@@ -39,6 +39,7 @@ const EducationPublicCenterPage = lazy(() => import('./pages/education-marketpla
 const EducationPublicCourseDetail = lazy(() => import('./pages/education-marketplace').then((module) => ({ default: module.EducationPublicCourseDetail })));
 const MarketplaceGuides = lazy(() => import('./pages/marketplace-guides'));
 const LegalPage = lazy(() => import('./pages/legal'));
+const ReferralsPage = lazy(() => import('./pages/referrals'));
 
 const BeautyJobs = lazy(() => import('./pages/beauty-jobs'));
 const BeautyJobDetail = lazy(() => import('./pages/beauty-jobs-detail'));
@@ -88,6 +89,7 @@ const AdminSalons = lazy(() => import('./pages/admin/salons'));
 const AdminSalonDetail = lazy(() => import('./pages/admin/salon-detail'));
 const AdminServiceTemplates = lazy(() => import('./pages/admin/service-templates'));
 const AdminUsers = lazy(() => import('./pages/admin/users'));
+const AdminReferrals = lazy(() => import('./pages/admin/referrals'));
 
 const AdminProfile = lazy(() => import('./pages/admin/profile'));
 const AdminLoyalty = lazy(() => import('./pages/admin/loyalty'));
@@ -298,6 +300,7 @@ function Router() {
         <Route path="/recnik"><MarketplaceGuides kind="glossary" /></Route>
         <Route path="/brendovi"><MarketplaceGuides kind="brands" /></Route>
         <Route path="/pridruzi-se-poslovi"><JobseekerRegistration /></Route>
+        <Route path="/preporuke"><RoleGuard allowedRoles={['CUSTOMER', 'JOBSEEKER', 'STUDENT', 'SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/prijava"><ReferralsPage /></RoleGuard></Route>
 
         <Route path="/moj-nalog">
           <RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava">
@@ -380,6 +383,7 @@ function Router() {
         <Route path="/admin/saloni"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSalons /></RoleGuard></Route>
         <Route path="/admin/predlosci-usluga"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminServiceTemplates /></RoleGuard></Route>
         <Route path="/admin/korisnici"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminUsers /></RoleGuard></Route>
+        <Route path="/admin/preporuke"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminReferrals /></RoleGuard></Route>
         <Route path="/admin/poslovi/pregled/:listingId"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><BeautyJobDetail /></RoleGuard></Route>
         <Route path="/admin/odbijeni-oglasi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminRejectedBeautyJobs /></RoleGuard></Route>
         <Route path="/admin/poslovi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminBeautyJobs /></RoleGuard></Route>

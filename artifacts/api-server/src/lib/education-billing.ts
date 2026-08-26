@@ -1,8 +1,10 @@
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   db,
   educationCentersTable,
+  educationCenterSubscriptionsTable,
   educationPlatformSettingsTable,
+  referralMilestoneBenefitsTable,
 } from "@workspace/db";
 
 export const educationBillingOverrideColumns = {
@@ -63,6 +65,62 @@ export async function resolveEducationBillingSettings(
         .map((key) => [key, billingSettings[key].effectiveValue]),
     ) as Record<EducationBillingKey, number>,
   };
+}
+
+/**
+ * Resolve and snapshot the commission for an actual enrollment charge. Exactly
+ * one queued A/C education benefit is consumed for a subscription cycle; every
+ * later charge in that same cycle reuses the already-applied 12% period.
+ * Callers must hold the center financial lock.
+ */
+export async function resolveEducationBillingSettingsForChargeInTx(
+  centerId: string,
+  tx: any,
+  knownCenter?: EducationCenterRow | null,
+  now = new Date(),
+) {
+  const settings = await resolveEducationBillingSettings(centerId, tx, knownCenter);
+  const [subscription] = await tx.select().from(educationCenterSubscriptionsTable)
+    .where(eq(educationCenterSubscriptionsTable.centerId, centerId))
+    .for("update")
+    .limit(1);
+  const cycleStart = subscription?.currentPeriodEnd
+    ? new Date(subscription.currentPeriodEnd)
+    : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  if (subscription?.currentPeriodEnd) cycleStart.setUTCMonth(cycleStart.getUTCMonth() - 1);
+
+  const [alreadyApplied] = await tx.select().from(referralMilestoneBenefitsTable)
+    .where(and(
+      eq(referralMilestoneBenefitsTable.benefitEducationCenterId, centerId),
+      eq(referralMilestoneBenefitsTable.kind, "education_commission_reduction"),
+      eq(referralMilestoneBenefitsTable.billingCycleStart, cycleStart),
+    ))
+    .orderBy(asc(referralMilestoneBenefitsTable.qualifyingCount))
+    .for("update")
+    .limit(1);
+  let benefit = alreadyApplied;
+  if (!benefit) {
+    const [queued] = await tx.select().from(referralMilestoneBenefitsTable)
+      .where(and(
+        eq(referralMilestoneBenefitsTable.benefitEducationCenterId, centerId),
+        inArray(referralMilestoneBenefitsTable.channel, ["A", "C"]),
+        eq(referralMilestoneBenefitsTable.kind, "education_commission_reduction"),
+        isNull(referralMilestoneBenefitsTable.appliedAt),
+      ))
+      .orderBy(asc(referralMilestoneBenefitsTable.qualifyingCount), asc(referralMilestoneBenefitsTable.createdAt))
+      .for("update")
+      .limit(1);
+    if (queued) {
+      [benefit] = await tx.update(referralMilestoneBenefitsTable).set({
+        billingCycleStart: cycleStart,
+        appliedAt: now,
+      }).where(and(eq(referralMilestoneBenefitsTable.id, queued.id),
+        isNull(referralMilestoneBenefitsTable.appliedAt))).returning();
+    }
+  }
+  return benefit
+    ? { ...settings, effective: { ...settings.effective, commissionPercent: 12 }, referralMilestoneBenefitId: benefit.id }
+    : { ...settings, referralMilestoneBenefitId: null };
 }
 
 export async function lockEducationCenterFinancials(tx: any, centerId: string) {

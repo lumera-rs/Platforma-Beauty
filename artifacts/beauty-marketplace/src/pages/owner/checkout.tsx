@@ -224,10 +224,10 @@ export function OwnerCartPage() {
                           </div>
                           <div className="flex justify-between items-end mt-4">
                             <div className="flex items-center space-x-1 bg-muted/20 border border-border/50 rounded-lg p-1">
-                              <Button 
+                              <Button
                                 data-testid={`button-cart-decrement-${item.id}`}
-                                variant="ghost" 
-                                size="icon" 
+                                variant="ghost"
+                                size="icon"
                                 className="h-8 w-8 text-muted-foreground hover:text-foreground"
                                 onClick={() => handleUpdateQuantity(item.id, item.quantity, -1, item.availableStock)}
                                 disabled={item.quantity <= 1 || cartBusy}
@@ -235,10 +235,10 @@ export function OwnerCartPage() {
                                 <Minus className="h-3 w-3" />
                               </Button>
                               <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
-                              <Button 
+                              <Button
                                 data-testid={`button-cart-increment-${item.id}`}
-                                variant="ghost" 
-                                size="icon" 
+                                variant="ghost"
+                                size="icon"
                                 className="h-8 w-8 text-muted-foreground hover:text-foreground"
                                 onClick={() => handleUpdateQuantity(item.id, item.quantity, 1, item.availableStock)}
                                 disabled={item.quantity >= item.availableStock || cartBusy}
@@ -246,10 +246,10 @@ export function OwnerCartPage() {
                                 <Plus className="h-3 w-3" />
                               </Button>
                             </div>
-                            <Button 
+                            <Button
                               data-testid={`button-cart-remove-${item.id}`}
-                              variant="ghost" 
-                              size="sm" 
+                              variant="ghost"
+                              size="sm"
                               className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 -mr-2"
                               onClick={() => handleRemove(item.id)}
                               disabled={cartBusy}
@@ -264,7 +264,7 @@ export function OwnerCartPage() {
                 </div>
               </div>
             </div>
-            
+
             <div className="lg:col-span-1 sticky top-8">
               <Card className="shadow-sm border-border/50 overflow-hidden">
                 <div className="h-2 bg-primary w-full" />
@@ -348,7 +348,7 @@ type DeliveryFormValues = z.infer<typeof deliverySchema>;
 export function OwnerCheckoutDeliveryPage() {
   const [, setLocation] = useLocation();
   const { data: profile, isLoading, isError } = useGetShopCheckoutProfile();
-  const { data: preview } = useGetShopCheckoutPreview(); 
+  const { data: preview } = useGetShopCheckoutPreview();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
@@ -434,7 +434,7 @@ export function OwnerCheckoutDeliveryPage() {
           <Link href="/vlasnik/prodavnica/korpa"><ArrowLeft className="w-4 h-4 mr-2" /> Nazad u korpu</Link>
         </Button>
         <CheckoutStepper step={2} />
-        
+
         <div className="mb-8 text-center">
           <h1 className="text-3xl md:text-4xl font-serif font-bold text-primary mb-2">Dostava i faktura</h1>
           <p className="text-muted-foreground">Unesite podatke o lokaciji za isporuku</p>
@@ -458,7 +458,7 @@ export function OwnerCheckoutDeliveryPage() {
                        </AlertDescription>
                      </Alert>
                    )}
-                  
+
                   {/* DELIVERY SECTION */}
                   <div className="bg-card rounded-xl border border-border/50 shadow-sm overflow-hidden">
                     <div className="bg-muted/30 px-6 py-4 border-b border-border/30 flex items-center gap-3">
@@ -622,7 +622,7 @@ export function OwnerCheckoutDeliveryPage() {
                 </form>
               </Form>
             </div>
-            
+
             {/* RIGHT COLUMN: MINI SUMMARY */}
             <div className="lg:col-span-1 sticky top-8">
               <Card className="shadow-sm border-border/50">
@@ -678,7 +678,8 @@ type ReviewFormValues = z.infer<typeof reviewSchema>;
 export function OwnerCheckoutReviewPage() {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
-  const { data: preview, isLoading, isError } = useGetShopCheckoutPreview();
+  const [desiredCredit, setDesiredCredit] = useState(0);
+  const { data: preview, isLoading, isError, isFetching } = useGetShopCheckoutPreview({ desiredReferralCreditRsd: desiredCredit });
   const checkoutMutation = useCheckoutShopCart();
   const { toast } = useToast();
   const [mounted, setMounted] = useState(false);
@@ -712,7 +713,11 @@ export function OwnerCheckoutReviewPage() {
       billingDetails: draft.useBilling ? draft.billingDetails : null,
       paymentMethod: values.paymentMethod,
       note: values.note || null,
-      termsAccepted: values.termsAccepted
+      termsAccepted: values.termsAccepted,
+      desiredReferralCreditRsd: desiredCredit,
+      expectedSubtotal: preview?.cart.subtotal,
+      expectedTotal: preview?.total,
+      expectedShippingCost: preview?.shipping.shippingCost,
     };
 
     checkoutMutation.mutate({ data: payload }, {
@@ -740,7 +745,7 @@ export function OwnerCheckoutReviewPage() {
           <Link href="/vlasnik/prodavnica/dostava"><ArrowLeft className="w-4 h-4 mr-2" /> Nazad na dostavu</Link>
         </Button>
         <CheckoutStepper step={3} />
-        
+
         <div className="mb-8 text-center">
           <h1 className="text-3xl md:text-4xl font-serif font-bold text-primary mb-2">Pregled i plaćanje</h1>
           <p className="text-muted-foreground">Proverite podatke i potvrdite vašu B2B porudžbinu</p>
@@ -753,7 +758,7 @@ export function OwnerCheckoutReviewPage() {
         ) : (
           <div className="grid lg:grid-cols-3 gap-8 items-start">
             <div className="lg:col-span-2 space-y-8">
-              
+
               {/* DRAFT REVIEW SUMMARY */}
               <div className="grid sm:grid-cols-2 gap-4">
                 <Card className="shadow-sm border-border/50">
@@ -851,7 +856,7 @@ export function OwnerCheckoutReviewPage() {
                        />
 
                        <Separator className="bg-border/40" />
-                       
+
                        <FormField control={form.control} name="note" render={({ field }) => (
                          <FormItem>
                            <FormLabel>Napomena za kurira ili prodavca (opciono)</FormLabel>
@@ -896,9 +901,42 @@ export function OwnerCheckoutReviewPage() {
                    <Separator className="bg-border/50" />
                    <div className="space-y-2">
                      <div className="flex justify-between text-muted-foreground">
-                        <span>Međuzbir</span>
+                        <span>Međuzbir robe</span>
                         <span>{money(preview.cart.subtotal)}</span>
                      </div>
+                     {preview.referralCreditAvailableRsd > 0 && (
+                       <div className="py-2">
+                         <div className="flex justify-between text-sm mb-2">
+                           <span className="text-primary font-medium flex items-center gap-1">Preporuke (Kredit: {money(preview.referralCreditAvailableRsd)})</span>
+                         </div>
+                         <div className="flex gap-2 items-center">
+                           <Input
+                             type="number"
+                             min={0}
+                             max={Math.min(preview.referralCreditAvailableRsd, preview.merchandiseSubtotalRsd)}
+                             value={desiredCredit}
+                             onChange={(e) => setDesiredCredit(Math.min(Number(e.target.value) || 0, Math.min(preview.referralCreditAvailableRsd, preview.merchandiseSubtotalRsd)))}
+                             className="h-8 text-sm"
+                           />
+                           <Button
+                             type="button"
+                             variant="outline"
+                             size="sm"
+                             onClick={() => setDesiredCredit(Math.min(preview.referralCreditAvailableRsd, preview.merchandiseSubtotalRsd))}
+                             className="h-8 whitespace-nowrap text-xs"
+                           >
+                             Maks
+                           </Button>
+                         </div>
+                         <p className="text-[10px] text-muted-foreground mt-1">Kredit se može iskoristiti samo za robu, ne i za dostavu.</p>
+                       </div>
+                     )}
+                     {preview.referralCreditAppliedRsd > 0 && (
+                       <div className="flex justify-between text-emerald-600 font-medium">
+                          <span>Primenjen kredit</span>
+                          <span>-{money(preview.referralCreditAppliedRsd)}</span>
+                       </div>
+                     )}
                      <div className="flex justify-between text-muted-foreground">
                          <span>Dostava {draft.deliveryMethod === "personal_belgrade" ? "— lična BG" : `${(preview.shipping.totalWeightGrams / 1000).toFixed(1)}kg`}</span>
                          <span>{draft.deliveryMethod === "personal_belgrade" ? money(preview.shipping.availableMethods.find(m => m.id === "personal_belgrade")?.price ?? 0) : preview.shipping.freeShipping ? <span className="text-green-600 font-medium">Besplatna</span> : money(preview.shipping.shippingCost)}</span>
@@ -912,7 +950,7 @@ export function OwnerCheckoutReviewPage() {
                    <Separator className="bg-border/50" />
                    <div className="flex justify-between font-black text-xl text-foreground items-end">
                      <span>Ukupno</span>
-                      <span className="text-primary">{money(preview.cart.subtotal + (draft.deliveryMethod === "personal_belgrade" ? preview.shipping.availableMethods.find(m => m.id === "personal_belgrade")?.price ?? 0 : preview.shipping.shippingCost))}</span>
+                      <span className="text-primary">{money(preview.total)}</span>
                    </div>
                    <p className="text-[10px] text-muted-foreground text-right leading-tight">Uključen PDV (ako je primenjivo).</p>
                 </CardContent>
@@ -926,7 +964,7 @@ export function OwnerCheckoutReviewPage() {
                      aria-busy={checkoutMutation.isPending}
                      aria-controls="checkout-form"
                    >
-                    {checkoutMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : <Check className="w-5 h-5 mr-2" />} 
+                    {checkoutMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : <Check className="w-5 h-5 mr-2" />}
                     Potvrdi porudžbinu
                   </Button>
                 </div>
@@ -966,7 +1004,7 @@ export function OwnerOrderConfirmationPage() {
             <div className="w-24 h-24 rounded-full bg-green-100 dark:bg-green-900/30 border-4 border-green-500 text-green-600 dark:text-green-400 mx-auto flex items-center justify-center mb-6 shadow-sm">
               <Check className="w-12 h-12" strokeWidth={3} />
             </div>
-            
+
             <h1 className="text-4xl font-serif font-bold text-foreground mb-4">Hvala vam na porudžbini!</h1>
             <p className="text-xl text-muted-foreground mb-2">Vaša porudžbina <strong className="text-foreground">#{order.id.slice(0,8).toUpperCase()}</strong> je uspešno primljena.</p>
             <p className="text-muted-foreground mb-10 max-w-xl mx-auto">

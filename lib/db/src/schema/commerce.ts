@@ -211,6 +211,13 @@ export const ordersTable = pgTable("orders", {
   billingCity: text("billing_city"),
   billingPostalCode: text("billing_postal_code"),
   subtotal: integer("subtotal").notNull().default(0),
+  /** Immutable VAT-inclusive merchandise amount before referral credit. */
+  referralCreditMerchandiseSubtotalRsd: integer("referral_credit_merchandise_subtotal_rsd").notNull().default(0),
+  /** Immutable merchandise-plus-shipping amount before referral credit. */
+  referralCreditPreCreditPayableTotalRsd: integer("referral_credit_pre_credit_payable_total_rsd").notNull().default(0),
+  /** Immutable referral-credit accounting snapshot; never includes shipping. */
+  referralCreditAppliedRsd: integer("referral_credit_applied_rsd").notNull().default(0),
+  referralCreditRestoredAt: timestamp("referral_credit_restored_at", { withTimezone: true }),
   totalWeightGrams: integer("total_weight_grams").notNull().default(0),
   paymentMethod: paymentMethodEnum("payment_method").notNull(),
   paymentStatus: paymentStatusEnum("payment_status").notNull().default("unpaid"),
@@ -349,6 +356,13 @@ export const retailOrdersTable = pgTable("retail_orders", {
   paymentStatus: paymentStatusEnum("payment_status").notNull().default("unpaid"),
   deliveryMethod: deliveryMethodEnum("delivery_method").notNull().default("courier"),
   subtotal: integer("subtotal").notNull(),
+  /** Immutable VAT-inclusive merchandise amount before referral credit. */
+  referralCreditMerchandiseSubtotalRsd: integer("referral_credit_merchandise_subtotal_rsd").notNull().default(0),
+  /** Immutable merchandise-plus-shipping amount before referral credit. */
+  referralCreditPreCreditPayableTotalRsd: integer("referral_credit_pre_credit_payable_total_rsd").notNull().default(0),
+  /** Immutable referral-credit accounting snapshot; never includes shipping. */
+  referralCreditAppliedRsd: integer("referral_credit_applied_rsd").notNull().default(0),
+  referralCreditRestoredAt: timestamp("referral_credit_restored_at", { withTimezone: true }),
   shippingCost: integer("shipping_cost").notNull().default(0),
   total: integer("total").notNull(),
   shippingName: text("shipping_name").notNull(),

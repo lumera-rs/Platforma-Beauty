@@ -15,6 +15,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { homeForRole } from "@/lib/role-routing";
 import { getSafeReturnTo } from "@/lib/auth-return";
+import { useReferralCapture } from "@/hooks/use-referral-capture";
+import { ReferralContextBanner } from "@/components/referral-context-banner";
+import { clearStoredReferralCode } from "@/lib/referral-storage";
 
 const loginSchema = z.object({
   email: z.string().email("Unesite validnu email adresu."),
@@ -33,6 +36,7 @@ const registrationSchema = z.object({
   municipality: z.string().min(2, "Opština je obavezna."),
   address: z.string().min(3, "Adresa je obavezna."),
   postalCode: z.string().min(4, "Poštanski broj je obavezan."),
+  pib: z.string().min(8, "PIB je obavezan."),
 });
 
 type BusinessAuthProps = {
@@ -48,6 +52,7 @@ export default function BusinessAuth({ initialTab }: BusinessAuthProps) {
   const register = useRegisterBusiness();
   const oauthBusiness = new URLSearchParams(window.location.search).get("oauth") === "1";
   const returnTo = getSafeReturnTo(searchString);
+  const referralCode = useReferralCapture();
 
   const loginForm = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
@@ -67,6 +72,7 @@ export default function BusinessAuth({ initialTab }: BusinessAuthProps) {
       municipality: "",
       address: "",
       postalCode: "",
+      pib: "",
     },
   });
 
@@ -88,6 +94,7 @@ export default function BusinessAuth({ initialTab }: BusinessAuthProps) {
   const continueWith = (provider: "google" | "facebook") => {
     const params = new URLSearchParams({ flow: "business" });
     if (returnTo) params.set("returnTo", returnTo);
+    if (referralCode) params.set("referralCode", referralCode);
     window.location.assign(`/api/auth/oauth/${provider}/start?${params.toString()}`);
   };
 
@@ -180,6 +187,7 @@ export default function BusinessAuth({ initialTab }: BusinessAuthProps) {
                 </TabsContent>
 
                 <TabsContent value="register">
+                  <ReferralContextBanner code={referralCode} />
                   <Form {...registrationForm}>
                     <form
                       className="space-y-5"
@@ -188,8 +196,9 @@ export default function BusinessAuth({ initialTab }: BusinessAuthProps) {
                           registrationForm.setError("password", { message: "Lozinka je obavezna." });
                           return;
                         }
-                        register.mutate({ data: values }, {
+                        register.mutate({ data: { ...values, referralCode } }, {
                           onSuccess: (response) => {
+                            clearStoredReferralCode();
                             toast.success("Poslovni nalog je kreiran", { description: "Dobrodošli u LUMERA Biznis." });
                             setLocation(returnTo ?? homeForRole(response.user.role));
                           },
@@ -247,6 +256,17 @@ export default function BusinessAuth({ initialTab }: BusinessAuthProps) {
                           <FormItem>
                             <FormLabel>Naziv biznisa</FormLabel>
                             <FormControl><Input autoComplete="organization" placeholder="Naziv salona ili centra" {...field} /></FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={registrationForm.control}
+                        name="pib"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>PIB pravnog lica</FormLabel>
+                            <FormControl><Input inputMode="numeric" autoComplete="off" {...field} /></FormControl>
                             <FormMessage />
                           </FormItem>
                         )}

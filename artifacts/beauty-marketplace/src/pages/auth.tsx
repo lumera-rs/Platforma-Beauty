@@ -15,6 +15,9 @@ import { useToast } from "@/hooks/use-toast";
 import { Facebook, Loader2, Mail } from "lucide-react";
 import { homeForRole } from "@/lib/role-routing";
 import { getSafeReturnTo } from "@/lib/auth-return";
+import { useReferralCapture } from "@/hooks/use-referral-capture";
+import { ReferralContextBanner } from "@/components/referral-context-banner";
+import { clearStoredReferralCode } from "@/lib/referral-storage";
 
 const loginSchema = z.object({
   email: z.string().email({ message: "Unesite validnu email adresu" }),
@@ -47,6 +50,7 @@ export default function Login() {
   // Redirect if already logged in
   useEffect(() => {
     if (userResp?.user) {
+      if (searchParams.get("oauth_created") === "1") clearStoredReferralCode();
       setLocation(returnTo ?? homeForRole(userResp.user.role));
     }
   }, [returnTo, userResp, setLocation]);
@@ -76,16 +80,20 @@ export default function Login() {
     });
   };
 
+  const referralCode = useReferralCapture();
+
   const onRegisterSubmit = (values: z.infer<typeof registerSchema>) => {
     const registrationValues = {
       ...values,
       phoneVerificationCode: registerForm.getValues("phoneVerificationCode"),
+      referralCode,
     };
     if (studentPortal) {
       void fetch("/api/auth/student-register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(registrationValues) })
         .then(async (response) => ({ response, data: await response.json() }))
         .then(({ response, data }) => {
           if (!response.ok) throw new Error(data.error ?? "Registracija nije uspela.");
+          clearStoredReferralCode();
           toast.success("STUDENT nalog je kreiran", { description: "Dobrodošli u LUMERA Edukacije." });
           setLocation("/student/edukacije");
         })
@@ -94,6 +102,7 @@ export default function Login() {
     }
     registerMutation.mutate({ data: registrationValues }, {
       onSuccess: (res) => {
+        clearStoredReferralCode();
         toast.success("Uspešna registracija", { description: "Vaš klijentski nalog je kreiran!" });
         setLocation(returnTo ?? homeForRole(res.user.role));
       },
@@ -121,6 +130,7 @@ export default function Login() {
   const continueWith = (provider: "google" | "facebook") => {
     const params = new URLSearchParams({ flow: "customer" });
     if (returnTo) params.set("returnTo", returnTo);
+    if (referralCode) params.set("referralCode", referralCode);
     window.location.assign(`/api/auth/oauth/${provider}/start?${params.toString()}`);
   };
 
@@ -179,6 +189,7 @@ export default function Login() {
               </TabsContent>
               
               <TabsContent value="register" className="mt-0">
+                <ReferralContextBanner code={referralCode} />
                 <Form {...registerForm}>
                   <form onSubmit={registerForm.handleSubmit(onRegisterSubmit)} className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">

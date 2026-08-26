@@ -14,5 +14,15 @@ export interface ShopCheckoutPreview {
   shipping: ShippingQuote;
   /** @minimum 0 */
   total: number;
+  /** @minimum 0 */
+  referralCreditAvailableRsd: number;
+  /** @minimum 0 */
+  referralCreditAppliedRsd: number;
+  /** @minimum 0 */
+  merchandiseSubtotalRsd: number;
+  /** @minimum 0 */
+  shippingRsd: number;
+  /** @minimum 0 */
+  payableTotalRsd: number;
   paymentMethods: ShopCheckoutPreviewPaymentMethodsItem[];
 }

@@ -1,7 +1,7 @@
 import { Link, useLocation, useRoute } from "wouter";
 import { 
   LayoutDashboard, Briefcase, GraduationCap, 
-  UserCircle, Settings, LogOut, Loader2, Bell
+  UserCircle, Settings, LogOut, Loader2, Bell, Gift
 } from "lucide-react";
 import { useGetCurrentUser, useGetJobseekerDashboard, useLogout } from "@workspace/api-client-react";
 import { Layout } from "@/components/layout";
@@ -73,6 +73,12 @@ export default function JobseekerDashboard() {
                 </Link>
               );
             })}
+            <Link href="/preporuke">
+              <span className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-muted text-primary bg-primary/5 border border-primary/10 mt-4">
+                <Gift className="h-4 w-4" />
+                Preporuke
+              </span>
+            </Link>
           </nav>
 
           <div className="pt-4 border-t mt-auto">

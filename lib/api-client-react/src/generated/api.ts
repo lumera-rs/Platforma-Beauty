@@ -198,6 +198,7 @@ import type {
   GetSalonCalendarDayParams,
   GetSalonDashboardParams,
   GetShippingQuoteParams,
+  GetShopCheckoutPreviewParams,
   GetWidgetAvailabilityParams,
   GrowthAdminSummary,
   GrowthAiAnswer,
@@ -262,6 +263,13 @@ import type {
   QuickPackagePurchaseResult,
   RedeemSessionBody,
   RedeemSessionResult,
+  ReferralApproval,
+  ReferralApprovalDecision,
+  ReferralApprovalDecisionResult,
+  ReferralCodeValidation,
+  ReferralDashboard,
+  ReferralReview,
+  ReferralReviewUpdate,
   RegisterInput,
   RetailCart,
   RetailCartItemInput,
@@ -7444,20 +7452,27 @@ export function useGetShopCheckoutProfile<TData = Awaited<ReturnType<typeof getS
 
 
 
-export const getGetShopCheckoutPreviewUrl = () => {
+export const getGetShopCheckoutPreviewUrl = (params?: GetShopCheckoutPreviewParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/shop/checkout-preview`
+  return stringifiedParams.length > 0 ? `/api/shop/checkout-preview?${stringifiedParams}` : `/api/shop/checkout-preview`
 }
 
 /**
  * @summary Calculate the server-authoritative totals for the persistent cart
  */
-export const getShopCheckoutPreview = async ( options?: Parameters<typeof customFetch>[1]): Promise<ShopCheckoutPreview> => {
+export const getShopCheckoutPreview = async (params?: GetShopCheckoutPreviewParams, options?: Parameters<typeof customFetch>[1]): Promise<ShopCheckoutPreview> => {
 
-  return customFetch<ShopCheckoutPreview>(getGetShopCheckoutPreviewUrl(),
+  return customFetch<ShopCheckoutPreview>(getGetShopCheckoutPreviewUrl(params),
   {
     ...options,
     method: 'GET'
@@ -7470,23 +7485,23 @@ export const getShopCheckoutPreview = async ( options?: Parameters<typeof custom
 
 
 
-export const getGetShopCheckoutPreviewQueryKey = () => {
+export const getGetShopCheckoutPreviewQueryKey = (params?: GetShopCheckoutPreviewParams,) => {
     return [
-    `/api/shop/checkout-preview`
+    `/api/shop/checkout-preview`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getGetShopCheckoutPreviewQueryOptions = <TData = Awaited<ReturnType<typeof getShopCheckoutPreview>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShopCheckoutPreview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetShopCheckoutPreviewQueryOptions = <TData = Awaited<ReturnType<typeof getShopCheckoutPreview>>, TError = ErrorType<unknown>>(params?: GetShopCheckoutPreviewParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShopCheckoutPreview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetShopCheckoutPreviewQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getGetShopCheckoutPreviewQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getShopCheckoutPreview>>> = ({ signal }) => getShopCheckoutPreview({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getShopCheckoutPreview>>> = ({ signal }) => getShopCheckoutPreview(params, { signal, ...requestOptions });
 
 
 
@@ -7504,11 +7519,11 @@ export type GetShopCheckoutPreviewQueryError = ErrorType<unknown>
  */
 
 export function useGetShopCheckoutPreview<TData = Awaited<ReturnType<typeof getShopCheckoutPreview>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShopCheckoutPreview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: GetShopCheckoutPreviewParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShopCheckoutPreview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetShopCheckoutPreviewQueryOptions(options)
+  const queryOptions = getGetShopCheckoutPreviewQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -24082,4 +24097,456 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getResolveBeautyJobReportMutationOptions(options));
+    }
+
+export const getValidateReferralCodeUrl = (code: string,) => {
+
+
+
+
+  return `/api/referrals/validate/${code}`
+}
+
+/**
+ * @summary Validate a public referral code without disclosing referrer identity
+ */
+export const validateReferralCode = async (code: string, options?: Parameters<typeof customFetch>[1]): Promise<ReferralCodeValidation> => {
+
+  return customFetch<ReferralCodeValidation>(getValidateReferralCodeUrl(code),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getValidateReferralCodeQueryKey = (code: string,) => {
+    return [
+    `/api/referrals/validate/${code}`
+    ] as const;
+    }
+
+
+export const getValidateReferralCodeQueryOptions = <TData = Awaited<ReturnType<typeof validateReferralCode>>, TError = ErrorType<void>>(code: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof validateReferralCode>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getValidateReferralCodeQueryKey(code);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof validateReferralCode>>> = ({ signal }) => validateReferralCode(code, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: code !== null && code !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof validateReferralCode>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ValidateReferralCodeQueryResult = NonNullable<Awaited<ReturnType<typeof validateReferralCode>>>
+export type ValidateReferralCodeQueryError = ErrorType<void>
+
+
+/**
+ * @summary Validate a public referral code without disclosing referrer identity
+ */
+
+export function useValidateReferralCode<TData = Awaited<ReturnType<typeof validateReferralCode>>, TError = ErrorType<void>>(
+ code: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof validateReferralCode>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getValidateReferralCodeQueryOptions(code,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetReferralDashboardUrl = () => {
+
+
+
+
+  return `/api/referrals/dashboard`
+}
+
+/**
+ * @summary Get the signed-in user's tenant-safe referral dashboard
+ */
+export const getReferralDashboard = async ( options?: Parameters<typeof customFetch>[1]): Promise<ReferralDashboard> => {
+
+  return customFetch<ReferralDashboard>(getGetReferralDashboardUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetReferralDashboardQueryKey = () => {
+    return [
+    `/api/referrals/dashboard`
+    ] as const;
+    }
+
+
+export const getGetReferralDashboardQueryOptions = <TData = Awaited<ReturnType<typeof getReferralDashboard>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getReferralDashboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetReferralDashboardQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getReferralDashboard>>> = ({ signal }) => getReferralDashboard({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getReferralDashboard>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetReferralDashboardQueryResult = NonNullable<Awaited<ReturnType<typeof getReferralDashboard>>>
+export type GetReferralDashboardQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get the signed-in user's tenant-safe referral dashboard
+ */
+
+export function useGetReferralDashboard<TData = Awaited<ReturnType<typeof getReferralDashboard>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getReferralDashboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetReferralDashboardQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminListReferralApprovalsUrl = () => {
+
+
+
+
+  return `/api/admin/referrals/approvals`
+}
+
+/**
+ * @summary List pending referred businesses awaiting approval
+ */
+export const adminListReferralApprovals = async ( options?: Parameters<typeof customFetch>[1]): Promise<ReferralApproval[]> => {
+
+  return customFetch<ReferralApproval[]>(getAdminListReferralApprovalsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListReferralApprovalsQueryKey = () => {
+    return [
+    `/api/admin/referrals/approvals`
+    ] as const;
+    }
+
+
+export const getAdminListReferralApprovalsQueryOptions = <TData = Awaited<ReturnType<typeof adminListReferralApprovals>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListReferralApprovals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListReferralApprovalsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListReferralApprovals>>> = ({ signal }) => adminListReferralApprovals({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListReferralApprovals>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminListReferralApprovalsQueryResult = NonNullable<Awaited<ReturnType<typeof adminListReferralApprovals>>>
+export type AdminListReferralApprovalsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List pending referred businesses awaiting approval
+ */
+
+export function useAdminListReferralApprovals<TData = Awaited<ReturnType<typeof adminListReferralApprovals>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListReferralApprovals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminListReferralApprovalsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminDecideReferralApprovalUrl = (attributionId: string,) => {
+
+
+
+
+  return `/api/admin/referrals/approvals/${attributionId}`
+}
+
+/**
+ * @summary Approve, reject, or resubmit a referred salon or education center
+ */
+export const adminDecideReferralApproval = async (attributionId: string,
+    referralApprovalDecision: ReferralApprovalDecision, options?: Parameters<typeof customFetch>[1]): Promise<ReferralApprovalDecisionResult> => {
+
+  return customFetch<ReferralApprovalDecisionResult>(getAdminDecideReferralApprovalUrl(attributionId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(referralApprovalDecision)
+  }
+);}
+
+
+
+
+
+export const getAdminDecideReferralApprovalMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminDecideReferralApproval>>, TError,{attributionId: string;data: BodyType<ReferralApprovalDecision>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminDecideReferralApproval>>, TError,{attributionId: string;data: BodyType<ReferralApprovalDecision>}, TContext> => {
+
+const mutationKey = ['adminDecideReferralApproval'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminDecideReferralApproval>>, {attributionId: string;data: BodyType<ReferralApprovalDecision>}> = (props) => {
+          const {attributionId,data} = props ?? {};
+
+          return  adminDecideReferralApproval(attributionId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminDecideReferralApprovalMutationResult = NonNullable<Awaited<ReturnType<typeof adminDecideReferralApproval>>>
+    export type AdminDecideReferralApprovalMutationBody = BodyType<ReferralApprovalDecision>
+    export type AdminDecideReferralApprovalMutationError = ErrorType<void>
+
+    /**
+ * @summary Approve, reject, or resubmit a referred salon or education center
+ */
+export const useAdminDecideReferralApproval = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminDecideReferralApproval>>, TError,{attributionId: string;data: BodyType<ReferralApprovalDecision>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminDecideReferralApproval>>,
+        TError,
+        {attributionId: string;data: BodyType<ReferralApprovalDecision>},
+        TContext
+      > => {
+      return useMutation(getAdminDecideReferralApprovalMutationOptions(options));
+    }
+
+export const getAdminListReferralReviewsUrl = () => {
+
+
+
+
+  return `/api/admin/referrals/reviews`
+}
+
+/**
+ * @summary List suspicious referral records
+ */
+export const adminListReferralReviews = async ( options?: Parameters<typeof customFetch>[1]): Promise<ReferralReview[]> => {
+
+  return customFetch<ReferralReview[]>(getAdminListReferralReviewsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListReferralReviewsQueryKey = () => {
+    return [
+    `/api/admin/referrals/reviews`
+    ] as const;
+    }
+
+
+export const getAdminListReferralReviewsQueryOptions = <TData = Awaited<ReturnType<typeof adminListReferralReviews>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListReferralReviews>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListReferralReviewsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListReferralReviews>>> = ({ signal }) => adminListReferralReviews({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListReferralReviews>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminListReferralReviewsQueryResult = NonNullable<Awaited<ReturnType<typeof adminListReferralReviews>>>
+export type AdminListReferralReviewsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List suspicious referral records
+ */
+
+export function useAdminListReferralReviews<TData = Awaited<ReturnType<typeof adminListReferralReviews>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListReferralReviews>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminListReferralReviewsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminReviewReferralUrl = (reviewId: string,) => {
+
+
+
+
+  return `/api/admin/referrals/reviews/${reviewId}`
+}
+
+/**
+ * @summary Resolve a suspicious referral review
+ */
+export const adminReviewReferral = async (reviewId: string,
+    referralReviewUpdate: ReferralReviewUpdate, options?: Parameters<typeof customFetch>[1]): Promise<ReferralReview> => {
+
+  return customFetch<ReferralReview>(getAdminReviewReferralUrl(reviewId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(referralReviewUpdate)
+  }
+);}
+
+
+
+
+
+export const getAdminReviewReferralMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminReviewReferral>>, TError,{reviewId: string;data: BodyType<ReferralReviewUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminReviewReferral>>, TError,{reviewId: string;data: BodyType<ReferralReviewUpdate>}, TContext> => {
+
+const mutationKey = ['adminReviewReferral'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminReviewReferral>>, {reviewId: string;data: BodyType<ReferralReviewUpdate>}> = (props) => {
+          const {reviewId,data} = props ?? {};
+
+          return  adminReviewReferral(reviewId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminReviewReferralMutationResult = NonNullable<Awaited<ReturnType<typeof adminReviewReferral>>>
+    export type AdminReviewReferralMutationBody = BodyType<ReferralReviewUpdate>
+    export type AdminReviewReferralMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Resolve a suspicious referral review
+ */
+export const useAdminReviewReferral = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminReviewReferral>>, TError,{reviewId: string;data: BodyType<ReferralReviewUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminReviewReferral>>,
+        TError,
+        {reviewId: string;data: BodyType<ReferralReviewUpdate>},
+        TContext
+      > => {
+      return useMutation(getAdminReviewReferralMutationOptions(options));
     }

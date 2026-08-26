@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useLocation, Link } from "wouter";
-import { useGetCurrentUser } from "@workspace/api-client-react";
+import { useGetCurrentUser, useGetReferralDashboard, getGetReferralDashboardQueryKey } from "@workspace/api-client-react";
 import { BusinessLayout } from "@/components/business-layout";
-import { Loader2, BookOpen, ArrowRight, Building2, CheckCircle2, GraduationCap } from "lucide-react";
+import { Loader2, BookOpen, ArrowRight, Building2, CheckCircle2, GraduationCap, Gift, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -11,6 +11,12 @@ export default function BusinessHub() {
   const { data, isLoading } = useGetCurrentUser();
   const user = data?.user;
   const [centerStatus, setCenterStatus] = useState<{ verificationStatus: string; subscriptionStatus: string | null; eligible: boolean; verificationNote: string | null } | null>(null);
+
+  const { data: refDash } = useGetReferralDashboard({
+    query: { enabled: user?.role === "EDUKATIVNI_CENTAR", queryKey: getGetReferralDashboardQueryKey() }
+  });
+  const refChannelC = refDash?.channels.find(c => c.channel === "C");
+  const refChannelA = refDash?.channels.find(c => c.channel === "A");
 
   useEffect(() => {
     if (isLoading) return;
@@ -82,6 +88,43 @@ export default function BusinessHub() {
             </CardContent>
             {centerStatus && !centerStatus.eligible ? <CardContent className="pt-0 text-sm text-muted-foreground">Kursevi ostaju sačuvani kao nacrt dok LUMERA administrator ne verifikuje centar i ne aktivira pretplatu.{centerStatus.verificationNote ? ` Napomena: ${centerStatus.verificationNote}` : ""}</CardContent> : null}
           </Card>
+
+          {(refChannelC || refChannelA) && (
+            <div className="grid sm:grid-cols-2 gap-4 mb-12">
+              {refChannelC && (
+                <Link href="/preporuke">
+                  <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 flex items-center justify-between hover:bg-primary/10 transition-colors cursor-pointer group">
+                    <div className="flex items-center gap-4">
+                      <div className="bg-primary text-primary-foreground p-3 rounded-full">
+                        <Gift className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-primary">Studentske Preporuke (C)</p>
+                        <p className="text-sm text-muted-foreground">{refChannelC.qualified} uspesnih, {refChannelC.pending} na čekanju</p>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-primary group-hover:translate-x-1 transition-transform" />
+                  </div>
+                </Link>
+              )}
+              {refChannelA && (
+                <Link href="/preporuke">
+                  <div className="bg-accent/5 border border-accent/20 rounded-xl p-4 flex items-center justify-between hover:bg-accent/10 transition-colors cursor-pointer group">
+                    <div className="flex items-center gap-4">
+                      <div className="bg-accent text-accent-foreground p-3 rounded-full">
+                        <Building2 className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-accent">Preporuke Biznisa (A)</p>
+                        <p className="text-sm text-muted-foreground">{refChannelA.qualified} uspesnih, {refChannelA.pending} na čekanju</p>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-accent group-hover:translate-x-1 transition-transform" />
+                  </div>
+                </Link>
+              )}
+            </div>
+          )}
 
           <div className="grid md:grid-cols-2 gap-8 mb-12">
             <div className="md:col-span-2">

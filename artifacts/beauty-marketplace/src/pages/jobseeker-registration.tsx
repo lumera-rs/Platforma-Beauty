@@ -13,6 +13,9 @@ import { useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Briefcase } from "lucide-react";
 import { homeForRole } from "@/lib/role-routing";
+import { useReferralCapture } from "@/hooks/use-referral-capture";
+import { ReferralContextBanner } from "@/components/referral-context-banner";
+import { clearStoredReferralCode } from "@/lib/referral-storage";
 
 function isValidPastOrPresentDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -42,6 +45,7 @@ export default function JobseekerRegistration() {
   const { toast } = useToast();
   
   const registerMutation = useRegisterJobseeker();
+  const referralCode = useReferralCapture();
   
   useEffect(() => {
     if (userResp?.user) {
@@ -56,8 +60,9 @@ export default function JobseekerRegistration() {
 
   const onSubmit = (values: z.infer<typeof registerSchema>) => {
     const { passwordConfirm, ...registrationValues } = values;
-    registerMutation.mutate({ data: registrationValues }, {
+    registerMutation.mutate({ data: { ...registrationValues, referralCode } }, {
       onSuccess: () => {
+        clearStoredReferralCode();
         toast.success("Uspešna registracija", { description: "Vaš profil je kreiran!" });
         setLocation("/poslovi/nalog");
       },
@@ -99,6 +104,7 @@ export default function JobseekerRegistration() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            <ReferralContextBanner code={referralCode} />
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">

@@ -13,4 +13,9 @@ export interface AdminSalonUpdate {
   topSalon?: boolean;
   /** @nullable */
   videoUrl?: string | null;
+  /**
+     * @minLength 8
+     * @maxLength 50
+     */
+  pib?: string;
 }

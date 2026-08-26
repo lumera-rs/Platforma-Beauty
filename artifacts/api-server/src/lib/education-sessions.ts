@@ -38,6 +38,7 @@ import {
 } from "@workspace/db";
 import { lumeraEmailHtml, sendTransactionalEmail } from "./brevo";
 import { logger } from "./logger";
+import { recordEducationEnrollmentReferralTransitionInTx } from "./referral-service";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -257,6 +258,10 @@ export async function cancelEducationSession(
           paymentStatus: refundedEnrollmentIds.includes(enrollment.id) ? "refunded" : enrollment.paymentStatus,
           updatedAt: new Date(),
         }).where(and(eq(courseEnrollmentsTable.id, enrollment.id), inArray(courseEnrollmentsTable.status, ["pending", "active"])));
+        if (centerId) await recordEducationEnrollmentReferralTransitionInTx(tx, {
+          enrollmentId: enrollment.id, studentUserId: enrollment.userId, centerId,
+          occurredAt: new Date(), valid: false, reason: "education_session_cancelled",
+        });
       }
 
       // Release reserved seats (set to 0 – session is cancelled).
@@ -548,6 +553,10 @@ export async function cancelEducationEnrollment(input: {
             sql`${courseEnrollmentsTable.status} <> 'cancelled'`,
           ),
         );
+      if (course.centerId) await recordEducationEnrollmentReferralTransitionInTx(tx, {
+        enrollmentId: locked.id, studentUserId: locked.userId, centerId: course.centerId,
+        occurredAt: new Date(), valid: false, reason: "education_enrollment_cancelled_or_refunded",
+      });
     }
 
     // Release exactly one reserved seat and promote one waiter.

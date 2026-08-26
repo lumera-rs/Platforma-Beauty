@@ -34,6 +34,17 @@ import
 }
  from "../lib/salon-notification-events"
 ;
+import {
+  allocateReferralCreditInTx,
+  bindLegalEntityBusinessInTx,
+  captureReferralAttributionInTx,
+  recordAppointmentReferralTransitionInTx,
+  recordEducationEnrollmentReferralTransitionInTx,
+  recordReferralRedemptionInTx,
+  referralCreditBalanceInTx,
+  restoreReferralCreditForOrderInTx,
+  LegalEntityOwnerConflictError,
+} from "../lib/referral-service";
 
 import 
 {
@@ -87,6 +98,7 @@ import
   oauthIdentitiesTable,
   oauthLoginStatesTable,
   phoneVerificationCodesTable,
+  phoneVerificationProofsTable,
   orderItemsTable,
   orderStatusHistoryTable,
   ordersTable,
@@ -99,6 +111,8 @@ import
   retailCartItemsTable,
   retailOrdersTable,
   retailOrderItemsTable,
+  referralCreditLedgerTable,
+  referralCreditRedemptionsTable,
   retailProductReviewsTable,
   reviewsTable,
   salonHoursTable,
@@ -139,6 +153,7 @@ import {
   lockEducationBillingRules,
   lockEducationCenterFinancials,
   resolveEducationBillingSettings,
+  resolveEducationBillingSettingsForChargeInTx,
   type EducationBillingKey,
 } from "../lib/education-billing";
 
@@ -3237,6 +3252,9 @@ router.post("/auth/phone-verification/confirm", async (req, res): Promise<void> 
   try {
     await db.transaction(async (tx) => {
       await tx.update(usersTable).set({ phone, phoneNormalized, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
+        await tx.insert(phoneVerificationProofsTable).values({
+          userId: user.id, phoneNormalized, metadata: { source: "phone-verification-confirm" },
+        });
       if (user.role === "CUSTOMER") await linkPhoneContactsToUser(tx, user.id, phone);
       await tx.delete(phoneVerificationCodesTable).where(eq(phoneVerificationCodesTable.id, verification.id));
     });
@@ -3264,16 +3282,23 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     const [phoneOwner] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.phoneNormalized, phoneNormalized)).limit(1);
     if (phoneOwner) { res.status(409).json({ error: "Broj telefona je već povezan sa drugim nalogom." }); return; }
   }
-  const [user] = await db.insert(usersTable).values({
-    firstName: parsed.data.firstName,
-    lastName: parsed.data.lastName,
-    email: parsed.data.email.toLowerCase(),
-    phone: parsed.data.phone ?? null, phoneNormalized,
-    passwordHash: await hashPassword(parsed.data.password),
-    passwordSetAt: new Date(),
-    role: "CUSTOMER",
-  }).returning();
-  await db.delete(phoneVerificationCodesTable).where(eq(phoneVerificationCodesTable.id, verification.id));
+  const [user] = await db.transaction(async (tx) => {
+    const [created] = await tx.insert(usersTable).values({
+      firstName: parsed.data.firstName,
+      lastName: parsed.data.lastName,
+      email: parsed.data.email.toLowerCase(),
+      phone: parsed.data.phone ?? null, phoneNormalized,
+      passwordHash: await hashPassword(parsed.data.password),
+      passwordSetAt: new Date(),
+      role: "CUSTOMER",
+    }).returning();
+    await tx.insert(phoneVerificationProofsTable).values({
+      userId: created!.id, phoneNormalized, metadata: { source: "customer-registration" },
+    });
+    await captureReferralAttributionInTx(tx, { referralCode: parsed.data.referralCode, referredUserId: created!.id, phoneNormalized });
+    await tx.delete(phoneVerificationCodesTable).where(eq(phoneVerificationCodesTable.id, verification.id));
+    return [created!];
+  });
   const verifiedPhone = user!.phone;
   if (verifiedPhone) await db.transaction((tx) => linkPhoneContactsToUser(tx, user!.id, verifiedPhone));
   const token = await createSession(user!.id);
@@ -3321,6 +3346,10 @@ router.post("/auth/jobseeker-register", async (req, res): Promise<void> => {
       phoneNormalized, dateOfBirth: input.dateOfBirth, passwordHash: await hashPassword(input.password),
       passwordSetAt: new Date(), role: "JOBSEEKER",
     }).returning();
+    await tx.insert(phoneVerificationProofsTable).values({
+      userId: created!.id, phoneNormalized, metadata: { source: "jobseeker-registration" },
+    });
+    await captureReferralAttributionInTx(tx, { referralCode: input.referralCode, referredUserId: created!.id, phoneNormalized });
     await tx.delete(phoneVerificationCodesTable).where(eq(phoneVerificationCodesTable.id, verification.id));
     return [created!];
   });
@@ -3439,11 +3468,18 @@ router.post("/auth/student-register", async (req, res): Promise<void> => {
     if (verification[0]) await db.update(phoneVerificationCodesTable).set({ attempts: verification[0].attempts + 1 }).where(eq(phoneVerificationCodesTable.id, verification[0].id));
     res.status(400).json({ error: "Kod za potvrdu broja nije ispravan ili je istekao." }); return;
   }
-  const [student] = await db.insert(usersTable).values({
-    firstName: input.firstName, lastName: input.lastName, email, phone: input.phone, phoneNormalized,
-    passwordHash: await hashPassword(input.password), passwordSetAt: new Date(), role: "STUDENT",
-  }).returning();
-  await db.delete(phoneVerificationCodesTable).where(eq(phoneVerificationCodesTable.id, verification[0].id));
+  const [student] = await db.transaction(async (tx) => {
+    const [created] = await tx.insert(usersTable).values({
+      firstName: input.firstName, lastName: input.lastName, email, phone: input.phone, phoneNormalized,
+      passwordHash: await hashPassword(input.password), passwordSetAt: new Date(), role: "STUDENT",
+    }).returning();
+    await tx.insert(phoneVerificationProofsTable).values({
+      userId: created!.id, phoneNormalized, metadata: { source: "student-registration" },
+    });
+    await captureReferralAttributionInTx(tx, { referralCode: input.referralCode, referredUserId: created!.id, phoneNormalized });
+    await tx.delete(phoneVerificationCodesTable).where(eq(phoneVerificationCodesTable.id, verification[0].id));
+    return [created!];
+  });
   const token = await createSession(student!.id);
   res.cookie(sessionCookieName, token, cookieOptions());
   res.status(201).json(RegisterResponse.parse({ user: publicUser(student!), message: "STUDENT nalog je kreiran." }));
@@ -3455,6 +3491,7 @@ router.get("/auth/oauth/:provider/start", async (req, res): Promise<void> => {
   const requestedFlow = typeof req.query.flow === "string" ? req.query.flow : "";
   const flow = requestedFlow === "business" ? "business" : requestedFlow === "link" ? "link" : "customer";
   const returnTo = flow === "link" ? null : safeInternalReturnPath(req.query.returnTo);
+  const requestedReferralCode = typeof req.query.referralCode === "string" ? req.query.referralCode.trim().toUpperCase() : null;
   const linkingUser = flow === "link" ? await getCurrentUser(req) : null;
   if (flow === "link" && !linkingUser) {
     res.redirect(oauthFailurePath("link", "Prijavite se da biste dodali način prijave."));
@@ -3472,6 +3509,7 @@ router.get("/auth/oauth/:provider/start", async (req, res): Promise<void> => {
     flow,
     userId: linkingUser?.id ?? null,
     codeVerifier,
+    referralCode: requestedReferralCode,
     expiresAt: new Date(Date.now() + 10 * 60 * 1000),
   });
   res.cookie(OAUTH_STATE_COOKIE, Buffer.from(JSON.stringify({ state, returnTo })).toString("base64url"), {
@@ -3509,8 +3547,10 @@ router.get("/auth/oauth/:provider/callback", async (req, res): Promise<void> => 
   const returnTo = browserState.returnTo;
   const [loginState] = await db.select().from(oauthLoginStatesTable).where(and(eq(oauthLoginStatesTable.state, state), eq(oauthLoginStatesTable.provider, provider))).limit(1);
   if (!loginState || loginState.expiresAt <= new Date()) { res.redirect(oauthFailurePath(loginState?.flow ?? "customer", "Prijava je istekla. Pokušajte ponovo.")); return; }
-  await db.delete(oauthLoginStatesTable).where(eq(oauthLoginStatesTable.id, loginState.id));
-  if (typeof req.query.error === "string" || typeof req.query.code !== "string") { res.redirect(oauthFailurePath(loginState.flow, "Prijava je otkazana ili nije odobrena.")); return; }
+  if (typeof req.query.error === "string" || typeof req.query.code !== "string") {
+    await db.delete(oauthLoginStatesTable).where(eq(oauthLoginStatesTable.id, loginState.id));
+    res.redirect(oauthFailurePath(loginState.flow, "Prijava je otkazana ili nije odobrena.")); return;
+  }
   try {
     const redirectUri = oauthRedirect(req, provider);
     if (!redirectUri) { res.redirect(oauthFailurePath(loginState.flow, "OAuth prijava zahteva bezbedan APP_BASE_URL u produkciji.")); return; }
@@ -3526,6 +3566,9 @@ router.get("/auth/oauth/:provider/callback", async (req, res): Promise<void> => 
 
       try {
         await db.transaction(async (tx) => {
+          const [consumedState] = await tx.select({ id: oauthLoginStatesTable.id }).from(oauthLoginStatesTable)
+            .where(eq(oauthLoginStatesTable.id, loginState.id)).for("update").limit(1);
+          if (!consumedState) throw new Error("oauth_state_consumed");
           await tx.execute(sql`select id from ${usersTable} where ${usersTable.id} = ${linkingUserId} for update`);
           const [lockedUser] = await tx.select({ id: usersTable.id }).from(usersTable)
             .where(and(eq(usersTable.id, linkingUserId), eq(usersTable.active, true)))
@@ -3555,6 +3598,7 @@ router.get("/auth/oauth/:provider/callback", async (req, res): Promise<void> => 
             providerAccountId: profile.id,
             providerEmail: profile.email,
           });
+          await tx.delete(oauthLoginStatesTable).where(eq(oauthLoginStatesTable.id, loginState.id));
         });
       } catch (error) {
         const errorCode = error instanceof Error ? error.message : "";
@@ -3572,12 +3616,19 @@ router.get("/auth/oauth/:provider/callback", async (req, res): Promise<void> => 
     }
 
     const user = await db.transaction(async (tx) => {
+      const [consumedState] = await tx.select({ id: oauthLoginStatesTable.id }).from(oauthLoginStatesTable)
+        .where(eq(oauthLoginStatesTable.id, loginState.id)).for("update").limit(1);
+      if (!consumedState) throw new Error("oauth_state_consumed");
       const [identity] = await tx.select().from(oauthIdentitiesTable).where(and(eq(oauthIdentitiesTable.provider, provider), eq(oauthIdentitiesTable.providerAccountId, profile.id))).limit(1);
       if (identity) {
         const [existingByIdentity] = await tx.select().from(usersTable).where(eq(usersTable.id, identity.userId)).limit(1);
-        if (existingByIdentity) return existingByIdentity;
+        if (existingByIdentity) {
+          await tx.delete(oauthLoginStatesTable).where(eq(oauthLoginStatesTable.id, loginState.id));
+          return existingByIdentity;
+        }
       }
       const [existingByEmail] = await tx.select().from(usersTable).where(eq(usersTable.email, profile.email)).limit(1);
+      const created = !existingByEmail;
       const user = existingByEmail ?? (await tx.insert(usersTable).values({
         firstName: profile.firstName,
         lastName: profile.lastName,
@@ -3585,14 +3636,21 @@ router.get("/auth/oauth/:provider/callback", async (req, res): Promise<void> => 
         passwordHash: await hashPassword(randomBytes(32).toString("base64url")),
         role: "CUSTOMER",
       }).returning())[0]!;
+      if (created && loginState.flow === "customer") await captureReferralAttributionInTx(tx, {
+        referralCode: loginState.referralCode, referredUserId: user.id,
+      });
       await tx.insert(oauthIdentitiesTable).values({
         userId: user.id, provider, providerAccountId: profile.id, providerEmail: profile.email,
       }).onConflictDoNothing();
+      await tx.delete(oauthLoginStatesTable).where(eq(oauthLoginStatesTable.id, loginState.id));
       return user;
     });
     const token = await createSession(user.id);
     res.cookie(sessionCookieName, token, cookieOptions());
-    res.redirect(returnTo ?? (loginState.flow === "business" ? "/poslovna-registracija?oauth=1" : "/moj-nalog"));
+    const encodedReturnTo = returnTo ? `&returnTo=${encodeURIComponent(returnTo)}` : "";
+    res.redirect(loginState.flow === "business"
+      ? `/poslovna-registracija?oauth=1${encodedReturnTo}`
+      : `/prijava?oauth_created=1${encodedReturnTo}`);
   } catch {
     res.redirect(oauthFailurePath(loginState.flow, "Nismo mogli da potvrdimo nalog kod provajdera."));
   }
@@ -4587,8 +4645,8 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Opis edukativnih programa i sertifikacija je obavezan." });
     return;
   }
-  if (input.businessType === "EDUCATION_CENTER" && !input.pib?.trim()) {
-    res.status(400).json({ error: "PIB edukativnog centra je obavezan." });
+  if (!input.pib?.trim()) {
+    res.status(400).json({ error: "PIB pravnog lica je obavezan." });
     return;
   }
   const email = input.email.toLowerCase();
@@ -4635,9 +4693,12 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
           description: `Poslovni profil za ${input.businessName}. Dopunite ponudu, tim i radno vreme iz poslovnog portala.`,
           imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=1200&auto=format&fit=crop",
           active: false,
+          companyName: input.businessName,
+          companyTaxId: input.pib,
         }).returning({ id: salonsTable.id });
+      let referredEducationCenterId: string | null = null;
       if (input.businessType === "EDUCATION_CENTER") {
-        await tx.insert(educationCentersTable).values({
+        const [center] = await tx.insert(educationCentersTable).values({
           ownerId: created!.id,
           name: input.businessName,
           city: input.city,
@@ -4646,11 +4707,28 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
           contactEmail: input.contactEmail?.trim() || email,
           contactPhone: input.contactPhone?.trim() || input.phone,
           contactAddress: input.contactAddress?.trim() || input.address,
-          pib: input.pib!.trim(),
+          pib: input.pib,
           websiteUrl: input.websiteUrl?.trim() || undefined,
           instagramUrl: input.instagramUrl?.trim() || undefined,
-        });
+        }).returning({ id: educationCentersTable.id });
+        referredEducationCenterId = center!.id;
       }
+      const legalBinding = await bindLegalEntityBusinessInTx(tx, {
+        pib: input.pib, legalName: input.businessName, ownerUserId: created.id,
+        salonId: input.businessType === "SALON" ? workspace!.id : null,
+        educationCenterId: referredEducationCenterId,
+      });
+      if (input.businessType === "SALON") {
+        await tx.update(salonsTable).set({ companyTaxId: legalBinding.normalizedPib }).where(eq(salonsTable.id, workspace!.id));
+      } else {
+        await tx.update(educationCentersTable).set({ pib: legalBinding.normalizedPib }).where(eq(educationCentersTable.id, referredEducationCenterId!));
+      }
+      await captureReferralAttributionInTx(tx, {
+        referralCode: input.referralCode, referredUserId: created!.id,
+        phoneNormalized: normalizedPhone(input.phone),
+        referredSalonId: input.businessType === "SALON" ? workspace!.id : null,
+        referredEducationCenterId,
+      });
       return (await tx.update(usersTable).set({ activeSalonId: workspace!.id, updatedAt: new Date() })
         .where(eq(usersTable.id, created!.id)).returning())[0]!;
     });
@@ -4659,6 +4737,13 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
     res.cookie(sessionCookieName, token, cookieOptions());
     res.status(201).json(RegisterResponse.parse({ user: publicUser(user), message: "Poslovni nalog je kreiran." }));
   } catch (error) {
+    if (error instanceof LegalEntityOwnerConflictError) {
+      res.status(409).json({
+        error: error.message, code: error.code, normalizedPib: error.normalizedPib,
+        outcome: "cross_account_conflict", conflictingOwnerCount: error.existingOwnerUserIds.length,
+      });
+      return;
+    }
     if ((error as { code?: string }).code === "23505") {
       res.status(409).json({ error: "Nalog ili poslovni profil sa ovim podacima već postoji." });
       return;
@@ -5737,6 +5822,10 @@ router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<voi
     if (!appointment) return { error: "changed" as const };
     // Reverse any active package redemptions atomically with the cancellation.
     await handleAppointmentCancellationReversalsInTx(tx, appointment.id, appointment.salonId);
+    if (appointment.customerId) await recordAppointmentReferralTransitionInTx(tx, {
+      appointmentId: appointment.id, customerId: appointment.customerId, salonId: appointment.salonId,
+      occurredAt: new Date(), valid: false, reason: "customer_cancelled",
+    });
     return { appointment };
   });
   if ("error" in result) {
@@ -6969,10 +7058,14 @@ router.delete("/salon/appointment-series/:seriesId", async (req, res): Promise<v
       eq(appointmentsTable.seriesId, series.id),
       sql`${appointmentsTable.date} >= ${today}`,
       inArray(appointmentsTable.status, ["pending", "confirmed"]),
-    )).returning({ id: appointmentsTable.id });
+    )).returning({ id: appointmentsTable.id, customerId: appointmentsTable.customerId, salonId: appointmentsTable.salonId });
     // Reverse active package redemptions for every cancelled appointment, atomically.
     for (const appt of cancelled) {
       await handleAppointmentCancellationReversalsInTx(tx, appt.id, access.salon.id);
+      if (appt.customerId) await recordAppointmentReferralTransitionInTx(tx, {
+        appointmentId: appt.id, customerId: appt.customerId, salonId: appt.salonId,
+        occurredAt: new Date(), valid: false, reason: "series_cancelled",
+      });
     }
     return { series, cancelled };
   });
@@ -7112,11 +7205,21 @@ router.patch("/salon/appointments/:appointmentId", async (req, res): Promise<voi
     if (updated.status === "cancelled" && target.status !== "cancelled") {
       await handleAppointmentCancellationReversalsInTx(tx, updated.id, salon.id);
     }
+    if (target.status === "completed" && updated.status !== "completed" && updated.customerId) {
+      await recordAppointmentReferralTransitionInTx(tx, {
+        appointmentId: updated.id, customerId: updated.customerId, salonId: updated.salonId,
+        occurredAt: new Date(), valid: false, reason: `owner_changed_status_to_${updated.status}`,
+      });
+    }
     // On transition INTO completed, auto-decrement mapped salon inventory
     // (idempotent per appointment/product via the consumption ledger).
     let lowStockWarned = false;
     if (updated.status === "completed" && target.status !== "completed") {
       const warnings = await consumeInventoryForAppointmentInTx(tx, { id: updated.id, salonId: salon.id, serviceId: updated.serviceId });
+      if (updated.customerId) await recordAppointmentReferralTransitionInTx(tx, {
+        appointmentId: updated.id, customerId: updated.customerId, salonId: updated.salonId,
+        occurredAt: new Date(), valid: true,
+      });
       lowStockWarned = warnings.length > 0;
     }
     return { updated, lowStockWarned };
@@ -8053,7 +8156,15 @@ router.patch("/employee/appointments/:appointmentId", async (req, res): Promise<
     let lowStockWarned = false;
     if (appointment.status === "completed") {
       const warnings = await consumeInventoryForAppointmentInTx(tx, { id: appointment.id, salonId: access.salon.id, serviceId: appointment.serviceId });
+      if (appointment.customerId) await recordAppointmentReferralTransitionInTx(tx, {
+        appointmentId: appointment.id, customerId: appointment.customerId, salonId: appointment.salonId, occurredAt: new Date(), valid: true,
+      });
       lowStockWarned = warnings.length > 0;
+    } else if (appointment.customerId) {
+      await recordAppointmentReferralTransitionInTx(tx, {
+        appointmentId: appointment.id, customerId: appointment.customerId, salonId: appointment.salonId,
+        occurredAt: new Date(), valid: false, reason: "employee_marked_no_show",
+      });
     }
     return { appointment, lowStockWarned };
   });
@@ -8598,6 +8709,7 @@ type RetailCheckoutInput = {
   street: string; city: string; postalCode: string; note?: string;
   paymentMethod: "CARD" | "BANK_TRANSFER" | "CASH_ON_DELIVERY"; deliveryMethod: "courier" | "personal_belgrade";
   expectedSubtotal?: number; expectedShippingCost?: number; expectedTotal?: number;
+  desiredReferralCreditRsd: number;
 };
 function retailCartItemInput(body: unknown): RetailCartItemInput | null {
   const value = body as Partial<RetailCartItemInput>;
@@ -8624,6 +8736,7 @@ function retailCheckoutInput(body: unknown): RetailCheckoutInput | null {
     expectedSubtotal: expectedAmount("expectedSubtotal"),
     expectedShippingCost: expectedAmount("expectedShippingCost"),
     expectedTotal: expectedAmount("expectedTotal"),
+    desiredReferralCreditRsd: expectedAmount("desiredReferralCreditRsd") ?? 0,
   };
 }
 
@@ -9017,7 +9130,19 @@ router.get("/retail/checkout-preview", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Lična dostava je dostupna samo u Beogradu." }); return;
   }
   const shipping = calculateShipping(config, view.totalWeightGrams, view.subtotal, deliveryMethod, city);
-  res.json({ cart: view, shipping, total: view.subtotal + shipping.shippingCost, paymentMethods: checkoutPaymentMethods });
+  const desired = typeof req.query.desiredReferralCreditRsd === "string" && /^\d+$/.test(req.query.desiredReferralCreditRsd)
+    ? Number(req.query.desiredReferralCreditRsd) : 0;
+  const user = await getCurrentUser(req);
+  const available = user?.role === "CUSTOMER"
+    ? await db.transaction((tx) => referralCreditBalanceInTx(tx, { ownerUserId: user.id, walletKind: "B2C" }))
+    : 0;
+  const applied = Math.min(desired || available, available, view.subtotal);
+  res.json({
+    cart: view, shipping, total: view.subtotal + shipping.shippingCost - applied, paymentMethods: checkoutPaymentMethods,
+    referralCreditAvailableRsd: available, referralCreditAppliedRsd: applied,
+    merchandiseSubtotalRsd: view.subtotal, shippingRsd: shipping.shippingCost,
+    payableTotalRsd: view.subtotal + shipping.shippingCost - applied,
+  });
 });
 
 router.post("/retail/checkout", async (req, res): Promise<void> => {
@@ -9090,9 +9215,13 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
     });
     if (stockError || lines.some((line) => !line)) return null;
     const shipping = calculateShipping(config, weight, subtotal, parsed.deliveryMethod, parsed.city);
+    const referral = userId
+      ? await allocateReferralCreditInTx(tx, { ownerUserId: userId, walletKind: "B2C" }, parsed.desiredReferralCreditRsd, subtotal)
+      : { availableRsd: 0, appliedRsd: 0, allocations: [] };
+    const payableTotal = subtotal + shipping.shippingCost - referral.appliedRsd;
     if ((parsed.expectedSubtotal !== undefined && parsed.expectedSubtotal !== subtotal)
       || (parsed.expectedShippingCost !== undefined && parsed.expectedShippingCost !== shipping.shippingCost)
-      || (parsed.expectedTotal !== undefined && parsed.expectedTotal !== subtotal + shipping.shippingCost)) {
+      || (parsed.expectedTotal !== undefined && parsed.expectedTotal !== payableTotal)) {
       quoteConflict = true;
       return null;
     }
@@ -9102,10 +9231,16 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
       orderNumber, cartId: cart.id, userId, trackingTokenHash: hashRetailToken(trackingToken), idempotencyKey: parsed.idempotencyKey,
       status: "pending", paymentMethod: parsed.paymentMethod,
       paymentStatus: parsed.paymentMethod === "CASH_ON_DELIVERY" ? "unpaid" : "pending",
-      deliveryMethod: parsed.deliveryMethod, subtotal, shippingCost: shipping.shippingCost, total: subtotal + shipping.shippingCost,
+      deliveryMethod: parsed.deliveryMethod, subtotal, shippingCost: shipping.shippingCost, total: payableTotal,
+      referralCreditMerchandiseSubtotalRsd: subtotal, referralCreditPreCreditPayableTotalRsd: subtotal + shipping.shippingCost,
+      referralCreditAppliedRsd: referral.appliedRsd,
       shippingName: `${parsed.firstName} ${parsed.lastName}`, shippingAddress: parsed.street, shippingCity: parsed.city,
       shippingPostalCode: parsed.postalCode, shippingPhone: parsed.phone, shippingEmail: parsed.email.toLowerCase(), shippingNote: parsed.note ?? null,
     }).returning();
+    if (referral.appliedRsd) await recordReferralRedemptionInTx(tx, {
+      scope: { ownerUserId: userId!, walletKind: "B2C" }, retailOrderId: order!.id,
+      allocations: referral.allocations, idempotencyKey: parsed.idempotencyKey, actorUserId: userId,
+    });
     const orderItems = lines.filter((line): line is NonNullable<typeof line> => line !== null).map(({ product, item, unitPrice }) => ({
       orderId: order!.id, productId: product.id, productName: product.name, productImageUrl: product.imageUrl,
       productCatalogReference: item.productCatalogReference ?? product.catalogReference,
@@ -9256,8 +9391,22 @@ router.patch("/admin/retail-orders/:orderId/status", async (req, res): Promise<v
   if (typeof next !== "string" || !["pending", "confirmed", "paid", "processing", "shipped", "delivered", "cancelled"].includes(next)) {
     res.status(400).json({ error: "Neispravan status porudžbine." }); return;
   }
-  const [order] = await db.update(retailOrdersTable).set({ status: next as typeof retailOrdersTable.$inferInsert.status, updatedAt: new Date() })
-    .where(eq(retailOrdersTable.id, req.params.orderId)).returning();
+  const order = await db.transaction(async (tx) => {
+    const [locked] = await tx.select().from(retailOrdersTable).where(eq(retailOrdersTable.id, req.params.orderId)).for("update");
+    if (!locked) return null;
+    const now = new Date();
+    if (next === "cancelled" && locked.referralCreditAppliedRsd > 0 && !locked.referralCreditRestoredAt && locked.userId) {
+      await restoreReferralCreditForOrderInTx(tx, {
+        scope: { ownerUserId: locked.userId, walletKind: "B2C" }, retailOrderId: locked.id,
+        eventKey: `retail-cancel:${locked.id}`, actorUserId: user.id, now,
+      });
+    }
+    const [saved] = await tx.update(retailOrdersTable).set({
+      status: next as typeof retailOrdersTable.$inferInsert.status, updatedAt: now,
+      ...(next === "cancelled" && locked.referralCreditAppliedRsd > 0 && !locked.referralCreditRestoredAt ? { referralCreditRestoredAt: now } : {}),
+    }).where(eq(retailOrdersTable.id, locked.id)).returning();
+    return saved!;
+  });
   if (!order) { res.status(404).json({ error: "Retail porudžbina nije pronađena." }); return; }
   res.json(await retailOrderWithItems(order));
 });
@@ -9268,9 +9417,22 @@ router.patch("/admin/retail-orders/:orderId/payment-status", async (req, res): P
   if (typeof next !== "string" || !["unpaid", "pending", "paid", "refunded", "failed"].includes(next)) {
     res.status(400).json({ error: "Neispravan status plaćanja." }); return;
   }
-  const [order] = await db.update(retailOrdersTable).set({
-    paymentStatus: next as typeof retailOrdersTable.$inferInsert.paymentStatus, updatedAt: new Date(),
-  }).where(eq(retailOrdersTable.id, req.params.orderId)).returning();
+  const order = await db.transaction(async (tx) => {
+    const [locked] = await tx.select().from(retailOrdersTable).where(eq(retailOrdersTable.id, req.params.orderId)).for("update");
+    if (!locked) return null;
+    const now = new Date();
+    if (next === "refunded" && locked.referralCreditAppliedRsd > 0 && !locked.referralCreditRestoredAt && locked.userId) {
+      await restoreReferralCreditForOrderInTx(tx, {
+        scope: { ownerUserId: locked.userId, walletKind: "B2C" }, retailOrderId: locked.id,
+        eventKey: `retail-refund:${locked.id}`, actorUserId: user.id, now,
+      });
+    }
+    const [saved] = await tx.update(retailOrdersTable).set({
+      paymentStatus: next as typeof retailOrdersTable.$inferInsert.paymentStatus, updatedAt: now,
+      ...(next === "refunded" && locked.referralCreditAppliedRsd > 0 && !locked.referralCreditRestoredAt ? { referralCreditRestoredAt: now } : {}),
+    }).where(eq(retailOrdersTable.id, locked.id)).returning();
+    return saved!;
+  });
   if (!order) { res.status(404).json({ error: "Retail porudžbina nije pronađena." }); return; }
   res.json(await retailOrderWithItems(order));
 });
@@ -9734,7 +9896,17 @@ router.get("/shop/checkout-preview", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const cart = await shopCartDto(access.salon.id);
   const shipping = calculateShipping(await getShippingConfig(), cart.totalWeightGrams, cart.subtotal);
-  res.json(GetShopCheckoutPreviewResponse.parse({ cart, shipping, total: cart.subtotal + shipping.shippingCost, paymentMethods: checkoutPaymentMethods }));
+  const desired = typeof req.query.desiredReferralCreditRsd === "string" && /^\d+$/.test(req.query.desiredReferralCreditRsd)
+    ? Number(req.query.desiredReferralCreditRsd) : 0;
+  const scope = { ownerUserId: access.user.id, walletKind: "B2B" as const, salonId: access.salon.id };
+  const available = await db.transaction((tx) => referralCreditBalanceInTx(tx, scope));
+  const applied = Math.min(desired || available, available, cart.subtotal);
+  res.json(GetShopCheckoutPreviewResponse.parse({
+    cart, shipping, total: cart.subtotal + shipping.shippingCost - applied, paymentMethods: checkoutPaymentMethods,
+    referralCreditAvailableRsd: available, referralCreditAppliedRsd: applied,
+    merchandiseSubtotalRsd: cart.subtotal, shippingRsd: shipping.shippingCost,
+    payableTotalRsd: cart.subtotal + shipping.shippingCost - applied,
+  }));
 });
 
 router.post("/shop/checkout", async (req, res): Promise<void> => {
@@ -9835,6 +10007,16 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
     const subtotal = details.reduce((sum, line) => sum + line.price * line.quantity, 0);
     const totalWeightGrams = details.reduce((sum, line) => sum + (line.product.weightGrams ?? 0) * line.quantity, 0);
     const shipping = calculateShipping(config, totalWeightGrams, subtotal, deliveryMethod, delivery.city);
+    const referral = await allocateReferralCreditInTx(tx, {
+      ownerUserId: user.id, walletKind: "B2B", salonId: salon.id,
+    }, parsed.data.desiredReferralCreditRsd ?? 0, subtotal);
+    const payableTotal = subtotal + shipping.shippingCost - referral.appliedRsd;
+    if ((parsed.data.expectedSubtotal !== undefined && parsed.data.expectedSubtotal !== subtotal)
+      || (parsed.data.expectedShippingCost !== undefined && parsed.data.expectedShippingCost !== shipping.shippingCost)
+      || (parsed.data.expectedTotal !== undefined && parsed.data.expectedTotal !== payableTotal)) {
+      conflictProductName = "quote";
+      tx.rollback();
+    }
     for (const [productId, quantity] of productQuantities) {
       const product = lockedProducts.get(productId)!;
       const updatedVariants = (product.variants ?? []).map((variant) => {
@@ -9850,8 +10032,11 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
     const [order] = await tx.insert(ordersTable).values({
       salonId: salon.id,
       status: "pending",
-      total: subtotal + shipping.shippingCost,
+      total: payableTotal,
       subtotal,
+      referralCreditMerchandiseSubtotalRsd: subtotal,
+      referralCreditPreCreditPayableTotalRsd: subtotal + shipping.shippingCost,
+      referralCreditAppliedRsd: referral.appliedRsd,
       shippingCost: shipping.shippingCost,
       totalWeightGrams,
       shippingName: delivery.recipientName,
@@ -9872,6 +10057,11 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
       paymentStatus: parsed.data.paymentMethod === "CARD" ? "pending" : "unpaid",
       deliveryMethod,
     }).returning();
+    if (referral.appliedRsd) await recordReferralRedemptionInTx(tx, {
+      scope: { ownerUserId: user.id, walletKind: "B2B", salonId: salon.id },
+      orderId: order!.id, allocations: referral.allocations,
+      idempotencyKey: `b2b-order:${order!.id}`, actorUserId: user.id,
+    });
     const orderItems = details.map((line) => ({
       orderId: order!.id,
       productId: line.product.id,
@@ -9903,7 +10093,7 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
     throw error;
   });
   if (!created) {
-    res.status(conflictProductName ? 409 : 400).json({ error: conflictProductName ? `Zalihe za "${conflictProductName}" su se promenile tokom obrade. Osvežite korpu i pokušajte ponovo.` : "Vaša korpa je prazna." });
+    res.status(conflictProductName ? 409 : 400).json({ error: conflictProductName === "quote" ? "Iznos porudžbine se promenio. Osvežite pregled i pokušajte ponovo." : conflictProductName ? `Zalihe za "${conflictProductName}" su se promenile tokom obrade. Osvežite korpu i pokušajte ponovo.` : "Vaša korpa je prazna.", ...(conflictProductName === "quote" ? { code: "CHECKOUT_QUOTE_CHANGED" } : {}) });
     return;
   }
   await publishSalonNotificationUpdate(salon.id);
@@ -10477,7 +10667,24 @@ router.patch("/admin/orders/:orderId", async (req, res): Promise<void> => {
     updatedAt: new Date(),
   };
   const { updated, deliveryChanged } = await db.transaction(async (tx) => {
-    const [saved] = await tx.update(ordersTable).set(update).where(eq(ordersTable.id, order.id)).returning();
+    const [locked] = await tx.select().from(ordersTable).where(eq(ordersTable.id, order.id)).for("update");
+    if (!locked) throw new Error("Order disappeared during update.");
+    const restoresCredit = (body.data.status === "cancelled" || body.data.paymentStatus === "refunded")
+      && locked.referralCreditAppliedRsd > 0 && !locked.referralCreditRestoredAt;
+    const now = new Date();
+    if (restoresCredit) {
+      const [scopeSalon] = await tx.select({ ownerId: salonsTable.ownerId }).from(salonsTable)
+        .where(eq(salonsTable.id, locked.salonId)).limit(1);
+      if (scopeSalon) await restoreReferralCreditForOrderInTx(tx, {
+        scope: { ownerUserId: scopeSalon.ownerId, walletKind: "B2B", salonId: locked.salonId },
+        orderId: locked.id, eventKey: `b2b-${body.data.status === "cancelled" ? "cancel" : "refund"}:${locked.id}`,
+        actorUserId: user.id, now,
+      });
+    }
+    const [saved] = await tx.update(ordersTable).set({
+      ...update,
+      ...(restoresCredit ? { referralCreditRestoredAt: now } : {}),
+    }).where(eq(ordersTable.id, locked.id)).returning();
     const changes = [
       ["status", order.status, body.data.status],
       ["paymentStatus", order.paymentStatus, body.data.paymentStatus],
@@ -11755,7 +11962,10 @@ router.post("/admin/education/enrollments/:enrollmentId/settle", async (req, res
         updatedAt: new Date(),
       }).where(and(eq(courseEnrollmentsTable.id, enrollment.id), eq(courseEnrollmentsTable.status, "pending"), eq(courseEnrollmentsTable.paymentStatus, "pending"))).returning();
       if (!confirmed) throw new Error("Zahtev je izmenjen u drugoj operaciji.");
-      const settings = await resolveEducationBillingSettings(course.centerId, tx, center);
+      await recordEducationEnrollmentReferralTransitionInTx(tx, {
+        enrollmentId: confirmed.id, studentUserId: confirmed.userId, centerId: course.centerId, occurredAt: new Date(), valid: true,
+      });
+      const settings = await resolveEducationBillingSettingsForChargeInTx(course.centerId, tx, center);
       // Charge the amount captured at request time (group discount survives here);
       // fall back to the current course price for legacy rows without it.
       const grossAmount = confirmed.chargedAmount ?? course.price;
@@ -11777,6 +11987,7 @@ router.post("/admin/education/enrollments/:enrollmentId/settle", async (req, res
         metadata: {
           releaseAt: releaseAt.toISOString(),
           commissionPercent: settings.effective.commissionPercent,
+          referralMilestoneBenefitId: settings.referralMilestoneBenefitId,
           reservePercent: settings.effective.reservePercent,
           onlineRefundDays: settings.effective.onlineRefundDays,
           liveAppealDays: settings.effective.liveAppealDays,
@@ -13477,6 +13688,9 @@ router.patch("/admin/education/centers/:centerId", async (req, res): Promise<voi
   if (hasOwn("pib") && pib === undefined) {
     res.status(400).json({ error: "PIB mora biti tekstualna vrednost ili null." }); return;
   }
+  if (hasOwn("pib") && pib === null) {
+    res.status(400).json({ error: "PIB aktivnog pravnog lica ne može biti uklonjen." }); return;
+  }
   const billingOverrides = req.body?.billingOverrides;
   if (billingOverrides !== undefined && (!billingOverrides || typeof billingOverrides !== "object" || Array.isArray(billingOverrides))) {
     res.status(400).json({ error: "Pravila obračuna nisu ispravna." }); return;
@@ -13518,6 +13732,14 @@ router.patch("/admin/education/centers/:centerId", async (req, res): Promise<voi
         .limit(1);
       if (!currentCenter) throw new Error("Edukativni centar nije pronađen.");
       const currentVerificationStatus = verificationStatus as typeof currentCenter.verificationStatus;
+      let normalizedPib = pib;
+      if (pib) {
+        const legalBinding = await bindLegalEntityBusinessInTx(tx, {
+          pib, legalName: currentCenter.name, ownerUserId: currentCenter.ownerId,
+          educationCenterId: currentCenter.id,
+        });
+        normalizedPib = legalBinding.normalizedPib;
+      }
       const globalSettings = await getEducationPlatformSettings(tx);
       const effectiveCommissionOverride = Object.prototype.hasOwnProperty.call(overrideUpdates, "commissionPercentOverride")
         ? overrideUpdates.commissionPercentOverride!
@@ -13537,7 +13759,7 @@ router.patch("/admin/education/centers/:centerId", async (req, res): Promise<voi
         verificationNote: typeof req.body?.verificationNote === "string" ? req.body.verificationNote.trim().slice(0, 1000) || null : currentCenter.verificationNote,
         verifiedAt: currentVerificationStatus === "verified" ? currentCenter.verifiedAt ?? new Date() : null,
         verifiedByUserId: currentVerificationStatus === "verified" ? currentCenter.verifiedByUserId ?? user.id : null,
-        pib,
+        pib: normalizedPib,
         ...overrideUpdates,
         updatedAt: new Date(),
       }).where(eq(educationCentersTable.id, currentCenter.id)).returning();
@@ -13567,7 +13789,9 @@ router.patch("/admin/education/centers/:centerId", async (req, res): Promise<voi
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Izmena centra nije uspela.";
-    res.status(message === "Edukativni centar nije pronađen." ? 404 : 409).json({ error: message });
+    res.status(message === "Edukativni centar nije pronađen." ? 404 : 409).json(error instanceof LegalEntityOwnerConflictError
+      ? { error: message, code: error.code, normalizedPib: error.normalizedPib, outcome: "cross_account_conflict", conflictingOwnerCount: error.existingOwnerUserIds.length }
+      : { error: message });
     return;
   }
   void publishCatalogInvalidation(["education-categories"]);
@@ -13761,6 +13985,10 @@ router.patch("/admin/education/disputes/:disputeId", async (req, res): Promise<v
       if (action === "refund") {
         await tx.insert(educationLedgerEntriesTable).values({ escrowId: escrow.id, enrollmentId: dispute.enrollmentId, centerId: escrow.centerId, type: "refund", amount: -escrow.grossAmount, note: resolutionNote, actorUserId: user.id });
         await tx.update(courseEnrollmentsTable).set({ paymentStatus: "refunded", status: "cancelled", updatedAt: new Date() }).where(eq(courseEnrollmentsTable.id, enrollment.id));
+        await recordEducationEnrollmentReferralTransitionInTx(tx, {
+          enrollmentId: enrollment.id, studentUserId: enrollment.userId, centerId: escrow.centerId,
+          occurredAt: new Date(), valid: false, reason: "admin_dispute_refund",
+        });
         // Refunding a live seat frees capacity: release exactly one reserved
         // seat and promote exactly one waiter under this same center lock.
         if (enrollment.sessionId && Boolean((enrollment.auditData as { seatReserved?: boolean } | null)?.seatReserved)) {
@@ -13976,7 +14204,7 @@ router.patch("/admin/salons/:salonId", async (req, res): Promise<void> => {
   const { salonId } = parsedParams.data;
   const parsed = AdminUpdateSalonBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const { active, featured, isVerified, topSalon, videoUrl } = parsed.data;
+  const { active, featured, isVerified, topSalon, videoUrl, pib } = parsed.data;
   if (videoUrl !== undefined && !isHttpVideoUrl(videoUrl)) { res.status(400).json({ error: "Video URL mora početi sa http:// ili https://." }); return; }
 
   const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, salonId)).limit(1);
@@ -14000,8 +14228,16 @@ router.patch("/admin/salons/:salonId", async (req, res): Promise<void> => {
   if (isVerified !== undefined) updates.isVerified = isVerified;
   if (topSalon !== undefined) updates.topSalon = topSalon;
   if (videoUrl !== undefined) updates.videoUrl = videoUrl;
+  if (pib !== undefined) updates.companyTaxId = pib;
 
-  const [updated, changedMediaAssetIds] = await db.transaction(async (tx) => {
+  let legalConflict: LegalEntityOwnerConflictError | null = null;
+  const updateResult = await db.transaction(async (tx) => {
+    if (pib !== undefined) {
+      const legalBinding = await bindLegalEntityBusinessInTx(tx, {
+        pib, legalName: salon.companyName ?? salon.name, ownerUserId: salon.ownerId, salonId: salon.id,
+      });
+      updates.companyTaxId = legalBinding.normalizedPib;
+    }
     const rows = await tx.update(salonsTable).set(updates).where(eq(salonsTable.id, salonId)).returning();
     const changed = rows[0]!;
     const changedAssetIds = await publishActiveSalonMediaReferences({
@@ -14012,7 +14248,22 @@ router.patch("/admin/salons/:salonId", async (req, res): Promise<void> => {
       gallery: changed.gallery,
     }, tx);
     return [changed, changedAssetIds] as const;
+  }).catch((error: unknown) => {
+    if (error instanceof LegalEntityOwnerConflictError) {
+      legalConflict = error;
+      return null;
+    }
+    throw error;
   });
+  if (!updateResult) {
+    res.status(409).json({
+      error: legalConflict!.message, code: legalConflict!.code,
+      normalizedPib: legalConflict!.normalizedPib, outcome: "cross_account_conflict",
+      conflictingOwnerCount: legalConflict!.existingOwnerUserIds.length,
+    });
+    return;
+  }
+  const [updated, changedMediaAssetIds] = updateResult;
 
   if (isDeactivating && changedMediaAssetIds.length) {
     try {

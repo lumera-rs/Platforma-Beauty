@@ -62,6 +62,9 @@ export const registerBodyPasswordMin = 8;
 export const registerBodyPhoneVerificationCodeMin = 6;
 export const registerBodyPhoneVerificationCodeMax = 6;
 
+export const registerBodyReferralCodeMin = 3;
+export const registerBodyReferralCodeMax = 64;
+
 
 
 export const RegisterBody = zod.object({
@@ -70,7 +73,8 @@ export const RegisterBody = zod.object({
   "email": zod.string(),
   "password": zod.string().min(registerBodyPasswordMin),
   "phone": zod.string(),
-  "phoneVerificationCode": zod.string().min(registerBodyPhoneVerificationCodeMin).max(registerBodyPhoneVerificationCodeMax)
+  "phoneVerificationCode": zod.string().min(registerBodyPhoneVerificationCodeMin).max(registerBodyPhoneVerificationCodeMax),
+  "referralCode": zod.string().min(registerBodyReferralCodeMin).max(registerBodyReferralCodeMax).optional()
 })
 
 export const registerResponseUserDateOfBirthRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
@@ -98,51 +102,56 @@ export const RegisterResponse = zod.object({
  */
 
 
-export const registerBusinessBodyTwoPasswordMin = 8;
+export const registerBusinessBodyPasswordMin = 8;
 
-export const registerBusinessBodyTwoPhoneMin = 6;
+export const registerBusinessBodyPhoneMin = 6;
 
-export const registerBusinessBodyTwoBusinessNameMin = 2;
+export const registerBusinessBodyBusinessNameMin = 2;
 
-export const registerBusinessBodyTwoCityMin = 2;
+export const registerBusinessBodyCityMin = 2;
 
-export const registerBusinessBodyTwoMunicipalityMin = 2;
+export const registerBusinessBodyMunicipalityMin = 2;
 
-export const registerBusinessBodyTwoAddressMin = 3;
+export const registerBusinessBodyAddressMin = 3;
 
-export const registerBusinessBodyTwoPostalCodeMin = 4;
+export const registerBusinessBodyPostalCodeMin = 4;
 
-export const registerBusinessBodyTwoContactPhoneMin = 6;
+export const registerBusinessBodyContactPhoneMin = 6;
 
-export const registerBusinessBodyTwoContactAddressMin = 3;
+export const registerBusinessBodyContactAddressMin = 3;
 
-export const registerBusinessBodyTwoPibMax = 50;
+export const registerBusinessBodyPibMin = 8;
+export const registerBusinessBodyPibMax = 50;
 
-export const registerBusinessBodyTwoDescriptionMin = 20;
-export const registerBusinessBodyTwoDescriptionMax = 2000;
+export const registerBusinessBodyDescriptionMin = 20;
+export const registerBusinessBodyDescriptionMax = 2000;
+
+export const registerBusinessBodyReferralCodeMin = 3;
+export const registerBusinessBodyReferralCodeMax = 64;
 
 
 
-export const RegisterBusinessBody = zod.unknown().and(zod.object({
+export const RegisterBusinessBody = zod.object({
   "firstName": zod.string().min(1),
   "lastName": zod.string().min(1),
   "email": zod.string(),
-  "password": zod.string().min(registerBusinessBodyTwoPasswordMin).optional(),
-  "phone": zod.string().min(registerBusinessBodyTwoPhoneMin),
+  "password": zod.string().min(registerBusinessBodyPasswordMin).optional(),
+  "phone": zod.string().min(registerBusinessBodyPhoneMin),
   "businessType": zod.enum(['SALON', 'EDUCATION_CENTER']),
-  "businessName": zod.string().min(registerBusinessBodyTwoBusinessNameMin),
-  "city": zod.string().min(registerBusinessBodyTwoCityMin),
-  "municipality": zod.string().min(registerBusinessBodyTwoMunicipalityMin),
-  "address": zod.string().min(registerBusinessBodyTwoAddressMin),
-  "postalCode": zod.string().min(registerBusinessBodyTwoPostalCodeMin),
+  "businessName": zod.string().min(registerBusinessBodyBusinessNameMin),
+  "city": zod.string().min(registerBusinessBodyCityMin),
+  "municipality": zod.string().min(registerBusinessBodyMunicipalityMin),
+  "address": zod.string().min(registerBusinessBodyAddressMin),
+  "postalCode": zod.string().min(registerBusinessBodyPostalCodeMin),
   "contactEmail": zod.string().optional(),
-  "contactPhone": zod.string().min(registerBusinessBodyTwoContactPhoneMin).optional(),
-  "contactAddress": zod.string().min(registerBusinessBodyTwoContactAddressMin).optional(),
-  "pib": zod.string().min(1).max(registerBusinessBodyTwoPibMax).optional().describe('Required when businessType is EDUCATION_CENTER; omitted for salon registration.'),
+  "contactPhone": zod.string().min(registerBusinessBodyContactPhoneMin).optional(),
+  "contactAddress": zod.string().min(registerBusinessBodyContactAddressMin).optional(),
+  "pib": zod.string().min(registerBusinessBodyPibMin).max(registerBusinessBodyPibMax),
   "websiteUrl": zod.string().url().optional(),
   "instagramUrl": zod.string().url().optional(),
-  "description": zod.string().min(registerBusinessBodyTwoDescriptionMin).max(registerBusinessBodyTwoDescriptionMax).optional()
-}))
+  "description": zod.string().min(registerBusinessBodyDescriptionMin).max(registerBusinessBodyDescriptionMax).optional(),
+  "referralCode": zod.string().min(registerBusinessBodyReferralCodeMin).max(registerBusinessBodyReferralCodeMax).optional()
+})
 
 export const registerBusinessResponseUserDateOfBirthRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
 
@@ -175,6 +184,9 @@ export const registerJobseekerBodyPhoneVerificationCodeMin = 6;
 export const registerJobseekerBodyPhoneVerificationCodeMax = 6;
 
 export const registerJobseekerBodyDateOfBirthRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const registerJobseekerBodyReferralCodeMin = 3;
+export const registerJobseekerBodyReferralCodeMax = 64;
+
 
 
 export const RegisterJobseekerBody = zod.object({
@@ -184,7 +196,8 @@ export const RegisterJobseekerBody = zod.object({
   "password": zod.string().min(registerJobseekerBodyPasswordMin),
   "phone": zod.string(),
   "phoneVerificationCode": zod.string().min(registerJobseekerBodyPhoneVerificationCodeMin).max(registerJobseekerBodyPhoneVerificationCodeMax),
-  "dateOfBirth": zod.string().regex(registerJobseekerBodyDateOfBirthRegExp)
+  "dateOfBirth": zod.string().regex(registerJobseekerBodyDateOfBirthRegExp),
+  "referralCode": zod.string().min(registerJobseekerBodyReferralCodeMin).max(registerJobseekerBodyReferralCodeMax).optional()
 })
 
 export const registerJobseekerResponseUserDateOfBirthRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
@@ -4017,6 +4030,14 @@ export const GetShopCheckoutProfileResponse = zod.object({
 /**
  * @summary Calculate the server-authoritative totals for the persistent cart
  */
+export const getShopCheckoutPreviewQueryDesiredReferralCreditRsdMin = 0;
+
+
+
+export const GetShopCheckoutPreviewQueryParams = zod.object({
+  "desiredReferralCreditRsd": zod.coerce.number().int().min(getShopCheckoutPreviewQueryDesiredReferralCreditRsdMin).optional()
+})
+
 export const getShopCheckoutPreviewResponseCartItemsItemUnitPriceMin = 0;
 export const getShopCheckoutPreviewResponseCartItemsItemUnitPriceMultipleOf = 1;
 
@@ -4045,6 +4066,16 @@ export const getShopCheckoutPreviewResponseShippingAvailableMethodsItemPriceMult
 
 export const getShopCheckoutPreviewResponseTotalMin = 0;
 export const getShopCheckoutPreviewResponseTotalMultipleOf = 1;
+
+export const getShopCheckoutPreviewResponseReferralCreditAvailableRsdMin = 0;
+
+export const getShopCheckoutPreviewResponseReferralCreditAppliedRsdMin = 0;
+
+export const getShopCheckoutPreviewResponseMerchandiseSubtotalRsdMin = 0;
+
+export const getShopCheckoutPreviewResponseShippingRsdMin = 0;
+
+export const getShopCheckoutPreviewResponsePayableTotalRsdMin = 0;
 
 
 
@@ -4085,6 +4116,11 @@ export const GetShopCheckoutPreviewResponse = zod.object({
 }))
 }),
   "total": zod.number().min(getShopCheckoutPreviewResponseTotalMin).multipleOf(getShopCheckoutPreviewResponseTotalMultipleOf),
+  "referralCreditAvailableRsd": zod.number().int().min(getShopCheckoutPreviewResponseReferralCreditAvailableRsdMin),
+  "referralCreditAppliedRsd": zod.number().int().min(getShopCheckoutPreviewResponseReferralCreditAppliedRsdMin),
+  "merchandiseSubtotalRsd": zod.number().int().min(getShopCheckoutPreviewResponseMerchandiseSubtotalRsdMin),
+  "shippingRsd": zod.number().int().min(getShopCheckoutPreviewResponseShippingRsdMin),
+  "payableTotalRsd": zod.number().int().min(getShopCheckoutPreviewResponsePayableTotalRsdMin),
   "paymentMethods": zod.array(zod.enum(['CARD', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']))
 })
 
@@ -4105,6 +4141,15 @@ export const checkoutShopCartBodyDeliveryAddressEmailMin = 3;
 
 
 export const checkoutShopCartBodyNoteMax = 1000;
+
+export const checkoutShopCartBodyDesiredReferralCreditRsdDefault = 0;
+export const checkoutShopCartBodyDesiredReferralCreditRsdMin = 0;
+
+export const checkoutShopCartBodyExpectedSubtotalMin = 0;
+
+export const checkoutShopCartBodyExpectedShippingCostMin = 0;
+
+export const checkoutShopCartBodyExpectedTotalMin = 0;
 
 
 
@@ -4129,6 +4174,10 @@ export const CheckoutShopCartBody = zod.object({
   "paymentMethod": zod.enum(['CARD', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']),
   "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
   "note": zod.string().max(checkoutShopCartBodyNoteMax).nullish(),
+  "desiredReferralCreditRsd": zod.number().int().min(checkoutShopCartBodyDesiredReferralCreditRsdMin).default(checkoutShopCartBodyDesiredReferralCreditRsdDefault),
+  "expectedSubtotal": zod.number().int().min(checkoutShopCartBodyExpectedSubtotalMin).optional(),
+  "expectedShippingCost": zod.number().int().min(checkoutShopCartBodyExpectedShippingCostMin).optional(),
+  "expectedTotal": zod.number().int().min(checkoutShopCartBodyExpectedTotalMin).optional(),
   "termsAccepted": zod.boolean()
 })
 
@@ -8371,12 +8420,18 @@ export const AdminUpdateSalonParams = zod.object({
   "salonId": zod.coerce.string().regex(adminUpdateSalonPathSalonIdRegExp)
 })
 
+export const adminUpdateSalonBodyPibMin = 8;
+export const adminUpdateSalonBodyPibMax = 50;
+
+
+
 export const AdminUpdateSalonBody = zod.object({
   "active": zod.boolean().optional(),
   "featured": zod.boolean().optional(),
   "isVerified": zod.boolean().optional(),
   "topSalon": zod.boolean().optional(),
-  "videoUrl": zod.string().nullish()
+  "videoUrl": zod.string().nullish(),
+  "pib": zod.string().min(adminUpdateSalonBodyPibMin).max(adminUpdateSalonBodyPibMax).optional()
 }).strict()
 
 export const AdminUpdateSalonResponse = zod.object({
@@ -12227,9 +12282,14 @@ export const RemoveRetailCartItemResponse = zod.object({
 /**
  * @summary Calculate delivery and final total for the selected retail destination
  */
+export const previewRetailCheckoutQueryDesiredReferralCreditRsdMin = 0;
+
+
+
 export const PreviewRetailCheckoutQueryParams = zod.object({
   "deliveryMethod": zod.enum(['courier', 'personal_belgrade']).optional(),
-  "city": zod.coerce.string().optional()
+  "city": zod.coerce.string().optional(),
+  "desiredReferralCreditRsd": zod.coerce.number().int().min(previewRetailCheckoutQueryDesiredReferralCreditRsdMin).optional()
 })
 
 export const previewRetailCheckoutResponseCartItemCountMin = 0;
@@ -12245,6 +12305,16 @@ export const previewRetailCheckoutResponseShippingAvailableMethodsItemPriceMin =
 export const previewRetailCheckoutResponseShippingAvailableMethodsItemPriceMultipleOf = 1;
 
 export const previewRetailCheckoutResponseTotalMin = 0;
+
+export const previewRetailCheckoutResponseReferralCreditAvailableRsdMin = 0;
+
+export const previewRetailCheckoutResponseReferralCreditAppliedRsdMin = 0;
+
+export const previewRetailCheckoutResponseMerchandiseSubtotalRsdMin = 0;
+
+export const previewRetailCheckoutResponseShippingRsdMin = 0;
+
+export const previewRetailCheckoutResponsePayableTotalRsdMin = 0;
 
 
 
@@ -12280,6 +12350,11 @@ export const PreviewRetailCheckoutResponse = zod.object({
 }))
 }),
   "total": zod.number().int().min(previewRetailCheckoutResponseTotalMin),
+  "referralCreditAvailableRsd": zod.number().int().min(previewRetailCheckoutResponseReferralCreditAvailableRsdMin),
+  "referralCreditAppliedRsd": zod.number().int().min(previewRetailCheckoutResponseReferralCreditAppliedRsdMin),
+  "merchandiseSubtotalRsd": zod.number().int().min(previewRetailCheckoutResponseMerchandiseSubtotalRsdMin),
+  "shippingRsd": zod.number().int().min(previewRetailCheckoutResponseShippingRsdMin),
+  "payableTotalRsd": zod.number().int().min(previewRetailCheckoutResponsePayableTotalRsdMin),
   "paymentMethods": zod.array(zod.enum(['BANK_TRANSFER', 'CASH_ON_DELIVERY']))
 })
 
@@ -12319,6 +12394,9 @@ export const checkoutRetailCartBodyExpectedShippingCostMin = 0;
 
 export const checkoutRetailCartBodyExpectedTotalMin = 0;
 
+export const checkoutRetailCartBodyDesiredReferralCreditRsdDefault = 0;
+export const checkoutRetailCartBodyDesiredReferralCreditRsdMin = 0;
+
 
 
 export const CheckoutRetailCartBody = zod.object({
@@ -12335,7 +12413,8 @@ export const CheckoutRetailCartBody = zod.object({
   "deliveryMethod": zod.enum(['courier', 'personal_belgrade']).optional(),
   "expectedSubtotal": zod.number().int().min(checkoutRetailCartBodyExpectedSubtotalMin).optional().describe('Optional subtotal from the displayed checkout quote; checkout rejects a changed quote.'),
   "expectedShippingCost": zod.number().int().min(checkoutRetailCartBodyExpectedShippingCostMin).optional().describe('Optional delivery amount from the displayed checkout quote; checkout rejects a changed quote.'),
-  "expectedTotal": zod.number().int().min(checkoutRetailCartBodyExpectedTotalMin).optional().describe('Optional final amount from the displayed checkout quote; checkout rejects a changed quote.')
+  "expectedTotal": zod.number().int().min(checkoutRetailCartBodyExpectedTotalMin).optional().describe('Optional final amount from the displayed checkout quote; checkout rejects a changed quote.'),
+  "desiredReferralCreditRsd": zod.number().int().min(checkoutRetailCartBodyDesiredReferralCreditRsdMin).default(checkoutRetailCartBodyDesiredReferralCreditRsdDefault)
 })
 
 export const CheckoutRetailCartResponse = zod.object({
@@ -14070,4 +14149,148 @@ export const ResolveBeautyJobReportResponse = zod.object({
   "listingTitle": zod.string().optional(),
   "authorSalonId": zod.string().nullish(),
   "authorUserId": zod.string().nullish()
+})
+
+
+/**
+ * @summary Validate a public referral code without disclosing referrer identity
+ */
+export const validateReferralCodePathCodeMin = 3;
+export const validateReferralCodePathCodeMax = 64;
+
+
+
+export const ValidateReferralCodeParams = zod.object({
+  "code": zod.coerce.string().min(validateReferralCodePathCodeMin).max(validateReferralCodePathCodeMax)
+})
+
+export const ValidateReferralCodeResponse = zod.object({
+  "valid": zod.boolean(),
+  "code": zod.string(),
+  "channel": zod.enum(['A', 'B1', 'B2', 'C', 'D']),
+  "link": zod.string()
+})
+
+
+/**
+ * @summary Get the signed-in user's tenant-safe referral dashboard
+ */
+export const getReferralDashboardResponseChannelsItemQualifiedMin = 0;
+
+export const getReferralDashboardResponseChannelsItemPendingMin = 0;
+
+
+export const getReferralDashboardResponseChannelsItemCapTwoUsedMin = 0;
+
+
+
+export const GetReferralDashboardResponse = zod.object({
+  "availableRsd": zod.number().int(),
+  "expiringSoonRsd": zod.number().int(),
+  "channels": zod.array(zod.object({
+  "channel": zod.enum(['A', 'B1', 'B2', 'C', 'D']),
+  "sourceBusinessId": zod.string().nullable(),
+  "sourceBusinessKind": zod.enum(['account', 'salon', 'education_center']),
+  "sourceBusinessName": zod.string(),
+  "code": zod.string(),
+  "link": zod.string().url(),
+  "qualified": zod.number().int().min(getReferralDashboardResponseChannelsItemQualifiedMin),
+  "pending": zod.number().int().min(getReferralDashboardResponseChannelsItemPendingMin),
+  "terms": zod.string(),
+  "cap": zod.union([zod.null(),zod.object({
+  "limit": zod.number().int().min(1),
+  "used": zod.number().int().min(getReferralDashboardResponseChannelsItemCapTwoUsedMin),
+  "period": zod.enum(['calendar_month', 'calendar_week'])
+})])
+})),
+  "ledger": zod.array(zod.object({
+  "id": zod.string(),
+  "type": zod.enum(['held', 'available', 'redeemed', 'expired', 'reversed', 'negative_offset', 'restored']),
+  "amountRsd": zod.number().int(),
+  "effectiveAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "reason": zod.string()
+}))
+})
+
+
+/**
+ * @summary List pending referred businesses awaiting approval
+ */
+export const AdminListReferralApprovalsResponseItem = zod.object({
+  "attributionId": zod.string(),
+  "channel": zod.enum(['A', 'B1']),
+  "businessKind": zod.enum(['salon', 'education_center']),
+  "status": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+export const AdminListReferralApprovalsResponse = zod.array(AdminListReferralApprovalsResponseItem)
+
+
+/**
+ * @summary Approve, reject, or resubmit a referred salon or education center
+ */
+export const adminDecideReferralApprovalPathAttributionIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
+export const AdminDecideReferralApprovalParams = zod.object({
+  "attributionId": zod.coerce.string().regex(adminDecideReferralApprovalPathAttributionIdRegExp)
+})
+
+export const adminDecideReferralApprovalBodyReasonMax = 1000;
+
+
+
+export const AdminDecideReferralApprovalBody = zod.object({
+  "action": zod.enum(['approve', 'reject', 'resubmit']),
+  "reason": zod.string().max(adminDecideReferralApprovalBodyReasonMax).optional()
+}).strict()
+
+export const AdminDecideReferralApprovalResponse = zod.object({
+  "businessKind": zod.enum(['salon', 'education_center']),
+  "action": zod.enum(['approve', 'reject', 'resubmit']),
+  "status": zod.enum(['tracking', 'pending_verification'])
+})
+
+
+/**
+ * @summary List suspicious referral records
+ */
+export const AdminListReferralReviewsResponseItem = zod.object({
+  "id": zod.string(),
+  "status": zod.enum(['open', 'approved', 'rejected', 'dismissed']),
+  "reasonCode": zod.string(),
+  "detail": zod.string().nullable(),
+  "score": zod.number().int().nullable(),
+  "createdAt": zod.coerce.date()
+})
+export const AdminListReferralReviewsResponse = zod.array(AdminListReferralReviewsResponseItem)
+
+
+/**
+ * @summary Resolve a suspicious referral review
+ */
+export const adminReviewReferralPathReviewIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
+export const AdminReviewReferralParams = zod.object({
+  "reviewId": zod.coerce.string().regex(adminReviewReferralPathReviewIdRegExp)
+})
+
+export const adminReviewReferralBodyDetailMax = 2000;
+
+
+
+export const AdminReviewReferralBody = zod.object({
+  "status": zod.enum(['approved', 'rejected', 'dismissed']),
+  "detail": zod.string().max(adminReviewReferralBodyDetailMax).optional()
+}).strict()
+
+export const AdminReviewReferralResponse = zod.object({
+  "id": zod.string(),
+  "status": zod.enum(['open', 'approved', 'rejected', 'dismissed']),
+  "reasonCode": zod.string(),
+  "detail": zod.string().nullable(),
+  "score": zod.number().int().nullable(),
+  "createdAt": zod.coerce.date()
 })

@@ -20,4 +20,9 @@ export interface RegisterInput {
      * @maxLength 6
      */
   phoneVerificationCode: string;
+  /**
+     * @minLength 3
+     * @maxLength 64
+     */
+  referralCode?: string;
 }

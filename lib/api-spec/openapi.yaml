@@ -1743,6 +1743,10 @@ paths:
       operationId: getShopCheckoutPreview
       tags: [shop]
       summary: Calculate the server-authoritative totals for the persistent cart
+      parameters:
+        - name: desiredReferralCreditRsd
+          in: query
+          schema: { type: integer, minimum: 0 }
       responses:
         "200":
           description: Checkout preview
@@ -5058,6 +5062,7 @@ paths:
       parameters:
         - { name: deliveryMethod, in: query, schema: { type: string, enum: [courier, personal_belgrade] } }
         - { name: city, in: query, schema: { type: string } }
+        - { name: desiredReferralCreditRsd, in: query, schema: { type: integer, minimum: 0 } }
       responses:
         "200":
           description: Checkout pricing preview
@@ -5459,6 +5464,76 @@ paths:
       parameters: [{ name: reportId, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobReportResolveInput" } } } }
       responses: { "200": { description: Resolved report, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobReport" } } } } }
+  /referrals/validate/{code}:
+    get:
+      operationId: validateReferralCode
+      tags: [auth]
+      summary: Validate a public referral code without disclosing referrer identity
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: { type: string, minLength: 3, maxLength: 64 }
+      responses:
+        "200": { description: Valid referral code, content: { application/json: { schema: { $ref: "#/components/schemas/ReferralCodeValidation" } } } }
+        "404": { description: Unknown or inactive referral code }
+  /referrals/dashboard:
+    get:
+      operationId: getReferralDashboard
+      tags: [customer]
+      summary: Get the signed-in user's tenant-safe referral dashboard
+      responses:
+        "200": { description: "Referral summary, channels, history and ledger", content: { application/json: { schema: { $ref: "#/components/schemas/ReferralDashboard" } } } }
+        "401": { description: Authentication required }
+  /admin/referrals/approvals:
+    get:
+      operationId: adminListReferralApprovals
+      tags: [admin]
+      summary: List pending referred businesses awaiting approval
+      responses:
+        "200": { description: Referral approval queue, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ReferralApproval" } } } } }
+  /admin/referrals/approvals/{attributionId}:
+    patch:
+      operationId: adminDecideReferralApproval
+      tags: [admin]
+      summary: Approve, reject, or resubmit a referred salon or education center
+      parameters:
+        - name: attributionId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReferralApprovalDecision" }
+      responses:
+        "200": { description: Recorded approval decision, content: { application/json: { schema: { $ref: "#/components/schemas/ReferralApprovalDecisionResult" } } } }
+        "404": { description: Referral business approval not found }
+  /admin/referrals/reviews:
+    get:
+      operationId: adminListReferralReviews
+      tags: [admin]
+      summary: List suspicious referral records
+      responses:
+        "200": { description: Referral fraud queue, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ReferralReview" } } } } }
+  /admin/referrals/reviews/{reviewId}:
+    patch:
+      operationId: adminReviewReferral
+      tags: [admin]
+      summary: Resolve a suspicious referral review
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReferralReviewUpdate" }
+      responses:
+        "200": { description: Resolved review, content: { application/json: { schema: { $ref: "#/components/schemas/ReferralReview" } } } }
 components:
   parameters:
     CityQuery:
@@ -5533,6 +5608,94 @@ components:
       required: true
       schema: { type: string }
   schemas:
+    ReferralCodeValidation:
+      type: object
+      properties:
+        valid: { type: boolean }
+        code: { type: string }
+        channel: { type: string, enum: [A, B1, B2, C, D] }
+        link: { type: string }
+      required: [valid, code, channel, link]
+    ReferralChannelSummary:
+      type: object
+      properties:
+        channel: { type: string, enum: [A, B1, B2, C, D] }
+        sourceBusinessId: { type: ["string", "null"] }
+        sourceBusinessKind: { type: string, enum: [account, salon, education_center] }
+        sourceBusinessName: { type: string }
+        code: { type: string }
+        link: { type: string, format: uri }
+        qualified: { type: integer, minimum: 0 }
+        pending: { type: integer, minimum: 0 }
+        terms: { type: string }
+        cap:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/ReferralChannelCap"
+      required: [channel, sourceBusinessId, sourceBusinessKind, sourceBusinessName, code, link, qualified, pending, terms, cap]
+    ReferralChannelCap:
+      type: object
+      properties:
+        limit: { type: integer, minimum: 1 }
+        used: { type: integer, minimum: 0 }
+        period: { type: string, enum: [calendar_month, calendar_week] }
+      required: [limit, used, period]
+    ReferralLedgerEntry:
+      type: object
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [held, available, redeemed, expired, reversed, negative_offset, restored] }
+        amountRsd: { type: integer }
+        effectiveAt: { type: string, format: date-time }
+        expiresAt: { type: ["string", "null"], format: date-time }
+        reason: { type: string }
+      required: [id, type, amountRsd, effectiveAt, expiresAt, reason]
+    ReferralDashboard:
+      type: object
+      properties:
+        availableRsd: { type: integer }
+        expiringSoonRsd: { type: integer }
+        channels: { type: array, items: { $ref: "#/components/schemas/ReferralChannelSummary" } }
+        ledger: { type: array, items: { $ref: "#/components/schemas/ReferralLedgerEntry" } }
+      required: [availableRsd, expiringSoonRsd, channels, ledger]
+    ReferralApproval:
+      type: object
+      properties:
+        attributionId: { type: string }
+        channel: { type: string, enum: [A, B1] }
+        businessKind: { type: string, enum: [salon, education_center] }
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
+      required: [attributionId, channel, businessKind, status, createdAt]
+    ReferralApprovalDecision:
+      type: object
+      required: [action]
+      properties:
+        action: { type: string, enum: [approve, reject, resubmit] }
+        reason: { type: string, maxLength: 1000 }
+    ReferralApprovalDecisionResult:
+      type: object
+      required: [businessKind, action, status]
+      properties:
+        businessKind: { type: string, enum: [salon, education_center] }
+        action: { type: string, enum: [approve, reject, resubmit] }
+        status: { type: string, enum: [tracking, pending_verification] }
+    ReferralReview:
+      type: object
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [open, approved, rejected, dismissed] }
+        reasonCode: { type: string }
+        detail: { type: ["string", "null"] }
+        score: { type: ["integer", "null"] }
+        createdAt: { type: string, format: date-time }
+      required: [id, status, reasonCode, detail, score, createdAt]
+    ReferralReviewUpdate:
+      type: object
+      properties:
+        status: { type: string, enum: [approved, rejected, dismissed] }
+        detail: { type: string, maxLength: 2000 }
+      required: [status]
     HealthStatus:
       type: object
       properties:
@@ -5598,6 +5761,7 @@ components:
         password: { type: string, minLength: 8 }
         phone: { type: string }
         phoneVerificationCode: { type: string, minLength: 6, maxLength: 6 }
+        referralCode: { type: string, minLength: 3, maxLength: 64 }
       required: [firstName, lastName, email, password, phone, phoneVerificationCode]
     JobseekerRegistrationInput:
       type: object
@@ -5609,6 +5773,7 @@ components:
         phone: { type: string }
         phoneVerificationCode: { type: string, minLength: 6, maxLength: 6 }
         dateOfBirth: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        referralCode: { type: string, minLength: 3, maxLength: 64 }
       required: [firstName, lastName, email, password, phone, phoneVerificationCode, dateOfBirth]
     JobseekerProfileInput:
       type: object
@@ -5657,21 +5822,12 @@ components:
         contactEmail: { type: string }
         contactPhone: { type: string, minLength: 6 }
         contactAddress: { type: string, minLength: 3 }
-        pib:
-          type: string
-          minLength: 1
-          maxLength: 50
-          description: Required when businessType is EDUCATION_CENTER; omitted for salon registration.
+        pib: { type: string, minLength: 8, maxLength: 50 }
         websiteUrl: { type: string, format: uri }
         instagramUrl: { type: string, format: uri }
         description: { type: string, minLength: 20, maxLength: 2000 }
-      required: [firstName, lastName, email, phone, businessType, businessName, city, municipality, address, postalCode]
-      allOf:
-        - if:
-            properties:
-              businessType: { const: EDUCATION_CENTER }
-          then:
-            required: [pib]
+        referralCode: { type: string, minLength: 3, maxLength: 64 }
+      required: [firstName, lastName, email, phone, businessType, businessName, city, municipality, address, postalCode, pib]
     LoginInput:
       type: object
       properties:
@@ -6844,6 +7000,7 @@ components:
         expectedSubtotal: { type: integer, minimum: 0, description: "Optional subtotal from the displayed checkout quote; checkout rejects a changed quote." }
         expectedShippingCost: { type: integer, minimum: 0, description: "Optional delivery amount from the displayed checkout quote; checkout rejects a changed quote." }
         expectedTotal: { type: integer, minimum: 0, description: "Optional final amount from the displayed checkout quote; checkout rejects a changed quote." }
+        desiredReferralCreditRsd: { type: integer, minimum: 0, default: 0 }
       required: [idempotencyKey, firstName, lastName, email, phone, street, city, postalCode, paymentMethod]
     RetailCheckoutPreview:
       type: object
@@ -6851,10 +7008,15 @@ components:
         cart: { $ref: "#/components/schemas/RetailCart" }
         shipping: { $ref: "#/components/schemas/ShippingQuote" }
         total: { type: integer, minimum: 0 }
+        referralCreditAvailableRsd: { type: integer, minimum: 0 }
+        referralCreditAppliedRsd: { type: integer, minimum: 0 }
+        merchandiseSubtotalRsd: { type: integer, minimum: 0 }
+        shippingRsd: { type: integer, minimum: 0 }
+        payableTotalRsd: { type: integer, minimum: 0 }
         paymentMethods:
           type: array
           items: { type: string, enum: [BANK_TRANSFER, CASH_ON_DELIVERY] }
-      required: [cart, shipping, total, paymentMethods]
+      required: [cart, shipping, total, paymentMethods, referralCreditAvailableRsd, referralCreditAppliedRsd, merchandiseSubtotalRsd, shippingRsd, payableTotalRsd]
     RetailOrder:
       type: object
       properties:
@@ -7110,10 +7272,15 @@ components:
         cart: { $ref: "#/components/schemas/ShopCart" }
         shipping: { $ref: "#/components/schemas/ShippingQuote" }
         total: { type: number, minimum: 0, multipleOf: 1 }
+        referralCreditAvailableRsd: { type: integer, minimum: 0 }
+        referralCreditAppliedRsd: { type: integer, minimum: 0 }
+        merchandiseSubtotalRsd: { type: integer, minimum: 0 }
+        shippingRsd: { type: integer, minimum: 0 }
+        payableTotalRsd: { type: integer, minimum: 0 }
         paymentMethods:
           type: array
           items: { type: string, enum: [CARD, BANK_TRANSFER, CASH_ON_DELIVERY] }
-      required: [cart, shipping, total, paymentMethods]
+      required: [cart, shipping, total, paymentMethods, referralCreditAvailableRsd, referralCreditAppliedRsd, merchandiseSubtotalRsd, shippingRsd, payableTotalRsd]
     ShopCheckoutInput:
       type: object
       properties:
@@ -7126,6 +7293,10 @@ components:
         paymentMethod: { type: string, enum: [CARD, BANK_TRANSFER, CASH_ON_DELIVERY] }
         deliveryMethod: { type: string, enum: [courier, personal_belgrade] }
         note: { type: ["string", "null"], maxLength: 1000 }
+        desiredReferralCreditRsd: { type: integer, minimum: 0, default: 0 }
+        expectedSubtotal: { type: integer, minimum: 0 }
+        expectedShippingCost: { type: integer, minimum: 0 }
+        expectedTotal: { type: integer, minimum: 0 }
         termsAccepted: { type: boolean }
       required: [useSalonAddress, paymentMethod, deliveryMethod, termsAccepted]
     Order:
@@ -7990,6 +8161,7 @@ components:
         isVerified: { type: boolean }
         topSalon: { type: boolean }
         videoUrl: { type: ["string", "null"] }
+        pib: { type: string, minLength: 8, maxLength: 50 }
     AdminSalonOrderSummary:
       type: object
       properties:

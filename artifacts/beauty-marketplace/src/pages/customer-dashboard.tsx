@@ -36,7 +36,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { format, parseISO } from "date-fns";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { AlertTriangle, Camera, Calendar, Clock, MapPin, Loader2, KeyRound, Link2, Link2Off, ShieldCheck, Heart, RotateCcw, Sparkles, GraduationCap, Box, ChevronDown } from "lucide-react";
+import { AlertTriangle, Camera, Calendar, Clock, MapPin, Loader2, KeyRound, Link2, Link2Off, ShieldCheck, Heart, RotateCcw, Sparkles, GraduationCap, Box, ChevronDown, Gift } from "lucide-react";
 import { useLocation, useSearch, Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -365,9 +365,17 @@ export default function CustomerDashboard() {
             <h1 className="text-3xl font-serif font-bold text-foreground">Zdravo, {userResp.user.firstName}</h1>
             <p className="text-muted-foreground mt-1">Upravljajte svojim terminima i sačuvanim salonima</p>
           </div>
-          <Button asChild>
-            <Link href="/saloni">Novi termin</Link>
-          </Button>
+          <div className="flex gap-3">
+            <Button variant="outline" className="border-primary/20 bg-primary/5 text-primary hover:bg-primary/10" asChild>
+              <Link href="/preporuke">
+                <Gift className="w-4 h-4 mr-2" />
+                Preporuke
+              </Link>
+            </Button>
+            <Button asChild>
+              <Link href="/saloni">Novi termin</Link>
+            </Button>
+          </div>
         </div>
       </div>
 

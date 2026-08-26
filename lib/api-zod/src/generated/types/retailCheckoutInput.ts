@@ -69,4 +69,6 @@ export interface RetailCheckoutInput {
      * @minimum 0
      */
   expectedTotal?: number;
+  /** @minimum 0 */
+  desiredReferralCreditRsd?: number;
 }

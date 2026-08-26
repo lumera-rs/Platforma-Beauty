@@ -36,6 +36,12 @@ export type TransactionalEmailInput = {
 
 const RESCHEDULED_EMAIL_TYPE = "appointment_rescheduled";
 const AUTOMATION_EMAIL_TYPE = "automation";
+export const REFERRAL_EMAIL_TYPES = [
+  "referral_signup_attributed",
+  "referral_credit_available",
+  "referral_milestone",
+  "referral_credit_expiry_warning",
+] as const;
 export const BEAUTY_JOB_EMAIL_TYPES = [
   "beauty_job_new_contact",
   "beauty_job_author_reply",
@@ -47,7 +53,7 @@ export const BEAUTY_JOB_EMAIL_TYPES = [
 // backoff retries, temporary-vs-permanent classification, and idempotent
 // provider dedup (via the stable delivery id). Any other emailType is a
 // single-shot send with no retry.
-const RETRYABLE_EMAIL_TYPES = [RESCHEDULED_EMAIL_TYPE, AUTOMATION_EMAIL_TYPE, ...BEAUTY_JOB_EMAIL_TYPES] as const;
+const RETRYABLE_EMAIL_TYPES = [RESCHEDULED_EMAIL_TYPE, AUTOMATION_EMAIL_TYPE, ...BEAUTY_JOB_EMAIL_TYPES, ...REFERRAL_EMAIL_TYPES] as const;
 const BREVO_WEBHOOK_COVERAGE_ALERT_EMAIL_TYPE = "brevo_webhook_coverage_alert";
 export const BEAUTY_JOB_DELIVERY_ALERT_EMAIL_TYPE = "beauty_job_delivery_alert";
 const RETRYABLE_EMAIL_TYPES_WITH_MONITORING = [

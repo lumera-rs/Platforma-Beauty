@@ -5,6 +5,212 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+export type ReferralCodeValidationChannel = typeof ReferralCodeValidationChannel[keyof typeof ReferralCodeValidationChannel];
+
+
+export const ReferralCodeValidationChannel = {
+  A: 'A',
+  B1: 'B1',
+  B2: 'B2',
+  C: 'C',
+  D: 'D',
+} as const;
+
+export interface ReferralCodeValidation {
+  valid: boolean;
+  code: string;
+  channel: ReferralCodeValidationChannel;
+  link: string;
+}
+
+export type ReferralChannelSummaryChannel = typeof ReferralChannelSummaryChannel[keyof typeof ReferralChannelSummaryChannel];
+
+
+export const ReferralChannelSummaryChannel = {
+  A: 'A',
+  B1: 'B1',
+  B2: 'B2',
+  C: 'C',
+  D: 'D',
+} as const;
+
+export type ReferralChannelSummarySourceBusinessKind = typeof ReferralChannelSummarySourceBusinessKind[keyof typeof ReferralChannelSummarySourceBusinessKind];
+
+
+export const ReferralChannelSummarySourceBusinessKind = {
+  account: 'account',
+  salon: 'salon',
+  education_center: 'education_center',
+} as const;
+
+export type ReferralChannelCapPeriod = typeof ReferralChannelCapPeriod[keyof typeof ReferralChannelCapPeriod];
+
+
+export const ReferralChannelCapPeriod = {
+  calendar_month: 'calendar_month',
+  calendar_week: 'calendar_week',
+} as const;
+
+export interface ReferralChannelCap {
+  /** @minimum 1 */
+  limit: number;
+  /** @minimum 0 */
+  used: number;
+  period: ReferralChannelCapPeriod;
+}
+
+export interface ReferralChannelSummary {
+  channel: ReferralChannelSummaryChannel;
+  /** @nullable */
+  sourceBusinessId: string | null;
+  sourceBusinessKind: ReferralChannelSummarySourceBusinessKind;
+  sourceBusinessName: string;
+  code: string;
+  link: string;
+  /** @minimum 0 */
+  qualified: number;
+  /** @minimum 0 */
+  pending: number;
+  terms: string;
+  cap: null | ReferralChannelCap;
+}
+
+export type ReferralLedgerEntryType = typeof ReferralLedgerEntryType[keyof typeof ReferralLedgerEntryType];
+
+
+export const ReferralLedgerEntryType = {
+  held: 'held',
+  available: 'available',
+  redeemed: 'redeemed',
+  expired: 'expired',
+  reversed: 'reversed',
+  negative_offset: 'negative_offset',
+  restored: 'restored',
+} as const;
+
+export interface ReferralLedgerEntry {
+  id: string;
+  type: ReferralLedgerEntryType;
+  amountRsd: number;
+  effectiveAt: string;
+  /** @nullable */
+  expiresAt: string | null;
+  reason: string;
+}
+
+export interface ReferralDashboard {
+  availableRsd: number;
+  expiringSoonRsd: number;
+  channels: ReferralChannelSummary[];
+  ledger: ReferralLedgerEntry[];
+}
+
+export type ReferralApprovalChannel = typeof ReferralApprovalChannel[keyof typeof ReferralApprovalChannel];
+
+
+export const ReferralApprovalChannel = {
+  A: 'A',
+  B1: 'B1',
+} as const;
+
+export type ReferralApprovalBusinessKind = typeof ReferralApprovalBusinessKind[keyof typeof ReferralApprovalBusinessKind];
+
+
+export const ReferralApprovalBusinessKind = {
+  salon: 'salon',
+  education_center: 'education_center',
+} as const;
+
+export interface ReferralApproval {
+  attributionId: string;
+  channel: ReferralApprovalChannel;
+  businessKind: ReferralApprovalBusinessKind;
+  status: string;
+  createdAt: string;
+}
+
+export type ReferralApprovalDecisionAction = typeof ReferralApprovalDecisionAction[keyof typeof ReferralApprovalDecisionAction];
+
+
+export const ReferralApprovalDecisionAction = {
+  approve: 'approve',
+  reject: 'reject',
+  resubmit: 'resubmit',
+} as const;
+
+export interface ReferralApprovalDecision {
+  action: ReferralApprovalDecisionAction;
+  /** @maxLength 1000 */
+  reason?: string;
+}
+
+export type ReferralApprovalDecisionResultBusinessKind = typeof ReferralApprovalDecisionResultBusinessKind[keyof typeof ReferralApprovalDecisionResultBusinessKind];
+
+
+export const ReferralApprovalDecisionResultBusinessKind = {
+  salon: 'salon',
+  education_center: 'education_center',
+} as const;
+
+export type ReferralApprovalDecisionResultAction = typeof ReferralApprovalDecisionResultAction[keyof typeof ReferralApprovalDecisionResultAction];
+
+
+export const ReferralApprovalDecisionResultAction = {
+  approve: 'approve',
+  reject: 'reject',
+  resubmit: 'resubmit',
+} as const;
+
+export type ReferralApprovalDecisionResultStatus = typeof ReferralApprovalDecisionResultStatus[keyof typeof ReferralApprovalDecisionResultStatus];
+
+
+export const ReferralApprovalDecisionResultStatus = {
+  tracking: 'tracking',
+  pending_verification: 'pending_verification',
+} as const;
+
+export interface ReferralApprovalDecisionResult {
+  businessKind: ReferralApprovalDecisionResultBusinessKind;
+  action: ReferralApprovalDecisionResultAction;
+  status: ReferralApprovalDecisionResultStatus;
+}
+
+export type ReferralReviewStatus = typeof ReferralReviewStatus[keyof typeof ReferralReviewStatus];
+
+
+export const ReferralReviewStatus = {
+  open: 'open',
+  approved: 'approved',
+  rejected: 'rejected',
+  dismissed: 'dismissed',
+} as const;
+
+export interface ReferralReview {
+  id: string;
+  status: ReferralReviewStatus;
+  reasonCode: string;
+  /** @nullable */
+  detail: string | null;
+  /** @nullable */
+  score: number | null;
+  createdAt: string;
+}
+
+export type ReferralReviewUpdateStatus = typeof ReferralReviewUpdateStatus[keyof typeof ReferralReviewUpdateStatus];
+
+
+export const ReferralReviewUpdateStatus = {
+  approved: 'approved',
+  rejected: 'rejected',
+  dismissed: 'dismissed',
+} as const;
+
+export interface ReferralReviewUpdate {
+  status: ReferralReviewUpdateStatus;
+  /** @maxLength 2000 */
+  detail?: string;
+}
+
 export type HealthStatusDatabasePool = {
   /** @minimum 0 */
   total: number;
@@ -118,6 +324,11 @@ export interface RegisterInput {
      * @maxLength 6
      */
   phoneVerificationCode: string;
+  /**
+     * @minLength 3
+     * @maxLength 64
+     */
+  referralCode?: string;
 }
 
 export interface JobseekerRegistrationInput {
@@ -136,6 +347,11 @@ export interface JobseekerRegistrationInput {
   phoneVerificationCode: string;
   /** @pattern ^\d{4}-\d{2}-\d{2}$ */
   dateOfBirth: string;
+  /**
+     * @minLength 3
+     * @maxLength 64
+     */
+  referralCode?: string;
 }
 
 export interface JobseekerProfileInput {
@@ -195,7 +411,7 @@ export const BusinessRegistrationInputBusinessType = {
   EDUCATION_CENTER: 'EDUCATION_CENTER',
 } as const;
 
-export type BusinessRegistrationInput = unknown & {
+export interface BusinessRegistrationInput {
   /** @minLength 1 */
   firstName: string;
   /** @minLength 1 */
@@ -222,11 +438,10 @@ export type BusinessRegistrationInput = unknown & {
   /** @minLength 3 */
   contactAddress?: string;
   /**
-     * Required when businessType is EDUCATION_CENTER; omitted for salon registration.
-     * @minLength 1
+     * @minLength 8
      * @maxLength 50
      */
-  pib?: string;
+  pib: string;
   websiteUrl?: string;
   instagramUrl?: string;
   /**
@@ -234,7 +449,12 @@ export type BusinessRegistrationInput = unknown & {
      * @maxLength 2000
      */
   description?: string;
-};
+  /**
+     * @minLength 3
+     * @maxLength 64
+     */
+  referralCode?: string;
+}
 
 export interface LoginInput {
   email: string;
@@ -1891,6 +2111,8 @@ export interface RetailCheckoutInput {
      * @minimum 0
      */
   expectedTotal?: number;
+  /** @minimum 0 */
+  desiredReferralCreditRsd?: number;
 }
 
 export type RetailCheckoutPreviewPaymentMethodsItem = typeof RetailCheckoutPreviewPaymentMethodsItem[keyof typeof RetailCheckoutPreviewPaymentMethodsItem];
@@ -1934,6 +2156,16 @@ export interface RetailCheckoutPreview {
   shipping: ShippingQuote;
   /** @minimum 0 */
   total: number;
+  /** @minimum 0 */
+  referralCreditAvailableRsd: number;
+  /** @minimum 0 */
+  referralCreditAppliedRsd: number;
+  /** @minimum 0 */
+  merchandiseSubtotalRsd: number;
+  /** @minimum 0 */
+  shippingRsd: number;
+  /** @minimum 0 */
+  payableTotalRsd: number;
   paymentMethods: RetailCheckoutPreviewPaymentMethodsItem[];
 }
 
@@ -2222,6 +2454,16 @@ export interface ShopCheckoutPreview {
   shipping: ShippingQuote;
   /** @minimum 0 */
   total: number;
+  /** @minimum 0 */
+  referralCreditAvailableRsd: number;
+  /** @minimum 0 */
+  referralCreditAppliedRsd: number;
+  /** @minimum 0 */
+  merchandiseSubtotalRsd: number;
+  /** @minimum 0 */
+  shippingRsd: number;
+  /** @minimum 0 */
+  payableTotalRsd: number;
   paymentMethods: ShopCheckoutPreviewPaymentMethodsItem[];
 }
 
@@ -2254,6 +2496,14 @@ export interface ShopCheckoutInput {
      * @nullable
      */
   note?: string | null;
+  /** @minimum 0 */
+  desiredReferralCreditRsd?: number;
+  /** @minimum 0 */
+  expectedSubtotal?: number;
+  /** @minimum 0 */
+  expectedShippingCost?: number;
+  /** @minimum 0 */
+  expectedTotal?: number;
   termsAccepted: boolean;
 }
 
@@ -3633,6 +3883,11 @@ export interface AdminSalonUpdate {
   topSalon?: boolean;
   /** @nullable */
   videoUrl?: string | null;
+  /**
+     * @minLength 8
+     * @maxLength 50
+     */
+  pib?: string;
 }
 
 export interface AdminSalonOrderSummary {
@@ -6911,6 +7166,13 @@ page?: number;
 pageSize?: number;
 };
 
+export type GetShopCheckoutPreviewParams = {
+/**
+ * @minimum 0
+ */
+desiredReferralCreditRsd?: number;
+};
+
 export type ListSalonNotificationsParams = {
 /**
  * 1-based page number for stable pagination (createdAt desc, id desc).
@@ -7448,6 +7710,10 @@ employeeId?: string;
 export type PreviewRetailCheckoutParams = {
 deliveryMethod?: PreviewRetailCheckoutDeliveryMethod;
 city?: string;
+/**
+ * @minimum 0
+ */
+desiredReferralCreditRsd?: number;
 };
 
 export type PreviewRetailCheckoutDeliveryMethod = typeof PreviewRetailCheckoutDeliveryMethod[keyof typeof PreviewRetailCheckoutDeliveryMethod];

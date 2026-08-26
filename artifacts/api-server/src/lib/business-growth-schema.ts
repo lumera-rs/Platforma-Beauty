@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 34;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 37;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -100,6 +100,13 @@ const ENUM_LABELS: Record<string, string[]> = {
   beauty_job_contact_status: ["pending", "viewed", "accepted", "declined", "replied"],
   beauty_job_rental_request_status: ["pending", "accepted", "declined"],
   beauty_job_report_status: ["pending", "resolved", "dismissed"],
+  referral_channel: ["A", "B1", "B2", "C", "D"],
+  referral_attribution_status: ["attributed", "rejected", "under_review", "expired"],
+  referral_qualification_status: ["pending_verification", "tracking", "qualified", "held", "available", "reversed", "rejected"],
+  referral_review_status: ["open", "approved", "rejected", "dismissed"],
+  referral_credit_entry_type: ["held", "available", "redeemed", "expired", "reversed", "negative_offset", "restored"],
+  referral_wallet_kind: ["B2B", "B2C"],
+  referral_milestone_kind: ["salon_subscription_reduction", "education_commission_reduction"],
 };
 
 /**
@@ -168,6 +175,263 @@ function tableStatements(s: string): string[] {
          ALTER TABLE products RENAME COLUMN public_enabled TO retail_enabled;
        END IF;
      END $$`,
+    // v35 — Referral programme core.  These rows are append-only evidence and
+    // accounting records; no referral reward is inferred from mutable UI state.
+    `CREATE TABLE IF NOT EXISTS ${s}.phone_verification_proofs (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      phone_normalized text NOT NULL, verification_method text NOT NULL DEFAULT 'sms_otp',
+      verified_at timestamptz NOT NULL DEFAULT now(), revoked_at timestamptz,
+      revocation_reason text, metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      UNIQUE (phone_normalized, verification_method, verified_at)
+    )`,
+    `CREATE INDEX IF NOT EXISTS phone_verification_proofs_user_active_idx
+      ON ${s}.phone_verification_proofs (user_id, verified_at) WHERE revoked_at IS NULL`,
+    `DO $$ BEGIN
+       IF to_regclass('${s}.oauth_login_states') IS NOT NULL THEN
+         ALTER TABLE ${s}.oauth_login_states ADD COLUMN IF NOT EXISTS referral_code text;
+       END IF;
+     END $$`,
+    `CREATE TABLE IF NOT EXISTS ${s}.legal_entities (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), normalized_pib text NOT NULL,
+      legal_name text, created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE (normalized_pib)
+    )`,
+    `CREATE TABLE IF NOT EXISTS ${s}.legal_entity_businesses (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      legal_entity_id uuid NOT NULL REFERENCES ${s}.legal_entities(id) ON DELETE RESTRICT,
+      owner_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE RESTRICT,
+      salon_id uuid REFERENCES ${s}.salons(id) ON DELETE CASCADE,
+      education_center_id uuid REFERENCES ${s}.education_centers(id) ON DELETE CASCADE,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT legal_entity_businesses_one_business_check
+        CHECK (num_nonnulls(salon_id, education_center_id) = 1)
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS legal_entity_businesses_salon_unique
+      ON ${s}.legal_entity_businesses (salon_id) WHERE salon_id IS NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS legal_entity_businesses_center_unique
+      ON ${s}.legal_entity_businesses (education_center_id) WHERE education_center_id IS NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS legal_entity_businesses_entity_owner_idx
+      ON ${s}.legal_entity_businesses (legal_entity_id, owner_user_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.business_verification_audits (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      legal_entity_business_id uuid NOT NULL REFERENCES ${s}.legal_entity_businesses(id) ON DELETE CASCADE,
+      previous_status text, next_status text NOT NULL, reason text,
+      actor_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      evidence jsonb NOT NULL DEFAULT '{}'::jsonb, created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS business_verification_audits_business_created_idx
+      ON ${s}.business_verification_audits (legal_entity_business_id, created_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.referral_codes (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), code text NOT NULL UNIQUE,
+      channel ${s}.referral_channel NOT NULL,
+      referrer_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE RESTRICT,
+      referrer_salon_id uuid REFERENCES ${s}.salons(id) ON DELETE CASCADE,
+      referrer_education_center_id uuid REFERENCES ${s}.education_centers(id) ON DELETE CASCADE,
+      active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT referral_codes_source_channel_check CHECK (
+        (channel in ('B1', 'B2') and num_nonnulls(referrer_salon_id, referrer_education_center_id) = 0)
+        or (channel = 'C' and referrer_education_center_id is not null and referrer_salon_id is null)
+        or (channel = 'D' and referrer_salon_id is not null and referrer_education_center_id is null)
+        or (channel = 'A' and num_nonnulls(referrer_salon_id, referrer_education_center_id) = 1)
+      )
+    )`,
+    `CREATE INDEX IF NOT EXISTS referral_codes_salon_channel_idx ON ${s}.referral_codes (referrer_salon_id, channel)`,
+    `CREATE INDEX IF NOT EXISTS referral_codes_center_channel_idx ON ${s}.referral_codes (referrer_education_center_id, channel)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS referral_codes_salon_channel_unique ON ${s}.referral_codes (referrer_salon_id, channel) WHERE referrer_salon_id IS NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS referral_codes_center_channel_unique ON ${s}.referral_codes (referrer_education_center_id, channel) WHERE referrer_education_center_id IS NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS referral_codes_user_channel_unique ON ${s}.referral_codes (referrer_user_id, channel) WHERE referrer_salon_id IS NULL AND referrer_education_center_id IS NULL`,
+    `CREATE TABLE IF NOT EXISTS ${s}.referral_attributions (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      referral_code_id uuid NOT NULL REFERENCES ${s}.referral_codes(id) ON DELETE RESTRICT,
+      channel ${s}.referral_channel NOT NULL,
+      referrer_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE RESTRICT,
+      referred_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE RESTRICT,
+      referred_salon_id uuid REFERENCES ${s}.salons(id) ON DELETE RESTRICT,
+      referred_education_center_id uuid REFERENCES ${s}.education_centers(id) ON DELETE RESTRICT,
+      status ${s}.referral_attribution_status NOT NULL DEFAULT 'attributed',
+      captured_at timestamptz NOT NULL DEFAULT now(), locked_until timestamptz NOT NULL,
+      rejection_reason text, idempotency_key text NOT NULL UNIQUE,
+      created_at timestamptz NOT NULL DEFAULT now(), UNIQUE (referred_user_id),
+      CONSTRAINT referral_attributions_target_business_check CHECK (
+        num_nonnulls(referred_salon_id, referred_education_center_id) = 0
+        or (channel in ('A', 'B1') and num_nonnulls(referred_salon_id, referred_education_center_id) = 1)
+      )
+    )`,
+    `CREATE INDEX IF NOT EXISTS referral_attributions_referrer_channel_created_idx
+      ON ${s}.referral_attributions (referrer_user_id, channel, created_at)`,
+    `CREATE INDEX IF NOT EXISTS referral_attributions_referred_salon_idx ON ${s}.referral_attributions (referred_salon_id)`,
+    `CREATE INDEX IF NOT EXISTS referral_attributions_referred_center_idx ON ${s}.referral_attributions (referred_education_center_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.referral_qualifications (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      attribution_id uuid NOT NULL UNIQUE REFERENCES ${s}.referral_attributions(id) ON DELETE RESTRICT,
+      referred_salon_id uuid REFERENCES ${s}.salons(id) ON DELETE RESTRICT,
+      referred_education_center_id uuid REFERENCES ${s}.education_centers(id) ON DELETE RESTRICT,
+      status ${s}.referral_qualification_status NOT NULL DEFAULT 'pending_verification',
+      required_evidence_count integer NOT NULL, qualified_at timestamptz, hold_until timestamptz,
+      available_at timestamptz, reversed_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT referral_qualifications_target_business_check
+        CHECK (num_nonnulls(referred_salon_id, referred_education_center_id) <= 1)
+    )`,
+    `CREATE INDEX IF NOT EXISTS referral_qualifications_status_hold_idx ON ${s}.referral_qualifications (status, hold_until)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.referral_qualification_evidence (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      qualification_id uuid NOT NULL REFERENCES ${s}.referral_qualifications(id) ON DELETE CASCADE,
+      appointment_id uuid REFERENCES ${s}.appointments(id) ON DELETE RESTRICT,
+      enrollment_id uuid REFERENCES ${s}.course_enrollments(id) ON DELETE RESTRICT,
+      eligible_at timestamptz NOT NULL, invalidated_at timestamptz, invalidation_reason text,
+      idempotency_key text NOT NULL UNIQUE, created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT referral_qualification_evidence_one_source_check
+        CHECK (num_nonnulls(appointment_id, enrollment_id) = 1)
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS referral_qualification_evidence_appointment_unique
+      ON ${s}.referral_qualification_evidence (qualification_id, appointment_id) WHERE appointment_id IS NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS referral_qualification_evidence_enrollment_unique
+      ON ${s}.referral_qualification_evidence (qualification_id, enrollment_id) WHERE enrollment_id IS NOT NULL`,
+    `CREATE TABLE IF NOT EXISTS ${s}.referral_reviews (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      attribution_id uuid REFERENCES ${s}.referral_attributions(id) ON DELETE CASCADE,
+      qualification_id uuid REFERENCES ${s}.referral_qualifications(id) ON DELETE CASCADE,
+      status ${s}.referral_review_status NOT NULL DEFAULT 'open', reason_code text NOT NULL,
+      detail text, score integer, reviewed_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      resolved_at timestamptz, created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS referral_reviews_status_created_idx ON ${s}.referral_reviews (status, created_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.referral_credit_ledger (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), wallet_kind ${s}.referral_wallet_kind NOT NULL,
+      owner_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE RESTRICT,
+      salon_id uuid REFERENCES ${s}.salons(id) ON DELETE RESTRICT,
+      education_center_id uuid REFERENCES ${s}.education_centers(id) ON DELETE RESTRICT,
+      referral_attribution_id uuid REFERENCES ${s}.referral_attributions(id) ON DELETE RESTRICT,
+      type ${s}.referral_credit_entry_type NOT NULL, amount_rsd integer NOT NULL,
+      expires_at timestamptz, effective_at timestamptz NOT NULL DEFAULT now(),
+      actor_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL, reason text NOT NULL,
+      idempotency_key text NOT NULL UNIQUE, metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT referral_credit_ledger_wallet_business_check CHECK (
+        (wallet_kind = 'B2C' AND salon_id IS NULL AND education_center_id IS NULL)
+        OR (wallet_kind = 'B2B' AND num_nonnulls(salon_id, education_center_id) = 1)
+      )
+    )`,
+    `CREATE INDEX IF NOT EXISTS referral_credit_ledger_owner_wallet_effective_idx ON ${s}.referral_credit_ledger (owner_user_id, wallet_kind, effective_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.referral_credit_redemptions (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      ledger_entry_id uuid NOT NULL REFERENCES ${s}.referral_credit_ledger(id) ON DELETE RESTRICT,
+      order_id uuid REFERENCES ${s}.orders(id) ON DELETE RESTRICT,
+      retail_order_id uuid,
+      amount_rsd integer NOT NULL, idempotency_key text NOT NULL UNIQUE,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT referral_credit_redemptions_one_order_check CHECK (num_nonnulls(order_id, retail_order_id) = 1),
+      CONSTRAINT referral_credit_redemptions_positive_amount_check CHECK (amount_rsd > 0)
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS referral_credit_redemptions_order_ledger_unique ON ${s}.referral_credit_redemptions (order_id, ledger_entry_id) WHERE order_id IS NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS referral_credit_redemptions_retail_order_ledger_unique ON ${s}.referral_credit_redemptions (retail_order_id, ledger_entry_id) WHERE retail_order_id IS NOT NULL`,
+    `CREATE TABLE IF NOT EXISTS ${s}.referral_milestone_benefits (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      referrer_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE RESTRICT,
+      channel ${s}.referral_channel NOT NULL,
+      benefit_salon_id uuid REFERENCES ${s}.salons(id) ON DELETE RESTRICT,
+      benefit_education_center_id uuid REFERENCES ${s}.education_centers(id) ON DELETE RESTRICT,
+      qualifying_count integer NOT NULL,
+      kind ${s}.referral_milestone_kind NOT NULL, billing_cycle_start timestamptz,
+      applied_at timestamptz, idempotency_key text NOT NULL UNIQUE,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT referral_milestone_benefits_business_check CHECK (
+        (channel = 'A' and kind = 'salon_subscription_reduction' and benefit_salon_id is not null and benefit_education_center_id is null)
+        or (channel in ('A', 'C') and kind = 'education_commission_reduction' and benefit_education_center_id is not null and benefit_salon_id is null)
+      )
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS referral_milestone_benefits_salon_channel_count_unique ON ${s}.referral_milestone_benefits (benefit_salon_id, channel, qualifying_count) WHERE benefit_salon_id IS NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS referral_milestone_benefits_center_channel_count_unique ON ${s}.referral_milestone_benefits (benefit_education_center_id, channel, qualifying_count) WHERE benefit_education_center_id IS NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS referral_milestone_benefits_pending_idx
+      ON ${s}.referral_milestone_benefits (channel, billing_cycle_start) WHERE applied_at IS NULL`,
+    // v36 — a user can own several locations. Replace v35's user/channel
+    // constraints with source-business scope, while keeping B1/B2 personal.
+    `ALTER TABLE ${s}.referral_codes ADD COLUMN IF NOT EXISTS referrer_salon_id uuid REFERENCES ${s}.salons(id) ON DELETE CASCADE`,
+    `ALTER TABLE ${s}.referral_codes ADD COLUMN IF NOT EXISTS referrer_education_center_id uuid REFERENCES ${s}.education_centers(id) ON DELETE CASCADE`,
+    `ALTER TABLE ${s}.referral_codes DROP CONSTRAINT IF EXISTS referral_codes_referrer_user_id_channel_key`,
+    `ALTER TABLE ${s}.referral_codes DROP CONSTRAINT IF EXISTS referral_codes_source_channel_check`,
+    `ALTER TABLE ${s}.referral_codes ADD CONSTRAINT referral_codes_source_channel_check CHECK (
+      (channel in ('B1', 'B2') and num_nonnulls(referrer_salon_id, referrer_education_center_id) = 0)
+      or (channel = 'C' and referrer_education_center_id is not null and referrer_salon_id is null)
+      or (channel = 'D' and referrer_salon_id is not null and referrer_education_center_id is null)
+      or (channel = 'A' and num_nonnulls(referrer_salon_id, referrer_education_center_id) = 1)
+    ) NOT VALID`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS referral_codes_salon_channel_unique ON ${s}.referral_codes (referrer_salon_id, channel) WHERE referrer_salon_id IS NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS referral_codes_center_channel_unique ON ${s}.referral_codes (referrer_education_center_id, channel) WHERE referrer_education_center_id IS NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS referral_codes_user_channel_unique ON ${s}.referral_codes (referrer_user_id, channel) WHERE referrer_salon_id IS NULL AND referrer_education_center_id IS NULL`,
+    `ALTER TABLE ${s}.referral_attributions ADD COLUMN IF NOT EXISTS referred_salon_id uuid REFERENCES ${s}.salons(id) ON DELETE RESTRICT`,
+    `ALTER TABLE ${s}.referral_attributions ADD COLUMN IF NOT EXISTS referred_education_center_id uuid REFERENCES ${s}.education_centers(id) ON DELETE RESTRICT`,
+    `ALTER TABLE ${s}.referral_attributions DROP CONSTRAINT IF EXISTS referral_attributions_target_business_check`,
+    `ALTER TABLE ${s}.referral_attributions ADD CONSTRAINT referral_attributions_target_business_check CHECK (
+      num_nonnulls(referred_salon_id, referred_education_center_id) = 0
+      or (channel in ('A', 'B1') and num_nonnulls(referred_salon_id, referred_education_center_id) = 1)
+    )`,
+    `ALTER TABLE ${s}.referral_qualifications ADD COLUMN IF NOT EXISTS referred_salon_id uuid REFERENCES ${s}.salons(id) ON DELETE RESTRICT`,
+    `ALTER TABLE ${s}.referral_qualifications ADD COLUMN IF NOT EXISTS referred_education_center_id uuid REFERENCES ${s}.education_centers(id) ON DELETE RESTRICT`,
+    `ALTER TABLE ${s}.referral_qualifications DROP CONSTRAINT IF EXISTS referral_qualifications_target_business_check`,
+    `ALTER TABLE ${s}.referral_qualifications ADD CONSTRAINT referral_qualifications_target_business_check
+      CHECK (num_nonnulls(referred_salon_id, referred_education_center_id) <= 1)`,
+    `ALTER TABLE ${s}.referral_milestone_benefits ADD COLUMN IF NOT EXISTS benefit_salon_id uuid REFERENCES ${s}.salons(id) ON DELETE RESTRICT`,
+    `ALTER TABLE ${s}.referral_milestone_benefits ADD COLUMN IF NOT EXISTS benefit_education_center_id uuid REFERENCES ${s}.education_centers(id) ON DELETE RESTRICT`,
+    `ALTER TABLE ${s}.referral_milestone_benefits DROP CONSTRAINT IF EXISTS referral_milestone_benefits_referrer_user_id_channel_qualifying_count_key`,
+    `ALTER TABLE ${s}.referral_milestone_benefits DROP CONSTRAINT IF EXISTS referral_milestone_benefits_business_check`,
+    `ALTER TABLE ${s}.referral_milestone_benefits ADD CONSTRAINT referral_milestone_benefits_business_check CHECK (
+      (channel = 'A' and kind = 'salon_subscription_reduction' and benefit_salon_id is not null and benefit_education_center_id is null)
+      or (channel in ('A', 'C') and kind = 'education_commission_reduction' and benefit_education_center_id is not null and benefit_salon_id is null)
+    ) NOT VALID`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS referral_milestone_benefits_salon_channel_count_unique ON ${s}.referral_milestone_benefits (benefit_salon_id, channel, qualifying_count) WHERE benefit_salon_id IS NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS referral_milestone_benefits_center_channel_count_unique ON ${s}.referral_milestone_benefits (benefit_education_center_id, channel, qualifying_count) WHERE benefit_education_center_id IS NOT NULL`,
+    // Existing commerce stores integer whole RSD (for example product price
+    // 2000 is displayed as 2,000 RSD). Preserve v35 amounts while exposing the
+    // explicitly named fields to new referral accounting code.
+    `ALTER TABLE ${s}.referral_credit_ledger ADD COLUMN IF NOT EXISTS amount_rsd integer`,
+    `ALTER TABLE ${s}.referral_credit_redemptions ADD COLUMN IF NOT EXISTS amount_rsd integer`,
+    `DO $$ BEGIN
+       ALTER TABLE ${s}.referral_credit_ledger DISABLE TRIGGER USER;
+       ALTER TABLE ${s}.referral_credit_redemptions DISABLE TRIGGER USER;
+       IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()
+                  AND table_name = 'referral_credit_ledger' AND column_name = 'amount') THEN
+         UPDATE ${s}.referral_credit_ledger SET amount_rsd = amount WHERE amount_rsd IS NULL;
+       END IF;
+       IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()
+                  AND table_name = 'referral_credit_redemptions' AND column_name = 'amount') THEN
+         UPDATE ${s}.referral_credit_redemptions SET amount_rsd = amount WHERE amount_rsd IS NULL;
+       END IF;
+       ALTER TABLE ${s}.referral_credit_ledger ENABLE TRIGGER USER;
+       ALTER TABLE ${s}.referral_credit_redemptions ENABLE TRIGGER USER;
+     EXCEPTION WHEN OTHERS THEN
+       ALTER TABLE ${s}.referral_credit_ledger ENABLE TRIGGER USER;
+       ALTER TABLE ${s}.referral_credit_redemptions ENABLE TRIGGER USER;
+       RAISE;
+     END $$`,
+    `ALTER TABLE ${s}.referral_credit_ledger ALTER COLUMN amount_rsd SET NOT NULL`,
+    `ALTER TABLE ${s}.referral_credit_redemptions ALTER COLUMN amount_rsd SET NOT NULL`,
+    // v37 — permit a single order to consume more than one earned ledger
+    // entry, while preserving the no-duplicate-source invariant.
+    `DROP INDEX IF EXISTS ${s}.referral_credit_redemptions_order_unique`,
+    `DROP INDEX IF EXISTS ${s}.referral_credit_redemptions_retail_order_unique`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS referral_credit_redemptions_order_ledger_unique
+       ON ${s}.referral_credit_redemptions (order_id, ledger_entry_id) WHERE order_id IS NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS referral_credit_redemptions_retail_order_ledger_unique
+       ON ${s}.referral_credit_redemptions (retail_order_id, ledger_entry_id) WHERE retail_order_id IS NOT NULL`,
+    `ALTER TABLE ${s}.referral_credit_redemptions DROP CONSTRAINT IF EXISTS referral_credit_redemptions_positive_amount_check`,
+    `ALTER TABLE ${s}.referral_credit_redemptions ADD CONSTRAINT referral_credit_redemptions_positive_amount_check CHECK (amount_rsd > 0) NOT VALID`,
+    // Accounting and first-touch rows are facts. Corrections are represented by
+    // reversal/negative-offset entries, never in-place edits.
+    `CREATE OR REPLACE FUNCTION ${s}.referral_prevent_mutation() RETURNS trigger
+      LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Referral financial and attribution records are append-only'; END $$`,
+    `DROP TRIGGER IF EXISTS referral_attributions_append_only ON ${s}.referral_attributions`,
+    `CREATE TRIGGER referral_attributions_append_only BEFORE UPDATE OR DELETE ON ${s}.referral_attributions
+      FOR EACH ROW EXECUTE FUNCTION ${s}.referral_prevent_mutation()`,
+    `DROP TRIGGER IF EXISTS referral_credit_ledger_append_only ON ${s}.referral_credit_ledger`,
+    `CREATE TRIGGER referral_credit_ledger_append_only BEFORE UPDATE OR DELETE ON ${s}.referral_credit_ledger
+      FOR EACH ROW EXECUTE FUNCTION ${s}.referral_prevent_mutation()`,
+    `DROP TRIGGER IF EXISTS referral_credit_redemptions_append_only ON ${s}.referral_credit_redemptions`,
+    `CREATE TRIGGER referral_credit_redemptions_append_only BEFORE UPDATE OR DELETE ON ${s}.referral_credit_redemptions
+      FOR EACH ROW EXECUTE FUNCTION ${s}.referral_prevent_mutation()`,
     `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS retail_enabled boolean NOT NULL DEFAULT false`,
     `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS public_description text`,
     `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS public_price integer`,
@@ -308,6 +572,10 @@ function tableStatements(s: string): string[] {
       payment_status ${s}.payment_status NOT NULL DEFAULT 'unpaid',
       delivery_method ${s}.delivery_method NOT NULL DEFAULT 'courier',
       subtotal integer NOT NULL,
+       referral_credit_merchandise_subtotal_rsd integer NOT NULL DEFAULT 0,
+       referral_credit_pre_credit_payable_total_rsd integer NOT NULL DEFAULT 0,
+       referral_credit_applied_rsd integer NOT NULL DEFAULT 0,
+       referral_credit_restored_at timestamptz,
       shipping_cost integer NOT NULL DEFAULT 0,
       total integer NOT NULL,
       shipping_name text NOT NULL,
@@ -323,11 +591,34 @@ function tableStatements(s: string): string[] {
       UNIQUE (cart_id, idempotency_key)
     )`,
     `ALTER TABLE ${s}.retail_orders ADD COLUMN IF NOT EXISTS cart_id uuid REFERENCES ${s}.retail_carts(id) ON DELETE RESTRICT`,
+    // v37 — explicit immutable quote snapshots make the pre-credit and
+    // payable amounts auditable even when regular order totals are repurposed.
+    `ALTER TABLE ${s}.orders ADD COLUMN IF NOT EXISTS referral_credit_merchandise_subtotal_rsd integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.orders ADD COLUMN IF NOT EXISTS referral_credit_pre_credit_payable_total_rsd integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.orders ADD COLUMN IF NOT EXISTS referral_credit_applied_rsd integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.orders ADD COLUMN IF NOT EXISTS referral_credit_restored_at timestamptz`,
+    `ALTER TABLE ${s}.retail_orders ADD COLUMN IF NOT EXISTS referral_credit_merchandise_subtotal_rsd integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.retail_orders ADD COLUMN IF NOT EXISTS referral_credit_pre_credit_payable_total_rsd integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.retail_orders ADD COLUMN IF NOT EXISTS referral_credit_applied_rsd integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.retail_orders ADD COLUMN IF NOT EXISTS referral_credit_restored_at timestamptz`,
     `ALTER TABLE ${s}.retail_orders DROP CONSTRAINT IF EXISTS retail_orders_idempotency_key_key`,
     `CREATE UNIQUE INDEX IF NOT EXISTS retail_orders_cart_idempotency_unique
        ON ${s}.retail_orders (cart_id, idempotency_key) WHERE cart_id IS NOT NULL`,
     `CREATE INDEX IF NOT EXISTS retail_orders_user_created_idx ON ${s}.retail_orders (user_id, created_at)`,
     `CREATE INDEX IF NOT EXISTS retail_orders_status_created_idx ON ${s}.retail_orders (status, created_at)`,
+    // retail_orders is created above on old deployments. Add this FK only after
+    // its target exists; the referral table itself is deliberately created
+    // earlier because all of its other evidence targets are core tables.
+    `DO $$ BEGIN
+       IF NOT EXISTS (
+         SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
+         WHERE n.nspname = current_schema() AND c.conname = 'referral_credit_redemptions_retail_order_id_fkey'
+       ) THEN
+         ALTER TABLE ${s}.referral_credit_redemptions
+           ADD CONSTRAINT referral_credit_redemptions_retail_order_id_fkey
+           FOREIGN KEY (retail_order_id) REFERENCES ${s}.retail_orders(id) ON DELETE RESTRICT;
+       END IF;
+     END $$`,
     `CREATE TABLE IF NOT EXISTS ${s}.retail_order_items (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       order_id uuid NOT NULL REFERENCES ${s}.retail_orders(id) ON DELETE CASCADE,

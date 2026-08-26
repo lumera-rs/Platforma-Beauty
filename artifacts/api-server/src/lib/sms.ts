@@ -1,11 +1,17 @@
-import { db, smsDeliveriesTable } from "@workspace/db";
-import { and, eq, lt, or } from "drizzle-orm";
+import {
+  db,
+  phoneVerificationProofsTable,
+  salonCustomersTable,
+  smsDeliveriesTable,
+  usersTable,
+} from "@workspace/db";
+import { and, asc, eq, isNull, lt, lte, or } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { logger } from "./logger";
 import { infobipBaseUrl, integrationSettings, integrationValue } from "./integrations";
 import { resolveInfobipNotifyUrl } from "./provider-events";
 
-export type SmsMessageType = "appointment_confirmation" | "appointment_reminder" | "automation" | "admin_alert" | "retail_order";
+export type SmsMessageType = "appointment_confirmation" | "appointment_reminder" | "automation" | "admin_alert" | "retail_order" | "referral";
 
 /** Lease duration for an SMS delivery claim (5 minutes). */
 const SMS_LEASE_MS = 5 * 60 * 1000;
@@ -15,6 +21,66 @@ const SMS_LEASE_MS = 5 * 60 * 1000;
  * Only `sent` and intentional `skipped` are terminal/deduplicated.
  */
 export type SmsDeliveryStatus = "queued" | "processing" | "sent" | "failed" | "skipped";
+type SmsTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Writes a referral SMS to the durable outbox without contacting the provider.
+ * This is safe to call from the transaction which changes referral state.
+ *
+ * A user phone is eligible only while the account is active and an unrevoked
+ * proof exists for the exact current normalized phone. A CRM opt-out is applied
+ * only when that concrete salon-customer relationship is the destination
+ * context; platform/user-level notices deliberately have no CRM opt-out.
+ */
+export async function enqueueReferralSmsInTx(
+  tx: SmsTransaction,
+  input: {
+    eventKey: string;
+    userId: string;
+    salonId?: string | null;
+    salonCustomerId?: string | null;
+    text: string;
+  },
+) {
+  const [recipient] = await tx.select({
+    phoneNormalized: usersTable.phoneNormalized,
+    active: usersTable.active,
+  }).from(usersTable).where(eq(usersTable.id, input.userId)).limit(1);
+  if (!recipient?.active || !recipient.phoneNormalized) return null;
+
+  const [proof] = await tx.select({ id: phoneVerificationProofsTable.id })
+    .from(phoneVerificationProofsTable)
+    .where(and(
+      eq(phoneVerificationProofsTable.userId, input.userId),
+      eq(phoneVerificationProofsTable.phoneNormalized, recipient.phoneNormalized),
+      isNull(phoneVerificationProofsTable.revokedAt),
+    ))
+    .limit(1);
+  if (!proof) return null;
+
+  if (input.salonCustomerId) {
+    if (!input.salonId) return null;
+    const [relationship] = await tx.select({ smsOptOut: salonCustomersTable.smsOptOut })
+      .from(salonCustomersTable)
+      .where(and(
+        eq(salonCustomersTable.id, input.salonCustomerId),
+        eq(salonCustomersTable.salonId, input.salonId),
+      ))
+      .limit(1);
+    if (!relationship || relationship.smsOptOut) return null;
+  }
+
+  const [inserted] = await tx.insert(smsDeliveriesTable).values({
+    eventKey: input.eventKey,
+    salonId: input.salonId ?? null,
+    appointmentId: null,
+    messageType: "referral",
+    recipientPhone: recipient.phoneNormalized,
+    body: input.text,
+    status: "queued",
+  }).onConflictDoNothing().returning();
+  return inserted ?? null;
+}
 
 /** Provider send input. `idempotencyKey` is the persistent sms_deliveries.id. */
 export interface SmsSendInput {
@@ -238,6 +304,29 @@ export async function sendSms(
       .where(eq(smsDeliveriesTable.id, claimed.id));
     return { skipped: true };
   }
+  // Referral rows can sit in the outbox for several minutes. Re-check the
+  // durable proof at claim time so a proof revoked after enqueue never reaches
+  // the provider.
+  if (input.type === "referral") {
+    const [eligible] = await db.select({ id: phoneVerificationProofsTable.id })
+      .from(phoneVerificationProofsTable)
+      .innerJoin(usersTable, and(
+        eq(usersTable.id, phoneVerificationProofsTable.userId),
+        eq(usersTable.phoneNormalized, phoneVerificationProofsTable.phoneNormalized),
+      ))
+      .where(and(
+        eq(phoneVerificationProofsTable.phoneNormalized, input.phone),
+        isNull(phoneVerificationProofsTable.revokedAt),
+        eq(usersTable.active, true),
+      ))
+      .limit(1);
+    if (!eligible) {
+      await db.update(smsDeliveriesTable)
+        .set({ status: "skipped", errorMessage: "Broj nema aktivan trajni dokaz SMS verifikacije.", claimExpiresAt: null })
+        .where(eq(smsDeliveriesTable.id, claimed.id));
+      return { skipped: true };
+    }
+  }
   // If a provider override is supplied (e.g. in tests), skip the settings check.
   const activeProvider = providerOverride ?? null;
   if (!activeProvider) {
@@ -333,4 +422,44 @@ export async function sendSms(
     // expire and the next claim reconciles the accepted submission to sent.
   }
   return sent;
+}
+
+/**
+ * Bounded referral-only outbox drain. Rows are merely candidates here:
+ * sendSms performs the atomic claim/lease, unknown-outcome reconciliation and
+ * provider-idempotent dispatch, so overlapping maintenance workers are safe.
+ */
+export async function drainReferralSmsOutbox(limit = 25) {
+  const boundedLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
+  const now = new Date();
+  const candidates = await db.select({
+    eventKey: smsDeliveriesTable.eventKey,
+    salonId: smsDeliveriesTable.salonId,
+    appointmentId: smsDeliveriesTable.appointmentId,
+    recipientPhone: smsDeliveriesTable.recipientPhone,
+    body: smsDeliveriesTable.body,
+  }).from(smsDeliveriesTable).where(and(
+    eq(smsDeliveriesTable.messageType, "referral"),
+    or(
+      eq(smsDeliveriesTable.status, "queued"),
+      eq(smsDeliveriesTable.status, "failed"),
+      and(
+        eq(smsDeliveriesTable.status, "processing"),
+        lte(smsDeliveriesTable.claimExpiresAt, now),
+      ),
+    ),
+  )).orderBy(asc(smsDeliveriesTable.createdAt)).limit(boundedLimit);
+
+  const results = [];
+  for (const candidate of candidates) {
+    results.push(await sendSms({
+      eventKey: candidate.eventKey,
+      salonId: candidate.salonId,
+      appointmentId: candidate.appointmentId,
+      type: "referral",
+      phone: candidate.recipientPhone,
+      text: candidate.body,
+    }));
+  }
+  return { attempted: candidates.length, results };
 }

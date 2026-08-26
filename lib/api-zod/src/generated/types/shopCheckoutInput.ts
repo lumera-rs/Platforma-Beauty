@@ -22,5 +22,13 @@ export interface ShopCheckoutInput {
      * @nullable
      */
   note?: string | null;
+  /** @minimum 0 */
+  desiredReferralCreditRsd?: number;
+  /** @minimum 0 */
+  expectedSubtotal?: number;
+  /** @minimum 0 */
+  expectedShippingCost?: number;
+  /** @minimum 0 */
+  expectedTotal?: number;
   termsAccepted: boolean;
 }

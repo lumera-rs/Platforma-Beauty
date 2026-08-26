@@ -30,6 +30,8 @@ import { expireBeautyJobListings } from "./lib/beauty-jobs-maintenance";
 import { runBeautyJobDeliveryFailureAlerts } from "./lib/beauty-jobs-delivery-monitor";
 import { reconcileKnownTestListings } from "./lib/test-listing-reconciliation";
 import { seedProductionMarketplaceDemoContent } from "./lib/production-marketplace-demo-seed";
+import { runReferralMaintenance } from "./lib/referral-service";
+import { ensureReferralSchema } from "./lib/referral-schema";
 
 const rawPort = process.env["PORT"];
 
@@ -52,6 +54,7 @@ await ensureBusinessGrowthSchema();
 await ensureMediaSchema();
 await ensureShippingConfigSchema();
 await ensureMarketplacePerformanceIndexes();
+await ensureReferralSchema();
 await reconcileKnownTestListings();
 if (process.env.NODE_ENV === "production") {
   await seedProductionMarketplaceDemoContent();
@@ -129,6 +132,10 @@ const beautyJobEmailDeliveryAlerts = createResilientScheduledJob({
   job: "beauty-job-email-delivery-alerts",
   run: runBeautyJobDeliveryFailureAlerts,
 });
+const referralMaintenance = createResilientScheduledJob({
+  job: "referral-maintenance",
+  run: runReferralMaintenance,
+});
 const scheduledJobs = [
   rescheduledConfirmationRetries,
   educationSessionMaintenance,
@@ -143,6 +150,7 @@ const scheduledJobs = [
   malformedWebhookAlerts,
   beautyJobsExpirySweep,
   beautyJobEmailDeliveryAlerts,
+  referralMaintenance,
 ];
 
 const retryInterval = setInterval(() => {
@@ -165,6 +173,12 @@ const beautyJobsExpiryInterval = setInterval(() => {
 }, 5 * 60_000);
 beautyJobsExpiryInterval.unref();
 void beautyJobsExpirySweep.run();
+
+const referralMaintenanceInterval = setInterval(() => {
+  void referralMaintenance.run();
+}, 5 * 60_000);
+referralMaintenanceInterval.unref();
+void referralMaintenance.run();
 
 const educationGalleryCleanupInterval = setInterval(() => {
   void educationGalleryCleanup.run();
@@ -237,6 +251,7 @@ function clearScheduledTasks(): void {
   clearInterval(retryInterval);
   clearInterval(educationMaintenanceInterval);
   clearInterval(beautyJobsExpiryInterval);
+  clearInterval(referralMaintenanceInterval);
   clearInterval(educationGalleryCleanupInterval);
   clearInterval(mediaCleanupInterval);
   clearInterval(compatibilityImageCleanupInterval);

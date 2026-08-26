@@ -10,4 +10,8 @@ import type { PreviewRetailCheckoutDeliveryMethod } from './previewRetailCheckou
 export type PreviewRetailCheckoutParams = {
 deliveryMethod?: PreviewRetailCheckoutDeliveryMethod;
 city?: string;
+/**
+ * @minimum 0
+ */
+desiredReferralCreditRsd?: number;
 };

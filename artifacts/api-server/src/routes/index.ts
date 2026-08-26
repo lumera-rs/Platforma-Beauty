@@ -9,12 +9,14 @@ import phase3Router from "./phase3";
 import widgetRouter from "./widget";
 import businessGuideRouter from "./business-guide";
 import beautyJobsRouter from "./beauty-jobs";
+import referralsRouter from "./referrals";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(businessGuideRouter);
 router.use(beautyJobsRouter);
+router.use(referralsRouter);
 router.use(imageMediaRouter);
 router.use(mediaRouter);
 router.use(widgetRouter);

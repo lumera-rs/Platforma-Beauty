@@ -49,6 +49,7 @@ export const smsMessageTypeEnum = pgEnum("sms_message_type", [
   "education_session_cancelled",
   "automation",
   "retail_order",
+  "referral",
   // Platform-level administrator alert (e.g. the delivery-report silence
   // fallback SMS when alert emails cannot be sent). Not tied to any salon.
   "admin_alert",
@@ -162,6 +163,7 @@ export const oauthLoginStatesTable = pgTable("oauth_login_states", {
   flow: text("flow").notNull(),
   userId: uuid("user_id").references(() => usersTable.id, { onDelete: "cascade" }),
   codeVerifier: text("code_verifier"),
+  referralCode: text("referral_code"),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
@@ -180,6 +182,28 @@ export const phoneVerificationCodesTable = pgTable("phone_verification_codes", {
   lastRequestIp: text("last_request_ip"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * A successful verification is evidence, not a transient OTP row.  Referral
+ * eligibility must never be inferred from a code which may later be replaced
+ * or deleted by a new verification attempt.
+ */
+export const phoneVerificationProofsTable = pgTable("phone_verification_proofs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  phoneNormalized: text("phone_normalized").notNull(),
+  verificationMethod: text("verification_method").notNull().default("sms_otp"),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }).notNull().defaultNow(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  revocationReason: text("revocation_reason"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("phone_verification_proofs_phone_method_verified_unique")
+    .on(table.phoneNormalized, table.verificationMethod, table.verifiedAt),
+  index("phone_verification_proofs_user_active_idx").on(table.userId, table.verifiedAt)
+    .where(sql`${table.revokedAt} is null`),
+]);
 
 export const integrationSettingsTable = pgTable("integration_settings", {
   id: uuid("id").defaultRandom().primaryKey(),

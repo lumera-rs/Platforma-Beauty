@@ -14,6 +14,9 @@ import { PasswordInput } from "@/components/password-input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { homeForRole } from "@/lib/role-routing";
+import { useReferralCapture } from "@/hooks/use-referral-capture";
+import { ReferralContextBanner } from "@/components/referral-context-banner";
+import { clearStoredReferralCode } from "@/lib/referral-storage";
 
 const eduRegistrationSchema = z.object({
   firstName: z.string().min(1, "Ime je obavezno."),
@@ -39,6 +42,7 @@ export default function EducationCenterRegistration() {
   const { toast } = useToast();
   const [step, setStep] = useState<1 | 2>(1);
   const registerBusiness = useRegisterBusiness();
+  const referralCode = useReferralCapture();
 
   const form = useForm<EduRegistrationValues>({
     resolver: zodResolver(eduRegistrationSchema),
@@ -71,9 +75,11 @@ export default function EducationCenterRegistration() {
         contactAddress: values.address,
         websiteUrl: values.websiteUrl || undefined,
         instagramUrl: values.instagramUrl || undefined,
+        referralCode,
       },
     }, {
       onSuccess: (data) => {
+        clearStoredReferralCode();
         toast.success("Edukativni centar je kreiran", { description: "Dobrodošli u LUMERA Edukativnu mrežu." });
         setLocation(homeForRole(data.user.role));
       },
@@ -95,17 +101,17 @@ export default function EducationCenterRegistration() {
   return (
     <BusinessLayout>
       <div className="flex-1 flex flex-col lg:flex-row bg-background">
-        
+
         {/* Left side info */}
         <div className="lg:w-5/12 bg-primary text-primary-foreground p-10 md:p-16 flex flex-col justify-between relative overflow-hidden">
           <div className="absolute inset-0 opacity-10 bg-[url('https://images.unsplash.com/photo-1574015974293-817f0ebebb74?q=80&w=2673&auto=format&fit=crop')] bg-cover bg-center mix-blend-overlay"></div>
-          
+
           <div className="relative z-10">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/20 text-white text-sm font-medium mb-8">
               <GraduationCap className="w-4 h-4" />
               <span>LUMERA Edukativni Partner</span>
             </div>
-            
+
             <h1 className="font-serif text-4xl md:text-5xl font-bold mb-6">
               Platforma za moderne beauty edukatore
             </h1>
@@ -137,7 +143,7 @@ export default function EducationCenterRegistration() {
               </li>
             </ul>
           </div>
-          
+
           <div className="relative z-10 mt-16 pt-8 border-t border-white/20">
             <p className="text-sm text-primary-foreground/60">
               Ukoliko ste salon koji nudi usluge klijetima, <Link href="/poslovna-registracija" className="text-white hover:underline font-medium">registrujte se ovde</Link>.
@@ -155,9 +161,11 @@ export default function EducationCenterRegistration() {
               </p>
             </div>
 
+            <ReferralContextBanner code={referralCode} />
+
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                
+
                 {step === 1 && (
                   <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-500">
                     <div className="grid gap-5 sm:grid-cols-2">
@@ -249,7 +257,7 @@ export default function EducationCenterRegistration() {
                         </FormItem>
                       )}
                     />
-                    
+
                     <div className="grid gap-5 sm:grid-cols-2">
                       <FormField
                         control={form.control}
@@ -331,17 +339,17 @@ export default function EducationCenterRegistration() {
                         <FormItem>
                           <FormLabel>Programi i sertifikacije</FormLabel>
                           <FormControl>
-                            <Textarea 
+                            <Textarea
                               placeholder="Opišite oblasti edukacija, formate programa i sertifikacije koje nudite."
                               className="resize-none h-24"
-                              {...field} 
+                              {...field}
                             />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
-                    
+
                     <div className="flex gap-4 mt-8">
                       <Button type="button" variant="outline" size="lg" className="h-14 w-1/3 text-base" onClick={() => setStep(1)}>
                         Nazad
