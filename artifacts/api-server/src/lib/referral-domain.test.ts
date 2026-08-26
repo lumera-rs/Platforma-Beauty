@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   canEarnUnderCap, creditExpiry, duplicatePreflight, firstTouchLockUntil,
   milestoneBenefitKind, milestoneCrossed, REFERRAL_POLICY, referralCreditAvailable,
-  referralIdempotencyKey, requiresBusinessScopedCode, normalizePib,
+  qualificationWindow, referralIdempotencyKey, requiresBusinessScopedCode, normalizePib,
 } from "./referral-domain";
 import { referralLink, stableReferralCode } from "./referral-service";
 
@@ -46,4 +46,22 @@ test("caps, isolated milestones, offsets, and duplicate preflight follow policy"
   assert.equal(referralCreditAvailable(500, 150, 400), 350);
   assert.deepEqual(duplicatePreflight({ referrerUserId: "same", referredUserId: "same" }), { decision: "reject", reasons: ["self_referral"] });
   assert.equal(creditExpiry(new Date("2026-08-31T00:00:00Z")).toISOString(), "2027-02-28T00:00:00.000Z");
+});
+
+test("qualification windows are fixed, calendar-safe half-open intervals", () => {
+  const capturedAt = new Date("2026-01-31T12:34:56.789Z");
+  assert.deepEqual(qualificationWindow("B2", capturedAt), {
+    start: capturedAt,
+    deadline: new Date("2026-04-01T12:34:56.789Z"),
+  });
+  assert.deepEqual(qualificationWindow("C", capturedAt), {
+    start: capturedAt,
+    deadline: new Date("2026-04-30T12:34:56.789Z"),
+  });
+  const approval = new Date("2028-08-31T01:02:03.004Z");
+  assert.deepEqual(qualificationWindow("A", capturedAt, approval), {
+    start: approval,
+    deadline: new Date("2028-11-30T01:02:03.004Z"),
+  });
+  assert.throws(() => qualificationWindow("B1", capturedAt), /not been unlocked/);
 });

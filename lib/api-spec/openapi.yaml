@@ -5534,6 +5534,8 @@ paths:
             schema: { $ref: "#/components/schemas/ReferralReviewUpdate" }
       responses:
         "200": { description: Resolved review, content: { application/json: { schema: { $ref: "#/components/schemas/ReferralReview" } } } }
+        "404": { description: Referral review not found }
+        "409": { description: Review was already resolved or the requested decision conflicts with terminal referral lifecycle }
 components:
   parameters:
     CityQuery:

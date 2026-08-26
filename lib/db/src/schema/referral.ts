@@ -80,7 +80,7 @@ export const referralCodesTable = pgTable("referral_codes", {
     or (${table.channel} = 'A' and num_nonnulls(${table.referrerSalonId}, ${table.referrerEducationCenterId}) = 1)`),
 ]);
 
-/** First-touch attribution is intentionally insert-only; lifecycle facts live elsewhere. */
+/** First-touch identity is immutable; only status and its audit reason may transition. */
 export const referralAttributionsTable = pgTable("referral_attributions", {
   id: uuid("id").defaultRandom().primaryKey(),
   referralCodeId: uuid("referral_code_id").notNull().references(() => referralCodesTable.id, { onDelete: "restrict" }),
@@ -114,6 +114,8 @@ export const referralQualificationsTable = pgTable("referral_qualifications", {
   referredEducationCenterId: uuid("referred_education_center_id").references(() => educationCentersTable.id, { onDelete: "restrict" }),
   status: referralQualificationStatusEnum("status").notNull().default("pending_verification"),
   requiredEvidenceCount: integer("required_evidence_count").notNull(),
+  /** Fixed qualification-window start set by the first A/B1 admin approval. */
+  trackingStartedAt: timestamp("tracking_started_at", { withTimezone: true }),
   qualifiedAt: timestamp("qualified_at", { withTimezone: true }),
   holdUntil: timestamp("hold_until", { withTimezone: true }),
   availableAt: timestamp("available_at", { withTimezone: true }),
@@ -215,7 +217,13 @@ export const referralMilestoneBenefitsTable = pgTable("referral_milestone_benefi
   qualifyingCount: integer("qualifying_count").notNull(),
   kind: referralMilestoneKindEnum("kind").notNull(),
   billingCycleStart: timestamp("billing_cycle_start", { withTimezone: true }),
+  billingCycleEnd: timestamp("billing_cycle_end", { withTimezone: true }),
+  discountPercent: integer("discount_percent"),
   appliedAt: timestamp("applied_at", { withTimezone: true }),
+  /** A late fraud rejection preserves the earned fact but makes an unapplied benefit unusable. */
+  neutralizedAt: timestamp("neutralized_at", { withTimezone: true }),
+  neutralizedByUserId: uuid("neutralized_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  neutralizationReason: text("neutralization_reason"),
   idempotencyKey: text("idempotency_key").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
@@ -225,6 +233,7 @@ export const referralMilestoneBenefitsTable = pgTable("referral_milestone_benefi
     .where(sql`${table.benefitEducationCenterId} is not null`),
   uniqueIndex("referral_milestone_benefits_idempotency_unique").on(table.idempotencyKey),
   index("referral_milestone_benefits_pending_idx").on(table.channel, table.billingCycleStart).where(sql`${table.appliedAt} is null`),
+  check("referral_milestone_benefits_discount_percent_check", sql`${table.discountPercent} is null or (${table.discountPercent} > 0 and ${table.discountPercent} <= 100)`),
   check("referral_milestone_benefits_business_check", sql`
     (${table.channel} = 'A' and ${table.kind} = 'salon_subscription_reduction' and ${table.benefitSalonId} is not null and ${table.benefitEducationCenterId} is null)
     or (${table.channel} in ('A', 'C') and ${table.kind} = 'education_commission_reduction' and ${table.benefitEducationCenterId} is not null and ${table.benefitSalonId} is null)`),

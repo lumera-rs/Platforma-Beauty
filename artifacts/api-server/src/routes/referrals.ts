@@ -2,6 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import {
   db, educationCentersTable, referralAttributionsTable, referralCreditLedgerTable,
+  referralCreditRedemptionsTable,
   referralQualificationsTable, referralReviewsTable, salonsTable,
 } from "@workspace/db";
 import {
@@ -11,7 +12,11 @@ import {
   GetReferralDashboardResponse, ValidateReferralCodeParams, ValidateReferralCodeResponse,
 } from "@workspace/api-zod";
 import { getCurrentUser, isAdmin } from "../lib/auth";
-import { decideReferredBusinessApproval, deriveReferralCreditBalance, ensureReferralCode, REFERRAL_TERMS_SR, normalizedReferralCode, referralLink, validateReferralCode } from "../lib/referral-service";
+import {
+  decideReferralReview, decideReferredBusinessApproval, deriveReferralWalletSnapshot,
+  ensureReferralCode, REFERRAL_TERMS_SR, normalizedReferralCode, referralLink,
+  ReferralReviewDecisionConflictError, validateReferralCode,
+} from "../lib/referral-service";
 import { REFERRAL_POLICY, type ReferralChannel } from "../lib/referral-domain";
 import { publishCatalogInvalidation } from "../lib/catalog-cache";
 
@@ -46,19 +51,22 @@ router.get("/referrals/dashboard", async (req: Request, res: Response): Promise<
   if (!user) { res.status(401).json({ error: "Prijava je obavezna." }); return; }
   const now = new Date();
   const capLookback = new Date(now.getTime() - 35 * 86400_000);
-  const [qualifications, ledger, balanceLedger, capLedger, ownedSalons, ownedCenters] = await Promise.all([
+  const [qualifications, ledger, walletLedger, redemptionRows, capLedger, ownedSalons, ownedCenters] = await Promise.all([
     db.select({ attributionId: referralAttributionsTable.id, codeId: referralAttributionsTable.referralCodeId, channel: referralAttributionsTable.channel, status: referralQualificationsTable.status })
       .from(referralQualificationsTable)
       .innerJoin(referralAttributionsTable, eq(referralQualificationsTable.attributionId, referralAttributionsTable.id))
       .where(eq(referralAttributionsTable.referrerUserId, user.id)),
     db.select().from(referralCreditLedgerTable).where(eq(referralCreditLedgerTable.ownerUserId, user.id))
       .orderBy(desc(referralCreditLedgerTable.effectiveAt)).limit(100),
+    db.select().from(referralCreditLedgerTable)
+      .where(eq(referralCreditLedgerTable.ownerUserId, user.id)),
     db.select({
-      type: referralCreditLedgerTable.type,
-      amountRsd: referralCreditLedgerTable.amountRsd,
-      expiresAt: referralCreditLedgerTable.expiresAt,
-      effectiveAt: referralCreditLedgerTable.effectiveAt,
-    }).from(referralCreditLedgerTable).where(eq(referralCreditLedgerTable.ownerUserId, user.id)),
+      ledgerEntryId: referralCreditRedemptionsTable.ledgerEntryId,
+      amountRsd: referralCreditRedemptionsTable.amountRsd,
+    }).from(referralCreditRedemptionsTable)
+      .innerJoin(referralCreditLedgerTable,
+        eq(referralCreditRedemptionsTable.ledgerEntryId, referralCreditLedgerTable.id))
+      .where(eq(referralCreditLedgerTable.ownerUserId, user.id)),
     db.select({
       referralAttributionId: referralCreditLedgerTable.referralAttributionId,
       type: referralCreditLedgerTable.type,
@@ -71,6 +79,20 @@ router.get("/referrals/dashboard", async (req: Request, res: Response): Promise<
     db.select({ id: salonsTable.id, name: salonsTable.name }).from(salonsTable).where(eq(salonsTable.ownerId, user.id)),
     db.select({ id: educationCentersTable.id, name: educationCentersTable.name }).from(educationCentersTable).where(eq(educationCentersTable.ownerId, user.id)),
   ]);
+  const walletScopeKey = (entry: Pick<typeof referralCreditLedgerTable.$inferSelect,
+    "walletKind" | "ownerUserId" | "salonId" | "educationCenterId">) =>
+    `${entry.walletKind}:${entry.ownerUserId}:${entry.salonId ?? ""}:${entry.educationCenterId ?? ""}`;
+  const walletSnapshots = Array.from(new Set(walletLedger.map(walletScopeKey))).map((scopeKey) => {
+    const scopedEntries = walletLedger.filter((entry) => walletScopeKey(entry) === scopeKey);
+    const sourceIds = new Set(scopedEntries
+      .filter((entry) => entry.type === "available")
+      .map((entry) => entry.id));
+    return deriveReferralWalletSnapshot(
+      scopedEntries,
+      redemptionRows.filter((row) => sourceIds.has(row.ledgerEntryId)),
+      now,
+    );
+  });
   const periodStart = (period: "calendar_month" | "calendar_week") => {
     const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
     if (period === "calendar_month") return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
@@ -112,10 +134,8 @@ router.get("/referrals/dashboard", async (req: Request, res: Response): Promise<
   });
   const requestOrigin = `${req.protocol}://${req.get("host")}`;
   const response = {
-    availableRsd: deriveReferralCreditBalance(balanceLedger, now),
-    expiringSoonRsd: balanceLedger.filter((entry) => entry.type === "available" && entry.expiresAt
-      && entry.expiresAt > now && entry.expiresAt.getTime() - now.getTime() <= 14 * 86400_000)
-      .reduce((sum, entry) => sum + entry.amountRsd, 0),
+    availableRsd: walletSnapshots.reduce((sum, snapshot) => sum + snapshot.availableRsd, 0),
+    expiringSoonRsd: walletSnapshots.reduce((sum, snapshot) => sum + snapshot.expiringSoonRsd, 0),
     channels: issued.map(({ channel, sourceBusinessId, sourceBusinessKind, sourceBusinessName, code }) => {
       const scoped = qualifications.filter((item) => item.codeId === code.id);
       const policy = REFERRAL_POLICY[channel];
@@ -182,10 +202,22 @@ router.patch("/admin/referrals/reviews/:reviewId", async (req: Request, res: Res
   if (!user || !isAdmin(user)) { res.status(user ? 403 : 401).json({ error: "Administratorski pristup je obavezan." }); return; }
   const [params, body] = [AdminReviewReferralParams.safeParse(req.params), AdminReviewReferralBody.safeParse(req.body)];
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci za pregled nisu ispravni." }); return; }
-  const [saved] = await db.update(referralReviewsTable).set({
-    status: body.data.status, detail: body.data.detail ?? null, reviewedByUserId: user.id, resolvedAt: new Date(),
-  }).where(and(eq(referralReviewsTable.id, params.data.reviewId), eq(referralReviewsTable.status, "open"))).returning();
-  if (!saved) { res.status(404).json({ error: "Otvoren zapis za pregled nije pronađen." }); return; }
+  let saved;
+  try {
+    saved = await decideReferralReview(
+      user.id,
+      params.data.reviewId,
+      body.data.status,
+      body.data.detail,
+    );
+  } catch (error) {
+    if (error instanceof ReferralReviewDecisionConflictError) {
+      res.status(409).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
+  if (!saved) { res.status(404).json({ error: "Zapis za pregled nije pronađen." }); return; }
   res.json(AdminReviewReferralResponse.parse({
     id: saved.id, status: saved.status, reasonCode: saved.reasonCode, detail: saved.detail, score: saved.score, createdAt: saved.createdAt.toISOString(),
   }));

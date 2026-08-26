@@ -17,6 +17,28 @@ export async function ensureReferralSchema(schemaName = "public"): Promise<void>
     await client.query(`alter table ${schema}.orders add column if not exists referral_credit_restored_at timestamptz`);
     await client.query(`alter table ${schema}.retail_orders add column if not exists referral_credit_applied_rsd integer not null default 0`);
     await client.query(`alter table ${schema}.retail_orders add column if not exists referral_credit_restored_at timestamptz`);
+    await client.query(`alter table ${schema}.referral_qualifications add column if not exists tracking_started_at timestamptz`);
+    await client.query(`alter table ${schema}.referral_milestone_benefits add column if not exists neutralized_at timestamptz`);
+    await client.query(`alter table ${schema}.referral_milestone_benefits add column if not exists neutralized_by_user_id uuid references ${schema}.users(id) on delete set null`);
+    await client.query(`alter table ${schema}.referral_milestone_benefits add column if not exists neutralization_reason text`);
+    // Preserve already-unlocked A/B1 windows during a mixed-version rollout.
+    // Prefer the immutable approval audit and use the qualification transition
+    // timestamp only for legacy approvals that predate legal-entity auditing.
+    await client.query(`
+      update ${schema}.referral_qualifications q
+      set tracking_started_at = coalesce(
+        (select min(a.created_at)
+         from ${schema}.business_verification_audits a
+         where a.next_status = 'verified'
+           and a.evidence->>'referralAttributionId' = q.attribution_id::text),
+        q.updated_at
+      )
+      from ${schema}.referral_attributions r
+      where r.id = q.attribution_id
+        and r.channel in ('A', 'B1')
+        and q.status <> 'pending_verification'
+        and q.tracking_started_at is null
+    `);
     // PostgreSQL has no IF NOT EXISTS for enum values on old supported versions.
     await client.query(`
       do $$ begin

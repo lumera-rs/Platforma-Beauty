@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, eq, gt, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import {
   appointmentsTable,
   businessVerificationAuditsTable,
@@ -7,6 +7,7 @@ import {
   coursesTable,
   db,
   educationCentersTable,
+  educationCenterSubscriptionsTable,
   legalEntitiesTable,
   legalEntityBusinessesTable,
   phoneVerificationProofsTable,
@@ -19,10 +20,13 @@ import {
   referralQualificationsTable,
   referralReviewsTable,
   salonsTable,
+  subscriptionPlansTable,
+  subscriptionsTable,
   usersTable,
 } from "@workspace/db";
 import {
   REFERRAL_POLICY,
+  SALON_TYPE_A_SUBSCRIPTION_DISCOUNT_PERCENT,
   creditExpiry,
   canEarnUnderCap,
   milestoneBenefitKind,
@@ -30,7 +34,7 @@ import {
   normalizePib,
   qualificationHoldUntil,
   qualificationSatisfied,
-  qualificationWindowStartsAt,
+  qualificationWindow,
   referralIdempotencyKey,
   type ReferralChannel,
   type ReferralSourceBusiness,
@@ -56,6 +60,48 @@ export type ReferralWalletScope = {
 
 export type ReferralCreditAllocation = { ledgerEntryId: string; amountRsd: number };
 
+type ReferralSourceFact = Pick<typeof referralCreditLedgerTable.$inferSelect,
+  "type" | "amountRsd" | "effectiveAt">;
+
+type ReferralWalletSnapshotEntry = Pick<typeof referralCreditLedgerTable.$inferSelect,
+  "id" | "type" | "amountRsd" | "expiresAt" | "effectiveAt" | "metadata">;
+
+type ReferralWalletSnapshotRedemption = Pick<typeof referralCreditRedemptionsTable.$inferSelect,
+  "ledgerEntryId" | "amountRsd">;
+
+/**
+ * Redemption allocations are the authoritative consumption identities. The
+ * matching `redeemed` ledger rows are wallet-display facts and are deliberately
+ * not counted again here. Restorations and terminal source compensations remain
+ * authoritative signed ledger facts. A source-linked expiry or reversal is a
+ * terminal marker, so a later refund cannot revive that source.
+ */
+export function deriveReferralSourceCapacity(
+  source: Pick<typeof referralCreditLedgerTable.$inferSelect, "amountRsd" | "expiresAt" | "effectiveAt">,
+  sourceFacts: ReferralSourceFact[],
+  redemptionAmountsRsd: number[],
+  now = new Date(),
+) {
+  const effectiveFacts = sourceFacts.filter((fact) => fact.effectiveAt <= now);
+  const redeemedRsd = redemptionAmountsRsd.reduce((sum, amount) => sum + Number(amount), 0);
+  const restoredRsd = effectiveFacts.filter((fact) => fact.type === "restored")
+    .reduce((sum, fact) => sum + Number(fact.amountRsd), 0);
+  const terminalFacts = effectiveFacts.filter((fact) => fact.type === "expired" || fact.type === "reversed");
+  const terminalAdjustmentRsd = terminalFacts
+    .reduce((sum, fact) => sum + Number(fact.amountRsd), 0);
+  const currentContributionRsd = source.amountRsd - redeemedRsd + restoredRsd + terminalAdjustmentRsd;
+  const terminal = terminalFacts.length > 0 || !!(source.expiresAt && source.expiresAt <= now);
+  return {
+    redeemedRsd,
+    restoredRsd,
+    currentContributionRsd,
+    consumedUnrestoredRsd: Math.max(0, redeemedRsd - restoredRsd),
+    reusableCapacityRsd: terminal
+      ? 0
+      : Math.max(0, Math.min(source.amountRsd, currentContributionRsd)),
+  };
+}
+
 export function deriveReferralCreditBalance(
   entries: Array<Pick<typeof referralCreditLedgerTable.$inferSelect, "type" | "amountRsd" | "expiresAt" | "effectiveAt">
     & { id?: string; metadata?: Record<string, unknown> }>,
@@ -65,13 +111,78 @@ export function deriveReferralCreditBalance(
     if (entry.effectiveAt > now || entry.type === "held" || entry.metadata?.["reversedHeld"] === true) return total;
     return total + entry.amountRsd;
   }, 0);
-  const virtualExpiry = entries.reduce((total, source) => {
-    if (source.type !== "available" || !source.expiresAt || source.expiresAt > now) return total;
-    const allocated = source.id ? entries.reduce((sum, entry) =>
-      entry.metadata?.["sourceLedgerEntryId"] === source.id ? sum + entry.amountRsd : sum, 0) : 0;
-    return total + Math.max(0, source.amountRsd + allocated);
+  const adjustment = entries.reduce((total, source) => {
+    if (source.type !== "available") return total;
+    const linkedEntries = source.id ? entries.filter((entry) =>
+      entry.effectiveAt <= now && entry.metadata?.["sourceLedgerEntryId"] === source.id) : [];
+    const linked = linkedEntries.reduce((sum, entry) => sum + entry.amountRsd, 0);
+    const uncappedCapacity = source.amountRsd + linked;
+    const reusableCapacity = Math.max(0, Math.min(source.amountRsd, uncappedCapacity));
+    // A malformed or replayed restoration must never inflate the wallet above
+    // its source grant, even on display-only reads.
+    const restorationOverage = Math.max(0, uncappedCapacity - source.amountRsd);
+    const terminal = !!(source.expiresAt && source.expiresAt <= now)
+      || linkedEntries.some((entry) => entry.type === "expired" || entry.type === "reversed");
+    return total + restorationOverage + (terminal ? reusableCapacity : 0);
   }, 0);
-  return base - virtualExpiry;
+  return base - adjustment;
+}
+
+/**
+ * Derive one exact wallet scope from its complete append-only fact set.
+ * Redemption rows provide consumption identity while linked ledger facts
+ * provide restorations and terminality. Spendable capacity is walked in the
+ * same FIFO order as checkout, so wallet debt reduces the sources that could
+ * actually be allocated rather than leaking into another business wallet.
+ */
+export function deriveReferralWalletSnapshot(
+  entries: ReferralWalletSnapshotEntry[],
+  redemptions: ReferralWalletSnapshotRedemption[],
+  now = new Date(),
+  expiringWithinMs = 14 * 86400_000,
+) {
+  const availableRsd = deriveReferralCreditBalance(entries, now);
+  let allocatableRemainingRsd = Math.max(0, availableRsd);
+  let allocatableRsd = 0;
+  let expiringSoonRsd = 0;
+  const sourceFactsById = new Map<string, ReferralSourceFact[]>();
+  for (const entry of entries) {
+    const sourceId = entry.metadata?.["sourceLedgerEntryId"];
+    if (typeof sourceId !== "string" || entry.effectiveAt > now
+      || (entry.type !== "restored" && entry.type !== "expired" && entry.type !== "reversed")) continue;
+    const facts = sourceFactsById.get(sourceId) ?? [];
+    facts.push(entry);
+    sourceFactsById.set(sourceId, facts);
+  }
+  const redemptionAmountsBySourceId = new Map<string, number[]>();
+  for (const redemption of redemptions) {
+    const amounts = redemptionAmountsBySourceId.get(redemption.ledgerEntryId) ?? [];
+    amounts.push(Number(redemption.amountRsd));
+    redemptionAmountsBySourceId.set(redemption.ledgerEntryId, amounts);
+  }
+  const sources = entries
+    .filter((entry) => entry.type === "available" && entry.effectiveAt <= now)
+    .sort((left, right) =>
+      left.effectiveAt.getTime() - right.effectiveAt.getTime() || left.id.localeCompare(right.id));
+
+  for (const source of sources) {
+    if (!allocatableRemainingRsd) break;
+    const capacityRsd = deriveReferralSourceCapacity(
+      source,
+      sourceFactsById.get(source.id) ?? [],
+      redemptionAmountsBySourceId.get(source.id) ?? [],
+      now,
+    ).reusableCapacityRsd;
+    const allocatedRsd = Math.min(allocatableRemainingRsd, capacityRsd);
+    allocatableRemainingRsd -= allocatedRsd;
+    allocatableRsd += allocatedRsd;
+    if (source.expiresAt && source.expiresAt > now
+      && source.expiresAt.getTime() - now.getTime() <= expiringWithinMs) {
+      expiringSoonRsd += allocatedRsd;
+    }
+  }
+
+  return { availableRsd, allocatableRsd, expiringSoonRsd };
 }
 
 const walletScopeCondition = (scope: ReferralWalletScope) => and(
@@ -112,23 +223,44 @@ export async function allocateReferralCreditInTx(
   // also covers the empty-wallet case, which row locks alone cannot protect.
   const sources = await tx.select().from(referralCreditLedgerTable)
     .where(and(walletScopeCondition(scope), eq(referralCreditLedgerTable.type, "available"),
-      lte(referralCreditLedgerTable.effectiveAt, now),
-      or(isNull(referralCreditLedgerTable.expiresAt), gt(referralCreditLedgerTable.expiresAt, now))))
+      lte(referralCreditLedgerTable.effectiveAt, now)))
     .orderBy(asc(referralCreditLedgerTable.effectiveAt), asc(referralCreditLedgerTable.id))
     .for("update");
   const availableRsd = await referralCreditBalanceInTx(tx, scope, now);
   let remaining = Math.max(0, Math.min(desiredRsd, merchandiseSubtotalRsd, availableRsd));
   if (!remaining) return { availableRsd, appliedRsd: 0, allocations: [] };
   const sourceIds = sources.map((source) => source.id);
-  const spent = sourceIds.length ? await tx.select({
+  const redemptionRows = sourceIds.length ? await tx.select({
+    id: referralCreditRedemptionsTable.id,
     ledgerEntryId: referralCreditRedemptionsTable.ledgerEntryId,
-    amount: sql<number>`coalesce(sum(${referralCreditRedemptionsTable.amountRsd}), 0)::int`,
+    amount: referralCreditRedemptionsTable.amountRsd,
   }).from(referralCreditRedemptionsTable).where(inArray(referralCreditRedemptionsTable.ledgerEntryId, sourceIds))
-    .groupBy(referralCreditRedemptionsTable.ledgerEntryId) : [];
-  const spentBySource = new Map(spent.map((row) => [row.ledgerEntryId, Number(row.amount)]));
+    .orderBy(asc(referralCreditRedemptionsTable.ledgerEntryId), asc(referralCreditRedemptionsTable.id))
+    .for("update") : [];
+  const sourceFacts = sourceIds.length ? await tx.select({
+    id: referralCreditLedgerTable.id,
+    ledgerEntryId: sql<string>`${referralCreditLedgerTable.metadata}->>'sourceLedgerEntryId'`,
+    type: referralCreditLedgerTable.type,
+    amountRsd: referralCreditLedgerTable.amountRsd,
+    effectiveAt: referralCreditLedgerTable.effectiveAt,
+  }).from(referralCreditLedgerTable).where(and(
+    walletScopeCondition(scope),
+    inArray(referralCreditLedgerTable.type, ["restored", "expired", "reversed"]),
+    lte(referralCreditLedgerTable.effectiveAt, now),
+    inArray(sql<string>`${referralCreditLedgerTable.metadata}->>'sourceLedgerEntryId'`, sourceIds),
+  )).orderBy(
+    asc(sql`${referralCreditLedgerTable.metadata}->>'sourceLedgerEntryId'`),
+    asc(referralCreditLedgerTable.effectiveAt),
+    asc(referralCreditLedgerTable.id),
+  ).for("update") : [];
   const allocations: ReferralCreditAllocation[] = [];
   for (const source of sources) {
-    const remainingOnSource = Math.max(0, source.amountRsd - (spentBySource.get(source.id) ?? 0));
+    const remainingOnSource = deriveReferralSourceCapacity(
+      source,
+      sourceFacts.filter((fact) => fact.ledgerEntryId === source.id),
+      redemptionRows.filter((row) => row.ledgerEntryId === source.id).map((row) => Number(row.amount)),
+      now,
+    ).reusableCapacityRsd;
     const amountRsd = Math.min(remaining, remainingOnSource);
     if (amountRsd) allocations.push({ ledgerEntryId: source.id, amountRsd });
     remaining -= amountRsd;
@@ -143,6 +275,8 @@ export async function recordReferralRedemptionInTx(
   input: { scope: ReferralWalletScope; orderId?: string; retailOrderId?: string; allocations: ReferralCreditAllocation[]; idempotencyKey: string; actorUserId?: string | null; now?: Date },
 ) {
   const now = input.now ?? new Date();
+  const scopeKey = `${input.scope.walletKind}:${input.scope.ownerUserId}:${input.scope.salonId ?? ""}:${input.scope.educationCenterId ?? ""}`;
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`referral-wallet:${scopeKey}`}))`);
   for (const allocation of input.allocations) {
     const allocationKey = referralIdempotencyKey("redemption-allocation", input.idempotencyKey, allocation.ledgerEntryId);
     await tx.insert(referralCreditRedemptionsTable).values({
@@ -163,26 +297,138 @@ export async function restoreReferralCreditForOrderInTx(
   tx: ReferralTransaction,
   input: { scope: ReferralWalletScope; orderId?: string; retailOrderId?: string; eventKey: string; actorUserId?: string | null; now?: Date },
 ) {
+  const scopeKey = `${input.scope.walletKind}:${input.scope.ownerUserId}:${input.scope.salonId ?? ""}:${input.scope.educationCenterId ?? ""}`;
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`referral-wallet:${scopeKey}`}))`);
   const rows = await tx.select({
+    redemptionId: referralCreditRedemptionsTable.id,
     ledgerEntryId: referralCreditRedemptionsTable.ledgerEntryId,
-    amount: sql<number>`sum(${referralCreditRedemptionsTable.amountRsd})::int`,
+    amount: referralCreditRedemptionsTable.amountRsd,
   }).from(referralCreditRedemptionsTable).where(input.orderId
     ? eq(referralCreditRedemptionsTable.orderId, input.orderId)
-    : eq(referralCreditRedemptionsTable.retailOrderId, input.retailOrderId!))
-    .groupBy(referralCreditRedemptionsTable.ledgerEntryId);
+    : eq(referralCreditRedemptionsTable.retailOrderId, input.retailOrderId!));
   const now = input.now ?? new Date();
   for (const row of rows) {
     await tx.insert(referralCreditLedgerTable).values({
       ...input.scope, type: "restored", amountRsd: Number(row.amount), effectiveAt: now,
       actorUserId: input.actorUserId ?? null, reason: "Referral credit restored after order cancellation or refund.",
-      idempotencyKey: referralIdempotencyKey("restored", input.eventKey, row.ledgerEntryId),
-      metadata: { sourceLedgerEntryId: row.ledgerEntryId, orderId: input.orderId ?? null, retailOrderId: input.retailOrderId ?? null },
+      // A redemption allocation can be restored exactly once, irrespective of
+      // how many cancellation/refund event names reach this service.
+      idempotencyKey: referralIdempotencyKey("restored-redemption", row.redemptionId),
+      metadata: { sourceLedgerEntryId: row.ledgerEntryId, redemptionId: row.redemptionId,
+        orderId: input.orderId ?? null, retailOrderId: input.retailOrderId ?? null },
     }).onConflictDoNothing();
   }
 }
 
+/**
+ * Neutralizes every reward source produced by one referral while preserving
+ * only consumed value that has not subsequently been restored.
+ *
+ * Lock order for lifecycle callers is qualification -> wallet advisory lock ->
+ * source ledger rows (effectiveAt/id order) -> redemption/source-fact rows.
+ * Checkout and restore take their order/cart lock before the same wallet lock,
+ * and expiry never waits on a lifecycle row, so all competing source mutation
+ * serializes at or below the wallet lock without forming a lock cycle.
+ */
+export async function compensateInvalidatedReferralSourcesInTx(
+  tx: ReferralTransaction,
+  input: {
+    attributionId: string;
+    scope: ReferralWalletScope;
+    now: Date;
+    reason: string;
+    actorUserId?: string | null;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  const scopeKey = `${input.scope.walletKind}:${input.scope.ownerUserId}:${input.scope.salonId ?? ""}:${input.scope.educationCenterId ?? ""}`;
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`referral-wallet:${scopeKey}`}))`);
+  const ledger = await tx.select().from(referralCreditLedgerTable)
+    .where(eq(referralCreditLedgerTable.referralAttributionId, input.attributionId))
+    .orderBy(asc(referralCreditLedgerTable.effectiveAt), asc(referralCreditLedgerTable.id))
+    .for("update");
+  const availableSources = ledger.filter((entry) => entry.type === "available");
+  const heldAmount = ledger.filter((entry) => entry.type === "held")
+    .reduce((sum, entry) => sum + entry.amountRsd, 0);
+  const reversedHeldAmount = ledger.filter((entry) => entry.type === "reversed"
+    && entry.metadata?.["reversedHeld"] === true)
+    .reduce((sum, entry) => sum + entry.amountRsd, 0);
+  const remainingHeld = Math.max(0, heldAmount + reversedHeldAmount);
+  const producedReward = heldAmount > 0 || availableSources.length > 0;
+  if (!availableSources.length && remainingHeld > 0) {
+    await tx.insert(referralCreditLedgerTable).values({
+      ...input.scope,
+      referralAttributionId: input.attributionId,
+      type: "reversed",
+      amountRsd: -remainingHeld,
+      effectiveAt: input.now,
+      actorUserId: input.actorUserId ?? null,
+      reason: input.reason,
+      idempotencyKey: referralIdempotencyKey("source-compensation-held", input.attributionId),
+      metadata: {
+        ...input.metadata,
+        sourceLedgerEntryId: null,
+        reversedHeld: true,
+      },
+    }).onConflictDoNothing();
+  }
+  for (const source of availableSources) {
+    const redemptionRows = await tx.select({
+      id: referralCreditRedemptionsTable.id,
+      amount: referralCreditRedemptionsTable.amountRsd,
+    })
+      .from(referralCreditRedemptionsTable)
+      .where(eq(referralCreditRedemptionsTable.ledgerEntryId, source.id))
+      .orderBy(asc(referralCreditRedemptionsTable.id))
+      .for("update");
+    const sourceFacts = await tx.select({
+      id: referralCreditLedgerTable.id,
+      type: referralCreditLedgerTable.type,
+      amountRsd: referralCreditLedgerTable.amountRsd,
+      effectiveAt: referralCreditLedgerTable.effectiveAt,
+    }).from(referralCreditLedgerTable).where(and(
+      inArray(referralCreditLedgerTable.type, ["restored", "expired", "reversed"]),
+      sql`${referralCreditLedgerTable.metadata}->>'sourceLedgerEntryId' = ${source.id}`,
+      lte(referralCreditLedgerTable.effectiveAt, input.now),
+    )).orderBy(asc(referralCreditLedgerTable.effectiveAt), asc(referralCreditLedgerTable.id))
+      .for("update");
+    const sourceState = deriveReferralSourceCapacity(
+      source,
+      sourceFacts,
+      redemptionRows.map((row) => Number(row.amount)),
+      input.now,
+    );
+    const currentContribution = sourceState.currentContributionRsd;
+    const targetContribution = -sourceState.consumedUnrestoredRsd;
+    // A replay observes the prior append in sourceFacts and therefore computes
+    // zero. Expiry facts likewise remove unused capacity without creating debt.
+    const additionalCompensation = Math.min(0, targetContribution - currentContribution);
+    if (!additionalCompensation) continue;
+    await tx.insert(referralCreditLedgerTable).values({
+      ...input.scope,
+      referralAttributionId: input.attributionId,
+      type: "reversed",
+      amountRsd: additionalCompensation,
+      effectiveAt: input.now,
+      actorUserId: input.actorUserId ?? null,
+      reason: input.reason,
+      idempotencyKey: referralIdempotencyKey("source-compensation", input.attributionId, source.id),
+      metadata: {
+        ...input.metadata,
+        sourceLedgerEntryId: source.id,
+        reversedHeld: false,
+        sourceContributionBeforeRsd: currentContribution,
+        targetInvalidatedContributionRsd: targetContribution,
+      },
+    }).onConflictDoNothing();
+  }
+  return { producedReward };
+}
+
 export function normalizedReferralCode(value: string): string {
-  return value.trim().toUpperCase().replace(/[^A-Z0-9-]/g, "");
+  // base64url-backed stable codes can contain "_"; preserving it is required
+  // so a server-issued code always round-trips through registration.
+  return value.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "");
 }
 
 /**
@@ -215,6 +461,52 @@ export class LegalEntityOwnerConflictError extends Error {
   constructor(readonly normalizedPib: string, readonly existingOwnerUserIds: string[]) {
     super("PIB je već povezan sa drugim poslovnim nalogom. Aktivacija zahteva administratorsku proveru.");
   }
+}
+
+/**
+ * A referral code is not a generic signup coupon.  Keeping the registration
+ * surface explicit prevents a code captured from one flow being attached by a
+ * different flow before the database's one-attribution constraint can help.
+ */
+export class ReferralChannelContextError extends Error {
+  readonly code = "REFERRAL_CHANNEL_CONTEXT_INVALID";
+  constructor() {
+    super("Kod preporuke nije važeći za ovaj tip registracije.");
+  }
+}
+
+export type ReferralRegistrationContext =
+  | "customer"
+  | "oauth_customer"
+  | "jobseeker"
+  | "student"
+  | "business_salon"
+  | "business_education"
+  | "oauth_business_salon"
+  | "oauth_business_education";
+
+function referralChannelMatchesRegistration(
+  channel: ReferralChannel,
+  context: ReferralRegistrationContext,
+  referredSalonId?: string | null,
+  referredEducationCenterId?: string | null,
+) {
+  const hasSalon = Boolean(referredSalonId);
+  const hasCenter = Boolean(referredEducationCenterId);
+  if (hasSalon && hasCenter) return false;
+  if (context === "business_salon" || context === "oauth_business_salon") {
+    return (channel === "A" || channel === "B1") && hasSalon;
+  }
+  if (context === "business_education" || context === "oauth_business_education") {
+    return (channel === "A" || channel === "B1") && hasCenter;
+  }
+  if (context === "customer" || context === "oauth_customer") {
+    return (channel === "B2" || channel === "D") && !hasSalon && !hasCenter;
+  }
+  if (context === "student") return channel === "C" && !hasSalon && !hasCenter;
+  // Jobseekers may be referrers for B1/B2, but there is no agreed referred-
+  // jobseeker channel. Never silently treat this as a customer registration.
+  return false;
 }
 
 /** Lock, globally upsert, and bind a PIB to one of the owner's businesses. */
@@ -255,11 +547,11 @@ export async function bindLegalEntityBusinessInTx(
 }
 
 export const REFERRAL_TERMS_SR: Record<ReferralChannel, string> = {
-  A: "Preporuka poslovnog partnera (A): salon ili edukativni centar može preporučiti novi biznis. Nakon administrativne verifikacije preporučenog biznisa, u roku od tri meseca moraju biti završena četiri termina u salonu, odnosno četiri potvrđene ili završene prijave za edukaciju. Nagrada od 500 RSD je na čekanju 14 dana, zatim je dostupna šest meseci samo za poslovne kupovine. Svaka deseta kvalifikovana preporuka donosi pogodnost za naredni obračunski ciklus. Samopreporuke, preklapanje PIB-a ili kontakta i zloupotrebe se odbijaju ili šalju na proveru.",
-  B1: "Preporuka biznisa (B1): korisnik ili kandidat za posao može preporučiti novi salon ili edukativni centar. Posle verifikacije biznisa potrebno je četiri završena termina, odnosno četiri potvrđene ili završene prijave za edukaciju u roku od tri meseca. Nagrada je 500 RSD kredita za kupovinu kao fizičko lice i dostupna je odmah po kvalifikaciji. Nema milestone pogodnosti.",
-  B2: "Preporuka novog korisnika (B2): novi korisnik mora potvrditi broj telefona i završiti tri termina u roku od 60 dana od registracije. Nagrada je 100 RSD, dostupna nakon 14 dana i važi šest meseci za B2C kupovine. Najviše 20 nagrada može biti ostvareno po preporučiocu u jednom kalendarskom mesecu. B2 se ne kombinuje sa D preporukom za istu osobu.",
-  C: "Studentska preporuka (C): edukativni centar preporučuje novog polaznika. Potrebne su četiri potvrđene ili završene prijave u roku od tri meseca. Nagrada je 500 RSD poslovnog kredita nakon čekanja od 14 dana, sa rokom korišćenja od šest meseci. Svaka deseta kvalifikovana preporuka aktivira pogodnost od 12% provizije za naredni obračunski period.",
-  D: "Preporuka postojećeg klijenta (D): salon preporučuje novog korisnika koji mora potvrditi broj telefona i završiti jedan termin. Nagrada od 100 RSD poslovnog kredita dostupna je nakon 30 dana i važi šest meseci. Salon može ostvariti najviše 15 nagrada u kalendarskoj nedelji. D se ne kombinuje sa B2 preporukom za istu osobu.",
+  A: "Preporuka poslovnog partnera (A): salon ili edukativni centar može preporučiti novi biznis. Od administrativne verifikacije do isteka fiksnog roka od tri kalendarska meseca moraju biti završena četiri termina u salonu, odnosno četiri potvrđene ili završene prijave za edukaciju; događaj u trenutku isteka roka se ne računa. Nagrada od 500 RSD je na čekanju 14 dana, zatim je dostupna šest meseci samo za poslovne kupovine. Svaka deseta kvalifikovana preporuka salona donosi 20% popusta na pretplatu u narednom mesečnom obračunskom ciklusu; više ostvarenih pogodnosti se koristi redom, po jedna u svakom sledećem ciklusu i ne sabiraju se. Za edukativni centar ostaje pogodnost od 12% provizije za naredni jednomesečni obračunski period. Samopreporuke, preklapanje PIB-a ili kontakta i zloupotrebe se odbijaju ili šalju na proveru.",
+  B1: "Preporuka biznisa (B1): korisnik ili kandidat za posao može preporučiti novi salon ili edukativni centar. Od administrativne verifikacije do isteka fiksnog roka od tri kalendarska meseca potrebna su četiri završena termina, odnosno četiri potvrđene ili završene prijave za edukaciju; događaj u trenutku isteka roka se ne računa. Nagrada je 500 RSD kredita za kupovinu kao fizičko lice i dostupna je odmah po kvalifikaciji. Nema milestone pogodnosti.",
+  B2: "Preporuka novog korisnika (B2): novi korisnik mora potvrditi broj telefona i završiti tri termina od registracije do isteka fiksnog roka od 60 dana; događaj u trenutku isteka roka se ne računa. Nagrada je 100 RSD, dostupna nakon 14 dana i važi šest meseci za B2C kupovine. Najviše 20 nagrada može biti ostvareno po preporučiocu u jednom kalendarskom mesecu. B2 se ne kombinuje sa D preporukom za istu osobu.",
+  C: "Studentska preporuka (C): edukativni centar preporučuje novog polaznika. Potrebne su četiri potvrđene ili završene prijave od registracije do isteka fiksnog roka od tri kalendarska meseca; događaj u trenutku isteka roka se ne računa. Nagrada je 500 RSD poslovnog kredita nakon čekanja od 14 dana, sa rokom korišćenja od šest meseci. Svaka deseta kvalifikovana preporuka aktivira pogodnost od 12% provizije za naredni obračunski period.",
+  D: "Preporuka postojećeg klijenta (D): salon preporučuje novog korisnika koji mora potvrditi broj telefona i završiti jedan termin od registracije do isteka fiksnog roka od 60 dana; događaj u trenutku isteka roka se ne računa. Nagrada od 100 RSD poslovnog kredita dostupna je nakon 30 dana i važi šest meseci. Salon može ostvariti najviše 15 nagrada u kalendarskoj nedelji. D se ne kombinuje sa B2 preporukom za istu osobu.",
 };
 
 export async function validateReferralCode(codeInput: string) {
@@ -313,6 +605,7 @@ export async function captureReferralAttributionInTx(
     referredSalonId?: string | null;
     referredEducationCenterId?: string | null;
     phoneNormalized?: string | null;
+    registrationContext: ReferralRegistrationContext;
     now?: Date;
   },
 ) {
@@ -322,6 +615,12 @@ export async function captureReferralAttributionInTx(
   const [code] = await tx.select().from(referralCodesTable)
     .where(and(eq(referralCodesTable.code, raw), eq(referralCodesTable.active, true))).limit(1);
   if (!code || code.referrerUserId === input.referredUserId) return null;
+  if (!referralChannelMatchesRegistration(
+    code.channel as ReferralChannel,
+    input.registrationContext,
+    input.referredSalonId,
+    input.referredEducationCenterId,
+  )) throw new ReferralChannelContextError();
   const [referrer] = await tx.select({
     phoneNormalized: usersTable.phoneNormalized,
     email: usersTable.email,
@@ -396,6 +695,21 @@ function calendarPeriodStart(period: "calendar_month" | "calendar_week", now: Da
   return date;
 }
 
+function oneUtcMonthAfter(start: Date) {
+  const year = start.getUTCFullYear();
+  const month = start.getUTCMonth() + 1;
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(
+    year,
+    month,
+    Math.min(start.getUTCDate(), lastDay),
+    start.getUTCHours(),
+    start.getUTCMinutes(),
+    start.getUTCSeconds(),
+    start.getUTCMilliseconds(),
+  ));
+}
+
 async function durablePhoneProof(tx: ReferralTransaction, userId: string) {
   const [proof] = await tx.select({ id: phoneVerificationProofsTable.id }).from(phoneVerificationProofsTable)
     .where(and(eq(phoneVerificationProofsTable.userId, userId), isNull(phoneVerificationProofsTable.revokedAt)))
@@ -425,6 +739,9 @@ async function recordReferralEvidenceInTx(
   if (!attribution) return { matched: false, qualified: false };
   const channel = attribution.attribution.channel as ReferralChannel;
   const qualification = attribution.qualification;
+  if (qualification.status === "rejected" || qualification.status === "reversed") {
+    return { matched: true, qualified: false };
+  }
   const targetMatches = input.kind === "appointment"
     ? (channel === "A" || channel === "B1" ? qualification.referredSalonId === input.salonId
       : channel === "D" ? attribution.code.referrerSalonId === input.salonId : channel === "B2")
@@ -434,10 +751,16 @@ async function recordReferralEvidenceInTx(
   if (input.valid && qualification.status === "pending_verification") {
     return { matched: true, qualified: false };
   }
-  // Eligibility begins at attribution for consumer channels and at approval
-  // (represented by tracking qualification update) for business channels.
-  if (input.valid && (input.occurredAt < qualification.updatedAt || input.occurredAt < attribution.attribution.capturedAt
-    || input.occurredAt < qualificationWindowStartsAt(channel, input.occurredAt))) return { matched: true, qualified: false };
+  if (!input.valid && (channel === "A" || channel === "B1") && !qualification.trackingStartedAt) {
+    return { matched: true, qualified: false };
+  }
+  // Fixed half-open policy window: start is inclusive and deadline exclusive.
+  // C intentionally has no separate tracking start in the schema, so it starts
+  // at capturedAt; A/B1 use the first persisted admin approval.
+  const window = qualificationWindow(channel, attribution.attribution.capturedAt, qualification.trackingStartedAt);
+  if (input.valid && (input.occurredAt < window.start || input.occurredAt >= window.deadline)) {
+    return { matched: true, qualified: false };
+  }
   if (input.valid && (channel === "B2" || channel === "D") && !await durablePhoneProof(tx, attribution.attribution.referredUserId)) {
     await tx.insert(referralReviewsTable).values({ attributionId: attribution.attribution.id, qualificationId: qualification.id,
       reasonCode: "missing_durable_phone_proof", detail: "Qualification event arrived without a durable SMS phone proof.", score: 40 });
@@ -457,36 +780,31 @@ async function recordReferralEvidenceInTx(
   }
   const evidence = await tx.select({ eligibleAt: referralQualificationEvidenceTable.eligibleAt }).from(referralQualificationEvidenceTable)
     .where(and(eq(referralQualificationEvidenceTable.qualificationId, qualification.id), isNull(referralQualificationEvidenceTable.invalidatedAt)));
-  const windowStart = qualificationWindowStartsAt(channel, input.occurredAt);
-  const validCount = evidence.filter((item) => item.eligibleAt >= windowStart
-    && item.eligibleAt >= attribution.attribution.capturedAt).length;
+  const validCount = evidence.filter((item) =>
+    item.eligibleAt >= window.start && item.eligibleAt < window.deadline).length;
   if (!qualificationSatisfied(channel, validCount)) {
     if (["qualified", "held", "available"].includes(qualification.status)) {
-      const key = referralIdempotencyKey("clawback", attribution.attribution.id);
       const policy = REFERRAL_POLICY[channel];
-      const [availableSource] = await tx.select({ id: referralCreditLedgerTable.id })
-        .from(referralCreditLedgerTable)
-        .where(and(eq(referralCreditLedgerTable.referralAttributionId, attribution.attribution.id),
-          eq(referralCreditLedgerTable.type, "available")))
-        .for("update")
-        .limit(1);
-      await tx.insert(referralCreditLedgerTable).values({
-        walletKind: policy.wallet, ownerUserId: attribution.attribution.referrerUserId,
-        salonId: policy.wallet === "B2B" ? attribution.code.referrerSalonId : null,
-        educationCenterId: policy.wallet === "B2B" ? attribution.code.referrerEducationCenterId : null,
-        referralAttributionId: attribution.attribution.id, type: "reversed", amountRsd: -policy.rewardAmountRsd,
-        effectiveAt: input.occurredAt, reason: "Qualification evidence was cancelled or refunded.", idempotencyKey: key,
-        metadata: {
-          sourceLedgerEntryId: availableSource?.id ?? null,
-          reversedHeld: !availableSource,
+      await compensateInvalidatedReferralSourcesInTx(tx, {
+        attributionId: attribution.attribution.id,
+        scope: {
+          walletKind: policy.wallet,
+          ownerUserId: attribution.attribution.referrerUserId,
+          salonId: policy.wallet === "B2B" ? attribution.code.referrerSalonId : null,
+          educationCenterId: policy.wallet === "B2B" ? attribution.code.referrerEducationCenterId : null,
         },
-      }).onConflictDoNothing();
+        now: input.occurredAt,
+        reason: "Qualification evidence was cancelled or refunded.",
+        metadata: {
+          evidenceKind: input.kind,
+          evidenceSourceId: input.kind === "appointment" ? input.appointmentId : input.enrollmentId,
+        },
+      });
       await tx.update(referralQualificationsTable).set({ status: "reversed", reversedAt: input.occurredAt, updatedAt: input.occurredAt })
         .where(eq(referralQualificationsTable.id, qualification.id));
     }
     return { matched: true, qualified: false };
   }
-  if (qualification.status === "reversed") return { matched: true, qualified: false };
   if (["qualified", "held", "available"].includes(qualification.status)) return { matched: true, qualified: true };
   const policy = REFERRAL_POLICY[channel];
   if (policy.cap) {
@@ -553,11 +871,45 @@ async function recordReferralEvidenceInTx(
     const crossing = milestoneCrossed(channel, count - 1, count);
     if (crossing) {
       const sourceBusiness: ReferralSourceBusiness = attribution.code.referrerSalonId ? "salon" : "education_center";
+      const kind = milestoneBenefitKind(channel, sourceBusiness)!;
+      let billingCycleStart: Date | null = null;
+      let billingCycleEnd: Date | null = null;
+      if (kind === "education_commission_reduction") {
+        const centerId = attribution.code.referrerEducationCenterId!;
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`education-benefit-schedule:${centerId}`}))`);
+        const [subscription] = await tx.select({ currentPeriodEnd: educationCenterSubscriptionsTable.currentPeriodEnd })
+          .from(educationCenterSubscriptionsTable)
+          .where(eq(educationCenterSubscriptionsTable.centerId, centerId))
+          .for("update")
+          .limit(1);
+        const [lastScheduled] = await tx.select({ billingCycleEnd: referralMilestoneBenefitsTable.billingCycleEnd })
+          .from(referralMilestoneBenefitsTable)
+          .where(and(
+            eq(referralMilestoneBenefitsTable.benefitEducationCenterId, centerId),
+            eq(referralMilestoneBenefitsTable.kind, "education_commission_reduction"),
+            isNull(referralMilestoneBenefitsTable.neutralizedAt),
+            sql`${referralMilestoneBenefitsTable.billingCycleEnd} is not null`,
+          ))
+          .orderBy(desc(referralMilestoneBenefitsTable.billingCycleEnd))
+          .limit(1);
+        const nextCalendarMonth = new Date(Date.UTC(
+          input.occurredAt.getUTCFullYear(),
+          input.occurredAt.getUTCMonth() + 1,
+          1,
+        ));
+        const nextSubscriptionCycle = subscription?.currentPeriodEnd ?? nextCalendarMonth;
+        billingCycleStart = lastScheduled?.billingCycleEnd && lastScheduled.billingCycleEnd > nextSubscriptionCycle
+          ? lastScheduled.billingCycleEnd
+          : nextSubscriptionCycle;
+        billingCycleEnd = oneUtcMonthAfter(billingCycleStart);
+      }
       const [benefit] = await tx.insert(referralMilestoneBenefitsTable).values({
         referrerUserId: attribution.attribution.referrerUserId, channel, qualifyingCount: crossing,
-        kind: milestoneBenefitKind(channel, sourceBusiness)!,
+        kind,
         benefitSalonId: attribution.code.referrerSalonId,
         benefitEducationCenterId: attribution.code.referrerEducationCenterId,
+        billingCycleStart,
+        billingCycleEnd,
         idempotencyKey: referralIdempotencyKey("milestone", channel, sourceId, String(crossing)),
       }).onConflictDoNothing().returning();
       if (benefit) {
@@ -591,6 +943,150 @@ export async function recordEducationEnrollmentReferralTransitionInTx(tx: Referr
   return recordReferralEvidenceInTx(tx, { ...input, kind: "enrollment" });
 }
 
+export class ReferralReviewDecisionConflictError extends Error {
+  readonly code = "REFERRAL_REVIEW_DECISION_CONFLICT";
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+/**
+ * Resolves fraud review and its linked lifecycle as one serialized transaction.
+ * Lock order is review -> attribution -> qualification; financial source rows
+ * are locked only after the lifecycle rows.
+ */
+export async function decideReferralReview(
+  actorUserId: string,
+  reviewId: string,
+  decision: "approved" | "rejected" | "dismissed",
+  detail?: string | null,
+) {
+  return db.transaction(async (tx) => {
+    const [review] = await tx.select().from(referralReviewsTable)
+      .where(eq(referralReviewsTable.id, reviewId)).for("update").limit(1);
+    if (!review) return null;
+    if (review.status !== "open") {
+      throw new ReferralReviewDecisionConflictError("Referral review has already been resolved.");
+    }
+    if (!review.attributionId) {
+      throw new ReferralReviewDecisionConflictError("Referral review is not linked to an attribution.");
+    }
+    const [attribution] = await tx.select().from(referralAttributionsTable)
+      .where(eq(referralAttributionsTable.id, review.attributionId)).for("update").limit(1);
+    if (!attribution) {
+      throw new ReferralReviewDecisionConflictError("Linked referral attribution no longer exists.");
+    }
+    const [qualification] = await tx.select().from(referralQualificationsTable)
+      .where(eq(referralQualificationsTable.attributionId, attribution.id)).for("update").limit(1);
+    if (!qualification) {
+      throw new ReferralReviewDecisionConflictError("Linked referral qualification no longer exists.");
+    }
+    const now = new Date();
+
+    if (decision === "dismissed") {
+      if (attribution.status !== "attributed") {
+        throw new ReferralReviewDecisionConflictError(
+          "A blocking referral review must be approved or rejected.",
+        );
+      }
+    } else if (decision === "approved") {
+      if (attribution.status === "rejected" || attribution.status === "expired"
+        || qualification.status === "rejected" || qualification.status === "reversed") {
+        throw new ReferralReviewDecisionConflictError("A terminal referral cannot be approved.");
+      }
+      if (attribution.status === "under_review") {
+        await tx.update(referralAttributionsTable).set({
+          status: "attributed",
+          // The review row permanently retains the suspicious signal and admin
+          // resolution; this field should describe only a current rejection.
+          rejectionReason: null,
+        }).where(eq(referralAttributionsTable.id, attribution.id));
+        await tx.update(referralQualificationsTable).set({
+          status: attribution.channel === "A" || attribution.channel === "B1"
+            ? "pending_verification"
+            : "tracking",
+          updatedAt: now,
+        }).where(eq(referralQualificationsTable.id, qualification.id));
+      } else if (attribution.status !== "attributed") {
+        throw new ReferralReviewDecisionConflictError("Referral attribution is not approvable.");
+      }
+    } else {
+      const codeRows = await tx.select().from(referralCodesTable)
+        .where(eq(referralCodesTable.id, attribution.referralCodeId)).limit(1);
+      const code = codeRows[0];
+      if (!code) throw new ReferralReviewDecisionConflictError("Linked referral code no longer exists.");
+      const policy = REFERRAL_POLICY[attribution.channel as ReferralChannel];
+      const scope: ReferralWalletScope = {
+        walletKind: policy.wallet,
+        ownerUserId: attribution.referrerUserId,
+        salonId: policy.wallet === "B2B" ? code.referrerSalonId : null,
+        educationCenterId: policy.wallet === "B2B" ? code.referrerEducationCenterId : null,
+      };
+      const { producedReward } = await compensateInvalidatedReferralSourcesInTx(tx, {
+        attributionId: attribution.id,
+        scope,
+        now,
+        actorUserId,
+        reason: detail?.trim() || `Referral rejected after fraud review: ${review.reasonCode}.`,
+        metadata: { reviewId: review.id },
+      });
+      await tx.update(referralAttributionsTable).set({
+        status: "rejected",
+        rejectionReason: detail?.trim() || review.reasonCode,
+      }).where(eq(referralAttributionsTable.id, attribution.id));
+      await tx.update(referralQualificationsTable).set({
+        status: "rejected",
+        reversedAt: producedReward ? now : qualification.reversedAt,
+        updatedAt: now,
+      }).where(eq(referralQualificationsTable.id, qualification.id));
+
+      if ((attribution.channel === "A" || attribution.channel === "C")
+        && (code.referrerSalonId || code.referrerEducationCenterId)) {
+        const sourceId = code.referrerSalonId ?? code.referrerEducationCenterId!;
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`referral-milestone:${attribution.channel}:${sourceId}`}))`);
+        const active = await tx.select({ count: sql<number>`count(*)::int` })
+          .from(referralQualificationsTable)
+          .innerJoin(referralAttributionsTable,
+            eq(referralQualificationsTable.attributionId, referralAttributionsTable.id))
+          .innerJoin(referralCodesTable,
+            eq(referralAttributionsTable.referralCodeId, referralCodesTable.id))
+          .where(and(
+            eq(referralAttributionsTable.channel, attribution.channel),
+            eq(referralAttributionsTable.status, "attributed"),
+            inArray(referralQualificationsTable.status, ["qualified", "held", "available"]),
+            code.referrerSalonId
+              ? eq(referralCodesTable.referrerSalonId, sourceId)
+              : eq(referralCodesTable.referrerEducationCenterId, sourceId),
+          ));
+        const activeCount = Number(active[0]?.count ?? 0);
+        await tx.update(referralMilestoneBenefitsTable).set({
+          neutralizedAt: now,
+          neutralizedByUserId: actorUserId,
+          neutralizationReason: detail?.trim() || `Referral fraud review ${review.id} rejected.`,
+        }).where(and(
+          eq(referralMilestoneBenefitsTable.channel, attribution.channel),
+          code.referrerSalonId
+            ? eq(referralMilestoneBenefitsTable.benefitSalonId, sourceId)
+            : eq(referralMilestoneBenefitsTable.benefitEducationCenterId, sourceId),
+          gt(referralMilestoneBenefitsTable.qualifyingCount, activeCount),
+          isNull(referralMilestoneBenefitsTable.appliedAt),
+          isNull(referralMilestoneBenefitsTable.neutralizedAt),
+        ));
+      }
+    }
+
+    const [saved] = await tx.update(referralReviewsTable).set({
+      status: decision,
+      detail: detail?.trim() || review.detail,
+      reviewedByUserId: actorUserId,
+      resolvedAt: now,
+    }).where(and(eq(referralReviewsTable.id, review.id), eq(referralReviewsTable.status, "open")))
+      .returning();
+    if (!saved) throw new ReferralReviewDecisionConflictError("Referral review was resolved concurrently.");
+    return saved;
+  });
+}
+
 /** Approves/rejects/resubmits the actual business record and its referral gate atomically. */
 export async function decideReferredBusinessApproval(
   actorUserId: string,
@@ -621,7 +1117,9 @@ export async function decideReferredBusinessApproval(
       }).where(eq(educationCentersTable.id, businessId));
     }
     await tx.update(referralQualificationsTable).set({
-      status: nextStatus, updatedAt: now,
+      status: nextStatus,
+      trackingStartedAt: action === "approve" ? row.qualification.trackingStartedAt ?? now : row.qualification.trackingStartedAt,
+      updatedAt: now,
     }).where(eq(referralQualificationsTable.id, row.qualification.id));
     const [legalBusiness] = await tx.select({ id: legalEntityBusinessesTable.id }).from(legalEntityBusinessesTable)
       .where(row.attribution.referredSalonId
@@ -635,13 +1133,134 @@ export async function decideReferredBusinessApproval(
   });
 }
 
+function nextMonthlyCycleBoundary(start: Date): Date {
+  const end = new Date(start);
+  const day = end.getUTCDate();
+  end.setUTCDate(1);
+  end.setUTCMonth(end.getUTCMonth() + 1);
+  const targetMonth = end.getUTCMonth();
+  end.setUTCMonth(targetMonth + 1, 0);
+  end.setUTCDate(Math.min(day, end.getUTCDate()));
+  return end;
+}
+
+export function applySalonReferralSubscriptionReduction(baseDueRsd: number, discountPercent = SALON_TYPE_A_SUBSCRIPTION_DISCOUNT_PERCENT) {
+  if (!Number.isSafeInteger(baseDueRsd) || baseDueRsd < 0) throw new Error("Subscription due must be non-negative integer RSD.");
+  if (!Number.isInteger(discountPercent) || discountPercent < 0 || discountPercent > 100) throw new Error("Invalid subscription discount percent.");
+  return Math.round(baseDueRsd * (100 - discountPercent) / 100);
+}
+
+export function projectSalonSubscriptionDue(
+  baseDueRsd: number,
+  loyalty: { freeSubscription: boolean; discountPercent: number },
+  referralDiscountPercent = 0,
+) {
+  if (loyalty.freeSubscription) return 0;
+  if (loyalty.discountPercent > 0) {
+    return applySalonReferralSubscriptionReduction(baseDueRsd, loyalty.discountPercent);
+  }
+  return referralDiscountPercent > 0
+    ? applySalonReferralSubscriptionReduction(baseDueRsd, referralDiscountPercent)
+    : baseDueRsd;
+}
+
+const subscriptionPriority: Record<(typeof subscriptionsTable.$inferSelect)["status"], number> = {
+  free_via_loyalty: 6,
+  active: 5,
+  trial: 4,
+  past_due: 3,
+  suspended: 2,
+  cancelled: 1,
+};
+
+/** Assign and activate salon milestones against the one canonical owner charge. */
+async function maintainSalonSubscriptionBenefits(now: Date) {
+  const owners = await db.selectDistinct({ ownerId: salonsTable.ownerId })
+    .from(referralMilestoneBenefitsTable)
+    .innerJoin(salonsTable, eq(referralMilestoneBenefitsTable.benefitSalonId, salonsTable.id))
+    .where(and(eq(referralMilestoneBenefitsTable.kind, "salon_subscription_reduction"),
+      isNull(referralMilestoneBenefitsTable.neutralizedAt)));
+  let scheduled = 0;
+  let activated = 0;
+  for (const { ownerId } of owners) {
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`salon-subscription-referral:${ownerId}`}))`);
+      const subscriptions = await tx.select({ subscription: subscriptionsTable, plan: subscriptionPlansTable })
+        .from(subscriptionsTable)
+        .innerJoin(salonsTable, eq(subscriptionsTable.salonId, salonsTable.id))
+        .innerJoin(subscriptionPlansTable, eq(subscriptionsTable.planId, subscriptionPlansTable.id))
+        .where(eq(salonsTable.ownerId, ownerId));
+      const canonical = subscriptions.sort((a, b) =>
+        subscriptionPriority[b.subscription.status] - subscriptionPriority[a.subscription.status]
+        || b.subscription.dueAmount - a.subscription.dueAmount
+        || a.subscription.id.localeCompare(b.subscription.id))[0];
+      if (!canonical?.subscription.currentPeriodEnd) return { scheduled: 0, activated: 0 };
+      const benefits = await tx.select({ benefit: referralMilestoneBenefitsTable })
+        .from(referralMilestoneBenefitsTable)
+        .innerJoin(salonsTable, eq(referralMilestoneBenefitsTable.benefitSalonId, salonsTable.id))
+        .where(and(eq(salonsTable.ownerId, ownerId),
+          eq(referralMilestoneBenefitsTable.kind, "salon_subscription_reduction"),
+          isNull(referralMilestoneBenefitsTable.neutralizedAt)))
+        .orderBy(asc(referralMilestoneBenefitsTable.createdAt), asc(referralMilestoneBenefitsTable.id))
+        .for("update", { of: referralMilestoneBenefitsTable });
+      let cursor = canonical.subscription.currentPeriodEnd;
+      // A legacy/manual subscription row may not have rolled its period marker
+      // forward yet. Never assign a newly queued benefit wholly into the past.
+      while (nextMonthlyCycleBoundary(cursor) <= now) cursor = nextMonthlyCycleBoundary(cursor);
+      let scheduledCount = 0;
+      let activatedCount = 0;
+      for (const { benefit } of benefits) {
+        let cycleStart = benefit.billingCycleStart;
+        let cycleEnd = benefit.billingCycleEnd;
+        // An unapplied legacy assignment whose window was missed is safely put
+        // back at the head of the owner's future queue.
+        if (cycleStart && cycleEnd && cycleEnd <= now && !benefit.appliedAt) {
+          cycleStart = null;
+          cycleEnd = null;
+        }
+        if (!cycleStart) {
+          cycleStart = cursor;
+          cycleEnd = nextMonthlyCycleBoundary(cycleStart);
+          await tx.update(referralMilestoneBenefitsTable).set({
+            billingCycleStart: cycleStart,
+            billingCycleEnd: cycleEnd,
+            discountPercent: SALON_TYPE_A_SUBSCRIPTION_DISCOUNT_PERCENT,
+          }).where(eq(referralMilestoneBenefitsTable.id, benefit.id));
+          scheduledCount += 1;
+        } else {
+          cycleEnd ??= nextMonthlyCycleBoundary(cycleStart);
+          if (!benefit.billingCycleEnd || benefit.discountPercent == null) {
+            await tx.update(referralMilestoneBenefitsTable).set({
+              billingCycleEnd: cycleEnd,
+              discountPercent: benefit.discountPercent ?? SALON_TYPE_A_SUBSCRIPTION_DISCOUNT_PERCENT,
+            }).where(eq(referralMilestoneBenefitsTable.id, benefit.id));
+          }
+        }
+        if (cycleEnd > cursor) cursor = cycleEnd;
+        if (!benefit.appliedAt && cycleStart <= now && now < cycleEnd) {
+          const changed = await tx.update(referralMilestoneBenefitsTable).set({ appliedAt: now })
+            .where(and(eq(referralMilestoneBenefitsTable.id, benefit.id), isNull(referralMilestoneBenefitsTable.appliedAt)))
+            .returning({ id: referralMilestoneBenefitsTable.id });
+          activatedCount += changed.length;
+        }
+      }
+      return { scheduled: scheduledCount, activated: activatedCount };
+    });
+    scheduled += result.scheduled;
+    activated += result.activated;
+  }
+  return { scheduled, activated };
+}
+
 /** Runs from the scheduler. Every write is keyed so overlapping workers are safe. */
 export async function runReferralMaintenance(now = new Date()) {
+  const salonBenefits = await maintainSalonSubscriptionBenefits(now);
   const released = await db.transaction(async (tx) => {
     const due = await tx.select().from(referralQualificationsTable)
       .innerJoin(referralAttributionsTable, eq(referralQualificationsTable.attributionId, referralAttributionsTable.id))
       .innerJoin(referralCodesTable, eq(referralAttributionsTable.referralCodeId, referralCodesTable.id))
-      .where(and(eq(referralQualificationsTable.status, "held"), lte(referralQualificationsTable.holdUntil, now)))
+      .where(and(eq(referralAttributionsTable.status, "attributed"),
+        eq(referralQualificationsTable.status, "held"), lte(referralQualificationsTable.holdUntil, now)))
       .for("update");
     let count = 0;
     for (const row of due) {
@@ -702,9 +1321,9 @@ export async function runReferralMaintenance(now = new Date()) {
         .where(and(eq(referralCreditLedgerTable.type, "restored"),
           sql`${referralCreditLedgerTable.metadata}->>'sourceLedgerEntryId' = ${source.id}`))
         .for("update");
-      const remainder = Math.max(0, source.amountRsd
+      const remainder = Math.max(0, Math.min(source.amountRsd, source.amountRsd
         - redemptionRows.reduce((sum, row) => sum + row.amount, 0)
-        + restorationRows.reduce((sum, row) => sum + row.amount, 0));
+        + restorationRows.reduce((sum, row) => sum + row.amount, 0)));
       if (!remainder) return false;
       const [recipient] = await tx.select().from(usersTable)
         .where(eq(usersTable.id, source.ownerUserId)).limit(1);
@@ -752,9 +1371,9 @@ export async function runReferralMaintenance(now = new Date()) {
           sql`${referralCreditLedgerTable.metadata}->>'sourceLedgerEntryId' = ${source.id}`,
         ))
         .for("update");
-      const remainder = Math.max(0, source.amountRsd
+      const remainder = Math.max(0, Math.min(source.amountRsd, source.amountRsd
         - redemptionRows.reduce((sum, row) => sum + row.amount, 0)
-        + allocationRows.reduce((sum, row) => sum + row.amount, 0));
+        + allocationRows.reduce((sum, row) => sum + row.amount, 0)));
       if (!remainder) return false;
       const [inserted] = await tx.insert(referralCreditLedgerTable).values({
         walletKind: source.walletKind, ownerUserId: source.ownerUserId, salonId: source.salonId,
@@ -768,5 +1387,6 @@ export async function runReferralMaintenance(now = new Date()) {
     if (written) expired += 1;
   }
   const sms = await drainReferralSmsOutbox();
-  return { released, warned, expired, smsAttempted: sms.attempted };
+  return { released, warned, expired, salonBenefitsScheduled: salonBenefits.scheduled,
+    salonBenefitsActivated: salonBenefits.activated, smsAttempted: sms.attempted };
 }

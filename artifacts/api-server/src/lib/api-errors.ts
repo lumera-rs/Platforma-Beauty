@@ -160,6 +160,15 @@ export const apiErrorHandler: ErrorRequestHandler = (
     return;
   }
 
+  const applicationError = error as { code?: string; message?: string };
+  if (applicationError.code === "REFERRAL_CHANNEL_CONTEXT_INVALID") {
+    res.status(400).json({
+      error: "Kod preporuke nije važeći za ovaj tip registracije.",
+      code: applicationError.code,
+    } satisfies ApiErrorBody);
+    return;
+  }
+
   const databaseError = error as PgError;
   const expected = databaseError.code
     ? expectedDatabaseErrors[databaseError.code]

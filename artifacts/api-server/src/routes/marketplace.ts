@@ -44,6 +44,8 @@ import {
   referralCreditBalanceInTx,
   restoreReferralCreditForOrderInTx,
   LegalEntityOwnerConflictError,
+  ReferralChannelContextError,
+  projectSalonSubscriptionDue,
 } from "../lib/referral-service";
 
 import 
@@ -113,6 +115,7 @@ import
   retailOrderItemsTable,
   referralCreditLedgerTable,
   referralCreditRedemptionsTable,
+  referralMilestoneBenefitsTable,
   retailProductReviewsTable,
   reviewsTable,
   salonHoursTable,
@@ -3295,7 +3298,9 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     await tx.insert(phoneVerificationProofsTable).values({
       userId: created!.id, phoneNormalized, metadata: { source: "customer-registration" },
     });
-    await captureReferralAttributionInTx(tx, { referralCode: parsed.data.referralCode, referredUserId: created!.id, phoneNormalized });
+    await captureReferralAttributionInTx(tx, {
+      referralCode: parsed.data.referralCode, referredUserId: created!.id, phoneNormalized, registrationContext: "customer",
+    });
     await tx.delete(phoneVerificationCodesTable).where(eq(phoneVerificationCodesTable.id, verification.id));
     return [created!];
   });
@@ -3349,7 +3354,9 @@ router.post("/auth/jobseeker-register", async (req, res): Promise<void> => {
     await tx.insert(phoneVerificationProofsTable).values({
       userId: created!.id, phoneNormalized, metadata: { source: "jobseeker-registration" },
     });
-    await captureReferralAttributionInTx(tx, { referralCode: input.referralCode, referredUserId: created!.id, phoneNormalized });
+    await captureReferralAttributionInTx(tx, {
+      referralCode: input.referralCode, referredUserId: created!.id, phoneNormalized, registrationContext: "jobseeker",
+    });
     await tx.delete(phoneVerificationCodesTable).where(eq(phoneVerificationCodesTable.id, verification.id));
     return [created!];
   });
@@ -3476,7 +3483,9 @@ router.post("/auth/student-register", async (req, res): Promise<void> => {
     await tx.insert(phoneVerificationProofsTable).values({
       userId: created!.id, phoneNormalized, metadata: { source: "student-registration" },
     });
-    await captureReferralAttributionInTx(tx, { referralCode: input.referralCode, referredUserId: created!.id, phoneNormalized });
+    await captureReferralAttributionInTx(tx, {
+      referralCode: input.referralCode, referredUserId: created!.id, phoneNormalized, registrationContext: "student",
+    });
     await tx.delete(phoneVerificationCodesTable).where(eq(phoneVerificationCodesTable.id, verification[0].id));
     return [created!];
   });
@@ -3638,6 +3647,7 @@ router.get("/auth/oauth/:provider/callback", async (req, res): Promise<void> => 
       }).returning())[0]!;
       if (created && loginState.flow === "customer") await captureReferralAttributionInTx(tx, {
         referralCode: loginState.referralCode, referredUserId: user.id,
+        registrationContext: "oauth_customer",
       });
       await tx.insert(oauthIdentitiesTable).values({
         userId: user.id, provider, providerAccountId: profile.id, providerEmail: profile.email,
@@ -3651,7 +3661,26 @@ router.get("/auth/oauth/:provider/callback", async (req, res): Promise<void> => 
     res.redirect(loginState.flow === "business"
       ? `/poslovna-registracija?oauth=1${encodedReturnTo}`
       : `/prijava?oauth_created=1${encodedReturnTo}`);
-  } catch {
+    } catch (error) {
+      if (error instanceof ReferralChannelContextError) {
+        // Attribution failure rolls back the newly-created account, identity,
+        // and in-transaction state deletion. Consume the state separately so
+        // the rejected browser-bound attempt cannot be replayed.
+        await db.delete(oauthLoginStatesTable).where(eq(oauthLoginStatesTable.id, loginState.id));
+        res.status(400).json({ error: error.message, code: error.code });
+        return;
+      }
+      const errorCode = typeof error === "object" && error !== null && "cause" in error
+        && typeof error.cause === "object" && error.cause !== null && "code" in error.cause
+        ? String(error.cause.code)
+        : "unknown";
+      req.log.error({
+        errorType: error instanceof Error ? error.name : typeof error,
+        errorCode,
+        provider,
+        flow: loginState.flow,
+      },
+        "OAuth callback failed after provider profile resolution");
     res.redirect(oauthFailurePath(loginState.flow, "Nismo mogli da potvrdimo nalog kod provajdera."));
   }
 });
@@ -4728,6 +4757,9 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
         phoneNormalized: normalizedPhone(input.phone),
         referredSalonId: input.businessType === "SALON" ? workspace!.id : null,
         referredEducationCenterId,
+        registrationContext: input.businessType === "SALON"
+          ? socialBusinessCompletion ? "oauth_business_salon" : "business_salon"
+          : socialBusinessCompletion ? "oauth_business_education" : "business_education",
       });
       return (await tx.update(usersTable).set({ activeSalonId: workspace!.id, updatedAt: new Date() })
         .where(eq(usersTable.id, created!.id)).returning())[0]!;
@@ -4742,6 +4774,10 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
         error: error.message, code: error.code, normalizedPib: error.normalizedPib,
         outcome: "cross_account_conflict", conflictingOwnerCount: error.existingOwnerUserIds.length,
       });
+      return;
+    }
+    if (error instanceof ReferralChannelContextError) {
+      res.status(400).json({ error: error.message, code: error.code });
       return;
     }
     if ((error as { code?: string }).code === "23505") {
@@ -8455,7 +8491,7 @@ router.post("/employee/appointments", async (req, res): Promise<void> => {
   })) });
 });
 
-async function loyaltyStatusForSalons(salonIds: string[], subscriptionBaseDue = 2490) {
+async function loyaltyStatusForSalons(salonIds: string[], subscriptionBaseDue = 2490, referralDiscountPercent = 0) {
   const statuses = salonIds.length
     ? await db.select().from(salonLoyaltyStatusesTable).where(inArray(salonLoyaltyStatusesTable.salonId, salonIds))
     : [];
@@ -8474,7 +8510,8 @@ async function loyaltyStatusForSalons(salonIds: string[], subscriptionBaseDue = 
       tierThreshold: 0,
       amountToNextTier: 0,
       nextTier: null,
-      subscriptionDue: subscriptionBaseDue,
+      subscriptionDue: projectSalonSubscriptionDue(subscriptionBaseDue,
+        { freeSubscription: false, discountPercent: 0 }, referralDiscountPercent),
       subscriptionDiscountPercent: 0,
       productDiscountPercent: 0,
       benefits: [],
@@ -8483,18 +8520,37 @@ async function loyaltyStatusForSalons(salonIds: string[], subscriptionBaseDue = 
   }
   const current = [...tiers].reverse().find((tier) => tier.spendThreshold <= spend) ?? tiers[0]!;
   const next = tiers.find((tier) => tier.sortOrder > current.sortOrder) ?? null;
-  const due = current.freeSubscription ? 0 : Math.round(subscriptionBaseDue * (1 - current.subscriptionDiscountPercent / 100));
+  // Loyalty remains authoritative: free and discounted tiers are never stacked
+  // with a referral cycle. The referral policy applies only to the neutral tier.
+  const due = projectSalonSubscriptionDue(subscriptionBaseDue, {
+    freeSubscription: current.freeSubscription,
+    discountPercent: current.subscriptionDiscountPercent,
+  }, referralDiscountPercent);
   return GetLoyaltyStatusResponse.parse({ currentTier: current.name, monthlySpend: spend, tierThreshold: current.spendThreshold, amountToNextTier: next ? Math.max(next.spendThreshold - spend, 0) : 0, nextTier: next?.name ?? null, subscriptionDue: due, subscriptionDiscountPercent: current.subscriptionDiscountPercent, productDiscountPercent: current.productDiscountPercent, benefits: current.benefits, freeSubscription: current.freeSubscription });
 }
 
 async function loyaltyStatusForOwner(ownerId: string) {
-  const [salons, subscriptionRows] = await Promise.all([
+  const now = new Date();
+  const [salons, subscriptionRows, activeReferralBenefits] = await Promise.all([
     db.select({ id: salonsTable.id }).from(salonsTable).where(eq(salonsTable.ownerId, ownerId)),
     db.select({ subscription: subscriptionsTable, plan: subscriptionPlansTable })
       .from(subscriptionsTable)
       .innerJoin(salonsTable, eq(subscriptionsTable.salonId, salonsTable.id))
       .innerJoin(subscriptionPlansTable, eq(subscriptionsTable.planId, subscriptionPlansTable.id))
       .where(eq(salonsTable.ownerId, ownerId)),
+    db.select({ discountPercent: referralMilestoneBenefitsTable.discountPercent })
+      .from(referralMilestoneBenefitsTable)
+      .innerJoin(salonsTable, eq(referralMilestoneBenefitsTable.benefitSalonId, salonsTable.id))
+      .where(and(
+        eq(salonsTable.ownerId, ownerId),
+        eq(referralMilestoneBenefitsTable.kind, "salon_subscription_reduction"),
+        isNull(referralMilestoneBenefitsTable.neutralizedAt),
+        isNotNull(referralMilestoneBenefitsTable.appliedAt),
+        lte(referralMilestoneBenefitsTable.billingCycleStart, now),
+        gt(referralMilestoneBenefitsTable.billingCycleEnd, now),
+      ))
+      .orderBy(asc(referralMilestoneBenefitsTable.billingCycleStart), asc(referralMilestoneBenefitsTable.id))
+      .limit(1),
   ]);
   // Subscription rows remain location-linked for admin auditing. Owner-facing
   // calculation deliberately chooses one deterministic account subscription
@@ -8519,8 +8575,9 @@ async function loyaltyStatusForOwner(ownerId: string) {
   // period-end dates and avoids silently undercharging a legacy owner with two
   // active location subscriptions.
   const accountSubscription = rankedSubscriptions[0];
-  const subscriptionBaseDue = accountSubscription?.subscription.dueAmount ?? 2490;
-  return loyaltyStatusForSalons(salons.map((salon) => salon.id), subscriptionBaseDue);
+  const subscriptionBaseDue = accountSubscription?.subscription.dueAmount ?? accountSubscription?.plan.price ?? 2490;
+  return loyaltyStatusForSalons(salons.map((salon) => salon.id), subscriptionBaseDue,
+    activeReferralBenefits[0]?.discountPercent ?? 0);
 }
 
 router.get("/shop/brands", async (_req, res): Promise<void> => {
@@ -10577,18 +10634,42 @@ router.patch("/admin/orders/bulk", async (req, res): Promise<void> => {
   if (!body.success || (!body.data.status && !body.data.paymentStatus)) {
     res.status(400).json({ error: body.success ? "Izaberite status isporuke ili plaćanja." : body.error.message }); return;
   }
-  const selected = await db.select().from(ordersTable).where(inArray(ordersTable.id, body.data.orderIds));
-  if (selected.length !== body.data.orderIds.length) { res.status(404).json({ error: "Jedna ili više porudžbina nije pronađena." }); return; }
-  if (body.data.status && selected.some((order) => !allowedOrderTransitions[order.status]?.includes(body.data.status!))) {
-    res.status(400).json({ error: "Masovna promena bi preskočila dozvoljeni tok isporuke. Obradite porudžbine po redosledu statusa." }); return;
-  }
-  const changed = await db.transaction(async (tx) => {
+  const sortedOrderIds = [...body.data.orderIds].sort();
+  const transactionResult = await db.transaction(async (tx) => {
+    // All contenders acquire order locks in the same stable order. Besides
+    // preventing stale transition checks, this avoids opposite-order bulk
+    // requests deadlocking each other.
+    const selected = await tx.select().from(ordersTable)
+      .where(inArray(ordersTable.id, sortedOrderIds))
+      .orderBy(asc(ordersTable.id))
+      .for("update");
+    if (selected.length !== sortedOrderIds.length) return { error: "not_found" as const };
+    if (body.data.status && selected.some((order) => !allowedOrderTransitions[order.status]?.includes(body.data.status!))) {
+      return { error: "invalid_transition" as const };
+    }
     const result = [];
     for (const order of selected) {
+      const cancellationTransition = body.data.status === "cancelled" && order.status !== "cancelled";
+      const refundTransition = body.data.paymentStatus === "refunded" && order.paymentStatus !== "refunded";
+      const restoresCredit = (cancellationTransition || refundTransition)
+        && order.referralCreditAppliedRsd > 0 && !order.referralCreditRestoredAt;
+      const now = new Date();
+      if (restoresCredit) {
+        const [scopeSalon] = await tx.select({ ownerId: salonsTable.ownerId }).from(salonsTable)
+          .where(eq(salonsTable.id, order.salonId)).limit(1);
+        if (scopeSalon) await restoreReferralCreditForOrderInTx(tx, {
+          scope: { ownerUserId: scopeSalon.ownerId, walletKind: "B2B", salonId: order.salonId },
+          orderId: order.id,
+          eventKey: `b2b-${cancellationTransition ? "cancel" : "refund"}:${order.id}`,
+          actorUserId: user.id,
+          now,
+        });
+      }
       const update = {
         ...(body.data.status ? { status: body.data.status } : {}),
         ...(body.data.paymentStatus ? { paymentStatus: body.data.paymentStatus } : {}),
-        updatedAt: new Date(),
+        ...(restoresCredit ? { referralCreditRestoredAt: now } : {}),
+        updatedAt: now,
       };
       const [saved] = await tx.update(ordersTable).set(update).where(eq(ordersTable.id, order.id)).returning();
       for (const [field, previousValue, nextValue] of [
@@ -10604,8 +10685,15 @@ router.patch("/admin/orders/bulk", async (req, res): Promise<void> => {
       }
       result.push(saved!);
     }
-    return result;
+    return { result };
   });
+  if ("error" in transactionResult) {
+    if (transactionResult.error === "not_found") {
+      res.status(404).json({ error: "Jedna ili više porudžbina nije pronađena." }); return;
+    }
+    res.status(400).json({ error: "Masovna promena bi preskočila dozvoljeni tok isporuke. Obradite porudžbine po redosledu statusa." }); return;
+  }
+  const changed = transactionResult.result;
   if (!changed.length) { res.json([]); return; }
   const changedSalonIds = [...new Set(changed.map((o) => o.salonId))];
   const [itemRows, salonRows, couriers] = await Promise.all([

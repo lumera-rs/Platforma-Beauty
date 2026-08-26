@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 export const REFERRAL_CHANNELS = ["A", "B1", "B2", "C", "D"] as const;
 export type ReferralChannel = (typeof REFERRAL_CHANNELS)[number];
 export type ReferralSourceBusiness = "salon" | "education_center";
+export const SALON_TYPE_A_SUBSCRIPTION_DISCOUNT_PERCENT = 20;
 
 export const REFERRAL_POLICY: Record<ReferralChannel, {
   wallet: "B2B" | "B2C";
@@ -13,8 +14,12 @@ export const REFERRAL_POLICY: Record<ReferralChannel, {
   windowMonths?: number;
   holdDays: number;
   cap?: { amount: number; period: "calendar_month" | "calendar_week" };
+  salonSubscriptionDiscountPercent?: number;
 }> = {
-  A: { wallet: "B2B", rewardAmountRsd: 500, requiredEvidence: 4, windowMonths: 3, holdDays: 14 },
+  A: {
+    wallet: "B2B", rewardAmountRsd: 500, requiredEvidence: 4, windowMonths: 3, holdDays: 14,
+    salonSubscriptionDiscountPercent: SALON_TYPE_A_SUBSCRIPTION_DISCOUNT_PERCENT,
+  },
   B1: { wallet: "B2C", rewardAmountRsd: 500, requiredEvidence: 4, windowMonths: 3, holdDays: 0 },
   B2: { wallet: "B2C", rewardAmountRsd: 100, requiredEvidence: 3, windowDays: 60, holdDays: 14, cap: { amount: 20, period: "calendar_month" } },
   C: { wallet: "B2B", rewardAmountRsd: 500, requiredEvidence: 4, windowMonths: 3, holdDays: 14 },
@@ -47,19 +52,38 @@ export function qualificationHoldUntil(channel: ReferralChannel, qualifiedAt: Da
   return days ? new Date(qualifiedAt.getTime() + days * 24 * 60 * 60 * 1000) : null;
 }
 
-export function qualificationWindowStartsAt(channel: ReferralChannel, observedAt: Date): Date {
+/** Calendar-month-safe addition: Jan 31 + 3 months is Apr 30, not May 1. */
+export function addUtcCalendarMonths(start: Date, months: number): Date {
+  const result = new Date(start);
+  const day = result.getUTCDate();
+  result.setUTCDate(1);
+  result.setUTCMonth(result.getUTCMonth() + months);
+  const targetMonth = result.getUTCMonth();
+  result.setUTCMonth(targetMonth + 1, 0);
+  result.setUTCDate(Math.min(day, result.getUTCDate()));
+  return result;
+}
+
+/**
+ * Qualification windows are fixed half-open intervals [start, deadline).
+ * A/B1 start at persisted admin approval; all other channels start at capture.
+ */
+export function qualificationWindow(
+  channel: ReferralChannel,
+  capturedAt: Date,
+  trackingStartedAt?: Date | null,
+): { start: Date; deadline: Date } {
   const policy = REFERRAL_POLICY[channel];
-  const start = new Date(observedAt);
-  if (policy.windowMonths) {
-    const day = start.getUTCDate();
-    start.setUTCDate(1);
-    start.setUTCMonth(start.getUTCMonth() - policy.windowMonths);
-    const month = start.getUTCMonth();
-    start.setUTCMonth(month + 1, 0);
-    start.setUTCDate(Math.min(day, start.getUTCDate()));
-    return start;
+  const start = channel === "A" || channel === "B1"
+    ? trackingStartedAt ? new Date(trackingStartedAt) : null
+    : new Date(capturedAt);
+  if (!start) {
+    throw new Error(`Referral ${channel} tracking has not been unlocked by admin approval.`);
   }
-  return new Date(observedAt.getTime() - (policy.windowDays ?? 0) * 24 * 60 * 60 * 1000);
+  const deadline = policy.windowMonths
+    ? addUtcCalendarMonths(start, policy.windowMonths)
+    : new Date(start.getTime() + (policy.windowDays ?? 0) * 24 * 60 * 60 * 1000);
+  return { start, deadline };
 }
 
 export function creditExpiry(availableAt: Date): Date {

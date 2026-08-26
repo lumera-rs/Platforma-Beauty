@@ -31,3 +31,6 @@ APP_BASE_URL = "https://beauty-partner-hub.replit.app"
 
 [userenv.development]
 APP_BASE_URL = "https://6b6c8a4c-09a1-427b-b1ad-9e4e1d89549a-00-1j27uqb8wl0i8.archer.replit.dev"
+
+[objectStorage]
+defaultBucketID = "replit-objstore-1658e3b9-848e-43b6-bbee-7ce5c9d63aab"

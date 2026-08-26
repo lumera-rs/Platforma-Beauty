@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 37;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 38;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -335,7 +335,8 @@ function tableStatements(s: string): string[] {
       benefit_salon_id uuid REFERENCES ${s}.salons(id) ON DELETE RESTRICT,
       benefit_education_center_id uuid REFERENCES ${s}.education_centers(id) ON DELETE RESTRICT,
       qualifying_count integer NOT NULL,
-      kind ${s}.referral_milestone_kind NOT NULL, billing_cycle_start timestamptz,
+       kind ${s}.referral_milestone_kind NOT NULL, billing_cycle_start timestamptz,
+       billing_cycle_end timestamptz, discount_percent integer,
       applied_at timestamptz, idempotency_key text NOT NULL UNIQUE,
       created_at timestamptz NOT NULL DEFAULT now(),
       CONSTRAINT referral_milestone_benefits_business_check CHECK (
@@ -347,6 +348,17 @@ function tableStatements(s: string): string[] {
     `CREATE UNIQUE INDEX IF NOT EXISTS referral_milestone_benefits_center_channel_count_unique ON ${s}.referral_milestone_benefits (benefit_education_center_id, channel, qualifying_count) WHERE benefit_education_center_id IS NOT NULL`,
     `CREATE INDEX IF NOT EXISTS referral_milestone_benefits_pending_idx
       ON ${s}.referral_milestone_benefits (channel, billing_cycle_start) WHERE applied_at IS NULL`,
+    // v38 — immutable-at-use salon benefit policy snapshots. Nullable rollout
+    // keeps old education and not-yet-scheduled rows valid.
+    `ALTER TABLE ${s}.referral_milestone_benefits ADD COLUMN IF NOT EXISTS billing_cycle_end timestamptz`,
+    `ALTER TABLE ${s}.referral_milestone_benefits ADD COLUMN IF NOT EXISTS discount_percent integer`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'referral_milestone_benefits_discount_percent_check'
+         AND conrelid = '${s}.referral_milestone_benefits'::regclass) THEN
+         ALTER TABLE ${s}.referral_milestone_benefits ADD CONSTRAINT referral_milestone_benefits_discount_percent_check
+           CHECK (discount_percent IS NULL OR (discount_percent > 0 AND discount_percent <= 100)) NOT VALID;
+       END IF;
+     END $$`,
     // v36 — a user can own several locations. Replace v35's user/channel
     // constraints with source-business scope, while keeping B1/B2 personal.
     `ALTER TABLE ${s}.referral_codes ADD COLUMN IF NOT EXISTS referrer_salon_id uuid REFERENCES ${s}.salons(id) ON DELETE CASCADE`,
@@ -419,13 +431,33 @@ function tableStatements(s: string): string[] {
        ON ${s}.referral_credit_redemptions (retail_order_id, ledger_entry_id) WHERE retail_order_id IS NOT NULL`,
     `ALTER TABLE ${s}.referral_credit_redemptions DROP CONSTRAINT IF EXISTS referral_credit_redemptions_positive_amount_check`,
     `ALTER TABLE ${s}.referral_credit_redemptions ADD CONSTRAINT referral_credit_redemptions_positive_amount_check CHECK (amount_rsd > 0) NOT VALID`,
-    // Accounting and first-touch rows are facts. Corrections are represented by
-    // reversal/negative-offset entries, never in-place edits.
+    // Accounting rows and first-touch attribution identity are facts.
+    // Attribution status/reason are the deliberately mutable lifecycle fields;
+    // financial corrections remain reversal/negative-offset entries.
     `CREATE OR REPLACE FUNCTION ${s}.referral_prevent_mutation() RETURNS trigger
       LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Referral financial and attribution records are append-only'; END $$`,
+    `CREATE OR REPLACE FUNCTION ${s}.referral_protect_attribution_identity() RETURNS trigger
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        IF TG_OP = 'DELETE'
+          OR NEW.id IS DISTINCT FROM OLD.id
+          OR NEW.referral_code_id IS DISTINCT FROM OLD.referral_code_id
+          OR NEW.channel IS DISTINCT FROM OLD.channel
+          OR NEW.referrer_user_id IS DISTINCT FROM OLD.referrer_user_id
+          OR NEW.referred_user_id IS DISTINCT FROM OLD.referred_user_id
+          OR NEW.referred_salon_id IS DISTINCT FROM OLD.referred_salon_id
+          OR NEW.referred_education_center_id IS DISTINCT FROM OLD.referred_education_center_id
+          OR NEW.captured_at IS DISTINCT FROM OLD.captured_at
+          OR NEW.locked_until IS DISTINCT FROM OLD.locked_until
+          OR NEW.idempotency_key IS DISTINCT FROM OLD.idempotency_key
+          OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+          RAISE EXCEPTION 'Referral attribution identity is immutable';
+        END IF;
+        RETURN NEW;
+      END $$`,
     `DROP TRIGGER IF EXISTS referral_attributions_append_only ON ${s}.referral_attributions`,
     `CREATE TRIGGER referral_attributions_append_only BEFORE UPDATE OR DELETE ON ${s}.referral_attributions
-      FOR EACH ROW EXECUTE FUNCTION ${s}.referral_prevent_mutation()`,
+      FOR EACH ROW EXECUTE FUNCTION ${s}.referral_protect_attribution_identity()`,
     `DROP TRIGGER IF EXISTS referral_credit_ledger_append_only ON ${s}.referral_credit_ledger`,
     `CREATE TRIGGER referral_credit_ledger_append_only BEFORE UPDATE OR DELETE ON ${s}.referral_credit_ledger
       FOR EACH ROW EXECUTE FUNCTION ${s}.referral_prevent_mutation()`,

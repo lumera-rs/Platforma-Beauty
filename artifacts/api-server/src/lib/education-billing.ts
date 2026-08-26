@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, lte, sql } from "drizzle-orm";
 import {
   db,
   educationCentersTable,
@@ -69,7 +69,7 @@ export async function resolveEducationBillingSettings(
 
 /**
  * Resolve and snapshot the commission for an actual enrollment charge. Exactly
- * one queued A/C education benefit is consumed for a subscription cycle; every
+ * one queued A/C education benefit is applied for a subscription cycle; every
  * later charge in that same cycle reuses the already-applied 12% period.
  * Callers must hold the center financial lock.
  */
@@ -80,43 +80,29 @@ export async function resolveEducationBillingSettingsForChargeInTx(
   now = new Date(),
 ) {
   const settings = await resolveEducationBillingSettings(centerId, tx, knownCenter);
-  const [subscription] = await tx.select().from(educationCenterSubscriptionsTable)
+  await tx.select().from(educationCenterSubscriptionsTable)
     .where(eq(educationCenterSubscriptionsTable.centerId, centerId))
     .for("update")
     .limit(1);
-  const cycleStart = subscription?.currentPeriodEnd
-    ? new Date(subscription.currentPeriodEnd)
-    : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  if (subscription?.currentPeriodEnd) cycleStart.setUTCMonth(cycleStart.getUTCMonth() - 1);
-
-  const [alreadyApplied] = await tx.select().from(referralMilestoneBenefitsTable)
+  // Milestones are scheduled when earned. A charge can only use the benefit
+  // whose explicit next-cycle window contains the charge instant; this keeps a
+  // mid-period milestone out of current-period enrollment charges.
+  const [scheduled] = await tx.select().from(referralMilestoneBenefitsTable)
     .where(and(
       eq(referralMilestoneBenefitsTable.benefitEducationCenterId, centerId),
       eq(referralMilestoneBenefitsTable.kind, "education_commission_reduction"),
-      eq(referralMilestoneBenefitsTable.billingCycleStart, cycleStart),
+      isNull(referralMilestoneBenefitsTable.neutralizedAt),
+      lte(referralMilestoneBenefitsTable.billingCycleStart, now),
+      gt(referralMilestoneBenefitsTable.billingCycleEnd, now),
     ))
-    .orderBy(asc(referralMilestoneBenefitsTable.qualifyingCount))
+    .orderBy(asc(referralMilestoneBenefitsTable.billingCycleStart), asc(referralMilestoneBenefitsTable.qualifyingCount))
     .for("update")
     .limit(1);
-  let benefit = alreadyApplied;
-  if (!benefit) {
-    const [queued] = await tx.select().from(referralMilestoneBenefitsTable)
-      .where(and(
-        eq(referralMilestoneBenefitsTable.benefitEducationCenterId, centerId),
-        inArray(referralMilestoneBenefitsTable.channel, ["A", "C"]),
-        eq(referralMilestoneBenefitsTable.kind, "education_commission_reduction"),
-        isNull(referralMilestoneBenefitsTable.appliedAt),
-      ))
-      .orderBy(asc(referralMilestoneBenefitsTable.qualifyingCount), asc(referralMilestoneBenefitsTable.createdAt))
-      .for("update")
-      .limit(1);
-    if (queued) {
-      [benefit] = await tx.update(referralMilestoneBenefitsTable).set({
-        billingCycleStart: cycleStart,
-        appliedAt: now,
-      }).where(and(eq(referralMilestoneBenefitsTable.id, queued.id),
-        isNull(referralMilestoneBenefitsTable.appliedAt))).returning();
-    }
+  let benefit = scheduled;
+  if (benefit && !benefit.appliedAt) {
+    [benefit] = await tx.update(referralMilestoneBenefitsTable).set({ appliedAt: now })
+      .where(eq(referralMilestoneBenefitsTable.id, benefit.id))
+      .returning();
   }
   return benefit
     ? { ...settings, effective: { ...settings.effective, commissionPercent: 12 }, referralMilestoneBenefitId: benefit.id }
