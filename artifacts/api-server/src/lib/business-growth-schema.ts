@@ -359,6 +359,8 @@ function tableStatements(s: string): string[] {
            CHECK (discount_percent IS NULL OR (discount_percent > 0 AND discount_percent <= 100)) NOT VALID;
        END IF;
      END $$`,
+    `ALTER TABLE ${s}.referral_milestone_benefits
+       VALIDATE CONSTRAINT referral_milestone_benefits_discount_percent_check`,
     // v36 — a user can own several locations. Replace v35's user/channel
     // constraints with source-business scope, while keeping B1/B2 personal.
     `ALTER TABLE ${s}.referral_codes ADD COLUMN IF NOT EXISTS referrer_salon_id uuid REFERENCES ${s}.salons(id) ON DELETE CASCADE`,
@@ -371,6 +373,8 @@ function tableStatements(s: string): string[] {
       or (channel = 'D' and referrer_salon_id is not null and referrer_education_center_id is null)
       or (channel = 'A' and num_nonnulls(referrer_salon_id, referrer_education_center_id) = 1)
     ) NOT VALID`,
+    `ALTER TABLE ${s}.referral_codes
+       VALIDATE CONSTRAINT referral_codes_source_channel_check`,
     `CREATE UNIQUE INDEX IF NOT EXISTS referral_codes_salon_channel_unique ON ${s}.referral_codes (referrer_salon_id, channel) WHERE referrer_salon_id IS NOT NULL`,
     `CREATE UNIQUE INDEX IF NOT EXISTS referral_codes_center_channel_unique ON ${s}.referral_codes (referrer_education_center_id, channel) WHERE referrer_education_center_id IS NOT NULL`,
     `CREATE UNIQUE INDEX IF NOT EXISTS referral_codes_user_channel_unique ON ${s}.referral_codes (referrer_user_id, channel) WHERE referrer_salon_id IS NULL AND referrer_education_center_id IS NULL`,
@@ -394,6 +398,8 @@ function tableStatements(s: string): string[] {
       (channel = 'A' and kind = 'salon_subscription_reduction' and benefit_salon_id is not null and benefit_education_center_id is null)
       or (channel in ('A', 'C') and kind = 'education_commission_reduction' and benefit_education_center_id is not null and benefit_salon_id is null)
     ) NOT VALID`,
+    `ALTER TABLE ${s}.referral_milestone_benefits
+       VALIDATE CONSTRAINT referral_milestone_benefits_business_check`,
     `CREATE UNIQUE INDEX IF NOT EXISTS referral_milestone_benefits_salon_channel_count_unique ON ${s}.referral_milestone_benefits (benefit_salon_id, channel, qualifying_count) WHERE benefit_salon_id IS NOT NULL`,
     `CREATE UNIQUE INDEX IF NOT EXISTS referral_milestone_benefits_center_channel_count_unique ON ${s}.referral_milestone_benefits (benefit_education_center_id, channel, qualifying_count) WHERE benefit_education_center_id IS NOT NULL`,
     // Existing commerce stores integer whole RSD (for example product price
@@ -431,6 +437,8 @@ function tableStatements(s: string): string[] {
        ON ${s}.referral_credit_redemptions (retail_order_id, ledger_entry_id) WHERE retail_order_id IS NOT NULL`,
     `ALTER TABLE ${s}.referral_credit_redemptions DROP CONSTRAINT IF EXISTS referral_credit_redemptions_positive_amount_check`,
     `ALTER TABLE ${s}.referral_credit_redemptions ADD CONSTRAINT referral_credit_redemptions_positive_amount_check CHECK (amount_rsd > 0) NOT VALID`,
+    `ALTER TABLE ${s}.referral_credit_redemptions
+       VALIDATE CONSTRAINT referral_credit_redemptions_positive_amount_check`,
     // Accounting rows and first-touch attribution identity are facts.
     // Attribution status/reason are the deliberately mutable lifecycle fields;
     // financial corrections remain reversal/negative-offset entries.
