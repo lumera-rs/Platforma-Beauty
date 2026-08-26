@@ -104,3 +104,4 @@
 - [Applicant decision path integrity](applicant-decision-path-integrity.md) — terminal candidate decisions stay immutable and auditable through every legacy and current write path.
 - [Private routes and public SEO matchers](private-route-seo-matchers.md) — exclude private namespaces before broad public-detail metadata patterns run.
 - [Published enum renames](published-enum-renames.md) — live enum labels need an additive compatibility publish before the obsolete label can be removed safely.
+- [Vite unknown runtime overlays](vite-unknown-runtime-overlays.md) — first distinguish resource-style window errors from real JavaScript exceptions before changing app code.

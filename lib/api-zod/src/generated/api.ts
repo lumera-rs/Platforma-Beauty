@@ -10511,6 +10511,89 @@ export const OwnerCreatePackageResponse = zod.object({
 
 
 /**
+ * @summary Atomically create a treatment package definition and sell it to an existing salon customer (owner)
+ */
+
+export const ownerQuickCreatePackagePurchaseBodyNameMax = 200;
+
+export const ownerQuickCreatePackagePurchaseBodyPriceInDinarsMin = 0;
+export const ownerQuickCreatePackagePurchaseBodyPriceInDinarsMultipleOf = 1;
+
+export const ownerQuickCreatePackagePurchaseBodyValidityDaysMax = 3650;
+export const ownerQuickCreatePackagePurchaseBodyValidityDaysMultipleOf = 1;
+
+export const ownerQuickCreatePackagePurchaseBodyServiceQuotasItemQuotaMax = 100;
+export const ownerQuickCreatePackagePurchaseBodyServiceQuotasItemQuotaMultipleOf = 1;
+
+
+
+
+export const OwnerQuickCreatePackagePurchaseBody = zod.object({
+  "salonCustomerId": zod.string().min(1),
+  "name": zod.string().min(1).max(ownerQuickCreatePackagePurchaseBodyNameMax),
+  "description": zod.string().optional(),
+  "priceInDinars": zod.number().min(ownerQuickCreatePackagePurchaseBodyPriceInDinarsMin).multipleOf(ownerQuickCreatePackagePurchaseBodyPriceInDinarsMultipleOf),
+  "validityDays": zod.number().min(1).max(ownerQuickCreatePackagePurchaseBodyValidityDaysMax).multipleOf(ownerQuickCreatePackagePurchaseBodyValidityDaysMultipleOf),
+  "serviceQuotas": zod.array(zod.object({
+  "serviceId": zod.string(),
+  "quota": zod.number().min(1).max(ownerQuickCreatePackagePurchaseBodyServiceQuotasItemQuotaMax).multipleOf(ownerQuickCreatePackagePurchaseBodyServiceQuotasItemQuotaMultipleOf)
+})).min(1),
+  "paymentStatus": zod.enum(['active', 'pending_payment']),
+  "paymentMethod": zod.enum(['pay_at_salon', 'bank_transfer']),
+  "notes": zod.string().nullish()
+})
+
+export const ownerQuickCreatePackagePurchaseResponsePackageServiceQuotasItemQuotaMax = 100;
+export const ownerQuickCreatePackagePurchaseResponsePackageServiceQuotasItemQuotaMultipleOf = 1;
+
+
+
+export const OwnerQuickCreatePackagePurchaseResponse = zod.object({
+  "package": zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "priceInDinars": zod.number(),
+  "sessionCount": zod.number(),
+  "validityDays": zod.number(),
+  "active": zod.boolean(),
+  "quotaPolicy": zod.enum(['shared_pool', 'per_service']),
+  "serviceIds": zod.array(zod.string()),
+  "serviceQuotas": zod.array(zod.object({
+  "serviceId": zod.string(),
+  "quota": zod.number().min(1).max(ownerQuickCreatePackagePurchaseResponsePackageServiceQuotasItemQuotaMax).multipleOf(ownerQuickCreatePackagePurchaseResponsePackageServiceQuotasItemQuotaMultipleOf)
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}),
+  "purchase": zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "packageId": zod.string(),
+  "packageName": zod.string(),
+  "salonCustomerId": zod.string(),
+  "totalSessions": zod.number(),
+  "remainingSessions": zod.number(),
+  "quotaPolicy": zod.enum(['shared_pool', 'per_service']),
+  "serviceQuotas": zod.array(zod.object({
+  "serviceId": zod.string(),
+  "totalQuota": zod.number(),
+  "remainingQuota": zod.number()
+})),
+  "priceInDinars": zod.number(),
+  "paymentMethod": zod.enum(['pay_at_salon', 'bank_transfer']),
+  "status": zod.enum(['pending_payment', 'active', 'completed', 'expired', 'cancelled']),
+  "expiresAt": zod.coerce.date(),
+  "paymentConfirmedAt": zod.coerce.date().nullish(),
+  "notes": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+})
+
+
+/**
  * @summary Get a treatment package (owner)
  */
 export const OwnerGetPackageParams = zod.object({

@@ -1,4 +1,4 @@
-import { type ComponentProps, useEffect, useMemo, useState } from "react";
+import { type ComponentProps, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { SearchableCombobox, type SearchableComboboxOption } from "@/components/ui/searchable-combobox";
+import { QuickPackageDialog } from "@/components/owner/quick-package-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
@@ -42,6 +43,7 @@ import {
   getGetSalonCalendarDayQueryKey,
   useOwnerListCustomerPackages,
   getOwnerListCustomerPackagesQueryKey,
+  getOwnerListPackagesQueryKey,
   usePreviewSalonPackageAppointments,
   useCreateSalonPackageAppointments,
   type Appointment,
@@ -450,6 +452,18 @@ export default function OwnerCalendar() {
   const [open, setOpen] = useState(false);
   const [bookingMode, setBookingMode] = useState<"standard" | "package">("standard");
   const [form, setForm] = useState(initialForm);
+  const currentBookingContextRef = useRef({
+    open,
+    mode: bookingMode,
+    customerId: form.customerId,
+    serviceId: form.serviceId,
+  });
+  currentBookingContextRef.current = {
+    open,
+    mode: bookingMode,
+    customerId: form.customerId,
+    serviceId: form.serviceId,
+  };
   const [isSeries, setIsSeries] = useState(false);
   const [seriesSlots, setSeriesSlots] = useState<SeriesSlot[]>([]);
 
@@ -466,14 +480,14 @@ export default function OwnerCalendar() {
     setPackagePlannerRows((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row));
   };
 
-  const handlePlannerPackageChange = (id: string) => {
-    setPackagePlannerPackageId(id);
-    const pkg = customerPackages?.find(p => p.id === id);
+  const applyPlannerPackage = (pkg: PackagePurchase | undefined) => {
     if (!pkg) {
+      setPackagePlannerPackageId("");
       setPackagePlannerRows([]);
       previewPackageSeries.reset();
       return;
     }
+    setPackagePlannerPackageId(pkg.id);
     const newRows: PackagePlannerRow[] = [];
     if (pkg.quotaPolicy === 'per_service') {
       pkg.serviceQuotas.forEach(q => {
@@ -502,6 +516,9 @@ export default function OwnerCalendar() {
     setPackagePlannerRows(newRows);
     previewPackageSeries.reset();
   };
+  const handlePlannerPackageChange = (id: string) => {
+    applyPlannerPackage(customerPackages?.find(p => p.id === id));
+  };
   const [editing, setEditing] = useState<{ id: string; seriesId: string | null; status: "pending" | "confirmed" | "completed" | "cancelled" | "no-show"; employeeId: string; notes: string } | null>(null);
   const [seriesMove, setSeriesMove] = useState<{ seriesId: string; dayOffset: string; startTime: string } | null>(null);
   const [seriesMovePreviewKey, setSeriesMovePreviewKey] = useState<string | null>(null);
@@ -518,6 +535,29 @@ export default function OwnerCalendar() {
 
   const [blockOpen, setBlockOpen] = useState(false);
   const [blockForm, setBlockForm] = useState({ date: today, startTime: "09:00", endTime: "10:00", employeeId: "", reason: "" });
+
+  type QuickPackageContext = {
+    id: string;
+    mode: "standard" | "package";
+    customerId: string;
+    serviceId: string;
+  };
+  const [quickPackageContext, setQuickPackageContext] = useState<QuickPackageContext | null>(null);
+  const quickPackageContextRef = useRef<QuickPackageContext | null>(null);
+  const openQuickPackage = (mode: QuickPackageContext["mode"]) => {
+    const context = {
+      id: crypto.randomUUID(),
+      mode,
+      customerId: form.customerId,
+      serviceId: form.serviceId,
+    };
+    quickPackageContextRef.current = context;
+    setQuickPackageContext(context);
+  };
+  const closeQuickPackage = () => {
+    quickPackageContextRef.current = null;
+    setQuickPackageContext(null);
+  };
 
   const sortedList = useMemo<CalendarListItem[]>(() => {
     const a = (appointments ?? []).map(x => ({ ...x, _type: 'appointment' as const }));
@@ -807,17 +847,17 @@ export default function OwnerCalendar() {
                   </form>
                 </DialogContent>
               </Dialog>
-              <Dialog open={open} onOpenChange={setOpen}>
+              <Dialog open={open} onOpenChange={(nextOpen) => { setOpen(nextOpen); if (!nextOpen) closeQuickPackage(); }}>
                 <DialogTrigger asChild><Button data-testid="calendar-new-appointment" onClick={() => openNewAppointment()}><Plus className="mr-2 h-4 w-4" /> Novi termin</Button></DialogTrigger>
-                <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+                <DialogContent className="max-h-[90dvh] w-[calc(100vw-1rem)] min-w-0 max-w-3xl overflow-y-auto overflow-x-hidden">
                   <DialogHeader><DialogTitle>Zakazivanje</DialogTitle></DialogHeader>
-                  <Tabs value={bookingMode} onValueChange={(v) => setBookingMode(v as "standard" | "package")} className="mt-2">
-                    <TabsList className="grid w-full grid-cols-2 mb-4">
-                      <TabsTrigger value="standard">Jedan termin ili serija</TabsTrigger>
-                      <TabsTrigger value="package">Planiranje celog paketa</TabsTrigger>
+                  <Tabs value={bookingMode} onValueChange={(v) => setBookingMode(v as "standard" | "package")} className="mt-2 min-w-0">
+                    <TabsList className="mb-4 grid min-w-0 w-full grid-cols-2">
+                      <TabsTrigger value="standard" className="min-w-0 truncate px-2">Jedan termin ili serija</TabsTrigger>
+                      <TabsTrigger value="package" className="min-w-0 truncate px-2">Planiranje celog paketa</TabsTrigger>
                     </TabsList>
 
-                    <TabsContent value="standard">
+                    <TabsContent value="standard" className="min-w-0">
                       <form className="space-y-5" onSubmit={createAppointment}>
                         <div className="grid gap-4 sm:grid-cols-2">
                           <div className="space-y-2"><Label>Usluga</Label><select required className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={form.serviceId} onChange={(e) => { setForm({ ...form, serviceId: e.target.value, packagePurchaseId: "" }); previewSeries.reset(); }}><option value="">Izaberite uslugu</option>{services?.filter((service) => service.active).map((service) => <option key={service.id} value={service.id}>{service.name} · {service.durationMinutes} min</option>)}</select></div>
@@ -846,17 +886,33 @@ export default function OwnerCalendar() {
                             }
                           />
                         </div>
-                        {form.customerId !== "new" && eligiblePackages.length > 0 && (
+                        {form.customerId !== "new" && form.customerId !== "" && (
                           <div className="space-y-2">
                             <Label>Korišćenje paketa (opciono)</Label>
-                            <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={form.packagePurchaseId} onChange={(e) => setForm({ ...form, packagePurchaseId: e.target.value })}>
-                              <option value="">Redovno plaćanje (ne koristi paket)</option>
-                              {eligiblePackages.map(p => {
-                                const q = p.serviceQuotas.find(sq => sq.serviceId === form.serviceId);
-                                const label = p.quotaPolicy === 'shared_pool' ? `${p.packageName} (Zajedničkih termina: ${p.remainingSessions})` : `${p.packageName} (Preostalo za ovu uslugu: ${q?.remainingQuota}/${q?.totalQuota})`;
-                                return <option key={p.id} value={p.id}>{label}</option>;
-                              })}
-                            </select>
+                            <SearchableCombobox
+                              value={form.packagePurchaseId || "none"}
+                              onValueChange={(val) => {
+                                if (val === "new") {
+                                  openQuickPackage("standard");
+                                } else {
+                                  setForm({ ...form, packagePurchaseId: val === "none" ? "" : val });
+                                  previewSeries.reset();
+                                }
+                              }}
+                              options={[
+                                { value: "none", label: "Redovno plaćanje (ne koristi paket)", keywords: "redovno placanje" },
+                                ...eligiblePackages.map(p => {
+                                  const q = p.serviceQuotas.find(sq => sq.serviceId === form.serviceId);
+                                  const label = p.quotaPolicy === 'shared_pool' ? `${p.packageName} (Zajedničkih termina: ${p.remainingSessions})` : `${p.packageName} (Preostalo za ovu uslugu: ${q?.remainingQuota}/${q?.totalQuota})`;
+                                  const keywords = `${p.packageName} ${services?.find(s => s.id === form.serviceId)?.name || ""}`;
+                                  return { value: p.id, label, keywords };
+                                })
+                              ]}
+                              placeholder="Izaberite paket"
+                              searchPlaceholder="Pretražite pakete..."
+                              emptyMessage="Nema dostupnih aktivnih paketa."
+                              pinnedAction={{ label: "Brzi unos novog paketa", value: "new" }}
+                            />
                           </div>
                         )}
                         {form.customerId === "new" && <div className="rounded-lg border border-dashed bg-muted/30 p-4"><div className="mb-3 flex items-center gap-2 font-medium"><UserRoundPlus className="h-4 w-4 text-primary" /> Walk-in klijent</div><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Ime</Label><Input required value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} /></div><div className="space-y-2"><Label>Prezime</Label><Input required value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} /></div><div className="space-y-2"><Label>Telefon</Label><Input required placeholder="+381 6x..." value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div><div className="space-y-2"><Label>E-mail <span className="text-muted-foreground">(opciono)</span></Label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div></div></div>}
@@ -866,13 +922,13 @@ export default function OwnerCalendar() {
                       </form>
                     </TabsContent>
 
-                    <TabsContent value="package">
+                    <TabsContent value="package" className="min-w-0">
                       <form className="space-y-5" onSubmit={submitPlanner}>
                         <div className="space-y-2">
                           <Label>Klijent</Label>
                           <SearchableCombobox
                             value={form.customerId}
-                            onValueChange={(customerId) => { setForm({ ...form, customerId, packagePurchaseId: "" }); setPackagePlannerPackageId(""); setPackagePlannerRows([]); }}
+                            onValueChange={(customerId) => { previewPackageSeries.reset(); setForm({ ...form, customerId, packagePurchaseId: "" }); setPackagePlannerPackageId(""); setPackagePlannerRows([]); }}
                             options={customerOptions}
                             placeholder="Izaberite klijenta"
                             searchPlaceholder="Pretražite klijente..."
@@ -887,12 +943,31 @@ export default function OwnerCalendar() {
                           <>
                             <div className="space-y-2">
                               <Label>Aktivni paket za raspoređivanje</Label>
-                              <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={packagePlannerPackageId} onChange={(e) => handlePlannerPackageChange(e.target.value)}>
-                                <option value="">Izaberite paket</option>
-                                {customerPackages?.filter(p => p.status === 'active' && p.remainingSessions > 0).map(p => (
-                                  <option key={p.id} value={p.id}>{p.packageName} ({p.remainingSessions} preostalih termina)</option>
-                                ))}
-                              </select>
+                              <SearchableCombobox
+                                value={packagePlannerPackageId}
+                                onValueChange={(val) => {
+                                  if (val === "new") {
+                                    openQuickPackage("package");
+                                  } else {
+                                    handlePlannerPackageChange(val);
+                                  }
+                                }}
+                                options={[
+                                  ...(customerPackages?.filter(p => p.status === 'active' && p.remainingSessions > 0).map(p => {
+                                    const servicesStr = p.serviceQuotas.map(q => services?.find(s => s.id === q.serviceId)?.name).join(" ");
+                                    return {
+                                      value: p.id,
+                                      label: `${p.packageName} (${p.remainingSessions} preostalih termina)`,
+                                      keywords: `${p.packageName} ${servicesStr}`
+                                    };
+                                  }) ?? [])
+                                ]}
+                                placeholder="Izaberite paket"
+                                searchPlaceholder="Pretražite pakete..."
+                                emptyMessage="Nema dostupnih aktivnih paketa."
+                                clearable
+                                pinnedAction={{ label: "Brzi unos novog paketa", value: "new" }}
+                              />
                             </div>
 
                             {packagePlannerPackageId && (
@@ -982,6 +1057,52 @@ export default function OwnerCalendar() {
               </div>}
             </DialogContent>
           </Dialog>
+
+          <QuickPackageDialog
+            open={quickPackageContext !== null}
+            onOpenChange={(nextOpen) => { if (!nextOpen) closeQuickPackage(); }}
+            contextId={quickPackageContext?.id ?? ""}
+            customerId={quickPackageContext?.customerId ?? ""}
+            services={services || []}
+            onSuccess={(result, contextId) => {
+              queryClient.invalidateQueries({ queryKey: getOwnerListPackagesQueryKey() });
+              queryClient.invalidateQueries({ queryKey: getOwnerListCustomerPackagesQueryKey({ salonCustomerId: result.purchase.salonCustomerId, status: 'active' }) });
+              queryClient.invalidateQueries({ queryKey: ["owner-customer-packages"] });
+              refetchCustomerPackages();
+              previewPackageSeries.reset();
+              const submittedContext = quickPackageContextRef.current;
+              const currentContext = currentBookingContextRef.current;
+              const isSameContext = Boolean(
+                submittedContext
+                && submittedContext.id === contextId
+                && currentContext.open
+                && currentContext.mode === submittedContext.mode
+                && currentContext.customerId === submittedContext.customerId
+                && currentContext.customerId === result.purchase.salonCustomerId
+                && (submittedContext.mode === "package" || currentContext.serviceId === submittedContext.serviceId),
+              );
+              if (result.purchase.status === "active" && isSameContext && submittedContext) {
+                if (submittedContext.mode === "standard") {
+                  const coversCurrentService = result.purchase.serviceQuotas.some(q => q.serviceId === currentContext.serviceId);
+                  if (coversCurrentService) {
+                    setForm(f => ({ ...f, packagePurchaseId: result.purchase.id }));
+                    previewSeries.reset();
+                    toast.success(`Paket ${result.package.name} je kreiran i izabran za termin.`);
+                  } else {
+                    toast.success(`Paket ${result.package.name} je kreiran. Izaberite uslugu iz tog paketa da biste ga koristili.`);
+                  }
+                } else {
+                  applyPlannerPackage(result.purchase);
+                  toast.success(`Paket ${result.package.name} je kreiran i spreman za raspoređivanje.`);
+                }
+              } else if (result.purchase.status === "active") {
+                toast.success(`Paket ${result.package.name} je kreiran i aktivan.`);
+              } else {
+                toast.success(`Paket ${result.package.name} je sačuvan i čeka uplatu.`);
+              }
+            }}
+          />
+
           <div className="grid min-w-0 gap-7 xl:grid-cols-[minmax(0,.82fr)_minmax(0,1.7fr)]">
             <div className="space-y-6">
               <Card className="h-fit min-w-0 overflow-hidden border-primary/10 shadow-md max-sm:-mx-2 max-sm:w-[calc(100%+1rem)]">

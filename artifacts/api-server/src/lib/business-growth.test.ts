@@ -651,6 +651,147 @@ async function runIntegrationTests(): Promise<void> {
     }
     console.log("✓ Package create invalid serviceIds rollback");
 
+    // ── Test 15b: Owner quick-sale is atomic and uses canonical package rows ─
+    {
+      const secondService = await makeService(ownerA.salon.id, `Quick second ${suffix}`);
+      const foreignService = await makeService(ownerB.salon.id, `Quick foreign ${suffix}`);
+      const [foreignCustomer] = await db.select().from(salonCustomersTable)
+        .where(and(
+          eq(salonCustomersTable.userId, custInfo.user.id),
+          eq(salonCustomersTable.salonId, ownerB.salon.id),
+        ))
+        .limit(1);
+      assert.ok(foreignCustomer, "Foreign-salon CRM fixture must exist");
+      const activeName = `Quick active ${suffix}`;
+      const activeResponse = await fetch(`${baseUrl}/growth/packages/quick-sale`, {
+        method: "POST",
+        headers: ownerAHeaders(),
+        body: JSON.stringify({
+          salonCustomerId: custScA.id,
+          name: activeName,
+          description: "Created from calendar",
+          priceInDinars: 7600,
+          validityDays: 120,
+          serviceQuotas: [
+            { serviceId: svcA.id, quota: 2 },
+            { serviceId: secondService.id, quota: 1 },
+          ],
+          paymentStatus: "active",
+          paymentMethod: "pay_at_salon",
+          notes: "Paid at desk",
+        }),
+      });
+      const activeBody = await activeResponse.json() as {
+        package: { id: string; sessionCount: number; quotaPolicy: string; serviceQuotas: Array<{ serviceId: string; quota: number }> };
+        purchase: {
+          id: string; packageId: string; status: string; totalSessions: number; remainingSessions: number;
+          paymentConfirmedAt: string | null; paymentConfirmedByUserId: string | null;
+          serviceQuotas: Array<{ serviceId: string; totalQuota: number; remainingQuota: number }>;
+        };
+      };
+      assert.equal(activeResponse.status, 201, `Active quick-sale failed: ${JSON.stringify(activeBody)}`);
+      toCleanup.purchaseIds.push(activeBody.purchase.id);
+      assert.equal(activeBody.package.sessionCount, 3);
+      assert.equal(activeBody.package.quotaPolicy, "per_service");
+      assert.equal(activeBody.purchase.packageId, activeBody.package.id);
+      assert.equal(activeBody.purchase.status, "active");
+      assert.equal(activeBody.purchase.totalSessions, 3);
+      assert.equal(activeBody.purchase.remainingSessions, 3);
+      assert.ok(activeBody.purchase.paymentConfirmedAt, "Paid quick-sale records confirmation time");
+      assert.equal(activeBody.purchase.paymentConfirmedByUserId, ownerA.owner.id);
+      assert.deepEqual(
+        [...activeBody.package.serviceQuotas].sort((a, b) => a.serviceId.localeCompare(b.serviceId)),
+        [{ serviceId: secondService.id, quota: 1 }, { serviceId: svcA.id, quota: 2 }].sort((a, b) => a.serviceId.localeCompare(b.serviceId)),
+      );
+      assert.deepEqual(
+        [...activeBody.purchase.serviceQuotas].sort((a, b) => a.serviceId.localeCompare(b.serviceId)),
+        [
+          { serviceId: secondService.id, totalQuota: 1, remainingQuota: 1 },
+          { serviceId: svcA.id, totalQuota: 2, remainingQuota: 2 },
+        ].sort((a, b) => a.serviceId.localeCompare(b.serviceId)),
+        "Purchase snapshot exactly matches the definition quotas",
+      );
+
+      const redemptionAppointment = await makeAppointment(ownerA.salon.id, custScA.id, svcA.id, "confirmed");
+      const redemption = await redeemPackageSession({
+        purchaseId: activeBody.purchase.id,
+        appointmentId: redemptionAppointment.id,
+        salonId: ownerA.salon.id,
+        requestingCustomerId: custScA.id,
+      });
+      assert.ok(redemption.ok, "Quick-created paid package uses the existing redemption domain");
+      assert.equal(redemption.remainingSessions, 2);
+
+      const pendingResponse = await fetch(`${baseUrl}/growth/packages/quick-sale`, {
+        method: "POST",
+        headers: ownerAHeaders(),
+        body: JSON.stringify({
+          salonCustomerId: custScA.id,
+          name: `Quick pending ${suffix}`,
+          priceInDinars: 4000,
+          validityDays: 90,
+          serviceQuotas: [{ serviceId: svcA.id, quota: 4 }],
+          paymentStatus: "pending_payment",
+          paymentMethod: "bank_transfer",
+        }),
+      });
+      const pendingBody = await pendingResponse.json() as {
+        purchase: { id: string; status: string; paymentConfirmedAt: string | null; paymentConfirmedByUserId: string | null };
+      };
+      assert.equal(pendingResponse.status, 201);
+      toCleanup.purchaseIds.push(pendingBody.purchase.id);
+      assert.equal(pendingBody.purchase.status, "pending_payment");
+      assert.equal(pendingBody.purchase.paymentConfirmedAt, null);
+      assert.equal(pendingBody.purchase.paymentConfirmedByUserId, null);
+
+      const invalidCases = [
+        {
+          expectedStatus: 404,
+          name: `Quick foreign customer ${suffix}`,
+          salonCustomerId: foreignCustomer.id,
+          serviceQuotas: [{ serviceId: svcA.id, quota: 1 }],
+        },
+        {
+          expectedStatus: 400,
+          name: `Quick foreign service ${suffix}`,
+          salonCustomerId: custScA.id,
+          serviceQuotas: [{ serviceId: foreignService.id, quota: 1 }],
+        },
+        {
+          expectedStatus: 400,
+          name: `Quick duplicate ${suffix}`,
+          salonCustomerId: custScA.id,
+          serviceQuotas: [{ serviceId: svcA.id, quota: 1 }, { serviceId: svcA.id, quota: 2 }],
+        },
+        {
+          expectedStatus: 400,
+          name: `Quick invalid quota ${suffix}`,
+          salonCustomerId: custScA.id,
+          serviceQuotas: [{ serviceId: svcA.id, quota: 0 }],
+        },
+      ];
+      for (const invalidCase of invalidCases) {
+        const invalidResponse = await fetch(`${baseUrl}/growth/packages/quick-sale`, {
+          method: "POST",
+          headers: ownerAHeaders(),
+          body: JSON.stringify({
+            salonCustomerId: invalidCase.salonCustomerId,
+            name: invalidCase.name,
+            priceInDinars: 1000,
+            validityDays: 30,
+            serviceQuotas: invalidCase.serviceQuotas,
+            paymentStatus: "active",
+            paymentMethod: "pay_at_salon",
+          }),
+        });
+        assert.equal(invalidResponse.status, invalidCase.expectedStatus, `${invalidCase.name} must be rejected`);
+        const definitions = await db.select({ id: treatmentPackagesTable.id }).from(treatmentPackagesTable)
+          .where(eq(treatmentPackagesTable.name, invalidCase.name));
+        assert.equal(definitions.length, 0, `${invalidCase.name} must not leave a partial definition`);
+      }
+    }
+    console.log("✓ Owner quick-sale package creation is atomic, isolated, and redeemable");
+
     // ── Test 16: Package soft-delete preserves purchase history ─────────
     {
       // Create a separate package and purchase

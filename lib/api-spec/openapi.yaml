@@ -4189,6 +4189,27 @@ paths:
         "401": { description: Authentication required }
         "403": { description: Salon owner required }
 
+  /growth/packages/quick-sale:
+    post:
+      operationId: ownerQuickCreatePackagePurchase
+      tags: [growth]
+      summary: Atomically create a treatment package definition and sell it to an existing salon customer (owner)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/QuickPackagePurchaseInput" }
+      responses:
+        "201":
+          description: Created package definition and customer purchase
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QuickPackagePurchaseResult" }
+        "400": { description: Invalid package or service quotas }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner required }
+        "404": { description: Salon customer not found }
+
   /growth/packages/{packageId}:
     get:
       operationId: ownerGetPackage
@@ -8929,6 +8950,32 @@ components:
           type: array
           items: { $ref: "#/components/schemas/PackageServiceQuota" }
           minItems: 1
+
+    QuickPackagePurchaseInput:
+      type: object
+      additionalProperties: false
+      properties:
+        salonCustomerId: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string }
+        priceInDinars: { type: number, minimum: 0, multipleOf: 1 }
+        validityDays: { type: number, minimum: 1, maximum: 3650, multipleOf: 1 }
+        serviceQuotas:
+          type: array
+          items: { $ref: "#/components/schemas/PackageServiceQuota" }
+          minItems: 1
+        paymentStatus: { type: string, enum: [active, pending_payment] }
+        paymentMethod: { type: string, enum: [pay_at_salon, bank_transfer] }
+        notes: { type: ["string", "null"] }
+      required: [salonCustomerId, name, priceInDinars, validityDays, serviceQuotas, paymentStatus, paymentMethod]
+
+    QuickPackagePurchaseResult:
+      type: object
+      additionalProperties: false
+      properties:
+        package: { $ref: "#/components/schemas/TreatmentPackage" }
+        purchase: { $ref: "#/components/schemas/PackagePurchase" }
+      required: [package, purchase]
 
     PackagePurchase:
       type: object

@@ -34,6 +34,7 @@ import {
   OwnerUpdateAutomationBody,
   OwnerCreateAutomationFromAiProposalBody,
   OwnerCreatePackageBody,
+  OwnerQuickCreatePackagePurchaseBody,
   OwnerUpdatePackageBody,
   CustomerRedeemPackageSessionBody,
   OwnerUpdateEmployeeCommissionBody,
@@ -1391,6 +1392,36 @@ async function withPurchaseServiceQuotas<T extends { id: string }>(purchase: T) 
   return { ...purchase, serviceQuotas };
 }
 
+async function insertPerServicePackageDefinitionInTx(
+  tx: any,
+  input: {
+    salonId: string;
+    name: string;
+    description?: string | null;
+    priceInDinars: number;
+    validityDays: number;
+    active: boolean;
+    serviceQuotas: Array<{ serviceId: string; quota: number }>;
+  },
+) {
+  const sessionCount = input.serviceQuotas.reduce((sum, item) => sum + item.quota, 0);
+  const [pkg] = await tx.insert(treatmentPackagesTable).values({
+    salonId: input.salonId,
+    name: input.name,
+    description: input.description ?? "",
+    priceInDinars: input.priceInDinars,
+    sessionCount,
+    quotaPolicy: "per_service",
+    validityDays: input.validityDays,
+    active: input.active,
+  }).returning();
+  if (!pkg) throw new Error("Package insert failed");
+  await tx.insert(packageServiceLinksTable).values(
+    input.serviceQuotas.map(({ serviceId, quota }) => ({ packageId: pkg.id, serviceId, quota })),
+  );
+  return pkg as typeof treatmentPackagesTable.$inferSelect;
+}
+
 router.get("/growth/packages", async (req, res, next) => {
   try {
     const ctx = await requireSalonOwner(req);
@@ -1461,31 +1492,130 @@ router.post("/growth/packages", async (req, res, next) => {
       }
     }
 
-    const result = await db.transaction(async (tx) => {
-      const [pkg] = await tx.insert(treatmentPackagesTable).values({
+    const result = await db.transaction(async (tx) => (
+      insertPerServicePackageDefinitionInTx(tx, {
         salonId: ctx.salon.id,
         name,
-        description: description ?? "",
+        description,
         priceInDinars,
-        sessionCount,
-        quotaPolicy: "per_service",
         validityDays: validityDays ?? 365,
         active: active ?? true,
-      }).returning();
-
-      if (!pkg) throw new Error("Package insert failed");
-
-      if (serviceQuotas.length > 0) {
-        await tx.insert(packageServiceLinksTable).values(
-          serviceQuotas.map(({ serviceId, quota }) => ({ packageId: pkg.id, serviceId, quota })),
-        );
-      }
-
-      return pkg;
-    });
+        serviceQuotas,
+      })
+    ));
 
     const full = await loadPackageWithServiceIds(result.id);
     res.status(201).json(full);
+  } catch (err) { next(err); }
+});
+
+router.post("/growth/packages/quick-sale", async (req, res, next) => {
+  try {
+    const ctx = await requireSalonOwner(req);
+    if (!ctx) { res.status(403).json({ error: "Salon owner required.", code: "FORBIDDEN" }); return; }
+
+    const parsed = OwnerQuickCreatePackagePurchaseBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Validation error.", code: "VALIDATION_ERROR", issues: parsed.error.issues });
+      return;
+    }
+    const serviceIds = parsed.data.serviceQuotas.map((item) => item.serviceId);
+    const packageName = parsed.data.name.trim();
+    if (!packageName) {
+      res.status(400).json({ error: "Package name is required.", code: "VALIDATION_ERROR" });
+      return;
+    }
+    if (new Set(serviceIds).size !== serviceIds.length) {
+      res.status(400).json({ error: "Each service may have only one quota.", code: "DUPLICATE_SERVICE_QUOTA" });
+      return;
+    }
+
+    const now = new Date();
+    const result = await db.transaction(async (tx) => {
+      const [salonCustomer] = await tx
+        .select({ id: salonCustomersTable.id })
+        .from(salonCustomersTable)
+        .where(and(
+          eq(salonCustomersTable.id, parsed.data.salonCustomerId),
+          eq(salonCustomersTable.salonId, ctx.salon.id),
+        ))
+        .limit(1);
+      if (!salonCustomer) return { error: "customer_not_found" as const };
+
+      const validServices = await tx
+        .select({ id: servicesTable.id })
+        .from(servicesTable)
+        .where(and(
+          eq(servicesTable.salonId, ctx.salon.id),
+          eq(servicesTable.active, true),
+          inArray(servicesTable.id, serviceIds),
+        ));
+      if (validServices.length !== serviceIds.length) return { error: "invalid_services" as const };
+
+      const pkg = await insertPerServicePackageDefinitionInTx(tx, {
+        salonId: ctx.salon.id,
+        name: packageName,
+        description: parsed.data.description,
+        priceInDinars: parsed.data.priceInDinars,
+        validityDays: parsed.data.validityDays,
+        active: true,
+        serviceQuotas: parsed.data.serviceQuotas,
+      });
+      const totalSessions = parsed.data.serviceQuotas.reduce((sum, item) => sum + item.quota, 0);
+      const expiresAt = new Date(now.getTime() + parsed.data.validityDays * 86_400_000);
+      const isActive = parsed.data.paymentStatus === "active";
+      const [purchase] = await tx.insert(customerPackagePurchasesTable).values({
+        salonId: ctx.salon.id,
+        packageId: pkg.id,
+        salonCustomerId: salonCustomer.id,
+        totalSessions,
+        remainingSessions: totalSessions,
+        quotaPolicy: "per_service",
+        priceInDinars: parsed.data.priceInDinars,
+        paymentMethod: parsed.data.paymentMethod,
+        status: parsed.data.paymentStatus,
+        expiresAt,
+        paymentConfirmedAt: isActive ? now : null,
+        paymentConfirmedByUserId: isActive ? ctx.user.id : null,
+        notes: parsed.data.notes ?? null,
+      }).returning();
+      if (!purchase) throw new Error("Package purchase insert failed");
+      await tx.insert(packagePurchaseServiceLinksTable).values(
+        parsed.data.serviceQuotas.map(({ serviceId, quota }) => ({
+          purchaseId: purchase.id,
+          serviceId,
+          totalQuota: quota,
+          remainingQuota: quota,
+        })),
+      );
+      return { pkg, purchase };
+    });
+
+    if ("error" in result) {
+      if (result.error === "customer_not_found") {
+        res.status(404).json({ error: "Salon customer not found.", code: "NOT_FOUND" });
+      } else {
+        res.status(400).json({ error: "Some services are inactive, invalid, or belong to another salon.", code: "INVALID_SERVICE_IDS" });
+      }
+      return;
+    }
+
+    res.status(201).json({
+      package: {
+        ...result.pkg,
+        serviceIds,
+        serviceQuotas: parsed.data.serviceQuotas,
+      },
+      purchase: {
+        ...result.purchase,
+        packageName: result.pkg.name,
+        serviceQuotas: parsed.data.serviceQuotas.map(({ serviceId, quota }) => ({
+          serviceId,
+          totalQuota: quota,
+          remainingQuota: quota,
+        })),
+      },
+    });
   } catch (err) { next(err); }
 });
 

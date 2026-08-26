@@ -258,6 +258,8 @@ import type {
   PublicProductDetail,
   PublicProductList,
   PurchasePackageBody,
+  QuickPackagePurchaseInput,
+  QuickPackagePurchaseResult,
   RedeemSessionBody,
   RedeemSessionResult,
   RegisterInput,
@@ -17399,6 +17401,77 @@ export const useOwnerCreatePackage = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getOwnerCreatePackageMutationOptions(options));
+    }
+
+export const getOwnerQuickCreatePackagePurchaseUrl = () => {
+
+
+
+
+  return `/api/growth/packages/quick-sale`
+}
+
+/**
+ * @summary Atomically create a treatment package definition and sell it to an existing salon customer (owner)
+ */
+export const ownerQuickCreatePackagePurchase = async (quickPackagePurchaseInput: QuickPackagePurchaseInput, options?: Parameters<typeof customFetch>[1]): Promise<QuickPackagePurchaseResult> => {
+
+  return customFetch<QuickPackagePurchaseResult>(getOwnerQuickCreatePackagePurchaseUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(quickPackagePurchaseInput)
+  }
+);}
+
+
+
+
+
+export const getOwnerQuickCreatePackagePurchaseMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerQuickCreatePackagePurchase>>, TError,{data: BodyType<QuickPackagePurchaseInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof ownerQuickCreatePackagePurchase>>, TError,{data: BodyType<QuickPackagePurchaseInput>}, TContext> => {
+
+const mutationKey = ['ownerQuickCreatePackagePurchase'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof ownerQuickCreatePackagePurchase>>, {data: BodyType<QuickPackagePurchaseInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  ownerQuickCreatePackagePurchase(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type OwnerQuickCreatePackagePurchaseMutationResult = NonNullable<Awaited<ReturnType<typeof ownerQuickCreatePackagePurchase>>>
+    export type OwnerQuickCreatePackagePurchaseMutationBody = BodyType<QuickPackagePurchaseInput>
+    export type OwnerQuickCreatePackagePurchaseMutationError = ErrorType<void>
+
+    /**
+ * @summary Atomically create a treatment package definition and sell it to an existing salon customer (owner)
+ */
+export const useOwnerQuickCreatePackagePurchase = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerQuickCreatePackagePurchase>>, TError,{data: BodyType<QuickPackagePurchaseInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof ownerQuickCreatePackagePurchase>>,
+        TError,
+        {data: BodyType<QuickPackagePurchaseInput>},
+        TContext
+      > => {
+      return useMutation(getOwnerQuickCreatePackagePurchaseMutationOptions(options));
     }
 
 export const getOwnerGetPackageUrl = (packageId: string,) => {

@@ -58,7 +58,7 @@ export function SearchableCombobox({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <div className="relative">
+      <div className="relative min-w-0 max-w-full">
         <PopoverTrigger asChild>
           <Button
             ref={triggerRef}
@@ -69,9 +69,9 @@ export function SearchableCombobox({
             aria-expanded={open}
             disabled={disabled}
             data-testid={testId}
-            className="w-full justify-between font-normal"
+            className="min-w-0 max-w-full justify-between overflow-hidden font-normal"
           >
-            <span className={cn("truncate", !selected && "text-muted-foreground")}>{selected?.label ?? placeholder}</span>
+            <span className={cn("min-w-0 flex-1 truncate text-left", !selected && "text-muted-foreground")}>{selected?.label ?? placeholder}</span>
             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" aria-hidden="true" />
           </Button>
         </PopoverTrigger>
@@ -91,7 +91,7 @@ export function SearchableCombobox({
       </div>
       <PopoverContent
         align="start"
-        className="w-[var(--radix-popover-trigger-width)] p-0"
+        className="w-[var(--radix-popover-trigger-width)] max-w-[calc(100vw-1rem)] overflow-hidden p-0"
         onCloseAutoFocus={(event) => {
           event.preventDefault();
           triggerRef.current?.focus();
@@ -130,7 +130,7 @@ export function SearchableCombobox({
                   data-testid={testId ? `${testId}-option-${option.value}` : undefined}
                 >
                   <Check className={cn("h-4 w-4", value === option.value ? "opacity-100" : "opacity-0")} />
-                  <span className="truncate">{option.label}</span>
+                  <span className="min-w-0 flex-1 truncate">{option.label}</span>
                 </CommandItem>
               ))
             )}

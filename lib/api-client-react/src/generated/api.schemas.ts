@@ -4914,6 +4914,46 @@ export interface UpdateTreatmentPackageBody {
   serviceQuotas?: PackageServiceQuota[];
 }
 
+export type QuickPackagePurchaseInputPaymentStatus = typeof QuickPackagePurchaseInputPaymentStatus[keyof typeof QuickPackagePurchaseInputPaymentStatus];
+
+
+export const QuickPackagePurchaseInputPaymentStatus = {
+  active: 'active',
+  pending_payment: 'pending_payment',
+} as const;
+
+export type QuickPackagePurchaseInputPaymentMethod = typeof QuickPackagePurchaseInputPaymentMethod[keyof typeof QuickPackagePurchaseInputPaymentMethod];
+
+
+export const QuickPackagePurchaseInputPaymentMethod = {
+  pay_at_salon: 'pay_at_salon',
+  bank_transfer: 'bank_transfer',
+} as const;
+
+export interface QuickPackagePurchaseInput {
+  /** @minLength 1 */
+  salonCustomerId: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  name: string;
+  description?: string;
+  /** @minimum 0 */
+  priceInDinars: number;
+  /**
+     * @minimum 1
+     * @maximum 3650
+     */
+  validityDays: number;
+  /** @minItems 1 */
+  serviceQuotas: PackageServiceQuota[];
+  paymentStatus: QuickPackagePurchaseInputPaymentStatus;
+  paymentMethod: QuickPackagePurchaseInputPaymentMethod;
+  /** @nullable */
+  notes?: string | null;
+}
+
 export type PackagePurchaseQuotaPolicy = typeof PackagePurchaseQuotaPolicy[keyof typeof PackagePurchaseQuotaPolicy];
 
 
@@ -4921,6 +4961,12 @@ export const PackagePurchaseQuotaPolicy = {
   shared_pool: 'shared_pool',
   per_service: 'per_service',
 } as const;
+
+export interface PurchaseServiceQuota {
+  serviceId: string;
+  totalQuota: number;
+  remainingQuota: number;
+}
 
 export type PackagePurchasePaymentMethod = typeof PackagePurchasePaymentMethod[keyof typeof PackagePurchasePaymentMethod];
 
@@ -4940,12 +4986,6 @@ export const PackagePurchaseStatus = {
   expired: 'expired',
   cancelled: 'cancelled',
 } as const;
-
-export interface PurchaseServiceQuota {
-  serviceId: string;
-  totalQuota: number;
-  remainingQuota: number;
-}
 
 export interface PackagePurchase {
   id: string;
@@ -4967,6 +5007,11 @@ export interface PackagePurchase {
   notes?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface QuickPackagePurchaseResult {
+  package: TreatmentPackage;
+  purchase: PackagePurchase;
 }
 
 export type PurchasePackageBodyPaymentMethod = typeof PurchasePackageBodyPaymentMethod[keyof typeof PurchasePackageBodyPaymentMethod];

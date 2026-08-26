@@ -26,6 +26,7 @@ import { Loader2, Plus, Box, Users, Check, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
+import { ServiceQuotaSelector } from "@/components/ui/service-quota-selector";
 
 export default function OwnerPackages() {
   const { data: userResp } = useGetCurrentUser();
@@ -149,18 +150,6 @@ export default function OwnerPackages() {
     }
   };
 
-  const toggleService = (id: string) => {
-    setFormData(prev => ({
-      ...prev,
-      serviceQuotas: Object.prototype.hasOwnProperty.call(prev.serviceQuotas, id)
-        ? Object.fromEntries(Object.entries(prev.serviceQuotas).filter(([serviceId]) => serviceId !== id))
-        : { ...prev.serviceQuotas, [id]: 1 },
-    }));
-  };
-
-  const setServiceQuota = (id: string, quota: number) => {
-    setFormData(prev => ({ ...prev, serviceQuotas: { ...prev.serviceQuotas, [id]: quota } }));
-  };
 
   const handleConfirmPayment = (packageId: string, purchaseId: string) => {
     confirmPaymentMutation.mutate({ packageId, purchaseId }, {
@@ -211,11 +200,11 @@ export default function OwnerPackages() {
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   {packages?.map((pkg: TreatmentPackage) => (
-                    <Card key={pkg.id} className={!pkg.active ? "opacity-60" : ""}>
+                    <Card key={pkg.id} className={`min-w-0 overflow-hidden${!pkg.active ? " opacity-60" : ""}`}>
                       <CardHeader className="pb-3 border-b">
-                        <div className="flex justify-between items-start gap-4">
-                          <div>
-                            <CardTitle className="text-lg flex items-center gap-2">
+                        <div className="flex min-w-0 justify-between items-start gap-4">
+                          <div className="min-w-0">
+                            <CardTitle className="min-w-0 break-words text-lg">
                               {pkg.name}
                               {!pkg.active && <Badge variant="secondary">Neaktivno</Badge>}
                             </CardTitle>
@@ -233,7 +222,7 @@ export default function OwnerPackages() {
                           <div className="flex flex-wrap gap-1">
                             {pkg.serviceQuotas.map(({ serviceId, quota }) => {
                               const srv = services?.find(s => s.id === serviceId);
-                              return srv ? <Badge key={serviceId} variant="secondary" className="text-xs">{srv.name} × {quota}</Badge> : null;
+                              return srv ? <Badge key={serviceId} variant="secondary" className="max-w-full whitespace-normal break-words text-xs">{srv.name} × {quota}</Badge> : null;
                             })}
                           </div>
                         </div>
@@ -259,9 +248,9 @@ export default function OwnerPackages() {
                     <div className="divide-y">
                       {customerPackages?.map((purchase: PackagePurchase) => (
                         <div key={purchase.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                          <div>
-                            <div className="flex items-center gap-2 mb-1">
-                              <h4 className="font-bold">{purchase.packageName}</h4>
+                          <div className="min-w-0">
+                            <div className="flex min-w-0 flex-wrap items-center gap-2 mb-1">
+                              <h4 className="min-w-0 break-words font-bold">{purchase.packageName}</h4>
                               {purchase.status === 'active' && <Badge className="bg-emerald-100 text-emerald-800 border-none">Aktivan</Badge>}
                               {purchase.status === 'pending_payment' && <Badge variant="secondary" className="bg-orange-100 text-orange-800 border-none">Čeka uplatu</Badge>}
                               {purchase.status === 'completed' && <Badge variant="outline">Iskorišćen</Badge>}
@@ -301,11 +290,11 @@ export default function OwnerPackages() {
       </div>
 
       <Dialog open={isEditing} onOpenChange={(open) => !open && setIsEditing(false)}>
-        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[90dvh] w-[calc(100vw-1rem)] min-w-0 max-w-xl flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-5 pt-5 sm:px-6 sm:pt-6">
             <DialogTitle>{currentId ? "Izmeni paket" : "Novi paket tretmana"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden px-5 py-4 sm:px-6">
             <div className="space-y-2">
               <Label>Naziv paketa</Label>
               <Input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="Npr. Paket 5 Masaža" />
@@ -331,33 +320,12 @@ export default function OwnerPackages() {
 
             <div className="space-y-2 pt-2 border-t">
               <Label>Usluge na koje se paket može primeniti</Label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2 max-h-48 overflow-y-auto p-2 border rounded-md bg-muted/10">
-                {activeServices.length === 0 ? (
-                  <p className="text-sm text-muted-foreground col-span-2">Nema aktivnih usluga u salonu.</p>
-                ) : (
-                  activeServices.map(srv => (
-                    <label key={srv.id} className="flex items-center gap-2 text-sm cursor-pointer p-1.5 hover:bg-muted/30 rounded">
-                      <input
-                        type="checkbox" 
-                        className="rounded border-gray-300"
-                        checked={Object.prototype.hasOwnProperty.call(formData.serviceQuotas, srv.id)}
-                        onChange={() => toggleService(srv.id)}
-                      />
-                      <span className="truncate">{srv.name}</span>
-                      {Object.prototype.hasOwnProperty.call(formData.serviceQuotas, srv.id) && (
-                        <Input
-                          aria-label={`Kvota za ${srv.name}`}
-                          className="ml-auto h-8 w-20"
-                          type="number"
-                          min="1"
-                          value={formData.serviceQuotas[srv.id]}
-                          onChange={event => setServiceQuota(srv.id, Number(event.target.value))}
-                        />
-                      )}
-                    </label>
-                  ))
-                )}
-              </div>
+              <ServiceQuotaSelector
+                services={services || []}
+                quotas={formData.serviceQuotas}
+                onChange={(quotas) => setFormData(prev => ({ ...prev, serviceQuotas: quotas }))}
+                testIdPrefix="package-definition-service"
+              />
             </div>
             <p className="text-sm font-medium">Ukupno tretmana: <strong>{totalSessions}</strong></p>
             {validationError && <p className="text-sm text-destructive">{validationError}</p>}
@@ -368,7 +336,7 @@ export default function OwnerPackages() {
             </div>
 
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 gap-2 border-t bg-background px-5 py-4 sm:px-6">
             <Button variant="outline" onClick={() => setIsEditing(false)}>Odustani</Button>
             <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending || Boolean(validationError)}>
               {(createMutation.isPending || updateMutation.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
