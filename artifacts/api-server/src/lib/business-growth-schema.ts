@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 38;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 40;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -107,6 +107,7 @@ const ENUM_LABELS: Record<string, string[]> = {
   referral_credit_entry_type: ["held", "available", "redeemed", "expired", "reversed", "negative_offset", "restored"],
   referral_wallet_kind: ["B2B", "B2C"],
   referral_milestone_kind: ["salon_subscription_reduction", "education_commission_reduction"],
+  supplier_scope: ["B2B", "B2C", "BOTH"],
 };
 
 /**
@@ -477,6 +478,149 @@ function tableStatements(s: string): string[] {
     `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS public_price integer`,
     `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS public_discount_price integer`,
     `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS professional_enabled boolean NOT NULL DEFAULT true`,
+    // v39 — platform-managed supplier catalog. A single deterministic legacy
+    // supplier preserves every pre-marketplace catalog row without deleting or
+    // rewriting the legacy categoryName/subcategoryName compatibility fields.
+    `CREATE TABLE IF NOT EXISTS ${s}.suppliers (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      name text NOT NULL,
+      slug text NOT NULL UNIQUE,
+      scope ${s}.supplier_scope NOT NULL DEFAULT 'BOTH',
+      logo_url text,
+      active boolean NOT NULL DEFAULT true,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS suppliers_active_name_idx ON ${s}.suppliers (active, name)`,
+    `INSERT INTO ${s}.suppliers (id, name, slug, scope, active)
+      VALUES ('9b5970ea-0a8c-5e60-9d32-2a09f0890560', 'LUMERA Legacy Catalog', 'lumera-legacy', 'BOTH', true)
+      ON CONFLICT (slug) DO NOTHING`,
+    `ALTER TABLE ${s}.product_categories ADD COLUMN IF NOT EXISTS supplier_id uuid`,
+    `UPDATE ${s}.product_categories
+       SET supplier_id = '9b5970ea-0a8c-5e60-9d32-2a09f0890560'
+       WHERE supplier_id IS NULL`,
+    `ALTER TABLE ${s}.product_categories ALTER COLUMN supplier_id
+       SET DEFAULT '9b5970ea-0a8c-5e60-9d32-2a09f0890560'`,
+    `DO $$ BEGIN
+       IF EXISTS (
+         SELECT 1 FROM ${s}.product_categories category
+         LEFT JOIN ${s}.suppliers supplier ON supplier.id = category.supplier_id
+         WHERE supplier.id IS NULL
+       ) THEN RAISE EXCEPTION 'Cannot add category supplier FK: an owner is missing'; END IF;
+       IF EXISTS (SELECT 1 FROM ${s}.product_categories WHERE supplier_id IS NULL) THEN
+         RAISE EXCEPTION 'Cannot require product_categories.supplier_id: legacy backfill is incomplete';
+       END IF;
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '${s}.product_categories'::regclass
+         AND conname = 'product_categories_supplier_id_fkey') THEN
+         ALTER TABLE ${s}.product_categories ADD CONSTRAINT product_categories_supplier_id_fkey
+           FOREIGN KEY (supplier_id) REFERENCES ${s}.suppliers(id) ON DELETE RESTRICT;
+       END IF;
+       ALTER TABLE ${s}.product_categories ALTER COLUMN supplier_id SET NOT NULL;
+     END $$`,
+    // Replace the legacy global uniqueness constraints with supplier-scoped
+    // sibling uniqueness. NULLS NOT DISTINCT covers root categories too.
+    `ALTER TABLE ${s}.product_categories DROP CONSTRAINT IF EXISTS product_categories_name_key`,
+    `ALTER TABLE ${s}.product_categories DROP CONSTRAINT IF EXISTS product_categories_slug_key`,
+    `ALTER TABLE ${s}.product_categories DROP CONSTRAINT IF EXISTS product_categories_name_unique`,
+    `ALTER TABLE ${s}.product_categories DROP CONSTRAINT IF EXISTS product_categories_slug_unique`,
+    `DROP INDEX IF EXISTS ${s}.product_categories_name_unique`,
+    `DROP INDEX IF EXISTS ${s}.product_categories_slug_unique`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS product_categories_supplier_parent_name_unique
+       ON ${s}.product_categories (supplier_id, parent_id, name) NULLS NOT DISTINCT`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS product_categories_supplier_parent_slug_unique
+       ON ${s}.product_categories (supplier_id, parent_id, slug) NULLS NOT DISTINCT`,
+    `CREATE INDEX IF NOT EXISTS product_categories_supplier_parent_sort_idx
+       ON ${s}.product_categories (supplier_id, parent_id, sort_order)`,
+    `CREATE INDEX IF NOT EXISTS product_categories_supplier_active_sort_idx
+       ON ${s}.product_categories (supplier_id, active, sort_order)`,
+    `DO $$ BEGIN
+       IF EXISTS (
+         SELECT 1 FROM ${s}.product_categories child
+         LEFT JOIN ${s}.product_categories parent ON parent.id = child.parent_id
+         WHERE child.parent_id IS NOT NULL AND parent.id IS NULL
+       ) THEN RAISE EXCEPTION 'Cannot add category parent FK: an existing parent is missing'; END IF;
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '${s}.product_categories'::regclass
+         AND conname = 'product_categories_parent_id_fkey') THEN
+         ALTER TABLE ${s}.product_categories ADD CONSTRAINT product_categories_parent_id_fkey
+           FOREIGN KEY (parent_id) REFERENCES ${s}.product_categories(id) ON DELETE RESTRICT;
+       END IF;
+     END $$`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS supplier_id uuid`,
+    `UPDATE ${s}.products
+       SET supplier_id = '9b5970ea-0a8c-5e60-9d32-2a09f0890560'
+       WHERE supplier_id IS NULL`,
+    `ALTER TABLE ${s}.products ALTER COLUMN supplier_id
+       SET DEFAULT '9b5970ea-0a8c-5e60-9d32-2a09f0890560'`,
+    `DO $$ BEGIN
+       IF EXISTS (
+         SELECT 1 FROM ${s}.products product
+         LEFT JOIN ${s}.suppliers supplier ON supplier.id = product.supplier_id
+         WHERE supplier.id IS NULL
+       ) THEN RAISE EXCEPTION 'Cannot add product supplier FK: an owner is missing'; END IF;
+       IF EXISTS (SELECT 1 FROM ${s}.products WHERE supplier_id IS NULL) THEN
+         RAISE EXCEPTION 'Cannot require products.supplier_id: legacy backfill is incomplete';
+       END IF;
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '${s}.products'::regclass
+         AND conname = 'products_supplier_id_fkey') THEN
+         ALTER TABLE ${s}.products ADD CONSTRAINT products_supplier_id_fkey
+           FOREIGN KEY (supplier_id) REFERENCES ${s}.suppliers(id) ON DELETE RESTRICT;
+       END IF;
+       ALTER TABLE ${s}.products ALTER COLUMN supplier_id SET NOT NULL;
+     END $$`,
+    `CREATE INDEX IF NOT EXISTS products_supplier_category_active_idx
+       ON ${s}.products (supplier_id, category_id, active)`,
+    `CREATE INDEX IF NOT EXISTS products_supplier_active_created_idx
+       ON ${s}.products (supplier_id, active, created_at)`,
+    `DO $$ BEGIN
+       IF EXISTS (
+         SELECT 1 FROM ${s}.products product
+         LEFT JOIN ${s}.product_categories category ON category.id = product.category_id
+         WHERE product.category_id IS NOT NULL
+           AND (category.id IS NULL OR category.supplier_id <> product.supplier_id)
+       ) THEN RAISE EXCEPTION 'Cannot enforce product category ownership: legacy catalog is inconsistent'; END IF;
+     END $$`,
+    `CREATE OR REPLACE FUNCTION ${s}.enforce_supplier_catalog_ownership()
+      RETURNS trigger LANGUAGE plpgsql AS $$
+      DECLARE parent_supplier uuid; category_supplier uuid; supplier_scope_value ${s}.supplier_scope;
+      BEGIN
+        IF TG_TABLE_NAME = 'product_categories' THEN
+          IF NEW.parent_id IS NOT NULL THEN
+            SELECT supplier_id INTO parent_supplier FROM ${s}.product_categories WHERE id = NEW.parent_id;
+            IF parent_supplier IS NULL OR parent_supplier <> NEW.supplier_id THEN
+              RAISE EXCEPTION 'Category parent must belong to the same supplier';
+            END IF;
+            IF NEW.id IS NOT NULL AND NEW.parent_id = NEW.id THEN RAISE EXCEPTION 'Category cannot be its own parent'; END IF;
+            IF NEW.id IS NOT NULL AND EXISTS (
+              WITH RECURSIVE ancestors AS (
+                SELECT id, parent_id FROM ${s}.product_categories WHERE id = NEW.parent_id
+                UNION
+                SELECT category.id, category.parent_id FROM ${s}.product_categories category
+                JOIN ancestors ON category.id = ancestors.parent_id
+              ) SELECT 1 FROM ancestors WHERE id = NEW.id
+            ) THEN RAISE EXCEPTION 'Category parent would create a cycle'; END IF;
+          END IF;
+        ELSE
+          SELECT supplier_id INTO category_supplier FROM ${s}.product_categories WHERE id = NEW.category_id;
+          IF NEW.category_id IS NOT NULL AND (category_supplier IS NULL OR category_supplier <> NEW.supplier_id) THEN
+            RAISE EXCEPTION 'Product category must belong to the same supplier';
+          END IF;
+          SELECT scope INTO supplier_scope_value FROM ${s}.suppliers
+          WHERE id = NEW.supplier_id
+          FOR SHARE;
+          IF supplier_scope_value IS NULL
+             OR (NEW.retail_enabled AND supplier_scope_value NOT IN ('B2C', 'BOTH'))
+             OR (NEW.professional_enabled AND supplier_scope_value NOT IN ('B2B', 'BOTH')) THEN
+            RAISE EXCEPTION 'Product sales channels are not permitted by supplier scope';
+          END IF;
+        END IF;
+        RETURN NEW;
+      END $$`,
+    `DROP TRIGGER IF EXISTS product_categories_supplier_ownership ON ${s}.product_categories`,
+    `CREATE TRIGGER product_categories_supplier_ownership BEFORE INSERT OR UPDATE ON ${s}.product_categories
+       FOR EACH ROW EXECUTE FUNCTION ${s}.enforce_supplier_catalog_ownership()`,
+    `DROP TRIGGER IF EXISTS products_supplier_ownership ON ${s}.products`,
+    `CREATE TRIGGER products_supplier_ownership BEFORE INSERT OR UPDATE ON ${s}.products
+       FOR EACH ROW EXECUTE FUNCTION ${s}.enforce_supplier_catalog_ownership()`,
     // v18: preserve an opaque customer-facing catalog reference independently
     // from the editable owner SKU. Backfill legacy products before enforcing
     // the invariant so existing carts and orders can snapshot it.
@@ -682,6 +826,104 @@ function tableStatements(s: string): string[] {
     // joining the bounded admin result back to retail_orders.
     `CREATE INDEX CONCURRENTLY IF NOT EXISTS retail_order_items_catalog_reference_order_idx
        ON ${s}.retail_order_items (product_catalog_reference, order_id)`,
+    // v39 — immutable supplier and commercial line snapshots. Populate from
+    // the product/catalog as it exists during rollout before making the facts
+    // required; existing orders remain valid if that supplier is later retired.
+    `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS supplier_id uuid`,
+    `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS supplier_name text`,
+    `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS supplier_slug text`,
+    `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS product_catalog_reference text`,
+    `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS product_sku_snapshot text`,
+    `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS market text NOT NULL DEFAULT 'B2B'`,
+    `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS currency text NOT NULL DEFAULT 'RSD'`,
+    `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS unit_price integer`,
+    `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS discount_snapshot integer`,
+    `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS line_subtotal integer`,
+    `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS line_total integer`,
+    `UPDATE ${s}.order_items AS item SET
+       supplier_id = COALESCE(item.supplier_id, product.supplier_id),
+       supplier_name = COALESCE(item.supplier_name, supplier.name),
+       supplier_slug = COALESCE(item.supplier_slug, supplier.slug),
+       product_catalog_reference = COALESCE(item.product_catalog_reference, product.catalog_reference),
+       product_sku_snapshot = COALESCE(item.product_sku_snapshot, item.product_sku, product.sku),
+       unit_price = COALESCE(item.unit_price, item.price),
+       line_subtotal = COALESCE(item.line_subtotal, item.price * item.quantity),
+       line_total = COALESCE(item.line_total, item.price * item.quantity)
+       FROM ${s}.products product JOIN ${s}.suppliers supplier ON supplier.id = product.supplier_id
+       WHERE item.product_id = product.id`,
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS supplier_id uuid`,
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS supplier_name text`,
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS supplier_slug text`,
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS product_sku_snapshot text`,
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS market text NOT NULL DEFAULT 'B2C'`,
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS currency text NOT NULL DEFAULT 'RSD'`,
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS discount_snapshot integer`,
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS line_subtotal integer`,
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS line_total integer`,
+    `UPDATE ${s}.retail_order_items AS item SET
+       supplier_id = COALESCE(item.supplier_id, product.supplier_id),
+       supplier_name = COALESCE(item.supplier_name, supplier.name),
+       supplier_slug = COALESCE(item.supplier_slug, supplier.slug),
+       product_catalog_reference = COALESCE(item.product_catalog_reference, product.catalog_reference),
+       product_sku_snapshot = COALESCE(item.product_sku_snapshot, product.sku),
+       discount_snapshot = COALESCE(item.discount_snapshot,
+         CASE WHEN product.public_price IS NOT NULL AND product.public_price > item.unit_price
+           THEN product.public_price - item.unit_price ELSE NULL END),
+       line_subtotal = COALESCE(item.line_subtotal, item.unit_price * item.quantity),
+       line_total = COALESCE(item.line_total, item.unit_price * item.quantity)
+       FROM ${s}.products product JOIN ${s}.suppliers supplier ON supplier.id = product.supplier_id
+       WHERE item.product_id = product.id`,
+    `DO $$ BEGIN
+       IF EXISTS (SELECT 1 FROM ${s}.order_items WHERE supplier_id IS NULL OR supplier_name IS NULL
+         OR supplier_slug IS NULL OR product_catalog_reference IS NULL OR unit_price IS NULL
+         OR line_subtotal IS NULL OR line_total IS NULL) THEN
+         RAISE EXCEPTION 'Cannot require order item snapshots: legacy backfill is incomplete';
+       END IF;
+       IF EXISTS (SELECT 1 FROM ${s}.retail_order_items WHERE supplier_id IS NULL OR supplier_name IS NULL
+         OR supplier_slug IS NULL OR product_catalog_reference IS NULL OR unit_price IS NULL
+         OR line_subtotal IS NULL OR line_total IS NULL) THEN
+         RAISE EXCEPTION 'Cannot require retail order item snapshots: legacy backfill is incomplete';
+       END IF;
+       ALTER TABLE ${s}.order_items ALTER COLUMN supplier_id SET NOT NULL;
+       ALTER TABLE ${s}.order_items ALTER COLUMN supplier_name SET NOT NULL;
+       ALTER TABLE ${s}.order_items ALTER COLUMN supplier_slug SET NOT NULL;
+       ALTER TABLE ${s}.order_items ALTER COLUMN product_catalog_reference SET NOT NULL;
+       ALTER TABLE ${s}.order_items ALTER COLUMN unit_price SET NOT NULL;
+       ALTER TABLE ${s}.order_items ALTER COLUMN line_subtotal SET NOT NULL;
+       ALTER TABLE ${s}.order_items ALTER COLUMN line_total SET NOT NULL;
+       ALTER TABLE ${s}.retail_order_items ALTER COLUMN supplier_id SET NOT NULL;
+       ALTER TABLE ${s}.retail_order_items ALTER COLUMN supplier_name SET NOT NULL;
+       ALTER TABLE ${s}.retail_order_items ALTER COLUMN supplier_slug SET NOT NULL;
+       ALTER TABLE ${s}.retail_order_items ALTER COLUMN product_catalog_reference SET NOT NULL;
+       ALTER TABLE ${s}.retail_order_items ALTER COLUMN line_subtotal SET NOT NULL;
+       ALTER TABLE ${s}.retail_order_items ALTER COLUMN line_total SET NOT NULL;
+     END $$`,
+    `CREATE INDEX IF NOT EXISTS order_items_supplier_idx ON ${s}.order_items (supplier_id)`,
+    `CREATE INDEX IF NOT EXISTS retail_order_items_supplier_idx ON ${s}.retail_order_items (supplier_id)`,
+    `CREATE OR REPLACE FUNCTION ${s}.prevent_order_item_commercial_snapshot_update()
+      RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.supplier_id IS DISTINCT FROM OLD.supplier_id
+          OR NEW.supplier_name IS DISTINCT FROM OLD.supplier_name
+          OR NEW.supplier_slug IS DISTINCT FROM OLD.supplier_slug
+          OR NEW.product_catalog_reference IS DISTINCT FROM OLD.product_catalog_reference
+          OR NEW.product_sku_snapshot IS DISTINCT FROM OLD.product_sku_snapshot
+          OR NEW.market IS DISTINCT FROM OLD.market OR NEW.currency IS DISTINCT FROM OLD.currency
+          OR NEW.unit_price IS DISTINCT FROM OLD.unit_price
+          OR NEW.discount_snapshot IS DISTINCT FROM OLD.discount_snapshot
+          OR NEW.quantity IS DISTINCT FROM OLD.quantity
+          OR NEW.line_subtotal IS DISTINCT FROM OLD.line_subtotal
+          OR NEW.line_total IS DISTINCT FROM OLD.line_total THEN
+          RAISE EXCEPTION 'Order item commercial snapshot is immutable';
+        END IF;
+        RETURN NEW;
+      END $$`,
+    `DROP TRIGGER IF EXISTS order_items_commercial_snapshot_immutable ON ${s}.order_items`,
+    `CREATE TRIGGER order_items_commercial_snapshot_immutable BEFORE UPDATE ON ${s}.order_items
+       FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_order_item_commercial_snapshot_update()`,
+    `DROP TRIGGER IF EXISTS retail_order_items_commercial_snapshot_immutable ON ${s}.retail_order_items`,
+    `CREATE TRIGGER retail_order_items_commercial_snapshot_immutable BEFORE UPDATE ON ${s}.retail_order_items
+       FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_order_item_commercial_snapshot_update()`,
     `CREATE TABLE IF NOT EXISTS ${s}.retail_product_reviews (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE CASCADE,

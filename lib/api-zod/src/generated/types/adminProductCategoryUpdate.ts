@@ -7,6 +7,8 @@
  */
 
 export interface AdminProductCategoryUpdate {
+  /** @minLength 1 */
+  supplierId?: string;
   /**
      * @minLength 1
      * @pattern .*\S.*

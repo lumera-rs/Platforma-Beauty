@@ -322,8 +322,8 @@ export function RetailCheckoutPage() {
     const unavailableMessage = productNames.length === 0
       ? <>Jedan od proizvoda u vašoj korpi je rasprodat ili više nije aktivan. Porudžbina nije kreirana.</>
       : productNames.length === 1
-        ? <>Proizvod <strong>{productNames[0]}</strong> je rasprodat ili više nije aktivan. Porudžbina nije kreirana.</>
-        : <>Proizvodi <strong>{productNames.join(", ")}</strong> su rasprodati ili više nisu aktivni. Porudžbina nije kreirana.</>;
+        ? <>Proizvod <strong>{productNames[0]}</strong> je rasprodat, promenio cenu, ili je dobavljač trenutno neaktivan. Porudžbina nije kreirana.</>
+        : <>Proizvodi <strong>{productNames.join(", ")}</strong> su rasprodati, promenili cenu, ili je dobavljač trenutno neaktivan. Porudžbina nije kreirana.</>;
     const unavailableHeading = productNames.length > 1 ? "Proizvodi više nisu dostupni" : "Proizvod više nije dostupan";
     return <Layout><main className="mx-auto min-h-screen max-w-2xl px-4 py-10"><h1 className="font-serif text-4xl font-bold">Dostava i plaćanje</h1><div data-testid="unavailable-item-recovery" role="alert" aria-live="assertive" className="mt-10 rounded-2xl border border-destructive/30 bg-destructive/5 p-8"><h2 className="text-xl font-semibold">{unavailableHeading}</h2><p className="mt-3 text-muted-foreground">{unavailableMessage}</p><p className="mt-2 text-muted-foreground">Vratite se u korpu da uklonite proizvod ili nastavite sa pregledom drugih proizvoda.</p><div className="mt-6 flex flex-wrap gap-3"><Button variant="outline" asChild><Link href="/korpa">Vrati se u korpu</Link></Button><Button asChild><Link href="/proizvodi">Nastavi sa kupovinom</Link></Button></div></div></main></Layout>;
   }

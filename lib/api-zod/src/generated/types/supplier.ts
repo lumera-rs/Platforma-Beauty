@@ -5,19 +5,16 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { SupplierScope } from './supplierScope';
 
-export interface AdminProductCategory {
+export interface Supplier {
   id: string;
-  supplierId: string;
   name: string;
   slug: string;
+  scope: SupplierScope;
   /** @nullable */
-  parentId?: string | null;
-  sortOrder: number;
-  /** @nullable */
-  icon?: string | null;
-  /** @nullable */
-  imageUrl?: string | null;
+  logoUrl: string | null;
   active: boolean;
-  productCount: number;
+  createdAt: Date;
+  updatedAt: Date;
 }

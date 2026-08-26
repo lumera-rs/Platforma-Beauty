@@ -11,6 +11,7 @@
  */
 export interface PublicProduct {
   id: string;
+  supplierId: string;
   name: string;
   category: string;
   /** @nullable */

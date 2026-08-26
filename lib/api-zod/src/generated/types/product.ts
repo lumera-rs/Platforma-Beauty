@@ -9,6 +9,7 @@ import type { ProductVariantsItem } from './productVariantsItem';
 
 export interface Product {
   id: string;
+  supplierId: string;
   name: string;
   category: string;
   /** @nullable */

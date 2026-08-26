@@ -184,45 +184,159 @@ test('education-center registration stays excluded from the sitemap during upstr
   }
 });
 
-test('public product pages render only approved customer data and enter the sitemap', async () => {
+function supplierCatalogFetch(fixtures) {
+  return async (input) => {
+    const url = new URL(input);
+    const key = `${url.pathname}${url.search}`;
+    const value = fixtures[key] ?? fixtures[url.pathname];
+    if (value === undefined) return new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: { 'content-type': 'application/json' } });
+    return new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+}
+
+test('/proizvodi lists only active B2C suppliers instead of legacy mixed products', async () => {
   const originalFetch = global.fetch;
-  const product = {
-    id: 'public-product-1',
-    name: 'Javni beauty proizvod',
-    category: 'Nega',
-    brand: 'LUMERA Test',
-    description: 'Opis namenjen kupcima.',
-    imageUrl: '/public-product.jpg',
-    images: ['/public-product.jpg'],
-    price: 2499,
-    discountPrice: 1999,
-    unit: 'kom',
-    isNew: true,
-    isBestseller: false,
-    relatedProducts: [],
-    sku: 'B2B-SKU-PRIVATE',
-    stock: 999,
-    weightGrams: 100,
-    internalDescription: 'Interni privatni opis koji ne sme biti renderovan.',
-  };
-  global.fetch = async (url) => {
-    const pathname = new URL(url).pathname;
-    const body = pathname === '/api/shop/public/products'
-      ? { items: [product], total: 1, page: 1, pageSize: 24, totalPages: 1 }
-      : pathname === '/api/shop/public/products/public-product-1'
-        ? product
-        : [];
-    return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
-  };
+  global.fetch = supplierCatalogFetch({
+    '/api/suppliers': [
+      { id: 's1', slug: 'aurora', name: 'Aurora Beauty', scope: 'B2C', active: true, logoUrl: '/aurora.jpg' },
+      { id: 's2', slug: 'pro-only', name: 'Pro Only', scope: 'B2B', active: true, logoUrl: null },
+      { id: 's3', slug: 'inactive', name: 'Inactive Retail', scope: 'BOTH', active: false, logoUrl: null },
+    ],
+  });
   try {
     const listing = await createSeoResponse(request('/proizvodi'), template);
-    const detail = await createSeoResponse(request('/proizvodi/public-product-1'), template);
-    const sitemap = await createSeoResponse(request('/sitemap.xml'), template);
+    assert.equal(listing.status, 200);
     assert.match(listing.body, /<h1>Beauty proizvodi za kupce<\/h1>/);
-    assert.match(detail.body, /<title>Javni beauty proizvod \| LUMERA proizvodi<\/title>/);
-    assert.match(detail.body, /Opis namenjen kupcima/);
-    assert.doesNotMatch(detail.body, /B2B-SKU-PRIVATE|Interni privatni opis/);
-    assert.match(sitemap.body, /https:\/\/lumera\.example\/proizvodi\/public-product-1/);
+    assert.match(listing.body, /href="\/shop\/aurora"/);
+    assert.match(listing.body, /Aurora Beauty/);
+    assert.doesNotMatch(listing.body, /Pro Only|Inactive Retail|\/api\/shop\/public\/products/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('supplier shop and arbitrary-depth category render canonical metadata, breadcrumbs, and qualified links', async () => {
+  const originalFetch = global.fetch;
+  const supplier = { id: 's1', slug: 'aurora', name: 'Aurora Beauty', scope: 'BOTH', active: true, logoUrl: '/aurora.jpg' };
+  const categories = [
+    { id: 'c1', name: 'Nega', path: 'nega', parentId: null, active: true },
+    { id: 'c2', name: 'Lice', path: 'nega/lice', parentId: 'c1', active: true },
+    { id: 'c3', name: 'Profesionalna nega', path: 'nega/lice/profesionalna', parentId: 'c2', active: true },
+  ];
+  const product = { id: 'p1', supplierId: 's1', name: 'Serum Aurora', category: 'Nega', description: 'Javni opis seruma.', imageUrl: '/serum.jpg', images: [], price: 2400, discountPrice: null };
+  const requested = [];
+  global.fetch = async (input) => {
+    requested.push(decodeURIComponent(String(input)));
+    return supplierCatalogFetch({
+      '/api/suppliers/aurora': supplier,
+      '/api/suppliers/aurora/categories': categories,
+      '/api/suppliers/aurora/public-products': { items: [product], total: 1, page: 1, pageSize: 24, totalPages: 1 },
+    })(input);
+  };
+  try {
+    const shop = await createSeoResponse(request('/shop/aurora'), template);
+    const category = await createSeoResponse(request('/shop/aurora/nega/lice/profesionalna'), template);
+    assert.equal(shop.status, 200);
+    assert.match(shop.body, /<title>Aurora Beauty \| Beauty proizvodi<\/title>/);
+    assert.match(shop.body, /rel="canonical" href="https:\/\/lumera\.example\/shop\/aurora"/);
+    assert.match(shop.body, /<h1>Aurora Beauty<\/h1>/);
+    assert.match(shop.body, /"@type":"ItemList"/);
+    assert.match(shop.body, /"@type":"BreadcrumbList"/);
+    assert.match(shop.body, /href="\/shop\/aurora\/proizvod\/p1"/);
+    assert.equal(category.status, 200);
+    assert.match(category.body, /<title>Profesionalna nega \| Aurora Beauty<\/title>/);
+    assert.match(category.body, /rel="canonical" href="https:\/\/lumera\.example\/shop\/aurora\/nega\/lice\/profesionalna"/);
+    assert.match(category.body, /<h1>Profesionalna nega — Aurora Beauty<\/h1>/);
+    assert.match(category.body, /href="\/shop\/aurora\/nega\/lice"/);
+    assert.ok(requested.some((url) => url.includes('/api/suppliers/aurora/public-products?page=1&pageSize=24&categoryId=c3')));
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('unknown, inactive, non-retail suppliers and unknown category paths use normal not-found behavior', async () => {
+  const originalFetch = global.fetch;
+  const inactive = { id: 's2', slug: 'inactive', name: 'Inactive', scope: 'B2C', active: false };
+  global.fetch = supplierCatalogFetch({
+    '/api/suppliers/inactive': inactive,
+    '/api/suppliers/inactive/categories': [],
+    '/api/suppliers/aurora': { id: 's1', slug: 'aurora', name: 'Aurora', scope: 'B2C', active: true },
+    '/api/suppliers/aurora/categories': [{ id: 'c1', name: 'Nega', path: 'nega', active: true }],
+  });
+  try {
+    assert.equal((await createSeoResponse(request('/shop/nepoznat'), template)).status, 404);
+    assert.equal((await createSeoResponse(request('/shop/inactive'), template)).status, 404);
+    assert.equal((await createSeoResponse(request('/shop/aurora/nega/nepostojeca'), template)).status, 404);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('supplier-qualified product uses only public B2C DTO fields in Product and Offer schema', async () => {
+  const originalFetch = global.fetch;
+  const supplier = { id: 's1', slug: 'aurora', name: 'Aurora Beauty', scope: 'B2C', active: true };
+  const product = {
+    id: 'p1', supplierId: 's1', name: 'Javni serum', category: 'Nega', brand: 'Aurora',
+    description: 'Opis namenjen kupcima.', imageUrl: '/serum.jpg', images: ['/serum.jpg'],
+    price: 2499, discountPrice: 1999, unit: 'kom', isNew: true, isBestseller: false,
+    sku: 'B2B-SKU-PRIVATE', stock: 999, wholesalePrice: 700,
+    internalDescription: 'Interni privatni opis koji ne sme biti renderovan.',
+  };
+  global.fetch = supplierCatalogFetch({
+    '/api/suppliers/aurora': supplier,
+    '/api/suppliers/aurora/public-products/p1': product,
+  });
+  try {
+    const detail = await createSeoResponse(request('/shop/aurora/proizvod/p1'), template);
+    assert.equal(detail.status, 200);
+    assert.match(detail.body, /<title>Javni serum \| Aurora Beauty<\/title>/);
+    assert.match(detail.body, /rel="canonical" href="https:\/\/lumera\.example\/shop\/aurora\/proizvod\/p1"/);
+    assert.match(detail.body, /"@type":"Product"/);
+    assert.match(detail.body, /"@type":"Offer"/);
+    assert.match(detail.body, /"price":"1999"/);
+    assert.doesNotMatch(detail.body, /B2B-SKU-PRIVATE|Interni privatni opis|wholesalePrice|"stock"/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('sitemap contains only active retail supplier, category, and supplier-qualified product URLs', async () => {
+  const originalFetch = global.fetch;
+  const active = { id: 's1', slug: 'aurora', name: 'Aurora', scope: 'B2C', active: true };
+  const fixtures = {
+    '/api/suppliers': [active, { id: 's2', slug: 'pro', name: 'Pro', scope: 'B2B', active: true }, { id: 's3', slug: 'off', name: 'Off', scope: 'BOTH', active: false }],
+    '/api/salons': [],
+    '/api/education/public/courses': [],
+    '/api/beauty-jobs': [],
+    '/api/suppliers/aurora/categories': [{ id: 'c3', name: 'Duboka', path: 'nega/lice/duboka', active: true }, { id: 'off-c', name: 'Skrivena', path: 'skrivena', active: false }],
+    '/api/suppliers/aurora/public-products': { items: [{ id: 'p1' }], total: 1, page: 1, pageSize: 100, totalPages: 1 },
+  };
+  global.fetch = supplierCatalogFetch(fixtures);
+  try {
+    const sitemap = await createSeoResponse(request('/sitemap.xml'), template);
+    assert.equal(sitemap.status, 200);
+    assert.match(sitemap.body, /https:\/\/lumera\.example\/shop\/aurora<\/loc>/);
+    assert.match(sitemap.body, /https:\/\/lumera\.example\/shop\/aurora\/nega\/lice\/duboka/);
+    assert.match(sitemap.body, /https:\/\/lumera\.example\/shop\/aurora\/proizvod\/p1/);
+    assert.doesNotMatch(sitemap.body, /\/shop\/(?:pro|off|aurora\/skrivena)|\/proizvodi\/p1/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('legacy product URL permanently redirects by supplier ID or returns not found', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = supplierCatalogFetch({
+    '/api/shop/public/products/p1': { id: 'p1', supplierId: 's1', name: 'Serum' },
+    '/api/shop/public/products/orphan': { id: 'orphan', supplierId: 'missing', name: 'Orphan' },
+    '/api/suppliers': [{ id: 's1', slug: 'aurora', name: 'Aurora', scope: 'BOTH', active: true }],
+  });
+  try {
+    const redirect = await createSeoResponse(request('/proizvodi/p1'), template);
+    const unavailable = await createSeoResponse(request('/proizvodi/orphan'), template);
+    assert.equal(redirect.status, 308);
+    assert.equal(redirect.headers.location, '/shop/aurora/proizvod/p1');
+    assert.equal(unavailable.status, 404);
   } finally {
     global.fetch = originalFetch;
   }

@@ -8,6 +8,8 @@
 import type { ProductVariant } from './productVariant';
 
 export interface AdminProductUpdate {
+  /** @minLength 1 */
+  supplierId?: string;
   /**
      * @minLength 1
      * @pattern .*\S.*

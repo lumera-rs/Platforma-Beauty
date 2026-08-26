@@ -1899,7 +1899,7 @@ export const requestMediaUploadBodySizeMultipleOf = 1;
 
 
 export const RequestMediaUploadBody = zod.object({
-  "scope": zod.enum(['salon-profile', 'salon-gallery', 'employee-avatar', 'product', 'education-cover', 'education-gallery', 'education-center', 'instructor-avatar', 'service-category', 'product-category', 'treatment-photo', 'jobseeker-portfolio']),
+  "scope": zod.enum(['salon-profile', 'salon-gallery', 'employee-avatar', 'product', 'supplier', 'education-cover', 'education-gallery', 'education-center', 'instructor-avatar', 'service-category', 'product-category', 'treatment-photo', 'jobseeker-portfolio']),
   "resourceId": zod.string().regex(requestMediaUploadBodyResourceIdRegExp).nullish(),
   "name": zod.string().min(1).max(requestMediaUploadBodyNameMax),
   "size": zod.number().min(1).max(requestMediaUploadBodySizeMax).multipleOf(requestMediaUploadBodySizeMultipleOf),
@@ -3416,6 +3416,7 @@ export const listPublicProductsResponseItemsItemDiscountPriceMultipleOf = 1;
 export const ListPublicProductsResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.string(),
+  "supplierId": zod.string(),
   "name": zod.string(),
   "category": zod.string(),
   "subcategory": zod.string().nullish(),
@@ -3456,6 +3457,7 @@ export const getPublicProductResponseTwoRelatedProductsItemDiscountPriceMultiple
 
 export const GetPublicProductResponse = zod.object({
   "id": zod.string(),
+  "supplierId": zod.string(),
   "name": zod.string(),
   "category": zod.string(),
   "subcategory": zod.string().nullish(),
@@ -3472,6 +3474,7 @@ export const GetPublicProductResponse = zod.object({
 }).describe('Customer-facing product fields only. B2B price, SKU, stock, weight, variants and salon-only review data are deliberately omitted.').and(zod.object({
   "relatedProducts": zod.array(zod.object({
   "id": zod.string(),
+  "supplierId": zod.string(),
   "name": zod.string(),
   "category": zod.string(),
   "subcategory": zod.string().nullish(),
@@ -3534,6 +3537,7 @@ export const listProductsResponseItemsItemVariantsItemStockMultipleOf = 1;
 export const ListProductsResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.string(),
+  "supplierId": zod.string(),
   "name": zod.string(),
   "category": zod.string(),
   "subcategory": zod.string().nullish(),
@@ -3619,6 +3623,7 @@ export const getShopProductResponseTwoRelatedProductsItemVariantsItemStockMultip
 
 export const GetShopProductResponse = zod.object({
   "id": zod.string(),
+  "supplierId": zod.string(),
   "name": zod.string(),
   "category": zod.string(),
   "subcategory": zod.string().nullish(),
@@ -3658,6 +3663,7 @@ export const GetShopProductResponse = zod.object({
 })),
   "relatedProducts": zod.array(zod.object({
   "id": zod.string(),
+  "supplierId": zod.string(),
   "name": zod.string(),
   "category": zod.string(),
   "subcategory": zod.string().nullish(),
@@ -8537,6 +8543,7 @@ export const AdminListLoyaltyTiersResponse = zod.array(AdminListLoyaltyTiersResp
  */
 
 
+
 export const adminCreateLoyaltyTierBodyNameRegExp = new RegExp('.*\\S.*');
 export const adminCreateLoyaltyTierBodySortOrderMin = 0;
 export const adminCreateLoyaltyTierBodySortOrderMax = 100000;
@@ -8559,6 +8566,7 @@ export const adminCreateLoyaltyTierBodyProductDiscountPercentMultipleOf = 1;
 
 
 export const AdminCreateLoyaltyTierBody = zod.object({
+  "supplierId": zod.string().min(1).optional(),
   "name": zod.string().min(1).regex(adminCreateLoyaltyTierBodyNameRegExp),
   "sortOrder": zod.number().min(adminCreateLoyaltyTierBodySortOrderMin).max(adminCreateLoyaltyTierBodySortOrderMax).multipleOf(adminCreateLoyaltyTierBodySortOrderMultipleOf),
   "spendThreshold": zod.number().min(adminCreateLoyaltyTierBodySpendThresholdMin).max(adminCreateLoyaltyTierBodySpendThresholdMax).multipleOf(adminCreateLoyaltyTierBodySpendThresholdMultipleOf),
@@ -8897,6 +8905,9 @@ export const AdminListProductsQueryParams = zod.object({
   "category": zod.coerce.string().optional(),
   "subcategory": zod.coerce.string().optional(),
   "brand": zod.coerce.string().optional(),
+  "supplierId": zod.coerce.string().optional(),
+  "market": zod.enum(['B2B', 'B2C']).optional(),
+  "lowStock": zod.coerce.boolean().optional(),
   "status": zod.enum(['in-stock', 'out-of-stock', 'new', 'on-sale', 'inactive']).optional(),
   "sortBy": zod.enum(['name', 'price', 'stock', 'createdAt']).default(adminListProductsQuerySortByDefault),
   "sortDir": zod.enum(['asc', 'desc']).default(adminListProductsQuerySortDirDefault),
@@ -8931,6 +8942,7 @@ export const adminListProductsResponseItemsItemVariantsItemStockMultipleOf = 1;
 export const AdminListProductsResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.string(),
+  "supplierId": zod.string().optional(),
   "name": zod.string(),
   "categoryId": zod.string().nullish(),
   "categoryName": zod.string(),
@@ -8979,6 +8991,7 @@ export const AdminListProductsResponse = zod.object({
  */
 
 
+
 export const adminCreateProductBodyNameRegExp = new RegExp('.*\\S.*');
 
 
@@ -9021,8 +9034,9 @@ export const adminCreateProductBodyVariantsItemStockMultipleOf = 1;
 
 
 export const AdminCreateProductBody = zod.object({
+  "supplierId": zod.string().min(1).optional(),
   "name": zod.string().min(1).regex(adminCreateProductBodyNameRegExp),
-  "categoryId": zod.string().nullish(),
+  "categoryId": zod.string().nullable(),
   "categoryName": zod.string().min(1),
   "subcategoryName": zod.string().nullish(),
   "brand": zod.string().nullish(),
@@ -9081,6 +9095,7 @@ export const adminCreateProductResponseVariantsItemStockMultipleOf = 1;
 
 export const AdminCreateProductResponse = zod.object({
   "id": zod.string(),
+  "supplierId": zod.string().optional(),
   "name": zod.string(),
   "categoryId": zod.string().nullish(),
   "categoryName": zod.string(),
@@ -9152,6 +9167,7 @@ export const AdminUpdateProductParams = zod.object({
 
 
 
+
 export const adminUpdateProductBodyNameRegExp = new RegExp('.*\\S.*');
 
 
@@ -9194,6 +9210,7 @@ export const adminUpdateProductBodyVariantsItemStockMultipleOf = 1;
 
 
 export const AdminUpdateProductBody = zod.object({
+  "supplierId": zod.string().min(1).optional(),
   "name": zod.string().min(1).regex(adminUpdateProductBodyNameRegExp).optional(),
   "categoryId": zod.string().nullish(),
   "categoryName": zod.string().min(1).optional(),
@@ -9254,6 +9271,7 @@ export const adminUpdateProductResponseVariantsItemStockMultipleOf = 1;
 
 export const AdminUpdateProductResponse = zod.object({
   "id": zod.string(),
+  "supplierId": zod.string().optional(),
   "name": zod.string(),
   "categoryId": zod.string().nullish(),
   "categoryName": zod.string(),
@@ -9328,6 +9346,7 @@ export const adminDeleteProductResponseVariantsItemStockMultipleOf = 1;
 
 export const AdminDeleteProductResponse = zod.object({
   "id": zod.string(),
+  "supplierId": zod.string().optional(),
   "name": zod.string(),
   "categoryId": zod.string().nullish(),
   "categoryName": zod.string(),
@@ -9371,6 +9390,7 @@ export const AdminDeleteProductResponse = zod.object({
  */
 export const AdminListProductCategoriesResponseItem = zod.object({
   "id": zod.string(),
+  "supplierId": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
   "parentId": zod.string().nullish(),
@@ -9388,6 +9408,7 @@ export const AdminListProductCategoriesResponse = zod.array(AdminListProductCate
  */
 
 
+
 export const adminCreateProductCategoryBodyNameRegExp = new RegExp('.*\\S.*');
 export const adminCreateProductCategoryBodySortOrderMin = 0;
 export const adminCreateProductCategoryBodySortOrderMax = 100000;
@@ -9396,6 +9417,7 @@ export const adminCreateProductCategoryBodySortOrderMultipleOf = 1;
 
 
 export const AdminCreateProductCategoryBody = zod.object({
+  "supplierId": zod.string().min(1).optional(),
   "name": zod.string().min(1).regex(adminCreateProductCategoryBodyNameRegExp),
   "parentId": zod.string().nullish(),
   "sortOrder": zod.number().min(adminCreateProductCategoryBodySortOrderMin).max(adminCreateProductCategoryBodySortOrderMax).multipleOf(adminCreateProductCategoryBodySortOrderMultipleOf).optional(),
@@ -9406,6 +9428,7 @@ export const AdminCreateProductCategoryBody = zod.object({
 
 export const AdminCreateProductCategoryResponse = zod.object({
   "id": zod.string(),
+  "supplierId": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
   "parentId": zod.string().nullish(),
@@ -9429,6 +9452,7 @@ export const AdminUpdateProductCategoryParams = zod.object({
 
 
 
+
 export const adminUpdateProductCategoryBodyNameRegExp = new RegExp('.*\\S.*');
 export const adminUpdateProductCategoryBodySortOrderMin = 0;
 export const adminUpdateProductCategoryBodySortOrderMax = 100000;
@@ -9437,6 +9461,7 @@ export const adminUpdateProductCategoryBodySortOrderMultipleOf = 1;
 
 
 export const AdminUpdateProductCategoryBody = zod.object({
+  "supplierId": zod.string().min(1).optional(),
   "name": zod.string().min(1).regex(adminUpdateProductCategoryBodyNameRegExp).optional(),
   "parentId": zod.string().nullish(),
   "sortOrder": zod.number().min(adminUpdateProductCategoryBodySortOrderMin).max(adminUpdateProductCategoryBodySortOrderMax).multipleOf(adminUpdateProductCategoryBodySortOrderMultipleOf).optional(),
@@ -9447,6 +9472,7 @@ export const AdminUpdateProductCategoryBody = zod.object({
 
 export const AdminUpdateProductCategoryResponse = zod.object({
   "id": zod.string(),
+  "supplierId": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
   "parentId": zod.string().nullish(),
@@ -9469,6 +9495,387 @@ export const AdminDeleteProductCategoryParams = zod.object({
 })
 
 export const AdminDeleteProductCategoryResponse = zod.void()
+
+
+/**
+ * @summary List platform-managed suppliers
+ */
+export const AdminListSuppliersResponseItem = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "slug": zod.string(),
+  "scope": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "logoUrl": zod.string().nullable(),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const AdminListSuppliersResponse = zod.array(AdminListSuppliersResponseItem)
+
+
+/**
+ * @summary Create a platform-managed supplier
+ */
+
+
+
+export const adminCreateSupplierBodySlugRegExp = new RegExp('^[a-z0-9]+(?:-[a-z0-9]+)*$');
+
+
+export const AdminCreateSupplierBody = zod.object({
+  "name": zod.string().min(1),
+  "slug": zod.string().min(1).regex(adminCreateSupplierBodySlugRegExp),
+  "scope": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "logoUrl": zod.string().nullish(),
+  "active": zod.boolean().optional()
+}).strict()
+
+export const AdminCreateSupplierResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "slug": zod.string(),
+  "scope": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "logoUrl": zod.string().nullable(),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Get a supplier
+ */
+export const AdminGetSupplierParams = zod.object({
+  "supplierId": zod.coerce.string()
+})
+
+export const AdminGetSupplierResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "slug": zod.string(),
+  "scope": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "logoUrl": zod.string().nullable(),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Update supplier details or status without changing catalog history
+ */
+export const AdminUpdateSupplierParams = zod.object({
+  "supplierId": zod.coerce.string()
+})
+
+
+
+
+export const AdminUpdateSupplierBody = zod.object({
+  "name": zod.string().min(1).optional(),
+  "scope": zod.enum(['B2B', 'B2C', 'BOTH']).optional(),
+  "logoUrl": zod.string().nullish(),
+  "active": zod.boolean().optional()
+}).strict()
+
+export const AdminUpdateSupplierResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "slug": zod.string(),
+  "scope": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "logoUrl": zod.string().nullable(),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary List active public suppliers
+ */
+export const ListPublicSuppliersResponseItem = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "slug": zod.string(),
+  "scope": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "logoUrl": zod.string().nullable(),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListPublicSuppliersResponse = zod.array(ListPublicSuppliersResponseItem)
+
+
+/**
+ * @summary Get an active supplier and its category tree
+ */
+export const GetPublicSupplierParams = zod.object({
+  "supplierSlug": zod.coerce.string()
+})
+
+export const GetPublicSupplierResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "slug": zod.string(),
+  "scope": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "logoUrl": zod.string().nullable(),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary List the full active category tree for one supplier as flat path-aware nodes
+ */
+export const ListSupplierCategoriesParams = zod.object({
+  "supplierSlug": zod.coerce.string()
+})
+
+export const ListSupplierCategoriesResponseItem = zod.object({
+  "id": zod.string(),
+  "supplierId": zod.string(),
+  "name": zod.string(),
+  "slug": zod.string(),
+  "parentId": zod.string().nullable(),
+  "path": zod.string(),
+  "depth": zod.number().int(),
+  "sortOrder": zod.number().int(),
+  "active": zod.boolean(),
+  "directProductCount": zod.number().int(),
+  "descendantProductCount": zod.number().int()
+})
+export const ListSupplierCategoriesResponse = zod.array(ListSupplierCategoriesResponseItem)
+
+
+/**
+ * @summary List active B2B products from one active supplier
+ */
+export const ListSupplierProductsParams = zod.object({
+  "supplierSlug": zod.coerce.string()
+})
+
+export const listSupplierProductsQueryPageDefault = 1;
+
+export const listSupplierProductsQueryPageSizeDefault = 24;
+export const listSupplierProductsQueryPageSizeMax = 100;
+
+
+
+export const ListSupplierProductsQueryParams = zod.object({
+  "categoryId": zod.coerce.string().optional(),
+  "search": zod.coerce.string().optional(),
+  "brand": zod.coerce.string().optional(),
+  "page": zod.coerce.number().int().min(1).default(listSupplierProductsQueryPageDefault),
+  "pageSize": zod.coerce.number().int().min(1).max(listSupplierProductsQueryPageSizeMax).default(listSupplierProductsQueryPageSizeDefault)
+})
+
+export const listSupplierProductsResponseItemsItemPriceMultipleOf = 1;
+
+export const listSupplierProductsResponseItemsItemDiscountPriceMultipleOf = 1;
+
+export const listSupplierProductsResponseItemsItemStockMin = 0;
+export const listSupplierProductsResponseItemsItemStockMultipleOf = 1;
+
+export const listSupplierProductsResponseItemsItemWeightGramsMultipleOf = 1;
+
+export const listSupplierProductsResponseItemsItemVariantsItemPriceAdjustMultipleOf = 1;
+
+export const listSupplierProductsResponseItemsItemVariantsItemPriceMin = 0;
+export const listSupplierProductsResponseItemsItemVariantsItemPriceMultipleOf = 1;
+
+
+export const listSupplierProductsResponseItemsItemVariantsItemStockMin = 0;
+export const listSupplierProductsResponseItemsItemVariantsItemStockMultipleOf = 1;
+
+
+
+export const ListSupplierProductsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "supplierId": zod.string(),
+  "name": zod.string(),
+  "category": zod.string(),
+  "subcategory": zod.string().nullish(),
+  "brand": zod.string().nullish(),
+  "description": zod.string(),
+  "imageUrl": zod.string(),
+  "price": zod.number().multipleOf(listSupplierProductsResponseItemsItemPriceMultipleOf),
+  "discountPrice": zod.number().multipleOf(listSupplierProductsResponseItemsItemDiscountPriceMultipleOf).nullish(),
+  "discountPercent": zod.number().nullish(),
+  "stock": zod.number().min(listSupplierProductsResponseItemsItemStockMin).multipleOf(listSupplierProductsResponseItemsItemStockMultipleOf),
+  "sku": zod.string(),
+  "unit": zod.string(),
+  "isNew": zod.boolean(),
+  "isBestseller": zod.boolean(),
+  "weightGrams": zod.number().multipleOf(listSupplierProductsResponseItemsItemWeightGramsMultipleOf).nullish(),
+  "shortDescription": zod.string().nullish(),
+  "images": zod.array(zod.string()),
+  "variants": zod.array(zod.object({
+  "label": zod.string(),
+  "value": zod.string(),
+  "priceAdjust": zod.number().multipleOf(listSupplierProductsResponseItemsItemVariantsItemPriceAdjustMultipleOf).optional(),
+  "price": zod.number().min(listSupplierProductsResponseItemsItemVariantsItemPriceMin).multipleOf(listSupplierProductsResponseItemsItemVariantsItemPriceMultipleOf).optional(),
+  "sku": zod.string().min(1).optional(),
+  "stock": zod.number().min(listSupplierProductsResponseItemsItemVariantsItemStockMin).multipleOf(listSupplierProductsResponseItemsItemVariantsItemStockMultipleOf).optional()
+})).nullish(),
+  "variantType": zod.string().nullable(),
+  "averageRating": zod.number().nullish(),
+  "reviewCount": zod.number()
+})),
+  "total": zod.number(),
+  "page": zod.number(),
+  "pageSize": zod.number(),
+  "totalPages": zod.number()
+})
+
+
+/**
+ * @summary List active retail products from one active supplier
+ */
+export const ListSupplierPublicProductsParams = zod.object({
+  "supplierSlug": zod.coerce.string()
+})
+
+export const listSupplierPublicProductsQueryPageDefault = 1;
+
+export const listSupplierPublicProductsQueryPageSizeDefault = 24;
+export const listSupplierPublicProductsQueryPageSizeMax = 100;
+
+
+
+export const ListSupplierPublicProductsQueryParams = zod.object({
+  "categoryId": zod.coerce.string().optional(),
+  "search": zod.coerce.string().optional(),
+  "brand": zod.coerce.string().optional(),
+  "page": zod.coerce.number().int().min(1).default(listSupplierPublicProductsQueryPageDefault),
+  "pageSize": zod.coerce.number().int().min(1).max(listSupplierPublicProductsQueryPageSizeMax).default(listSupplierPublicProductsQueryPageSizeDefault)
+})
+
+export const listSupplierPublicProductsResponseItemsItemPriceMultipleOf = 1;
+
+export const listSupplierPublicProductsResponseItemsItemDiscountPriceMultipleOf = 1;
+
+
+
+export const ListSupplierPublicProductsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "supplierId": zod.string(),
+  "name": zod.string(),
+  "category": zod.string(),
+  "subcategory": zod.string().nullish(),
+  "brand": zod.string().nullish(),
+  "description": zod.string(),
+  "imageUrl": zod.string(),
+  "images": zod.array(zod.string()),
+  "price": zod.number().min(1).multipleOf(listSupplierPublicProductsResponseItemsItemPriceMultipleOf),
+  "discountPrice": zod.number().min(1).multipleOf(listSupplierPublicProductsResponseItemsItemDiscountPriceMultipleOf).nullish(),
+  "discountPercent": zod.number().nullish(),
+  "unit": zod.string(),
+  "isNew": zod.boolean(),
+  "isBestseller": zod.boolean()
+}).describe('Customer-facing product fields only. B2B price, SKU, stock, weight, variants and salon-only review data are deliberately omitted.')),
+  "total": zod.number(),
+  "page": zod.number(),
+  "pageSize": zod.number(),
+  "totalPages": zod.number()
+})
+
+
+/**
+ * @summary Get an active B2B product from one active supplier
+ */
+export const GetSupplierProductParams = zod.object({
+  "supplierSlug": zod.coerce.string(),
+  "productId": zod.coerce.string()
+})
+
+export const getSupplierProductResponsePriceMultipleOf = 1;
+
+export const getSupplierProductResponseDiscountPriceMultipleOf = 1;
+
+export const getSupplierProductResponseStockMin = 0;
+export const getSupplierProductResponseStockMultipleOf = 1;
+
+export const getSupplierProductResponseWeightGramsMultipleOf = 1;
+
+export const getSupplierProductResponseVariantsItemPriceAdjustMultipleOf = 1;
+
+export const getSupplierProductResponseVariantsItemPriceMin = 0;
+export const getSupplierProductResponseVariantsItemPriceMultipleOf = 1;
+
+
+export const getSupplierProductResponseVariantsItemStockMin = 0;
+export const getSupplierProductResponseVariantsItemStockMultipleOf = 1;
+
+
+
+export const GetSupplierProductResponse = zod.object({
+  "id": zod.string(),
+  "supplierId": zod.string(),
+  "name": zod.string(),
+  "category": zod.string(),
+  "subcategory": zod.string().nullish(),
+  "brand": zod.string().nullish(),
+  "description": zod.string(),
+  "imageUrl": zod.string(),
+  "price": zod.number().multipleOf(getSupplierProductResponsePriceMultipleOf),
+  "discountPrice": zod.number().multipleOf(getSupplierProductResponseDiscountPriceMultipleOf).nullish(),
+  "discountPercent": zod.number().nullish(),
+  "stock": zod.number().min(getSupplierProductResponseStockMin).multipleOf(getSupplierProductResponseStockMultipleOf),
+  "sku": zod.string(),
+  "unit": zod.string(),
+  "isNew": zod.boolean(),
+  "isBestseller": zod.boolean(),
+  "weightGrams": zod.number().multipleOf(getSupplierProductResponseWeightGramsMultipleOf).nullish(),
+  "shortDescription": zod.string().nullish(),
+  "images": zod.array(zod.string()),
+  "variants": zod.array(zod.object({
+  "label": zod.string(),
+  "value": zod.string(),
+  "priceAdjust": zod.number().multipleOf(getSupplierProductResponseVariantsItemPriceAdjustMultipleOf).optional(),
+  "price": zod.number().min(getSupplierProductResponseVariantsItemPriceMin).multipleOf(getSupplierProductResponseVariantsItemPriceMultipleOf).optional(),
+  "sku": zod.string().min(1).optional(),
+  "stock": zod.number().min(getSupplierProductResponseVariantsItemStockMin).multipleOf(getSupplierProductResponseVariantsItemStockMultipleOf).optional()
+})).nullish(),
+  "variantType": zod.string().nullable(),
+  "averageRating": zod.number().nullish(),
+  "reviewCount": zod.number()
+})
+
+
+/**
+ * @summary Get an active retail product from one active supplier
+ */
+export const GetSupplierPublicProductParams = zod.object({
+  "supplierSlug": zod.coerce.string(),
+  "productId": zod.coerce.string()
+})
+
+export const getSupplierPublicProductResponsePriceMultipleOf = 1;
+
+export const getSupplierPublicProductResponseDiscountPriceMultipleOf = 1;
+
+
+
+export const GetSupplierPublicProductResponse = zod.object({
+  "id": zod.string(),
+  "supplierId": zod.string(),
+  "name": zod.string(),
+  "category": zod.string(),
+  "subcategory": zod.string().nullish(),
+  "brand": zod.string().nullish(),
+  "description": zod.string(),
+  "imageUrl": zod.string(),
+  "images": zod.array(zod.string()),
+  "price": zod.number().min(1).multipleOf(getSupplierPublicProductResponsePriceMultipleOf),
+  "discountPrice": zod.number().min(1).multipleOf(getSupplierPublicProductResponseDiscountPriceMultipleOf).nullish(),
+  "discountPercent": zod.number().nullish(),
+  "unit": zod.string(),
+  "isNew": zod.boolean(),
+  "isBestseller": zod.boolean()
+}).describe('Customer-facing product fields only. B2B price, SKU, stock, weight, variants and salon-only review data are deliberately omitted.')
 
 
 /**

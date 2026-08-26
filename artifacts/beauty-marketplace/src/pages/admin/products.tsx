@@ -8,8 +8,8 @@ import {
   useAdminBulkUpdateProducts,
   useAdminListProductCategories,
   useAdminListBrands,
-  useAdminCreateProductCategory,
   useAdminCreateBrand,
+  useAdminListSuppliers,
   getAdminListProductsQueryKey,
   getAdminListProductCategoriesQueryKey,
   getAdminListBrandsQueryKey,
@@ -46,7 +46,9 @@ import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
-const emptyForm: AdminProductInput = {
+const emptyForm = {
+  supplierId: "",
+  market: "B2B",
   name: "",
   categoryId: null,
   categoryName: "",
@@ -72,7 +74,7 @@ const emptyForm: AdminProductInput = {
   variantType: null,
   variants: null,
   active: true,
-};
+} as unknown as AdminProductInput;
 
 function formatRSD(v: number) {
   return `${v.toLocaleString("sr-RS")} RSD`;
@@ -92,16 +94,16 @@ function ProductFormDialog({
   const queryClient = useQueryClient();
   const createProduct = useAdminCreateProduct();
   const updateProduct = useAdminUpdateProduct();
-  const createCategory = useAdminCreateProductCategory();
-  const createBrand = useAdminCreateBrand();
   const { data: categories = [] } = useAdminListProductCategories();
   const { data: brands = [] } = useAdminListBrands();
+  const { data: suppliers = [] } = useAdminListSuppliers();
   const actionGuard = useImmediateActionGuard();
 
-  const parents = categories.filter((c) => !c.parentId);
-  const [form, setForm] = useState<AdminProductInput>(
+  const [form, setForm] = useState<AdminProductInput & { supplierId: string, market: "B2B" | "B2C" | "BOTH" }>(
     editing
       ? {
+          supplierId: editing.supplierId,
+          market: editing.professionalEnabled && editing.retailEnabled ? "BOTH" : editing.retailEnabled ? "B2C" : "B2B",
           name: editing.name,
           categoryId: editing.categoryId ?? null,
           categoryName: editing.categoryName,
@@ -128,7 +130,7 @@ function ProductFormDialog({
           variants: editing.variants ?? null,
           active: editing.active,
         }
-      : emptyForm
+      : { ...(emptyForm as any), supplierId: "", market: "B2B" }
   );
   const [weightUnit, setWeightUnit] = useState<"g" | "kg">("g");
   // Raw string state so numeric inputs aren't clobbered while typing
@@ -147,11 +149,6 @@ function ProductFormDialog({
     setRawNums(next);
   };
   const [uploadingImages, setUploadingImages] = useState(false);
-  const [newCategoryName, setNewCategoryName] = useState("");
-  const [newCategoryParent, setNewCategoryParent] = useState<string>("");
-  const [showNewCategory, setShowNewCategory] = useState(false);
-  const [newBrandName, setNewBrandName] = useState("");
-  const [showNewBrand, setShowNewBrand] = useState(false);
   const [variantInventoryMode, setVariantInventoryMode] = useState<"shared" | "per-variant">(
     editing?.variants?.length && editing.variants.every((variant) => variant.stock !== undefined)
       ? "per-variant"
@@ -159,10 +156,8 @@ function ProductFormDialog({
   );
   const [variantDraft, setVariantDraft] = useState<ProductVariant>({ label: "", value: "", priceAdjust: 0 });
 
-  const selectedParent = parents.find((p) => p.name === form.categoryName);
-  const subcategories = selectedParent
-    ? categories.filter((c) => c.parentId === selectedParent.id)
-    : [];
+  const selectedSupplier = suppliers.find(s => s.id === form.supplierId);
+  const availableCategories = categories.filter(c => c.supplierId === form.supplierId);
 
   // Discount percent display — parsed from rawNums for live feedback
   const rawPrice = parseFloat(rawNums.price);
@@ -250,61 +245,13 @@ function ProductFormDialog({
     })());
   };
 
-  const handleCreateCategory = () => {
-    if (!newCategoryName.trim()) return;
-    if (!actionGuard.begin("create-category")) return;
-    createCategory.mutate(
-      { data: { name: newCategoryName.trim(), parentId: newCategoryParent || null } },
-      {
-        onSuccess: (cat) => {
-          toast.success("Kategorija kreirana", { description: cat.name });
-          queryClient.invalidateQueries({ queryKey: getAdminListProductCategoriesQueryKey() });
-          if (cat.parentId) {
-            const parent = parents.find((p) => p.id === cat.parentId);
-            setForm((f) => ({ ...f, categoryId: cat.id, categoryName: parent?.name ?? f.categoryName, subcategoryName: cat.name }));
-          } else {
-            setForm((f) => ({ ...f, categoryId: cat.id, categoryName: cat.name, subcategoryName: null }));
-          }
-          setShowNewCategory(false);
-          setNewCategoryName("");
-          setNewCategoryParent("");
-          actionGuard.end("create-category");
-        },
-        onError: () => {
-          toast.error("Greška", { description: "Kategorija nije kreirana." });
-          actionGuard.end("create-category");
-        },
-      }
-    );
-  };
-
-  const handleCreateBrand = () => {
-    if (!newBrandName.trim()) return;
-    if (!actionGuard.begin("create-brand")) return;
-    createBrand.mutate(
-      { data: { name: newBrandName.trim() } },
-      {
-        onSuccess: (brand) => {
-          toast.success("Brend kreiran", { description: brand.name });
-          queryClient.invalidateQueries({ queryKey: getAdminListBrandsQueryKey() });
-          setForm((f) => ({ ...f, brand: brand.name }));
-          setShowNewBrand(false);
-          setNewBrandName("");
-          actionGuard.end("create-brand");
-        },
-        onError: () => {
-          toast.error("Greška", { description: "Brend nije kreiran." });
-          actionGuard.end("create-brand");
-        },
-      }
-    );
-  };
 
   const handleSave = () => {
     if (isPending) return;
     const submittedRawNums = rawNumsRef.current;
+    if (!form.supplierId) { toast.error("Greška", { description: "Dobavljač je obavezan." }); return; }
     if (!form.name.trim()) { toast.error("Greška", { description: "Naziv je obavezan." }); return; }
-    if (!form.categoryName) { toast.error("Greška", { description: "Kategorija je obavezna." }); return; }
+    if (!form.categoryId) { toast.error("Greška", { description: "Kategorija je obavezna." }); return; }
     if (!form.sku.trim()) { toast.error("Greška", { description: "SKU je obavezan." }); return; }
     if (!form.description.trim()) { toast.error("Greška", { description: "Opis je obavezan." }); return; }
     if (!form.imageUrl) { toast.error("Greška", { description: "Bar jedna slika je obavezna." }); return; }
@@ -327,15 +274,13 @@ function ProductFormDialog({
       ? { ok: true as const, value: null }
       : parseStrictInt(submittedRawNums.publicDiscountPrice, { label: "Javna akcijska cena", allowNegative: false, allowZero: false });
     if (!publicDiscountParsed.ok) { toast.error("Greška", { description: publicDiscountParsed.message }); return; }
-    if (!form.professionalEnabled && !form.retailEnabled) {
-      toast.error("Izaberite namenu proizvoda", { description: "Proizvod mora biti dostupan profesionalcima, za kućnu negu ili u oba kanala." });
-      return;
-    }
-    if (form.retailEnabled && !form.publicDescription?.trim()) {
-      toast.error("Greška", { description: "Javni proizvod mora imati poseban opis za kupce." }); return;
-    }
-    if (form.retailEnabled && publicPriceParsed.value === null) {
-      toast.error("Greška", { description: "Javni proizvod mora imati javnu cenu za kupce." }); return;
+    if (form.market === "B2C" || form.market === "BOTH") {
+      if (!form.publicDescription?.trim()) {
+        toast.error("Greška", { description: "Javni proizvod mora imati poseban opis za kupce." }); return;
+      }
+      if (publicPriceParsed.value === null) {
+        toast.error("Greška", { description: "Javni proizvod mora imati javnu cenu za kupce." }); return;
+      }
     }
     if (publicDiscountParsed.value !== null && (publicPriceParsed.value === null || publicDiscountParsed.value >= publicPriceParsed.value)) {
       toast.error("Greška", { description: "Javna akcijska cena mora biti niža od javne redovne cene." }); return;
@@ -353,8 +298,13 @@ function ProductFormDialog({
     const weightGrams = weightUnit === "kg" ? Math.round(weightParsed.value * 1000) : Math.round(weightParsed.value);
     if (weightGrams <= 0) { toast.error("Greška", { description: "Težina je obavezna (u gramima ili kilogramima)." }); return; }
 
+    const selectedCategory = availableCategories.find(c => c.id === form.categoryId);
+
     const payload = {
       ...form,
+      categoryName: selectedCategory ? selectedCategory.name : form.categoryName,
+      professionalEnabled: form.market === "B2B" || form.market === "BOTH",
+      retailEnabled: form.market === "B2C" || form.market === "BOTH",
       price: priceParsed.value,
       discountPrice: discountParsed.value,
       publicDescription: form.publicDescription?.trim() || null,
@@ -390,6 +340,45 @@ function ProductFormDialog({
         </DialogHeader>
 
         <div className="space-y-6 py-2">
+          {/* ── Dobavljač i Tržište ── */}
+          <section className="space-y-4 border rounded-xl p-4">
+            <h4 className="text-sm font-semibold text-foreground">Izvor proizvoda</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Dobavljač *</Label>
+                <Select
+                  value={form.supplierId || "__none__"}
+                  onValueChange={(v) => {
+                    const newSupplierId = v === "__none__" ? "" : v;
+                    setForm({ ...form, supplierId: newSupplierId, categoryId: null, categoryName: "" });
+                  }}
+                  disabled={!!editing}
+                >
+                  <SelectTrigger><SelectValue placeholder="Izaberi dobavljača" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">— Izaberi —</SelectItem>
+                    {suppliers.filter(s => s.active || s.id === form.supplierId).map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Dostupnost (Tržište) *</Label>
+                <Select
+                  value={form.market}
+                  onValueChange={(v) => setForm({ ...form, market: v as any })}
+                  disabled={!form.supplierId}
+                >
+                  <SelectTrigger><SelectValue placeholder="Izaberi tržište" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="B2B">Samo B2B (saloni)</SelectItem>
+                    {selectedSupplier?.scope !== "B2B" && <SelectItem value="B2C">Samo B2C (fizička lica)</SelectItem>}
+                    {selectedSupplier?.scope !== "B2B" && <SelectItem value="BOTH">Oba (B2B i B2C)</SelectItem>}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </section>
+
           {/* ── Osnovni podaci ── */}
           <section className="space-y-4 border rounded-xl p-4">
             <h4 className="text-sm font-semibold text-foreground">Osnovni podaci</h4>
@@ -400,26 +389,15 @@ function ProductFormDialog({
               </div>
               <div className="space-y-2">
                 <Label>Brend</Label>
-                {showNewBrand ? (
-                  <div className="flex gap-2">
-                    <Input value={newBrandName} onChange={(e) => setNewBrandName(e.target.value)} placeholder="Naziv novog brenda" />
-                    <Button type="button" size="sm" onClick={handleCreateBrand} disabled={createBrand.isPending || actionGuard.isActive("create-brand")}>
-                      {createBrand.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Dodaj"}
-                    </Button>
-                    <Button type="button" size="sm" variant="ghost" onClick={() => setShowNewBrand(false)}><X className="w-4 h-4" /></Button>
-                  </div>
-                ) : (
-                  <div className="flex gap-2">
-                    <Select value={form.brand ?? "__none__"} onValueChange={(v) => setForm({ ...form, brand: v === "__none__" ? null : v })}>
-                      <SelectTrigger data-testid="select-product-brand"><SelectValue placeholder="Izaberi brend" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">Bez brenda</SelectItem>
-                        {brands.filter((b) => b.active).map((b) => <SelectItem key={b.id} value={b.name}>{b.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                    <Button type="button" size="sm" variant="outline" onClick={() => setShowNewBrand(true)} title="Novi brend"><Plus className="w-4 h-4" /></Button>
-                  </div>
-                )}
+                <div className="flex gap-2">
+                  <Select value={form.brand ?? "__none__"} onValueChange={(v) => setForm({ ...form, brand: v === "__none__" ? null : v })}>
+                    <SelectTrigger data-testid="select-product-brand"><SelectValue placeholder="Izaberi brend" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Bez brenda</SelectItem>
+                      {brands.filter((b) => b.active).map((b) => <SelectItem key={b.id} value={b.name}>{b.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="space-y-2">
                 <Label>SKU (šifra) *</Label>
@@ -435,59 +413,30 @@ function ProductFormDialog({
               <div className="space-y-2">
                 <Label>Kategorija *</Label>
                 <Select
-                  value={form.categoryName || "__none__"}
+                  value={form.categoryId || "__none__"}
                   onValueChange={(v) => {
-                    if (v === "__none__") { setForm({ ...form, categoryId: null, categoryName: "", subcategoryName: null }); return; }
-                    const parent = parents.find((p) => p.name === v);
-                    setForm({ ...form, categoryId: parent?.id ?? null, categoryName: v, subcategoryName: null });
+                    if (v === "__none__") { setForm({ ...form, categoryId: null, categoryName: "" }); return; }
+                    setForm({ ...form, categoryId: v });
                   }}
+                  disabled={!form.supplierId}
                 >
-                  <SelectTrigger data-testid="select-product-category"><SelectValue placeholder="Izaberi kategoriju" /></SelectTrigger>
+                  <SelectTrigger data-testid="select-product-category"><SelectValue placeholder={form.supplierId ? "Izaberi kategoriju" : "Prvo izaberi dobavljača"} /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">— Izaberi —</SelectItem>
-                    {parents.map((p) => <SelectItem key={p.id} value={p.name}>{p.name}</SelectItem>)}
+                    {availableCategories.sort((a,b) => a.sortOrder - b.sortOrder).map(c => {
+                      // simple rendering for arbitrary depth: just show parent name if it exists, or full path if we build it.
+                      // Let's build a quick path
+                      let path = c.name;
+                      let curr = c.parentId;
+                      while (curr) {
+                        const p = availableCategories.find(x => x.id === curr);
+                        if (p) { path = `${p.name} > ${path}`; curr = p.parentId; }
+                        else curr = null;
+                      }
+                      return <SelectItem key={c.id} value={c.id}>{path}</SelectItem>;
+                    })}
                   </SelectContent>
                 </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Podkategorija</Label>
-                <Select
-                  value={form.subcategoryName ?? "__none__"}
-                  onValueChange={(v) => {
-                    if (v === "__none__") { setForm({ ...form, subcategoryName: null, categoryId: selectedParent?.id ?? form.categoryId }); return; }
-                    const sub = subcategories.find((s) => s.name === v);
-                    setForm({ ...form, subcategoryName: v, categoryId: sub?.id ?? form.categoryId });
-                  }}
-                  disabled={!selectedParent || subcategories.length === 0}
-                >
-                  <SelectTrigger data-testid="select-product-subcategory"><SelectValue placeholder="Izaberi podkategoriju" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">Bez podkategorije</SelectItem>
-                    {subcategories.map((s) => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="sm:col-span-2">
-                {showNewCategory ? (
-                  <div className="flex flex-col sm:flex-row gap-2 bg-muted/30 border rounded-lg p-3">
-                    <Input value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} placeholder="Naziv nove kategorije" className="flex-1" />
-                    <Select value={newCategoryParent || "__root__"} onValueChange={(v) => setNewCategoryParent(v === "__root__" ? "" : v)}>
-                      <SelectTrigger className="sm:w-56"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__root__">Glavna kategorija</SelectItem>
-                        {parents.map((p) => <SelectItem key={p.id} value={p.id}>Podkategorija: {p.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                    <Button type="button" size="sm" onClick={handleCreateCategory} disabled={createCategory.isPending || actionGuard.isActive("create-category")}>
-                      {createCategory.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Kreiraj"}
-                    </Button>
-                    <Button type="button" size="sm" variant="ghost" onClick={() => setShowNewCategory(false)}><X className="w-4 h-4" /></Button>
-                  </div>
-                ) : (
-                  <Button type="button" variant="link" size="sm" className="px-0 text-xs" onClick={() => setShowNewCategory(true)}>
-                    <Plus className="w-3 h-3 mr-1" /> Kreiraj novu kategoriju direktno iz forme
-                  </Button>
-                )}
               </div>
               <div className="space-y-2 sm:col-span-2">
                 <Label>Kratki opis</Label>
@@ -508,15 +457,7 @@ function ProductFormDialog({
                   <p className="font-medium">Kanali prodaje</p>
                   <p className="mt-1 text-xs text-muted-foreground">Javne informacije su odvojene od B2B kataloga. Kupci i pretraživači vide samo opis i cene koje unesete ovde.</p>
                 </div>
-                <div className="flex items-center justify-between gap-4">
-                  <Label className="cursor-pointer">Za profesionalce (B2B)</Label>
-                  <Switch checked={form.professionalEnabled ?? false} onCheckedChange={(checked) => setForm({ ...form, professionalEnabled: checked })} data-testid="switch-product-professional" />
-                </div>
-                <div className="flex items-center justify-between gap-4">
-                  <Label className="cursor-pointer">Za kućnu negu (retail)</Label>
-                  <Switch checked={form.retailEnabled ?? false} onCheckedChange={(checked) => setForm({ ...form, retailEnabled: checked })} data-testid="switch-product-retail" />
-                </div>
-                {form.retailEnabled && (
+                {(form.market === "B2C" || form.market === "BOTH") && (
                   <>
                     <div className="space-y-2">
                       <Label>Javni opis za kupce *</Label>
@@ -754,6 +695,9 @@ export default function AdminProducts() {
 
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedSearch(search);
+  const [supplierFilter, setSupplierFilter] = useState("all");
+  const [marketFilter, setMarketFilter] = useState("all");
+  const [lowStockFilter, setLowStockFilter] = useState(false);
   const [category, setCategory] = useState("");
   const [subcategory, setSubcategory] = useState("");
   const [brand, setBrand] = useState("");
@@ -769,16 +713,20 @@ export default function AdminProducts() {
 
   const params: AdminListProductsParams = useMemo(() => ({
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
+    ...(supplierFilter !== "all" ? { supplierId: supplierFilter } : {}),
+    ...(marketFilter !== "all" ? { market: marketFilter as any } : {}),
+    ...(lowStockFilter ? { lowStock: true } : {}),
     ...(category ? { category } : {}),
     ...(subcategory ? { subcategory } : {}),
     ...(brand ? { brand } : {}),
     ...(status ? { status: status as NonNullable<AdminListProductsParams["status"]> } : {}),
     sortBy, sortDir, page, pageSize,
-  }), [debouncedSearch, category, subcategory, brand, status, sortBy, sortDir, page]);
+  }), [debouncedSearch, supplierFilter, marketFilter, lowStockFilter, category, subcategory, brand, status, sortBy, sortDir, page, pageSize]);
 
   const { data, isLoading, error } = useAdminListProducts(params);
   const { data: categories = [] } = useAdminListProductCategories();
   const { data: brands = [] } = useAdminListBrands();
+  const { data: suppliers = [] } = useAdminListSuppliers();
   const deleteProduct = useAdminDeleteProduct();
   const bulkUpdate = useAdminBulkUpdateProducts();
   const actionGuard = useImmediateActionGuard();
@@ -870,9 +818,24 @@ export default function AdminProducts() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input placeholder="Pretraži po nazivu, SKU, brendu..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" data-testid="input-search-products" />
           </div>
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-2 flex-wrap items-center">
+            <Select value={supplierFilter} onValueChange={(v) => { setSupplierFilter(v); setPage(1); }}>
+              <SelectTrigger className="w-40"><SelectValue placeholder="Dobavljač" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Svi dobavljači</SelectItem>
+                {suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={marketFilter} onValueChange={(v) => { setMarketFilter(v); setPage(1); }}>
+              <SelectTrigger className="w-36"><SelectValue placeholder="Tržište" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Sva tržišta</SelectItem>
+                <SelectItem value="B2B">Samo B2B</SelectItem>
+                <SelectItem value="B2C">Samo B2C</SelectItem>
+              </SelectContent>
+            </Select>
             <Select value={category || "__all__"} onValueChange={(v) => { setCategory(v === "__all__" ? "" : v); setSubcategory(""); setPage(1); }}>
-              <SelectTrigger className="w-44"><SelectValue placeholder="Kategorija" /></SelectTrigger>
+              <SelectTrigger className="w-40"><SelectValue placeholder="Kategorija" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="__all__">Sve kategorije</SelectItem>
                 {parents.map((p) => <SelectItem key={p.id} value={p.name}>{p.name}</SelectItem>)}
@@ -880,7 +843,7 @@ export default function AdminProducts() {
             </Select>
             {subcats.length > 0 && (
               <Select value={subcategory || "__all__"} onValueChange={(v) => { setSubcategory(v === "__all__" ? "" : v); setPage(1); }}>
-                <SelectTrigger className="w-44"><SelectValue placeholder="Podkategorija" /></SelectTrigger>
+                <SelectTrigger className="w-40"><SelectValue placeholder="Podkategorija" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__all__">Sve podkategorije</SelectItem>
                   {subcats.map((s) => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
@@ -905,6 +868,12 @@ export default function AdminProducts() {
                 <SelectItem value="inactive">Neaktivni</SelectItem>
               </SelectContent>
             </Select>
+            <div className="flex items-center gap-2 pl-2">
+              <label className="text-sm flex items-center gap-2 cursor-pointer">
+                <Checkbox checked={lowStockFilter} onCheckedChange={(c) => { setLowStockFilter(!!c); setPage(1); }} />
+                Slabo stanje
+              </label>
+            </div>
           </div>
         </div>
 
@@ -989,7 +958,9 @@ export default function AdminProducts() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
-                  {items.map((p) => (
+                  {items.map((p) => {
+                    const sup = suppliers.find(s => s.id === p.supplierId);
+                    return (
                     <tr key={p.id} className={`hover:bg-muted/10 transition-colors ${!p.active ? "opacity-50" : ""}`} data-testid={`product-row-${p.id}`}>
                       <td className="p-3">
                         <Checkbox checked={selected.includes(p.id)} onCheckedChange={(c) => setSelected(c ? [...selected, p.id] : selected.filter((id) => id !== p.id))} />
@@ -999,7 +970,15 @@ export default function AdminProducts() {
                           <img src={p.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover border shrink-0" />
                           <div className="min-w-0">
                             <p className="font-medium line-clamp-1">{p.name}</p>
-                            <p className="text-xs text-muted-foreground line-clamp-1">{p.brand ?? "—"}{p.variants?.length ? ` · ${p.variants.length} varijanti` : ""}</p>
+                            <p className="text-xs text-muted-foreground line-clamp-1">
+                              {sup ? <span className="font-medium text-foreground">{sup.name}</span> : "Nepoznat"}
+                              {p.brand ? ` · ${p.brand}` : ""}
+                              {p.variants?.length ? ` · ${p.variants.length} var.` : ""}
+                            </p>
+                            <div className="flex gap-1 mt-1">
+                              {p.professionalEnabled && <Badge variant="outline" className="text-[9px] h-4 px-1 border-emerald-500/30 text-emerald-600 bg-emerald-500/5">B2B</Badge>}
+                              {p.retailEnabled && <Badge variant="outline" className="text-[9px] h-4 px-1 border-sky-500/30 text-sky-600 bg-sky-500/5">B2C</Badge>}
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -1048,7 +1027,8 @@ export default function AdminProducts() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

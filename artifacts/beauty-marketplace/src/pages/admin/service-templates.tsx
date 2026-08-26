@@ -17,9 +17,16 @@ import {
   useAdminUpdateServiceTemplate,
   useAdminDeleteServiceTemplate,
   getAdminListServiceTemplatesQueryKey,
+  useAdminListServiceCategories,
+  useAdminUpdateServiceCategory,
+  getAdminListServiceCategoriesQueryKey,
+  getGetMarketplaceHomeDiscoveryQueryKey,
 } from "@workspace/api-client-react";
+import type { AdminServiceCategory } from "@workspace/api-client-react";
 import { useDebouncedSearch } from "@/hooks/use-debounce";
 import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
+import { OptimizedImage } from "@/components/optimized-image";
+import { uploadOptimizedImage } from "@/lib/media-upload";
 
 // Local types until the client is updated
 interface ServiceTemplate {
@@ -50,6 +57,8 @@ export default function AdminServiceTemplates() {
   const createTemplate = useAdminCreateServiceTemplate();
   const updateTemplate = useAdminUpdateServiceTemplate();
   const deleteTemplate = useAdminDeleteServiceTemplate();
+  const { data: serviceCategories = [], isLoading: serviceCategoriesLoading } = useAdminListServiceCategories();
+  const updateServiceCategory = useAdminUpdateServiceCategory();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const actionGuard = useImmediateActionGuard();
@@ -61,6 +70,56 @@ export default function AdminServiceTemplates() {
   const [editing, setEditing] = useState<ServiceTemplate | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [deleteTarget, setDeleteTarget] = useState<ServiceTemplate | null>(null);
+
+  const [serviceImageDrafts, setServiceImageDrafts] = useState<Record<string, string>>({});
+  const [uploadingServiceCategoryId, setUploadingServiceCategoryId] = useState<string | null>(null);
+  const [savingServiceCategoryId, setSavingServiceCategoryId] = useState<string | null>(null);
+
+  const invalidateServiceCategories = () => {
+    queryClient.invalidateQueries({ queryKey: getAdminListServiceCategoriesQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getGetMarketplaceHomeDiscoveryQueryKey() });
+  };
+  const serviceImageValue = (cat: AdminServiceCategory) => serviceImageDrafts[cat.id] ?? cat.fallbackImageUrl ?? "";
+
+  const saveServiceImage = async (cat: AdminServiceCategory) => {
+    const actionKey = `service-image:${cat.id}`;
+    if (!actionGuard.begin(actionKey)) return;
+    setSavingServiceCategoryId(cat.id);
+    try {
+      await updateServiceCategory.mutateAsync({
+        categoryId: cat.id,
+        data: { fallbackImageUrl: serviceImageValue(cat).trim() || null },
+      });
+      setServiceImageDrafts((drafts) => {
+        const next = { ...drafts };
+        delete next[cat.id];
+        return next;
+      });
+      invalidateServiceCategories();
+      toast.success("Sačuvano", { description: `Rezervna fotografija za „${cat.name}“ je ažurirana.` });
+    } catch (err: unknown) {
+      toast.error("Slika nije sačuvana", { description: extractApiError(err, "Pokušajte ponovo.") });
+    } finally {
+      setSavingServiceCategoryId(null);
+      actionGuard.end(actionKey);
+    }
+  };
+
+  const uploadServiceImage = async (cat: AdminServiceCategory, event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setUploadingServiceCategoryId(cat.id);
+    try {
+      const upload = await uploadOptimizedImage(file, "service-category", cat.id);
+      setServiceImageDrafts((drafts) => ({ ...drafts, [cat.id]: upload.imageUrl }));
+      toast.success("Slika je otpremljena", { description: "Kliknite „Sačuvaj sliku“ da je postavite za kategoriju." });
+    } catch (error) {
+      toast.error("Upload nije uspeo", { description: error instanceof Error ? error.message : "Pokušajte ponovo sa drugom slikom." });
+    } finally {
+      setUploadingServiceCategoryId(null);
+    }
+  };
 
   const invalidate = () => {
     try { queryClient.invalidateQueries({ queryKey: getAdminListServiceTemplatesQueryKey() }); } catch {}
@@ -239,6 +298,65 @@ export default function AdminServiceTemplates() {
             </div>
           )}
         </div>
+
+        <section className="rounded-xl border bg-card shadow-sm overflow-hidden mt-8" aria-labelledby="service-category-images-title">
+          <div className="border-b border-border/70 px-5 py-4">
+            <h2 id="service-category-images-title" className="font-serif text-xl font-bold text-foreground">Kategorije usluga — fotografije za klijente</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Ove rezervne fotografije se prikazuju kada salon iz iste kategorije nema stvarnu fotografiju u galeriji.</p>
+          </div>
+          {serviceCategoriesLoading ? (
+            <div className="flex justify-center p-10"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+          ) : (
+            <div className="divide-y divide-border/60">
+              {serviceCategories.map((cat) => (
+                <div key={cat.id} className="grid gap-4 p-4 sm:grid-cols-[112px_minmax(0,1fr)_auto] sm:items-center">
+                   <OptimizedImage
+                    src={serviceImageValue(cat) || "/lumera-media/categories/kozmeticki-saloni.jpg"}
+                    alt={`Rezervna fotografija: ${cat.name}`}
+                     width={448}
+                     height={384}
+                     preferredSize="medium"
+                     responsiveSizes="112px"
+                    className="h-24 w-full rounded-lg border bg-muted object-cover sm:w-28"
+                  />
+                  <div className="min-w-0 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold">{cat.name}</p>
+                      <Badge variant="secondary" className="text-[10px]">{cat.serviceCount} usluga</Badge>
+                    </div>
+                    <p className="truncate text-xs text-muted-foreground" data-testid={`service-category-fallback-url-${cat.id}`}>
+                      {serviceImageValue(cat) ? "Fotografija je spremna za čuvanje." : "Nije izabrana fotografija."}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 font-medium text-foreground transition-colors hover:bg-muted">
+                        {uploadingServiceCategoryId === cat.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                        Otpremi fotografiju
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/avif"
+                          className="sr-only"
+                          disabled={uploadingServiceCategoryId === cat.id}
+                          onChange={(event) => void uploadServiceImage(cat, event)}
+                          data-testid={`service-category-fallback-file-${cat.id}`}
+                        />
+                      </label>
+                      <span>JPG, PNG, WEBP ili AVIF · do 12 MB</span>
+                    </div>
+                  </div>
+                  <Button
+                    className="w-full sm:w-auto"
+                    onClick={() => void saveServiceImage(cat)}
+                    disabled={savingServiceCategoryId === cat.id || uploadingServiceCategoryId === cat.id || actionGuard.isActive(`service-image:${cat.id}`)}
+                    data-testid={`service-category-fallback-save-${cat.id}`}
+                  >
+                    {savingServiceCategoryId === cat.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Sačuvaj sliku
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
 
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>

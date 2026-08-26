@@ -17,6 +17,7 @@ import {
   productsTable,
   salonCustomersTable,
   salonsTable,
+  suppliersTable,
   treatmentPhotosTable,
   usersTable,
 } from "@workspace/db";
@@ -165,6 +166,7 @@ export async function purgeMediaCacheForVisibilityRevocation(assetIds: readonly 
     await mediaCachePurgeHandlerForTesting(request);
     return;
   }
+  if (process.env.NODE_ENV !== "production") return;
   const configured = await configuredCloudflareCachePurge();
   const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${configured.zoneId}/purge_cache`, {
     method: "POST",
@@ -199,6 +201,7 @@ type MediaScope =
   | "salon-gallery"
   | "employee-avatar"
   | "product"
+  | "supplier"
   | "education-cover"
   | "education-gallery"
   | "education-center"
@@ -216,6 +219,7 @@ const REVOCABLE_PUBLIC_MEDIA_SCOPES = new Set<string>([
   "salon-gallery",
   "employee-avatar",
   "product",
+  "supplier",
   "service-category",
   "product-category",
 ]);
@@ -353,11 +357,15 @@ async function authorizeUploadScope(
     return { resourceId: scope === "employee-avatar" ? null : salon.id, visibility: "public" };
   }
 
-  if (scope === "product" || scope === "service-category" || scope === "product-category") {
+  if (scope === "product" || scope === "supplier" || scope === "service-category" || scope === "product-category") {
     if (!isAdmin(user)) return null;
     if (scope === "product" && requestedResourceId) {
       const [product] = await db.select({ id: productsTable.id }).from(productsTable).where(eq(productsTable.id, requestedResourceId)).limit(1);
       if (!product) return null;
+    }
+    if (scope === "supplier" && requestedResourceId) {
+      const [supplier] = await db.select({ id: suppliersTable.id }).from(suppliersTable).where(eq(suppliersTable.id, requestedResourceId)).limit(1);
+      if (!supplier) return null;
     }
     return { resourceId: requestedResourceId ?? null, visibility: "public" };
   }

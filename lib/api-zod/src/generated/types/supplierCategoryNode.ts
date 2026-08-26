@@ -6,18 +6,17 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface AdminProductCategory {
+export interface SupplierCategoryNode {
   id: string;
   supplierId: string;
   name: string;
   slug: string;
   /** @nullable */
-  parentId?: string | null;
+  parentId: string | null;
+  path: string;
+  depth: number;
   sortOrder: number;
-  /** @nullable */
-  icon?: string | null;
-  /** @nullable */
-  imageUrl?: string | null;
   active: boolean;
-  productCount: number;
+  directProductCount: number;
+  descendantProductCount: number;
 }

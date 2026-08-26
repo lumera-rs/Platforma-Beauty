@@ -974,6 +974,7 @@ export const MediaUploadInputScope = {
   'salon-gallery': 'salon-gallery',
   'employee-avatar': 'employee-avatar',
   product: 'product',
+  supplier: 'supplier',
   'education-cover': 'education-cover',
   'education-gallery': 'education-gallery',
   'education-center': 'education-center',
@@ -2225,6 +2226,7 @@ export type ProductVariantsItem = {
 
 export interface Product {
   id: string;
+  supplierId: string;
   name: string;
   category: string;
   /** @nullable */
@@ -2271,6 +2273,7 @@ export interface ProductList {
  */
 export interface PublicProduct {
   id: string;
+  supplierId: string;
   name: string;
   category: string;
   /** @nullable */
@@ -3978,6 +3981,8 @@ export interface LoyaltyTier {
 }
 
 export interface LoyaltyTierInput {
+  /** @minLength 1 */
+  supplierId?: string;
   /**
      * @minLength 1
      * @pattern .*\S.*
@@ -4164,6 +4169,7 @@ export interface ProductVariant {
 
 export interface AdminProduct {
   id: string;
+  supplierId?: string;
   name: string;
   /** @nullable */
   categoryId?: string | null;
@@ -4223,13 +4229,15 @@ export interface AdminProductList {
 }
 
 export interface AdminProductInput {
+  /** @minLength 1 */
+  supplierId?: string;
   /**
      * @minLength 1
      * @pattern .*\S.*
      */
   name: string;
   /** @nullable */
-  categoryId?: string | null;
+  categoryId: string | null;
   /** @minLength 1 */
   categoryName: string;
   /** @nullable */
@@ -4297,6 +4305,8 @@ export interface AdminProductInput {
 }
 
 export interface AdminProductUpdate {
+  /** @minLength 1 */
+  supplierId?: string;
   /**
      * @minLength 1
      * @pattern .*\S.*
@@ -4401,6 +4411,7 @@ export interface AdminBulkResult {
 
 export interface AdminProductCategory {
   id: string;
+  supplierId: string;
   name: string;
   slug: string;
   /** @nullable */
@@ -4414,7 +4425,86 @@ export interface AdminProductCategory {
   productCount: number;
 }
 
+export type SupplierScope = typeof SupplierScope[keyof typeof SupplierScope];
+
+
+export const SupplierScope = {
+  B2B: 'B2B',
+  B2C: 'B2C',
+  BOTH: 'BOTH',
+} as const;
+
+export interface Supplier {
+  id: string;
+  name: string;
+  slug: string;
+  scope: SupplierScope;
+  /** @nullable */
+  logoUrl: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SupplierCategoryNode {
+  id: string;
+  supplierId: string;
+  name: string;
+  slug: string;
+  /** @nullable */
+  parentId: string | null;
+  path: string;
+  depth: number;
+  sortOrder: number;
+  active: boolean;
+  directProductCount: number;
+  descendantProductCount: number;
+}
+
+export type SupplierInputScope = typeof SupplierInputScope[keyof typeof SupplierInputScope];
+
+
+export const SupplierInputScope = {
+  B2B: 'B2B',
+  B2C: 'B2C',
+  BOTH: 'BOTH',
+} as const;
+
+export interface SupplierInput {
+  /** @minLength 1 */
+  name: string;
+  /**
+     * @minLength 1
+     * @pattern ^[a-z0-9]+(?:-[a-z0-9]+)*$
+     */
+  slug: string;
+  scope: SupplierInputScope;
+  /** @nullable */
+  logoUrl?: string | null;
+  active?: boolean;
+}
+
+export type SupplierUpdateScope = typeof SupplierUpdateScope[keyof typeof SupplierUpdateScope];
+
+
+export const SupplierUpdateScope = {
+  B2B: 'B2B',
+  B2C: 'B2C',
+  BOTH: 'BOTH',
+} as const;
+
+export interface SupplierUpdate {
+  /** @minLength 1 */
+  name?: string;
+  scope?: SupplierUpdateScope;
+  /** @nullable */
+  logoUrl?: string | null;
+  active?: boolean;
+}
+
 export interface AdminProductCategoryInput {
+  /** @minLength 1 */
+  supplierId?: string;
   /**
      * @minLength 1
      * @pattern .*\S.*
@@ -4435,6 +4525,8 @@ export interface AdminProductCategoryInput {
 }
 
 export interface AdminProductCategoryUpdate {
+  /** @minLength 1 */
+  supplierId?: string;
   /**
      * @minLength 1
      * @pattern .*\S.*
@@ -7487,6 +7579,9 @@ search?: string;
 category?: string;
 subcategory?: string;
 brand?: string;
+supplierId?: string;
+market?: AdminListProductsMarket;
+lowStock?: boolean;
 status?: AdminListProductsStatus;
 sortBy?: AdminListProductsSortBy;
 sortDir?: AdminListProductsSortDir;
@@ -7500,6 +7595,14 @@ page?: number;
  */
 pageSize?: number;
 };
+
+export type AdminListProductsMarket = typeof AdminListProductsMarket[keyof typeof AdminListProductsMarket];
+
+
+export const AdminListProductsMarket = {
+  B2B: 'B2B',
+  B2C: 'B2C',
+} as const;
 
 export type AdminListProductsStatus = typeof AdminListProductsStatus[keyof typeof AdminListProductsStatus];
 
@@ -7529,6 +7632,36 @@ export const AdminListProductsSortDir = {
   asc: 'asc',
   desc: 'desc',
 } as const;
+
+export type ListSupplierProductsParams = {
+categoryId?: string;
+search?: string;
+brand?: string;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
+
+export type ListSupplierPublicProductsParams = {
+categoryId?: string;
+search?: string;
+brand?: string;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
 
 export type AdminListServiceTemplatesParams = {
 /**

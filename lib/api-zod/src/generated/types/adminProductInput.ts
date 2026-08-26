@@ -8,13 +8,15 @@
 import type { ProductVariant } from './productVariant';
 
 export interface AdminProductInput {
+  /** @minLength 1 */
+  supplierId?: string;
   /**
      * @minLength 1
      * @pattern .*\S.*
      */
   name: string;
   /** @nullable */
-  categoryId?: string | null;
+  categoryId: string | null;
   /** @minLength 1 */
   categoryName: string;
   /** @nullable */

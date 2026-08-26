@@ -433,6 +433,17 @@ async function seed(): Promise<void> {
     productName: product.name,
     quantity: index + 1,
     price: product.discountPrice ?? product.price,
+    supplierId: product.supplierId,
+    supplierName: "LUMERA Legacy Catalog",
+    supplierSlug: "lumera-legacy",
+    productCatalogReference: product.catalogReference,
+    productSkuSnapshot: product.sku,
+    market: "B2B" as const,
+    currency: "RSD",
+    unitPrice: product.discountPrice ?? product.price,
+    discountSnapshot: product.discountPrice == null ? null : product.price - product.discountPrice,
+    lineSubtotal: (product.discountPrice ?? product.price) * (index + 1),
+    lineTotal: (product.discountPrice ?? product.price) * (index + 1),
   })));
 
   const [courseCategory] = await db.insert(courseCategoriesTable).values({ name: "Stručne tehnike", slug: "strucne-tehnike" }).returning();

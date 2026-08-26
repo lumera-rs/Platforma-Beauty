@@ -3397,6 +3397,15 @@ paths:
         - name: brand
           in: query
           schema: { type: string }
+        - name: supplierId
+          in: query
+          schema: { type: string }
+        - name: market
+          in: query
+          schema: { type: string, enum: [B2B, B2C] }
+        - name: lowStock
+          in: query
+          schema: { type: boolean }
         - name: status
           in: query
           schema: { type: string, enum: [in-stock, out-of-stock, new, on-sale, inactive] }
@@ -3564,6 +3573,119 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /admin/suppliers:
+    get:
+      operationId: adminListSuppliers
+      tags: [admin]
+      summary: List platform-managed suppliers
+      responses:
+        "200": { description: Suppliers, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Supplier" } } } } }
+    post:
+      operationId: adminCreateSupplier
+      tags: [admin]
+      summary: Create a platform-managed supplier
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SupplierInput" } } }
+      responses:
+        "201": { description: Created supplier, content: { application/json: { schema: { $ref: "#/components/schemas/Supplier" } } } }
+  /admin/suppliers/{supplierId}:
+    get:
+      operationId: adminGetSupplier
+      tags: [admin]
+      summary: Get a supplier
+      parameters: [{ name: supplierId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Supplier, content: { application/json: { schema: { $ref: "#/components/schemas/Supplier" } } } }
+        "404": { description: Supplier not found }
+    patch:
+      operationId: adminUpdateSupplier
+      tags: [admin]
+      summary: Update supplier details or status without changing catalog history
+      parameters: [{ name: supplierId, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SupplierUpdate" } } }
+      responses:
+        "200": { description: Updated supplier, content: { application/json: { schema: { $ref: "#/components/schemas/Supplier" } } } }
+  /suppliers:
+    get:
+      operationId: listPublicSuppliers
+      tags: [shop]
+      summary: List active public suppliers
+      responses:
+        "200": { description: Active suppliers, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Supplier" } } } } }
+  /suppliers/{supplierSlug}:
+    get:
+      operationId: getPublicSupplier
+      tags: [shop]
+      summary: Get an active supplier and its category tree
+      parameters: [{ name: supplierSlug, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Supplier, content: { application/json: { schema: { $ref: "#/components/schemas/Supplier" } } } }
+        "404": { description: Supplier not found }
+  /suppliers/{supplierSlug}/categories:
+    get:
+      operationId: listSupplierCategories
+      tags: [shop]
+      summary: List the full active category tree for one supplier as flat path-aware nodes
+      parameters: [{ name: supplierSlug, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Supplier categories, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/SupplierCategoryNode" } } } } }
+        "404": { description: Supplier not found }
+  /suppliers/{supplierSlug}/products:
+    get:
+      operationId: listSupplierProducts
+      tags: [shop]
+      summary: List active B2B products from one active supplier
+      parameters:
+        - { name: supplierSlug, in: path, required: true, schema: { type: string } }
+        - { name: categoryId, in: query, schema: { type: string } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: brand, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 24 } }
+      responses:
+        "200": { description: Supplier products, content: { application/json: { schema: { $ref: "#/components/schemas/ProductList" } } } }
+        "401": { description: Authentication required }
+        "404": { description: Supplier not found }
+  /suppliers/{supplierSlug}/public-products:
+    get:
+      operationId: listSupplierPublicProducts
+      tags: [shop]
+      summary: List active retail products from one active supplier
+      parameters:
+        - { name: supplierSlug, in: path, required: true, schema: { type: string } }
+        - { name: categoryId, in: query, schema: { type: string } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: brand, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 24 } }
+      responses:
+        "200": { description: Supplier products, content: { application/json: { schema: { $ref: "#/components/schemas/PublicProductList" } } } }
+        "404": { description: Supplier not found }
+  /suppliers/{supplierSlug}/products/{productId}:
+    get:
+      operationId: getSupplierProduct
+      tags: [shop]
+      summary: Get an active B2B product from one active supplier
+      parameters:
+        - { name: supplierSlug, in: path, required: true, schema: { type: string } }
+        - { name: productId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Supplier product, content: { application/json: { schema: { $ref: "#/components/schemas/Product" } } } }
+        "404": { description: Product or supplier not found }
+  /suppliers/{supplierSlug}/public-products/{productId}:
+    get:
+      operationId: getSupplierPublicProduct
+      tags: [shop]
+      summary: Get an active retail product from one active supplier
+      parameters:
+        - { name: supplierSlug, in: path, required: true, schema: { type: string } }
+        - { name: productId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Supplier product, content: { application/json: { schema: { $ref: "#/components/schemas/PublicProduct" } } } }
+        "404": { description: Product or supplier not found }
   /admin/service-categories:
     get:
       operationId: adminListServiceCategories
@@ -6212,7 +6334,7 @@ components:
       properties:
         scope:
           type: string
-          enum: [salon-profile, salon-gallery, employee-avatar, product, education-cover, education-gallery, education-center, instructor-avatar, service-category, product-category, treatment-photo, jobseeker-portfolio]
+          enum: [salon-profile, salon-gallery, employee-avatar, product, supplier, education-cover, education-gallery, education-center, instructor-avatar, service-category, product-category, treatment-photo, jobseeker-portfolio]
         resourceId:
           type: ["string", "null"]
           pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
@@ -7069,6 +7191,7 @@ components:
       type: object
       properties:
         id: { type: string }
+        supplierId: { type: string }
         name: { type: string }
         category: { type: string }
         subcategory: { type: ["string", "null"] }
@@ -7103,7 +7226,7 @@ components:
         variantType: { type: ["string", "null"] }
         averageRating: { type: ["number", "null"] }
         reviewCount: { type: number }
-      required: [id, name, category, description, imageUrl, price, stock, sku, unit, isNew, isBestseller, images, variantType, reviewCount]
+      required: [id, supplierId, name, category, description, imageUrl, price, stock, sku, unit, isNew, isBestseller, images, variantType, reviewCount]
     ProductList:
       type: object
       properties:
@@ -7120,6 +7243,7 @@ components:
       description: Customer-facing product fields only. B2B price, SKU, stock, weight, variants and salon-only review data are deliberately omitted.
       properties:
         id: { type: string }
+        supplierId: { type: string }
         name: { type: string }
         category: { type: string }
         subcategory: { type: ["string", "null"] }
@@ -7135,7 +7259,7 @@ components:
         unit: { type: string }
         isNew: { type: boolean }
         isBestseller: { type: boolean }
-      required: [id, name, category, description, imageUrl, images, price, unit, isNew, isBestseller]
+      required: [id, supplierId, name, category, description, imageUrl, images, price, unit, isNew, isBestseller]
     PublicProductList:
       type: object
       properties:
@@ -8237,6 +8361,7 @@ components:
       type: object
       additionalProperties: false
       properties:
+        supplierId: { type: string, minLength: 1 }
         name: { type: string, minLength: 1, pattern: '.*\S.*' }
         sortOrder: { type: number, minimum: 0, maximum: 100000, multipleOf: 1 }
         spendThreshold: { type: number, minimum: 0, maximum: 1000000000, multipleOf: 1 }
@@ -8370,6 +8495,7 @@ components:
       type: object
       properties:
         id: { type: string }
+        supplierId: { type: string }
         name: { type: string }
         categoryId: { type: ["string", "null"] }
         categoryName: { type: string }
@@ -8418,6 +8544,7 @@ components:
       type: object
       additionalProperties: false
       properties:
+        supplierId: { type: string, minLength: 1 }
         name: { type: string, minLength: 1, pattern: '.*\S.*' }
         categoryId: { type: ["string", "null"] }
         categoryName: { type: string, minLength: 1 }
@@ -8447,11 +8574,12 @@ components:
           items: { $ref: "#/components/schemas/ProductVariant" }
         variantType: { type: ["string", "null"] }
         active: { type: boolean }
-      required: [name, categoryName, description, imageUrl, price, stock, sku, unit, weightGrams]
+      required: [categoryId, name, categoryName, description, imageUrl, price, stock, sku, unit, weightGrams]
     AdminProductUpdate:
       type: object
       additionalProperties: false
       properties:
+        supplierId: { type: string, minLength: 1 }
         name: { type: string, minLength: 1, pattern: '.*\S.*' }
         categoryId: { type: ["string", "null"] }
         categoryName: { type: string, minLength: 1 }
@@ -8504,6 +8632,7 @@ components:
       type: object
       properties:
         id: { type: string }
+        supplierId: { type: string }
         name: { type: string }
         slug: { type: string }
         parentId: { type: ["string", "null"] }
@@ -8512,11 +8641,57 @@ components:
         imageUrl: { type: ["string", "null"] }
         active: { type: boolean }
         productCount: { type: number }
-      required: [id, name, slug, sortOrder, active, productCount]
+      required: [id, supplierId, name, slug, sortOrder, active, productCount]
+    Supplier:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        slug: { type: string }
+        scope: { type: string, enum: [B2B, B2C, BOTH] }
+        logoUrl: { type: ["string", "null"] }
+        active: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, name, slug, scope, logoUrl, active, createdAt, updatedAt]
+    SupplierCategoryNode:
+      type: object
+      properties:
+        id: { type: string }
+        supplierId: { type: string }
+        name: { type: string }
+        slug: { type: string }
+        parentId: { type: ["string", "null"] }
+        path: { type: string }
+        depth: { type: integer }
+        sortOrder: { type: integer }
+        active: { type: boolean }
+        directProductCount: { type: integer }
+        descendantProductCount: { type: integer }
+      required: [id, supplierId, name, slug, parentId, path, depth, sortOrder, active, directProductCount, descendantProductCount]
+    SupplierInput:
+      type: object
+      additionalProperties: false
+      required: [name, slug, scope]
+      properties:
+        name: { type: string, minLength: 1 }
+        slug: { type: string, minLength: 1, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
+        scope: { type: string, enum: [B2B, B2C, BOTH] }
+        logoUrl: { type: ["string", "null"] }
+        active: { type: boolean }
+    SupplierUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1 }
+        scope: { type: string, enum: [B2B, B2C, BOTH] }
+        logoUrl: { type: ["string", "null"] }
+        active: { type: boolean }
     AdminProductCategoryInput:
       type: object
       additionalProperties: false
       properties:
+        supplierId: { type: string, minLength: 1 }
         name: { type: string, minLength: 1, pattern: '.*\S.*' }
         parentId: { type: ["string", "null"] }
         sortOrder: { type: number, minimum: 0, maximum: 100000, multipleOf: 1 }
@@ -8528,6 +8703,7 @@ components:
       type: object
       additionalProperties: false
       properties:
+        supplierId: { type: string, minLength: 1 }
         name: { type: string, minLength: 1, pattern: '.*\S.*' }
         parentId: { type: ["string", "null"] }
         sortOrder: { type: number, minimum: 0, maximum: 100000, multipleOf: 1 }

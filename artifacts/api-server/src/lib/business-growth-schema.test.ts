@@ -83,12 +83,24 @@ async function seedLegacySchema(schema: string) {
     salon_id uuid NOT NULL REFERENCES "${schema}".salons(id) ON DELETE CASCADE,
     name text NOT NULL
   )`);
-  // Legacy catalog table before customer-safe public storefront fields.
-  // The upgrade must add those fields without exposing B2B description/prices.
+  // Legacy catalog tables before supplier ownership and customer-safe public
+  // storefront fields. The upgrade must replace global category uniqueness
+  // without losing the existing hierarchy.
+  await q(`CREATE TABLE "${schema}".product_categories (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    name text NOT NULL UNIQUE,
+    slug text NOT NULL UNIQUE,
+    parent_id uuid REFERENCES "${schema}".product_categories(id),
+    sort_order integer NOT NULL DEFAULT 0,
+    active boolean NOT NULL DEFAULT true,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`);
   await q(`CREATE TABLE "${schema}".products (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    category_id uuid REFERENCES "${schema}".product_categories(id),
     name text NOT NULL,
     description text NOT NULL,
+    sku text,
     active boolean NOT NULL DEFAULT true,
     created_at timestamptz NOT NULL DEFAULT now()
   )`);
@@ -119,6 +131,15 @@ async function seedLegacySchema(schema: string) {
   // Existing core commerce dependency used by phase-3 inventory movements.
   await q(`CREATE TABLE "${schema}".orders (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid()
+  )`);
+  await q(`CREATE TABLE "${schema}".order_items (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    order_id uuid NOT NULL REFERENCES "${schema}".orders(id) ON DELETE CASCADE,
+    product_id uuid NOT NULL REFERENCES "${schema}".products(id),
+    product_name text NOT NULL,
+    product_sku text,
+    price integer NOT NULL,
+    quantity integer NOT NULL
   )`);
   await q(`CREATE TABLE "${schema}".salon_customers (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -222,8 +243,14 @@ async function seedLegacySchema(schema: string) {
   const service = (await q<{ id: string }>(`INSERT INTO "${schema}".services (salon_id, name) VALUES ($1, 'Svc') RETURNING id`, [salon.id])).rows[0]!;
   const customer = (await q<{ id: string }>(`INSERT INTO "${schema}".salon_customers (salon_id, display_name) VALUES ($1, 'Cust') RETURNING id`, [salon.id])).rows[0]!;
   const appointment = (await q<{ id: string }>(`INSERT INTO "${schema}".appointments (salon_id) VALUES ($1) RETURNING id`, [salon.id])).rows[0]!;
+  const retailCategory = (await q<{ id: string }>(
+    `INSERT INTO "${schema}".product_categories (name, slug)
+     VALUES ('Legacy retail category', 'legacy-retail-category') RETURNING id`,
+  )).rows[0]!;
   const retailProduct = (await q<{ id: string }>(
-    `INSERT INTO "${schema}".products (name, description) VALUES ('Legacy retail product', 'Legacy retail description') RETURNING id`,
+    `INSERT INTO "${schema}".products (category_id, name, description)
+     VALUES ($1, 'Legacy retail product', 'Legacy retail description') RETURNING id`,
+    [retailCategory.id],
   )).rows[0]!;
   const retailCart = (await q<{ id: string }>(
     `INSERT INTO "${schema}".retail_carts (token_hash) VALUES ('legacy-retail-cart') RETURNING id`,

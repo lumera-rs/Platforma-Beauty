@@ -7,6 +7,8 @@
  */
 
 export interface AdminProductCategoryInput {
+  /** @minLength 1 */
+  supplierId?: string;
   /**
      * @minLength 1
      * @pattern .*\S.*

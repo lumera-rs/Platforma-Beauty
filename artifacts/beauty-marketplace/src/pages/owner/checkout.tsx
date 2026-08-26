@@ -728,8 +728,23 @@ export function OwnerCheckoutReviewPage() {
         queryClient.invalidateQueries({ queryKey: getListSalonNotificationsQueryKey() });
         setLocation(`/vlasnik/prodavnica/porudzbina/${order.id}/potvrda`);
       },
-      onError: (error) => {
-        const message = (error as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      onError: async (error) => {
+        if ((error as any)?.response?.status === 409) {
+          const productNames = (error as any)?.response?.data?.unavailableProducts ?? [];
+          const text = productNames.length === 1
+            ? `Proizvod ${productNames[0]} je rasprodat, promenio cenu, ili je dobavljač neaktivan. Porudžbina nije kreirana.`
+            : `Proizvodi: ${productNames.join(", ")} su rasprodati, promenili cenu, ili je dobavljač neaktivan. Porudžbina nije kreirana.`;
+
+          toast.error("Promena u katalogu dobavljača", { description: text });
+
+          await queryClient.invalidateQueries({ queryKey: getGetShopCartQueryKey() });
+          await queryClient.invalidateQueries({ queryKey: getGetShopCheckoutPreviewQueryKey() });
+
+          setLocation("/vlasnik/prodavnica/korpa");
+          return;
+        }
+
+        const message = (error as any)?.response?.data?.error;
         toast.error("Porudžbina nije kreirana.", { description: message ?? "Proverite podatke za dostavu i pokušajte ponovo." });
       }
     });

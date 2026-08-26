@@ -3,6 +3,7 @@ export type MediaUploadScope =
   | "salon-gallery"
   | "employee-avatar"
   | "product"
+  | "supplier"
   | "education-cover"
   | "education-gallery"
   | "education-center"

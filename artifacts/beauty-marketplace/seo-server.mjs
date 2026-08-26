@@ -119,6 +119,40 @@ function card({ href, title, description, image, detail }) {
   return `<article>${image ? `<img src="${escapeHtml(image)}" width="640" height="400" alt="${escapeHtml(title)}">` : ''}<h2><a href="${escapeHtml(href)}">${escapeHtml(title)}</a></h2>${description ? `<p>${escapeHtml(clip(description, 220))}</p>` : ''}${detail ? `<p>${escapeHtml(detail)}</p>` : ''}</article>`;
 }
 
+function isPublicRetailSupplier(supplier) {
+  return Boolean(supplier?.active && (supplier.scope === 'B2C' || supplier.scope === 'BOTH'));
+}
+
+function supplierDescription(supplier) {
+  return supplier.description || `Istražite javnu ponudu beauty proizvoda dobavljača ${supplier.name} na LUMERA platformi.`;
+}
+
+function breadcrumbs(origin, items) {
+  return {
+    '@type': 'BreadcrumbList',
+    itemListElement: items.map((item, index) => ({
+      '@type': 'ListItem',
+      position: index + 1,
+      name: item.name,
+      item: `${origin}${item.pathname}`,
+    })),
+  };
+}
+
+function breadcrumbHtml(items) {
+  return `<nav aria-label="Putanja">${items.map((item) => `<a href="${escapeHtml(item.pathname)}">${escapeHtml(item.name)}</a>`).join(' · ')}</nav>`;
+}
+
+function supplierProductCard(product, supplierSlug) {
+  return card({
+    href: `/shop/${encodeURIComponent(supplierSlug)}/proizvod/${encodeURIComponent(product.id)}`,
+    title: product.name,
+    description: product.description,
+    image: product.imageUrl,
+    detail: `${product.discountPrice ?? product.price} RSD`,
+  });
+}
+
 function beautyJobTypeLabel(type) {
   return ({ job: 'Posao', freelance: 'Freelance angažman', equipment_rental: 'Iznajmljivanje opreme', space_rental: 'Iznajmljivanje prostora ili stolice' })[type] ?? 'Beauty oglas';
 }
@@ -191,28 +225,28 @@ async function renderPublicPage(req, pathname) {
       return { meta, html: pageShell(meta, `<section><h1>${escapeHtml(heading)}</h1><p>${escapeHtml(description)}</p></section><section><h2>Dostupni saloni</h2><div class="seo-grid">${cards || '<p>Trenutno nema dostupnih salona.</p>'}</div></section>`, origin) };
     }
     if (pathname === '/proizvodi') {
-      const products = (await getJson(req, '/api/shop/public/products?page=1&pageSize=24'))?.items ?? [];
+      const suppliers = (await getJson(req, '/api/suppliers') ?? []).filter(isPublicRetailSupplier);
       const meta = makeMeta(pathname, title, description, {
         schema: {
           '@context': 'https://schema.org',
           '@type': 'ItemList',
-          name: 'LUMERA beauty proizvodi',
-          itemListElement: products.map((product, index) => ({
+          name: 'LUMERA dobavljači beauty proizvoda',
+          itemListElement: suppliers.map((supplier, index) => ({
             '@type': 'ListItem',
             position: index + 1,
-            url: `${origin}/proizvodi/${encodeURIComponent(product.id)}`,
-            name: product.name,
+            url: `${origin}/shop/${encodeURIComponent(supplier.slug)}`,
+            name: supplier.name,
           })),
         },
       });
-      const cards = products.map((product) => card({
-        href: `/proizvodi/${product.id}`,
-        title: product.name,
-        description: product.description,
-        image: product.imageUrl,
-        detail: `${product.discountPrice ?? product.price} RSD`,
+      const cards = suppliers.map((supplier) => card({
+        href: `/shop/${encodeURIComponent(supplier.slug)}`,
+        title: supplier.name,
+        description: supplierDescription(supplier),
+        image: supplier.logoUrl,
+        detail: 'Pogledajte javnu ponudu',
       })).join('');
-      return { meta, html: pageShell(meta, `<section><h1>${escapeHtml(heading)}</h1><p>${escapeHtml(description)}</p></section><section><h2>Javno dostupni proizvodi</h2><div class="seo-grid">${cards || '<p>Trenutno nema javno dostupnih proizvoda.</p>'}</div></section>`, origin) };
+      return { meta, html: pageShell(meta, `<section><h1>${escapeHtml(heading)}</h1><p>${escapeHtml(description)}</p></section><section><h2>Aktivni dobavljači</h2><div class="seo-grid">${cards || '<p>Trenutno nema javno dostupnih dobavljača.</p>'}</div></section>`, origin) };
     }
     if (pathname === '/poslovi') {
       const jobs = (await getJson(req, '/api/beauty-jobs?page=1&pageSize=24&sort=newest'))?.items ?? [];
@@ -289,37 +323,106 @@ async function renderPublicPage(req, pathname) {
     };
   }
 
-  const productMatch = pathname.match(/^\/proizvodi\/([^/]+)$/);
-  if (productMatch) {
-    const product = await getJson(req, `/api/shop/public/products/${encodeURIComponent(productMatch[1])}`);
-    if (!product) return null;
+  const supplierProductMatch = pathname.match(/^\/shop\/([^/]+)\/proizvod\/([^/]+)$/);
+  if (supplierProductMatch) {
+    const supplierSlug = decodeURIComponent(supplierProductMatch[1]);
+    const productId = decodeURIComponent(supplierProductMatch[2]);
+    const [supplier, product] = await Promise.all([
+      getJson(req, `/api/suppliers/${encodeURIComponent(supplierSlug)}`),
+      getJson(req, `/api/suppliers/${encodeURIComponent(supplierSlug)}/public-products/${encodeURIComponent(productId)}`),
+    ]);
+    if (!isPublicRetailSupplier(supplier) || !product) return null;
     const description = product.description || `${product.name} — javno dostupan beauty proizvod na LUMERA platformi.`;
     const price = product.discountPrice ?? product.price;
-    const meta = makeMeta(pathname, `${product.name} | LUMERA proizvodi`, description, {
+    const canonicalPath = `/shop/${encodeURIComponent(supplier.slug)}/proizvod/${encodeURIComponent(product.id)}`;
+    const crumbs = [
+      { name: 'Proizvodi', pathname: '/proizvodi' },
+      { name: supplier.name, pathname: `/shop/${encodeURIComponent(supplier.slug)}` },
+      { name: product.name, pathname: canonicalPath },
+    ];
+    const meta = makeMeta(canonicalPath, `${product.name} | ${supplier.name}`, description, {
       image: product.images?.[0] ?? product.imageUrl,
       schema: {
         '@context': 'https://schema.org',
-        '@type': 'Product',
-        name: product.name,
-        description,
-        image: asAbsolute(origin, product.images?.[0] ?? product.imageUrl),
-        brand: product.brand ? { '@type': 'Brand', name: product.brand } : undefined,
-        category: product.category,
-        offers: {
-          '@type': 'Offer',
-          priceCurrency: 'RSD',
-          price: String(price),
-          availability: 'https://schema.org/InStock',
-          url: `${origin}${pathname}`,
-        },
+        '@graph': [{
+          '@type': 'Product',
+          name: product.name,
+          description,
+          image: asAbsolute(origin, product.images?.[0] ?? product.imageUrl),
+          brand: product.brand ? { '@type': 'Brand', name: product.brand } : undefined,
+          category: product.category,
+          offers: {
+            '@type': 'Offer',
+            priceCurrency: 'RSD',
+            price: String(price),
+            availability: 'https://schema.org/InStock',
+            url: `${origin}${canonicalPath}`,
+          },
+        }, breadcrumbs(origin, crumbs)],
       },
     });
-    const related = (product.relatedProducts ?? []).map((item) => card({
-      href: `/proizvodi/${item.id}`, title: item.name, description: item.description, image: item.imageUrl, detail: `${item.discountPrice ?? item.price} RSD`,
-    })).join('');
     return {
       meta,
-      html: pageShell(meta, `<article><h1>${escapeHtml(product.name)}</h1><p>${escapeHtml(description)}</p>${product.imageUrl ? `<img src="${escapeHtml(product.imageUrl)}" width="960" height="720" alt="${escapeHtml(product.name)}">` : ''}<p><strong>Cena: ${escapeHtml(price)} RSD</strong></p><p>${escapeHtml(product.category)}${product.brand ? ` · ${escapeHtml(product.brand)}` : ''}</p><section><h2>Slični proizvodi</h2><div class="seo-grid">${related || '<p>Pogledajte druge proizvode u javnoj prodavnici.</p>'}</div></section><p><a href="/proizvodi">Svi proizvodi</a></p></article>`, origin),
+      html: pageShell(meta, `<article>${breadcrumbHtml(crumbs)}<h1>${escapeHtml(product.name)}</h1><p>${escapeHtml(description)}</p>${product.imageUrl ? `<img src="${escapeHtml(product.imageUrl)}" width="960" height="720" alt="${escapeHtml(product.name)}">` : ''}<p><strong>Cena: ${escapeHtml(price)} RSD</strong></p><p>${escapeHtml(product.category)}${product.brand ? ` · ${escapeHtml(product.brand)}` : ''}</p><p><a href="/shop/${escapeHtml(encodeURIComponent(supplier.slug))}">Svi proizvodi dobavljača ${escapeHtml(supplier.name)}</a></p></article>`, origin),
+    };
+  }
+
+  const supplierShopMatch = pathname.match(/^\/shop\/([^/]+)(?:\/(.+))?$/);
+  if (supplierShopMatch) {
+    const supplierSlug = decodeURIComponent(supplierShopMatch[1]);
+    const categoryPath = supplierShopMatch[2] ? supplierShopMatch[2].split('/').map(decodeURIComponent).join('/') : '';
+    const [supplier, categories] = await Promise.all([
+      getJson(req, `/api/suppliers/${encodeURIComponent(supplierSlug)}`),
+      getJson(req, `/api/suppliers/${encodeURIComponent(supplierSlug)}/categories`),
+    ]);
+    if (!isPublicRetailSupplier(supplier) || !Array.isArray(categories)) return null;
+    const category = categoryPath ? categories.find((item) => item.active && item.path === categoryPath) : null;
+    if (categoryPath && !category) return null;
+    const productsEndpoint = `/api/suppliers/${encodeURIComponent(supplier.slug)}/public-products?page=1&pageSize=24${category ? `&categoryId=${encodeURIComponent(category.id)}` : ''}`;
+    const products = (await getJson(req, productsEndpoint))?.items ?? [];
+    const canonicalPath = category
+      ? `/shop/${encodeURIComponent(supplier.slug)}/${category.path.split('/').map(encodeURIComponent).join('/')}`
+      : `/shop/${encodeURIComponent(supplier.slug)}`;
+    const title = category ? `${category.name} | ${supplier.name}` : `${supplier.name} | Beauty proizvodi`;
+    const description = category
+      ? `${category.name} dobavljača ${supplier.name}. Pogledajte javno dostupne beauty proizvode, opise i cene za kupce.`
+      : supplierDescription(supplier);
+    const pathParts = category ? category.path.split('/') : [];
+    const categoryCrumbs = pathParts.map((_, index) => {
+      const pathValue = pathParts.slice(0, index + 1).join('/');
+      const match = categories.find((item) => item.path === pathValue);
+      return match ? {
+        name: match.name,
+        pathname: `/shop/${encodeURIComponent(supplier.slug)}/${pathValue.split('/').map(encodeURIComponent).join('/')}`,
+      } : null;
+    }).filter(Boolean);
+    const crumbs = [
+      { name: 'Proizvodi', pathname: '/proizvodi' },
+      { name: supplier.name, pathname: `/shop/${encodeURIComponent(supplier.slug)}` },
+      ...categoryCrumbs,
+    ];
+    const meta = makeMeta(canonicalPath, title, description, {
+      image: supplier.logoUrl,
+      schema: {
+        '@context': 'https://schema.org',
+        '@graph': [{
+          '@type': 'ItemList',
+          name: category ? `${category.name} — ${supplier.name}` : `${supplier.name} proizvodi`,
+          itemListElement: products.map((product, index) => ({
+            '@type': 'ListItem',
+            position: index + 1,
+            url: `${origin}/shop/${encodeURIComponent(supplier.slug)}/proizvod/${encodeURIComponent(product.id)}`,
+            name: product.name,
+          })),
+        }, breadcrumbs(origin, crumbs)],
+      },
+    });
+    const cards = products.map((product) => supplierProductCard(product, supplier.slug)).join('');
+    const categoryLinks = !category ? categories.filter((item) => item.active).map((item) =>
+      `<li><a href="/shop/${escapeHtml(encodeURIComponent(supplier.slug))}/${item.path.split('/').map((part) => escapeHtml(encodeURIComponent(part))).join('/')}">${escapeHtml(item.name)}</a></li>`).join('') : '';
+    return {
+      meta,
+      html: pageShell(meta, `<section>${breadcrumbHtml(crumbs)}<h1>${escapeHtml(category ? `${category.name} — ${supplier.name}` : supplier.name)}</h1><p>${escapeHtml(description)}</p>${categoryLinks ? `<nav aria-label="Kategorije"><h2>Kategorije</h2><ul>${categoryLinks}</ul></nav>` : ''}</section><section><h2>${category ? `Proizvodi u kategoriji ${escapeHtml(category.name)}` : 'Javno dostupni proizvodi'}</h2><div class="seo-grid">${cards || '<p>Trenutno nema javno dostupnih proizvoda.</p>'}</div></section>`, origin),
     };
   }
 
@@ -413,10 +516,10 @@ async function buildSitemap(req) {
   const entries = [...staticPages.keys(), ...categoryPages.keys()]
     .filter((pathname) => pathname !== '/pridruzi-se-edukativni-centar')
     .map((pathname) => ({ pathname, priority: pathname === '/' ? '1.0' : categoryPages.has(pathname) ? '0.8' : '0.7' }));
-  const [salons, courses, products, beautyJobs] = await Promise.all([
+  const [salons, courses, suppliers, beautyJobs] = await Promise.all([
     listAll(req, '/api/salons', 24),
     listAll(req, '/api/education/public/courses', 24),
-    listAll(req, '/api/shop/public/products', 100),
+    getJson(req, '/api/suppliers'),
     listAll(req, '/api/beauty-jobs', 100),
   ]);
   const seenCenters = new Set();
@@ -427,8 +530,22 @@ async function buildSitemap(req) {
     if (course.centerId && !seenCenters.has(course.centerId)) { seenCenters.add(course.centerId); entries.push({ pathname: `/edukacije/centri/${encodeURIComponent(course.centerId)}`, priority: '0.6' }); }
     if (course.instructorProfileId && !seenInstructors.has(course.instructorProfileId)) { seenInstructors.add(course.instructorProfileId); entries.push({ pathname: `/edukacije/instruktori/${encodeURIComponent(course.instructorProfileId)}`, priority: '0.6' }); }
   }
-  for (const product of products) {
-    entries.push({ pathname: `/proizvodi/${encodeURIComponent(product.id)}`, priority: '0.7' });
+  for (const supplier of (suppliers ?? []).filter(isPublicRetailSupplier)) {
+    const supplierPath = `/shop/${encodeURIComponent(supplier.slug)}`;
+    entries.push({ pathname: supplierPath, priority: '0.8' });
+    const [categories, products] = await Promise.all([
+      getJson(req, `/api/suppliers/${encodeURIComponent(supplier.slug)}/categories`),
+      listAll(req, `/api/suppliers/${encodeURIComponent(supplier.slug)}/public-products`, 100),
+    ]);
+    for (const category of categories ?? []) {
+      if (category.active) entries.push({
+        pathname: `${supplierPath}/${category.path.split('/').map(encodeURIComponent).join('/')}`,
+        priority: '0.7',
+      });
+    }
+    for (const product of products) {
+      entries.push({ pathname: `${supplierPath}/proizvod/${encodeURIComponent(product.id)}`, priority: '0.7' });
+    }
   }
   for (const job of beautyJobs) {
     entries.push({ pathname: `/poslovi/${encodeURIComponent(beautyJobSlug(job))}/${encodeURIComponent(job.id)}`, lastmod: job.updatedAt ? new Date(job.updatedAt).toISOString().slice(0, 10) : undefined, priority: '0.7' });
@@ -445,6 +562,26 @@ export async function createSeoResponse(req, template) {
   const url = new URL(req.url ?? '/', requestOrigin(req));
   const pathname = url.pathname.replace(/\/+$/, '') || '/';
   const origin = requestOrigin(req);
+  const legacyProduct = pathname.match(/^\/proizvodi\/([^/]+)$/);
+  if (legacyProduct) {
+    try {
+      const [product, suppliers] = await Promise.all([
+        getJson(req, `/api/shop/public/products/${encodeURIComponent(legacyProduct[1])}`),
+        getJson(req, '/api/suppliers'),
+      ]);
+      const supplier = (suppliers ?? []).find((item) => isPublicRetailSupplier(item) && item.id === product?.supplierId);
+      if (product && supplier) {
+        return {
+          status: 308,
+          type: 'text/plain; charset=utf-8',
+          body: 'Permanent redirect to the supplier product listing.',
+          headers: { location: `/shop/${encodeURIComponent(supplier.slug)}/proizvod/${encodeURIComponent(product.id)}${url.search}` },
+        };
+      }
+    } catch {
+      // Unknown or unavailable legacy products use the normal not-found response.
+    }
+  }
   if (pathname === '/beauty-poslovi') {
     return {
       status: 308,

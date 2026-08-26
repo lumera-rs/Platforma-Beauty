@@ -1,5 +1,6 @@
 import {
   boolean,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -54,10 +55,29 @@ export const subscriptionStatusEnum = pgEnum("subscription_status", [
   "free_via_loyalty",
 ]);
 
+/** The storefronts in which a platform-managed supplier may sell. */
+export const supplierScopeEnum = pgEnum("supplier_scope", ["B2B", "B2C", "BOTH"]);
+
+export const suppliersTable = pgTable("suppliers", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  /** Stable public identifier; renaming a supplier must not change this. */
+  slug: text("slug").notNull().unique(),
+  scope: supplierScopeEnum("scope").notNull().default("BOTH"),
+  logoUrl: text("logo_url"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("suppliers_active_name_idx").on(table.active, table.name),
+]);
+
 export const productCategoriesTable = pgTable("product_categories", {
   id: uuid("id").defaultRandom().primaryKey(),
-  name: text("name").notNull().unique(),
-  slug: text("slug").notNull().unique(),
+  supplierId: uuid("supplier_id").notNull().default("9b5970ea-0a8c-5e60-9d32-2a09f0890560").references(() => suppliersTable.id, { onDelete: "restrict" }),
+  name: text("name").notNull(),
+  slug: text("slug").notNull(),
+  // RESTRICT deliberately prevents accidental deletion of a whole category tree.
   parentId: uuid("parent_id"),
   sortOrder: integer("sort_order").notNull().default(0),
   icon: text("icon"),
@@ -65,13 +85,22 @@ export const productCategoriesTable = pgTable("product_categories", {
   active: boolean("active").notNull().default(true),
 }, (table) => [
   // Category tree navigation: children of a parent node.
-  index("product_categories_parent_sort_idx").on(table.parentId, table.sortOrder),
+  index("product_categories_supplier_parent_sort_idx").on(table.supplierId, table.parentId, table.sortOrder),
   // Active category listing ordered by sortOrder.
-  index("product_categories_active_sort_idx").on(table.active, table.sortOrder),
+  index("product_categories_supplier_active_sort_idx").on(table.supplierId, table.active, table.sortOrder),
+  // NULLS NOT DISTINCT also makes root-level siblings unique.
+  unique("product_categories_supplier_parent_name_unique").on(table.supplierId, table.parentId, table.name).nullsNotDistinct(),
+  unique("product_categories_supplier_parent_slug_unique").on(table.supplierId, table.parentId, table.slug).nullsNotDistinct(),
+  foreignKey({
+    columns: [table.parentId],
+    foreignColumns: [table.id],
+    name: "product_categories_parent_id_fkey",
+  }).onDelete("restrict"),
 ]);
 
 export const productsTable = pgTable("products", {
   id: uuid("id").defaultRandom().primaryKey(),
+  supplierId: uuid("supplier_id").notNull().default("9b5970ea-0a8c-5e60-9d32-2a09f0890560").references(() => suppliersTable.id, { onDelete: "restrict" }),
   categoryId: uuid("category_id").references(() => productCategoriesTable.id, { onDelete: "set null" }),
   categoryName: text("category_name").notNull(),
   subcategoryName: text("subcategory_name"),
@@ -103,7 +132,8 @@ export const productsTable = pgTable("products", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   // Product catalog: active listings by category, sorted by creation date or price.
-  index("products_category_active_idx").on(table.categoryId, table.active),
+  index("products_supplier_category_active_idx").on(table.supplierId, table.categoryId, table.active),
+  index("products_supplier_active_created_idx").on(table.supplierId, table.active, table.createdAt),
   uniqueIndex("products_catalog_reference_unique").on(table.catalogReference),
   index("products_active_created_idx").on(table.active, table.createdAt),
   index("products_retail_active_created_idx").on(table.retailEnabled, table.active, table.createdAt),
@@ -288,10 +318,24 @@ export const orderItemsTable = pgTable("order_items", {
   productSku: text("product_sku"),
   quantity: integer("quantity").notNull(),
   price: integer("price").notNull(),
+  // Immutable commercial evidence. These values must never be re-derived from
+  // current catalog data when an order is viewed or refunded.
+  supplierId: uuid("supplier_id").notNull(),
+  supplierName: text("supplier_name").notNull(),
+  supplierSlug: text("supplier_slug").notNull(),
+  productCatalogReference: text("product_catalog_reference").notNull(),
+  productSkuSnapshot: text("product_sku_snapshot"),
+  market: text("market").notNull().default("B2B"),
+  currency: text("currency").notNull().default("RSD"),
+  unitPrice: integer("unit_price").notNull(),
+  discountSnapshot: integer("discount_snapshot"),
+  lineSubtotal: integer("line_subtotal").notNull(),
+  lineTotal: integer("line_total").notNull(),
 }, (table) => [
   // Leading FK coverage for both sides.
   index("order_items_order_idx").on(table.orderId),
   index("order_items_product_idx").on(table.productId),
+  index("order_items_supplier_idx").on(table.supplierId),
 ]);
 
 export const productReviewsTable = pgTable("product_reviews", {
@@ -392,10 +436,21 @@ export const retailOrderItemsTable = pgTable("retail_order_items", {
   variantLabel: text("variant_label"),
   unitPrice: integer("unit_price").notNull(),
   quantity: integer("quantity").notNull(),
+  // See order_items: retain commercial facts even if catalog/supplier changes.
+  supplierId: uuid("supplier_id").notNull(),
+  supplierName: text("supplier_name").notNull(),
+  supplierSlug: text("supplier_slug").notNull(),
+  productSkuSnapshot: text("product_sku_snapshot"),
+  market: text("market").notNull().default("B2C"),
+  currency: text("currency").notNull().default("RSD"),
+  discountSnapshot: integer("discount_snapshot"),
+  lineSubtotal: integer("line_subtotal").notNull(),
+  lineTotal: integer("line_total").notNull(),
 }, (table) => [
   index("retail_order_items_order_idx").on(table.orderId),
   index("retail_order_items_product_idx").on(table.productId),
   index("retail_order_items_catalog_reference_order_idx").on(table.productCatalogReference, table.orderId),
+  index("retail_order_items_supplier_idx").on(table.supplierId),
 ]);
 
 export const retailProductReviewsTable = pgTable("retail_product_reviews", {

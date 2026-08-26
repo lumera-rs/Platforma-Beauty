@@ -253,8 +253,16 @@ async function run(): Promise<void> {
   assert.equal(orderRows.length, 5);
   await db.insert(orderItemsTable).values(
     orderRows.flatMap((order) => [
-      { orderId: order.id, productId: b2bProduct.id, productName: b2bProduct.name, quantity: 1, price: 1000 },
-      { orderId: order.id, productId: b2bProduct.id, productName: b2bProduct.name, quantity: 1, price: 1000 },
+      {
+        orderId: order.id, productId: b2bProduct.id, productName: b2bProduct.name, quantity: 1, price: 1000,
+        supplierId: b2bProduct.supplierId, supplierName: "LUMERA Legacy Catalog", supplierSlug: "lumera-legacy",
+        productCatalogReference: b2bProduct.catalogReference, market: "B2B", currency: "RSD", unitPrice: 1000, lineSubtotal: 1000, lineTotal: 1000,
+      },
+      {
+        orderId: order.id, productId: b2bProduct.id, productName: b2bProduct.name, quantity: 1, price: 1000,
+        supplierId: b2bProduct.supplierId, supplierName: "LUMERA Legacy Catalog", supplierSlug: "lumera-legacy",
+        productCatalogReference: b2bProduct.catalogReference, market: "B2B", currency: "RSD", unitPrice: 1000, lineSubtotal: 1000, lineTotal: 1000,
+      },
     ]),
   );
   await db.insert(salonNotificationsTable).values(

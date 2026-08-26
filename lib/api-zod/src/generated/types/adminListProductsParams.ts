@@ -5,6 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { AdminListProductsMarket } from './adminListProductsMarket';
 import type { AdminListProductsSortBy } from './adminListProductsSortBy';
 import type { AdminListProductsSortDir } from './adminListProductsSortDir';
 import type { AdminListProductsStatus } from './adminListProductsStatus';
@@ -14,6 +15,9 @@ search?: string;
 category?: string;
 subcategory?: string;
 brand?: string;
+supplierId?: string;
+market?: AdminListProductsMarket;
+lowStock?: boolean;
 status?: AdminListProductsStatus;
 sortBy?: AdminListProductsSortBy;
 sortDir?: AdminListProductsSortDir;

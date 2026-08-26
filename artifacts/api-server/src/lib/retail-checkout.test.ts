@@ -367,11 +367,17 @@ test("cart and checkout retain the saved catalog reference after an SKU edit", a
            )
            INSERT INTO retail_order_items (
              order_id, product_id, product_name, product_image_url,
-             product_catalog_reference, variant_value, variant_label, unit_price, quantity
+             product_catalog_reference, variant_value, variant_label, unit_price, quantity,
+             supplier_id, supplier_name, supplier_slug, product_sku_snapshot,
+             line_subtotal, line_total
            )
-           SELECT inserted_order.id, $3::uuid, 'Plan distractor', '/reference-plan.jpg',
-                  $2 || '-reference-' || inserted_order.id, NULL, NULL, 1, 1
-           FROM inserted_orders AS inserted_order`,
+           SELECT inserted_order.id, product.id, 'Plan distractor', '/reference-plan.jpg',
+                  $2 || '-reference-' || inserted_order.id, NULL, NULL, 1, 1,
+                  product.supplier_id, supplier.name, supplier.slug, product.sku, 1, 1
+           FROM inserted_orders AS inserted_order
+           CROSS JOIN products AS product
+           INNER JOIN suppliers AS supplier ON supplier.id = product.supplier_id
+           WHERE product.id = $3::uuid`,
           [order.id, planMarker, createdProductId],
         );
         await pool.query("ANALYZE retail_orders, retail_order_items");

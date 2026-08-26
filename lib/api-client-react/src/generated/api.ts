@@ -231,6 +231,8 @@ import type {
   ListSalonTimeBlocksParams,
   ListSalonsParams,
   ListServiceTemplatesParams,
+  ListSupplierProductsParams,
+  ListSupplierPublicProductsParams,
   LoginInput,
   LoyaltyStatus,
   LoyaltyTier,
@@ -250,12 +252,14 @@ import type {
   PackagePurchase,
   PlatformTrustStats,
   PreviewRetailCheckoutParams,
+  Product,
   ProductBrand,
   ProductCategory,
   ProductDetail,
   ProductList,
   ProductReview,
   ProductReviewInput,
+  PublicProduct,
   PublicProductDetail,
   PublicProductList,
   PurchasePackageBody,
@@ -339,6 +343,10 @@ import type {
   SubscriptionPlan,
   SubscriptionPlanInput,
   SubscriptionPlanUpdate,
+  Supplier,
+  SupplierCategoryNode,
+  SupplierInput,
+  SupplierUpdate,
   TimeSlot,
   TrackRetailOrderParams,
   TreatmentPackage,
@@ -14952,6 +14960,876 @@ export const useAdminDeleteProductCategory = <TError = ErrorType<ApiError>,
       return useMutation(getAdminDeleteProductCategoryMutationOptions(options));
     }
 
+export const getAdminListSuppliersUrl = () => {
+
+
+
+
+  return `/api/admin/suppliers`
+}
+
+/**
+ * @summary List platform-managed suppliers
+ */
+export const adminListSuppliers = async ( options?: Parameters<typeof customFetch>[1]): Promise<Supplier[]> => {
+
+  return customFetch<Supplier[]>(getAdminListSuppliersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListSuppliersQueryKey = () => {
+    return [
+    `/api/admin/suppliers`
+    ] as const;
+    }
+
+
+export const getAdminListSuppliersQueryOptions = <TData = Awaited<ReturnType<typeof adminListSuppliers>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListSuppliers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListSuppliersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListSuppliers>>> = ({ signal }) => adminListSuppliers({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListSuppliers>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminListSuppliersQueryResult = NonNullable<Awaited<ReturnType<typeof adminListSuppliers>>>
+export type AdminListSuppliersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List platform-managed suppliers
+ */
+
+export function useAdminListSuppliers<TData = Awaited<ReturnType<typeof adminListSuppliers>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListSuppliers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminListSuppliersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminCreateSupplierUrl = () => {
+
+
+
+
+  return `/api/admin/suppliers`
+}
+
+/**
+ * @summary Create a platform-managed supplier
+ */
+export const adminCreateSupplier = async (supplierInput: SupplierInput, options?: Parameters<typeof customFetch>[1]): Promise<Supplier> => {
+
+  return customFetch<Supplier>(getAdminCreateSupplierUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(supplierInput)
+  }
+);}
+
+
+
+
+
+export const getAdminCreateSupplierMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminCreateSupplier>>, TError,{data: BodyType<SupplierInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminCreateSupplier>>, TError,{data: BodyType<SupplierInput>}, TContext> => {
+
+const mutationKey = ['adminCreateSupplier'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminCreateSupplier>>, {data: BodyType<SupplierInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  adminCreateSupplier(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminCreateSupplierMutationResult = NonNullable<Awaited<ReturnType<typeof adminCreateSupplier>>>
+    export type AdminCreateSupplierMutationBody = BodyType<SupplierInput>
+    export type AdminCreateSupplierMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a platform-managed supplier
+ */
+export const useAdminCreateSupplier = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminCreateSupplier>>, TError,{data: BodyType<SupplierInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminCreateSupplier>>,
+        TError,
+        {data: BodyType<SupplierInput>},
+        TContext
+      > => {
+      return useMutation(getAdminCreateSupplierMutationOptions(options));
+    }
+
+export const getAdminGetSupplierUrl = (supplierId: string,) => {
+
+
+
+
+  return `/api/admin/suppliers/${supplierId}`
+}
+
+/**
+ * @summary Get a supplier
+ */
+export const adminGetSupplier = async (supplierId: string, options?: Parameters<typeof customFetch>[1]): Promise<Supplier> => {
+
+  return customFetch<Supplier>(getAdminGetSupplierUrl(supplierId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGetSupplierQueryKey = (supplierId: string,) => {
+    return [
+    `/api/admin/suppliers/${supplierId}`
+    ] as const;
+    }
+
+
+export const getAdminGetSupplierQueryOptions = <TData = Awaited<ReturnType<typeof adminGetSupplier>>, TError = ErrorType<void>>(supplierId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetSupplier>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetSupplierQueryKey(supplierId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetSupplier>>> = ({ signal }) => adminGetSupplier(supplierId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: supplierId !== null && supplierId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetSupplier>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminGetSupplierQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetSupplier>>>
+export type AdminGetSupplierQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get a supplier
+ */
+
+export function useAdminGetSupplier<TData = Awaited<ReturnType<typeof adminGetSupplier>>, TError = ErrorType<void>>(
+ supplierId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetSupplier>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminGetSupplierQueryOptions(supplierId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminUpdateSupplierUrl = (supplierId: string,) => {
+
+
+
+
+  return `/api/admin/suppliers/${supplierId}`
+}
+
+/**
+ * @summary Update supplier details or status without changing catalog history
+ */
+export const adminUpdateSupplier = async (supplierId: string,
+    supplierUpdate: SupplierUpdate, options?: Parameters<typeof customFetch>[1]): Promise<Supplier> => {
+
+  return customFetch<Supplier>(getAdminUpdateSupplierUrl(supplierId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(supplierUpdate)
+  }
+);}
+
+
+
+
+
+export const getAdminUpdateSupplierMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateSupplier>>, TError,{supplierId: string;data: BodyType<SupplierUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateSupplier>>, TError,{supplierId: string;data: BodyType<SupplierUpdate>}, TContext> => {
+
+const mutationKey = ['adminUpdateSupplier'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateSupplier>>, {supplierId: string;data: BodyType<SupplierUpdate>}> = (props) => {
+          const {supplierId,data} = props ?? {};
+
+          return  adminUpdateSupplier(supplierId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminUpdateSupplierMutationResult = NonNullable<Awaited<ReturnType<typeof adminUpdateSupplier>>>
+    export type AdminUpdateSupplierMutationBody = BodyType<SupplierUpdate>
+    export type AdminUpdateSupplierMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update supplier details or status without changing catalog history
+ */
+export const useAdminUpdateSupplier = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateSupplier>>, TError,{supplierId: string;data: BodyType<SupplierUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminUpdateSupplier>>,
+        TError,
+        {supplierId: string;data: BodyType<SupplierUpdate>},
+        TContext
+      > => {
+      return useMutation(getAdminUpdateSupplierMutationOptions(options));
+    }
+
+export const getListPublicSuppliersUrl = () => {
+
+
+
+
+  return `/api/suppliers`
+}
+
+/**
+ * @summary List active public suppliers
+ */
+export const listPublicSuppliers = async ( options?: Parameters<typeof customFetch>[1]): Promise<Supplier[]> => {
+
+  return customFetch<Supplier[]>(getListPublicSuppliersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPublicSuppliersQueryKey = () => {
+    return [
+    `/api/suppliers`
+    ] as const;
+    }
+
+
+export const getListPublicSuppliersQueryOptions = <TData = Awaited<ReturnType<typeof listPublicSuppliers>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPublicSuppliers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPublicSuppliersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPublicSuppliers>>> = ({ signal }) => listPublicSuppliers({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPublicSuppliers>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPublicSuppliersQueryResult = NonNullable<Awaited<ReturnType<typeof listPublicSuppliers>>>
+export type ListPublicSuppliersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List active public suppliers
+ */
+
+export function useListPublicSuppliers<TData = Awaited<ReturnType<typeof listPublicSuppliers>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPublicSuppliers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPublicSuppliersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetPublicSupplierUrl = (supplierSlug: string,) => {
+
+
+
+
+  return `/api/suppliers/${supplierSlug}`
+}
+
+/**
+ * @summary Get an active supplier and its category tree
+ */
+export const getPublicSupplier = async (supplierSlug: string, options?: Parameters<typeof customFetch>[1]): Promise<Supplier> => {
+
+  return customFetch<Supplier>(getGetPublicSupplierUrl(supplierSlug),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPublicSupplierQueryKey = (supplierSlug: string,) => {
+    return [
+    `/api/suppliers/${supplierSlug}`
+    ] as const;
+    }
+
+
+export const getGetPublicSupplierQueryOptions = <TData = Awaited<ReturnType<typeof getPublicSupplier>>, TError = ErrorType<void>>(supplierSlug: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicSupplier>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPublicSupplierQueryKey(supplierSlug);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPublicSupplier>>> = ({ signal }) => getPublicSupplier(supplierSlug, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: supplierSlug !== null && supplierSlug !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPublicSupplier>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPublicSupplierQueryResult = NonNullable<Awaited<ReturnType<typeof getPublicSupplier>>>
+export type GetPublicSupplierQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get an active supplier and its category tree
+ */
+
+export function useGetPublicSupplier<TData = Awaited<ReturnType<typeof getPublicSupplier>>, TError = ErrorType<void>>(
+ supplierSlug: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicSupplier>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPublicSupplierQueryOptions(supplierSlug,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListSupplierCategoriesUrl = (supplierSlug: string,) => {
+
+
+
+
+  return `/api/suppliers/${supplierSlug}/categories`
+}
+
+/**
+ * @summary List the full active category tree for one supplier as flat path-aware nodes
+ */
+export const listSupplierCategories = async (supplierSlug: string, options?: Parameters<typeof customFetch>[1]): Promise<SupplierCategoryNode[]> => {
+
+  return customFetch<SupplierCategoryNode[]>(getListSupplierCategoriesUrl(supplierSlug),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSupplierCategoriesQueryKey = (supplierSlug: string,) => {
+    return [
+    `/api/suppliers/${supplierSlug}/categories`
+    ] as const;
+    }
+
+
+export const getListSupplierCategoriesQueryOptions = <TData = Awaited<ReturnType<typeof listSupplierCategories>>, TError = ErrorType<void>>(supplierSlug: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSupplierCategories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSupplierCategoriesQueryKey(supplierSlug);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSupplierCategories>>> = ({ signal }) => listSupplierCategories(supplierSlug, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: supplierSlug !== null && supplierSlug !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSupplierCategories>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSupplierCategoriesQueryResult = NonNullable<Awaited<ReturnType<typeof listSupplierCategories>>>
+export type ListSupplierCategoriesQueryError = ErrorType<void>
+
+
+/**
+ * @summary List the full active category tree for one supplier as flat path-aware nodes
+ */
+
+export function useListSupplierCategories<TData = Awaited<ReturnType<typeof listSupplierCategories>>, TError = ErrorType<void>>(
+ supplierSlug: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSupplierCategories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSupplierCategoriesQueryOptions(supplierSlug,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListSupplierProductsUrl = (supplierSlug: string,
+    params?: ListSupplierProductsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/suppliers/${supplierSlug}/products?${stringifiedParams}` : `/api/suppliers/${supplierSlug}/products`
+}
+
+/**
+ * @summary List active B2B products from one active supplier
+ */
+export const listSupplierProducts = async (supplierSlug: string,
+    params?: ListSupplierProductsParams, options?: Parameters<typeof customFetch>[1]): Promise<ProductList> => {
+
+  return customFetch<ProductList>(getListSupplierProductsUrl(supplierSlug,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSupplierProductsQueryKey = (supplierSlug: string,
+    params?: ListSupplierProductsParams,) => {
+    return [
+    `/api/suppliers/${supplierSlug}/products`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListSupplierProductsQueryOptions = <TData = Awaited<ReturnType<typeof listSupplierProducts>>, TError = ErrorType<void>>(supplierSlug: string,
+    params?: ListSupplierProductsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSupplierProducts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSupplierProductsQueryKey(supplierSlug,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSupplierProducts>>> = ({ signal }) => listSupplierProducts(supplierSlug,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: supplierSlug !== null && supplierSlug !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSupplierProducts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSupplierProductsQueryResult = NonNullable<Awaited<ReturnType<typeof listSupplierProducts>>>
+export type ListSupplierProductsQueryError = ErrorType<void>
+
+
+/**
+ * @summary List active B2B products from one active supplier
+ */
+
+export function useListSupplierProducts<TData = Awaited<ReturnType<typeof listSupplierProducts>>, TError = ErrorType<void>>(
+ supplierSlug: string,
+    params?: ListSupplierProductsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSupplierProducts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSupplierProductsQueryOptions(supplierSlug,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListSupplierPublicProductsUrl = (supplierSlug: string,
+    params?: ListSupplierPublicProductsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/suppliers/${supplierSlug}/public-products?${stringifiedParams}` : `/api/suppliers/${supplierSlug}/public-products`
+}
+
+/**
+ * @summary List active retail products from one active supplier
+ */
+export const listSupplierPublicProducts = async (supplierSlug: string,
+    params?: ListSupplierPublicProductsParams, options?: Parameters<typeof customFetch>[1]): Promise<PublicProductList> => {
+
+  return customFetch<PublicProductList>(getListSupplierPublicProductsUrl(supplierSlug,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSupplierPublicProductsQueryKey = (supplierSlug: string,
+    params?: ListSupplierPublicProductsParams,) => {
+    return [
+    `/api/suppliers/${supplierSlug}/public-products`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListSupplierPublicProductsQueryOptions = <TData = Awaited<ReturnType<typeof listSupplierPublicProducts>>, TError = ErrorType<void>>(supplierSlug: string,
+    params?: ListSupplierPublicProductsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSupplierPublicProducts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSupplierPublicProductsQueryKey(supplierSlug,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSupplierPublicProducts>>> = ({ signal }) => listSupplierPublicProducts(supplierSlug,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: supplierSlug !== null && supplierSlug !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSupplierPublicProducts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSupplierPublicProductsQueryResult = NonNullable<Awaited<ReturnType<typeof listSupplierPublicProducts>>>
+export type ListSupplierPublicProductsQueryError = ErrorType<void>
+
+
+/**
+ * @summary List active retail products from one active supplier
+ */
+
+export function useListSupplierPublicProducts<TData = Awaited<ReturnType<typeof listSupplierPublicProducts>>, TError = ErrorType<void>>(
+ supplierSlug: string,
+    params?: ListSupplierPublicProductsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSupplierPublicProducts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSupplierPublicProductsQueryOptions(supplierSlug,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetSupplierProductUrl = (supplierSlug: string,
+    productId: string,) => {
+
+
+
+
+  return `/api/suppliers/${supplierSlug}/products/${productId}`
+}
+
+/**
+ * @summary Get an active B2B product from one active supplier
+ */
+export const getSupplierProduct = async (supplierSlug: string,
+    productId: string, options?: Parameters<typeof customFetch>[1]): Promise<Product> => {
+
+  return customFetch<Product>(getGetSupplierProductUrl(supplierSlug,productId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSupplierProductQueryKey = (supplierSlug: string,
+    productId: string,) => {
+    return [
+    `/api/suppliers/${supplierSlug}/products/${productId}`
+    ] as const;
+    }
+
+
+export const getGetSupplierProductQueryOptions = <TData = Awaited<ReturnType<typeof getSupplierProduct>>, TError = ErrorType<void>>(supplierSlug: string,
+    productId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSupplierProduct>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSupplierProductQueryKey(supplierSlug,productId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSupplierProduct>>> = ({ signal }) => getSupplierProduct(supplierSlug,productId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: supplierSlug !== null && supplierSlug !== undefined && productId !== null && productId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSupplierProduct>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSupplierProductQueryResult = NonNullable<Awaited<ReturnType<typeof getSupplierProduct>>>
+export type GetSupplierProductQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get an active B2B product from one active supplier
+ */
+
+export function useGetSupplierProduct<TData = Awaited<ReturnType<typeof getSupplierProduct>>, TError = ErrorType<void>>(
+ supplierSlug: string,
+    productId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSupplierProduct>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSupplierProductQueryOptions(supplierSlug,productId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetSupplierPublicProductUrl = (supplierSlug: string,
+    productId: string,) => {
+
+
+
+
+  return `/api/suppliers/${supplierSlug}/public-products/${productId}`
+}
+
+/**
+ * @summary Get an active retail product from one active supplier
+ */
+export const getSupplierPublicProduct = async (supplierSlug: string,
+    productId: string, options?: Parameters<typeof customFetch>[1]): Promise<PublicProduct> => {
+
+  return customFetch<PublicProduct>(getGetSupplierPublicProductUrl(supplierSlug,productId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSupplierPublicProductQueryKey = (supplierSlug: string,
+    productId: string,) => {
+    return [
+    `/api/suppliers/${supplierSlug}/public-products/${productId}`
+    ] as const;
+    }
+
+
+export const getGetSupplierPublicProductQueryOptions = <TData = Awaited<ReturnType<typeof getSupplierPublicProduct>>, TError = ErrorType<void>>(supplierSlug: string,
+    productId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSupplierPublicProduct>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSupplierPublicProductQueryKey(supplierSlug,productId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSupplierPublicProduct>>> = ({ signal }) => getSupplierPublicProduct(supplierSlug,productId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: supplierSlug !== null && supplierSlug !== undefined && productId !== null && productId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSupplierPublicProduct>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSupplierPublicProductQueryResult = NonNullable<Awaited<ReturnType<typeof getSupplierPublicProduct>>>
+export type GetSupplierPublicProductQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get an active retail product from one active supplier
+ */
+
+export function useGetSupplierPublicProduct<TData = Awaited<ReturnType<typeof getSupplierPublicProduct>>, TError = ErrorType<void>>(
+ supplierSlug: string,
+    productId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSupplierPublicProduct>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSupplierPublicProductQueryOptions(supplierSlug,productId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getAdminListServiceCategoriesUrl = () => {
 
 
@@ -24506,7 +25384,7 @@ export const adminReviewReferral = async (reviewId: string,
 
 
 
-export const getAdminReviewReferralMutationOptions = <TError = ErrorType<unknown>,
+export const getAdminReviewReferralMutationOptions = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminReviewReferral>>, TError,{reviewId: string;data: BodyType<ReferralReviewUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof adminReviewReferral>>, TError,{reviewId: string;data: BodyType<ReferralReviewUpdate>}, TContext> => {
 
@@ -24535,12 +25413,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type AdminReviewReferralMutationResult = NonNullable<Awaited<ReturnType<typeof adminReviewReferral>>>
     export type AdminReviewReferralMutationBody = BodyType<ReferralReviewUpdate>
-    export type AdminReviewReferralMutationError = ErrorType<unknown>
+    export type AdminReviewReferralMutationError = ErrorType<void>
 
     /**
  * @summary Resolve a suspicious referral review
  */
-export const useAdminReviewReferral = <TError = ErrorType<unknown>,
+export const useAdminReviewReferral = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminReviewReferral>>, TError,{reviewId: string;data: BodyType<ReferralReviewUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof adminReviewReferral>>,

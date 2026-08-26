@@ -368,12 +368,18 @@ async function run(): Promise<void> {
         await db.insert(orderItemsTable).values({
           orderId: orderA.id, productId: product.id, productName: product.name,
           productSku: product.sku, quantity: 1, price: product.price,
+          supplierId: product.supplierId, supplierName: "LUMERA Legacy Catalog", supplierSlug: "lumera-legacy",
+          productCatalogReference: product.catalogReference, productSkuSnapshot: product.sku,
+          market: "B2B", currency: "RSD", unitPrice: product.price, lineSubtotal: product.price, lineTotal: product.price,
         });
       }
       if (orderB) {
         await db.insert(orderItemsTable).values({
           orderId: orderB.id, productId: product.id, productName: product.name,
           productSku: product.sku, quantity: 1, price: product.price,
+          supplierId: product.supplierId, supplierName: "LUMERA Legacy Catalog", supplierSlug: "lumera-legacy",
+          productCatalogReference: product.catalogReference, productSkuSnapshot: product.sku,
+          market: "B2B", currency: "RSD", unitPrice: product.price, lineSubtotal: product.price, lineTotal: product.price,
         });
       }
     }

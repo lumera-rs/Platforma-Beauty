@@ -79,8 +79,19 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
       `admin order query count grew with page size (${smallOrders.queries.length} -> ${largeOrders.queries.length})`,
     );
 
-    const productResult = await pool.query<{ id: string; catalog_reference: string }>(
-      "SELECT id, catalog_reference FROM products ORDER BY id LIMIT 1",
+    const productResult = await pool.query<{
+      id: string;
+      catalog_reference: string;
+      supplier_id: string;
+      supplier_name: string;
+      supplier_slug: string;
+      sku: string | null;
+    }>(
+      `SELECT product.id, product.catalog_reference, product.supplier_id,
+              supplier.name AS supplier_name, supplier.slug AS supplier_slug, product.sku
+       FROM products AS product
+       INNER JOIN suppliers AS supplier ON supplier.id = product.supplier_id
+       ORDER BY product.id LIMIT 1`,
     );
     assert.ok(productResult.rows[0], "retail query budget fixture requires a product");
     await pool.query(
@@ -111,12 +122,23 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
        )
        INSERT INTO retail_order_items (
          order_id, product_id, product_name, product_image_url,
-         product_catalog_reference, variant_value, variant_label, unit_price, quantity
+         product_catalog_reference, variant_value, variant_label, unit_price, quantity,
+         supplier_id, supplier_name, supplier_slug, product_sku_snapshot,
+         line_subtotal, line_total
        )
        SELECT orders.id, $2::uuid, 'Query budget product', '/query-budget.jpg',
-              NULL, NULL, NULL, 100, 1
+              $3, NULL, NULL, 100, 1,
+              $4::uuid, $5, $6, $7, 100, 100
        FROM fixture_orders AS orders`,
-      [fixtureMarker, productResult.rows[0].id],
+      [
+        fixtureMarker,
+        productResult.rows[0].id,
+        productResult.rows[0].catalog_reference,
+        productResult.rows[0].supplier_id,
+        productResult.rows[0].supplier_name,
+        productResult.rows[0].supplier_slug,
+        productResult.rows[0].sku,
+      ],
     );
 
     const retailOrders = await countedRequest(
@@ -170,16 +192,28 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
        )
        INSERT INTO retail_order_items (
          order_id, product_id, product_name, product_image_url,
-         product_catalog_reference, variant_value, variant_label, unit_price, quantity
+         product_catalog_reference, variant_value, variant_label, unit_price, quantity,
+         supplier_id, supplier_name, supplier_slug, product_sku_snapshot,
+         line_subtotal, line_total
        )
        SELECT orders.id, $2::uuid, 'Saved Customer Snapshot', '/customer-query-budget.jpg',
-              CASE WHEN series_number % 2 = 0 THEN $1 || '-snapshot-' || series_number ELSE NULL END,
-              NULL, NULL, 100, 1
+              CASE WHEN series_number % 2 = 0 THEN $1 || '-snapshot-' || series_number ELSE $4 END,
+              NULL, NULL, 100, 1,
+              $5::uuid, $6, $7, $8, 100, 100
        FROM fixture_orders AS orders
        CROSS JOIN LATERAL (
          SELECT substring(orders.order_number from '[0-9]+$')::integer AS series_number
        ) AS series`,
-      [fixtureMarker, productResult.rows[0].id, customerId],
+      [
+        fixtureMarker,
+        productResult.rows[0].id,
+        customerId,
+        productResult.rows[0].catalog_reference,
+        productResult.rows[0].supplier_id,
+        productResult.rows[0].supplier_name,
+        productResult.rows[0].supplier_slug,
+        productResult.rows[0].sku,
+      ],
     );
 
     const customerOrders = await countedRequest(`${baseUrl}/customer/retail-orders`, {

@@ -136,6 +136,7 @@ import
   customerPackagePurchasesTable,
   packagePurchaseServiceLinksTable,
   subscriptionPlansTable,
+  suppliersTable,
   subscriptionsTable,
   smsDeliveriesTable,
   usersTable,
@@ -164,6 +165,14 @@ import
 {
 
   AdminBulkUpdateProductsBody,
+   AdminCreateSupplierBody,
+   AdminCreateSupplierResponse,
+   AdminGetSupplierParams,
+   AdminGetSupplierResponse,
+   AdminListSuppliersResponse,
+   AdminUpdateSupplierBody,
+   AdminUpdateSupplierParams,
+   AdminUpdateSupplierResponse,
   AdminListServiceCategoriesResponse,
   AdminListServiceTemplatesQueryParams,
   AdminListServiceTemplatesResponse,
@@ -337,6 +346,21 @@ import
   MarkEducationNotificationReadResponse,
   ListOrdersResponse,
   ListProductReviewsParams,
+   ListPublicSuppliersResponse,
+   GetPublicSupplierParams,
+   GetPublicSupplierResponse,
+   ListSupplierCategoriesParams,
+   ListSupplierCategoriesResponse,
+   ListSupplierProductsParams,
+   ListSupplierProductsQueryParams,
+   ListSupplierProductsResponse,
+   GetSupplierProductParams,
+   GetSupplierProductResponse,
+   ListSupplierPublicProductsParams,
+   ListSupplierPublicProductsQueryParams,
+   ListSupplierPublicProductsResponse,
+   GetSupplierPublicProductParams,
+   GetSupplierPublicProductResponse,
   ListProductReviewsResponse,
   ListProductCategoriesResponse,
   ListProductsQueryParams,
@@ -8614,6 +8638,232 @@ router.get("/shop/categories", async (req, res): Promise<void> => {
   res.json(ListProductCategoriesResponse.parse(result));
 });
 
+// Supplier lifecycle is intentionally isolated from catalog rows: deactivation
+// merely changes supplier.active, preserving orders, carts, refunds and reports.
+router.get("/admin/suppliers", async (req, res): Promise<void> => {
+  if (!await requireAdmin(req, res)) return;
+  const rows = await db.select().from(suppliersTable).orderBy(asc(suppliersTable.name), asc(suppliersTable.id));
+  res.json(AdminListSuppliersResponse.parse(rows));
+});
+router.post("/admin/suppliers", async (req, res): Promise<void> => {
+  if (!await requireAdmin(req, res)) return;
+  const body = AdminCreateSupplierBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  try {
+    const [supplier] = await db.insert(suppliersTable).values({
+      ...body.data, logoUrl: body.data.logoUrl ?? null, active: body.data.active ?? true,
+    }).returning();
+    res.status(201).json(AdminCreateSupplierResponse.parse(supplier));
+  } catch {
+    res.status(409).json({ error: "Dobavljač sa tim slug-om već postoji." });
+  }
+});
+router.get("/admin/suppliers/:supplierId", async (req, res): Promise<void> => {
+  if (!await requireAdmin(req, res)) return;
+  const params = AdminGetSupplierParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const [supplier] = await db.select().from(suppliersTable).where(eq(suppliersTable.id, params.data.supplierId)).limit(1);
+  if (!supplier) { res.status(404).json({ error: "Dobavljač nije pronađen." }); return; }
+  res.json(AdminGetSupplierResponse.parse(supplier));
+});
+router.patch("/admin/suppliers/:supplierId", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const params = AdminUpdateSupplierParams.safeParse(req.params);
+  const body = AdminUpdateSupplierBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: !params.success ? params.error.message : body.error?.message ?? "Neispravan zahtev." });
+    return;
+  }
+  const [existing] = await db.select().from(suppliersTable)
+    .where(eq(suppliersTable.id, params.data.supplierId)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Dobavljač nije pronađen." }); return; }
+  const nextLogoUrl = body.data.logoUrl !== undefined ? body.data.logoUrl : existing.logoUrl;
+  if (nextLogoUrl && !await canClaimMediaReference({
+    userId: user.id,
+    url: nextLogoUrl,
+    scope: "supplier",
+    resourceId: existing.id,
+    existingUrls: [existing.logoUrl],
+  })) {
+    res.status(400).json({ error: "Logo dobavljača nije otpremljen sa ovog administratorskog naloga." });
+    return;
+  }
+  const revokedLogoAssetIds = nextLogoUrl !== existing.logoUrl
+    ? [mediaAssetIdFromUrl(existing.logoUrl ?? "")].filter((id): id is string => Boolean(id))
+    : [];
+  if (revokedLogoAssetIds.length) {
+    try {
+      await requireMediaCachePurgeForVisibilityRevocation();
+      await purgeMediaCacheForVisibilityRevocation(revokedLogoAssetIds);
+    } catch (error) {
+      res.status(503).json({ error: error instanceof Error ? error.message : "Nije moguće bezbedno opozvati keš logoa dobavljača." });
+      return;
+    }
+  }
+  let supplier: typeof suppliersTable.$inferSelect | undefined;
+  try {
+    [supplier] = await db.transaction(async (tx) => {
+      await tx.execute(sql`select id from suppliers where id = ${existing.id} for update`);
+      const [lockedSupplier] = await tx.select().from(suppliersTable)
+        .where(eq(suppliersTable.id, existing.id)).limit(1);
+      if (!lockedSupplier) return [];
+      const nextScope = body.data.scope ?? lockedSupplier.scope;
+      const nextActive = body.data.active ?? lockedSupplier.active;
+      const scopeChanged = body.data.scope !== undefined && body.data.scope !== lockedSupplier.scope;
+      if ((scopeChanged || nextActive) && nextScope !== "BOTH") {
+        const incompatibleChannel = nextScope === "B2C"
+          ? eq(productsTable.professionalEnabled, true)
+          : eq(productsTable.retailEnabled, true);
+        const [incompatibleProduct] = await tx.select({ id: productsTable.id }).from(productsTable)
+          .where(and(eq(productsTable.supplierId, lockedSupplier.id), incompatibleChannel)).limit(1);
+        if (incompatibleProduct) throw new Error("supplier_catalog_scope_conflict");
+      }
+      if (nextLogoUrl && mediaAssetIdFromUrl(nextLogoUrl) && !await claimMediaReference({
+        userId: user.id,
+        url: nextLogoUrl,
+        scope: "supplier",
+        resourceId: lockedSupplier.id,
+        visibility: nextActive ? "public" : "private",
+      }, tx)) {
+        throw new MediaClaimConflictError();
+      }
+      const rows = await tx.update(suppliersTable).set({ ...body.data, updatedAt: new Date() })
+        .where(eq(suppliersTable.id, lockedSupplier.id)).returning();
+      if (revokedLogoAssetIds.length) {
+        await releaseMediaReferenceClaims({
+          urls: [lockedSupplier.logoUrl ?? ""],
+          resourceId: lockedSupplier.id,
+          visibility: "private",
+        }, tx);
+      }
+      return rows;
+    });
+  } catch (error) {
+    if (error instanceof MediaClaimConflictError) {
+      res.status(409).json({ error: "Logo dobavljača je u međuvremenu promenjen. Osvežite stranicu." });
+      return;
+    }
+    if (error instanceof Error && error.message === "supplier_catalog_scope_conflict") {
+      res.status(409).json({
+        code: "SUPPLIER_CATALOG_SCOPE_CONFLICT",
+        error: "Dobavljač ima proizvode čiji prodajni kanali nisu dozvoljeni izabranim opsegom.",
+      });
+      return;
+    }
+    throw error;
+  }
+  if (!supplier) { res.status(404).json({ error: "Dobavljač nije pronađen." }); return; }
+  res.json(AdminUpdateSupplierResponse.parse(supplier));
+});
+router.get("/suppliers", async (_req, res): Promise<void> => {
+  const rows = await db.select().from(suppliersTable).where(eq(suppliersTable.active, true))
+    .orderBy(asc(suppliersTable.name), asc(suppliersTable.id));
+  res.json(ListPublicSuppliersResponse.parse(rows));
+});
+router.get("/suppliers/:supplierSlug", async (req, res): Promise<void> => {
+  const params = GetPublicSupplierParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const [supplier] = await db.select().from(suppliersTable).where(and(
+    eq(suppliersTable.slug, params.data.supplierSlug), eq(suppliersTable.active, true),
+  )).limit(1);
+  if (!supplier) { res.status(404).json({ error: "Dobavljač nije pronađen." }); return; }
+  res.json(GetPublicSupplierResponse.parse(supplier));
+});
+router.get("/suppliers/:supplierSlug/categories", async (req, res): Promise<void> => {
+  const params = ListSupplierCategoriesParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const [supplier] = await db.select().from(suppliersTable).where(and(eq(suppliersTable.slug, params.data.supplierSlug), eq(suppliersTable.active, true))).limit(1);
+  if (!supplier) { res.status(404).json({ error: "Dobavljač nije pronađen." }); return; }
+  const [categories, counts] = await Promise.all([
+    db.select().from(productCategoriesTable).where(and(eq(productCategoriesTable.supplierId, supplier.id), eq(productCategoriesTable.active, true)))
+      .orderBy(asc(productCategoriesTable.sortOrder), asc(productCategoriesTable.id)),
+    db.select({ categoryId: productsTable.categoryId, count: count() }).from(productsTable)
+      .where(and(eq(productsTable.supplierId, supplier.id), eq(productsTable.active, true))).groupBy(productsTable.categoryId),
+  ]);
+  const byId = new Map(categories.map((category) => [category.id, category]));
+  const direct = new Map(counts.map((row) => [row.categoryId, Number(row.count)]));
+  const pathFor = (category: typeof categories[number]): { path: string; depth: number } => {
+    const parts = [category.slug]; let parent = category.parentId ? byId.get(category.parentId) : undefined; let depth = 0;
+    while (parent) { parts.unshift(parent.slug); depth += 1; parent = parent.parentId ? byId.get(parent.parentId) : undefined; }
+    return { path: parts.join("/"), depth };
+  };
+  res.json(ListSupplierCategoriesResponse.parse(categories.map((category) => {
+    const { path, depth } = pathFor(category);
+    const prefix = `${path}/`;
+    const descendantProductCount = categories.filter((candidate) => {
+      const candidatePath = pathFor(candidate).path;
+      return candidate.id === category.id || candidatePath.startsWith(prefix);
+    }).reduce((sum, candidate) => sum + (direct.get(candidate.id) ?? 0), 0);
+    return { id: category.id, supplierId: category.supplierId, name: category.name, slug: category.slug,
+      parentId: category.parentId ?? null, path, depth, sortOrder: category.sortOrder, active: category.active,
+      directProductCount: direct.get(category.id) ?? 0, descendantProductCount };
+  })));
+});
+router.get("/suppliers/:supplierSlug/products", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const params = ListSupplierProductsParams.safeParse(req.params);
+  const query = ListSupplierProductsQueryParams.safeParse(req.query);
+  if (!params.success || !query.success) {
+    res.status(400).json({ error: !params.success ? params.error.message : query.error?.message ?? "Neispravan zahtev." });
+    return;
+  }
+  const [supplier] = await db.select().from(suppliersTable).where(and(eq(suppliersTable.slug, params.data.supplierSlug), eq(suppliersTable.active, true), inArray(suppliersTable.scope, ["B2B", "BOTH"]))).limit(1);
+  if (!supplier) { res.status(404).json({ error: "Dobavljač nije pronađen." }); return; }
+  const filters = [eq(productsTable.supplierId, supplier.id), eq(productsTable.active, true), eq(productsTable.professionalEnabled, true), activeCategoryCondition()];
+  if (query.data.categoryId) filters.push(eq(productsTable.categoryId, query.data.categoryId));
+  if (query.data.brand) filters.push(eq(productsTable.brand, query.data.brand));
+  if (query.data.search) filters.push(ilike(productsTable.name, `%${query.data.search}%`));
+  const page = query.data.page ?? 1; const pageSize = query.data.pageSize ?? 24; const where = and(...filters);
+  const [[totalRow], products] = await Promise.all([
+    db.select({ count: count() }).from(productsTable).where(where),
+    db.select().from(productsTable).where(where).orderBy(asc(productsTable.name), asc(productsTable.id)).limit(pageSize).offset((page - 1) * pageSize),
+  ]);
+  const aggregates = await productReviewAggregates(products.map((product) => product.id));
+  const total = Number(totalRow?.count ?? 0);
+  res.json(ListSupplierProductsResponse.parse({ items: products.map((product) => productDtoWithAggregate(product, aggregates.get(product.id))),
+    total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) }));
+});
+router.get("/suppliers/:supplierSlug/products/:productId", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const params = GetSupplierProductParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const rows = await db.select({ product: productsTable }).from(productsTable).innerJoin(suppliersTable, eq(productsTable.supplierId, suppliersTable.id))
+    .where(and(eq(suppliersTable.slug, params.data.supplierSlug), eq(suppliersTable.active, true), inArray(suppliersTable.scope, ["B2B", "BOTH"]), eq(productsTable.id, params.data.productId),
+      eq(productsTable.active, true), eq(productsTable.professionalEnabled, true), activeCategoryCondition())).limit(1);
+  const product = rows[0]?.product;
+  if (!product) { res.status(404).json({ error: "Proizvod nije pronađen." }); return; }
+  const aggregates = await productReviewAggregates([product.id]);
+  res.json(GetSupplierProductResponse.parse(productDtoWithAggregate(product, aggregates.get(product.id))));
+});
+router.get("/suppliers/:supplierSlug/public-products", async (req, res): Promise<void> => {
+  const params = ListSupplierPublicProductsParams.safeParse(req.params);
+  const query = ListSupplierPublicProductsQueryParams.safeParse(req.query);
+  if (!params.success || !query.success) { res.status(400).json({ error: "Neispravan zahtev." }); return; }
+  const [supplier] = await db.select().from(suppliersTable).where(and(eq(suppliersTable.slug, params.data.supplierSlug),
+    eq(suppliersTable.active, true), inArray(suppliersTable.scope, ["B2C", "BOTH"]))).limit(1);
+  if (!supplier) { res.status(404).json({ error: "Dobavljač nije pronađen." }); return; }
+  const filters = [eq(productsTable.supplierId, supplier.id), eq(productsTable.active, true), eq(productsTable.retailEnabled, true), activeCategoryCondition(),
+    isNotNull(productsTable.publicDescription), isNotNull(productsTable.publicPrice)];
+  if (query.data.categoryId) filters.push(eq(productsTable.categoryId, query.data.categoryId));
+  if (query.data.brand) filters.push(eq(productsTable.brand, query.data.brand));
+  if (query.data.search) filters.push(ilike(productsTable.name, `%${query.data.search}%`));
+  const page = query.data.page ?? 1; const pageSize = query.data.pageSize ?? 24; const where = and(...filters);
+  const [[totalRow], products] = await Promise.all([db.select({ count: count() }).from(productsTable).where(where),
+    db.select().from(productsTable).where(where).orderBy(asc(productsTable.name), asc(productsTable.id)).limit(pageSize).offset((page - 1) * pageSize)]);
+  const total = Number(totalRow?.count ?? 0);
+  res.json(ListSupplierPublicProductsResponse.parse({ items: products.map(publicProductDto), total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) }));
+});
+router.get("/suppliers/:supplierSlug/public-products/:productId", async (req, res): Promise<void> => {
+  const params = GetSupplierPublicProductParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const rows = await db.select({ product: productsTable }).from(productsTable).innerJoin(suppliersTable, eq(productsTable.supplierId, suppliersTable.id))
+    .where(and(eq(suppliersTable.slug, params.data.supplierSlug), eq(suppliersTable.active, true), inArray(suppliersTable.scope, ["B2C", "BOTH"]),
+      eq(productsTable.id, params.data.productId), eq(productsTable.active, true), eq(productsTable.retailEnabled, true), activeCategoryCondition(),
+      isNotNull(productsTable.publicDescription), isNotNull(productsTable.publicPrice))).limit(1);
+  if (!rows[0]) { res.status(404).json({ error: "Proizvod nije pronađen." }); return; }
+  res.json(GetSupplierPublicProductResponse.parse(publicProductDto(rows[0].product)));
+});
+
 function productBelongsToActiveCategory(
   product: typeof productsTable.$inferSelect,
   categories: Array<typeof productCategoriesTable.$inferSelect>,
@@ -8636,31 +8886,30 @@ function productBelongsToActiveCategory(
 // - Without a subcategory: a top-level (parentId IS NULL) category with the
 //   matching name must be active.
 function activeCategoryCondition() {
-  const sub = sql`${productCategoriesTable} AS sub`;
-  const parent = sql`${productCategoriesTable} AS parent`;
   const cat = sql`${productCategoriesTable} AS cat`;
-  return sql`(
-    CASE WHEN ${productsTable.subcategoryName} IS NOT NULL THEN
-      EXISTS (
-        SELECT 1 FROM ${sub}
-        WHERE sub.name = ${productsTable.subcategoryName}
-          AND sub.active = true
-          AND sub.parent_id IS NOT NULL
-          AND EXISTS (
-            SELECT 1 FROM ${parent}
-            WHERE parent.id = sub.parent_id
-              AND parent.active = true
-              AND parent.name = ${productsTable.categoryName}
-          )
-      )
-    ELSE
-      EXISTS (
-        SELECT 1 FROM ${cat}
-        WHERE cat.name = ${productsTable.categoryName}
-          AND cat.parent_id IS NULL
-          AND cat.active = true
-      )
-    END
+  // category_id is authoritative. This supports arbitrary depth while retaining
+  // legacy categoryName/subcategoryName for old callers and catalog imports.
+  return sql`EXISTS (
+    WITH RECURSIVE ancestors AS (
+      SELECT c.id, c.parent_id, c.supplier_id, c.active FROM product_categories c
+      WHERE c.id = ${productsTable.categoryId}
+      UNION ALL
+      SELECT parent.id, parent.parent_id, parent.supplier_id, parent.active
+      FROM product_categories parent JOIN ancestors child ON child.parent_id = parent.id
+    )
+    SELECT 1 FROM ancestors
+    WHERE (SELECT count(*) FROM ancestors) > 0
+      AND NOT EXISTS (SELECT 1 FROM ancestors WHERE supplier_id <> ${productsTable.supplierId} OR active = false)
+  )`;
+}
+
+function activeSupplierCondition(market: "B2B" | "B2C") {
+  const supplier = sql`${suppliersTable} AS supplier`;
+  return sql`EXISTS (
+    SELECT 1 FROM ${supplier}
+    WHERE supplier.id = ${productsTable.supplierId}
+      AND supplier.active = true
+      AND supplier.scope IN (${market}, 'BOTH')
   )`;
 }
 
@@ -8695,6 +8944,7 @@ function productDtoWithAggregate(
   const discountPercent = item.discountPrice ? Math.round((1 - item.discountPrice / item.price) * 100) : null;
   return {
     id: item.id,
+    supplierId: item.supplierId,
     name: item.name,
     category: item.categoryName,
     subcategory: item.subcategoryName ?? null,
@@ -8731,6 +8981,7 @@ function publicProductDto(item: typeof productsTable.$inferSelect) {
   }
   return {
     id: item.id,
+    supplierId: item.supplierId,
     name: item.name,
     category: item.categoryName,
     subcategory: item.subcategoryName ?? null,
@@ -8869,7 +9120,7 @@ async function retailCheckoutCartQuote(cartId: string) {
     .where(eq(retailCartItemsTable.cartId, cartId)).orderBy(asc(retailCartItemsTable.createdAt));
   const productIds = [...new Set(cartItems.map((item) => item.productId))];
   const products = productIds.length
-    ? await db.select().from(productsTable).where(and(inArray(productsTable.id, productIds), activeCategoryCondition()))
+    ? await db.select().from(productsTable).where(and(inArray(productsTable.id, productIds), activeCategoryCondition(), activeSupplierCondition("B2C")))
     : [];
   const byId = new Map(products.map((product) => [product.id, product]));
   const quantityByProduct = new Map<string, number>();
@@ -9004,7 +9255,7 @@ router.get("/shop/public/products", async (req, res): Promise<void> => {
     isNotNull(productsTable.publicPrice),
     isNotNull(productsTable.publicDescription),
     retailVariantCompatibleCondition(),
-    activeCategoryCondition(),
+    activeCategoryCondition(), activeSupplierCondition("B2C"),
   ];
   if (q.category) productFilters.push(eq(productsTable.categoryName, q.category));
   if (q.subcategory) productFilters.push(eq(productsTable.subcategoryName, q.subcategory));
@@ -9044,7 +9295,7 @@ router.get("/shop/public/products/:productId", async (req, res): Promise<void> =
     isNotNull(productsTable.publicPrice),
     isNotNull(productsTable.publicDescription),
     retailVariantCompatibleCondition(),
-    activeCategoryCondition(),
+    activeCategoryCondition(), activeSupplierCondition("B2C"),
   );
   const [product] = await db.select().from(productsTable)
     .where(and(eq(productsTable.id, parsed.data.productId), publicCondition)).limit(1);
@@ -9090,7 +9341,7 @@ router.post("/retail/cart/items", async (req, res): Promise<void> => {
       isNotNull(productsTable.publicDescription),
       retailVariantCompatibleCondition(),
       isNotNull(productsTable.publicPrice),
-      activeCategoryCondition(),
+      activeCategoryCondition(), activeSupplierCondition("B2C"),
     )).limit(1);
     if (!product || (product.variants?.length ?? 0) > 0) throw new Error("retail_stock_conflict");
     const unitPrice = product.publicDiscountPrice ?? product.publicPrice!;
@@ -9135,7 +9386,7 @@ router.patch("/retail/cart/items/:cartItemId", async (req, res): Promise<void> =
     await tx.execute(sql`select id from products where id = ${item.productId} for update`);
     const [product] = await tx.select().from(productsTable).where(and(
       eq(productsTable.id, item.productId), eq(productsTable.active, true), eq(productsTable.retailEnabled, true),
-      isNotNull(productsTable.publicDescription), isNotNull(productsTable.publicPrice), retailVariantCompatibleCondition(), activeCategoryCondition(),
+      isNotNull(productsTable.publicDescription), isNotNull(productsTable.publicPrice), retailVariantCompatibleCondition(), activeCategoryCondition(), activeSupplierCondition("B2C"),
     )).limit(1);
     if (!product || product.stock < body.quantity || (product.variants?.length ?? 0) > 0) return "stock";
     const productCartItems = await tx.select().from(retailCartItemsTable).where(and(
@@ -9234,8 +9485,17 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
     if (!cartItems.length) throw new Error("retail_cart_empty");
     const productIds = [...new Set(cartItems.map((item) => item.productId))].sort();
     for (const id of productIds) await tx.execute(sql`select id from products where id = ${id} for update`);
-    const products = await tx.select().from(productsTable).where(and(inArray(productsTable.id, productIds), activeCategoryCondition()));
+    const rawProducts = await tx.select().from(productsTable).where(inArray(productsTable.id, productIds));
+    const supplierIds = [...new Set(rawProducts.map((product) => product.supplierId))].sort();
+    for (const supplierId of supplierIds) {
+      await tx.execute(sql`select id from suppliers where id = ${supplierId} for update`);
+      await tx.execute(sql`select id from product_categories where supplier_id = ${supplierId} order by id for update`);
+    }
+    const products = await tx.select().from(productsTable).where(and(inArray(productsTable.id, productIds), activeCategoryCondition(), activeSupplierCondition("B2C")));
     const byId = new Map(products.map((product) => [product.id, product]));
+    const supplierRows = await tx.select().from(suppliersTable)
+      .where(inArray(suppliersTable.id, [...new Set(products.map((product) => product.supplierId))]));
+    const suppliersById = new Map(supplierRows.map((supplier) => [supplier.id, supplier]));
     const quantityByProduct = new Map<string, number>();
     for (const item of cartItems) {
       quantityByProduct.set(item.productId, (quantityByProduct.get(item.productId) ?? 0) + item.quantity);
@@ -9298,11 +9558,19 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
       scope: { ownerUserId: userId!, walletKind: "B2C" }, retailOrderId: order!.id,
       allocations: referral.allocations, idempotencyKey: parsed.idempotencyKey, actorUserId: userId,
     });
-    const orderItems = lines.filter((line): line is NonNullable<typeof line> => line !== null).map(({ product, item, unitPrice }) => ({
-      orderId: order!.id, productId: product.id, productName: product.name, productImageUrl: product.imageUrl,
-      productCatalogReference: item.productCatalogReference ?? product.catalogReference,
-      variantValue: null, variantLabel: null, unitPrice, quantity: item.quantity,
-    }));
+    const orderItems = lines.filter((line): line is NonNullable<typeof line> => line !== null).map(({ product, item, unitPrice }) => {
+      const supplier = suppliersById.get(product.supplierId);
+      if (!supplier) throw new Error("retail_stock_conflict");
+      return {
+        orderId: order!.id, productId: product.id, productName: product.name, productImageUrl: product.imageUrl,
+        productCatalogReference: item.productCatalogReference ?? product.catalogReference,
+        variantValue: null, variantLabel: null, unitPrice, quantity: item.quantity,
+        supplierId: supplier.id, supplierName: supplier.name, supplierSlug: supplier.slug,
+        productSkuSnapshot: product.sku, market: "B2C" as const, currency: "RSD",
+        discountSnapshot: product.publicPrice != null && product.publicPrice > unitPrice ? product.publicPrice - unitPrice : null,
+        lineSubtotal: unitPrice * item.quantity, lineTotal: unitPrice * item.quantity,
+      };
+    });
     await tx.insert(retailOrderItemsTable).values(orderItems);
     for (const line of lines.filter((line): line is NonNullable<typeof line> => line !== null)) {
       const [updated] = await tx.update(productsTable).set({ stock: sql`${productsTable.stock} - ${line.item.quantity}` })
@@ -9552,7 +9820,7 @@ router.get("/shop/products", async (req, res): Promise<void> => {
   if (q.search) productFilters.push(sql`lower(${productsTable.name} || ' ' || ${productsTable.description} || ' ' || coalesce(${productsTable.brand}, '')) like ${`%${q.search.toLowerCase()}%`}`);
   // Category availability is enforced in SQL so counting and paging stay stable
   // and every matching product remains reachable across pages.
-  productFilters.push(activeCategoryCondition());
+  productFilters.push(activeCategoryCondition(), activeSupplierCondition("B2B"));
   const whereClause = and(...productFilters);
   const page = q.page ?? 1;
   const pageSize = q.pageSize ?? 24;
@@ -9588,7 +9856,7 @@ router.get("/shop/products/:productId", async (req, res): Promise<void> => {
   const [product] = await db
     .select()
     .from(productsTable)
-    .where(and(eq(productsTable.id, parsed.data.productId), eq(productsTable.active, true), eq(productsTable.professionalEnabled, true), activeCategoryCondition()))
+    .where(and(eq(productsTable.id, parsed.data.productId), eq(productsTable.active, true), eq(productsTable.professionalEnabled, true), activeCategoryCondition(), activeSupplierCondition("B2B")))
     .limit(1);
   if (!product) {
     res.status(404).json({ error: "Proizvod nije pronađen ili nije dostupan." }); return;
@@ -9602,7 +9870,7 @@ router.get("/shop/products/:productId", async (req, res): Promise<void> => {
     db
       .select()
       .from(productsTable)
-      .where(and(eq(productsTable.active, true), eq(productsTable.professionalEnabled, true), eq(productsTable.categoryName, item.categoryName), ne(productsTable.id, item.id), activeCategoryCondition()))
+      .where(and(eq(productsTable.active, true), eq(productsTable.professionalEnabled, true), eq(productsTable.categoryName, item.categoryName), ne(productsTable.id, item.id), activeCategoryCondition(), activeSupplierCondition("B2B")))
       .orderBy(asc(productsTable.name), asc(productsTable.id))
       .limit(4),
   ]);
@@ -9801,7 +10069,7 @@ async function shopCartDto(salonId: string) {
   const items = await db.select().from(shoppingCartItemsTable).where(eq(shoppingCartItemsTable.cartId, cart.id)).orderBy(asc(shoppingCartItemsTable.createdAt));
   const productIds = [...new Set(items.map((item) => item.productId))];
   const products = productIds.length ? await db.select().from(productsTable).where(and(
-    inArray(productsTable.id, productIds), eq(productsTable.professionalEnabled, true),
+    inArray(productsTable.id, productIds), eq(productsTable.professionalEnabled, true), activeCategoryCondition(), activeSupplierCondition("B2B"),
   )) : [];
   const byId = new Map(products.map((product) => [product.id, product]));
   const views = items.map((item) => {
@@ -9857,11 +10125,9 @@ router.post("/shop/cart/items", async (req, res): Promise<void> => {
   const parsed = AddShopCartItemBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const [product] = await db.select().from(productsTable).where(and(
-    eq(productsTable.id, parsed.data.productId), eq(productsTable.professionalEnabled, true),
+    eq(productsTable.id, parsed.data.productId), eq(productsTable.professionalEnabled, true), activeCategoryCondition(), activeSupplierCondition("B2B"),
   )).limit(1);
   if (!product || !product.active) { res.status(404).json({ error: "Proizvod nije dostupan." }); return; }
-  const categories = await db.select().from(productCategoriesTable);
-  if (!productBelongsToActiveCategory(product, categories)) { res.status(400).json({ error: "Kategorija ovog proizvoda trenutno nije dostupna." }); return; }
   const cart = await getOrCreateShopCart(access.salon.id);
   const result = await db.transaction(async (tx) => {
     await tx.execute(sql`select id from shopping_carts where id = ${cart.id} for update`);
@@ -9901,7 +10167,7 @@ router.patch("/shop/cart/items/:cartItemId", async (req, res): Promise<void> => 
     const [item] = await tx.select().from(shoppingCartItemsTable).where(and(eq(shoppingCartItemsTable.id, params.data.cartItemId), eq(shoppingCartItemsTable.cartId, cart.id))).limit(1);
     if (!item) return { error: "Stavka korpe nije pronađena.", status: 404 };
     const [product] = await tx.select().from(productsTable).where(and(
-      eq(productsTable.id, item.productId), eq(productsTable.professionalEnabled, true),
+      eq(productsTable.id, item.productId), eq(productsTable.professionalEnabled, true), activeCategoryCondition(), activeSupplierCondition("B2B"),
     )).limit(1);
     if (!product || !product.active) return { error: "Proizvod više nije dostupan.", status: 400 };
     const line = cartLineForProduct(product, item.variantValue ?? undefined, body.data.quantity);
@@ -10004,28 +10270,35 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
       conflictProductName = "";
       tx.rollback();
     }
-    const productIds = [...new Set(lines.map((line) => line.productId))];
-    const lockedProducts = new Map<string, typeof productsTable.$inferSelect>();
-    for (const productId of productIds.sort()) {
+    const productIds = [...new Set(lines.map((line) => line.productId))].sort();
+    for (const productId of productIds) {
       await tx.execute(sql`select id from products where id = ${productId} for update`);
-      const [product] = await tx.select().from(productsTable).where(and(
-        eq(productsTable.id, productId), eq(productsTable.professionalEnabled, true),
-      )).limit(1);
-      if (!product || !product.active) {
-        conflictProductName = product?.name ?? "izabrani proizvod";
+    }
+    const rawProducts = await tx.select().from(productsTable).where(inArray(productsTable.id, productIds));
+    const rawProductsById = new Map(rawProducts.map((product) => [product.id, product]));
+    const supplierIds = [...new Set(rawProducts.map((product) => product.supplierId))].sort();
+    for (const supplierId of supplierIds) {
+      await tx.execute(sql`select id from suppliers where id = ${supplierId} for update`);
+      await tx.execute(sql`select id from product_categories where supplier_id = ${supplierId} order by id for update`);
+    }
+    const validProducts = await tx.select().from(productsTable).where(and(
+      inArray(productsTable.id, productIds),
+      eq(productsTable.active, true),
+      eq(productsTable.professionalEnabled, true),
+      activeSupplierCondition("B2B"),
+      activeCategoryCondition(),
+    ));
+    const lockedProducts = new Map(validProducts.map((product) => [product.id, product]));
+    for (const productId of productIds) {
+      if (!lockedProducts.has(productId)) {
+        conflictProductName = rawProductsById.get(productId)?.name ?? "izabrani proizvod";
         tx.rollback();
       }
-      lockedProducts.set(productId, product!);
     }
-    const categories = await tx.select().from(productCategoriesTable);
     const productQuantities = new Map<string, number>();
     const variantQuantities = new Map<string, number>();
     const details = lines.map((line) => {
       const product = lockedProducts.get(line.productId)!;
-      if (!productBelongsToActiveCategory(product, categories)) {
-        conflictProductName = product.name;
-        tx.rollback();
-      }
       const variants = product.variants ?? [];
       const variant = line.variantValue ? variants.find((candidate) => candidate.value === line.variantValue) : undefined;
       if ((variants.length > 0 && !line.variantValue) || (variants.length === 0 && line.variantValue) || (line.variantValue && !variant)) {
@@ -10119,16 +10392,31 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
       orderId: order!.id, allocations: referral.allocations,
       idempotencyKey: `b2b-order:${order!.id}`, actorUserId: user.id,
     });
-    const orderItems = details.map((line) => ({
-      orderId: order!.id,
-      productId: line.product.id,
-      productName: line.product.name,
-      productSku: line.variant?.sku ?? line.product.sku,
-      variantValue: line.variantValue,
-      variantLabel: line.variant?.label ?? null,
-      quantity: line.quantity,
-      price: line.price,
-    }));
+    const supplierRows = await tx.select().from(suppliersTable).where(inArray(
+      suppliersTable.id,
+      [...new Set(details.map((line) => line.product.supplierId))],
+    ));
+    const suppliersById = new Map(supplierRows.map((supplier) => [supplier.id, supplier]));
+    const orderItems = details.map((line) => {
+      const supplier = suppliersById.get(line.product.supplierId);
+      if (!supplier) throw new Error("B2B supplier is unavailable");
+      const sku = line.variant?.sku ?? line.product.sku;
+      return {
+        orderId: order!.id,
+        productId: line.product.id,
+        productName: line.product.name,
+        productSku: sku,
+        variantValue: line.variantValue,
+        variantLabel: line.variant?.label ?? null,
+        quantity: line.quantity,
+        price: line.price,
+        supplierId: supplier.id, supplierName: supplier.name, supplierSlug: supplier.slug,
+        productCatalogReference: line.product.catalogReference, productSkuSnapshot: sku,
+        market: "B2B" as const, currency: "RSD",
+        discountSnapshot: line.product.discountPrice == null ? null : line.product.price - line.product.discountPrice,
+        unitPrice: line.price, lineSubtotal: line.price * line.quantity, lineTotal: line.price * line.quantity,
+      };
+    });
     await tx.insert(orderItemsTable).values(orderItems);
     // Credit salon-owned inventory for the purchase (usage units per piece).
     await creditInventoryForOrderInTx(tx, {
@@ -15035,6 +15323,7 @@ function adminProductDto(item: typeof productsTable.$inferSelect) {
   const discountPercent = item.discountPrice ? Math.round((1 - item.discountPrice / item.price) * 100) : null;
   return {
     id: item.id,
+    supplierId: item.supplierId,
     name: item.name,
     categoryId: item.categoryId ?? null,
     categoryName: item.categoryName,
@@ -15113,13 +15402,13 @@ function validateVariantInventory(
   return null;
 }
 
-async function categoryAssignment(categoryId: string) {
+async function categoryAssignment(categoryId: string, supplierId?: string) {
   // Single self-join: load child and optional parent in one round-trip
   const rows = await db.execute<{ child_id: string; child_name: string; child_parent_id: string | null; parent_name: string | null }>(
     sql`SELECT c.id AS child_id, c.name AS child_name, c.parent_id AS child_parent_id, p.name AS parent_name
         FROM product_categories c
         LEFT JOIN product_categories p ON p.id = c.parent_id
-        WHERE c.id = ${categoryId}
+        WHERE c.id = ${categoryId}${supplierId ? sql` AND c.supplier_id = ${supplierId}` : sql``}
         LIMIT 1`,
   );
   const row = rows.rows[0];
@@ -15143,6 +15432,10 @@ router.get("/admin/products", async (req, res): Promise<void> => {
   if (q.category) filters.push(eq(productsTable.categoryName, q.category));
   if (q.subcategory) filters.push(eq(productsTable.subcategoryName, q.subcategory));
   if (q.brand) filters.push(sql`lower(${productsTable.brand}) = ${q.brand.toLowerCase()}`);
+  if (q.supplierId) filters.push(eq(productsTable.supplierId, q.supplierId));
+  if (q.market === "B2B") filters.push(eq(productsTable.professionalEnabled, true));
+  if (q.market === "B2C") filters.push(eq(productsTable.retailEnabled, true));
+  if (q.lowStock) filters.push(sql`${productsTable.stock} > 0 AND ${productsTable.stock} <= 5`);
   if (q.status === "in-stock") filters.push(gt(productsTable.stock, 0));
   if (q.status === "out-of-stock") filters.push(sql`${productsTable.stock} <= 0`);
   if (q.status === "new") filters.push(eq(productsTable.isNew, true));
@@ -15172,14 +15465,20 @@ router.post("/admin/products", async (req, res): Promise<void> => {
   const parsed = AdminCreateProductBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const body = parsed.data;
+  if (!body.supplierId) { res.status(400).json({ error: "Dobavljač je obavezan." }); return; }
   if (body.discountPrice != null && body.discountPrice >= body.price) {
     res.status(400).json({ error: "Akcijska cena mora biti niža od redovne cene." }); return;
   }
   const publicError = publicStorefrontError(body);
   if (publicError) { res.status(400).json({ error: publicError }); return; }
   if (!body.categoryId) { res.status(400).json({ error: "Kategorija je obavezna." }); return; }
-  const assignment = await categoryAssignment(body.categoryId);
+  const assignment = await categoryAssignment(body.categoryId, body.supplierId);
   if (!assignment) { res.status(404).json({ error: "Kategorija nije pronađena." }); return; }
+  const [supplier] = await db.select().from(suppliersTable).where(eq(suppliersTable.id, body.supplierId)).limit(1);
+  if (!supplier) { res.status(404).json({ error: "Dobavljač nije pronađen." }); return; }
+  if ((body.retailEnabled && supplier.scope === "B2B") || (body.professionalEnabled && supplier.scope === "B2C")) {
+    res.status(400).json({ error: "Izabrani kanali prodaje nisu dozvoljeni za dobavljača." }); return;
+  }
   const variantError = validateVariantInventory(body.variants ?? null, body.stock);
   if (variantError) { res.status(400).json({ error: variantError }); return; }
   const imageReferences = [...new Set([body.imageUrl, ...(body.images ?? [])])];
@@ -15195,6 +15494,7 @@ router.post("/admin/products", async (req, res): Promise<void> => {
   try {
     [product] = await db.transaction(async (tx) => {
       const rows = await tx.insert(productsTable).values({
+        supplierId: body.supplierId,
         name: body.name,
         ...assignment,
         brand: body.brand ?? null,
@@ -15393,10 +15693,21 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
     }
   }
   let assignment: { categoryId: string; categoryName: string; subcategoryName: string | null } | null = null;
+  const nextSupplierId = body.supplierId ?? existing.supplierId;
   if (body.categoryId !== undefined) {
     if (!body.categoryId) { res.status(400).json({ error: "Kategorija je obavezna." }); return; }
-    assignment = await categoryAssignment(body.categoryId);
+    assignment = await categoryAssignment(body.categoryId, nextSupplierId);
     if (!assignment) { res.status(404).json({ error: "Kategorija nije pronađena." }); return; }
+  } else if (body.supplierId && body.supplierId !== existing.supplierId) {
+    // Supplier cannot be swapped while retaining a category owned by another supplier.
+    assignment = existing.categoryId ? await categoryAssignment(existing.categoryId, nextSupplierId) : null;
+    if (existing.categoryId && !assignment) { res.status(400).json({ error: "Promena dobavljača zahteva kategoriju tog dobavljača." }); return; }
+  }
+  const [nextSupplier] = await db.select().from(suppliersTable).where(eq(suppliersTable.id, nextSupplierId)).limit(1);
+  if (!nextSupplier) { res.status(404).json({ error: "Dobavljač nije pronađen." }); return; }
+  if (((body.retailEnabled ?? existing.retailEnabled) && nextSupplier.scope === "B2B")
+    || ((body.professionalEnabled ?? existing.professionalEnabled) && nextSupplier.scope === "B2C")) {
+    res.status(400).json({ error: "Izabrani kanali prodaje nisu dozvoljeni za dobavljača." }); return;
   }
   const managedImageReferences = imageReferences.filter((url) => mediaAssetIdFromUrl(url));
   let product: typeof productsTable.$inferSelect | undefined;
@@ -15414,6 +15725,7 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
         }
       }
       const rows = await tx.update(productsTable).set({
+        supplierId: nextSupplierId,
         name: body.name ?? existing.name,
         categoryId: assignment?.categoryId ?? existing.categoryId,
         categoryName: assignment?.categoryName ?? existing.categoryName,
@@ -15507,6 +15819,7 @@ async function adminCategoryDto(cat: typeof productCategoriesTable.$inferSelect)
   const [byId] = await db.select({ count: count() }).from(productsTable).where(eq(productsTable.categoryId, cat.id));
   return {
     id: cat.id,
+    supplierId: cat.supplierId,
     name: cat.name,
     slug: cat.slug,
     parentId: cat.parentId ?? null,
@@ -15527,6 +15840,7 @@ router.get("/admin/product-categories", async (req, res): Promise<void> => {
   const countByCat = new Map(productCounts.map((c) => [c.categoryId, c.count]));
   res.json(cats.map((cat) => ({
     id: cat.id,
+    supplierId: cat.supplierId,
     name: cat.name,
     slug: cat.slug,
     parentId: cat.parentId ?? null,
@@ -15543,21 +15857,26 @@ router.post("/admin/product-categories", async (req, res): Promise<void> => {
   const parsed = AdminCreateProductCategoryBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const body = parsed.data;
+  const supplierId = body.supplierId ?? "9b5970ea-0a8c-5e60-9d32-2a09f0890560";
   if (body.imageUrl && !await canClaimMediaReference({ userId: user.id, url: body.imageUrl, scope: "product-category" })) {
     res.status(400).json({ error: "Fotografija kategorije nije otpremljena sa ovog administratorskog naloga." }); return;
   }
   const slug = slugify(body.name);
-  const [nameTaken] = await db.select({ id: productCategoriesTable.id }).from(productCategoriesTable).where(eq(productCategoriesTable.name, body.name)).limit(1);
+  const [nameTaken] = await db.select({ id: productCategoriesTable.id }).from(productCategoriesTable).where(and(
+    eq(productCategoriesTable.supplierId, supplierId),
+    eq(productCategoriesTable.name, body.name),
+    body.parentId ? eq(productCategoriesTable.parentId, body.parentId) : isNull(productCategoriesTable.parentId),
+  )).limit(1);
   if (nameTaken) { res.status(409).json({ error: "Kategorija sa ovim nazivom već postoji." }); return; }
   if (body.parentId) {
     const [parent] = await db.select().from(productCategoriesTable).where(eq(productCategoriesTable.id, body.parentId)).limit(1);
-    if (!parent) { res.status(404).json({ error: "Nadređena kategorija nije pronađena." }); return; }
-    if (parent.parentId) { res.status(400).json({ error: "Podkategorija ne može imati sopstvene podkategorije." }); return; }
+    if (!parent || parent.supplierId !== supplierId) { res.status(404).json({ error: "Nadređena kategorija nije pronađena kod ovog dobavljača." }); return; }
   }
   let cat: typeof productCategoriesTable.$inferSelect | undefined;
   try {
     [cat] = await db.transaction(async (tx) => {
       const rows = await tx.insert(productCategoriesTable).values({
+        supplierId,
         name: body.name,
         slug,
         parentId: body.parentId ?? null,
@@ -15597,6 +15916,10 @@ router.patch("/admin/product-categories/:categoryId", async (req, res): Promise<
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const body = parsed.data;
   if (!Object.keys(body).length) { res.status(400).json({ error: "Pošaljite najmanje jedno polje za izmenu." }); return; }
+  if (body.supplierId && body.supplierId !== existing.supplierId) {
+    res.status(400).json({ error: "Kategorija se ne može premestiti kod drugog dobavljača." });
+    return;
+  }
   const nextCategoryImageUrl = body.imageUrl !== undefined ? body.imageUrl : existing.imageUrl;
   const nextActive = body.active ?? existing.active;
   if (nextCategoryImageUrl && !await canClaimMediaReference({
@@ -15621,18 +15944,30 @@ router.patch("/admin/product-categories/:categoryId", async (req, res): Promise<
       return;
     }
   }
-  if (body.parentId !== undefined && body.parentId !== existing.parentId) {
-    const [children] = await db.select({ count: count() }).from(productCategoriesTable).where(eq(productCategoriesTable.parentId, categoryId));
-    if ((children?.count ?? 0) > 0) {
-      res.status(409).json({ error: "Kategorija sa podkategorijama ne može se premestiti. Prvo premestite podkategorije." });
-      return;
-    }
-  }
   if (body.parentId) {
     if (body.parentId === categoryId) { res.status(400).json({ error: "Kategorija ne može biti sama sebi nadređena." }); return; }
     const [parent] = await db.select().from(productCategoriesTable).where(eq(productCategoriesTable.id, body.parentId)).limit(1);
     if (!parent) { res.status(404).json({ error: "Nadređena kategorija nije pronađena." }); return; }
-    if (parent.parentId) { res.status(400).json({ error: "Podkategorija ne može imati sopstvene podkategorije." }); return; }
+    if (parent.supplierId !== existing.supplierId) {
+      res.status(400).json({ error: "Nadređena kategorija mora pripadati istom dobavljaču." });
+      return;
+    }
+    const cycle = await db.execute<{ id: string }>(sql`
+      WITH RECURSIVE descendants AS (
+        SELECT id
+        FROM product_categories
+        WHERE parent_id = ${categoryId}
+        UNION ALL
+        SELECT child.id
+        FROM product_categories child
+        INNER JOIN descendants parent_descendant ON child.parent_id = parent_descendant.id
+      )
+      SELECT id FROM descendants WHERE id = ${body.parentId} LIMIT 1
+    `);
+    if (cycle.rows.length > 0) {
+      res.status(409).json({ error: "Kategorija se ne može premestiti unutar sopstvenog podstabla." });
+      return;
+    }
   }
   const newName = body.name ?? existing.name;
   const newParentId = body.parentId !== undefined ? body.parentId : existing.parentId;

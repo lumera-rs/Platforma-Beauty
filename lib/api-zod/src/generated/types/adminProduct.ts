@@ -9,6 +9,7 @@ import type { ProductVariant } from './productVariant';
 
 export interface AdminProduct {
   id: string;
+  supplierId?: string;
   name: string;
   /** @nullable */
   categoryId?: string | null;
