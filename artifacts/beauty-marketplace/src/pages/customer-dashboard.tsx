@@ -20,6 +20,7 @@ import {
   useCustomerListMyPurchases,
   useListCustomerAppointmentTreatmentPhotos,
   useRepeatLastRetailOrder,
+  getApiErrorMessage,
 } from "@workspace/api-client-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -304,7 +305,9 @@ export default function CustomerDashboard() {
           refetchDash();
           refetchAppts();
         },
-        onError: () => toast.error("Termin nije otkazan", { description: "Osvežite listu i pokušajte ponovo." }),
+        onError: (error: unknown) => toast.error("Termin nije otkazan", {
+          description: getApiErrorMessage(error, "Osvežite listu i pokušajte ponovo."),
+        }),
       },
     );
   };
@@ -320,8 +323,7 @@ export default function CustomerDashboard() {
           setProviderToDisconnect(null);
         },
         onError: (error: unknown) => {
-          const message = (error as { response?: { data?: { error?: string } } })?.response?.data?.error
-            ?? "Način prijave nije odvojen. Pokušajte ponovo.";
+          const message = getApiErrorMessage(error, "Način prijave nije odvojen. Pokušajte ponovo.");
           toast.error("Promena nije sačuvana", { description: message });
         },
       },

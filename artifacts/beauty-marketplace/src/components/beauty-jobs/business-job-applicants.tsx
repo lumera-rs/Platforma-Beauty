@@ -8,6 +8,8 @@ import {
   useDecideBeautyJobApplicants,
   getListMyBeautyJobsQueryKey,
   getListBeautyJobInboxQueryKey,
+  getApiErrorDetails,
+  getApiErrorMessage,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -64,12 +66,14 @@ export function BusinessJobApplicants({ listingId }: { listingId: string }) {
         setSelectedIds(new Set());
       },
       onError: (err: unknown) => {
-        const error = err as { status?: number; response?: { status?: number } };
-        if (error?.status === 409 || error?.response?.status === 409) {
+        const { status } = getApiErrorDetails(err);
+        if (status === 409) {
            toast.error("Prijave su već obrađene ili je došlo do promene.", { description: "Podaci su zastareli. Molimo osvežite listu." });
            queryClient.invalidateQueries({ queryKey: getListBeautyJobApplicantsQueryKey(listingId) });
         } else {
-           toast.error("Došlo je do greške prilikom obrade.");
+           toast.error("Došlo je do greške prilikom obrade.", {
+             description: getApiErrorMessage(err, "Pokušajte ponovo."),
+           });
         }
       }
     });

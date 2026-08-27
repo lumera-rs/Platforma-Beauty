@@ -3,6 +3,7 @@ import {
   getGetShopCartQueryKey,
   getGetShopCheckoutPreviewQueryKey,
   getGetShopSummaryQueryKey,
+  getApiErrorMessage,
   useAddShopCartItem,
   useRemoveShopCartItem,
   useUpdateShopCartItem,
@@ -143,10 +144,13 @@ export function useShopCartMutations() {
         patchSummaryCartCount(quantity);
         return context;
       },
-      onError: (_error, _variables, context) => {
+      onError: (error, _variables, context) => {
         rollback(context);
         toast.error("Dodavanje u korpu nije uspelo.", {
-          description: "Korpa je vraćena na prethodno stanje. Pokušajte ponovo.",
+          description: getApiErrorMessage(
+            error,
+            "Korpa je vraćena na prethodno stanje. Pokušajte ponovo.",
+          ),
         });
       },
       onSuccess: () => toast.success("Dodato u korpu"),
@@ -183,9 +187,11 @@ export function useShopCartMutations() {
         if (updated) patchSummaryCartCount(updated.itemCount - (context.previousCart?.itemCount ?? updated.itemCount));
         return context;
       },
-      onError: (_error, _variables, context) => {
+      onError: (error, _variables, context) => {
         rollback(context);
-        toast.error("Nije uspelo ažuriranje količine.");
+        toast.error("Nije uspelo ažuriranje količine.", {
+          description: getApiErrorMessage(error, "Korpa je vraćena na prethodno stanje."),
+        });
       },
       onSettled: (cart) => reconcile(cart),
     },
@@ -203,9 +209,11 @@ export function useShopCartMutations() {
         if (removed) patchSummaryCartCount(-removed.quantity);
         return context;
       },
-      onError: (_error, _variables, context) => {
+      onError: (error, _variables, context) => {
         rollback(context);
-        toast.error("Nije uspelo uklanjanje stavke.");
+        toast.error("Nije uspelo uklanjanje stavke.", {
+          description: getApiErrorMessage(error, "Korpa je vraćena na prethodno stanje."),
+        });
       },
       onSettled: (cart) => reconcile(cart),
     },

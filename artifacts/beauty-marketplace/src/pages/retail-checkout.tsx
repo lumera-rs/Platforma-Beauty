@@ -23,6 +23,8 @@ import {
   useAddRetailCartItem,
   useTrackRetailOrder,
   getGetRetailCartQueryKey,
+  getApiErrorDetails,
+  getApiErrorMessage,
   RetailCheckoutInputPaymentMethod,
   RetailCheckoutInputDeliveryMethod,
   type RetailCheckoutInput,
@@ -45,14 +47,24 @@ function CartLines({ cart }: { cart: RetailCart }) {
     onSuccess: (data) => {
       qc.setQueryData(getGetRetailCartQueryKey(), data);
       notifyRetailCartChanged(data.itemCount);
-    }
+    },
+    onError: (error: unknown) => {
+      toast.error("Količina nije promenjena.", {
+        description: getApiErrorMessage(error, "Osvežite korpu i pokušajte ponovo."),
+      });
+    },
   });
   const removeItem = useRemoveRetailCartItem({
     mutation: {
       onSuccess: (data) => {
         qc.setQueryData(getGetRetailCartQueryKey(), data);
         notifyRetailCartChanged(data.itemCount);
-      }
+      },
+      onError: (error: unknown) => {
+        toast.error("Stavka nije uklonjena.", {
+          description: getApiErrorMessage(error, "Osvežite korpu i pokušajte ponovo."),
+        });
+      },
     }
   });
   const saveItem = useSaveRetailCartItemForLater({
@@ -61,7 +73,12 @@ function CartLines({ cart }: { cart: RetailCart }) {
         qc.setQueryData(getGetRetailCartQueryKey(), data);
         notifyRetailCartChanged(data.itemCount);
         toast.success("Sačuvano za kasnije");
-      }
+      },
+      onError: (error: unknown) => {
+        toast.error("Stavka nije sačuvana za kasnije.", {
+          description: getApiErrorMessage(error, "Pokušajte ponovo."),
+        });
+      },
     }
   });
 
@@ -120,12 +137,24 @@ export function RetailCartPage() {
         qc.setQueryData(getGetRetailCartQueryKey(), data);
         notifyRetailCartChanged(data.itemCount);
         toast.success("Stavka vraćena u korpu");
-      }
+      },
+      onError: (error: unknown) => {
+        toast.error("Stavka nije vraćena u korpu.", {
+          description: getApiErrorMessage(error, "Pokušajte ponovo."),
+        });
+      },
     }
   });
 
   const removeSaved = useRemoveSavedRetailCartItem({
-    mutation: { onSuccess: (data) => qc.setQueryData(getGetRetailCartQueryKey(), data) }
+    mutation: {
+      onSuccess: (data) => qc.setQueryData(getGetRetailCartQueryKey(), data),
+      onError: (error: unknown) => {
+        toast.error("Sačuvana stavka nije uklonjena.", {
+          description: getApiErrorMessage(error, "Pokušajte ponovo."),
+        });
+      },
+    }
   });
 
   const addItem = useAddRetailCartItem({
@@ -134,7 +163,12 @@ export function RetailCartPage() {
         qc.setQueryData(getGetRetailCartQueryKey(), data);
         notifyRetailCartChanged(data.itemCount);
         toast.success("Dodato u korpu");
-      }
+      },
+      onError: (error: unknown) => {
+        toast.error("Dodavanje u korpu nije uspelo.", {
+          description: getApiErrorMessage(error, "Proverite dostupnost proizvoda i pokušajte ponovo."),
+        });
+      },
     }
   });
 
@@ -276,14 +310,17 @@ export function RetailCheckoutPage() {
     query: {
       enabled: !!cart && cart.items.length > 0,
       queryKey: ['retailCheckoutPreview', cart?.id, form.deliveryMethod, form.city, desiredCredit, appliedCoupon],
-      retry: (count: number, err: any) => err?.response?.status >= 400 && err?.response?.status < 500 ? false : count < 3
+      retry: (count: number, err: unknown) => {
+        const { status } = getApiErrorDetails(err);
+        return status !== undefined && status >= 400 && status < 500 ? false : count < 3;
+      },
     }
   });
 
   useEffect(() => {
-    const errorData = (previewErrorObj as any)?.data ?? (previewErrorObj as any)?.response?.data;
-    if (previewIsError && errorData?.code?.startsWith("COUPON_")) {
-      setCouponError(errorData.error);
+    const { code, message } = getApiErrorDetails(previewErrorObj);
+    if (previewIsError && code?.startsWith("COUPON_")) {
+      setCouponError(message ?? "Kupon nije moguće primeniti.");
       setAppliedCoupon(undefined);
       sessionStorage.removeItem("lumera_retail_coupon");
     }
@@ -336,8 +373,13 @@ export function RetailCheckoutPage() {
         notifyRetailCartChanged(0);
         setLocation(`/korpa/uspeh?order=${encodeURIComponent(order.orderNumber)}`);
       },
-      onError: () => {
-        toast.error("Porudžbina nije potvrđena. Osvežite stranicu.");
+      onError: (error: unknown) => {
+        toast.error("Porudžbina nije potvrđena.", {
+          description: getApiErrorMessage(
+            error,
+            "Proverite podatke i pokušajte ponovo. Uneti podaci su sačuvani.",
+          ),
+        });
       }
     });
   };

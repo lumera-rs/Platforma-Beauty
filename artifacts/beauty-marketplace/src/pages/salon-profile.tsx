@@ -25,6 +25,8 @@ import {
   getListMyAppointmentsQueryKey,
   getListSalonsQueryKey,
   getListJobseekerSalonInterestsQueryKey,
+  getApiErrorDetails,
+  getApiErrorMessage,
   type FirstAvailableServiceSlot
 } from "@workspace/api-client-react";
 import { useParams, useLocation, useSearch, Link } from "wouter";
@@ -413,12 +415,11 @@ export default function SalonProfile() {
         setIsSuccess(true);
       },
       onError: (error: unknown) => {
-        const status = (error as { status?: number })?.status;
-        const errorData = (error as { data?: { error?: string, code?: string } })?.data;
+        const { status, code, message } = getApiErrorDetails(error);
 
         if (status === 409) {
-          if (errorData?.code === 'PACKAGE_ERROR') {
-            toast.error("Greška sa paketom", { description: errorData.error || "Paket nije moguće iskoristiti za ovaj termin." });
+          if (code === 'PACKAGE_ERROR') {
+            toast.error("Greška sa paketom", { description: message ?? "Paket nije moguće iskoristiti za ovaj termin." });
             setLocationDialogOpen(false);
             // DO NOT reset selection or step so user can try standard payment
             return;
@@ -440,9 +441,7 @@ export default function SalonProfile() {
           return;
         }
 
-        const description = errorData?.error
-          ?? (error as { message?: string })?.message
-          ?? "Došlo je do greške prilikom zakazivanja.";
+        const description = getApiErrorMessage(error, "Došlo je do greške prilikom zakazivanja.");
         toast.error("Zakazivanje nije uspelo", { description });
       }
     });
@@ -546,8 +545,7 @@ export default function SalonProfile() {
         toast.success(reviewContext?.review ? "Recenzija je izmenjena." : "Hvala na recenziji!");
       },
       onError: (error: unknown) => {
-        const message = (error as { response?: { data?: { error?: string } } })?.response?.data?.error
-          ?? "Recenzija nije sačuvana. Pokušajte ponovo.";
+        const message = getApiErrorMessage(error, "Recenzija nije sačuvana. Pokušajte ponovo.");
         toast.error("Promena nije sačuvana", { description: message });
       },
     });
@@ -567,8 +565,7 @@ export default function SalonProfile() {
         toast.success("Recenzija je obrisana.");
       },
       onError: (error: unknown) => {
-        const message = (error as { response?: { data?: { error?: string } } })?.response?.data?.error
-          ?? "Recenzija nije obrisana. Pokušajte ponovo.";
+        const message = getApiErrorMessage(error, "Recenzija nije obrisana. Pokušajte ponovo.");
         toast.error("Brisanje nije uspelo", { description: message });
       },
     });

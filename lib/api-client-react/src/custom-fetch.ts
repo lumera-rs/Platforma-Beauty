@@ -8,6 +8,22 @@ export type BodyType<T> = T;
 
 export type AuthTokenGetter = () => Promise<string | null> | string | null;
 
+export interface ApiErrorData {
+  error?: string;
+  message?: string;
+  detail?: string;
+  code?: string;
+  issues?: unknown[];
+  [key: string]: unknown;
+}
+
+export interface ApiErrorDetails {
+  status: number | undefined;
+  data: ApiErrorData | null;
+  code: string | undefined;
+  message: string | undefined;
+}
+
 const NO_BODY_STATUS = new Set([204, 205, 304]);
 const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 
@@ -197,6 +213,52 @@ export class ApiError<T = unknown> extends Error {
     this.method = requestInfo.method;
     this.url = response.url || requestInfo.url;
   }
+}
+
+function asApiErrorData(value: unknown): ApiErrorData | null {
+  return value !== null && typeof value === "object" ? value as ApiErrorData : null;
+}
+
+/**
+ * Normalizes errors thrown by the generated client without leaking the native
+ * Response object or requiring Axios-style response.data access in callers.
+ */
+export function getApiErrorDetails(error: unknown): ApiErrorDetails {
+  const candidate = error as { name?: unknown; status?: unknown; data?: unknown; message?: unknown } | null;
+  const isGeneratedApiError =
+    error instanceof ApiError ||
+    (
+      candidate?.name === "ApiError" &&
+      typeof candidate.status === "number" &&
+      "data" in (candidate ?? {})
+    );
+
+  if (!isGeneratedApiError) {
+    return {
+      status: undefined,
+      data: null,
+      code: undefined,
+      message: undefined,
+    };
+  }
+
+  const data = asApiErrorData(candidate?.data);
+  const code = getStringField(data, "code");
+  const message =
+    getStringField(data, "error") ??
+    getStringField(data, "detail") ??
+    getStringField(data, "message");
+
+  return {
+    status: typeof candidate?.status === "number" ? candidate.status : undefined,
+    data,
+    code,
+    message,
+  };
+}
+
+export function getApiErrorMessage(error: unknown, fallback: string): string {
+  return getApiErrorDetails(error).message ?? fallback;
 }
 
 /**

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Building2, Facebook, GraduationCap, Loader2, Mail, ShieldCheck } from "lucide-react";
-import { useGetCurrentUser, useLogin, useRegisterBusiness } from "@workspace/api-client-react";
+import { getApiErrorMessage, useGetCurrentUser, useLogin, useRegisterBusiness } from "@workspace/api-client-react";
 import { BusinessLayout } from "@/components/business-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -151,7 +151,9 @@ export default function BusinessAuth({ initialTab }: BusinessAuthProps) {
                             toast.success("Uspešna prijava", { description: "Otvaramo vaš poslovni prostor." });
                             setLocation(returnTo ?? homeForRole(response.user.role));
                           },
-                          onError: () => toast.error("Prijava nije uspela", { description: "Proverite email i lozinku." }),
+                          onError: (error: unknown) => toast.error("Prijava nije uspela", {
+                            description: getApiErrorMessage(error, "Proverite email i lozinku."),
+                          }),
                         });
                       })}
                     >
@@ -202,7 +204,12 @@ export default function BusinessAuth({ initialTab }: BusinessAuthProps) {
                             toast.success("Poslovni nalog je kreiran", { description: "Dobrodošli u LUMERA Biznis." });
                             setLocation(returnTo ?? homeForRole(response.user.role));
                           },
-                          onError: () => toast.error("Registracija nije uspela", { description: "Proverite podatke ili pokušajte sa drugom email adresom." }),
+                          onError: (error: unknown) => toast.error("Registracija nije uspela", {
+                            description: getApiErrorMessage(
+                              error,
+                              "Proverite podatke ili pokušajte sa drugom email adresom.",
+                            ),
+                          }),
                         });
                       })}
                     >

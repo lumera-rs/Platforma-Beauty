@@ -9,6 +9,7 @@ import {
   getAdminGetRetentionSettingsQueryKey,
   getAdminGetRetentionSettingsHistoryQueryKey,
   getOwnerListRetentionQueryKey,
+  getApiErrorDetails,
 } from "@workspace/api-client-react";
 import type {
   RetentionSettings,
@@ -366,10 +367,7 @@ export default function AdminRetentionSettings() {
         // The server blocks restores whose values equal the active thresholds
         // (e.g. another admin already made them active while the dialog was
         // open). Explain why nothing was recorded and refresh the stale view.
-        const code =
-          (err as { response?: { data?: { code?: string } }; data?: { code?: string } })
-            ?.response?.data?.code ??
-          (err as { data?: { code?: string } })?.data?.code;
+        const { code } = getApiErrorDetails(err);
         if (code === "NO_OP_RESTORE") {
           toast.info(
             "Vrednosti su identične trenutno aktivnim pragovima — nova verzija nije zabeležena.",
@@ -1267,8 +1265,8 @@ export default function AdminRetentionSettings() {
 
 /** True when the server rejected the update because a newer version exists (409). */
 function isVersionConflict(err: unknown): boolean {
-  const e = err as { status?: number; data?: { code?: string } } | null;
-  return e?.status === 409 || e?.data?.code === "VERSION_CONFLICT";
+  const { status, code } = getApiErrorDetails(err);
+  return status === 409 || code === "VERSION_CONFLICT";
 }
 
 /** Values the admin tried to save when another admin's newer version was found. */
@@ -1285,11 +1283,7 @@ interface ConflictRefreshError {
 }
 
 function getVersionConflictDetails(err: unknown): Pick<VersionConflict, "changedByName" | "changedAt"> {
-  const e = err as {
-    response?: { data?: { changedByName?: unknown; changedAt?: unknown } };
-    data?: { changedByName?: unknown; changedAt?: unknown };
-  } | null;
-  const data = e?.response?.data ?? e?.data;
+  const { data } = getApiErrorDetails(err);
   return {
     changedByName: typeof data?.changedByName === "string" ? data.changedByName : null,
     changedAt: typeof data?.changedAt === "string" ? data.changedAt : null,

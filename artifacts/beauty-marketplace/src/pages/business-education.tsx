@@ -25,6 +25,7 @@ import {
   getListEnrollmentsQueryKey, getGetEducationLmsQueryKey, getListSalonEmployeesQueryKey,
   getListEducationInstructorsQueryKey, getGetEducationCourseFeaturedStatusQueryKey,
   getListEducationNotificationsQueryKey,
+  getApiErrorMessage,
   type EducationNotificationList,
 } from "@workspace/api-client-react";
 
@@ -1157,14 +1158,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
 type CourseGalleryItem = { id: string; url: string; altText: string; sortOrder: number };
 
 function galleryUploadErrorMessage(error: unknown): string {
-  if (error && typeof error === "object" && "data" in error) {
-    const data = (error as { data?: unknown }).data;
-    if (data && typeof data === "object" && "error" in data && typeof (data as { error?: unknown }).error === "string") {
-      return (data as { error: string }).error;
-    }
-  }
-  if (error instanceof Error && error.message) return error.message;
-  return "Pokušajte ponovo sa drugom slikom.";
+  return getApiErrorMessage(error, "Pokušajte ponovo sa drugom slikom.");
 }
 
 function CourseGalleryEditor({ courseId, gallery: initialGallery }: { courseId: string; gallery: CourseGalleryItem[] }) {

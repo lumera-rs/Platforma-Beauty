@@ -22,6 +22,8 @@ import {
   getGetShopCheckoutPreviewQueryKey,
   getListSalonNotificationsQueryKey,
   getGetOrderQueryKey,
+  getApiErrorDetails,
+  getApiErrorMessage,
   ShopCheckoutInputPaymentMethod,
 } from "@workspace/api-client-react";
 
@@ -818,7 +820,10 @@ export function OwnerCheckoutReviewPage() {
 
   const { data: preview, isLoading, isError, error, isFetching } = useGetShopCheckoutPreview(
     { desiredReferralCreditRsd: desiredCredit, couponCode: appliedCoupon } as any,
-    { query: { retry: (count: number, err: any) => (err?.status ?? err?.response?.status) >= 400 && (err?.status ?? err?.response?.status) < 500 ? false : count < 3, queryKey: getGetShopCheckoutPreviewQueryKey({ desiredReferralCreditRsd: desiredCredit, couponCode: appliedCoupon } as any) } as any }
+    { query: { retry: (count: number, err: unknown) => {
+      const { status } = getApiErrorDetails(err);
+      return status !== undefined && status >= 400 && status < 500 ? false : count < 3;
+    }, queryKey: getGetShopCheckoutPreviewQueryKey({ desiredReferralCreditRsd: desiredCredit, couponCode: appliedCoupon } as any) } as any }
   );
 
   const checkoutMutation = useCheckoutShopCart();
@@ -839,9 +844,9 @@ export function OwnerCheckoutReviewPage() {
   }, [setLocation]);
 
   useEffect(() => {
-    const errorData = (error as any)?.data ?? (error as any)?.response?.data;
-    if (isError && errorData?.code?.startsWith("COUPON_")) {
-      setCouponError(errorData.error);
+    const { code, message } = getApiErrorDetails(error);
+    if (isError && code?.startsWith("COUPON_")) {
+      setCouponError(message ?? "Kupon nije moguće primeniti.");
       setAppliedCoupon(undefined);
       sessionStorage.removeItem("lumera_checkout_coupon");
     }
@@ -883,9 +888,7 @@ export function OwnerCheckoutReviewPage() {
         setLocation(`/vlasnik/prodavnica/porudzbina/${order.id}/potvrda`);
       },
       onError: async (error) => {
-        const errorData = (error as any)?.data ?? (error as any)?.response?.data;
-        const errorStatus = (error as any)?.status ?? (error as any)?.response?.status;
-        const responseCode = errorData?.code;
+        const { data: errorData, status: errorStatus, code: responseCode } = getApiErrorDetails(error);
         if (responseCode === "APPROVAL_REQUIRED") {
           const approvalKey = sessionStorage.getItem("lumera_approval_request_key") ?? crypto.randomUUID();
           sessionStorage.setItem("lumera_approval_request_key", approvalKey);
@@ -914,7 +917,10 @@ export function OwnerCheckoutReviewPage() {
           return;
         }
         if (errorStatus === 409) {
-          const productNames = errorData?.unavailableProducts ?? [];
+          const unavailableProducts = errorData?.unavailableProducts;
+          const productNames = Array.isArray(unavailableProducts)
+            ? unavailableProducts.filter((name): name is string => typeof name === "string")
+            : [];
           const text = productNames.length === 1
             ? `Proizvod ${productNames[0]} je rasprodat, promenio cenu, ili je dobavljač neaktivan. Porudžbina nije kreirana.`
             : `Proizvodi: ${productNames.join(", ")} su rasprodati, promenili cenu, ili je dobavljač neaktivan. Porudžbina nije kreirana.`;
@@ -928,8 +934,9 @@ export function OwnerCheckoutReviewPage() {
           return;
         }
 
-        const message = errorData?.error;
-        toast.error("Porudžbina nije kreirana.", { description: message ?? "Proverite podatke za dostavu i pokušajte ponovo." });
+        toast.error("Porudžbina nije kreirana.", {
+          description: getApiErrorMessage(error, "Proverite podatke za dostavu i pokušajte ponovo."),
+        });
       }
     });
   };

@@ -8,34 +8,19 @@
  *    parsing happens on submit. Returns { ok, value } or { ok: false, message }.
  */
 
-// ─── Error extraction ───────────────────────────────────────────────────────
+import { getApiErrorMessage } from "@workspace/api-client-react";
 
-/** Shape produced by the generated orval ApiError */
-interface ApiErrorLike {
-  response?: { data?: { error?: string; code?: string; issues?: unknown[] } };
-  data?: { error?: string; code?: string; issues?: unknown[] };
-  message?: string;
-}
+// ─── Error extraction ───────────────────────────────────────────────────────
 
 /**
  * Extract a human-readable Serbian message from an unknown mutation error.
  * Works with:
- *   - orval-generated ApiError (err.response.data.error)
- *   - plain fetch rejections (err.data.error, err.message)
+ *   - generated ApiError (err.data.error)
+ *   - plain Error rejections
  *   - structured { error, code, issues } bodies
  */
 export function extractApiError(err: unknown, fallback = "Pokušajte ponovo."): string {
-  if (!err) return fallback;
-  const e = err as ApiErrorLike;
-  // orval ApiError shape
-  const fromResponse = e?.response?.data?.error;
-  if (fromResponse) return fromResponse;
-  // plain fetch / custom throw shape
-  const fromData = e?.data?.error;
-  if (fromData) return fromData;
-  // Error.message
-  if (e?.message && e.message !== "[object Object]") return e.message;
-  return fallback;
+  return getApiErrorMessage(err, fallback);
 }
 
 // ─── Numeric parsing ────────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ import {
   useAdminDeleteCourierService,
   useAdminUpdateShippingConfig,
   getAdminGetShippingConfigQueryKey,
+  getApiErrorMessage,
 } from "@workspace/api-client-react";
 import type { CourierService, ShippingTier } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -40,7 +41,7 @@ function CourierServices() {
   const [editTemplate, setEditTemplate] = useState("");
   const [editActive, setEditActive] = useState(true);
   const invalidate = () => queryClient.invalidateQueries({ queryKey: getAdminListCourierServicesQueryKey() });
-  const errorMessage = (error: unknown) => (error as { response?: { data?: { error?: string } } })?.response?.data?.error ?? "Promena nije sačuvana.";
+  const errorMessage = (error: unknown) => getApiErrorMessage(error, "Promena nije sačuvana.");
   const beginEdit = (service: CourierService) => {
     setEditing(service);
     setEditName(service.name);

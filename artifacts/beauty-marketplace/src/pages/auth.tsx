@@ -8,7 +8,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { useLogin, useRegister, useGetCurrentUser } from "@workspace/api-client-react";
+import { getApiErrorMessage, useLogin, useRegister, useGetCurrentUser } from "@workspace/api-client-react";
 import { Link, useLocation, useSearch } from "wouter";
 import { useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -72,9 +72,7 @@ export default function Login() {
         setLocation(returnTo ?? homeForRole(res.user.role));
       },
       onError: (err: unknown) => {
-        const message = (err as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
-          ?? (err as { response?: { data?: { error?: string } } })?.response?.data?.error
-          ?? "Neispravni podaci. Pokušajte ponovo.";
+        const message = getApiErrorMessage(err, "Neispravni podaci. Pokušajte ponovo.");
         toast.error("Greška", { description: message });
       }
     });
@@ -106,8 +104,10 @@ export default function Login() {
         toast.success("Uspešna registracija", { description: "Vaš klijentski nalog je kreiran!" });
         setLocation(returnTo ?? homeForRole(res.user.role));
       },
-      onError: (err) => {
-        toast.error("Greška", { description: "Došlo je do greške prilikom registracije." });
+      onError: (err: unknown) => {
+        toast.error("Greška", {
+          description: getApiErrorMessage(err, "Došlo je do greške prilikom registracije."),
+        });
       }
     });
   };

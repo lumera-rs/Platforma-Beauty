@@ -6,6 +6,7 @@ import {
   useCreateWidgetAppointment,
   getGetWidgetSalonQueryKey,
   getGetWidgetAvailabilityQueryKey,
+  getApiErrorDetails,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { format, addDays, isSameDay, parseISO, startOfToday } from "date-fns";
@@ -61,17 +62,17 @@ export default function WidgetBooking() {
         // Invalidate slots to ensure next user sees fresh data
         queryClient.invalidateQueries({ queryKey: getGetWidgetAvailabilityQueryKey(slug ?? "", { serviceId: serviceId!, date: format(selectedDate, 'yyyy-MM-dd') }) });
       },
-      onError: (err: any) => {
-        const status = err?.response?.status;
+      onError: (err: unknown) => {
+        const { status, message } = getApiErrorDetails(err);
         if (status === 409) {
           toast.error("Termin je upravo zauzet", { description: "Molimo izaberite drugo vreme." });
           queryClient.invalidateQueries({ queryKey: getGetWidgetAvailabilityQueryKey(slug ?? "", { serviceId: serviceId!, date: format(selectedDate, 'yyyy-MM-dd') }) });
           setStep("DATETIME");
           setStartTime(null);
         } else if (status === 429) {
-          toast.error("Previše zahteva", { description: "Pokušajte ponovo za koji minut." });
+          toast.error("Previše zahteva", { description: message ?? "Pokušajte ponovo za koji minut." });
         } else {
-          toast.error("Greška", { description: "Nije moguće zakazati termin. Pokušajte ponovo." });
+          toast.error("Greška", { description: message ?? "Nije moguće zakazati termin. Pokušajte ponovo." });
         }
       }
     }
