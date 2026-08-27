@@ -285,6 +285,28 @@ export class NetworkError extends Error {
   }
 }
 
+/**
+ * Identifies transport failures without relying only on instanceof.  Generated
+ * clients can be loaded more than once in a browser, which would otherwise
+ * make an equivalent NetworkError from another module copy look like a
+ * generic error.
+ */
+export function isNetworkError(error: unknown): error is NetworkError {
+  if (error instanceof NetworkError) return true;
+
+  const candidate = error as {
+    name?: unknown;
+    method?: unknown;
+    url?: unknown;
+  } | null;
+
+  return (
+    candidate?.name === "NetworkError" &&
+    typeof candidate.method === "string" &&
+    typeof candidate.url === "string"
+  );
+}
+
 export class ResponseParseError extends Error {
   readonly name = "ResponseParseError";
   readonly status: number;

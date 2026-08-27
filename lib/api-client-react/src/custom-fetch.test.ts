@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   ApiError,
+  NetworkError,
   customFetch,
   getApiErrorDetails,
   getApiErrorMessage,
+  isNetworkError,
 } from "./custom-fetch";
 
 test("customFetch keeps structured 4xx payload and status on ApiError", async () => {
@@ -88,4 +90,19 @@ test("transport and non-object API failures use a user-safe fallback", () => {
   const response = new Response(null, { status: 500 });
   const error = new ApiError(response, "upstream failed", { method: "GET", url: "/api/test" });
   assert.equal(getApiErrorMessage(error, "Pokušajte ponovo."), "Pokušajte ponovo.");
+});
+
+test("isNetworkError identifies transport failures across module boundaries", () => {
+  const error = new NetworkError(new Error("offline"), {
+    method: "GET",
+    url: "/api/widget/salons/demo",
+  });
+
+  assert.equal(isNetworkError(error), true);
+  assert.equal(isNetworkError({
+    name: "NetworkError",
+    method: "GET",
+    url: "/api/widget/salons/demo",
+  }), true);
+  assert.equal(isNetworkError(new Error("server error")), false);
 });

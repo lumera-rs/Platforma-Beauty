@@ -7,11 +7,12 @@ import {
   getGetWidgetSalonQueryKey,
   getGetWidgetAvailabilityQueryKey,
   getApiErrorDetails,
+  isNetworkError,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { format, addDays, isSameDay, parseISO, startOfToday } from "date-fns";
 import { srLatn } from "date-fns/locale";
-import { Loader2, Calendar, Clock, User, ChevronRight, ChevronLeft, MapPin, CheckCircle2, AlertCircle } from "lucide-react";
+import { Loader2, Calendar, Clock, User, ChevronRight, ChevronLeft, MapPin, CheckCircle2, AlertCircle, WifiOff, RotateCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,6 +25,35 @@ import { Skeleton } from "@/components/ui/skeleton";
 // Step Enum
 type Step = "SERVICE" | "EMPLOYEE" | "DATETIME" | "CONTACT" | "SUCCESS";
 
+function TemporaryWidgetError({
+  description,
+  isRetrying,
+  onRetry,
+  compact = false,
+}: {
+  description: string;
+  isRetrying: boolean;
+  onRetry: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={compact
+        ? "rounded-lg border border-dashed bg-card p-8 text-center"
+        : "flex h-full min-h-screen flex-col items-center justify-center bg-background p-4 text-center"}
+      data-testid={compact ? "widget-availability-error" : "widget-temporary-error"}
+    >
+      <WifiOff className="mb-4 h-12 w-12 text-muted-foreground" />
+      <h2 className="mb-2 text-xl font-semibold">Zakazivanje trenutno nije dostupno</h2>
+      <p className="mb-5 max-w-sm text-sm text-muted-foreground">{description}</p>
+      <Button type="button" variant="outline" onClick={onRetry} disabled={isRetrying}>
+        {isRetrying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
+        Pokušaj ponovo
+      </Button>
+    </div>
+  );
+}
+
 export default function WidgetBooking() {
   const { slug } = useParams<{ slug: string }>();
   const searchString = useSearch();
@@ -33,9 +63,16 @@ export default function WidgetBooking() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: salon, isLoading: isLoadingSalon, isError: isErrorSalon, error: salonError } = useGetWidgetSalon(
+  const {
+    data: salon,
+    isLoading: isLoadingSalon,
+    isFetching: isFetchingSalon,
+    isError: isErrorSalon,
+    error: salonError,
+    refetch: refetchSalon,
+  } = useGetWidgetSalon(
     slug ?? "", 
-    { query: { enabled: !!slug, queryKey: getGetWidgetSalonQueryKey(slug ?? "") } }
+    { query: { enabled: !!slug, queryKey: getGetWidgetSalonQueryKey(slug ?? ""), retry: false } }
   );
 
   // State
@@ -87,13 +124,21 @@ export default function WidgetBooking() {
 
   // Availability Query
   const dateStr = format(selectedDate, 'yyyy-MM-dd');
-  const { data: slots, isLoading: isLoadingSlots } = useGetWidgetAvailability(
+  const {
+    data: slots,
+    isLoading: isLoadingSlots,
+    isFetching: isFetchingSlots,
+    isError: isErrorSlots,
+    error: slotsError,
+    refetch: refetchSlots,
+  } = useGetWidgetAvailability(
     slug ?? "",
     { serviceId: serviceId!, date: dateStr, employeeId: employeeId || undefined },
     { 
       query: { 
         enabled: !!slug && !!serviceId && step === "DATETIME", 
-        queryKey: getGetWidgetAvailabilityQueryKey(slug ?? "", { serviceId: serviceId!, date: dateStr, employeeId: employeeId || undefined }) 
+        queryKey: getGetWidgetAvailabilityQueryKey(slug ?? "", { serviceId: serviceId!, date: dateStr, employeeId: employeeId || undefined }),
+        retry: false,
       } 
     }
   );
@@ -193,12 +238,29 @@ export default function WidgetBooking() {
     } as React.CSSProperties;
   }, [boja]);
 
-  if (isErrorSalon) {
+  const salonErrorDetails = getApiErrorDetails(salonError);
+  const salonErrorDescription = isNetworkError(salonError)
+    ? "Proverite internet vezu i pokušajte ponovo."
+    : "Došlo je do privremenog problema sa serverom. Pokušajte ponovo za nekoliko trenutaka.";
+
+  if (isErrorSalon && salonErrorDetails.status === 404) {
     return (
       <div className="flex h-screen flex-col items-center justify-center bg-background p-4 text-center" style={cssVars}>
         <AlertCircle className="mb-4 h-12 w-12 text-muted-foreground" />
         <h2 className="mb-2 text-xl font-semibold">Salon nije pronađen</h2>
         <p className="text-sm text-muted-foreground">Proverite da li je link ispravan.</p>
+      </div>
+    );
+  }
+
+  if (isErrorSalon) {
+    return (
+      <div style={cssVars}>
+        <TemporaryWidgetError
+          description={salonErrorDescription}
+          isRetrying={isFetchingSalon}
+          onRetry={() => void refetchSalon()}
+        />
       </div>
     );
   }
@@ -379,6 +441,15 @@ export default function WidgetBooking() {
                 <h3 className="mb-3 text-sm font-medium">Slobodni termini</h3>
                 {isLoadingSlots ? (
                   <div className="flex justify-center p-8"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+                ) : isErrorSlots ? (
+                  <TemporaryWidgetError
+                    compact
+                    description={isNetworkError(slotsError)
+                      ? "Proverite internet vezu i pokušajte ponovo."
+                      : "Došlo je do privremenog problema pri učitavanju termina. Pokušajte ponovo."}
+                    isRetrying={isFetchingSlots}
+                    onRetry={() => void refetchSlots()}
+                  />
                 ) : !slots || slots.length === 0 ? (
                   <div className="rounded-lg border border-dashed p-8 text-center bg-card">
                     <Calendar className="mx-auto mb-2 h-8 w-8 text-muted-foreground opacity-20" />
