@@ -353,6 +353,58 @@ test("directory salon links open the selected public profile on desktop and mobi
   }
 });
 
+test("public salon profile distinguishes temporary API errors from a missing salon on desktop and mobile", async ({ page }) => {
+  const fixture = await createPendingBookingFixture({ instantBooking: true });
+  const salonSlug = fixture.salonPath.split("/").at(-1);
+  if (!salonSlug) throw new Error("The browser fixture did not create a salon slug.");
+  const salonApiPath = `/api/salons/${salonSlug}`;
+  let profileShouldFail = true;
+
+  try {
+    await page.route(`**${salonApiPath}`, async (route) => {
+      if (profileShouldFail) {
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "Privremeni kvar API-ja." }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport);
+      profileShouldFail = true;
+      await page.goto(fixture.salonPath);
+
+      await expect(page.getByRole("heading", { name: "Profil salona trenutno nije dostupan" })).toBeVisible();
+      await expect(page.getByText("Salon nije pronađen.")).toHaveCount(0);
+
+      profileShouldFail = false;
+      await page.getByRole("button", { name: "Pokušaj ponovo" }).click();
+      await expect(page.locator("h1").filter({ hasText: fixture.salonName })).toBeVisible();
+    }
+
+    await page.unroute(`**${salonApiPath}`);
+    await page.route(`**${salonApiPath}`, async (route) => {
+      await route.fulfill({
+        status: 404,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Salon nije pronađen." }),
+      });
+    });
+
+    await page.goto(fixture.salonPath);
+    await expect(page.getByText("Salon nije pronađen.")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Profil salona trenutno nije dostupan" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Pokušaj ponovo" })).toHaveCount(0);
+  } finally {
+    await page.unroute(`**${salonApiPath}`);
+    await cleanUpPendingBookingFixture(fixture);
+  }
+});
+
 test("customer can book from the mobile sticky trigger and the drawer remains accessible", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const fixture = await createPendingBookingFixture({ instantBooking: true });

@@ -72,10 +72,17 @@ export default function SalonProfile() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: salon, isLoading, refetch: refetchSalon } = useGetSalon(slug || "", {
+  const {
+    data: salon,
+    error: salonError,
+    isLoading,
+    isFetching: isFetchingSalon,
+    refetch: refetchSalon,
+  } = useGetSalon(slug || "", {
     query: {
       queryKey: getGetSalonQueryKey(slug || ""),
       refetchOnMount: "always",
+      retry: false,
     },
   });
   const { data: userResp } = useGetCurrentUser();
@@ -622,7 +629,35 @@ export default function SalonProfile() {
     );
   }
 
-  if (!salonData) return <Layout><div className="p-12 text-center text-xl font-medium">Salon nije pronađen.</div></Layout>;
+  if (!salonData) {
+    const { status: salonErrorStatus } = getApiErrorDetails(salonError);
+    if (salonError && salonErrorStatus !== 404) {
+      return (
+        <Layout>
+          <div className="container mx-auto flex min-h-[50vh] items-center justify-center px-4 py-12">
+            <Card className="w-full max-w-lg text-center">
+              <CardHeader>
+                <CardTitle className="text-2xl">Profil salona trenutno nije dostupan</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-muted-foreground">
+                  Došlo je do privremene greške pri učitavanju profila. Pokušajte ponovo za trenutak.
+                </p>
+              </CardContent>
+              <CardFooter className="justify-center">
+                <Button type="button" onClick={() => void refetchSalon()} disabled={isFetchingSalon}>
+                  {isFetchingSalon && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Pokušaj ponovo
+                </Button>
+              </CardFooter>
+            </Card>
+          </div>
+        </Layout>
+      );
+    }
+
+    return <Layout><div className="p-12 text-center text-xl font-medium">Salon nije pronađen.</div></Layout>;
+  }
 
   const isInterestedInSalon = jobseekerSalonInterests.includes(salonData.id);
   const toggleJobseekerSalonInterest = () => {
