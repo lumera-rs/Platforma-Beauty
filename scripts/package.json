@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "hello": "tsx ./src/hello.ts",
+    "ensure:development-schema": "tsx ./src/ensure-development-schema.ts",
     "sms-reminders": "tsx ./src/send-sms-reminders.ts",
     "rescheduled-confirmation-retries": "tsx ./src/retry-rescheduled-confirmations.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",

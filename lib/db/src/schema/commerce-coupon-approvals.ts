@@ -58,6 +58,8 @@ export const couponRedemptionsTable = pgTable("coupon_redemptions", {
   cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  index("coupon_redemptions_salon_idx").on(table.salonId),
+  index("coupon_redemptions_user_idx").on(table.userId),
   uniqueIndex("coupon_redemptions_order_unique").on(table.orderId).where(sql`${table.orderId} IS NOT NULL`),
   uniqueIndex("coupon_redemptions_retail_order_unique").on(table.retailOrderId).where(sql`${table.retailOrderId} IS NOT NULL`),
   index("coupon_redemptions_coupon_customer_idx").on(table.couponId, table.userId, table.salonId),
@@ -92,6 +94,9 @@ export const orderApprovalRequestsTable = pgTable("order_approval_requests", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  index("order_approval_requests_cart_idx").on(table.cartId),
+  index("order_approval_requests_reviewer_user_idx").on(table.reviewerUserId),
+  index("order_approval_requests_submitted_by_user_idx").on(table.submittedByUserId),
   uniqueIndex("order_approval_requests_salon_key_unique").on(table.salonId, table.idempotencyKey),
   index("order_approval_requests_salon_status_created_idx").on(table.salonId, table.status, table.createdAt),
   index("order_approval_requests_employee_created_idx").on(table.employeeId, table.createdAt),
@@ -108,6 +113,8 @@ export const orderApprovalRequestLinesTable = pgTable("order_approval_request_li
   quantity: integer("quantity").notNull(),
   catalogSnapshot: jsonb("catalog_snapshot").$type<Record<string, unknown>>().notNull(),
 }, (table) => [
+  index("order_approval_request_lines_bundle_idx").on(table.bundleId),
+  index("order_approval_request_lines_product_idx").on(table.productId),
   index("order_approval_request_lines_request_idx").on(table.requestId),
   check("order_approval_request_lines_target_check", sql`num_nonnulls(${table.productId}, ${table.bundleId}) = 1`),
   check("order_approval_request_lines_quantity_check", sql`${table.quantity} > 0`),

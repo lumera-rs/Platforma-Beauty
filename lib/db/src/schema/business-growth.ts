@@ -377,6 +377,7 @@ export const packageRedemptionsTable = pgTable("package_redemptions", {
   /** Leading FK coverage: salonCustomerId (existing composite leads with salonId). */
   index("package_redemptions_customer_idx").on(table.salonCustomerId),
   index("package_redemptions_purchase_service_link_idx").on(table.purchaseServiceLinkId),
+  index("package_redemptions_service_idx").on(table.serviceId),
 ]);
 
 // ---------------------------------------------------------------------------

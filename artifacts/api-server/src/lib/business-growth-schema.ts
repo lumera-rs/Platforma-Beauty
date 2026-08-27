@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 44;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 45;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -535,18 +535,25 @@ function tableStatements(s: string): string[] {
        END IF;
        ALTER TABLE ${s}.product_categories ALTER COLUMN supplier_id SET NOT NULL;
      END $$`,
-    // Replace the legacy global uniqueness constraints with supplier-scoped
-    // sibling uniqueness. NULLS NOT DISTINCT covers root categories too.
+     // Replace the legacy global uniqueness constraints with supplier-scoped
+     // sibling uniqueness. Root siblings use separate partial indexes because
+     // Drizzle's index builder cannot model NULLS NOT DISTINCT.
     `ALTER TABLE ${s}.product_categories DROP CONSTRAINT IF EXISTS product_categories_name_key`,
     `ALTER TABLE ${s}.product_categories DROP CONSTRAINT IF EXISTS product_categories_slug_key`,
     `ALTER TABLE ${s}.product_categories DROP CONSTRAINT IF EXISTS product_categories_name_unique`,
     `ALTER TABLE ${s}.product_categories DROP CONSTRAINT IF EXISTS product_categories_slug_unique`,
     `DROP INDEX IF EXISTS ${s}.product_categories_name_unique`,
     `DROP INDEX IF EXISTS ${s}.product_categories_slug_unique`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS product_categories_supplier_root_name_unique
+        ON ${s}.product_categories (supplier_id, name) WHERE parent_id IS NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS product_categories_supplier_root_slug_unique
+        ON ${s}.product_categories (supplier_id, slug) WHERE parent_id IS NULL`,
+    `ALTER TABLE ${s}.product_categories DROP CONSTRAINT IF EXISTS product_categories_supplier_parent_name_unique`,
+    `ALTER TABLE ${s}.product_categories DROP CONSTRAINT IF EXISTS product_categories_supplier_parent_slug_unique`,
     `CREATE UNIQUE INDEX IF NOT EXISTS product_categories_supplier_parent_name_unique
-       ON ${s}.product_categories (supplier_id, parent_id, name) NULLS NOT DISTINCT`,
+       ON ${s}.product_categories (supplier_id, parent_id, name)`,
     `CREATE UNIQUE INDEX IF NOT EXISTS product_categories_supplier_parent_slug_unique
-       ON ${s}.product_categories (supplier_id, parent_id, slug) NULLS NOT DISTINCT`,
+       ON ${s}.product_categories (supplier_id, parent_id, slug)`,
     `CREATE INDEX IF NOT EXISTS product_categories_supplier_parent_sort_idx
        ON ${s}.product_categories (supplier_id, parent_id, sort_order)`,
     `CREATE INDEX IF NOT EXISTS product_categories_supplier_active_sort_idx
@@ -2169,6 +2176,49 @@ function tableStatements(s: string): string[] {
       CHECK (num_nonnulls(product_id, bundle_id) = 1), CHECK (quantity > 0)
     )`,
     `CREATE INDEX IF NOT EXISTS order_approval_request_lines_request_idx ON ${s}.order_approval_request_lines (request_id)`,
+    // v45 — every foreign key needs a matching leading index. These statements
+    // also reconcile legacy databases that predate the current schema audit.
+    `ALTER TABLE ${s}.referral_milestone_benefits ADD COLUMN IF NOT EXISTS neutralized_at timestamptz`,
+    `ALTER TABLE ${s}.referral_milestone_benefits ADD COLUMN IF NOT EXISTS neutralized_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL`,
+    `ALTER TABLE ${s}.referral_milestone_benefits ADD COLUMN IF NOT EXISTS neutralization_reason text`,
+    `CREATE INDEX IF NOT EXISTS business_verification_audits_actor_user_idx ON ${s}.business_verification_audits (actor_user_id)`,
+    `CREATE INDEX IF NOT EXISTS coupon_redemptions_salon_idx ON ${s}.coupon_redemptions (salon_id)`,
+    `CREATE INDEX IF NOT EXISTS coupon_redemptions_user_idx ON ${s}.coupon_redemptions (user_id)`,
+    `CREATE INDEX IF NOT EXISTS legal_entity_businesses_owner_user_idx ON ${s}.legal_entity_businesses (owner_user_id)`,
+    `CREATE INDEX IF NOT EXISTS loyalty_point_ledger_order_idx ON ${s}.loyalty_point_ledger (order_id)`,
+    `CREATE INDEX IF NOT EXISTS loyalty_point_ledger_retail_order_idx ON ${s}.loyalty_point_ledger (retail_order_id)`,
+    `CREATE INDEX IF NOT EXISTS order_approval_request_lines_bundle_idx ON ${s}.order_approval_request_lines (bundle_id)`,
+    `CREATE INDEX IF NOT EXISTS order_approval_request_lines_product_idx ON ${s}.order_approval_request_lines (product_id)`,
+    `CREATE INDEX IF NOT EXISTS order_approval_requests_cart_idx ON ${s}.order_approval_requests (cart_id)`,
+    `CREATE INDEX IF NOT EXISTS order_approval_requests_reviewer_user_idx ON ${s}.order_approval_requests (reviewer_user_id)`,
+    `CREATE INDEX IF NOT EXISTS order_approval_requests_submitted_by_user_idx ON ${s}.order_approval_requests (submitted_by_user_id)`,
+    `CREATE INDEX IF NOT EXISTS package_redemptions_service_idx ON ${s}.package_redemptions (service_id)`,
+    `CREATE INDEX IF NOT EXISTS product_waitlist_salon_idx ON ${s}.product_waitlist (salon_id)`,
+    `CREATE INDEX IF NOT EXISTS product_waitlist_user_idx ON ${s}.product_waitlist (user_id)`,
+    `CREATE INDEX IF NOT EXISTS product_waitlist_notification_outbox_product_idx ON ${s}.product_waitlist_notification_outbox (product_id)`,
+    `CREATE INDEX IF NOT EXISTS product_waitlist_notification_outbox_salon_idx ON ${s}.product_waitlist_notification_outbox (salon_id)`,
+    `CREATE INDEX IF NOT EXISTS product_waitlist_notification_outbox_user_idx ON ${s}.product_waitlist_notification_outbox (user_id)`,
+    `CREATE INDEX IF NOT EXISTS referral_attributions_referral_code_idx ON ${s}.referral_attributions (referral_code_id)`,
+    `CREATE INDEX IF NOT EXISTS referral_credit_ledger_actor_user_idx ON ${s}.referral_credit_ledger (actor_user_id)`,
+    `CREATE INDEX IF NOT EXISTS referral_credit_ledger_center_effective_idx ON ${s}.referral_credit_ledger (education_center_id, effective_at)`,
+    `CREATE INDEX IF NOT EXISTS referral_credit_ledger_referral_attribution_idx ON ${s}.referral_credit_ledger (referral_attribution_id)`,
+    `CREATE INDEX IF NOT EXISTS referral_credit_ledger_salon_effective_idx ON ${s}.referral_credit_ledger (salon_id, effective_at)`,
+    `CREATE INDEX IF NOT EXISTS referral_credit_redemptions_ledger_entry_idx ON ${s}.referral_credit_redemptions (ledger_entry_id)`,
+    `CREATE INDEX IF NOT EXISTS referral_milestone_benefits_neutralized_by_user_idx ON ${s}.referral_milestone_benefits (neutralized_by_user_id)`,
+    `CREATE INDEX IF NOT EXISTS referral_milestone_benefits_referrer_user_idx ON ${s}.referral_milestone_benefits (referrer_user_id)`,
+    `CREATE INDEX IF NOT EXISTS referral_qualification_evidence_appointment_idx ON ${s}.referral_qualification_evidence (appointment_id)`,
+    `CREATE INDEX IF NOT EXISTS referral_qualification_evidence_enrollment_idx ON ${s}.referral_qualification_evidence (enrollment_id)`,
+    `CREATE INDEX IF NOT EXISTS referral_qualifications_referred_education_center_idx ON ${s}.referral_qualifications (referred_education_center_id)`,
+    `CREATE INDEX IF NOT EXISTS referral_qualifications_referred_salon_idx ON ${s}.referral_qualifications (referred_salon_id)`,
+    `CREATE INDEX IF NOT EXISTS referral_reviews_attribution_idx ON ${s}.referral_reviews (attribution_id)`,
+    `CREATE INDEX IF NOT EXISTS referral_reviews_qualification_idx ON ${s}.referral_reviews (qualification_id)`,
+    `CREATE INDEX IF NOT EXISTS referral_reviews_reviewed_by_user_idx ON ${s}.referral_reviews (reviewed_by_user_id)`,
+    `CREATE INDEX IF NOT EXISTS retail_cart_items_bundle_idx ON ${s}.retail_cart_items (bundle_id)`,
+    `CREATE INDEX IF NOT EXISTS saved_retail_cart_items_bundle_idx ON ${s}.saved_retail_cart_items (bundle_id)`,
+    `CREATE INDEX IF NOT EXISTS saved_retail_cart_items_product_idx ON ${s}.saved_retail_cart_items (product_id)`,
+    `CREATE INDEX IF NOT EXISTS saved_shop_cart_items_bundle_idx ON ${s}.saved_shop_cart_items (bundle_id)`,
+    `CREATE INDEX IF NOT EXISTS saved_shop_cart_items_product_idx ON ${s}.saved_shop_cart_items (product_id)`,
+    `CREATE INDEX IF NOT EXISTS shopping_cart_items_bundle_idx ON ${s}.shopping_cart_items (bundle_id)`,
     `CREATE OR REPLACE FUNCTION ${s}.prevent_coupon_order_snapshot_update()
       RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
         IF NEW.coupon_discount_rsd IS DISTINCT FROM OLD.coupon_discount_rsd THEN

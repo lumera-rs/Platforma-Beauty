@@ -97,9 +97,16 @@ export const productCategoriesTable = pgTable("product_categories", {
   index("product_categories_supplier_parent_sort_idx").on(table.supplierId, table.parentId, table.sortOrder),
   // Active category listing ordered by sortOrder.
   index("product_categories_supplier_active_sort_idx").on(table.supplierId, table.active, table.sortOrder),
-  // NULLS NOT DISTINCT also makes root-level siblings unique.
-  unique("product_categories_supplier_parent_name_unique").on(table.supplierId, table.parentId, table.name).nullsNotDistinct(),
-  unique("product_categories_supplier_parent_slug_unique").on(table.supplierId, table.parentId, table.slug).nullsNotDistinct(),
+  uniqueIndex("product_categories_supplier_parent_name_unique").on(table.supplierId, table.parentId, table.name),
+  uniqueIndex("product_categories_supplier_parent_slug_unique").on(table.supplierId, table.parentId, table.slug),
+  // PostgreSQL treats NULL parent IDs as distinct in a normal unique
+  // constraint, so root siblings need their own ordinary-column indexes.
+  uniqueIndex("product_categories_supplier_root_name_unique")
+    .on(table.supplierId, table.name)
+    .where(sql`${table.parentId} IS NULL`),
+  uniqueIndex("product_categories_supplier_root_slug_unique")
+    .on(table.supplierId, table.slug)
+    .where(sql`${table.parentId} IS NULL`),
   foreignKey({
     columns: [table.parentId],
     foreignColumns: [table.id],
@@ -400,6 +407,7 @@ export const shoppingCartItemsTable = pgTable("shopping_cart_items", {
   // Leading FK coverage for both sides of the cart-items join.
   index("shopping_cart_items_cart_idx").on(table.cartId),
   index("shopping_cart_items_product_idx").on(table.productId),
+  index("shopping_cart_items_bundle_idx").on(table.bundleId),
   uniqueIndex("shopping_cart_items_cart_bundle_unique").on(table.cartId, table.bundleId)
     .where(sql`${table.bundleId} IS NOT NULL`),
   check("shopping_cart_items_target_check", sql`num_nonnulls(${table.productId}, ${table.bundleId}) = 1`),
@@ -415,6 +423,8 @@ export const savedShopCartItemsTable = pgTable("saved_shop_cart_items", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("saved_shop_cart_items_cart_idx").on(table.cartId),
+  index("saved_shop_cart_items_product_idx").on(table.productId),
+  index("saved_shop_cart_items_bundle_idx").on(table.bundleId),
   check("saved_shop_cart_items_target_check", sql`num_nonnulls(${table.productId}, ${table.bundleId}) = 1`),
   check("saved_shop_cart_items_quantity_check", sql`${table.quantity} > 0`),
 ]);
@@ -522,6 +532,7 @@ export const retailCartItemsTable = pgTable("retail_cart_items", {
     .nullsNotDistinct(),
   index("retail_cart_items_cart_idx").on(table.cartId),
   index("retail_cart_items_product_idx").on(table.productId),
+  index("retail_cart_items_bundle_idx").on(table.bundleId),
   uniqueIndex("retail_cart_items_cart_bundle_unique").on(table.cartId, table.bundleId)
     .where(sql`${table.bundleId} IS NOT NULL`),
   check("retail_cart_items_target_check", sql`num_nonnulls(${table.productId}, ${table.bundleId}) = 1`),
@@ -537,6 +548,8 @@ export const savedRetailCartItemsTable = pgTable("saved_retail_cart_items", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("saved_retail_cart_items_cart_idx").on(table.cartId),
+  index("saved_retail_cart_items_product_idx").on(table.productId),
+  index("saved_retail_cart_items_bundle_idx").on(table.bundleId),
   check("saved_retail_cart_items_target_check", sql`num_nonnulls(${table.productId}, ${table.bundleId}) = 1`),
   check("saved_retail_cart_items_quantity_check", sql`${table.quantity} > 0`),
 ]);
@@ -638,6 +651,8 @@ export const loyaltyPointLedgerTable = pgTable("loyalty_point_ledger", {
 }, (table) => [
   index("loyalty_point_ledger_salon_created_idx").on(table.salonId, table.createdAt),
   index("loyalty_point_ledger_user_created_idx").on(table.userId, table.createdAt),
+  index("loyalty_point_ledger_order_idx").on(table.orderId),
+  index("loyalty_point_ledger_retail_order_idx").on(table.retailOrderId),
   check("loyalty_point_ledger_owner_check", sql`
     (${table.audience} = 'B2B' AND ${table.salonId} IS NOT NULL AND ${table.userId} IS NULL)
     OR (${table.audience} = 'B2C' AND ${table.userId} IS NOT NULL AND ${table.salonId} IS NULL)
@@ -657,6 +672,8 @@ export const productWaitlistTable = pgTable("product_waitlist", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("product_waitlist_product_status_idx").on(table.productId, table.status),
+  index("product_waitlist_salon_idx").on(table.salonId),
+  index("product_waitlist_user_idx").on(table.userId),
   uniqueIndex("product_waitlist_active_salon_unique").on(table.productId, table.salonId)
     .where(sql`${table.status} = 'ACTIVE' AND ${table.salonId} IS NOT NULL`),
   uniqueIndex("product_waitlist_active_user_unique").on(table.productId, table.userId)
@@ -692,6 +709,9 @@ export const productWaitlistNotificationOutboxTable = pgTable("product_waitlist_
   processedAt: timestamp("processed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  index("product_waitlist_notification_outbox_product_idx").on(table.productId),
+  index("product_waitlist_notification_outbox_salon_idx").on(table.salonId),
+  index("product_waitlist_notification_outbox_user_idx").on(table.userId),
   index("product_waitlist_notification_outbox_pending_idx").on(table.createdAt)
     .where(sql`${table.processedAt} IS NULL`),
 ]);

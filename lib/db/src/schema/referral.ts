@@ -38,6 +38,7 @@ export const legalEntityBusinessesTable = pgTable("legal_entity_businesses", {
 }, (table) => [
   uniqueIndex("legal_entity_businesses_salon_unique").on(table.salonId).where(sql`${table.salonId} is not null`),
   uniqueIndex("legal_entity_businesses_center_unique").on(table.educationCenterId).where(sql`${table.educationCenterId} is not null`),
+  index("legal_entity_businesses_owner_user_idx").on(table.ownerUserId),
   index("legal_entity_businesses_entity_owner_idx").on(table.legalEntityId, table.ownerUserId),
   check("legal_entity_businesses_one_business_check", sql`num_nonnulls(${table.salonId}, ${table.educationCenterId}) = 1`),
 ]);
@@ -51,7 +52,10 @@ export const businessVerificationAuditsTable = pgTable("business_verification_au
   actorUserId: uuid("actor_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   evidence: jsonb("evidence").$type<Record<string, unknown>>().notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [index("business_verification_audits_business_created_idx").on(table.legalEntityBusinessId, table.createdAt)]);
+}, (table) => [
+  index("business_verification_audits_actor_user_idx").on(table.actorUserId),
+  index("business_verification_audits_business_created_idx").on(table.legalEntityBusinessId, table.createdAt),
+]);
 
 export const referralCodesTable = pgTable("referral_codes", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -99,6 +103,7 @@ export const referralAttributionsTable = pgTable("referral_attributions", {
 }, (table) => [
   uniqueIndex("referral_attributions_referred_user_unique").on(table.referredUserId),
   uniqueIndex("referral_attributions_idempotency_unique").on(table.idempotencyKey),
+  index("referral_attributions_referral_code_idx").on(table.referralCodeId),
   index("referral_attributions_referrer_channel_created_idx").on(table.referrerUserId, table.channel, table.createdAt),
   index("referral_attributions_referred_salon_idx").on(table.referredSalonId),
   index("referral_attributions_referred_center_idx").on(table.referredEducationCenterId),
@@ -123,6 +128,8 @@ export const referralQualificationsTable = pgTable("referral_qualifications", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  index("referral_qualifications_referred_education_center_idx").on(table.referredEducationCenterId),
+  index("referral_qualifications_referred_salon_idx").on(table.referredSalonId),
   index("referral_qualifications_status_hold_idx").on(table.status, table.holdUntil),
   check("referral_qualifications_target_business_check", sql`num_nonnulls(${table.referredSalonId}, ${table.referredEducationCenterId}) <= 1`),
 ]);
@@ -141,6 +148,8 @@ export const referralQualificationEvidenceTable = pgTable("referral_qualificatio
   uniqueIndex("referral_qualification_evidence_idempotency_unique").on(table.idempotencyKey),
   uniqueIndex("referral_qualification_evidence_appointment_unique").on(table.qualificationId, table.appointmentId).where(sql`${table.appointmentId} is not null`),
   uniqueIndex("referral_qualification_evidence_enrollment_unique").on(table.qualificationId, table.enrollmentId).where(sql`${table.enrollmentId} is not null`),
+  index("referral_qualification_evidence_appointment_idx").on(table.appointmentId),
+  index("referral_qualification_evidence_enrollment_idx").on(table.enrollmentId),
   check("referral_qualification_evidence_one_source_check", sql`num_nonnulls(${table.appointmentId}, ${table.enrollmentId}) = 1`),
 ]);
 
@@ -155,7 +164,12 @@ export const referralReviewsTable = pgTable("referral_reviews", {
   reviewedByUserId: uuid("reviewed_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [index("referral_reviews_status_created_idx").on(table.status, table.createdAt)]);
+}, (table) => [
+  index("referral_reviews_attribution_idx").on(table.attributionId),
+  index("referral_reviews_qualification_idx").on(table.qualificationId),
+  index("referral_reviews_reviewed_by_user_idx").on(table.reviewedByUserId),
+  index("referral_reviews_status_created_idx").on(table.status, table.createdAt),
+]);
 
 export const referralCreditLedgerTable = pgTable("referral_credit_ledger", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -176,6 +190,8 @@ export const referralCreditLedgerTable = pgTable("referral_credit_ledger", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("referral_credit_ledger_idempotency_unique").on(table.idempotencyKey),
+  index("referral_credit_ledger_actor_user_idx").on(table.actorUserId),
+  index("referral_credit_ledger_referral_attribution_idx").on(table.referralAttributionId),
   index("referral_credit_ledger_owner_wallet_effective_idx").on(table.ownerUserId, table.walletKind, table.effectiveAt),
   index("referral_credit_ledger_salon_effective_idx").on(table.salonId, table.effectiveAt),
   index("referral_credit_ledger_center_effective_idx").on(table.educationCenterId, table.effectiveAt),
@@ -197,6 +213,7 @@ export const referralCreditRedemptionsTable = pgTable("referral_credit_redemptio
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("referral_credit_redemptions_idempotency_unique").on(table.idempotencyKey),
+  index("referral_credit_redemptions_ledger_entry_idx").on(table.ledgerEntryId),
   // One checkout can consume several earned entries, but never consume the
   // same source entry twice. The idempotency key additionally makes a replay
   // of the entire checkout allocation exact.
@@ -232,6 +249,8 @@ export const referralMilestoneBenefitsTable = pgTable("referral_milestone_benefi
   uniqueIndex("referral_milestone_benefits_center_channel_count_unique").on(table.benefitEducationCenterId, table.channel, table.qualifyingCount)
     .where(sql`${table.benefitEducationCenterId} is not null`),
   uniqueIndex("referral_milestone_benefits_idempotency_unique").on(table.idempotencyKey),
+  index("referral_milestone_benefits_neutralized_by_user_idx").on(table.neutralizedByUserId),
+  index("referral_milestone_benefits_referrer_user_idx").on(table.referrerUserId),
   index("referral_milestone_benefits_pending_idx").on(table.channel, table.billingCycleStart).where(sql`${table.appliedAt} is null`),
   check("referral_milestone_benefits_discount_percent_check", sql`${table.discountPercent} is null or (${table.discountPercent} > 0 and ${table.discountPercent} <= 100)`),
   check("referral_milestone_benefits_business_check", sql`
