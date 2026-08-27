@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AdminProductSimilarProductsMode } from './adminProductSimilarProductsMode';
+import type { ProductCharacteristic } from './productCharacteristic';
 import type { ProductVariant } from './productVariant';
 import type { QuantityPricingTier } from './quantityPricingTier';
 
@@ -27,7 +28,9 @@ export interface AdminProduct {
   images: string[];
   price: number;
   /** @nullable */
-  discountPrice?: number | null;
+  discountPrice: number | null;
+  /** @nullable */
+  discountPriceEndsAt: Date | null;
   retailEnabled: boolean;
   priceOnRequest?: boolean;
   bulkMatrixEnabled?: boolean;
@@ -43,7 +46,9 @@ export interface AdminProduct {
      * @minimum 1
      * @nullable
      */
-  publicDiscountPrice?: number | null;
+  publicDiscountPrice: number | null;
+  /** @nullable */
+  publicDiscountPriceEndsAt: Date | null;
   /** @nullable */
   discountPercent?: number | null;
   /** @minimum 0 */
@@ -86,6 +91,13 @@ export interface AdminProduct {
   ingredients: string | null;
   /** @nullable */
   usageInstructions: string | null;
+  characteristics: ProductCharacteristic[];
+  /**
+     * @maxItems 30
+     * @items.minLength 1
+     * @items.maxLength 100
+     */
+  searchSynonyms: string[];
   active: boolean;
   createdAt: Date;
 }

@@ -5,6 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { ProductCharacteristic } from './productCharacteristic';
 import type { ProductVariantsItem } from './productVariantsItem';
 
 export interface Product {
@@ -13,7 +14,7 @@ export interface Product {
   name: string;
   category: string;
   /** @nullable */
-  categoryId?: string | null;
+  categoryId: string | null;
   /** @nullable */
   subcategory?: string | null;
   /** @nullable */
@@ -22,7 +23,9 @@ export interface Product {
   imageUrl: string;
   price: number;
   /** @nullable */
-  discountPrice?: number | null;
+  discountPrice: number | null;
+  /** @nullable */
+  saleEndsAt: Date | null;
   /** @nullable */
   discountPercent?: number | null;
   /** @minimum 0 */
@@ -49,4 +52,5 @@ export interface Product {
      * @nullable
      */
   deliveryBusinessDaysOverride: number | null;
+  characteristics: ProductCharacteristic[];
 }

@@ -42,6 +42,8 @@ import { useDebouncedSearch } from "@/hooks/use-debounce";
 import { addOptimisticCartItem, updateCartAndSummaryOptimistically } from "@/lib/optimistic-cart";
 import { rollbackQueries } from "@/lib/optimistic-query";
 import { SHOP_CART_MUTATION_KEY, shopCartMutationQueue, useMutationQueueBusy } from "@/lib/optimistic-mutation-queue";
+import { CommerceSearch } from "@/components/commerce-search";
+import { CommerceBestsellers } from "@/components/commerce-bestsellers";
 
 type FilterState = {
   categoryId: string;
@@ -401,8 +403,12 @@ export default function OwnerShop() {
 
             <div className="flex flex-col sm:flex-row gap-3 bg-card border rounded-xl p-4">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input placeholder="Pretraži po imenu..." value={filters.search} onChange={(e) => setFilters(f => ({ ...f, search: e.target.value }))} className="pl-9" />
+                <CommerceSearch
+                  audience="B2B"
+                  value={filters.search}
+                  onChange={(val) => setFilters(f => ({ ...f, search: val }))}
+                  supplierSlug={supplierSlug}
+                />
               </div>
             </div>
 
@@ -429,6 +435,11 @@ export default function OwnerShop() {
                     </div>
                   </div>
                 )}
+
+                {page === 1 && !debouncedSearch && (
+                  <CommerceBestsellers audience="B2B" categoryId={filters.categoryId} supplierSlug={supplierSlug} />
+                )}
+
                 <div className="flex items-center justify-between mb-3 text-sm text-muted-foreground">
                   <span className="font-semibold text-foreground">Proizvodi</span>
                   <span>{isLoadingProd ? "Učitavanje..." : `${total} proizvoda`}</span>

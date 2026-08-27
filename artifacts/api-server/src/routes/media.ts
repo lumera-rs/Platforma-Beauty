@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
+import { isSupportedProductDocument } from "../lib/commerce-g-domain";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { and, asc, eq, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import sharp from "sharp";
@@ -201,6 +202,7 @@ type MediaScope =
   | "salon-gallery"
   | "employee-avatar"
   | "product"
+  | "product-document"
   | "supplier"
   | "education-cover"
   | "education-gallery"
@@ -221,6 +223,7 @@ const REVOCABLE_PUBLIC_MEDIA_SCOPES = new Set<string>([
   "salon-gallery",
   "employee-avatar",
   "product",
+  "product-document",
   "supplier",
   "service-category",
   "product-category",
@@ -371,9 +374,9 @@ async function authorizeUploadScope(
     return { resourceId: scope === "employee-avatar" ? null : salon.id, visibility: "public" };
   }
 
-  if (scope === "product" || scope === "supplier" || scope === "service-category" || scope === "product-category") {
+  if (scope === "product" || scope === "product-document" || scope === "supplier" || scope === "service-category" || scope === "product-category") {
     if (!isAdmin(user)) return null;
-    if (scope === "product" && requestedResourceId) {
+    if ((scope === "product" || scope === "product-document") && requestedResourceId) {
       const [product] = await db.select({ id: productsTable.id }).from(productsTable).where(eq(productsTable.id, requestedResourceId)).limit(1);
       if (!product) return null;
     }
@@ -533,6 +536,8 @@ export async function releaseMediaReferenceClaims(input: {
 }
 
 function extensionFor(contentType: string): string {
+  if (contentType === "application/pdf") return "pdf";
+  if (contentType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") return "docx";
   if (contentType === "image/avif") return "avif";
   if (contentType === "image/webp") return "webp";
   if (contentType === "image/png") return "png";
@@ -758,6 +763,13 @@ router.post("/media/uploads", async (req, res): Promise<void> => {
     return;
   }
   const body = parsed.data;
+  const isProductDocument = body.scope === "product-document";
+  const isDocumentType = body.contentType === "application/pdf"
+    || body.contentType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if (isProductDocument !== isDocumentType) {
+    res.status(400).json({ error: "PDF/DOCX uploads are allowed only for product-document scope." });
+    return;
+  }
   const authorization = await authorizeUploadScope(user, body.scope as MediaScope, body.resourceId);
   if (!authorization) {
     res.status(403).json({ error: "Nemate pravo da postavite fotografiju za izabrani sadržaj." });
@@ -808,14 +820,29 @@ router.post("/media/uploads/:uploadId/finalize", async (req, res): Promise<void>
   let processed: Awaited<ReturnType<typeof processImageBytes>> | null = null;
   try {
     const bytes = await readStagedUpload(ticket);
-    const promoted = await processImageBytes({
-      assetId: ticket.id,
-      bytes,
-      declaredContentType: ticket.contentType,
-      beforeVariantUpload: isMediaRouteRegressionCleanupKey(ticket.testCleanupKey)
-        ? (objectPath) => recordMediaRouteRegressionPromotionPath(ticket.id, objectPath)
-        : undefined,
-    });
+    const beforeVariantUpload = isMediaRouteRegressionCleanupKey(ticket.testCleanupKey)
+      ? (objectPath: string) => recordMediaRouteRegressionPromotionPath(ticket.id, objectPath)
+      : undefined;
+    const isDocument = ticket.scope === "product-document";
+    if (isDocument) {
+      if (!isSupportedProductDocument(ticket.originalFileName, ticket.contentType, bytes)) {
+        throw new Error("Sadržaj dokumenta ne odgovara PDF/DOCX tipu.");
+      }
+    }
+    const promoted = isDocument
+      ? {
+          // MediaAsset's public contract has positive dimensions. Documents
+          // have no raster dimensions, so use the neutral 1×1 sentinel.
+          width: 1, height: 1, contentType: ticket.contentType,
+          contentHash: createHash("sha256").update(bytes).digest("hex"),
+          variants: [await addVariant(
+            ticket.id, createHash("sha256").update(bytes).digest("hex"), "original", "original",
+            ticket.contentType, 1, 1, bytes, beforeVariantUpload,
+          )],
+        }
+      : await processImageBytes({
+          assetId: ticket.id, bytes, declaredContentType: ticket.contentType, beforeVariantUpload,
+        });
     processed = promoted;
     const result = await db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`media-upload:${ticket.id}`}))`);
@@ -970,6 +997,10 @@ router.get("/media/:assetId", async (req, res): Promise<void> => {
   const versionMatches = typeof req.query.v === "string" && req.query.v === asset.contentHash.slice(0, 16);
   const isRevocablePublicMedia = REVOCABLE_PUBLIC_MEDIA_SCOPES.has(asset.scope);
   res.setHeader("Content-Type", variant.contentType);
+  if (asset.scope === "product-document") {
+    const safeName = asset.originalFileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+    res.setHeader("Content-Disposition", `attachment; filename="${safeName}"`);
+  }
   res.setHeader("Content-Length", String(variant.byteSize));
   res.setHeader("ETag", variant.etag);
   res.setHeader("Vary", isPublic ? "Accept" : "Accept, Cookie");

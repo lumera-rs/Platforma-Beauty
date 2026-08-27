@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 55;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 57;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -178,6 +178,7 @@ END $$`;
  */
 function tableStatements(s: string): string[] {
   return [
+    `CREATE EXTENSION IF NOT EXISTS pg_trgm`,
     // ── Existing-table additive changes (Phase 2 evolution) ────────────────
     `ALTER TABLE ${s}.salon_customers ADD COLUMN IF NOT EXISTS birth_date date`,
     // Retention's stratified preview seeks from a random UUID within each salon
@@ -497,6 +498,38 @@ function tableStatements(s: string): string[] {
     `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS public_description text`,
     `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS public_price integer`,
     `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS public_discount_price integer`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS discount_price_ends_at timestamptz`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS public_discount_price_ends_at timestamptz`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS characteristics jsonb NOT NULL DEFAULT '[]'::jsonb`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS search_synonyms jsonb NOT NULL DEFAULT '[]'::jsonb`,
+    `CREATE TABLE IF NOT EXISTS ${s}.product_documents (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE CASCADE,
+      media_asset_id uuid NOT NULL REFERENCES ${s}.media_assets(id) ON DELETE RESTRICT,
+      display_name text NOT NULL, sort_order integer NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      UNIQUE (product_id, media_asset_id)
+    )`,
+    `CREATE INDEX IF NOT EXISTS product_documents_product_sort_idx ON ${s}.product_documents (product_id, sort_order, id)`,
+    `CREATE INDEX IF NOT EXISTS product_documents_asset_idx ON ${s}.product_documents (media_asset_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.commerce_experience_settings (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      header_enabled boolean NOT NULL DEFAULT false,
+      header_messages jsonb NOT NULL DEFAULT '[]'::jsonb,
+      header_interval_seconds integer NOT NULL DEFAULT 5,
+      smart_search_mode text NOT NULL DEFAULT 'AUTOMATIC',
+      smart_search_product_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
+      bestseller_period_days integer NOT NULL DEFAULT 30,
+      version integer NOT NULL DEFAULT 1,
+      updated_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT commerce_experience_settings_values_check CHECK (
+        header_interval_seconds BETWEEN 2 AND 60 AND smart_search_mode IN ('AUTOMATIC','MANUAL')
+        AND jsonb_array_length(smart_search_product_ids) <= 5
+        AND bestseller_period_days IN (30,60) AND version >= 1
+      )
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS commerce_experience_settings_singleton_unique ON ${s}.commerce_experience_settings ((true))`,
     `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS professional_enabled boolean NOT NULL DEFAULT true`,
     // v41 — validated product merchandising configuration. JSONB keeps ordered
     // relationship ids and tier rows intact; API writes enforce their invariants.

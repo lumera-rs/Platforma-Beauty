@@ -12,3 +12,4 @@ export * from "./phase3";
 export * from "./beauty-jobs";
 export * from "./referral";
 export * from "./commerce-ef";
+export * from "./commerce-g";

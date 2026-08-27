@@ -6726,8 +6726,110 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ReviewRewardSettings" }
+  /commerce/header-bar:
+    get:
+      operationId: getCommerceHeaderBar
+      tags: [shop]
+      summary: Get rotating global commerce header messages
+      responses:
+        "200": { description: Header bar configuration, content: { application/json: { schema: { $ref: "#/components/schemas/HeaderBarConfig" } } } }
+  /admin/commerce-experience:
+    get:
+      operationId: adminGetCommerceExperience
+      tags: [admin]
+      responses:
+        "200": { description: Commerce experience settings, content: { application/json: { schema: { $ref: "#/components/schemas/CommerceExperienceSettings" } } } }
+    put:
+      operationId: adminUpdateCommerceExperience
+      tags: [admin]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CommerceExperienceSettingsInput" } } }
+      responses:
+        "200": { description: Updated settings, content: { application/json: { schema: { $ref: "#/components/schemas/CommerceExperienceSettings" } } } }
         "409": { description: Version conflict }
-
+  /commerce/search-suggestions:
+    get:
+      operationId: getCommerceSearchSuggestions
+      tags: [shop]
+      parameters:
+        - { name: audience, in: query, required: true, schema: { type: string, enum: [B2B, B2C] } }
+        - { name: q, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 5, default: 5 } }
+      responses:
+        "200": { description: Eligible variant-aware product suggestions, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/SearchProductSuggestion" } } } } }
+  /commerce/bestsellers:
+    get:
+      operationId: listCommerceBestsellers
+      tags: [shop]
+      parameters:
+        - { name: audience, in: query, required: true, schema: { type: string, enum: [B2B, B2C] } }
+        - { name: periodDays, in: query, schema: { type: integer, enum: [30, 60] } }
+        - { name: categoryId, in: query, schema: { type: string } }
+        - { name: supplierSlug, in: query, schema: { type: string, minLength: 1, maxLength: 120 } }
+      responses:
+        "200": { description: Top ten eligible products by completed quantity, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/BestsellerRanking" } } } } }
+  /admin/commerce/bestsellers:
+    get:
+      operationId: adminListCommerceBestsellers
+      tags: [admin]
+      parameters:
+        - { name: audience, in: query, required: true, schema: { type: string, enum: [B2B, B2C] } }
+        - { name: periodDays, in: query, schema: { type: integer, enum: [30, 60] } }
+        - { name: categoryId, in: query, schema: { type: string } }
+        - { name: supplierSlug, in: query, schema: { type: string, minLength: 1, maxLength: 120 } }
+      responses:
+        "200": { description: Administrative top ten ranking, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/BestsellerRanking" } } } } }
+  /products/{productId}/documents:
+    get:
+      operationId: listProductDocuments
+      tags: [shop]
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string } }
+        - { name: audience, in: query, required: true, schema: { type: string, enum: [B2B, B2C] } }
+      responses:
+        "200": { description: Public eligible product documents, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ProductDocument" } } } } }
+        "404": { description: Product not eligible }
+  /admin/products/{productId}/documents:
+    get:
+      operationId: adminListProductDocuments
+      tags: [admin]
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Administrative product documents, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ProductDocument" } } } } }
+    post:
+      operationId: adminAttachProductDocument
+      tags: [admin]
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProductDocumentInput" }
+      responses:
+        "200": { description: Document attached, content: { application/json: { schema: { $ref: "#/components/schemas/ProductDocument" } } } }
+    put:
+      operationId: adminReorderProductDocuments
+      tags: [admin]
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProductDocumentOrderInput" }
+      responses:
+        "204": { description: Reordered }
+  /admin/products/documents/{documentId}:
+    delete:
+      operationId: adminDeleteProductDocument
+      tags: [admin]
+      parameters:
+        - { name: documentId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
 components:
   parameters:
     CityQuery:
@@ -7622,13 +7724,13 @@ components:
       properties:
         scope:
           type: string
-          enum: [salon-profile, salon-gallery, employee-avatar, product, supplier, education-cover, education-gallery, education-center, instructor-avatar, service-category, product-category, treatment-photo, jobseeker-portfolio, rma-photo, retail-review-photo]
+          enum: [salon-profile, salon-gallery, employee-avatar, product, product-document, supplier, education-cover, education-gallery, education-center, instructor-avatar, service-category, product-category, treatment-photo, jobseeker-portfolio, rma-photo, retail-review-photo]
         resourceId:
           type: ["string", "null"]
           pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
         name: { type: string, minLength: 1, maxLength: 240 }
         size: { type: number, minimum: 1, maximum: 12582912, multipleOf: 1 }
-        contentType: { type: string, enum: [image/jpeg, image/png, image/webp, image/avif] }
+        contentType: { type: string, enum: [image/jpeg, image/png, image/webp, image/avif, application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document] }
       required: [scope, name, size, contentType]
     MediaUploadTicket:
       type: object
@@ -8716,6 +8818,7 @@ components:
         imageUrl: { type: string }
         price: { type: number, multipleOf: 1 }
         discountPrice: { type: ["number", "null"], multipleOf: 1 }
+        saleEndsAt: { type: ["string", "null"], format: date-time }
         discountPercent: { type: ["number", "null"] }
         stock: { type: number, minimum: 0, multipleOf: 1 }
         sku: { type: string }
@@ -8743,7 +8846,10 @@ components:
         averageRating: { type: ["number", "null"] }
         reviewCount: { type: number }
         deliveryBusinessDaysOverride: { type: ["integer", "null"], minimum: 1, maximum: 365 }
-      required: [id, supplierId, name, category, description, imageUrl, price, stock, sku, unit, isNew, isBestseller, images, variantType, reviewCount, deliveryBusinessDaysOverride]
+        characteristics:
+          type: array
+          items: { $ref: "#/components/schemas/ProductCharacteristic" }
+      required: [id, supplierId, name, category, categoryId, description, imageUrl, price, discountPrice, saleEndsAt, stock, sku, unit, isNew, isBestseller, images, variantType, reviewCount, deliveryBusinessDaysOverride, characteristics]
     ProductList:
       type: object
       properties:
@@ -8836,6 +8942,7 @@ components:
         supplierId: { type: string }
         name: { type: string }
         category: { type: string }
+        categoryId: { type: ["string", "null"] }
         subcategory: { type: ["string", "null"] }
         brand: { type: ["string", "null"] }
         description: { type: string }
@@ -8845,6 +8952,7 @@ components:
           items: { type: string }
         price: { type: ["number", "null"], minimum: 1, multipleOf: 1 }
         discountPrice: { type: ["number", "null"], minimum: 1, multipleOf: 1 }
+        saleEndsAt: { type: ["string", "null"], format: date-time }
         discountPercent: { type: ["number", "null"] }
         priceOnRequest: { type: boolean }
         cartEligible: { type: boolean }
@@ -8852,6 +8960,9 @@ components:
         isNew: { type: boolean }
         isBestseller: { type: boolean }
         deliveryBusinessDaysOverride: { type: ["integer", "null"], minimum: 1, maximum: 365 }
+        characteristics:
+          type: array
+          items: { $ref: "#/components/schemas/ProductCharacteristic" }
         subscriptionAllowed: { type: boolean }
         subscriptionDiscountPercent: { type: ["integer", "null"], minimum: 1, maximum: 100 }
         reviewSummary: { $ref: "#/components/schemas/RetailProductReviewSummary" }
@@ -8859,7 +8970,7 @@ components:
         variants:
           type: array
           items: { $ref: "#/components/schemas/PublicProductVariant" }
-      required: [id, supplierId, name, category, categoryId, description, imageUrl, images, price, priceOnRequest, cartEligible, unit, isNew, isBestseller, deliveryBusinessDaysOverride, subscriptionAllowed, subscriptionDiscountPercent, reviewSummary, variantType, variants]
+      required: [id, supplierId, name, category, categoryId, description, imageUrl, images, price, discountPrice, saleEndsAt, priceOnRequest, cartEligible, unit, isNew, isBestseller, deliveryBusinessDaysOverride, characteristics, subscriptionAllowed, subscriptionDiscountPercent, reviewSummary, variantType, variants]
     RelatedProductCard:
       type: object
       description: Channel-priced related-product allowlist; excludes inventory, SKU, weight, variants, wholesale administration and relationship IDs.
@@ -8870,7 +8981,8 @@ components:
         brand: { type: ["string", "null"] }
         price: { type: integer, minimum: 0 }
         discountPrice: { type: ["integer", "null"], minimum: 0 }
-      required: [id, name, imageUrl, brand, price, discountPrice]
+        saleEndsAt: { type: ["string", "null"], format: date-time }
+      required: [id, name, imageUrl, brand, price, discountPrice, saleEndsAt]
     PublicRelatedProductCard:
       type: object
       description: Public retail related-product allowlist with explicit price-on-request state.
@@ -8881,9 +8993,10 @@ components:
         brand: { type: ["string", "null"] }
         price: { type: ["integer", "null"], minimum: 1 }
         discountPrice: { type: ["integer", "null"], minimum: 1 }
+        saleEndsAt: { type: ["string", "null"], format: date-time }
         priceOnRequest: { type: boolean }
         cartEligible: { type: boolean }
-      required: [id, name, imageUrl, brand, price, discountPrice, priceOnRequest, cartEligible]
+      required: [id, name, imageUrl, brand, price, discountPrice, saleEndsAt, priceOnRequest, cartEligible]
     PublicProductList:
       type: object
       properties:
@@ -10409,6 +10522,13 @@ components:
         maxQuantity: { type: ["integer", "null"], minimum: 1 }
         unitPrice: { type: integer, minimum: 1 }
       required: [minQuantity, maxQuantity, unitPrice]
+    ProductCharacteristic:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        value: { type: string, minLength: 1, maxLength: 500 }
+      required: [name, value]
     AdminProduct:
       type: object
       properties:
@@ -10427,6 +10547,7 @@ components:
           items: { type: string }
         price: { type: number, multipleOf: 1 }
         discountPrice: { type: ["number", "null"], multipleOf: 1 }
+        discountPriceEndsAt: { type: ["string", "null"], format: date-time }
         retailEnabled: { type: boolean }
         priceOnRequest: { type: boolean, default: false }
         bulkMatrixEnabled: { type: boolean, default: false }
@@ -10434,6 +10555,7 @@ components:
         publicDescription: { type: ["string", "null"] }
         publicPrice: { type: ["number", "null"], minimum: 1, multipleOf: 1 }
         publicDiscountPrice: { type: ["number", "null"], minimum: 1, multipleOf: 1 }
+        publicDiscountPriceEndsAt: { type: ["string", "null"], format: date-time }
         discountPercent: { type: ["number", "null"] }
         stock: { type: number, minimum: 0, multipleOf: 1 }
         catalogReference: { type: string, description: "Opaque immutable customer-facing catalog reference." }
@@ -10466,9 +10588,17 @@ components:
         productTypeId: { type: ["string", "null"] }
         ingredients: { type: ["string", "null"] }
         usageInstructions: { type: ["string", "null"] }
+        characteristics:
+          type: array
+          items: { $ref: "#/components/schemas/ProductCharacteristic" }
+        searchSynonyms:
+          type: array
+          uniqueItems: true
+          maxItems: 30
+          items: { type: string, minLength: 1, maxLength: 100 }
         active: { type: boolean }
         createdAt: { type: string, format: date-time }
-      required: [id, supplierId, name, categoryName, description, imageUrl, images, price, retailEnabled, professionalEnabled, stock, catalogReference, sku, unit, isNew, isBestseller, similarProductsMode, similarProductIds, crossSellProductIds, quantityPricingTiers, minimumOrderQuantity, deliveryBusinessDaysOverride, subscriptionAllowed, subscriptionDiscountPercent, productTypeId, ingredients, usageInstructions, active, createdAt]
+      required: [id, supplierId, name, categoryName, description, imageUrl, images, price, discountPrice, discountPriceEndsAt, retailEnabled, professionalEnabled, publicDiscountPrice, publicDiscountPriceEndsAt, stock, catalogReference, sku, unit, isNew, isBestseller, similarProductsMode, similarProductIds, crossSellProductIds, quantityPricingTiers, minimumOrderQuantity, deliveryBusinessDaysOverride, subscriptionAllowed, subscriptionDiscountPercent, productTypeId, ingredients, usageInstructions, characteristics, searchSynonyms, active, createdAt]
     AdminProductList:
       type: object
       properties:
@@ -10498,6 +10628,7 @@ components:
           items: { type: string }
         price: { type: number, minimum: 0, maximum: 100000000, multipleOf: 1 }
         discountPrice: { type: ["number", "null"], minimum: 0, maximum: 100000000, multipleOf: 1 }
+        discountPriceEndsAt: { type: ["string", "null"], format: date-time }
         retailEnabled: { type: boolean }
         priceOnRequest: { type: boolean }
         bulkMatrixEnabled: { type: boolean }
@@ -10505,6 +10636,7 @@ components:
         publicDescription: { type: ["string", "null"], maxLength: 10000 }
         publicPrice: { type: ["number", "null"], minimum: 1, maximum: 100000000, multipleOf: 1 }
         publicDiscountPrice: { type: ["number", "null"], minimum: 1, maximum: 100000000, multipleOf: 1 }
+        publicDiscountPriceEndsAt: { type: ["string", "null"], format: date-time }
         stock: { type: number, minimum: 0, maximum: 100000000, multipleOf: 1 }
         sku: { type: string, minLength: 1 }
         unit: { type: string, minLength: 1 }
@@ -10528,6 +10660,15 @@ components:
         needTagIds: { type: array, uniqueItems: true, items: { type: string } }
         ingredients: { type: ["string", "null"], maxLength: 20000 }
         usageInstructions: { type: ["string", "null"], maxLength: 20000 }
+        characteristics:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/ProductCharacteristic" }
+        searchSynonyms:
+          type: array
+          uniqueItems: true
+          maxItems: 30
+          items: { type: string, minLength: 1, maxLength: 100 }
       required: [categoryId, name, categoryName, description, imageUrl, price, stock, sku, unit, weightGrams]
     AdminProductUpdate:
       type: object
@@ -10547,6 +10688,7 @@ components:
           items: { type: string }
         price: { type: number, minimum: 0, maximum: 100000000, multipleOf: 1 }
         discountPrice: { type: ["number", "null"], minimum: 0, maximum: 100000000, multipleOf: 1 }
+        discountPriceEndsAt: { type: ["string", "null"], format: date-time }
         retailEnabled: { type: boolean }
         priceOnRequest: { type: boolean }
         bulkMatrixEnabled: { type: boolean }
@@ -10554,6 +10696,7 @@ components:
         publicDescription: { type: ["string", "null"], maxLength: 10000 }
         publicPrice: { type: ["number", "null"], minimum: 1, maximum: 100000000, multipleOf: 1 }
         publicDiscountPrice: { type: ["number", "null"], minimum: 1, maximum: 100000000, multipleOf: 1 }
+        publicDiscountPriceEndsAt: { type: ["string", "null"], format: date-time }
         stock: { type: number, minimum: 0, maximum: 100000000, multipleOf: 1 }
         sku: { type: string, minLength: 1 }
         unit: { type: string, minLength: 1 }
@@ -10577,6 +10720,15 @@ components:
         needTagIds: { type: array, uniqueItems: true, items: { type: string } }
         ingredients: { type: ["string", "null"], maxLength: 20000 }
         usageInstructions: { type: ["string", "null"], maxLength: 20000 }
+        characteristics:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/ProductCharacteristic" }
+        searchSynonyms:
+          type: array
+          uniqueItems: true
+          maxItems: 30
+          items: { type: string, minLength: 1, maxLength: 100 }
     AdminProductBulkUpdate:
       type: object
       additionalProperties: false
@@ -12529,3 +12681,96 @@ components:
         reportCount: { type: integer, minimum: 0 }
         reports: { type: array, items: { $ref: "#/components/schemas/AdminRetailProductReviewReport" } }
         audits: { type: array, items: { $ref: "#/components/schemas/AdminRetailProductReviewAudit" } }
+    SearchProductSuggestion:
+      type: object
+      required: [id, name, imageUrl, audience, price, discountPrice, priceOnRequest, cartEligible, variantType, variants, automaticBestseller]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        imageUrl: { type: string }
+        audience: { type: string, enum: [B2B, B2C] }
+        price: { type: ["number", "null"] }
+        discountPrice: { type: ["number", "null"] }
+        priceOnRequest: { type: boolean }
+        cartEligible: { type: boolean }
+        variantType: { type: ["string", "null"] }
+        variants: { type: array, items: { $ref: "#/components/schemas/PublicProductVariant" } }
+        automaticBestseller: { type: boolean }
+    BestsellerRanking:
+      type: object
+      required: [rank, productId, name, imageUrl, categoryId, quantitySold, audience, periodDays, automaticBestseller]
+      properties:
+        rank: { type: integer, minimum: 1, maximum: 10 }
+        productId: { type: string }
+        name: { type: string }
+        imageUrl: { type: string }
+        categoryId: { type: ["string", "null"] }
+        quantitySold: { type: integer, minimum: 1 }
+        audience: { type: string, enum: [B2B, B2C] }
+        periodDays: { type: integer, enum: [30, 60] }
+        automaticBestseller: { type: boolean }
+    ProductDocument:
+      type: object
+      required: [id, displayName, sortOrder, url, contentType]
+      properties:
+        id: { type: string }
+        displayName: { type: string }
+        sortOrder: { type: integer }
+        url: { type: string }
+        contentType: { type: string, enum: [application/pdf, application/msword, application/vnd.openxmlformats-officedocument.wordprocessingml.document] }
+    ProductDocumentInput:
+      type: object
+      required: [mediaUrl, displayName, sortOrder]
+      properties:
+        mediaUrl: { type: string, pattern: "^/api/media/[0-9a-fA-F-]{36}" }
+        displayName: { type: string, minLength: 1, maxLength: 200 }
+        sortOrder: { type: integer, minimum: 0, maximum: 10000 }
+    ProductDocumentOrderInput:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            required: [id, sortOrder]
+            properties:
+              id: { type: string }
+              sortOrder: { type: integer, minimum: 0, maximum: 10000 }
+    HeaderBarMessage:
+      type: object
+      required: [text, backgroundColor, textColor]
+      properties:
+        text: { type: string, minLength: 1, maxLength: 200 }
+        backgroundColor: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+        textColor: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+    HeaderBarConfig:
+      type: object
+      required: [enabled, messages, intervalSeconds]
+      properties:
+        enabled: { type: boolean }
+        messages: { type: array, maxItems: 10, items: { $ref: "#/components/schemas/HeaderBarMessage" } }
+        intervalSeconds: { type: integer, minimum: 2, maximum: 60 }
+    CommerceExperienceSettings:
+      type: object
+      required: [headerEnabled, headerMessages, headerIntervalSeconds, smartSearchMode, smartSearchProductIds, bestsellerPeriodDays, version]
+      properties:
+        headerEnabled: { type: boolean }
+        headerMessages: { type: array, maxItems: 10, items: { $ref: "#/components/schemas/HeaderBarMessage" } }
+        headerIntervalSeconds: { type: integer, minimum: 2, maximum: 60 }
+        smartSearchMode: { type: string, enum: [AUTOMATIC, MANUAL] }
+        smartSearchProductIds: { type: array, maxItems: 5, items: { type: string } }
+        bestsellerPeriodDays: { type: integer, enum: [30, 60] }
+        version: { type: integer, minimum: 1 }
+    CommerceExperienceSettingsInput:
+      type: object
+      required: [headerEnabled, headerMessages, headerIntervalSeconds, smartSearchMode, smartSearchProductIds, bestsellerPeriodDays, version]
+      properties:
+        headerEnabled: { type: boolean }
+        headerMessages: { type: array, maxItems: 10, items: { $ref: "#/components/schemas/HeaderBarMessage" } }
+        headerIntervalSeconds: { type: integer, minimum: 2, maximum: 60 }
+        smartSearchMode: { type: string, enum: [AUTOMATIC, MANUAL] }
+        smartSearchProductIds: { type: array, maxItems: 5, items: { type: string } }
+        bestsellerPeriodDays: { type: integer, enum: [30, 60] }
+        version: { type: integer, minimum: 1 }

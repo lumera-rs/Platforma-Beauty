@@ -19,6 +19,7 @@ import {
 } from "@workspace/db";
 import { getCurrentUser, isAdmin } from "../lib/auth";
 import { createHash, randomBytes } from "node:crypto";
+import { activeProductSale, activeProductSalePriceSql } from "../lib/active-product-sale";
 
 const router = Router();
 const SORTS = ["RECOMMENDED", "PRICE_ASC", "PRICE_DESC", "NEWEST", "BEST_RATED", "MOST_POPULAR"] as const;
@@ -369,7 +370,7 @@ async function categorySubtree(supplierId: string, categoryId: string) {
     ) SELECT id FROM subtree`);
   return rows.rows.map((row) => row.id);
 }
-const priceExpr = sql<number>`coalesce(${productsTable.publicDiscountPrice}, ${productsTable.publicPrice})`;
+const priceExpr = sql<number>`coalesce(${activeProductSalePriceSql("B2C")}, ${productsTable.publicPrice})`;
 // Moderation maintains this aggregate atomically with the review row. Listing
 // and BEST_RATED deliberately read the identical public aggregate.
 const ratingExpr = productsTable.averageRating;
@@ -391,9 +392,13 @@ function productConditions(supplierId: string, f: FilterInput, omit?: "category"
   if (omit !== "type" && f.types.length) conditions.push(sql`EXISTS (SELECT 1 FROM b2c_product_types pt WHERE pt.id=${productsTable.productTypeId} AND pt.active=true AND pt.slug IN (${sql.join(f.types.map((value) => sql`${value}`), sql`, `)}))`);
   if (omit !== "tag" && f.tags.length) conditions.push(sql`EXISTS (SELECT 1 FROM b2c_product_need_tags pnt JOIN b2c_need_tags nt ON nt.id=pnt.need_tag_id WHERE pnt.product_id=${productsTable.id} AND nt.active=true AND nt.key IN (${sql.join(f.tags.map((value) => sql`${value}`), sql`, `)}))`);
   if (f.search) {
-    const pattern = `%${f.search}%`;
+    const normalized = f.search.toLowerCase();
+    const pattern = `%${normalized}%`;
     conditions.push(or(
       ilike(productsTable.name, pattern), ilike(productsTable.brand, pattern), ilike(productsTable.categoryName, pattern),
+      sql`EXISTS (SELECT 1 FROM jsonb_array_elements_text(${productsTable.searchSynonyms}) synonym
+        WHERE lower(synonym) LIKE ${pattern} OR similarity(lower(synonym), ${normalized}) >= 0.25)`,
+      sql`similarity(lower(${productsTable.name}), ${normalized}) >= 0.25`,
       exists(db.select({ one: sql`1` }).from(b2cProductTypesTable).where(and(eq(b2cProductTypesTable.id, productsTable.productTypeId), eq(b2cProductTypesTable.active, true), ilike(b2cProductTypesTable.label, pattern)))),
       sql`EXISTS (SELECT 1 FROM b2c_product_need_tags pnt JOIN b2c_need_tags nt ON nt.id=pnt.need_tag_id WHERE pnt.product_id=${productsTable.id} AND nt.active=true AND nt.label ILIKE ${pattern})`,
     )!);
@@ -431,21 +436,24 @@ function publicVariantInventoryModel(product: typeof productsTable.$inferSelect)
 
 function publicBase(product: typeof productsTable.$inferSelect) {
   const configuredPrice = product.publicPrice!;
+  const sale = activeProductSale(product, "B2C");
   const inventory = publicVariantInventoryModel(product);
   const effectiveStock = inventory.kind === "invalid"
     ? 0
     : inventory.kind === "per-variant" ? inventory.total : Math.max(0, product.stock);
   const priceOnRequest = product.priceOnRequest || effectiveStock === 0;
   const price = priceOnRequest ? null : configuredPrice;
-  const discountPrice = priceOnRequest ? null : product.publicDiscountPrice;
+  const discountPrice = priceOnRequest ? null : sale?.price ?? null;
   return {
     id: product.id, supplierId: product.supplierId, name: product.name, category: product.categoryName,
     categoryId: product.categoryId, subcategory: product.subcategoryName, brand: product.brand,
     description: product.publicDescription!, imageUrl: product.imageUrl, images: product.images ?? [],
-    price, discountPrice, discountPercent: discountPrice ? Math.round((1 - discountPrice / configuredPrice) * 100) : null,
+    price, discountPrice, saleEndsAt: discountPrice ? sale?.endsAt ?? null : null,
+    discountPercent: discountPrice ? Math.round((1 - discountPrice / configuredPrice) * 100) : null,
     priceOnRequest, cartEligible: !priceOnRequest,
     unit: product.unit, isNew: product.isNew, isBestseller: product.isBestseller,
     deliveryBusinessDaysOverride: product.deliveryBusinessDaysOverride,
+    characteristics: product.characteristics,
     subscriptionAllowed: product.subscriptionAllowed,
     subscriptionDiscountPercent: product.subscriptionAllowed ? product.subscriptionDiscountPercent : null,
     reviewSummary: { averageRating: product.averageRating, reviewCount: product.reviewCount },
@@ -557,7 +565,10 @@ router.get("/suppliers/:supplierSlug/public-products", async (req, res, next) =>
       min, max, showOutOfStock: config.showOutOfStock,
     };
     const where = productConditions(supplier.id, f);
-    const ordering = sort === "PRICE_ASC" ? [asc(priceExpr), asc(productsTable.id)]
+    const relevance = f.search ? desc(sql`CASE WHEN lower(${productsTable.name}) = ${f.search.toLowerCase()} THEN 3
+      WHEN lower(${productsTable.name}) LIKE ${`%${f.search.toLowerCase()}%`} THEN 2 ELSE 1 END`) : undefined;
+    const ordering = relevance ? [relevance, desc(sql`similarity(lower(${productsTable.name}), ${f.search!.toLowerCase()})`), asc(productsTable.id)]
+      : sort === "PRICE_ASC" ? [asc(priceExpr), asc(productsTable.id)]
       : sort === "PRICE_DESC" ? [desc(priceExpr), asc(productsTable.id)]
       : sort === "NEWEST" ? [desc(productsTable.createdAt), asc(productsTable.id)]
       : sort === "BEST_RATED" ? [desc(ratingExpr), desc(productsTable.createdAt), asc(productsTable.id)]
@@ -639,7 +650,7 @@ router.get("/suppliers/:supplierSlug/public-products/:productId", async (req, re
       const view = publicBase(item);
       return {
         id: item.id, name: item.name, imageUrl: item.imageUrl, brand: item.brand,
-        price: view.price, discountPrice: view.discountPrice,
+        price: view.price, discountPrice: view.discountPrice, saleEndsAt: view.saleEndsAt,
         priceOnRequest: view.priceOnRequest, cartEligible: view.cartEligible,
       };
     }) });

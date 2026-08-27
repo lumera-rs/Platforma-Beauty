@@ -25,6 +25,8 @@ export interface PublicRelatedProductCard {
      * @nullable
      */
   discountPrice: number | null;
+  /** @nullable */
+  saleEndsAt: Date | null;
   priceOnRequest: boolean;
   cartEligible: boolean;
 }

@@ -15,6 +15,7 @@ import {
   mediaVariantsTable,
   pool,
   productCategoriesTable,
+  productDocumentsTable,
   productsTable,
   salonsTable,
   subscriptionPlansTable,
@@ -155,7 +156,7 @@ async function run() {
     .where(and(inArray(usersTable.role, ["ADMIN", "SUPER_ADMIN"]), eq(usersTable.active, true)))
     .limit(1);
   assert.ok(adminUser, "An active admin is required for media claim endpoint regressions.");
-  const [productCategory] = await db.select({ id: productCategoriesTable.id }).from(productCategoriesTable)
+  const [productCategory] = await db.select({ id: productCategoriesTable.id, supplierId: productCategoriesTable.supplierId }).from(productCategoriesTable)
     .where(eq(productCategoriesTable.active, true))
     .limit(1);
   assert.ok(productCategory, "An active product category is required for product media claim regression.");
@@ -254,6 +255,62 @@ async function run() {
       assert.equal(asset.status, 201, `${scope} asset should finalize.`);
       return asset.body;
     };
+    // Product documents use the same signed staging/finalization lifecycle as
+    // images, but only their dedicated scope may declare PDF/DOCX bytes.
+    const pdf = Buffer.from("%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n");
+    const wrongScopeDocument = await jsonRequest<{ error: string }>(
+      activeServer.baseUrl, "/media/uploads", adminSession, "POST",
+      { scope: "product", name: "wrong-scope.pdf", size: pdf.length, contentType: "application/pdf" },
+    );
+    assert.equal(wrongScopeDocument.status, 400, "A PDF cannot be staged under an image scope.");
+    const spoofTicket = await jsonRequest<Ticket>(
+      activeServer.baseUrl, "/media/uploads", adminSession, "POST",
+      { scope: "product-document", name: "spoof.pdf", size: 8, contentType: "application/pdf" },
+    );
+    assert.equal(spoofTicket.status, 200);
+    createdUploadIds.push(spoofTicket.body.uploadId);
+    assert.ok((await fetch(spoofTicket.body.uploadUrl, {
+      method: "PUT", headers: { "content-type": "application/pdf" }, body: Buffer.from("<html/>"),
+    })).ok);
+    const spoofFinalize = await jsonRequest<{ error: string }>(
+      activeServer.baseUrl, `/media/uploads/${spoofTicket.body.uploadId}/finalize`, adminSession, "POST",
+    );
+    assert.equal(spoofFinalize.status, 400, "A spoofed PDF must fail finalization.");
+    const documentTicket = await jsonRequest<Ticket>(
+      activeServer.baseUrl, "/media/uploads", adminSession, "POST",
+      { scope: "product-document", name: "manual.pdf", size: pdf.length, contentType: "application/pdf" },
+    );
+    assert.equal(documentTicket.status, 200);
+    createdUploadIds.push(documentTicket.body.uploadId);
+    assert.ok((await fetch(documentTicket.body.uploadUrl, {
+      method: "PUT", headers: { "content-type": "application/pdf" }, body: pdf,
+    })).ok);
+    const documentAsset = await jsonRequest<Asset>(
+      activeServer.baseUrl, `/media/uploads/${documentTicket.body.uploadId}/finalize`, adminSession, "POST",
+    );
+    assert.equal(documentAsset.status, 201, "A minimally valid PDF must finalize through managed media.");
+    const [documentProduct] = await db.select({ id: productsTable.id }).from(productsTable)
+      .where(and(eq(productsTable.active, true), eq(productsTable.retailEnabled, true), eq(productsTable.professionalEnabled, true)))
+      .limit(1);
+    assert.ok(documentProduct, "A visible product is required for document attachment regression.");
+    const attached = await jsonRequest<{ id: string; url: string; contentType: string }>(
+      activeServer.baseUrl, `/admin/products/${documentProduct.id}/documents`, adminSession, "POST",
+      { mediaUrl: documentAsset.body.imageUrl, displayName: "Safety manual", sortOrder: 3 },
+    );
+    assert.equal(attached.status, 201);
+    assert.equal(attached.body.contentType, "application/pdf");
+    const publicDocuments = await fetch(`${activeServer.baseUrl}/api/products/${documentProduct.id}/documents?audience=B2C`);
+    assert.equal(publicDocuments.status, 200);
+    const listed = await publicDocuments.json() as Array<{ id: string; url: string; displayName: string }>;
+    assert.ok(listed.some((document) => document.id === attached.body.id && document.url === attached.body.url && document.displayName === "Safety manual"));
+    const downloaded = await fetch(`${activeServer.baseUrl}${attached.body.url}`);
+    assert.equal(downloaded.status, 200);
+    assert.equal(downloaded.headers.get("content-type"), "application/pdf");
+    assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()), pdf);
+    const detach = await fetch(`${activeServer.baseUrl}/api/admin/product-documents/${attached.body.id}`, {
+      method: "DELETE", headers: { cookie: `${sessionCookieName}=${adminSession}` },
+    });
+    assert.equal(detach.status, 204, "Document regression must detach before media cleanup.");
     const ordinaryTicket = await jsonRequest<Ticket>(
       activeServer.baseUrl,
       "/media/uploads",
@@ -599,6 +656,7 @@ async function run() {
       "POST",
       {
         name: "Media product rollback",
+        supplierId: productCategory.supplierId,
         categoryId: productCategory.id,
         categoryName: "ignored",
         description: "Transactional media claim regression.",
@@ -1120,6 +1178,7 @@ async function run() {
       "POST",
       {
         name: "Media cache product",
+        supplierId: productCategory.supplierId,
         categoryId: productCategory.id,
         categoryName: "ignored",
         description: "Managed product image cache regression.",
@@ -1451,6 +1510,7 @@ async function run() {
       if (ticket) {
         await deletePrivateStorageObject(ticket.stagingObjectPath).catch((error) => storageCleanupErrors.push(error));
       }
+      await db.delete(productDocumentsTable).where(eq(productDocumentsTable.mediaAssetId, uploadId));
       await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.id, uploadId));
       await db.delete(mediaUploadTicketsTable).where(eq(mediaUploadTicketsTable.id, uploadId));
     }

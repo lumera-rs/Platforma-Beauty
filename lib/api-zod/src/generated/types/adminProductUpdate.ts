@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AdminProductUpdateSimilarProductsMode } from './adminProductUpdateSimilarProductsMode';
+import type { ProductCharacteristic } from './productCharacteristic';
 import type { ProductVariant } from './productVariant';
 import type { QuantityPricingTier } from './quantityPricingTier';
 
@@ -43,6 +44,8 @@ export interface AdminProductUpdate {
      * @nullable
      */
   discountPrice?: number | null;
+  /** @nullable */
+  discountPriceEndsAt?: Date | null;
   retailEnabled?: boolean;
   priceOnRequest?: boolean;
   bulkMatrixEnabled?: boolean;
@@ -64,6 +67,8 @@ export interface AdminProductUpdate {
      * @nullable
      */
   publicDiscountPrice?: number | null;
+  /** @nullable */
+  publicDiscountPriceEndsAt?: Date | null;
   /**
      * @minimum 0
      * @maximum 100000000
@@ -118,4 +123,12 @@ export interface AdminProductUpdate {
      * @nullable
      */
   usageInstructions?: string | null;
+  /** @maxItems 100 */
+  characteristics?: ProductCharacteristic[];
+  /**
+     * @maxItems 30
+     * @items.minLength 1
+     * @items.maxLength 100
+     */
+  searchSynonyms?: string[];
 }

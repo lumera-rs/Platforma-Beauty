@@ -13,6 +13,7 @@ import referralsRouter from "./referrals";
 import retailSubscriptionsRouter from "./retail-subscriptions";
 import b2cDiscoveryRouter from "./b2c-discovery";
 import commerceEfRouter from "./commerce-ef";
+import commerceGRouter from "./commerce-g";
 
 const router: IRouter = Router();
 
@@ -26,6 +27,7 @@ router.use(widgetRouter);
 router.use(phase3Router);
 router.use(b2cDiscoveryRouter);
 router.use(commerceEfRouter);
+router.use(commerceGRouter);
 router.use(marketplaceRouter);
 router.use(retailSubscriptionsRouter);
 router.use(growthRouter);

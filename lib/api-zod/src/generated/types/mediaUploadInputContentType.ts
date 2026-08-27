@@ -14,4 +14,6 @@ export const MediaUploadInputContentType = {
   'image/png': 'image/png',
   'image/webp': 'image/webp',
   'image/avif': 'image/avif',
+  'application/pdf': 'application/pdf',
+  'application/vndopenxmlformats-officedocumentwordprocessingmldocument': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 } as const;

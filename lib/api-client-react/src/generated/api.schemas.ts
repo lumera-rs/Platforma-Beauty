@@ -1353,6 +1353,7 @@ export const MediaUploadInputScope = {
   'salon-gallery': 'salon-gallery',
   'employee-avatar': 'employee-avatar',
   product: 'product',
+  'product-document': 'product-document',
   supplier: 'supplier',
   'education-cover': 'education-cover',
   'education-gallery': 'education-gallery',
@@ -1374,6 +1375,8 @@ export const MediaUploadInputContentType = {
   'image/png': 'image/png',
   'image/webp': 'image/webp',
   'image/avif': 'image/avif',
+  'application/pdf': 'application/pdf',
+  'application/vndopenxmlformats-officedocumentwordprocessingmldocument': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 } as const;
 
 export interface MediaUploadInput {
@@ -3064,13 +3067,26 @@ export type ProductVariantsItem = {
   stock?: number;
 };
 
+export interface ProductCharacteristic {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  value: string;
+}
+
 export interface Product {
   id: string;
   supplierId: string;
   name: string;
   category: string;
   /** @nullable */
-  categoryId?: string | null;
+  categoryId: string | null;
   /** @nullable */
   subcategory?: string | null;
   /** @nullable */
@@ -3079,7 +3095,9 @@ export interface Product {
   imageUrl: string;
   price: number;
   /** @nullable */
-  discountPrice?: number | null;
+  discountPrice: number | null;
+  /** @nullable */
+  saleEndsAt: string | null;
   /** @nullable */
   discountPercent?: number | null;
   /** @minimum 0 */
@@ -3106,6 +3124,7 @@ export interface Product {
      * @nullable
      */
   deliveryBusinessDaysOverride: number | null;
+  characteristics: ProductCharacteristic[];
 }
 
 export interface ProductList {
@@ -3260,6 +3279,8 @@ export interface PublicProduct {
   name: string;
   category: string;
   /** @nullable */
+  categoryId: string | null;
+  /** @nullable */
   subcategory?: string | null;
   /** @nullable */
   brand?: string | null;
@@ -3275,7 +3296,9 @@ export interface PublicProduct {
      * @minimum 1
      * @nullable
      */
-  discountPrice?: number | null;
+  discountPrice: number | null;
+  /** @nullable */
+  saleEndsAt: string | null;
   /** @nullable */
   discountPercent?: number | null;
   priceOnRequest: boolean;
@@ -3289,6 +3312,7 @@ export interface PublicProduct {
      * @nullable
      */
   deliveryBusinessDaysOverride: number | null;
+  characteristics: ProductCharacteristic[];
   subscriptionAllowed: boolean;
   /**
      * @minimum 1
@@ -3318,6 +3342,8 @@ export interface RelatedProductCard {
      * @nullable
      */
   discountPrice: number | null;
+  /** @nullable */
+  saleEndsAt: string | null;
 }
 
 /**
@@ -3339,6 +3365,8 @@ export interface PublicRelatedProductCard {
      * @nullable
      */
   discountPrice: number | null;
+  /** @nullable */
+  saleEndsAt: string | null;
   priceOnRequest: boolean;
   cartEligible: boolean;
 }
@@ -3369,23 +3397,7 @@ export type PublicProductDetail = PublicProduct & ({
   productType?: B2cPublicTaxonomyValue | null;
   needTags?: B2cPublicNeedTag[];
   relatedProducts: PublicRelatedProductCard[];
-}) & Required<Pick<PublicProduct & ({
-  /** @nullable */
-  ingredients?: string | null;
-  /** @nullable */
-  usageInstructions?: string | null;
-  productType?: B2cPublicTaxonomyValue | null;
-  needTags?: B2cPublicNeedTag[];
-  relatedProducts: PublicRelatedProductCard[];
-}), Extract<keyof (PublicProduct & ({
-  /** @nullable */
-  ingredients?: string | null;
-  /** @nullable */
-  usageInstructions?: string | null;
-  productType?: B2cPublicTaxonomyValue | null;
-  needTags?: B2cPublicNeedTag[];
-  relatedProducts: PublicRelatedProductCard[];
-})), 'categoryId'>>>;
+});
 
 export type B2cProductSort = typeof B2cProductSort[keyof typeof B2cProductSort];
 
@@ -5604,7 +5616,9 @@ export interface AdminProduct {
   images: string[];
   price: number;
   /** @nullable */
-  discountPrice?: number | null;
+  discountPrice: number | null;
+  /** @nullable */
+  discountPriceEndsAt: string | null;
   retailEnabled: boolean;
   priceOnRequest?: boolean;
   bulkMatrixEnabled?: boolean;
@@ -5620,7 +5634,9 @@ export interface AdminProduct {
      * @minimum 1
      * @nullable
      */
-  publicDiscountPrice?: number | null;
+  publicDiscountPrice: number | null;
+  /** @nullable */
+  publicDiscountPriceEndsAt: string | null;
   /** @nullable */
   discountPercent?: number | null;
   /** @minimum 0 */
@@ -5663,6 +5679,13 @@ export interface AdminProduct {
   ingredients: string | null;
   /** @nullable */
   usageInstructions: string | null;
+  characteristics: ProductCharacteristic[];
+  /**
+     * @maxItems 30
+     * @items.minLength 1
+     * @items.maxLength 100
+     */
+  searchSynonyms: string[];
   active: boolean;
   createdAt: string;
 }
@@ -5717,6 +5740,8 @@ export interface AdminProductInput {
      * @nullable
      */
   discountPrice?: number | null;
+  /** @nullable */
+  discountPriceEndsAt?: string | null;
   retailEnabled?: boolean;
   priceOnRequest?: boolean;
   bulkMatrixEnabled?: boolean;
@@ -5738,6 +5763,8 @@ export interface AdminProductInput {
      * @nullable
      */
   publicDiscountPrice?: number | null;
+  /** @nullable */
+  publicDiscountPriceEndsAt?: string | null;
   /**
      * @minimum 0
      * @maximum 100000000
@@ -5792,6 +5819,14 @@ export interface AdminProductInput {
      * @nullable
      */
   usageInstructions?: string | null;
+  /** @maxItems 100 */
+  characteristics?: ProductCharacteristic[];
+  /**
+     * @maxItems 30
+     * @items.minLength 1
+     * @items.maxLength 100
+     */
+  searchSynonyms?: string[];
 }
 
 export type AdminProductUpdateSimilarProductsMode = typeof AdminProductUpdateSimilarProductsMode[keyof typeof AdminProductUpdateSimilarProductsMode];
@@ -5836,6 +5871,8 @@ export interface AdminProductUpdate {
      * @nullable
      */
   discountPrice?: number | null;
+  /** @nullable */
+  discountPriceEndsAt?: string | null;
   retailEnabled?: boolean;
   priceOnRequest?: boolean;
   bulkMatrixEnabled?: boolean;
@@ -5857,6 +5894,8 @@ export interface AdminProductUpdate {
      * @nullable
      */
   publicDiscountPrice?: number | null;
+  /** @nullable */
+  publicDiscountPriceEndsAt?: string | null;
   /**
      * @minimum 0
      * @maximum 100000000
@@ -5911,6 +5950,14 @@ export interface AdminProductUpdate {
      * @nullable
      */
   usageInstructions?: string | null;
+  /** @maxItems 100 */
+  characteristics?: ProductCharacteristic[];
+  /**
+     * @maxItems 30
+     * @items.minLength 1
+     * @items.maxLength 100
+     */
+  searchSynonyms?: string[];
 }
 
 export type AdminProductBulkUpdateAction = typeof AdminProductBulkUpdateAction[keyof typeof AdminProductBulkUpdateAction];
@@ -8698,6 +8745,200 @@ export interface AdminRetailProductReviewDetail {
   audits: AdminRetailProductReviewAudit[];
 }
 
+export type SearchProductSuggestionAudience = typeof SearchProductSuggestionAudience[keyof typeof SearchProductSuggestionAudience];
+
+
+export const SearchProductSuggestionAudience = {
+  B2B: 'B2B',
+  B2C: 'B2C',
+} as const;
+
+export interface SearchProductSuggestion {
+  id: string;
+  name: string;
+  imageUrl: string;
+  audience: SearchProductSuggestionAudience;
+  /** @nullable */
+  price: number | null;
+  /** @nullable */
+  discountPrice: number | null;
+  priceOnRequest: boolean;
+  cartEligible: boolean;
+  /** @nullable */
+  variantType: string | null;
+  variants: PublicProductVariant[];
+  automaticBestseller: boolean;
+}
+
+export type BestsellerRankingAudience = typeof BestsellerRankingAudience[keyof typeof BestsellerRankingAudience];
+
+
+export const BestsellerRankingAudience = {
+  B2B: 'B2B',
+  B2C: 'B2C',
+} as const;
+
+export type BestsellerRankingPeriodDays = typeof BestsellerRankingPeriodDays[keyof typeof BestsellerRankingPeriodDays];
+
+
+export const BestsellerRankingPeriodDays = {
+  NUMBER_30: 30,
+  NUMBER_60: 60,
+} as const;
+
+export interface BestsellerRanking {
+  /**
+     * @minimum 1
+     * @maximum 10
+     */
+  rank: number;
+  productId: string;
+  name: string;
+  imageUrl: string;
+  /** @nullable */
+  categoryId: string | null;
+  /** @minimum 1 */
+  quantitySold: number;
+  audience: BestsellerRankingAudience;
+  periodDays: BestsellerRankingPeriodDays;
+  automaticBestseller: boolean;
+}
+
+export type ProductDocumentContentType = typeof ProductDocumentContentType[keyof typeof ProductDocumentContentType];
+
+
+export const ProductDocumentContentType = {
+  'application/pdf': 'application/pdf',
+  'application/msword': 'application/msword',
+  'application/vndopenxmlformats-officedocumentwordprocessingmldocument': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+} as const;
+
+export interface ProductDocument {
+  id: string;
+  displayName: string;
+  sortOrder: number;
+  url: string;
+  contentType: ProductDocumentContentType;
+}
+
+export interface ProductDocumentInput {
+  /** @pattern ^/api/media/[0-9a-fA-F-]{36} */
+  mediaUrl: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  displayName: string;
+  /**
+     * @minimum 0
+     * @maximum 10000
+     */
+  sortOrder: number;
+}
+
+export type ProductDocumentOrderInputItemsItem = {
+  id: string;
+  /**
+     * @minimum 0
+     * @maximum 10000
+     */
+  sortOrder: number;
+};
+
+export interface ProductDocumentOrderInput {
+  /** @maxItems 100 */
+  items: ProductDocumentOrderInputItemsItem[];
+}
+
+export interface HeaderBarMessage {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  text: string;
+  /** @pattern ^#[0-9A-Fa-f]{6}$ */
+  backgroundColor: string;
+  /** @pattern ^#[0-9A-Fa-f]{6}$ */
+  textColor: string;
+}
+
+export interface HeaderBarConfig {
+  enabled: boolean;
+  /** @maxItems 10 */
+  messages: HeaderBarMessage[];
+  /**
+     * @minimum 2
+     * @maximum 60
+     */
+  intervalSeconds: number;
+}
+
+export type CommerceExperienceSettingsSmartSearchMode = typeof CommerceExperienceSettingsSmartSearchMode[keyof typeof CommerceExperienceSettingsSmartSearchMode];
+
+
+export const CommerceExperienceSettingsSmartSearchMode = {
+  AUTOMATIC: 'AUTOMATIC',
+  MANUAL: 'MANUAL',
+} as const;
+
+export type CommerceExperienceSettingsBestsellerPeriodDays = typeof CommerceExperienceSettingsBestsellerPeriodDays[keyof typeof CommerceExperienceSettingsBestsellerPeriodDays];
+
+
+export const CommerceExperienceSettingsBestsellerPeriodDays = {
+  NUMBER_30: 30,
+  NUMBER_60: 60,
+} as const;
+
+export interface CommerceExperienceSettings {
+  headerEnabled: boolean;
+  /** @maxItems 10 */
+  headerMessages: HeaderBarMessage[];
+  /**
+     * @minimum 2
+     * @maximum 60
+     */
+  headerIntervalSeconds: number;
+  smartSearchMode: CommerceExperienceSettingsSmartSearchMode;
+  /** @maxItems 5 */
+  smartSearchProductIds: string[];
+  bestsellerPeriodDays: CommerceExperienceSettingsBestsellerPeriodDays;
+  /** @minimum 1 */
+  version: number;
+}
+
+export type CommerceExperienceSettingsInputSmartSearchMode = typeof CommerceExperienceSettingsInputSmartSearchMode[keyof typeof CommerceExperienceSettingsInputSmartSearchMode];
+
+
+export const CommerceExperienceSettingsInputSmartSearchMode = {
+  AUTOMATIC: 'AUTOMATIC',
+  MANUAL: 'MANUAL',
+} as const;
+
+export type CommerceExperienceSettingsInputBestsellerPeriodDays = typeof CommerceExperienceSettingsInputBestsellerPeriodDays[keyof typeof CommerceExperienceSettingsInputBestsellerPeriodDays];
+
+
+export const CommerceExperienceSettingsInputBestsellerPeriodDays = {
+  NUMBER_30: 30,
+  NUMBER_60: 60,
+} as const;
+
+export interface CommerceExperienceSettingsInput {
+  headerEnabled: boolean;
+  /** @maxItems 10 */
+  headerMessages: HeaderBarMessage[];
+  /**
+     * @minimum 2
+     * @maximum 60
+     */
+  headerIntervalSeconds: number;
+  smartSearchMode: CommerceExperienceSettingsInputSmartSearchMode;
+  /** @maxItems 5 */
+  smartSearchProductIds: string[];
+  bestsellerPeriodDays: CommerceExperienceSettingsInputBestsellerPeriodDays;
+  /** @minimum 1 */
+  version: number;
+}
+
 export type CityQueryParameter = string;
 
 export type CategoryQueryParameter = string;
@@ -10177,3 +10418,90 @@ export type AdminUpdateReviewRewardSettingsBody = {
   /** @minimum 1 */
   version: number;
 };
+
+export type GetCommerceSearchSuggestionsParams = {
+audience: GetCommerceSearchSuggestionsAudience;
+/**
+ * @maxLength 100
+ */
+q?: string;
+/**
+ * @minimum 1
+ * @maximum 5
+ */
+limit?: number;
+};
+
+export type GetCommerceSearchSuggestionsAudience = typeof GetCommerceSearchSuggestionsAudience[keyof typeof GetCommerceSearchSuggestionsAudience];
+
+
+export const GetCommerceSearchSuggestionsAudience = {
+  B2B: 'B2B',
+  B2C: 'B2C',
+} as const;
+
+export type ListCommerceBestsellersParams = {
+audience: ListCommerceBestsellersAudience;
+periodDays?: ListCommerceBestsellersPeriodDays;
+categoryId?: string;
+/**
+ * @minLength 1
+ * @maxLength 120
+ */
+supplierSlug?: string;
+};
+
+export type ListCommerceBestsellersAudience = typeof ListCommerceBestsellersAudience[keyof typeof ListCommerceBestsellersAudience];
+
+
+export const ListCommerceBestsellersAudience = {
+  B2B: 'B2B',
+  B2C: 'B2C',
+} as const;
+
+export type ListCommerceBestsellersPeriodDays = typeof ListCommerceBestsellersPeriodDays[keyof typeof ListCommerceBestsellersPeriodDays];
+
+
+export const ListCommerceBestsellersPeriodDays = {
+  NUMBER_30: 30,
+  NUMBER_60: 60,
+} as const;
+
+export type AdminListCommerceBestsellersParams = {
+audience: AdminListCommerceBestsellersAudience;
+periodDays?: AdminListCommerceBestsellersPeriodDays;
+categoryId?: string;
+/**
+ * @minLength 1
+ * @maxLength 120
+ */
+supplierSlug?: string;
+};
+
+export type AdminListCommerceBestsellersAudience = typeof AdminListCommerceBestsellersAudience[keyof typeof AdminListCommerceBestsellersAudience];
+
+
+export const AdminListCommerceBestsellersAudience = {
+  B2B: 'B2B',
+  B2C: 'B2C',
+} as const;
+
+export type AdminListCommerceBestsellersPeriodDays = typeof AdminListCommerceBestsellersPeriodDays[keyof typeof AdminListCommerceBestsellersPeriodDays];
+
+
+export const AdminListCommerceBestsellersPeriodDays = {
+  NUMBER_30: 30,
+  NUMBER_60: 60,
+} as const;
+
+export type ListProductDocumentsParams = {
+audience: ListProductDocumentsAudience;
+};
+
+export type ListProductDocumentsAudience = typeof ListProductDocumentsAudience[keyof typeof ListProductDocumentsAudience];
+
+
+export const ListProductDocumentsAudience = {
+  B2B: 'B2B',
+  B2C: 'B2C',
+} as const;

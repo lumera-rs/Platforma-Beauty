@@ -22,4 +22,6 @@ export interface RelatedProductCard {
      * @nullable
      */
   discountPrice: number | null;
+  /** @nullable */
+  saleEndsAt: Date | null;
 }

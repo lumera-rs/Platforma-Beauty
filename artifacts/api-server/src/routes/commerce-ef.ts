@@ -9,6 +9,7 @@ import {
 } from "@workspace/db";
 import { getCurrentUser, isAdmin } from "../lib/auth";
 import { canClaimMediaReference, claimMediaReference, mediaAssetIdFromUrl } from "./media";
+import { activeProductSale } from "../lib/active-product-sale";
 
 const router: IRouter = Router();
 const clean = (value: unknown, max: number) => typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -72,7 +73,7 @@ router.get("/catalog/feed", async (_req, res): Promise<void> => {
       title: product.name,
       supplier: supplier.name,
       url: `${origin}/shop/${encodeURIComponent(supplier.slug)}/proizvod/${product.id}`,
-      price: product.publicDiscountPrice ?? product.publicPrice,
+      price: activeProductSale(product, "B2C")?.price ?? product.publicPrice,
       currency: "RSD",
       availability: "in_stock",
       images: [product.imageUrl, ...product.images].filter((value, index, all) => value && all.indexOf(value) === index),
@@ -89,7 +90,7 @@ router.get("/public/products/:productId/bulk-matrix", async (req, res): Promise<
     productId: product.id, priceOnRequest, cartEligible: !priceOnRequest,
     rows: (product.variants ?? []).slice().sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.value.localeCompare(b.value)).map((variant) => {
       const stock = variant.stock == null ? Math.max(0, product.stock) : Math.max(0, variant.stock);
-      const unitPrice = variant.price ?? Math.max(0, product.discountPrice ?? product.price) + (variant.priceAdjust ?? 0);
+      const unitPrice = variant.price ?? Math.max(0, activeProductSale(product, "B2B")?.price ?? product.price) + (variant.priceAdjust ?? 0);
       return {
         value: variant.value, label: variant.label, sku: variant.sku ?? null, available: stock > 0,
         stock, swatch: validatedSwatch(variant.swatch), mainImageUrl: variant.mainImageUrl ?? null,
@@ -225,7 +226,7 @@ router.post("/shop/cart/bulk-matrix", async (req, res): Promise<void> => {
         if (product.priceOnRequest || effectiveStock(product) === 0 || (variant.stock == null
           ? requestedForProduct + existingShared > product.stock
           : row.quantity + (current?.quantity ?? 0) > stock)) throw new Error(`STOCK:${row.productId}:${row.variantValue}`);
-        const unitPrice = variant.price ?? Math.max(0, product.discountPrice ?? product.price) + (variant.priceAdjust ?? 0);
+        const unitPrice = variant.price ?? Math.max(0, activeProductSale(product, "B2B")?.price ?? product.price) + (variant.priceAdjust ?? 0);
         additions.push({ cartId: cart!.id, productId: product.id, bundleId: null, variantValue: variant.value,
           productName: product.name, productImageUrl: variant.mainImageUrl ?? product.imageUrl, variantLabel: variant.label,
           productSku: variant.sku ?? product.sku, unitPrice, quantity: row.quantity });

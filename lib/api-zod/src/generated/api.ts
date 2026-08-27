@@ -1900,11 +1900,11 @@ export const requestMediaUploadBodySizeMultipleOf = 1;
 
 
 export const RequestMediaUploadBody = zod.object({
-  "scope": zod.enum(['salon-profile', 'salon-gallery', 'employee-avatar', 'product', 'supplier', 'education-cover', 'education-gallery', 'education-center', 'instructor-avatar', 'service-category', 'product-category', 'treatment-photo', 'jobseeker-portfolio', 'rma-photo', 'retail-review-photo']),
+  "scope": zod.enum(['salon-profile', 'salon-gallery', 'employee-avatar', 'product', 'product-document', 'supplier', 'education-cover', 'education-gallery', 'education-center', 'instructor-avatar', 'service-category', 'product-category', 'treatment-photo', 'jobseeker-portfolio', 'rma-photo', 'retail-review-photo']),
   "resourceId": zod.string().regex(requestMediaUploadBodyResourceIdRegExp).nullish(),
   "name": zod.string().min(1).max(requestMediaUploadBodyNameMax),
   "size": zod.number().min(1).max(requestMediaUploadBodySizeMax).multipleOf(requestMediaUploadBodySizeMultipleOf),
-  "contentType": zod.enum(['image/jpeg', 'image/png', 'image/webp', 'image/avif'])
+  "contentType": zod.enum(['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'])
 })
 
 export const RequestMediaUploadResponse = zod.object({
@@ -3415,6 +3415,10 @@ export const listPublicProductsResponseItemsItemDiscountPriceMultipleOf = 1;
 
 export const listPublicProductsResponseItemsItemDeliveryBusinessDaysOverrideMax = 365;
 
+export const listPublicProductsResponseItemsItemCharacteristicsItemNameMax = 100;
+
+export const listPublicProductsResponseItemsItemCharacteristicsItemValueMax = 500;
+
 export const listPublicProductsResponseItemsItemSubscriptionDiscountPercentMax = 100;
 
 export const listPublicProductsResponseItemsItemReviewSummaryAverageRatingMin = 0;
@@ -3431,13 +3435,15 @@ export const ListPublicProductsResponse = zod.object({
   "supplierId": zod.string(),
   "name": zod.string(),
   "category": zod.string(),
+  "categoryId": zod.string().nullable(),
   "subcategory": zod.string().nullish(),
   "brand": zod.string().nullish(),
   "description": zod.string(),
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
   "price": zod.number().min(1).multipleOf(listPublicProductsResponseItemsItemPriceMultipleOf).nullable(),
-  "discountPrice": zod.number().min(1).multipleOf(listPublicProductsResponseItemsItemDiscountPriceMultipleOf).nullish(),
+  "discountPrice": zod.number().min(1).multipleOf(listPublicProductsResponseItemsItemDiscountPriceMultipleOf).nullable(),
+  "saleEndsAt": zod.coerce.date().nullable(),
   "discountPercent": zod.number().nullish(),
   "priceOnRequest": zod.boolean(),
   "cartEligible": zod.boolean(),
@@ -3445,6 +3451,10 @@ export const ListPublicProductsResponse = zod.object({
   "isNew": zod.boolean(),
   "isBestseller": zod.boolean(),
   "deliveryBusinessDaysOverride": zod.number().int().min(1).max(listPublicProductsResponseItemsItemDeliveryBusinessDaysOverrideMax).nullable(),
+  "characteristics": zod.array(zod.object({
+  "name": zod.string().min(1).max(listPublicProductsResponseItemsItemCharacteristicsItemNameMax),
+  "value": zod.string().min(1).max(listPublicProductsResponseItemsItemCharacteristicsItemValueMax)
+})),
   "subscriptionAllowed": zod.boolean(),
   "subscriptionDiscountPercent": zod.number().int().min(1).max(listPublicProductsResponseItemsItemSubscriptionDiscountPercentMax).nullable(),
   "reviewSummary": zod.object({
@@ -3489,6 +3499,10 @@ export const getPublicProductResponseOneDiscountPriceMultipleOf = 1;
 
 export const getPublicProductResponseOneDeliveryBusinessDaysOverrideMax = 365;
 
+export const getPublicProductResponseOneCharacteristicsItemNameMax = 100;
+
+export const getPublicProductResponseOneCharacteristicsItemValueMax = 500;
+
 export const getPublicProductResponseOneSubscriptionDiscountPercentMax = 100;
 
 export const getPublicProductResponseOneReviewSummaryAverageRatingMin = 0;
@@ -3506,13 +3520,15 @@ export const GetPublicProductResponse = zod.object({
   "supplierId": zod.string(),
   "name": zod.string(),
   "category": zod.string(),
+  "categoryId": zod.string().nullable(),
   "subcategory": zod.string().nullish(),
   "brand": zod.string().nullish(),
   "description": zod.string(),
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
   "price": zod.number().min(1).multipleOf(getPublicProductResponseOnePriceMultipleOf).nullable(),
-  "discountPrice": zod.number().min(1).multipleOf(getPublicProductResponseOneDiscountPriceMultipleOf).nullish(),
+  "discountPrice": zod.number().min(1).multipleOf(getPublicProductResponseOneDiscountPriceMultipleOf).nullable(),
+  "saleEndsAt": zod.coerce.date().nullable(),
   "discountPercent": zod.number().nullish(),
   "priceOnRequest": zod.boolean(),
   "cartEligible": zod.boolean(),
@@ -3520,6 +3536,10 @@ export const GetPublicProductResponse = zod.object({
   "isNew": zod.boolean(),
   "isBestseller": zod.boolean(),
   "deliveryBusinessDaysOverride": zod.number().int().min(1).max(getPublicProductResponseOneDeliveryBusinessDaysOverrideMax).nullable(),
+  "characteristics": zod.array(zod.object({
+  "name": zod.string().min(1).max(getPublicProductResponseOneCharacteristicsItemNameMax),
+  "value": zod.string().min(1).max(getPublicProductResponseOneCharacteristicsItemValueMax)
+})),
   "subscriptionAllowed": zod.boolean(),
   "subscriptionDiscountPercent": zod.number().int().min(1).max(getPublicProductResponseOneSubscriptionDiscountPercentMax).nullable(),
   "reviewSummary": zod.object({
@@ -3561,6 +3581,7 @@ export const GetPublicProductResponse = zod.object({
   "brand": zod.string().nullable(),
   "price": zod.number().int().min(1).nullable(),
   "discountPrice": zod.number().int().min(1).nullable(),
+  "saleEndsAt": zod.coerce.date().nullable(),
   "priceOnRequest": zod.boolean(),
   "cartEligible": zod.boolean()
 }).describe('Public retail related-product allowlist with explicit price-on-request state.'))
@@ -3609,6 +3630,10 @@ export const listProductsResponseItemsItemVariantsItemStockMultipleOf = 1;
 
 export const listProductsResponseItemsItemDeliveryBusinessDaysOverrideMax = 365;
 
+export const listProductsResponseItemsItemCharacteristicsItemNameMax = 100;
+
+export const listProductsResponseItemsItemCharacteristicsItemValueMax = 500;
+
 
 
 export const ListProductsResponse = zod.object({
@@ -3617,13 +3642,14 @@ export const ListProductsResponse = zod.object({
   "supplierId": zod.string(),
   "name": zod.string(),
   "category": zod.string(),
-  "categoryId": zod.string().nullish(),
+  "categoryId": zod.string().nullable(),
   "subcategory": zod.string().nullish(),
   "brand": zod.string().nullish(),
   "description": zod.string(),
   "imageUrl": zod.string(),
   "price": zod.number().multipleOf(listProductsResponseItemsItemPriceMultipleOf),
-  "discountPrice": zod.number().multipleOf(listProductsResponseItemsItemDiscountPriceMultipleOf).nullish(),
+  "discountPrice": zod.number().multipleOf(listProductsResponseItemsItemDiscountPriceMultipleOf).nullable(),
+  "saleEndsAt": zod.coerce.date().nullable(),
   "discountPercent": zod.number().nullish(),
   "stock": zod.number().min(listProductsResponseItemsItemStockMin).multipleOf(listProductsResponseItemsItemStockMultipleOf),
   "sku": zod.string(),
@@ -3644,7 +3670,11 @@ export const ListProductsResponse = zod.object({
   "variantType": zod.string().nullable(),
   "averageRating": zod.number().nullish(),
   "reviewCount": zod.number(),
-  "deliveryBusinessDaysOverride": zod.number().int().min(1).max(listProductsResponseItemsItemDeliveryBusinessDaysOverrideMax).nullable()
+  "deliveryBusinessDaysOverride": zod.number().int().min(1).max(listProductsResponseItemsItemDeliveryBusinessDaysOverrideMax).nullable(),
+  "characteristics": zod.array(zod.object({
+  "name": zod.string().min(1).max(listProductsResponseItemsItemCharacteristicsItemNameMax),
+  "value": zod.string().min(1).max(listProductsResponseItemsItemCharacteristicsItemValueMax)
+}))
 })),
   "total": zod.number(),
   "page": zod.number(),
@@ -3808,6 +3838,10 @@ export const getShopProductResponseOneVariantsItemStockMultipleOf = 1;
 
 export const getShopProductResponseOneDeliveryBusinessDaysOverrideMax = 365;
 
+export const getShopProductResponseOneCharacteristicsItemNameMax = 100;
+
+export const getShopProductResponseOneCharacteristicsItemValueMax = 500;
+
 export const getShopProductResponseTwoReviewsItemRatingMax = 5;
 
 export const getShopProductResponseTwoRelatedProductsItemPriceMin = 0;
@@ -3821,13 +3855,14 @@ export const GetShopProductResponse = zod.object({
   "supplierId": zod.string(),
   "name": zod.string(),
   "category": zod.string(),
-  "categoryId": zod.string().nullish(),
+  "categoryId": zod.string().nullable(),
   "subcategory": zod.string().nullish(),
   "brand": zod.string().nullish(),
   "description": zod.string(),
   "imageUrl": zod.string(),
   "price": zod.number().multipleOf(getShopProductResponseOnePriceMultipleOf),
-  "discountPrice": zod.number().multipleOf(getShopProductResponseOneDiscountPriceMultipleOf).nullish(),
+  "discountPrice": zod.number().multipleOf(getShopProductResponseOneDiscountPriceMultipleOf).nullable(),
+  "saleEndsAt": zod.coerce.date().nullable(),
   "discountPercent": zod.number().nullish(),
   "stock": zod.number().min(getShopProductResponseOneStockMin).multipleOf(getShopProductResponseOneStockMultipleOf),
   "sku": zod.string(),
@@ -3848,7 +3883,11 @@ export const GetShopProductResponse = zod.object({
   "variantType": zod.string().nullable(),
   "averageRating": zod.number().nullish(),
   "reviewCount": zod.number(),
-  "deliveryBusinessDaysOverride": zod.number().int().min(1).max(getShopProductResponseOneDeliveryBusinessDaysOverrideMax).nullable()
+  "deliveryBusinessDaysOverride": zod.number().int().min(1).max(getShopProductResponseOneDeliveryBusinessDaysOverrideMax).nullable(),
+  "characteristics": zod.array(zod.object({
+  "name": zod.string().min(1).max(getShopProductResponseOneCharacteristicsItemNameMax),
+  "value": zod.string().min(1).max(getShopProductResponseOneCharacteristicsItemValueMax)
+}))
 }).and(zod.object({
   "reviews": zod.array(zod.object({
   "id": zod.string(),
@@ -3864,7 +3903,8 @@ export const GetShopProductResponse = zod.object({
   "imageUrl": zod.string(),
   "brand": zod.string().nullable(),
   "price": zod.number().int().min(getShopProductResponseTwoRelatedProductsItemPriceMin),
-  "discountPrice": zod.number().int().min(getShopProductResponseTwoRelatedProductsItemDiscountPriceMin).nullable()
+  "discountPrice": zod.number().int().min(getShopProductResponseTwoRelatedProductsItemDiscountPriceMin).nullable(),
+  "saleEndsAt": zod.coerce.date().nullable()
 }).describe('Channel-priced related-product allowlist; excludes inventory, SKU, weight, variants, wholesale administration and relationship IDs.'))
 }))
 
@@ -11161,6 +11201,14 @@ export const adminListProductsResponseItemsItemDeliveryBusinessDaysOverrideMax =
 
 export const adminListProductsResponseItemsItemSubscriptionDiscountPercentMax = 100;
 
+export const adminListProductsResponseItemsItemCharacteristicsItemNameMax = 100;
+
+export const adminListProductsResponseItemsItemCharacteristicsItemValueMax = 500;
+
+export const adminListProductsResponseItemsItemSearchSynonymsItemMax = 100;
+
+export const adminListProductsResponseItemsItemSearchSynonymsMax = 30;
+
 
 
 export const AdminListProductsResponse = zod.object({
@@ -11177,14 +11225,16 @@ export const AdminListProductsResponse = zod.object({
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
   "price": zod.number().multipleOf(adminListProductsResponseItemsItemPriceMultipleOf),
-  "discountPrice": zod.number().multipleOf(adminListProductsResponseItemsItemDiscountPriceMultipleOf).nullish(),
+  "discountPrice": zod.number().multipleOf(adminListProductsResponseItemsItemDiscountPriceMultipleOf).nullable(),
+  "discountPriceEndsAt": zod.coerce.date().nullable(),
   "retailEnabled": zod.boolean(),
   "priceOnRequest": zod.boolean().default(adminListProductsResponseItemsItemPriceOnRequestDefault),
   "bulkMatrixEnabled": zod.boolean().default(adminListProductsResponseItemsItemBulkMatrixEnabledDefault),
   "professionalEnabled": zod.boolean(),
   "publicDescription": zod.string().nullish(),
   "publicPrice": zod.number().min(1).multipleOf(adminListProductsResponseItemsItemPublicPriceMultipleOf).nullish(),
-  "publicDiscountPrice": zod.number().min(1).multipleOf(adminListProductsResponseItemsItemPublicDiscountPriceMultipleOf).nullish(),
+  "publicDiscountPrice": zod.number().min(1).multipleOf(adminListProductsResponseItemsItemPublicDiscountPriceMultipleOf).nullable(),
+  "publicDiscountPriceEndsAt": zod.coerce.date().nullable(),
   "discountPercent": zod.number().nullish(),
   "stock": zod.number().min(adminListProductsResponseItemsItemStockMin).multipleOf(adminListProductsResponseItemsItemStockMultipleOf),
   "catalogReference": zod.string().describe('Opaque immutable customer-facing catalog reference.'),
@@ -11226,6 +11276,11 @@ export const AdminListProductsResponse = zod.object({
   "productTypeId": zod.string().nullable(),
   "ingredients": zod.string().nullable(),
   "usageInstructions": zod.string().nullable(),
+  "characteristics": zod.array(zod.object({
+  "name": zod.string().min(1).max(adminListProductsResponseItemsItemCharacteristicsItemNameMax),
+  "value": zod.string().min(1).max(adminListProductsResponseItemsItemCharacteristicsItemValueMax)
+})),
+  "searchSynonyms": zod.array(zod.string().min(1).max(adminListProductsResponseItemsItemSearchSynonymsItemMax)).max(adminListProductsResponseItemsItemSearchSynonymsMax),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date()
 })),
@@ -11309,6 +11364,16 @@ export const adminCreateProductBodyIngredientsMax = 20000;
 
 export const adminCreateProductBodyUsageInstructionsMax = 20000;
 
+export const adminCreateProductBodyCharacteristicsItemNameMax = 100;
+
+export const adminCreateProductBodyCharacteristicsItemValueMax = 500;
+
+export const adminCreateProductBodyCharacteristicsMax = 100;
+
+export const adminCreateProductBodySearchSynonymsItemMax = 100;
+
+export const adminCreateProductBodySearchSynonymsMax = 30;
+
 
 
 export const AdminCreateProductBody = zod.object({
@@ -11324,6 +11389,7 @@ export const AdminCreateProductBody = zod.object({
   "images": zod.array(zod.string()).optional(),
   "price": zod.number().min(adminCreateProductBodyPriceMin).max(adminCreateProductBodyPriceMax).multipleOf(adminCreateProductBodyPriceMultipleOf),
   "discountPrice": zod.number().min(adminCreateProductBodyDiscountPriceMin).max(adminCreateProductBodyDiscountPriceMax).multipleOf(adminCreateProductBodyDiscountPriceMultipleOf).nullish(),
+  "discountPriceEndsAt": zod.coerce.date().nullish(),
   "retailEnabled": zod.boolean().optional(),
   "priceOnRequest": zod.boolean().optional(),
   "bulkMatrixEnabled": zod.boolean().optional(),
@@ -11331,6 +11397,7 @@ export const AdminCreateProductBody = zod.object({
   "publicDescription": zod.string().max(adminCreateProductBodyPublicDescriptionMax).nullish(),
   "publicPrice": zod.number().min(1).max(adminCreateProductBodyPublicPriceMax).multipleOf(adminCreateProductBodyPublicPriceMultipleOf).nullish(),
   "publicDiscountPrice": zod.number().min(1).max(adminCreateProductBodyPublicDiscountPriceMax).multipleOf(adminCreateProductBodyPublicDiscountPriceMultipleOf).nullish(),
+  "publicDiscountPriceEndsAt": zod.coerce.date().nullish(),
   "stock": zod.number().min(adminCreateProductBodyStockMin).max(adminCreateProductBodyStockMax).multipleOf(adminCreateProductBodyStockMultipleOf),
   "sku": zod.string().min(1),
   "unit": zod.string().min(1),
@@ -11371,7 +11438,12 @@ export const AdminCreateProductBody = zod.object({
   "productTypeId": zod.string().nullish(),
   "needTagIds": zod.array(zod.string()).optional(),
   "ingredients": zod.string().max(adminCreateProductBodyIngredientsMax).nullish(),
-  "usageInstructions": zod.string().max(adminCreateProductBodyUsageInstructionsMax).nullish()
+  "usageInstructions": zod.string().max(adminCreateProductBodyUsageInstructionsMax).nullish(),
+  "characteristics": zod.array(zod.object({
+  "name": zod.string().min(1).max(adminCreateProductBodyCharacteristicsItemNameMax),
+  "value": zod.string().min(1).max(adminCreateProductBodyCharacteristicsItemValueMax)
+})).max(adminCreateProductBodyCharacteristicsMax).optional(),
+  "searchSynonyms": zod.array(zod.string().min(1).max(adminCreateProductBodySearchSynonymsItemMax)).max(adminCreateProductBodySearchSynonymsMax).optional()
 }).strict()
 
 export const adminCreateProductResponsePriceMultipleOf = 1;
@@ -11416,6 +11488,14 @@ export const adminCreateProductResponseDeliveryBusinessDaysOverrideMax = 365;
 
 export const adminCreateProductResponseSubscriptionDiscountPercentMax = 100;
 
+export const adminCreateProductResponseCharacteristicsItemNameMax = 100;
+
+export const adminCreateProductResponseCharacteristicsItemValueMax = 500;
+
+export const adminCreateProductResponseSearchSynonymsItemMax = 100;
+
+export const adminCreateProductResponseSearchSynonymsMax = 30;
+
 
 
 export const AdminCreateProductResponse = zod.object({
@@ -11431,14 +11511,16 @@ export const AdminCreateProductResponse = zod.object({
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
   "price": zod.number().multipleOf(adminCreateProductResponsePriceMultipleOf),
-  "discountPrice": zod.number().multipleOf(adminCreateProductResponseDiscountPriceMultipleOf).nullish(),
+  "discountPrice": zod.number().multipleOf(adminCreateProductResponseDiscountPriceMultipleOf).nullable(),
+  "discountPriceEndsAt": zod.coerce.date().nullable(),
   "retailEnabled": zod.boolean(),
   "priceOnRequest": zod.boolean().default(adminCreateProductResponsePriceOnRequestDefault),
   "bulkMatrixEnabled": zod.boolean().default(adminCreateProductResponseBulkMatrixEnabledDefault),
   "professionalEnabled": zod.boolean(),
   "publicDescription": zod.string().nullish(),
   "publicPrice": zod.number().min(1).multipleOf(adminCreateProductResponsePublicPriceMultipleOf).nullish(),
-  "publicDiscountPrice": zod.number().min(1).multipleOf(adminCreateProductResponsePublicDiscountPriceMultipleOf).nullish(),
+  "publicDiscountPrice": zod.number().min(1).multipleOf(adminCreateProductResponsePublicDiscountPriceMultipleOf).nullable(),
+  "publicDiscountPriceEndsAt": zod.coerce.date().nullable(),
   "discountPercent": zod.number().nullish(),
   "stock": zod.number().min(adminCreateProductResponseStockMin).multipleOf(adminCreateProductResponseStockMultipleOf),
   "catalogReference": zod.string().describe('Opaque immutable customer-facing catalog reference.'),
@@ -11480,6 +11562,11 @@ export const AdminCreateProductResponse = zod.object({
   "productTypeId": zod.string().nullable(),
   "ingredients": zod.string().nullable(),
   "usageInstructions": zod.string().nullable(),
+  "characteristics": zod.array(zod.object({
+  "name": zod.string().min(1).max(adminCreateProductResponseCharacteristicsItemNameMax),
+  "value": zod.string().min(1).max(adminCreateProductResponseCharacteristicsItemValueMax)
+})),
+  "searchSynonyms": zod.array(zod.string().min(1).max(adminCreateProductResponseSearchSynonymsItemMax)).max(adminCreateProductResponseSearchSynonymsMax),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date()
 })
@@ -11771,6 +11858,16 @@ export const adminUpdateProductBodyIngredientsMax = 20000;
 
 export const adminUpdateProductBodyUsageInstructionsMax = 20000;
 
+export const adminUpdateProductBodyCharacteristicsItemNameMax = 100;
+
+export const adminUpdateProductBodyCharacteristicsItemValueMax = 500;
+
+export const adminUpdateProductBodyCharacteristicsMax = 100;
+
+export const adminUpdateProductBodySearchSynonymsItemMax = 100;
+
+export const adminUpdateProductBodySearchSynonymsMax = 30;
+
 
 
 export const AdminUpdateProductBody = zod.object({
@@ -11786,6 +11883,7 @@ export const AdminUpdateProductBody = zod.object({
   "images": zod.array(zod.string()).optional(),
   "price": zod.number().min(adminUpdateProductBodyPriceMin).max(adminUpdateProductBodyPriceMax).multipleOf(adminUpdateProductBodyPriceMultipleOf).optional(),
   "discountPrice": zod.number().min(adminUpdateProductBodyDiscountPriceMin).max(adminUpdateProductBodyDiscountPriceMax).multipleOf(adminUpdateProductBodyDiscountPriceMultipleOf).nullish(),
+  "discountPriceEndsAt": zod.coerce.date().nullish(),
   "retailEnabled": zod.boolean().optional(),
   "priceOnRequest": zod.boolean().optional(),
   "bulkMatrixEnabled": zod.boolean().optional(),
@@ -11793,6 +11891,7 @@ export const AdminUpdateProductBody = zod.object({
   "publicDescription": zod.string().max(adminUpdateProductBodyPublicDescriptionMax).nullish(),
   "publicPrice": zod.number().min(1).max(adminUpdateProductBodyPublicPriceMax).multipleOf(adminUpdateProductBodyPublicPriceMultipleOf).nullish(),
   "publicDiscountPrice": zod.number().min(1).max(adminUpdateProductBodyPublicDiscountPriceMax).multipleOf(adminUpdateProductBodyPublicDiscountPriceMultipleOf).nullish(),
+  "publicDiscountPriceEndsAt": zod.coerce.date().nullish(),
   "stock": zod.number().min(adminUpdateProductBodyStockMin).max(adminUpdateProductBodyStockMax).multipleOf(adminUpdateProductBodyStockMultipleOf).optional(),
   "sku": zod.string().min(1).optional(),
   "unit": zod.string().min(1).optional(),
@@ -11833,7 +11932,12 @@ export const AdminUpdateProductBody = zod.object({
   "productTypeId": zod.string().nullish(),
   "needTagIds": zod.array(zod.string()).optional(),
   "ingredients": zod.string().max(adminUpdateProductBodyIngredientsMax).nullish(),
-  "usageInstructions": zod.string().max(adminUpdateProductBodyUsageInstructionsMax).nullish()
+  "usageInstructions": zod.string().max(adminUpdateProductBodyUsageInstructionsMax).nullish(),
+  "characteristics": zod.array(zod.object({
+  "name": zod.string().min(1).max(adminUpdateProductBodyCharacteristicsItemNameMax),
+  "value": zod.string().min(1).max(adminUpdateProductBodyCharacteristicsItemValueMax)
+})).max(adminUpdateProductBodyCharacteristicsMax).optional(),
+  "searchSynonyms": zod.array(zod.string().min(1).max(adminUpdateProductBodySearchSynonymsItemMax)).max(adminUpdateProductBodySearchSynonymsMax).optional()
 }).strict()
 
 export const adminUpdateProductResponsePriceMultipleOf = 1;
@@ -11878,6 +11982,14 @@ export const adminUpdateProductResponseDeliveryBusinessDaysOverrideMax = 365;
 
 export const adminUpdateProductResponseSubscriptionDiscountPercentMax = 100;
 
+export const adminUpdateProductResponseCharacteristicsItemNameMax = 100;
+
+export const adminUpdateProductResponseCharacteristicsItemValueMax = 500;
+
+export const adminUpdateProductResponseSearchSynonymsItemMax = 100;
+
+export const adminUpdateProductResponseSearchSynonymsMax = 30;
+
 
 
 export const AdminUpdateProductResponse = zod.object({
@@ -11893,14 +12005,16 @@ export const AdminUpdateProductResponse = zod.object({
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
   "price": zod.number().multipleOf(adminUpdateProductResponsePriceMultipleOf),
-  "discountPrice": zod.number().multipleOf(adminUpdateProductResponseDiscountPriceMultipleOf).nullish(),
+  "discountPrice": zod.number().multipleOf(adminUpdateProductResponseDiscountPriceMultipleOf).nullable(),
+  "discountPriceEndsAt": zod.coerce.date().nullable(),
   "retailEnabled": zod.boolean(),
   "priceOnRequest": zod.boolean().default(adminUpdateProductResponsePriceOnRequestDefault),
   "bulkMatrixEnabled": zod.boolean().default(adminUpdateProductResponseBulkMatrixEnabledDefault),
   "professionalEnabled": zod.boolean(),
   "publicDescription": zod.string().nullish(),
   "publicPrice": zod.number().min(1).multipleOf(adminUpdateProductResponsePublicPriceMultipleOf).nullish(),
-  "publicDiscountPrice": zod.number().min(1).multipleOf(adminUpdateProductResponsePublicDiscountPriceMultipleOf).nullish(),
+  "publicDiscountPrice": zod.number().min(1).multipleOf(adminUpdateProductResponsePublicDiscountPriceMultipleOf).nullable(),
+  "publicDiscountPriceEndsAt": zod.coerce.date().nullable(),
   "discountPercent": zod.number().nullish(),
   "stock": zod.number().min(adminUpdateProductResponseStockMin).multipleOf(adminUpdateProductResponseStockMultipleOf),
   "catalogReference": zod.string().describe('Opaque immutable customer-facing catalog reference.'),
@@ -11942,6 +12056,11 @@ export const AdminUpdateProductResponse = zod.object({
   "productTypeId": zod.string().nullable(),
   "ingredients": zod.string().nullable(),
   "usageInstructions": zod.string().nullable(),
+  "characteristics": zod.array(zod.object({
+  "name": zod.string().min(1).max(adminUpdateProductResponseCharacteristicsItemNameMax),
+  "value": zod.string().min(1).max(adminUpdateProductResponseCharacteristicsItemValueMax)
+})),
+  "searchSynonyms": zod.array(zod.string().min(1).max(adminUpdateProductResponseSearchSynonymsItemMax)).max(adminUpdateProductResponseSearchSynonymsMax),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date()
 })
@@ -11999,6 +12118,14 @@ export const adminDeleteProductResponseDeliveryBusinessDaysOverrideMax = 365;
 
 export const adminDeleteProductResponseSubscriptionDiscountPercentMax = 100;
 
+export const adminDeleteProductResponseCharacteristicsItemNameMax = 100;
+
+export const adminDeleteProductResponseCharacteristicsItemValueMax = 500;
+
+export const adminDeleteProductResponseSearchSynonymsItemMax = 100;
+
+export const adminDeleteProductResponseSearchSynonymsMax = 30;
+
 
 
 export const AdminDeleteProductResponse = zod.object({
@@ -12014,14 +12141,16 @@ export const AdminDeleteProductResponse = zod.object({
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
   "price": zod.number().multipleOf(adminDeleteProductResponsePriceMultipleOf),
-  "discountPrice": zod.number().multipleOf(adminDeleteProductResponseDiscountPriceMultipleOf).nullish(),
+  "discountPrice": zod.number().multipleOf(adminDeleteProductResponseDiscountPriceMultipleOf).nullable(),
+  "discountPriceEndsAt": zod.coerce.date().nullable(),
   "retailEnabled": zod.boolean(),
   "priceOnRequest": zod.boolean().default(adminDeleteProductResponsePriceOnRequestDefault),
   "bulkMatrixEnabled": zod.boolean().default(adminDeleteProductResponseBulkMatrixEnabledDefault),
   "professionalEnabled": zod.boolean(),
   "publicDescription": zod.string().nullish(),
   "publicPrice": zod.number().min(1).multipleOf(adminDeleteProductResponsePublicPriceMultipleOf).nullish(),
-  "publicDiscountPrice": zod.number().min(1).multipleOf(adminDeleteProductResponsePublicDiscountPriceMultipleOf).nullish(),
+  "publicDiscountPrice": zod.number().min(1).multipleOf(adminDeleteProductResponsePublicDiscountPriceMultipleOf).nullable(),
+  "publicDiscountPriceEndsAt": zod.coerce.date().nullable(),
   "discountPercent": zod.number().nullish(),
   "stock": zod.number().min(adminDeleteProductResponseStockMin).multipleOf(adminDeleteProductResponseStockMultipleOf),
   "catalogReference": zod.string().describe('Opaque immutable customer-facing catalog reference.'),
@@ -12063,6 +12192,11 @@ export const AdminDeleteProductResponse = zod.object({
   "productTypeId": zod.string().nullable(),
   "ingredients": zod.string().nullable(),
   "usageInstructions": zod.string().nullable(),
+  "characteristics": zod.array(zod.object({
+  "name": zod.string().min(1).max(adminDeleteProductResponseCharacteristicsItemNameMax),
+  "value": zod.string().min(1).max(adminDeleteProductResponseCharacteristicsItemValueMax)
+})),
+  "searchSynonyms": zod.array(zod.string().min(1).max(adminDeleteProductResponseSearchSynonymsItemMax)).max(adminDeleteProductResponseSearchSynonymsMax),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date()
 })
@@ -12373,6 +12507,10 @@ export const listSupplierProductsResponseItemsItemVariantsItemStockMultipleOf = 
 
 export const listSupplierProductsResponseItemsItemDeliveryBusinessDaysOverrideMax = 365;
 
+export const listSupplierProductsResponseItemsItemCharacteristicsItemNameMax = 100;
+
+export const listSupplierProductsResponseItemsItemCharacteristicsItemValueMax = 500;
+
 
 
 export const ListSupplierProductsResponse = zod.object({
@@ -12381,13 +12519,14 @@ export const ListSupplierProductsResponse = zod.object({
   "supplierId": zod.string(),
   "name": zod.string(),
   "category": zod.string(),
-  "categoryId": zod.string().nullish(),
+  "categoryId": zod.string().nullable(),
   "subcategory": zod.string().nullish(),
   "brand": zod.string().nullish(),
   "description": zod.string(),
   "imageUrl": zod.string(),
   "price": zod.number().multipleOf(listSupplierProductsResponseItemsItemPriceMultipleOf),
-  "discountPrice": zod.number().multipleOf(listSupplierProductsResponseItemsItemDiscountPriceMultipleOf).nullish(),
+  "discountPrice": zod.number().multipleOf(listSupplierProductsResponseItemsItemDiscountPriceMultipleOf).nullable(),
+  "saleEndsAt": zod.coerce.date().nullable(),
   "discountPercent": zod.number().nullish(),
   "stock": zod.number().min(listSupplierProductsResponseItemsItemStockMin).multipleOf(listSupplierProductsResponseItemsItemStockMultipleOf),
   "sku": zod.string(),
@@ -12408,7 +12547,11 @@ export const ListSupplierProductsResponse = zod.object({
   "variantType": zod.string().nullable(),
   "averageRating": zod.number().nullish(),
   "reviewCount": zod.number(),
-  "deliveryBusinessDaysOverride": zod.number().int().min(1).max(listSupplierProductsResponseItemsItemDeliveryBusinessDaysOverrideMax).nullable()
+  "deliveryBusinessDaysOverride": zod.number().int().min(1).max(listSupplierProductsResponseItemsItemDeliveryBusinessDaysOverrideMax).nullable(),
+  "characteristics": zod.array(zod.object({
+  "name": zod.string().min(1).max(listSupplierProductsResponseItemsItemCharacteristicsItemNameMax),
+  "value": zod.string().min(1).max(listSupplierProductsResponseItemsItemCharacteristicsItemValueMax)
+}))
 })),
   "total": zod.number(),
   "page": zod.number(),
@@ -12454,6 +12597,10 @@ export const listSupplierPublicProductsResponseOneItemsItemDiscountPriceMultiple
 
 export const listSupplierPublicProductsResponseOneItemsItemDeliveryBusinessDaysOverrideMax = 365;
 
+export const listSupplierPublicProductsResponseOneItemsItemCharacteristicsItemNameMax = 100;
+
+export const listSupplierPublicProductsResponseOneItemsItemCharacteristicsItemValueMax = 500;
+
 export const listSupplierPublicProductsResponseOneItemsItemSubscriptionDiscountPercentMax = 100;
 
 export const listSupplierPublicProductsResponseOneItemsItemReviewSummaryAverageRatingMin = 0;
@@ -12478,13 +12625,15 @@ export const ListSupplierPublicProductsResponse = zod.object({
   "supplierId": zod.string(),
   "name": zod.string(),
   "category": zod.string(),
+  "categoryId": zod.string().nullable(),
   "subcategory": zod.string().nullish(),
   "brand": zod.string().nullish(),
   "description": zod.string(),
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
   "price": zod.number().min(1).multipleOf(listSupplierPublicProductsResponseOneItemsItemPriceMultipleOf).nullable(),
-  "discountPrice": zod.number().min(1).multipleOf(listSupplierPublicProductsResponseOneItemsItemDiscountPriceMultipleOf).nullish(),
+  "discountPrice": zod.number().min(1).multipleOf(listSupplierPublicProductsResponseOneItemsItemDiscountPriceMultipleOf).nullable(),
+  "saleEndsAt": zod.coerce.date().nullable(),
   "discountPercent": zod.number().nullish(),
   "priceOnRequest": zod.boolean(),
   "cartEligible": zod.boolean(),
@@ -12492,6 +12641,10 @@ export const ListSupplierPublicProductsResponse = zod.object({
   "isNew": zod.boolean(),
   "isBestseller": zod.boolean(),
   "deliveryBusinessDaysOverride": zod.number().int().min(1).max(listSupplierPublicProductsResponseOneItemsItemDeliveryBusinessDaysOverrideMax).nullable(),
+  "characteristics": zod.array(zod.object({
+  "name": zod.string().min(1).max(listSupplierPublicProductsResponseOneItemsItemCharacteristicsItemNameMax),
+  "value": zod.string().min(1).max(listSupplierPublicProductsResponseOneItemsItemCharacteristicsItemValueMax)
+})),
   "subscriptionAllowed": zod.boolean(),
   "subscriptionDiscountPercent": zod.number().int().min(1).max(listSupplierPublicProductsResponseOneItemsItemSubscriptionDiscountPercentMax).nullable(),
   "reviewSummary": zod.object({
@@ -12582,6 +12735,10 @@ export const getSupplierProductResponseOneVariantsItemStockMultipleOf = 1;
 
 export const getSupplierProductResponseOneDeliveryBusinessDaysOverrideMax = 365;
 
+export const getSupplierProductResponseOneCharacteristicsItemNameMax = 100;
+
+export const getSupplierProductResponseOneCharacteristicsItemValueMax = 500;
+
 export const getSupplierProductResponseTwoReviewsItemRatingMax = 5;
 
 export const getSupplierProductResponseTwoRelatedProductsItemPriceMin = 0;
@@ -12595,13 +12752,14 @@ export const GetSupplierProductResponse = zod.object({
   "supplierId": zod.string(),
   "name": zod.string(),
   "category": zod.string(),
-  "categoryId": zod.string().nullish(),
+  "categoryId": zod.string().nullable(),
   "subcategory": zod.string().nullish(),
   "brand": zod.string().nullish(),
   "description": zod.string(),
   "imageUrl": zod.string(),
   "price": zod.number().multipleOf(getSupplierProductResponseOnePriceMultipleOf),
-  "discountPrice": zod.number().multipleOf(getSupplierProductResponseOneDiscountPriceMultipleOf).nullish(),
+  "discountPrice": zod.number().multipleOf(getSupplierProductResponseOneDiscountPriceMultipleOf).nullable(),
+  "saleEndsAt": zod.coerce.date().nullable(),
   "discountPercent": zod.number().nullish(),
   "stock": zod.number().min(getSupplierProductResponseOneStockMin).multipleOf(getSupplierProductResponseOneStockMultipleOf),
   "sku": zod.string(),
@@ -12622,7 +12780,11 @@ export const GetSupplierProductResponse = zod.object({
   "variantType": zod.string().nullable(),
   "averageRating": zod.number().nullish(),
   "reviewCount": zod.number(),
-  "deliveryBusinessDaysOverride": zod.number().int().min(1).max(getSupplierProductResponseOneDeliveryBusinessDaysOverrideMax).nullable()
+  "deliveryBusinessDaysOverride": zod.number().int().min(1).max(getSupplierProductResponseOneDeliveryBusinessDaysOverrideMax).nullable(),
+  "characteristics": zod.array(zod.object({
+  "name": zod.string().min(1).max(getSupplierProductResponseOneCharacteristicsItemNameMax),
+  "value": zod.string().min(1).max(getSupplierProductResponseOneCharacteristicsItemValueMax)
+}))
 }).and(zod.object({
   "reviews": zod.array(zod.object({
   "id": zod.string(),
@@ -12638,7 +12800,8 @@ export const GetSupplierProductResponse = zod.object({
   "imageUrl": zod.string(),
   "brand": zod.string().nullable(),
   "price": zod.number().int().min(getSupplierProductResponseTwoRelatedProductsItemPriceMin),
-  "discountPrice": zod.number().int().min(getSupplierProductResponseTwoRelatedProductsItemDiscountPriceMin).nullable()
+  "discountPrice": zod.number().int().min(getSupplierProductResponseTwoRelatedProductsItemDiscountPriceMin).nullable(),
+  "saleEndsAt": zod.coerce.date().nullable()
 }).describe('Channel-priced related-product allowlist; excludes inventory, SKU, weight, variants, wholesale administration and relationship IDs.'))
 }))
 
@@ -12657,6 +12820,10 @@ export const getSupplierPublicProductResponseOneDiscountPriceMultipleOf = 1;
 
 export const getSupplierPublicProductResponseOneDeliveryBusinessDaysOverrideMax = 365;
 
+export const getSupplierPublicProductResponseOneCharacteristicsItemNameMax = 100;
+
+export const getSupplierPublicProductResponseOneCharacteristicsItemValueMax = 500;
+
 export const getSupplierPublicProductResponseOneSubscriptionDiscountPercentMax = 100;
 
 export const getSupplierPublicProductResponseOneReviewSummaryAverageRatingMin = 0;
@@ -12674,13 +12841,15 @@ export const GetSupplierPublicProductResponse = zod.object({
   "supplierId": zod.string(),
   "name": zod.string(),
   "category": zod.string(),
+  "categoryId": zod.string().nullable(),
   "subcategory": zod.string().nullish(),
   "brand": zod.string().nullish(),
   "description": zod.string(),
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
   "price": zod.number().min(1).multipleOf(getSupplierPublicProductResponseOnePriceMultipleOf).nullable(),
-  "discountPrice": zod.number().min(1).multipleOf(getSupplierPublicProductResponseOneDiscountPriceMultipleOf).nullish(),
+  "discountPrice": zod.number().min(1).multipleOf(getSupplierPublicProductResponseOneDiscountPriceMultipleOf).nullable(),
+  "saleEndsAt": zod.coerce.date().nullable(),
   "discountPercent": zod.number().nullish(),
   "priceOnRequest": zod.boolean(),
   "cartEligible": zod.boolean(),
@@ -12688,6 +12857,10 @@ export const GetSupplierPublicProductResponse = zod.object({
   "isNew": zod.boolean(),
   "isBestseller": zod.boolean(),
   "deliveryBusinessDaysOverride": zod.number().int().min(1).max(getSupplierPublicProductResponseOneDeliveryBusinessDaysOverrideMax).nullable(),
+  "characteristics": zod.array(zod.object({
+  "name": zod.string().min(1).max(getSupplierPublicProductResponseOneCharacteristicsItemNameMax),
+  "value": zod.string().min(1).max(getSupplierPublicProductResponseOneCharacteristicsItemValueMax)
+})),
   "subscriptionAllowed": zod.boolean(),
   "subscriptionDiscountPercent": zod.number().int().min(1).max(getSupplierPublicProductResponseOneSubscriptionDiscountPercentMax).nullable(),
   "reviewSummary": zod.object({
@@ -12729,6 +12902,7 @@ export const GetSupplierPublicProductResponse = zod.object({
   "brand": zod.string().nullable(),
   "price": zod.number().int().min(1).nullable(),
   "discountPrice": zod.number().int().min(1).nullable(),
+  "saleEndsAt": zod.coerce.date().nullable(),
   "priceOnRequest": zod.boolean(),
   "cartEligible": zod.boolean()
 }).describe('Public retail related-product allowlist with explicit price-on-request state.'))
@@ -12748,6 +12922,10 @@ export const listRecentlyViewedProductsResponseDiscountPriceMultipleOf = 1;
 
 export const listRecentlyViewedProductsResponseDeliveryBusinessDaysOverrideMax = 365;
 
+export const listRecentlyViewedProductsResponseCharacteristicsItemNameMax = 100;
+
+export const listRecentlyViewedProductsResponseCharacteristicsItemValueMax = 500;
+
 export const listRecentlyViewedProductsResponseSubscriptionDiscountPercentMax = 100;
 
 export const listRecentlyViewedProductsResponseReviewSummaryAverageRatingMin = 0;
@@ -12763,13 +12941,15 @@ export const ListRecentlyViewedProductsResponseItem = zod.object({
   "supplierId": zod.string(),
   "name": zod.string(),
   "category": zod.string(),
+  "categoryId": zod.string().nullable(),
   "subcategory": zod.string().nullish(),
   "brand": zod.string().nullish(),
   "description": zod.string(),
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
   "price": zod.number().min(1).multipleOf(listRecentlyViewedProductsResponsePriceMultipleOf).nullable(),
-  "discountPrice": zod.number().min(1).multipleOf(listRecentlyViewedProductsResponseDiscountPriceMultipleOf).nullish(),
+  "discountPrice": zod.number().min(1).multipleOf(listRecentlyViewedProductsResponseDiscountPriceMultipleOf).nullable(),
+  "saleEndsAt": zod.coerce.date().nullable(),
   "discountPercent": zod.number().nullish(),
   "priceOnRequest": zod.boolean(),
   "cartEligible": zod.boolean(),
@@ -12777,6 +12957,10 @@ export const ListRecentlyViewedProductsResponseItem = zod.object({
   "isNew": zod.boolean(),
   "isBestseller": zod.boolean(),
   "deliveryBusinessDaysOverride": zod.number().int().min(1).max(listRecentlyViewedProductsResponseDeliveryBusinessDaysOverrideMax).nullable(),
+  "characteristics": zod.array(zod.object({
+  "name": zod.string().min(1).max(listRecentlyViewedProductsResponseCharacteristicsItemNameMax),
+  "value": zod.string().min(1).max(listRecentlyViewedProductsResponseCharacteristicsItemValueMax)
+})),
   "subscriptionAllowed": zod.boolean(),
   "subscriptionDiscountPercent": zod.number().int().min(1).max(listRecentlyViewedProductsResponseSubscriptionDiscountPercentMax).nullable(),
   "reviewSummary": zod.object({
@@ -16199,6 +16383,10 @@ export const listProductWishlistResponseProductOneDiscountPriceMultipleOf = 1;
 
 export const listProductWishlistResponseProductOneDeliveryBusinessDaysOverrideMax = 365;
 
+export const listProductWishlistResponseProductOneCharacteristicsItemNameMax = 100;
+
+export const listProductWishlistResponseProductOneCharacteristicsItemValueMax = 500;
+
 export const listProductWishlistResponseProductOneSubscriptionDiscountPercentMax = 100;
 
 export const listProductWishlistResponseProductOneReviewSummaryAverageRatingMin = 0;
@@ -16221,13 +16409,15 @@ export const ListProductWishlistResponseItem = zod.object({
   "supplierId": zod.string(),
   "name": zod.string(),
   "category": zod.string(),
+  "categoryId": zod.string().nullable(),
   "subcategory": zod.string().nullish(),
   "brand": zod.string().nullish(),
   "description": zod.string(),
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
   "price": zod.number().min(1).multipleOf(listProductWishlistResponseProductOnePriceMultipleOf).nullable(),
-  "discountPrice": zod.number().min(1).multipleOf(listProductWishlistResponseProductOneDiscountPriceMultipleOf).nullish(),
+  "discountPrice": zod.number().min(1).multipleOf(listProductWishlistResponseProductOneDiscountPriceMultipleOf).nullable(),
+  "saleEndsAt": zod.coerce.date().nullable(),
   "discountPercent": zod.number().nullish(),
   "priceOnRequest": zod.boolean(),
   "cartEligible": zod.boolean(),
@@ -16235,6 +16425,10 @@ export const ListProductWishlistResponseItem = zod.object({
   "isNew": zod.boolean(),
   "isBestseller": zod.boolean(),
   "deliveryBusinessDaysOverride": zod.number().int().min(1).max(listProductWishlistResponseProductOneDeliveryBusinessDaysOverrideMax).nullable(),
+  "characteristics": zod.array(zod.object({
+  "name": zod.string().min(1).max(listProductWishlistResponseProductOneCharacteristicsItemNameMax),
+  "value": zod.string().min(1).max(listProductWishlistResponseProductOneCharacteristicsItemValueMax)
+})),
   "subscriptionAllowed": zod.boolean(),
   "subscriptionDiscountPercent": zod.number().int().min(1).max(listProductWishlistResponseProductOneSubscriptionDiscountPercentMax).nullable(),
   "reviewSummary": zod.object({
@@ -16281,6 +16475,10 @@ export const addProductWishlistItemResponseProductOneDiscountPriceMultipleOf = 1
 
 export const addProductWishlistItemResponseProductOneDeliveryBusinessDaysOverrideMax = 365;
 
+export const addProductWishlistItemResponseProductOneCharacteristicsItemNameMax = 100;
+
+export const addProductWishlistItemResponseProductOneCharacteristicsItemValueMax = 500;
+
 export const addProductWishlistItemResponseProductOneSubscriptionDiscountPercentMax = 100;
 
 export const addProductWishlistItemResponseProductOneReviewSummaryAverageRatingMin = 0;
@@ -16303,13 +16501,15 @@ export const AddProductWishlistItemResponse = zod.object({
   "supplierId": zod.string(),
   "name": zod.string(),
   "category": zod.string(),
+  "categoryId": zod.string().nullable(),
   "subcategory": zod.string().nullish(),
   "brand": zod.string().nullish(),
   "description": zod.string(),
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
   "price": zod.number().min(1).multipleOf(addProductWishlistItemResponseProductOnePriceMultipleOf).nullable(),
-  "discountPrice": zod.number().min(1).multipleOf(addProductWishlistItemResponseProductOneDiscountPriceMultipleOf).nullish(),
+  "discountPrice": zod.number().min(1).multipleOf(addProductWishlistItemResponseProductOneDiscountPriceMultipleOf).nullable(),
+  "saleEndsAt": zod.coerce.date().nullable(),
   "discountPercent": zod.number().nullish(),
   "priceOnRequest": zod.boolean(),
   "cartEligible": zod.boolean(),
@@ -16317,6 +16517,10 @@ export const AddProductWishlistItemResponse = zod.object({
   "isNew": zod.boolean(),
   "isBestseller": zod.boolean(),
   "deliveryBusinessDaysOverride": zod.number().int().min(1).max(addProductWishlistItemResponseProductOneDeliveryBusinessDaysOverrideMax).nullable(),
+  "characteristics": zod.array(zod.object({
+  "name": zod.string().min(1).max(addProductWishlistItemResponseProductOneCharacteristicsItemNameMax),
+  "value": zod.string().min(1).max(addProductWishlistItemResponseProductOneCharacteristicsItemValueMax)
+})),
   "subscriptionAllowed": zod.boolean(),
   "subscriptionDiscountPercent": zod.number().int().min(1).max(addProductWishlistItemResponseProductOneSubscriptionDiscountPercentMax).nullable(),
   "reviewSummary": zod.object({
@@ -16362,6 +16566,10 @@ export const toggleProductWishlistItemResponseItemOneProductOneDiscountPriceMult
 
 export const toggleProductWishlistItemResponseItemOneProductOneDeliveryBusinessDaysOverrideMax = 365;
 
+export const toggleProductWishlistItemResponseItemOneProductOneCharacteristicsItemNameMax = 100;
+
+export const toggleProductWishlistItemResponseItemOneProductOneCharacteristicsItemValueMax = 500;
+
 export const toggleProductWishlistItemResponseItemOneProductOneSubscriptionDiscountPercentMax = 100;
 
 export const toggleProductWishlistItemResponseItemOneProductOneReviewSummaryAverageRatingMin = 0;
@@ -16386,13 +16594,15 @@ export const ToggleProductWishlistItemResponse = zod.object({
   "supplierId": zod.string(),
   "name": zod.string(),
   "category": zod.string(),
+  "categoryId": zod.string().nullable(),
   "subcategory": zod.string().nullish(),
   "brand": zod.string().nullish(),
   "description": zod.string(),
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
   "price": zod.number().min(1).multipleOf(toggleProductWishlistItemResponseItemOneProductOnePriceMultipleOf).nullable(),
-  "discountPrice": zod.number().min(1).multipleOf(toggleProductWishlistItemResponseItemOneProductOneDiscountPriceMultipleOf).nullish(),
+  "discountPrice": zod.number().min(1).multipleOf(toggleProductWishlistItemResponseItemOneProductOneDiscountPriceMultipleOf).nullable(),
+  "saleEndsAt": zod.coerce.date().nullable(),
   "discountPercent": zod.number().nullish(),
   "priceOnRequest": zod.boolean(),
   "cartEligible": zod.boolean(),
@@ -16400,6 +16610,10 @@ export const ToggleProductWishlistItemResponse = zod.object({
   "isNew": zod.boolean(),
   "isBestseller": zod.boolean(),
   "deliveryBusinessDaysOverride": zod.number().int().min(1).max(toggleProductWishlistItemResponseItemOneProductOneDeliveryBusinessDaysOverrideMax).nullable(),
+  "characteristics": zod.array(zod.object({
+  "name": zod.string().min(1).max(toggleProductWishlistItemResponseItemOneProductOneCharacteristicsItemNameMax),
+  "value": zod.string().min(1).max(toggleProductWishlistItemResponseItemOneProductOneCharacteristicsItemValueMax)
+})),
   "subscriptionAllowed": zod.boolean(),
   "subscriptionDiscountPercent": zod.number().int().min(1).max(toggleProductWishlistItemResponseItemOneProductOneSubscriptionDiscountPercentMax).nullable(),
   "reviewSummary": zod.object({
@@ -20525,3 +20739,308 @@ export const AdminUpdateReviewRewardSettingsResponse = zod.object({
   "validityDays": zod.number().int().min(1).max(adminUpdateReviewRewardSettingsResponseValidityDaysMax),
   "version": zod.number().int().min(1)
 })
+
+
+/**
+ * @summary Get rotating global commerce header messages
+ */
+export const getCommerceHeaderBarResponseMessagesItemTextMax = 200;
+
+export const getCommerceHeaderBarResponseMessagesItemBackgroundColorRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');
+export const getCommerceHeaderBarResponseMessagesItemTextColorRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');
+export const getCommerceHeaderBarResponseMessagesMax = 10;
+
+export const getCommerceHeaderBarResponseIntervalSecondsMin = 2;
+export const getCommerceHeaderBarResponseIntervalSecondsMax = 60;
+
+
+
+export const GetCommerceHeaderBarResponse = zod.object({
+  "enabled": zod.boolean(),
+  "messages": zod.array(zod.object({
+  "text": zod.string().min(1).max(getCommerceHeaderBarResponseMessagesItemTextMax),
+  "backgroundColor": zod.string().regex(getCommerceHeaderBarResponseMessagesItemBackgroundColorRegExp),
+  "textColor": zod.string().regex(getCommerceHeaderBarResponseMessagesItemTextColorRegExp)
+})).max(getCommerceHeaderBarResponseMessagesMax),
+  "intervalSeconds": zod.number().int().min(getCommerceHeaderBarResponseIntervalSecondsMin).max(getCommerceHeaderBarResponseIntervalSecondsMax)
+})
+
+
+export const adminGetCommerceExperienceResponseHeaderMessagesItemTextMax = 200;
+
+export const adminGetCommerceExperienceResponseHeaderMessagesItemBackgroundColorRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');
+export const adminGetCommerceExperienceResponseHeaderMessagesItemTextColorRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');
+export const adminGetCommerceExperienceResponseHeaderMessagesMax = 10;
+
+export const adminGetCommerceExperienceResponseHeaderIntervalSecondsMin = 2;
+export const adminGetCommerceExperienceResponseHeaderIntervalSecondsMax = 60;
+
+export const adminGetCommerceExperienceResponseSmartSearchProductIdsMax = 5;
+
+
+
+
+export const AdminGetCommerceExperienceResponse = zod.object({
+  "headerEnabled": zod.boolean(),
+  "headerMessages": zod.array(zod.object({
+  "text": zod.string().min(1).max(adminGetCommerceExperienceResponseHeaderMessagesItemTextMax),
+  "backgroundColor": zod.string().regex(adminGetCommerceExperienceResponseHeaderMessagesItemBackgroundColorRegExp),
+  "textColor": zod.string().regex(adminGetCommerceExperienceResponseHeaderMessagesItemTextColorRegExp)
+})).max(adminGetCommerceExperienceResponseHeaderMessagesMax),
+  "headerIntervalSeconds": zod.number().int().min(adminGetCommerceExperienceResponseHeaderIntervalSecondsMin).max(adminGetCommerceExperienceResponseHeaderIntervalSecondsMax),
+  "smartSearchMode": zod.enum(['AUTOMATIC', 'MANUAL']),
+  "smartSearchProductIds": zod.array(zod.string()).max(adminGetCommerceExperienceResponseSmartSearchProductIdsMax),
+  "bestsellerPeriodDays": zod.union([zod.literal(30),zod.literal(60)]),
+  "version": zod.number().int().min(1)
+})
+
+
+export const adminUpdateCommerceExperienceBodyHeaderMessagesItemTextMax = 200;
+
+export const adminUpdateCommerceExperienceBodyHeaderMessagesItemBackgroundColorRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');
+export const adminUpdateCommerceExperienceBodyHeaderMessagesItemTextColorRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');
+export const adminUpdateCommerceExperienceBodyHeaderMessagesMax = 10;
+
+export const adminUpdateCommerceExperienceBodyHeaderIntervalSecondsMin = 2;
+export const adminUpdateCommerceExperienceBodyHeaderIntervalSecondsMax = 60;
+
+export const adminUpdateCommerceExperienceBodySmartSearchProductIdsMax = 5;
+
+
+
+
+export const AdminUpdateCommerceExperienceBody = zod.object({
+  "headerEnabled": zod.boolean(),
+  "headerMessages": zod.array(zod.object({
+  "text": zod.string().min(1).max(adminUpdateCommerceExperienceBodyHeaderMessagesItemTextMax),
+  "backgroundColor": zod.string().regex(adminUpdateCommerceExperienceBodyHeaderMessagesItemBackgroundColorRegExp),
+  "textColor": zod.string().regex(adminUpdateCommerceExperienceBodyHeaderMessagesItemTextColorRegExp)
+})).max(adminUpdateCommerceExperienceBodyHeaderMessagesMax),
+  "headerIntervalSeconds": zod.number().int().min(adminUpdateCommerceExperienceBodyHeaderIntervalSecondsMin).max(adminUpdateCommerceExperienceBodyHeaderIntervalSecondsMax),
+  "smartSearchMode": zod.enum(['AUTOMATIC', 'MANUAL']),
+  "smartSearchProductIds": zod.array(zod.string()).max(adminUpdateCommerceExperienceBodySmartSearchProductIdsMax),
+  "bestsellerPeriodDays": zod.union([zod.literal(30),zod.literal(60)]),
+  "version": zod.number().int().min(1)
+}).strict()
+
+export const adminUpdateCommerceExperienceResponseHeaderMessagesItemTextMax = 200;
+
+export const adminUpdateCommerceExperienceResponseHeaderMessagesItemBackgroundColorRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');
+export const adminUpdateCommerceExperienceResponseHeaderMessagesItemTextColorRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');
+export const adminUpdateCommerceExperienceResponseHeaderMessagesMax = 10;
+
+export const adminUpdateCommerceExperienceResponseHeaderIntervalSecondsMin = 2;
+export const adminUpdateCommerceExperienceResponseHeaderIntervalSecondsMax = 60;
+
+export const adminUpdateCommerceExperienceResponseSmartSearchProductIdsMax = 5;
+
+
+
+
+export const AdminUpdateCommerceExperienceResponse = zod.object({
+  "headerEnabled": zod.boolean(),
+  "headerMessages": zod.array(zod.object({
+  "text": zod.string().min(1).max(adminUpdateCommerceExperienceResponseHeaderMessagesItemTextMax),
+  "backgroundColor": zod.string().regex(adminUpdateCommerceExperienceResponseHeaderMessagesItemBackgroundColorRegExp),
+  "textColor": zod.string().regex(adminUpdateCommerceExperienceResponseHeaderMessagesItemTextColorRegExp)
+})).max(adminUpdateCommerceExperienceResponseHeaderMessagesMax),
+  "headerIntervalSeconds": zod.number().int().min(adminUpdateCommerceExperienceResponseHeaderIntervalSecondsMin).max(adminUpdateCommerceExperienceResponseHeaderIntervalSecondsMax),
+  "smartSearchMode": zod.enum(['AUTOMATIC', 'MANUAL']),
+  "smartSearchProductIds": zod.array(zod.string()).max(adminUpdateCommerceExperienceResponseSmartSearchProductIdsMax),
+  "bestsellerPeriodDays": zod.union([zod.literal(30),zod.literal(60)]),
+  "version": zod.number().int().min(1)
+})
+
+
+export const getCommerceSearchSuggestionsQueryQMax = 100;
+
+export const getCommerceSearchSuggestionsQueryLimitDefault = 5;
+export const getCommerceSearchSuggestionsQueryLimitMax = 5;
+
+
+
+export const GetCommerceSearchSuggestionsQueryParams = zod.object({
+  "audience": zod.enum(['B2B', 'B2C']),
+  "q": zod.coerce.string().max(getCommerceSearchSuggestionsQueryQMax).optional(),
+  "limit": zod.coerce.number().int().min(1).max(getCommerceSearchSuggestionsQueryLimitMax).default(getCommerceSearchSuggestionsQueryLimitDefault)
+})
+
+export const getCommerceSearchSuggestionsResponseVariantsItemSwatchOneOneHexRegExp = new RegExp('^#[0-9A-F]{6}$');
+
+
+export const GetCommerceSearchSuggestionsResponseItem = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string(),
+  "audience": zod.enum(['B2B', 'B2C']),
+  "price": zod.number().nullable(),
+  "discountPrice": zod.number().nullable(),
+  "priceOnRequest": zod.boolean(),
+  "cartEligible": zod.boolean(),
+  "variantType": zod.string().nullable(),
+  "variants": zod.array(zod.object({
+  "value": zod.string(),
+  "label": zod.string(),
+  "cartEligible": zod.boolean(),
+  "swatch": zod.union([zod.union([zod.object({
+  "kind": zod.enum(['COLOR']),
+  "hex": zod.string().regex(getCommerceSearchSuggestionsResponseVariantsItemSwatchOneOneHexRegExp)
+}),zod.object({
+  "kind": zod.enum(['IMAGE']),
+  "imageUrl": zod.string()
+}),zod.object({
+  "kind": zod.enum(['TEXT']),
+  "text": zod.string()
+})]),zod.null()]),
+  "imageUrl": zod.string().nullable()
+})),
+  "automaticBestseller": zod.boolean()
+})
+export const GetCommerceSearchSuggestionsResponse = zod.array(GetCommerceSearchSuggestionsResponseItem)
+
+
+export const listCommerceBestsellersQuerySupplierSlugMax = 120;
+
+
+
+export const ListCommerceBestsellersQueryParams = zod.object({
+  "audience": zod.enum(['B2B', 'B2C']),
+  "periodDays": zod.union([zod.literal(30),zod.literal(60)]).optional(),
+  "categoryId": zod.coerce.string().optional(),
+  "supplierSlug": zod.coerce.string().min(1).max(listCommerceBestsellersQuerySupplierSlugMax).optional()
+})
+
+export const listCommerceBestsellersResponseRankMax = 10;
+
+
+
+
+export const ListCommerceBestsellersResponseItem = zod.object({
+  "rank": zod.number().int().min(1).max(listCommerceBestsellersResponseRankMax),
+  "productId": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string(),
+  "categoryId": zod.string().nullable(),
+  "quantitySold": zod.number().int().min(1),
+  "audience": zod.enum(['B2B', 'B2C']),
+  "periodDays": zod.union([zod.literal(30),zod.literal(60)]),
+  "automaticBestseller": zod.boolean()
+})
+export const ListCommerceBestsellersResponse = zod.array(ListCommerceBestsellersResponseItem)
+
+
+export const adminListCommerceBestsellersQuerySupplierSlugMax = 120;
+
+
+
+export const AdminListCommerceBestsellersQueryParams = zod.object({
+  "audience": zod.enum(['B2B', 'B2C']),
+  "periodDays": zod.union([zod.literal(30),zod.literal(60)]).optional(),
+  "categoryId": zod.coerce.string().optional(),
+  "supplierSlug": zod.coerce.string().min(1).max(adminListCommerceBestsellersQuerySupplierSlugMax).optional()
+})
+
+export const adminListCommerceBestsellersResponseRankMax = 10;
+
+
+
+
+export const AdminListCommerceBestsellersResponseItem = zod.object({
+  "rank": zod.number().int().min(1).max(adminListCommerceBestsellersResponseRankMax),
+  "productId": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string(),
+  "categoryId": zod.string().nullable(),
+  "quantitySold": zod.number().int().min(1),
+  "audience": zod.enum(['B2B', 'B2C']),
+  "periodDays": zod.union([zod.literal(30),zod.literal(60)]),
+  "automaticBestseller": zod.boolean()
+})
+export const AdminListCommerceBestsellersResponse = zod.array(AdminListCommerceBestsellersResponseItem)
+
+
+export const ListProductDocumentsParams = zod.object({
+  "productId": zod.coerce.string()
+})
+
+export const ListProductDocumentsQueryParams = zod.object({
+  "audience": zod.enum(['B2B', 'B2C'])
+})
+
+export const ListProductDocumentsResponseItem = zod.object({
+  "id": zod.string(),
+  "displayName": zod.string(),
+  "sortOrder": zod.number().int(),
+  "url": zod.string(),
+  "contentType": zod.enum(['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'])
+})
+export const ListProductDocumentsResponse = zod.array(ListProductDocumentsResponseItem)
+
+
+export const AdminListProductDocumentsParams = zod.object({
+  "productId": zod.coerce.string()
+})
+
+export const AdminListProductDocumentsResponseItem = zod.object({
+  "id": zod.string(),
+  "displayName": zod.string(),
+  "sortOrder": zod.number().int(),
+  "url": zod.string(),
+  "contentType": zod.enum(['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'])
+})
+export const AdminListProductDocumentsResponse = zod.array(AdminListProductDocumentsResponseItem)
+
+
+export const AdminAttachProductDocumentParams = zod.object({
+  "productId": zod.coerce.string()
+})
+
+export const adminAttachProductDocumentBodyMediaUrlRegExp = new RegExp('^/api/media/[0-9a-fA-F-]{36}');
+export const adminAttachProductDocumentBodyDisplayNameMax = 200;
+
+export const adminAttachProductDocumentBodySortOrderMin = 0;
+export const adminAttachProductDocumentBodySortOrderMax = 10000;
+
+
+
+export const AdminAttachProductDocumentBody = zod.object({
+  "mediaUrl": zod.string().regex(adminAttachProductDocumentBodyMediaUrlRegExp),
+  "displayName": zod.string().min(1).max(adminAttachProductDocumentBodyDisplayNameMax),
+  "sortOrder": zod.number().int().min(adminAttachProductDocumentBodySortOrderMin).max(adminAttachProductDocumentBodySortOrderMax)
+}).strict()
+
+export const AdminAttachProductDocumentResponse = zod.object({
+  "id": zod.string(),
+  "displayName": zod.string(),
+  "sortOrder": zod.number().int(),
+  "url": zod.string(),
+  "contentType": zod.enum(['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'])
+})
+
+
+export const AdminReorderProductDocumentsParams = zod.object({
+  "productId": zod.coerce.string()
+})
+
+export const adminReorderProductDocumentsBodyItemsItemSortOrderMin = 0;
+export const adminReorderProductDocumentsBodyItemsItemSortOrderMax = 10000;
+
+export const adminReorderProductDocumentsBodyItemsMax = 100;
+
+
+
+export const AdminReorderProductDocumentsBody = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "sortOrder": zod.number().int().min(adminReorderProductDocumentsBodyItemsItemSortOrderMin).max(adminReorderProductDocumentsBodyItemsItemSortOrderMax)
+})).max(adminReorderProductDocumentsBodyItemsMax)
+}).strict()
+
+export const AdminReorderProductDocumentsResponse = zod.void()
+
+
+export const AdminDeleteProductDocumentParams = zod.object({
+  "documentId": zod.coerce.string()
+})
+
+export const AdminDeleteProductDocumentResponse = zod.void()

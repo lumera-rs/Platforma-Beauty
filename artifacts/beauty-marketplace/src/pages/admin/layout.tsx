@@ -28,6 +28,7 @@ const navLinks = [
   { href: "/admin/lista-cekanja", label: "Lista čekanja", icon: Bell },
   { href: "/admin/podesavanja/prodavnica", label: "Podešavanja prodavnice", icon: Settings2 },
   { href: "/admin/podesavanja-prikaza", label: "B2C Podešavanja", icon: Settings2 },
+  { href: "/admin/iskustvo-kupovine", label: "Iskustvo kupovine", icon: Settings2 },
     { href: "/admin/porudzbine", label: "Porudžbine", icon: Package },
   { href: "/admin/b2b-ponude", label: "B2B Ponude", icon: FileText },
   { href: "/admin/reklamacije", label: "Reklamacije (RMA)", icon: AlertCircle },

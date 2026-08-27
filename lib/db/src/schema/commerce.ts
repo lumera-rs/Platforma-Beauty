@@ -132,13 +132,19 @@ export const productsTable = pgTable("products", {
   images: jsonb("images").$type<string[]>().notNull().default([]),
   price: integer("price").notNull(),
   discountPrice: integer("discount_price"),
+  /** B2B sale is active strictly before this instant; null preserves legacy perpetual-sale behavior. */
+  discountPriceEndsAt: timestamp("discount_price_ends_at", { withTimezone: true }),
   retailEnabled: boolean("retail_enabled").notNull().default(false),
   publicDescription: text("public_description"),
   publicPrice: integer("public_price"),
   publicDiscountPrice: integer("public_discount_price"),
+  /** B2C sale is active strictly before this instant; null preserves legacy perpetual-sale behavior. */
+  publicDiscountPriceEndsAt: timestamp("public_discount_price_ends_at", { withTimezone: true }),
   productTypeId: uuid("product_type_id").references(() => b2cProductTypesTable.id, { onDelete: "restrict" }),
   ingredients: text("ingredients"),
   usageInstructions: text("usage_instructions"),
+  characteristics: jsonb("characteristics").$type<Array<{ name: string; value: string }>>().notNull().default([]),
+  searchSynonyms: jsonb("search_synonyms").$type<string[]>().notNull().default([]),
   professionalEnabled: boolean("professional_enabled").notNull().default(true),
   stock: integer("stock").notNull().default(0),
   // Opaque customer-facing reference. Unlike SKU, this is never edited.

@@ -53,6 +53,11 @@ import {
   commerceDiscountsForPricedLine,
   quoteCommerceReferralBase,
 } from "../lib/commerce-discount-engine";
+import {
+  activeProductSale,
+  activeProductSaleConditionSql,
+  activeProductSalePriceSql,
+} from "../lib/active-product-sale";
 
 import 
 {
@@ -9042,7 +9047,8 @@ function productDtoWithAggregate(
   item: typeof productsTable.$inferSelect,
   aggregate: { count: number; averageRating: number | null } | undefined,
 ) {
-  const discountPercent = item.discountPrice ? Math.round((1 - item.discountPrice / item.price) * 100) : null;
+  const sale = activeProductSale(item, "B2B");
+  const discountPercent = sale ? Math.round((1 - sale.price / item.price) * 100) : null;
   return {
     id: item.id,
     supplierId: item.supplierId,
@@ -9056,7 +9062,8 @@ function productDtoWithAggregate(
     imageUrl: item.imageUrl,
     images: item.images ?? [],
     price: item.price,
-    discountPrice: item.discountPrice ?? null,
+    discountPrice: sale?.price ?? null,
+    saleEndsAt: sale?.endsAt ?? null,
     discountPercent,
     stock: item.stock,
     catalogReference: item.catalogReference,
@@ -9070,6 +9077,7 @@ function productDtoWithAggregate(
     averageRating: aggregate?.averageRating ?? null,
     reviewCount: aggregate?.count ?? 0,
     deliveryBusinessDaysOverride: item.deliveryBusinessDaysOverride ?? null,
+    characteristics: item.characteristics,
   };
 }
 
@@ -9094,7 +9102,8 @@ function publicProductDto(item: typeof productsTable.$inferSelect) {
     : inventory.kind === "per-variant" ? inventory.total : Math.max(0, item.stock);
   const priceOnRequest = item.priceOnRequest || effectiveStock === 0;
   const price = priceOnRequest ? null : configuredPrice;
-  const discountPrice = priceOnRequest ? null : item.publicDiscountPrice;
+  const sale = activeProductSale(item, "B2C");
+  const discountPrice = priceOnRequest ? null : sale?.price ?? null;
   if (!item.retailEnabled || !item.publicDescription || configuredPrice == null) {
     throw new Error("Attempted to serialize a product without complete public storefront data.");
   }
@@ -9103,6 +9112,7 @@ function publicProductDto(item: typeof productsTable.$inferSelect) {
     supplierId: item.supplierId,
     name: item.name,
     category: item.categoryName,
+    categoryId: item.categoryId ?? null,
     subcategory: item.subcategoryName ?? null,
     brand: item.brand ?? null,
     description: item.publicDescription,
@@ -9110,6 +9120,7 @@ function publicProductDto(item: typeof productsTable.$inferSelect) {
     images: item.images ?? [],
     price,
     discountPrice: discountPrice ?? null,
+    saleEndsAt: discountPrice ? sale?.endsAt ?? null : null,
     discountPercent: discountPrice && configuredPrice ? Math.round((1 - discountPrice / configuredPrice) * 100) : null,
     priceOnRequest,
     cartEligible: !priceOnRequest,
@@ -9117,6 +9128,7 @@ function publicProductDto(item: typeof productsTable.$inferSelect) {
     isNew: item.isNew,
     isBestseller: item.isBestseller,
     deliveryBusinessDaysOverride: item.deliveryBusinessDaysOverride ?? null,
+    characteristics: item.characteristics,
     subscriptionAllowed: item.subscriptionAllowed,
     subscriptionDiscountPercent: item.subscriptionAllowed
       ? item.subscriptionDiscountPercent ?? null
@@ -9189,6 +9201,7 @@ function relatedProductCard(item: typeof productsTable.$inferSelect, market: "B2
   const price = market === "B2B" ? item.price : item.publicPrice;
   if (price == null) throw new Error("Attempted to serialize an ineligible related product.");
   if (market === "B2C") {
+    const sale = activeProductSale(item, "B2C");
     const inventory = variantInventoryModel(item);
     const effectiveStock = inventory.kind === "invalid"
       ? 0
@@ -9200,18 +9213,21 @@ function relatedProductCard(item: typeof productsTable.$inferSelect, market: "B2
       imageUrl: item.imageUrl,
       brand: item.brand ?? null,
       price: priceOnRequest ? null : price,
-      discountPrice: priceOnRequest ? null : item.publicDiscountPrice ?? null,
+      discountPrice: priceOnRequest ? null : sale?.price ?? null,
+      saleEndsAt: priceOnRequest ? null : sale?.endsAt ?? null,
       priceOnRequest,
       cartEligible: !priceOnRequest,
     };
   }
+  const sale = activeProductSale(item, "B2B");
   return {
     id: item.id,
     name: item.name,
     imageUrl: item.imageUrl,
     brand: item.brand ?? null,
     price,
-    discountPrice: market === "B2B" ? item.discountPrice ?? null : item.publicDiscountPrice ?? null,
+    discountPrice: sale?.price ?? null,
+    saleEndsAt: sale?.endsAt ?? null,
   };
 }
 
@@ -9614,7 +9630,7 @@ function retailLineDto(item: typeof retailCartItemsTable.$inferSelect, catalogRe
 }
 
 function retailProductPrice(product: typeof productsTable.$inferSelect, quantity: number) {
-  const salePrice = product.publicDiscountPrice;
+  const salePrice = activeProductSale(product, "B2C")?.price ?? null;
   const tier = salePrice == null
     ? (product.quantityPricingTiers ?? []).find((candidate) => quantity >= candidate.minQuantity
       && (candidate.maxQuantity == null || quantity <= candidate.maxQuantity))
@@ -10002,10 +10018,14 @@ router.get("/shop/public/products", async (req, res): Promise<void> => {
   if (q.subcategory) productFilters.push(eq(productsTable.subcategoryName, q.subcategory));
   if (q.brand) productFilters.push(sql`lower(${productsTable.brand}) = ${q.brand.toLowerCase()}`);
   if (q.search) {
-    const term = `%${q.search.trim().toLowerCase()}%`;
-    productFilters.push(sql`(lower(${productsTable.name}) like ${term} or lower(${productsTable.publicDescription}) like ${term})`);
+    const normalizedSearch = q.search.trim().toLowerCase();
+    const term = `%${normalizedSearch}%`;
+    productFilters.push(sql`(lower(${productsTable.name}) like ${term} or lower(${productsTable.publicDescription}) like ${term}
+      or similarity(lower(${productsTable.name}), ${normalizedSearch}) >= 0.25
+      or exists (select 1 from jsonb_array_elements_text(${productsTable.searchSynonyms}) synonym
+        where lower(synonym) like ${term} or similarity(lower(synonym), ${normalizedSearch}) >= 0.25))`);
   }
-  if (q.onSale) productFilters.push(isNotNull(productsTable.publicDiscountPrice));
+  if (q.onSale) productFilters.push(activeProductSaleConditionSql("B2C"));
   if (q.isNew) productFilters.push(eq(productsTable.isNew, true));
   if (q.isBestseller) productFilters.push(eq(productsTable.isBestseller, true));
   const whereClause = and(...productFilters);
@@ -10014,7 +10034,12 @@ router.get("/shop/public/products", async (req, res): Promise<void> => {
   const [[totals], pageProducts] = await Promise.all([
     db.select({ total: count(productsTable.id) }).from(productsTable).where(whereClause),
     db.select().from(productsTable).where(whereClause)
-      .orderBy(asc(productsTable.name), asc(productsTable.id))
+      .orderBy(...(q.search ? [
+        desc(sql`CASE WHEN lower(${productsTable.name}) = ${q.search.trim().toLowerCase()} THEN 3
+          WHEN lower(${productsTable.name}) LIKE ${`%${q.search.trim().toLowerCase()}%`} THEN 2 ELSE 1 END`),
+        desc(sql`similarity(lower(${productsTable.name}), ${q.search.trim().toLowerCase()})`),
+        asc(productsTable.id),
+      ] : [asc(productsTable.name), asc(productsTable.id)]))
       .limit(pageSize).offset((page - 1) * pageSize),
   ]);
   const total = Number(totals?.total ?? 0);
@@ -11418,10 +11443,15 @@ router.get("/shop/products", async (req, res): Promise<void> => {
   if (q.category) productFilters.push(eq(productsTable.categoryName, q.category));
   if (q.subcategory) productFilters.push(eq(productsTable.subcategoryName, q.subcategory));
   if (q.brand) productFilters.push(sql`lower(${productsTable.brand}) = ${q.brand.toLowerCase()}`);
-  if (q.onSale) productFilters.push(isNotNull(productsTable.discountPrice));
+  if (q.onSale) productFilters.push(activeProductSaleConditionSql("B2B"));
   if (q.isNew) productFilters.push(eq(productsTable.isNew, true));
   if (q.isBestseller) productFilters.push(eq(productsTable.isBestseller, true));
-  if (q.search) productFilters.push(sql`lower(${productsTable.name} || ' ' || ${productsTable.description} || ' ' || coalesce(${productsTable.brand}, '')) like ${`%${q.search.toLowerCase()}%`}`);
+  if (q.search) productFilters.push(sql`(
+    lower(${productsTable.name} || ' ' || ${productsTable.description} || ' ' || coalesce(${productsTable.brand}, '')) like ${`%${q.search.toLowerCase()}%`}
+    or similarity(lower(${productsTable.name}), ${q.search.toLowerCase()}) >= 0.25
+    or exists (select 1 from jsonb_array_elements_text(${productsTable.searchSynonyms}) synonym
+      where lower(synonym) like ${`%${q.search.toLowerCase()}%`} or similarity(lower(synonym), ${q.search.toLowerCase()}) >= 0.25)
+  )`);
   // Category availability is enforced in SQL so counting and paging stay stable
   // and every matching product remains reachable across pages.
   productFilters.push(activeCategoryCondition(), activeSupplierCondition("B2B"));
@@ -11436,7 +11466,12 @@ router.get("/shop/products", async (req, res): Promise<void> => {
       .select()
       .from(productsTable)
       .where(whereClause)
-      .orderBy(asc(productsTable.name), asc(productsTable.id))
+      .orderBy(...(q.search ? [
+        desc(sql`CASE WHEN lower(${productsTable.name}) = ${q.search.toLowerCase()} THEN 3
+          WHEN lower(${productsTable.name}) LIKE ${`%${q.search.toLowerCase()}%`} THEN 2 ELSE 1 END`),
+        desc(sql`similarity(lower(${productsTable.name}), ${q.search.toLowerCase()})`),
+        asc(productsTable.id),
+      ] : [asc(productsTable.name), asc(productsTable.id)]))
       .limit(pageSize)
       .offset((page - 1) * pageSize),
   ]);
@@ -11956,7 +11991,7 @@ function cartLineForProduct(product: typeof productsTable.$inferSelect, variantV
   }
   // A sale is the one and only product discount. Quantity tiers apply only to
   // full-price products, never on top of a channel sale or a bundle price.
-  const salePrice = product.discountPrice;
+  const salePrice = activeProductSale(product, "B2B")?.price ?? null;
   const tier = salePrice == null
     ? (product.quantityPricingTiers ?? []).find((candidate) => quantity >= candidate.minQuantity
       && (candidate.maxQuantity == null || quantity <= candidate.maxQuantity))
@@ -13026,6 +13061,7 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
       if (!supplier) throw new Error("B2B supplier is unavailable");
       const sku = line.variant?.sku ?? line.product.sku;
       const lineCouponDiscount = appliedCoupon?.quote.allocations[line.cartLineId] ?? 0;
+      const sale = line.bundle ? null : activeProductSale(line.product, "B2B");
       return {
         orderId: order!.id,
         productId: line.bundle ? null : line.product.id,
@@ -13039,7 +13075,7 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
         supplierId: supplier.id, supplierName: supplier.name, supplierSlug: supplier.slug,
         productCatalogReference: line.bundle ? null : line.product.catalogReference, productSkuSnapshot: line.bundle ? null : sku,
         market: "B2B" as const, currency: "RSD",
-        discountSnapshot: line.bundle ? null : line.product.discountPrice == null ? null : line.product.price - line.product.discountPrice,
+        discountSnapshot: sale ? line.product.price - sale.price : null,
         baseUnitPrice: line.bundle ? line.price : line.product.price,
         effectiveUnitPrice: line.price,
         priceSource: line.bundle ? "BUNDLE" as const : line.priceSource,
@@ -13491,7 +13527,7 @@ router.post("/shop/orders", async (req, res): Promise<void> => {
         variantValue: item.variantValue ?? null,
         variantLabel: variant?.label ?? null,
         quantity: item.quantity,
-        price: variant?.price ?? ((product.discountPrice ?? product.price) + (variant?.priceAdjust ?? 0)),
+        price: variant?.price ?? ((activeProductSale(product, "B2B")?.price ?? product.price) + (variant?.priceAdjust ?? 0)),
       };
     });
     const subtotal = lineDetails.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -18137,6 +18173,7 @@ function adminProductDto(item: typeof productsTable.$inferSelect) {
     images: item.images ?? [],
     price: item.price,
     discountPrice: item.discountPrice ?? null,
+    discountPriceEndsAt: item.discountPriceEndsAt ?? null,
     retailEnabled: item.retailEnabled,
     priceOnRequest: item.priceOnRequest,
     bulkMatrixEnabled: item.bulkMatrixEnabled,
@@ -18144,6 +18181,7 @@ function adminProductDto(item: typeof productsTable.$inferSelect) {
     publicDescription: item.publicDescription ?? null,
     publicPrice: item.publicPrice ?? null,
     publicDiscountPrice: item.publicDiscountPrice ?? null,
+    publicDiscountPriceEndsAt: item.publicDiscountPriceEndsAt ?? null,
     discountPercent,
     stock: item.stock,
     catalogReference: item.catalogReference,
@@ -18165,6 +18203,8 @@ function adminProductDto(item: typeof productsTable.$inferSelect) {
     productTypeId: item.productTypeId ?? null,
     ingredients: item.ingredients ?? null,
     usageInstructions: item.usageInstructions ?? null,
+    characteristics: item.characteristics,
+    searchSynonyms: item.searchSynonyms,
     active: item.active,
     createdAt: item.createdAt.toISOString(),
   };
@@ -18405,13 +18445,13 @@ router.get("/admin/products", async (req, res): Promise<void> => {
   if (q.status === "in-stock") filters.push(gt(productsTable.stock, 0));
   if (q.status === "out-of-stock") filters.push(sql`${productsTable.stock} <= 0`);
   if (q.status === "new") filters.push(eq(productsTable.isNew, true));
-  if (q.status === "on-sale") filters.push(isNotNull(productsTable.discountPrice));
+  if (q.status === "on-sale") filters.push(activeProductSaleConditionSql("B2B"));
   if (q.status === "inactive") filters.push(eq(productsTable.active, false));
   const whereClause = filters.length ? and(...filters) : undefined;
   const sortBy = q.sortBy ?? "createdAt";
   const sortDir = (q.sortDir ?? "desc") === "asc" ? asc : desc;
   const sortExpr = sortBy === "name" ? sortDir(productsTable.name)
-    : sortBy === "price" ? sortDir(sql`coalesce(${productsTable.discountPrice}, ${productsTable.price})`)
+    : sortBy === "price" ? sortDir(sql`coalesce(${activeProductSalePriceSql("B2B")}, ${productsTable.price})`)
     : sortBy === "stock" ? sortDir(productsTable.stock)
     : sortDir(productsTable.createdAt);
   const page = q.page ?? 1;
@@ -18434,6 +18474,12 @@ router.post("/admin/products", async (req, res): Promise<void> => {
   if (!body.supplierId) { res.status(400).json({ error: "Dobavljač je obavezan." }); return; }
   if (body.discountPrice != null && body.discountPrice >= body.price) {
     res.status(400).json({ error: "Akcijska cena mora biti niža od redovne cene." }); return;
+  }
+  if (body.discountPriceEndsAt && body.discountPrice == null) {
+    res.status(400).json({ error: "Datum isteka B2B akcije zahteva akcijsku cenu." }); return;
+  }
+  if (body.publicDiscountPriceEndsAt && body.publicDiscountPrice == null) {
+    res.status(400).json({ error: "Datum isteka B2C akcije zahteva javnu akcijsku cenu." }); return;
   }
   const publicError = publicStorefrontError(body);
   if (publicError) { res.status(400).json({ error: publicError }); return; }
@@ -18498,6 +18544,7 @@ router.post("/admin/products", async (req, res): Promise<void> => {
         images: body.images ?? [],
         price: body.price,
         discountPrice: body.discountPrice ?? null,
+        discountPriceEndsAt: body.discountPriceEndsAt ? new Date(body.discountPriceEndsAt) : null,
         retailEnabled: body.retailEnabled ?? false,
         professionalEnabled: body.professionalEnabled ?? true,
         priceOnRequest: body.priceOnRequest ?? false,
@@ -18505,9 +18552,12 @@ router.post("/admin/products", async (req, res): Promise<void> => {
         publicDescription: body.publicDescription?.trim() || null,
         publicPrice: body.publicPrice ?? null,
         publicDiscountPrice: body.publicDiscountPrice ?? null,
+        publicDiscountPriceEndsAt: body.publicDiscountPriceEndsAt ? new Date(body.publicDiscountPriceEndsAt) : null,
         productTypeId: body.productTypeId ?? null,
         ingredients: body.ingredients?.trim() || null,
         usageInstructions: body.usageInstructions?.trim() || null,
+        characteristics: body.characteristics ?? [],
+        searchSynonyms: body.searchSynonyms?.map((value) => value.trim()) ?? [],
         stock: body.stock,
         sku: body.sku,
         unit: body.unit,
@@ -18654,6 +18704,15 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
   if (nextDiscount != null && nextDiscount >= nextPrice) {
     res.status(400).json({ error: "Akcijska cena mora biti niža od redovne cene." }); return;
   }
+  const nextDiscountEndsAt = body.discountPriceEndsAt !== undefined ? body.discountPriceEndsAt : existing.discountPriceEndsAt;
+  const nextPublicDiscount = body.publicDiscountPrice !== undefined ? body.publicDiscountPrice : existing.publicDiscountPrice;
+  const nextPublicDiscountEndsAt = body.publicDiscountPriceEndsAt !== undefined ? body.publicDiscountPriceEndsAt : existing.publicDiscountPriceEndsAt;
+  if (nextDiscountEndsAt && nextDiscount == null) {
+    res.status(400).json({ error: "Datum isteka B2B akcije zahteva akcijsku cenu." }); return;
+  }
+  if (nextPublicDiscountEndsAt && nextPublicDiscount == null) {
+    res.status(400).json({ error: "Datum isteka B2C akcije zahteva javnu akcijsku cenu." }); return;
+  }
   const publicError = publicStorefrontError({
     retailEnabled: body.retailEnabled ?? existing.retailEnabled,
     publicDescription: body.publicDescription !== undefined ? body.publicDescription : existing.publicDescription,
@@ -18799,6 +18858,9 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
         images: nextImages,
         price: nextPrice,
         discountPrice: nextDiscount,
+        discountPriceEndsAt: body.discountPriceEndsAt !== undefined
+          ? body.discountPriceEndsAt ? new Date(body.discountPriceEndsAt) : null
+          : existing.discountPriceEndsAt,
         retailEnabled: body.retailEnabled ?? existing.retailEnabled,
         professionalEnabled: body.professionalEnabled ?? existing.professionalEnabled,
         priceOnRequest: body.priceOnRequest ?? existing.priceOnRequest,
@@ -18806,9 +18868,14 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
         publicDescription: body.publicDescription !== undefined ? body.publicDescription?.trim() || null : existing.publicDescription,
         publicPrice: body.publicPrice !== undefined ? body.publicPrice : existing.publicPrice,
         publicDiscountPrice: body.publicDiscountPrice !== undefined ? body.publicDiscountPrice : existing.publicDiscountPrice,
+        publicDiscountPriceEndsAt: body.publicDiscountPriceEndsAt !== undefined
+          ? body.publicDiscountPriceEndsAt ? new Date(body.publicDiscountPriceEndsAt) : null
+          : existing.publicDiscountPriceEndsAt,
         productTypeId: nextProductTypeId,
         ingredients: body.ingredients !== undefined ? body.ingredients?.trim() || null : existing.ingredients,
         usageInstructions: body.usageInstructions !== undefined ? body.usageInstructions?.trim() || null : existing.usageInstructions,
+        characteristics: body.characteristics ?? existing.characteristics,
+        searchSynonyms: body.searchSynonyms?.map((value) => value.trim()) ?? existing.searchSynonyms,
         stock: nextStock,
         sku: body.sku ?? existing.sku,
         unit: body.unit ?? existing.unit,

@@ -115,6 +115,7 @@ const AdminEducationCenterDetail = lazy(() => import('./pages/admin/education-ce
 const AdminBundles = lazy(() => import('./pages/admin/bundles'));
 const AdminCoupons = lazy(() => import('./pages/admin/coupons'));
 const AdminWaitlist = lazy(() => import('./pages/admin/waitlist'));
+const AdminCommerceSettings = lazy(() => import('./pages/admin/commerce-settings'));
 const AdminShopSettings = lazy(() => import('./pages/admin/shop-settings'));
 const AdminB2cBanners = lazy(() => import('./pages/admin/b2c-banners'));
 const AdminCatalogAttributes = lazy(() => import('./pages/admin/b2c-catalog-attributes'));
@@ -421,6 +422,7 @@ function Router() {
         <Route path="/admin/edukacije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminEducationMarketplace /></RoleGuard></Route>
         <Route path="/admin/recenzije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminReviews /></RoleGuard></Route>
         <Route path="/admin/recenzije-proizvoda"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminRetailReviews /></RoleGuard></Route>
+        <Route path="/admin/iskustvo-kupovine"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminCommerceSettings /></RoleGuard></Route>
         <Route path="/admin/bundle-proizvodi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminBundles /></RoleGuard></Route>
         <Route path="/admin/kuponi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminCoupons /></RoleGuard></Route>
         <Route path="/admin/lista-cekanja"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminWaitlist /></RoleGuard></Route>

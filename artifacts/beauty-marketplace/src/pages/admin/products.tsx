@@ -6,6 +6,10 @@ import {
   useAdminCreateProduct,
   useAdminUpdateProduct,
   useAdminDeleteProduct,
+  useAdminAttachProductDocument,
+  useAdminDeleteProductDocument,
+  useListProductDocuments,
+  getListProductDocumentsQueryKey,
   useAdminBulkUpdateProducts,
   useAdminListProductCategories,
   useAdminListBrands,
@@ -49,7 +53,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useDebouncedSearch } from "@/hooks/use-debounce";
 import { OptimizedImage } from "@/components/optimized-image";
-import { uploadOptimizedImage } from "@/lib/media-upload";
+import { uploadOptimizedImage, uploadDocument } from "@/lib/media-upload";
+import { FileText, Download } from "lucide-react";
 import { extractApiError, parseStrictDecimal, parseStrictInt } from "@/lib/admin-form-utils";
 import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
 
@@ -97,6 +102,10 @@ const emptyForm = {
   needTagIds: [],
   ingredients: null,
   usageInstructions: null,
+  characteristics: [],
+  searchSynonyms: [],
+  discountPriceEndsAt: null,
+  publicDiscountPriceEndsAt: null,
 } as unknown as AdminProductInput;
 
 function formatRSD(v: number) {
@@ -118,6 +127,31 @@ function ProductFormDialog({
   const createProduct = useAdminCreateProduct();
   const updateProduct = useAdminUpdateProduct();
   const createBrand = useAdminCreateBrand();
+
+  const attachDocument = useAdminAttachProductDocument();
+  const deleteDocument = useAdminDeleteProductDocument();
+  const { data: documents = [], refetch: refetchDocs } = useListProductDocuments(editing?.id || "", { audience: "B2C" }, { query: { enabled: !!editing?.id, queryKey: getListProductDocumentsQueryKey(editing?.id || "", { audience: "B2C" }) } });
+  const [uploadingDocs, setUploadingDocs] = useState(false);
+
+  const handleDocumentUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!editing?.id) return;
+    const file = event.target.files?.[0];
+    if (!file) return;
+    event.target.value = "";
+
+    setUploadingDocs(true);
+    try {
+      const { url, displayName } = await uploadDocument(file, "product-document", editing.id);
+      await attachDocument.mutateAsync({ productId: editing.id, data: { mediaUrl: url, displayName, sortOrder: documents.length } });
+      toast.success("Dokument uspešno dodat.");
+      refetchDocs();
+    } catch (err) {
+      toast.error("Greška", { description: extractApiError(err, "Nije moguće dodati dokument.") });
+    } finally {
+      setUploadingDocs(false);
+    }
+  };
+
   const { data: categories = [] } = useAdminListProductCategories();
   const { data: brands = [] } = useAdminListBrands();
   const { data: suppliers = [] } = useAdminListSuppliers();
@@ -170,6 +204,10 @@ function ProductFormDialog({
           needTagIds: (editing as any).needTagIds ?? [],
           ingredients: editing.ingredients ?? null,
           usageInstructions: editing.usageInstructions ?? null,
+          characteristics: editing.characteristics ?? [],
+          searchSynonyms: editing.searchSynonyms ?? [],
+          discountPriceEndsAt: editing.discountPriceEndsAt ?? null,
+          publicDiscountPriceEndsAt: (editing as any).publicDiscountPriceEndsAt ?? null,
         }
       : { ...(emptyForm as any), supplierId: "", market: "B2B" }
   );
@@ -456,6 +494,10 @@ function ProductFormDialog({
       needTagIds: form.needTagIds || [],
       ingredients: form.ingredients?.trim() || null,
       usageInstructions: form.usageInstructions?.trim() || null,
+      characteristics: form.characteristics || [],
+      searchSynonyms: form.searchSynonyms || [],
+      discountPriceEndsAt: form.discountPriceEndsAt || null,
+      publicDiscountPriceEndsAt: (form as any).publicDiscountPriceEndsAt || null,
     };
     if (!actionGuard.begin("save-product")) return;
     const opts = {
@@ -596,6 +638,44 @@ function ProductFormDialog({
                   data-testid="input-product-description"
                 />
               </div>
+
+              <div className="space-y-2 sm:col-span-2">
+                <Label>Ključne reči / Sinonimi za pretragu (zarezom odvojeni)</Label>
+                <Input
+                  value={(form.searchSynonyms || []).join(", ")}
+                  onChange={(e) => setForm({ ...form, searchSynonyms: e.target.value.split(",").map(s => s.trim()).filter(Boolean) })}
+                  placeholder="Npr. krema, hidratacija, lice"
+                />
+              </div>
+
+              <div className="space-y-3 sm:col-span-2 border rounded-lg p-3 bg-muted/20">
+                <div className="flex justify-between items-center">
+                  <Label>Karakteristike proizvoda</Label>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setForm(f => ({ ...f, characteristics: [...(f.characteristics || []), { name: "", value: "" }] }))}>
+                    + Dodaj karakteristiku
+                  </Button>
+                </div>
+                {(form.characteristics || []).map((char, i) => (
+                  <div key={i} className="flex gap-2 items-center">
+                    <Input placeholder="Naziv (npr. Tip kože)" value={char.name} onChange={(e) => {
+                      const newChars = [...(form.characteristics || [])];
+                      newChars[i].name = e.target.value;
+                      setForm({ ...form, characteristics: newChars });
+                    }} />
+                    <Input placeholder="Vrednost (npr. Suva koža)" value={char.value} onChange={(e) => {
+                      const newChars = [...(form.characteristics || [])];
+                      newChars[i].value = e.target.value;
+                      setForm({ ...form, characteristics: newChars });
+                    }} />
+                    <Button type="button" variant="ghost" size="icon" className="text-destructive shrink-0" onClick={() => {
+                      const newChars = [...(form.characteristics || [])];
+                      newChars.splice(i, 1);
+                      setForm({ ...form, characteristics: newChars });
+                    }}><X className="w-4 h-4" /></Button>
+                  </div>
+                ))}
+              </div>
+
               <div className="sm:col-span-2 rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-3">
                 <div>
                   <p className="font-medium">Kanali prodaje</p>
@@ -622,6 +702,13 @@ function ProductFormDialog({
                       <div className="space-y-2">
                         <Label>Javna akcijska cena (RSD)</Label>
                         <Input value={rawNums.publicDiscountPrice} inputMode="numeric" onChange={(event) => updateRawNums((current) => ({ ...current, publicDiscountPrice: event.target.value }))} data-testid="input-product-public-discount-price" />
+                      </div>
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label>Rok akcije</Label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {((form.market as string) === "B2B" || form.market === "BOTH") && <Input aria-label="B2B akcija traje do" type="datetime-local" value={form.discountPriceEndsAt ? form.discountPriceEndsAt.slice(0, 16) : ""} onChange={(e) => setForm({ ...form, discountPriceEndsAt: e.target.value ? new Date(e.target.value).toISOString() : null })} />}
+                          {(form.market === "B2C" || form.market === "BOTH") && <Input aria-label="B2C akcija traje do" type="datetime-local" value={(form as any).publicDiscountPriceEndsAt ? (form as any).publicDiscountPriceEndsAt.slice(0, 16) : ""} onChange={(e) => setForm({ ...form, publicDiscountPriceEndsAt: e.target.value ? new Date(e.target.value).toISOString() : null } as typeof form)} />}
+                        </div>
                       </div>
                     </div>
                     )}
@@ -801,6 +888,51 @@ function ProductFormDialog({
               </div>
             )}
           </section>
+
+          {/* ── Dokumenta (samo edit) ── */}
+          {editing && (
+            <section className="space-y-4 border rounded-xl p-4">
+              <h4 className="text-sm font-semibold text-foreground">Dokumentacija</h4>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed p-3">
+                <p className="text-sm text-muted-foreground">PDF, DOCX do 12 MB. Vidljivo kupcima na stranici proizvoda.</p>
+                <Button asChild type="button" variant="secondary" disabled={uploadingDocs}>
+                  <label className="cursor-pointer">
+                    {uploadingDocs ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+                    Dodaj dokument
+                    <input className="sr-only" type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" disabled={uploadingDocs} onChange={handleDocumentUpload} />
+                  </label>
+                </Button>
+              </div>
+              {documents.length > 0 && (
+                <ul className="space-y-2 mt-4">
+                  {documents.map(doc => (
+                    <li key={doc.id} className="flex items-center justify-between p-3 rounded-lg border bg-muted/20">
+                      <div className="flex items-center gap-3">
+                        <FileText className="w-5 h-5 text-muted-foreground" />
+                        <div>
+                          <p className="text-sm font-medium">{doc.displayName}</p>
+                          <p className="text-xs text-muted-foreground uppercase">{doc.contentType === 'application/pdf' ? 'PDF' : 'DOCX'}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="icon" asChild>
+                          <a href={doc.url} target="_blank" rel="noopener noreferrer"><Download className="w-4 h-4" /></a>
+                        </Button>
+                        <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10" disabled={deleteDocument.isPending} onClick={async () => {
+                          if (confirm("Brisanje dokumenta?")) {
+                            await deleteDocument.mutateAsync({ documentId: doc.id });
+                            refetchDocs();
+                          }
+                        }}>
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
 
           {/* ── Varijante ── */}
           <section className="space-y-4 border rounded-xl p-4">

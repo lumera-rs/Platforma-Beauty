@@ -18,20 +18,4 @@ export type PublicProductDetail = PublicProduct & ({
   productType?: B2cPublicTaxonomyValue | null;
   needTags?: B2cPublicNeedTag[];
   relatedProducts: PublicRelatedProductCard[];
-}) & Required<Pick<PublicProduct & ({
-  /** @nullable */
-  ingredients?: string | null;
-  /** @nullable */
-  usageInstructions?: string | null;
-  productType?: B2cPublicTaxonomyValue | null;
-  needTags?: B2cPublicNeedTag[];
-  relatedProducts: PublicRelatedProductCard[];
-}), Extract<keyof (PublicProduct & ({
-  /** @nullable */
-  ingredients?: string | null;
-  /** @nullable */
-  usageInstructions?: string | null;
-  productType?: B2cPublicTaxonomyValue | null;
-  needTags?: B2cPublicNeedTag[];
-  relatedProducts: PublicRelatedProductCard[];
-})), 'categoryId'>>>;
+});

@@ -16,6 +16,21 @@ import { Badge } from "@/components/ui/badge";
 import { addOptimisticCartItem, updateCartAndSummaryOptimistically } from "@/lib/optimistic-cart";
 import { rollbackQueries } from "@/lib/optimistic-query";
 import { SHOP_CART_MUTATION_KEY, shopCartMutationQueue, useMutationQueueBusy } from "@/lib/optimistic-mutation-queue";
+import { useListProductDocuments, getListProductDocumentsQueryKey } from "@workspace/api-client-react";
+import { ResponsiveProductTabs } from "@/components/responsive-product-tabs";
+import { useCountdown } from "@/hooks/use-countdown";
+import { Timer } from "lucide-react";
+
+function SaleCountdown({ endsAt }: { endsAt: string }) {
+  const { days, hours, minutes, seconds, isActive, isExpired } = useCountdown(endsAt);
+  if (!isActive || isExpired) return null;
+  return (
+    <div className="flex items-center gap-1 mt-2 text-xs font-semibold text-rose-600 bg-rose-50 px-2 py-1 rounded w-fit border border-rose-100">
+      <Timer className="w-3.5 h-3.5" />
+      <span>Još {days > 0 ? `${days}d ` : ""}{hours.toString().padStart(2, '0')}:{minutes.toString().padStart(2, '0')}:{seconds.toString().padStart(2, '0')}</span>
+    </div>
+  );
+}
 
 interface ExtendedVariant {
   value: string;
@@ -41,6 +56,7 @@ export default function OwnerProductDetail() {
   const supplierSlug = params?.supplierSlug ?? "";
   const id = params?.productId ?? "";
   const { data: product, isLoading } = useGetSupplierProduct(supplierSlug, id);
+  const { data: documents = [] } = useListProductDocuments(id, { audience: "B2B" }, { query: { enabled: !!id, queryKey: getListProductDocumentsQueryKey(id, { audience: "B2B" }) } });
   const { data: reviews = [] } = useListProductReviews(id, { query: { enabled: !!id, queryKey: getListProductReviewsQueryKey(id) } });
   const qc = useQueryClient(); const mutation = useUpsertProductReview(); const { toast } = useToast(); const [rating, setRating] = useState(5); const [comment, setComment] = useState("");
   const [variantValue, setVariantValue] = useState("");
@@ -103,9 +119,23 @@ export default function OwnerProductDetail() {
             <div>
               <p className="text-sm text-primary">{product.brand ?? product.category}</p>
               <h1 className="text-3xl font-serif font-bold mt-1">{product.name}</h1>
-              <p className="mt-4 text-muted-foreground whitespace-pre-line">{product.description}</p>
-              {!isPriceOnRequest && <p className="text-2xl font-bold mt-5">{selectedPrice.toLocaleString("sr-RS")} RSD</p>}
-              <p className="text-sm mt-2">{product.stock > 0 ? `${product.stock} kom. dostupno` : "Trenutno nema na stanju"}</p>
+
+              <div className="mt-4 text-muted-foreground whitespace-pre-line text-sm">
+                <ResponsiveProductTabs product={product} documents={documents} />
+              </div>
+
+              {!isPriceOnRequest && (
+                <div className="mt-5 flex flex-col gap-1">
+                  <div className="flex items-baseline gap-3">
+                    <p className="text-2xl font-bold">{selectedPrice.toLocaleString("sr-RS")} RSD</p>
+                    {product.discountPrice != null && product.price != null && (
+                      <span className="text-sm text-muted-foreground line-through opacity-70">{product.price.toLocaleString("sr-RS")} RSD</span>
+                    )}
+                  </div>
+                  {(product as any).saleEndsAt && <SaleCountdown endsAt={(product as any).saleEndsAt} />}
+                </div>
+              )}
+              <p className="text-sm mt-3">{product.stock > 0 ? `${product.stock} kom. dostupno` : "Trenutno nema na stanju"}</p>
               {product.deliveryBusinessDaysOverride != null && <p className="mt-2 text-sm text-muted-foreground" data-testid="text-estimated-delivery">Procenjena isporuka: {product.deliveryBusinessDaysOverride} {product.deliveryBusinessDaysOverride === 1 ? "radni dan" : "radnih dana"}</p>}
 
               {!isPriceOnRequest && extendedProduct.bulkMatrixEnabled && extendedProduct.variants?.length ? (

@@ -14,6 +14,7 @@ export const MediaUploadInputScope = {
   'salon-gallery': 'salon-gallery',
   'employee-avatar': 'employee-avatar',
   product: 'product',
+  'product-document': 'product-document',
   supplier: 'supplier',
   'education-cover': 'education-cover',
   'education-gallery': 'education-gallery',

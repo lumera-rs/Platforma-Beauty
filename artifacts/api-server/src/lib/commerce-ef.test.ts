@@ -271,4 +271,33 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
     assert.equal((await api(`/admin/rmas/${rma.id}/status`, adminCookie, { method: "PATCH", body: JSON.stringify({ status: "RECEIVED" }) })).status, 200);
     assert.equal((await db.select().from(emailDeliveriesTable).where(eq(emailDeliveriesTable.eventKey, `rma:${rma.id}:status:RECEIVED`))).length, 0);
   });
+  await t.test("supplier-scoped bestseller ranking never crosses supplier or category", async () => {
+    const [supplierB] = await db.insert(suppliersTable).values({ name: `${marker} B`, slug: `${marker}-b`, scope: "BOTH" }).returning();
+    ids.suppliers.push(supplierB!.id);
+    const [categoryB] = await db.insert(productCategoriesTable).values({ supplierId: supplierB!.id, name: `${marker} B cat`, slug: `${marker}-b-cat` }).returning();
+    ids.categories.push(categoryB!.id);
+    const [productB] = await db.insert(productsTable).values({
+      supplierId: supplierB!.id, categoryId: categoryB!.id, categoryName: categoryB!.name,
+      name: `${marker} B product`, description: marker, publicDescription: marker, imageUrl: "/test.jpg",
+      price: 1200, publicPrice: 1200, professionalEnabled: true, retailEnabled: true, stock: 8, sku: `${marker}-B`, unit: "kom",
+    }).returning();
+    ids.products.push(productB!.id);
+    const [orderA, orderB] = await db.insert(ordersTable).values([
+      { salonId, status: "delivered", total: 1000, subtotal: 1000, shippingName: marker, shippingAddress: "Test", shippingCity: "Beograd", shippingPostalCode: "11000", paymentMethod: "BANK_TRANSFER" },
+      { salonId, status: "delivered", total: 1200, subtotal: 1200, shippingName: marker, shippingAddress: "Test", shippingCity: "Beograd", shippingPostalCode: "11000", paymentMethod: "BANK_TRANSFER" },
+    ]).returning();
+    ids.orders.push(orderA!.id, orderB!.id);
+    await db.insert(orderItemsTable).values([
+      { orderId: orderA!.id, productId, productName: marker, quantity: 2, price: 1000, unitPrice: 1000, lineSubtotal: 2000, lineTotal: 2000, supplierId: ids.suppliers[0], supplierName: marker, supplierSlug: marker },
+      { orderId: orderB!.id, productId: productB!.id, productName: `${marker} B`, quantity: 9, price: 1200, unitPrice: 1200, lineSubtotal: 10800, lineTotal: 10800, supplierId: supplierB!.id, supplierName: supplierB!.name, supplierSlug: supplierB!.slug },
+    ]);
+    const owner = await cookie(salonOwner);
+    const scoped = await api(`/commerce/bestsellers?audience=B2B&periodDays=30&supplierSlug=${encodeURIComponent(marker)}`, owner);
+    assert.equal(scoped.status, 200);
+    const scopedRows = await scoped.json() as Array<{ productId: string }>;
+    assert.deepEqual(scopedRows.map((row) => row.productId), [productId]);
+    const categoryScoped = await api(`/commerce/bestsellers?audience=B2B&periodDays=30&supplierSlug=${encodeURIComponent(marker)}&categoryId=${categoryB!.id}`, owner);
+    assert.equal(categoryScoped.status, 200);
+    assert.deepEqual(await categoryScoped.json(), [], "Supplier A plus supplier B category must return no cross-supplier ranking.");
+  });
 });

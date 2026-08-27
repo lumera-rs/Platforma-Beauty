@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { Link, useLocation, useRoute, useSearch } from "wouter";
-import { ChevronLeft, ChevronRight, Loader2, Search, ShoppingBag, Sparkles, Building2, Bell, CheckCircle, Package, Eye, Heart, CalendarClock, Filter, X, Star, Flag, Clock, ShieldCheck, MessageSquare } from "lucide-react";
+import { useCountdown } from "@/hooks/use-countdown";
+import { ChevronLeft, ChevronRight, Loader2, Search, ShoppingBag, Sparkles, Building2, Bell, CheckCircle, Package, Eye, Heart, CalendarClock, Filter, X, Star, Flag, Clock, ShieldCheck, MessageSquare, Timer } from "lucide-react";
 import {
   useGetSupplierPublicProduct, useListSupplierPublicProducts, useListPublicSuppliers,
   useGetPublicSupplier, useListSupplierCategories, getGetPublicSupplierQueryKey,
@@ -43,6 +44,10 @@ import { MediaUpload } from "@/components/media-upload";
 import { useQueryClient } from "@tanstack/react-query";
 import { PriceInquiryDialog } from "@/components/price-inquiry-dialog";
 import { BulkMatrixOrderTable } from "@/components/bulk-matrix-table";
+import { CommerceSearch } from "@/components/commerce-search";
+import { CommerceBestsellers } from "@/components/commerce-bestsellers";
+import { ResponsiveProductTabs } from "@/components/responsive-product-tabs";
+import { useListProductDocuments, getListProductDocumentsQueryKey } from "@workspace/api-client-react";
 
 interface ExtendedPublicProduct {
   bulkMatrixEnabled?: boolean;
@@ -58,9 +63,28 @@ function ProductPrice({ product }: { product: PublicProduct }) {
   const current = product.discountPrice ?? product.price;
   if (((product as unknown as ExtendedPublicProduct).priceOnRequest || product.price === null) || current == null) return <span className="text-sm font-semibold text-primary">Cena na upit</span>;
   return (
-    <div className="flex items-baseline gap-2">
-      <span className="text-lg font-semibold text-foreground">{money(current)}</span>
-      {product.discountPrice != null && product.price != null && <span className="text-sm text-muted-foreground line-through">{money(product.price)}</span>}
+    <div className="flex flex-col gap-0.5">
+      <div className="flex items-baseline gap-2">
+        <span className="text-lg font-semibold text-foreground">{money(current)}</span>
+        {product.discountPrice != null && product.price != null && <span className="text-sm text-muted-foreground line-through opacity-70">{money(product.price)}</span>}
+      </div>
+      {product.discountPrice != null && product.price != null && (
+        <span className="text-xs font-semibold text-emerald-600">
+          Ušteda: {money(product.price - current)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function SaleCountdown({ endsAt }: { endsAt: string }) {
+  const { days, hours, minutes, seconds, isActive, isExpired } = useCountdown(endsAt);
+  if (!isActive || isExpired) return null;
+
+  return (
+    <div className="flex items-center gap-1 mt-2 text-xs font-semibold text-rose-600 bg-rose-50 px-2 py-1 rounded w-fit border border-rose-100">
+      <Timer className="w-3.5 h-3.5" />
+      <span>Još {days > 0 ? `${days}d ` : ""}{hours.toString().padStart(2, '0')}:{minutes.toString().padStart(2, '0')}:{seconds.toString().padStart(2, '0')}</span>
     </div>
   );
 }
@@ -116,8 +140,13 @@ function PublicProductCard({ product, supplierSlug, isWishlisted, onToggleWishli
         </button>
       )}
       <Link href={`/shop/${supplierSlug}/proizvod/${product.id}`} className="block flex-1" data-testid={`public-product-link-${product.id}`}>
-        <div className="aspect-square overflow-hidden bg-muted">
+        <div className="aspect-square overflow-hidden bg-muted relative">
           <OptimizedImage src={product.imageUrl} alt={product.name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+          {product.isBestseller && (
+            <div className="absolute top-2 left-2 bg-amber-500 text-white rounded px-2 py-0.5 text-[10px] font-bold z-10 flex items-center gap-1 shadow-sm">
+              <Star className="w-3 h-3 fill-current" /> BESTSELLER
+            </div>
+          )}
         </div>
         <div className="space-y-3 p-4">
           <div className="flex flex-wrap gap-1.5 min-h-[22px]">
@@ -129,8 +158,8 @@ function PublicProductCard({ product, supplierSlug, isWishlisted, onToggleWishli
             <h2 className="mt-1 line-clamp-2 font-serif text-lg font-semibold text-foreground">{product.name}</h2>
             <StarRating rating={rating} count={count} />
           </div>
-          <p className="line-clamp-2 text-sm text-muted-foreground">{product.description}</p>
           <ProductPrice product={product} />
+          {product.saleEndsAt && <SaleCountdown endsAt={product.saleEndsAt} />}
         </div>
       </Link>
       <div className="px-4 pb-4 mt-auto">
@@ -660,18 +689,15 @@ export function PublicSupplierShop() {
         )}
 
         <div className="mb-6 space-y-4">
-          <label className="relative block">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={localSearch}
-              onChange={(event) => {
-                rehydratingSearchRef.current = false;
-                setLocalSearch(event.target.value);
-              }}
-              placeholder="Pretraga..."
-              className="pl-9 h-9 text-sm"
-            />
-          </label>
+          <CommerceSearch
+            audience="B2C"
+            value={localSearch}
+            onChange={(val) => {
+              rehydratingSearchRef.current = false;
+              setLocalSearch(val);
+            }}
+            supplierSlug={supplierSlug}
+          />
         </div>
 
         <div className="mb-6">
@@ -826,6 +852,10 @@ export function PublicSupplierShop() {
                   ))}
                 </div>
               </div>
+            )}
+
+            {page === 1 && !debouncedSearch && activeFiltersCount === 0 && (
+               <CommerceBestsellers audience="B2C" categoryId={selectedCategory?.id} supplierSlug={supplierSlug} />
             )}
 
             {productsLoading ? (
@@ -1002,6 +1032,7 @@ export function PublicProductDetailPage() {
   const { data: recentlyViewed } = useListRecentlyViewedProducts(supplierSlug, { query: { enabled: !!supplierSlug, queryKey: getListRecentlyViewedProductsQueryKey(supplierSlug) } });
 
   const { data: waitlistStatus, refetch: refetchWaitlist } = useGetB2cProductWaitlistStatus(productId, { query: { enabled: !!productId, queryKey: getGetB2cProductWaitlistStatusQueryKey(productId) } });
+  const { data: documents = [] } = useListProductDocuments(productId, { audience: "B2C" }, { query: { enabled: !!productId, queryKey: getListProductDocumentsQueryKey(productId, { audience: "B2C" }) } });
   const subscribeWaitlist = useSubscribeB2cProductWaitlist({ mutation: { onSuccess: () => { toast.success("Prijavljeni ste na listu čekanja."); refetchWaitlist(); } } });
   const unsubscribeWaitlist = useUnsubscribeB2cProductWaitlist({ mutation: { onSuccess: () => { toast.success("Odjavljeni ste sa liste čekanja."); refetchWaitlist(); } } });
 
@@ -1137,6 +1168,11 @@ export function PublicProductDetailPage() {
               <StarRating rating={rating} count={count} />
             </a>
 
+            {product.saleEndsAt && (
+              <div className="mt-2">
+                <SaleCountdown endsAt={product.saleEndsAt} />
+              </div>
+            )}
             <div className="mt-6"><ProductPrice product={product} /></div>
 
             {productDetail.productType || (productDetail.needTags && productDetail.needTags.length > 0) ? (
@@ -1146,33 +1182,16 @@ export function PublicProductDetailPage() {
               </div>
             ) : null}
 
-            <div className="mt-8 space-y-6 text-sm text-muted-foreground leading-relaxed">
-              <div>
-                <h3 className="text-foreground font-semibold mb-2">Opis</h3>
-                <p className="whitespace-pre-line">{product.description}</p>
-              </div>
-
-              {productDetail.usageInstructions && (
-                <div>
-                  <h3 className="text-foreground font-semibold mb-2">Način upotrebe</h3>
-                  <p className="whitespace-pre-line">{productDetail.usageInstructions}</p>
-                </div>
-              )}
-
-              {productDetail.ingredients && (
-                <div>
-                  <h3 className="text-foreground font-semibold mb-2">Sastav (INCI)</h3>
-                  <p className="whitespace-pre-line text-xs">{productDetail.ingredients}</p>
-                </div>
-              )}
-            </div>
-
             {product.deliveryBusinessDaysOverride != null && (
               <p className="mt-6 text-sm flex items-center text-muted-foreground" data-testid="text-public-estimated-delivery">
                 <Clock className="w-4 h-4 mr-2 text-primary" />
                 Procenjena isporuka: {product.deliveryBusinessDaysOverride} {product.deliveryBusinessDaysOverride === 1 ? "radni dan" : "radnih dana"}
               </p>
             )}
+
+            <div className="mt-8">
+              <ResponsiveProductTabs product={productDetail} documents={documents} />
+            </div>
 
             {publicVariants.length > 0 && (
               <div className="mt-8">
