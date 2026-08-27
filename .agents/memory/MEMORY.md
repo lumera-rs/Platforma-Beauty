@@ -111,3 +111,4 @@
 - [Generated API error guard coverage](generated-api-error-guard-coverage.md) — discover production client imports dynamically and keep native Response handling outside generated-error paths.
 - [Referral discount stacking](referral-discount-stacking.md) — referral credit applies only to clean full-price lines; any other positive discount blocks the whole line.
 - [Deterministic FK default seeds](deterministic-fk-default-seeds.md) — fixed parent UUID defaults need recoverable seeds and explicit tenant-scoped child IDs.
+- [Public commerce route parity](public-commerce-route-parity.md) — shadow handlers and nested cards must share canonical eligibility, POR, inventory, and response semantics.

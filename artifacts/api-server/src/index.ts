@@ -35,6 +35,7 @@ import { ensureReferralSchema } from "./lib/referral-schema";
 import { runProductWaitlistNotificationWorker } from "./lib/product-waitlist-worker";
 import { runRetailSubscriptionWorker } from "./lib/retail-subscription-worker";
 import { runRetailCartReminderSweep } from "./lib/retail-cart-reminders";
+import { runRetailReviewInvitationSweep } from "./lib/review-invitations";
 
 const rawPort = process.env["PORT"];
 
@@ -151,6 +152,10 @@ const retailCartReminderSweep = createResilientScheduledJob({
   job: "retail-cart-reminder-sweep",
   run: runRetailCartReminderSweep,
 });
+const retailReviewInvitationSweep = createResilientScheduledJob({
+  job: "retail-review-invitation-sweep",
+  run: runRetailReviewInvitationSweep,
+});
 const scheduledJobs = [
   rescheduledConfirmationRetries,
   educationSessionMaintenance,
@@ -169,6 +174,7 @@ const scheduledJobs = [
   productWaitlistNotifications,
   retailSubscriptionCycles,
   retailCartReminderSweep,
+  retailReviewInvitationSweep,
 ];
 
 const retryInterval = setInterval(() => {
@@ -218,6 +224,9 @@ const retailCartReminderSweepInterval = setInterval(() => {
 }, 15 * 60_000);
 retailCartReminderSweepInterval.unref();
 void retailCartReminderSweep.run();
+const retailReviewInvitationSweepInterval = setInterval(() => { void retailReviewInvitationSweep.run(); }, 60 * 60_000);
+retailReviewInvitationSweepInterval.unref();
+void retailReviewInvitationSweep.run();
 
 const educationGalleryCleanupInterval = setInterval(() => {
   void educationGalleryCleanup.run();
@@ -291,6 +300,7 @@ function clearScheduledTasks(): void {
   clearInterval(productWaitlistNotificationsInterval);
   clearInterval(retailSubscriptionCyclesInterval);
   clearInterval(retailCartReminderSweepInterval);
+  clearInterval(retailReviewInvitationSweepInterval);
   clearInterval(educationMaintenanceInterval);
   clearInterval(beautyJobsExpiryInterval);
   clearInterval(referralMaintenanceInterval);

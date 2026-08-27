@@ -6426,6 +6426,308 @@ paths:
       summary: Cancel an owned subscription idempotently
       parameters: [{ name: subscriptionId, in: path, required: true, schema: { type: string } }]
       responses: { "200": { description: Subscription, content: { application/json: { schema: { $ref: "#/components/schemas/RetailProductSubscription" } } } } }
+  /catalog/feed:
+    get:
+      operationId: getCatalogFeed
+      tags: [shop]
+      summary: Provider-neutral public catalog feed using canonical product URLs
+      responses:
+        "200":
+          description: Eligible B2C catalog items (price-on-request products excluded)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [generatedAt, items]
+                properties:
+                  generatedAt: { type: string, format: date-time }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, title, supplier, url, price, currency, availability, images]
+                      properties:
+                        id: { type: string }
+                        title: { type: string }
+                        supplier: { type: string }
+                        url: { type: string }
+                        price: { type: [integer, "null"] }
+                        currency: { type: string, enum: [RSD] }
+                        availability: { type: string, enum: [in_stock] }
+                        images: { type: array, items: { type: string } }
+        "503": { description: Canonical public origin is not configured safely }
+  /public/suppliers/{supplierId}/products/{productId}/price-inquiries:
+    post:
+      operationId: createPriceInquiry
+      tags: [shop]
+      summary: Create an inquiry in an exact supplier and price-on-request product scope
+      parameters:
+        - { name: supplierId, in: path, required: true, schema: { type: string } }
+        - { name: productId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, phone, message]
+              properties:
+                name: { type: string, minLength: 2, maxLength: 120 }
+                email: { type: string, maxLength: 254 }
+                phone: { type: string, minLength: 6, maxLength: 40 }
+                message: { type: string, minLength: 10, maxLength: 2000 }
+      responses:
+        "201":
+          description: Inquiry accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, status, createdAt]
+                properties:
+                  id: { type: string }
+                  status: { type: string, enum: [NEW] }
+                  createdAt: { type: string, format: date-time }
+        "400": { description: Invalid contact data }
+        "404": { description: Supplier/product scope not found }
+        "409": { description: Product is currently directly purchasable }
+  /shop/quotes:
+    post:
+      operationId: createShopQuote
+      tags: [shop]
+      summary: Snapshot the authenticated salon cart without creating an order
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customerCompanyName: { type: string, maxLength: 200 }
+                validityDays: { type: integer, minimum: 1, maximum: 90 }
+      responses:
+        "201": { description: Immutable quote snapshot, content: { application/json: { schema: { $ref: "#/components/schemas/B2bQuote" } } } }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner access required }
+  /public/products/{productId}/bulk-matrix:
+    get:
+      operationId: getPublicBulkMatrix
+      tags: [shop]
+      summary: Get public variant availability, promoted swatches and optional tier-price preview
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Bulk matrix
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BulkMatrixResponse" }
+        "404": { description: Product or matrix unavailable }
+  /shop/cart/bulk-matrix:
+    post:
+      operationId: addShopBulkMatrix
+      tags: [shop]
+      summary: Validate and add all variant rows atomically
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rows]
+              properties:
+                rows:
+                  type: array
+                  minItems: 1
+                  maxItems: 200
+                  items:
+                    type: object
+                    required: [productId, variantValue, quantity]
+                    properties:
+                      productId: { type: string }
+                      variantValue: { type: string, minLength: 1, maxLength: 200 }
+                      quantity: { type: integer, minimum: 1, maximum: 10000 }
+      responses:
+        "200":
+          description: Every row added
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BulkMatrixAddResponse" }
+        "409": { description: No rows added because one row was invalid or unavailable }
+  /shop/quotes/{publicId}:
+    get:
+      operationId: getShopQuote
+      tags: [shop]
+      summary: Get an owned quote from immutable snapshots
+      parameters:
+        - { name: publicId, in: path, required: true, schema: { type: string, minLength: 20, maxLength: 80 } }
+      responses:
+        "200": { description: Quote snapshot, content: { application/json: { schema: { $ref: "#/components/schemas/B2bQuote" } } } }
+        "404": { description: Quote absent or not owned by active salon }
+  /shop/quotes/{publicId}/restore-cart:
+    post:
+      operationId: restoreShopQuoteCart
+      tags: [shop]
+      summary: Atomically replace the owned salon cart with quote snapshot lines
+      parameters:
+        - { name: publicId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Cart replaced }
+        "404": { description: Quote absent or not owned by active salon }
+  /shop/quotes/{publicId}/pdf:
+    get:
+      operationId: getShopQuotePdf
+      tags: [shop]
+      summary: Render an owned quote PDF only from immutable snapshots
+      parameters:
+        - { name: publicId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Quote PDF
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+  /admin/catalog/meta/status:
+    get:
+      operationId: adminGetMetaCatalogStatus
+      tags: [admin]
+      summary: Report provider-neutral catalog infrastructure connection status
+      responses:
+        "200":
+          description: Meta remains truthfully disconnected
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MetaCatalogStatus" }
+  /admin/catalog/meta/validate:
+    post:
+      operationId: adminValidateMetaCatalog
+      tags: [admin]
+      summary: Validate feed configuration without connecting or storing provider credentials
+      responses:
+        "200":
+          description: Validation run with NOT_CONNECTED status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MetaCatalogValidationResponse" }
+  /orders/{orderId}/rmas:
+    post:
+      operationId: createOrderRma
+      tags: [shop]
+      summary: Create an RMA for an eligible delivered item and atomically claim private photos
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orderItemId, quantity, reason, description]
+              properties:
+                orderItemId: { type: string }
+                quantity: { type: integer, minimum: 1 }
+                reason: { type: string, minLength: 2, maxLength: 120 }
+                description: { type: string, minLength: 10, maxLength: 3000 }
+                photoUrls: { type: array, maxItems: 6, items: { type: string } }
+      responses:
+        "201": { description: RMA received }
+        "403": { description: Unsupported role or not owner }
+        "409": { description: Item ineligible or media claim conflict }
+  /retail/orders/{orderId}/rmas:
+    post:
+      operationId: createRetailOrderRma
+      tags: [shop]
+      summary: Create a customer/jobseeker RMA for an owned delivered retail-order item
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orderItemId, quantity, reason, description]
+              properties:
+                orderItemId: { type: string }
+                quantity: { type: integer, minimum: 1 }
+                reason: { type: string, minLength: 2, maxLength: 120 }
+                description: { type: string, minLength: 10, maxLength: 3000 }
+                photoUrls: { type: array, maxItems: 6, items: { type: string } }
+      responses:
+        "201": { description: RMA received }
+        "403": { description: Customer/jobseeker access required }
+        "404": { description: Owned retail item not found }
+  /admin/rmas:
+    get:
+      operationId: adminListRmas
+      tags: [admin]
+      summary: List RMAs
+      responses:
+        "200": { description: RMA list }
+  /admin/rmas/{id}:
+    get:
+      operationId: adminGetRma
+      tags: [admin]
+      summary: Get RMA, private attachment count and status audit
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: RMA detail }
+        "404": { description: RMA not found }
+  /admin/rmas/{id}/status:
+    patch:
+      operationId: adminUpdateRmaStatus
+      tags: [admin]
+      summary: Change RMA status with durable audit and email outbox event
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [RECEIVED, IN_REVIEW, APPROVED, REJECTED] }
+      responses:
+        "200": { description: Current RMA and whether a real transition occurred }
+  /admin/review-rewards:
+    get:
+      operationId: adminGetReviewRewardSettings
+      tags: [admin]
+      summary: Get bounded review reward settings and issuance stats
+      responses:
+        "200":
+          description: Settings and aggregate stats
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewRewardSettingsResponse" }
+    patch:
+      operationId: adminUpdateReviewRewardSettings
+      tags: [admin]
+      summary: Optimistically update bounded review invitation and reward settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled, invitationDelayDays, percent, validityDays, version]
+              properties:
+                enabled: { type: boolean }
+                invitationDelayDays: { type: integer, minimum: 7, maximum: 10 }
+                percent: { type: integer, minimum: 1, maximum: 100 }
+                validityDays: { type: integer, minimum: 1, maximum: 365 }
+                version: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewRewardSettings" }
+        "409": { description: Version conflict }
+
 components:
   parameters:
     CityQuery:
@@ -6500,6 +6802,137 @@ components:
       required: true
       schema: { type: string }
   schemas:
+    CatalogSyncRun:
+      type: object
+      required: [id, provider, status, itemCount, validationErrors, createdAt]
+      properties:
+        id: { type: string }
+        provider: { type: string }
+        status: { type: string }
+        itemCount: { type: integer, minimum: 0 }
+        validationErrors: { type: array, items: { type: string } }
+        requestedByUserId: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+    MetaCatalogStatus:
+      type: object
+      required: [connectionStatus, canSync, latestRun]
+      properties:
+        connectionStatus: { type: string, enum: [NOT_CONNECTED] }
+        canSync: { type: boolean }
+        latestRun:
+          anyOf:
+            - { $ref: "#/components/schemas/CatalogSyncRun" }
+            - { type: "null" }
+    MetaCatalogValidationResponse:
+      type: object
+      required: [connectionStatus, canSync, run]
+      properties:
+        connectionStatus: { type: string, enum: [NOT_CONNECTED] }
+        canSync: { type: boolean }
+        run: { $ref: "#/components/schemas/CatalogSyncRun" }
+    ReviewRewardSettings:
+      type: object
+      required: [enabled, invitationDelayDays, percent, validityDays, version]
+      properties:
+        enabled: { type: boolean }
+        invitationDelayDays: { type: integer, minimum: 7, maximum: 10 }
+        percent: { type: integer, minimum: 1, maximum: 100 }
+        validityDays: { type: integer, minimum: 1, maximum: 365 }
+        version: { type: integer, minimum: 1 }
+    ReviewRewardSettingsResponse:
+      type: object
+      required: [settings, stats]
+      properties:
+        settings: { $ref: "#/components/schemas/ReviewRewardSettings" }
+        stats:
+          type: object
+          required: [issued]
+          properties:
+            issued: { type: integer, minimum: 0 }
+    BulkMatrixTierPrice:
+      type: object
+      required: [minQuantity, maxQuantity, unitPrice]
+      properties:
+        minQuantity: { type: integer, minimum: 1 }
+        maxQuantity: { type: [integer, "null"], minimum: 1 }
+        unitPrice: { type: integer, minimum: 0 }
+    BulkMatrixSwatch:
+      oneOf:
+        - type: object
+          required: [kind, hex]
+          properties:
+            kind: { type: string, enum: [COLOR] }
+            hex: { type: string, pattern: "^#[0-9A-F]{6}$" }
+        - type: object
+          required: [kind, imageUrl]
+          properties:
+            kind: { type: string, enum: [IMAGE] }
+            imageUrl: { type: string }
+        - type: object
+          required: [kind, text]
+          properties:
+            kind: { type: string, enum: [TEXT] }
+            text: { type: string }
+    BulkMatrixRow:
+      type: object
+      required: [value, label, sku, available, stock, swatch, mainImageUrl, altText, sortOrder]
+      properties:
+        value: { type: string }
+        label: { type: string }
+        sku: { type: [string, "null"] }
+        available: { type: boolean }
+        stock:
+          type: integer
+          minimum: 0
+          description: Effective available quantity; shared-stock variants expose current product stock.
+        swatch:
+          anyOf:
+            - { $ref: "#/components/schemas/BulkMatrixSwatch" }
+            - { type: "null" }
+        mainImageUrl: { type: [string, "null"] }
+        altText: { type: [string, "null"] }
+        sortOrder: { type: integer }
+        unitPrice:
+          type: integer
+          minimum: 0
+          description: Omitted when priceOnRequest is true.
+        tierPricePreview:
+          type: array
+          items: { $ref: "#/components/schemas/BulkMatrixTierPrice" }
+          description: Omitted when priceOnRequest is true.
+    BulkMatrixResponse:
+      type: object
+      required: [productId, priceOnRequest, cartEligible, rows]
+      properties:
+        productId: { type: string }
+        priceOnRequest: { type: boolean }
+        cartEligible: { type: boolean }
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/BulkMatrixRow" }
+    BulkMatrixAddResponse:
+      type: object
+      required: [cartId, addedRows]
+      properties:
+        cartId: { type: string }
+        addedRows: { type: integer, minimum: 0 }
+    B2bQuote:
+      type: object
+      required: [id, publicId, salonId, sellerSnapshot, itemSnapshots, subtotalWithoutVat, vatAmount, totalWithVat, currency, validUntil, createdAt]
+      properties:
+        id: { type: string }
+        publicId: { type: string }
+        salonId: { type: string }
+        sourceCartId: { type: [string, "null"] }
+        customerCompanyName: { type: [string, "null"] }
+        sellerSnapshot: { type: object, additionalProperties: true }
+        itemSnapshots: { type: array, items: { type: object, additionalProperties: true } }
+        subtotalWithoutVat: { type: integer, minimum: 0 }
+        vatAmount: { type: integer, minimum: 0 }
+        totalWithVat: { type: integer, minimum: 0 }
+        currency: { type: string, enum: [RSD] }
+        validUntil: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
     RetailProductSubscription:
       type: object
       required: [id, productId, quantity, frequency, status, discountPercent, paymentMethod, deliveryMethod, nextDueAt, createdAt]
@@ -7189,7 +7622,7 @@ components:
       properties:
         scope:
           type: string
-          enum: [salon-profile, salon-gallery, employee-avatar, product, supplier, education-cover, education-gallery, education-center, instructor-avatar, service-category, product-category, treatment-photo, jobseeker-portfolio]
+          enum: [salon-profile, salon-gallery, employee-avatar, product, supplier, education-cover, education-gallery, education-center, instructor-avatar, service-category, product-category, treatment-photo, jobseeker-portfolio, rma-photo, retail-review-photo]
         resourceId:
           type: ["string", "null"]
           pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
@@ -7935,6 +8368,7 @@ components:
           additionalProperties: false
           properties:
             productId: { type: string, minLength: 1 }
+            variantValue: { type: string, minLength: 1, maxLength: 120 }
             quantity: { type: integer, minimum: 1, maximum: 100 }
           required: [productId, quantity]
         - type: object
@@ -7962,11 +8396,13 @@ components:
                   name: { type: string }
                   imageUrl: { type: string }
                   sku: { type: string, description: "Immutable customer-facing catalog reference; retained under the legacy sku response key." }
+                  variantValue: { type: ["string", "null"] }
+                  variantLabel: { type: ["string", "null"] }
                   quantity: { type: integer, minimum: 1 }
                   unitPrice: { type: integer, minimum: 0 }
                   lineTotal: { type: integer, minimum: 0 }
                   lowStock: { type: boolean }
-                required: [id, kind, productId, name, imageUrl, sku, quantity, unitPrice, lineTotal, lowStock]
+                required: [id, kind, productId, name, imageUrl, sku, variantValue, variantLabel, quantity, unitPrice, lineTotal, lowStock]
               - type: object
                 properties:
                   id: { type: string }
@@ -8380,6 +8816,18 @@ components:
         derivedStock: { type: integer, minimum: 0 }
         components: { type: array, items: { $ref: "#/components/schemas/BundleComponentCard" } }
       required: [id, supplierId, name, description, imageUrl, market, b2cPrice, derivedStock, components]
+    PublicProductVariant:
+      type: object
+      properties:
+        value: { type: string }
+        label: { type: string }
+        cartEligible: { type: boolean }
+        swatch:
+          anyOf:
+            - { $ref: "#/components/schemas/BulkMatrixSwatch" }
+            - { type: "null" }
+        imageUrl: { type: ["string", "null"] }
+      required: [value, label, cartEligible, swatch, imageUrl]
     PublicProduct:
       type: object
       description: Customer-facing product fields only. B2B price, SKU, stock, weight, variants and salon-only review data are deliberately omitted.
@@ -8395,9 +8843,11 @@ components:
         images:
           type: array
           items: { type: string }
-        price: { type: number, minimum: 1, multipleOf: 1 }
+        price: { type: ["number", "null"], minimum: 1, multipleOf: 1 }
         discountPrice: { type: ["number", "null"], minimum: 1, multipleOf: 1 }
         discountPercent: { type: ["number", "null"] }
+        priceOnRequest: { type: boolean }
+        cartEligible: { type: boolean }
         unit: { type: string }
         isNew: { type: boolean }
         isBestseller: { type: boolean }
@@ -8405,7 +8855,11 @@ components:
         subscriptionAllowed: { type: boolean }
         subscriptionDiscountPercent: { type: ["integer", "null"], minimum: 1, maximum: 100 }
         reviewSummary: { $ref: "#/components/schemas/RetailProductReviewSummary" }
-      required: [id, supplierId, name, category, categoryId, description, imageUrl, images, price, unit, isNew, isBestseller, deliveryBusinessDaysOverride, subscriptionAllowed, subscriptionDiscountPercent, reviewSummary]
+        variantType: { type: ["string", "null"] }
+        variants:
+          type: array
+          items: { $ref: "#/components/schemas/PublicProductVariant" }
+      required: [id, supplierId, name, category, categoryId, description, imageUrl, images, price, priceOnRequest, cartEligible, unit, isNew, isBestseller, deliveryBusinessDaysOverride, subscriptionAllowed, subscriptionDiscountPercent, reviewSummary, variantType, variants]
     RelatedProductCard:
       type: object
       description: Channel-priced related-product allowlist; excludes inventory, SKU, weight, variants, wholesale administration and relationship IDs.
@@ -8417,6 +8871,19 @@ components:
         price: { type: integer, minimum: 0 }
         discountPrice: { type: ["integer", "null"], minimum: 0 }
       required: [id, name, imageUrl, brand, price, discountPrice]
+    PublicRelatedProductCard:
+      type: object
+      description: Public retail related-product allowlist with explicit price-on-request state.
+      properties:
+        id: { type: string }
+        name: { type: string }
+        imageUrl: { type: string }
+        brand: { type: ["string", "null"] }
+        price: { type: ["integer", "null"], minimum: 1 }
+        discountPrice: { type: ["integer", "null"], minimum: 1 }
+        priceOnRequest: { type: boolean }
+        cartEligible: { type: boolean }
+      required: [id, name, imageUrl, brand, price, discountPrice, priceOnRequest, cartEligible]
     PublicProductList:
       type: object
       properties:
@@ -8442,7 +8909,7 @@ components:
               items: { $ref: "#/components/schemas/B2cPublicNeedTag" }
             relatedProducts:
               type: array
-              items: { $ref: "#/components/schemas/RelatedProductCard" }
+              items: { $ref: "#/components/schemas/PublicRelatedProductCard" }
           required: [relatedProducts]
     B2cProductSort:
       type: string
@@ -9922,6 +10389,17 @@ components:
         price: { type: number, minimum: 0, multipleOf: 1 }
         stock: { type: number, minimum: 0, multipleOf: 1 }
         sku: { type: string, minLength: 1 }
+        swatch:
+          type: ["object", "null"]
+          properties:
+            kind: { type: string, enum: [TEXT, COLOR, IMAGE] }
+            text: { type: string, maxLength: 80 }
+            hex: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+            imageUrl: { type: string }
+          required: [kind]
+        mainImageUrl: { type: ["string", "null"] }
+        altText: { type: ["string", "null"], maxLength: 180 }
+        sortOrder: { type: integer, minimum: 0, maximum: 10000 }
       required: [label, value]
     QuantityPricingTier:
       type: object
@@ -9950,6 +10428,8 @@ components:
         price: { type: number, multipleOf: 1 }
         discountPrice: { type: ["number", "null"], multipleOf: 1 }
         retailEnabled: { type: boolean }
+        priceOnRequest: { type: boolean, default: false }
+        bulkMatrixEnabled: { type: boolean, default: false }
         professionalEnabled: { type: boolean }
         publicDescription: { type: ["string", "null"] }
         publicPrice: { type: ["number", "null"], minimum: 1, multipleOf: 1 }
@@ -10019,6 +10499,8 @@ components:
         price: { type: number, minimum: 0, maximum: 100000000, multipleOf: 1 }
         discountPrice: { type: ["number", "null"], minimum: 0, maximum: 100000000, multipleOf: 1 }
         retailEnabled: { type: boolean }
+        priceOnRequest: { type: boolean }
+        bulkMatrixEnabled: { type: boolean }
         professionalEnabled: { type: boolean }
         publicDescription: { type: ["string", "null"], maxLength: 10000 }
         publicPrice: { type: ["number", "null"], minimum: 1, maximum: 100000000, multipleOf: 1 }
@@ -10066,6 +10548,8 @@ components:
         price: { type: number, minimum: 0, maximum: 100000000, multipleOf: 1 }
         discountPrice: { type: ["number", "null"], minimum: 0, maximum: 100000000, multipleOf: 1 }
         retailEnabled: { type: boolean }
+        priceOnRequest: { type: boolean }
+        bulkMatrixEnabled: { type: boolean }
         professionalEnabled: { type: boolean }
         publicDescription: { type: ["string", "null"], maxLength: 10000 }
         publicPrice: { type: ["number", "null"], minimum: 1, maximum: 100000000, multipleOf: 1 }
@@ -11905,6 +12389,7 @@ components:
       properties:
         rating: { type: integer, minimum: 1, maximum: 5 }
         comment: { type: string, minLength: 1, maxLength: 2000 }
+        photoUrls: { type: array, maxItems: 6, items: { type: string } }
     RetailReviewModerationStatus:
       type: string
       enum: [PUBLISHED, REPORTED, AUTO_FLAGGED, REMOVED]

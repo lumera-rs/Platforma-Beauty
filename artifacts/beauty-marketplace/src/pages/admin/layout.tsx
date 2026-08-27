@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useGetCurrentUser } from "@workspace/api-client-react";
 import { BusinessLayout } from "@/components/business-layout";
 import { Button } from "@/components/ui/button";
-import { Loader2, LayoutDashboard, Store, Users, Star, CreditCard, MessageSquare, Menu, X, Package, FolderTree, Tags, Truck, Mail, MessageSquareText, PlugZap, FileText, GraduationCap, SlidersHorizontal, BriefcaseBusiness, ListX, Gift, Layers, Bell, Settings2, Image, ListTree, ShieldAlert } from "lucide-react";
+import { Loader2, LayoutDashboard, Store, Users, Star, CreditCard, MessageSquare, Menu, X, Package, FolderTree, Tags, Truck, Mail, MessageSquareText, PlugZap, FileText, GraduationCap, SlidersHorizontal, BriefcaseBusiness, ListX, Gift, Layers, Bell, Settings2, Image, ListTree, ShieldAlert, Facebook, MailQuestion, AlertCircle } from "lucide-react";
 
 const navLinks = [
   { href: "/admin", label: "Pregled", icon: LayoutDashboard },
@@ -28,7 +28,12 @@ const navLinks = [
   { href: "/admin/lista-cekanja", label: "Lista čekanja", icon: Bell },
   { href: "/admin/podesavanja/prodavnica", label: "Podešavanja prodavnice", icon: Settings2 },
   { href: "/admin/podesavanja-prikaza", label: "B2C Podešavanja", icon: Settings2 },
-  { href: "/admin/porudzbine", label: "Porudžbine", icon: Package },
+    { href: "/admin/porudzbine", label: "Porudžbine", icon: Package },
+  { href: "/admin/b2b-ponude", label: "B2B Ponude", icon: FileText },
+  { href: "/admin/reklamacije", label: "Reklamacije (RMA)", icon: AlertCircle },
+  { href: "/admin/upiti-za-cenu", label: "Upiti za cenu", icon: MailQuestion },
+  { href: "/admin/nagrade-recenzije", label: "Nagrade za recenzije", icon: Star },
+  { href: "/admin/drustvene-mreze", label: "Meta (Facebook)", icon: Facebook },
   { href: "/admin/brendovi", label: "Brendovi", icon: Tags },
   { href: "/admin/dostava", label: "Dostava", icon: Truck },
   { href: "/admin/email-marketing", label: "E-mail marketing", icon: Mail },

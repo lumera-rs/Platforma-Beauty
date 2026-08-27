@@ -14,6 +14,10 @@ export type RetailCartItemsItem = {
   imageUrl: string;
   /** Immutable customer-facing catalog reference; retained under the legacy sku response key. */
   sku: string;
+  /** @nullable */
+  variantValue: string | null;
+  /** @nullable */
+  variantLabel: string | null;
   /** @minimum 1 */
   quantity: number;
   /** @minimum 0 */

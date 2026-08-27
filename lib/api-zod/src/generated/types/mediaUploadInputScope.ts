@@ -23,4 +23,6 @@ export const MediaUploadInputScope = {
   'product-category': 'product-category',
   'treatment-photo': 'treatment-photo',
   'jobseeker-portfolio': 'jobseeker-portfolio',
+  'rma-photo': 'rma-photo',
+  'retail-review-photo': 'retail-review-photo',
 } as const;

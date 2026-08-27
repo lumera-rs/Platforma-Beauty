@@ -419,19 +419,45 @@ export function canonicalPublicProductCondition(supplierId: string) {
     )`,
   )!;
 }
+function publicVariantInventoryModel(product: typeof productsTable.$inferSelect) {
+  const variants = product.variants ?? [];
+  if (!variants.length || variants.every((variant) => variant.stock == null)) return { kind: "shared" as const, variants };
+  if (!variants.every((variant) => variant.stock != null)) return { kind: "invalid" as const, variants };
+  const total = variants.reduce((sum, variant) => sum + Math.max(0, variant.stock!), 0);
+  return total === product.stock
+    ? { kind: "per-variant" as const, variants, total }
+    : { kind: "invalid" as const, variants };
+}
+
 function publicBase(product: typeof productsTable.$inferSelect) {
-  const price = product.publicPrice!;
-  const discountPrice = product.publicDiscountPrice;
+  const configuredPrice = product.publicPrice!;
+  const inventory = publicVariantInventoryModel(product);
+  const effectiveStock = inventory.kind === "invalid"
+    ? 0
+    : inventory.kind === "per-variant" ? inventory.total : Math.max(0, product.stock);
+  const priceOnRequest = product.priceOnRequest || effectiveStock === 0;
+  const price = priceOnRequest ? null : configuredPrice;
+  const discountPrice = priceOnRequest ? null : product.publicDiscountPrice;
   return {
     id: product.id, supplierId: product.supplierId, name: product.name, category: product.categoryName,
     categoryId: product.categoryId, subcategory: product.subcategoryName, brand: product.brand,
     description: product.publicDescription!, imageUrl: product.imageUrl, images: product.images ?? [],
-    price, discountPrice, discountPercent: discountPrice ? Math.round((1 - discountPrice / price) * 100) : null,
+    price, discountPrice, discountPercent: discountPrice ? Math.round((1 - discountPrice / configuredPrice) * 100) : null,
+    priceOnRequest, cartEligible: !priceOnRequest,
     unit: product.unit, isNew: product.isNew, isBestseller: product.isBestseller,
     deliveryBusinessDaysOverride: product.deliveryBusinessDaysOverride,
     subscriptionAllowed: product.subscriptionAllowed,
     subscriptionDiscountPercent: product.subscriptionAllowed ? product.subscriptionDiscountPercent : null,
     reviewSummary: { averageRating: product.averageRating, reviewCount: product.reviewCount },
+    variantType: product.variantType ?? null,
+    variants: (product.variants ?? []).map((variant) => ({
+      value: variant.value,
+      label: variant.label,
+      cartEligible: inventory.kind !== "invalid"
+        && (inventory.kind === "per-variant" ? variant.stock! > 0 : product.stock > 0),
+      swatch: variant.swatch ?? null,
+      imageUrl: variant.mainImageUrl ?? null,
+    })),
   };
 }
 
@@ -597,8 +623,7 @@ router.get("/suppliers/:supplierSlug/public-products/:productId", async (req, re
   ]);
   const relationIds = product.similarProductsMode === "MANUAL" ? product.similarProductIds : [];
   const relatedWhere = and(
-    eq(productsTable.supplierId, supplier.id), eq(productsTable.active, true), eq(productsTable.retailEnabled, true),
-    isNotNull(productsTable.publicPrice), isNotNull(productsTable.publicDescription),
+    canonicalPublicProductCondition(supplier.id),
     relationIds.length
       ? inArray(productsTable.id, relationIds)
       : product.categoryId ? eq(productsTable.categoryId, product.categoryId) : eq(productsTable.categoryName, product.categoryName),
@@ -610,10 +635,14 @@ router.get("/suppliers/:supplierSlug/public-products/:productId", async (req, re
     ? relationIds.map((id) => byId.get(id)).filter((item): item is typeof relatedRows[number] => Boolean(item))
     : relatedRows;
   res.json({ ...publicBase(product), ingredients: product.ingredients, usageInstructions: product.usageInstructions,
-    productType: productType[0] ?? null, needTags, relatedProducts: related.slice(0, 8).map((item) => ({
-      id: item.id, name: item.name, imageUrl: item.imageUrl, brand: item.brand,
-      price: item.publicPrice!, discountPrice: item.publicDiscountPrice,
-    })) });
+    productType: productType[0] ?? null, needTags, relatedProducts: related.slice(0, 8).map((item) => {
+      const view = publicBase(item);
+      return {
+        id: item.id, name: item.name, imageUrl: item.imageUrl, brand: item.brand,
+        price: view.price, discountPrice: view.discountPrice,
+        priceOnRequest: view.priceOnRequest, cartEligible: view.cartEligible,
+      };
+    }) });
 });
 
 // This intentionally does not mint a viewer cookie: passive reads must not

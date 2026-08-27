@@ -10,6 +10,11 @@ export type RetailCartItemInput = {
   /** @minLength 1 */
   productId: string;
   /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  variantValue?: string;
+  /**
      * @minimum 1
      * @maximum 100
      */

@@ -5,6 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { ProductVariantSwatch } from './productVariantSwatch';
 
 export interface ProductVariant {
   label: string;
@@ -16,4 +17,18 @@ export interface ProductVariant {
   stock?: number;
   /** @minLength 1 */
   sku?: string;
+  /** @nullable */
+  swatch?: ProductVariantSwatch;
+  /** @nullable */
+  mainImageUrl?: string | null;
+  /**
+     * @maxLength 180
+     * @nullable
+     */
+  altText?: string | null;
+  /**
+     * @minimum 0
+     * @maximum 10000
+     */
+  sortOrder?: number;
 }

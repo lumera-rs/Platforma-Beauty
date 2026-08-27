@@ -44,6 +44,8 @@ export interface AdminProductInput {
      */
   discountPrice?: number | null;
   retailEnabled?: boolean;
+  priceOnRequest?: boolean;
+  bulkMatrixEnabled?: boolean;
   professionalEnabled?: boolean;
   /**
      * @maxLength 10000

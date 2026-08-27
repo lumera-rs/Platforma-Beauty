@@ -39,7 +39,16 @@ import { notifyRetailCartChanged } from "@/lib/retail-cart-events";
 import { extractApiError } from "@/lib/admin-form-utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { MediaUpload } from "@/components/media-upload";
 import { useQueryClient } from "@tanstack/react-query";
+import { PriceInquiryDialog } from "@/components/price-inquiry-dialog";
+import { BulkMatrixOrderTable } from "@/components/bulk-matrix-table";
+
+interface ExtendedPublicProduct {
+  bulkMatrixEnabled?: boolean;
+  priceOnRequest?: boolean;
+  stock?: number;
+}
 
 const money = (value: number) => new Intl.NumberFormat("sr-RS", {
   style: "currency", currency: "RSD", maximumFractionDigits: 0,
@@ -47,10 +56,11 @@ const money = (value: number) => new Intl.NumberFormat("sr-RS", {
 
 function ProductPrice({ product }: { product: PublicProduct }) {
   const current = product.discountPrice ?? product.price;
+  if (((product as unknown as ExtendedPublicProduct).priceOnRequest || product.price === null) || current == null) return <span className="text-sm font-semibold text-primary">Cena na upit</span>;
   return (
     <div className="flex items-baseline gap-2">
       <span className="text-lg font-semibold text-foreground">{money(current)}</span>
-      {product.discountPrice != null && <span className="text-sm text-muted-foreground line-through">{money(product.price)}</span>}
+      {product.discountPrice != null && product.price != null && <span className="text-sm text-muted-foreground line-through">{money(product.price)}</span>}
     </div>
   );
 }
@@ -89,6 +99,7 @@ function PublicProductCard({ product, supplierSlug, isWishlisted, onToggleWishli
     });
   };
   const adding = addRetailCartItem.isPending;
+  const hasVariants = (product.variants ?? []).length > 0;
 
   const rating = (product as any).reviewSummary?.averageRating;
   const count = (product as any).reviewSummary?.reviewCount;
@@ -123,9 +134,19 @@ function PublicProductCard({ product, supplierSlug, isWishlisted, onToggleWishli
         </div>
       </Link>
       <div className="px-4 pb-4 mt-auto">
-        <Button className="w-full" onClick={add} disabled={adding} data-testid={`public-product-add-${product.id}`}>
-          {adding ? "Dodavanje…" : "Dodaj u korpu"}
-        </Button>
+        {((product as unknown as ExtendedPublicProduct).priceOnRequest || product.price === null) || ((product as unknown as ExtendedPublicProduct).stock !== undefined && (product as unknown as ExtendedPublicProduct).stock! <= 0) ? (
+          <Button className="w-full" asChild data-testid={`public-product-inquiry-${product.id}`}>
+            <Link href={`/shop/${supplierSlug}/proizvod/${product.id}`}>Pošalji upit</Link>
+          </Button>
+        ) : hasVariants ? (
+          <Button className="w-full" asChild data-testid={`public-product-select-${product.id}`}>
+            <Link href={`/shop/${supplierSlug}/proizvod/${product.id}`}>Izaberi varijantu</Link>
+          </Button>
+        ) : (
+          <Button className="w-full" onClick={add} disabled={adding} data-testid={`public-product-add-${product.id}`}>
+            {adding ? "Dodavanje…" : "Dodaj u korpu"}
+          </Button>
+        )}
       </div>
     </article>
   );
@@ -849,6 +870,7 @@ function ProductReviews({ supplierSlug, productId, isCustomer }: { supplierSlug:
   const [isReviewDialogOpen, setIsReviewDialogOpen] = useState(false);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
+  const [photos, setPhotos] = useState<string[]>([]);
 
   const createReview = useCreateCustomerRetailProductReview({
     mutation: {
@@ -942,10 +964,14 @@ function ProductReviews({ supplierSlug, productId, isCustomer }: { supplierSlug:
               <Label className="mb-2 block">Komentar</Label>
               <Textarea rows={4} value={comment} onChange={e => setComment(e.target.value)} placeholder="Napišite svoje utiske..." />
             </div>
+            <div>
+              <Label className="mb-2 block">Fotografije (Opciono)</Label>
+              <MediaUpload value={photos} onChange={setPhotos} context="review" maxFiles={6} />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsReviewDialogOpen(false)}>Odustani</Button>
-            <Button onClick={() => createReview.mutate({ productId, data: { rating, comment } })} disabled={createReview.isPending || !comment.trim()}>
+            <Button onClick={() => createReview.mutate({ productId, data: { rating, comment, photoUrls: photos } })} disabled={createReview.isPending || !comment.trim()}>
               {createReview.isPending ? "Čuvanje..." : "Sačuvaj recenziju"}
             </Button>
           </DialogFooter>
@@ -993,6 +1019,8 @@ export function PublicProductDetailPage() {
   });
 
   const [showSubDialog, setShowSubDialog] = useState(false);
+  const [variantValue, setVariantValue] = useState("");
+  const [showInquiry, setShowInquiry] = useState(false);
   const [subFreq, setSubFreq] = useState<RetailProductSubscriptionInputFrequency>("MONTHLY");
   const [subPayment, setSubPayment] = useState<RetailProductSubscriptionInputPaymentMethod>("CARD");
   const [subDelivery, setSubDelivery] = useState<RetailProductSubscriptionInputDeliveryMethod>("courier");
@@ -1012,7 +1040,7 @@ export function PublicProductDetailPage() {
   const productName = product?.name ?? "Proizvod";
   const addRetailCartItem = useAddRetailCartItem();
   const add = () => {
-    addRetailCartItem.mutate({ data: { productId, quantity: 1 } }, {
+    addRetailCartItem.mutate({ data: { productId, quantity: 1, ...(variantValue ? { variantValue } : {}) } }, {
       onSuccess: (cart) => {
         const changedItem = cart.items?.find((item) => item.kind === 'product' && item.productId === productId);
         notifyRetailCartChanged(cart.itemCount, {
@@ -1045,6 +1073,8 @@ export function PublicProductDetailPage() {
 
   const currentHeroImage = activeThumbnail || gallery[0];
   const productDetail = product as any;
+  const publicVariants = product.variants ?? [];
+  const selectedVariant = publicVariants.find((variant) => variant.value === variantValue);
   const rating = productDetail.reviewSummary?.averageRating;
   const count = productDetail.reviewSummary?.reviewCount;
 
@@ -1144,10 +1174,57 @@ export function PublicProductDetailPage() {
               </p>
             )}
 
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Button size="lg" className="flex-1 sm:flex-none min-w-[200px]" onClick={add} disabled={adding}>{adding ? "Dodavanje…" : "Dodaj u korpu"}</Button>
-              <Button size="lg" variant="outline" className="flex-1 sm:flex-none" asChild><Link href="/korpa">Pregled korpe</Link></Button>
-            </div>
+            {publicVariants.length > 0 && (
+              <div className="mt-8">
+                <Label className="text-sm font-semibold">
+                  {product.variantType ? `Izaberite ${product.variantType.toLowerCase()}` : "Izaberite varijantu"}
+                </Label>
+                <div className="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label="Varijante proizvoda">
+                  {publicVariants.map((variant) => (
+                    <button
+                      key={variant.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={variantValue === variant.value}
+                      disabled={!variant.cartEligible}
+                      onClick={() => setVariantValue(variant.value)}
+                      className={`flex min-h-11 items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-colors ${
+                        variantValue === variant.value ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-border hover:border-primary/50"
+                      } disabled:cursor-not-allowed disabled:opacity-40`}
+                    >
+                      {variant.swatch?.kind === "COLOR" && variant.swatch.hex && (
+                        <span className="h-6 w-6 rounded-full border shadow-sm" style={{ backgroundColor: variant.swatch.hex }} aria-hidden="true" />
+                      )}
+                      {variant.swatch?.kind === "IMAGE" && variant.swatch.imageUrl && (
+                        <img src={variant.swatch.imageUrl} alt="" className="h-7 w-7 rounded-md border object-cover" />
+                      )}
+                      <span>{variant.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {(product as unknown as ExtendedPublicProduct).bulkMatrixEnabled && productDetail.variants?.length ? (
+              <BulkMatrixOrderTable productId={product.id} />
+            ) : (
+              <>
+                {((product as unknown as ExtendedPublicProduct).priceOnRequest || product.price === null) || ((product as unknown as ExtendedPublicProduct).stock !== undefined && (product as unknown as ExtendedPublicProduct).stock! <= 0) ? (
+                  <div className="mt-8">
+                    <Button size="lg" className="w-full sm:w-auto" onClick={() => setShowInquiry(true)}>Pošalji upit za cenu / dostupnost</Button>
+                  </div>
+                ) : (
+                  <div className="mt-8 flex flex-wrap gap-3">
+                    <Button size="lg" className="flex-1 sm:flex-none min-w-[200px]" onClick={add} disabled={adding || (publicVariants.length > 0 && !selectedVariant)}>
+                      {adding ? "Dodavanje…" : publicVariants.length > 0 && !selectedVariant ? "Izaberite varijantu" : "Dodaj u korpu"}
+                    </Button>
+                    <Button size="lg" variant="outline" className="flex-1 sm:flex-none" asChild><Link href="/korpa">Pregled korpe</Link></Button>
+                  </div>
+                )}
+              </>
+            )}
+            <PriceInquiryDialog open={showInquiry} onOpenChange={setShowInquiry} supplierId={product.supplierId} productId={product.id} productName={product.name} />
+
 
             {Boolean(product.subscriptionAllowed) && isCustomer && (
               <div className="mt-6 p-5 rounded-2xl border bg-primary/5 flex items-center justify-between border-primary/20">
@@ -1190,8 +1267,14 @@ export function PublicProductDetailPage() {
                       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{related.brand ?? "Proizvod"}</p>
                       <h3 className="mt-1 line-clamp-2 font-serif font-semibold">{related.name}</h3>
                       <div className="mt-auto pt-3 flex items-baseline gap-2">
-                        <p className="font-bold text-primary">{money(relatedPrice)}</p>
-                        {related.discountPrice != null && <p className="text-xs text-muted-foreground line-through">{money(related.price)}</p>}
+                        {related.priceOnRequest || relatedPrice == null ? (
+                          <p className="font-bold text-primary">Cena na upit</p>
+                        ) : (
+                          <>
+                            <p className="font-bold text-primary">{money(relatedPrice)}</p>
+                            {related.discountPrice != null && related.price != null && <p className="text-xs text-muted-foreground line-through">{money(related.price)}</p>}
+                          </>
+                        )}
                       </div>
                     </div>
                   </Link>

@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 52;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 55;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -116,6 +116,9 @@ const ENUM_LABELS: Record<string, string[]> = {
   product_waitlist_status: ["ACTIVE", "NOTIFIED", "UNSUBSCRIBED"],
   coupon_discount_type: ["PERCENTAGE", "FIXED_RSD"],
   approval_request_status: ["PENDING", "APPROVED", "REJECTED", "EXPIRED"],
+  price_inquiry_status: ["NEW", "CONTACTED", "CLOSED"],
+  rma_status: ["RECEIVED", "IN_REVIEW", "APPROVED", "REJECTED"],
+  catalog_sync_status: ["NOT_CONNECTED", "VALIDATED", "FAILED"],
   retail_subscription_frequency: ["WEEKLY", "BIWEEKLY", "MONTHLY", "EVERY_TWO_MONTHS"],
   retail_subscription_status: ["ACTIVE", "PAUSED", "CANCELLED"],
   retail_subscription_attempt_status: ["PROCESSING", "CREATED", "INSUFFICIENT_STOCK", "SKIPPED"],
@@ -2605,6 +2608,87 @@ function tableStatements(s: string): string[] {
     `CREATE UNIQUE INDEX IF NOT EXISTS b2c_display_settings_singleton_unique ON ${s}.b2c_display_settings ((true))`,
     `CREATE INDEX IF NOT EXISTS b2c_display_settings_updated_by_idx ON ${s}.b2c_display_settings (updated_by_user_id)`,
     `INSERT INTO ${s}.b2c_display_settings DEFAULT VALUES ON CONFLICT DO NOTHING`,
+
+    // v53 — Deo E/F commerce workflows. All evidence and one-time issuance
+    // fences are additive, preserving existing catalog, cart and stock models.
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS price_on_request boolean NOT NULL DEFAULT false`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS bulk_matrix_enabled boolean NOT NULL DEFAULT false`,
+    `ALTER TABLE ${s}.shop_settings ADD COLUMN IF NOT EXISTS quote_validity_days integer NOT NULL DEFAULT 7`,
+    `ALTER TABLE ${s}.shop_settings ADD COLUMN IF NOT EXISTS review_rewards_enabled boolean NOT NULL DEFAULT false`,
+    `ALTER TABLE ${s}.shop_settings ADD COLUMN IF NOT EXISTS review_invitation_delay_days integer NOT NULL DEFAULT 7`,
+    `ALTER TABLE ${s}.shop_settings ADD COLUMN IF NOT EXISTS review_reward_percent integer NOT NULL DEFAULT 5`,
+    `ALTER TABLE ${s}.shop_settings ADD COLUMN IF NOT EXISTS review_reward_validity_days integer NOT NULL DEFAULT 30`,
+    `CREATE TABLE IF NOT EXISTS ${s}.b2b_quotes (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), public_id text NOT NULL UNIQUE,
+      salon_id uuid NOT NULL REFERENCES ${s}.salons(id) ON DELETE RESTRICT,
+      source_cart_id uuid REFERENCES ${s}.shopping_carts(id) ON DELETE SET NULL,
+      customer_company_name text, seller_snapshot jsonb NOT NULL, item_snapshots jsonb NOT NULL,
+      subtotal_without_vat integer NOT NULL, vat_amount integer NOT NULL, total_with_vat integer NOT NULL,
+      currency text NOT NULL DEFAULT 'RSD', valid_until timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT b2b_quotes_totals_check CHECK (subtotal_without_vat >= 0 AND vat_amount >= 0 AND total_with_vat = subtotal_without_vat + vat_amount)
+    )`,
+    `CREATE INDEX IF NOT EXISTS b2b_quotes_salon_created_idx ON ${s}.b2b_quotes (salon_id, created_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.price_inquiries (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), supplier_id uuid NOT NULL REFERENCES ${s}.suppliers(id) ON DELETE RESTRICT,
+      product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE RESTRICT,
+      name text NOT NULL, email text NOT NULL, phone text NOT NULL, message text NOT NULL,
+      status ${s}.price_inquiry_status NOT NULL DEFAULT 'NEW', internal_note text,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS price_inquiries_status_created_idx ON ${s}.price_inquiries (status, created_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.rmas (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), rma_number text NOT NULL UNIQUE,
+      order_id uuid NOT NULL REFERENCES ${s}.orders(id) ON DELETE RESTRICT,
+      order_item_id uuid NOT NULL REFERENCES ${s}.order_items(id) ON DELETE RESTRICT,
+      requester_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE RESTRICT,
+      quantity integer NOT NULL CHECK (quantity > 0), reason text NOT NULL, description text NOT NULL,
+      status ${s}.rma_status NOT NULL DEFAULT 'RECEIVED',
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS rmas_order_created_idx ON ${s}.rmas (order_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS rmas_status_created_idx ON ${s}.rmas (status, created_at)`,
+    // Existing v53 installations may already have B2B-only non-null columns.
+    // Extend in place to a checked discriminated target; no data is rewritten.
+    `ALTER TABLE ${s}.rmas ADD COLUMN IF NOT EXISTS retail_order_id uuid REFERENCES ${s}.retail_orders(id) ON DELETE RESTRICT`,
+    `ALTER TABLE ${s}.rmas ADD COLUMN IF NOT EXISTS retail_order_item_id uuid REFERENCES ${s}.retail_order_items(id) ON DELETE RESTRICT`,
+    `ALTER TABLE ${s}.rmas ALTER COLUMN order_id DROP NOT NULL`,
+    `ALTER TABLE ${s}.rmas ALTER COLUMN order_item_id DROP NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS rmas_retail_order_created_idx ON ${s}.rmas (retail_order_id, created_at)`,
+    `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'rmas_target_check' AND conrelid = '${s}.rmas'::regclass) THEN
+      ALTER TABLE ${s}.rmas ADD CONSTRAINT rmas_target_check CHECK (num_nonnulls(order_id, retail_order_id) = 1 AND num_nonnulls(order_item_id, retail_order_item_id) = 1) NOT VALID;
+      ALTER TABLE ${s}.rmas VALIDATE CONSTRAINT rmas_target_check;
+    END IF; END $$`,
+    `CREATE TABLE IF NOT EXISTS ${s}.rma_attachments (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), rma_id uuid NOT NULL REFERENCES ${s}.rmas(id) ON DELETE CASCADE,
+      media_asset_id uuid NOT NULL UNIQUE REFERENCES ${s}.media_assets(id) ON DELETE RESTRICT,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS rma_attachments_rma_idx ON ${s}.rma_attachments (rma_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.rma_status_history (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), rma_id uuid NOT NULL REFERENCES ${s}.rmas(id) ON DELETE CASCADE,
+      actor_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      previous_status ${s}.rma_status, next_status ${s}.rma_status NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS rma_status_history_rma_created_idx ON ${s}.rma_status_history (rma_id, created_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.review_reward_issuances (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), order_id uuid NOT NULL UNIQUE REFERENCES ${s}.retail_orders(id) ON DELETE RESTRICT,
+      review_id uuid NOT NULL UNIQUE, coupon_id uuid NOT NULL, percent_snapshot integer NOT NULL CHECK (percent_snapshot BETWEEN 1 AND 100),
+      expires_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE TABLE IF NOT EXISTS ${s}.catalog_sync_runs (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), provider text NOT NULL DEFAULT 'META',
+      status ${s}.catalog_sync_status NOT NULL DEFAULT 'NOT_CONNECTED', item_count integer NOT NULL DEFAULT 0,
+      validation_errors jsonb NOT NULL DEFAULT '[]'::jsonb,
+      requested_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL, created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS catalog_sync_runs_provider_created_idx ON ${s}.catalog_sync_runs (provider, created_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.retail_product_review_attachments (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      review_id uuid NOT NULL REFERENCES ${s}.retail_product_reviews(id) ON DELETE CASCADE,
+      media_asset_id uuid NOT NULL UNIQUE REFERENCES ${s}.media_assets(id) ON DELETE RESTRICT,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS retail_product_review_attachments_review_idx ON ${s}.retail_product_review_attachments (review_id)`,
   ];
 }
 

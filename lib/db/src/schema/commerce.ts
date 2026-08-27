@@ -67,6 +67,9 @@ export const loyaltyPointEntryTypeEnum = pgEnum("loyalty_point_entry_type", ["AW
 export const productWaitlistStatusEnum = pgEnum("product_waitlist_status", ["ACTIVE", "NOTIFIED", "UNSUBSCRIBED"]);
 export const couponDiscountTypeEnum = pgEnum("coupon_discount_type", ["PERCENTAGE", "FIXED_RSD"]);
 export const approvalRequestStatusEnum = pgEnum("approval_request_status", ["PENDING", "APPROVED", "REJECTED", "EXPIRED"]);
+export const priceInquiryStatusEnum = pgEnum("price_inquiry_status", ["NEW", "CONTACTED", "CLOSED"]);
+export const rmaStatusEnum = pgEnum("rma_status", ["RECEIVED", "IN_REVIEW", "APPROVED", "REJECTED"]);
+export const catalogSyncStatusEnum = pgEnum("catalog_sync_status", ["NOT_CONNECTED", "VALIDATED", "FAILED"]);
 
 export const suppliersTable = pgTable("suppliers", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -147,7 +150,11 @@ export const productsTable = pgTable("products", {
   isNew: boolean("is_new").notNull().default(false),
   isBestseller: boolean("is_bestseller").notNull().default(false),
   variantType: text("variant_type"),
-  variants: jsonb("variants").$type<Array<{ label: string; value: string; priceAdjust?: number; price?: number; stock?: number; sku?: string }>>(),
+  variants: jsonb("variants").$type<Array<{
+    label: string; value: string; priceAdjust?: number; price?: number; stock?: number; sku?: string;
+    swatch?: { kind: "TEXT" | "COLOR" | "IMAGE"; text?: string; hex?: string; imageUrl?: string } | null;
+    mainImageUrl?: string | null; altText?: string | null; sortOrder?: number;
+  }>>(),
   similarProductsMode: similarProductsModeEnum("similar_products_mode").notNull().default("AUTO_CATEGORY"),
   similarProductIds: jsonb("similar_product_ids").$type<string[]>().notNull().default([]),
   crossSellProductIds: jsonb("cross_sell_product_ids").$type<string[]>().notNull().default([]),
@@ -159,6 +166,9 @@ export const productsTable = pgTable("products", {
   deliveryBusinessDaysOverride: integer("delivery_business_days_override"),
   subscriptionAllowed: boolean("subscription_allowed").notNull().default(false),
   subscriptionDiscountPercent: integer("subscription_discount_percent"),
+  /** Manual override; zero effective sellable stock also implies price-on-request. */
+  priceOnRequest: boolean("price_on_request").notNull().default(false),
+  bulkMatrixEnabled: boolean("bulk_matrix_enabled").notNull().default(false),
   /** Denormalized from published B2C reviews only; maintained by moderation. */
   averageRating: integer("average_rating").notNull().default(0),
   /** Denormalized count of published B2C reviews only; maintained by moderation. */
@@ -250,6 +260,11 @@ export const shopSettingsTable = pgTable("shop_settings", {
   retailCartReminderDelayHours: integer("retail_cart_reminder_delay_hours").notNull().default(24),
   /** Brevo template identifier configured by an administrator; required to enable sends. */
   retailCartReminderBrevoTemplateId: integer("retail_cart_reminder_brevo_template_id"),
+  quoteValidityDays: integer("quote_validity_days").notNull().default(7),
+  reviewRewardsEnabled: boolean("review_rewards_enabled").notNull().default(false),
+  reviewInvitationDelayDays: integer("review_invitation_delay_days").notNull().default(7),
+  reviewRewardPercent: integer("review_reward_percent").notNull().default(5),
+  reviewRewardValidityDays: integer("review_reward_validity_days").notNull().default(30),
   version: integer("version").notNull().default(1),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
@@ -260,6 +275,10 @@ export const shopSettingsTable = pgTable("shop_settings", {
     AND ${table.defaultDeliveryBusinessDays} BETWEEN 1 AND 365
     AND ${table.retailCartReminderDelayHours} BETWEEN 1 AND 720
     AND (${table.retailCartReminderBrevoTemplateId} IS NULL OR ${table.retailCartReminderBrevoTemplateId} > 0)
+    AND ${table.quoteValidityDays} BETWEEN 1 AND 90
+    AND ${table.reviewInvitationDelayDays} BETWEEN 7 AND 10
+    AND ${table.reviewRewardPercent} BETWEEN 1 AND 100
+    AND ${table.reviewRewardValidityDays} BETWEEN 1 AND 365
     AND ${table.version} >= 1
   `),
 ]);

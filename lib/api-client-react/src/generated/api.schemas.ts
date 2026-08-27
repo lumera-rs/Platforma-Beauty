@@ -5,6 +5,170 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+export interface CatalogSyncRun {
+  id: string;
+  provider: string;
+  status: string;
+  /** @minimum 0 */
+  itemCount: number;
+  validationErrors: string[];
+  /** @nullable */
+  requestedByUserId?: string | null;
+  createdAt: string;
+}
+
+export type MetaCatalogStatusConnectionStatus = typeof MetaCatalogStatusConnectionStatus[keyof typeof MetaCatalogStatusConnectionStatus];
+
+
+export const MetaCatalogStatusConnectionStatus = {
+  NOT_CONNECTED: 'NOT_CONNECTED',
+} as const;
+
+export interface MetaCatalogStatus {
+  connectionStatus: MetaCatalogStatusConnectionStatus;
+  canSync: boolean;
+  latestRun: CatalogSyncRun | null;
+}
+
+export type MetaCatalogValidationResponseConnectionStatus = typeof MetaCatalogValidationResponseConnectionStatus[keyof typeof MetaCatalogValidationResponseConnectionStatus];
+
+
+export const MetaCatalogValidationResponseConnectionStatus = {
+  NOT_CONNECTED: 'NOT_CONNECTED',
+} as const;
+
+export interface MetaCatalogValidationResponse {
+  connectionStatus: MetaCatalogValidationResponseConnectionStatus;
+  canSync: boolean;
+  run: CatalogSyncRun;
+}
+
+export interface ReviewRewardSettings {
+  enabled: boolean;
+  /**
+     * @minimum 7
+     * @maximum 10
+     */
+  invitationDelayDays: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  percent: number;
+  /**
+     * @minimum 1
+     * @maximum 365
+     */
+  validityDays: number;
+  /** @minimum 1 */
+  version: number;
+}
+
+export type ReviewRewardSettingsResponseStats = {
+  /** @minimum 0 */
+  issued: number;
+};
+
+export interface ReviewRewardSettingsResponse {
+  settings: ReviewRewardSettings;
+  stats: ReviewRewardSettingsResponseStats;
+}
+
+export interface BulkMatrixTierPrice {
+  /** @minimum 1 */
+  minQuantity: number;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  maxQuantity: number | null;
+  /** @minimum 0 */
+  unitPrice: number;
+}
+
+export type BulkMatrixSwatch = {
+  kind: 'COLOR';
+  /** @pattern ^#[0-9A-F]{6}$ */
+  hex: string;
+} | {
+  kind: 'IMAGE';
+  imageUrl: string;
+} | {
+  kind: 'TEXT';
+  text: string;
+};
+
+export interface BulkMatrixRow {
+  value: string;
+  label: string;
+  /** @nullable */
+  sku: string | null;
+  available: boolean;
+  /**
+     * Effective available quantity; shared-stock variants expose current product stock.
+     * @minimum 0
+     */
+  stock: number;
+  swatch: BulkMatrixSwatch | null;
+  /** @nullable */
+  mainImageUrl: string | null;
+  /** @nullable */
+  altText: string | null;
+  sortOrder: number;
+  /**
+     * Omitted when priceOnRequest is true.
+     * @minimum 0
+     */
+  unitPrice?: number;
+  /** Omitted when priceOnRequest is true. */
+  tierPricePreview?: BulkMatrixTierPrice[];
+}
+
+export interface BulkMatrixResponse {
+  productId: string;
+  priceOnRequest: boolean;
+  cartEligible: boolean;
+  rows: BulkMatrixRow[];
+}
+
+export interface BulkMatrixAddResponse {
+  cartId: string;
+  /** @minimum 0 */
+  addedRows: number;
+}
+
+export type B2bQuoteSellerSnapshot = { [key: string]: unknown };
+
+export type B2bQuoteItemSnapshotsItem = { [key: string]: unknown };
+
+export type B2bQuoteCurrency = typeof B2bQuoteCurrency[keyof typeof B2bQuoteCurrency];
+
+
+export const B2bQuoteCurrency = {
+  RSD: 'RSD',
+} as const;
+
+export interface B2bQuote {
+  id: string;
+  publicId: string;
+  salonId: string;
+  /** @nullable */
+  sourceCartId?: string | null;
+  /** @nullable */
+  customerCompanyName?: string | null;
+  sellerSnapshot: B2bQuoteSellerSnapshot;
+  itemSnapshots: B2bQuoteItemSnapshotsItem[];
+  /** @minimum 0 */
+  subtotalWithoutVat: number;
+  /** @minimum 0 */
+  vatAmount: number;
+  /** @minimum 0 */
+  totalWithVat: number;
+  currency: B2bQuoteCurrency;
+  validUntil: string;
+  createdAt: string;
+}
+
 export type RetailProductSubscriptionFrequency = typeof RetailProductSubscriptionFrequency[keyof typeof RetailProductSubscriptionFrequency];
 
 
@@ -1198,6 +1362,8 @@ export const MediaUploadInputScope = {
   'product-category': 'product-category',
   'treatment-photo': 'treatment-photo',
   'jobseeker-portfolio': 'jobseeker-portfolio',
+  'rma-photo': 'rma-photo',
+  'retail-review-photo': 'retail-review-photo',
 } as const;
 
 export type MediaUploadInputContentType = typeof MediaUploadInputContentType[keyof typeof MediaUploadInputContentType];
@@ -2214,6 +2380,11 @@ export type RetailCartItemInput = {
   /** @minLength 1 */
   productId: string;
   /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  variantValue?: string;
+  /**
      * @minimum 1
      * @maximum 100
      */
@@ -2236,6 +2407,10 @@ export type RetailCartItemsItem = {
   imageUrl: string;
   /** Immutable customer-facing catalog reference; retained under the legacy sku response key. */
   sku: string;
+  /** @nullable */
+  variantValue: string | null;
+  /** @nullable */
+  variantLabel: string | null;
   /** @minimum 1 */
   quantity: number;
   /** @minimum 0 */
@@ -3057,6 +3232,15 @@ export interface PublicBundle {
   components: BundleComponentCard[];
 }
 
+export interface PublicProductVariant {
+  value: string;
+  label: string;
+  cartEligible: boolean;
+  swatch: BulkMatrixSwatch | null;
+  /** @nullable */
+  imageUrl: string | null;
+}
+
 export interface RetailProductReviewSummary {
   /**
      * @minimum 0
@@ -3082,8 +3266,11 @@ export interface PublicProduct {
   description: string;
   imageUrl: string;
   images: string[];
-  /** @minimum 1 */
-  price: number;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  price: number | null;
   /**
      * @minimum 1
      * @nullable
@@ -3091,6 +3278,8 @@ export interface PublicProduct {
   discountPrice?: number | null;
   /** @nullable */
   discountPercent?: number | null;
+  priceOnRequest: boolean;
+  cartEligible: boolean;
   unit: string;
   isNew: boolean;
   isBestseller: boolean;
@@ -3108,6 +3297,9 @@ export interface PublicProduct {
      */
   subscriptionDiscountPercent: number | null;
   reviewSummary: RetailProductReviewSummary;
+  /** @nullable */
+  variantType: string | null;
+  variants: PublicProductVariant[];
 }
 
 /**
@@ -3126,6 +3318,29 @@ export interface RelatedProductCard {
      * @nullable
      */
   discountPrice: number | null;
+}
+
+/**
+ * Public retail related-product allowlist with explicit price-on-request state.
+ */
+export interface PublicRelatedProductCard {
+  id: string;
+  name: string;
+  imageUrl: string;
+  /** @nullable */
+  brand: string | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  price: number | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  discountPrice: number | null;
+  priceOnRequest: boolean;
+  cartEligible: boolean;
 }
 
 export interface PublicProductList {
@@ -3153,7 +3368,7 @@ export type PublicProductDetail = PublicProduct & ({
   usageInstructions?: string | null;
   productType?: B2cPublicTaxonomyValue | null;
   needTags?: B2cPublicNeedTag[];
-  relatedProducts: RelatedProductCard[];
+  relatedProducts: PublicRelatedProductCard[];
 }) & Required<Pick<PublicProduct & ({
   /** @nullable */
   ingredients?: string | null;
@@ -3161,7 +3376,7 @@ export type PublicProductDetail = PublicProduct & ({
   usageInstructions?: string | null;
   productType?: B2cPublicTaxonomyValue | null;
   needTags?: B2cPublicNeedTag[];
-  relatedProducts: RelatedProductCard[];
+  relatedProducts: PublicRelatedProductCard[];
 }), Extract<keyof (PublicProduct & ({
   /** @nullable */
   ingredients?: string | null;
@@ -3169,7 +3384,7 @@ export type PublicProductDetail = PublicProduct & ({
   usageInstructions?: string | null;
   productType?: B2cPublicTaxonomyValue | null;
   needTags?: B2cPublicNeedTag[];
-  relatedProducts: RelatedProductCard[];
+  relatedProducts: PublicRelatedProductCard[];
 })), 'categoryId'>>>;
 
 export type B2cProductSort = typeof B2cProductSort[keyof typeof B2cProductSort];
@@ -5304,6 +5519,27 @@ export interface ApiError {
   issues?: ApiErrorIssuesItem[];
 }
 
+export type ProductVariantSwatchKind = typeof ProductVariantSwatchKind[keyof typeof ProductVariantSwatchKind];
+
+
+export const ProductVariantSwatchKind = {
+  TEXT: 'TEXT',
+  COLOR: 'COLOR',
+  IMAGE: 'IMAGE',
+} as const;
+
+/**
+ * @nullable
+ */
+export type ProductVariantSwatch = {
+  kind: ProductVariantSwatchKind;
+  /** @maxLength 80 */
+  text?: string;
+  /** @pattern ^#[0-9A-Fa-f]{6}$ */
+  hex?: string;
+  imageUrl?: string;
+} | null;
+
 export interface ProductVariant {
   label: string;
   value: string;
@@ -5314,6 +5550,20 @@ export interface ProductVariant {
   stock?: number;
   /** @minLength 1 */
   sku?: string;
+  /** @nullable */
+  swatch?: ProductVariantSwatch;
+  /** @nullable */
+  mainImageUrl?: string | null;
+  /**
+     * @maxLength 180
+     * @nullable
+     */
+  altText?: string | null;
+  /**
+     * @minimum 0
+     * @maximum 10000
+     */
+  sortOrder?: number;
 }
 
 export interface QuantityPricingTier {
@@ -5356,6 +5606,8 @@ export interface AdminProduct {
   /** @nullable */
   discountPrice?: number | null;
   retailEnabled: boolean;
+  priceOnRequest?: boolean;
+  bulkMatrixEnabled?: boolean;
   professionalEnabled: boolean;
   /** @nullable */
   publicDescription?: string | null;
@@ -5466,6 +5718,8 @@ export interface AdminProductInput {
      */
   discountPrice?: number | null;
   retailEnabled?: boolean;
+  priceOnRequest?: boolean;
+  bulkMatrixEnabled?: boolean;
   professionalEnabled?: boolean;
   /**
      * @maxLength 10000
@@ -5583,6 +5837,8 @@ export interface AdminProductUpdate {
      */
   discountPrice?: number | null;
   retailEnabled?: boolean;
+  priceOnRequest?: boolean;
+  bulkMatrixEnabled?: boolean;
   professionalEnabled?: boolean;
   /**
      * @maxLength 10000
@@ -8256,6 +8512,8 @@ export interface RetailProductReviewInput {
      * @maxLength 2000
      */
   comment: string;
+  /** @maxItems 6 */
+  photoUrls?: string[];
 }
 
 export type RetailReviewModerationStatus = typeof RetailReviewModerationStatus[keyof typeof RetailReviewModerationStatus];
@@ -9752,3 +10010,170 @@ export const ListRejectedBeautyJobsPeriod = {
   custom: 'custom',
   all: 'all',
 } as const;
+
+export type GetCatalogFeed200ItemsItemCurrency = typeof GetCatalogFeed200ItemsItemCurrency[keyof typeof GetCatalogFeed200ItemsItemCurrency];
+
+
+export const GetCatalogFeed200ItemsItemCurrency = {
+  RSD: 'RSD',
+} as const;
+
+export type GetCatalogFeed200ItemsItemAvailability = typeof GetCatalogFeed200ItemsItemAvailability[keyof typeof GetCatalogFeed200ItemsItemAvailability];
+
+
+export const GetCatalogFeed200ItemsItemAvailability = {
+  in_stock: 'in_stock',
+} as const;
+
+export type GetCatalogFeed200ItemsItem = {
+  id: string;
+  title: string;
+  supplier: string;
+  url: string;
+  /** @nullable */
+  price: number | null;
+  currency: GetCatalogFeed200ItemsItemCurrency;
+  availability: GetCatalogFeed200ItemsItemAvailability;
+  images: string[];
+};
+
+export type GetCatalogFeed200 = {
+  generatedAt: string;
+  items: GetCatalogFeed200ItemsItem[];
+};
+
+export type CreatePriceInquiryBody = {
+  /**
+     * @minLength 2
+     * @maxLength 120
+     */
+  name: string;
+  /** @maxLength 254 */
+  email: string;
+  /**
+     * @minLength 6
+     * @maxLength 40
+     */
+  phone: string;
+  /**
+     * @minLength 10
+     * @maxLength 2000
+     */
+  message: string;
+};
+
+export type CreatePriceInquiry201Status = typeof CreatePriceInquiry201Status[keyof typeof CreatePriceInquiry201Status];
+
+
+export const CreatePriceInquiry201Status = {
+  NEW: 'NEW',
+} as const;
+
+export type CreatePriceInquiry201 = {
+  id: string;
+  status: CreatePriceInquiry201Status;
+  createdAt: string;
+};
+
+export type CreateShopQuoteBody = {
+  /** @maxLength 200 */
+  customerCompanyName?: string;
+  /**
+     * @minimum 1
+     * @maximum 90
+     */
+  validityDays?: number;
+};
+
+export type AddShopBulkMatrixBodyRowsItem = {
+  productId: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  variantValue: string;
+  /**
+     * @minimum 1
+     * @maximum 10000
+     */
+  quantity: number;
+};
+
+export type AddShopBulkMatrixBody = {
+  /**
+     * @minItems 1
+     * @maxItems 200
+     */
+  rows: AddShopBulkMatrixBodyRowsItem[];
+};
+
+export type CreateOrderRmaBody = {
+  orderItemId: string;
+  /** @minimum 1 */
+  quantity: number;
+  /**
+     * @minLength 2
+     * @maxLength 120
+     */
+  reason: string;
+  /**
+     * @minLength 10
+     * @maxLength 3000
+     */
+  description: string;
+  /** @maxItems 6 */
+  photoUrls?: string[];
+};
+
+export type CreateRetailOrderRmaBody = {
+  orderItemId: string;
+  /** @minimum 1 */
+  quantity: number;
+  /**
+     * @minLength 2
+     * @maxLength 120
+     */
+  reason: string;
+  /**
+     * @minLength 10
+     * @maxLength 3000
+     */
+  description: string;
+  /** @maxItems 6 */
+  photoUrls?: string[];
+};
+
+export type AdminUpdateRmaStatusBodyStatus = typeof AdminUpdateRmaStatusBodyStatus[keyof typeof AdminUpdateRmaStatusBodyStatus];
+
+
+export const AdminUpdateRmaStatusBodyStatus = {
+  RECEIVED: 'RECEIVED',
+  IN_REVIEW: 'IN_REVIEW',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+} as const;
+
+export type AdminUpdateRmaStatusBody = {
+  status: AdminUpdateRmaStatusBodyStatus;
+};
+
+export type AdminUpdateReviewRewardSettingsBody = {
+  enabled: boolean;
+  /**
+     * @minimum 7
+     * @maximum 10
+     */
+  invitationDelayDays: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  percent: number;
+  /**
+     * @minimum 1
+     * @maximum 365
+     */
+  validityDays: number;
+  /** @minimum 1 */
+  version: number;
+};

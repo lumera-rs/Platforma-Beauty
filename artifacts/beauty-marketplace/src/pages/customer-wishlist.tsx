@@ -138,8 +138,8 @@ export default function CustomerWishlistPage() {
                     <h3 className="line-clamp-2 font-serif font-semibold mb-2"><Link href={`/shop/${p.supplierId}/proizvod/${p.id}`} className="hover:text-primary">{p.name}</Link></h3>
                     <div className="mt-auto pt-4 flex items-center justify-between">
                       <div className="flex flex-col">
-                        <span className="font-bold text-lg text-primary">{money(currentPrice)}</span>
-                        {p.discountPrice != null && <span className="text-xs text-muted-foreground line-through">{money(p.price)}</span>}
+                        <span className="font-bold text-lg text-primary">{p.priceOnRequest || currentPrice == null ? "Cena na upit" : money(currentPrice)}</span>
+                        {p.discountPrice != null && p.price != null && <span className="text-xs text-muted-foreground line-through">{money(p.price)}</span>}
                       </div>
                       <Button size="sm" onClick={() => handleAddToCart(p.id, p.name, item.available)} disabled={!item.available || addRetailCartItem.isPending} className="z-30">
                         <ShoppingBag className="w-4 h-4 mr-2" /> Dodaj

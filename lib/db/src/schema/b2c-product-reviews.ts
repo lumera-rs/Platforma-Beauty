@@ -11,6 +11,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { usersTable } from "./core";
+import { mediaAssetsTable } from "./media";
 import { productsTable, retailOrderItemsTable } from "./commerce";
 
 /** B2C review domain. This is deliberately separate from salon-owned B2B reviews. */
@@ -45,6 +46,16 @@ export const retailProductReviewsTable = pgTable("retail_product_reviews", {
   index("retail_product_reviews_user_idx").on(table.userId),
   index("retail_product_reviews_order_item_idx").on(table.orderItemId),
   check("retail_product_reviews_rating_check", sql`${table.rating} BETWEEN 1 AND 5`),
+]);
+
+export const retailProductReviewAttachmentsTable = pgTable("retail_product_review_attachments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  reviewId: uuid("review_id").notNull().references(() => retailProductReviewsTable.id, { onDelete: "cascade" }),
+  mediaAssetId: uuid("media_asset_id").notNull().references(() => mediaAssetsTable.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("retail_product_review_attachments_asset_unique").on(table.mediaAssetId),
+  index("retail_product_review_attachments_review_idx").on(table.reviewId),
 ]);
 
 export const retailProductReviewReportsTable = pgTable("retail_product_review_reports", {

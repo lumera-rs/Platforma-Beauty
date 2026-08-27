@@ -80,6 +80,8 @@ const emptyForm = {
   weightGrams: 0,
   isNew: false,
   isBestseller: false,
+  priceOnRequest: false,
+  bulkMatrixEnabled: false,
   variantType: null,
   variants: null,
   active: true,
@@ -151,7 +153,9 @@ function ProductFormDialog({
           weightGrams: editing.weightGrams ?? 0,
           isNew: editing.isNew,
           isBestseller: editing.isBestseller,
-           variantType: editing.variantType ?? editing.variants?.[0]?.label ?? null,
+          priceOnRequest: (editing as any).priceOnRequest ?? false,
+          bulkMatrixEnabled: (editing as any).bulkMatrixEnabled ?? false,
+          variantType: editing.variantType ?? editing.variants?.[0]?.label ?? null,
           variants: editing.variants ?? null,
           active: editing.active,
           similarProductsMode: editing.similarProductsMode,
@@ -347,21 +351,21 @@ function ProductFormDialog({
     if (!form.description.trim()) { toast.error("Greška", { description: "Opis je obavezan." }); return; }
     if (!form.imageUrl) { toast.error("Greška", { description: "Bar jedna slika je obavezna." }); return; }
 
-    const priceParsed = parseStrictInt(submittedRawNums.price, { label: "Redovna cena", allowNegative: false, allowZero: false });
+    const priceParsed = form.priceOnRequest ? { ok: true as const, value: 0 } : parseStrictInt(submittedRawNums.price, { label: "Redovna cena", allowNegative: false, allowZero: false });
     if (!priceParsed.ok) { toast.error("Greška", { description: priceParsed.message }); return; }
 
-    const discountParsed = submittedRawNums.discountPrice.trim() === ""
+    const discountParsed = form.priceOnRequest || submittedRawNums.discountPrice.trim() === ""
       ? { ok: true as const, value: null }
       : parseStrictInt(submittedRawNums.discountPrice, { label: "Akcijska cena", allowNegative: false, allowZero: false });
     if (!discountParsed.ok) { toast.error("Greška", { description: discountParsed.message }); return; }
     if (discountParsed.value !== null && discountParsed.value >= priceParsed.value) {
       toast.error("Greška", { description: "Akcijska cena mora biti niža od redovne." }); return;
     }
-    const publicPriceParsed = submittedRawNums.publicPrice.trim() === ""
+    const publicPriceParsed = form.priceOnRequest || submittedRawNums.publicPrice.trim() === ""
       ? { ok: true as const, value: null }
       : parseStrictInt(submittedRawNums.publicPrice, { label: "Javna redovna cena", allowNegative: false, allowZero: false });
     if (!publicPriceParsed.ok) { toast.error("Greška", { description: publicPriceParsed.message }); return; }
-    const publicDiscountParsed = submittedRawNums.publicDiscountPrice.trim() === ""
+    const publicDiscountParsed = form.priceOnRequest || submittedRawNums.publicDiscountPrice.trim() === ""
       ? { ok: true as const, value: null }
       : parseStrictInt(submittedRawNums.publicDiscountPrice, { label: "Javna akcijska cena", allowNegative: false, allowZero: false });
     if (!publicDiscountParsed.ok) { toast.error("Greška", { description: publicDiscountParsed.message }); return; }
@@ -369,11 +373,11 @@ function ProductFormDialog({
       if (!form.publicDescription?.trim()) {
         toast.error("Greška", { description: "Javni proizvod mora imati poseban opis za kupce." }); return;
       }
-      if (publicPriceParsed.value === null) {
+      if (!form.priceOnRequest && publicPriceParsed.value === null) {
         toast.error("Greška", { description: "Javni proizvod mora imati javnu cenu za kupce." }); return;
       }
     }
-    if (publicDiscountParsed.value !== null && (publicPriceParsed.value === null || publicDiscountParsed.value >= publicPriceParsed.value)) {
+    if (!form.priceOnRequest && publicDiscountParsed.value !== null && (publicPriceParsed.value === null || publicDiscountParsed.value >= publicPriceParsed.value)) {
       toast.error("Greška", { description: "Javna akcijska cena mora biti niža od javne redovne cene." }); return;
     }
 
@@ -429,6 +433,8 @@ function ProductFormDialog({
       categoryName: selectedCategory ? selectedCategory.name : form.categoryName,
       professionalEnabled: form.market === "B2B" || form.market === "BOTH",
       retailEnabled: form.market === "B2C" || form.market === "BOTH",
+      priceOnRequest: form.priceOnRequest,
+      bulkMatrixEnabled: form.bulkMatrixEnabled,
       price: priceParsed.value,
       discountPrice: discountParsed.value,
       publicDescription: form.publicDescription?.trim() || null,
@@ -607,6 +613,7 @@ function ProductFormDialog({
                         data-testid="input-product-public-description"
                       />
                     </div>
+                    {!form.priceOnRequest && (
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <div className="space-y-2">
                         <Label>Javna redovna cena (RSD) *</Label>
@@ -617,6 +624,7 @@ function ProductFormDialog({
                         <Input value={rawNums.publicDiscountPrice} inputMode="numeric" onChange={(event) => updateRawNums((current) => ({ ...current, publicDiscountPrice: event.target.value }))} data-testid="input-product-public-discount-price" />
                       </div>
                     </div>
+                    )}
                   </>
                 )}
               </div>
@@ -625,7 +633,14 @@ function ProductFormDialog({
 
           {/* ── Cena i popust ── */}
           <section className="space-y-4 border rounded-xl p-4">
-            <h4 className="text-sm font-semibold text-foreground">Cena i popust</h4>
+            <h4 className="text-sm font-semibold text-foreground flex items-center justify-between">
+              Cena i popust
+              <div className="flex items-center gap-2 text-sm font-normal">
+                <Switch checked={form.priceOnRequest} onCheckedChange={(c) => setForm({ ...form, priceOnRequest: c })} id="price-on-request" />
+                <Label htmlFor="price-on-request" className="cursor-pointer">Cena na upit (Price on request)</Label>
+              </div>
+            </h4>
+            {!form.priceOnRequest && (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label>Redovna cena (RSD) *</Label>
@@ -656,6 +671,7 @@ function ProductFormDialog({
                 <Input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} placeholder="kom / 500 ml / set" />
               </div>
             </div>
+            )}
           </section>
 
           {(form.market === "B2C" || form.market === "BOTH") && (
@@ -788,7 +804,13 @@ function ProductFormDialog({
 
           {/* ── Varijante ── */}
           <section className="space-y-4 border rounded-xl p-4">
-            <h4 className="text-sm font-semibold text-foreground">Varijante proizvoda</h4>
+            <h4 className="text-sm font-semibold text-foreground flex items-center justify-between">
+              Varijante proizvoda
+              <div className="flex items-center gap-2 text-sm font-normal">
+                <Switch checked={form.bulkMatrixEnabled} onCheckedChange={(c) => setForm({ ...form, bulkMatrixEnabled: c })} id="bulk-matrix-enabled" />
+                <Label htmlFor="bulk-matrix-enabled" className="cursor-pointer">Tabelarni (Bulk) unos količina</Label>
+              </div>
+            </h4>
             <div className="space-y-1 max-w-sm">
               <Label className="text-xs">Tip varijante</Label>
               <Input
@@ -805,7 +827,7 @@ function ProductFormDialog({
               <Button type="button" size="sm" variant={variantInventoryMode === "per-variant" ? "default" : "outline"} onClick={() => changeVariantInventoryMode("per-variant")}>Po varijanti</Button>
               <span className="text-muted-foreground">{variantInventoryMode === "shared" ? "Sve varijante koriste stanje proizvoda." : "Stanje proizvoda je zbir stanja varijanti."}</span>
             </div>
-            <div className={`grid grid-cols-2 ${variantInventoryMode === "per-variant" ? "sm:grid-cols-6" : "sm:grid-cols-5"} gap-2 items-end`}>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end border p-3 rounded-lg bg-muted/5">
               <div className="space-y-1">
                 <Label className="text-xs">Vrednost</Label>
                 <Input value={variantDraft.value} onChange={(e) => setVariantDraft({ ...variantDraft, value: e.target.value })} placeholder="6/0 Tamno plava" />
@@ -822,27 +844,92 @@ function ProductFormDialog({
                 <Label className="text-xs">SKU varijante</Label>
                 <Input value={variantDraft.sku ?? ""} onChange={(e) => setVariantDraft({ ...variantDraft, sku: e.target.value || undefined })} placeholder="Opciono" />
               </div>
-              {variantInventoryMode === "per-variant" && <div className="space-y-1">
-                <Label className="text-xs">Stanje</Label>
-                <Input type="number" min="0" step="1" value={variantDraft.stock ?? 0} onChange={(e) => setVariantDraft({ ...variantDraft, stock: Number(e.target.value) })} />
-              </div>}
-              <Button type="button" variant="secondary" size="sm" onClick={addVariant} data-testid="btn-add-product-variant">Dodaj</Button>
+              {variantInventoryMode === "per-variant" && (
+                <div className="space-y-1">
+                  <Label className="text-xs">Stanje</Label>
+                  <Input type="number" min="0" step="1" value={variantDraft.stock ?? 0} onChange={(e) => setVariantDraft({ ...variantDraft, stock: Number(e.target.value) })} />
+                </div>
+              )}
+              <div className="space-y-1 col-span-2">
+                <Label className="text-xs">Swatch prikaz</Label>
+                <div className="flex gap-2">
+                  <Select value={variantDraft.swatch?.kind || "NONE"} onValueChange={(v) => {
+                    if (v === "NONE") {
+                      const { swatch, ...rest } = variantDraft;
+                      setVariantDraft(rest as any);
+                    } else {
+                      setVariantDraft({ ...variantDraft, swatch: { kind: v as any } });
+                    }
+                  }}>
+                    <SelectTrigger className="w-28"><SelectValue placeholder="Bez swatch-a" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="NONE">Nema</SelectItem>
+                      <SelectItem value="TEXT">Tekst</SelectItem>
+                      <SelectItem value="COLOR">Boja (HEX)</SelectItem>
+                      <SelectItem value="IMAGE">Slika</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {variantDraft.swatch?.kind === "TEXT" && (
+                    <Input value={variantDraft.swatch.text || ""} onChange={(e) => setVariantDraft({ ...variantDraft, swatch: { ...variantDraft.swatch!, text: e.target.value } })} placeholder="npr. 120ml" />
+                  )}
+                  {variantDraft.swatch?.kind === "COLOR" && (
+                    <Input value={variantDraft.swatch.hex || ""} onChange={(e) => setVariantDraft({ ...variantDraft, swatch: { ...variantDraft.swatch!, hex: e.target.value } })} placeholder="#FF0000" />
+                  )}
+                  {variantDraft.swatch?.kind === "IMAGE" && (
+                    <Input value={variantDraft.swatch.imageUrl || ""} onChange={(e) => setVariantDraft({ ...variantDraft, swatch: { ...variantDraft.swatch!, imageUrl: e.target.value } })} placeholder="URL slike" />
+                  )}
+                </div>
+              </div>
+              <div className="space-y-1 col-span-2">
+                <Label className="text-xs">Nova glavna slika (opciono)</Label>
+                <Input value={variantDraft.mainImageUrl ?? ""} onChange={(e) => setVariantDraft({ ...variantDraft, mainImageUrl: e.target.value || undefined })} placeholder="Prikazaće se ova slika" />
+              </div>
+              <div className="space-y-1 col-span-2">
+                <Label className="text-xs">Alt tekst (opciono)</Label>
+                <Input value={variantDraft.altText ?? ""} onChange={(e) => setVariantDraft({ ...variantDraft, altText: e.target.value || undefined })} placeholder="Alt tekst" />
+              </div>
+              <div className="space-y-1">
+                <Button type="button" size="sm" onClick={addVariant} className="w-full">
+                  <Plus className="w-4 h-4 mr-1" /> Dodaj
+                </Button>
+              </div>
             </div>
-            {(form.variants ?? []).length > 0 && (
-              <ul className="space-y-1.5">
-                {(form.variants ?? []).map((v, i) => (
-                  <li key={i} className="flex items-center justify-between text-sm bg-muted/30 border rounded-md px-3 py-1.5">
-                    <span>
-                      <span className="text-muted-foreground text-xs mr-2">{form.variantType || v.label}:</span>
-                      <span className="font-medium">{v.value}</span>
-                      {v.price != null ? <span className="ml-2 text-xs text-muted-foreground">cena: {formatRSD(v.price)}</span> : v.priceAdjust ? <span className="ml-2 text-xs text-muted-foreground">({v.priceAdjust > 0 ? "+" : ""}{v.priceAdjust} RSD)</span> : null}
-                      {v.sku ? <span className="ml-2 text-xs text-muted-foreground">SKU: {v.sku}</span> : null}
-                      {v.stock != null ? <span className="ml-2 text-xs text-muted-foreground">stanje: {v.stock}</span> : null}
-                    </span>
-                    <Button type="button" variant="ghost" size="sm" className="h-6 w-6 p-0 text-destructive" onClick={() => removeVariant(i)}><X className="w-3.5 h-3.5" /></Button>
-                  </li>
-                ))}
-              </ul>
+            {form.variants?.length ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left border rounded-lg overflow-hidden">
+                  <thead className="bg-muted/30">
+                    <tr>
+                      <th className="p-2 font-medium">Vrednost</th>
+                      <th className="p-2 font-medium">Cena/Adjust</th>
+                      <th className="p-2 font-medium">SKU</th>
+                      <th className="p-2 font-medium">Swatch</th>
+                      {variantInventoryMode === "per-variant" && <th className="p-2 font-medium">Stanje</th>}
+                      <th className="p-2 font-medium w-16 text-right">Akcija</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {form.variants.map((v, i) => (
+                      <tr key={i} className="border-t border-muted">
+                        <td className="p-2">{v.value}</td>
+                        <td className="p-2">{v.price != null ? `${v.price} RSD` : `${v.priceAdjust! > 0 ? '+' : ''}${v.priceAdjust} RSD`}</td>
+                        <td className="p-2">{v.sku || "-"}</td>
+                        <td className="p-2">
+                          {v.swatch?.kind === "COLOR" && <div className="w-4 h-4 rounded-full border shadow-sm" style={{ backgroundColor: v.swatch.hex }} title={v.swatch.hex} />}
+                          {v.swatch?.kind === "TEXT" && <Badge variant="outline">{v.swatch.text}</Badge>}
+                          {v.swatch?.kind === "IMAGE" && <div className="w-6 h-6 bg-muted overflow-hidden rounded-full border shadow-sm"><img src={v.swatch.imageUrl} className="w-full h-full object-cover" /></div>}
+                          {!v.swatch && "-"}
+                        </td>
+                        {variantInventoryMode === "per-variant" && <td className="p-2">{v.stock}</td>}
+                        <td className="p-2 text-right">
+                          <Button type="button" size="sm" variant="ghost" onClick={() => removeVariant(i)} className="h-6 w-6 p-0 text-destructive"><Trash2 className="w-4 h-4" /></Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="p-3 text-center text-sm text-muted-foreground border rounded-lg bg-muted/20">Nema dodatih varijanti.</div>
             )}
           </section>
 

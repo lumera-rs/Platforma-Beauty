@@ -6,7 +6,7 @@ import { OwnerSidebar } from "./dashboard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Package, ArrowLeft, ExternalLink, Truck, Repeat, Download } from "lucide-react";
+import { Loader2, Package, ArrowLeft, ExternalLink, Truck, Repeat, Download, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const money = (n: number) => `${n.toLocaleString("sr-RS")} RSD`;
@@ -24,6 +24,7 @@ function DeliveryTracking({ order, compact = false }: { order: { deliveryMethod:
 }
 
 function OrderDetail({ id }: { id: string }) {
+  const [rmaItem, setRmaItem] = useState<{ id: string, name: string, quantity: number, orderId: string } | null>(null);
   const { data: order, isLoading } = useGetOrder(id);
   if (isLoading) return <div className="p-10 text-center"><Loader2 className="animate-spin inline" /></div>;
   if (!order) return <p>Porudžbina nije pronađena.</p>;
@@ -36,16 +37,30 @@ function OrderDetail({ id }: { id: string }) {
   return <div className="space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <Button asChild variant="ghost"><Link href="/vlasnik/porudzbine"><ArrowLeft className="w-4 h-4 mr-2"/>Nazad na porudžbine</Link></Button>
-      {invoice && (
+            {invoice && (
         <Button asChild variant="default" className="bg-primary/10 text-primary hover:bg-primary/20">
           <a href={`/api/shop/orders/${order.id}/invoice.pdf`} target="_blank" rel="noopener noreferrer">
             <Download className="w-4 h-4 mr-2"/> Preuzmi fakturu {invoice.number}
           </a>
         </Button>
       )}
+
     </div>
     <Card><CardHeader><CardTitle className="flex justify-between">Porudžbina #{order.id.slice(0, 8)} <Badge>{order.status}</Badge></CardTitle></CardHeader><CardContent className="space-y-4">
-      {order.items.map((item) => <div key={`${item.productId}-${item.variantValue}`} className="flex justify-between border-b pb-3"><div><b>{item.productName}</b><p className="text-sm text-muted-foreground">{item.variantLabel ? `${item.variantLabel}: ` : ""}{item.variantValue ?? "—"} · SKU {item.productSku ?? "—"} · {item.quantity} kom.</p></div><b>{money(item.price * item.quantity)}</b></div>)}
+            {order.items.map((item) => (
+        <div key={`${item.productId}-${item.variantValue}`} className="flex justify-between border-b pb-3">
+          <div>
+            <b>{item.productName}</b>
+            <p className="text-sm text-muted-foreground">{item.variantLabel ? `${item.variantLabel}: ` : ""}{item.variantValue ?? "—"} · SKU {item.productSku ?? "—"} · {item.quantity} kom.</p>
+            {(order.status as string) === 'DELIVERED' && (
+              <Button variant="link" size="sm" className="h-auto p-0 mt-1 text-xs text-primary" onClick={() => setRmaItem({ id: (item as any).id ?? item.productId ?? "", name: item.productName, quantity: item.quantity, orderId: order.id })}>
+                <AlertCircle className="w-3 h-3 mr-1"/> Reklamiraj ovaj artikal
+              </Button>
+            )}
+          </div>
+          <b>{money(item.price * item.quantity)}</b>
+        </div>
+      ))}
       <div className="text-sm space-y-1 border-t pt-3">
         <div className="flex justify-between"><span>Međuzbir</span><span>{money(order.subtotal)}</span></div>
         {couponCode && (

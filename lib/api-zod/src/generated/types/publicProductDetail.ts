@@ -8,7 +8,7 @@
 import type { B2cPublicNeedTag } from './b2cPublicNeedTag';
 import type { B2cPublicTaxonomyValue } from './b2cPublicTaxonomyValue';
 import type { PublicProduct } from './publicProduct';
-import type { RelatedProductCard } from './relatedProductCard';
+import type { PublicRelatedProductCard } from './publicRelatedProductCard';
 
 export type PublicProductDetail = PublicProduct & ({
   /** @nullable */
@@ -17,7 +17,7 @@ export type PublicProductDetail = PublicProduct & ({
   usageInstructions?: string | null;
   productType?: B2cPublicTaxonomyValue | null;
   needTags?: B2cPublicNeedTag[];
-  relatedProducts: RelatedProductCard[];
+  relatedProducts: PublicRelatedProductCard[];
 }) & Required<Pick<PublicProduct & ({
   /** @nullable */
   ingredients?: string | null;
@@ -25,7 +25,7 @@ export type PublicProductDetail = PublicProduct & ({
   usageInstructions?: string | null;
   productType?: B2cPublicTaxonomyValue | null;
   needTags?: B2cPublicNeedTag[];
-  relatedProducts: RelatedProductCard[];
+  relatedProducts: PublicRelatedProductCard[];
 }), Extract<keyof (PublicProduct & ({
   /** @nullable */
   ingredients?: string | null;
@@ -33,5 +33,5 @@ export type PublicProductDetail = PublicProduct & ({
   usageInstructions?: string | null;
   productType?: B2cPublicTaxonomyValue | null;
   needTags?: B2cPublicNeedTag[];
-  relatedProducts: RelatedProductCard[];
+  relatedProducts: PublicRelatedProductCard[];
 })), 'categoryId'>>>;

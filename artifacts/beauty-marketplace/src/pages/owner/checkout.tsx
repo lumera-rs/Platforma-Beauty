@@ -43,6 +43,7 @@ import { OptimizedImage } from "@/components/optimized-image";
 import { removeOptimisticCartItem, updateCartAndSummaryOptimistically, updateOptimisticCartQuantity } from "@/lib/optimistic-cart";
 import { rollbackQueries } from "@/lib/optimistic-query";
 import { SHOP_CART_MUTATION_KEY, shopCartMutationQueue, useMutationQueueBusy } from "@/lib/optimistic-mutation-queue";
+import { CreateShopQuoteDialog } from "@/components/create-shop-quote-dialog";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 
@@ -82,6 +83,7 @@ export function OwnerCartPage() {
   const { data: cart, isLoading, isError } = useGetShopCart();
   const { toast } = useToast();
   const cartBusy = useMutationQueueBusy(shopCartMutationQueue);
+  const [showQuoteDialog, setShowQuoteDialog] = useState(false);
   const updateItem = useUpdateShopCartItem({
     mutation: {
       mutationKey: SHOP_CART_MUTATION_KEY,
@@ -422,18 +424,24 @@ export function OwnerCartPage() {
                   )}
                   <p className="text-xs text-muted-foreground text-center mt-2">Dostava se obračunava u sledećem koraku.</p>
                 </CardContent>
-                <div className="p-4 bg-muted/10 border-t border-border/30">
+
+                <div className="p-4 bg-muted/10 border-t border-border/30 flex flex-col gap-3">
                   <Button size="lg" className="w-full text-base font-medium h-12" asChild>
                     <Link href="/vlasnik/prodavnica/dostava">
                       Nastavi na dostavu <ChevronRight className="h-5 w-5 ml-2" />
                     </Link>
+                  </Button>
+                  <Button size="lg" variant="outline" className="w-full text-base font-medium h-12" onClick={() => setShowQuoteDialog(true)}>
+                    <FileText className="h-5 w-5 mr-2" /> Kreiraj PDF ponudu
                   </Button>
                 </div>
               </Card>
             </div>
           </div>
         )}
+        <CreateShopQuoteDialog open={showQuoteDialog} onOpenChange={setShowQuoteDialog} />
       </div>
+
     </BusinessLayout>
   );
 }

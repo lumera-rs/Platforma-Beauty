@@ -118,6 +118,9 @@ function CartLines({ cart }: { cart: RetailCart }) {
                 <div>
                   <h3 className="font-bold">{item.name}</h3>
                   {item.kind === 'bundle' && <Badge variant="secondary" className="mt-1 mb-1">Paket</Badge>}
+                  {item.kind === 'product' && item.variantLabel && (
+                    <p className="text-sm text-muted-foreground mt-1">Varijanta: {item.variantLabel}</p>
+                  )}
                   {item.sku && <p className="text-xs text-muted-foreground mt-1">SKU: {item.sku}</p>}
                   {item.lowStock && <p className="text-xs text-amber-600 font-medium mt-1">Niske zalihe</p>}
                 </div>

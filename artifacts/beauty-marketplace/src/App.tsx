@@ -120,6 +120,12 @@ const AdminB2cBanners = lazy(() => import('./pages/admin/b2c-banners'));
 const AdminCatalogAttributes = lazy(() => import('./pages/admin/b2c-catalog-attributes'));
 const AdminRetailReviews = lazy(() => import('./pages/admin/retail-reviews'));
 const AdminB2cDisplaySettings = lazy(() => import('./pages/admin/b2c-display-settings'));
+const AdminB2bQuotes = lazy(() => import('./pages/admin/b2b-quotes'));
+const AdminPriceInquiries = lazy(() => import('./pages/admin/price-inquiries'));
+const AdminRmas = lazy(() => import('./pages/admin/rmas'));
+const AdminReviewRewards = lazy(() => import('./pages/admin/review-rewards'));
+const AdminSocialMedia = lazy(() => import('./pages/admin/social-media'));
+const ShopQuotePage = lazy(() => import('./pages/shop-quote'));
 
 const queryClient = new QueryClient();
 
@@ -291,6 +297,7 @@ function Router() {
         <Route path="/poslovi/nalog"><RoleGuard allowedRoles={['JOBSEEKER']} loginPath="/prijava"><JobseekerDashboard /></RoleGuard></Route>
         <Route path="/poslovi/nalog/:tab"><RoleGuard allowedRoles={['JOBSEEKER']} loginPath="/prijava"><JobseekerDashboard /></RoleGuard></Route>
         <Route path="/poslovi/:slug/:listingId" component={BeautyJobDetail} />
+                <Route path="/ponuda/:publicId" component={ShopQuotePage} />
         <Route path="/proizvodi" component={PublicProducts} />
         <Route path="/shop/:supplierSlug/proizvod/:productId" component={PublicProductDetail} />
         <Route path="/shop/:supplierSlug" component={PublicSupplierShop} />
@@ -421,6 +428,11 @@ function Router() {
         <Route path="/admin/podesavanja-prikaza"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminB2cDisplaySettings /></RoleGuard></Route>
         <Route path="/admin/b2c-baneri"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminB2cBanners /></RoleGuard></Route>
         <Route path="/admin/katalog/atributi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminCatalogAttributes /></RoleGuard></Route>
+        <Route path="/admin/b2b-ponude"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminB2bQuotes /></RoleGuard></Route>
+        <Route path="/admin/upiti-za-cenu"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminPriceInquiries /></RoleGuard></Route>
+        <Route path="/admin/reklamacije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminRmas /></RoleGuard></Route>
+        <Route path="/admin/nagrade-recenzije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminReviewRewards /></RoleGuard></Route>
+        <Route path="/admin/drustvene-mreze"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSocialMedia /></RoleGuard></Route>
 
         <Route path="/uslovi-koriscenja"><LegalPage pagePath="/uslovi-koriscenja" /></Route>
         <Route path="/politika-privatnosti"><LegalPage pagePath="/politika-privatnosti" /></Route>

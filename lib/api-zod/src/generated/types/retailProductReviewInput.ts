@@ -17,4 +17,6 @@ export interface RetailProductReviewInput {
      * @maxLength 2000
      */
   comment: string;
+  /** @maxItems 6 */
+  photoUrls?: string[];
 }

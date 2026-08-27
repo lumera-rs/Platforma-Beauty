@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AddShopBulkMatrixBody,
   AdminB2cBannerInput,
   AdminB2cBannerUpdate,
   AdminB2cDisplaySettings,
@@ -73,6 +74,8 @@ import type {
   AdminShopSettings,
   AdminShopSettingsInput,
   AdminSummary,
+  AdminUpdateReviewRewardSettingsBody,
+  AdminUpdateRmaStatusBody,
   AdminUser,
   AdminUserUpdate,
   ApiError,
@@ -100,6 +103,7 @@ import type {
   B2bOrderImportApplyInput,
   B2bOrderImportPreviewInput,
   B2bOrderImportResult,
+  B2bQuote,
   B2cDictionaryCreate,
   B2cDictionaryUpdate,
   B2cDictionaryValue,
@@ -139,6 +143,8 @@ import type {
   BeautyJobSettingsUpdateInput,
   BeautyJobSweepResult,
   BeautyJobUpdateInput,
+  BulkMatrixAddResponse,
+  BulkMatrixResponse,
   Bundle,
   BundleInput,
   BusinessRegistrationInput,
@@ -154,6 +160,11 @@ import type {
   CreateAutomationRuleBody,
   CreateEducationDisputeBody,
   CreateEducationPurchaseMessageBody,
+  CreateOrderRmaBody,
+  CreatePriceInquiry201,
+  CreatePriceInquiryBody,
+  CreateRetailOrderRmaBody,
+  CreateShopQuoteBody,
   CreateTreatmentPackageBody,
   CurrentUserResponse,
   CustomerDashboard,
@@ -224,6 +235,7 @@ import type {
   FavoriteInput,
   FavoriteResult,
   GetBeautyJobModerationQueueParams,
+  GetCatalogFeed200,
   GetMarketplaceHomeDiscoveryParams,
   GetMediaAssetParams,
   GetSalonAvailabilityParams,
@@ -275,6 +287,8 @@ import type {
   MediaAsset,
   MediaUploadInput,
   MediaUploadTicket,
+  MetaCatalogStatus,
+  MetaCatalogValidationResponse,
   Order,
   OwnRetailProductReview,
   OwnerGetAutomationStatsParams,
@@ -340,6 +354,8 @@ import type {
   RetentionSettingsVersionConflict,
   RetentionThresholds,
   ReversalResult,
+  ReviewRewardSettings,
+  ReviewRewardSettingsResponse,
   SalonAppointmentCreate,
   SalonAppointmentSeriesInput,
   SalonAppointmentUpdate,
@@ -31315,4 +31331,1265 @@ export const useCancelRetailProductSubscription = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCancelRetailProductSubscriptionMutationOptions(options));
+    }
+
+export const getGetCatalogFeedUrl = () => {
+
+
+
+
+  return `/api/catalog/feed`
+}
+
+/**
+ * @summary Provider-neutral public catalog feed using canonical product URLs
+ */
+export const getCatalogFeed = async ( options?: Parameters<typeof customFetch>[1]): Promise<GetCatalogFeed200> => {
+
+  return customFetch<GetCatalogFeed200>(getGetCatalogFeedUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCatalogFeedQueryKey = () => {
+    return [
+    `/api/catalog/feed`
+    ] as const;
+    }
+
+
+export const getGetCatalogFeedQueryOptions = <TData = Awaited<ReturnType<typeof getCatalogFeed>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCatalogFeed>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCatalogFeedQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCatalogFeed>>> = ({ signal }) => getCatalogFeed({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCatalogFeed>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCatalogFeedQueryResult = NonNullable<Awaited<ReturnType<typeof getCatalogFeed>>>
+export type GetCatalogFeedQueryError = ErrorType<void>
+
+
+/**
+ * @summary Provider-neutral public catalog feed using canonical product URLs
+ */
+
+export function useGetCatalogFeed<TData = Awaited<ReturnType<typeof getCatalogFeed>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCatalogFeed>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCatalogFeedQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreatePriceInquiryUrl = (supplierId: string,
+    productId: string,) => {
+
+
+
+
+  return `/api/public/suppliers/${supplierId}/products/${productId}/price-inquiries`
+}
+
+/**
+ * @summary Create an inquiry in an exact supplier and price-on-request product scope
+ */
+export const createPriceInquiry = async (supplierId: string,
+    productId: string,
+    createPriceInquiryBody: CreatePriceInquiryBody, options?: Parameters<typeof customFetch>[1]): Promise<CreatePriceInquiry201> => {
+
+  return customFetch<CreatePriceInquiry201>(getCreatePriceInquiryUrl(supplierId,productId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createPriceInquiryBody)
+  }
+);}
+
+
+
+
+
+export const getCreatePriceInquiryMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPriceInquiry>>, TError,{supplierId: string;productId: string;data: BodyType<CreatePriceInquiryBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createPriceInquiry>>, TError,{supplierId: string;productId: string;data: BodyType<CreatePriceInquiryBody>}, TContext> => {
+
+const mutationKey = ['createPriceInquiry'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPriceInquiry>>, {supplierId: string;productId: string;data: BodyType<CreatePriceInquiryBody>}> = (props) => {
+          const {supplierId,productId,data} = props ?? {};
+
+          return  createPriceInquiry(supplierId,productId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreatePriceInquiryMutationResult = NonNullable<Awaited<ReturnType<typeof createPriceInquiry>>>
+    export type CreatePriceInquiryMutationBody = BodyType<CreatePriceInquiryBody>
+    export type CreatePriceInquiryMutationError = ErrorType<void>
+
+    /**
+ * @summary Create an inquiry in an exact supplier and price-on-request product scope
+ */
+export const useCreatePriceInquiry = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPriceInquiry>>, TError,{supplierId: string;productId: string;data: BodyType<CreatePriceInquiryBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createPriceInquiry>>,
+        TError,
+        {supplierId: string;productId: string;data: BodyType<CreatePriceInquiryBody>},
+        TContext
+      > => {
+      return useMutation(getCreatePriceInquiryMutationOptions(options));
+    }
+
+export const getCreateShopQuoteUrl = () => {
+
+
+
+
+  return `/api/shop/quotes`
+}
+
+/**
+ * @summary Snapshot the authenticated salon cart without creating an order
+ */
+export const createShopQuote = async (createShopQuoteBody?: CreateShopQuoteBody, options?: Parameters<typeof customFetch>[1]): Promise<B2bQuote> => {
+
+  return customFetch<B2bQuote>(getCreateShopQuoteUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createShopQuoteBody)
+  }
+);}
+
+
+
+
+
+export const getCreateShopQuoteMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createShopQuote>>, TError,{data?: BodyType<CreateShopQuoteBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createShopQuote>>, TError,{data?: BodyType<CreateShopQuoteBody>}, TContext> => {
+
+const mutationKey = ['createShopQuote'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createShopQuote>>, {data?: BodyType<CreateShopQuoteBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createShopQuote(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateShopQuoteMutationResult = NonNullable<Awaited<ReturnType<typeof createShopQuote>>>
+    export type CreateShopQuoteMutationBody = BodyType<CreateShopQuoteBody> | undefined
+    export type CreateShopQuoteMutationError = ErrorType<void>
+
+    /**
+ * @summary Snapshot the authenticated salon cart without creating an order
+ */
+export const useCreateShopQuote = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createShopQuote>>, TError,{data?: BodyType<CreateShopQuoteBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createShopQuote>>,
+        TError,
+        {data?: BodyType<CreateShopQuoteBody>},
+        TContext
+      > => {
+      return useMutation(getCreateShopQuoteMutationOptions(options));
+    }
+
+export const getGetPublicBulkMatrixUrl = (productId: string,) => {
+
+
+
+
+  return `/api/public/products/${productId}/bulk-matrix`
+}
+
+/**
+ * @summary Get public variant availability, promoted swatches and optional tier-price preview
+ */
+export const getPublicBulkMatrix = async (productId: string, options?: Parameters<typeof customFetch>[1]): Promise<BulkMatrixResponse> => {
+
+  return customFetch<BulkMatrixResponse>(getGetPublicBulkMatrixUrl(productId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPublicBulkMatrixQueryKey = (productId: string,) => {
+    return [
+    `/api/public/products/${productId}/bulk-matrix`
+    ] as const;
+    }
+
+
+export const getGetPublicBulkMatrixQueryOptions = <TData = Awaited<ReturnType<typeof getPublicBulkMatrix>>, TError = ErrorType<void>>(productId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicBulkMatrix>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPublicBulkMatrixQueryKey(productId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPublicBulkMatrix>>> = ({ signal }) => getPublicBulkMatrix(productId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: productId !== null && productId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPublicBulkMatrix>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPublicBulkMatrixQueryResult = NonNullable<Awaited<ReturnType<typeof getPublicBulkMatrix>>>
+export type GetPublicBulkMatrixQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get public variant availability, promoted swatches and optional tier-price preview
+ */
+
+export function useGetPublicBulkMatrix<TData = Awaited<ReturnType<typeof getPublicBulkMatrix>>, TError = ErrorType<void>>(
+ productId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicBulkMatrix>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPublicBulkMatrixQueryOptions(productId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAddShopBulkMatrixUrl = () => {
+
+
+
+
+  return `/api/shop/cart/bulk-matrix`
+}
+
+/**
+ * @summary Validate and add all variant rows atomically
+ */
+export const addShopBulkMatrix = async (addShopBulkMatrixBody: AddShopBulkMatrixBody, options?: Parameters<typeof customFetch>[1]): Promise<BulkMatrixAddResponse> => {
+
+  return customFetch<BulkMatrixAddResponse>(getAddShopBulkMatrixUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(addShopBulkMatrixBody)
+  }
+);}
+
+
+
+
+
+export const getAddShopBulkMatrixMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addShopBulkMatrix>>, TError,{data: BodyType<AddShopBulkMatrixBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof addShopBulkMatrix>>, TError,{data: BodyType<AddShopBulkMatrixBody>}, TContext> => {
+
+const mutationKey = ['addShopBulkMatrix'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addShopBulkMatrix>>, {data: BodyType<AddShopBulkMatrixBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  addShopBulkMatrix(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AddShopBulkMatrixMutationResult = NonNullable<Awaited<ReturnType<typeof addShopBulkMatrix>>>
+    export type AddShopBulkMatrixMutationBody = BodyType<AddShopBulkMatrixBody>
+    export type AddShopBulkMatrixMutationError = ErrorType<void>
+
+    /**
+ * @summary Validate and add all variant rows atomically
+ */
+export const useAddShopBulkMatrix = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addShopBulkMatrix>>, TError,{data: BodyType<AddShopBulkMatrixBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof addShopBulkMatrix>>,
+        TError,
+        {data: BodyType<AddShopBulkMatrixBody>},
+        TContext
+      > => {
+      return useMutation(getAddShopBulkMatrixMutationOptions(options));
+    }
+
+export const getGetShopQuoteUrl = (publicId: string,) => {
+
+
+
+
+  return `/api/shop/quotes/${publicId}`
+}
+
+/**
+ * @summary Get an owned quote from immutable snapshots
+ */
+export const getShopQuote = async (publicId: string, options?: Parameters<typeof customFetch>[1]): Promise<B2bQuote> => {
+
+  return customFetch<B2bQuote>(getGetShopQuoteUrl(publicId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetShopQuoteQueryKey = (publicId: string,) => {
+    return [
+    `/api/shop/quotes/${publicId}`
+    ] as const;
+    }
+
+
+export const getGetShopQuoteQueryOptions = <TData = Awaited<ReturnType<typeof getShopQuote>>, TError = ErrorType<void>>(publicId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShopQuote>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetShopQuoteQueryKey(publicId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getShopQuote>>> = ({ signal }) => getShopQuote(publicId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: publicId !== null && publicId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getShopQuote>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetShopQuoteQueryResult = NonNullable<Awaited<ReturnType<typeof getShopQuote>>>
+export type GetShopQuoteQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get an owned quote from immutable snapshots
+ */
+
+export function useGetShopQuote<TData = Awaited<ReturnType<typeof getShopQuote>>, TError = ErrorType<void>>(
+ publicId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShopQuote>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetShopQuoteQueryOptions(publicId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRestoreShopQuoteCartUrl = (publicId: string,) => {
+
+
+
+
+  return `/api/shop/quotes/${publicId}/restore-cart`
+}
+
+/**
+ * @summary Atomically replace the owned salon cart with quote snapshot lines
+ */
+export const restoreShopQuoteCart = async (publicId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getRestoreShopQuoteCartUrl(publicId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRestoreShopQuoteCartMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restoreShopQuoteCart>>, TError,{publicId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof restoreShopQuoteCart>>, TError,{publicId: string}, TContext> => {
+
+const mutationKey = ['restoreShopQuoteCart'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof restoreShopQuoteCart>>, {publicId: string}> = (props) => {
+          const {publicId} = props ?? {};
+
+          return  restoreShopQuoteCart(publicId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RestoreShopQuoteCartMutationResult = NonNullable<Awaited<ReturnType<typeof restoreShopQuoteCart>>>
+
+    export type RestoreShopQuoteCartMutationError = ErrorType<void>
+
+    /**
+ * @summary Atomically replace the owned salon cart with quote snapshot lines
+ */
+export const useRestoreShopQuoteCart = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restoreShopQuoteCart>>, TError,{publicId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof restoreShopQuoteCart>>,
+        TError,
+        {publicId: string},
+        TContext
+      > => {
+      return useMutation(getRestoreShopQuoteCartMutationOptions(options));
+    }
+
+export const getGetShopQuotePdfUrl = (publicId: string,) => {
+
+
+
+
+  return `/api/shop/quotes/${publicId}/pdf`
+}
+
+/**
+ * @summary Render an owned quote PDF only from immutable snapshots
+ */
+export const getShopQuotePdf = async (publicId: string, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getGetShopQuotePdfUrl(publicId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetShopQuotePdfQueryKey = (publicId: string,) => {
+    return [
+    `/api/shop/quotes/${publicId}/pdf`
+    ] as const;
+    }
+
+
+export const getGetShopQuotePdfQueryOptions = <TData = Awaited<ReturnType<typeof getShopQuotePdf>>, TError = ErrorType<unknown>>(publicId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShopQuotePdf>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetShopQuotePdfQueryKey(publicId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getShopQuotePdf>>> = ({ signal }) => getShopQuotePdf(publicId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: publicId !== null && publicId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getShopQuotePdf>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetShopQuotePdfQueryResult = NonNullable<Awaited<ReturnType<typeof getShopQuotePdf>>>
+export type GetShopQuotePdfQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Render an owned quote PDF only from immutable snapshots
+ */
+
+export function useGetShopQuotePdf<TData = Awaited<ReturnType<typeof getShopQuotePdf>>, TError = ErrorType<unknown>>(
+ publicId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShopQuotePdf>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetShopQuotePdfQueryOptions(publicId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminGetMetaCatalogStatusUrl = () => {
+
+
+
+
+  return `/api/admin/catalog/meta/status`
+}
+
+/**
+ * @summary Report provider-neutral catalog infrastructure connection status
+ */
+export const adminGetMetaCatalogStatus = async ( options?: Parameters<typeof customFetch>[1]): Promise<MetaCatalogStatus> => {
+
+  return customFetch<MetaCatalogStatus>(getAdminGetMetaCatalogStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGetMetaCatalogStatusQueryKey = () => {
+    return [
+    `/api/admin/catalog/meta/status`
+    ] as const;
+    }
+
+
+export const getAdminGetMetaCatalogStatusQueryOptions = <TData = Awaited<ReturnType<typeof adminGetMetaCatalogStatus>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetMetaCatalogStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetMetaCatalogStatusQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetMetaCatalogStatus>>> = ({ signal }) => adminGetMetaCatalogStatus({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetMetaCatalogStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminGetMetaCatalogStatusQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetMetaCatalogStatus>>>
+export type AdminGetMetaCatalogStatusQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Report provider-neutral catalog infrastructure connection status
+ */
+
+export function useAdminGetMetaCatalogStatus<TData = Awaited<ReturnType<typeof adminGetMetaCatalogStatus>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetMetaCatalogStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminGetMetaCatalogStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminValidateMetaCatalogUrl = () => {
+
+
+
+
+  return `/api/admin/catalog/meta/validate`
+}
+
+/**
+ * @summary Validate feed configuration without connecting or storing provider credentials
+ */
+export const adminValidateMetaCatalog = async ( options?: Parameters<typeof customFetch>[1]): Promise<MetaCatalogValidationResponse> => {
+
+  return customFetch<MetaCatalogValidationResponse>(getAdminValidateMetaCatalogUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminValidateMetaCatalogMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminValidateMetaCatalog>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminValidateMetaCatalog>>, TError,void, TContext> => {
+
+const mutationKey = ['adminValidateMetaCatalog'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminValidateMetaCatalog>>, void> = () => {
+
+
+          return  adminValidateMetaCatalog(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminValidateMetaCatalogMutationResult = NonNullable<Awaited<ReturnType<typeof adminValidateMetaCatalog>>>
+
+    export type AdminValidateMetaCatalogMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Validate feed configuration without connecting or storing provider credentials
+ */
+export const useAdminValidateMetaCatalog = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminValidateMetaCatalog>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminValidateMetaCatalog>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getAdminValidateMetaCatalogMutationOptions(options));
+    }
+
+export const getCreateOrderRmaUrl = (orderId: string,) => {
+
+
+
+
+  return `/api/orders/${orderId}/rmas`
+}
+
+/**
+ * @summary Create an RMA for an eligible delivered item and atomically claim private photos
+ */
+export const createOrderRma = async (orderId: string,
+    createOrderRmaBody: CreateOrderRmaBody, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getCreateOrderRmaUrl(orderId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createOrderRmaBody)
+  }
+);}
+
+
+
+
+
+export const getCreateOrderRmaMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrderRma>>, TError,{orderId: string;data: BodyType<CreateOrderRmaBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createOrderRma>>, TError,{orderId: string;data: BodyType<CreateOrderRmaBody>}, TContext> => {
+
+const mutationKey = ['createOrderRma'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createOrderRma>>, {orderId: string;data: BodyType<CreateOrderRmaBody>}> = (props) => {
+          const {orderId,data} = props ?? {};
+
+          return  createOrderRma(orderId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateOrderRmaMutationResult = NonNullable<Awaited<ReturnType<typeof createOrderRma>>>
+    export type CreateOrderRmaMutationBody = BodyType<CreateOrderRmaBody>
+    export type CreateOrderRmaMutationError = ErrorType<void>
+
+    /**
+ * @summary Create an RMA for an eligible delivered item and atomically claim private photos
+ */
+export const useCreateOrderRma = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrderRma>>, TError,{orderId: string;data: BodyType<CreateOrderRmaBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createOrderRma>>,
+        TError,
+        {orderId: string;data: BodyType<CreateOrderRmaBody>},
+        TContext
+      > => {
+      return useMutation(getCreateOrderRmaMutationOptions(options));
+    }
+
+export const getCreateRetailOrderRmaUrl = (orderId: string,) => {
+
+
+
+
+  return `/api/retail/orders/${orderId}/rmas`
+}
+
+/**
+ * @summary Create a customer/jobseeker RMA for an owned delivered retail-order item
+ */
+export const createRetailOrderRma = async (orderId: string,
+    createRetailOrderRmaBody: CreateRetailOrderRmaBody, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getCreateRetailOrderRmaUrl(orderId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createRetailOrderRmaBody)
+  }
+);}
+
+
+
+
+
+export const getCreateRetailOrderRmaMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createRetailOrderRma>>, TError,{orderId: string;data: BodyType<CreateRetailOrderRmaBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createRetailOrderRma>>, TError,{orderId: string;data: BodyType<CreateRetailOrderRmaBody>}, TContext> => {
+
+const mutationKey = ['createRetailOrderRma'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createRetailOrderRma>>, {orderId: string;data: BodyType<CreateRetailOrderRmaBody>}> = (props) => {
+          const {orderId,data} = props ?? {};
+
+          return  createRetailOrderRma(orderId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateRetailOrderRmaMutationResult = NonNullable<Awaited<ReturnType<typeof createRetailOrderRma>>>
+    export type CreateRetailOrderRmaMutationBody = BodyType<CreateRetailOrderRmaBody>
+    export type CreateRetailOrderRmaMutationError = ErrorType<void>
+
+    /**
+ * @summary Create a customer/jobseeker RMA for an owned delivered retail-order item
+ */
+export const useCreateRetailOrderRma = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createRetailOrderRma>>, TError,{orderId: string;data: BodyType<CreateRetailOrderRmaBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createRetailOrderRma>>,
+        TError,
+        {orderId: string;data: BodyType<CreateRetailOrderRmaBody>},
+        TContext
+      > => {
+      return useMutation(getCreateRetailOrderRmaMutationOptions(options));
+    }
+
+export const getAdminListRmasUrl = () => {
+
+
+
+
+  return `/api/admin/rmas`
+}
+
+/**
+ * @summary List RMAs
+ */
+export const adminListRmas = async ( options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getAdminListRmasUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListRmasQueryKey = () => {
+    return [
+    `/api/admin/rmas`
+    ] as const;
+    }
+
+
+export const getAdminListRmasQueryOptions = <TData = Awaited<ReturnType<typeof adminListRmas>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListRmas>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListRmasQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListRmas>>> = ({ signal }) => adminListRmas({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListRmas>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminListRmasQueryResult = NonNullable<Awaited<ReturnType<typeof adminListRmas>>>
+export type AdminListRmasQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List RMAs
+ */
+
+export function useAdminListRmas<TData = Awaited<ReturnType<typeof adminListRmas>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListRmas>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminListRmasQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminGetRmaUrl = (id: string,) => {
+
+
+
+
+  return `/api/admin/rmas/${id}`
+}
+
+/**
+ * @summary Get RMA, private attachment count and status audit
+ */
+export const adminGetRma = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getAdminGetRmaUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGetRmaQueryKey = (id: string,) => {
+    return [
+    `/api/admin/rmas/${id}`
+    ] as const;
+    }
+
+
+export const getAdminGetRmaQueryOptions = <TData = Awaited<ReturnType<typeof adminGetRma>>, TError = ErrorType<void>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetRma>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetRmaQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetRma>>> = ({ signal }) => adminGetRma(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetRma>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminGetRmaQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetRma>>>
+export type AdminGetRmaQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get RMA, private attachment count and status audit
+ */
+
+export function useAdminGetRma<TData = Awaited<ReturnType<typeof adminGetRma>>, TError = ErrorType<void>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetRma>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminGetRmaQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminUpdateRmaStatusUrl = (id: string,) => {
+
+
+
+
+  return `/api/admin/rmas/${id}/status`
+}
+
+/**
+ * @summary Change RMA status with durable audit and email outbox event
+ */
+export const adminUpdateRmaStatus = async (id: string,
+    adminUpdateRmaStatusBody: AdminUpdateRmaStatusBody, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getAdminUpdateRmaStatusUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminUpdateRmaStatusBody)
+  }
+);}
+
+
+
+
+
+export const getAdminUpdateRmaStatusMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRmaStatus>>, TError,{id: string;data: BodyType<AdminUpdateRmaStatusBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRmaStatus>>, TError,{id: string;data: BodyType<AdminUpdateRmaStatusBody>}, TContext> => {
+
+const mutationKey = ['adminUpdateRmaStatus'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateRmaStatus>>, {id: string;data: BodyType<AdminUpdateRmaStatusBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  adminUpdateRmaStatus(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminUpdateRmaStatusMutationResult = NonNullable<Awaited<ReturnType<typeof adminUpdateRmaStatus>>>
+    export type AdminUpdateRmaStatusMutationBody = BodyType<AdminUpdateRmaStatusBody>
+    export type AdminUpdateRmaStatusMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Change RMA status with durable audit and email outbox event
+ */
+export const useAdminUpdateRmaStatus = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRmaStatus>>, TError,{id: string;data: BodyType<AdminUpdateRmaStatusBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminUpdateRmaStatus>>,
+        TError,
+        {id: string;data: BodyType<AdminUpdateRmaStatusBody>},
+        TContext
+      > => {
+      return useMutation(getAdminUpdateRmaStatusMutationOptions(options));
+    }
+
+export const getAdminGetReviewRewardSettingsUrl = () => {
+
+
+
+
+  return `/api/admin/review-rewards`
+}
+
+/**
+ * @summary Get bounded review reward settings and issuance stats
+ */
+export const adminGetReviewRewardSettings = async ( options?: Parameters<typeof customFetch>[1]): Promise<ReviewRewardSettingsResponse> => {
+
+  return customFetch<ReviewRewardSettingsResponse>(getAdminGetReviewRewardSettingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGetReviewRewardSettingsQueryKey = () => {
+    return [
+    `/api/admin/review-rewards`
+    ] as const;
+    }
+
+
+export const getAdminGetReviewRewardSettingsQueryOptions = <TData = Awaited<ReturnType<typeof adminGetReviewRewardSettings>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetReviewRewardSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetReviewRewardSettingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetReviewRewardSettings>>> = ({ signal }) => adminGetReviewRewardSettings({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetReviewRewardSettings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminGetReviewRewardSettingsQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetReviewRewardSettings>>>
+export type AdminGetReviewRewardSettingsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get bounded review reward settings and issuance stats
+ */
+
+export function useAdminGetReviewRewardSettings<TData = Awaited<ReturnType<typeof adminGetReviewRewardSettings>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetReviewRewardSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminGetReviewRewardSettingsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminUpdateReviewRewardSettingsUrl = () => {
+
+
+
+
+  return `/api/admin/review-rewards`
+}
+
+/**
+ * @summary Optimistically update bounded review invitation and reward settings
+ */
+export const adminUpdateReviewRewardSettings = async (adminUpdateReviewRewardSettingsBody: AdminUpdateReviewRewardSettingsBody, options?: Parameters<typeof customFetch>[1]): Promise<ReviewRewardSettings> => {
+
+  return customFetch<ReviewRewardSettings>(getAdminUpdateReviewRewardSettingsUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminUpdateReviewRewardSettingsBody)
+  }
+);}
+
+
+
+
+
+export const getAdminUpdateReviewRewardSettingsMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateReviewRewardSettings>>, TError,{data: BodyType<AdminUpdateReviewRewardSettingsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateReviewRewardSettings>>, TError,{data: BodyType<AdminUpdateReviewRewardSettingsBody>}, TContext> => {
+
+const mutationKey = ['adminUpdateReviewRewardSettings'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateReviewRewardSettings>>, {data: BodyType<AdminUpdateReviewRewardSettingsBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  adminUpdateReviewRewardSettings(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminUpdateReviewRewardSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof adminUpdateReviewRewardSettings>>>
+    export type AdminUpdateReviewRewardSettingsMutationBody = BodyType<AdminUpdateReviewRewardSettingsBody>
+    export type AdminUpdateReviewRewardSettingsMutationError = ErrorType<void>
+
+    /**
+ * @summary Optimistically update bounded review invitation and reward settings
+ */
+export const useAdminUpdateReviewRewardSettings = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateReviewRewardSettings>>, TError,{data: BodyType<AdminUpdateReviewRewardSettingsBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminUpdateReviewRewardSettings>>,
+        TError,
+        {data: BodyType<AdminUpdateReviewRewardSettingsBody>},
+        TContext
+      > => {
+      return useMutation(getAdminUpdateReviewRewardSettingsMutationOptions(options));
     }

@@ -29,6 +29,8 @@ export interface AdminProduct {
   /** @nullable */
   discountPrice?: number | null;
   retailEnabled: boolean;
+  priceOnRequest?: boolean;
+  bulkMatrixEnabled?: boolean;
   professionalEnabled: boolean;
   /** @nullable */
   publicDescription?: string | null;

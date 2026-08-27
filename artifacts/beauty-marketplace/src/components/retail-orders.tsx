@@ -4,7 +4,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, AlertTriangle, RotateCcw, Box } from "lucide-react";
+import { Loader2, AlertTriangle, RotateCcw, Box, AlertCircle } from "lucide-react";
+import { CreateRmaDialog } from "@/components/create-rma-dialog";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { useListCustomerRetailOrders, useRepeatLastRetailOrder, getListCustomerRetailOrdersQueryKey } from "@workspace/api-client-react";
 
@@ -12,6 +13,7 @@ export function CustomerRetailOrders() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [repeatIdempotencyKey, setRepeatIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [rmaItem, setRmaItem] = useState<{ id: string, name: string, quantity: number, orderId: string } | null>(null);
   
   const { data: orders, isLoading, isError, isFetching, refetch } = useListCustomerRetailOrders({
     query: { queryKey: getListCustomerRetailOrdersQueryKey(), retry: 1 },
@@ -68,8 +70,20 @@ export function CustomerRetailOrders() {
             <div>
               <p className="font-semibold">{order.orderNumber}</p>
               <p className="text-sm text-muted-foreground">
-                {new Date(order.createdAt).toLocaleDateString("sr-RS")} · {order.items.map((item) => `${item.quantity}× ${item.name}`).join(", ")}
+                                {new Date(order.createdAt).toLocaleDateString("sr-RS")}
               </p>
+              <div className="mt-2 space-y-2">
+                {order.items.map((item) => (
+                  <div key={item.productId} className="flex justify-between items-center text-sm">
+                    <span className="text-muted-foreground">{item.quantity}× {item.name}</span>
+                    {order.status === 'DELIVERED' && (
+                      <Button variant="link" size="sm" className="h-auto p-0 text-xs text-primary" onClick={() => setRmaItem({ id: item.id, name: item.name, quantity: item.quantity, orderId: order.id })}>
+                        <AlertCircle className="w-3 h-3 mr-1"/> Reklamiraj
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
             <div className="flex flex-col items-end gap-2 text-right">
               <div className="flex items-center gap-2">
@@ -83,6 +97,7 @@ export function CustomerRetailOrders() {
           </CardContent>
         </Card>
       ))}
+      <CreateRmaDialog open={!!rmaItem} onOpenChange={(open) => !open && setRmaItem(null)} orderId={rmaItem?.orderId ?? ""} orderItemId={rmaItem?.id ?? ""} itemName={rmaItem?.name ?? ""} maxQuantity={rmaItem?.quantity ?? 1} isRetail={true} />
     </div>
   );
 }

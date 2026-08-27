@@ -209,7 +209,9 @@ type MediaScope =
   | "service-category"
   | "product-category"
   | "treatment-photo"
-  | "jobseeker-portfolio";
+  | "jobseeker-portfolio"
+  | "rma-photo"
+  | "retail-review-photo";
 
 // These references can be removed from public resources after an image URL has
 // been issued. They must revalidate at the origin instead of letting a stable,
@@ -320,6 +322,18 @@ async function authorizeUploadScope(
   scope: MediaScope,
   requestedResourceId: string | null | undefined,
 ): Promise<{ resourceId: string | null; visibility: "public" | "private" | "education" } | null> {
+  if (scope === "rma-photo") {
+    // RMA creation performs the atomic owner/resource claim. Until then the
+    // finalized image is private and has no browser-selected resource owner.
+    return ["CUSTOMER", "JOBSEEKER", "SALON_OWNER"].includes(user.role) && !requestedResourceId
+      ? { resourceId: null, visibility: "private" }
+      : null;
+  }
+  if (scope === "retail-review-photo") {
+    return ["CUSTOMER", "JOBSEEKER"].includes(user.role) && !requestedResourceId
+      ? { resourceId: null, visibility: "private" }
+      : null;
+  }
   if (scope === "jobseeker-portfolio") {
     // The profile route performs the later atomic claim.  Never trust a
     // browser-provided resource id for this owner-only private scope.
