@@ -259,6 +259,51 @@ test("retail checkout displays and saves identical totals for courier and person
   await assertDisplayedAndSavedTotal(page, "personal_belgrade", "Beograd");
 });
 
+test("retail checkout keeps the cart subtotal and controls usable across mobile and desktop widths", async ({ page }) => {
+  const consoleErrors: string[] = [];
+  const previewStatuses: number[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("response", (response) => {
+    if (new URL(response.url()).pathname === "/api/retail/checkout-preview") {
+      previewStatuses.push(response.status());
+    }
+  });
+
+  for (const viewport of [
+    { width: 320, height: 800 },
+    { width: 390, height: 844 },
+    { width: 1440, height: 1000 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await createCartAndOpenCheckout(page);
+
+    const previewResponse = await page.request.get(
+      "/api/retail/checkout-preview?deliveryMethod=courier&city=Novi%20Sad",
+    );
+    expect(previewResponse.status()).toBe(200);
+    const preview = await previewResponse.json() as CheckoutPreview;
+
+    const subtotalRow = page.getByText("Međuzbir robe", { exact: true }).locator("..");
+    await expect(subtotalRow).toContainText(money(preview.cart.subtotal));
+    await expect(page.locator('input[type="email"]')).toBeVisible();
+    await expect(page.getByRole("button", { name: "Potvrdi porudžbinu" })).toBeVisible();
+
+    const dimensions = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }));
+    expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
+
+    await page.context().clearCookies();
+  }
+
+  expect(previewStatuses.length).toBeGreaterThan(0);
+  expect(previewStatuses.every((status) => status === 200)).toBe(true);
+  expect(consoleErrors).toEqual([]);
+});
+
 test("retail checkout refreshes a changed quote before allowing confirmation again", async ({ page }) => {
   let holdRefreshedPreview = false;
   let notifyRefreshStarted: (() => void) | undefined;

@@ -413,11 +413,11 @@ export function RetailCheckoutPage() {
 
   return (
     <Layout>
-      <main className="mx-auto min-h-screen max-w-5xl px-4 py-10">
-        <h1 className="font-serif text-4xl font-bold mb-8">Dostava i plaćanje</h1>
-        <form onSubmit={submit} className="grid gap-8 lg:grid-cols-[1fr_380px]">
-          <div className="space-y-6">
-            <section className="rounded-xl border bg-card p-6 shadow-sm">
+      <main className="mx-auto min-h-screen max-w-5xl px-4 py-8 sm:py-10">
+        <h1 className="mb-8 font-serif text-3xl font-bold sm:text-4xl">Dostava i plaćanje</h1>
+        <form onSubmit={submit} className="grid min-w-0 gap-8 lg:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="min-w-0 space-y-6">
+            <section className="min-w-0 rounded-xl border bg-card p-4 shadow-sm sm:p-6">
               <h2 className="font-bold text-xl mb-4">Kontakt podaci</h2>
               <div className="grid gap-4 sm:grid-cols-2">
                 {[["firstName","Ime"],["lastName","Prezime"],["email","Email"],["phone","Telefon"],["street","Adresa"],["city","Grad"],["postalCode","Poštanski broj"]].map(([key,label]) => (
@@ -433,7 +433,7 @@ export function RetailCheckoutPage() {
               </div>
             </section>
 
-            <section className="rounded-xl border bg-card p-6 shadow-sm">
+            <section className="min-w-0 rounded-xl border bg-card p-4 shadow-sm sm:p-6">
               <h2 className="font-bold text-xl mb-4">Način isporuke</h2>
               <div className="space-y-3">
                 <label className="flex items-start gap-3 p-4 border rounded-lg cursor-pointer hover:bg-muted/20 data-[checked=true]:border-primary data-[checked=true]:bg-primary/5" data-checked={form.deliveryMethod === "courier"}>
@@ -454,7 +454,7 @@ export function RetailCheckoutPage() {
               </div>
             </section>
 
-            <section className="rounded-xl border bg-card p-6 shadow-sm">
+            <section className="min-w-0 rounded-xl border bg-card p-4 shadow-sm sm:p-6">
               <h2 className="font-bold text-xl mb-4">Plaćanje</h2>
               <div className="space-y-3">
                 {[["BANK_TRANSFER","Uplata na račun (uplatnicom)"],["CASH_ON_DELIVERY","Plaćanje pouzećem (gotovinom kuriru)"]].map(([value,label]) => (
@@ -467,7 +467,7 @@ export function RetailCheckoutPage() {
             </section>
           </div>
 
-          <aside className="h-fit rounded-xl border bg-card p-6 shadow-sm sticky top-6">
+          <aside className="sticky top-6 h-fit min-w-0 rounded-xl border bg-card p-4 shadow-sm sm:p-6">
             <h2 className="font-bold text-xl mb-4">Pregled porudžbine</h2>
 
             <div className="space-y-3 max-h-64 overflow-y-auto pr-2 mb-6">
@@ -551,7 +551,7 @@ export function RetailCheckoutPage() {
                   )}
                 </div>
 
-                <div className="flex justify-between text-muted-foreground"><span>Međuzbir robe</span><span>{money((preview as Record<string, any>).merchandiseSubtotalRsd ?? preview.cart.subtotal)}</span></div>
+                <div className="flex justify-between gap-4 text-muted-foreground"><span>Međuzbir robe</span><span className="shrink-0">{money(preview.cart.subtotal)}</span></div>
 
                 {(preview as Record<string, any>).couponDiscountRsd != null && (preview as Record<string, any>).couponDiscountRsd > 0 && (
                   <div className="flex justify-between text-emerald-600 font-medium">
@@ -562,9 +562,11 @@ export function RetailCheckoutPage() {
 
                 {preview.referralCreditAvailableRsd != null && preview.referralCreditAvailableRsd > 0 && (
                   <div className="py-3 border-y border-border/50 my-2">
-                    <div className="flex justify-between mb-2 text-primary font-medium"><span>Preporuke (Dostupno: {money(preview.referralCreditAvailableRsd)})</span></div>
-                    <div className="flex gap-2">
-                      <Input type="number" min={0} max={Math.min(preview.referralCreditAvailableRsd, (preview as any).merchandiseSubtotalRsd ?? preview.cart.subtotal)} value={desiredCredit} onChange={(e) => setDesiredCredit(Math.min(Number(e.target.value) || 0, Math.min(preview.referralCreditAvailableRsd ?? 0, (preview as any).merchandiseSubtotalRsd ?? preview.cart.subtotal)))} className="h-9" />
+                    <div className="mb-2 text-primary font-medium">
+                      <span>Kredit od preporuka (dostupno: {money(preview.referralCreditAvailableRsd)})</span>
+                    </div>
+                    <div className="flex min-w-0 gap-2">
+                      <Input type="number" min={0} max={Math.min(preview.referralCreditAvailableRsd, (preview as any).merchandiseSubtotalRsd ?? preview.cart.subtotal)} value={desiredCredit} onChange={(e) => setDesiredCredit(Math.min(Number(e.target.value) || 0, Math.min(preview.referralCreditAvailableRsd ?? 0, (preview as any).merchandiseSubtotalRsd ?? preview.cart.subtotal)))} className="h-9 min-w-0" />
                       <Button type="button" variant="secondary" className="h-9 shrink-0" onClick={() => setDesiredCredit(Math.min(preview.referralCreditAvailableRsd ?? 0, (preview as any).merchandiseSubtotalRsd ?? preview.cart.subtotal))}>Maks</Button>
                     </div>
                     {preview.referralCreditAppliedRsd != null && preview.referralCreditAppliedRsd > 0 && (
