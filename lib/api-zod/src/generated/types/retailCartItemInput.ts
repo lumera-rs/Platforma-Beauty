@@ -6,7 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface RetailCartItemInput {
+export type RetailCartItemInput = {
   /** @minLength 1 */
   productId: string;
   /**
@@ -14,4 +14,12 @@ export interface RetailCartItemInput {
      * @maximum 100
      */
   quantity: number;
-}
+} | {
+  /** @minLength 1 */
+  bundleId: string;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  quantity: number;
+};

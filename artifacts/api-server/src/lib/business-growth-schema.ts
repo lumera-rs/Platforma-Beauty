@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 41;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 43;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -109,6 +109,11 @@ const ENUM_LABELS: Record<string, string[]> = {
   referral_milestone_kind: ["salon_subscription_reduction", "education_commission_reduction"],
   supplier_scope: ["B2B", "B2C", "BOTH"],
   similar_products_mode: ["AUTO_CATEGORY", "MANUAL"],
+  bundle_market: ["B2B", "B2C", "BOTH"],
+  cart_price_source: ["FULL_PRICE", "SALE", "TIER", "BUNDLE"],
+  commerce_audience: ["B2B", "B2C"],
+  loyalty_point_entry_type: ["AWARD", "REVERSAL", "ADJUSTMENT"],
+  product_waitlist_status: ["ACTIVE", "NOTIFIED", "UNSUBSCRIBED"],
 };
 
 /**
@@ -886,26 +891,34 @@ function tableStatements(s: string): string[] {
        WHERE item.product_id = product.id`,
     `DO $$ BEGIN
        IF EXISTS (SELECT 1 FROM ${s}.order_items WHERE supplier_id IS NULL OR supplier_name IS NULL
-         OR supplier_slug IS NULL OR product_catalog_reference IS NULL OR unit_price IS NULL
+         OR supplier_slug IS NULL OR (product_id IS NOT NULL AND product_catalog_reference IS NULL) OR unit_price IS NULL
          OR line_subtotal IS NULL OR line_total IS NULL) THEN
          RAISE EXCEPTION 'Cannot require order item snapshots: legacy backfill is incomplete';
        END IF;
        IF EXISTS (SELECT 1 FROM ${s}.retail_order_items WHERE supplier_id IS NULL OR supplier_name IS NULL
-         OR supplier_slug IS NULL OR product_catalog_reference IS NULL OR unit_price IS NULL
+         OR supplier_slug IS NULL OR (product_id IS NOT NULL AND product_catalog_reference IS NULL) OR unit_price IS NULL
          OR line_subtotal IS NULL OR line_total IS NULL) THEN
          RAISE EXCEPTION 'Cannot require retail order item snapshots: legacy backfill is incomplete';
        END IF;
        ALTER TABLE ${s}.order_items ALTER COLUMN supplier_id SET NOT NULL;
        ALTER TABLE ${s}.order_items ALTER COLUMN supplier_name SET NOT NULL;
        ALTER TABLE ${s}.order_items ALTER COLUMN supplier_slug SET NOT NULL;
-       ALTER TABLE ${s}.order_items ALTER COLUMN product_catalog_reference SET NOT NULL;
+       IF EXISTS (SELECT 1 FROM ${s}.order_items WHERE product_id IS NULL) THEN
+         ALTER TABLE ${s}.order_items ALTER COLUMN product_catalog_reference DROP NOT NULL;
+       ELSE
+         ALTER TABLE ${s}.order_items ALTER COLUMN product_catalog_reference SET NOT NULL;
+       END IF;
        ALTER TABLE ${s}.order_items ALTER COLUMN unit_price SET NOT NULL;
        ALTER TABLE ${s}.order_items ALTER COLUMN line_subtotal SET NOT NULL;
        ALTER TABLE ${s}.order_items ALTER COLUMN line_total SET NOT NULL;
        ALTER TABLE ${s}.retail_order_items ALTER COLUMN supplier_id SET NOT NULL;
        ALTER TABLE ${s}.retail_order_items ALTER COLUMN supplier_name SET NOT NULL;
        ALTER TABLE ${s}.retail_order_items ALTER COLUMN supplier_slug SET NOT NULL;
-       ALTER TABLE ${s}.retail_order_items ALTER COLUMN product_catalog_reference SET NOT NULL;
+       IF EXISTS (SELECT 1 FROM ${s}.retail_order_items WHERE product_id IS NULL) THEN
+         ALTER TABLE ${s}.retail_order_items ALTER COLUMN product_catalog_reference DROP NOT NULL;
+       ELSE
+         ALTER TABLE ${s}.retail_order_items ALTER COLUMN product_catalog_reference SET NOT NULL;
+       END IF;
        ALTER TABLE ${s}.retail_order_items ALTER COLUMN line_subtotal SET NOT NULL;
        ALTER TABLE ${s}.retail_order_items ALTER COLUMN line_total SET NOT NULL;
      END $$`,
@@ -1813,6 +1826,272 @@ function tableStatements(s: string): string[] {
         enabled = EXCLUDED.enabled,
         feature_flag = EXCLUDED.feature_flag,
         updated_at = now()`,
+    // v42 — cart growth: fixed-price bundles, explicit pricing evidence,
+    // saved items, loyalty accounting, waitlist/outbox and unified settings.
+    `CREATE TABLE IF NOT EXISTS ${s}.product_bundles (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       supplier_id uuid NOT NULL REFERENCES ${s}.suppliers(id) ON DELETE RESTRICT,
+       name text NOT NULL, description text, image_url text,
+       market ${s}.bundle_market NOT NULL,
+       b2b_price integer, b2c_price integer,
+       active boolean NOT NULL DEFAULT true,
+       created_at timestamptz NOT NULL DEFAULT now(),
+       updated_at timestamptz NOT NULL DEFAULT now(),
+       CONSTRAINT product_bundles_market_prices_check CHECK (
+         (market = 'B2B' AND b2b_price > 0 AND b2c_price IS NULL)
+         OR (market = 'B2C' AND b2c_price > 0 AND b2b_price IS NULL)
+         OR (market = 'BOTH' AND b2b_price > 0 AND b2c_price > 0)
+       )
+     )`,
+    `CREATE INDEX IF NOT EXISTS product_bundles_supplier_active_idx
+       ON ${s}.product_bundles (supplier_id, active)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.product_bundle_components (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       bundle_id uuid NOT NULL REFERENCES ${s}.product_bundles(id) ON DELETE CASCADE,
+       product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE RESTRICT,
+       quantity integer NOT NULL CHECK (quantity > 0), sort_order integer NOT NULL,
+       UNIQUE (bundle_id, product_id), UNIQUE (bundle_id, sort_order)
+     )`,
+    `CREATE INDEX IF NOT EXISTS product_bundle_components_product_idx
+       ON ${s}.product_bundle_components (product_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.shop_settings (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       show_loyalty_points boolean NOT NULL DEFAULT true,
+       points_per_100_rsd integer NOT NULL DEFAULT 1 CHECK (points_per_100_rsd >= 0),
+       low_stock_threshold integer NOT NULL DEFAULT 5 CHECK (low_stock_threshold >= 1),
+       default_delivery_business_days integer NOT NULL DEFAULT 3
+         CHECK (default_delivery_business_days BETWEEN 1 AND 365),
+       version integer NOT NULL DEFAULT 1 CHECK (version >= 1),
+       updated_at timestamptz NOT NULL DEFAULT now()
+     )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS shop_settings_singleton_unique ON ${s}.shop_settings ((true))`,
+    `INSERT INTO ${s}.shop_settings DEFAULT VALUES ON CONFLICT DO NOTHING`,
+    `ALTER TABLE ${s}.shopping_cart_items ADD COLUMN IF NOT EXISTS bundle_id uuid
+       REFERENCES ${s}.product_bundles(id) ON DELETE CASCADE`,
+    `ALTER TABLE ${s}.retail_cart_items ADD COLUMN IF NOT EXISTS bundle_id uuid
+       REFERENCES ${s}.product_bundles(id) ON DELETE CASCADE`,
+    `ALTER TABLE ${s}.shopping_cart_items ALTER COLUMN product_id DROP NOT NULL`,
+    `ALTER TABLE ${s}.retail_cart_items ALTER COLUMN product_id DROP NOT NULL`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '${s}.shopping_cart_items'::regclass
+         AND conname = 'shopping_cart_items_target_check') THEN
+         ALTER TABLE ${s}.shopping_cart_items ADD CONSTRAINT shopping_cart_items_target_check
+           CHECK (num_nonnulls(product_id, bundle_id) = 1);
+       END IF;
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '${s}.retail_cart_items'::regclass
+         AND conname = 'retail_cart_items_target_check') THEN
+         ALTER TABLE ${s}.retail_cart_items ADD CONSTRAINT retail_cart_items_target_check
+           CHECK (num_nonnulls(product_id, bundle_id) = 1);
+       END IF;
+     END $$`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS shopping_cart_items_cart_bundle_unique
+       ON ${s}.shopping_cart_items (cart_id, bundle_id) WHERE bundle_id IS NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS retail_cart_items_cart_bundle_unique
+       ON ${s}.retail_cart_items (cart_id, bundle_id) WHERE bundle_id IS NOT NULL`,
+    `CREATE TABLE IF NOT EXISTS ${s}.saved_shop_cart_items (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       cart_id uuid NOT NULL REFERENCES ${s}.shopping_carts(id) ON DELETE CASCADE,
+       product_id uuid REFERENCES ${s}.products(id) ON DELETE CASCADE,
+       bundle_id uuid REFERENCES ${s}.product_bundles(id) ON DELETE CASCADE,
+       variant_value text, quantity integer NOT NULL CHECK (quantity > 0),
+       created_at timestamptz NOT NULL DEFAULT now(),
+       CONSTRAINT saved_shop_cart_items_target_check
+         CHECK (num_nonnulls(product_id, bundle_id) = 1)
+     )`,
+    `CREATE INDEX IF NOT EXISTS saved_shop_cart_items_cart_idx ON ${s}.saved_shop_cart_items (cart_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.saved_retail_cart_items (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       cart_id uuid NOT NULL REFERENCES ${s}.retail_carts(id) ON DELETE CASCADE,
+       product_id uuid REFERENCES ${s}.products(id) ON DELETE CASCADE,
+       bundle_id uuid REFERENCES ${s}.product_bundles(id) ON DELETE CASCADE,
+       variant_value text, quantity integer NOT NULL CHECK (quantity > 0),
+       created_at timestamptz NOT NULL DEFAULT now(),
+       CONSTRAINT saved_retail_cart_items_target_check
+         CHECK (num_nonnulls(product_id, bundle_id) = 1)
+     )`,
+    `CREATE INDEX IF NOT EXISTS saved_retail_cart_items_cart_idx ON ${s}.saved_retail_cart_items (cart_id)`,
+    ...["order_items", "retail_order_items"].flatMap((table) => [
+      `ALTER TABLE ${s}.${table} ADD COLUMN IF NOT EXISTS bundle_id uuid`,
+      `ALTER TABLE ${s}.${table} ADD COLUMN IF NOT EXISTS base_unit_price integer NOT NULL DEFAULT 0`,
+      `ALTER TABLE ${s}.${table} ADD COLUMN IF NOT EXISTS effective_unit_price integer NOT NULL DEFAULT 0`,
+      `ALTER TABLE ${s}.${table} ADD COLUMN IF NOT EXISTS price_source ${s}.cart_price_source NOT NULL DEFAULT 'FULL_PRICE'`,
+      `ALTER TABLE ${s}.${table} ADD COLUMN IF NOT EXISTS line_discount integer NOT NULL DEFAULT 0`,
+      `ALTER TABLE ${s}.${table} ADD COLUMN IF NOT EXISTS bundle_name_snapshot text`,
+      `ALTER TABLE ${s}.${table} ADD COLUMN IF NOT EXISTS bundle_components_snapshot jsonb`,
+      `ALTER TABLE ${s}.${table} ADD COLUMN IF NOT EXISTS estimated_delivery_date text`,
+      `ALTER TABLE ${s}.${table} ALTER COLUMN product_id DROP NOT NULL`,
+      `ALTER TABLE ${s}.${table} ALTER COLUMN product_catalog_reference DROP NOT NULL`,
+    ]),
+    `CREATE TABLE IF NOT EXISTS ${s}.order_bundle_components (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       order_item_id uuid NOT NULL REFERENCES ${s}.order_items(id) ON DELETE CASCADE,
+       product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE RESTRICT,
+       product_name text NOT NULL,
+       product_catalog_reference text NOT NULL,
+       quantity integer NOT NULL CHECK (quantity > 0),
+       CONSTRAINT order_bundle_components_item_product_unique UNIQUE (order_item_id, product_id)
+     )`,
+    `CREATE INDEX IF NOT EXISTS order_bundle_components_product_idx ON ${s}.order_bundle_components (product_id)`,
+    `CREATE OR REPLACE FUNCTION ${s}.prevent_order_bundle_component_update()
+       RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+         RAISE EXCEPTION 'Order bundle component snapshot is immutable';
+       END $$`,
+    `DROP TRIGGER IF EXISTS order_bundle_components_immutable ON ${s}.order_bundle_components`,
+    `CREATE TRIGGER order_bundle_components_immutable BEFORE UPDATE ON ${s}.order_bundle_components
+       FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_order_bundle_component_update()`,
+    ...["orders", "retail_orders"].flatMap((table) => [
+      `ALTER TABLE ${s}.${table} ADD COLUMN IF NOT EXISTS estimated_delivery_date text`,
+      `ALTER TABLE ${s}.${table} ADD COLUMN IF NOT EXISTS loyalty_points_awarded integer NOT NULL DEFAULT 0`,
+      `ALTER TABLE ${s}.${table} ADD COLUMN IF NOT EXISTS loyalty_points_reversed_at timestamptz`,
+    ]),
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '${s}.order_items'::regclass
+         AND conname = 'order_items_target_check') THEN
+         ALTER TABLE ${s}.order_items ADD CONSTRAINT order_items_target_check
+           CHECK (num_nonnulls(product_id, bundle_id) = 1);
+       END IF;
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '${s}.retail_order_items'::regclass
+         AND conname = 'retail_order_items_target_check') THEN
+         ALTER TABLE ${s}.retail_order_items ADD CONSTRAINT retail_order_items_target_check
+           CHECK (num_nonnulls(product_id, bundle_id) = 1);
+       END IF;
+     END $$`,
+    `CREATE TABLE IF NOT EXISTS ${s}.loyalty_point_ledger (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       audience ${s}.commerce_audience NOT NULL,
+       salon_id uuid REFERENCES ${s}.salons(id) ON DELETE RESTRICT,
+       user_id uuid REFERENCES ${s}.users(id) ON DELETE RESTRICT,
+       order_id uuid REFERENCES ${s}.orders(id) ON DELETE RESTRICT,
+       retail_order_id uuid REFERENCES ${s}.retail_orders(id) ON DELETE RESTRICT,
+       type ${s}.loyalty_point_entry_type NOT NULL, points integer NOT NULL,
+       idempotency_key text NOT NULL UNIQUE, created_at timestamptz NOT NULL DEFAULT now(),
+       CONSTRAINT loyalty_point_ledger_owner_check CHECK (
+         (audience = 'B2B' AND salon_id IS NOT NULL AND user_id IS NULL)
+         OR (audience = 'B2C' AND user_id IS NOT NULL AND salon_id IS NULL)),
+       CONSTRAINT loyalty_point_ledger_order_check CHECK (num_nonnulls(order_id, retail_order_id) <= 1)
+     )`,
+    `CREATE INDEX IF NOT EXISTS loyalty_point_ledger_salon_created_idx
+       ON ${s}.loyalty_point_ledger (salon_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS loyalty_point_ledger_user_created_idx
+       ON ${s}.loyalty_point_ledger (user_id, created_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.product_waitlist (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE CASCADE,
+       audience ${s}.commerce_audience NOT NULL,
+       salon_id uuid REFERENCES ${s}.salons(id) ON DELETE CASCADE,
+       user_id uuid REFERENCES ${s}.users(id) ON DELETE CASCADE,
+       status ${s}.product_waitlist_status NOT NULL DEFAULT 'ACTIVE',
+       notified_at timestamptz, created_at timestamptz NOT NULL DEFAULT now(),
+       updated_at timestamptz NOT NULL DEFAULT now(),
+       CONSTRAINT product_waitlist_owner_check CHECK (
+         (audience = 'B2B' AND salon_id IS NOT NULL AND user_id IS NULL)
+         OR (audience = 'B2C' AND user_id IS NOT NULL AND salon_id IS NULL))
+     )`,
+    `CREATE INDEX IF NOT EXISTS product_waitlist_product_status_idx
+       ON ${s}.product_waitlist (product_id, status)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS product_waitlist_active_salon_unique
+       ON ${s}.product_waitlist (product_id, salon_id) WHERE status = 'ACTIVE' AND salon_id IS NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS product_waitlist_active_user_unique
+       ON ${s}.product_waitlist (product_id, user_id) WHERE status = 'ACTIVE' AND user_id IS NOT NULL`,
+    `CREATE TABLE IF NOT EXISTS ${s}.commerce_customer_notifications (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE,
+       waitlist_id uuid REFERENCES ${s}.product_waitlist(id) ON DELETE SET NULL,
+       title text NOT NULL, message text NOT NULL, href text, read_at timestamptz,
+       created_at timestamptz NOT NULL DEFAULT now()
+     )`,
+    `CREATE INDEX IF NOT EXISTS commerce_customer_notifications_user_created_idx
+       ON ${s}.commerce_customer_notifications (user_id, created_at)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS commerce_customer_notifications_waitlist_unique
+       ON ${s}.commerce_customer_notifications (waitlist_id) WHERE waitlist_id IS NOT NULL`,
+    `CREATE TABLE IF NOT EXISTS ${s}.product_waitlist_notification_outbox (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       waitlist_id uuid NOT NULL UNIQUE REFERENCES ${s}.product_waitlist(id) ON DELETE CASCADE,
+       audience ${s}.commerce_audience NOT NULL,
+       salon_id uuid REFERENCES ${s}.salons(id) ON DELETE CASCADE,
+       user_id uuid REFERENCES ${s}.users(id) ON DELETE CASCADE,
+       product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE CASCADE,
+       processed_at timestamptz, created_at timestamptz NOT NULL DEFAULT now()
+     )`,
+    `CREATE INDEX IF NOT EXISTS product_waitlist_notification_outbox_pending_idx
+       ON ${s}.product_waitlist_notification_outbox (created_at) WHERE processed_at IS NULL`,
+    `CREATE TABLE IF NOT EXISTS ${s}.reorder_actions (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), audience ${s}.commerce_audience NOT NULL,
+       salon_id uuid REFERENCES ${s}.salons(id) ON DELETE CASCADE,
+       user_id uuid REFERENCES ${s}.users(id) ON DELETE CASCADE,
+       idempotency_key text NOT NULL, result jsonb NOT NULL,
+       created_at timestamptz NOT NULL DEFAULT now()
+     )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS reorder_actions_salon_key_unique
+       ON ${s}.reorder_actions (salon_id, idempotency_key) WHERE salon_id IS NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS reorder_actions_user_key_unique
+       ON ${s}.reorder_actions (user_id, idempotency_key) WHERE user_id IS NOT NULL`,
+    `CREATE OR REPLACE FUNCTION ${s}.validate_bundle_component()
+       RETURNS trigger LANGUAGE plpgsql AS $$
+       DECLARE component_supplier uuid; component_variants jsonb; bundle_supplier uuid;
+       BEGIN
+         SELECT supplier_id, variants INTO component_supplier, component_variants
+           FROM ${s}.products WHERE id = NEW.product_id FOR KEY SHARE;
+         SELECT supplier_id INTO bundle_supplier
+           FROM ${s}.product_bundles WHERE id = NEW.bundle_id FOR KEY SHARE;
+         IF component_supplier IS DISTINCT FROM bundle_supplier THEN
+           RAISE EXCEPTION 'Bundle components must belong to the bundle supplier';
+         END IF;
+         IF component_variants IS NOT NULL AND jsonb_array_length(component_variants) > 0 THEN
+           RAISE EXCEPTION 'Bundle components with variants are not supported';
+         END IF;
+         RETURN NEW;
+       END $$`,
+    `DROP TRIGGER IF EXISTS product_bundle_components_validate ON ${s}.product_bundle_components`,
+    `CREATE TRIGGER product_bundle_components_validate BEFORE INSERT OR UPDATE
+       ON ${s}.product_bundle_components FOR EACH ROW EXECUTE FUNCTION ${s}.validate_bundle_component()`,
+    `CREATE OR REPLACE FUNCTION ${s}.enqueue_restocked_product_waitlist()
+       RETURNS trigger LANGUAGE plpgsql AS $$
+       BEGIN
+         IF OLD.stock = 0 AND NEW.stock > 0 THEN
+           INSERT INTO ${s}.product_waitlist_notification_outbox
+             (waitlist_id, audience, salon_id, user_id, product_id)
+           SELECT id, audience, salon_id, user_id, product_id
+             FROM ${s}.product_waitlist
+             WHERE product_id = NEW.id AND status = 'ACTIVE'
+           ON CONFLICT (waitlist_id) DO NOTHING;
+           UPDATE ${s}.product_waitlist waiter SET status = 'NOTIFIED',
+             notified_at = now(), updated_at = now()
+             WHERE waiter.product_id = NEW.id AND waiter.status = 'ACTIVE'
+               AND EXISTS (SELECT 1 FROM ${s}.product_waitlist_notification_outbox outbox
+                 WHERE outbox.waitlist_id = waiter.id);
+         END IF;
+         RETURN NEW;
+       END $$`,
+    `DROP TRIGGER IF EXISTS products_enqueue_restocked_waitlist ON ${s}.products`,
+    `CREATE TRIGGER products_enqueue_restocked_waitlist AFTER UPDATE OF stock ON ${s}.products
+       FOR EACH ROW EXECUTE FUNCTION ${s}.enqueue_restocked_product_waitlist()`,
+    `CREATE OR REPLACE FUNCTION ${s}.prevent_order_item_commercial_snapshot_update()
+       RETURNS trigger LANGUAGE plpgsql AS $$
+       BEGIN
+         IF NEW.supplier_id IS DISTINCT FROM OLD.supplier_id
+           OR NEW.supplier_name IS DISTINCT FROM OLD.supplier_name
+           OR NEW.supplier_slug IS DISTINCT FROM OLD.supplier_slug
+           OR NEW.product_catalog_reference IS DISTINCT FROM OLD.product_catalog_reference
+           OR NEW.product_sku_snapshot IS DISTINCT FROM OLD.product_sku_snapshot
+           OR NEW.market IS DISTINCT FROM OLD.market OR NEW.currency IS DISTINCT FROM OLD.currency
+           OR NEW.unit_price IS DISTINCT FROM OLD.unit_price
+           OR NEW.discount_snapshot IS DISTINCT FROM OLD.discount_snapshot
+           OR NEW.quantity IS DISTINCT FROM OLD.quantity
+           OR NEW.line_subtotal IS DISTINCT FROM OLD.line_subtotal
+           OR NEW.line_total IS DISTINCT FROM OLD.line_total
+           OR NEW.bundle_id IS DISTINCT FROM OLD.bundle_id
+           OR NEW.base_unit_price IS DISTINCT FROM OLD.base_unit_price
+           OR NEW.effective_unit_price IS DISTINCT FROM OLD.effective_unit_price
+           OR NEW.price_source IS DISTINCT FROM OLD.price_source
+           OR NEW.line_discount IS DISTINCT FROM OLD.line_discount
+           OR NEW.bundle_name_snapshot IS DISTINCT FROM OLD.bundle_name_snapshot
+           OR NEW.bundle_components_snapshot IS DISTINCT FROM OLD.bundle_components_snapshot
+           OR NEW.estimated_delivery_date IS DISTINCT FROM OLD.estimated_delivery_date THEN
+           RAISE EXCEPTION 'Order item commercial snapshot is immutable';
+         END IF;
+         RETURN NEW;
+       END $$`,
     // Existing individual marketplace users move once and only once.  No
     // dependent row is rewritten: listings, contacts, rentals and enrollments
     // keep their user foreign keys while the account boundary changes.

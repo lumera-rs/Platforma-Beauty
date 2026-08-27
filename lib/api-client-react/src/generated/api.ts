@@ -30,6 +30,7 @@ import type {
   AdminIntegrationCard,
   AdminListEmailCampaignsResponse,
   AdminListOrdersParams,
+  AdminListProductWaitlistParams,
   AdminListProductsParams,
   AdminListRetailOrdersParams,
   AdminListReviewsParams,
@@ -47,6 +48,7 @@ import type {
   AdminProductInput,
   AdminProductList,
   AdminProductUpdate,
+  AdminProductWaitlistPage,
   AdminReview,
   AdminReviewUpdate,
   AdminSalon,
@@ -57,6 +59,8 @@ import type {
   AdminServiceCategoryImageUpdate,
   AdminServiceTemplateInput,
   AdminServiceTemplateUpdate,
+  AdminShopSettings,
+  AdminShopSettingsInput,
   AdminSummary,
   AdminUser,
   AdminUserUpdate,
@@ -111,6 +115,8 @@ import type {
   BeautyJobSettingsUpdateInput,
   BeautyJobSweepResult,
   BeautyJobUpdateInput,
+  Bundle,
+  BundleInput,
   BusinessRegistrationInput,
   CancelAppointmentInput,
   CitySummary,
@@ -256,9 +262,11 @@ import type {
   ProductCategory,
   ProductDetail,
   ProductList,
-  ProductRelatedDetail,
   ProductReview,
   ProductReviewInput,
+  ProductWaitlistStatus,
+  ProductWaitlistSubscription,
+  PublicBundle,
   PublicProductDetail,
   PublicProductList,
   PurchasePackageBody,
@@ -274,6 +282,7 @@ import type {
   ReferralReview,
   ReferralReviewUpdate,
   RegisterInput,
+  ReorderResult,
   RetailCart,
   RetailCartItemInput,
   RetailCartSummary,
@@ -6788,6 +6797,314 @@ export function useListProducts<TData = Awaited<ReturnType<typeof listProducts>>
 
 
 
+export const getListShopBundlesUrl = () => {
+
+
+
+
+  return `/api/shop/bundles`
+}
+
+/**
+ * @summary List active B2B fixed-price bundles
+ */
+export const listShopBundles = async ( options?: Parameters<typeof customFetch>[1]): Promise<Bundle[]> => {
+
+  return customFetch<Bundle[]>(getListShopBundlesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListShopBundlesQueryKey = () => {
+    return [
+    `/api/shop/bundles`
+    ] as const;
+    }
+
+
+export const getListShopBundlesQueryOptions = <TData = Awaited<ReturnType<typeof listShopBundles>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listShopBundles>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListShopBundlesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listShopBundles>>> = ({ signal }) => listShopBundles({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listShopBundles>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListShopBundlesQueryResult = NonNullable<Awaited<ReturnType<typeof listShopBundles>>>
+export type ListShopBundlesQueryError = ErrorType<void>
+
+
+/**
+ * @summary List active B2B fixed-price bundles
+ */
+
+export function useListShopBundles<TData = Awaited<ReturnType<typeof listShopBundles>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listShopBundles>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListShopBundlesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetShopBundleUrl = (bundleId: string,) => {
+
+
+
+
+  return `/api/shop/bundles/${bundleId}`
+}
+
+/**
+ * @summary Get an active B2B fixed-price bundle
+ */
+export const getShopBundle = async (bundleId: string, options?: Parameters<typeof customFetch>[1]): Promise<Bundle> => {
+
+  return customFetch<Bundle>(getGetShopBundleUrl(bundleId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetShopBundleQueryKey = (bundleId: string,) => {
+    return [
+    `/api/shop/bundles/${bundleId}`
+    ] as const;
+    }
+
+
+export const getGetShopBundleQueryOptions = <TData = Awaited<ReturnType<typeof getShopBundle>>, TError = ErrorType<void>>(bundleId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShopBundle>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetShopBundleQueryKey(bundleId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getShopBundle>>> = ({ signal }) => getShopBundle(bundleId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: bundleId !== null && bundleId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getShopBundle>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetShopBundleQueryResult = NonNullable<Awaited<ReturnType<typeof getShopBundle>>>
+export type GetShopBundleQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get an active B2B fixed-price bundle
+ */
+
+export function useGetShopBundle<TData = Awaited<ReturnType<typeof getShopBundle>>, TError = ErrorType<void>>(
+ bundleId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShopBundle>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetShopBundleQueryOptions(bundleId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListPublicBundlesUrl = () => {
+
+
+
+
+  return `/api/shop/public/bundles`
+}
+
+/**
+ * @summary List active B2C fixed-price bundles
+ */
+export const listPublicBundles = async ( options?: Parameters<typeof customFetch>[1]): Promise<PublicBundle[]> => {
+
+  return customFetch<PublicBundle[]>(getListPublicBundlesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPublicBundlesQueryKey = () => {
+    return [
+    `/api/shop/public/bundles`
+    ] as const;
+    }
+
+
+export const getListPublicBundlesQueryOptions = <TData = Awaited<ReturnType<typeof listPublicBundles>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPublicBundles>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPublicBundlesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPublicBundles>>> = ({ signal }) => listPublicBundles({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPublicBundles>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPublicBundlesQueryResult = NonNullable<Awaited<ReturnType<typeof listPublicBundles>>>
+export type ListPublicBundlesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List active B2C fixed-price bundles
+ */
+
+export function useListPublicBundles<TData = Awaited<ReturnType<typeof listPublicBundles>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPublicBundles>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPublicBundlesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetPublicBundleUrl = (bundleId: string,) => {
+
+
+
+
+  return `/api/shop/public/bundles/${bundleId}`
+}
+
+/**
+ * @summary Get an active B2C fixed-price bundle
+ */
+export const getPublicBundle = async (bundleId: string, options?: Parameters<typeof customFetch>[1]): Promise<PublicBundle> => {
+
+  return customFetch<PublicBundle>(getGetPublicBundleUrl(bundleId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPublicBundleQueryKey = (bundleId: string,) => {
+    return [
+    `/api/shop/public/bundles/${bundleId}`
+    ] as const;
+    }
+
+
+export const getGetPublicBundleQueryOptions = <TData = Awaited<ReturnType<typeof getPublicBundle>>, TError = ErrorType<void>>(bundleId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicBundle>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPublicBundleQueryKey(bundleId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPublicBundle>>> = ({ signal }) => getPublicBundle(bundleId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: bundleId !== null && bundleId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPublicBundle>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPublicBundleQueryResult = NonNullable<Awaited<ReturnType<typeof getPublicBundle>>>
+export type GetPublicBundleQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get an active B2C fixed-price bundle
+ */
+
+export function useGetPublicBundle<TData = Awaited<ReturnType<typeof getPublicBundle>>, TError = ErrorType<void>>(
+ bundleId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicBundle>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPublicBundleQueryOptions(bundleId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getGetShopProductUrl = (productId: string,) => {
 
 
@@ -6864,6 +7181,444 @@ export function useGetShopProduct<TData = Awaited<ReturnType<typeof getShopProdu
 
 
 
+
+export const getGetB2bProductWaitlistStatusUrl = (productId: string,) => {
+
+
+
+
+  return `/api/shop/products/${productId}/waitlist`
+}
+
+/**
+ * @summary Get the signed-in salon's product availability subscription
+ */
+export const getB2bProductWaitlistStatus = async (productId: string, options?: Parameters<typeof customFetch>[1]): Promise<ProductWaitlistStatus> => {
+
+  return customFetch<ProductWaitlistStatus>(getGetB2bProductWaitlistStatusUrl(productId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetB2bProductWaitlistStatusQueryKey = (productId: string,) => {
+    return [
+    `/api/shop/products/${productId}/waitlist`
+    ] as const;
+    }
+
+
+export const getGetB2bProductWaitlistStatusQueryOptions = <TData = Awaited<ReturnType<typeof getB2bProductWaitlistStatus>>, TError = ErrorType<void>>(productId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getB2bProductWaitlistStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetB2bProductWaitlistStatusQueryKey(productId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getB2bProductWaitlistStatus>>> = ({ signal }) => getB2bProductWaitlistStatus(productId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: productId !== null && productId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getB2bProductWaitlistStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetB2bProductWaitlistStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getB2bProductWaitlistStatus>>>
+export type GetB2bProductWaitlistStatusQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get the signed-in salon's product availability subscription
+ */
+
+export function useGetB2bProductWaitlistStatus<TData = Awaited<ReturnType<typeof getB2bProductWaitlistStatus>>, TError = ErrorType<void>>(
+ productId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getB2bProductWaitlistStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetB2bProductWaitlistStatusQueryOptions(productId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSubscribeB2bProductWaitlistUrl = (productId: string,) => {
+
+
+
+
+  return `/api/shop/products/${productId}/waitlist`
+}
+
+/**
+ * @summary Subscribe the signed-in salon to an out-of-stock B2B product
+ */
+export const subscribeB2bProductWaitlist = async (productId: string, options?: Parameters<typeof customFetch>[1]): Promise<ProductWaitlistSubscription> => {
+
+  return customFetch<ProductWaitlistSubscription>(getSubscribeB2bProductWaitlistUrl(productId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getSubscribeB2bProductWaitlistMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof subscribeB2bProductWaitlist>>, TError,{productId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof subscribeB2bProductWaitlist>>, TError,{productId: string}, TContext> => {
+
+const mutationKey = ['subscribeB2bProductWaitlist'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof subscribeB2bProductWaitlist>>, {productId: string}> = (props) => {
+          const {productId} = props ?? {};
+
+          return  subscribeB2bProductWaitlist(productId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SubscribeB2bProductWaitlistMutationResult = NonNullable<Awaited<ReturnType<typeof subscribeB2bProductWaitlist>>>
+
+    export type SubscribeB2bProductWaitlistMutationError = ErrorType<void>
+
+    /**
+ * @summary Subscribe the signed-in salon to an out-of-stock B2B product
+ */
+export const useSubscribeB2bProductWaitlist = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof subscribeB2bProductWaitlist>>, TError,{productId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof subscribeB2bProductWaitlist>>,
+        TError,
+        {productId: string},
+        TContext
+      > => {
+      return useMutation(getSubscribeB2bProductWaitlistMutationOptions(options));
+    }
+
+export const getUnsubscribeB2bProductWaitlistUrl = (productId: string,) => {
+
+
+
+
+  return `/api/shop/products/${productId}/waitlist`
+}
+
+/**
+ * @summary Unsubscribe the signed-in salon (idempotent)
+ */
+export const unsubscribeB2bProductWaitlist = async (productId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getUnsubscribeB2bProductWaitlistUrl(productId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getUnsubscribeB2bProductWaitlistMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unsubscribeB2bProductWaitlist>>, TError,{productId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof unsubscribeB2bProductWaitlist>>, TError,{productId: string}, TContext> => {
+
+const mutationKey = ['unsubscribeB2bProductWaitlist'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unsubscribeB2bProductWaitlist>>, {productId: string}> = (props) => {
+          const {productId} = props ?? {};
+
+          return  unsubscribeB2bProductWaitlist(productId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnsubscribeB2bProductWaitlistMutationResult = NonNullable<Awaited<ReturnType<typeof unsubscribeB2bProductWaitlist>>>
+
+    export type UnsubscribeB2bProductWaitlistMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Unsubscribe the signed-in salon (idempotent)
+ */
+export const useUnsubscribeB2bProductWaitlist = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unsubscribeB2bProductWaitlist>>, TError,{productId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof unsubscribeB2bProductWaitlist>>,
+        TError,
+        {productId: string},
+        TContext
+      > => {
+      return useMutation(getUnsubscribeB2bProductWaitlistMutationOptions(options));
+    }
+
+export const getGetB2cProductWaitlistStatusUrl = (productId: string,) => {
+
+
+
+
+  return `/api/shop/public/products/${productId}/waitlist`
+}
+
+/**
+ * @summary Get the signed-in customer's product availability subscription
+ */
+export const getB2cProductWaitlistStatus = async (productId: string, options?: Parameters<typeof customFetch>[1]): Promise<ProductWaitlistStatus> => {
+
+  return customFetch<ProductWaitlistStatus>(getGetB2cProductWaitlistStatusUrl(productId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetB2cProductWaitlistStatusQueryKey = (productId: string,) => {
+    return [
+    `/api/shop/public/products/${productId}/waitlist`
+    ] as const;
+    }
+
+
+export const getGetB2cProductWaitlistStatusQueryOptions = <TData = Awaited<ReturnType<typeof getB2cProductWaitlistStatus>>, TError = ErrorType<unknown>>(productId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getB2cProductWaitlistStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetB2cProductWaitlistStatusQueryKey(productId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getB2cProductWaitlistStatus>>> = ({ signal }) => getB2cProductWaitlistStatus(productId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: productId !== null && productId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getB2cProductWaitlistStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetB2cProductWaitlistStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getB2cProductWaitlistStatus>>>
+export type GetB2cProductWaitlistStatusQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the signed-in customer's product availability subscription
+ */
+
+export function useGetB2cProductWaitlistStatus<TData = Awaited<ReturnType<typeof getB2cProductWaitlistStatus>>, TError = ErrorType<unknown>>(
+ productId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getB2cProductWaitlistStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetB2cProductWaitlistStatusQueryOptions(productId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSubscribeB2cProductWaitlistUrl = (productId: string,) => {
+
+
+
+
+  return `/api/shop/public/products/${productId}/waitlist`
+}
+
+/**
+ * @summary Subscribe the signed-in customer to an out-of-stock B2C product
+ */
+export const subscribeB2cProductWaitlist = async (productId: string, options?: Parameters<typeof customFetch>[1]): Promise<ProductWaitlistSubscription> => {
+
+  return customFetch<ProductWaitlistSubscription>(getSubscribeB2cProductWaitlistUrl(productId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getSubscribeB2cProductWaitlistMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof subscribeB2cProductWaitlist>>, TError,{productId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof subscribeB2cProductWaitlist>>, TError,{productId: string}, TContext> => {
+
+const mutationKey = ['subscribeB2cProductWaitlist'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof subscribeB2cProductWaitlist>>, {productId: string}> = (props) => {
+          const {productId} = props ?? {};
+
+          return  subscribeB2cProductWaitlist(productId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SubscribeB2cProductWaitlistMutationResult = NonNullable<Awaited<ReturnType<typeof subscribeB2cProductWaitlist>>>
+
+    export type SubscribeB2cProductWaitlistMutationError = ErrorType<void>
+
+    /**
+ * @summary Subscribe the signed-in customer to an out-of-stock B2C product
+ */
+export const useSubscribeB2cProductWaitlist = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof subscribeB2cProductWaitlist>>, TError,{productId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof subscribeB2cProductWaitlist>>,
+        TError,
+        {productId: string},
+        TContext
+      > => {
+      return useMutation(getSubscribeB2cProductWaitlistMutationOptions(options));
+    }
+
+export const getUnsubscribeB2cProductWaitlistUrl = (productId: string,) => {
+
+
+
+
+  return `/api/shop/public/products/${productId}/waitlist`
+}
+
+/**
+ * @summary Unsubscribe the signed-in customer (idempotent)
+ */
+export const unsubscribeB2cProductWaitlist = async (productId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getUnsubscribeB2cProductWaitlistUrl(productId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getUnsubscribeB2cProductWaitlistMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unsubscribeB2cProductWaitlist>>, TError,{productId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof unsubscribeB2cProductWaitlist>>, TError,{productId: string}, TContext> => {
+
+const mutationKey = ['unsubscribeB2cProductWaitlist'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unsubscribeB2cProductWaitlist>>, {productId: string}> = (props) => {
+          const {productId} = props ?? {};
+
+          return  unsubscribeB2cProductWaitlist(productId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnsubscribeB2cProductWaitlistMutationResult = NonNullable<Awaited<ReturnType<typeof unsubscribeB2cProductWaitlist>>>
+
+    export type UnsubscribeB2cProductWaitlistMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Unsubscribe the signed-in customer (idempotent)
+ */
+export const useUnsubscribeB2cProductWaitlist = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unsubscribeB2cProductWaitlist>>, TError,{productId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof unsubscribeB2cProductWaitlist>>,
+        TError,
+        {productId: string},
+        TContext
+      > => {
+      return useMutation(getUnsubscribeB2cProductWaitlistMutationOptions(options));
+    }
 
 export const getListProductReviewsUrl = (productId: string,) => {
 
@@ -7380,6 +8135,290 @@ export const useRemoveShopCartItem = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getRemoveShopCartItemMutationOptions(options));
+    }
+
+export const getSaveShopCartItemForLaterUrl = (cartItemId: string,) => {
+
+
+
+
+  return `/api/shop/cart/items/${cartItemId}/save-for-later`
+}
+
+/**
+ * @summary Atomically move a cart line to saved items
+ */
+export const saveShopCartItemForLater = async (cartItemId: string, options?: Parameters<typeof customFetch>[1]): Promise<ShopCart> => {
+
+  return customFetch<ShopCart>(getSaveShopCartItemForLaterUrl(cartItemId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getSaveShopCartItemForLaterMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveShopCartItemForLater>>, TError,{cartItemId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveShopCartItemForLater>>, TError,{cartItemId: string}, TContext> => {
+
+const mutationKey = ['saveShopCartItemForLater'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveShopCartItemForLater>>, {cartItemId: string}> = (props) => {
+          const {cartItemId} = props ?? {};
+
+          return  saveShopCartItemForLater(cartItemId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveShopCartItemForLaterMutationResult = NonNullable<Awaited<ReturnType<typeof saveShopCartItemForLater>>>
+
+    export type SaveShopCartItemForLaterMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Atomically move a cart line to saved items
+ */
+export const useSaveShopCartItemForLater = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveShopCartItemForLater>>, TError,{cartItemId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveShopCartItemForLater>>,
+        TError,
+        {cartItemId: string},
+        TContext
+      > => {
+      return useMutation(getSaveShopCartItemForLaterMutationOptions(options));
+    }
+
+export const getRemoveSavedShopCartItemUrl = (savedItemId: string,) => {
+
+
+
+
+  return `/api/shop/cart/saved-items/${savedItemId}`
+}
+
+/**
+ * @summary Remove a saved cart line
+ */
+export const removeSavedShopCartItem = async (savedItemId: string, options?: Parameters<typeof customFetch>[1]): Promise<ShopCart> => {
+
+  return customFetch<ShopCart>(getRemoveSavedShopCartItemUrl(savedItemId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRemoveSavedShopCartItemMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeSavedShopCartItem>>, TError,{savedItemId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeSavedShopCartItem>>, TError,{savedItemId: string}, TContext> => {
+
+const mutationKey = ['removeSavedShopCartItem'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeSavedShopCartItem>>, {savedItemId: string}> = (props) => {
+          const {savedItemId} = props ?? {};
+
+          return  removeSavedShopCartItem(savedItemId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveSavedShopCartItemMutationResult = NonNullable<Awaited<ReturnType<typeof removeSavedShopCartItem>>>
+
+    export type RemoveSavedShopCartItemMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Remove a saved cart line
+ */
+export const useRemoveSavedShopCartItem = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeSavedShopCartItem>>, TError,{savedItemId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof removeSavedShopCartItem>>,
+        TError,
+        {savedItemId: string},
+        TContext
+      > => {
+      return useMutation(getRemoveSavedShopCartItemMutationOptions(options));
+    }
+
+export const getRestoreSavedShopCartItemUrl = (savedItemId: string,) => {
+
+
+
+
+  return `/api/shop/cart/saved-items/${savedItemId}/restore`
+}
+
+/**
+ * @summary Restore a saved line using current eligibility, price, MOQ and stock
+ */
+export const restoreSavedShopCartItem = async (savedItemId: string, options?: Parameters<typeof customFetch>[1]): Promise<ShopCart> => {
+
+  return customFetch<ShopCart>(getRestoreSavedShopCartItemUrl(savedItemId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRestoreSavedShopCartItemMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restoreSavedShopCartItem>>, TError,{savedItemId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof restoreSavedShopCartItem>>, TError,{savedItemId: string}, TContext> => {
+
+const mutationKey = ['restoreSavedShopCartItem'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof restoreSavedShopCartItem>>, {savedItemId: string}> = (props) => {
+          const {savedItemId} = props ?? {};
+
+          return  restoreSavedShopCartItem(savedItemId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RestoreSavedShopCartItemMutationResult = NonNullable<Awaited<ReturnType<typeof restoreSavedShopCartItem>>>
+
+    export type RestoreSavedShopCartItemMutationError = ErrorType<void>
+
+    /**
+ * @summary Restore a saved line using current eligibility, price, MOQ and stock
+ */
+export const useRestoreSavedShopCartItem = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restoreSavedShopCartItem>>, TError,{savedItemId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof restoreSavedShopCartItem>>,
+        TError,
+        {savedItemId: string},
+        TContext
+      > => {
+      return useMutation(getRestoreSavedShopCartItemMutationOptions(options));
+    }
+
+export const getRepeatLastShopOrderUrl = () => {
+
+
+
+
+  return `/api/shop/orders/repeat-last`
+}
+
+/**
+ * @summary Add eligible lines from the latest salon order at current prices
+ */
+export const repeatLastShopOrder = async ( options?: Parameters<typeof customFetch>[1]): Promise<ReorderResult> => {
+
+  return customFetch<ReorderResult>(getRepeatLastShopOrderUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRepeatLastShopOrderMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof repeatLastShopOrder>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof repeatLastShopOrder>>, TError,void, TContext> => {
+
+const mutationKey = ['repeatLastShopOrder'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof repeatLastShopOrder>>, void> = () => {
+
+
+          return  repeatLastShopOrder(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RepeatLastShopOrderMutationResult = NonNullable<Awaited<ReturnType<typeof repeatLastShopOrder>>>
+
+    export type RepeatLastShopOrderMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Add eligible lines from the latest salon order at current prices
+ */
+export const useRepeatLastShopOrder = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof repeatLastShopOrder>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof repeatLastShopOrder>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getRepeatLastShopOrderMutationOptions(options));
     }
 
 export const getGetShopCheckoutProfileUrl = () => {
@@ -14299,6 +15338,90 @@ export const useAdminDeleteReview = <TError = ErrorType<unknown>,
       return useMutation(getAdminDeleteReviewMutationOptions(options));
     }
 
+export const getAdminListProductWaitlistUrl = (params?: AdminListProductWaitlistParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/product-waitlist?${stringifiedParams}` : `/api/admin/product-waitlist`
+}
+
+/**
+ * @summary List product availability subscriptions without contact details
+ */
+export const adminListProductWaitlist = async (params?: AdminListProductWaitlistParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminProductWaitlistPage> => {
+
+  return customFetch<AdminProductWaitlistPage>(getAdminListProductWaitlistUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListProductWaitlistQueryKey = (params?: AdminListProductWaitlistParams,) => {
+    return [
+    `/api/admin/product-waitlist`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminListProductWaitlistQueryOptions = <TData = Awaited<ReturnType<typeof adminListProductWaitlist>>, TError = ErrorType<void>>(params?: AdminListProductWaitlistParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListProductWaitlist>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListProductWaitlistQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListProductWaitlist>>> = ({ signal }) => adminListProductWaitlist(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListProductWaitlist>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminListProductWaitlistQueryResult = NonNullable<Awaited<ReturnType<typeof adminListProductWaitlist>>>
+export type AdminListProductWaitlistQueryError = ErrorType<void>
+
+
+/**
+ * @summary List product availability subscriptions without contact details
+ */
+
+export function useAdminListProductWaitlist<TData = Awaited<ReturnType<typeof adminListProductWaitlist>>, TError = ErrorType<void>>(
+ params?: AdminListProductWaitlistParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListProductWaitlist>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminListProductWaitlistQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getAdminListProductsUrl = (params?: AdminListProductsParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -14452,6 +15575,297 @@ export const useAdminCreateProduct = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getAdminCreateProductMutationOptions(options));
+    }
+
+export const getAdminListBundlesUrl = () => {
+
+
+
+
+  return `/api/admin/bundles`
+}
+
+/**
+ * @summary List all fixed-price product bundles
+ */
+export const adminListBundles = async ( options?: Parameters<typeof customFetch>[1]): Promise<Bundle[]> => {
+
+  return customFetch<Bundle[]>(getAdminListBundlesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListBundlesQueryKey = () => {
+    return [
+    `/api/admin/bundles`
+    ] as const;
+    }
+
+
+export const getAdminListBundlesQueryOptions = <TData = Awaited<ReturnType<typeof adminListBundles>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListBundles>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListBundlesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListBundles>>> = ({ signal }) => adminListBundles({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListBundles>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminListBundlesQueryResult = NonNullable<Awaited<ReturnType<typeof adminListBundles>>>
+export type AdminListBundlesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List all fixed-price product bundles
+ */
+
+export function useAdminListBundles<TData = Awaited<ReturnType<typeof adminListBundles>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListBundles>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminListBundlesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminCreateBundleUrl = () => {
+
+
+
+
+  return `/api/admin/bundles`
+}
+
+/**
+ * @summary Create a fixed-price bundle with at least two same-supplier components
+ */
+export const adminCreateBundle = async (bundleInput: BundleInput, options?: Parameters<typeof customFetch>[1]): Promise<Bundle> => {
+
+  return customFetch<Bundle>(getAdminCreateBundleUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(bundleInput)
+  }
+);}
+
+
+
+
+
+export const getAdminCreateBundleMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminCreateBundle>>, TError,{data: BodyType<BundleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminCreateBundle>>, TError,{data: BodyType<BundleInput>}, TContext> => {
+
+const mutationKey = ['adminCreateBundle'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminCreateBundle>>, {data: BodyType<BundleInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  adminCreateBundle(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminCreateBundleMutationResult = NonNullable<Awaited<ReturnType<typeof adminCreateBundle>>>
+    export type AdminCreateBundleMutationBody = BodyType<BundleInput>
+    export type AdminCreateBundleMutationError = ErrorType<void>
+
+    /**
+ * @summary Create a fixed-price bundle with at least two same-supplier components
+ */
+export const useAdminCreateBundle = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminCreateBundle>>, TError,{data: BodyType<BundleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminCreateBundle>>,
+        TError,
+        {data: BodyType<BundleInput>},
+        TContext
+      > => {
+      return useMutation(getAdminCreateBundleMutationOptions(options));
+    }
+
+export const getAdminUpdateBundleUrl = (bundleId: string,) => {
+
+
+
+
+  return `/api/admin/bundles/${bundleId}`
+}
+
+/**
+ * @summary Replace bundle metadata, market prices, and optionally components
+ */
+export const adminUpdateBundle = async (bundleId: string,
+    bundleInput: BundleInput, options?: Parameters<typeof customFetch>[1]): Promise<Bundle> => {
+
+  return customFetch<Bundle>(getAdminUpdateBundleUrl(bundleId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(bundleInput)
+  }
+);}
+
+
+
+
+
+export const getAdminUpdateBundleMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateBundle>>, TError,{bundleId: string;data: BodyType<BundleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateBundle>>, TError,{bundleId: string;data: BodyType<BundleInput>}, TContext> => {
+
+const mutationKey = ['adminUpdateBundle'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateBundle>>, {bundleId: string;data: BodyType<BundleInput>}> = (props) => {
+          const {bundleId,data} = props ?? {};
+
+          return  adminUpdateBundle(bundleId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminUpdateBundleMutationResult = NonNullable<Awaited<ReturnType<typeof adminUpdateBundle>>>
+    export type AdminUpdateBundleMutationBody = BodyType<BundleInput>
+    export type AdminUpdateBundleMutationError = ErrorType<void>
+
+    /**
+ * @summary Replace bundle metadata, market prices, and optionally components
+ */
+export const useAdminUpdateBundle = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateBundle>>, TError,{bundleId: string;data: BodyType<BundleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminUpdateBundle>>,
+        TError,
+        {bundleId: string;data: BodyType<BundleInput>},
+        TContext
+      > => {
+      return useMutation(getAdminUpdateBundleMutationOptions(options));
+    }
+
+export const getAdminDeactivateBundleUrl = (bundleId: string,) => {
+
+
+
+
+  return `/api/admin/bundles/${bundleId}/deactivate`
+}
+
+/**
+ * @summary Deactivate a bundle without deleting historical references
+ */
+export const adminDeactivateBundle = async (bundleId: string, options?: Parameters<typeof customFetch>[1]): Promise<Bundle> => {
+
+  return customFetch<Bundle>(getAdminDeactivateBundleUrl(bundleId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminDeactivateBundleMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminDeactivateBundle>>, TError,{bundleId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminDeactivateBundle>>, TError,{bundleId: string}, TContext> => {
+
+const mutationKey = ['adminDeactivateBundle'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminDeactivateBundle>>, {bundleId: string}> = (props) => {
+          const {bundleId} = props ?? {};
+
+          return  adminDeactivateBundle(bundleId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminDeactivateBundleMutationResult = NonNullable<Awaited<ReturnType<typeof adminDeactivateBundle>>>
+
+    export type AdminDeactivateBundleMutationError = ErrorType<void>
+
+    /**
+ * @summary Deactivate a bundle without deleting historical references
+ */
+export const useAdminDeactivateBundle = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminDeactivateBundle>>, TError,{bundleId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminDeactivateBundle>>,
+        TError,
+        {bundleId: string},
+        TContext
+      > => {
+      return useMutation(getAdminDeactivateBundleMutationOptions(options));
     }
 
 export const getAdminBulkUpdateProductsUrl = () => {
@@ -15678,9 +17092,9 @@ export const getGetSupplierProductUrl = (supplierSlug: string,
  * @summary Get an active B2B product from one active supplier
  */
 export const getSupplierProduct = async (supplierSlug: string,
-    productId: string, options?: Parameters<typeof customFetch>[1]): Promise<ProductRelatedDetail> => {
+    productId: string, options?: Parameters<typeof customFetch>[1]): Promise<ProductDetail> => {
 
-  return customFetch<ProductRelatedDetail>(getGetSupplierProductUrl(supplierSlug,productId),
+  return customFetch<ProductDetail>(getGetSupplierProductUrl(supplierSlug,productId),
   {
     ...options,
     method: 'GET'
@@ -16638,6 +18052,154 @@ export const useAdminDeleteBrand = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getAdminDeleteBrandMutationOptions(options));
+    }
+
+export const getAdminGetShopSettingsUrl = () => {
+
+
+
+
+  return `/api/admin/shop-settings`
+}
+
+/**
+ * @summary Get versioned commerce presentation and loyalty settings
+ */
+export const adminGetShopSettings = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminShopSettings> => {
+
+  return customFetch<AdminShopSettings>(getAdminGetShopSettingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGetShopSettingsQueryKey = () => {
+    return [
+    `/api/admin/shop-settings`
+    ] as const;
+    }
+
+
+export const getAdminGetShopSettingsQueryOptions = <TData = Awaited<ReturnType<typeof adminGetShopSettings>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetShopSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetShopSettingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetShopSettings>>> = ({ signal }) => adminGetShopSettings({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetShopSettings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminGetShopSettingsQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetShopSettings>>>
+export type AdminGetShopSettingsQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get versioned commerce presentation and loyalty settings
+ */
+
+export function useAdminGetShopSettings<TData = Awaited<ReturnType<typeof adminGetShopSettings>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetShopSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminGetShopSettingsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminUpdateShopSettingsUrl = () => {
+
+
+
+
+  return `/api/admin/shop-settings`
+}
+
+/**
+ * @summary Replace versioned commerce presentation and loyalty settings
+ */
+export const adminUpdateShopSettings = async (adminShopSettingsInput: AdminShopSettingsInput, options?: Parameters<typeof customFetch>[1]): Promise<AdminShopSettings> => {
+
+  return customFetch<AdminShopSettings>(getAdminUpdateShopSettingsUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminShopSettingsInput)
+  }
+);}
+
+
+
+
+
+export const getAdminUpdateShopSettingsMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateShopSettings>>, TError,{data: BodyType<AdminShopSettingsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateShopSettings>>, TError,{data: BodyType<AdminShopSettingsInput>}, TContext> => {
+
+const mutationKey = ['adminUpdateShopSettings'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateShopSettings>>, {data: BodyType<AdminShopSettingsInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  adminUpdateShopSettings(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminUpdateShopSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof adminUpdateShopSettings>>>
+    export type AdminUpdateShopSettingsMutationBody = BodyType<AdminShopSettingsInput>
+    export type AdminUpdateShopSettingsMutationError = ErrorType<void>
+
+    /**
+ * @summary Replace versioned commerce presentation and loyalty settings
+ */
+export const useAdminUpdateShopSettings = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateShopSettings>>, TError,{data: BodyType<AdminShopSettingsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminUpdateShopSettings>>,
+        TError,
+        {data: BodyType<AdminShopSettingsInput>},
+        TContext
+      > => {
+      return useMutation(getAdminUpdateShopSettingsMutationOptions(options));
     }
 
 export const getAdminGetShippingConfigUrl = () => {
@@ -21822,6 +23384,290 @@ export const useRemoveRetailCartItem = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getRemoveRetailCartItemMutationOptions(options));
+    }
+
+export const getSaveRetailCartItemForLaterUrl = (cartItemId: string,) => {
+
+
+
+
+  return `/api/retail/cart/items/${cartItemId}/save-for-later`
+}
+
+/**
+ * @summary Atomically move a retail cart line to saved items
+ */
+export const saveRetailCartItemForLater = async (cartItemId: string, options?: Parameters<typeof customFetch>[1]): Promise<RetailCart> => {
+
+  return customFetch<RetailCart>(getSaveRetailCartItemForLaterUrl(cartItemId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getSaveRetailCartItemForLaterMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveRetailCartItemForLater>>, TError,{cartItemId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveRetailCartItemForLater>>, TError,{cartItemId: string}, TContext> => {
+
+const mutationKey = ['saveRetailCartItemForLater'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveRetailCartItemForLater>>, {cartItemId: string}> = (props) => {
+          const {cartItemId} = props ?? {};
+
+          return  saveRetailCartItemForLater(cartItemId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveRetailCartItemForLaterMutationResult = NonNullable<Awaited<ReturnType<typeof saveRetailCartItemForLater>>>
+
+    export type SaveRetailCartItemForLaterMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Atomically move a retail cart line to saved items
+ */
+export const useSaveRetailCartItemForLater = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveRetailCartItemForLater>>, TError,{cartItemId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveRetailCartItemForLater>>,
+        TError,
+        {cartItemId: string},
+        TContext
+      > => {
+      return useMutation(getSaveRetailCartItemForLaterMutationOptions(options));
+    }
+
+export const getRemoveSavedRetailCartItemUrl = (savedItemId: string,) => {
+
+
+
+
+  return `/api/retail/cart/saved-items/${savedItemId}`
+}
+
+/**
+ * @summary Remove a saved retail cart line
+ */
+export const removeSavedRetailCartItem = async (savedItemId: string, options?: Parameters<typeof customFetch>[1]): Promise<RetailCart> => {
+
+  return customFetch<RetailCart>(getRemoveSavedRetailCartItemUrl(savedItemId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRemoveSavedRetailCartItemMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeSavedRetailCartItem>>, TError,{savedItemId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeSavedRetailCartItem>>, TError,{savedItemId: string}, TContext> => {
+
+const mutationKey = ['removeSavedRetailCartItem'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeSavedRetailCartItem>>, {savedItemId: string}> = (props) => {
+          const {savedItemId} = props ?? {};
+
+          return  removeSavedRetailCartItem(savedItemId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveSavedRetailCartItemMutationResult = NonNullable<Awaited<ReturnType<typeof removeSavedRetailCartItem>>>
+
+    export type RemoveSavedRetailCartItemMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Remove a saved retail cart line
+ */
+export const useRemoveSavedRetailCartItem = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeSavedRetailCartItem>>, TError,{savedItemId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof removeSavedRetailCartItem>>,
+        TError,
+        {savedItemId: string},
+        TContext
+      > => {
+      return useMutation(getRemoveSavedRetailCartItemMutationOptions(options));
+    }
+
+export const getRestoreSavedRetailCartItemUrl = (savedItemId: string,) => {
+
+
+
+
+  return `/api/retail/cart/saved-items/${savedItemId}/restore`
+}
+
+/**
+ * @summary Restore a saved retail line with current eligibility and price
+ */
+export const restoreSavedRetailCartItem = async (savedItemId: string, options?: Parameters<typeof customFetch>[1]): Promise<RetailCart> => {
+
+  return customFetch<RetailCart>(getRestoreSavedRetailCartItemUrl(savedItemId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRestoreSavedRetailCartItemMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restoreSavedRetailCartItem>>, TError,{savedItemId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof restoreSavedRetailCartItem>>, TError,{savedItemId: string}, TContext> => {
+
+const mutationKey = ['restoreSavedRetailCartItem'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof restoreSavedRetailCartItem>>, {savedItemId: string}> = (props) => {
+          const {savedItemId} = props ?? {};
+
+          return  restoreSavedRetailCartItem(savedItemId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RestoreSavedRetailCartItemMutationResult = NonNullable<Awaited<ReturnType<typeof restoreSavedRetailCartItem>>>
+
+    export type RestoreSavedRetailCartItemMutationError = ErrorType<void>
+
+    /**
+ * @summary Restore a saved retail line with current eligibility and price
+ */
+export const useRestoreSavedRetailCartItem = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restoreSavedRetailCartItem>>, TError,{savedItemId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof restoreSavedRetailCartItem>>,
+        TError,
+        {savedItemId: string},
+        TContext
+      > => {
+      return useMutation(getRestoreSavedRetailCartItemMutationOptions(options));
+    }
+
+export const getRepeatLastRetailOrderUrl = () => {
+
+
+
+
+  return `/api/retail/orders/repeat-last`
+}
+
+/**
+ * @summary Add eligible lines from the authenticated customer's latest retail order
+ */
+export const repeatLastRetailOrder = async ( options?: Parameters<typeof customFetch>[1]): Promise<ReorderResult> => {
+
+  return customFetch<ReorderResult>(getRepeatLastRetailOrderUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRepeatLastRetailOrderMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof repeatLastRetailOrder>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof repeatLastRetailOrder>>, TError,void, TContext> => {
+
+const mutationKey = ['repeatLastRetailOrder'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof repeatLastRetailOrder>>, void> = () => {
+
+
+          return  repeatLastRetailOrder(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RepeatLastRetailOrderMutationResult = NonNullable<Awaited<ReturnType<typeof repeatLastRetailOrder>>>
+
+    export type RepeatLastRetailOrderMutationError = ErrorType<void>
+
+    /**
+ * @summary Add eligible lines from the authenticated customer's latest retail order
+ */
+export const useRepeatLastRetailOrder = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof repeatLastRetailOrder>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof repeatLastRetailOrder>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getRepeatLastRetailOrderMutationOptions(options));
     }
 
 export const getPreviewRetailCheckoutUrl = (params?: PreviewRetailCheckoutParams,) => {

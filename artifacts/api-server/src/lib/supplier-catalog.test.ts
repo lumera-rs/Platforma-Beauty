@@ -81,12 +81,12 @@ async function createCategory(
   return category;
 }
 
-async function addToCart(productId: string) {
+async function addToCart(productId: string, quantity = 1) {
   const response = await api("/shop/cart/items", ownerCookie, {
     method: "POST",
-    body: JSON.stringify({ productId, quantity: 1 }),
+    body: JSON.stringify({ productId, quantity }),
   });
-  assert.equal(response.status, 200);
+  assert.equal(response.status, 200, await response.text());
 }
 
 async function checkout() {
@@ -573,7 +573,7 @@ test("supplier scope changes serialize with concurrent product creation at the d
 
 test("supplier and category changes serialize with checkout and return stable conflicts", async () => {
   assert.ok(orderIds[0]);
-  await addToCart(conflictProduct.id);
+  await addToCart(conflictProduct.id, 2);
 
   const supplierChange = await pool.connect();
   let supplierCheckout: Promise<Response> | undefined;

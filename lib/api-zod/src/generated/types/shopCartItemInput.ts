@@ -6,11 +6,16 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface ShopCartItemInput {
+export type ShopCartItemInput = {
   /** @minLength 1 */
   productId: string;
   /** @minLength 1 */
   variantValue?: string;
   /** @minimum 1 */
   quantity?: number;
-}
+} | {
+  /** @minLength 1 */
+  bundleId: string;
+  /** @minimum 1 */
+  quantity?: number;
+};

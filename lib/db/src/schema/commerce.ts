@@ -1,5 +1,6 @@
 import {
   boolean,
+  check,
   foreignKey,
   index,
   integer,
@@ -58,6 +59,11 @@ export const subscriptionStatusEnum = pgEnum("subscription_status", [
 /** The storefronts in which a platform-managed supplier may sell. */
 export const supplierScopeEnum = pgEnum("supplier_scope", ["B2B", "B2C", "BOTH"]);
 export const similarProductsModeEnum = pgEnum("similar_products_mode", ["AUTO_CATEGORY", "MANUAL"]);
+export const bundleMarketEnum = pgEnum("bundle_market", ["B2B", "B2C", "BOTH"]);
+export const cartPriceSourceEnum = pgEnum("cart_price_source", ["FULL_PRICE", "SALE", "TIER", "BUNDLE"]);
+export const commerceAudienceEnum = pgEnum("commerce_audience", ["B2B", "B2C"]);
+export const loyaltyPointEntryTypeEnum = pgEnum("loyalty_point_entry_type", ["AWARD", "REVERSAL", "ADJUSTMENT"]);
+export const productWaitlistStatusEnum = pgEnum("product_waitlist_status", ["ACTIVE", "NOTIFIED", "UNSUBSCRIBED"]);
 
 export const suppliersTable = pgTable("suppliers", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -153,6 +159,40 @@ export const productsTable = pgTable("products", {
   index("products_brand_active_idx").on(table.brand, table.active),
 ]);
 
+export const productBundlesTable = pgTable("product_bundles", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  supplierId: uuid("supplier_id").notNull().references(() => suppliersTable.id, { onDelete: "restrict" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  imageUrl: text("image_url"),
+  market: bundleMarketEnum("market").notNull(),
+  b2bPrice: integer("b2b_price"),
+  b2cPrice: integer("b2c_price"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("product_bundles_supplier_active_idx").on(table.supplierId, table.active),
+  check("product_bundles_market_prices_check", sql`
+    (${table.market} = 'B2B' AND ${table.b2bPrice} > 0 AND ${table.b2cPrice} IS NULL)
+    OR (${table.market} = 'B2C' AND ${table.b2cPrice} > 0 AND ${table.b2bPrice} IS NULL)
+    OR (${table.market} = 'BOTH' AND ${table.b2bPrice} > 0 AND ${table.b2cPrice} > 0)
+  `),
+]);
+
+export const productBundleComponentsTable = pgTable("product_bundle_components", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  bundleId: uuid("bundle_id").notNull().references(() => productBundlesTable.id, { onDelete: "cascade" }),
+  productId: uuid("product_id").notNull().references(() => productsTable.id, { onDelete: "restrict" }),
+  quantity: integer("quantity").notNull(),
+  sortOrder: integer("sort_order").notNull(),
+}, (table) => [
+  uniqueIndex("product_bundle_components_bundle_product_unique").on(table.bundleId, table.productId),
+  uniqueIndex("product_bundle_components_bundle_sort_unique").on(table.bundleId, table.sortOrder),
+  index("product_bundle_components_product_idx").on(table.productId),
+  check("product_bundle_components_quantity_check", sql`${table.quantity} > 0`),
+]);
+
 export const shippingRulesTable = pgTable("shipping_rules", {
   id: uuid("id").defaultRandom().primaryKey(),
   freeShippingThreshold: integer("free_shipping_threshold").notNull().default(0),
@@ -169,6 +209,24 @@ export const shippingRulesTable = pgTable("shipping_rules", {
   // This legacy table is a singleton. A constant-expression unique index
   // enforces that invariant without changing the existing row shape.
   uniqueIndex("shipping_rules_singleton_unique").on(sql`(true)`),
+]);
+
+export const shopSettingsTable = pgTable("shop_settings", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  showLoyaltyPoints: boolean("show_loyalty_points").notNull().default(true),
+  pointsPer100Rsd: integer("points_per_100_rsd").notNull().default(1),
+  lowStockThreshold: integer("low_stock_threshold").notNull().default(5),
+  defaultDeliveryBusinessDays: integer("default_delivery_business_days").notNull().default(3),
+  version: integer("version").notNull().default(1),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("shop_settings_singleton_unique").on(sql`(true)`),
+  check("shop_settings_values_check", sql`
+    ${table.pointsPer100Rsd} >= 0
+    AND ${table.lowStockThreshold} >= 1
+    AND ${table.defaultDeliveryBusinessDays} BETWEEN 1 AND 365
+    AND ${table.version} >= 1
+  `),
 ]);
 
 export const courierServicesTable = pgTable("courier_services", {
@@ -268,6 +326,9 @@ export const ordersTable = pgTable("orders", {
   courierService: text("courier_service"),
   trackingNumber: text("tracking_number"),
   adminNote: text("admin_note"),
+  estimatedDeliveryDate: text("estimated_delivery_date"),
+  loyaltyPointsAwarded: integer("loyalty_points_awarded").notNull().default(0),
+  loyaltyPointsReversedAt: timestamp("loyalty_points_reversed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
@@ -304,7 +365,10 @@ export const shoppingCartsTable = pgTable("shopping_carts", {
 export const shoppingCartItemsTable = pgTable("shopping_cart_items", {
   id: uuid("id").defaultRandom().primaryKey(),
   cartId: uuid("cart_id").notNull().references(() => shoppingCartsTable.id, { onDelete: "cascade" }),
-  productId: uuid("product_id").notNull().references(() => productsTable.id, { onDelete: "cascade" }),
+  // Exactly one of productId/bundleId is present. Bundle inventory is carried
+  // by its component products, so a bundle line must not invent a product ID.
+  productId: uuid("product_id").references(() => productsTable.id, { onDelete: "cascade" }),
+  bundleId: uuid("bundle_id").references(() => productBundlesTable.id, { onDelete: "cascade" }),
   variantValue: text("variant_value"),
   productName: text("product_name").notNull(),
   productImageUrl: text("product_image_url").notNull(),
@@ -318,12 +382,29 @@ export const shoppingCartItemsTable = pgTable("shopping_cart_items", {
   // Leading FK coverage for both sides of the cart-items join.
   index("shopping_cart_items_cart_idx").on(table.cartId),
   index("shopping_cart_items_product_idx").on(table.productId),
+  uniqueIndex("shopping_cart_items_cart_bundle_unique").on(table.cartId, table.bundleId)
+    .where(sql`${table.bundleId} IS NOT NULL`),
+  check("shopping_cart_items_target_check", sql`num_nonnulls(${table.productId}, ${table.bundleId}) = 1`),
+]);
+
+export const savedShopCartItemsTable = pgTable("saved_shop_cart_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  cartId: uuid("cart_id").notNull().references(() => shoppingCartsTable.id, { onDelete: "cascade" }),
+  productId: uuid("product_id").references(() => productsTable.id, { onDelete: "cascade" }),
+  bundleId: uuid("bundle_id").references(() => productBundlesTable.id, { onDelete: "cascade" }),
+  variantValue: text("variant_value"),
+  quantity: integer("quantity").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("saved_shop_cart_items_cart_idx").on(table.cartId),
+  check("saved_shop_cart_items_target_check", sql`num_nonnulls(${table.productId}, ${table.bundleId}) = 1`),
+  check("saved_shop_cart_items_quantity_check", sql`${table.quantity} > 0`),
 ]);
 
 export const orderItemsTable = pgTable("order_items", {
   id: uuid("id").defaultRandom().primaryKey(),
   orderId: uuid("order_id").notNull().references(() => ordersTable.id, { onDelete: "cascade" }),
-  productId: uuid("product_id").notNull().references(() => productsTable.id),
+  productId: uuid("product_id").references(() => productsTable.id),
   productName: text("product_name").notNull(),
   variantValue: text("variant_value"),
   variantLabel: text("variant_label"),
@@ -335,7 +416,7 @@ export const orderItemsTable = pgTable("order_items", {
   supplierId: uuid("supplier_id").notNull(),
   supplierName: text("supplier_name").notNull(),
   supplierSlug: text("supplier_slug").notNull(),
-  productCatalogReference: text("product_catalog_reference").notNull(),
+  productCatalogReference: text("product_catalog_reference"),
   productSkuSnapshot: text("product_sku_snapshot"),
   market: text("market").notNull().default("B2B"),
   currency: text("currency").notNull().default("RSD"),
@@ -343,11 +424,34 @@ export const orderItemsTable = pgTable("order_items", {
   discountSnapshot: integer("discount_snapshot"),
   lineSubtotal: integer("line_subtotal").notNull(),
   lineTotal: integer("line_total").notNull(),
+  bundleId: uuid("bundle_id"),
+  baseUnitPrice: integer("base_unit_price").notNull().default(0),
+  effectiveUnitPrice: integer("effective_unit_price").notNull().default(0),
+  priceSource: cartPriceSourceEnum("price_source").notNull().default("FULL_PRICE"),
+  lineDiscount: integer("line_discount").notNull().default(0),
+  bundleNameSnapshot: text("bundle_name_snapshot"),
+  bundleComponentsSnapshot: jsonb("bundle_components_snapshot")
+    .$type<Array<{ productId: string; name: string; catalogReference: string; quantity: number }>>(),
+  estimatedDeliveryDate: text("estimated_delivery_date"),
 }, (table) => [
   // Leading FK coverage for both sides.
   index("order_items_order_idx").on(table.orderId),
   index("order_items_product_idx").on(table.productId),
   index("order_items_supplier_idx").on(table.supplierId),
+  check("order_items_target_check", sql`num_nonnulls(${table.productId}, ${table.bundleId}) = 1`),
+]);
+
+export const orderBundleComponentsTable = pgTable("order_bundle_components", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orderItemId: uuid("order_item_id").notNull().references(() => orderItemsTable.id, { onDelete: "cascade" }),
+  productId: uuid("product_id").notNull().references(() => productsTable.id, { onDelete: "restrict" }),
+  productName: text("product_name").notNull(),
+  productCatalogReference: text("product_catalog_reference").notNull(),
+  quantity: integer("quantity").notNull(),
+}, (table) => [
+  uniqueIndex("order_bundle_components_item_product_unique").on(table.orderItemId, table.productId),
+  index("order_bundle_components_product_idx").on(table.productId),
+  check("order_bundle_components_quantity_check", sql`${table.quantity} > 0`),
 ]);
 
 export const productReviewsTable = pgTable("product_reviews", {
@@ -381,7 +485,8 @@ export const retailCartsTable = pgTable("retail_carts", {
 export const retailCartItemsTable = pgTable("retail_cart_items", {
   id: uuid("id").defaultRandom().primaryKey(),
   cartId: uuid("cart_id").notNull().references(() => retailCartsTable.id, { onDelete: "cascade" }),
-  productId: uuid("product_id").notNull().references(() => productsTable.id, { onDelete: "cascade" }),
+  productId: uuid("product_id").references(() => productsTable.id, { onDelete: "cascade" }),
+  bundleId: uuid("bundle_id").references(() => productBundlesTable.id, { onDelete: "cascade" }),
   variantValue: text("variant_value"),
   productName: text("product_name").notNull(),
   productImageUrl: text("product_image_url").notNull(),
@@ -397,6 +502,23 @@ export const retailCartItemsTable = pgTable("retail_cart_items", {
     .nullsNotDistinct(),
   index("retail_cart_items_cart_idx").on(table.cartId),
   index("retail_cart_items_product_idx").on(table.productId),
+  uniqueIndex("retail_cart_items_cart_bundle_unique").on(table.cartId, table.bundleId)
+    .where(sql`${table.bundleId} IS NOT NULL`),
+  check("retail_cart_items_target_check", sql`num_nonnulls(${table.productId}, ${table.bundleId}) = 1`),
+]);
+
+export const savedRetailCartItemsTable = pgTable("saved_retail_cart_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  cartId: uuid("cart_id").notNull().references(() => retailCartsTable.id, { onDelete: "cascade" }),
+  productId: uuid("product_id").references(() => productsTable.id, { onDelete: "cascade" }),
+  bundleId: uuid("bundle_id").references(() => productBundlesTable.id, { onDelete: "cascade" }),
+  variantValue: text("variant_value"),
+  quantity: integer("quantity").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("saved_retail_cart_items_cart_idx").on(table.cartId),
+  check("saved_retail_cart_items_target_check", sql`num_nonnulls(${table.productId}, ${table.bundleId}) = 1`),
+  check("saved_retail_cart_items_quantity_check", sql`${table.quantity} > 0`),
 ]);
 
 export const retailOrdersTable = pgTable("retail_orders", {
@@ -429,6 +551,9 @@ export const retailOrdersTable = pgTable("retail_orders", {
   shippingEmail: text("shipping_email").notNull(),
   shippingNote: text("shipping_note"),
   trackingNumber: text("tracking_number"),
+  estimatedDeliveryDate: text("estimated_delivery_date"),
+  loyaltyPointsAwarded: integer("loyalty_points_awarded").notNull().default(0),
+  loyaltyPointsReversedAt: timestamp("loyalty_points_reversed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
@@ -440,7 +565,7 @@ export const retailOrdersTable = pgTable("retail_orders", {
 export const retailOrderItemsTable = pgTable("retail_order_items", {
   id: uuid("id").defaultRandom().primaryKey(),
   orderId: uuid("order_id").notNull().references(() => retailOrdersTable.id, { onDelete: "cascade" }),
-  productId: uuid("product_id").notNull().references(() => productsTable.id),
+  productId: uuid("product_id").references(() => productsTable.id),
   productName: text("product_name").notNull(),
   productImageUrl: text("product_image_url").notNull(),
   productCatalogReference: text("product_catalog_reference"),
@@ -458,11 +583,108 @@ export const retailOrderItemsTable = pgTable("retail_order_items", {
   discountSnapshot: integer("discount_snapshot"),
   lineSubtotal: integer("line_subtotal").notNull(),
   lineTotal: integer("line_total").notNull(),
+  bundleId: uuid("bundle_id"),
+  baseUnitPrice: integer("base_unit_price").notNull().default(0),
+  effectiveUnitPrice: integer("effective_unit_price").notNull().default(0),
+  priceSource: cartPriceSourceEnum("price_source").notNull().default("FULL_PRICE"),
+  lineDiscount: integer("line_discount").notNull().default(0),
+  bundleNameSnapshot: text("bundle_name_snapshot"),
+  bundleComponentsSnapshot: jsonb("bundle_components_snapshot")
+    .$type<Array<{ productId: string; name: string; catalogReference: string; quantity: number }>>(),
+  estimatedDeliveryDate: text("estimated_delivery_date"),
 }, (table) => [
   index("retail_order_items_order_idx").on(table.orderId),
   index("retail_order_items_product_idx").on(table.productId),
   index("retail_order_items_catalog_reference_order_idx").on(table.productCatalogReference, table.orderId),
   index("retail_order_items_supplier_idx").on(table.supplierId),
+  check("retail_order_items_target_check", sql`num_nonnulls(${table.productId}, ${table.bundleId}) = 1`),
+]);
+
+export const loyaltyPointLedgerTable = pgTable("loyalty_point_ledger", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  audience: commerceAudienceEnum("audience").notNull(),
+  salonId: uuid("salon_id").references(() => salonsTable.id, { onDelete: "restrict" }),
+  userId: uuid("user_id").references(() => usersTable.id, { onDelete: "restrict" }),
+  orderId: uuid("order_id").references(() => ordersTable.id, { onDelete: "restrict" }),
+  retailOrderId: uuid("retail_order_id").references(() => retailOrdersTable.id, { onDelete: "restrict" }),
+  type: loyaltyPointEntryTypeEnum("type").notNull(),
+  points: integer("points").notNull(),
+  idempotencyKey: text("idempotency_key").notNull().unique(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("loyalty_point_ledger_salon_created_idx").on(table.salonId, table.createdAt),
+  index("loyalty_point_ledger_user_created_idx").on(table.userId, table.createdAt),
+  check("loyalty_point_ledger_owner_check", sql`
+    (${table.audience} = 'B2B' AND ${table.salonId} IS NOT NULL AND ${table.userId} IS NULL)
+    OR (${table.audience} = 'B2C' AND ${table.userId} IS NOT NULL AND ${table.salonId} IS NULL)
+  `),
+  check("loyalty_point_ledger_order_check", sql`num_nonnulls(${table.orderId}, ${table.retailOrderId}) <= 1`),
+]);
+
+export const productWaitlistTable = pgTable("product_waitlist", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  productId: uuid("product_id").notNull().references(() => productsTable.id, { onDelete: "cascade" }),
+  audience: commerceAudienceEnum("audience").notNull(),
+  salonId: uuid("salon_id").references(() => salonsTable.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").references(() => usersTable.id, { onDelete: "cascade" }),
+  status: productWaitlistStatusEnum("status").notNull().default("ACTIVE"),
+  notifiedAt: timestamp("notified_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("product_waitlist_product_status_idx").on(table.productId, table.status),
+  uniqueIndex("product_waitlist_active_salon_unique").on(table.productId, table.salonId)
+    .where(sql`${table.status} = 'ACTIVE' AND ${table.salonId} IS NOT NULL`),
+  uniqueIndex("product_waitlist_active_user_unique").on(table.productId, table.userId)
+    .where(sql`${table.status} = 'ACTIVE' AND ${table.userId} IS NOT NULL`),
+  check("product_waitlist_owner_check", sql`
+    (${table.audience} = 'B2B' AND ${table.salonId} IS NOT NULL AND ${table.userId} IS NULL)
+    OR (${table.audience} = 'B2C' AND ${table.userId} IS NOT NULL AND ${table.salonId} IS NULL)
+  `),
+]);
+
+export const commerceCustomerNotificationsTable = pgTable("commerce_customer_notifications", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  waitlistId: uuid("waitlist_id").references(() => productWaitlistTable.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  href: text("href"),
+  readAt: timestamp("read_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("commerce_customer_notifications_user_created_idx").on(table.userId, table.createdAt),
+  uniqueIndex("commerce_customer_notifications_waitlist_unique").on(table.waitlistId)
+    .where(sql`${table.waitlistId} IS NOT NULL`),
+]);
+
+export const productWaitlistNotificationOutboxTable = pgTable("product_waitlist_notification_outbox", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  waitlistId: uuid("waitlist_id").notNull().unique().references(() => productWaitlistTable.id, { onDelete: "cascade" }),
+  audience: commerceAudienceEnum("audience").notNull(),
+  salonId: uuid("salon_id").references(() => salonsTable.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").references(() => usersTable.id, { onDelete: "cascade" }),
+  productId: uuid("product_id").notNull().references(() => productsTable.id, { onDelete: "cascade" }),
+  processedAt: timestamp("processed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("product_waitlist_notification_outbox_pending_idx").on(table.createdAt)
+    .where(sql`${table.processedAt} IS NULL`),
+]);
+
+export const reorderActionsTable = pgTable("reorder_actions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  audience: commerceAudienceEnum("audience").notNull(),
+  salonId: uuid("salon_id").references(() => salonsTable.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").references(() => usersTable.id, { onDelete: "cascade" }),
+  idempotencyKey: text("idempotency_key").notNull(),
+  result: jsonb("result").$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("reorder_actions_salon_key_unique").on(table.salonId, table.idempotencyKey)
+    .where(sql`${table.salonId} IS NOT NULL`),
+  uniqueIndex("reorder_actions_user_key_unique").on(table.userId, table.idempotencyKey)
+    .where(sql`${table.userId} IS NOT NULL`),
 ]);
 
 export const retailProductReviewsTable = pgTable("retail_product_reviews", {

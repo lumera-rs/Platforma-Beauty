@@ -9,6 +9,10 @@ import {
   useGetShopCart,
   useUpdateShopCartItem,
   useRemoveShopCartItem,
+  useSaveShopCartItemForLater,
+  useRestoreSavedShopCartItem,
+  useRemoveSavedShopCartItem,
+  useAddShopCartItem,
   useGetShopCheckoutProfile,
   useGetShopCheckoutPreview,
   useCheckoutShopCart,
@@ -38,6 +42,7 @@ import { removeOptimisticCartItem, updateCartAndSummaryOptimistically, updateOpt
 import { rollbackQueries } from "@/lib/optimistic-query";
 import { SHOP_CART_MUTATION_KEY, shopCartMutationQueue, useMutationQueueBusy } from "@/lib/optimistic-mutation-queue";
 import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
 
 const SESSION_STORAGE_KEY = "lumera_checkout_draft";
 
@@ -144,6 +149,49 @@ export function OwnerCartPage() {
     },
   });
 
+  const saveItem = useSaveShopCartItemForLater({
+    mutation: {
+      onSuccess: (serverCart) => {
+        queryClient.setQueryData(getGetShopCartQueryKey(), serverCart);
+        toast.success("Stavka sačuvana za kasnije.");
+        queryClient.invalidateQueries({ queryKey: getGetShopCartQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetShopSummaryQueryKey() });
+      }
+    }
+  });
+
+  const restoreItem = useRestoreSavedShopCartItem({
+    mutation: {
+      onSuccess: (serverCart) => {
+        queryClient.setQueryData(getGetShopCartQueryKey(), serverCart);
+        toast.success("Stavka vraćena u korpu.");
+        queryClient.invalidateQueries({ queryKey: getGetShopCartQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetShopSummaryQueryKey() });
+      }
+    }
+  });
+
+  const removeSavedItem = useRemoveSavedShopCartItem({
+    mutation: {
+      onSuccess: (serverCart) => {
+        queryClient.setQueryData(getGetShopCartQueryKey(), serverCart);
+        queryClient.invalidateQueries({ queryKey: getGetShopCartQueryKey() });
+      }
+    }
+  });
+
+  const addCartItem = useAddShopCartItem({
+    mutation: {
+      onSuccess: (serverCart) => {
+        queryClient.setQueryData(getGetShopCartQueryKey(), serverCart);
+        toast.success("Proizvod dodat u korpu.");
+        queryClient.invalidateQueries({ queryKey: getGetShopCartQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetShopSummaryQueryKey() });
+      },
+      onError: () => toast.error("Nije uspelo dodavanje u korpu.")
+    }
+  });
+
   const handleUpdateQuantity = (cartItemId: string, currentQty: number, delta: number, stock: number) => {
     if (shopCartMutationQueue.isBusy()) return;
     const newQty = currentQty + delta;
@@ -207,16 +255,20 @@ export function OwnerCartPage() {
                       {i > 0 && <Separator className="bg-border/40" />}
                       <div className="flex flex-col sm:flex-row gap-4 sm:gap-6 relative group">
                         <div className="w-full sm:w-24 h-24 rounded-lg bg-muted/30 border border-border/30 overflow-hidden flex-shrink-0">
-                          <OptimizedImage src={item.productImageUrl} alt={item.productName} width={96} height={96} preferredSize="thumbnail" responsiveSizes="96px" className="w-full h-full object-cover" />
+                          <OptimizedImage src={item.productImageUrl ?? ""} alt={item.productName} width={96} height={96} preferredSize="thumbnail" responsiveSizes="96px" className="w-full h-full object-cover" />
                         </div>
                         <div className="flex-1 flex flex-col justify-between">
                           <div className="flex justify-between items-start gap-4">
                             <div>
                               <h3 className="font-bold text-lg leading-tight text-foreground">{item.productName}</h3>
+                              {item.kind === 'bundle' && (
+                                <Badge className="mt-1 mb-1" variant="secondary">Paket</Badge>
+                              )}
                               <p className="text-sm text-muted-foreground mt-1">
                                 {item.variantLabel ? `${item.variantLabel}: ` : ""}{item.variantValue ?? "Standard"}
                               </p>
                               {item.productSku && <p className="text-xs text-muted-foreground/70 mt-1">SKU: {item.productSku}</p>}
+                              {item.lowStock && <p className="text-xs text-amber-600 font-medium mt-1">Niske zalihe</p>}
                             </div>
                             <div className="text-right">
                               <p className="font-bold text-lg text-primary">{money(item.unitPrice)}</p>
@@ -225,6 +277,7 @@ export function OwnerCartPage() {
                           <div className="flex justify-between items-end mt-4">
                             <div className="flex items-center space-x-1 bg-muted/20 border border-border/50 rounded-lg p-1">
                               <Button
+                                aria-label={`Smanji količinu za ${item.productName}`}
                                 data-testid={`button-cart-decrement-${item.id}`}
                                 variant="ghost"
                                 size="icon"
@@ -236,6 +289,7 @@ export function OwnerCartPage() {
                               </Button>
                               <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
                               <Button
+                                aria-label={`Povećaj količinu za ${item.productName}`}
                                 data-testid={`button-cart-increment-${item.id}`}
                                 variant="ghost"
                                 size="icon"
@@ -256,6 +310,15 @@ export function OwnerCartPage() {
                             >
                               <Trash2 className="h-4 w-4 mr-2" /> Ukloni
                             </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-muted-foreground hover:text-primary -mr-2"
+                              onClick={() => saveItem.mutate({ cartItemId: item.id })}
+                              disabled={saveItem.isPending}
+                            >
+                              Sačuvaj za kasnije
+                            </Button>
                           </div>
                         </div>
                       </div>
@@ -263,6 +326,58 @@ export function OwnerCartPage() {
                   ))}
                 </div>
               </div>
+
+              {cart.savedItems?.length > 0 && (
+                <div className="bg-card rounded-xl border border-border/50 shadow-sm overflow-hidden mt-6">
+                  <div className="p-4 md:p-6 bg-muted/20 border-b border-border/50">
+                    <h3 className="font-bold text-lg">Sačuvano za kasnije ({cart.savedItems.length})</h3>
+                  </div>
+                  <div className="p-4 md:p-6 space-y-4">
+                    {cart.savedItems.map((saved) => (
+                      <div key={saved.id} className="flex justify-between items-center bg-background p-3 rounded-lg border">
+                        <div className="flex flex-col">
+                          <span className="font-medium">Sačuvan artikal</span>
+                          <span className="text-xs text-muted-foreground">Količina: {saved.quantity}</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" onClick={() => restoreItem.mutate({ savedItemId: saved.id })} disabled={restoreItem.isPending}>
+                            Vrati u korpu
+                          </Button>
+                          <Button size="icon" variant="ghost" className="text-destructive" onClick={() => removeSavedItem.mutate({ savedItemId: saved.id })}>
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {cart.crossSellProducts?.length > 0 && (
+                <div className="mt-8">
+                  <h3 className="font-bold text-xl mb-4">Možda će vas zanimati</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    {cart.crossSellProducts.map((product) => (
+                      <Card key={product.id} className="overflow-hidden">
+                        <div className="aspect-square bg-muted">
+                          <OptimizedImage src={product.imageUrl} alt={product.name} width={200} height={200} className="w-full h-full object-cover" />
+                        </div>
+                        <CardContent className="p-3">
+                          <p className="text-xs text-muted-foreground">{product.brand}</p>
+                          <h4 className="font-medium text-sm line-clamp-2 mt-1">{product.name}</h4>
+                          <div className="mt-2 flex items-baseline gap-2">
+                            <span className="font-bold text-primary">{money(product.discountPrice ?? product.price)}</span>
+                            {product.discountPrice != null && <span className="text-xs text-muted-foreground line-through">{money(product.price)}</span>}
+                          </div>
+                          <Button size="sm" className="w-full mt-3" variant="secondary" onClick={() => addCartItem.mutate({ data: { productId: product.id, quantity: 1 } })}>
+                            <Plus className="w-3 h-3 mr-1" /> Dodaj
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="lg:col-span-1 sticky top-8">
@@ -285,6 +400,24 @@ export function OwnerCartPage() {
                     <span>Međuzbir</span>
                     <span className="text-primary">{money(cart.subtotal)}</span>
                   </div>
+                  {cart.freeShippingProgress && (
+                    <div className="mt-4 p-3 bg-primary/5 rounded-lg border border-primary/20">
+                      {cart.freeShippingProgress.remaining === 0 ? (
+                         <p className="text-sm font-medium text-emerald-600 flex items-center"><Check className="w-4 h-4 mr-1" /> Ostvarili ste besplatnu dostavu!</p>
+                      ) : (
+                         <p className="text-sm text-muted-foreground">Još <strong className="text-primary">{money(cart.freeShippingProgress.remaining)}</strong> do besplatne dostave.</p>
+                      )}
+                    </div>
+                  )}
+                  {cart.showLoyaltyPoints && (
+                    <div className="mt-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                       <p className="text-sm text-amber-900 font-medium">Trenutno bodova: {cart.currentLoyaltyPoints}</p>
+                       <p className="text-sm text-amber-700 mt-1">Nakon ove kupovine: {cart.projectedLoyaltyPoints} bodova</p>
+                    </div>
+                  )}
+                  {cart.estimatedDeliveryDate && (
+                    <p className="text-sm text-muted-foreground mt-4 text-center">Procenjena isporuka: {new Date(cart.estimatedDeliveryDate).toLocaleDateString("sr-RS")}</p>
+                  )}
                   <p className="text-xs text-muted-foreground text-center mt-2">Dostava se obračunava u sledećem koraku.</p>
                 </CardContent>
                 <div className="p-4 bg-muted/10 border-t border-border/30">

@@ -5,7 +5,10 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { CartCrossSellProduct } from './cartCrossSellProduct';
+import type { FreeShippingProgress } from './freeShippingProgress';
 import type { RetailCartItemsItem } from './retailCartItemsItem';
+import type { SavedCartItem } from './savedCartItem';
 
 export interface RetailCart {
   id: string;
@@ -14,4 +17,13 @@ export interface RetailCart {
   /** @minimum 0 */
   subtotal: number;
   items: RetailCartItemsItem[];
+  savedItems: SavedCartItem[];
+  crossSellProducts: CartCrossSellProduct[];
+  freeShippingProgress: FreeShippingProgress;
+  estimatedDeliveryDate: Date;
+  showLoyaltyPoints: boolean;
+  /** @minimum 0 */
+  currentLoyaltyPoints: number;
+  /** @minimum 0 */
+  projectedLoyaltyPoints: number;
 }

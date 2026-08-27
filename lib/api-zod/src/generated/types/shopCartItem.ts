@@ -6,8 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface ShopCartItem {
+export type ShopCartItem = {
   id: string;
+  kind: 'product';
   productId: string;
   productName: string;
   productImageUrl: string;
@@ -27,4 +28,29 @@ export interface ShopCartItem {
   availableStock: number;
   /** @minimum 0 */
   weightGrams: number;
-}
+  lowStock: boolean;
+} | {
+  id: string;
+  kind: 'bundle';
+  bundleId: string;
+  productName: string;
+  /** @nullable */
+  productImageUrl: string | null;
+  /** @nullable */
+  variantValue: string | null;
+  /** @nullable */
+  variantLabel: string | null;
+  /** @nullable */
+  productSku: string | null;
+  /** @minimum 0 */
+  unitPrice: number;
+  /** @minimum 1 */
+  quantity: number;
+  /** @minimum 0 */
+  lineTotal: number;
+  /** @minimum 0 */
+  availableStock: number;
+  /** @minimum 0 */
+  weightGrams: number;
+  lowStock: boolean;
+};

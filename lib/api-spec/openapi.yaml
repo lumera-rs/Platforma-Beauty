@@ -1598,6 +1598,56 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ProductList" }
+  /shop/bundles:
+    get:
+      operationId: listShopBundles
+      tags: [shop]
+      summary: List active B2B fixed-price bundles
+      responses:
+        "200":
+          description: Available professional bundles. Component cards intentionally contain no unit prices.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Bundle" } }
+        "401": { description: Authentication required }
+        "403": { description: Salon-owner access required }
+  /shop/bundles/{bundleId}:
+    get:
+      operationId: getShopBundle
+      tags: [shop]
+      summary: Get an active B2B fixed-price bundle
+      parameters:
+        - name: bundleId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Bundle detail, content: { application/json: { schema: { $ref: "#/components/schemas/Bundle" } } } }
+        "404": { description: Bundle is unavailable }
+  /shop/public/bundles:
+    get:
+      operationId: listPublicBundles
+      tags: [public-shop]
+      summary: List active B2C fixed-price bundles
+      responses:
+        "200":
+          description: Public bundles; neither B2B prices nor component unit prices are exposed.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/PublicBundle" } }
+  /shop/public/bundles/{bundleId}:
+    get:
+      operationId: getPublicBundle
+      tags: [public-shop]
+      summary: Get an active B2C fixed-price bundle
+      parameters:
+        - name: bundleId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Public bundle detail, content: { application/json: { schema: { $ref: "#/components/schemas/PublicBundle" } } } }
+        "404": { description: Bundle is unavailable }
   /shop/products/{productId}:
     get:
       operationId: getShopProduct
@@ -1614,6 +1664,61 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ProductDetail" }
+  /shop/products/{productId}/waitlist:
+    get:
+      operationId: getB2bProductWaitlistStatus
+      tags: [shop]
+      summary: Get the signed-in salon's product availability subscription
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Subscription status, content: { application/json: { schema: { $ref: "#/components/schemas/ProductWaitlistStatus" } } } }
+        "401": { description: Authentication required }
+        "403": { description: Salon-owner access required }
+    post:
+      operationId: subscribeB2bProductWaitlist
+      tags: [shop]
+      summary: Subscribe the signed-in salon to an out-of-stock B2B product
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "201": { description: Subscription created, content: { application/json: { schema: { $ref: "#/components/schemas/ProductWaitlistSubscription" } } } }
+        "409": { description: Product is in stock }
+    delete:
+      operationId: unsubscribeB2bProductWaitlist
+      tags: [shop]
+      summary: Unsubscribe the signed-in salon (idempotent)
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string }
+      responses: { "204": { description: Unsubscribed } }
+  /shop/public/products/{productId}/waitlist:
+    get:
+      operationId: getB2cProductWaitlistStatus
+      tags: [shop]
+      summary: Get the signed-in customer's product availability subscription
+      parameters: [{ name: productId, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: Subscription status, content: { application/json: { schema: { $ref: "#/components/schemas/ProductWaitlistStatus" } } } } }
+    post:
+      operationId: subscribeB2cProductWaitlist
+      tags: [shop]
+      summary: Subscribe the signed-in customer to an out-of-stock B2C product
+      parameters: [{ name: productId, in: path, required: true, schema: { type: string } }]
+      responses: { "201": { description: Subscription created, content: { application/json: { schema: { $ref: "#/components/schemas/ProductWaitlistSubscription" } } } }, "409": { description: Product is in stock } }
+    delete:
+      operationId: unsubscribeB2cProductWaitlist
+      tags: [shop]
+      summary: Unsubscribe the signed-in customer (idempotent)
+      parameters: [{ name: productId, in: path, required: true, schema: { type: string } }]
+      responses: { "204": { description: Unsubscribed } }
   /shop/products/{productId}/reviews:
     get:
       operationId: listProductReviews
@@ -1727,6 +1832,39 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ShopCart" }
+  /shop/cart/items/{cartItemId}/save-for-later:
+    post:
+      operationId: saveShopCartItemForLater
+      tags: [shop]
+      summary: Atomically move a cart line to saved items
+      parameters: [{ name: cartItemId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Updated cart, content: { application/json: { schema: { $ref: "#/components/schemas/ShopCart" } } } }
+  /shop/cart/saved-items/{savedItemId}:
+    delete:
+      operationId: removeSavedShopCartItem
+      tags: [shop]
+      summary: Remove a saved cart line
+      parameters: [{ name: savedItemId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Updated cart, content: { application/json: { schema: { $ref: "#/components/schemas/ShopCart" } } } }
+  /shop/cart/saved-items/{savedItemId}/restore:
+    post:
+      operationId: restoreSavedShopCartItem
+      tags: [shop]
+      summary: Restore a saved line using current eligibility, price, MOQ and stock
+      parameters: [{ name: savedItemId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Updated cart, content: { application/json: { schema: { $ref: "#/components/schemas/ShopCart" } } } }
+        "409": { description: Current catalog rules prevent restore }
+  /shop/orders/repeat-last:
+    post:
+      operationId: repeatLastShopOrder
+      tags: [shop]
+      summary: Add eligible lines from the latest salon order at current prices
+      parameters: [{ name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 8, maxLength: 200 } }]
+      responses:
+        "200": { description: Reorder result, content: { application/json: { schema: { $ref: "#/components/schemas/ReorderResult" } } } }
   /shop/checkout-profile:
     get:
       operationId: getShopCheckoutProfile
@@ -3379,6 +3517,23 @@ paths:
       responses:
         "204":
           description: Review deleted
+  /admin/product-waitlist:
+    get:
+      operationId: adminListProductWaitlist
+      tags: [admin]
+      summary: List product availability subscriptions without contact details
+      parameters:
+        - { name: audience, in: query, schema: { type: string, enum: [B2B, B2C] } }
+        - { name: status, in: query, schema: { type: string, enum: [ACTIVE, NOTIFIED, UNSUBSCRIBED] } }
+        - { name: productId, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: Paginated privacy-safe waitlist rows and count
+          content: { application/json: { schema: { $ref: "#/components/schemas/AdminProductWaitlistPage" } } }
+        "401": { description: Authentication required }
+        "403": { description: Administrator access required }
   /admin/products:
     get:
       operationId: adminListProducts
@@ -3449,6 +3604,62 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminProduct"
+  /admin/bundles:
+    get:
+      operationId: adminListBundles
+      tags: [admin]
+      summary: List all fixed-price product bundles
+      responses:
+        "200":
+          description: Bundles including administrative market prices and derived stock
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Bundle" } }
+    post:
+      operationId: adminCreateBundle
+      tags: [admin]
+      summary: Create a fixed-price bundle with at least two same-supplier components
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BundleInput" }
+      responses:
+        "201": { description: Created bundle, content: { application/json: { schema: { $ref: "#/components/schemas/Bundle" } } } }
+        "400": { description: Invalid prices or components }
+        "409": { description: "Supplier, channel, or component isolation conflict" }
+  /admin/bundles/{bundleId}:
+    patch:
+      operationId: adminUpdateBundle
+      tags: [admin]
+      summary: Replace bundle metadata, market prices, and optionally components
+      parameters:
+        - name: bundleId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BundleInput" }
+      responses:
+        "200": { description: Updated bundle, content: { application/json: { schema: { $ref: "#/components/schemas/Bundle" } } } }
+        "404": { description: Bundle not found }
+        "409": { description: Supplier or component isolation conflict }
+  /admin/bundles/{bundleId}/deactivate:
+    post:
+      operationId: adminDeactivateBundle
+      tags: [admin]
+      summary: Deactivate a bundle without deleting historical references
+      parameters:
+        - name: bundleId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Deactivated bundle, content: { application/json: { schema: { $ref: "#/components/schemas/Bundle" } } } }
+        "404": { description: Bundle not found }
   /admin/products/bulk:
     post:
       operationId: adminBulkUpdateProducts
@@ -3677,7 +3888,7 @@ paths:
         - { name: supplierSlug, in: path, required: true, schema: { type: string } }
         - { name: productId, in: path, required: true, schema: { type: string } }
       responses:
-        "200": { description: Supplier product, content: { application/json: { schema: { $ref: "#/components/schemas/ProductRelatedDetail" } } } }
+        "200": { description: Supplier product, content: { application/json: { schema: { $ref: "#/components/schemas/ProductDetail" } } } }
         "404": { description: Product or supplier not found }
   /suppliers/{supplierSlug}/public-products/{productId}:
     get:
@@ -3884,6 +4095,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminBrand"
+  /admin/shop-settings:
+    get:
+      operationId: adminGetShopSettings
+      tags: [admin]
+      summary: Get versioned commerce presentation and loyalty settings
+      responses:
+        "200": { description: Shop settings, content: { application/json: { schema: { $ref: "#/components/schemas/AdminShopSettings" } } } }
+        "401": { description: Authentication required }
+        "403": { description: Administrator access required }
+    put:
+      operationId: adminUpdateShopSettings
+      tags: [admin]
+      summary: Replace versioned commerce presentation and loyalty settings
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AdminShopSettingsInput" } } }
+      responses:
+        "200": { description: Updated shop settings, content: { application/json: { schema: { $ref: "#/components/schemas/AdminShopSettings" } } } }
+        "400": { description: Invalid settings }
+        "401": { description: Authentication required }
+        "403": { description: Administrator access required }
+        "409": { description: Settings version conflict }
   /admin/shipping:
     get:
       operationId: adminGetShippingConfig
@@ -5180,6 +5413,40 @@ paths:
       parameters: [{ name: cartItemId, in: path, required: true, schema: { type: string } }]
       responses:
         "200": { description: Updated retail cart, content: { application/json: { schema: { $ref: "#/components/schemas/RetailCart" } } } }
+  /retail/cart/items/{cartItemId}/save-for-later:
+    post:
+      operationId: saveRetailCartItemForLater
+      tags: [shop]
+      summary: Atomically move a retail cart line to saved items
+      parameters: [{ name: cartItemId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Updated retail cart, content: { application/json: { schema: { $ref: "#/components/schemas/RetailCart" } } } }
+  /retail/cart/saved-items/{savedItemId}:
+    delete:
+      operationId: removeSavedRetailCartItem
+      tags: [shop]
+      summary: Remove a saved retail cart line
+      parameters: [{ name: savedItemId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Updated retail cart, content: { application/json: { schema: { $ref: "#/components/schemas/RetailCart" } } } }
+  /retail/cart/saved-items/{savedItemId}/restore:
+    post:
+      operationId: restoreSavedRetailCartItem
+      tags: [shop]
+      summary: Restore a saved retail line with current eligibility and price
+      parameters: [{ name: savedItemId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Updated retail cart, content: { application/json: { schema: { $ref: "#/components/schemas/RetailCart" } } } }
+        "409": { description: Current catalog rules prevent restore }
+  /retail/orders/repeat-last:
+    post:
+      operationId: repeatLastRetailOrder
+      tags: [shop]
+      summary: Add eligible lines from the authenticated customer's latest retail order
+      parameters: [{ name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 8, maxLength: 200 } }]
+      responses:
+        "200": { description: Reorder result, content: { application/json: { schema: { $ref: "#/components/schemas/ReorderResult" } } } }
+        "401": { description: Customer authentication required }
   /retail/checkout-preview:
     get:
       operationId: previewRetailCheckout
@@ -5736,6 +6003,58 @@ components:
       required: true
       schema: { type: string }
   schemas:
+    ProductWaitlistSubscription:
+      type: object
+      required: [id, status, subscribed]
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [ACTIVE, NOTIFIED, UNSUBSCRIBED] }
+        subscribed: { type: boolean }
+    ProductWaitlistStatus:
+      type: object
+      required: [subscribed, status, notifiedAt]
+      properties:
+        subscribed: { type: boolean }
+        status: { type: [string, "null"], enum: [ACTIVE, NOTIFIED, UNSUBSCRIBED, null] }
+        notifiedAt: { type: [string, "null"], format: date-time }
+    AdminProductWaitlistPage:
+      type: object
+      required: [items, total, page, pageSize, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, audience, status, notifiedAt, createdAt, product, salon, customer]
+            properties:
+              id: { type: string }
+              audience: { type: string, enum: [B2B, B2C] }
+              status: { type: string, enum: [ACTIVE, NOTIFIED, UNSUBSCRIBED] }
+              notifiedAt: { type: [string, "null"], format: date-time }
+              createdAt: { type: string, format: date-time }
+              product:
+                type: object
+                required: [id, name, sku, catalogReference]
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+                  sku: { type: string }
+                  catalogReference: { type: string }
+              salon:
+                type: [object, "null"]
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+              customer:
+                type: [object, "null"]
+                properties:
+                  id: { type: string }
+                  firstName: { type: string }
+                  lastName: { type: string }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+        totalPages: { type: integer }
     ReferralCodeValidation:
       type: object
       properties:
@@ -7078,12 +7397,19 @@ components:
           items: { $ref: "#/components/schemas/ServiceResourceRequirement" }
       required: [category, name, description, durationMinutes, price, imageUrl, active, homeServiceAvailable, homeServiceFee]
     RetailCartItemInput:
-      type: object
-      additionalProperties: false
-      properties:
-        productId: { type: string, minLength: 1 }
-        quantity: { type: integer, minimum: 1, maximum: 100 }
-      required: [productId, quantity]
+      oneOf:
+        - type: object
+          additionalProperties: false
+          properties:
+            productId: { type: string, minLength: 1 }
+            quantity: { type: integer, minimum: 1, maximum: 100 }
+          required: [productId, quantity]
+        - type: object
+          additionalProperties: false
+          properties:
+            bundleId: { type: string, minLength: 1 }
+            quantity: { type: integer, minimum: 1, maximum: 100 }
+          required: [bundleId, quantity]
     RetailCart:
       type: object
       properties:
@@ -7093,18 +7419,103 @@ components:
         items:
           type: array
           items:
-            type: object
-            properties:
-              id: { type: string }
-              productId: { type: string }
-              name: { type: string }
-              imageUrl: { type: string }
-              sku: { type: string, description: "Immutable customer-facing catalog reference; retained under the legacy sku response key." }
-              quantity: { type: integer, minimum: 1 }
-              unitPrice: { type: integer, minimum: 0 }
-              lineTotal: { type: integer, minimum: 0 }
-            required: [id, productId, name, imageUrl, sku, quantity, unitPrice, lineTotal]
-      required: [id, itemCount, subtotal, items]
+            oneOf:
+              - type: object
+                properties:
+                  id: { type: string }
+                  productId: { type: string }
+                  kind: { type: string, enum: [product] }
+                  name: { type: string }
+                  imageUrl: { type: string }
+                  sku: { type: string, description: "Immutable customer-facing catalog reference; retained under the legacy sku response key." }
+                  quantity: { type: integer, minimum: 1 }
+                  unitPrice: { type: integer, minimum: 0 }
+                  lineTotal: { type: integer, minimum: 0 }
+                  lowStock: { type: boolean }
+                required: [id, kind, productId, name, imageUrl, sku, quantity, unitPrice, lineTotal, lowStock]
+              - type: object
+                properties:
+                  id: { type: string }
+                  bundleId: { type: string }
+                  kind: { type: string, enum: [bundle] }
+                  name: { type: string }
+                  imageUrl: { type: ["string", "null"] }
+                  sku: { type: ["string", "null"] }
+                  quantity: { type: integer, minimum: 1 }
+                  unitPrice: { type: integer, minimum: 0 }
+                  lineTotal: { type: integer, minimum: 0 }
+                  lowStock: { type: boolean }
+                required: [id, kind, bundleId, name, imageUrl, sku, quantity, unitPrice, lineTotal, lowStock]
+        savedItems:
+          type: array
+          items: { $ref: "#/components/schemas/SavedCartItem" }
+        crossSellProducts:
+          type: array
+          items: { $ref: "#/components/schemas/CartCrossSellProduct" }
+        freeShippingProgress: { $ref: "#/components/schemas/FreeShippingProgress" }
+        estimatedDeliveryDate: { type: string, format: date }
+        showLoyaltyPoints: { type: boolean }
+        currentLoyaltyPoints: { type: integer, minimum: 0 }
+        projectedLoyaltyPoints: { type: integer, minimum: 0 }
+      required: [id, itemCount, subtotal, items, savedItems, crossSellProducts, freeShippingProgress, estimatedDeliveryDate, showLoyaltyPoints, currentLoyaltyPoints, projectedLoyaltyPoints]
+    CartCrossSellProduct:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        imageUrl: { type: string }
+        brand: { type: ["string", "null"] }
+        price: { type: integer, minimum: 0 }
+        discountPrice: { type: ["integer", "null"], minimum: 0 }
+      required: [id, name, imageUrl, brand, price, discountPrice]
+    FreeShippingProgress:
+      type: object
+      properties:
+        threshold: { type: integer, minimum: 0 }
+        subtotal: { type: integer, minimum: 0 }
+        remaining: { type: integer, minimum: 0 }
+        qualifies: { type: boolean }
+        loyaltyFreeShipping: { type: boolean }
+      required: [threshold, subtotal, remaining, qualifies, loyaltyFreeShipping]
+    AdminShopSettings:
+      type: object
+      properties:
+        showLoyaltyPoints: { type: boolean }
+        pointsPer100Rsd: { type: integer, minimum: 0 }
+        lowStockThreshold: { type: integer, minimum: 1 }
+        defaultDeliveryBusinessDays: { type: integer, minimum: 1, maximum: 365 }
+        freeShippingThreshold: { type: integer, minimum: 0 }
+        version: { type: integer, minimum: 1 }
+        updatedAt: { type: string, format: date-time }
+      required: [showLoyaltyPoints, pointsPer100Rsd, lowStockThreshold, defaultDeliveryBusinessDays, freeShippingThreshold, version, updatedAt]
+    AdminShopSettingsInput:
+      type: object
+      additionalProperties: false
+      properties:
+        showLoyaltyPoints: { type: boolean }
+        pointsPer100Rsd: { type: integer, minimum: 0 }
+        lowStockThreshold: { type: integer, minimum: 1 }
+        defaultDeliveryBusinessDays: { type: integer, minimum: 1, maximum: 365 }
+        freeShippingThreshold: { type: integer, minimum: 0 }
+        version: { type: integer, minimum: 1 }
+      required: [showLoyaltyPoints, pointsPer100Rsd, lowStockThreshold, defaultDeliveryBusinessDays, freeShippingThreshold, version]
+    SavedCartItem:
+      type: object
+      properties:
+        id: { type: string }
+        productId: { type: ["string", "null"] }
+        bundleId: { type: ["string", "null"] }
+        variantValue: { type: ["string", "null"] }
+        quantity: { type: integer, minimum: 1 }
+      required: [id, productId, bundleId, variantValue, quantity]
+    ReorderResult:
+      type: object
+      properties:
+        added: { type: array, items: { type: object, additionalProperties: true } }
+        skipped: { type: array, items: { type: object, additionalProperties: true } }
+        adjusted: { type: array, items: { type: object, additionalProperties: true } }
+        cart: { oneOf: [{ $ref: "#/components/schemas/RetailCart" }, { $ref: "#/components/schemas/ShopCart" }] }
+      required: [added, skipped, adjusted, cart]
     RetailCartSummary:
       type: object
       properties:
@@ -7243,6 +7654,67 @@ components:
         pageSize: { type: number }
         totalPages: { type: number }
       required: [items, total, page, pageSize, totalPages]
+    BundleComponentInput:
+      type: object
+      properties:
+        productId: { type: string }
+        quantity: { type: integer, minimum: 1 }
+        sortOrder: { type: integer, minimum: 0 }
+      required: [productId, quantity]
+    BundleInput:
+      type: object
+      properties:
+        supplierId: { type: string }
+        name: { type: string, minLength: 1, maxLength: 250 }
+        description: { type: ["string", "null"], maxLength: 10000 }
+        imageUrl: { type: ["string", "null"] }
+        market: { type: string, enum: [B2B, B2C, BOTH] }
+        b2bPrice: { type: ["integer", "null"], minimum: 1 }
+        b2cPrice: { type: ["integer", "null"], minimum: 1 }
+        components: { type: array, minItems: 2, items: { $ref: "#/components/schemas/BundleComponentInput" } }
+        active: { type: boolean }
+      required: [supplierId, name, market, b2bPrice, b2cPrice]
+    BundleComponentCard:
+      type: object
+      description: Safe component identity and quantity. Unit prices are never exposed through bundle catalog endpoints.
+      properties:
+        productId: { type: string }
+        name: { type: string }
+        imageUrl: { type: string }
+        catalogReference: { type: string }
+        quantity: { type: integer, minimum: 1 }
+      required: [productId, name, imageUrl, catalogReference, quantity]
+    Bundle:
+      type: object
+      properties:
+        id: { type: string }
+        supplierId: { type: string }
+        name: { type: string }
+        description: { type: ["string", "null"] }
+        imageUrl: { type: ["string", "null"] }
+        market: { type: string, enum: [B2B, B2C, BOTH] }
+        b2bPrice: { type: ["integer", "null"] }
+        b2cPrice: { type: ["integer", "null"] }
+        active: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        derivedStock: { type: integer, minimum: 0 }
+        components: { type: array, items: { $ref: "#/components/schemas/BundleComponentCard" } }
+      required: [id, supplierId, name, description, imageUrl, market, b2bPrice, b2cPrice, active, createdAt, updatedAt, derivedStock, components]
+    PublicBundle:
+      type: object
+      description: Customer-safe fixed-price bundle. Wholesale price and all component unit prices are deliberately omitted.
+      properties:
+        id: { type: string }
+        supplierId: { type: string }
+        name: { type: string }
+        description: { type: ["string", "null"] }
+        imageUrl: { type: ["string", "null"] }
+        market: { type: string, enum: [B2C, BOTH] }
+        b2cPrice: { type: integer, minimum: 1 }
+        derivedStock: { type: integer, minimum: 0 }
+        components: { type: array, items: { $ref: "#/components/schemas/BundleComponentCard" } }
+      required: [id, supplierId, name, description, imageUrl, market, b2cPrice, derivedStock, components]
     PublicProduct:
       type: object
       description: Customer-facing product fields only. B2B price, SKU, stock, weight, variants and salon-only review data are deliberately omitted.
@@ -7349,37 +7821,72 @@ components:
         cartCount: { type: number }
       required: [monthlySpend, nextTierSpend, amountToNextTier, currentTier, subscriptionDue, subscriptionDiscount, benefits, cartCount]
     ShopCartItem:
-      type: object
-      properties:
-        id: { type: string }
-        productId: { type: string }
-        productName: { type: string }
-        productImageUrl: { type: string }
-        variantValue: { type: ["string", "null"] }
-        variantLabel: { type: ["string", "null"] }
-        productSku: { type: ["string", "null"] }
-        unitPrice: { type: number, minimum: 0, multipleOf: 1 }
-        quantity: { type: number, minimum: 1, multipleOf: 1 }
-        lineTotal: { type: number, minimum: 0, multipleOf: 1 }
-        availableStock: { type: number, minimum: 0, multipleOf: 1 }
-        weightGrams: { type: number, minimum: 0, multipleOf: 1 }
-      required: [id, productId, productName, productImageUrl, variantValue, variantLabel, productSku, unitPrice, quantity, lineTotal, availableStock, weightGrams]
+      oneOf:
+        - type: object
+          properties:
+            id: { type: string }
+            kind: { type: string, enum: [product] }
+            productId: { type: string }
+            productName: { type: string }
+            productImageUrl: { type: string }
+            variantValue: { type: ["string", "null"] }
+            variantLabel: { type: ["string", "null"] }
+            productSku: { type: ["string", "null"] }
+            unitPrice: { type: number, minimum: 0, multipleOf: 1 }
+            quantity: { type: number, minimum: 1, multipleOf: 1 }
+            lineTotal: { type: number, minimum: 0, multipleOf: 1 }
+            availableStock: { type: number, minimum: 0, multipleOf: 1 }
+            weightGrams: { type: number, minimum: 0, multipleOf: 1 }
+            lowStock: { type: boolean }
+          required: [id, kind, productId, productName, productImageUrl, variantValue, variantLabel, productSku, unitPrice, quantity, lineTotal, availableStock, weightGrams, lowStock]
+        - type: object
+          properties:
+            id: { type: string }
+            kind: { type: string, enum: [bundle] }
+            bundleId: { type: string }
+            productName: { type: string }
+            productImageUrl: { type: ["string", "null"] }
+            variantValue: { type: ["string", "null"] }
+            variantLabel: { type: ["string", "null"] }
+            productSku: { type: ["string", "null"] }
+            unitPrice: { type: number, minimum: 0, multipleOf: 1 }
+            quantity: { type: number, minimum: 1, multipleOf: 1 }
+            lineTotal: { type: number, minimum: 0, multipleOf: 1 }
+            availableStock: { type: number, minimum: 0, multipleOf: 1 }
+            weightGrams: { type: number, minimum: 0, multipleOf: 1 }
+            lowStock: { type: boolean }
+          required: [id, kind, bundleId, productName, productImageUrl, variantValue, variantLabel, productSku, unitPrice, quantity, lineTotal, availableStock, weightGrams, lowStock]
     ShopCart:
       type: object
       properties:
         id: { type: ["string", "null"] }
         items: { type: array, items: { $ref: "#/components/schemas/ShopCartItem" } }
+        savedItems: { type: array, items: { $ref: "#/components/schemas/SavedCartItem" } }
         itemCount: { type: number, minimum: 0, multipleOf: 1 }
         subtotal: { type: number, minimum: 0, multipleOf: 1 }
         totalWeightGrams: { type: number, minimum: 0, multipleOf: 1 }
-      required: [id, items, itemCount, subtotal, totalWeightGrams]
+        crossSellProducts: { type: array, items: { $ref: "#/components/schemas/CartCrossSellProduct" } }
+        freeShippingProgress: { $ref: "#/components/schemas/FreeShippingProgress" }
+        estimatedDeliveryDate: { type: string, format: date }
+        showLoyaltyPoints: { type: boolean }
+        currentLoyaltyPoints: { type: integer, minimum: 0 }
+        projectedLoyaltyPoints: { type: integer, minimum: 0 }
+      required: [id, items, savedItems, itemCount, subtotal, totalWeightGrams, crossSellProducts, freeShippingProgress, estimatedDeliveryDate, showLoyaltyPoints, currentLoyaltyPoints, projectedLoyaltyPoints]
     ShopCartItemInput:
-      type: object
-      properties:
-        productId: { type: string, minLength: 1 }
-        variantValue: { type: string, minLength: 1 }
-        quantity: { type: number, minimum: 1, multipleOf: 1 }
-      required: [productId]
+      oneOf:
+        - type: object
+          additionalProperties: false
+          properties:
+            productId: { type: string, minLength: 1 }
+            variantValue: { type: string, minLength: 1 }
+            quantity: { type: number, minimum: 1, multipleOf: 1 }
+          required: [productId]
+        - type: object
+          additionalProperties: false
+          properties:
+            bundleId: { type: string, minLength: 1 }
+            quantity: { type: number, minimum: 1, multipleOf: 1 }
+          required: [bundleId]
     ShopCartItemQuantityInput:
       type: object
       properties:
@@ -7524,14 +8031,15 @@ components:
     OrderItem:
       type: object
       properties:
-        productId: { type: string }
+        productId: { type: ["string", "null"] }
+        bundleId: { type: ["string", "null"] }
         productName: { type: string }
         variantValue: { type: ["string", "null"] }
         variantLabel: { type: ["string", "null"] }
         productSku: { type: ["string", "null"] }
         quantity: { type: number, multipleOf: 1 }
         price: { type: number, multipleOf: 1 }
-      required: [productId, productName, quantity, price]
+      required: [productId, bundleId, productName, quantity, price]
     OrderInput:
       type: object
       properties:

@@ -32,6 +32,7 @@ import { reconcileKnownTestListings } from "./lib/test-listing-reconciliation";
 import { seedProductionMarketplaceDemoContent } from "./lib/production-marketplace-demo-seed";
 import { runReferralMaintenance } from "./lib/referral-service";
 import { ensureReferralSchema } from "./lib/referral-schema";
+import { runProductWaitlistNotificationWorker } from "./lib/product-waitlist-worker";
 
 const rawPort = process.env["PORT"];
 
@@ -136,6 +137,10 @@ const referralMaintenance = createResilientScheduledJob({
   job: "referral-maintenance",
   run: runReferralMaintenance,
 });
+const productWaitlistNotifications = createResilientScheduledJob({
+  job: "product-waitlist-notifications",
+  run: runProductWaitlistNotificationWorker,
+});
 const scheduledJobs = [
   rescheduledConfirmationRetries,
   educationSessionMaintenance,
@@ -151,6 +156,7 @@ const scheduledJobs = [
   beautyJobsExpirySweep,
   beautyJobEmailDeliveryAlerts,
   referralMaintenance,
+  productWaitlistNotifications,
 ];
 
 const retryInterval = setInterval(() => {
@@ -179,6 +185,15 @@ const referralMaintenanceInterval = setInterval(() => {
 }, 5 * 60_000);
 referralMaintenanceInterval.unref();
 void referralMaintenance.run();
+
+// The database trigger writes this durable queue in the same stock-update
+// transaction (including admin adjustments and cancellation credits). Drain it
+// frequently; the worker is safe to run concurrently on every application node.
+const productWaitlistNotificationsInterval = setInterval(() => {
+  void productWaitlistNotifications.run();
+}, 60_000);
+productWaitlistNotificationsInterval.unref();
+void productWaitlistNotifications.run();
 
 const educationGalleryCleanupInterval = setInterval(() => {
   void educationGalleryCleanup.run();

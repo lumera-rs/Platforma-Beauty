@@ -2,8 +2,8 @@ import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useGetCurrentUser } from "@workspace/api-client-react";
 import { BusinessLayout } from "@/components/business-layout";
-import { Loader2, LayoutDashboard, Store, Users, Star, CreditCard, MessageSquare, Menu, X, Package, FolderTree, Tags, Truck, Mail, MessageSquareText, PlugZap, FileText, GraduationCap, SlidersHorizontal, BriefcaseBusiness, ListX, Gift } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Loader2, LayoutDashboard, Store, Users, Star, CreditCard, MessageSquare, Menu, X, Package, FolderTree, Tags, Truck, Mail, MessageSquareText, PlugZap, FileText, GraduationCap, SlidersHorizontal, BriefcaseBusiness, ListX, Gift, Layers, Bell, Settings2 } from "lucide-react";
 
 const navLinks = [
   { href: "/admin", label: "Pregled", icon: LayoutDashboard },
@@ -20,6 +20,9 @@ const navLinks = [
   { href: "/admin/recenzije", label: "Recenzije", icon: MessageSquare },
   { href: "/admin/dobavljaci", label: "Dobavljači", icon: FolderTree },
   { href: "/admin/proizvodi", label: "Proizvodi", icon: Package },
+  { href: "/admin/bundle-proizvodi", label: "Paketi", icon: Layers },
+  { href: "/admin/lista-cekanja", label: "Lista čekanja", icon: Bell },
+  { href: "/admin/podesavanja/prodavnica", label: "Podešavanja prodavnice", icon: Settings2 },
   { href: "/admin/porudzbine", label: "Porudžbine", icon: Package },
   { href: "/admin/brendovi", label: "Brendovi", icon: Tags },
   { href: "/admin/dostava", label: "Dostava", icon: Truck },
@@ -134,7 +137,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
             size="icon"
             onClick={() => isMobileOpen ? closeMobileMenu() : setIsMobileOpen(true)}
             aria-label={isMobileOpen ? "Zatvori meni" : "Otvori meni"}
-            aria-expanded={isMobileOpen}
+            aria-expanded={isMobileOpen ? "true" : "false"}
             data-testid="admin-mobile-menu-trigger"
             className={adminFocusClass}
           >

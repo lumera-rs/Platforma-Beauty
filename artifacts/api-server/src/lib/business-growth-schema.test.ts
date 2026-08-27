@@ -101,6 +101,8 @@ async function seedLegacySchema(schema: string) {
     name text NOT NULL,
     description text NOT NULL,
     sku text,
+    stock integer NOT NULL DEFAULT 0,
+    variants jsonb,
     active boolean NOT NULL DEFAULT true,
     created_at timestamptz NOT NULL DEFAULT now()
   )`);
@@ -128,6 +130,23 @@ async function seedLegacySchema(schema: string) {
   )`);
   await q(`CREATE UNIQUE INDEX retail_cart_items_cart_product_variant_unique
     ON "${schema}".retail_cart_items (cart_id, product_id, variant_value)`);
+  // Legacy B2B cart tables predate bundle targets. The v42 rollout must
+  // upgrade these rows in place without assuming a freshly created schema.
+  await q(`CREATE TABLE "${schema}".shopping_carts (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    salon_id uuid NOT NULL REFERENCES "${schema}".salons(id) ON DELETE CASCADE,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await q(`CREATE TABLE "${schema}".shopping_cart_items (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    cart_id uuid NOT NULL REFERENCES "${schema}".shopping_carts(id) ON DELETE CASCADE,
+    product_id uuid NOT NULL REFERENCES "${schema}".products(id) ON DELETE CASCADE,
+    variant_value text,
+    quantity integer NOT NULL DEFAULT 1,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`);
   // Existing core commerce dependency used by phase-3 inventory movements.
   await q(`CREATE TABLE "${schema}".orders (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid()

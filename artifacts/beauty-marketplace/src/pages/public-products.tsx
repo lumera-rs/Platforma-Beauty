@@ -1,7 +1,16 @@
 import { useMemo, useState } from "react";
 import { Link, useLocation, useRoute } from "wouter";
-import { ChevronLeft, ChevronRight, Loader2, Search, ShoppingBag, Sparkles, Building2 } from "lucide-react";
-import { useGetSupplierPublicProduct, useListSupplierPublicProducts, useListPublicSuppliers, useGetPublicSupplier, useListSupplierCategories, getGetPublicSupplierQueryKey, getListSupplierPublicProductsQueryKey, getListSupplierCategoriesQueryKey, getGetSupplierPublicProductQueryKey, useAddRetailCartItem, type ListSupplierPublicProductsParams, type PublicProduct } from "@workspace/api-client-react";
+import { ChevronLeft, ChevronRight, Loader2, Search, ShoppingBag, Sparkles, Building2, Bell, CheckCircle, Package, Eye } from "lucide-react";
+import {
+  useGetSupplierPublicProduct, useListSupplierPublicProducts, useListPublicSuppliers,
+  useGetPublicSupplier, useListSupplierCategories, getGetPublicSupplierQueryKey,
+  getListSupplierPublicProductsQueryKey, getListSupplierCategoriesQueryKey,
+  getGetSupplierPublicProductQueryKey, useAddRetailCartItem,
+  useGetB2cProductWaitlistStatus, useSubscribeB2cProductWaitlist, useUnsubscribeB2cProductWaitlist,
+  getGetB2cProductWaitlistStatusQueryKey,
+  useListPublicBundles, useGetPublicBundle, getListPublicBundlesQueryKey, getGetPublicBundleQueryKey
+} from "@workspace/api-client-react";
+import type { ListSupplierPublicProductsParams, PublicProduct, PublicBundle } from "@workspace/api-client-react";
 import { Layout } from "@/components/layout";
 import { OptimizedImage } from "@/components/optimized-image";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +20,7 @@ import { useDebouncedSearch } from "@/hooks/use-debounce";
 import { useToast } from "@/hooks/use-toast";
 import { notifyRetailCartChanged } from "@/lib/retail-cart-events";
 import { extractApiError } from "@/lib/admin-form-utils";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const money = (value: number) => new Intl.NumberFormat("sr-RS", {
   style: "currency", currency: "RSD", maximumFractionDigits: 0,
@@ -32,7 +42,7 @@ function PublicProductCard({ product, supplierSlug }: { product: PublicProduct, 
   const add = () => {
     addRetailCartItem.mutate({ data: { productId: product.id, quantity: 1 } }, {
       onSuccess: (cart) => {
-        const changedItem = cart.items?.find((item) => item.productId === product.id);
+        const changedItem = cart.items.find((item) => item.kind === "product" && item.kind === 'product' && item.productId === product.id);
         notifyRetailCartChanged(cart.itemCount, {
           productId: product.id,
           name: changedItem?.name ?? product.name,
@@ -66,6 +76,135 @@ function PublicProductCard({ product, supplierSlug }: { product: PublicProduct, 
         </div>
       </Link>
       <div className="px-4 pb-4"><Button className="w-full" onClick={add} disabled={adding} data-testid={`public-product-add-${product.id}`}>{adding ? "Dodavanje…" : "Dodaj u korpu"}</Button></div>
+    </article>
+  );
+}
+
+function PublicBundleQuickView({ bundleId, supplierSlug, onClose }: { bundleId: string; supplierSlug: string; onClose: () => void; }) {
+  const { data: bundle, isLoading, isError } = useGetPublicBundle(bundleId, { query: { enabled: !!bundleId, queryKey: getGetPublicBundleQueryKey(bundleId) } });
+  const { toast } = useToast();
+  const addRetailCartItem = useAddRetailCartItem();
+
+  const add = () => {
+    if (!bundle) return;
+    addRetailCartItem.mutate({ data: { bundleId: bundle.id, quantity: 1 } }, {
+      onSuccess: (cart) => {
+        const changedItem = cart.items.find((item) => item.kind === 'bundle' && item.bundleId === bundle.id);
+        notifyRetailCartChanged(cart.itemCount, {
+          productId: bundle.id,
+          name: changedItem?.name ?? bundle.name,
+          quantity: changedItem?.quantity ?? 1,
+        });
+        toast.success("Promo paket je dodat u korpu.");
+        onClose();
+      },
+      onError: (error) => {
+        toast.error(extractApiError(error, "Paket trenutno nije dostupan."));
+      }
+    });
+  };
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-xl">
+        {isLoading || !bundle ? (
+          <div className="py-12 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+        ) : isError ? (
+          <div className="py-12 text-center text-destructive">Nije moguće učitati paket.</div>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle className="text-xl font-serif">{bundle.name}</DialogTitle>
+            </DialogHeader>
+            <div className="flex gap-4 mt-2">
+              {bundle.imageUrl ? (
+                <OptimizedImage src={bundle.imageUrl} alt={bundle.name} width={144} height={144} preferredSize="medium" className="w-36 h-36 object-cover rounded-xl flex-shrink-0 bg-muted" />
+              ) : (
+                <div className="w-36 h-36 bg-muted rounded-xl flex items-center justify-center flex-shrink-0"><Package className="w-8 h-8 text-muted-foreground/30" /></div>
+              )}
+              <div className="flex flex-col gap-2 flex-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-primary">Promo Paket</span>
+                <p className="text-sm text-muted-foreground">{bundle.description || "Nema opisa."}</p>
+                <div className="mt-2 text-sm">
+                  <strong className="block mb-1">Sadržaj:</strong>
+                  <ul className="space-y-1">
+                    {bundle.components.map(c => (
+                      <li key={c.productId} className="flex items-center justify-between text-xs bg-muted/30 p-1.5 rounded">
+                        <span className="truncate mr-2 flex-1">{c.name}</span>
+                        <span className="font-semibold whitespace-nowrap text-muted-foreground">x{c.quantity}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-end justify-between mt-4 pt-4 border-t">
+              <div>
+                <span className="text-xs text-muted-foreground block">Dostupno: {bundle.derivedStock} kom</span>
+                <span className="text-2xl font-bold text-primary">{money(bundle.b2cPrice)}</span>
+              </div>
+              <div className="flex gap-2">
+                <Button data-testid={`button-add-public-bundle-cart-${bundle.id}`} disabled={addRetailCartItem.isPending || bundle.derivedStock <= 0} onClick={add} className="gap-2">
+                  <ShoppingBag className="w-4 h-4" /> {addRetailCartItem.isPending ? "Dodavanje..." : "Dodaj u korpu"}
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PublicBundleCard({ bundle, supplierSlug, onQuickView }: { bundle: PublicBundle; supplierSlug: string; onQuickView: (id: string) => void }) {
+  const { toast } = useToast();
+  const addRetailCartItem = useAddRetailCartItem();
+
+  const add = () => {
+    addRetailCartItem.mutate({ data: { bundleId: bundle.id, quantity: 1 } }, {
+      onSuccess: (cart) => {
+        const changedItem = cart.items.find((item) => item.kind === 'bundle' && item.bundleId === bundle.id);
+        notifyRetailCartChanged(cart.itemCount, {
+          productId: bundle.id,
+          name: changedItem?.name ?? bundle.name,
+          quantity: changedItem?.quantity ?? 1,
+        });
+        toast.success("Promo paket je dodat u korpu.");
+      },
+      onError: (error) => {
+        toast.error(extractApiError(error, "Paket trenutno nije dostupan."));
+      }
+    });
+  };
+  const adding = addRetailCartItem.isPending;
+
+  return (
+    <article className="group overflow-hidden rounded-2xl border border-primary/20 bg-primary/5 shadow-sm transition-shadow hover:shadow-md flex flex-col relative">
+      <div className="absolute top-2 left-2 z-10 flex flex-col gap-1">
+        <Badge className="bg-primary text-white"><Package className="w-3 h-3 mr-1" />Promo Paket</Badge>
+      </div>
+      <button onClick={() => onQuickView(bundle.id)} className="block relative w-full aspect-square bg-muted flex items-center justify-center overflow-hidden" data-testid={`public-bundle-link-${bundle.id}`}>
+        {bundle.imageUrl ? (
+          <OptimizedImage src={bundle.imageUrl} alt={bundle.name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+        ) : (
+          <Package className="w-16 h-16 text-muted-foreground/20" />
+        )}
+        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 text-white text-sm font-medium">
+          <Eye className="w-4 h-4" /> Brz pregled
+        </div>
+      </button>
+      <div className="space-y-3 p-4 flex-1 flex flex-col">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-primary">Sadrži {bundle.components.length} proizvoda</p>
+          <h2 className="mt-1 line-clamp-2 font-serif text-lg font-semibold text-foreground"><button onClick={() => onQuickView(bundle.id)} className="text-left hover:text-primary">{bundle.name}</button></h2>
+        </div>
+        <p className="line-clamp-2 text-sm text-muted-foreground flex-1">{bundle.description}</p>
+        <div className="flex items-baseline justify-between mt-auto">
+          <span className="text-lg font-bold text-primary">{money(bundle.b2cPrice)}</span>
+          <span className="text-[10px] text-muted-foreground">Dostupno: {bundle.derivedStock}</span>
+        </div>
+      </div>
+      <div className="px-4 pb-4"><Button className="w-full gap-2" onClick={add} disabled={adding || bundle.derivedStock <= 0} data-testid={`public-bundle-add-${bundle.id}`}><ShoppingBag className="w-4 h-4" /> {adding ? "Dodavanje…" : "Dodaj u korpu"}</Button></div>
     </article>
   );
 }
@@ -152,6 +291,11 @@ export function PublicSupplierShop() {
       queryKey: getListSupplierPublicProductsQueryKey(supplierSlug, queryParams),
     },
   });
+
+  const { data: allBundles = [] } = useListPublicBundles({ query: { enabled: !!supplierSlug, queryKey: getListPublicBundlesQueryKey() } });
+  const supplierBundles = useMemo(() => allBundles.filter(b => b.supplierId === supplier?.id), [allBundles, supplier?.id]);
+  const [quickViewBundleId, setQuickViewBundleId] = useState<string | null>(null);
+
   const renderCategoryLinks = (parentId: string | null, depth = 0) => categories
     .filter((category) => (category.parentId ?? null) === parentId)
     .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -216,6 +360,21 @@ export function PublicSupplierShop() {
 
           {/* Main content */}
           <div className="flex-1">
+            {page === 1 && !categoryPath && !debouncedSearch && supplierBundles.length > 0 && (
+              <div className="mb-10">
+                <h2 className="text-xl font-serif font-bold mb-4 flex items-center gap-2">
+                  <Package className="w-5 h-5 text-primary" /> Promo Paketi
+                </h2>
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                  {supplierBundles.map((bundle) => (
+                    <PublicBundleCard key={bundle.id} bundle={bundle} supplierSlug={supplier.slug} onQuickView={setQuickViewBundleId} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <h2 className="text-xl font-serif font-bold mb-4 flex items-center gap-2 text-foreground">Proizvodi</h2>
+
             {productsLoading ? (
               <div className="flex min-h-72 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
             ) : productsError ? (
@@ -244,6 +403,9 @@ export function PublicSupplierShop() {
           </div>
         </div>
       </main>
+      {quickViewBundleId && supplier && (
+        <PublicBundleQuickView bundleId={quickViewBundleId} supplierSlug={supplier.slug} onClose={() => setQuickViewBundleId(null)} />
+      )}
     </Layout>
   );
 }
@@ -256,13 +418,17 @@ export function PublicProductDetailPage() {
 
   const { data: product, isLoading, isError } = useGetSupplierPublicProduct(supplierSlug, productId, { query: { enabled: !!supplierSlug && !!productId, queryKey: getGetSupplierPublicProductQueryKey(supplierSlug, productId) } });
 
+  const { data: waitlistStatus, refetch: refetchWaitlist } = useGetB2cProductWaitlistStatus(productId, { query: { enabled: !!productId, queryKey: getGetB2cProductWaitlistStatusQueryKey(productId) } });
+  const subscribeWaitlist = useSubscribeB2cProductWaitlist({ mutation: { onSuccess: () => { toast.success("Prijavljeni ste na listu čekanja."); refetchWaitlist(); } } });
+  const unsubscribeWaitlist = useUnsubscribeB2cProductWaitlist({ mutation: { onSuccess: () => { toast.success("Odjavljeni ste sa liste čekanja."); refetchWaitlist(); } } });
+
   const { toast } = useToast();
   const productName = product?.name ?? "Proizvod";
   const addRetailCartItem = useAddRetailCartItem();
   const add = () => {
     addRetailCartItem.mutate({ data: { productId, quantity: 1 } }, {
       onSuccess: (cart) => {
-        const changedItem = cart.items?.find((item) => item.productId === productId);
+        const changedItem = cart.items?.find((item) => item.kind === 'product' && item.productId === productId);
         notifyRetailCartChanged(cart.itemCount, {
           productId,
           name: changedItem?.name ?? productName,
@@ -302,7 +468,19 @@ export function PublicProductDetailPage() {
             <div className="mt-5"><ProductPrice product={product} /></div>
             <p className="mt-7 whitespace-pre-line leading-7 text-muted-foreground">{product.description}</p>
             {product.deliveryBusinessDaysOverride != null && <p className="mt-4 text-sm text-muted-foreground" data-testid="text-public-estimated-delivery">Procenjena isporuka: {product.deliveryBusinessDaysOverride} {product.deliveryBusinessDaysOverride === 1 ? "radni dan" : "radnih dana"}</p>}
+
             <div className="mt-8 flex flex-wrap gap-3"><Button size="lg" onClick={add} disabled={adding}>{adding ? "Dodavanje…" : "Dodaj u korpu"}</Button><Button size="lg" variant="outline" asChild><Link href="/korpa">Pogledaj korpu</Link></Button></div>
+            <div className="mt-4 p-4 rounded-xl border bg-muted/20">
+              {waitlistStatus?.subscribed ? (
+                <div className="space-y-3">
+                  <p className="text-sm flex items-center text-emerald-600"><CheckCircle className="w-4 h-4 mr-2" /> Prijavljeni ste za obaveštenje kada proizvod bude dostupan.</p>
+                  <Button variant="outline" size="sm" onClick={() => unsubscribeWaitlist.mutate({ productId })} disabled={unsubscribeWaitlist.isPending}>Odjavi se</Button>
+                </div>
+              ) : (
+                <Button variant="secondary" onClick={() => subscribeWaitlist.mutate({ productId })} disabled={subscribeWaitlist.isPending}><Bell className="w-4 h-4 mr-2" /> Obavesti me kada bude dostupno</Button>
+              )}
+            </div>
+
             <div className="mt-5 rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground"><strong className="block text-foreground">Bezbedna retail kupovina</strong><span className="mt-1 block">Konačna dostupnost i javna cena proveravaju se ponovo prilikom potvrde porudžbine.</span></div>
           </div>
         </section>

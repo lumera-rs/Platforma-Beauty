@@ -16,9 +16,22 @@ import {
 const EMPTY_CART: ShopCart = {
   id: null,
   items: [],
+  savedItems: [],
   itemCount: 0,
   subtotal: 0,
   totalWeightGrams: 0,
+  crossSellProducts: [],
+  freeShippingProgress: {
+    threshold: 0,
+    subtotal: 0,
+    remaining: 0,
+    qualifies: false,
+    loyaltyFreeShipping: false,
+  },
+  estimatedDeliveryDate: "",
+  showLoyaltyPoints: false,
+  currentLoyaltyPoints: 0,
+  projectedLoyaltyPoints: 0,
 };
 
 function withCartTotals(cart: ShopCart, items: ShopCartItem[]): ShopCart {
@@ -38,7 +51,7 @@ export function addOptimisticCartItem(
 ): ShopCart {
   const cart = current ?? EMPTY_CART;
   const existingIndex = cart.items.findIndex(
-    (item) => item.productId === product.id && (item.variantValue ?? undefined) === variantValue,
+    (item) => item.kind === 'product' && item.productId === product.id && (item.variantValue ?? undefined) === variantValue,
   );
   const variant = product.variants?.find((item) => item.value === variantValue);
   const unitPrice = variant?.price ?? ((product.discountPrice ?? product.price) + (variant?.priceAdjust ?? 0));
@@ -52,6 +65,7 @@ export function addOptimisticCartItem(
 
   const item: ShopCartItem = {
     id: `optimistic:${product.id}:${variantValue ?? "base"}`,
+    kind: 'product' as const,
     productId: product.id,
     productName: product.name,
     productImageUrl: product.images[0] ?? product.imageUrl,
@@ -63,6 +77,7 @@ export function addOptimisticCartItem(
     lineTotal: unitPrice,
     availableStock: variant?.stock ?? product.stock,
     weightGrams: product.weightGrams ?? 0,
+    lowStock: false,
   };
   return withCartTotals(cart, [...cart.items, item]);
 }

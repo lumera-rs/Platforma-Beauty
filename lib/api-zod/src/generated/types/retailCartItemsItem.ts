@@ -9,6 +9,7 @@
 export type RetailCartItemsItem = {
   id: string;
   productId: string;
+  kind: 'product';
   name: string;
   imageUrl: string;
   /** Immutable customer-facing catalog reference; retained under the legacy sku response key. */
@@ -19,4 +20,21 @@ export type RetailCartItemsItem = {
   unitPrice: number;
   /** @minimum 0 */
   lineTotal: number;
+  lowStock: boolean;
+} | {
+  id: string;
+  bundleId: string;
+  kind: 'bundle';
+  name: string;
+  /** @nullable */
+  imageUrl: string | null;
+  /** @nullable */
+  sku: string | null;
+  /** @minimum 1 */
+  quantity: number;
+  /** @minimum 0 */
+  unitPrice: number;
+  /** @minimum 0 */
+  lineTotal: number;
+  lowStock: boolean;
 };

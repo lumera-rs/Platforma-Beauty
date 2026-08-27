@@ -96,21 +96,29 @@ import
   jobseekerSalonInterestsTable,
   lessonProgressTable,
   loyaltyTiersTable,
+   loyaltyPointLedgerTable,
   mediaAssetsTable,
   oauthIdentitiesTable,
   oauthLoginStatesTable,
   phoneVerificationCodesTable,
   phoneVerificationProofsTable,
+   orderBundleComponentsTable,
   orderItemsTable,
   orderStatusHistoryTable,
   ordersTable,
   salonNotificationsTable,
   productReviewsTable,
   productCategoriesTable,
+  productBundleComponentsTable,
+  productBundlesTable,
   productsTable,
+   productWaitlistTable,
   productBrandsTable,
   retailCartsTable,
   retailCartItemsTable,
+   savedRetailCartItemsTable,
+   savedShopCartItemsTable,
+   reorderActionsTable,
   retailOrdersTable,
   retailOrderItemsTable,
   referralCreditLedgerTable,
@@ -122,6 +130,7 @@ import
   salonBrandsTable,
   sessionsTable,
   shippingRulesTable,
+  shopSettingsTable,
   shoppingCartItemsTable,
   shoppingCartsTable,
   salonLoyaltyStatusesTable,
@@ -8833,10 +8842,15 @@ router.get("/suppliers/:supplierSlug/products/:productId", async (req, res): Pro
       eq(productsTable.active, true), eq(productsTable.professionalEnabled, true), activeCategoryCondition())).limit(1);
   const product = rows[0]?.product;
   if (!product) { res.status(404).json({ error: "Proizvod nije pronađen." }); return; }
-  const aggregates = await productReviewAggregates([product.id]);
+  const [aggregates, reviews, relatedProducts] = await Promise.all([
+    productReviewAggregates([product.id]),
+    productReviewViews(product.id, access.salon.id),
+    similarProductCards(product, "B2B"),
+  ]);
   res.json(GetSupplierProductResponse.parse({
     ...productDtoWithAggregate(product, aggregates.get(product.id)),
-    relatedProducts: await similarProductCards(product, "B2B"),
+    reviews,
+    relatedProducts,
   }));
 });
 router.get("/suppliers/:supplierSlug/public-products", async (req, res): Promise<void> => {
@@ -9007,6 +9021,54 @@ function publicProductDto(item: typeof productsTable.$inferSelect) {
   };
 }
 
+/** Calendar arithmetic deliberately never serializes an instant as a date. */
+function belgradeBusinessDate(days: number, from = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Belgrade", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(from);
+  const part = (kind: string) => Number(parts.find((value) => value.type === kind)?.value);
+  // UTC noon is only a convenient, DST-proof container for a calendar day.
+  const date = new Date(Date.UTC(part("year"), part("month") - 1, part("day"), 12));
+  for (let remaining = days; remaining > 0;) {
+    date.setUTCDate(date.getUTCDate() + 1);
+    const day = date.getUTCDay();
+    if (day !== 0 && day !== 6) remaining--;
+  }
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+function loyaltyPointsForAmount(amount: number, settings: typeof shopSettingsTable.$inferSelect | undefined) {
+  return settings?.showLoyaltyPoints ? Math.floor(Math.max(0, amount) / 100) * settings.pointsPer100Rsd : 0;
+}
+
+async function awardLoyaltyPointsInTx(
+  tx: BundleTransaction,
+  input: { audience: "B2B"; salonId: string; orderId: string } | { audience: "B2C"; userId: string; retailOrderId: string },
+  eligibleAmount: number,
+  settings: typeof shopSettingsTable.$inferSelect | undefined,
+) {
+  const points = loyaltyPointsForAmount(eligibleAmount, settings);
+  const key = input.audience === "B2B" ? `loyalty:award:b2b:${input.orderId}` : `loyalty:award:b2c:${input.retailOrderId}`;
+  if (!points) return 0;
+  const values = input.audience === "B2B"
+    ? { audience: "B2B" as const, salonId: input.salonId, orderId: input.orderId, type: "AWARD" as const, points, idempotencyKey: key }
+    : { audience: "B2C" as const, userId: input.userId, retailOrderId: input.retailOrderId, type: "AWARD" as const, points, idempotencyKey: key };
+  const inserted = await tx.insert(loyaltyPointLedgerTable).values(values).onConflictDoNothing().returning();
+  return inserted.length ? points : 0;
+}
+
+async function reverseLoyaltyPointsInTx(
+  tx: BundleTransaction,
+  input: { audience: "B2B"; salonId: string; orderId: string; points: number } | { audience: "B2C"; userId: string; retailOrderId: string; points: number },
+) {
+  if (!input.points) return false;
+  const key = input.audience === "B2B" ? `loyalty:reversal:b2b:${input.orderId}` : `loyalty:reversal:b2c:${input.retailOrderId}`;
+  const values = input.audience === "B2B"
+    ? { audience: "B2B" as const, salonId: input.salonId, orderId: input.orderId, type: "REVERSAL" as const, points: -input.points, idempotencyKey: key }
+    : { audience: "B2C" as const, userId: input.userId, retailOrderId: input.retailOrderId, type: "REVERSAL" as const, points: -input.points, idempotencyKey: key };
+  return (await tx.insert(loyaltyPointLedgerTable).values(values).onConflictDoNothing().returning()).length > 0;
+}
+
 function relatedProductCard(item: typeof productsTable.$inferSelect, market: "B2B" | "B2C") {
   const price = market === "B2B" ? item.price : item.publicPrice;
   if (price == null) throw new Error("Attempted to serialize an ineligible related product.");
@@ -9057,6 +9119,230 @@ const retailVariantCompatibleCondition = () => or(
   sql`jsonb_array_length(${productsTable.variants}) = 0`,
 );
 
+type BundleComponentInput = { productId: string; quantity: number; sortOrder?: number };
+type BundleInput = {
+  supplierId: string; name: string; description?: string | null; imageUrl?: string | null;
+  market: "B2B" | "B2C" | "BOTH"; b2bPrice?: number | null; b2cPrice?: number | null;
+  components?: BundleComponentInput[]; active?: boolean;
+};
+
+function bundleInput(body: unknown, creating: boolean): BundleInput | null {
+  const value = body as Record<string, unknown>;
+  const nullableText = (key: string) => value[key] === undefined ? undefined
+    : value[key] === null ? null : typeof value[key] === "string" && value[key].trim().length <= 10_000 ? value[key].trim() : false;
+  const price = (key: string) => value[key] === undefined ? undefined
+    : value[key] === null ? null : Number.isInteger(value[key]) && (value[key] as number) > 0 ? value[key] as number : false;
+  const market = value.market;
+  if (typeof value.supplierId !== "string" || !value.supplierId
+    || (market !== "B2B" && market !== "B2C" && market !== "BOTH")
+    || typeof value.name !== "string" || !value.name.trim() || value.name.trim().length > 250) return null;
+  const description = nullableText("description"); const imageUrl = nullableText("imageUrl");
+  const b2bPrice = price("b2bPrice"); const b2cPrice = price("b2cPrice");
+  if (description === false || imageUrl === false || b2bPrice === false || b2cPrice === false) return null;
+  const pricesValid = (market === "B2B" && b2bPrice !== undefined && b2bPrice !== null && b2cPrice === null)
+    || (market === "B2C" && b2cPrice !== undefined && b2cPrice !== null && b2bPrice === null)
+    || (market === "BOTH" && b2bPrice !== undefined && b2bPrice !== null && b2cPrice !== undefined && b2cPrice !== null);
+  if (!pricesValid) return null;
+  let components: BundleComponentInput[] | undefined;
+  if (value.components !== undefined) {
+    if (!Array.isArray(value.components) || value.components.length < 2) return null;
+    components = [];
+    const ids = new Set<string>();
+    const sortOrders = new Set<number>();
+    for (let index = 0; index < value.components.length; index += 1) {
+      const item = value.components[index] as Record<string, unknown>;
+      if (!item || typeof item.productId !== "string" || !item.productId || ids.has(item.productId)
+        || !Number.isInteger(item.quantity) || (item.quantity as number) < 1
+        || (item.sortOrder !== undefined && (!Number.isInteger(item.sortOrder) || (item.sortOrder as number) < 0
+          || sortOrders.has(item.sortOrder as number)))) return null;
+      ids.add(item.productId);
+      if (item.sortOrder !== undefined) sortOrders.add(item.sortOrder as number);
+      components.push({ productId: item.productId, quantity: item.quantity as number, sortOrder: item.sortOrder as number | undefined });
+    }
+  } else if (creating) return null;
+  if (value.active !== undefined && typeof value.active !== "boolean") return null;
+  return { supplierId: value.supplierId, name: value.name.trim(), description, imageUrl, market, b2bPrice, b2cPrice, components, active: value.active as boolean | undefined };
+}
+
+type BundleComponentCard = { productId: string; name: string; imageUrl: string; catalogReference: string; quantity: number };
+type BundleComponentState = BundleComponentCard & { active: boolean; professionalEnabled: boolean; retailEnabled: boolean };
+type BundleDetails = { components: BundleComponentCard[]; derivedStock: number; rows: BundleComponentState[] };
+async function bundleComponents(bundleIds: string[]) {
+  if (!bundleIds.length) return new Map<string, BundleDetails>();
+  const rows = await db.select({
+    bundleId: productBundleComponentsTable.bundleId, quantity: productBundleComponentsTable.quantity,
+    productId: productsTable.id, name: productsTable.name, imageUrl: productsTable.imageUrl,
+    catalogReference: productsTable.catalogReference, stock: productsTable.stock, active: productsTable.active,
+    professionalEnabled: productsTable.professionalEnabled, retailEnabled: productsTable.retailEnabled,
+  }).from(productBundleComponentsTable).innerJoin(productsTable, eq(productBundleComponentsTable.productId, productsTable.id))
+    .where(and(inArray(productBundleComponentsTable.bundleId, bundleIds), activeCategoryCondition()))
+    .orderBy(asc(productBundleComponentsTable.sortOrder));
+  const result = new Map<string, BundleDetails>();
+  for (const row of rows) {
+    const prior = result.get(row.bundleId) ?? { components: [], derivedStock: Number.MAX_SAFE_INTEGER, rows: [] };
+    prior.components.push({ productId: row.productId, name: row.name, imageUrl: row.imageUrl, catalogReference: row.catalogReference, quantity: row.quantity });
+    prior.derivedStock = Math.min(prior.derivedStock, Math.floor(row.stock / row.quantity));
+    prior.rows.push({ productId: row.productId, name: row.name, imageUrl: row.imageUrl, catalogReference: row.catalogReference,
+      quantity: row.quantity, active: row.active, professionalEnabled: row.professionalEnabled, retailEnabled: row.retailEnabled });
+    result.set(row.bundleId, prior);
+  }
+  return result;
+}
+
+type BundleTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+function bundleComponentValues(bundleId: string, components: BundleComponentInput[]) {
+  const used = new Set(components.flatMap((component) => component.sortOrder === undefined ? [] : [component.sortOrder]));
+  let next = 0;
+  return components.map((component) => {
+    if (component.sortOrder !== undefined) return { bundleId, productId: component.productId, quantity: component.quantity, sortOrder: component.sortOrder };
+    while (used.has(next)) next += 1;
+    const sortOrder = next; used.add(sortOrder); next += 1;
+    return { bundleId, productId: component.productId, quantity: component.quantity, sortOrder };
+  });
+}
+async function validateBundleComponentsInTx(tx: BundleTransaction, input: BundleInput) {
+  const components = input.components!;
+  const ids = [...components.map((component) => component.productId)].sort();
+  // Lock in a deterministic order before validating supplier/channel state.
+  for (const id of ids) await tx.execute(sql`select id from products where id = ${id} for update`);
+  const products = await tx.select().from(productsTable).where(inArray(productsTable.id, ids));
+  if (products.length !== ids.length || products.some((product) => product.supplierId !== input.supplierId)) {
+    throw new Error("bundle_component_supplier_conflict");
+  }
+  const wantsB2B = input.market === "B2B" || input.market === "BOTH";
+  const wantsB2C = input.market === "B2C" || input.market === "BOTH";
+  if (products.some((product) => !product.active || (wantsB2B && !product.professionalEnabled) || (wantsB2C && !product.retailEnabled))) {
+    throw new Error("bundle_component_channel_conflict");
+  }
+  const categoryEligible = await tx.select({ id: productsTable.id }).from(productsTable)
+    .where(and(inArray(productsTable.id, ids), activeCategoryCondition()));
+  if (categoryEligible.length !== ids.length) throw new Error("bundle_component_channel_conflict");
+}
+
+function bundleDto(bundle: typeof productBundlesTable.$inferSelect, data: Pick<BundleDetails, "components" | "derivedStock">) {
+  return {
+    id: bundle.id, supplierId: bundle.supplierId, name: bundle.name, description: bundle.description,
+    imageUrl: bundle.imageUrl, market: bundle.market, b2bPrice: bundle.b2bPrice, b2cPrice: bundle.b2cPrice,
+    active: bundle.active, createdAt: bundle.createdAt, updatedAt: bundle.updatedAt,
+    components: data.components, derivedStock: data.derivedStock === Number.MAX_SAFE_INTEGER ? 0 : data.derivedStock,
+  };
+}
+
+router.get("/admin/bundles", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const rows = await db.select().from(productBundlesTable).orderBy(asc(productBundlesTable.name), asc(productBundlesTable.id));
+  const components = await bundleComponents(rows.map((row) => row.id));
+  res.json(rows.map((row) => bundleDto(row, components.get(row.id) ?? { components: [], derivedStock: 0 })));
+});
+router.post("/admin/bundles", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const input = bundleInput(req.body, true);
+  if (!input) { res.status(400).json({ error: "Neispravan paket: potrebne su najmanje dve jedinstvene komponente i fiksne cene za izabrano tržište." }); return; }
+  try {
+    const bundle = await db.transaction(async (tx) => {
+      await tx.execute(sql`select id from suppliers where id = ${input.supplierId} for update`);
+      const [supplier] = await tx.select().from(suppliersTable).where(eq(suppliersTable.id, input.supplierId)).limit(1);
+      if (!supplier) throw new Error("bundle_supplier_missing");
+      if ((input.market === "B2B" || input.market === "BOTH") && !["B2B", "BOTH"].includes(supplier.scope)) throw new Error("bundle_supplier_scope_conflict");
+      if ((input.market === "B2C" || input.market === "BOTH") && !["B2C", "BOTH"].includes(supplier.scope)) throw new Error("bundle_supplier_scope_conflict");
+      await validateBundleComponentsInTx(tx, input);
+      const [created] = await tx.insert(productBundlesTable).values({
+        supplierId: input.supplierId, name: input.name, description: input.description ?? null, imageUrl: input.imageUrl ?? null,
+        market: input.market, b2bPrice: input.b2bPrice ?? null, b2cPrice: input.b2cPrice ?? null, active: input.active ?? true,
+      }).returning();
+      await tx.insert(productBundleComponentsTable).values(bundleComponentValues(created!.id, input.components!));
+      return created!;
+    });
+    const components = await bundleComponents([bundle.id]);
+    res.status(201).json(bundleDto(bundle, components.get(bundle.id)!));
+  } catch (error) {
+    if (error instanceof Error && ["bundle_supplier_missing", "bundle_supplier_scope_conflict", "bundle_component_supplier_conflict", "bundle_component_channel_conflict"].includes(error.message)) {
+      res.status(409).json({ error: "Komponente paketa moraju pripadati istom dobavljaču i biti dostupne na izabranom tržištu." }); return;
+    }
+    throw error;
+  }
+});
+router.patch("/admin/bundles/:bundleId", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const input = bundleInput(req.body, false);
+  if (!input) { res.status(400).json({ error: "Neispravan paket." }); return; }
+  try {
+    const bundle = await db.transaction(async (tx) => {
+      await tx.execute(sql`select id from product_bundles where id = ${req.params.bundleId} for update`);
+      const [existing] = await tx.select().from(productBundlesTable).where(eq(productBundlesTable.id, req.params.bundleId)).limit(1);
+      if (!existing) throw new Error("bundle_missing");
+      if (existing.supplierId !== input.supplierId) throw new Error("bundle_supplier_immutable");
+      await tx.execute(sql`select id from suppliers where id = ${input.supplierId} for update`);
+      const [supplier] = await tx.select().from(suppliersTable).where(eq(suppliersTable.id, input.supplierId)).limit(1);
+      if (!supplier
+        || ((input.market === "B2B" || input.market === "BOTH") && !["B2B", "BOTH"].includes(supplier.scope))
+        || ((input.market === "B2C" || input.market === "BOTH") && !["B2C", "BOTH"].includes(supplier.scope))) {
+        throw new Error("bundle_supplier_scope_conflict");
+      }
+      if (input.components) {
+        await validateBundleComponentsInTx(tx, input);
+        await tx.delete(productBundleComponentsTable).where(eq(productBundleComponentsTable.bundleId, existing.id));
+        await tx.insert(productBundleComponentsTable).values(bundleComponentValues(existing.id, input.components));
+      }
+      const [updated] = await tx.update(productBundlesTable).set({
+        name: input.name, description: input.description ?? null, imageUrl: input.imageUrl ?? null, market: input.market,
+        b2bPrice: input.b2bPrice ?? null, b2cPrice: input.b2cPrice ?? null, active: input.active ?? existing.active, updatedAt: new Date(),
+      }).where(eq(productBundlesTable.id, existing.id)).returning();
+      return updated!;
+    });
+    const components = await bundleComponents([bundle.id]);
+    res.json(bundleDto(bundle, components.get(bundle.id)!));
+  } catch (error) {
+    if (error instanceof Error && ["bundle_missing", "bundle_supplier_immutable", "bundle_supplier_scope_conflict", "bundle_component_supplier_conflict", "bundle_component_channel_conflict"].includes(error.message)) {
+      res.status(error.message === "bundle_missing" ? 404 : 409).json({ error: "Paket ili njegove komponente nisu važeći za dobavljača i tržište." }); return;
+    }
+    throw error;
+  }
+});
+router.post("/admin/bundles/:bundleId/deactivate", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const [bundle] = await db.update(productBundlesTable).set({ active: false, updatedAt: new Date() })
+    .where(eq(productBundlesTable.id, req.params.bundleId)).returning();
+  if (!bundle) { res.status(404).json({ error: "Paket nije pronađen." }); return; }
+  const components = await bundleComponents([bundle.id]);
+  res.json(bundleDto(bundle, components.get(bundle.id) ?? { components: [], derivedStock: 0 }));
+});
+
+async function catalogBundles(market: "B2B" | "B2C") {
+  const rows = await db.select({ bundle: productBundlesTable, supplier: suppliersTable }).from(productBundlesTable)
+    .innerJoin(suppliersTable, eq(productBundlesTable.supplierId, suppliersTable.id))
+    .where(and(eq(productBundlesTable.active, true), eq(suppliersTable.active, true),
+      market === "B2B" ? inArray(productBundlesTable.market, ["B2B", "BOTH"]) : inArray(productBundlesTable.market, ["B2C", "BOTH"]),
+      market === "B2B" ? inArray(suppliersTable.scope, ["B2B", "BOTH"]) : inArray(suppliersTable.scope, ["B2C", "BOTH"])));
+  const details = await bundleComponents(rows.map((row) => row.bundle.id));
+  return rows.filter(({ bundle }) => {
+    const detail = details.get(bundle.id);
+    return Boolean(detail && detail.components.length >= 2 && detail.rows.every((product) => product.active
+      && (market === "B2B" ? product.professionalEnabled : product.retailEnabled)));
+  }).map(({ bundle }) => bundleDto(bundle, details.get(bundle.id)!));
+}
+router.get("/shop/bundles", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  res.json(await catalogBundles("B2B"));
+});
+router.get("/shop/bundles/:bundleId", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const bundle = (await catalogBundles("B2B")).find((item) => item.id === req.params.bundleId);
+  if (!bundle) { res.status(404).json({ error: "Paket nije pronađen." }); return; }
+  res.json(bundle);
+});
+router.get("/shop/public/bundles", async (_req, res): Promise<void> => {
+  const bundles = await catalogBundles("B2C");
+  // Public cards deliberately omit B2B price and all component unit prices.
+  res.json(bundles.map(({ b2bPrice: _b2bPrice, ...bundle }) => bundle));
+});
+router.get("/shop/public/bundles/:bundleId", async (req, res): Promise<void> => {
+  const bundle = (await catalogBundles("B2C")).find((item) => item.id === req.params.bundleId);
+  if (!bundle) { res.status(404).json({ error: "Paket nije pronađen." }); return; }
+  const { b2bPrice: _b2bPrice, ...publicBundle } = bundle;
+  res.json(publicBundle);
+});
+
 const RETAIL_CART_COOKIE = "lumera_retail_cart";
 const retailCartCookieOptions = {
   httpOnly: true,
@@ -9066,7 +9352,7 @@ const retailCartCookieOptions = {
   path: "/",
 };
 const hashRetailToken = (token: string) => createHash("sha256").update(token).digest("hex");
-type RetailCartItemInput = { productId: string; quantity: number };
+type RetailCartItemInput = ({ productId: string } | { bundleId: string }) & { quantity: number };
 type RetailCheckoutInput = {
   idempotencyKey: string; firstName: string; lastName: string; email: string; phone: string;
   street: string; city: string; postalCode: string; note?: string;
@@ -9075,9 +9361,13 @@ type RetailCheckoutInput = {
   desiredReferralCreditRsd: number;
 };
 function retailCartItemInput(body: unknown): RetailCartItemInput | null {
-  const value = body as Partial<RetailCartItemInput>;
-  return typeof value?.productId === "string" && value.productId.trim() && Number.isInteger(value.quantity) && value.quantity! >= 1 && value.quantity! <= 100
-    ? { productId: value.productId, quantity: value.quantity! } : null;
+  const value = body as { productId?: unknown; bundleId?: unknown; quantity?: unknown };
+  if (typeof value.quantity !== "number" || !Number.isInteger(value.quantity) || value.quantity < 1 || value.quantity > 100) return null;
+  if (typeof value.productId === "string" && value.productId.trim() && value.bundleId === undefined) return { productId: value.productId, quantity: value.quantity };
+  if (typeof value.bundleId === "string" && value.bundleId.trim() && value.productId === undefined) {
+    return { bundleId: value.bundleId, quantity: value.quantity };
+  }
+  return null;
 }
 function retailCheckoutInput(body: unknown): RetailCheckoutInput | null {
   const value = body as Record<string, unknown>;
@@ -9105,22 +9395,49 @@ function retailCheckoutInput(body: unknown): RetailCheckoutInput | null {
 
 async function retailCartForRequest(req: Request, res: Response) {
   let token = typeof req.cookies?.[RETAIL_CART_COOKIE] === "string" ? req.cookies[RETAIL_CART_COOKIE] : null;
+  const user = await getCurrentUser(req);
   let cart = token
     ? (await db.select().from(retailCartsTable).where(eq(retailCartsTable.tokenHash, hashRetailToken(token))).limit(1))[0]
     : undefined;
   if (!cart) {
     token = randomBytes(32).toString("base64url");
-    const user = await getCurrentUser(req);
     [cart] = await db.insert(retailCartsTable).values({
       tokenHash: hashRetailToken(token),
       userId: user?.role === "CUSTOMER" ? user.id : null,
     }).returning();
     res.cookie(RETAIL_CART_COOKIE, token, retailCartCookieOptions);
   } else {
-    const user = await getCurrentUser(req);
-    if (user?.role === "CUSTOMER" && cart.userId !== user.id) {
-      [cart] = await db.update(retailCartsTable).set({ userId: user.id, updatedAt: new Date() })
-        .where(eq(retailCartsTable.id, cart.id)).returning();
+    if (cart.userId !== null && (user?.role !== "CUSTOMER" || cart.userId !== user.id)) {
+      // Account-bound carts are not bearer-token carts. A stale/shared cookie
+      // after logout or account switching must start an isolated cart instead
+      // of exposing the previous customer's active or saved items.
+      token = randomBytes(32).toString("base64url");
+      [cart] = await db.insert(retailCartsTable).values({
+        tokenHash: hashRetailToken(token),
+        userId: user?.role === "CUSTOMER" ? user.id : null,
+      }).returning();
+      res.cookie(RETAIL_CART_COOKIE, token, retailCartCookieOptions);
+    } else if (user?.role === "CUSTOMER" && cart.userId === null) {
+      const [claimed] = await db.update(retailCartsTable).set({ userId: user.id, updatedAt: new Date() })
+        .where(and(eq(retailCartsTable.id, cart.id), isNull(retailCartsTable.userId))).returning();
+      if (claimed) {
+        cart = claimed;
+      } else {
+        // Another request claimed this anonymous cart first. Reuse it only
+        // when that winner is the same account; otherwise isolate this caller.
+        const [current] = await db.select().from(retailCartsTable)
+          .where(eq(retailCartsTable.id, cart.id)).limit(1);
+        if (current?.userId === user.id) {
+          cart = current;
+        } else {
+          token = randomBytes(32).toString("base64url");
+          [cart] = await db.insert(retailCartsTable).values({
+            tokenHash: hashRetailToken(token),
+            userId: user.id,
+          }).returning();
+          res.cookie(RETAIL_CART_COOKIE, token, retailCartCookieOptions);
+        }
+      }
     }
   }
   return cart!;
@@ -9130,9 +9447,13 @@ async function retailCartSummaryForRequest(req: Request) {
   const token = typeof req.cookies?.[RETAIL_CART_COOKIE] === "string" ? req.cookies[RETAIL_CART_COOKIE] : null;
   if (!token) return { itemCount: 0 };
 
-  const [cart] = await db.select({ id: retailCartsTable.id }).from(retailCartsTable)
+  const [cart] = await db.select({ id: retailCartsTable.id, userId: retailCartsTable.userId }).from(retailCartsTable)
     .where(eq(retailCartsTable.tokenHash, hashRetailToken(token))).limit(1);
   if (!cart) return { itemCount: 0 };
+  if (cart.userId !== null) {
+    const user = await getCurrentUser(req);
+    if (user?.role !== "CUSTOMER" || user.id !== cart.userId) return { itemCount: 0 };
+  }
 
   const [summary] = await db.select({
     itemCount: sql<number>`coalesce(sum(${retailCartItemsTable.quantity}), 0)`,
@@ -9140,55 +9461,192 @@ async function retailCartSummaryForRequest(req: Request) {
   return { itemCount: Number(summary?.itemCount ?? 0) };
 }
 
-function retailLineDto(item: typeof retailCartItemsTable.$inferSelect, catalogReference: string) {
+function retailLineDto(item: typeof retailCartItemsTable.$inferSelect, catalogReference: string | null) {
+  if (item.bundleId) return {
+    id: item.id, kind: "bundle" as const, bundleId: item.bundleId, name: item.productName, imageUrl: item.productImageUrl || null,
+    sku: null, quantity: item.quantity, unitPrice: item.unitPrice, lineTotal: item.unitPrice * item.quantity,
+  };
+  if (!item.productId || !catalogReference) throw new Error("Retail cart item refers to an unavailable product.");
   return {
-    id: item.id, productId: item.productId, name: item.productName, imageUrl: item.productImageUrl,
+    id: item.id, kind: "product" as const, productId: item.productId, name: item.productName, imageUrl: item.productImageUrl,
     sku: catalogReference,
     quantity: item.quantity, unitPrice: item.unitPrice, lineTotal: item.unitPrice * item.quantity,
   };
 }
 
+function retailProductPrice(product: typeof productsTable.$inferSelect, quantity: number) {
+  const salePrice = product.publicDiscountPrice;
+  const tier = salePrice == null
+    ? (product.quantityPricingTiers ?? []).find((candidate) => quantity >= candidate.minQuantity
+      && (candidate.maxQuantity == null || quantity <= candidate.maxQuantity))
+    : undefined;
+  return {
+    baseUnitPrice: product.publicPrice!,
+    unitPrice: salePrice ?? tier?.unitPrice ?? product.publicPrice!,
+    priceSource: salePrice != null ? "SALE" as const : tier ? "TIER" as const : "FULL_PRICE" as const,
+  };
+}
+
+type CartCommerceLine = {
+  productId?: string;
+  bundleId?: string;
+  quantity: number;
+  lineTotal: number;
+  availableStock: number;
+};
+
+async function cartCommerceFields(
+  market: "B2B" | "B2C",
+  lines: CartCommerceLine[],
+  owner: { salonId: string } | { userId: string } | null,
+) {
+  const [settings] = await db.select().from(shopSettingsTable).limit(1);
+  const config = await getShippingConfig();
+  const threshold = settings?.lowStockThreshold ?? 5;
+  const productIds = [...new Set(lines.flatMap((line) => line.productId ? [line.productId] : []))];
+  const bundleIds = [...new Set(lines.flatMap((line) => line.bundleId ? [line.bundleId] : []))];
+  const componentRows = bundleIds.length
+    ? await db.select({ bundleId: productBundleComponentsTable.bundleId, product: productsTable, quantity: productBundleComponentsTable.quantity })
+      .from(productBundleComponentsTable).innerJoin(productsTable, eq(productBundleComponentsTable.productId, productsTable.id))
+      .where(inArray(productBundleComponentsTable.bundleId, bundleIds))
+    : [];
+  const sourceProducts = productIds.length
+    ? await db.select().from(productsTable).where(inArray(productsTable.id, productIds))
+    : [];
+  const sourceById = new Map(sourceProducts.map((product) => [product.id, product]));
+  const componentsByBundle = new Map<string, typeof componentRows>();
+  for (const row of componentRows) componentsByBundle.set(row.bundleId, [...(componentsByBundle.get(row.bundleId) ?? []), row]);
+  const configuredIds = new Set<string>();
+  const configuredSuppliers = new Map<string, Set<string>>();
+  const cartProductIds = new Set(productIds);
+  for (const product of sourceProducts) for (const id of product.crossSellProductIds ?? []) {
+    configuredIds.add(id);
+    const suppliers = configuredSuppliers.get(id) ?? new Set<string>();
+    suppliers.add(product.supplierId); configuredSuppliers.set(id, suppliers);
+  }
+  for (const row of componentRows) {
+    cartProductIds.add(row.product.id);
+    for (const id of row.product.crossSellProductIds ?? []) {
+      configuredIds.add(id);
+      const suppliers = configuredSuppliers.get(id) ?? new Set<string>();
+      suppliers.add(row.product.supplierId); configuredSuppliers.set(id, suppliers);
+    }
+  }
+  for (const id of cartProductIds) configuredIds.delete(id);
+  const candidates = configuredIds.size ? await db.select().from(productsTable).where(and(
+    inArray(productsTable.id, [...configuredIds]),
+    eq(productsTable.active, true), activeCategoryCondition(), activeSupplierCondition(market),
+    market === "B2B" ? eq(productsTable.professionalEnabled, true) : and(eq(productsTable.retailEnabled, true), isNotNull(productsTable.publicPrice), isNotNull(productsTable.publicDescription), retailVariantCompatibleCondition()),
+  )) : [];
+  const crossSellProducts = candidates.filter((product) => configuredSuppliers.get(product.id)?.has(product.supplierId))
+    .map((product) => relatedProductCard(product, market));
+  const subtotal = lines.reduce((sum, line) => sum + line.lineTotal, 0);
+  const tierRows = market === "B2B" && owner && "salonId" in owner
+    ? await db.select({ freeShipping: loyaltyTiersTable.freeShipping }).from(salonLoyaltyStatusesTable)
+      .leftJoin(loyaltyTiersTable, eq(salonLoyaltyStatusesTable.tierId, loyaltyTiersTable.id))
+      .where(eq(salonLoyaltyStatusesTable.salonId, owner.salonId)).limit(1)
+    : [];
+  const freeShipping = tierRows[0]?.freeShipping === true;
+  const dateDays = Math.max(settings?.defaultDeliveryBusinessDays ?? 3, ...[
+    ...sourceProducts.map((product) => product.deliveryBusinessDaysOverride ?? settings?.defaultDeliveryBusinessDays ?? 3),
+    ...componentRows.map((row) => row.product.deliveryBusinessDaysOverride ?? settings?.defaultDeliveryBusinessDays ?? 3),
+  ]);
+  const currentLoyaltyPoints = owner
+    ? Number((await db.select({ points: sql<number>`coalesce(sum(${loyaltyPointLedgerTable.points}), 0)` }).from(loyaltyPointLedgerTable)
+      .where("salonId" in owner ? eq(loyaltyPointLedgerTable.salonId, owner.salonId) : eq(loyaltyPointLedgerTable.userId, owner.userId)))[0]?.points ?? 0)
+    : 0;
+  const projectedLoyaltyPoints = owner ? loyaltyPointsForAmount(subtotal, settings) : 0;
+  return {
+    crossSellProducts,
+    freeShippingProgress: {
+      threshold: config.freeShippingThreshold, subtotal, remaining: freeShipping || !config.freeShippingThreshold ? 0 : Math.max(0, config.freeShippingThreshold - subtotal),
+      qualifies: freeShipping || (config.freeShippingThreshold > 0 && subtotal >= config.freeShippingThreshold), loyaltyFreeShipping: freeShipping,
+    },
+    lowStockThreshold: threshold,
+    estimatedDeliveryDate: belgradeBusinessDate(dateDays),
+    showLoyaltyPoints: settings?.showLoyaltyPoints ?? true,
+    currentLoyaltyPoints: settings?.showLoyaltyPoints ? currentLoyaltyPoints : 0,
+    projectedLoyaltyPoints: settings?.showLoyaltyPoints ? projectedLoyaltyPoints : 0,
+    lineLowStock: new Map(lines.map((line) => {
+      const derivedBundleStock = line.bundleId
+        ? Math.min(...(componentsByBundle.get(line.bundleId) ?? []).map((component) => Math.floor(component.product.stock / component.quantity)))
+        : line.availableStock;
+      return [line.productId ?? `bundle:${line.bundleId}`, derivedBundleStock > 0 && derivedBundleStock <= threshold] as const;
+    })),
+  };
+}
+
 async function retailCartDto(cartId: string) {
+  const [cart] = await db.select({ userId: retailCartsTable.userId }).from(retailCartsTable).where(eq(retailCartsTable.id, cartId)).limit(1);
   const items = await db.select().from(retailCartItemsTable)
     .where(eq(retailCartItemsTable.cartId, cartId)).orderBy(asc(retailCartItemsTable.createdAt));
-  const productIds = [...new Set(items.map((item) => item.productId))];
+  const productIds = [...new Set(items.flatMap((item) => item.productId ? [item.productId] : []))];
   const products = productIds.length
-    ? await db.select({ id: productsTable.id, catalogReference: productsTable.catalogReference }).from(productsTable)
+    ? await db.select({ id: productsTable.id, catalogReference: productsTable.catalogReference, stock: productsTable.stock }).from(productsTable)
       .where(inArray(productsTable.id, productIds))
     : [];
   const productCatalogReferences = new Map(products.map((product) => [product.id, product.catalogReference]));
+  const productStocks = new Map(products.map((product) => [product.id, product.stock]));
   const lines = items.map((item) => {
-    const catalogReference = item.productCatalogReference ?? productCatalogReferences.get(item.productId);
-    if (!catalogReference) throw new Error("Retail cart item refers to an unavailable product.");
+    const catalogReference = item.productId ? item.productCatalogReference ?? productCatalogReferences.get(item.productId) ?? null : null;
     return retailLineDto(item, catalogReference);
   });
+  const saved = await db.select().from(savedRetailCartItemsTable)
+    .where(eq(savedRetailCartItemsTable.cartId, cartId)).orderBy(asc(savedRetailCartItemsTable.createdAt));
+  const commerce = await cartCommerceFields("B2C", lines.map((line) => ({
+    productId: line.kind === "product" ? line.productId : undefined, bundleId: line.kind === "bundle" ? line.bundleId : undefined,
+    quantity: line.quantity, lineTotal: line.lineTotal, availableStock: line.kind === "product" ? productStocks.get(line.productId) ?? 0 : 0,
+  })), cart?.userId ? { userId: cart.userId } : null);
+  const { lineLowStock, ...commerceDto } = commerce;
   return {
     id: cartId,
-    items: lines,
+    savedItems: saved.map((item) => ({ id: item.id, productId: item.productId, bundleId: item.bundleId, variantValue: item.variantValue, quantity: item.quantity })),
     itemCount: lines.reduce((sum, item) => sum + item.quantity, 0),
     subtotal: lines.reduce((sum, item) => sum + item.lineTotal, 0),
+    ...commerceDto,
+    items: lines.map((line) => ({ ...line, lowStock: lineLowStock.get(line.kind === "product" ? line.productId : `bundle:${line.bundleId}`) ?? false })),
   };
 }
 
 async function retailCheckoutCartQuote(cartId: string) {
   const cartItems = await db.select().from(retailCartItemsTable)
     .where(eq(retailCartItemsTable.cartId, cartId)).orderBy(asc(retailCartItemsTable.createdAt));
-  const productIds = [...new Set(cartItems.map((item) => item.productId))];
+  const productItems = cartItems.filter((item): item is typeof item & { productId: string; bundleId: null } => item.productId !== null);
+  const bundleItems = cartItems.filter((item): item is typeof item & { bundleId: string; productId: null } => item.bundleId !== null);
+  const bundleIds = [...new Set(bundleItems.map((item) => item.bundleId))];
+  const bundleRows = bundleIds.length ? await db.select().from(productBundlesTable).where(and(
+    inArray(productBundlesTable.id, bundleIds), eq(productBundlesTable.active, true),
+    inArray(productBundlesTable.market, ["B2C", "BOTH"]),
+  )) : [];
+  const bundles = new Map(bundleRows.map((bundle) => [bundle.id, bundle]));
+  const components = bundleIds.length ? await db.select({ component: productBundleComponentsTable, product: productsTable })
+    .from(productBundleComponentsTable).innerJoin(productsTable, eq(productBundleComponentsTable.productId, productsTable.id))
+    .where(inArray(productBundleComponentsTable.bundleId, bundleIds)) : [];
+  const componentsByBundle = new Map<string, Array<typeof components[number]>>();
+  for (const component of components) componentsByBundle.set(component.component.bundleId, [...(componentsByBundle.get(component.component.bundleId) ?? []), component]);
+  const productIds = [...new Set([...productItems.map((item) => item.productId), ...components.map(({ component }) => component.productId)])];
   const products = productIds.length
     ? await db.select().from(productsTable).where(and(inArray(productsTable.id, productIds), activeCategoryCondition(), activeSupplierCondition("B2C")))
     : [];
   const byId = new Map(products.map((product) => [product.id, product]));
   const quantityByProduct = new Map<string, number>();
-  for (const item of cartItems) {
+  for (const item of productItems) {
     quantityByProduct.set(item.productId, (quantityByProduct.get(item.productId) ?? 0) + item.quantity);
   }
-  const lines = cartItems.map((item) => {
+  for (const item of bundleItems) for (const { component } of componentsByBundle.get(item.bundleId) ?? []) {
+    quantityByProduct.set(component.productId, (quantityByProduct.get(component.productId) ?? 0) + component.quantity * item.quantity);
+  }
+  const bundleSupplierIds = [...new Set(bundleRows.map((bundle) => bundle.supplierId))];
+  const eligibleBundleSuppliers = new Set((bundleSupplierIds.length ? await db.select({ id: suppliersTable.id }).from(suppliersTable)
+    .where(and(inArray(suppliersTable.id, bundleSupplierIds), eq(suppliersTable.active, true), inArray(suppliersTable.scope, ["B2C", "BOTH"]))) : []).map((supplier) => supplier.id));
+  const lines = productItems.map((item) => {
     const product = byId.get(item.productId);
     if (!product || !product.active || !product.retailEnabled || !product.publicDescription
       || product.publicPrice == null || product.stock < (quantityByProduct.get(item.productId) ?? 0) || (product.variants?.length ?? 0) > 0) {
       return null;
     }
-    const unitPrice = product.publicDiscountPrice ?? product.publicPrice;
+    const pricing = retailProductPrice(product, item.quantity);
+    const unitPrice = pricing.unitPrice;
     return {
       ...retailLineDto(item, item.productCatalogReference ?? product.catalogReference),
       name: product.name,
@@ -9196,17 +9654,37 @@ async function retailCheckoutCartQuote(cartId: string) {
       unitPrice,
       lineTotal: unitPrice * item.quantity,
       weightGrams: product.weightGrams ?? 0,
+      baseUnitPrice: pricing.baseUnitPrice,
+      priceSource: pricing.priceSource,
+      lineDiscount: (pricing.baseUnitPrice - unitPrice) * item.quantity,
     };
   });
-  const unavailableItems = cartItems
+  const bundleLines = bundleItems.map((item) => {
+    const bundle = bundles.get(item.bundleId);
+    const bundleComponents = componentsByBundle.get(item.bundleId) ?? [];
+    const valid = bundle && bundle.b2cPrice != null && bundleComponents.length >= 2 && bundleComponents.every(({ product }) =>
+      byId.has(product.id) && product.active && product.retailEnabled && product.publicPrice != null && product.publicDescription
+      && eligibleBundleSuppliers.has(bundle.supplierId) && (product.variants?.length ?? 0) === 0
+      && product.stock >= (quantityByProduct.get(product.id) ?? 0));
+    if (!valid) return null;
+    return {
+      ...retailLineDto(item, null), name: bundle.name, imageUrl: bundle.imageUrl ?? "", unitPrice: bundle.b2cPrice!,
+      lineTotal: bundle.b2cPrice! * item.quantity,
+      weightGrams: bundleComponents.reduce((sum, { component, product }) => sum + (product.weightGrams ?? 0) * component.quantity, 0),
+    };
+  });
+  const unavailableItems = [
+    ...bundleItems.filter((_, index) => bundleLines[index] === null).map((item) => ({ productId: item.bundleId, name: item.productName })),
+    ...productItems
     .filter((_, index) => lines[index] === null)
     .map((item) => ({
       productId: item.productId,
       name: byId.get(item.productId)?.name ?? item.productName,
     }))
-    .filter((item, index, all) => all.findIndex((candidate) => candidate.productId === item.productId) === index);
+    .filter((item, index, all) => all.findIndex((candidate) => candidate.productId === item.productId) === index),
+  ];
   if (unavailableItems.length) return { view: null, unavailableItems };
-  const validLines = lines.filter((line): line is NonNullable<typeof line> => line !== null);
+  const validLines = [...lines, ...bundleLines].filter((line): line is NonNullable<typeof line> => line !== null);
   return {
     view: {
       id: cartId,
@@ -9235,14 +9713,20 @@ function retailOrderDto(
     shippingCost: order.shippingCost,
     total: order.total,
     trackingNumber: order.trackingNumber ?? null,
+    estimatedDeliveryDate: order.estimatedDeliveryDate ?? null,
     createdAt: order.createdAt.toISOString(),
     contact: { name: order.shippingName, email: order.shippingEmail, phone: order.shippingPhone },
     delivery: { address: order.shippingAddress, city: order.shippingCity, postalCode: order.shippingPostalCode, note: order.shippingNote ?? null },
     items: items.map((item) => {
-      const catalogReference = item.productCatalogReference ?? productCatalogReferences.get(item.productId);
+      const catalogReference = item.productId ? item.productCatalogReference ?? productCatalogReferences.get(item.productId) : null;
+      if (item.bundleId) return {
+        id: item.id, kind: "bundle" as const, bundleId: item.bundleId, name: item.productName, imageUrl: item.productImageUrl || null,
+        sku: null, variantLabel: item.variantLabel ?? null, quantity: item.quantity, unitPrice: item.unitPrice,
+      };
       if (!catalogReference) throw new Error("Retail order item refers to an unavailable product.");
+      if (!item.productId || !catalogReference) throw new Error("Retail order item refers to an unavailable product.");
       return {
-        id: item.id, productId: item.productId, name: item.productName, imageUrl: item.productImageUrl,
+        id: item.id, kind: "product" as const, productId: item.productId, name: item.productName, imageUrl: item.productImageUrl,
         sku: catalogReference,
         variantLabel: item.variantLabel ?? null, quantity: item.quantity, unitPrice: item.unitPrice,
       };
@@ -9252,7 +9736,7 @@ function retailOrderDto(
 
 async function retailOrderWithItems(order: typeof retailOrdersTable.$inferSelect) {
   const items = await db.select().from(retailOrderItemsTable).where(eq(retailOrderItemsTable.orderId, order.id));
-  const productIds = [...new Set(items.map((item) => item.productId))];
+  const productIds = [...new Set(items.flatMap((item) => item.productId ? [item.productId] : []))];
   const products = productIds.length
     ? await db.select({ id: productsTable.id, catalogReference: productsTable.catalogReference }).from(productsTable)
       .where(inArray(productsTable.id, productIds))
@@ -9266,7 +9750,7 @@ async function retailOrdersWithItems(orders: Array<typeof retailOrdersTable.$inf
   const items = await db.select().from(retailOrderItemsTable).where(inArray(retailOrderItemsTable.orderId, orderIds));
   const fallbackProductIds = [...new Set(items
     .filter((item) => item.productCatalogReference == null)
-    .map((item) => item.productId))];
+    .flatMap((item) => item.productId ? [item.productId] : []))];
   const products = fallbackProductIds.length
     ? await db.select({ id: productsTable.id, catalogReference: productsTable.catalogReference }).from(productsTable)
       .where(inArray(productsTable.id, fallbackProductIds))
@@ -9382,7 +9866,24 @@ router.post("/retail/cart/items", async (req, res): Promise<void> => {
   const parsed = retailCartItemInput(req.body);
   if (!parsed) { res.status(400).json({ error: "Neispravna stavka korpe." }); return; }
   const cart = await retailCartForRequest(req, res);
+  if ("bundleId" in parsed) {
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(sql`select id from retail_carts where id = ${cart.id} for update`);
+      const target = await bundleForCartInTx(tx, parsed.bundleId, "B2C");
+      if (!target || target.bundle.b2cPrice == null) return false;
+      const [existing] = await tx.select().from(retailCartItemsTable).where(and(eq(retailCartItemsTable.cartId, cart.id), eq(retailCartItemsTable.bundleId, target.bundle.id))).limit(1);
+      const quantity = (existing?.quantity ?? 0) + parsed.quantity;
+      if (quantity > target.derivedStock) return false;
+      if (existing) await tx.update(retailCartItemsTable).set({ quantity, unitPrice: target.bundle.b2cPrice, updatedAt: new Date() }).where(eq(retailCartItemsTable.id, existing.id));
+      else await tx.insert(retailCartItemsTable).values({ cartId: cart.id, bundleId: target.bundle.id, productName: target.bundle.name, productImageUrl: target.bundle.imageUrl ?? "", unitPrice: target.bundle.b2cPrice, quantity, weightGrams: 0 });
+      await tx.update(retailCartsTable).set({ updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
+      return true;
+    });
+    if (!result) { res.status(409).json({ error: "Paket nije dostupan u traženoj količini." }); return; }
+    res.status(201).json(await retailCartDto(cart.id)); return;
+  }
   let stockConflict = false;
+  let minimumOrderQuantity: number | null = null;
   await db.transaction(async (tx) => {
     await tx.execute(sql`select id from retail_carts where id = ${cart.id} for update`);
     await tx.execute(sql`select id from products where id = ${parsed.productId} for update`);
@@ -9396,7 +9897,6 @@ router.post("/retail/cart/items", async (req, res): Promise<void> => {
       activeCategoryCondition(), activeSupplierCondition("B2C"),
     )).limit(1);
     if (!product || (product.variants?.length ?? 0) > 0) throw new Error("retail_stock_conflict");
-    const unitPrice = product.publicDiscountPrice ?? product.publicPrice!;
     const [existing] = await tx.select().from(retailCartItemsTable).where(and(
       eq(retailCartItemsTable.cartId, cart.id), eq(retailCartItemsTable.productId, product.id), isNull(retailCartItemsTable.variantValue),
     )).limit(1);
@@ -9405,6 +9905,11 @@ router.post("/retail/cart/items", async (req, res): Promise<void> => {
     ));
     const quantity = productCartItems.reduce((sum, item) => sum + item.quantity, 0) + parsed.quantity;
     if (quantity > product.stock) throw new Error("retail_stock_conflict");
+    if (quantity < product.minimumOrderQuantity) {
+      minimumOrderQuantity = product.minimumOrderQuantity;
+      throw new Error("retail_moq_conflict");
+    }
+    const unitPrice = retailProductPrice(product, quantity).unitPrice;
     if (existing) {
       await tx.update(retailCartItemsTable).set({ quantity: existing.quantity + parsed.quantity, unitPrice, updatedAt: new Date() })
         .where(eq(retailCartItemsTable.id, existing.id));
@@ -9418,9 +9923,15 @@ router.post("/retail/cart/items", async (req, res): Promise<void> => {
     await tx.update(retailCartsTable).set({ updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
   }).catch((error: unknown) => {
     if (error instanceof Error && error.message === "retail_stock_conflict") { stockConflict = true; return null; }
+    if (error instanceof Error && error.message === "retail_moq_conflict") { stockConflict = true; return "moq" as const; }
     throw error;
   });
-  if (stockConflict) { res.status(409).json({ error: "Proizvod je već u korpi u većoj količini nego što je trenutno dostupno." }); return; }
+  if (stockConflict) {
+    res.status(409).json(minimumOrderQuantity == null
+      ? { error: "Proizvod nije dostupan u traženoj količini." }
+      : { error: "Tražena količina je ispod minimalne količine.", code: "MINIMUM_ORDER_QUANTITY", minimumOrderQuantity });
+    return;
+  }
   res.status(201).json(await retailCartDto(cart.id));
 });
 
@@ -9435,12 +9946,21 @@ router.patch("/retail/cart/items/:cartItemId", async (req, res): Promise<void> =
       eq(retailCartItemsTable.id, req.params.cartItemId), eq(retailCartItemsTable.cartId, cart.id),
     )).limit(1);
     if (!item) return "missing";
+    if (item.bundleId) {
+      const target = await bundleForCartInTx(tx, item.bundleId, "B2C");
+      if (!target || target.bundle.b2cPrice == null || body.quantity > target.derivedStock) return "stock";
+      await tx.update(retailCartItemsTable).set({ quantity: body.quantity, unitPrice: target.bundle.b2cPrice, updatedAt: new Date() }).where(eq(retailCartItemsTable.id, item.id));
+      await tx.update(retailCartsTable).set({ updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
+      return "ok";
+    }
+    if (!item.productId) return "stock";
     await tx.execute(sql`select id from products where id = ${item.productId} for update`);
     const [product] = await tx.select().from(productsTable).where(and(
       eq(productsTable.id, item.productId), eq(productsTable.active, true), eq(productsTable.retailEnabled, true),
       isNotNull(productsTable.publicDescription), isNotNull(productsTable.publicPrice), retailVariantCompatibleCondition(), activeCategoryCondition(), activeSupplierCondition("B2C"),
     )).limit(1);
     if (!product || product.stock < body.quantity || (product.variants?.length ?? 0) > 0) return "stock";
+    if (body.quantity < product.minimumOrderQuantity) return "moq";
     const productCartItems = await tx.select().from(retailCartItemsTable).where(and(
       eq(retailCartItemsTable.cartId, cart.id), eq(retailCartItemsTable.productId, item.productId),
     ));
@@ -9449,13 +9969,14 @@ router.patch("/retail/cart/items/:cartItemId", async (req, res): Promise<void> =
       .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
     if (otherQuantity + body.quantity > product.stock) return "stock";
     await tx.update(retailCartItemsTable).set({
-      quantity: body.quantity, unitPrice: product.publicDiscountPrice ?? product.publicPrice!, updatedAt: new Date(),
+      quantity: body.quantity, unitPrice: retailProductPrice(product, body.quantity).unitPrice, updatedAt: new Date(),
     }).where(eq(retailCartItemsTable.id, item.id));
     await tx.update(retailCartsTable).set({ updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
     return "ok";
   });
   if (result === "missing") { res.status(404).json({ error: "Stavka korpe nije pronađena." }); return; }
   if (result === "stock") { res.status(409).json({ error: "Proizvod više nije dostupan u traženoj količini." }); return; }
+  if (result === "moq") { res.status(409).json({ error: "Tražena količina je ispod minimalne količine.", code: "MINIMUM_ORDER_QUANTITY" }); return; }
   res.json(await retailCartDto(cart.id));
 });
 
@@ -9469,6 +9990,103 @@ router.delete("/retail/cart/items/:cartItemId", async (req, res): Promise<void> 
     await tx.update(retailCartsTable).set({ updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
   });
   res.json(await retailCartDto(cart.id));
+});
+
+router.post("/retail/cart/items/:cartItemId/save-for-later", async (req, res): Promise<void> => {
+  const cart = await retailCartForRequest(req, res);
+  const moved = await db.transaction(async (tx) => {
+    await tx.execute(sql`select id from retail_carts where id = ${cart.id} for update`);
+    const [item] = await tx.select().from(retailCartItemsTable).where(and(eq(retailCartItemsTable.id, req.params.cartItemId), eq(retailCartItemsTable.cartId, cart.id))).limit(1);
+    if (!item) return false;
+    await tx.insert(savedRetailCartItemsTable).values({ cartId: cart.id, productId: item.productId, bundleId: item.bundleId, variantValue: item.variantValue, quantity: item.quantity });
+    await tx.delete(retailCartItemsTable).where(eq(retailCartItemsTable.id, item.id));
+    await tx.update(retailCartsTable).set({ updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
+    return true;
+  });
+  if (!moved) { res.status(404).json({ error: "Stavka korpe nije pronađena." }); return; }
+  res.json(await retailCartDto(cart.id));
+});
+
+router.delete("/retail/cart/saved-items/:savedItemId", async (req, res): Promise<void> => {
+  const cart = await retailCartForRequest(req, res);
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select id from retail_carts where id = ${cart.id} for update`);
+    await tx.delete(savedRetailCartItemsTable).where(and(eq(savedRetailCartItemsTable.id, req.params.savedItemId), eq(savedRetailCartItemsTable.cartId, cart.id)));
+    await tx.update(retailCartsTable).set({ updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
+  });
+  res.json(await retailCartDto(cart.id));
+});
+
+router.post("/retail/cart/saved-items/:savedItemId/restore", async (req, res): Promise<void> => {
+  const cart = await retailCartForRequest(req, res);
+  const result = await db.transaction(async (tx) => {
+    await tx.execute(sql`select id from retail_carts where id = ${cart.id} for update`);
+    const [saved] = await tx.select().from(savedRetailCartItemsTable).where(and(eq(savedRetailCartItemsTable.id, req.params.savedItemId), eq(savedRetailCartItemsTable.cartId, cart.id))).limit(1);
+    if (!saved) return "missing";
+    if (saved.bundleId) {
+      const target = await bundleForCartInTx(tx, saved.bundleId, "B2C");
+      const [existing] = target ? await tx.select().from(retailCartItemsTable).where(and(eq(retailCartItemsTable.cartId, cart.id), eq(retailCartItemsTable.bundleId, saved.bundleId))).limit(1) : [];
+      const quantity = (existing?.quantity ?? 0) + saved.quantity;
+      if (!target || target.bundle.b2cPrice == null || quantity > target.derivedStock) return "unavailable";
+      if (existing) await tx.update(retailCartItemsTable).set({ quantity, unitPrice: target.bundle.b2cPrice, updatedAt: new Date() }).where(eq(retailCartItemsTable.id, existing.id));
+      else await tx.insert(retailCartItemsTable).values({ cartId: cart.id, bundleId: saved.bundleId, productName: target.bundle.name, productImageUrl: target.bundle.imageUrl ?? "", unitPrice: target.bundle.b2cPrice, quantity, weightGrams: 0 });
+    } else if (saved.productId) {
+      await tx.execute(sql`select id from products where id = ${saved.productId} for update`);
+      const [product] = await tx.select().from(productsTable).where(and(eq(productsTable.id, saved.productId), eq(productsTable.active, true), eq(productsTable.retailEnabled, true), isNotNull(productsTable.publicDescription), isNotNull(productsTable.publicPrice), retailVariantCompatibleCondition(), activeCategoryCondition(), activeSupplierCondition("B2C"))).limit(1);
+      const [existing] = product ? await tx.select().from(retailCartItemsTable).where(and(eq(retailCartItemsTable.cartId, cart.id), eq(retailCartItemsTable.productId, saved.productId), isNull(retailCartItemsTable.variantValue))).limit(1) : [];
+      const quantity = (existing?.quantity ?? 0) + saved.quantity;
+      if (!product || quantity > product.stock || quantity < product.minimumOrderQuantity) return "unavailable";
+      const unitPrice = retailProductPrice(product, quantity).unitPrice;
+      if (existing) await tx.update(retailCartItemsTable).set({ quantity, unitPrice, updatedAt: new Date() }).where(eq(retailCartItemsTable.id, existing.id));
+      else await tx.insert(retailCartItemsTable).values({ cartId: cart.id, productId: product.id, productName: product.name, productImageUrl: product.imageUrl, productCatalogReference: product.catalogReference, unitPrice, quantity, weightGrams: product.weightGrams ?? 0 });
+    } else return "unavailable";
+    await tx.delete(savedRetailCartItemsTable).where(eq(savedRetailCartItemsTable.id, saved.id));
+    await tx.update(retailCartsTable).set({ updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
+    return "ok";
+  });
+  if (result !== "ok") { res.status(result === "missing" ? 404 : 409).json({ error: result === "missing" ? "Sačuvana stavka nije pronađena." : "Stavka više nije dostupna u traženoj količini." }); return; }
+  res.json(await retailCartDto(cart.id));
+});
+
+router.post("/retail/orders/repeat-last", async (req, res): Promise<void> => {
+  const user = await getCurrentUser(req);
+  if (user?.role !== "CUSTOMER") { res.status(401).json({ error: "Prijavite se da biste ponovili porudžbinu." }); return; }
+  const key = req.get("Idempotency-Key")?.trim() ?? "";
+  if (key.length < 8 || key.length > 200) { res.status(400).json({ error: "Idempotency-Key zaglavlje je obavezno." }); return; }
+  const cart = await retailCartForRequest(req, res);
+  const result = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`b2c:${user.id}:${key}`}))`);
+    const [prior] = await tx.select().from(reorderActionsTable).where(and(eq(reorderActionsTable.userId, user.id), eq(reorderActionsTable.idempotencyKey, key))).limit(1);
+    if (prior) return prior.result;
+    await tx.execute(sql`select id from retail_carts where id = ${cart.id} for update`);
+    const [order] = await tx.select().from(retailOrdersTable).where(eq(retailOrdersTable.userId, user.id)).orderBy(desc(retailOrdersTable.createdAt)).limit(1);
+    const outcome: { added: unknown[]; skipped: unknown[]; adjusted: unknown[] } = { added: [], skipped: [], adjusted: [] };
+    if (order) for (const source of await tx.select().from(retailOrderItemsTable).where(eq(retailOrderItemsTable.orderId, order.id))) {
+      if (source.bundleId) {
+        const target = await bundleForCartInTx(tx, source.bundleId, "B2C");
+        const [existing] = target ? await tx.select().from(retailCartItemsTable).where(and(eq(retailCartItemsTable.cartId, cart.id), eq(retailCartItemsTable.bundleId, source.bundleId))).limit(1) : [];
+        const requested = source.quantity; const quantity = Math.min(requested, Math.max(0, (target?.derivedStock ?? 0) - (existing?.quantity ?? 0)));
+        if (!target || target.bundle.b2cPrice == null || quantity < 1) { outcome.skipped.push({ id: source.bundleId, reason: "unavailable" }); continue; }
+        if (existing) await tx.update(retailCartItemsTable).set({ quantity: existing.quantity + quantity, unitPrice: target.bundle.b2cPrice, updatedAt: new Date() }).where(eq(retailCartItemsTable.id, existing.id));
+        else await tx.insert(retailCartItemsTable).values({ cartId: cart.id, bundleId: source.bundleId, productName: target.bundle.name, productImageUrl: target.bundle.imageUrl ?? "", unitPrice: target.bundle.b2cPrice, quantity, weightGrams: 0 });
+        (quantity === requested ? outcome.added : outcome.adjusted).push({ id: source.bundleId, requestedQuantity: requested, quantity });
+      } else if (source.productId) {
+        await tx.execute(sql`select id from products where id = ${source.productId} for update`);
+        const [product] = await tx.select().from(productsTable).where(and(eq(productsTable.id, source.productId), eq(productsTable.active, true), eq(productsTable.retailEnabled, true), isNotNull(productsTable.publicDescription), isNotNull(productsTable.publicPrice), retailVariantCompatibleCondition(), activeCategoryCondition(), activeSupplierCondition("B2C"))).limit(1);
+        const [existing] = product ? await tx.select().from(retailCartItemsTable).where(and(eq(retailCartItemsTable.cartId, cart.id), eq(retailCartItemsTable.productId, source.productId), isNull(retailCartItemsTable.variantValue))).limit(1) : [];
+        const requested = source.quantity; const quantity = Math.min(requested, Math.max(0, (product?.stock ?? 0) - (existing?.quantity ?? 0)));
+        if (!product || quantity < product.minimumOrderQuantity) { outcome.skipped.push({ id: source.productId, reason: "unavailable" }); continue; }
+        const unitPrice = retailProductPrice(product, (existing?.quantity ?? 0) + quantity).unitPrice;
+        if (existing) await tx.update(retailCartItemsTable).set({ quantity: existing.quantity + quantity, unitPrice, updatedAt: new Date() }).where(eq(retailCartItemsTable.id, existing.id));
+        else await tx.insert(retailCartItemsTable).values({ cartId: cart.id, productId: product.id, productName: product.name, productImageUrl: product.imageUrl, productCatalogReference: product.catalogReference, unitPrice, quantity, weightGrams: product.weightGrams ?? 0 });
+        (quantity === requested ? outcome.added : outcome.adjusted).push({ id: source.productId, requestedQuantity: requested, quantity });
+      }
+    }
+    await tx.update(retailCartsTable).set({ updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
+    await tx.insert(reorderActionsTable).values({ audience: "B2C", userId: user.id, idempotencyKey: key, result: outcome });
+    return outcome;
+  });
+  res.json({ ...result, cart: await retailCartDto(cart.id) });
 });
 
 router.get("/retail/checkout-preview", async (req, res): Promise<void> => {
@@ -9497,8 +10115,15 @@ router.get("/retail/checkout-preview", async (req, res): Promise<void> => {
     ? await db.transaction((tx) => referralCreditBalanceInTx(tx, { ownerUserId: user.id, walletKind: "B2C" }))
     : 0;
   const applied = Math.min(desired || available, available, view.subtotal);
+  const commerce = await cartCommerceFields("B2C", view.items.map((line) => ({
+    productId: line.kind === "product" ? line.productId : undefined, bundleId: line.kind === "bundle" ? line.bundleId : undefined,
+    quantity: line.quantity, lineTotal: line.lineTotal, availableStock: 0,
+  })), user?.role === "CUSTOMER" ? { userId: user.id } : null);
+  const { lineLowStock, ...commerceDto } = commerce;
   res.json({
-    cart: view, shipping, total: view.subtotal + shipping.shippingCost - applied, paymentMethods: checkoutPaymentMethods,
+    cart: { ...view, ...commerceDto, items: view.items.map((line) => ({
+      ...line, lowStock: lineLowStock.get(line.kind === "product" ? line.productId : `bundle:${line.bundleId}`) ?? false,
+    })) }, shipping, total: view.subtotal + shipping.shippingCost - applied, paymentMethods: checkoutPaymentMethods,
     referralCreditAvailableRsd: available, referralCreditAppliedRsd: applied,
     merchandiseSubtotalRsd: view.subtotal, shippingRsd: shipping.shippingCost,
     payableTotalRsd: view.subtotal + shipping.shippingCost - applied,
@@ -9524,6 +10149,7 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
   let stockConflict = false;
   let idempotencyConflict = false;
   let quoteConflict = false;
+  let minimumOrderConflict: { name: string; minimumOrderQuantity: number } | null = null;
   const created = await db.transaction(async (tx) => {
     await tx.execute(sql`select id from retail_carts where id = ${cart.id} for update`);
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${parsed.idempotencyKey}))`);
@@ -9535,10 +10161,24 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
     if (collision) throw new Error("retail_idempotency_collision");
     const cartItems = await tx.select().from(retailCartItemsTable).where(eq(retailCartItemsTable.cartId, cart.id));
     if (!cartItems.length) throw new Error("retail_cart_empty");
-    const productIds = [...new Set(cartItems.map((item) => item.productId))].sort();
+    const productItems = cartItems.filter((item): item is typeof item & { productId: string; bundleId: null } => item.productId !== null);
+    const bundleItems = cartItems.filter((item): item is typeof item & { bundleId: string; productId: null } => item.bundleId !== null);
+    const bundleIds = [...new Set(bundleItems.map((item) => item.bundleId))].sort();
+    // Lock every mutable catalog record in a global order before revalidating
+    // the quote.  A bundle consumes its component inventory, never its own.
+    for (const id of bundleIds) await tx.execute(sql`select id from product_bundles where id = ${id} for update`);
+    const bundles = bundleIds.length ? await tx.select().from(productBundlesTable).where(inArray(productBundlesTable.id, bundleIds)) : [];
+    const bundlesById = new Map(bundles.map((bundle) => [bundle.id, bundle]));
+    const components = bundleIds.length ? await tx.select().from(productBundleComponentsTable)
+      .where(inArray(productBundleComponentsTable.bundleId, bundleIds))
+      .orderBy(asc(productBundleComponentsTable.bundleId), asc(productBundleComponentsTable.productId)) : [];
+    const componentsByBundle = new Map<string, typeof components>();
+    for (const component of components) componentsByBundle.set(component.bundleId, [...(componentsByBundle.get(component.bundleId) ?? []), component]);
+    for (const component of components) await tx.execute(sql`select id from product_bundle_components where id = ${component.id} for update`);
+    const productIds = [...new Set([...productItems.map((item) => item.productId), ...components.map((component) => component.productId)])].sort();
     for (const id of productIds) await tx.execute(sql`select id from products where id = ${id} for update`);
     const rawProducts = await tx.select().from(productsTable).where(inArray(productsTable.id, productIds));
-    const supplierIds = [...new Set(rawProducts.map((product) => product.supplierId))].sort();
+    const supplierIds = [...new Set([...rawProducts.map((product) => product.supplierId), ...bundles.map((bundle) => bundle.supplierId)])].sort();
     for (const supplierId of supplierIds) {
       await tx.execute(sql`select id from suppliers where id = ${supplierId} for update`);
       await tx.execute(sql`select id from product_categories where supplier_id = ${supplierId} order by id for update`);
@@ -9546,18 +10186,29 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
     const products = await tx.select().from(productsTable).where(and(inArray(productsTable.id, productIds), activeCategoryCondition(), activeSupplierCondition("B2C")));
     const byId = new Map(products.map((product) => [product.id, product]));
     const supplierRows = await tx.select().from(suppliersTable)
-      .where(inArray(suppliersTable.id, [...new Set(products.map((product) => product.supplierId))]));
+      .where(and(inArray(suppliersTable.id, [...new Set([...products.map((product) => product.supplierId), ...bundles.map((bundle) => bundle.supplierId)])]),
+        eq(suppliersTable.active, true), inArray(suppliersTable.scope, ["B2C", "BOTH"])));
     const suppliersById = new Map(supplierRows.map((supplier) => [supplier.id, supplier]));
     const quantityByProduct = new Map<string, number>();
-    for (const item of cartItems) {
+    for (const item of productItems) {
       quantityByProduct.set(item.productId, (quantityByProduct.get(item.productId) ?? 0) + item.quantity);
+    }
+    for (const item of bundleItems) {
+      const bundle = bundlesById.get(item.bundleId);
+      const bundleComponents = componentsByBundle.get(item.bundleId) ?? [];
+      if (!bundle || !suppliersById.has(bundle.supplierId) || !bundle.active || !["B2C", "BOTH"].includes(bundle.market) || bundle.b2cPrice == null || bundleComponents.length < 2) {
+        unavailableItems.push({ productId: item.bundleId, name: item.productName }); continue;
+      }
+      for (const component of bundleComponents) {
+        quantityByProduct.set(component.productId, (quantityByProduct.get(component.productId) ?? 0) + component.quantity * item.quantity);
+      }
     }
     for (const [productId, quantity] of quantityByProduct) {
       const product = byId.get(productId);
       if (!product || product.stock < quantity || (product.variants?.length ?? 0) > 0) {
         unavailableItems.push({
           productId,
-          name: product?.name ?? cartItems.find((item) => item.productId === productId)?.productName ?? "Proizvod",
+          name: product?.name ?? productItems.find((item) => item.productId === productId)?.productName ?? "Proizvod",
         });
       }
     }
@@ -9567,7 +10218,7 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
     }
     let subtotal = 0;
     let weight = 0;
-    const lines = cartItems.map((item) => {
+    const lines = productItems.map((item) => {
       const product = byId.get(item.productId);
        if (!product || !product.active || !product.retailEnabled || !product.publicDescription || product.publicPrice == null) {
         const name = product?.name ?? item.productName;
@@ -9577,15 +10228,41 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
         stockError ??= name;
         return null;
       }
-      const unitPrice = product.publicDiscountPrice ?? product.publicPrice;
+      if (item.quantity < product.minimumOrderQuantity) {
+        minimumOrderConflict = {
+          name: product.name,
+          minimumOrderQuantity: product.minimumOrderQuantity,
+        };
+        throw new Error("retail_moq_conflict");
+      }
+      const pricing = retailProductPrice(product, item.quantity);
+      const unitPrice = pricing.unitPrice;
       subtotal += unitPrice * item.quantity;
       weight += (product.weightGrams ?? 0) * item.quantity;
-      return { product, item, unitPrice };
+      return { product, item, unitPrice, pricing };
     });
-    if (stockError || lines.some((line) => !line)) return null;
+    const bundleLines = bundleItems.map((item) => {
+      const bundle = bundlesById.get(item.bundleId);
+      const bundleComponents = (componentsByBundle.get(item.bundleId) ?? []).map((component) => ({ component, product: byId.get(component.productId) }));
+      if (!bundle || bundle.b2cPrice == null || bundleComponents.length < 2 || bundleComponents.some(({ product }) => !product)) {
+        stockError ??= item.productName; return null;
+      }
+      subtotal += bundle.b2cPrice * item.quantity;
+      weight += bundleComponents.reduce((sum, { component, product }) => sum + (product!.weightGrams ?? 0) * component.quantity * item.quantity, 0);
+      return { bundle, item, unitPrice: bundle.b2cPrice, components: bundleComponents.map(({ component, product }) => ({ component, product: product! })) };
+    });
+    if (stockError || unavailableItems.length || lines.some((line) => !line) || bundleLines.some((line) => !line)) throw new Error("retail_stock_conflict");
+    const defaultDeliveryDays = (await tx.select().from(shopSettingsTable).limit(1))[0]?.defaultDeliveryBusinessDays ?? 3;
+    const deliveryDays = Math.max(defaultDeliveryDays, ...[
+      ...lines.filter((line): line is NonNullable<typeof line> => line !== null).map(({ product }) => product.deliveryBusinessDaysOverride ?? defaultDeliveryDays),
+      ...bundleLines.filter((line): line is NonNullable<typeof line> => line !== null).flatMap(({ components }) => components.map(({ product }) => product.deliveryBusinessDaysOverride ?? defaultDeliveryDays)),
+    ]);
+    const estimatedDeliveryDate = belgradeBusinessDate(deliveryDays);
     const shipping = calculateShipping(config, weight, subtotal, parsed.deliveryMethod, parsed.city);
     const referral = userId
-      ? await allocateReferralCreditInTx(tx, { ownerUserId: userId, walletKind: "B2C" }, parsed.desiredReferralCreditRsd, subtotal)
+      ? await allocateReferralCreditInTx(tx, { ownerUserId: userId, walletKind: "B2C" }, parsed.desiredReferralCreditRsd,
+        lines.filter((line): line is NonNullable<typeof line> => line !== null && line.pricing.priceSource === "FULL_PRICE")
+          .reduce((sum, line) => sum + line.unitPrice * line.item.quantity, 0))
       : { availableRsd: 0, appliedRsd: 0, allocations: [] };
     const payableTotal = subtotal + shipping.shippingCost - referral.appliedRsd;
     if ((parsed.expectedSubtotal !== undefined && parsed.expectedSubtotal !== subtotal)
@@ -9604,13 +10281,14 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
       referralCreditMerchandiseSubtotalRsd: subtotal, referralCreditPreCreditPayableTotalRsd: subtotal + shipping.shippingCost,
       referralCreditAppliedRsd: referral.appliedRsd,
       shippingName: `${parsed.firstName} ${parsed.lastName}`, shippingAddress: parsed.street, shippingCity: parsed.city,
-      shippingPostalCode: parsed.postalCode, shippingPhone: parsed.phone, shippingEmail: parsed.email.toLowerCase(), shippingNote: parsed.note ?? null,
+      shippingPostalCode: parsed.postalCode, shippingPhone: parsed.phone, shippingEmail: parsed.email.toLowerCase(), shippingNote: parsed.note ?? null, estimatedDeliveryDate,
     }).returning();
     if (referral.appliedRsd) await recordReferralRedemptionInTx(tx, {
       scope: { ownerUserId: userId!, walletKind: "B2C" }, retailOrderId: order!.id,
       allocations: referral.allocations, idempotencyKey: parsed.idempotencyKey, actorUserId: userId,
     });
-    const orderItems = lines.filter((line): line is NonNullable<typeof line> => line !== null).map(({ product, item, unitPrice }) => {
+    const orderItems = [
+      ...lines.filter((line): line is NonNullable<typeof line> => line !== null).map(({ product, item, unitPrice, pricing }) => {
       const supplier = suppliersById.get(product.supplierId);
       if (!supplier) throw new Error("retail_stock_conflict");
       return {
@@ -9619,15 +10297,39 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
         variantValue: null, variantLabel: null, unitPrice, quantity: item.quantity,
         supplierId: supplier.id, supplierName: supplier.name, supplierSlug: supplier.slug,
         productSkuSnapshot: product.sku, market: "B2C" as const, currency: "RSD",
-        discountSnapshot: product.publicPrice != null && product.publicPrice > unitPrice ? product.publicPrice - unitPrice : null,
-        lineSubtotal: unitPrice * item.quantity, lineTotal: unitPrice * item.quantity,
+        discountSnapshot: pricing.baseUnitPrice > unitPrice ? pricing.baseUnitPrice - unitPrice : null,
+        baseUnitPrice: pricing.baseUnitPrice, effectiveUnitPrice: unitPrice,
+        priceSource: pricing.priceSource, lineDiscount: (pricing.baseUnitPrice - unitPrice) * item.quantity,
+        estimatedDeliveryDate, lineSubtotal: unitPrice * item.quantity, lineTotal: unitPrice * item.quantity,
       };
-    });
+      }),
+      ...bundleLines.filter((line): line is NonNullable<typeof line> => line !== null).map(({ bundle, item, unitPrice, components }) => {
+        const supplier = suppliersById.get(bundle.supplierId);
+        if (!supplier) throw new Error("retail_stock_conflict");
+        return {
+          orderId: order!.id, productId: null, bundleId: bundle.id, productName: bundle.name, productImageUrl: bundle.imageUrl ?? "",
+          productCatalogReference: null, variantValue: null, variantLabel: null, unitPrice, quantity: item.quantity,
+          supplierId: supplier.id, supplierName: supplier.name, supplierSlug: supplier.slug, productSkuSnapshot: null,
+          market: "B2C" as const, currency: "RSD", discountSnapshot: null, baseUnitPrice: unitPrice,
+          effectiveUnitPrice: unitPrice, priceSource: "BUNDLE" as const, lineDiscount: 0, bundleNameSnapshot: bundle.name,
+          bundleComponentsSnapshot: components.map(({ component, product }) => ({
+            productId: product.id, name: product.name, catalogReference: product.catalogReference, quantity: component.quantity,
+          })),
+          estimatedDeliveryDate, lineSubtotal: unitPrice * item.quantity, lineTotal: unitPrice * item.quantity,
+        };
+      }),
+    ];
     await tx.insert(retailOrderItemsTable).values(orderItems);
-    for (const line of lines.filter((line): line is NonNullable<typeof line> => line !== null)) {
-      const [updated] = await tx.update(productsTable).set({ stock: sql`${productsTable.stock} - ${line.item.quantity}` })
-        .where(and(eq(productsTable.id, line.product.id), gte(productsTable.stock, line.item.quantity))).returning({ id: productsTable.id });
-       if (!updated) { stockError = line.product.name; throw new Error("retail_stock_conflict"); }
+    const [pointSettings] = await tx.select().from(shopSettingsTable).limit(1);
+    const awarded = userId
+      ? await awardLoyaltyPointsInTx(tx, { audience: "B2C", userId, retailOrderId: order!.id },
+        orderItems.filter((item) => item.priceSource === "FULL_PRICE").reduce((sum, item) => sum + item.lineTotal, 0), pointSettings)
+      : 0;
+    if (awarded) await tx.update(retailOrdersTable).set({ loyaltyPointsAwarded: awarded }).where(eq(retailOrdersTable.id, order!.id));
+    for (const [productId, quantity] of quantityByProduct) {
+      const [updated] = await tx.update(productsTable).set({ stock: sql`${productsTable.stock} - ${quantity}` })
+        .where(and(eq(productsTable.id, productId), gte(productsTable.stock, quantity))).returning({ id: productsTable.id });
+       if (!updated) { stockError = byId.get(productId)?.name ?? "Proizvod"; throw new Error("retail_stock_conflict"); }
     }
     await tx.delete(retailCartItemsTable).where(eq(retailCartItemsTable.cartId, cart.id));
     await tx.update(retailCartsTable).set({ userId, updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
@@ -9636,10 +10338,23 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
     if (error instanceof Error && error.message === "retail_cart_empty") return "empty" as const;
     if (error instanceof Error && error.message === "retail_stock_conflict") { stockConflict = true; return null; }
     if (error instanceof Error && error.message === "retail_idempotency_collision") { idempotencyConflict = true; return null; }
+    if (error instanceof Error && error.message === "retail_moq_conflict") return null;
     throw error;
   });
   if (created === "empty") { res.status(400).json({ error: "Korpa je prazna." }); return; }
   if (idempotencyConflict) { res.status(409).json({ error: "Ovaj ključ potvrde je već iskorišćen za drugu korpu. Osvežite stranicu i pokušajte ponovo." }); return; }
+  const checkoutMinimumOrderConflict = minimumOrderConflict as {
+    name: string;
+    minimumOrderQuantity: number;
+  } | null;
+  if (checkoutMinimumOrderConflict) {
+    res.status(409).json({
+      error: `Minimalna količina za proizvod "${checkoutMinimumOrderConflict.name}" je ${checkoutMinimumOrderConflict.minimumOrderQuantity}.`,
+      code: "MINIMUM_ORDER_QUANTITY",
+      minimumOrderQuantity: checkoutMinimumOrderConflict.minimumOrderQuantity,
+    });
+    return;
+  }
   if (quoteConflict) {
     res.status(409).json({
       error: "Iznos porudžbine se promenio. Osvežite pregled i pokušajte ponovo.",
@@ -9762,6 +10477,27 @@ router.get("/admin/retail-orders/:orderId", async (req, res): Promise<void> => {
   res.json(await retailOrderWithItems(order));
 });
 
+async function restockRetailBundleComponentsForCancelledOrderInTx(tx: BundleTransaction, orderId: string) {
+  const items = await tx.select({
+    productId: retailOrderItemsTable.productId,
+    bundleId: retailOrderItemsTable.bundleId,
+    quantity: retailOrderItemsTable.quantity,
+    components: retailOrderItemsTable.bundleComponentsSnapshot,
+  }).from(retailOrderItemsTable).where(eq(retailOrderItemsTable.orderId, orderId));
+  const quantities = new Map<string, number>();
+  for (const item of items) {
+    if (item.bundleId && item.components) for (const component of item.components) {
+      quantities.set(component.productId, (quantities.get(component.productId) ?? 0) + component.quantity * item.quantity);
+    } else if (item.productId) {
+      quantities.set(item.productId, (quantities.get(item.productId) ?? 0) + item.quantity);
+    }
+  }
+  for (const productId of [...quantities.keys()].sort()) await tx.execute(sql`select id from products where id = ${productId} for update`);
+  for (const [productId, quantity] of quantities) {
+    await tx.update(productsTable).set({ stock: sql`${productsTable.stock} + ${quantity}` }).where(eq(productsTable.id, productId));
+  }
+}
+
 router.patch("/admin/retail-orders/:orderId/status", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
   const next = req.body?.status;
@@ -9772,15 +10508,21 @@ router.patch("/admin/retail-orders/:orderId/status", async (req, res): Promise<v
     const [locked] = await tx.select().from(retailOrdersTable).where(eq(retailOrdersTable.id, req.params.orderId)).for("update");
     if (!locked) return null;
     const now = new Date();
-    if (next === "cancelled" && locked.referralCreditAppliedRsd > 0 && !locked.referralCreditRestoredAt && locked.userId) {
+    const cancellationTransition = next === "cancelled" && locked.status !== "cancelled";
+    if (cancellationTransition && locked.referralCreditAppliedRsd > 0 && !locked.referralCreditRestoredAt && locked.userId) {
       await restoreReferralCreditForOrderInTx(tx, {
         scope: { ownerUserId: locked.userId, walletKind: "B2C" }, retailOrderId: locked.id,
         eventKey: `retail-cancel:${locked.id}`, actorUserId: user.id, now,
       });
     }
+    if (cancellationTransition) await restockRetailBundleComponentsForCancelledOrderInTx(tx, locked.id);
+    const reversedPoints = cancellationTransition && !locked.loyaltyPointsReversedAt && locked.userId
+      ? await reverseLoyaltyPointsInTx(tx, { audience: "B2C", userId: locked.userId, retailOrderId: locked.id, points: locked.loyaltyPointsAwarded })
+      : false;
     const [saved] = await tx.update(retailOrdersTable).set({
       status: next as typeof retailOrdersTable.$inferInsert.status, updatedAt: now,
-      ...(next === "cancelled" && locked.referralCreditAppliedRsd > 0 && !locked.referralCreditRestoredAt ? { referralCreditRestoredAt: now } : {}),
+      ...(cancellationTransition && locked.referralCreditAppliedRsd > 0 && !locked.referralCreditRestoredAt ? { referralCreditRestoredAt: now } : {}),
+      ...(reversedPoints ? { loyaltyPointsReversedAt: now } : {}),
     }).where(eq(retailOrdersTable.id, locked.id)).returning();
     return saved!;
   });
@@ -9930,6 +10672,93 @@ router.get("/shop/products/:productId", async (req, res): Promise<void> => {
     relatedProducts,
   }));
 });
+
+/**
+ * Product availability waitlist.  The identity is derived exclusively from the
+ * authenticated session: callers can never subscribe another salon/customer.
+ * A notified entry is deliberately not revived by a duplicate subscribe; an
+ * explicit new subscribe creates the next availability episode.
+ */
+async function productWaitlistProduct(productId: string, audience: "B2B" | "B2C") {
+  const [product] = await db.select().from(productsTable).where(and(
+    eq(productsTable.id, productId),
+    eq(productsTable.active, true),
+    audience === "B2B" ? eq(productsTable.professionalEnabled, true) : eq(productsTable.retailEnabled, true),
+  )).limit(1);
+  return product ?? null;
+}
+
+async function subscribeProductWaitlist(
+  req: Request,
+  res: Response,
+  audience: "B2B" | "B2C",
+): Promise<void> {
+  const productId = String(req.params.productId);
+  const access = audience === "B2B"
+    ? await requireSalonOwner(req, res).then((value) => value ? { salonId: value.salon.id, userId: null } : null)
+    : await requireCustomer(req, res).then((value) => value ? { salonId: null, userId: value.id } : null);
+  if (!access) return;
+  const product = await productWaitlistProduct(productId, audience);
+  if (!product) { res.status(404).json({ error: "Proizvod nije dostupan u ovom kanalu." }); return; }
+  if (product.stock !== 0) { res.status(409).json({ error: "Obaveštenje je moguće uključiti samo kada proizvod nije na stanju." }); return; }
+  const { salonId, userId } = access;
+  const ownerWhere = audience === "B2B"
+    ? and(eq(productWaitlistTable.productId, product.id), eq(productWaitlistTable.salonId, salonId!))
+    : and(eq(productWaitlistTable.productId, product.id), eq(productWaitlistTable.userId, userId!));
+  const [active] = await db.select().from(productWaitlistTable).where(and(ownerWhere, eq(productWaitlistTable.status, "ACTIVE"))).limit(1);
+  if (active) { res.json({ id: active.id, status: active.status, subscribed: true }); return; }
+  let created: typeof productWaitlistTable.$inferSelect;
+  try {
+    [created] = await db.insert(productWaitlistTable).values({
+      productId: product.id, audience, salonId, userId, status: "ACTIVE",
+    }).returning();
+  } catch (error: unknown) {
+    // The partial unique indexes are the authoritative race-safe invariant.
+    // A concurrent identical subscribe therefore has the same idempotent
+    // result instead of becoming a server error.
+    if ((error as { code?: string }).code !== "23505") throw error;
+    const [concurrent] = await db.select().from(productWaitlistTable)
+      .where(and(ownerWhere, eq(productWaitlistTable.status, "ACTIVE"))).limit(1);
+    if (!concurrent) throw error;
+    res.json({ id: concurrent.id, status: concurrent.status, subscribed: true });
+    return;
+  }
+  res.status(201).json({ id: created!.id, status: created!.status, subscribed: true });
+}
+
+async function productWaitlistStatus(req: Request, res: Response, audience: "B2B" | "B2C"): Promise<void> {
+  const productId = String(req.params.productId);
+  const access = audience === "B2B"
+    ? await requireSalonOwner(req, res).then((value) => value ? { salonId: value.salon.id, userId: null } : null)
+    : await requireCustomer(req, res).then((value) => value ? { salonId: null, userId: value.id } : null);
+  if (!access) return;
+  const rowWhere = audience === "B2B"
+    ? and(eq(productWaitlistTable.productId, productId), eq(productWaitlistTable.salonId, access.salonId!))
+    : and(eq(productWaitlistTable.productId, productId), eq(productWaitlistTable.userId, access.userId!));
+  const [entry] = await db.select().from(productWaitlistTable).where(rowWhere).orderBy(desc(productWaitlistTable.updatedAt)).limit(1);
+  res.json({ subscribed: entry?.status === "ACTIVE", status: entry?.status ?? null, notifiedAt: entry?.notifiedAt?.toISOString() ?? null });
+}
+
+async function unsubscribeProductWaitlist(req: Request, res: Response, audience: "B2B" | "B2C"): Promise<void> {
+  const productId = String(req.params.productId);
+  const access = audience === "B2B"
+    ? await requireSalonOwner(req, res).then((value) => value ? { salonId: value.salon.id, userId: null } : null)
+    : await requireCustomer(req, res).then((value) => value ? { salonId: null, userId: value.id } : null);
+  if (!access) return;
+  const rowWhere = audience === "B2B"
+    ? and(eq(productWaitlistTable.productId, productId), eq(productWaitlistTable.salonId, access.salonId!), eq(productWaitlistTable.status, "ACTIVE"))
+    : and(eq(productWaitlistTable.productId, productId), eq(productWaitlistTable.userId, access.userId!), eq(productWaitlistTable.status, "ACTIVE"));
+  await db.update(productWaitlistTable).set({ status: "UNSUBSCRIBED", updatedAt: new Date() }).where(rowWhere);
+  // DELETE is idempotent and never changes a terminal NOTIFIED record.
+  res.status(204).end();
+}
+
+router.get("/shop/products/:productId/waitlist", async (req, res) => productWaitlistStatus(req, res, "B2B"));
+router.post("/shop/products/:productId/waitlist", async (req, res) => subscribeProductWaitlist(req, res, "B2B"));
+router.delete("/shop/products/:productId/waitlist", async (req, res) => unsubscribeProductWaitlist(req, res, "B2B"));
+router.get("/shop/public/products/:productId/waitlist", async (req, res) => productWaitlistStatus(req, res, "B2C"));
+router.post("/shop/public/products/:productId/waitlist", async (req, res) => subscribeProductWaitlist(req, res, "B2C"));
+router.delete("/shop/public/products/:productId/waitlist", async (req, res) => unsubscribeProductWaitlist(req, res, "B2C"));
 
 router.get("/shop/products/:productId/reviews", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
@@ -10111,19 +10940,38 @@ async function getOrCreateShopCart(salonId: string) {
 
 async function shopCartDto(salonId: string) {
   const [cart] = await db.select().from(shoppingCartsTable).where(eq(shoppingCartsTable.salonId, salonId)).limit(1);
-  if (!cart) return { id: null, items: [], itemCount: 0, subtotal: 0, totalWeightGrams: 0 };
+  if (!cart) {
+    const commerce = await cartCommerceFields("B2B", [], { salonId });
+    return { id: null, items: [], savedItems: [], itemCount: 0, subtotal: 0, totalWeightGrams: 0, ...commerce, lineLowStock: undefined };
+  }
   const items = await db.select().from(shoppingCartItemsTable).where(eq(shoppingCartItemsTable.cartId, cart.id)).orderBy(asc(shoppingCartItemsTable.createdAt));
-  const productIds = [...new Set(items.map((item) => item.productId))];
+  const productIds = [...new Set(items.flatMap((item) => item.productId ? [item.productId] : []))];
+  const bundleIds = [...new Set(items.flatMap((item) => item.bundleId ? [item.bundleId] : []))];
   const products = productIds.length ? await db.select().from(productsTable).where(and(
     inArray(productsTable.id, productIds), eq(productsTable.professionalEnabled, true), activeCategoryCondition(), activeSupplierCondition("B2B"),
   )) : [];
   const byId = new Map(products.map((product) => [product.id, product]));
+  const bundles = bundleIds.length ? await catalogBundles("B2B") : [];
+  const bundlesById = new Map(bundles.map((bundle) => [bundle.id, bundle]));
   const views = items.map((item) => {
+    if (item.bundleId) {
+      const bundle = bundlesById.get(item.bundleId);
+      const availableStock = bundle?.derivedStock ?? 0;
+      return {
+        id: item.id, kind: "bundle" as const, bundleId: item.bundleId,
+        productName: item.productName, productImageUrl: item.productImageUrl || null,
+        variantValue: null, variantLabel: null, productSku: null, unitPrice: item.unitPrice,
+        quantity: item.quantity, lineTotal: item.unitPrice * item.quantity, availableStock,
+        weightGrams: 0,
+      };
+    }
+    if (!item.productId) throw new Error("Cart item has no target.");
     const product = byId.get(item.productId);
     const variant = item.variantValue ? product?.variants?.find((candidate) => candidate.value === item.variantValue) : undefined;
     const availableStock = variant?.stock ?? product?.stock ?? 0;
     return {
       id: item.id,
+      kind: "product" as const,
       productId: item.productId,
       productName: item.productName,
       productImageUrl: item.productImageUrl,
@@ -10137,13 +10985,45 @@ async function shopCartDto(salonId: string) {
       weightGrams: product?.weightGrams ?? 0,
     };
   });
+  const saved = await db.select().from(savedShopCartItemsTable)
+    .where(eq(savedShopCartItemsTable.cartId, cart.id)).orderBy(asc(savedShopCartItemsTable.createdAt));
+  const commerce = await cartCommerceFields("B2B", views.map((line) => ({
+    productId: line.kind === "product" ? line.productId : undefined, bundleId: line.kind === "bundle" ? line.bundleId : undefined,
+    quantity: line.quantity, lineTotal: line.lineTotal, availableStock: line.availableStock,
+  })), { salonId });
+  const { lineLowStock, ...commerceDto } = commerce;
   return {
     id: cart.id,
-    items: views,
+    savedItems: saved.map((item) => ({ id: item.id, productId: item.productId, bundleId: item.bundleId, variantValue: item.variantValue, quantity: item.quantity })),
     itemCount: views.reduce((sum, item) => sum + item.quantity, 0),
     subtotal: views.reduce((sum, item) => sum + item.lineTotal, 0),
     totalWeightGrams: views.reduce((sum, item) => sum + item.weightGrams * item.quantity, 0),
+    ...commerceDto,
+    items: views.map((line) => ({ ...line, lowStock: lineLowStock.get(line.kind === "product" ? line.productId : `bundle:${line.bundleId}`) ?? false })),
   };
+}
+
+async function bundleForCartInTx(tx: BundleTransaction, bundleId: string, market: "B2B" | "B2C") {
+  await tx.execute(sql`select id from product_bundles where id = ${bundleId} for update`);
+  const [bundle] = await tx.select().from(productBundlesTable).where(and(
+    eq(productBundlesTable.id, bundleId), eq(productBundlesTable.active, true),
+    market === "B2B" ? inArray(productBundlesTable.market, ["B2B", "BOTH"]) : inArray(productBundlesTable.market, ["B2C", "BOTH"]),
+  )).limit(1);
+  if (!bundle) return null;
+  const [supplier] = await tx.select().from(suppliersTable).where(and(eq(suppliersTable.id, bundle.supplierId), eq(suppliersTable.active, true),
+    market === "B2B" ? inArray(suppliersTable.scope, ["B2B", "BOTH"]) : inArray(suppliersTable.scope, ["B2C", "BOTH"]),
+  )).limit(1);
+  if (!supplier) return null;
+  const components = await tx.select({ product: productsTable, quantity: productBundleComponentsTable.quantity })
+    .from(productBundleComponentsTable).innerJoin(productsTable, eq(productBundleComponentsTable.productId, productsTable.id))
+    .where(eq(productBundleComponentsTable.bundleId, bundle.id));
+  if (components.length < 2 || components.some(({ product }) => !product.active
+    || (market === "B2B" ? !product.professionalEnabled : !product.retailEnabled))) return null;
+  const categoryEligible = await tx.select({ id: productsTable.id }).from(productsTable).where(and(
+    inArray(productsTable.id, components.map(({ product }) => product.id)), activeCategoryCondition(),
+  ));
+  if (categoryEligible.length !== components.length) return null;
+  return { bundle, components, derivedStock: Math.min(...components.map(({ product, quantity }) => Math.floor(product.stock / quantity))) };
 }
 
 function cartLineForProduct(product: typeof productsTable.$inferSelect, variantValue: string | undefined, quantity: number) {
@@ -10154,8 +11034,24 @@ function cartLineForProduct(product: typeof productsTable.$inferSelect, variantV
   if (variantValue && !variant) return { error: `Varijanta "${variantValue}" ne postoji za proizvod "${product.name}".` } as const;
   const available = variant?.stock ?? product.stock;
   if (available < quantity) return { error: `Nedovoljno zaliha za "${product.name}".` } as const;
+  if (quantity < product.minimumOrderQuantity) {
+    return {
+      error: `Minimalna količina za proizvod "${product.name}" je ${product.minimumOrderQuantity}.`,
+      code: "MINIMUM_ORDER_QUANTITY",
+      minimumOrderQuantity: product.minimumOrderQuantity,
+    } as const;
+  }
+  // A sale is the one and only product discount. Quantity tiers apply only to
+  // full-price products, never on top of a channel sale or a bundle price.
+  const salePrice = product.discountPrice;
+  const tier = salePrice == null
+    ? (product.quantityPricingTiers ?? []).find((candidate) => quantity >= candidate.minQuantity
+      && (candidate.maxQuantity == null || quantity <= candidate.maxQuantity))
+    : undefined;
   return {
-    unitPrice: variant?.price ?? ((product.discountPrice ?? product.price) + (variant?.priceAdjust ?? 0)),
+    unitPrice: variant?.price ?? ((tier?.unitPrice ?? salePrice ?? product.price) + (variant?.priceAdjust ?? 0)),
+    baseUnitPrice: variant?.price ?? (product.price + (variant?.priceAdjust ?? 0)),
+    priceSource: salePrice != null ? "SALE" as const : tier ? "TIER" as const : "FULL_PRICE" as const,
     variantLabel: variant?.label ?? null,
     productSku: variant?.sku ?? product.sku,
   } as const;
@@ -10170,18 +11066,45 @@ router.post("/shop/cart/items", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const parsed = AddShopCartItemBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const requestedBundleId = "bundleId" in parsed.data ? parsed.data.bundleId : undefined;
+  if (typeof requestedBundleId === "string") {
+    const cart = await getOrCreateShopCart(access.salon.id);
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(sql`select id from shopping_carts where id = ${cart.id} for update`);
+      const target = await bundleForCartInTx(tx, requestedBundleId, "B2B");
+      if (!target) return { error: "Paket nije dostupan." };
+      const quantity = parsed.data.quantity ?? 1;
+      const [existing] = await tx.select().from(shoppingCartItemsTable).where(and(eq(shoppingCartItemsTable.cartId, cart.id), eq(shoppingCartItemsTable.bundleId, target.bundle.id))).limit(1);
+      const totalQuantity = (existing?.quantity ?? 0) + quantity;
+      if (totalQuantity > target.derivedStock) return { error: "Nedovoljno zaliha za paket." };
+      const price = target.bundle.b2bPrice;
+      if (price == null) return { error: "Paket nije dostupan." };
+      if (existing) await tx.update(shoppingCartItemsTable).set({ quantity: totalQuantity, unitPrice: price, updatedAt: new Date() }).where(eq(shoppingCartItemsTable.id, existing.id));
+      else await tx.insert(shoppingCartItemsTable).values({ cartId: cart.id, bundleId: target.bundle.id, productName: target.bundle.name, productImageUrl: target.bundle.imageUrl ?? "", unitPrice: price, quantity });
+      await tx.update(shoppingCartsTable).set({ updatedAt: new Date() }).where(eq(shoppingCartsTable.id, cart.id));
+      return { error: null };
+    });
+    if (result.error) { res.status(409).json(result); return; }
+    res.json(AddShopCartItemResponse.parse(await shopCartDto(access.salon.id))); return;
+  }
+  if (!("productId" in parsed.data)) { res.status(400).json({ error: "Neispravna stavka korpe." }); return; }
+  const productInput = parsed.data;
   const [product] = await db.select().from(productsTable).where(and(
-    eq(productsTable.id, parsed.data.productId), eq(productsTable.professionalEnabled, true), activeCategoryCondition(), activeSupplierCondition("B2B"),
+    eq(productsTable.id, productInput.productId), eq(productsTable.professionalEnabled, true), activeCategoryCondition(), activeSupplierCondition("B2B"),
   )).limit(1);
   if (!product || !product.active) { res.status(404).json({ error: "Proizvod nije dostupan." }); return; }
   const cart = await getOrCreateShopCart(access.salon.id);
   const result = await db.transaction(async (tx) => {
     await tx.execute(sql`select id from shopping_carts where id = ${cart.id} for update`);
     const rows = await tx.select().from(shoppingCartItemsTable).where(eq(shoppingCartItemsTable.cartId, cart.id));
-    const existing = rows.find((item) => item.productId === product.id && item.variantValue === (parsed.data.variantValue ?? null));
-    const quantity = (existing?.quantity ?? 0) + (parsed.data.quantity ?? 1);
-    const line = cartLineForProduct(product, parsed.data.variantValue, quantity);
-    if ("error" in line) return { error: line.error };
+    const existing = rows.find((item) => item.productId === product.id && item.variantValue === (productInput.variantValue ?? null));
+    const quantity = (existing?.quantity ?? 0) + (productInput.quantity ?? 1);
+    const line = cartLineForProduct(product, productInput.variantValue, quantity);
+    if ("error" in line) return {
+      error: line.error,
+      code: "code" in line ? line.code : undefined,
+      minimumOrderQuantity: "minimumOrderQuantity" in line ? line.minimumOrderQuantity : undefined,
+    };
     if (existing) {
       await tx.update(shoppingCartItemsTable).set({
         quantity, unitPrice: line.unitPrice, variantLabel: line.variantLabel, productSku: line.productSku,
@@ -10189,7 +11112,7 @@ router.post("/shop/cart/items", async (req, res): Promise<void> => {
       }).where(eq(shoppingCartItemsTable.id, existing.id));
     } else {
       await tx.insert(shoppingCartItemsTable).values({
-        cartId: cart.id, productId: product.id, variantValue: parsed.data.variantValue ?? null,
+        cartId: cart.id, productId: product.id, variantValue: productInput.variantValue ?? null,
         productName: product.name, productImageUrl: product.imageUrl, variantLabel: line.variantLabel,
         productSku: line.productSku, unitPrice: line.unitPrice, quantity,
       });
@@ -10197,7 +11120,11 @@ router.post("/shop/cart/items", async (req, res): Promise<void> => {
     await tx.update(shoppingCartsTable).set({ updatedAt: new Date() }).where(eq(shoppingCartsTable.id, cart.id));
     return { error: null };
   });
-  if (result.error) { res.status(400).json({ error: result.error }); return; }
+  if (result.error) {
+    res.status(result.code === "MINIMUM_ORDER_QUANTITY" ? 409 : 400)
+      .json({ error: result.error, ...(result.code ? { code: result.code, minimumOrderQuantity: result.minimumOrderQuantity } : {}) });
+    return;
+  }
   res.json(AddShopCartItemResponse.parse(await shopCartDto(access.salon.id)));
 });
 
@@ -10212,17 +11139,32 @@ router.patch("/shop/cart/items/:cartItemId", async (req, res): Promise<void> => 
     await tx.execute(sql`select id from shopping_carts where id = ${cart.id} for update`);
     const [item] = await tx.select().from(shoppingCartItemsTable).where(and(eq(shoppingCartItemsTable.id, params.data.cartItemId), eq(shoppingCartItemsTable.cartId, cart.id))).limit(1);
     if (!item) return { error: "Stavka korpe nije pronađena.", status: 404 };
+    if (item.bundleId) {
+      const target = await bundleForCartInTx(tx, item.bundleId, "B2B");
+      if (!target || body.data.quantity > target.derivedStock || target.bundle.b2bPrice == null) return { error: "Paket više nije dostupan.", status: 409 };
+      await tx.update(shoppingCartItemsTable).set({ quantity: body.data.quantity, unitPrice: target.bundle.b2bPrice, updatedAt: new Date() }).where(eq(shoppingCartItemsTable.id, item.id));
+      await tx.update(shoppingCartsTable).set({ updatedAt: new Date() }).where(eq(shoppingCartsTable.id, cart.id));
+      return { error: null, status: 200 };
+    }
+    if (!item.productId) return { error: "Stavka korpe nema proizvod.", status: 400 };
     const [product] = await tx.select().from(productsTable).where(and(
       eq(productsTable.id, item.productId), eq(productsTable.professionalEnabled, true), activeCategoryCondition(), activeSupplierCondition("B2B"),
     )).limit(1);
     if (!product || !product.active) return { error: "Proizvod više nije dostupan.", status: 400 };
     const line = cartLineForProduct(product, item.variantValue ?? undefined, body.data.quantity);
-    if ("error" in line) return { error: line.error, status: 400 };
+    if ("error" in line) return {
+      error: line.error, status: "code" in line && line.code === "MINIMUM_ORDER_QUANTITY" ? 409 : 400,
+      code: "code" in line ? line.code : undefined,
+      minimumOrderQuantity: "minimumOrderQuantity" in line ? line.minimumOrderQuantity : undefined,
+    };
     await tx.update(shoppingCartItemsTable).set({ quantity: body.data.quantity, unitPrice: line.unitPrice, variantLabel: line.variantLabel, productSku: line.productSku, updatedAt: new Date() }).where(eq(shoppingCartItemsTable.id, item.id));
     await tx.update(shoppingCartsTable).set({ updatedAt: new Date() }).where(eq(shoppingCartsTable.id, cart.id));
     return { error: null, status: 200 };
   });
-  if (result.error) { res.status(result.status).json({ error: result.error }); return; }
+  if (result.error) {
+    res.status(result.status).json({ error: result.error, ...(result.code ? { code: result.code, minimumOrderQuantity: result.minimumOrderQuantity } : {}) });
+    return;
+  }
   res.json(UpdateShopCartItemResponse.parse(await shopCartDto(access.salon.id)));
 });
 
@@ -10238,6 +11180,110 @@ router.delete("/shop/cart/items/:cartItemId", async (req, res): Promise<void> =>
     await tx.update(shoppingCartsTable).set({ updatedAt: new Date() }).where(eq(shoppingCartsTable.id, cart.id));
   });
   res.json(RemoveShopCartItemResponse.parse(await shopCartDto(access.salon.id)));
+});
+
+// Saved lines intentionally retain only an identity and requested quantity.  All
+// commercial fields are rebuilt below from the live catalogue when restored.
+router.post("/shop/cart/items/:cartItemId/save-for-later", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const cart = await getOrCreateShopCart(access.salon.id);
+  const moved = await db.transaction(async (tx) => {
+    await tx.execute(sql`select id from shopping_carts where id = ${cart.id} for update`);
+    const [item] = await tx.select().from(shoppingCartItemsTable).where(and(eq(shoppingCartItemsTable.id, req.params.cartItemId), eq(shoppingCartItemsTable.cartId, cart.id))).limit(1);
+    if (!item) return false;
+    await tx.insert(savedShopCartItemsTable).values({ cartId: cart.id, productId: item.productId, bundleId: item.bundleId, variantValue: item.variantValue, quantity: item.quantity });
+    await tx.delete(shoppingCartItemsTable).where(eq(shoppingCartItemsTable.id, item.id));
+    await tx.update(shoppingCartsTable).set({ updatedAt: new Date() }).where(eq(shoppingCartsTable.id, cart.id));
+    return true;
+  });
+  if (!moved) { res.status(404).json({ error: "Stavka korpe nije pronađena." }); return; }
+  res.json(await shopCartDto(access.salon.id));
+});
+
+router.delete("/shop/cart/saved-items/:savedItemId", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const [cart] = await db.select().from(shoppingCartsTable).where(eq(shoppingCartsTable.salonId, access.salon.id)).limit(1);
+  if (!cart) { res.status(404).json({ error: "Korpa nije pronađena." }); return; }
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select id from shopping_carts where id = ${cart.id} for update`);
+    await tx.delete(savedShopCartItemsTable).where(and(eq(savedShopCartItemsTable.id, req.params.savedItemId), eq(savedShopCartItemsTable.cartId, cart.id)));
+    await tx.update(shoppingCartsTable).set({ updatedAt: new Date() }).where(eq(shoppingCartsTable.id, cart.id));
+  });
+  res.json(await shopCartDto(access.salon.id));
+});
+
+router.post("/shop/cart/saved-items/:savedItemId/restore", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const cart = await getOrCreateShopCart(access.salon.id);
+  const result = await db.transaction(async (tx) => {
+    await tx.execute(sql`select id from shopping_carts where id = ${cart.id} for update`);
+    const [saved] = await tx.select().from(savedShopCartItemsTable).where(and(eq(savedShopCartItemsTable.id, req.params.savedItemId), eq(savedShopCartItemsTable.cartId, cart.id))).limit(1);
+    if (!saved) return "missing";
+    if (saved.bundleId) {
+      const target = await bundleForCartInTx(tx, saved.bundleId, "B2B");
+      const [existing] = target ? await tx.select().from(shoppingCartItemsTable).where(and(eq(shoppingCartItemsTable.cartId, cart.id), eq(shoppingCartItemsTable.bundleId, saved.bundleId))).limit(1) : [];
+      const quantity = (existing?.quantity ?? 0) + saved.quantity;
+      if (!target || target.bundle.b2bPrice == null || quantity > target.derivedStock) return "unavailable";
+      if (existing) await tx.update(shoppingCartItemsTable).set({ quantity, unitPrice: target.bundle.b2bPrice, updatedAt: new Date() }).where(eq(shoppingCartItemsTable.id, existing.id));
+      else await tx.insert(shoppingCartItemsTable).values({ cartId: cart.id, bundleId: saved.bundleId, productName: target.bundle.name, productImageUrl: target.bundle.imageUrl ?? "", unitPrice: target.bundle.b2bPrice, quantity });
+    } else if (saved.productId) {
+      await tx.execute(sql`select id from products where id = ${saved.productId} for update`);
+      const [product] = await tx.select().from(productsTable).where(and(eq(productsTable.id, saved.productId), eq(productsTable.active, true), eq(productsTable.professionalEnabled, true), activeCategoryCondition(), activeSupplierCondition("B2B"))).limit(1);
+      const items = product ? await tx.select().from(shoppingCartItemsTable).where(eq(shoppingCartItemsTable.cartId, cart.id)) : [];
+      const existing = items.find((item) => item.productId === saved.productId && item.variantValue === saved.variantValue);
+      const line = product ? cartLineForProduct(product, saved.variantValue ?? undefined, (existing?.quantity ?? 0) + saved.quantity) : { error: "unavailable" };
+      if (!product || "error" in line) return "unavailable";
+      const quantity = (existing?.quantity ?? 0) + saved.quantity;
+      if (existing) await tx.update(shoppingCartItemsTable).set({ quantity, unitPrice: line.unitPrice, variantLabel: line.variantLabel, productSku: line.productSku, updatedAt: new Date() }).where(eq(shoppingCartItemsTable.id, existing.id));
+      else await tx.insert(shoppingCartItemsTable).values({ cartId: cart.id, productId: product.id, variantValue: saved.variantValue, productName: product.name, productImageUrl: product.imageUrl, variantLabel: line.variantLabel, productSku: line.productSku, unitPrice: line.unitPrice, quantity });
+    } else return "unavailable";
+    await tx.delete(savedShopCartItemsTable).where(eq(savedShopCartItemsTable.id, saved.id));
+    await tx.update(shoppingCartsTable).set({ updatedAt: new Date() }).where(eq(shoppingCartsTable.id, cart.id));
+    return "ok";
+  });
+  if (result !== "ok") { res.status(result === "missing" ? 404 : 409).json({ error: result === "missing" ? "Sačuvana stavka nije pronađena." : "Stavka više nije dostupna u traženoj količini." }); return; }
+  res.json(await shopCartDto(access.salon.id));
+});
+
+router.post("/shop/orders/repeat-last", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const key = typeof req.get("Idempotency-Key") === "string" ? req.get("Idempotency-Key")!.trim() : "";
+  if (key.length < 8 || key.length > 200) { res.status(400).json({ error: "Idempotency-Key zaglavlje je obavezno." }); return; }
+  const cart = await getOrCreateShopCart(access.salon.id);
+  const result = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`b2b:${access.salon.id}:${key}`}))`);
+    const [prior] = await tx.select().from(reorderActionsTable).where(and(eq(reorderActionsTable.salonId, access.salon.id), eq(reorderActionsTable.idempotencyKey, key))).limit(1);
+    if (prior) return prior.result;
+    await tx.execute(sql`select id from shopping_carts where id = ${cart.id} for update`);
+    const [order] = await tx.select().from(ordersTable).where(eq(ordersTable.salonId, access.salon.id)).orderBy(desc(ordersTable.createdAt)).limit(1);
+    const outcome: { added: unknown[]; skipped: unknown[]; adjusted: unknown[] } = { added: [], skipped: [], adjusted: [] };
+    if (order) for (const source of await tx.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id))) {
+      if (source.bundleId) {
+        const target = await bundleForCartInTx(tx, source.bundleId, "B2B");
+        const [existing] = target ? await tx.select().from(shoppingCartItemsTable).where(and(eq(shoppingCartItemsTable.cartId, cart.id), eq(shoppingCartItemsTable.bundleId, source.bundleId))).limit(1) : [];
+        const desired = source.quantity; const quantity = Math.min(desired, Math.max(0, (target?.derivedStock ?? 0) - (existing?.quantity ?? 0)));
+        if (!target || target.bundle.b2bPrice == null || quantity < 1) { outcome.skipped.push({ id: source.bundleId, reason: "unavailable" }); continue; }
+        if (existing) await tx.update(shoppingCartItemsTable).set({ quantity: existing.quantity + quantity, unitPrice: target.bundle.b2bPrice, updatedAt: new Date() }).where(eq(shoppingCartItemsTable.id, existing.id));
+        else await tx.insert(shoppingCartItemsTable).values({ cartId: cart.id, bundleId: source.bundleId, productName: target.bundle.name, productImageUrl: target.bundle.imageUrl ?? "", unitPrice: target.bundle.b2bPrice, quantity });
+        (quantity === desired ? outcome.added : outcome.adjusted).push({ id: source.bundleId, requestedQuantity: desired, quantity });
+      } else if (source.productId) {
+        await tx.execute(sql`select id from products where id = ${source.productId} for update`);
+        const [product] = await tx.select().from(productsTable).where(and(eq(productsTable.id, source.productId), eq(productsTable.active, true), eq(productsTable.professionalEnabled, true), activeCategoryCondition(), activeSupplierCondition("B2B"))).limit(1);
+        const rows = product ? await tx.select().from(shoppingCartItemsTable).where(eq(shoppingCartItemsTable.cartId, cart.id)) : [];
+        const existing = rows.find((item) => item.productId === source.productId && item.variantValue === source.variantValue);
+        const requested = source.quantity; const quantity = Math.min(requested, Math.max(0, (product?.stock ?? 0) - (existing?.quantity ?? 0)));
+        const line = product && quantity >= product.minimumOrderQuantity ? cartLineForProduct(product, source.variantValue ?? undefined, (existing?.quantity ?? 0) + quantity) : { error: "unavailable" };
+        if (!product || quantity < 1 || "error" in line) { outcome.skipped.push({ id: source.productId, reason: "unavailable" }); continue; }
+        if (existing) await tx.update(shoppingCartItemsTable).set({ quantity: existing.quantity + quantity, unitPrice: line.unitPrice, variantLabel: line.variantLabel, productSku: line.productSku, updatedAt: new Date() }).where(eq(shoppingCartItemsTable.id, existing.id));
+        else await tx.insert(shoppingCartItemsTable).values({ cartId: cart.id, productId: product.id, variantValue: source.variantValue, productName: product.name, productImageUrl: product.imageUrl, variantLabel: line.variantLabel, productSku: line.productSku, unitPrice: line.unitPrice, quantity });
+        (quantity === requested ? outcome.added : outcome.adjusted).push({ id: source.productId, requestedQuantity: requested, quantity });
+      }
+    }
+    await tx.update(shoppingCartsTable).set({ updatedAt: new Date() }).where(eq(shoppingCartsTable.id, cart.id));
+    await tx.insert(reorderActionsTable).values({ audience: "B2B", salonId: access.salon.id, idempotencyKey: key, result: outcome });
+    return outcome;
+  });
+  res.json({ ...result, cart: await shopCartDto(access.salon.id) });
 });
 
 router.get("/shop/checkout-profile", async (req, res): Promise<void> => {
@@ -10264,7 +11310,10 @@ router.get("/shop/checkout-profile", async (req, res): Promise<void> => {
 router.get("/shop/checkout-preview", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const cart = await shopCartDto(access.salon.id);
-  const shipping = calculateShipping(await getShippingConfig(), cart.totalWeightGrams, cart.subtotal);
+  const calculatedShipping = calculateShipping(await getShippingConfig(), cart.totalWeightGrams, cart.subtotal);
+  const shipping = cart.freeShippingProgress.loyaltyFreeShipping
+    ? { ...calculatedShipping, shippingCost: 0, isFreeShipping: true }
+    : calculatedShipping;
   const desired = typeof req.query.desiredReferralCreditRsd === "string" && /^\d+$/.test(req.query.desiredReferralCreditRsd)
     ? Number(req.query.desiredReferralCreditRsd) : 0;
   const scope = { ownerUserId: access.user.id, walletKind: "B2B" as const, salonId: access.salon.id };
@@ -10316,7 +11365,19 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
       conflictProductName = "";
       tx.rollback();
     }
-    const productIds = [...new Set(lines.map((line) => line.productId))].sort();
+    const productLines = lines.filter((line): line is typeof line & { productId: string; bundleId: null } => line.productId !== null);
+    const bundleLines = lines.filter((line): line is typeof line & { bundleId: string; productId: null } => line.bundleId !== null);
+    const bundleIds = [...new Set(bundleLines.map((line) => line.bundleId))].sort();
+    for (const bundleId of bundleIds) await tx.execute(sql`select id from product_bundles where id = ${bundleId} for update`);
+    const bundles = bundleIds.length ? await tx.select().from(productBundlesTable).where(inArray(productBundlesTable.id, bundleIds)) : [];
+    const bundlesById = new Map(bundles.map((bundle) => [bundle.id, bundle]));
+    const components = bundleIds.length ? await tx.select().from(productBundleComponentsTable)
+      .where(inArray(productBundleComponentsTable.bundleId, bundleIds))
+      .orderBy(asc(productBundleComponentsTable.bundleId), asc(productBundleComponentsTable.productId)) : [];
+    for (const component of components) await tx.execute(sql`select id from product_bundle_components where id = ${component.id} for update`);
+    const componentsByBundle = new Map<string, typeof components>();
+    for (const component of components) componentsByBundle.set(component.bundleId, [...(componentsByBundle.get(component.bundleId) ?? []), component]);
+    const productIds = [...new Set([...productLines.map((line) => line.productId), ...components.map((component) => component.productId)])].sort();
     for (const productId of productIds) {
       await tx.execute(sql`select id from products where id = ${productId} for update`);
     }
@@ -10335,6 +11396,14 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
       activeCategoryCondition(),
     ));
     const lockedProducts = new Map(validProducts.map((product) => [product.id, product]));
+    const bundleSuppliers = bundleIds.length ? await tx.select({ id: suppliersTable.id }).from(suppliersTable).where(and(
+      inArray(suppliersTable.id, bundles.map((bundle) => bundle.supplierId)), eq(suppliersTable.active, true), inArray(suppliersTable.scope, ["B2B", "BOTH"]),
+    )) : [];
+    const eligibleBundleSuppliers = new Set(bundleSuppliers.map((supplier) => supplier.id));
+    if (bundleIds.length && (bundles.length !== bundleIds.length || bundles.some((bundle) => !eligibleBundleSuppliers.has(bundle.supplierId) || !bundle.active || !["B2B", "BOTH"].includes(bundle.market) || bundle.b2bPrice == null))) {
+      conflictProductName = "paket";
+      tx.rollback();
+    }
     for (const productId of productIds) {
       if (!lockedProducts.has(productId)) {
         conflictProductName = rawProductsById.get(productId)?.name ?? "izabrani proizvod";
@@ -10343,7 +11412,16 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
     }
     const productQuantities = new Map<string, number>();
     const variantQuantities = new Map<string, number>();
-    const details = lines.map((line) => {
+    const details: Array<{
+      product: typeof productsTable.$inferSelect;
+      variant: { label: string; value: string; priceAdjust?: number; price?: number; stock?: number; sku?: string } | undefined;
+      variantValue: string | null;
+      quantity: number;
+      price: number;
+      baseUnitPrice: number;
+      priceSource: "FULL_PRICE" | "SALE" | "TIER" | "BUNDLE";
+      bundle: { bundle: typeof productBundlesTable.$inferSelect; components: Array<{ product: typeof productsTable.$inferSelect; quantity: number }> } | null;
+    }> = productLines.map((line) => {
       const product = lockedProducts.get(line.productId)!;
       const variants = product.variants ?? [];
       const variant = line.variantValue ? variants.find((candidate) => candidate.value === line.variantValue) : undefined;
@@ -10351,6 +11429,12 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
         conflictProductName = product.name;
         tx.rollback();
       }
+      const pricing = cartLineForProduct(product, line.variantValue ?? undefined, line.quantity);
+      if ("error" in pricing) {
+        conflictProductName = product.name;
+        tx.rollback();
+      }
+      const resolvedPricing = pricing as { unitPrice: number; baseUnitPrice: number; priceSource: "FULL_PRICE" | "SALE" | "TIER" };
       productQuantities.set(product.id, (productQuantities.get(product.id) ?? 0) + line.quantity);
       if (line.variantValue) {
         const key = `${product.id}\u0000${line.variantValue}`;
@@ -10361,9 +11445,34 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
         variant,
         variantValue: line.variantValue,
         quantity: line.quantity,
-        price: variant?.price ?? ((product.discountPrice ?? product.price) + (variant?.priceAdjust ?? 0)),
+        price: resolvedPricing.unitPrice,
+        baseUnitPrice: resolvedPricing.baseUnitPrice,
+        priceSource: resolvedPricing.priceSource,
+        bundle: null as { bundle: typeof productBundlesTable.$inferSelect; components: Array<{ product: typeof productsTable.$inferSelect; quantity: number }> } | null,
       };
     });
+    for (const line of bundleLines) {
+      const bundle = bundlesById.get(line.bundleId);
+      const bundleComponents = componentsByBundle.get(line.bundleId) ?? [];
+      const componentProducts = bundleComponents.map((component) => ({ product: lockedProducts.get(component.productId), quantity: component.quantity }));
+      if (!bundle || bundleComponents.length < 2 || componentProducts.some((component) => !component.product)) {
+        conflictProductName = line.productName;
+        tx.rollback();
+      }
+      for (const component of componentProducts) {
+        productQuantities.set(component.product!.id, (productQuantities.get(component.product!.id) ?? 0) + component.quantity * line.quantity);
+      }
+      details.push({
+        product: componentProducts[0]!.product!,
+        variant: undefined,
+        variantValue: null,
+        quantity: line.quantity,
+        price: bundle!.b2bPrice!,
+        baseUnitPrice: bundle!.b2bPrice!,
+        priceSource: "BUNDLE" as const,
+        bundle: { bundle: bundle!, components: componentProducts.map((component) => ({ product: component.product!, quantity: component.quantity })) },
+      });
+    }
     for (const [productId, quantity] of productQuantities) {
       const product = lockedProducts.get(productId)!;
       if (product.stock < quantity) {
@@ -10381,11 +11490,25 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
       }
     }
     const subtotal = details.reduce((sum, line) => sum + line.price * line.quantity, 0);
-    const totalWeightGrams = details.reduce((sum, line) => sum + (line.product.weightGrams ?? 0) * line.quantity, 0);
-    const shipping = calculateShipping(config, totalWeightGrams, subtotal, deliveryMethod, delivery.city);
+    const totalWeightGrams = details.reduce((sum, line) => sum + (line.bundle
+      ? line.bundle.components.reduce((weight, component) => weight + (component.product.weightGrams ?? 0) * component.quantity, 0)
+      : (line.product.weightGrams ?? 0)) * line.quantity, 0);
+    const [shopSettings] = await tx.select().from(shopSettingsTable).limit(1);
+    const defaultDeliveryDays = shopSettings?.defaultDeliveryBusinessDays ?? 3;
+    const deliveryDays = Math.max(defaultDeliveryDays, ...details.flatMap((line) => line.bundle
+      ? line.bundle.components.map((component) => component.product.deliveryBusinessDaysOverride ?? defaultDeliveryDays)
+      : [line.product.deliveryBusinessDaysOverride ?? defaultDeliveryDays]));
+    const estimatedDeliveryDate = belgradeBusinessDate(deliveryDays);
+    const calculatedShipping = calculateShipping(config, totalWeightGrams, subtotal, deliveryMethod, delivery.city);
+    const [tier] = await tx.select({ freeShipping: loyaltyTiersTable.freeShipping }).from(salonLoyaltyStatusesTable)
+      .leftJoin(loyaltyTiersTable, eq(salonLoyaltyStatusesTable.tierId, loyaltyTiersTable.id))
+      .where(eq(salonLoyaltyStatusesTable.salonId, salon.id)).limit(1);
+    const shipping = tier?.freeShipping ? { ...calculatedShipping, shippingCost: 0, isFreeShipping: true } : calculatedShipping;
     const referral = await allocateReferralCreditInTx(tx, {
       ownerUserId: user.id, walletKind: "B2B", salonId: salon.id,
-    }, parsed.data.desiredReferralCreditRsd ?? 0, subtotal);
+    }, parsed.data.desiredReferralCreditRsd ?? 0, details
+      .filter((line) => !line.bundle && line.priceSource === "FULL_PRICE")
+      .reduce((sum, line) => sum + line.price * line.quantity, 0));
     const payableTotal = subtotal + shipping.shippingCost - referral.appliedRsd;
     if ((parsed.data.expectedSubtotal !== undefined && parsed.data.expectedSubtotal !== subtotal)
       || (parsed.data.expectedShippingCost !== undefined && parsed.data.expectedShippingCost !== shipping.shippingCost)
@@ -10432,6 +11555,7 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
       paymentMethod: parsed.data.paymentMethod,
       paymentStatus: parsed.data.paymentMethod === "CARD" ? "pending" : "unpaid",
       deliveryMethod,
+      estimatedDeliveryDate,
     }).returning();
     if (referral.appliedRsd) await recordReferralRedemptionInTx(tx, {
       scope: { ownerUserId: user.id, walletKind: "B2B", salonId: salon.id },
@@ -10440,35 +11564,55 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
     });
     const supplierRows = await tx.select().from(suppliersTable).where(inArray(
       suppliersTable.id,
-      [...new Set(details.map((line) => line.product.supplierId))],
+      [...new Set(details.map((line) => line.bundle?.bundle.supplierId ?? line.product.supplierId))],
     ));
     const suppliersById = new Map(supplierRows.map((supplier) => [supplier.id, supplier]));
     const orderItems = details.map((line) => {
-      const supplier = suppliersById.get(line.product.supplierId);
+      const supplier = suppliersById.get(line.bundle?.bundle.supplierId ?? line.product.supplierId);
       if (!supplier) throw new Error("B2B supplier is unavailable");
       const sku = line.variant?.sku ?? line.product.sku;
       return {
         orderId: order!.id,
-        productId: line.product.id,
-        productName: line.product.name,
-        productSku: sku,
+        productId: line.bundle ? null : line.product.id,
+        bundleId: line.bundle?.bundle.id ?? null,
+        productName: line.bundle?.bundle.name ?? line.product.name,
+        productSku: line.bundle ? null : sku,
         variantValue: line.variantValue,
         variantLabel: line.variant?.label ?? null,
         quantity: line.quantity,
         price: line.price,
         supplierId: supplier.id, supplierName: supplier.name, supplierSlug: supplier.slug,
-        productCatalogReference: line.product.catalogReference, productSkuSnapshot: sku,
+        productCatalogReference: line.bundle ? null : line.product.catalogReference, productSkuSnapshot: line.bundle ? null : sku,
         market: "B2B" as const, currency: "RSD",
-        discountSnapshot: line.product.discountPrice == null ? null : line.product.price - line.product.discountPrice,
+        discountSnapshot: line.bundle ? null : line.product.discountPrice == null ? null : line.product.price - line.product.discountPrice,
+        baseUnitPrice: line.bundle ? line.price : line.product.price,
+        effectiveUnitPrice: line.price,
+        priceSource: line.bundle ? "BUNDLE" as const : line.priceSource,
+        lineDiscount: line.bundle ? 0 : (line.baseUnitPrice - line.price) * line.quantity,
+        bundleNameSnapshot: line.bundle?.bundle.name ?? null,
+        bundleComponentsSnapshot: line.bundle?.components.map((component) => ({ productId: component.product.id, name: component.product.name, catalogReference: component.product.catalogReference, quantity: component.quantity })) ?? null,
+        estimatedDeliveryDate,
         unitPrice: line.price, lineSubtotal: line.price * line.quantity, lineTotal: line.price * line.quantity,
       };
     });
-    await tx.insert(orderItemsTable).values(orderItems);
+    const savedOrderItems = await tx.insert(orderItemsTable).values(orderItems).returning();
+    const awarded = await awardLoyaltyPointsInTx(tx, { audience: "B2B", salonId: salon.id, orderId: order!.id },
+      savedOrderItems.filter((item) => item.priceSource === "FULL_PRICE").reduce((sum, item) => sum + item.lineTotal, 0), shopSettings);
+    if (awarded) await tx.update(ordersTable).set({ loyaltyPointsAwarded: awarded }).where(eq(ordersTable.id, order!.id));
+    const orderItemByBundleId = new Map(savedOrderItems.flatMap((item) => item.bundleId ? [[item.bundleId, item.id] as const] : []));
+    const immutableComponents = details.flatMap((line) => line.bundle ? line.bundle.components.map((component) => ({
+      orderItemId: orderItemByBundleId.get(line.bundle!.bundle.id)!,
+      productId: component.product.id, productName: component.product.name,
+      productCatalogReference: component.product.catalogReference, quantity: component.quantity * line.quantity,
+    })) : []);
+    if (immutableComponents.length) await tx.insert(orderBundleComponentsTable).values(immutableComponents);
     // Credit salon-owned inventory for the purchase (usage units per piece).
     await creditInventoryForOrderInTx(tx, {
       salonId: salon.id,
       orderId: order!.id,
-      items: orderItems.map((line) => ({ productId: line.productId, quantity: line.quantity })),
+      items: details.flatMap((line) => line.bundle
+        ? line.bundle.components.map((component) => ({ productId: component.product.id, quantity: component.quantity * line.quantity }))
+        : [{ productId: line.product.id, quantity: line.quantity }]),
     });
     await tx.delete(shoppingCartItemsTable).where(eq(shoppingCartItemsTable.cartId, cart.id));
     await tx.update(shoppingCartsTable).set({ updatedAt: new Date() }).where(eq(shoppingCartsTable.id, cart.id));
@@ -10478,7 +11622,7 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
       message: `Vaša B2B porudžbina #${order!.id.slice(0, 8).toUpperCase()} je uspešno primljena.`,
       href: `/vlasnik/porudzbine/${order!.id}`,
     });
-    return { order: order!, items: orderItems };
+    return { order: order!, items: savedOrderItems };
   }).catch((error: unknown) => {
     if (conflictProductName !== null) return null;
     throw error;
@@ -10503,7 +11647,8 @@ function orderDto(
   order: typeof ordersTable.$inferSelect,
   items: Array<{
     orderId: string;
-    productId: string;
+    productId: string | null;
+    bundleId?: string | null;
     productName: string;
     variantValue: string | null;
     variantLabel: string | null;
@@ -10561,6 +11706,7 @@ function orderDto(
     billing,
     items: items.map((item) => ({
       productId: item.productId,
+      bundleId: item.bundleId ?? null,
       productName: item.productName,
       variantValue: item.variantValue ?? null,
       variantLabel: item.variantLabel ?? null,
@@ -10962,6 +12108,58 @@ const allowedOrderTransitions: Record<string, string[]> = {
   cancelled: [],
 };
 
+async function restockBundleComponentsForCancelledOrderInTx(tx: BundleTransaction, orderId: string) {
+  const [components, ordinaryItems] = await Promise.all([
+    tx.select({
+      productId: orderBundleComponentsTable.productId,
+      quantity: orderBundleComponentsTable.quantity,
+    }).from(orderBundleComponentsTable)
+      .innerJoin(orderItemsTable, eq(orderBundleComponentsTable.orderItemId, orderItemsTable.id))
+      .where(eq(orderItemsTable.orderId, orderId)),
+    tx.select({
+      productId: orderItemsTable.productId,
+      quantity: orderItemsTable.quantity,
+      variantValue: orderItemsTable.variantValue,
+    }).from(orderItemsTable)
+      .where(and(eq(orderItemsTable.orderId, orderId), isNotNull(orderItemsTable.productId))),
+  ]);
+  const quantities = new Map<string, number>();
+  for (const component of components) {
+    quantities.set(component.productId, (quantities.get(component.productId) ?? 0) + component.quantity);
+  }
+  const variantQuantities = new Map<string, Map<string, number>>();
+  for (const item of ordinaryItems) {
+    if (!item.productId) continue;
+    quantities.set(item.productId, (quantities.get(item.productId) ?? 0) + item.quantity);
+    if (item.variantValue) {
+      const perVariant = variantQuantities.get(item.productId) ?? new Map<string, number>();
+      perVariant.set(item.variantValue, (perVariant.get(item.variantValue) ?? 0) + item.quantity);
+      variantQuantities.set(item.productId, perVariant);
+    }
+  }
+  for (const productId of [...quantities.keys()].sort()) {
+    await tx.execute(sql`select id from products where id = ${productId} for update`);
+  }
+  const products = quantities.size
+    ? await tx.select().from(productsTable).where(inArray(productsTable.id, [...quantities.keys()]))
+    : [];
+  const productsById = new Map(products.map((product) => [product.id, product]));
+  for (const [productId, quantity] of quantities) {
+    const product = productsById.get(productId);
+    const perVariant = variantQuantities.get(productId);
+    const variants = product?.variants?.map((variant) => {
+      const restored = perVariant?.get(variant.value) ?? 0;
+      return restored > 0 && variant.stock !== undefined
+        ? { ...variant, stock: variant.stock + restored }
+        : variant;
+    });
+    await tx.update(productsTable).set({
+      stock: sql`stock + ${quantity}`,
+      ...(variants ? { variants } : {}),
+    }).where(eq(productsTable.id, productId));
+  }
+}
+
 router.patch("/admin/orders/bulk", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
   const body = AdminBulkUpdateOrdersBody.safeParse(req.body);
@@ -10999,10 +12197,15 @@ router.patch("/admin/orders/bulk", async (req, res): Promise<void> => {
           now,
         });
       }
+      if (cancellationTransition) await restockBundleComponentsForCancelledOrderInTx(tx, order.id);
+      const reversedPoints = cancellationTransition && !order.loyaltyPointsReversedAt
+        ? await reverseLoyaltyPointsInTx(tx, { audience: "B2B", salonId: order.salonId, orderId: order.id, points: order.loyaltyPointsAwarded })
+        : false;
       const update = {
         ...(body.data.status ? { status: body.data.status } : {}),
         ...(body.data.paymentStatus ? { paymentStatus: body.data.paymentStatus } : {}),
         ...(restoresCredit ? { referralCreditRestoredAt: now } : {}),
+        ...(reversedPoints ? { loyaltyPointsReversedAt: now } : {}),
         updatedAt: now,
       };
       const [saved] = await tx.update(ordersTable).set(update).where(eq(ordersTable.id, order.id)).returning();
@@ -11093,6 +12296,7 @@ router.patch("/admin/orders/:orderId", async (req, res): Promise<void> => {
     if (!locked) throw new Error("Order disappeared during update.");
     const restoresCredit = (body.data.status === "cancelled" || body.data.paymentStatus === "refunded")
       && locked.referralCreditAppliedRsd > 0 && !locked.referralCreditRestoredAt;
+    const cancellationTransition = body.data.status === "cancelled" && locked.status !== "cancelled";
     const now = new Date();
     if (restoresCredit) {
       const [scopeSalon] = await tx.select({ ownerId: salonsTable.ownerId }).from(salonsTable)
@@ -11103,9 +12307,14 @@ router.patch("/admin/orders/:orderId", async (req, res): Promise<void> => {
         actorUserId: user.id, now,
       });
     }
+    if (cancellationTransition) await restockBundleComponentsForCancelledOrderInTx(tx, locked.id);
+    const reversedPoints = cancellationTransition && !locked.loyaltyPointsReversedAt
+      ? await reverseLoyaltyPointsInTx(tx, { audience: "B2B", salonId: locked.salonId, orderId: locked.id, points: locked.loyaltyPointsAwarded })
+      : false;
     const [saved] = await tx.update(ordersTable).set({
       ...update,
       ...(restoresCredit ? { referralCreditRestoredAt: now } : {}),
+      ...(reversedPoints ? { loyaltyPointsReversedAt: now } : {}),
     }).where(eq(ordersTable.id, locked.id)).returning();
     const changes = [
       ["status", order.status, body.data.status],
@@ -15563,6 +16772,49 @@ async function categoryAssignment(categoryId: string, supplierId?: string) {
   return { categoryId: row.child_id, categoryName: row.parent_name, subcategoryName: row.child_name };
 }
 
+router.get("/admin/product-waitlist", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const page = Math.max(1, Math.min(10_000, Number(req.query.page) || 1));
+  const pageSize = Math.max(1, Math.min(100, Number(req.query.pageSize) || 20));
+  const audience = req.query.audience === "B2B" || req.query.audience === "B2C" ? req.query.audience : undefined;
+  const status = ["ACTIVE", "NOTIFIED", "UNSUBSCRIBED"].includes(String(req.query.status)) ? String(req.query.status) as "ACTIVE" | "NOTIFIED" | "UNSUBSCRIBED" : undefined;
+  const productId = typeof req.query.productId === "string" ? req.query.productId : undefined;
+  const filters = [
+    audience ? eq(productWaitlistTable.audience, audience) : undefined,
+    status ? eq(productWaitlistTable.status, status) : undefined,
+    productId ? eq(productWaitlistTable.productId, productId) : undefined,
+  ].filter((value): value is NonNullable<typeof value> => Boolean(value));
+  const whereClause = filters.length ? and(...filters) : undefined;
+  const [[totalRow], rows] = await Promise.all([
+    db.select({ count: count() }).from(productWaitlistTable).where(whereClause),
+    db.select({
+      id: productWaitlistTable.id, audience: productWaitlistTable.audience, status: productWaitlistTable.status,
+      notifiedAt: productWaitlistTable.notifiedAt, createdAt: productWaitlistTable.createdAt,
+      product: { id: productsTable.id, name: productsTable.name, sku: productsTable.sku, catalogReference: productsTable.catalogReference },
+      salon: { id: salonsTable.id, name: salonsTable.name },
+      customer: { id: usersTable.id, firstName: usersTable.firstName, lastName: usersTable.lastName },
+    }).from(productWaitlistTable)
+      .innerJoin(productsTable, eq(productWaitlistTable.productId, productsTable.id))
+      .leftJoin(salonsTable, eq(productWaitlistTable.salonId, salonsTable.id))
+      .leftJoin(usersTable, eq(productWaitlistTable.userId, usersTable.id))
+      .where(whereClause).orderBy(desc(productWaitlistTable.createdAt), desc(productWaitlistTable.id))
+      .limit(pageSize).offset((page - 1) * pageSize),
+  ]);
+  const total = Number(totalRow?.count ?? 0);
+  // Do not widen this projection: the admin queue intentionally excludes every
+  // contact field (email, phone, addresses) for privacy-by-construction.
+  res.json({
+    items: rows.map((row) => ({
+      id: row.id, audience: row.audience, status: row.status,
+      notifiedAt: row.notifiedAt?.toISOString() ?? null, createdAt: row.createdAt.toISOString(),
+      product: row.product,
+      salon: row.salon?.id ? row.salon : null,
+      customer: row.customer?.id ? row.customer : null,
+    })),
+    total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  });
+});
+
 router.get("/admin/products", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
   const parsed = AdminListProductsQueryParams.safeParse({
@@ -16407,6 +17659,65 @@ router.delete("/admin/brands/:brandId", async (req, res): Promise<void> => {
 });
 
 // ── Admin Shipping Configuration ──────────────────────────────────────────────
+
+function shopSettingsDto(settings: typeof shopSettingsTable.$inferSelect, freeShippingThreshold: number) {
+  return {
+    showLoyaltyPoints: settings.showLoyaltyPoints,
+    pointsPer100Rsd: settings.pointsPer100Rsd,
+    lowStockThreshold: settings.lowStockThreshold,
+    defaultDeliveryBusinessDays: settings.defaultDeliveryBusinessDays,
+    freeShippingThreshold,
+    version: settings.version,
+    updatedAt: settings.updatedAt.toISOString(),
+  };
+}
+
+router.get("/admin/shop-settings", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const [settings] = await db.select().from(shopSettingsTable).limit(1);
+  const shipping = await getShippingConfig();
+  if (!settings) { res.status(503).json({ error: "Podešavanja prodavnice nisu inicijalizovana." }); return; }
+  res.json(shopSettingsDto(settings, shipping.freeShippingThreshold));
+});
+
+router.put("/admin/shop-settings", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const body = req.body as Record<string, unknown>;
+  const integer = (value: unknown, min: number, max: number) => Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
+  if (typeof body.showLoyaltyPoints !== "boolean"
+    || !integer(body.pointsPer100Rsd, 0, 1_000_000)
+    || !integer(body.lowStockThreshold, 1, 1_000_000)
+    || !integer(body.defaultDeliveryBusinessDays, 1, 365)
+    || !integer(body.freeShippingThreshold, 0, 2_147_483_647)
+    || !integer(body.version, 1, 2_147_483_647)) {
+    res.status(400).json({ error: "Neispravna podešavanja prodavnice." }); return;
+  }
+  const result = await db.transaction(async (tx) => {
+    const [current] = await tx.select().from(shopSettingsTable).limit(1).for("update");
+    if (!current) throw new Error("shop_settings_missing");
+    if (current.version !== body.version) return null;
+    const [shipping] = await tx.select().from(shippingRulesTable).orderBy(asc(shippingRulesTable.id)).limit(1).for("update");
+    if (!shipping) throw new Error("shop_shipping_missing");
+    const [saved] = await tx.update(shopSettingsTable).set({
+      showLoyaltyPoints: body.showLoyaltyPoints as boolean,
+      pointsPer100Rsd: body.pointsPer100Rsd as number,
+      lowStockThreshold: body.lowStockThreshold as number,
+      defaultDeliveryBusinessDays: body.defaultDeliveryBusinessDays as number,
+      version: current.version + 1,
+      updatedAt: new Date(),
+    }).where(eq(shopSettingsTable.id, current.id)).returning();
+    const [savedShipping] = await tx.update(shippingRulesTable).set({
+      freeShippingThreshold: body.freeShippingThreshold as number, updatedAt: new Date(),
+    }).where(eq(shippingRulesTable.id, shipping.id)).returning();
+    return { settings: saved!, shipping: savedShipping! };
+  }).catch((error: unknown) => {
+    if (error instanceof Error && (error.message === "shop_settings_missing" || error.message === "shop_shipping_missing")) return "missing" as const;
+    throw error;
+  });
+  if (result === "missing") { res.status(503).json({ error: "Podešavanja prodavnice nisu inicijalizovana." }); return; }
+  if (!result) { res.status(409).json({ error: "Podešavanja su izmenjena u međuvremenu.", code: "SETTINGS_VERSION_CONFLICT" }); return; }
+  res.json(shopSettingsDto(result.settings, result.shipping.freeShippingThreshold));
+});
 
 router.get("/admin/shipping", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;

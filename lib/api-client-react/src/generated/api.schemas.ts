@@ -5,6 +5,104 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+export type ProductWaitlistSubscriptionStatus = typeof ProductWaitlistSubscriptionStatus[keyof typeof ProductWaitlistSubscriptionStatus];
+
+
+export const ProductWaitlistSubscriptionStatus = {
+  ACTIVE: 'ACTIVE',
+  NOTIFIED: 'NOTIFIED',
+  UNSUBSCRIBED: 'UNSUBSCRIBED',
+} as const;
+
+export interface ProductWaitlistSubscription {
+  id: string;
+  status: ProductWaitlistSubscriptionStatus;
+  subscribed: boolean;
+}
+
+/**
+ * @nullable
+ */
+export type ProductWaitlistStatusStatus = typeof ProductWaitlistStatusStatus[keyof typeof ProductWaitlistStatusStatus] | null;
+
+
+export const ProductWaitlistStatusStatus = {
+  ACTIVE: 'ACTIVE',
+  NOTIFIED: 'NOTIFIED',
+  UNSUBSCRIBED: 'UNSUBSCRIBED',
+} as const;
+
+export interface ProductWaitlistStatus {
+  subscribed: boolean;
+  /** @nullable */
+  status: ProductWaitlistStatusStatus;
+  /** @nullable */
+  notifiedAt: string | null;
+}
+
+export type AdminProductWaitlistPageItemsItemAudience = typeof AdminProductWaitlistPageItemsItemAudience[keyof typeof AdminProductWaitlistPageItemsItemAudience];
+
+
+export const AdminProductWaitlistPageItemsItemAudience = {
+  B2B: 'B2B',
+  B2C: 'B2C',
+} as const;
+
+export type AdminProductWaitlistPageItemsItemStatus = typeof AdminProductWaitlistPageItemsItemStatus[keyof typeof AdminProductWaitlistPageItemsItemStatus];
+
+
+export const AdminProductWaitlistPageItemsItemStatus = {
+  ACTIVE: 'ACTIVE',
+  NOTIFIED: 'NOTIFIED',
+  UNSUBSCRIBED: 'UNSUBSCRIBED',
+} as const;
+
+export type AdminProductWaitlistPageItemsItemProduct = {
+  id: string;
+  name: string;
+  sku: string;
+  catalogReference: string;
+};
+
+/**
+ * @nullable
+ */
+export type AdminProductWaitlistPageItemsItemSalon = {
+  id?: string;
+  name?: string;
+} | null;
+
+/**
+ * @nullable
+ */
+export type AdminProductWaitlistPageItemsItemCustomer = {
+  id?: string;
+  firstName?: string;
+  lastName?: string;
+} | null;
+
+export type AdminProductWaitlistPageItemsItem = {
+  id: string;
+  audience: AdminProductWaitlistPageItemsItemAudience;
+  status: AdminProductWaitlistPageItemsItemStatus;
+  /** @nullable */
+  notifiedAt: string | null;
+  createdAt: string;
+  product: AdminProductWaitlistPageItemsItemProduct;
+  /** @nullable */
+  salon: AdminProductWaitlistPageItemsItemSalon;
+  /** @nullable */
+  customer: AdminProductWaitlistPageItemsItemCustomer;
+};
+
+export interface AdminProductWaitlistPage {
+  items: AdminProductWaitlistPageItemsItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 export type ReferralCodeValidationChannel = typeof ReferralCodeValidationChannel[keyof typeof ReferralCodeValidationChannel];
 
 
@@ -1995,7 +2093,7 @@ export interface ServiceInput {
   resourceRequirements?: ServiceResourceRequirement[];
 }
 
-export interface RetailCartItemInput {
+export type RetailCartItemInput = {
   /** @minLength 1 */
   productId: string;
   /**
@@ -2003,11 +2101,20 @@ export interface RetailCartItemInput {
      * @maximum 100
      */
   quantity: number;
-}
+} | {
+  /** @minLength 1 */
+  bundleId: string;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  quantity: number;
+};
 
 export type RetailCartItemsItem = {
   id: string;
   productId: string;
+  kind: 'product';
   name: string;
   imageUrl: string;
   /** Immutable customer-facing catalog reference; retained under the legacy sku response key. */
@@ -2018,7 +2125,62 @@ export type RetailCartItemsItem = {
   unitPrice: number;
   /** @minimum 0 */
   lineTotal: number;
+  lowStock: boolean;
+} | {
+  id: string;
+  bundleId: string;
+  kind: 'bundle';
+  name: string;
+  /** @nullable */
+  imageUrl: string | null;
+  /** @nullable */
+  sku: string | null;
+  /** @minimum 1 */
+  quantity: number;
+  /** @minimum 0 */
+  unitPrice: number;
+  /** @minimum 0 */
+  lineTotal: number;
+  lowStock: boolean;
 };
+
+export interface SavedCartItem {
+  id: string;
+  /** @nullable */
+  productId: string | null;
+  /** @nullable */
+  bundleId: string | null;
+  /** @nullable */
+  variantValue: string | null;
+  /** @minimum 1 */
+  quantity: number;
+}
+
+export interface CartCrossSellProduct {
+  id: string;
+  name: string;
+  imageUrl: string;
+  /** @nullable */
+  brand: string | null;
+  /** @minimum 0 */
+  price: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  discountPrice: number | null;
+}
+
+export interface FreeShippingProgress {
+  /** @minimum 0 */
+  threshold: number;
+  /** @minimum 0 */
+  subtotal: number;
+  /** @minimum 0 */
+  remaining: number;
+  qualifies: boolean;
+  loyaltyFreeShipping: boolean;
+}
 
 export interface RetailCart {
   id: string;
@@ -2027,6 +2189,133 @@ export interface RetailCart {
   /** @minimum 0 */
   subtotal: number;
   items: RetailCartItemsItem[];
+  savedItems: SavedCartItem[];
+  crossSellProducts: CartCrossSellProduct[];
+  freeShippingProgress: FreeShippingProgress;
+  estimatedDeliveryDate: string;
+  showLoyaltyPoints: boolean;
+  /** @minimum 0 */
+  currentLoyaltyPoints: number;
+  /** @minimum 0 */
+  projectedLoyaltyPoints: number;
+}
+
+export interface AdminShopSettings {
+  showLoyaltyPoints: boolean;
+  /** @minimum 0 */
+  pointsPer100Rsd: number;
+  /** @minimum 1 */
+  lowStockThreshold: number;
+  /**
+     * @minimum 1
+     * @maximum 365
+     */
+  defaultDeliveryBusinessDays: number;
+  /** @minimum 0 */
+  freeShippingThreshold: number;
+  /** @minimum 1 */
+  version: number;
+  updatedAt: string;
+}
+
+export interface AdminShopSettingsInput {
+  showLoyaltyPoints: boolean;
+  /** @minimum 0 */
+  pointsPer100Rsd: number;
+  /** @minimum 1 */
+  lowStockThreshold: number;
+  /**
+     * @minimum 1
+     * @maximum 365
+     */
+  defaultDeliveryBusinessDays: number;
+  /** @minimum 0 */
+  freeShippingThreshold: number;
+  /** @minimum 1 */
+  version: number;
+}
+
+export type ReorderResultAddedItem = { [key: string]: unknown };
+
+export type ReorderResultSkippedItem = { [key: string]: unknown };
+
+export type ReorderResultAdjustedItem = { [key: string]: unknown };
+
+export type ShopCartItem = {
+  id: string;
+  kind: 'product';
+  productId: string;
+  productName: string;
+  productImageUrl: string;
+  /** @nullable */
+  variantValue: string | null;
+  /** @nullable */
+  variantLabel: string | null;
+  /** @nullable */
+  productSku: string | null;
+  /** @minimum 0 */
+  unitPrice: number;
+  /** @minimum 1 */
+  quantity: number;
+  /** @minimum 0 */
+  lineTotal: number;
+  /** @minimum 0 */
+  availableStock: number;
+  /** @minimum 0 */
+  weightGrams: number;
+  lowStock: boolean;
+} | {
+  id: string;
+  kind: 'bundle';
+  bundleId: string;
+  productName: string;
+  /** @nullable */
+  productImageUrl: string | null;
+  /** @nullable */
+  variantValue: string | null;
+  /** @nullable */
+  variantLabel: string | null;
+  /** @nullable */
+  productSku: string | null;
+  /** @minimum 0 */
+  unitPrice: number;
+  /** @minimum 1 */
+  quantity: number;
+  /** @minimum 0 */
+  lineTotal: number;
+  /** @minimum 0 */
+  availableStock: number;
+  /** @minimum 0 */
+  weightGrams: number;
+  lowStock: boolean;
+};
+
+export interface ShopCart {
+  /** @nullable */
+  id: string | null;
+  items: ShopCartItem[];
+  savedItems: SavedCartItem[];
+  /** @minimum 0 */
+  itemCount: number;
+  /** @minimum 0 */
+  subtotal: number;
+  /** @minimum 0 */
+  totalWeightGrams: number;
+  crossSellProducts: CartCrossSellProduct[];
+  freeShippingProgress: FreeShippingProgress;
+  estimatedDeliveryDate: string;
+  showLoyaltyPoints: boolean;
+  /** @minimum 0 */
+  currentLoyaltyPoints: number;
+  /** @minimum 0 */
+  projectedLoyaltyPoints: number;
+}
+
+export interface ReorderResult {
+  added: ReorderResultAddedItem[];
+  skipped: ReorderResultSkippedItem[];
+  adjusted: ReorderResultAdjustedItem[];
+  cart: RetailCart | ShopCart;
 }
 
 export interface RetailCartSummary {
@@ -2274,6 +2563,122 @@ export interface ProductList {
   totalPages: number;
 }
 
+export interface BundleComponentInput {
+  productId: string;
+  /** @minimum 1 */
+  quantity: number;
+  /** @minimum 0 */
+  sortOrder?: number;
+}
+
+export type BundleInputMarket = typeof BundleInputMarket[keyof typeof BundleInputMarket];
+
+
+export const BundleInputMarket = {
+  B2B: 'B2B',
+  B2C: 'B2C',
+  BOTH: 'BOTH',
+} as const;
+
+export interface BundleInput {
+  supplierId: string;
+  /**
+     * @minLength 1
+     * @maxLength 250
+     */
+  name: string;
+  /**
+     * @maxLength 10000
+     * @nullable
+     */
+  description?: string | null;
+  /** @nullable */
+  imageUrl?: string | null;
+  market: BundleInputMarket;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  b2bPrice: number | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  b2cPrice: number | null;
+  /** @minItems 2 */
+  components?: BundleComponentInput[];
+  active?: boolean;
+}
+
+/**
+ * Safe component identity and quantity. Unit prices are never exposed through bundle catalog endpoints.
+ */
+export interface BundleComponentCard {
+  productId: string;
+  name: string;
+  imageUrl: string;
+  catalogReference: string;
+  /** @minimum 1 */
+  quantity: number;
+}
+
+export type BundleMarket = typeof BundleMarket[keyof typeof BundleMarket];
+
+
+export const BundleMarket = {
+  B2B: 'B2B',
+  B2C: 'B2C',
+  BOTH: 'BOTH',
+} as const;
+
+export interface Bundle {
+  id: string;
+  supplierId: string;
+  name: string;
+  /** @nullable */
+  description: string | null;
+  /** @nullable */
+  imageUrl: string | null;
+  market: BundleMarket;
+  /** @nullable */
+  b2bPrice: number | null;
+  /** @nullable */
+  b2cPrice: number | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  /** @minimum 0 */
+  derivedStock: number;
+  components: BundleComponentCard[];
+}
+
+export type PublicBundleMarket = typeof PublicBundleMarket[keyof typeof PublicBundleMarket];
+
+
+export const PublicBundleMarket = {
+  B2C: 'B2C',
+  BOTH: 'BOTH',
+} as const;
+
+/**
+ * Customer-safe fixed-price bundle. Wholesale price and all component unit prices are deliberately omitted.
+ */
+export interface PublicBundle {
+  id: string;
+  supplierId: string;
+  name: string;
+  /** @nullable */
+  description: string | null;
+  /** @nullable */
+  imageUrl: string | null;
+  market: PublicBundleMarket;
+  /** @minimum 1 */
+  b2cPrice: number;
+  /** @minimum 0 */
+  derivedStock: number;
+  components: BundleComponentCard[];
+}
+
 /**
  * Customer-facing product fields only. B2B price, SKU, stock, weight, variants and salon-only review data are deliberately omitted.
  */
@@ -2382,49 +2787,19 @@ export interface ShopSummary {
   cartCount: number;
 }
 
-export interface ShopCartItem {
-  id: string;
-  productId: string;
-  productName: string;
-  productImageUrl: string;
-  /** @nullable */
-  variantValue: string | null;
-  /** @nullable */
-  variantLabel: string | null;
-  /** @nullable */
-  productSku: string | null;
-  /** @minimum 0 */
-  unitPrice: number;
-  /** @minimum 1 */
-  quantity: number;
-  /** @minimum 0 */
-  lineTotal: number;
-  /** @minimum 0 */
-  availableStock: number;
-  /** @minimum 0 */
-  weightGrams: number;
-}
-
-export interface ShopCart {
-  /** @nullable */
-  id: string | null;
-  items: ShopCartItem[];
-  /** @minimum 0 */
-  itemCount: number;
-  /** @minimum 0 */
-  subtotal: number;
-  /** @minimum 0 */
-  totalWeightGrams: number;
-}
-
-export interface ShopCartItemInput {
+export type ShopCartItemInput = {
   /** @minLength 1 */
   productId: string;
   /** @minLength 1 */
   variantValue?: string;
   /** @minimum 1 */
   quantity?: number;
-}
+} | {
+  /** @minLength 1 */
+  bundleId: string;
+  /** @minimum 1 */
+  quantity?: number;
+};
 
 export interface ShopCartItemQuantityInput {
   /** @minimum 1 */
@@ -2614,7 +2989,10 @@ export type OrderBilling = {
 } | null;
 
 export interface OrderItem {
-  productId: string;
+  /** @nullable */
+  productId: string | null;
+  /** @nullable */
+  bundleId: string | null;
   productName: string;
   /** @nullable */
   variantValue?: string | null;
@@ -7703,6 +8081,38 @@ minRating?: number;
  */
 maxRating?: number;
 };
+
+export type AdminListProductWaitlistParams = {
+audience?: AdminListProductWaitlistAudience;
+status?: AdminListProductWaitlistStatus;
+productId?: string;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
+
+export type AdminListProductWaitlistAudience = typeof AdminListProductWaitlistAudience[keyof typeof AdminListProductWaitlistAudience];
+
+
+export const AdminListProductWaitlistAudience = {
+  B2B: 'B2B',
+  B2C: 'B2C',
+} as const;
+
+export type AdminListProductWaitlistStatus = typeof AdminListProductWaitlistStatus[keyof typeof AdminListProductWaitlistStatus];
+
+
+export const AdminListProductWaitlistStatus = {
+  ACTIVE: 'ACTIVE',
+  NOTIFIED: 'NOTIFIED',
+  UNSUBSCRIBED: 'UNSUBSCRIBED',
+} as const;
 
 export type AdminListProductsParams = {
 search?: string;

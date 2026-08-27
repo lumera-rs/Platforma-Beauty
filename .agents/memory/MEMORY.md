@@ -107,3 +107,4 @@
 - [Vite unknown runtime overlays](vite-unknown-runtime-overlays.md) — first distinguish resource-style window errors from real JavaScript exceptions before changing app code.
 - [Referral compensation accounting](referral-compensation-accounting.md) — fraud reversal targets consumed, unrestored value; expired or unused entitlement must never become debt.
 - [Supplier catalog write serialization](supplier-catalog-write-serialization.md) — supplier scope, product channels, merchandising links, and checkout eligibility share lock boundaries.
+- [Replay-safe additive DDL](replay-safe-additive-ddl.md) — historical guards must accept the final schema’s newer nullable/discriminated rows on every startup replay.

@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { Link, useRoute } from "wouter";
-import { useGetOrder, useListOrders, getListOrdersQueryKey } from "@workspace/api-client-react";
+import { useGetOrder, useListOrders, useRepeatLastShopOrder, getListOrdersQueryKey } from "@workspace/api-client-react";
 import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Package, ArrowLeft, ExternalLink, Truck } from "lucide-react";
+import { Loader2, Package, ArrowLeft, ExternalLink, Truck, Repeat } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 const money = (n: number) => `${n.toLocaleString("sr-RS")} RSD`;
 const date = (d: string) => new Date(d).toLocaleDateString("sr-RS", { dateStyle: "medium" });
@@ -43,8 +44,22 @@ export default function OwnerOrders() {
   const pageSize = 50;
   const listParams = useMemo(() => ({ page, pageSize }), [page]);
   const { data: orders = [], isLoading } = useListOrders(listParams, { query: { enabled: !params?.orderId, queryKey: getListOrdersQueryKey(listParams) } });
-  // customFetch returns only the body, so we infer "has next page" from whether
-  // this page came back full (== pageSize).
+
   const hasNextPage = orders.length === pageSize;
-  return <BusinessLayout><div className="container mx-auto px-4 py-8 flex flex-col md:flex-row gap-8"><OwnerSidebar current="/vlasnik/porudzbine"/><main className="flex-1 min-w-0">{params?.orderId ? <OrderDetail id={params.orderId}/> : <><div className="mb-6"><h1 className="text-3xl font-serif font-bold">B2B porudžbine</h1><p className="text-muted-foreground">Pregledajte istoriju, dostavu i račune.</p></div>{isLoading ? <Loader2 className="animate-spin"/> : orders.length === 0 ? <Card><CardContent className="p-10 text-center text-muted-foreground"><Package className="mx-auto mb-3 opacity-30"/>{page > 1 ? "Nema više porudžbina." : "Još nemate porudžbina."}</CardContent></Card> : <div className="space-y-3">{orders.map((order) => <Card key={order.id}><CardContent className="p-4 flex flex-wrap gap-3 items-center justify-between"><div><b>#{order.id.slice(0, 8)}</b><p className="text-sm text-muted-foreground">{date(order.createdAt)} · {order.itemCount} stavki</p><DeliveryTracking order={order} compact /></div><Badge>{order.status}</Badge><b>{money(order.total)}</b><Button asChild variant="outline" size="sm"><Link href={`/vlasnik/porudzbine/${order.id}`}>Detalji</Link></Button></CardContent></Card>)}</div>}{!params?.orderId && !isLoading && (page > 1 || hasNextPage) && <div className="flex items-center justify-between gap-3 pt-4"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} data-testid="btn-prev-page">Prethodna</Button><span className="text-sm text-muted-foreground">Strana {page}</span><Button variant="outline" size="sm" disabled={!hasNextPage} onClick={() => setPage(p => p + 1)} data-testid="btn-next-page">Sledeća</Button></div>}</>}</main></div></BusinessLayout>;
+  const { toast } = useToast();
+  const [repeatIdempotencyKey, setRepeatIdempotencyKey] = useState(() => crypto.randomUUID());
+
+  const repeatOrder = useRepeatLastShopOrder({
+    request: { headers: { "Idempotency-Key": repeatIdempotencyKey } },
+    mutation: {
+      onSuccess: (data) => {
+        setRepeatIdempotencyKey(crypto.randomUUID());
+        toast.success(`Porudžbina ponovljena. Dodato ${data.added?.length || 0} stavki u korpu.`);
+        window.location.href = "/vlasnik/prodavnica/korpa";
+      },
+      onError: (err: any) => toast.error("Greška pri ponavljanju porudžbine.")
+    }
+  });
+
+  return <BusinessLayout><div className="container mx-auto px-4 py-8 flex flex-col md:flex-row gap-8"><OwnerSidebar current="/vlasnik/porudzbine"/><main className="flex-1 min-w-0">{params?.orderId ? <OrderDetail id={params.orderId}/> : <><div className="mb-6"><h1 className="text-3xl font-serif font-bold">B2B porudžbine</h1><p className="text-muted-foreground">Pregledajte istoriju, dostavu i račune.</p></div>{isLoading ? <Loader2 className="animate-spin"/> : orders.length === 0 ? <Card><CardContent className="p-10 text-center text-muted-foreground"><Package className="mx-auto mb-3 opacity-30"/>{page > 1 ? "Nema više porudžbina." : "Još nemate porudžbina."}</CardContent></Card> : <div className="space-y-3">{orders.map((order) => <Card key={order.id}><CardContent className="p-4 flex flex-wrap gap-3 items-center justify-between"><div><b>#{order.id.slice(0, 8)}</b><p className="text-sm text-muted-foreground">{date(order.createdAt)} · {order.itemCount} stavki</p><DeliveryTracking order={order} compact /></div><Badge>{order.status}</Badge><b>{money(order.total)}</b><div className="flex gap-2"><Button size="sm" variant="secondary" onClick={() => repeatOrder.mutate()} disabled={repeatOrder.isPending}><Repeat className="w-4 h-4 mr-1"/> Ponovi porudžbinu</Button><Button asChild variant="outline" size="sm"><Link href={`/vlasnik/porudzbine/${order.id}`}>Detalji</Link></Button></div></CardContent></Card>)}</div>}{!params?.orderId && !isLoading && (page > 1 || hasNextPage) && <div className="flex items-center justify-between gap-3 pt-4"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} data-testid="btn-prev-page">Prethodna</Button><span className="text-sm text-muted-foreground">Strana {page}</span><Button variant="outline" size="sm" disabled={!hasNextPage} onClick={() => setPage(p => p + 1)} data-testid="btn-next-page">Sledeća</Button></div>}</>}</main></div></BusinessLayout>;
 }

@@ -7,7 +7,10 @@
  */
 
 export interface OrderItem {
-  productId: string;
+  /** @nullable */
+  productId: string | null;
+  /** @nullable */
+  bundleId: string | null;
   productName: string;
   /** @nullable */
   variantValue?: string | null;

@@ -90,13 +90,14 @@ export function useShopCartMutations() {
         const { data, optimisticProduct } = variables as AddCartMutationVariables;
         const quantity = data.quantity ?? 1;
 
-        if (optimisticProduct) {
+        if (optimisticProduct && 'productId' in data) {
           queryClient.setQueryData<ShopCart>(cartKey, (current) => {
             if (!current) return current;
 
             const variant = optimisticProduct.variants?.find((item) => item.value === data.variantValue);
             const existing = current.items.find(
               (item) =>
+                item.kind === 'product' &&
                 item.productId === data.productId &&
                 (item.variantValue ?? null) === (data.variantValue ?? null),
             );
@@ -120,6 +121,7 @@ export function useShopCartMutations() {
               ...current.items,
               {
                 id: `optimistic:${optimisticProduct.id}:${data.variantValue ?? "default"}`,
+                kind: 'product' as const,
                 productId: optimisticProduct.id,
                 productName: optimisticProduct.name,
                 productImageUrl: optimisticProduct.images[0] || optimisticProduct.imageUrl,
@@ -131,6 +133,7 @@ export function useShopCartMutations() {
                 lineTotal: unitPrice * quantity,
                 availableStock: variant?.stock ?? optimisticProduct.stock,
                 weightGrams: optimisticProduct.weightGrams ?? 0,
+                lowStock: false,
               },
             ];
             return recomputeCart({ ...current, items });

@@ -14,8 +14,12 @@ import {
   getGetPublicSupplierQueryKey,
   getListSupplierProductsQueryKey,
   getListSupplierCategoriesQueryKey,
+  useListShopBundles,
+  useGetShopBundle,
+  getListShopBundlesQueryKey,
+  getGetShopBundleQueryKey,
 } from "@workspace/api-client-react";
-import type { Product, ProductCategory, ListSupplierProductsParams, Supplier } from "@workspace/api-client-react";
+import type { Product, ProductCategory, ListSupplierProductsParams, Supplier, Bundle, BundleComponentCard } from "@workspace/api-client-react";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -137,6 +141,96 @@ function ProductCard({ product, onAdd, onQuickView, supplierSlug }: { product: P
   );
 }
 
+function BundleQuickView({ bundleId, supplierSlug, onClose, onAdd, cartBusy }: { bundleId: string; supplierSlug: string; onClose: () => void; onAdd: (payload: { bundleId: string }) => void; cartBusy: boolean; }) {
+  const { data: bundle, isLoading, isError } = useGetShopBundle(bundleId, { query: { enabled: !!bundleId, queryKey: getGetShopBundleQueryKey(bundleId) } });
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-xl">
+        {isLoading || !bundle ? (
+          <div className="py-12 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+        ) : isError ? (
+          <div className="py-12 text-center text-destructive">Nije moguće učitati bundle.</div>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle className="text-xl font-serif">{bundle.name}</DialogTitle>
+            </DialogHeader>
+            <div className="flex gap-4 mt-2">
+              {bundle.imageUrl ? (
+                <OptimizedImage src={bundle.imageUrl} alt={bundle.name} width={144} height={144} preferredSize="medium" className="w-36 h-36 object-cover rounded-xl flex-shrink-0 bg-muted" />
+              ) : (
+                <div className="w-36 h-36 bg-muted rounded-xl flex items-center justify-center flex-shrink-0"><Package className="w-8 h-8 text-muted-foreground/30" /></div>
+              )}
+              <div className="flex flex-col gap-2 flex-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-primary">B2B Bundle</span>
+                <p className="text-sm text-muted-foreground">{bundle.description || "Nema opisa."}</p>
+                <div className="mt-2 text-sm">
+                  <strong className="block mb-1">Sadržaj:</strong>
+                  <ul className="space-y-1">
+                    {bundle.components.map(c => (
+                      <li key={c.productId} className="flex items-center justify-between text-xs bg-muted/30 p-1.5 rounded">
+                        <span className="truncate mr-2 flex-1">{c.name}</span>
+                        <span className="font-semibold whitespace-nowrap text-muted-foreground">x{c.quantity}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-end justify-between mt-4 pt-4 border-t">
+              <div>
+                <span className="text-xs text-muted-foreground block">Dostupno: {bundle.derivedStock} kom</span>
+                <span className="text-2xl font-bold text-primary">{(bundle.b2bPrice ?? 0).toLocaleString("sr-RS")} RSD</span>
+              </div>
+              <div className="flex gap-2">
+                <Button data-testid={`button-add-bundle-cart-${bundle.id}`} disabled={cartBusy || bundle.derivedStock <= 0} onClick={() => { onAdd({ bundleId: bundle.id }); onClose(); }} className="gap-2">
+                  <ShoppingCart className="w-4 h-4" /> Dodaj u korpu
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function BundleCard({ bundle, onAdd, onQuickView, supplierSlug }: { bundle: Bundle; onAdd: (payload: { bundleId: string }) => void; onQuickView: (id: string) => void; supplierSlug: string; }) {
+  const cartBusy = useMutationQueueBusy(shopCartMutationQueue);
+  return (
+    <Card className="overflow-hidden group flex flex-col relative border-primary/20 bg-primary/5">
+      <div className="absolute top-2 left-2 z-10 flex flex-col gap-1">
+        <Badge className="bg-primary hover:bg-primary text-white border-none text-xs"><Package className="w-3 h-3 mr-1" />Bundle</Badge>
+      </div>
+      <div className="aspect-square bg-muted relative overflow-hidden flex items-center justify-center">
+        {bundle.imageUrl ? (
+          <OptimizedImage src={bundle.imageUrl} alt={bundle.name} width={400} height={400} preferredSize="medium" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+        ) : (
+          <Package className="w-16 h-16 text-muted-foreground/20" />
+        )}
+        <button onClick={() => onQuickView(bundle.id)} className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 text-white text-sm font-medium">
+          <Eye className="w-4 h-4" /> Brz pregled
+        </button>
+      </div>
+      <CardContent className="p-4 flex-1 flex flex-col gap-1">
+        <h3 className="font-semibold text-sm leading-tight line-clamp-2 mt-0.5"><button className="hover:text-primary text-left" onClick={() => onQuickView(bundle.id)}>{bundle.name}</button></h3>
+        <p className="text-xs text-muted-foreground line-clamp-1">{bundle.components.length} proizvoda</p>
+        <div className="mt-auto pt-2 flex items-end justify-between">
+          <div>
+            <span className="font-bold text-primary">{(bundle.b2bPrice ?? 0).toLocaleString("sr-RS")} RSD</span>
+          </div>
+          <span className="text-[10px] text-muted-foreground">Dostupno: {bundle.derivedStock}</span>
+        </div>
+      </CardContent>
+      <CardFooter className="p-4 pt-0 gap-2">
+        <Button data-testid={`button-quick-view-bundle-${bundle.id}`} size="sm" variant="outline" className="flex-shrink-0" onClick={() => onQuickView(bundle.id)}><Eye className="w-3.5 h-3.5" /></Button>
+        <Button data-testid={`button-add-cart-bundle-${bundle.id}`} size="sm" className="flex-1 gap-1" disabled={cartBusy || bundle.derivedStock <= 0} onClick={() => onAdd({ bundleId: bundle.id })}><ShoppingCart className="w-3.5 h-3.5" /> Dodaj</Button>
+      </CardFooter>
+    </Card>
+  );
+}
+
 function CategorySidebar({ categories, filters, setFilters }: { categories: any[]; filters: FilterState; setFilters: React.Dispatch<React.SetStateAction<FilterState>>; }) {
   const roots = categories.filter(c => !c.parentId).sort((a,b) => a.sortOrder - b.sortOrder);
   const getChildren = (parentId: string) => categories.filter(c => c.parentId === parentId).sort((a,b) => a.sortOrder - b.sortOrder);
@@ -169,6 +263,7 @@ export default function OwnerShop() {
   const { data: supplier, isLoading: isLoadingSupplier } = useGetPublicSupplier(supplierSlug ?? "", { query: { enabled: !!supplierSlug, queryKey: getGetPublicSupplierQueryKey(supplierSlug ?? "") } });
 
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
+  const [quickViewBundleId, setQuickViewBundleId] = useState<string | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const cartBusy = useMutationQueueBusy(shopCartMutationQueue);
@@ -188,6 +283,9 @@ export default function OwnerShop() {
   const { data: productList, isLoading: isLoadingProd } = useListSupplierProducts(supplierSlug ?? "", productParams, { query: { enabled: !!supplierSlug, queryKey: getListSupplierProductsQueryKey(supplierSlug ?? "", productParams) } });
   const { data: categories = [], isLoading: isLoadingCats } = useListSupplierCategories(supplierSlug ?? "", { query: { enabled: !!supplierSlug, queryKey: getListSupplierCategoriesQueryKey(supplierSlug ?? "") } });
 
+  const { data: allBundles = [], isLoading: isLoadingBundles } = useListShopBundles({ query: { enabled: !!supplierSlug, queryKey: getListShopBundlesQueryKey() } });
+  const supplierBundles = useMemo(() => allBundles.filter(b => b.supplierId === supplier?.id), [allBundles, supplier?.id]);
+
   const products = productList?.items ?? [];
   const total = productList?.total ?? 0;
   const totalPages = productList?.totalPages ?? 1;
@@ -198,6 +296,7 @@ export default function OwnerShop() {
     mutation: {
       mutationKey: SHOP_CART_MUTATION_KEY,
       onMutate: async ({ data }) => {
+        if (!("productId" in data)) return {};
         const product = products.find((item) => item.id === data.productId);
         if (!product) return {};
         const release = await shopCartMutationQueue.acquire();
@@ -215,6 +314,11 @@ export default function OwnerShop() {
   const addToCart = (id: string, variantValue?: string) => {
     if (shopCartMutationQueue.isBusy()) return;
     addCartItem.mutate({ data: { productId: id, ...(variantValue ? { variantValue } : {}) } });
+  };
+
+  const addBundleToCart = (payload: { bundleId: string }) => {
+    if (shopCartMutationQueue.isBusy()) return;
+    addCartItem.mutate({ data: { bundleId: payload.bundleId, quantity: 1 } });
   };
 
   if (!supplierSlug) {
@@ -308,7 +412,20 @@ export default function OwnerShop() {
               </div>
 
               <div className="flex-1 min-w-0">
+                {page === 1 && !filters.categoryId && !debouncedSearch && supplierBundles.length > 0 && (
+                  <div className="mb-10">
+                    <h2 className="text-xl font-serif font-bold mb-4 flex items-center gap-2">
+                      <Package className="w-5 h-5 text-primary" /> Promo Paketi
+                    </h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+                      {supplierBundles.map((bundle) => (
+                        <BundleCard key={bundle.id} bundle={bundle} onAdd={addBundleToCart} onQuickView={setQuickViewBundleId} supplierSlug={supplierSlug} />
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="flex items-center justify-between mb-3 text-sm text-muted-foreground">
+                  <span className="font-semibold text-foreground">Proizvodi</span>
                   <span>{isLoadingProd ? "Učitavanje..." : `${total} proizvoda`}</span>
                 </div>
                 {isLoadingProd || isLoadingSupplier ? (
@@ -338,6 +455,7 @@ export default function OwnerShop() {
         </div>
       </div>
       {quickViewProduct && <QuickView product={quickViewProduct} supplierSlug={supplierSlug} onClose={() => setQuickViewProduct(null)} onAdd={addToCart} cartBusy={cartBusy} />}
+      {quickViewBundleId && <BundleQuickView bundleId={quickViewBundleId} supplierSlug={supplierSlug} onClose={() => setQuickViewBundleId(null)} onAdd={addBundleToCart} cartBusy={cartBusy} />}
     </BusinessLayout>
   );
 }
