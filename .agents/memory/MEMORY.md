@@ -108,3 +108,4 @@
 - [Referral compensation accounting](referral-compensation-accounting.md) — fraud reversal targets consumed, unrestored value; expired or unused entitlement must never become debt.
 - [Supplier catalog write serialization](supplier-catalog-write-serialization.md) — supplier scope, product channels, merchandising links, and checkout eligibility share lock boundaries.
 - [Replay-safe additive DDL](replay-safe-additive-ddl.md) — historical guards must accept the final schema’s newer nullable/discriminated rows on every startup replay.
+- [Generated API error guard coverage](generated-api-error-guard-coverage.md) — discover production client imports dynamically and keep native Response handling outside generated-error paths.

@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { AdminLayout } from "./layout";
-import { NetworkError, useAdminListReviews, useAdminUpdateReview, useAdminDeleteReview, getAdminListReviewsQueryKey } from "@workspace/api-client-react";
+import { getApiErrorDetails, NetworkError, useAdminListReviews, useAdminUpdateReview, useAdminDeleteReview, getAdminListReviewsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -71,7 +71,7 @@ export default function AdminReviews() {
         actionGuard.end(actionKey);
       },
       onError: (error: unknown) => {
-        if ((error as { status?: number }).status === 404) {
+        if (getApiErrorDetails(error).status === 404) {
           toast.info("Recenzija više nije dostupna", {
             description: "Klijent je u međuvremenu povukao ovu recenziju. Lista je osvežena.",
           });

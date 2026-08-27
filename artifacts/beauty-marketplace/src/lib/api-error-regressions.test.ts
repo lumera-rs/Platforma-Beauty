@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   ApiError,
   getApiErrorDetails,
@@ -8,6 +10,160 @@ import {
   type ApiErrorData,
 } from "../../../../lib/api-client-react/src/custom-fetch";
 import { extractApiError } from "./admin-form-utils";
+
+const GENERATED_API_CLIENT_IMPORT =
+  /(?:\bfrom\s*|\bimport\s*\()\s*["']@workspace\/api-client-react["']/;
+const SOURCE_EXTENSIONS = new Set([".ts", ".tsx"]);
+
+type SourceFile = {
+  absolutePath: string;
+  relativePath: string;
+  source: string;
+};
+
+type ApiErrorViolation = {
+  line: number;
+  message: string;
+};
+
+function listProductionFrontendFiles(directory: string, relativeDirectory = ""): SourceFile[] {
+  return readdirSync(directory, { withFileTypes: true })
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .flatMap((entry) => {
+      const relativePath = path.join(relativeDirectory, entry.name);
+      const absolutePath = path.join(directory, entry.name);
+
+      if (entry.isDirectory()) {
+        return listProductionFrontendFiles(absolutePath, relativePath);
+      }
+
+      const extension = path.extname(entry.name);
+      if (
+        !entry.isFile()
+        || !SOURCE_EXTENSIONS.has(extension)
+        || /\.(?:test|fixture)\.[^.]+$/.test(entry.name)
+      ) {
+        return [];
+      }
+
+      return [{
+        absolutePath,
+        relativePath,
+        source: readFileSync(absolutePath, "utf8"),
+      }];
+    });
+}
+
+/**
+ * Keep the source offsets intact while ignoring comments and string literals.
+ * A textual guard should report real property access, not an example in a
+ * comment or an error-shaped string shown in the UI.
+ */
+function maskNonCode(source: string): string {
+  const masked = source.split("");
+  let quote: "'" | '"' | "`" | null = null;
+  let escaped = false;
+
+  const mask = (index: number) => {
+    if (masked[index] !== "\n" && masked[index] !== "\r") masked[index] = " ";
+  };
+
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    const nextCharacter = source[index + 1];
+
+    if (quote) {
+      mask(index);
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (character === "/" && nextCharacter === "/") {
+      mask(index);
+      mask(index + 1);
+      index += 1;
+      while (index + 1 < source.length && source[index + 1] !== "\n" && source[index + 1] !== "\r") {
+        index += 1;
+        mask(index);
+      }
+      continue;
+    }
+
+    if (character === "/" && nextCharacter === "*") {
+      mask(index);
+      mask(index + 1);
+      index += 1;
+      while (index + 1 < source.length && !(source[index] === "*" && source[index + 1] === "/")) {
+        index += 1;
+        mask(index);
+      }
+      if (index + 1 < source.length) {
+        index += 1;
+        mask(index);
+      }
+      continue;
+    }
+
+    if (character === "'" || character === '"' || character === "`") {
+      quote = character;
+      mask(index);
+    }
+  }
+
+  return masked.join("");
+}
+
+function lineNumberAt(source: string, offset: number): number {
+  return source.slice(0, offset).split("\n").length;
+}
+
+function isErrorIdentifier(identifier: string): boolean {
+  const normalized = identifier.toLowerCase();
+  return normalized === "e"
+    || normalized === "err"
+    || normalized === "error"
+    || normalized.includes("error")
+    || normalized.includes("exception")
+    || normalized.includes("failure")
+    || normalized === "caught";
+}
+
+function findGeneratedApiErrorViolations(source: string): ApiErrorViolation[] {
+  const code = maskNonCode(source);
+  const violations: ApiErrorViolation[] = [];
+  const addMatches = (expression: RegExp, message: (match: RegExpExecArray) => string) => {
+    for (const match of code.matchAll(expression)) {
+      const identifier = match[1];
+      if (identifier && isErrorIdentifier(identifier)) {
+        violations.push({
+          line: lineNumberAt(source, match.index ?? 0),
+          message: message(match),
+        });
+      }
+    }
+  };
+
+  addMatches(
+    /\b([A-Za-z_$][\w$]*)(?:\.|\?\.)response(?:\.|\?\.)?(?:data|status)\b/g,
+    (match) => `${match[1]}.response.data/status must use getApiErrorDetails`,
+  );
+  addMatches(
+    /\b([A-Za-z_$][\w$]*)(?:\.|\?\.)data\b/g,
+    (match) => `${match[1]}.data must use getApiErrorDetails`,
+  );
+  addMatches(
+    /\(\s*([A-Za-z_$][\w$]*)\s+as\s+[^)\n]*(?:\bdata\b|\bstatus\b)[^)\n]*\)\s*(?:\.|\?\.)\s*(?:data|status)\b/g,
+    (match) => `manual ${match[1]} data/status cast must use getApiErrorDetails`,
+  );
+
+  return violations.sort((left, right) => left.line - right.line || left.message.localeCompare(right.message));
+}
 
 function apiError(status: number, data: ApiErrorData): ApiError<ApiErrorData> {
   return new ApiError(
@@ -110,23 +266,63 @@ test("critical generated-client handlers stay on the shared parser and preserve 
 });
 
 test("frontend feature code contains no Axios-style generated error access", () => {
-  const featureFiles = [
-    "../components/beauty-jobs/business-job-applicants.tsx",
-    "../hooks/use-shop-cart-mutations.ts",
-    "../pages/auth.tsx",
-    "../pages/business-auth.tsx",
-    "../pages/business-education.tsx",
-    "../pages/customer-dashboard.tsx",
-    "../pages/owner/checkout.tsx",
-    "../pages/retail-checkout.tsx",
-    "../pages/salon-profile.tsx",
-    "../pages/widget-booking.tsx",
-    "../pages/admin/retention-settings.tsx",
-    "../pages/admin/shipping.tsx",
-  ];
+  const sourceRoot = fileURLToPath(new URL("..", import.meta.url));
+  const productionFiles = listProductionFrontendFiles(sourceRoot);
+  const generatedClientFiles = productionFiles.filter(({ source }) =>
+    GENERATED_API_CLIENT_IMPORT.test(source),
+  );
 
-  for (const relativePath of featureFiles) {
-    const source = readFileSync(new URL(relativePath, import.meta.url), "utf8");
-    assert.doesNotMatch(source, /\.response\??\.(?:data|status)/, relativePath);
-  }
+  assert.ok(generatedClientFiles.length > 0, "expected production files to use the generated API client");
+
+  const violations = generatedClientFiles.flatMap(({ relativePath, source }) =>
+    findGeneratedApiErrorViolations(source).map(({ line, message }) => `${relativePath}:${line} ${message}`),
+  );
+
+  assert.deepEqual(violations, [], violations.join("\n"));
+});
+
+test("the generated-client guard catches a newly added bad handler", () => {
+  const newScreenFixture = readFileSync(
+    new URL("../../test-fixtures/generated-api-error-handler.fixture.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(newScreenFixture, GENERATED_API_CLIENT_IMPORT);
+  const violations = findGeneratedApiErrorViolations(newScreenFixture);
+
+  assert.equal(violations.length, 3);
+  assert.equal(
+    violations.filter(({ message }) => /error\.response\.data\/status/.test(message)).length,
+    2,
+  );
+  assert.ok(violations.some(({ message }) => /manual error data\/status cast/.test(message)));
+});
+
+test("native fetch Response handling is not mistaken for generated API error access", () => {
+  const nativeFetchHelper = `
+    async function loadWithNativeFetch() {
+      const response = await fetch("/api/native");
+      if (!response.ok) throw new Error("Request failed");
+      return response.status;
+    }
+  `;
+
+  assert.deepEqual(findGeneratedApiErrorViolations(nativeFetchHelper), []);
+});
+
+test("generated-client discovery excludes regression test fixtures", () => {
+  const sourceRoot = fileURLToPath(new URL("..", import.meta.url));
+  const productionFiles = listProductionFrontendFiles(sourceRoot);
+
+  assert.equal(
+    productionFiles.some(({ relativePath }) => relativePath.endsWith("api-error-regressions.test.ts")),
+    false,
+  );
+  assert.equal(
+    productionFiles.some(({ relativePath }) => relativePath.endsWith("generated-api-error-handler.fixture.tsx")),
+    false,
+  );
+  assert.ok(
+    productionFiles.some(({ relativePath }) => relativePath === path.join("pages", "auth.tsx")),
+  );
 });

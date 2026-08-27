@@ -4,7 +4,7 @@ import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { GraduationCap, Loader2, CheckCircle2, ChevronRight } from "lucide-react";
-import { useRegisterBusiness } from "@workspace/api-client-react";
+import { getApiErrorMessage, useRegisterBusiness } from "@workspace/api-client-react";
 import { BusinessLayout } from "@/components/business-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -84,10 +84,12 @@ export default function EducationCenterRegistration() {
         setLocation(homeForRole(data.user.role));
       },
       onError: (error) => {
-        const message = typeof error.data === "object" && error.data && "error" in error.data
-          ? String(error.data.error)
-          : "Proverite podatke ili pokušajte sa drugom email adresom.";
-        toast.error("Registracija nije uspela", { description: message });
+        toast.error("Registracija nije uspela", {
+          description: getApiErrorMessage(
+            error,
+            "Proverite podatke ili pokušajte sa drugom email adresom.",
+          ),
+        });
       },
     });
   };
