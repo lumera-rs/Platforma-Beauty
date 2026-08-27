@@ -254,9 +254,14 @@ test("employee approval is side-effect free, approval finalizes exactly once, an
   await db.delete(couponsTable).where(eq(couponsTable.id, restrictedCoupon!.id));
   const preview = await request(`/shop/checkout-preview?couponCode=${encodeURIComponent(couponCode)}`, employeeUserId);
   assert.equal(preview.status, 200);
-  const previewBody = await preview.json() as { coupon: { code: string } | null; couponDiscountRsd: number };
+  const previewBody = await preview.json() as {
+    coupon: { code: string } | null;
+    couponDiscountRsd: number;
+    merchandiseSubtotalRsd: number;
+  };
   assert.equal(previewBody.coupon?.code, couponCode);
   assert.equal(previewBody.couponDiscountRsd, 1_001);
+  assert.equal(previewBody.merchandiseSubtotalRsd, 0);
 
   const stockBefore = await db.select({ stock: productsTable.stock }).from(productsTable).where(eq(productsTable.id, productIds[0]!));
   const ordersBefore = await countRows(ordersTable, ordersTable.salonId, salonId);
@@ -296,7 +301,19 @@ test("employee approval is side-effect free, approval finalizes exactly once, an
   assert.equal(coupon?.usageCount, 1);
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, savedRequest!.finalizedOrderId!));
   assert.equal(order?.couponDiscountRsd, 1_001);
-  assert.equal(order?.referralCreditMerchandiseSubtotalRsd, 599);
+  assert.equal(
+    order?.referralCreditMerchandiseSubtotalRsd,
+    previewBody.merchandiseSubtotalRsd,
+    "any positive coupon allocation excludes each allocated line from referral credit",
+  );
+  const finalizedResponse = approvalResults.find((result) => result.status === 201);
+  assert.ok(finalizedResponse);
+  assert.equal(
+    (JSON.parse(finalizedResponse.body) as { referralCreditMerchandiseSubtotalRsd: number })
+      .referralCreditMerchandiseSubtotalRsd,
+    order?.referralCreditMerchandiseSubtotalRsd,
+    "approval confirmation displays the persisted final referral base",
+  );
   assert.equal(order?.referralCreditPreCreditPayableTotalRsd, 989);
   const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order!.id));
   assert.deepEqual(

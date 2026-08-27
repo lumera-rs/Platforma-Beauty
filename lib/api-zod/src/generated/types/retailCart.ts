@@ -16,6 +16,8 @@ export interface RetailCart {
   itemCount: number;
   /** @minimum 0 */
   subtotal: number;
+  /** @minimum 0 */
+  referralCreditMerchandiseSubtotalRsd: number;
   items: RetailCartItemsItem[];
   savedItems: SavedCartItem[];
   crossSellProducts: CartCrossSellProduct[];

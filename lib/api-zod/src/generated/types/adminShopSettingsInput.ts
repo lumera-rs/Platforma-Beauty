@@ -18,6 +18,17 @@ export interface AdminShopSettingsInput {
      * @maximum 365
      */
   defaultDeliveryBusinessDays: number;
+  retailCartReminderEnabled?: boolean;
+  /**
+     * @minimum 1
+     * @maximum 720
+     */
+  retailCartReminderDelayHours?: number;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  retailCartReminderBrevoTemplateId?: number | null;
   /** @minimum 0 */
   freeShippingThreshold: number;
   /** @minimum 1 */

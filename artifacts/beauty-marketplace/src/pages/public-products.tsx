@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Link, useLocation, useRoute } from "wouter";
-import { ChevronLeft, ChevronRight, Loader2, Search, ShoppingBag, Sparkles, Building2, Bell, CheckCircle, Package, Eye } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Search, ShoppingBag, Sparkles, Building2, Bell, CheckCircle, Package, Eye, Heart, CalendarClock } from "lucide-react";
 import {
   useGetSupplierPublicProduct, useListSupplierPublicProducts, useListPublicSuppliers,
   useGetPublicSupplier, useListSupplierCategories, getGetPublicSupplierQueryKey,
@@ -8,7 +8,10 @@ import {
   getGetSupplierPublicProductQueryKey, useAddRetailCartItem,
   useGetB2cProductWaitlistStatus, useSubscribeB2cProductWaitlist, useUnsubscribeB2cProductWaitlist,
   getGetB2cProductWaitlistStatusQueryKey,
-  useListPublicBundles, useGetPublicBundle, getListPublicBundlesQueryKey, getGetPublicBundleQueryKey
+  useListPublicBundles, useGetPublicBundle, getListPublicBundlesQueryKey, getGetPublicBundleQueryKey,
+  useToggleProductWishlistItem, useListProductWishlist, getListProductWishlistQueryKey,
+  useGetCurrentUser, useCreateRetailProductSubscription,
+  RetailProductSubscriptionInputFrequency, RetailProductSubscriptionInputPaymentMethod, RetailProductSubscriptionInputDeliveryMethod
 } from "@workspace/api-client-react";
 import type { ListSupplierPublicProductsParams, PublicProduct, PublicBundle } from "@workspace/api-client-react";
 import { Layout } from "@/components/layout";
@@ -16,11 +19,15 @@ import { OptimizedImage } from "@/components/optimized-image";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useDebouncedSearch } from "@/hooks/use-debounce";
 import { useToast } from "@/hooks/use-toast";
 import { notifyRetailCartChanged } from "@/lib/retail-cart-events";
 import { extractApiError } from "@/lib/admin-form-utils";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { useQueryClient } from "@tanstack/react-query";
 
 const money = (value: number) => new Intl.NumberFormat("sr-RS", {
   style: "currency", currency: "RSD", maximumFractionDigits: 0,
@@ -36,7 +43,7 @@ function ProductPrice({ product }: { product: PublicProduct }) {
   );
 }
 
-function PublicProductCard({ product, supplierSlug }: { product: PublicProduct, supplierSlug: string }) {
+function PublicProductCard({ product, supplierSlug, isWishlisted, onToggleWishlist, isCustomer }: { product: PublicProduct, supplierSlug: string, isWishlisted?: boolean, onToggleWishlist?: (productId: string) => void, isCustomer?: boolean }) {
   const { toast } = useToast();
   const addRetailCartItem = useAddRetailCartItem();
   const add = () => {
@@ -57,7 +64,16 @@ function PublicProductCard({ product, supplierSlug }: { product: PublicProduct, 
   };
   const adding = addRetailCartItem.isPending;
   return (
-    <article className="group overflow-hidden rounded-2xl border bg-card shadow-sm transition-shadow hover:shadow-md">
+    <article className="group overflow-hidden rounded-2xl border bg-card shadow-sm transition-shadow hover:shadow-md relative">
+      {isCustomer && onToggleWishlist && (
+        <button
+          onClick={(e) => { e.preventDefault(); onToggleWishlist(product.id); }}
+          className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-white/80 backdrop-blur border shadow-sm flex items-center justify-center text-muted-foreground hover:text-rose-500 transition-colors"
+          data-testid={`button-wishlist-${product.id}`}
+        >
+          <Heart className={`w-4 h-4 ${isWishlisted ? "fill-rose-500 text-rose-500" : ""}`} />
+        </button>
+      )}
       <Link href={`/shop/${supplierSlug}/proizvod/${product.id}`} className="block" data-testid={`public-product-link-${product.id}`}>
         <div className="aspect-square overflow-hidden bg-muted">
           <OptimizedImage src={product.imageUrl} alt={product.name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
@@ -268,6 +284,9 @@ export function PublicSupplierShop() {
   const supplierSlug = pathSegments[1] ?? "";
   const categoryPath = pathSegments.slice(2).join("/");
 
+  const { data: userResp } = useGetCurrentUser();
+  const isCustomer = userResp?.user?.role === "CUSTOMER";
+
   const { data: supplier, isLoading: supplierLoading, isError: supplierError } = useGetPublicSupplier(supplierSlug, { query: { enabled: !!supplierSlug, queryKey: getGetPublicSupplierQueryKey(supplierSlug) } });
 
   const [search, setSearch] = useState("");
@@ -292,9 +311,33 @@ export function PublicSupplierShop() {
     },
   });
 
+  const { data: wishlist = [] } = useListProductWishlist({
+    query: { enabled: isCustomer, queryKey: getListProductWishlistQueryKey() }
+  });
+
+  const queryClient = useQueryClient();
+  const toggleWishlist = useToggleProductWishlistItem({
+    mutation: {
+      onSuccess: (res) => {
+        queryClient.invalidateQueries({ queryKey: getListProductWishlistQueryKey() });
+        if (res.saved) {
+          toast.success("Proizvod je sačuvan u listu želja.");
+        } else {
+          toast.success("Proizvod je uklonjen iz liste želja.");
+        }
+      }
+    }
+  });
+
+  const handleToggleWishlist = (productId: string) => {
+    toggleWishlist.mutate({ data: { productId } });
+  };
+
   const { data: allBundles = [] } = useListPublicBundles({ query: { enabled: !!supplierSlug, queryKey: getListPublicBundlesQueryKey() } });
   const supplierBundles = useMemo(() => allBundles.filter(b => b.supplierId === supplier?.id), [allBundles, supplier?.id]);
   const [quickViewBundleId, setQuickViewBundleId] = useState<string | null>(null);
+
+  const { toast } = useToast();
 
   const renderCategoryLinks = (parentId: string | null, depth = 0) => categories
     .filter((category) => (category.parentId ?? null) === parentId)
@@ -383,7 +426,16 @@ export function PublicSupplierShop() {
               <>
                 <p className="mb-5 text-sm text-muted-foreground">Prikazano {productsData.items.length} od {productsData.total} proizvoda.</p>
                 <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                  {productsData.items.map((product) => <PublicProductCard key={product.id} product={product} supplierSlug={supplier.slug} />)}
+                  {productsData.items.map((product) => (
+                    <PublicProductCard
+                      key={product.id}
+                      product={product}
+                      supplierSlug={supplier.slug}
+                      isCustomer={isCustomer}
+                      isWishlisted={wishlist.some(w => w.productId === product.id)}
+                      onToggleWishlist={handleToggleWishlist}
+                    />
+                  ))}
                 </div>
                 {productsData.totalPages > 1 && (
                   <div className="mt-10 flex items-center justify-center gap-3">
@@ -414,6 +466,10 @@ export function PublicProductDetailPage() {
   const [, params] = useRoute("/shop/:supplierSlug/proizvod/:productId");
   const supplierSlug = params?.supplierSlug ?? "";
   const productId = params?.productId ?? "";
+
+  const { data: userResp } = useGetCurrentUser();
+  const isCustomer = userResp?.user?.role === "CUSTOMER";
+
   const { data: supplier } = useGetPublicSupplier(supplierSlug, { query: { enabled: !!supplierSlug, queryKey: getGetPublicSupplierQueryKey(supplierSlug) } });
 
   const { data: product, isLoading, isError } = useGetSupplierPublicProduct(supplierSlug, productId, { query: { enabled: !!supplierSlug && !!productId, queryKey: getGetSupplierPublicProductQueryKey(supplierSlug, productId) } });
@@ -421,6 +477,43 @@ export function PublicProductDetailPage() {
   const { data: waitlistStatus, refetch: refetchWaitlist } = useGetB2cProductWaitlistStatus(productId, { query: { enabled: !!productId, queryKey: getGetB2cProductWaitlistStatusQueryKey(productId) } });
   const subscribeWaitlist = useSubscribeB2cProductWaitlist({ mutation: { onSuccess: () => { toast.success("Prijavljeni ste na listu čekanja."); refetchWaitlist(); } } });
   const unsubscribeWaitlist = useUnsubscribeB2cProductWaitlist({ mutation: { onSuccess: () => { toast.success("Odjavljeni ste sa liste čekanja."); refetchWaitlist(); } } });
+
+  const queryClient = useQueryClient();
+  const { data: wishlist = [] } = useListProductWishlist({
+    query: { enabled: isCustomer, queryKey: getListProductWishlistQueryKey() }
+  });
+  const isWishlisted = wishlist.some(w => w.productId === productId);
+  const toggleWishlist = useToggleProductWishlistItem({
+    mutation: {
+      onSuccess: (res) => {
+        queryClient.invalidateQueries({ queryKey: getListProductWishlistQueryKey() });
+        if (res.saved) {
+          toast.success("Proizvod je sačuvan u listu želja.");
+        } else {
+          toast.success("Proizvod je uklonjen iz liste želja.");
+        }
+      }
+    }
+  });
+
+  // Subscription state
+  const [showSubDialog, setShowSubDialog] = useState(false);
+  const [subFreq, setSubFreq] = useState<RetailProductSubscriptionInputFrequency>("MONTHLY");
+  const [subPayment, setSubPayment] = useState<RetailProductSubscriptionInputPaymentMethod>("CARD");
+  const [subDelivery, setSubDelivery] = useState<RetailProductSubscriptionInputDeliveryMethod>("courier");
+  const [subContact, setSubContact] = useState({ firstName: userResp?.user?.firstName ?? "", lastName: userResp?.user?.lastName ?? "", email: userResp?.user?.email ?? "", phone: userResp?.user?.phone ?? "" });
+  const [subAddress, setSubAddress] = useState({ street: "", city: "", postalCode: "" });
+  const createSub = useCreateRetailProductSubscription({
+    mutation: {
+      onSuccess: () => {
+        toast.success("Pretplata je uspešno kreirana.");
+        setShowSubDialog(false);
+      },
+      onError: (err) => {
+        toast.error(extractApiError(err, "Nije moguće kreirati pretplatu."));
+      }
+    }
+  });
 
   const { toast } = useToast();
   const productName = product?.name ?? "Proizvod";
@@ -464,12 +557,39 @@ export function PublicProductDetailPage() {
           </div>
           <div className="max-w-xl">
             <p className="text-sm font-semibold uppercase tracking-wide text-primary">{product.brand ?? product.category}</p>
-            <h1 className="mt-2 font-serif text-4xl font-bold tracking-tight">{product.name}</h1>
+            <h1 className="mt-2 font-serif text-4xl font-bold tracking-tight pr-12 relative">
+              {product.name}
+              {isCustomer && (
+                <button
+                  onClick={() => toggleWishlist.mutate({ data: { productId } })}
+                  className="absolute right-0 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-muted/50 hover:bg-muted border flex items-center justify-center text-muted-foreground hover:text-rose-500 transition-colors"
+                >
+                  <Heart className={`w-5 h-5 ${isWishlisted ? "fill-rose-500 text-rose-500" : ""}`} />
+                </button>
+              )}
+            </h1>
             <div className="mt-5"><ProductPrice product={product} /></div>
             <p className="mt-7 whitespace-pre-line leading-7 text-muted-foreground">{product.description}</p>
             {product.deliveryBusinessDaysOverride != null && <p className="mt-4 text-sm text-muted-foreground" data-testid="text-public-estimated-delivery">Procenjena isporuka: {product.deliveryBusinessDaysOverride} {product.deliveryBusinessDaysOverride === 1 ? "radni dan" : "radnih dana"}</p>}
 
-            <div className="mt-8 flex flex-wrap gap-3"><Button size="lg" onClick={add} disabled={adding}>{adding ? "Dodavanje…" : "Dodaj u korpu"}</Button><Button size="lg" variant="outline" asChild><Link href="/korpa">Pogledaj korpu</Link></Button></div>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Button size="lg" onClick={add} disabled={adding}>{adding ? "Dodavanje…" : "Dodaj u korpu"}</Button>
+              <Button size="lg" variant="outline" asChild><Link href="/korpa">Pogledaj korpu</Link></Button>
+            </div>
+
+            {Boolean(product.subscriptionAllowed) && isCustomer && (
+              <div className="mt-4 p-5 rounded-xl border bg-primary/5 flex items-center justify-between border-primary/20">
+                <div>
+                  <h3 className="font-semibold text-primary flex items-center gap-2">
+                    <CalendarClock className="w-5 h-5" />
+                    Pretplata na proizvod
+                  </h3>
+                  <p className="text-sm text-muted-foreground mt-1">Uštedite {product.subscriptionDiscountPercent ?? 0}% redovnom isporukom.</p>
+                </div>
+                <Button variant="secondary" onClick={() => setShowSubDialog(true)}>Podesi pretplatu</Button>
+              </div>
+            )}
+
             <div className="mt-4 p-4 rounded-xl border bg-muted/20">
               {waitlistStatus?.subscribed ? (
                 <div className="space-y-3">
@@ -506,6 +626,95 @@ export function PublicProductDetailPage() {
           </section>
         )}
       </main>
+      {showSubDialog && (
+        <Dialog open={showSubDialog} onOpenChange={setShowSubDialog}>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle>Pretplata na proizvod</DialogTitle>
+              <DialogDescription>Izaberite dinamiku isporuke. Redovnom pretplatom štedite {product.subscriptionDiscountPercent ?? 0}%.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Dinamika isporuke</Label>
+                <Select value={subFreq} onValueChange={(v: any) => setSubFreq(v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="WEEKLY">Nedeljno</SelectItem>
+                    <SelectItem value="BIWEEKLY">Na dve nedelje</SelectItem>
+                    <SelectItem value="MONTHLY">Mesečno</SelectItem>
+                    <SelectItem value="EVERY_TWO_MONTHS">Na dva meseca</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Ime</Label>
+                  <Input value={subContact.firstName} onChange={e => setSubContact({ ...subContact, firstName: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Prezime</Label>
+                  <Input value={subContact.lastName} onChange={e => setSubContact({ ...subContact, lastName: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Email</Label>
+                  <Input value={subContact.email} onChange={e => setSubContact({ ...subContact, email: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Telefon</Label>
+                  <Input value={subContact.phone} onChange={e => setSubContact({ ...subContact, phone: e.target.value })} />
+                </div>
+              </div>
+              <div className="space-y-2 border-t pt-4">
+                <Label className="font-semibold">Adresa isporuke</Label>
+                <Input placeholder="Ulica i broj" value={subAddress.street} onChange={e => setSubAddress({ ...subAddress, street: e.target.value })} />
+                <div className="grid grid-cols-2 gap-4 mt-2">
+                  <Input placeholder="Grad" value={subAddress.city} onChange={e => setSubAddress({ ...subAddress, city: e.target.value })} />
+                  <Input placeholder="Poštanski broj" value={subAddress.postalCode} onChange={e => setSubAddress({ ...subAddress, postalCode: e.target.value })} />
+                </div>
+              </div>
+              <div className="space-y-2 border-t pt-4">
+                <Label>Način plaćanja</Label>
+                <RadioGroup value={subPayment} onValueChange={(v: any) => setSubPayment(v)}>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="CARD" id="r1" />
+                    <Label htmlFor="r1">Platna kartica</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="BANK_TRANSFER" id="r2" />
+                    <Label htmlFor="r2">Uplata na račun (uplatnica)</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="CASH_ON_DELIVERY" id="r3" />
+                    <Label htmlFor="r3">Pouzećem</Label>
+                  </div>
+                </RadioGroup>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowSubDialog(false)}>Odustani</Button>
+              <Button onClick={() => {
+                if (!subContact.firstName || !subContact.lastName || !subContact.email || !subContact.phone || !subAddress.street || !subAddress.city || !subAddress.postalCode) {
+                  toast.error("Molimo popunite sva polja.");
+                  return;
+                }
+                createSub.mutate({
+                  data: {
+                    productId,
+                    quantity: 1,
+                    frequency: subFreq,
+                    paymentMethod: subPayment,
+                    deliveryMethod: subDelivery,
+                    contact: subContact,
+                    delivery: subAddress
+                  }
+                });
+              }} disabled={createSub.isPending}>
+                {createSub.isPending ? "Kreiranje..." : "Potvrdi pretplatu"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </Layout>
   );
 }

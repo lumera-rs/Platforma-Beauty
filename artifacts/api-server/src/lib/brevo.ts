@@ -19,6 +19,7 @@ export type TransactionalEmailTransport = {
     to: Recipient;
     subject: string;
     htmlContent: string;
+    templateId?: number;
     scheduledAt?: Date | null;
   }): Promise<{ messageId?: string } | { skipped: true; errorMessage: string }>;
 };
@@ -31,11 +32,14 @@ export type TransactionalEmailInput = {
   salonId?: string;
   appointmentId?: string;
   metadata?: Record<string, unknown>;
+  /** Optional Brevo transactional template; durable retry reads it from metadata. */
+  brevoTemplateId?: number;
   scheduledAt?: Date;
 };
 
 const RESCHEDULED_EMAIL_TYPE = "appointment_rescheduled";
 const AUTOMATION_EMAIL_TYPE = "automation";
+export const RETAIL_CART_REMINDER_EMAIL_TYPE = "retail_cart_reminder";
 export const REFERRAL_EMAIL_TYPES = [
   "referral_signup_attributed",
   "referral_credit_available",
@@ -53,7 +57,7 @@ export const BEAUTY_JOB_EMAIL_TYPES = [
 // backoff retries, temporary-vs-permanent classification, and idempotent
 // provider dedup (via the stable delivery id). Any other emailType is a
 // single-shot send with no retry.
-const RETRYABLE_EMAIL_TYPES = [RESCHEDULED_EMAIL_TYPE, AUTOMATION_EMAIL_TYPE, ...BEAUTY_JOB_EMAIL_TYPES, ...REFERRAL_EMAIL_TYPES] as const;
+const RETRYABLE_EMAIL_TYPES = [RESCHEDULED_EMAIL_TYPE, AUTOMATION_EMAIL_TYPE, RETAIL_CART_REMINDER_EMAIL_TYPE, ...BEAUTY_JOB_EMAIL_TYPES, ...REFERRAL_EMAIL_TYPES] as const;
 const BREVO_WEBHOOK_COVERAGE_ALERT_EMAIL_TYPE = "brevo_webhook_coverage_alert";
 export const BEAUTY_JOB_DELIVERY_ALERT_EMAIL_TYPE = "beauty_job_delivery_alert";
 const RETRYABLE_EMAIL_TYPES_WITH_MONITORING = [
@@ -118,7 +122,7 @@ const brevoTransactionalEmailTransport: TransactionalEmailTransport = {
       sender: from,
       to: [{ email: input.to.email, name: input.to.name ?? undefined }],
       subject: input.subject,
-      htmlContent: input.htmlContent,
+      ...(input.templateId ? { templateId: input.templateId } : { htmlContent: input.htmlContent }),
       headers: { idempotencyKey: input.idempotencyKey },
       ...(input.scheduledAt ? { scheduledAt: input.scheduledAt.toISOString() } : {}),
     });
@@ -153,7 +157,10 @@ export async function enqueueTransactionalEmail(
     // Retryable types enter the outbox as "due now" so the first attempt (and any
     // subsequent retries) flow through the CAS claim/lease path below.
     nextRetryAt: retryableEmailType(input.emailType) ? now : null,
-    metadata: input.metadata ?? {},
+    metadata: {
+      ...(input.metadata ?? {}),
+      ...(input.brevoTemplateId ? { brevoTemplateId: input.brevoTemplateId } : {}),
+    },
   }).onConflictDoNothing().returning();
   return delivery ?? null;
 }
@@ -411,6 +418,9 @@ async function deliverEmail(
       to: { email: delivery.recipientEmail, name: delivery.recipientName },
       subject: delivery.subject,
       htmlContent,
+      templateId: typeof delivery.metadata.brevoTemplateId === "number" && delivery.metadata.brevoTemplateId > 0
+        ? delivery.metadata.brevoTemplateId
+        : undefined,
       scheduledAt: delivery.scheduledAt,
     });
     if ("skipped" in result) {

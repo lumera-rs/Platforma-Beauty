@@ -19,6 +19,7 @@ const EMPTY_CART: ShopCart = {
   savedItems: [],
   itemCount: 0,
   subtotal: 0,
+  referralCreditMerchandiseSubtotalRsd: 0,
   totalWeightGrams: 0,
   crossSellProducts: [],
   freeShippingProgress: {

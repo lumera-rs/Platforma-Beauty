@@ -49,6 +49,10 @@ import {
   projectSalonSubscriptionDue,
 } from "../lib/referral-service";
 import { quoteCoupon, type CouponLine, type CouponPolicy } from "../lib/coupon-engine";
+import {
+  commerceDiscountsForPricedLine,
+  quoteCommerceReferralBase,
+} from "../lib/commerce-discount-engine";
 
 import 
 {
@@ -119,6 +123,8 @@ import
   productBundleComponentsTable,
   productBundlesTable,
   productsTable,
+   b2bCartImportsTable,
+   productWishlistsTable,
    productWaitlistTable,
   productBrandsTable,
   retailCartsTable,
@@ -485,6 +491,12 @@ import
   ListSalonTimeBlocksResponse,
   SearchSalonAvailabilityQueryParams,
   SearchSalonAvailabilityResponse,
+  PreviewB2bOrderImportBody,
+  ApplyB2bOrderImportBody,
+  AddProductWishlistItemBody,
+  ToggleProductWishlistItemBody,
+  RemoveProductWishlistItemParams,
+  RemoveProductWishlistItemQueryParams,
 }
  from "@workspace/api-zod"
 ;
@@ -9077,6 +9089,10 @@ function publicProductDto(item: typeof productsTable.$inferSelect) {
     isNew: item.isNew,
     isBestseller: item.isBestseller,
     deliveryBusinessDaysOverride: item.deliveryBusinessDaysOverride ?? null,
+    subscriptionAllowed: item.subscriptionAllowed,
+    subscriptionDiscountPercent: item.subscriptionAllowed
+      ? item.subscriptionDiscountPercent ?? null
+      : null,
   };
 }
 
@@ -9477,7 +9493,7 @@ async function retailCartForRequest(req: Request, res: Response) {
       }).returning();
       res.cookie(RETAIL_CART_COOKIE, token, retailCartCookieOptions);
     } else if (user?.role === "CUSTOMER" && cart.userId === null) {
-      const [claimed] = await db.update(retailCartsTable).set({ userId: user.id, updatedAt: new Date() })
+      const [claimed] = await db.update(retailCartsTable).set({ userId: user.id, activityVersion: sql`${retailCartsTable.activityVersion} + 1`, updatedAt: new Date() })
         .where(and(eq(retailCartsTable.id, cart.id), isNull(retailCartsTable.userId))).returning();
       if (claimed) {
         cart = claimed;
@@ -9544,6 +9560,29 @@ function retailProductPrice(product: typeof productsTable.$inferSelect, quantity
     unitPrice: salePrice ?? tier?.unitPrice ?? product.publicPrice!,
     priceSource: salePrice != null ? "SALE" as const : tier ? "TIER" as const : "FULL_PRICE" as const,
   };
+}
+
+type ReferralCommerceLine = {
+  id: string;
+  lineTotal: number;
+  kind?: "product" | "bundle";
+  priceSource?: string;
+  lineDiscount?: number;
+};
+
+function referralQuoteForCommerceLines(
+  lines: readonly ReferralCommerceLine[],
+  couponAllocations: Record<string, number> = {},
+) {
+  return quoteCommerceReferralBase(lines.map((line) => ({
+    id: line.id,
+    amountRsd: line.lineTotal,
+    discounts: commerceDiscountsForPricedLine({
+      priceSource: line.priceSource ?? (line.kind === "bundle" ? "BUNDLE" : "FULL_PRICE"),
+      lineDiscountRsd: line.lineDiscount ?? 0,
+      couponAllocationRsd: couponAllocations[line.id] ?? 0,
+    }),
+  })));
 }
 
 type CartCommerceLine = {
@@ -9641,14 +9680,22 @@ async function retailCartDto(cartId: string) {
     .where(eq(retailCartItemsTable.cartId, cartId)).orderBy(asc(retailCartItemsTable.createdAt));
   const productIds = [...new Set(items.flatMap((item) => item.productId ? [item.productId] : []))];
   const products = productIds.length
-    ? await db.select({ id: productsTable.id, catalogReference: productsTable.catalogReference, stock: productsTable.stock }).from(productsTable)
+    ? await db.select().from(productsTable)
       .where(inArray(productsTable.id, productIds))
     : [];
-  const productCatalogReferences = new Map(products.map((product) => [product.id, product.catalogReference]));
   const productStocks = new Map(products.map((product) => [product.id, product.stock]));
+  const productsById = new Map(products.map((product) => [product.id, product]));
   const lines = items.map((item) => {
-    const catalogReference = item.productId ? item.productCatalogReference ?? productCatalogReferences.get(item.productId) ?? null : null;
-    return retailLineDto(item, catalogReference);
+    const product = item.productId ? productsById.get(item.productId) : undefined;
+    const catalogReference = item.productId ? item.productCatalogReference ?? product?.catalogReference ?? null : null;
+    const line = retailLineDto(item, catalogReference);
+    if (line.kind === "bundle") return { ...line, priceSource: "BUNDLE" as const, lineDiscount: 0 };
+    const pricing = product ? retailProductPrice(product, item.quantity) : null;
+    return {
+      ...line,
+      priceSource: pricing?.priceSource ?? "FULL_PRICE" as const,
+      lineDiscount: pricing ? (pricing.baseUnitPrice - pricing.unitPrice) * item.quantity : 0,
+    };
   });
   const saved = await db.select().from(savedRetailCartItemsTable)
     .where(eq(savedRetailCartItemsTable.cartId, cartId)).orderBy(asc(savedRetailCartItemsTable.createdAt));
@@ -9657,11 +9704,13 @@ async function retailCartDto(cartId: string) {
     quantity: line.quantity, lineTotal: line.lineTotal, availableStock: line.kind === "product" ? productStocks.get(line.productId) ?? 0 : 0,
   })), cart?.userId ? { userId: cart.userId } : null);
   const { lineLowStock, ...commerceDto } = commerce;
+  const referralQuote = referralQuoteForCommerceLines(lines);
   return {
     id: cartId,
     savedItems: saved.map((item) => ({ id: item.id, productId: item.productId, bundleId: item.bundleId, variantValue: item.variantValue, quantity: item.quantity })),
     itemCount: lines.reduce((sum, item) => sum + item.quantity, 0),
     subtotal: lines.reduce((sum, item) => sum + item.lineTotal, 0),
+    referralCreditMerchandiseSubtotalRsd: referralQuote.referralBaseRsd,
     ...commerceDto,
     items: lines.map((line) => ({ ...line, lowStock: lineLowStock.get(line.kind === "product" ? line.productId : `bundle:${line.bundleId}`) ?? false })),
   };
@@ -9774,6 +9823,9 @@ function retailOrderDto(
     couponCode: order.couponCodeSnapshot ?? null,
     couponDiscountRsd: order.couponDiscountRsd,
     couponFreeShipping: order.couponFreeShipping,
+    referralCreditMerchandiseSubtotalRsd: order.referralCreditMerchandiseSubtotalRsd,
+    referralCreditPreCreditPayableTotalRsd: order.referralCreditPreCreditPayableTotalRsd,
+    referralCreditAppliedRsd: order.referralCreditAppliedRsd,
     trackingNumber: order.trackingNumber ?? null,
     estimatedDeliveryDate: order.estimatedDeliveryDate ?? null,
     createdAt: order.createdAt.toISOString(),
@@ -9917,6 +9969,94 @@ router.use("/retail", async (req, res, next): Promise<void> => {
   next();
 });
 
+async function wishlistItemDto(entry: typeof productWishlistsTable.$inferSelect) {
+  const [row] = await db.select({ product: productsTable, supplier: suppliersTable }).from(productsTable)
+    .innerJoin(suppliersTable, eq(productsTable.supplierId, suppliersTable.id))
+    .where(eq(productsTable.id, entry.productId)).limit(1);
+  const product = row?.product;
+  const variant = product && entry.variantValue ? (product.variants ?? []).find((item) => item.value === entry.variantValue) : undefined;
+  const eligible = !!product && product.active && product.retailEnabled && !!product.publicDescription && product.publicPrice != null
+    && row!.supplier.active && ["B2C", "BOTH"].includes(row!.supplier.scope);
+  const stock = variant?.stock ?? product?.stock ?? 0;
+  const unavailableReason = !product || !product.active ? "PRODUCT_INACTIVE"
+    : !product.retailEnabled || !row!.supplier.active || !["B2C", "BOTH"].includes(row!.supplier.scope) ? "RETAIL_DISABLED"
+    : entry.variantValue && !variant ? "VARIANT_UNAVAILABLE"
+    : stock < 1 ? "OUT_OF_STOCK" : null;
+  return {
+    id: entry.id, productId: entry.productId, variantValue: entry.variantValue, createdAt: entry.createdAt.toISOString(),
+    available: eligible && !unavailableReason, unavailableReason,
+    product: eligible ? publicProductDto(product!) : null,
+  };
+}
+
+router.get("/retail/wishlist", async (req, res): Promise<void> => {
+  const user = await requireCustomer(req, res); if (!user) return;
+  const entries = await db.select().from(productWishlistsTable).where(eq(productWishlistsTable.userId, user.id))
+    .orderBy(desc(productWishlistsTable.createdAt));
+  res.json(await Promise.all(entries.map(wishlistItemDto)));
+});
+
+async function retailVisibleWishlistProduct(productId: string, variantValue?: string | null) {
+  const [row] = await db.select({ product: productsTable, supplier: suppliersTable }).from(productsTable)
+    .innerJoin(suppliersTable, eq(productsTable.supplierId, suppliersTable.id))
+    .where(and(eq(productsTable.id, productId), eq(productsTable.active, true), eq(productsTable.retailEnabled, true), activeCategoryCondition(), activeSupplierCondition("B2C"))).limit(1);
+  if (!row?.product.publicDescription || row.product.publicPrice == null) return null;
+  if (variantValue != null && !(row.product.variants ?? []).some((variant) => variant.value === variantValue)) return null;
+  return row.product;
+}
+
+router.post("/retail/wishlist", async (req, res): Promise<void> => {
+  const user = await requireCustomer(req, res); if (!user) return;
+  const body = AddProductWishlistItemBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (!await retailVisibleWishlistProduct(body.data.productId, body.data.variantValue)) { res.status(404).json({ error: "Proizvod nije dostupan." }); return; }
+  const where = and(eq(productWishlistsTable.userId, user.id), eq(productWishlistsTable.productId, body.data.productId),
+    body.data.variantValue == null ? isNull(productWishlistsTable.variantValue) : eq(productWishlistsTable.variantValue, body.data.variantValue));
+  const [existing] = await db.select().from(productWishlistsTable).where(where).limit(1);
+  if (existing) { res.json(await wishlistItemDto(existing)); return; }
+  try {
+    const [created] = await db.insert(productWishlistsTable).values({ userId: user.id, productId: body.data.productId, variantValue: body.data.variantValue ?? null }).returning();
+    res.status(201).json(await wishlistItemDto(created!));
+  } catch (error: unknown) {
+    if ((error as { code?: string }).code !== "23505") throw error;
+    const [concurrent] = await db.select().from(productWishlistsTable).where(where).limit(1);
+    if (!concurrent) throw error;
+    res.json(await wishlistItemDto(concurrent));
+  }
+});
+
+router.post("/retail/wishlist/toggle", async (req, res): Promise<void> => {
+  const user = await requireCustomer(req, res); if (!user) return;
+  const body = ToggleProductWishlistItemBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const where = and(eq(productWishlistsTable.userId, user.id), eq(productWishlistsTable.productId, body.data.productId),
+    body.data.variantValue == null ? isNull(productWishlistsTable.variantValue) : eq(productWishlistsTable.variantValue, body.data.variantValue));
+  const [existing] = await db.select().from(productWishlistsTable).where(where).limit(1);
+  if (existing) { await db.delete(productWishlistsTable).where(eq(productWishlistsTable.id, existing.id)); res.json({ saved: false, item: null }); return; }
+  if (!await retailVisibleWishlistProduct(body.data.productId, body.data.variantValue)) { res.status(404).json({ error: "Proizvod nije dostupan." }); return; }
+  try {
+    const [created] = await db.insert(productWishlistsTable).values({ userId: user.id, productId: body.data.productId, variantValue: body.data.variantValue ?? null }).returning();
+    res.json({ saved: true, item: await wishlistItemDto(created!) });
+  } catch (error: unknown) {
+    // A simultaneous toggle that won the insert is interpreted as the same
+    // "saved" intent rather than leaking a unique-key race to the client.
+    if ((error as { code?: string }).code !== "23505") throw error;
+    const [concurrent] = await db.select().from(productWishlistsTable).where(where).limit(1);
+    res.json({ saved: true, item: concurrent ? await wishlistItemDto(concurrent) : null });
+  }
+});
+
+router.delete("/retail/wishlist/:productId", async (req, res): Promise<void> => {
+  const user = await requireCustomer(req, res); if (!user) return;
+  const params = RemoveProductWishlistItemParams.safeParse(req.params);
+  const query = RemoveProductWishlistItemQueryParams.safeParse(req.query);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
+  await db.delete(productWishlistsTable).where(and(eq(productWishlistsTable.userId, user.id), eq(productWishlistsTable.productId, params.data.productId),
+    query.data.variantValue == null ? isNull(productWishlistsTable.variantValue) : eq(productWishlistsTable.variantValue, query.data.variantValue)));
+  res.status(204).end();
+});
+
 router.get("/retail/cart", async (req, res): Promise<void> => {
   const cart = await retailCartForRequest(req, res);
   res.json(await retailCartDto(cart.id));
@@ -9924,6 +10064,22 @@ router.get("/retail/cart", async (req, res): Promise<void> => {
 
 router.get("/retail/cart-summary", async (req, res): Promise<void> => {
   res.json(GetRetailCartSummaryResponse.parse(await retailCartSummaryForRequest(req)));
+});
+
+// Contact capture is intentionally independent from checkout: a guest may
+// opt into a cart reminder without creating an order or storing delivery data.
+router.put("/retail/cart/contact", async (req, res): Promise<void> => {
+  const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+  if (email.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    res.status(400).json({ error: "Unesite ispravnu email adresu." }); return;
+  }
+  const cart = await retailCartForRequest(req, res);
+  await db.update(retailCartsTable).set({
+    contactEmail: email,
+    activityVersion: sql`${retailCartsTable.activityVersion} + 1`,
+    updatedAt: new Date(),
+  }).where(eq(retailCartsTable.id, cart.id));
+  res.status(204).end();
 });
 
 router.post("/retail/cart/items", async (req, res): Promise<void> => {
@@ -9940,7 +10096,7 @@ router.post("/retail/cart/items", async (req, res): Promise<void> => {
       if (quantity > target.derivedStock) return false;
       if (existing) await tx.update(retailCartItemsTable).set({ quantity, unitPrice: target.bundle.b2cPrice, updatedAt: new Date() }).where(eq(retailCartItemsTable.id, existing.id));
       else await tx.insert(retailCartItemsTable).values({ cartId: cart.id, bundleId: target.bundle.id, productName: target.bundle.name, productImageUrl: target.bundle.imageUrl ?? "", unitPrice: target.bundle.b2cPrice, quantity, weightGrams: 0 });
-      await tx.update(retailCartsTable).set({ updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
+      await tx.update(retailCartsTable).set({ updatedAt: new Date(), activityVersion: sql`${retailCartsTable.activityVersion} + 1` }).where(eq(retailCartsTable.id, cart.id));
       return true;
     });
     if (!result) { res.status(409).json({ error: "Paket nije dostupan u traženoj količini." }); return; }
@@ -9984,7 +10140,7 @@ router.post("/retail/cart/items", async (req, res): Promise<void> => {
         unitPrice, quantity, weightGrams: product.weightGrams ?? 0,
       });
     }
-    await tx.update(retailCartsTable).set({ updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
+    await tx.update(retailCartsTable).set({ updatedAt: new Date(), activityVersion: sql`${retailCartsTable.activityVersion} + 1` }).where(eq(retailCartsTable.id, cart.id));
   }).catch((error: unknown) => {
     if (error instanceof Error && error.message === "retail_stock_conflict") { stockConflict = true; return null; }
     if (error instanceof Error && error.message === "retail_moq_conflict") { stockConflict = true; return "moq" as const; }
@@ -10014,7 +10170,7 @@ router.patch("/retail/cart/items/:cartItemId", async (req, res): Promise<void> =
       const target = await bundleForCartInTx(tx, item.bundleId, "B2C");
       if (!target || target.bundle.b2cPrice == null || body.quantity > target.derivedStock) return "stock";
       await tx.update(retailCartItemsTable).set({ quantity: body.quantity, unitPrice: target.bundle.b2cPrice, updatedAt: new Date() }).where(eq(retailCartItemsTable.id, item.id));
-      await tx.update(retailCartsTable).set({ updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
+      await tx.update(retailCartsTable).set({ updatedAt: new Date(), activityVersion: sql`${retailCartsTable.activityVersion} + 1` }).where(eq(retailCartsTable.id, cart.id));
       return "ok";
     }
     if (!item.productId) return "stock";
@@ -10035,7 +10191,7 @@ router.patch("/retail/cart/items/:cartItemId", async (req, res): Promise<void> =
     await tx.update(retailCartItemsTable).set({
       quantity: body.quantity, unitPrice: retailProductPrice(product, body.quantity).unitPrice, updatedAt: new Date(),
     }).where(eq(retailCartItemsTable.id, item.id));
-    await tx.update(retailCartsTable).set({ updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
+    await tx.update(retailCartsTable).set({ updatedAt: new Date(), activityVersion: sql`${retailCartsTable.activityVersion} + 1` }).where(eq(retailCartsTable.id, cart.id));
     return "ok";
   });
   if (result === "missing") { res.status(404).json({ error: "Stavka korpe nije pronađena." }); return; }
@@ -10051,7 +10207,7 @@ router.delete("/retail/cart/items/:cartItemId", async (req, res): Promise<void> 
     await tx.delete(retailCartItemsTable).where(and(
       eq(retailCartItemsTable.id, req.params.cartItemId), eq(retailCartItemsTable.cartId, cart.id),
     ));
-    await tx.update(retailCartsTable).set({ updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
+    await tx.update(retailCartsTable).set({ updatedAt: new Date(), activityVersion: sql`${retailCartsTable.activityVersion} + 1` }).where(eq(retailCartsTable.id, cart.id));
   });
   res.json(await retailCartDto(cart.id));
 });
@@ -10064,7 +10220,7 @@ router.post("/retail/cart/items/:cartItemId/save-for-later", async (req, res): P
     if (!item) return false;
     await tx.insert(savedRetailCartItemsTable).values({ cartId: cart.id, productId: item.productId, bundleId: item.bundleId, variantValue: item.variantValue, quantity: item.quantity });
     await tx.delete(retailCartItemsTable).where(eq(retailCartItemsTable.id, item.id));
-    await tx.update(retailCartsTable).set({ updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
+    await tx.update(retailCartsTable).set({ updatedAt: new Date(), activityVersion: sql`${retailCartsTable.activityVersion} + 1` }).where(eq(retailCartsTable.id, cart.id));
     return true;
   });
   if (!moved) { res.status(404).json({ error: "Stavka korpe nije pronađena." }); return; }
@@ -10076,7 +10232,7 @@ router.delete("/retail/cart/saved-items/:savedItemId", async (req, res): Promise
   await db.transaction(async (tx) => {
     await tx.execute(sql`select id from retail_carts where id = ${cart.id} for update`);
     await tx.delete(savedRetailCartItemsTable).where(and(eq(savedRetailCartItemsTable.id, req.params.savedItemId), eq(savedRetailCartItemsTable.cartId, cart.id)));
-    await tx.update(retailCartsTable).set({ updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
+    await tx.update(retailCartsTable).set({ updatedAt: new Date(), activityVersion: sql`${retailCartsTable.activityVersion} + 1` }).where(eq(retailCartsTable.id, cart.id));
   });
   res.json(await retailCartDto(cart.id));
 });
@@ -10105,7 +10261,7 @@ router.post("/retail/cart/saved-items/:savedItemId/restore", async (req, res): P
       else await tx.insert(retailCartItemsTable).values({ cartId: cart.id, productId: product.id, productName: product.name, productImageUrl: product.imageUrl, productCatalogReference: product.catalogReference, unitPrice, quantity, weightGrams: product.weightGrams ?? 0 });
     } else return "unavailable";
     await tx.delete(savedRetailCartItemsTable).where(eq(savedRetailCartItemsTable.id, saved.id));
-    await tx.update(retailCartsTable).set({ updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
+    await tx.update(retailCartsTable).set({ updatedAt: new Date(), activityVersion: sql`${retailCartsTable.activityVersion} + 1` }).where(eq(retailCartsTable.id, cart.id));
     return "ok";
   });
   if (result !== "ok") { res.status(result === "missing" ? 404 : 409).json({ error: result === "missing" ? "Sačuvana stavka nije pronađena." : "Stavka više nije dostupna u traženoj količini." }); return; }
@@ -10146,7 +10302,7 @@ router.post("/retail/orders/repeat-last", async (req, res): Promise<void> => {
         (quantity === requested ? outcome.added : outcome.adjusted).push({ id: source.productId, requestedQuantity: requested, quantity });
       }
     }
-    await tx.update(retailCartsTable).set({ updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
+    await tx.update(retailCartsTable).set({ updatedAt: new Date(), activityVersion: sql`${retailCartsTable.activityVersion} + 1` }).where(eq(retailCartsTable.id, cart.id));
     await tx.insert(reorderActionsTable).values({ audience: "B2C", userId: user.id, idempotencyKey: key, result: outcome });
     return outcome;
   });
@@ -10189,7 +10345,8 @@ router.get("/retail/checkout-preview", async (req, res): Promise<void> => {
   const available = user?.role === "CUSTOMER"
     ? await db.transaction((tx) => referralCreditBalanceInTx(tx, { ownerUserId: user.id, walletKind: "B2C" }))
     : 0;
-  const applied = Math.min(desired || available, available, Math.max(0, view.subtotal - couponDiscountRsd));
+  const referralQuote = referralQuoteForCommerceLines(view.items, appliedCoupon?.quote.allocations);
+  const applied = Math.min(desired || available, available, referralQuote.referralBaseRsd);
   const commerce = await cartCommerceFields("B2C", view.items.map((line) => ({
     productId: line.kind === "product" ? line.productId : undefined, bundleId: line.kind === "bundle" ? line.bundleId : undefined,
     quantity: line.quantity, lineTotal: line.lineTotal, availableStock: 0,
@@ -10200,7 +10357,7 @@ router.get("/retail/checkout-preview", async (req, res): Promise<void> => {
       ...line, lowStock: lineLowStock.get(line.kind === "product" ? line.productId : `bundle:${line.bundleId}`) ?? false,
     })) }, shipping, total: view.subtotal - couponDiscountRsd + shipping.shippingCost - applied, paymentMethods: checkoutPaymentMethods,
     referralCreditAvailableRsd: available, referralCreditAppliedRsd: applied,
-    merchandiseSubtotalRsd: view.subtotal, shippingRsd: shipping.shippingCost,
+    merchandiseSubtotalRsd: referralQuote.referralBaseRsd, shippingRsd: shipping.shippingCost,
     payableTotalRsd: view.subtotal - couponDiscountRsd + shipping.shippingCost - applied,
     coupon: appliedCoupon ? {
       code: appliedCoupon.quote.code, discountRsd: couponDiscountRsd,
@@ -10363,12 +10520,23 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
     const shipping = appliedCoupon?.quote.freeShipping
       ? { ...calculatedShipping, shippingCost: 0, isFreeShipping: true }
       : calculatedShipping;
+    const referralQuote = referralQuoteForCommerceLines([
+      ...lines.filter((line): line is NonNullable<typeof line> => line !== null).map((line) => ({
+        id: line.item.id,
+        lineTotal: line.unitPrice * line.item.quantity,
+        priceSource: line.pricing.priceSource,
+        lineDiscount: (line.pricing.baseUnitPrice - line.unitPrice) * line.item.quantity,
+      })),
+      ...bundleLines.filter((line): line is NonNullable<typeof line> => line !== null).map((line) => ({
+        id: line.item.id,
+        lineTotal: line.unitPrice * line.item.quantity,
+        priceSource: "BUNDLE",
+        lineDiscount: 0,
+      })),
+    ], appliedCoupon?.quote.allocations);
     const referral = userId
       ? await allocateReferralCreditInTx(tx, { ownerUserId: userId, walletKind: "B2C" }, parsed.desiredReferralCreditRsd,
-        lines.filter((line): line is NonNullable<typeof line> => line !== null
-          && line.pricing.priceSource === "FULL_PRICE")
-          .reduce((sum, line) => sum + line.unitPrice * line.item.quantity
-            - (appliedCoupon?.quote.allocations[line.item.id] ?? 0), 0))
+        referralQuote.referralBaseRsd)
       : { availableRsd: 0, appliedRsd: 0, allocations: [] };
     const payableTotal = subtotal - couponDiscountRsd + shipping.shippingCost - referral.appliedRsd;
     if ((parsed.expectedSubtotal !== undefined && parsed.expectedSubtotal !== subtotal)
@@ -10386,7 +10554,7 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
       deliveryMethod: parsed.deliveryMethod, subtotal, shippingCost: shipping.shippingCost, total: payableTotal,
       couponCodeSnapshot: appliedCoupon?.quote.code ?? null, couponDiscountRsd,
       couponFreeShipping: appliedCoupon?.quote.freeShipping ?? false,
-      referralCreditMerchandiseSubtotalRsd: subtotal - couponDiscountRsd,
+      referralCreditMerchandiseSubtotalRsd: referralQuote.referralBaseRsd,
       referralCreditPreCreditPayableTotalRsd: subtotal - couponDiscountRsd + shipping.shippingCost,
       referralCreditAppliedRsd: referral.appliedRsd,
       shippingName: `${parsed.firstName} ${parsed.lastName}`, shippingAddress: parsed.street, shippingCity: parsed.city,
@@ -10456,7 +10624,15 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
        if (!updated) { stockError = byId.get(productId)?.name ?? "Proizvod"; throw new Error("retail_stock_conflict"); }
     }
     await tx.delete(retailCartItemsTable).where(eq(retailCartItemsTable.cartId, cart.id));
-    await tx.update(retailCartsTable).set({ userId, updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
+    // Preserve the completed activity marker before the cart becomes empty.
+    // A subsequent item/contact mutation advances activityVersion and can then
+    // qualify independently for a future reminder.
+    await tx.update(retailCartsTable).set({
+      userId,
+      completedActivityVersion: retailCartsTable.activityVersion,
+      activityVersion: sql`${retailCartsTable.activityVersion} + 1`,
+      updatedAt: new Date(),
+    }).where(eq(retailCartsTable.id, cart.id));
     return { order: order!, repeat: false };
   }).catch((error: unknown) => {
     if (error instanceof Error && error.message === "retail_cart_empty") return "empty" as const;
@@ -11178,7 +11354,7 @@ async function shopCartDto(salonId: string) {
   const [cart] = await db.select().from(shoppingCartsTable).where(eq(shoppingCartsTable.salonId, salonId)).limit(1);
   if (!cart) {
     const commerce = await cartCommerceFields("B2B", [], { salonId });
-    return { id: null, items: [], savedItems: [], itemCount: 0, subtotal: 0, totalWeightGrams: 0, ...commerce, lineLowStock: undefined };
+    return { id: null, items: [], savedItems: [], itemCount: 0, subtotal: 0, referralCreditMerchandiseSubtotalRsd: 0, totalWeightGrams: 0, ...commerce, lineLowStock: undefined };
   }
   const items = await db.select().from(shoppingCartItemsTable).where(eq(shoppingCartItemsTable.cartId, cart.id)).orderBy(asc(shoppingCartItemsTable.createdAt));
   const productIds = [...new Set(items.flatMap((item) => item.productId ? [item.productId] : []))];
@@ -11199,12 +11375,16 @@ async function shopCartDto(salonId: string) {
         variantValue: null, variantLabel: null, productSku: null, unitPrice: item.unitPrice,
         quantity: item.quantity, lineTotal: item.unitPrice * item.quantity, availableStock,
         weightGrams: 0,
+        priceSource: "BUNDLE" as const,
+        lineDiscount: 0,
       };
     }
     if (!item.productId) throw new Error("Cart item has no target.");
     const product = byId.get(item.productId);
     const variant = item.variantValue ? product?.variants?.find((candidate) => candidate.value === item.variantValue) : undefined;
     const availableStock = variant?.stock ?? product?.stock ?? 0;
+    const pricing = product ? cartLineForProduct(product, item.variantValue ?? undefined, item.quantity) : null;
+    const resolvedPricing = pricing && !("error" in pricing) ? pricing : null;
     return {
       id: item.id,
       kind: "product" as const,
@@ -11219,6 +11399,8 @@ async function shopCartDto(salonId: string) {
       lineTotal: item.unitPrice * item.quantity,
       availableStock,
       weightGrams: product?.weightGrams ?? 0,
+      priceSource: resolvedPricing?.priceSource ?? "FULL_PRICE" as const,
+      lineDiscount: resolvedPricing ? (resolvedPricing.baseUnitPrice - resolvedPricing.unitPrice) * item.quantity : 0,
     };
   });
   const saved = await db.select().from(savedShopCartItemsTable)
@@ -11228,11 +11410,13 @@ async function shopCartDto(salonId: string) {
     quantity: line.quantity, lineTotal: line.lineTotal, availableStock: line.availableStock,
   })), { salonId });
   const { lineLowStock, ...commerceDto } = commerce;
+  const referralQuote = referralQuoteForCommerceLines(views);
   return {
     id: cart.id,
     savedItems: saved.map((item) => ({ id: item.id, productId: item.productId, bundleId: item.bundleId, variantValue: item.variantValue, quantity: item.quantity })),
     itemCount: views.reduce((sum, item) => sum + item.quantity, 0),
     subtotal: views.reduce((sum, item) => sum + item.lineTotal, 0),
+    referralCreditMerchandiseSubtotalRsd: referralQuote.referralBaseRsd,
     totalWeightGrams: views.reduce((sum, item) => sum + item.weightGrams * item.quantity, 0),
     ...commerceDto,
     items: views.map((line) => ({ ...line, lowStock: lineLowStock.get(line.kind === "product" ? line.productId : `bundle:${line.bundleId}`) ?? false })),
@@ -11292,6 +11476,211 @@ function cartLineForProduct(product: typeof productsTable.$inferSelect, variantV
     productSku: variant?.sku ?? product.sku,
   } as const;
 }
+
+const B2B_IMPORT_MAX_BYTES = 512 * 1024;
+const B2B_IMPORT_MAX_ROWS = 1_000;
+type B2bImportDiagnostic = {
+  rowNumber: number; sku: string | null; quantity: number | null; status: "matched" | "unmatched" | "invalid";
+  code: "EMPTY_SKU" | "INVALID_QUANTITY" | "SKU_NOT_FOUND" | "SUPPLIER_SCOPE" | "PRODUCT_UNAVAILABLE" | "VARIANT_UNAVAILABLE" | "MOQ_NOT_MET" | "INSUFFICIENT_STOCK" | null;
+  message: string | null; productId: string | null; variantValue: string | null;
+};
+
+/** RFC4180 reader: escaped quotes and quoted CR/LF are data, not row breaks. */
+export function parseB2bImportCsv(input: string): { rows: string[][]; error?: string } {
+  const rows: string[][] = []; let row: string[] = []; let field = ""; let quoted = false;
+  for (let i = 0; i < input.length; i += 1) {
+    const char = input[i]!;
+    if (quoted) {
+      if (char === '"') {
+        if (input[i + 1] === '"') { field += '"'; i += 1; } else quoted = false;
+      } else field += char;
+      continue;
+    }
+    if (char === '"') {
+      if (field.length) return { rows, error: "Navodnik može početi samo na početku polja." };
+      quoted = true;
+    } else if (char === ",") { row.push(field); field = ""; }
+    else if (char === "\n" || char === "\r") {
+      if (char === "\r" && input[i + 1] === "\n") i += 1;
+      row.push(field); rows.push(row); row = []; field = "";
+    } else field += char;
+  }
+  if (quoted) return { rows, error: "CSV sadrži nezatvoren navodnik." };
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return { rows };
+}
+
+function b2bSkuKey(value: string) { return value.trim().normalize("NFKC").toLocaleUpperCase("en-US"); }
+
+async function b2bImportDiagnostics(
+  csvText: string,
+  client: Pick<typeof db, "select"> = db,
+  cartQuantities = new Map<string, number>(),
+): Promise<{ diagnostics: B2bImportDiagnostic[]; error?: string }> {
+  if (Buffer.byteLength(csvText, "utf8") > B2B_IMPORT_MAX_BYTES) return { diagnostics: [], error: "CSV prelazi dozvoljenu veličinu." };
+  const parsed = parseB2bImportCsv(csvText.replace(/^\uFEFF/, ""));
+  if (parsed.error) return { diagnostics: [], error: parsed.error };
+  const [header, ...dataRows] = parsed.rows;
+  if (!header || dataRows.length > B2B_IMPORT_MAX_ROWS) return { diagnostics: [], error: dataRows.length > B2B_IMPORT_MAX_ROWS ? "CSV ima previše redova." : "CSV nema zaglavlje." };
+  const skuColumn = header.findIndex((value) => b2bSkuKey(value) === "SKU");
+  const quantityColumn = header.findIndex((value) => b2bSkuKey(value) === "QUANTITY");
+  if (skuColumn < 0 || quantityColumn < 0) return { diagnostics: [], error: "CSV mora sadržati kolone SKU i Quantity." };
+  const catalog = await client.select({ product: productsTable, supplier: suppliersTable })
+    .from(productsTable).innerJoin(suppliersTable, eq(productsTable.supplierId, suppliersTable.id));
+  const eligibleCategoryIds = new Set((await client.select({ id: productsTable.id }).from(productsTable)
+    .where(activeCategoryCondition())).map((row) => row.id));
+  const bySku = new Map<string, { product: typeof productsTable.$inferSelect; supplier: typeof suppliersTable.$inferSelect; variantValue: string | null }>();
+  for (const entry of catalog) {
+    bySku.set(b2bSkuKey(entry.product.sku), { ...entry, variantValue: null });
+    for (const variant of entry.product.variants ?? []) if (variant.sku) {
+      bySku.set(b2bSkuKey(variant.sku), { ...entry, variantValue: variant.value });
+    }
+  }
+  const diagnostics: B2bImportDiagnostic[] = [];
+  const totals = new Map<string, number>();
+  for (let index = 0; index < dataRows.length; index += 1) {
+    const fields = dataRows[index]!;
+    const rawSku = fields[skuColumn]?.trim() ?? "";
+    const rawQuantity = fields[quantityColumn]?.trim() ?? "";
+    // A completely blank physical row is ignored but never renumbers later rows.
+    if (!rawSku && !rawQuantity && fields.every((value) => !value.trim())) continue;
+    const quantity = /^(?:0|[1-9]\d*)$/.test(rawQuantity) ? Number(rawQuantity) : null;
+    const base: B2bImportDiagnostic = { rowNumber: index + 2, sku: rawSku || null, quantity, status: "invalid", code: null, message: null, productId: null, variantValue: null };
+    if (!rawSku) { diagnostics.push({ ...base, code: "EMPTY_SKU", message: "SKU je obavezan." }); continue; }
+    if (!quantity || !Number.isSafeInteger(quantity)) { diagnostics.push({ ...base, code: "INVALID_QUANTITY", message: "Količina mora biti pozitivan ceo broj." }); continue; }
+    const match = bySku.get(b2bSkuKey(rawSku));
+    if (!match) { diagnostics.push({ ...base, status: "unmatched", code: "SKU_NOT_FOUND", message: "SKU nije pronađen." }); continue; }
+    const key = `${match.product.id}:${match.variantValue ?? ""}`;
+    totals.set(key, (totals.get(key) ?? 0) + quantity);
+    diagnostics.push({ ...base, status: "matched", productId: match.product.id, variantValue: match.variantValue });
+  }
+  // Validate aggregate duplicate quantities; every affected physical row has a
+  // stable diagnostic, so a duplicate never hides a stock/MOQ failure.
+  for (const diagnostic of diagnostics.filter((item) => item.status === "matched")) {
+    const match = bySku.get(b2bSkuKey(diagnostic.sku!))!;
+    const aggregate = totals.get(`${match.product.id}:${match.variantValue ?? ""}`)!;
+    const variant = match.variantValue ? (match.product.variants ?? []).find((item) => item.value === match.variantValue) : undefined;
+    const invalid = !match.supplier.active || !["B2B", "BOTH"].includes(match.supplier.scope) ? ["SUPPLIER_SCOPE", "Dobavljač nije dostupan za B2B."] as const
+      : !match.product.active || !match.product.professionalEnabled || !eligibleCategoryIds.has(match.product.id) ? ["PRODUCT_UNAVAILABLE", "Proizvod nije dostupan za B2B."] as const
+      : (match.product.variants?.length && !variant) ? ["VARIANT_UNAVAILABLE", "Varijanta nije dostupna."] as const
+      : aggregate < match.product.minimumOrderQuantity ? ["MOQ_NOT_MET", `Minimalna količina je ${match.product.minimumOrderQuantity}.`] as const
+      : aggregate + (cartQuantities.get(`${match.product.id}:${match.variantValue ?? ""}`) ?? 0) > (variant?.stock ?? match.product.stock) ? ["INSUFFICIENT_STOCK", "Nedovoljno zaliha."] as const : null;
+    if (invalid) { diagnostic.status = "invalid"; diagnostic.code = invalid[0]; diagnostic.message = invalid[1]; }
+  }
+  return { diagnostics };
+}
+
+function b2bImportContentHash(csvText: string) {
+  // Canonicalize transport-only CSV differences; confirmation and the receipt
+  // key are intentionally not content, so a key always names one import.
+  const canonical = csvText.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  return createHash("sha256").update(canonical, "utf8").digest("hex");
+}
+
+function b2bImportResult(diagnostics: B2bImportDiagnostic[], applied = false, idempotent = false, cart: unknown = null) {
+  const matchedRows = diagnostics.filter((item) => item.status === "matched");
+  const unmatchedRows = diagnostics.filter((item) => item.status === "unmatched");
+  const invalidRows = diagnostics.filter((item) => item.status === "invalid");
+  return { applied, idempotent, validRowCount: matchedRows.length, invalidRowCount: unmatchedRows.length + invalidRows.length, matchedRows, unmatchedRows, invalidRows, cart };
+}
+
+router.get("/shop/order-import/template", async (req, res): Promise<void> => {
+  const access = await requireShopAccess(req, res); if (!access) return;
+  res.type("text/csv").attachment("lumera-b2b-order-template.csv").send("\uFEFFSKU,Quantity\r\nEXAMPLE-SKU,1\r\n");
+});
+
+router.post("/shop/order-import/preview", async (req, res): Promise<void> => {
+  const access = await requireShopAccess(req, res); if (!access) return;
+  const body = PreviewB2bOrderImportBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const parsed = await b2bImportDiagnostics(body.data.csvText);
+  if (parsed.error) { res.status(400).json({ error: parsed.error }); return; }
+  res.json(b2bImportResult(parsed.diagnostics));
+});
+
+router.post("/shop/order-import/apply", async (req, res): Promise<void> => {
+  const access = await requireShopAccess(req, res); if (!access) return;
+  const body = ApplyB2bOrderImportBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  // The receipt check deliberately precedes parsing and confirmation checks:
+  // retries are identified by their canonical payload, even if the new payload
+  // is malformed or would otherwise fail preliminary validation.
+  const hash = b2bImportContentHash(body.data.csvText);
+  const [existingReceipt] = await db.select().from(b2bCartImportsTable).where(and(
+    eq(b2bCartImportsTable.salonId, access.salon.id),
+    eq(b2bCartImportsTable.idempotencyKey, body.data.idempotencyKey),
+  )).limit(1);
+  if (existingReceipt) {
+    if (existingReceipt.contentHash !== hash) {
+      res.status(409).json({ error: "Idempotency ključ je već upotrebljen za drugačiji sadržaj." });
+      return;
+    }
+    res.status(200).json({ ...(existingReceipt.result as Record<string, unknown>), idempotent: true, cart: await shopCartDto(access.salon.id) });
+    return;
+  }
+  const parsed = await b2bImportDiagnostics(body.data.csvText);
+  if (parsed.error) { res.status(400).json({ error: parsed.error }); return; }
+  const initial = b2bImportResult(parsed.diagnostics);
+  if (initial.invalidRowCount && !body.data.confirmed) { res.status(409).json(initial); return; }
+  const cart = await getOrCreateShopCart(access.salon.id);
+  const result = await db.transaction(async (tx) => {
+    await tx.execute(sql`select id from shopping_carts where id = ${cart.id} for update`);
+    const [receipt] = await tx.select().from(b2bCartImportsTable).where(and(eq(b2bCartImportsTable.salonId, access.salon.id), eq(b2bCartImportsTable.idempotencyKey, body.data.idempotencyKey))).limit(1);
+    if (receipt) {
+      if (receipt.contentHash !== hash) return { result: { error: "Idempotency ključ je već upotrebljen za drugačiji sadržaj." }, status: 409 };
+      return { result: { ...receipt.result, idempotent: true }, status: 200 };
+    }
+    // Hold every existing cart line while calculating aggregate inventory.
+    // Product/supplier/category locks below make the catalog snapshot stable
+    // until this import has either failed or merged.
+    await tx.execute(sql`select id from shopping_cart_items where cart_id = ${cart.id} for update`);
+    const items = await tx.select().from(shoppingCartItemsTable).where(eq(shoppingCartItemsTable.cartId, cart.id));
+    const candidateIds = [...new Set(initial.matchedRows.map((row) => row.productId).filter((id): id is string => Boolean(id)))].sort();
+    for (const id of candidateIds) await tx.execute(sql`select id from products where id = ${id} for update`);
+    const lockedProducts = candidateIds.length
+      ? await tx.select().from(productsTable).where(inArray(productsTable.id, candidateIds))
+      : [];
+    for (const id of [...new Set(lockedProducts.map((product) => product.supplierId))].sort()) await tx.execute(sql`select id from suppliers where id = ${id} for update`);
+    for (const id of [...new Set(lockedProducts.map((product) => product.categoryId).filter((id): id is string => Boolean(id)))].sort()) await tx.execute(sql`select id from product_categories where id = ${id} for update`);
+    const existingQuantities = new Map<string, number>();
+    for (const item of items) existingQuantities.set(`${item.productId}:${item.variantValue ?? ""}`, item.quantity);
+    const fresh = await b2bImportDiagnostics(body.data.csvText, tx, existingQuantities);
+    if (fresh.error) return { result: { error: fresh.error }, status: 400 };
+    const freshResult = b2bImportResult(fresh.diagnostics);
+    // Confirmation permits rows that were already invalid at preview time, but
+    // never lets a row that was previously valid merge after a catalog/cart
+    // race made it invalid.
+    const initiallyMatched = new Set(initial.matchedRows.map((row) => row.rowNumber));
+    if (fresh.diagnostics.some((row) => initiallyMatched.has(row.rowNumber) && row.status !== "matched")
+      || (freshResult.invalidRowCount > 0 && freshResult.matchedRows.length === 0)) {
+      return { result: freshResult, status: 409 };
+    }
+    const valid = freshResult.matchedRows;
+    const grouped = new Map<string, { productId: string; variantValue: string | null; quantity: number }>();
+    for (const row of valid) {
+      const key = `${row.productId}:${row.variantValue ?? ""}`;
+      const entry = grouped.get(key) ?? { productId: row.productId!, variantValue: row.variantValue, quantity: 0 };
+      entry.quantity += row.quantity!; grouped.set(key, entry);
+    }
+    for (const entry of grouped.values()) {
+      const [product] = await tx.select().from(productsTable).where(eq(productsTable.id, entry.productId)).limit(1);
+      if (!product) throw new Error("Proizvod više nije dostupan.");
+      const existing = items.find((item) => item.productId === entry.productId && item.variantValue === entry.variantValue);
+      const line = cartLineForProduct(product, entry.variantValue ?? undefined, (existing?.quantity ?? 0) + entry.quantity);
+      if ("error" in line) throw new Error(line.error);
+      if (existing) await tx.update(shoppingCartItemsTable).set({ quantity: existing.quantity + entry.quantity, unitPrice: line.unitPrice, variantLabel: line.variantLabel, productSku: line.productSku, updatedAt: new Date() }).where(eq(shoppingCartItemsTable.id, existing.id));
+      else await tx.insert(shoppingCartItemsTable).values({ cartId: cart.id, productId: product.id, variantValue: entry.variantValue, productName: product.name, productImageUrl: product.imageUrl, variantLabel: line.variantLabel, productSku: line.productSku, unitPrice: line.unitPrice, quantity: entry.quantity });
+    }
+    await tx.update(shoppingCartsTable).set({ updatedAt: new Date() }).where(eq(shoppingCartsTable.id, cart.id));
+    // The receipt stores only deterministic parser diagnostics. Hydrate the
+    // current cart after commit so it never reads a separate connection's
+    // pre-commit snapshot.
+    const response = b2bImportResult(fresh.diagnostics, true);
+    await tx.insert(b2bCartImportsTable).values({ salonId: access.salon.id, cartId: cart.id, idempotencyKey: body.data.idempotencyKey, contentHash: hash, result: response });
+    return { result: response, status: 201 };
+  });
+  res.status(result.status).json({ ...(result.result as Record<string, unknown>), cart: await shopCartDto(access.salon.id) });
+});
 
 router.get("/shop/cart", async (req, res): Promise<void> => {
   const access = await requireShopAccess(req, res); if (!access) return;
@@ -11776,11 +12165,12 @@ router.get("/shop/checkout-preview", async (req, res): Promise<void> => {
     ? Number(req.query.desiredReferralCreditRsd) : 0;
   const scope = { ownerUserId: access.salon.ownerId, walletKind: "B2B" as const, salonId: access.salon.id };
   const available = await db.transaction((tx) => referralCreditBalanceInTx(tx, scope));
-  const applied = Math.min(desired || available, available, Math.max(0, cart.subtotal - couponDiscountRsd));
+  const referralQuote = referralQuoteForCommerceLines(cart.items, appliedCoupon?.quote.allocations);
+  const applied = Math.min(desired || available, available, referralQuote.referralBaseRsd);
   const parsedPreview = GetShopCheckoutPreviewResponse.parse({
     cart, shipping, total: cart.subtotal - couponDiscountRsd + shipping.shippingCost - applied, paymentMethods: checkoutPaymentMethods,
     referralCreditAvailableRsd: available, referralCreditAppliedRsd: applied,
-    merchandiseSubtotalRsd: cart.subtotal, shippingRsd: shipping.shippingCost,
+    merchandiseSubtotalRsd: referralQuote.referralBaseRsd, shippingRsd: shipping.shippingCost,
     payableTotalRsd: cart.subtotal - couponDiscountRsd + shipping.shippingCost - applied,
     coupon: appliedCoupon ? {
       code: appliedCoupon.quote.code, discountRsd: couponDiscountRsd,
@@ -12056,12 +12446,15 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
     const shipping = tier?.freeShipping || appliedCoupon?.quote.freeShipping
       ? { ...calculatedShipping, shippingCost: 0, isFreeShipping: true }
       : calculatedShipping;
+    const referralQuote = referralQuoteForCommerceLines(details.map((line) => ({
+      id: line.cartLineId,
+      lineTotal: line.price * line.quantity,
+      priceSource: line.priceSource,
+      lineDiscount: (line.baseUnitPrice - line.price) * line.quantity,
+    })), appliedCoupon?.quote.allocations);
     const referral = await allocateReferralCreditInTx(tx, {
       ownerUserId: salon.ownerId, walletKind: "B2B", salonId: salon.id,
-    }, parsed.data.desiredReferralCreditRsd ?? 0, details
-      .filter((line) => !line.bundle && line.priceSource === "FULL_PRICE")
-      .reduce((sum, line) => sum + line.price * line.quantity
-        - (appliedCoupon?.quote.allocations[line.cartLineId] ?? 0), 0));
+    }, parsed.data.desiredReferralCreditRsd ?? 0, referralQuote.referralBaseRsd);
     const payableTotal = subtotal - couponDiscountRsd + shipping.shippingCost - referral.appliedRsd;
     if ((parsed.data.expectedSubtotal !== undefined && parsed.data.expectedSubtotal !== subtotal)
       || (parsed.data.expectedShippingCost !== undefined && parsed.data.expectedShippingCost !== shipping.shippingCost)
@@ -12089,7 +12482,7 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
       couponCodeSnapshot: appliedCoupon?.quote.code ?? null,
       couponDiscountRsd,
       couponFreeShipping: appliedCoupon?.quote.freeShipping ?? false,
-      referralCreditMerchandiseSubtotalRsd: subtotal - couponDiscountRsd,
+      referralCreditMerchandiseSubtotalRsd: referralQuote.referralBaseRsd,
       referralCreditPreCreditPayableTotalRsd: subtotal - couponDiscountRsd + shipping.shippingCost,
       referralCreditAppliedRsd: referral.appliedRsd,
       shippingCost: shipping.shippingCost,
@@ -12252,6 +12645,7 @@ function orderDto(
     productSku: string | null;
     quantity: number;
     price: number;
+    couponDiscountRsd?: number;
   }>,
   salon: typeof salonsTable.$inferSelect,
   courier?: typeof courierServicesTable.$inferSelect,
@@ -12285,6 +12679,9 @@ function orderDto(
     couponCode: order.couponCodeSnapshot ?? null,
     couponDiscountRsd: order.couponDiscountRsd,
     couponFreeShipping: order.couponFreeShipping,
+    referralCreditMerchandiseSubtotalRsd: order.referralCreditMerchandiseSubtotalRsd,
+    referralCreditPreCreditPayableTotalRsd: order.referralCreditPreCreditPayableTotalRsd,
+    referralCreditAppliedRsd: order.referralCreditAppliedRsd,
     itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
     createdAt: order.createdAt.toISOString(),
     updatedAt: order.updatedAt.toISOString(),
@@ -12316,6 +12713,7 @@ function orderDto(
       productSku: item.productSku ?? null,
       quantity: item.quantity,
       price: item.price,
+      couponDiscountRsd: item.couponDiscountRsd ?? 0,
     })),
   };
 }
@@ -18322,6 +18720,9 @@ function shopSettingsDto(settings: typeof shopSettingsTable.$inferSelect, freeSh
     pointsPer100Rsd: settings.pointsPer100Rsd,
     lowStockThreshold: settings.lowStockThreshold,
     defaultDeliveryBusinessDays: settings.defaultDeliveryBusinessDays,
+    retailCartReminderEnabled: settings.retailCartReminderEnabled,
+    retailCartReminderDelayHours: settings.retailCartReminderDelayHours,
+    retailCartReminderBrevoTemplateId: settings.retailCartReminderBrevoTemplateId,
     freeShippingThreshold,
     version: settings.version,
     updatedAt: settings.updatedAt.toISOString(),
@@ -18351,6 +18752,10 @@ router.put("/admin/shop-settings", async (req, res): Promise<void> => {
     || !integer(body.pointsPer100Rsd, 0, 1_000_000)
     || !integer(body.lowStockThreshold, 1, 1_000_000)
     || !integer(body.defaultDeliveryBusinessDays, 1, 365)
+    || (body.retailCartReminderEnabled !== undefined && typeof body.retailCartReminderEnabled !== "boolean")
+    || (body.retailCartReminderDelayHours !== undefined && !integer(body.retailCartReminderDelayHours, 1, 720))
+    || (body.retailCartReminderBrevoTemplateId !== undefined && body.retailCartReminderBrevoTemplateId !== null && !integer(body.retailCartReminderBrevoTemplateId, 1, 2_147_483_647))
+    || (body.retailCartReminderEnabled === true && !integer(body.retailCartReminderBrevoTemplateId, 1, 2_147_483_647))
     || !integer(body.freeShippingThreshold, 0, 2_147_483_647)
     || !integer(body.version, 1, 2_147_483_647)) {
     res.status(400).json({ error: "Neispravna podešavanja prodavnice." }); return;
@@ -18374,6 +18779,9 @@ router.put("/admin/shop-settings", async (req, res): Promise<void> => {
       pointsPer100Rsd: body.pointsPer100Rsd as number,
       lowStockThreshold: body.lowStockThreshold as number,
       defaultDeliveryBusinessDays: body.defaultDeliveryBusinessDays as number,
+      retailCartReminderEnabled: body.retailCartReminderEnabled === undefined ? current.retailCartReminderEnabled : body.retailCartReminderEnabled as boolean,
+      retailCartReminderDelayHours: body.retailCartReminderDelayHours === undefined ? current.retailCartReminderDelayHours : body.retailCartReminderDelayHours as number,
+      retailCartReminderBrevoTemplateId: body.retailCartReminderBrevoTemplateId === undefined ? current.retailCartReminderBrevoTemplateId : body.retailCartReminderBrevoTemplateId as number | null,
       ...(sellerFields ? {
         sellerCompanyName: sellerFields.companyName.trim(), sellerTaxId: sellerFields.taxId.trim(),
         sellerRegistrationNumber: sellerFields.registrationNumber.trim(), sellerAddress: sellerFields.address.trim(),

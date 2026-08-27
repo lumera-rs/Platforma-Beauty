@@ -3415,6 +3415,8 @@ export const listPublicProductsResponseItemsItemDiscountPriceMultipleOf = 1;
 
 export const listPublicProductsResponseItemsItemDeliveryBusinessDaysOverrideMax = 365;
 
+export const listPublicProductsResponseItemsItemSubscriptionDiscountPercentMax = 100;
+
 
 
 export const ListPublicProductsResponse = zod.object({
@@ -3434,7 +3436,9 @@ export const ListPublicProductsResponse = zod.object({
   "unit": zod.string(),
   "isNew": zod.boolean(),
   "isBestseller": zod.boolean(),
-  "deliveryBusinessDaysOverride": zod.number().int().min(1).max(listPublicProductsResponseItemsItemDeliveryBusinessDaysOverrideMax).nullable()
+  "deliveryBusinessDaysOverride": zod.number().int().min(1).max(listPublicProductsResponseItemsItemDeliveryBusinessDaysOverrideMax).nullable(),
+  "subscriptionAllowed": zod.boolean(),
+  "subscriptionDiscountPercent": zod.number().int().min(1).max(listPublicProductsResponseItemsItemSubscriptionDiscountPercentMax).nullable()
 }).describe('Customer-facing product fields only. B2B price, SKU, stock, weight, variants and salon-only review data are deliberately omitted.')),
   "total": zod.number(),
   "page": zod.number(),
@@ -3455,6 +3459,8 @@ export const getPublicProductResponseOnePriceMultipleOf = 1;
 export const getPublicProductResponseOneDiscountPriceMultipleOf = 1;
 
 export const getPublicProductResponseOneDeliveryBusinessDaysOverrideMax = 365;
+
+export const getPublicProductResponseOneSubscriptionDiscountPercentMax = 100;
 
 export const getPublicProductResponseTwoRelatedProductsItemPriceMin = 0;
 
@@ -3478,7 +3484,9 @@ export const GetPublicProductResponse = zod.object({
   "unit": zod.string(),
   "isNew": zod.boolean(),
   "isBestseller": zod.boolean(),
-  "deliveryBusinessDaysOverride": zod.number().int().min(1).max(getPublicProductResponseOneDeliveryBusinessDaysOverrideMax).nullable()
+  "deliveryBusinessDaysOverride": zod.number().int().min(1).max(getPublicProductResponseOneDeliveryBusinessDaysOverrideMax).nullable(),
+  "subscriptionAllowed": zod.boolean(),
+  "subscriptionDiscountPercent": zod.number().int().min(1).max(getPublicProductResponseOneSubscriptionDiscountPercentMax).nullable()
 }).describe('Customer-facing product fields only. B2B price, SKU, stock, weight, variants and salon-only review data are deliberately omitted.').and(zod.object({
   "relatedProducts": zod.array(zod.object({
   "id": zod.string(),
@@ -3938,6 +3946,376 @@ export const GetShopSummaryResponse = zod.object({
 
 
 /**
+ * @summary Download the UTF-8 BOM B2B order-import CSV template
+ */
+export const DownloadB2bOrderImportTemplateResponse = zod.unknown()
+
+
+/**
+ * @summary Parse and validate a B2B order-import CSV without changing the cart
+ */
+export const previewB2bOrderImportBodyCsvTextMax = 524288;
+
+
+
+export const PreviewB2bOrderImportBody = zod.object({
+  "csvText": zod.string().min(1).max(previewB2bOrderImportBodyCsvTextMax)
+})
+
+export const previewB2bOrderImportResponseValidRowCountMin = 0;
+
+export const previewB2bOrderImportResponseInvalidRowCountMin = 0;
+
+export const previewB2bOrderImportResponseMatchedRowsItemRowNumberMin = 2;
+
+export const previewB2bOrderImportResponseUnmatchedRowsItemRowNumberMin = 2;
+
+export const previewB2bOrderImportResponseInvalidRowsItemRowNumberMin = 2;
+
+export const previewB2bOrderImportResponseCartOneItemsItemOneUnitPriceMin = 0;
+export const previewB2bOrderImportResponseCartOneItemsItemOneUnitPriceMultipleOf = 1;
+
+export const previewB2bOrderImportResponseCartOneItemsItemOneQuantityMultipleOf = 1;
+
+export const previewB2bOrderImportResponseCartOneItemsItemOneLineTotalMin = 0;
+export const previewB2bOrderImportResponseCartOneItemsItemOneLineTotalMultipleOf = 1;
+
+export const previewB2bOrderImportResponseCartOneItemsItemOneAvailableStockMin = 0;
+export const previewB2bOrderImportResponseCartOneItemsItemOneAvailableStockMultipleOf = 1;
+
+export const previewB2bOrderImportResponseCartOneItemsItemOneWeightGramsMin = 0;
+export const previewB2bOrderImportResponseCartOneItemsItemOneWeightGramsMultipleOf = 1;
+
+export const previewB2bOrderImportResponseCartOneItemsItemTwoUnitPriceMin = 0;
+export const previewB2bOrderImportResponseCartOneItemsItemTwoUnitPriceMultipleOf = 1;
+
+export const previewB2bOrderImportResponseCartOneItemsItemTwoQuantityMultipleOf = 1;
+
+export const previewB2bOrderImportResponseCartOneItemsItemTwoLineTotalMin = 0;
+export const previewB2bOrderImportResponseCartOneItemsItemTwoLineTotalMultipleOf = 1;
+
+export const previewB2bOrderImportResponseCartOneItemsItemTwoAvailableStockMin = 0;
+export const previewB2bOrderImportResponseCartOneItemsItemTwoAvailableStockMultipleOf = 1;
+
+export const previewB2bOrderImportResponseCartOneItemsItemTwoWeightGramsMin = 0;
+export const previewB2bOrderImportResponseCartOneItemsItemTwoWeightGramsMultipleOf = 1;
+
+
+export const previewB2bOrderImportResponseCartOneItemCountMin = 0;
+export const previewB2bOrderImportResponseCartOneItemCountMultipleOf = 1;
+
+export const previewB2bOrderImportResponseCartOneSubtotalMin = 0;
+export const previewB2bOrderImportResponseCartOneSubtotalMultipleOf = 1;
+
+export const previewB2bOrderImportResponseCartOneReferralCreditMerchandiseSubtotalRsdMin = 0;
+
+export const previewB2bOrderImportResponseCartOneTotalWeightGramsMin = 0;
+export const previewB2bOrderImportResponseCartOneTotalWeightGramsMultipleOf = 1;
+
+export const previewB2bOrderImportResponseCartOneCrossSellProductsItemPriceMin = 0;
+
+export const previewB2bOrderImportResponseCartOneCrossSellProductsItemDiscountPriceMin = 0;
+
+export const previewB2bOrderImportResponseCartOneFreeShippingProgressThresholdMin = 0;
+
+export const previewB2bOrderImportResponseCartOneFreeShippingProgressSubtotalMin = 0;
+
+export const previewB2bOrderImportResponseCartOneFreeShippingProgressRemainingMin = 0;
+
+export const previewB2bOrderImportResponseCartOneCurrentLoyaltyPointsMin = 0;
+
+export const previewB2bOrderImportResponseCartOneProjectedLoyaltyPointsMin = 0;
+
+
+
+export const PreviewB2bOrderImportResponse = zod.object({
+  "applied": zod.boolean(),
+  "idempotent": zod.boolean(),
+  "validRowCount": zod.number().int().min(previewB2bOrderImportResponseValidRowCountMin),
+  "invalidRowCount": zod.number().int().min(previewB2bOrderImportResponseInvalidRowCountMin),
+  "matchedRows": zod.array(zod.object({
+  "rowNumber": zod.number().int().min(previewB2bOrderImportResponseMatchedRowsItemRowNumberMin),
+  "sku": zod.string().nullable(),
+  "quantity": zod.number().int().nullable(),
+  "status": zod.enum(['matched', 'unmatched', 'invalid']),
+  "code": zod.union([zod.literal('EMPTY_SKU'),zod.literal('INVALID_QUANTITY'),zod.literal('SKU_NOT_FOUND'),zod.literal('SUPPLIER_SCOPE'),zod.literal('PRODUCT_UNAVAILABLE'),zod.literal('VARIANT_UNAVAILABLE'),zod.literal('MOQ_NOT_MET'),zod.literal('INSUFFICIENT_STOCK'),zod.literal('DUPLICATE_SKU'),zod.literal(null)]).nullable(),
+  "message": zod.string().nullable(),
+  "productId": zod.string().nullable(),
+  "variantValue": zod.string().nullable()
+})),
+  "unmatchedRows": zod.array(zod.object({
+  "rowNumber": zod.number().int().min(previewB2bOrderImportResponseUnmatchedRowsItemRowNumberMin),
+  "sku": zod.string().nullable(),
+  "quantity": zod.number().int().nullable(),
+  "status": zod.enum(['matched', 'unmatched', 'invalid']),
+  "code": zod.union([zod.literal('EMPTY_SKU'),zod.literal('INVALID_QUANTITY'),zod.literal('SKU_NOT_FOUND'),zod.literal('SUPPLIER_SCOPE'),zod.literal('PRODUCT_UNAVAILABLE'),zod.literal('VARIANT_UNAVAILABLE'),zod.literal('MOQ_NOT_MET'),zod.literal('INSUFFICIENT_STOCK'),zod.literal('DUPLICATE_SKU'),zod.literal(null)]).nullable(),
+  "message": zod.string().nullable(),
+  "productId": zod.string().nullable(),
+  "variantValue": zod.string().nullable()
+})),
+  "invalidRows": zod.array(zod.object({
+  "rowNumber": zod.number().int().min(previewB2bOrderImportResponseInvalidRowsItemRowNumberMin),
+  "sku": zod.string().nullable(),
+  "quantity": zod.number().int().nullable(),
+  "status": zod.enum(['matched', 'unmatched', 'invalid']),
+  "code": zod.union([zod.literal('EMPTY_SKU'),zod.literal('INVALID_QUANTITY'),zod.literal('SKU_NOT_FOUND'),zod.literal('SUPPLIER_SCOPE'),zod.literal('PRODUCT_UNAVAILABLE'),zod.literal('VARIANT_UNAVAILABLE'),zod.literal('MOQ_NOT_MET'),zod.literal('INSUFFICIENT_STOCK'),zod.literal('DUPLICATE_SKU'),zod.literal(null)]).nullable(),
+  "message": zod.string().nullable(),
+  "productId": zod.string().nullable(),
+  "variantValue": zod.string().nullable()
+})),
+  "cart": zod.union([zod.object({
+  "id": zod.string().nullable(),
+  "items": zod.array(zod.union([zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['product']),
+  "productId": zod.string(),
+  "productName": zod.string(),
+  "productImageUrl": zod.string(),
+  "variantValue": zod.string().nullable(),
+  "variantLabel": zod.string().nullable(),
+  "productSku": zod.string().nullable(),
+  "unitPrice": zod.number().min(previewB2bOrderImportResponseCartOneItemsItemOneUnitPriceMin).multipleOf(previewB2bOrderImportResponseCartOneItemsItemOneUnitPriceMultipleOf),
+  "quantity": zod.number().min(1).multipleOf(previewB2bOrderImportResponseCartOneItemsItemOneQuantityMultipleOf),
+  "lineTotal": zod.number().min(previewB2bOrderImportResponseCartOneItemsItemOneLineTotalMin).multipleOf(previewB2bOrderImportResponseCartOneItemsItemOneLineTotalMultipleOf),
+  "availableStock": zod.number().min(previewB2bOrderImportResponseCartOneItemsItemOneAvailableStockMin).multipleOf(previewB2bOrderImportResponseCartOneItemsItemOneAvailableStockMultipleOf),
+  "weightGrams": zod.number().min(previewB2bOrderImportResponseCartOneItemsItemOneWeightGramsMin).multipleOf(previewB2bOrderImportResponseCartOneItemsItemOneWeightGramsMultipleOf),
+  "lowStock": zod.boolean()
+}),zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['bundle']),
+  "bundleId": zod.string(),
+  "productName": zod.string(),
+  "productImageUrl": zod.string().nullable(),
+  "variantValue": zod.string().nullable(),
+  "variantLabel": zod.string().nullable(),
+  "productSku": zod.string().nullable(),
+  "unitPrice": zod.number().min(previewB2bOrderImportResponseCartOneItemsItemTwoUnitPriceMin).multipleOf(previewB2bOrderImportResponseCartOneItemsItemTwoUnitPriceMultipleOf),
+  "quantity": zod.number().min(1).multipleOf(previewB2bOrderImportResponseCartOneItemsItemTwoQuantityMultipleOf),
+  "lineTotal": zod.number().min(previewB2bOrderImportResponseCartOneItemsItemTwoLineTotalMin).multipleOf(previewB2bOrderImportResponseCartOneItemsItemTwoLineTotalMultipleOf),
+  "availableStock": zod.number().min(previewB2bOrderImportResponseCartOneItemsItemTwoAvailableStockMin).multipleOf(previewB2bOrderImportResponseCartOneItemsItemTwoAvailableStockMultipleOf),
+  "weightGrams": zod.number().min(previewB2bOrderImportResponseCartOneItemsItemTwoWeightGramsMin).multipleOf(previewB2bOrderImportResponseCartOneItemsItemTwoWeightGramsMultipleOf),
+  "lowStock": zod.boolean()
+})])),
+  "savedItems": zod.array(zod.object({
+  "id": zod.string(),
+  "productId": zod.string().nullable(),
+  "bundleId": zod.string().nullable(),
+  "variantValue": zod.string().nullable(),
+  "quantity": zod.number().int().min(1)
+})),
+  "itemCount": zod.number().min(previewB2bOrderImportResponseCartOneItemCountMin).multipleOf(previewB2bOrderImportResponseCartOneItemCountMultipleOf),
+  "subtotal": zod.number().min(previewB2bOrderImportResponseCartOneSubtotalMin).multipleOf(previewB2bOrderImportResponseCartOneSubtotalMultipleOf),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(previewB2bOrderImportResponseCartOneReferralCreditMerchandiseSubtotalRsdMin),
+  "totalWeightGrams": zod.number().min(previewB2bOrderImportResponseCartOneTotalWeightGramsMin).multipleOf(previewB2bOrderImportResponseCartOneTotalWeightGramsMultipleOf),
+  "crossSellProducts": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string(),
+  "brand": zod.string().nullable(),
+  "price": zod.number().int().min(previewB2bOrderImportResponseCartOneCrossSellProductsItemPriceMin),
+  "discountPrice": zod.number().int().min(previewB2bOrderImportResponseCartOneCrossSellProductsItemDiscountPriceMin).nullable()
+})),
+  "freeShippingProgress": zod.object({
+  "threshold": zod.number().int().min(previewB2bOrderImportResponseCartOneFreeShippingProgressThresholdMin),
+  "subtotal": zod.number().int().min(previewB2bOrderImportResponseCartOneFreeShippingProgressSubtotalMin),
+  "remaining": zod.number().int().min(previewB2bOrderImportResponseCartOneFreeShippingProgressRemainingMin),
+  "qualifies": zod.boolean(),
+  "loyaltyFreeShipping": zod.boolean()
+}),
+  "estimatedDeliveryDate": zod.coerce.date(),
+  "showLoyaltyPoints": zod.boolean(),
+  "currentLoyaltyPoints": zod.number().int().min(previewB2bOrderImportResponseCartOneCurrentLoyaltyPointsMin),
+  "projectedLoyaltyPoints": zod.number().int().min(previewB2bOrderImportResponseCartOneProjectedLoyaltyPointsMin)
+}),zod.null()])
+})
+
+
+/**
+ * @summary Idempotently merge valid B2B CSV rows into the authenticated salon cart
+ */
+export const applyB2bOrderImportBodyCsvTextMax = 524288;
+
+export const applyB2bOrderImportBodyConfirmedDefault = false;
+export const applyB2bOrderImportBodyIdempotencyKeyMin = 8;
+export const applyB2bOrderImportBodyIdempotencyKeyMax = 200;
+
+
+
+export const ApplyB2bOrderImportBody = zod.object({
+  "csvText": zod.string().min(1).max(applyB2bOrderImportBodyCsvTextMax),
+  "confirmed": zod.boolean().default(applyB2bOrderImportBodyConfirmedDefault),
+  "idempotencyKey": zod.string().min(applyB2bOrderImportBodyIdempotencyKeyMin).max(applyB2bOrderImportBodyIdempotencyKeyMax)
+})
+
+export const applyB2bOrderImportResponseValidRowCountMin = 0;
+
+export const applyB2bOrderImportResponseInvalidRowCountMin = 0;
+
+export const applyB2bOrderImportResponseMatchedRowsItemRowNumberMin = 2;
+
+export const applyB2bOrderImportResponseUnmatchedRowsItemRowNumberMin = 2;
+
+export const applyB2bOrderImportResponseInvalidRowsItemRowNumberMin = 2;
+
+export const applyB2bOrderImportResponseCartOneItemsItemOneUnitPriceMin = 0;
+export const applyB2bOrderImportResponseCartOneItemsItemOneUnitPriceMultipleOf = 1;
+
+export const applyB2bOrderImportResponseCartOneItemsItemOneQuantityMultipleOf = 1;
+
+export const applyB2bOrderImportResponseCartOneItemsItemOneLineTotalMin = 0;
+export const applyB2bOrderImportResponseCartOneItemsItemOneLineTotalMultipleOf = 1;
+
+export const applyB2bOrderImportResponseCartOneItemsItemOneAvailableStockMin = 0;
+export const applyB2bOrderImportResponseCartOneItemsItemOneAvailableStockMultipleOf = 1;
+
+export const applyB2bOrderImportResponseCartOneItemsItemOneWeightGramsMin = 0;
+export const applyB2bOrderImportResponseCartOneItemsItemOneWeightGramsMultipleOf = 1;
+
+export const applyB2bOrderImportResponseCartOneItemsItemTwoUnitPriceMin = 0;
+export const applyB2bOrderImportResponseCartOneItemsItemTwoUnitPriceMultipleOf = 1;
+
+export const applyB2bOrderImportResponseCartOneItemsItemTwoQuantityMultipleOf = 1;
+
+export const applyB2bOrderImportResponseCartOneItemsItemTwoLineTotalMin = 0;
+export const applyB2bOrderImportResponseCartOneItemsItemTwoLineTotalMultipleOf = 1;
+
+export const applyB2bOrderImportResponseCartOneItemsItemTwoAvailableStockMin = 0;
+export const applyB2bOrderImportResponseCartOneItemsItemTwoAvailableStockMultipleOf = 1;
+
+export const applyB2bOrderImportResponseCartOneItemsItemTwoWeightGramsMin = 0;
+export const applyB2bOrderImportResponseCartOneItemsItemTwoWeightGramsMultipleOf = 1;
+
+
+export const applyB2bOrderImportResponseCartOneItemCountMin = 0;
+export const applyB2bOrderImportResponseCartOneItemCountMultipleOf = 1;
+
+export const applyB2bOrderImportResponseCartOneSubtotalMin = 0;
+export const applyB2bOrderImportResponseCartOneSubtotalMultipleOf = 1;
+
+export const applyB2bOrderImportResponseCartOneReferralCreditMerchandiseSubtotalRsdMin = 0;
+
+export const applyB2bOrderImportResponseCartOneTotalWeightGramsMin = 0;
+export const applyB2bOrderImportResponseCartOneTotalWeightGramsMultipleOf = 1;
+
+export const applyB2bOrderImportResponseCartOneCrossSellProductsItemPriceMin = 0;
+
+export const applyB2bOrderImportResponseCartOneCrossSellProductsItemDiscountPriceMin = 0;
+
+export const applyB2bOrderImportResponseCartOneFreeShippingProgressThresholdMin = 0;
+
+export const applyB2bOrderImportResponseCartOneFreeShippingProgressSubtotalMin = 0;
+
+export const applyB2bOrderImportResponseCartOneFreeShippingProgressRemainingMin = 0;
+
+export const applyB2bOrderImportResponseCartOneCurrentLoyaltyPointsMin = 0;
+
+export const applyB2bOrderImportResponseCartOneProjectedLoyaltyPointsMin = 0;
+
+
+
+export const ApplyB2bOrderImportResponse = zod.object({
+  "applied": zod.boolean(),
+  "idempotent": zod.boolean(),
+  "validRowCount": zod.number().int().min(applyB2bOrderImportResponseValidRowCountMin),
+  "invalidRowCount": zod.number().int().min(applyB2bOrderImportResponseInvalidRowCountMin),
+  "matchedRows": zod.array(zod.object({
+  "rowNumber": zod.number().int().min(applyB2bOrderImportResponseMatchedRowsItemRowNumberMin),
+  "sku": zod.string().nullable(),
+  "quantity": zod.number().int().nullable(),
+  "status": zod.enum(['matched', 'unmatched', 'invalid']),
+  "code": zod.union([zod.literal('EMPTY_SKU'),zod.literal('INVALID_QUANTITY'),zod.literal('SKU_NOT_FOUND'),zod.literal('SUPPLIER_SCOPE'),zod.literal('PRODUCT_UNAVAILABLE'),zod.literal('VARIANT_UNAVAILABLE'),zod.literal('MOQ_NOT_MET'),zod.literal('INSUFFICIENT_STOCK'),zod.literal('DUPLICATE_SKU'),zod.literal(null)]).nullable(),
+  "message": zod.string().nullable(),
+  "productId": zod.string().nullable(),
+  "variantValue": zod.string().nullable()
+})),
+  "unmatchedRows": zod.array(zod.object({
+  "rowNumber": zod.number().int().min(applyB2bOrderImportResponseUnmatchedRowsItemRowNumberMin),
+  "sku": zod.string().nullable(),
+  "quantity": zod.number().int().nullable(),
+  "status": zod.enum(['matched', 'unmatched', 'invalid']),
+  "code": zod.union([zod.literal('EMPTY_SKU'),zod.literal('INVALID_QUANTITY'),zod.literal('SKU_NOT_FOUND'),zod.literal('SUPPLIER_SCOPE'),zod.literal('PRODUCT_UNAVAILABLE'),zod.literal('VARIANT_UNAVAILABLE'),zod.literal('MOQ_NOT_MET'),zod.literal('INSUFFICIENT_STOCK'),zod.literal('DUPLICATE_SKU'),zod.literal(null)]).nullable(),
+  "message": zod.string().nullable(),
+  "productId": zod.string().nullable(),
+  "variantValue": zod.string().nullable()
+})),
+  "invalidRows": zod.array(zod.object({
+  "rowNumber": zod.number().int().min(applyB2bOrderImportResponseInvalidRowsItemRowNumberMin),
+  "sku": zod.string().nullable(),
+  "quantity": zod.number().int().nullable(),
+  "status": zod.enum(['matched', 'unmatched', 'invalid']),
+  "code": zod.union([zod.literal('EMPTY_SKU'),zod.literal('INVALID_QUANTITY'),zod.literal('SKU_NOT_FOUND'),zod.literal('SUPPLIER_SCOPE'),zod.literal('PRODUCT_UNAVAILABLE'),zod.literal('VARIANT_UNAVAILABLE'),zod.literal('MOQ_NOT_MET'),zod.literal('INSUFFICIENT_STOCK'),zod.literal('DUPLICATE_SKU'),zod.literal(null)]).nullable(),
+  "message": zod.string().nullable(),
+  "productId": zod.string().nullable(),
+  "variantValue": zod.string().nullable()
+})),
+  "cart": zod.union([zod.object({
+  "id": zod.string().nullable(),
+  "items": zod.array(zod.union([zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['product']),
+  "productId": zod.string(),
+  "productName": zod.string(),
+  "productImageUrl": zod.string(),
+  "variantValue": zod.string().nullable(),
+  "variantLabel": zod.string().nullable(),
+  "productSku": zod.string().nullable(),
+  "unitPrice": zod.number().min(applyB2bOrderImportResponseCartOneItemsItemOneUnitPriceMin).multipleOf(applyB2bOrderImportResponseCartOneItemsItemOneUnitPriceMultipleOf),
+  "quantity": zod.number().min(1).multipleOf(applyB2bOrderImportResponseCartOneItemsItemOneQuantityMultipleOf),
+  "lineTotal": zod.number().min(applyB2bOrderImportResponseCartOneItemsItemOneLineTotalMin).multipleOf(applyB2bOrderImportResponseCartOneItemsItemOneLineTotalMultipleOf),
+  "availableStock": zod.number().min(applyB2bOrderImportResponseCartOneItemsItemOneAvailableStockMin).multipleOf(applyB2bOrderImportResponseCartOneItemsItemOneAvailableStockMultipleOf),
+  "weightGrams": zod.number().min(applyB2bOrderImportResponseCartOneItemsItemOneWeightGramsMin).multipleOf(applyB2bOrderImportResponseCartOneItemsItemOneWeightGramsMultipleOf),
+  "lowStock": zod.boolean()
+}),zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['bundle']),
+  "bundleId": zod.string(),
+  "productName": zod.string(),
+  "productImageUrl": zod.string().nullable(),
+  "variantValue": zod.string().nullable(),
+  "variantLabel": zod.string().nullable(),
+  "productSku": zod.string().nullable(),
+  "unitPrice": zod.number().min(applyB2bOrderImportResponseCartOneItemsItemTwoUnitPriceMin).multipleOf(applyB2bOrderImportResponseCartOneItemsItemTwoUnitPriceMultipleOf),
+  "quantity": zod.number().min(1).multipleOf(applyB2bOrderImportResponseCartOneItemsItemTwoQuantityMultipleOf),
+  "lineTotal": zod.number().min(applyB2bOrderImportResponseCartOneItemsItemTwoLineTotalMin).multipleOf(applyB2bOrderImportResponseCartOneItemsItemTwoLineTotalMultipleOf),
+  "availableStock": zod.number().min(applyB2bOrderImportResponseCartOneItemsItemTwoAvailableStockMin).multipleOf(applyB2bOrderImportResponseCartOneItemsItemTwoAvailableStockMultipleOf),
+  "weightGrams": zod.number().min(applyB2bOrderImportResponseCartOneItemsItemTwoWeightGramsMin).multipleOf(applyB2bOrderImportResponseCartOneItemsItemTwoWeightGramsMultipleOf),
+  "lowStock": zod.boolean()
+})])),
+  "savedItems": zod.array(zod.object({
+  "id": zod.string(),
+  "productId": zod.string().nullable(),
+  "bundleId": zod.string().nullable(),
+  "variantValue": zod.string().nullable(),
+  "quantity": zod.number().int().min(1)
+})),
+  "itemCount": zod.number().min(applyB2bOrderImportResponseCartOneItemCountMin).multipleOf(applyB2bOrderImportResponseCartOneItemCountMultipleOf),
+  "subtotal": zod.number().min(applyB2bOrderImportResponseCartOneSubtotalMin).multipleOf(applyB2bOrderImportResponseCartOneSubtotalMultipleOf),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(applyB2bOrderImportResponseCartOneReferralCreditMerchandiseSubtotalRsdMin),
+  "totalWeightGrams": zod.number().min(applyB2bOrderImportResponseCartOneTotalWeightGramsMin).multipleOf(applyB2bOrderImportResponseCartOneTotalWeightGramsMultipleOf),
+  "crossSellProducts": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string(),
+  "brand": zod.string().nullable(),
+  "price": zod.number().int().min(applyB2bOrderImportResponseCartOneCrossSellProductsItemPriceMin),
+  "discountPrice": zod.number().int().min(applyB2bOrderImportResponseCartOneCrossSellProductsItemDiscountPriceMin).nullable()
+})),
+  "freeShippingProgress": zod.object({
+  "threshold": zod.number().int().min(applyB2bOrderImportResponseCartOneFreeShippingProgressThresholdMin),
+  "subtotal": zod.number().int().min(applyB2bOrderImportResponseCartOneFreeShippingProgressSubtotalMin),
+  "remaining": zod.number().int().min(applyB2bOrderImportResponseCartOneFreeShippingProgressRemainingMin),
+  "qualifies": zod.boolean(),
+  "loyaltyFreeShipping": zod.boolean()
+}),
+  "estimatedDeliveryDate": zod.coerce.date(),
+  "showLoyaltyPoints": zod.boolean(),
+  "currentLoyaltyPoints": zod.number().int().min(applyB2bOrderImportResponseCartOneCurrentLoyaltyPointsMin),
+  "projectedLoyaltyPoints": zod.number().int().min(applyB2bOrderImportResponseCartOneProjectedLoyaltyPointsMin)
+}),zod.null()])
+})
+
+
+/**
  * @summary Get the persistent cart belonging to the current salon
  */
 export const getShopCartResponseItemsItemOneUnitPriceMin = 0;
@@ -3974,6 +4352,8 @@ export const getShopCartResponseItemCountMultipleOf = 1;
 
 export const getShopCartResponseSubtotalMin = 0;
 export const getShopCartResponseSubtotalMultipleOf = 1;
+
+export const getShopCartResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
 
 export const getShopCartResponseTotalWeightGramsMin = 0;
 export const getShopCartResponseTotalWeightGramsMultipleOf = 1;
@@ -4036,6 +4416,7 @@ export const GetShopCartResponse = zod.object({
 })),
   "itemCount": zod.number().min(getShopCartResponseItemCountMin).multipleOf(getShopCartResponseItemCountMultipleOf),
   "subtotal": zod.number().min(getShopCartResponseSubtotalMin).multipleOf(getShopCartResponseSubtotalMultipleOf),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(getShopCartResponseReferralCreditMerchandiseSubtotalRsdMin),
   "totalWeightGrams": zod.number().min(getShopCartResponseTotalWeightGramsMin).multipleOf(getShopCartResponseTotalWeightGramsMultipleOf),
   "crossSellProducts": zod.array(zod.object({
   "id": zod.string(),
@@ -4115,6 +4496,8 @@ export const addShopCartItemResponseItemCountMultipleOf = 1;
 export const addShopCartItemResponseSubtotalMin = 0;
 export const addShopCartItemResponseSubtotalMultipleOf = 1;
 
+export const addShopCartItemResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+
 export const addShopCartItemResponseTotalWeightGramsMin = 0;
 export const addShopCartItemResponseTotalWeightGramsMultipleOf = 1;
 
@@ -4176,6 +4559,7 @@ export const AddShopCartItemResponse = zod.object({
 })),
   "itemCount": zod.number().min(addShopCartItemResponseItemCountMin).multipleOf(addShopCartItemResponseItemCountMultipleOf),
   "subtotal": zod.number().min(addShopCartItemResponseSubtotalMin).multipleOf(addShopCartItemResponseSubtotalMultipleOf),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(addShopCartItemResponseReferralCreditMerchandiseSubtotalRsdMin),
   "totalWeightGrams": zod.number().min(addShopCartItemResponseTotalWeightGramsMin).multipleOf(addShopCartItemResponseTotalWeightGramsMultipleOf),
   "crossSellProducts": zod.array(zod.object({
   "id": zod.string(),
@@ -4249,6 +4633,8 @@ export const updateShopCartItemResponseItemCountMultipleOf = 1;
 export const updateShopCartItemResponseSubtotalMin = 0;
 export const updateShopCartItemResponseSubtotalMultipleOf = 1;
 
+export const updateShopCartItemResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+
 export const updateShopCartItemResponseTotalWeightGramsMin = 0;
 export const updateShopCartItemResponseTotalWeightGramsMultipleOf = 1;
 
@@ -4310,6 +4696,7 @@ export const UpdateShopCartItemResponse = zod.object({
 })),
   "itemCount": zod.number().min(updateShopCartItemResponseItemCountMin).multipleOf(updateShopCartItemResponseItemCountMultipleOf),
   "subtotal": zod.number().min(updateShopCartItemResponseSubtotalMin).multipleOf(updateShopCartItemResponseSubtotalMultipleOf),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(updateShopCartItemResponseReferralCreditMerchandiseSubtotalRsdMin),
   "totalWeightGrams": zod.number().min(updateShopCartItemResponseTotalWeightGramsMin).multipleOf(updateShopCartItemResponseTotalWeightGramsMultipleOf),
   "crossSellProducts": zod.array(zod.object({
   "id": zod.string(),
@@ -4375,6 +4762,8 @@ export const removeShopCartItemResponseItemCountMultipleOf = 1;
 export const removeShopCartItemResponseSubtotalMin = 0;
 export const removeShopCartItemResponseSubtotalMultipleOf = 1;
 
+export const removeShopCartItemResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+
 export const removeShopCartItemResponseTotalWeightGramsMin = 0;
 export const removeShopCartItemResponseTotalWeightGramsMultipleOf = 1;
 
@@ -4436,6 +4825,7 @@ export const RemoveShopCartItemResponse = zod.object({
 })),
   "itemCount": zod.number().min(removeShopCartItemResponseItemCountMin).multipleOf(removeShopCartItemResponseItemCountMultipleOf),
   "subtotal": zod.number().min(removeShopCartItemResponseSubtotalMin).multipleOf(removeShopCartItemResponseSubtotalMultipleOf),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(removeShopCartItemResponseReferralCreditMerchandiseSubtotalRsdMin),
   "totalWeightGrams": zod.number().min(removeShopCartItemResponseTotalWeightGramsMin).multipleOf(removeShopCartItemResponseTotalWeightGramsMultipleOf),
   "crossSellProducts": zod.array(zod.object({
   "id": zod.string(),
@@ -4501,6 +4891,8 @@ export const saveShopCartItemForLaterResponseItemCountMultipleOf = 1;
 export const saveShopCartItemForLaterResponseSubtotalMin = 0;
 export const saveShopCartItemForLaterResponseSubtotalMultipleOf = 1;
 
+export const saveShopCartItemForLaterResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+
 export const saveShopCartItemForLaterResponseTotalWeightGramsMin = 0;
 export const saveShopCartItemForLaterResponseTotalWeightGramsMultipleOf = 1;
 
@@ -4562,6 +4954,7 @@ export const SaveShopCartItemForLaterResponse = zod.object({
 })),
   "itemCount": zod.number().min(saveShopCartItemForLaterResponseItemCountMin).multipleOf(saveShopCartItemForLaterResponseItemCountMultipleOf),
   "subtotal": zod.number().min(saveShopCartItemForLaterResponseSubtotalMin).multipleOf(saveShopCartItemForLaterResponseSubtotalMultipleOf),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(saveShopCartItemForLaterResponseReferralCreditMerchandiseSubtotalRsdMin),
   "totalWeightGrams": zod.number().min(saveShopCartItemForLaterResponseTotalWeightGramsMin).multipleOf(saveShopCartItemForLaterResponseTotalWeightGramsMultipleOf),
   "crossSellProducts": zod.array(zod.object({
   "id": zod.string(),
@@ -4627,6 +5020,8 @@ export const removeSavedShopCartItemResponseItemCountMultipleOf = 1;
 export const removeSavedShopCartItemResponseSubtotalMin = 0;
 export const removeSavedShopCartItemResponseSubtotalMultipleOf = 1;
 
+export const removeSavedShopCartItemResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+
 export const removeSavedShopCartItemResponseTotalWeightGramsMin = 0;
 export const removeSavedShopCartItemResponseTotalWeightGramsMultipleOf = 1;
 
@@ -4688,6 +5083,7 @@ export const RemoveSavedShopCartItemResponse = zod.object({
 })),
   "itemCount": zod.number().min(removeSavedShopCartItemResponseItemCountMin).multipleOf(removeSavedShopCartItemResponseItemCountMultipleOf),
   "subtotal": zod.number().min(removeSavedShopCartItemResponseSubtotalMin).multipleOf(removeSavedShopCartItemResponseSubtotalMultipleOf),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(removeSavedShopCartItemResponseReferralCreditMerchandiseSubtotalRsdMin),
   "totalWeightGrams": zod.number().min(removeSavedShopCartItemResponseTotalWeightGramsMin).multipleOf(removeSavedShopCartItemResponseTotalWeightGramsMultipleOf),
   "crossSellProducts": zod.array(zod.object({
   "id": zod.string(),
@@ -4753,6 +5149,8 @@ export const restoreSavedShopCartItemResponseItemCountMultipleOf = 1;
 export const restoreSavedShopCartItemResponseSubtotalMin = 0;
 export const restoreSavedShopCartItemResponseSubtotalMultipleOf = 1;
 
+export const restoreSavedShopCartItemResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+
 export const restoreSavedShopCartItemResponseTotalWeightGramsMin = 0;
 export const restoreSavedShopCartItemResponseTotalWeightGramsMultipleOf = 1;
 
@@ -4814,6 +5212,7 @@ export const RestoreSavedShopCartItemResponse = zod.object({
 })),
   "itemCount": zod.number().min(restoreSavedShopCartItemResponseItemCountMin).multipleOf(restoreSavedShopCartItemResponseItemCountMultipleOf),
   "subtotal": zod.number().min(restoreSavedShopCartItemResponseSubtotalMin).multipleOf(restoreSavedShopCartItemResponseSubtotalMultipleOf),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(restoreSavedShopCartItemResponseReferralCreditMerchandiseSubtotalRsdMin),
   "totalWeightGrams": zod.number().min(restoreSavedShopCartItemResponseTotalWeightGramsMin).multipleOf(restoreSavedShopCartItemResponseTotalWeightGramsMultipleOf),
   "crossSellProducts": zod.array(zod.object({
   "id": zod.string(),
@@ -4852,6 +5251,8 @@ export const RepeatLastShopOrderHeader = zod.object({
 export const repeatLastShopOrderResponseCartOneItemCountMin = 0;
 
 export const repeatLastShopOrderResponseCartOneSubtotalMin = 0;
+
+export const repeatLastShopOrderResponseCartOneReferralCreditMerchandiseSubtotalRsdMin = 0;
 
 
 export const repeatLastShopOrderResponseCartOneItemsItemOneUnitPriceMin = 0;
@@ -4913,6 +5314,8 @@ export const repeatLastShopOrderResponseCartTwoItemCountMultipleOf = 1;
 export const repeatLastShopOrderResponseCartTwoSubtotalMin = 0;
 export const repeatLastShopOrderResponseCartTwoSubtotalMultipleOf = 1;
 
+export const repeatLastShopOrderResponseCartTwoReferralCreditMerchandiseSubtotalRsdMin = 0;
+
 export const repeatLastShopOrderResponseCartTwoTotalWeightGramsMin = 0;
 export const repeatLastShopOrderResponseCartTwoTotalWeightGramsMultipleOf = 1;
 
@@ -4940,6 +5343,7 @@ export const RepeatLastShopOrderResponse = zod.object({
   "id": zod.string(),
   "itemCount": zod.number().int().min(repeatLastShopOrderResponseCartOneItemCountMin),
   "subtotal": zod.number().int().min(repeatLastShopOrderResponseCartOneSubtotalMin),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(repeatLastShopOrderResponseCartOneReferralCreditMerchandiseSubtotalRsdMin),
   "items": zod.array(zod.union([zod.object({
   "id": zod.string(),
   "productId": zod.string(),
@@ -5031,6 +5435,7 @@ export const RepeatLastShopOrderResponse = zod.object({
 })),
   "itemCount": zod.number().min(repeatLastShopOrderResponseCartTwoItemCountMin).multipleOf(repeatLastShopOrderResponseCartTwoItemCountMultipleOf),
   "subtotal": zod.number().min(repeatLastShopOrderResponseCartTwoSubtotalMin).multipleOf(repeatLastShopOrderResponseCartTwoSubtotalMultipleOf),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(repeatLastShopOrderResponseCartTwoReferralCreditMerchandiseSubtotalRsdMin),
   "totalWeightGrams": zod.number().min(repeatLastShopOrderResponseCartTwoTotalWeightGramsMin).multipleOf(repeatLastShopOrderResponseCartTwoTotalWeightGramsMultipleOf),
   "crossSellProducts": zod.array(zod.object({
   "id": zod.string(),
@@ -5363,6 +5768,12 @@ export const approveShopApprovalRequestResponseTotalWeightGramsMultipleOf = 1;
 
 export const approveShopApprovalRequestResponseCouponDiscountRsdMin = 0;
 
+export const approveShopApprovalRequestResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+
+export const approveShopApprovalRequestResponseReferralCreditPreCreditPayableTotalRsdMin = 0;
+
+export const approveShopApprovalRequestResponseReferralCreditAppliedRsdMin = 0;
+
 export const approveShopApprovalRequestResponseItemsItemQuantityMultipleOf = 1;
 
 export const approveShopApprovalRequestResponseItemsItemPriceMultipleOf = 1;
@@ -5387,6 +5798,9 @@ export const ApproveShopApprovalRequestResponse = zod.object({
   "couponCode": zod.string().nullable(),
   "couponDiscountRsd": zod.number().int().min(approveShopApprovalRequestResponseCouponDiscountRsdMin),
   "couponFreeShipping": zod.boolean(),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(approveShopApprovalRequestResponseReferralCreditMerchandiseSubtotalRsdMin),
+  "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(approveShopApprovalRequestResponseReferralCreditPreCreditPayableTotalRsdMin),
+  "referralCreditAppliedRsd": zod.number().int().min(approveShopApprovalRequestResponseReferralCreditAppliedRsdMin),
   "invoice": zod.object({
   "number": zod.string(),
   "issuedAt": zod.coerce.date()
@@ -5483,6 +5897,8 @@ export const getShopCheckoutPreviewResponseCartItemCountMultipleOf = 1;
 export const getShopCheckoutPreviewResponseCartSubtotalMin = 0;
 export const getShopCheckoutPreviewResponseCartSubtotalMultipleOf = 1;
 
+export const getShopCheckoutPreviewResponseCartReferralCreditMerchandiseSubtotalRsdMin = 0;
+
 export const getShopCheckoutPreviewResponseCartTotalWeightGramsMin = 0;
 export const getShopCheckoutPreviewResponseCartTotalWeightGramsMultipleOf = 1;
 
@@ -5567,6 +5983,7 @@ export const GetShopCheckoutPreviewResponse = zod.object({
 })),
   "itemCount": zod.number().min(getShopCheckoutPreviewResponseCartItemCountMin).multipleOf(getShopCheckoutPreviewResponseCartItemCountMultipleOf),
   "subtotal": zod.number().min(getShopCheckoutPreviewResponseCartSubtotalMin).multipleOf(getShopCheckoutPreviewResponseCartSubtotalMultipleOf),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(getShopCheckoutPreviewResponseCartReferralCreditMerchandiseSubtotalRsdMin),
   "totalWeightGrams": zod.number().min(getShopCheckoutPreviewResponseCartTotalWeightGramsMin).multipleOf(getShopCheckoutPreviewResponseCartTotalWeightGramsMultipleOf),
   "crossSellProducts": zod.array(zod.object({
   "id": zod.string(),
@@ -5689,6 +6106,12 @@ export const checkoutShopCartResponseTotalWeightGramsMultipleOf = 1;
 
 export const checkoutShopCartResponseCouponDiscountRsdMin = 0;
 
+export const checkoutShopCartResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+
+export const checkoutShopCartResponseReferralCreditPreCreditPayableTotalRsdMin = 0;
+
+export const checkoutShopCartResponseReferralCreditAppliedRsdMin = 0;
+
 export const checkoutShopCartResponseItemsItemQuantityMultipleOf = 1;
 
 export const checkoutShopCartResponseItemsItemPriceMultipleOf = 1;
@@ -5713,6 +6136,9 @@ export const CheckoutShopCartResponse = zod.object({
   "couponCode": zod.string().nullable(),
   "couponDiscountRsd": zod.number().int().min(checkoutShopCartResponseCouponDiscountRsdMin),
   "couponFreeShipping": zod.boolean(),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(checkoutShopCartResponseReferralCreditMerchandiseSubtotalRsdMin),
+  "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(checkoutShopCartResponseReferralCreditPreCreditPayableTotalRsdMin),
+  "referralCreditAppliedRsd": zod.number().int().min(checkoutShopCartResponseReferralCreditAppliedRsdMin),
   "invoice": zod.object({
   "number": zod.string(),
   "issuedAt": zod.coerce.date()
@@ -5828,6 +6254,12 @@ export const listOrdersResponseTotalWeightGramsMultipleOf = 1;
 
 export const listOrdersResponseCouponDiscountRsdMin = 0;
 
+export const listOrdersResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+
+export const listOrdersResponseReferralCreditPreCreditPayableTotalRsdMin = 0;
+
+export const listOrdersResponseReferralCreditAppliedRsdMin = 0;
+
 export const listOrdersResponseItemsItemQuantityMultipleOf = 1;
 
 export const listOrdersResponseItemsItemPriceMultipleOf = 1;
@@ -5852,6 +6284,9 @@ export const ListOrdersResponseItem = zod.object({
   "couponCode": zod.string().nullable(),
   "couponDiscountRsd": zod.number().int().min(listOrdersResponseCouponDiscountRsdMin),
   "couponFreeShipping": zod.boolean(),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(listOrdersResponseReferralCreditMerchandiseSubtotalRsdMin),
+  "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(listOrdersResponseReferralCreditPreCreditPayableTotalRsdMin),
+  "referralCreditAppliedRsd": zod.number().int().min(listOrdersResponseReferralCreditAppliedRsdMin),
   "invoice": zod.object({
   "number": zod.string(),
   "issuedAt": zod.coerce.date()
@@ -5924,6 +6359,12 @@ export const getOrderResponseTotalWeightGramsMultipleOf = 1;
 
 export const getOrderResponseCouponDiscountRsdMin = 0;
 
+export const getOrderResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+
+export const getOrderResponseReferralCreditPreCreditPayableTotalRsdMin = 0;
+
+export const getOrderResponseReferralCreditAppliedRsdMin = 0;
+
 export const getOrderResponseItemsItemQuantityMultipleOf = 1;
 
 export const getOrderResponseItemsItemPriceMultipleOf = 1;
@@ -5948,6 +6389,9 @@ export const GetOrderResponse = zod.object({
   "couponCode": zod.string().nullable(),
   "couponDiscountRsd": zod.number().int().min(getOrderResponseCouponDiscountRsdMin),
   "couponFreeShipping": zod.boolean(),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(getOrderResponseReferralCreditMerchandiseSubtotalRsdMin),
+  "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(getOrderResponseReferralCreditPreCreditPayableTotalRsdMin),
+  "referralCreditAppliedRsd": zod.number().int().min(getOrderResponseReferralCreditAppliedRsdMin),
   "invoice": zod.object({
   "number": zod.string(),
   "issuedAt": zod.coerce.date()
@@ -6075,6 +6519,12 @@ export const adminListOrdersResponseOneTotalWeightGramsMultipleOf = 1;
 
 export const adminListOrdersResponseOneCouponDiscountRsdMin = 0;
 
+export const adminListOrdersResponseOneReferralCreditMerchandiseSubtotalRsdMin = 0;
+
+export const adminListOrdersResponseOneReferralCreditPreCreditPayableTotalRsdMin = 0;
+
+export const adminListOrdersResponseOneReferralCreditAppliedRsdMin = 0;
+
 export const adminListOrdersResponseOneItemsItemQuantityMultipleOf = 1;
 
 export const adminListOrdersResponseOneItemsItemPriceMultipleOf = 1;
@@ -6099,6 +6549,9 @@ export const AdminListOrdersResponseItem = zod.object({
   "couponCode": zod.string().nullable(),
   "couponDiscountRsd": zod.number().int().min(adminListOrdersResponseOneCouponDiscountRsdMin),
   "couponFreeShipping": zod.boolean(),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(adminListOrdersResponseOneReferralCreditMerchandiseSubtotalRsdMin),
+  "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(adminListOrdersResponseOneReferralCreditPreCreditPayableTotalRsdMin),
+  "referralCreditAppliedRsd": zod.number().int().min(adminListOrdersResponseOneReferralCreditAppliedRsdMin),
   "invoice": zod.object({
   "number": zod.string(),
   "issuedAt": zod.coerce.date()
@@ -6175,6 +6628,12 @@ export const adminGetOrderResponseOneTotalWeightGramsMultipleOf = 1;
 
 export const adminGetOrderResponseOneCouponDiscountRsdMin = 0;
 
+export const adminGetOrderResponseOneReferralCreditMerchandiseSubtotalRsdMin = 0;
+
+export const adminGetOrderResponseOneReferralCreditPreCreditPayableTotalRsdMin = 0;
+
+export const adminGetOrderResponseOneReferralCreditAppliedRsdMin = 0;
+
 export const adminGetOrderResponseOneItemsItemQuantityMultipleOf = 1;
 
 export const adminGetOrderResponseOneItemsItemPriceMultipleOf = 1;
@@ -6199,6 +6658,9 @@ export const AdminGetOrderResponse = zod.object({
   "couponCode": zod.string().nullable(),
   "couponDiscountRsd": zod.number().int().min(adminGetOrderResponseOneCouponDiscountRsdMin),
   "couponFreeShipping": zod.boolean(),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(adminGetOrderResponseOneReferralCreditMerchandiseSubtotalRsdMin),
+  "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(adminGetOrderResponseOneReferralCreditPreCreditPayableTotalRsdMin),
+  "referralCreditAppliedRsd": zod.number().int().min(adminGetOrderResponseOneReferralCreditAppliedRsdMin),
   "invoice": zod.object({
   "number": zod.string(),
   "issuedAt": zod.coerce.date()
@@ -6288,6 +6750,12 @@ export const adminUpdateOrderStatusResponseOneTotalWeightGramsMultipleOf = 1;
 
 export const adminUpdateOrderStatusResponseOneCouponDiscountRsdMin = 0;
 
+export const adminUpdateOrderStatusResponseOneReferralCreditMerchandiseSubtotalRsdMin = 0;
+
+export const adminUpdateOrderStatusResponseOneReferralCreditPreCreditPayableTotalRsdMin = 0;
+
+export const adminUpdateOrderStatusResponseOneReferralCreditAppliedRsdMin = 0;
+
 export const adminUpdateOrderStatusResponseOneItemsItemQuantityMultipleOf = 1;
 
 export const adminUpdateOrderStatusResponseOneItemsItemPriceMultipleOf = 1;
@@ -6312,6 +6780,9 @@ export const AdminUpdateOrderStatusResponse = zod.object({
   "couponCode": zod.string().nullable(),
   "couponDiscountRsd": zod.number().int().min(adminUpdateOrderStatusResponseOneCouponDiscountRsdMin),
   "couponFreeShipping": zod.boolean(),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(adminUpdateOrderStatusResponseOneReferralCreditMerchandiseSubtotalRsdMin),
+  "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(adminUpdateOrderStatusResponseOneReferralCreditPreCreditPayableTotalRsdMin),
+  "referralCreditAppliedRsd": zod.number().int().min(adminUpdateOrderStatusResponseOneReferralCreditAppliedRsdMin),
   "invoice": zod.object({
   "number": zod.string(),
   "issuedAt": zod.coerce.date()
@@ -6402,6 +6873,12 @@ export const adminBulkUpdateOrdersResponseOneTotalWeightGramsMultipleOf = 1;
 
 export const adminBulkUpdateOrdersResponseOneCouponDiscountRsdMin = 0;
 
+export const adminBulkUpdateOrdersResponseOneReferralCreditMerchandiseSubtotalRsdMin = 0;
+
+export const adminBulkUpdateOrdersResponseOneReferralCreditPreCreditPayableTotalRsdMin = 0;
+
+export const adminBulkUpdateOrdersResponseOneReferralCreditAppliedRsdMin = 0;
+
 export const adminBulkUpdateOrdersResponseOneItemsItemQuantityMultipleOf = 1;
 
 export const adminBulkUpdateOrdersResponseOneItemsItemPriceMultipleOf = 1;
@@ -6426,6 +6903,9 @@ export const AdminBulkUpdateOrdersResponseItem = zod.object({
   "couponCode": zod.string().nullable(),
   "couponDiscountRsd": zod.number().int().min(adminBulkUpdateOrdersResponseOneCouponDiscountRsdMin),
   "couponFreeShipping": zod.boolean(),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(adminBulkUpdateOrdersResponseOneReferralCreditMerchandiseSubtotalRsdMin),
+  "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(adminBulkUpdateOrdersResponseOneReferralCreditPreCreditPayableTotalRsdMin),
+  "referralCreditAppliedRsd": zod.number().int().min(adminBulkUpdateOrdersResponseOneReferralCreditAppliedRsdMin),
   "invoice": zod.object({
   "number": zod.string(),
   "issuedAt": zod.coerce.date()
@@ -11742,6 +12222,8 @@ export const listSupplierPublicProductsResponseItemsItemDiscountPriceMultipleOf 
 
 export const listSupplierPublicProductsResponseItemsItemDeliveryBusinessDaysOverrideMax = 365;
 
+export const listSupplierPublicProductsResponseItemsItemSubscriptionDiscountPercentMax = 100;
+
 
 
 export const ListSupplierPublicProductsResponse = zod.object({
@@ -11761,7 +12243,9 @@ export const ListSupplierPublicProductsResponse = zod.object({
   "unit": zod.string(),
   "isNew": zod.boolean(),
   "isBestseller": zod.boolean(),
-  "deliveryBusinessDaysOverride": zod.number().int().min(1).max(listSupplierPublicProductsResponseItemsItemDeliveryBusinessDaysOverrideMax).nullable()
+  "deliveryBusinessDaysOverride": zod.number().int().min(1).max(listSupplierPublicProductsResponseItemsItemDeliveryBusinessDaysOverrideMax).nullable(),
+  "subscriptionAllowed": zod.boolean(),
+  "subscriptionDiscountPercent": zod.number().int().min(1).max(listSupplierPublicProductsResponseItemsItemSubscriptionDiscountPercentMax).nullable()
 }).describe('Customer-facing product fields only. B2B price, SKU, stock, weight, variants and salon-only review data are deliberately omitted.')),
   "total": zod.number(),
   "page": zod.number(),
@@ -11872,6 +12356,8 @@ export const getSupplierPublicProductResponseOneDiscountPriceMultipleOf = 1;
 
 export const getSupplierPublicProductResponseOneDeliveryBusinessDaysOverrideMax = 365;
 
+export const getSupplierPublicProductResponseOneSubscriptionDiscountPercentMax = 100;
+
 export const getSupplierPublicProductResponseTwoRelatedProductsItemPriceMin = 0;
 
 export const getSupplierPublicProductResponseTwoRelatedProductsItemDiscountPriceMin = 0;
@@ -11894,7 +12380,9 @@ export const GetSupplierPublicProductResponse = zod.object({
   "unit": zod.string(),
   "isNew": zod.boolean(),
   "isBestseller": zod.boolean(),
-  "deliveryBusinessDaysOverride": zod.number().int().min(1).max(getSupplierPublicProductResponseOneDeliveryBusinessDaysOverrideMax).nullable()
+  "deliveryBusinessDaysOverride": zod.number().int().min(1).max(getSupplierPublicProductResponseOneDeliveryBusinessDaysOverrideMax).nullable(),
+  "subscriptionAllowed": zod.boolean(),
+  "subscriptionDiscountPercent": zod.number().int().min(1).max(getSupplierPublicProductResponseOneSubscriptionDiscountPercentMax).nullable()
 }).describe('Customer-facing product fields only. B2B price, SKU, stock, weight, variants and salon-only review data are deliberately omitted.').and(zod.object({
   "relatedProducts": zod.array(zod.object({
   "id": zod.string(),
@@ -12489,6 +12977,9 @@ export const adminGetShopSettingsResponsePointsPer100RsdMin = 0;
 
 export const adminGetShopSettingsResponseDefaultDeliveryBusinessDaysMax = 365;
 
+export const adminGetShopSettingsResponseRetailCartReminderDelayHoursMax = 720;
+
+
 export const adminGetShopSettingsResponseFreeShippingThresholdMin = 0;
 
 
@@ -12517,6 +13008,9 @@ export const AdminGetShopSettingsResponse = zod.object({
   "pointsPer100Rsd": zod.number().int().min(adminGetShopSettingsResponsePointsPer100RsdMin),
   "lowStockThreshold": zod.number().int().min(1),
   "defaultDeliveryBusinessDays": zod.number().int().min(1).max(adminGetShopSettingsResponseDefaultDeliveryBusinessDaysMax),
+  "retailCartReminderEnabled": zod.boolean(),
+  "retailCartReminderDelayHours": zod.number().int().min(1).max(adminGetShopSettingsResponseRetailCartReminderDelayHoursMax),
+  "retailCartReminderBrevoTemplateId": zod.number().int().min(1).nullable(),
   "freeShippingThreshold": zod.number().int().min(adminGetShopSettingsResponseFreeShippingThresholdMin),
   "version": zod.number().int().min(1),
   "updatedAt": zod.coerce.date(),
@@ -12541,6 +13035,9 @@ export const adminUpdateShopSettingsBodyPointsPer100RsdMin = 0;
 
 
 export const adminUpdateShopSettingsBodyDefaultDeliveryBusinessDaysMax = 365;
+
+export const adminUpdateShopSettingsBodyRetailCartReminderDelayHoursMax = 720;
+
 
 export const adminUpdateShopSettingsBodyFreeShippingThresholdMin = 0;
 
@@ -12570,6 +13067,9 @@ export const AdminUpdateShopSettingsBody = zod.object({
   "pointsPer100Rsd": zod.number().int().min(adminUpdateShopSettingsBodyPointsPer100RsdMin),
   "lowStockThreshold": zod.number().int().min(1),
   "defaultDeliveryBusinessDays": zod.number().int().min(1).max(adminUpdateShopSettingsBodyDefaultDeliveryBusinessDaysMax),
+  "retailCartReminderEnabled": zod.boolean().optional(),
+  "retailCartReminderDelayHours": zod.number().int().min(1).max(adminUpdateShopSettingsBodyRetailCartReminderDelayHoursMax).optional(),
+  "retailCartReminderBrevoTemplateId": zod.number().int().min(1).nullish(),
   "freeShippingThreshold": zod.number().int().min(adminUpdateShopSettingsBodyFreeShippingThresholdMin),
   "version": zod.number().int().min(1),
   "seller": zod.object({
@@ -12589,6 +13089,9 @@ export const adminUpdateShopSettingsResponsePointsPer100RsdMin = 0;
 
 
 export const adminUpdateShopSettingsResponseDefaultDeliveryBusinessDaysMax = 365;
+
+export const adminUpdateShopSettingsResponseRetailCartReminderDelayHoursMax = 720;
+
 
 export const adminUpdateShopSettingsResponseFreeShippingThresholdMin = 0;
 
@@ -12618,6 +13121,9 @@ export const AdminUpdateShopSettingsResponse = zod.object({
   "pointsPer100Rsd": zod.number().int().min(adminUpdateShopSettingsResponsePointsPer100RsdMin),
   "lowStockThreshold": zod.number().int().min(1),
   "defaultDeliveryBusinessDays": zod.number().int().min(1).max(adminUpdateShopSettingsResponseDefaultDeliveryBusinessDaysMax),
+  "retailCartReminderEnabled": zod.boolean(),
+  "retailCartReminderDelayHours": zod.number().int().min(1).max(adminUpdateShopSettingsResponseRetailCartReminderDelayHoursMax),
+  "retailCartReminderBrevoTemplateId": zod.number().int().min(1).nullable(),
   "freeShippingThreshold": zod.number().int().min(adminUpdateShopSettingsResponseFreeShippingThresholdMin),
   "version": zod.number().int().min(1),
   "updatedAt": zod.coerce.date(),
@@ -14919,11 +15425,178 @@ export const CreateWidgetAppointmentResponse = zod.object({
 
 
 /**
+ * @summary List the signed-in customer's saved B2C products, including unavailable items
+ */
+export const listProductWishlistResponseProductOnePriceMultipleOf = 1;
+
+export const listProductWishlistResponseProductOneDiscountPriceMultipleOf = 1;
+
+export const listProductWishlistResponseProductOneDeliveryBusinessDaysOverrideMax = 365;
+
+export const listProductWishlistResponseProductOneSubscriptionDiscountPercentMax = 100;
+
+
+
+export const ListProductWishlistResponseItem = zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "variantValue": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "available": zod.boolean(),
+  "unavailableReason": zod.union([zod.literal('PRODUCT_INACTIVE'),zod.literal('RETAIL_DISABLED'),zod.literal('OUT_OF_STOCK'),zod.literal('VARIANT_UNAVAILABLE'),zod.literal(null)]).nullable(),
+  "product": zod.union([zod.object({
+  "id": zod.string(),
+  "supplierId": zod.string(),
+  "name": zod.string(),
+  "category": zod.string(),
+  "subcategory": zod.string().nullish(),
+  "brand": zod.string().nullish(),
+  "description": zod.string(),
+  "imageUrl": zod.string(),
+  "images": zod.array(zod.string()),
+  "price": zod.number().min(1).multipleOf(listProductWishlistResponseProductOnePriceMultipleOf),
+  "discountPrice": zod.number().min(1).multipleOf(listProductWishlistResponseProductOneDiscountPriceMultipleOf).nullish(),
+  "discountPercent": zod.number().nullish(),
+  "unit": zod.string(),
+  "isNew": zod.boolean(),
+  "isBestseller": zod.boolean(),
+  "deliveryBusinessDaysOverride": zod.number().int().min(1).max(listProductWishlistResponseProductOneDeliveryBusinessDaysOverrideMax).nullable(),
+  "subscriptionAllowed": zod.boolean(),
+  "subscriptionDiscountPercent": zod.number().int().min(1).max(listProductWishlistResponseProductOneSubscriptionDiscountPercentMax).nullable()
+}).describe('Customer-facing product fields only. B2B price, SKU, stock, weight, variants and salon-only review data are deliberately omitted.'),zod.null()])
+})
+export const ListProductWishlistResponse = zod.array(ListProductWishlistResponseItem)
+
+
+/**
+ * @summary Idempotently save a currently B2C-visible product
+ */
+
+
+
+
+export const AddProductWishlistItemBody = zod.object({
+  "productId": zod.string().min(1),
+  "variantValue": zod.string().min(1).nullish()
+})
+
+export const addProductWishlistItemResponseProductOnePriceMultipleOf = 1;
+
+export const addProductWishlistItemResponseProductOneDiscountPriceMultipleOf = 1;
+
+export const addProductWishlistItemResponseProductOneDeliveryBusinessDaysOverrideMax = 365;
+
+export const addProductWishlistItemResponseProductOneSubscriptionDiscountPercentMax = 100;
+
+
+
+export const AddProductWishlistItemResponse = zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "variantValue": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "available": zod.boolean(),
+  "unavailableReason": zod.union([zod.literal('PRODUCT_INACTIVE'),zod.literal('RETAIL_DISABLED'),zod.literal('OUT_OF_STOCK'),zod.literal('VARIANT_UNAVAILABLE'),zod.literal(null)]).nullable(),
+  "product": zod.union([zod.object({
+  "id": zod.string(),
+  "supplierId": zod.string(),
+  "name": zod.string(),
+  "category": zod.string(),
+  "subcategory": zod.string().nullish(),
+  "brand": zod.string().nullish(),
+  "description": zod.string(),
+  "imageUrl": zod.string(),
+  "images": zod.array(zod.string()),
+  "price": zod.number().min(1).multipleOf(addProductWishlistItemResponseProductOnePriceMultipleOf),
+  "discountPrice": zod.number().min(1).multipleOf(addProductWishlistItemResponseProductOneDiscountPriceMultipleOf).nullish(),
+  "discountPercent": zod.number().nullish(),
+  "unit": zod.string(),
+  "isNew": zod.boolean(),
+  "isBestseller": zod.boolean(),
+  "deliveryBusinessDaysOverride": zod.number().int().min(1).max(addProductWishlistItemResponseProductOneDeliveryBusinessDaysOverrideMax).nullable(),
+  "subscriptionAllowed": zod.boolean(),
+  "subscriptionDiscountPercent": zod.number().int().min(1).max(addProductWishlistItemResponseProductOneSubscriptionDiscountPercentMax).nullable()
+}).describe('Customer-facing product fields only. B2B price, SKU, stock, weight, variants and salon-only review data are deliberately omitted.'),zod.null()])
+})
+
+
+/**
+ * @summary Atomically add or remove a customer wishlist item
+ */
+
+
+
+
+export const ToggleProductWishlistItemBody = zod.object({
+  "productId": zod.string().min(1),
+  "variantValue": zod.string().min(1).nullish()
+})
+
+export const toggleProductWishlistItemResponseItemOneProductOnePriceMultipleOf = 1;
+
+export const toggleProductWishlistItemResponseItemOneProductOneDiscountPriceMultipleOf = 1;
+
+export const toggleProductWishlistItemResponseItemOneProductOneDeliveryBusinessDaysOverrideMax = 365;
+
+export const toggleProductWishlistItemResponseItemOneProductOneSubscriptionDiscountPercentMax = 100;
+
+
+
+export const ToggleProductWishlistItemResponse = zod.object({
+  "saved": zod.boolean(),
+  "item": zod.union([zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "variantValue": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "available": zod.boolean(),
+  "unavailableReason": zod.union([zod.literal('PRODUCT_INACTIVE'),zod.literal('RETAIL_DISABLED'),zod.literal('OUT_OF_STOCK'),zod.literal('VARIANT_UNAVAILABLE'),zod.literal(null)]).nullable(),
+  "product": zod.union([zod.object({
+  "id": zod.string(),
+  "supplierId": zod.string(),
+  "name": zod.string(),
+  "category": zod.string(),
+  "subcategory": zod.string().nullish(),
+  "brand": zod.string().nullish(),
+  "description": zod.string(),
+  "imageUrl": zod.string(),
+  "images": zod.array(zod.string()),
+  "price": zod.number().min(1).multipleOf(toggleProductWishlistItemResponseItemOneProductOnePriceMultipleOf),
+  "discountPrice": zod.number().min(1).multipleOf(toggleProductWishlistItemResponseItemOneProductOneDiscountPriceMultipleOf).nullish(),
+  "discountPercent": zod.number().nullish(),
+  "unit": zod.string(),
+  "isNew": zod.boolean(),
+  "isBestseller": zod.boolean(),
+  "deliveryBusinessDaysOverride": zod.number().int().min(1).max(toggleProductWishlistItemResponseItemOneProductOneDeliveryBusinessDaysOverrideMax).nullable(),
+  "subscriptionAllowed": zod.boolean(),
+  "subscriptionDiscountPercent": zod.number().int().min(1).max(toggleProductWishlistItemResponseItemOneProductOneSubscriptionDiscountPercentMax).nullable()
+}).describe('Customer-facing product fields only. B2B price, SKU, stock, weight, variants and salon-only review data are deliberately omitted.'),zod.null()])
+}),zod.null()])
+})
+
+
+/**
+ * @summary Remove a saved product variant from the signed-in customer's wishlist
+ */
+export const RemoveProductWishlistItemParams = zod.object({
+  "productId": zod.coerce.string()
+})
+
+export const RemoveProductWishlistItemQueryParams = zod.object({
+  "variantValue": zod.coerce.string().optional()
+})
+
+export const RemoveProductWishlistItemResponse = zod.void()
+
+
+/**
  * @summary Get the current guest or customer retail cart
  */
 export const getRetailCartResponseItemCountMin = 0;
 
 export const getRetailCartResponseSubtotalMin = 0;
+
+export const getRetailCartResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
 
 
 export const getRetailCartResponseItemsItemOneUnitPriceMin = 0;
@@ -14956,6 +15629,7 @@ export const GetRetailCartResponse = zod.object({
   "id": zod.string(),
   "itemCount": zod.number().int().min(getRetailCartResponseItemCountMin),
   "subtotal": zod.number().int().min(getRetailCartResponseSubtotalMin),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(getRetailCartResponseReferralCreditMerchandiseSubtotalRsdMin),
   "items": zod.array(zod.union([zod.object({
   "id": zod.string(),
   "productId": zod.string(),
@@ -15021,6 +15695,21 @@ export const GetRetailCartSummaryResponse = zod.object({
 
 
 /**
+ * @summary Capture a guest email for an abandoned-cart reminder without checkout
+ */
+export const captureRetailCartContactBodyEmailMin = 3;
+export const captureRetailCartContactBodyEmailMax = 320;
+
+
+
+export const CaptureRetailCartContactBody = zod.object({
+  "email": zod.string().min(captureRetailCartContactBodyEmailMin).max(captureRetailCartContactBodyEmailMax)
+})
+
+export const CaptureRetailCartContactResponse = zod.void()
+
+
+/**
  * @summary Add a retail product to the separate guest/customer cart
  */
 
@@ -15042,6 +15731,8 @@ export const AddRetailCartItemBody = zod.union([zod.object({
 export const addRetailCartItemResponseItemCountMin = 0;
 
 export const addRetailCartItemResponseSubtotalMin = 0;
+
+export const addRetailCartItemResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
 
 
 export const addRetailCartItemResponseItemsItemOneUnitPriceMin = 0;
@@ -15074,6 +15765,7 @@ export const AddRetailCartItemResponse = zod.object({
   "id": zod.string(),
   "itemCount": zod.number().int().min(addRetailCartItemResponseItemCountMin),
   "subtotal": zod.number().int().min(addRetailCartItemResponseSubtotalMin),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(addRetailCartItemResponseReferralCreditMerchandiseSubtotalRsdMin),
   "items": zod.array(zod.union([zod.object({
   "id": zod.string(),
   "productId": zod.string(),
@@ -15137,6 +15829,8 @@ export const updateRetailCartItemResponseItemCountMin = 0;
 
 export const updateRetailCartItemResponseSubtotalMin = 0;
 
+export const updateRetailCartItemResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+
 
 export const updateRetailCartItemResponseItemsItemOneUnitPriceMin = 0;
 
@@ -15168,6 +15862,7 @@ export const UpdateRetailCartItemResponse = zod.object({
   "id": zod.string(),
   "itemCount": zod.number().int().min(updateRetailCartItemResponseItemCountMin),
   "subtotal": zod.number().int().min(updateRetailCartItemResponseSubtotalMin),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(updateRetailCartItemResponseReferralCreditMerchandiseSubtotalRsdMin),
   "items": zod.array(zod.union([zod.object({
   "id": zod.string(),
   "productId": zod.string(),
@@ -15231,6 +15926,8 @@ export const removeRetailCartItemResponseItemCountMin = 0;
 
 export const removeRetailCartItemResponseSubtotalMin = 0;
 
+export const removeRetailCartItemResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+
 
 export const removeRetailCartItemResponseItemsItemOneUnitPriceMin = 0;
 
@@ -15262,6 +15959,7 @@ export const RemoveRetailCartItemResponse = zod.object({
   "id": zod.string(),
   "itemCount": zod.number().int().min(removeRetailCartItemResponseItemCountMin),
   "subtotal": zod.number().int().min(removeRetailCartItemResponseSubtotalMin),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(removeRetailCartItemResponseReferralCreditMerchandiseSubtotalRsdMin),
   "items": zod.array(zod.union([zod.object({
   "id": zod.string(),
   "productId": zod.string(),
@@ -15325,6 +16023,8 @@ export const saveRetailCartItemForLaterResponseItemCountMin = 0;
 
 export const saveRetailCartItemForLaterResponseSubtotalMin = 0;
 
+export const saveRetailCartItemForLaterResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+
 
 export const saveRetailCartItemForLaterResponseItemsItemOneUnitPriceMin = 0;
 
@@ -15356,6 +16056,7 @@ export const SaveRetailCartItemForLaterResponse = zod.object({
   "id": zod.string(),
   "itemCount": zod.number().int().min(saveRetailCartItemForLaterResponseItemCountMin),
   "subtotal": zod.number().int().min(saveRetailCartItemForLaterResponseSubtotalMin),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(saveRetailCartItemForLaterResponseReferralCreditMerchandiseSubtotalRsdMin),
   "items": zod.array(zod.union([zod.object({
   "id": zod.string(),
   "productId": zod.string(),
@@ -15419,6 +16120,8 @@ export const removeSavedRetailCartItemResponseItemCountMin = 0;
 
 export const removeSavedRetailCartItemResponseSubtotalMin = 0;
 
+export const removeSavedRetailCartItemResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+
 
 export const removeSavedRetailCartItemResponseItemsItemOneUnitPriceMin = 0;
 
@@ -15450,6 +16153,7 @@ export const RemoveSavedRetailCartItemResponse = zod.object({
   "id": zod.string(),
   "itemCount": zod.number().int().min(removeSavedRetailCartItemResponseItemCountMin),
   "subtotal": zod.number().int().min(removeSavedRetailCartItemResponseSubtotalMin),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(removeSavedRetailCartItemResponseReferralCreditMerchandiseSubtotalRsdMin),
   "items": zod.array(zod.union([zod.object({
   "id": zod.string(),
   "productId": zod.string(),
@@ -15513,6 +16217,8 @@ export const restoreSavedRetailCartItemResponseItemCountMin = 0;
 
 export const restoreSavedRetailCartItemResponseSubtotalMin = 0;
 
+export const restoreSavedRetailCartItemResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+
 
 export const restoreSavedRetailCartItemResponseItemsItemOneUnitPriceMin = 0;
 
@@ -15544,6 +16250,7 @@ export const RestoreSavedRetailCartItemResponse = zod.object({
   "id": zod.string(),
   "itemCount": zod.number().int().min(restoreSavedRetailCartItemResponseItemCountMin),
   "subtotal": zod.number().int().min(restoreSavedRetailCartItemResponseSubtotalMin),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(restoreSavedRetailCartItemResponseReferralCreditMerchandiseSubtotalRsdMin),
   "items": zod.array(zod.union([zod.object({
   "id": zod.string(),
   "productId": zod.string(),
@@ -15612,6 +16319,8 @@ export const repeatLastRetailOrderResponseCartOneItemCountMin = 0;
 
 export const repeatLastRetailOrderResponseCartOneSubtotalMin = 0;
 
+export const repeatLastRetailOrderResponseCartOneReferralCreditMerchandiseSubtotalRsdMin = 0;
+
 
 export const repeatLastRetailOrderResponseCartOneItemsItemOneUnitPriceMin = 0;
 
@@ -15672,6 +16381,8 @@ export const repeatLastRetailOrderResponseCartTwoItemCountMultipleOf = 1;
 export const repeatLastRetailOrderResponseCartTwoSubtotalMin = 0;
 export const repeatLastRetailOrderResponseCartTwoSubtotalMultipleOf = 1;
 
+export const repeatLastRetailOrderResponseCartTwoReferralCreditMerchandiseSubtotalRsdMin = 0;
+
 export const repeatLastRetailOrderResponseCartTwoTotalWeightGramsMin = 0;
 export const repeatLastRetailOrderResponseCartTwoTotalWeightGramsMultipleOf = 1;
 
@@ -15699,6 +16410,7 @@ export const RepeatLastRetailOrderResponse = zod.object({
   "id": zod.string(),
   "itemCount": zod.number().int().min(repeatLastRetailOrderResponseCartOneItemCountMin),
   "subtotal": zod.number().int().min(repeatLastRetailOrderResponseCartOneSubtotalMin),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(repeatLastRetailOrderResponseCartOneReferralCreditMerchandiseSubtotalRsdMin),
   "items": zod.array(zod.union([zod.object({
   "id": zod.string(),
   "productId": zod.string(),
@@ -15790,6 +16502,7 @@ export const RepeatLastRetailOrderResponse = zod.object({
 })),
   "itemCount": zod.number().min(repeatLastRetailOrderResponseCartTwoItemCountMin).multipleOf(repeatLastRetailOrderResponseCartTwoItemCountMultipleOf),
   "subtotal": zod.number().min(repeatLastRetailOrderResponseCartTwoSubtotalMin).multipleOf(repeatLastRetailOrderResponseCartTwoSubtotalMultipleOf),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(repeatLastRetailOrderResponseCartTwoReferralCreditMerchandiseSubtotalRsdMin),
   "totalWeightGrams": zod.number().min(repeatLastRetailOrderResponseCartTwoTotalWeightGramsMin).multipleOf(repeatLastRetailOrderResponseCartTwoTotalWeightGramsMultipleOf),
   "crossSellProducts": zod.array(zod.object({
   "id": zod.string(),
@@ -15833,6 +16546,8 @@ export const PreviewRetailCheckoutQueryParams = zod.object({
 export const previewRetailCheckoutResponseCartItemCountMin = 0;
 
 export const previewRetailCheckoutResponseCartSubtotalMin = 0;
+
+export const previewRetailCheckoutResponseCartReferralCreditMerchandiseSubtotalRsdMin = 0;
 
 
 export const previewRetailCheckoutResponseCartItemsItemOneUnitPriceMin = 0;
@@ -15887,6 +16602,7 @@ export const PreviewRetailCheckoutResponse = zod.object({
   "id": zod.string(),
   "itemCount": zod.number().int().min(previewRetailCheckoutResponseCartItemCountMin),
   "subtotal": zod.number().int().min(previewRetailCheckoutResponseCartSubtotalMin),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(previewRetailCheckoutResponseCartReferralCreditMerchandiseSubtotalRsdMin),
   "items": zod.array(zod.union([zod.object({
   "id": zod.string(),
   "productId": zod.string(),
@@ -16032,6 +16748,12 @@ export const CheckoutRetailCartBody = zod.object({
 
 export const checkoutRetailCartResponseCouponDiscountRsdMin = 0;
 
+export const checkoutRetailCartResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+
+export const checkoutRetailCartResponseReferralCreditPreCreditPayableTotalRsdMin = 0;
+
+export const checkoutRetailCartResponseReferralCreditAppliedRsdMin = 0;
+
 
 
 export const CheckoutRetailCartResponse = zod.object({
@@ -16047,6 +16769,9 @@ export const CheckoutRetailCartResponse = zod.object({
   "couponCode": zod.string().nullish(),
   "couponDiscountRsd": zod.number().int().min(checkoutRetailCartResponseCouponDiscountRsdMin).optional(),
   "couponFreeShipping": zod.boolean().optional(),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(checkoutRetailCartResponseReferralCreditMerchandiseSubtotalRsdMin),
+  "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(checkoutRetailCartResponseReferralCreditPreCreditPayableTotalRsdMin),
+  "referralCreditAppliedRsd": zod.number().int().min(checkoutRetailCartResponseReferralCreditAppliedRsdMin),
   "createdAt": zod.coerce.date(),
   "items": zod.array(zod.object({
   "id": zod.string(),
@@ -16073,6 +16798,12 @@ export const TrackRetailOrderQueryParams = zod.object({
 
 export const trackRetailOrderResponseCouponDiscountRsdMin = 0;
 
+export const trackRetailOrderResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+
+export const trackRetailOrderResponseReferralCreditPreCreditPayableTotalRsdMin = 0;
+
+export const trackRetailOrderResponseReferralCreditAppliedRsdMin = 0;
+
 
 
 export const TrackRetailOrderResponse = zod.object({
@@ -16088,6 +16819,9 @@ export const TrackRetailOrderResponse = zod.object({
   "couponCode": zod.string().nullish(),
   "couponDiscountRsd": zod.number().int().min(trackRetailOrderResponseCouponDiscountRsdMin).optional(),
   "couponFreeShipping": zod.boolean().optional(),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(trackRetailOrderResponseReferralCreditMerchandiseSubtotalRsdMin),
+  "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(trackRetailOrderResponseReferralCreditPreCreditPayableTotalRsdMin),
+  "referralCreditAppliedRsd": zod.number().int().min(trackRetailOrderResponseReferralCreditAppliedRsdMin),
   "createdAt": zod.coerce.date(),
   "items": zod.array(zod.object({
   "id": zod.string(),
@@ -16106,6 +16840,12 @@ export const TrackRetailOrderResponse = zod.object({
  */
 export const listCustomerRetailOrdersResponseCouponDiscountRsdMin = 0;
 
+export const listCustomerRetailOrdersResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+
+export const listCustomerRetailOrdersResponseReferralCreditPreCreditPayableTotalRsdMin = 0;
+
+export const listCustomerRetailOrdersResponseReferralCreditAppliedRsdMin = 0;
+
 
 
 export const ListCustomerRetailOrdersResponseItem = zod.object({
@@ -16121,6 +16861,9 @@ export const ListCustomerRetailOrdersResponseItem = zod.object({
   "couponCode": zod.string().nullish(),
   "couponDiscountRsd": zod.number().int().min(listCustomerRetailOrdersResponseCouponDiscountRsdMin).optional(),
   "couponFreeShipping": zod.boolean().optional(),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(listCustomerRetailOrdersResponseReferralCreditMerchandiseSubtotalRsdMin),
+  "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(listCustomerRetailOrdersResponseReferralCreditPreCreditPayableTotalRsdMin),
+  "referralCreditAppliedRsd": zod.number().int().min(listCustomerRetailOrdersResponseReferralCreditAppliedRsdMin),
   "createdAt": zod.coerce.date(),
   "items": zod.array(zod.object({
   "id": zod.string(),
@@ -16144,6 +16887,12 @@ export const GetCustomerRetailOrderParams = zod.object({
 
 export const getCustomerRetailOrderResponseCouponDiscountRsdMin = 0;
 
+export const getCustomerRetailOrderResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+
+export const getCustomerRetailOrderResponseReferralCreditPreCreditPayableTotalRsdMin = 0;
+
+export const getCustomerRetailOrderResponseReferralCreditAppliedRsdMin = 0;
+
 
 
 export const GetCustomerRetailOrderResponse = zod.object({
@@ -16159,6 +16908,9 @@ export const GetCustomerRetailOrderResponse = zod.object({
   "couponCode": zod.string().nullish(),
   "couponDiscountRsd": zod.number().int().min(getCustomerRetailOrderResponseCouponDiscountRsdMin).optional(),
   "couponFreeShipping": zod.boolean().optional(),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(getCustomerRetailOrderResponseReferralCreditMerchandiseSubtotalRsdMin),
+  "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(getCustomerRetailOrderResponseReferralCreditPreCreditPayableTotalRsdMin),
+  "referralCreditAppliedRsd": zod.number().int().min(getCustomerRetailOrderResponseReferralCreditAppliedRsdMin),
   "createdAt": zod.coerce.date(),
   "items": zod.array(zod.object({
   "id": zod.string(),
@@ -16186,6 +16938,12 @@ export const AdminListRetailOrdersQueryParams = zod.object({
 
 export const adminListRetailOrdersResponseCouponDiscountRsdMin = 0;
 
+export const adminListRetailOrdersResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+
+export const adminListRetailOrdersResponseReferralCreditPreCreditPayableTotalRsdMin = 0;
+
+export const adminListRetailOrdersResponseReferralCreditAppliedRsdMin = 0;
+
 
 
 export const AdminListRetailOrdersResponseItem = zod.object({
@@ -16201,6 +16959,9 @@ export const AdminListRetailOrdersResponseItem = zod.object({
   "couponCode": zod.string().nullish(),
   "couponDiscountRsd": zod.number().int().min(adminListRetailOrdersResponseCouponDiscountRsdMin).optional(),
   "couponFreeShipping": zod.boolean().optional(),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(adminListRetailOrdersResponseReferralCreditMerchandiseSubtotalRsdMin),
+  "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(adminListRetailOrdersResponseReferralCreditPreCreditPayableTotalRsdMin),
+  "referralCreditAppliedRsd": zod.number().int().min(adminListRetailOrdersResponseReferralCreditAppliedRsdMin),
   "createdAt": zod.coerce.date(),
   "items": zod.array(zod.object({
   "id": zod.string(),
@@ -16224,6 +16985,12 @@ export const AdminGetRetailOrderParams = zod.object({
 
 export const adminGetRetailOrderResponseCouponDiscountRsdMin = 0;
 
+export const adminGetRetailOrderResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+
+export const adminGetRetailOrderResponseReferralCreditPreCreditPayableTotalRsdMin = 0;
+
+export const adminGetRetailOrderResponseReferralCreditAppliedRsdMin = 0;
+
 
 
 export const AdminGetRetailOrderResponse = zod.object({
@@ -16239,6 +17006,9 @@ export const AdminGetRetailOrderResponse = zod.object({
   "couponCode": zod.string().nullish(),
   "couponDiscountRsd": zod.number().int().min(adminGetRetailOrderResponseCouponDiscountRsdMin).optional(),
   "couponFreeShipping": zod.boolean().optional(),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(adminGetRetailOrderResponseReferralCreditMerchandiseSubtotalRsdMin),
+  "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(adminGetRetailOrderResponseReferralCreditPreCreditPayableTotalRsdMin),
+  "referralCreditAppliedRsd": zod.number().int().min(adminGetRetailOrderResponseReferralCreditAppliedRsdMin),
   "createdAt": zod.coerce.date(),
   "items": zod.array(zod.object({
   "id": zod.string(),
@@ -16261,6 +17031,12 @@ export const AdminUpdateRetailOrderStatusParams = zod.object({
 
 export const adminUpdateRetailOrderStatusResponseCouponDiscountRsdMin = 0;
 
+export const adminUpdateRetailOrderStatusResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+
+export const adminUpdateRetailOrderStatusResponseReferralCreditPreCreditPayableTotalRsdMin = 0;
+
+export const adminUpdateRetailOrderStatusResponseReferralCreditAppliedRsdMin = 0;
+
 
 
 export const AdminUpdateRetailOrderStatusResponse = zod.object({
@@ -16276,6 +17052,9 @@ export const AdminUpdateRetailOrderStatusResponse = zod.object({
   "couponCode": zod.string().nullish(),
   "couponDiscountRsd": zod.number().int().min(adminUpdateRetailOrderStatusResponseCouponDiscountRsdMin).optional(),
   "couponFreeShipping": zod.boolean().optional(),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(adminUpdateRetailOrderStatusResponseReferralCreditMerchandiseSubtotalRsdMin),
+  "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(adminUpdateRetailOrderStatusResponseReferralCreditPreCreditPayableTotalRsdMin),
+  "referralCreditAppliedRsd": zod.number().int().min(adminUpdateRetailOrderStatusResponseReferralCreditAppliedRsdMin),
   "createdAt": zod.coerce.date(),
   "items": zod.array(zod.object({
   "id": zod.string(),
@@ -16298,6 +17077,12 @@ export const AdminUpdateRetailPaymentStatusParams = zod.object({
 
 export const adminUpdateRetailPaymentStatusResponseCouponDiscountRsdMin = 0;
 
+export const adminUpdateRetailPaymentStatusResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+
+export const adminUpdateRetailPaymentStatusResponseReferralCreditPreCreditPayableTotalRsdMin = 0;
+
+export const adminUpdateRetailPaymentStatusResponseReferralCreditAppliedRsdMin = 0;
+
 
 
 export const AdminUpdateRetailPaymentStatusResponse = zod.object({
@@ -16313,6 +17098,9 @@ export const AdminUpdateRetailPaymentStatusResponse = zod.object({
   "couponCode": zod.string().nullish(),
   "couponDiscountRsd": zod.number().int().min(adminUpdateRetailPaymentStatusResponseCouponDiscountRsdMin).optional(),
   "couponFreeShipping": zod.boolean().optional(),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(adminUpdateRetailPaymentStatusResponseReferralCreditMerchandiseSubtotalRsdMin),
+  "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(adminUpdateRetailPaymentStatusResponseReferralCreditPreCreditPayableTotalRsdMin),
+  "referralCreditAppliedRsd": zod.number().int().min(adminUpdateRetailPaymentStatusResponseReferralCreditAppliedRsdMin),
   "createdAt": zod.coerce.date(),
   "items": zod.array(zod.object({
   "id": zod.string(),
@@ -17961,5 +18749,205 @@ export const AdminReviewReferralResponse = zod.object({
   "reasonCode": zod.string(),
   "detail": zod.string().nullable(),
   "score": zod.number().int().nullable(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary List the signed-in customer's physical-product replenishment subscriptions
+ */
+
+export const listRetailProductSubscriptionsResponseDiscountPercentMin = 0;
+export const listRetailProductSubscriptionsResponseDiscountPercentMax = 100;
+
+
+
+export const ListRetailProductSubscriptionsResponseItem = zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "quantity": zod.number().int().min(1),
+  "frequency": zod.enum(['WEEKLY', 'BIWEEKLY', 'MONTHLY', 'EVERY_TWO_MONTHS']),
+  "status": zod.enum(['ACTIVE', 'PAUSED', 'CANCELLED']),
+  "discountPercent": zod.number().int().min(listRetailProductSubscriptionsResponseDiscountPercentMin).max(listRetailProductSubscriptionsResponseDiscountPercentMax),
+  "paymentMethod": zod.enum(['CARD', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']),
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
+  "nextDueAt": zod.coerce.date(),
+  "blockedUntil": zod.coerce.date().nullish(),
+  "pausedAt": zod.coerce.date().nullish(),
+  "cancelledAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+})
+export const ListRetailProductSubscriptionsResponse = zod.array(ListRetailProductSubscriptionsResponseItem)
+
+
+/**
+ * @summary Create a recurring physical-product order
+ */
+
+export const createRetailProductSubscriptionBodyDeliveryShippingCostMin = 0;
+
+
+
+export const CreateRetailProductSubscriptionBody = zod.object({
+  "productId": zod.string(),
+  "quantity": zod.number().int().min(1),
+  "frequency": zod.enum(['WEEKLY', 'BIWEEKLY', 'MONTHLY', 'EVERY_TWO_MONTHS']),
+  "paymentMethod": zod.enum(['CARD', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']),
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
+  "firstDueAt": zod.coerce.date().optional(),
+  "contact": zod.object({
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "email": zod.string(),
+  "phone": zod.string()
+}),
+  "delivery": zod.object({
+  "street": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string(),
+  "note": zod.string().optional(),
+  "shippingCost": zod.number().int().min(createRetailProductSubscriptionBodyDeliveryShippingCostMin).optional()
+})
+})
+
+
+export const createRetailProductSubscriptionResponseDiscountPercentMin = 0;
+export const createRetailProductSubscriptionResponseDiscountPercentMax = 100;
+
+
+
+export const CreateRetailProductSubscriptionResponse = zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "quantity": zod.number().int().min(1),
+  "frequency": zod.enum(['WEEKLY', 'BIWEEKLY', 'MONTHLY', 'EVERY_TWO_MONTHS']),
+  "status": zod.enum(['ACTIVE', 'PAUSED', 'CANCELLED']),
+  "discountPercent": zod.number().int().min(createRetailProductSubscriptionResponseDiscountPercentMin).max(createRetailProductSubscriptionResponseDiscountPercentMax),
+  "paymentMethod": zod.enum(['CARD', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']),
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
+  "nextDueAt": zod.coerce.date(),
+  "blockedUntil": zod.coerce.date().nullish(),
+  "pausedAt": zod.coerce.date().nullish(),
+  "cancelledAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Get one owned physical-product replenishment subscription
+ */
+export const GetRetailProductSubscriptionParams = zod.object({
+  "subscriptionId": zod.coerce.string()
+})
+
+
+export const getRetailProductSubscriptionResponseDiscountPercentMin = 0;
+export const getRetailProductSubscriptionResponseDiscountPercentMax = 100;
+
+
+
+export const GetRetailProductSubscriptionResponse = zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "quantity": zod.number().int().min(1),
+  "frequency": zod.enum(['WEEKLY', 'BIWEEKLY', 'MONTHLY', 'EVERY_TWO_MONTHS']),
+  "status": zod.enum(['ACTIVE', 'PAUSED', 'CANCELLED']),
+  "discountPercent": zod.number().int().min(getRetailProductSubscriptionResponseDiscountPercentMin).max(getRetailProductSubscriptionResponseDiscountPercentMax),
+  "paymentMethod": zod.enum(['CARD', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']),
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
+  "nextDueAt": zod.coerce.date(),
+  "blockedUntil": zod.coerce.date().nullish(),
+  "pausedAt": zod.coerce.date().nullish(),
+  "cancelledAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Pause an owned subscription idempotently
+ */
+export const PauseRetailProductSubscriptionParams = zod.object({
+  "subscriptionId": zod.coerce.string()
+})
+
+
+export const pauseRetailProductSubscriptionResponseDiscountPercentMin = 0;
+export const pauseRetailProductSubscriptionResponseDiscountPercentMax = 100;
+
+
+
+export const PauseRetailProductSubscriptionResponse = zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "quantity": zod.number().int().min(1),
+  "frequency": zod.enum(['WEEKLY', 'BIWEEKLY', 'MONTHLY', 'EVERY_TWO_MONTHS']),
+  "status": zod.enum(['ACTIVE', 'PAUSED', 'CANCELLED']),
+  "discountPercent": zod.number().int().min(pauseRetailProductSubscriptionResponseDiscountPercentMin).max(pauseRetailProductSubscriptionResponseDiscountPercentMax),
+  "paymentMethod": zod.enum(['CARD', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']),
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
+  "nextDueAt": zod.coerce.date(),
+  "blockedUntil": zod.coerce.date().nullish(),
+  "pausedAt": zod.coerce.date().nullish(),
+  "cancelledAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Resume an owned paused subscription idempotently
+ */
+export const ResumeRetailProductSubscriptionParams = zod.object({
+  "subscriptionId": zod.coerce.string()
+})
+
+
+export const resumeRetailProductSubscriptionResponseDiscountPercentMin = 0;
+export const resumeRetailProductSubscriptionResponseDiscountPercentMax = 100;
+
+
+
+export const ResumeRetailProductSubscriptionResponse = zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "quantity": zod.number().int().min(1),
+  "frequency": zod.enum(['WEEKLY', 'BIWEEKLY', 'MONTHLY', 'EVERY_TWO_MONTHS']),
+  "status": zod.enum(['ACTIVE', 'PAUSED', 'CANCELLED']),
+  "discountPercent": zod.number().int().min(resumeRetailProductSubscriptionResponseDiscountPercentMin).max(resumeRetailProductSubscriptionResponseDiscountPercentMax),
+  "paymentMethod": zod.enum(['CARD', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']),
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
+  "nextDueAt": zod.coerce.date(),
+  "blockedUntil": zod.coerce.date().nullish(),
+  "pausedAt": zod.coerce.date().nullish(),
+  "cancelledAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Cancel an owned subscription idempotently
+ */
+export const CancelRetailProductSubscriptionParams = zod.object({
+  "subscriptionId": zod.coerce.string()
+})
+
+
+export const cancelRetailProductSubscriptionResponseDiscountPercentMin = 0;
+export const cancelRetailProductSubscriptionResponseDiscountPercentMax = 100;
+
+
+
+export const CancelRetailProductSubscriptionResponse = zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "quantity": zod.number().int().min(1),
+  "frequency": zod.enum(['WEEKLY', 'BIWEEKLY', 'MONTHLY', 'EVERY_TWO_MONTHS']),
+  "status": zod.enum(['ACTIVE', 'PAUSED', 'CANCELLED']),
+  "discountPercent": zod.number().int().min(cancelRetailProductSubscriptionResponseDiscountPercentMin).max(cancelRetailProductSubscriptionResponseDiscountPercentMax),
+  "paymentMethod": zod.enum(['CARD', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']),
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
+  "nextDueAt": zod.coerce.date(),
+  "blockedUntil": zod.coerce.date().nullish(),
+  "pausedAt": zod.coerce.date().nullish(),
+  "cancelledAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
 })

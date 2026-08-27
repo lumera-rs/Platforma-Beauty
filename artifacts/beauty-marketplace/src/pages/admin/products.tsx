@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AdminLayout } from "./layout";
+import { Link, useLocation, useSearch } from "wouter";
 import {
   useAdminListProducts,
   useAdminCreateProduct,
@@ -927,11 +928,14 @@ function ProductFormDialog({
 export default function AdminProducts() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const searchString = useSearch();
+  const [, setLocation] = useLocation();
+  const urlParams = new URLSearchParams(searchString);
+  const currentMarket = urlParams.get("market") === "B2C" ? "B2C" : "B2B";
 
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedSearch(search);
   const [supplierFilter, setSupplierFilter] = useState("all");
-  const [marketFilter, setMarketFilter] = useState("all");
   const [lowStockFilter, setLowStockFilter] = useState(false);
   const [category, setCategory] = useState("");
   const [subcategory, setSubcategory] = useState("");
@@ -944,19 +948,19 @@ export default function AdminProducts() {
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch]);
+  }, [debouncedSearch, currentMarket]);
 
   const params: AdminListProductsParams = useMemo(() => ({
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
     ...(supplierFilter !== "all" ? { supplierId: supplierFilter } : {}),
-    ...(marketFilter !== "all" ? { market: marketFilter as any } : {}),
+    market: currentMarket,
     ...(lowStockFilter ? { lowStock: true } : {}),
     ...(category ? { category } : {}),
     ...(subcategory ? { subcategory } : {}),
     ...(brand ? { brand } : {}),
     ...(status ? { status: status as NonNullable<AdminListProductsParams["status"]> } : {}),
     sortBy, sortDir, page, pageSize,
-  }), [debouncedSearch, supplierFilter, marketFilter, lowStockFilter, category, subcategory, brand, status, sortBy, sortDir, page, pageSize]);
+  }), [debouncedSearch, supplierFilter, currentMarket, lowStockFilter, category, subcategory, brand, status, sortBy, sortDir, page, pageSize]);
 
   const { data, isLoading, error } = useAdminListProducts(params);
   const { data: categories = [] } = useAdminListProductCategories();
@@ -1039,12 +1043,31 @@ export default function AdminProducts() {
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-serif font-bold text-foreground">B2B Proizvodi</h1>
-            <p className="text-muted-foreground text-sm">Upravljanje proizvodima u profesionalnom shopu.</p>
+            <h1 className="text-2xl font-serif font-bold text-foreground">
+              {currentMarket === "B2C" ? "B2C Proizvodi" : "B2B Proizvodi"}
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              Upravljanje proizvodima u {currentMarket === "B2C" ? "maloprodaji" : "profesionalnom shopu"}.
+            </p>
           </div>
           <Button onClick={() => { setEditing(null); setModalOpen(true); }} className="shrink-0 gap-2" data-testid="btn-new-product">
             <Plus className="w-4 h-4" /> Novi proizvod
           </Button>
+        </div>
+
+        <div className="flex border-b">
+          <Link
+            href="/admin/proizvodi?market=B2B"
+            className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${currentMarket === "B2B" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+          >
+            B2B Proizvodi
+          </Link>
+          <Link
+            href="/admin/proizvodi?market=B2C"
+            className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${currentMarket === "B2C" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+          >
+            B2C Proizvodi
+          </Link>
         </div>
 
         {/* Filters */}
@@ -1059,14 +1082,6 @@ export default function AdminProducts() {
               <SelectContent>
                 <SelectItem value="all">Svi dobavljači</SelectItem>
                 {suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={marketFilter} onValueChange={(v) => { setMarketFilter(v); setPage(1); }}>
-              <SelectTrigger className="w-36"><SelectValue placeholder="Tržište" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Sva tržišta</SelectItem>
-                <SelectItem value="B2B">Samo B2B</SelectItem>
-                <SelectItem value="B2C">Samo B2C</SelectItem>
               </SelectContent>
             </Select>
             <Select value={category || "__all__"} onValueChange={(v) => { setCategory(v === "__all__" ? "" : v); setSubcategory(""); setPage(1); }}>

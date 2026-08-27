@@ -33,6 +33,8 @@ import { seedProductionMarketplaceDemoContent } from "./lib/production-marketpla
 import { runReferralMaintenance } from "./lib/referral-service";
 import { ensureReferralSchema } from "./lib/referral-schema";
 import { runProductWaitlistNotificationWorker } from "./lib/product-waitlist-worker";
+import { runRetailSubscriptionWorker } from "./lib/retail-subscription-worker";
+import { runRetailCartReminderSweep } from "./lib/retail-cart-reminders";
 
 const rawPort = process.env["PORT"];
 
@@ -141,6 +143,14 @@ const productWaitlistNotifications = createResilientScheduledJob({
   job: "product-waitlist-notifications",
   run: runProductWaitlistNotificationWorker,
 });
+const retailSubscriptionCycles = createResilientScheduledJob({
+  job: "retail-subscription-cycles",
+  run: runRetailSubscriptionWorker,
+});
+const retailCartReminderSweep = createResilientScheduledJob({
+  job: "retail-cart-reminder-sweep",
+  run: runRetailCartReminderSweep,
+});
 const scheduledJobs = [
   rescheduledConfirmationRetries,
   educationSessionMaintenance,
@@ -157,6 +167,8 @@ const scheduledJobs = [
   beautyJobEmailDeliveryAlerts,
   referralMaintenance,
   productWaitlistNotifications,
+  retailSubscriptionCycles,
+  retailCartReminderSweep,
 ];
 
 const retryInterval = setInterval(() => {
@@ -194,6 +206,18 @@ const productWaitlistNotificationsInterval = setInterval(() => {
 }, 60_000);
 productWaitlistNotificationsInterval.unref();
 void productWaitlistNotifications.run();
+
+const retailSubscriptionCyclesInterval = setInterval(() => {
+  void retailSubscriptionCycles.run();
+}, 60_000);
+retailSubscriptionCyclesInterval.unref();
+void retailSubscriptionCycles.run();
+
+const retailCartReminderSweepInterval = setInterval(() => {
+  void retailCartReminderSweep.run();
+}, 15 * 60_000);
+retailCartReminderSweepInterval.unref();
+void retailCartReminderSweep.run();
 
 const educationGalleryCleanupInterval = setInterval(() => {
   void educationGalleryCleanup.run();
@@ -264,6 +288,9 @@ let shuttingDown = false;
 
 function clearScheduledTasks(): void {
   clearInterval(retryInterval);
+  clearInterval(productWaitlistNotificationsInterval);
+  clearInterval(retailSubscriptionCyclesInterval);
+  clearInterval(retailCartReminderSweepInterval);
   clearInterval(educationMaintenanceInterval);
   clearInterval(beautyJobsExpiryInterval);
   clearInterval(referralMaintenanceInterval);

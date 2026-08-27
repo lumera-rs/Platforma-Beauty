@@ -19,6 +19,7 @@ import {
   referralCreditLedgerTable,
   referralCreditRedemptionsTable,
   salonsTable,
+  shopSettingsTable,
   shoppingCartItemsTable,
   shoppingCartsTable,
   suppliersTable,
@@ -61,6 +62,8 @@ let supplierBRootId = "";
 let baseUrl = "";
 let server: ReturnType<typeof app.listen> | undefined;
 let lockClient: DatabasePoolClient | undefined;
+let settingsBefore: typeof shopSettingsTable.$inferSelect | undefined;
+let createdSettingsId: string | undefined;
 
 async function api(path: string, cookie = "", init: RequestInit = {}) {
   return fetch(`${baseUrl}${path}`, {
@@ -171,6 +174,27 @@ test.before(async () => {
   assert.ok(salon);
   salonId = salon.id;
 
+  settingsBefore = (await db.select().from(shopSettingsTable).limit(1))[0];
+  if (!settingsBefore) {
+    const [created] = await db.insert(shopSettingsTable).values({}).returning();
+    createdSettingsId = created?.id;
+  }
+  const [settings] = await db.select().from(shopSettingsTable).limit(1);
+  assert.ok(settings);
+  await db.update(shopSettingsTable).set({
+    sellerCompanyName: `Supplier catalog seller ${marker}`,
+    sellerTaxId: "101234567",
+    sellerRegistrationNumber: "20123456",
+    sellerAddress: "Seller street 1",
+    sellerCity: "Beograd",
+    sellerPostalCode: "11000",
+    sellerBankAccount: "100-123456789-10",
+    sellerContactEmail: `${marker}-seller@example.test`,
+    sellerContactPhone: "+381601234567",
+    version: settings.version + 1,
+    updatedAt: new Date(),
+  }).where(eq(shopSettingsTable.id, settings.id));
+
   [supplierA, supplierB] = await db.insert(suppliersTable).values([
     { name: `${marker} A`, slug: `${marker}-a`, scope: "BOTH" },
     { name: `${marker} B`, slug: `${marker}-b`, scope: "BOTH" },
@@ -261,18 +285,20 @@ test.after(async () => {
       server.closeAllConnections();
       await closed;
     }
-    if (orderIds.length) {
-      await db.transaction(async (tx) => {
-        await tx.execute(sql`alter table referral_credit_ledger disable trigger referral_credit_ledger_append_only`);
-        await tx.execute(sql`alter table referral_credit_redemptions disable trigger referral_credit_redemptions_append_only`);
-        try {
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`alter table referral_credit_ledger disable trigger referral_credit_ledger_append_only`);
+      await tx.execute(sql`alter table referral_credit_redemptions disable trigger referral_credit_redemptions_append_only`);
+      try {
+        if (orderIds.length) {
           await tx.delete(referralCreditRedemptionsTable).where(inArray(referralCreditRedemptionsTable.orderId, orderIds));
-          await tx.delete(referralCreditLedgerTable).where(eq(referralCreditLedgerTable.ownerUserId, ownerId));
-        } finally {
-          await tx.execute(sql`alter table referral_credit_ledger enable trigger referral_credit_ledger_append_only`);
-          await tx.execute(sql`alter table referral_credit_redemptions enable trigger referral_credit_redemptions_append_only`);
         }
-      });
+        await tx.delete(referralCreditLedgerTable).where(eq(referralCreditLedgerTable.ownerUserId, ownerId));
+      } finally {
+        await tx.execute(sql`alter table referral_credit_ledger enable trigger referral_credit_ledger_append_only`);
+        await tx.execute(sql`alter table referral_credit_redemptions enable trigger referral_credit_redemptions_append_only`);
+      }
+    });
+    if (orderIds.length) {
       await db.delete(loyaltyPointLedgerTable).where(inArray(loyaltyPointLedgerTable.orderId, orderIds));
       await db.delete(orderItemsTable).where(inArray(orderItemsTable.orderId, orderIds));
       await db.delete(ordersTable).where(inArray(ordersTable.id, orderIds));
@@ -294,6 +320,11 @@ test.after(async () => {
     if (categoryIds.length) await db.delete(productCategoriesTable).where(inArray(productCategoriesTable.id, categoryIds));
     if (supplierIds.length) await db.delete(suppliersTable).where(inArray(suppliersTable.id, supplierIds));
     if (adminId || ownerId) await db.delete(usersTable).where(inArray(usersTable.id, [adminId, ownerId].filter(Boolean)));
+    if (settingsBefore) {
+      await db.update(shopSettingsTable).set(settingsBefore).where(eq(shopSettingsTable.id, settingsBefore.id));
+    } else if (createdSettingsId) {
+      await db.delete(shopSettingsTable).where(eq(shopSettingsTable.id, createdSettingsId));
+    }
   } finally {
     if (lockClient) {
       await lockClient.query("select pg_advisory_unlock(hashtext($1))", ["supplier-catalog-task-560"]);

@@ -5,6 +5,121 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+export type RetailProductSubscriptionFrequency = typeof RetailProductSubscriptionFrequency[keyof typeof RetailProductSubscriptionFrequency];
+
+
+export const RetailProductSubscriptionFrequency = {
+  WEEKLY: 'WEEKLY',
+  BIWEEKLY: 'BIWEEKLY',
+  MONTHLY: 'MONTHLY',
+  EVERY_TWO_MONTHS: 'EVERY_TWO_MONTHS',
+} as const;
+
+export type RetailProductSubscriptionStatus = typeof RetailProductSubscriptionStatus[keyof typeof RetailProductSubscriptionStatus];
+
+
+export const RetailProductSubscriptionStatus = {
+  ACTIVE: 'ACTIVE',
+  PAUSED: 'PAUSED',
+  CANCELLED: 'CANCELLED',
+} as const;
+
+export type RetailProductSubscriptionPaymentMethod = typeof RetailProductSubscriptionPaymentMethod[keyof typeof RetailProductSubscriptionPaymentMethod];
+
+
+export const RetailProductSubscriptionPaymentMethod = {
+  CARD: 'CARD',
+  BANK_TRANSFER: 'BANK_TRANSFER',
+  CASH_ON_DELIVERY: 'CASH_ON_DELIVERY',
+} as const;
+
+export type RetailProductSubscriptionDeliveryMethod = typeof RetailProductSubscriptionDeliveryMethod[keyof typeof RetailProductSubscriptionDeliveryMethod];
+
+
+export const RetailProductSubscriptionDeliveryMethod = {
+  courier: 'courier',
+  personal_belgrade: 'personal_belgrade',
+} as const;
+
+export interface RetailProductSubscription {
+  id: string;
+  productId: string;
+  /** @minimum 1 */
+  quantity: number;
+  frequency: RetailProductSubscriptionFrequency;
+  status: RetailProductSubscriptionStatus;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  discountPercent: number;
+  paymentMethod: RetailProductSubscriptionPaymentMethod;
+  deliveryMethod: RetailProductSubscriptionDeliveryMethod;
+  nextDueAt: string;
+  /** @nullable */
+  blockedUntil?: string | null;
+  /** @nullable */
+  pausedAt?: string | null;
+  /** @nullable */
+  cancelledAt?: string | null;
+  createdAt: string;
+}
+
+export type RetailProductSubscriptionInputFrequency = typeof RetailProductSubscriptionInputFrequency[keyof typeof RetailProductSubscriptionInputFrequency];
+
+
+export const RetailProductSubscriptionInputFrequency = {
+  WEEKLY: 'WEEKLY',
+  BIWEEKLY: 'BIWEEKLY',
+  MONTHLY: 'MONTHLY',
+  EVERY_TWO_MONTHS: 'EVERY_TWO_MONTHS',
+} as const;
+
+export type RetailProductSubscriptionInputPaymentMethod = typeof RetailProductSubscriptionInputPaymentMethod[keyof typeof RetailProductSubscriptionInputPaymentMethod];
+
+
+export const RetailProductSubscriptionInputPaymentMethod = {
+  CARD: 'CARD',
+  BANK_TRANSFER: 'BANK_TRANSFER',
+  CASH_ON_DELIVERY: 'CASH_ON_DELIVERY',
+} as const;
+
+export type RetailProductSubscriptionInputDeliveryMethod = typeof RetailProductSubscriptionInputDeliveryMethod[keyof typeof RetailProductSubscriptionInputDeliveryMethod];
+
+
+export const RetailProductSubscriptionInputDeliveryMethod = {
+  courier: 'courier',
+  personal_belgrade: 'personal_belgrade',
+} as const;
+
+export type RetailProductSubscriptionInputContact = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+};
+
+export type RetailProductSubscriptionInputDelivery = {
+  street: string;
+  city: string;
+  postalCode: string;
+  note?: string;
+  /** @minimum 0 */
+  shippingCost?: number;
+};
+
+export interface RetailProductSubscriptionInput {
+  productId: string;
+  /** @minimum 1 */
+  quantity: number;
+  frequency: RetailProductSubscriptionInputFrequency;
+  paymentMethod: RetailProductSubscriptionInputPaymentMethod;
+  deliveryMethod: RetailProductSubscriptionInputDeliveryMethod;
+  firstDueAt?: string;
+  contact: RetailProductSubscriptionInputContact;
+  delivery: RetailProductSubscriptionInputDelivery;
+}
+
 export type ProductWaitlistSubscriptionStatus = typeof ProductWaitlistSubscriptionStatus[keyof typeof ProductWaitlistSubscriptionStatus];
 
 
@@ -2190,6 +2305,8 @@ export interface RetailCart {
   itemCount: number;
   /** @minimum 0 */
   subtotal: number;
+  /** @minimum 0 */
+  referralCreditMerchandiseSubtotalRsd: number;
   items: RetailCartItemsItem[];
   savedItems: SavedCartItem[];
   crossSellProducts: CartCrossSellProduct[];
@@ -2261,6 +2378,17 @@ export interface AdminShopSettings {
      * @maximum 365
      */
   defaultDeliveryBusinessDays: number;
+  retailCartReminderEnabled: boolean;
+  /**
+     * @minimum 1
+     * @maximum 720
+     */
+  retailCartReminderDelayHours: number;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  retailCartReminderBrevoTemplateId: number | null;
   /** @minimum 0 */
   freeShippingThreshold: number;
   /** @minimum 1 */
@@ -2280,11 +2408,30 @@ export interface AdminShopSettingsInput {
      * @maximum 365
      */
   defaultDeliveryBusinessDays: number;
+  retailCartReminderEnabled?: boolean;
+  /**
+     * @minimum 1
+     * @maximum 720
+     */
+  retailCartReminderDelayHours?: number;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  retailCartReminderBrevoTemplateId?: number | null;
   /** @minimum 0 */
   freeShippingThreshold: number;
   /** @minimum 1 */
   version: number;
   seller?: SellerIdentity;
+}
+
+export interface RetailCartContactInput {
+  /**
+     * @minLength 3
+     * @maxLength 320
+     */
+  email: string;
 }
 
 /**
@@ -2508,6 +2655,8 @@ export interface ShopCart {
   /** @minimum 0 */
   subtotal: number;
   /** @minimum 0 */
+  referralCreditMerchandiseSubtotalRsd: number;
+  /** @minimum 0 */
   totalWeightGrams: number;
   crossSellProducts: CartCrossSellProduct[];
   freeShippingProgress: FreeShippingProgress;
@@ -2701,6 +2850,12 @@ export interface RetailOrder {
   /** @minimum 0 */
   couponDiscountRsd?: number;
   couponFreeShipping?: boolean;
+  /** @minimum 0 */
+  referralCreditMerchandiseSubtotalRsd: number;
+  /** @minimum 0 */
+  referralCreditPreCreditPayableTotalRsd: number;
+  /** @minimum 0 */
+  referralCreditAppliedRsd: number;
   createdAt: string;
   items: RetailOrderItemsItem[];
 }
@@ -2933,6 +3088,13 @@ export interface PublicProduct {
      * @nullable
      */
   deliveryBusinessDaysOverride: number | null;
+  subscriptionAllowed: boolean;
+  /**
+     * @minimum 1
+     * @maximum 100
+     * @nullable
+     */
+  subscriptionDiscountPercent: number | null;
 }
 
 /**
@@ -3006,6 +3168,126 @@ export interface ShopSummary {
   subscriptionDiscount: number;
   benefits: string[];
   cartCount: number;
+}
+
+export interface B2bOrderImportPreviewInput {
+  /**
+     * @minLength 1
+     * @maxLength 524288
+     */
+  csvText: string;
+}
+
+export interface B2bOrderImportApplyInput {
+  /**
+     * @minLength 1
+     * @maxLength 524288
+     */
+  csvText: string;
+  confirmed: boolean;
+  /**
+     * @minLength 8
+     * @maxLength 200
+     */
+  idempotencyKey: string;
+}
+
+export type B2bOrderImportDiagnosticStatus = typeof B2bOrderImportDiagnosticStatus[keyof typeof B2bOrderImportDiagnosticStatus];
+
+
+export const B2bOrderImportDiagnosticStatus = {
+  matched: 'matched',
+  unmatched: 'unmatched',
+  invalid: 'invalid',
+} as const;
+
+/**
+ * @nullable
+ */
+export type B2bOrderImportDiagnosticCode = typeof B2bOrderImportDiagnosticCode[keyof typeof B2bOrderImportDiagnosticCode] | null;
+
+
+export const B2bOrderImportDiagnosticCode = {
+  EMPTY_SKU: 'EMPTY_SKU',
+  INVALID_QUANTITY: 'INVALID_QUANTITY',
+  SKU_NOT_FOUND: 'SKU_NOT_FOUND',
+  SUPPLIER_SCOPE: 'SUPPLIER_SCOPE',
+  PRODUCT_UNAVAILABLE: 'PRODUCT_UNAVAILABLE',
+  VARIANT_UNAVAILABLE: 'VARIANT_UNAVAILABLE',
+  MOQ_NOT_MET: 'MOQ_NOT_MET',
+  INSUFFICIENT_STOCK: 'INSUFFICIENT_STOCK',
+  DUPLICATE_SKU: 'DUPLICATE_SKU',
+} as const;
+
+export interface B2bOrderImportDiagnostic {
+  /** @minimum 2 */
+  rowNumber: number;
+  /** @nullable */
+  sku: string | null;
+  /** @nullable */
+  quantity: number | null;
+  status: B2bOrderImportDiagnosticStatus;
+  /** @nullable */
+  code: B2bOrderImportDiagnosticCode;
+  /** @nullable */
+  message: string | null;
+  /** @nullable */
+  productId: string | null;
+  /** @nullable */
+  variantValue: string | null;
+}
+
+export interface B2bOrderImportResult {
+  applied: boolean;
+  idempotent: boolean;
+  /** @minimum 0 */
+  validRowCount: number;
+  /** @minimum 0 */
+  invalidRowCount: number;
+  matchedRows: B2bOrderImportDiagnostic[];
+  unmatchedRows: B2bOrderImportDiagnostic[];
+  invalidRows: B2bOrderImportDiagnostic[];
+  cart: ShopCart | null;
+}
+
+export interface ProductWishlistInput {
+  /** @minLength 1 */
+  productId: string;
+  /**
+     * @minLength 1
+     * @nullable
+     */
+  variantValue?: string | null;
+}
+
+/**
+ * @nullable
+ */
+export type ProductWishlistItemUnavailableReason = typeof ProductWishlistItemUnavailableReason[keyof typeof ProductWishlistItemUnavailableReason] | null;
+
+
+export const ProductWishlistItemUnavailableReason = {
+  PRODUCT_INACTIVE: 'PRODUCT_INACTIVE',
+  RETAIL_DISABLED: 'RETAIL_DISABLED',
+  OUT_OF_STOCK: 'OUT_OF_STOCK',
+  VARIANT_UNAVAILABLE: 'VARIANT_UNAVAILABLE',
+} as const;
+
+export interface ProductWishlistItem {
+  id: string;
+  productId: string;
+  /** @nullable */
+  variantValue: string | null;
+  createdAt: string;
+  available: boolean;
+  /** @nullable */
+  unavailableReason: ProductWishlistItemUnavailableReason;
+  product: PublicProduct | null;
+}
+
+export interface ProductWishlistToggleResult {
+  saved: boolean;
+  item: ProductWishlistItem | null;
 }
 
 export type ShopCartItemInput = {
@@ -3265,6 +3547,12 @@ export interface Order {
   /** @minimum 0 */
   couponDiscountRsd: number;
   couponFreeShipping: boolean;
+  /** @minimum 0 */
+  referralCreditMerchandiseSubtotalRsd: number;
+  /** @minimum 0 */
+  referralCreditPreCreditPayableTotalRsd: number;
+  /** @minimum 0 */
+  referralCreditAppliedRsd: number;
   /** @nullable */
   invoice: OrderInvoice;
   itemCount: number;
@@ -8632,6 +8920,10 @@ export type GetWidgetAvailabilityParams = {
 serviceId: string;
 date: string;
 employeeId?: string;
+};
+
+export type RemoveProductWishlistItemParams = {
+variantValue?: string;
 };
 
 export type PreviewRetailCheckoutParams = {

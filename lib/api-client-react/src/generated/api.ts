@@ -86,6 +86,9 @@ import type {
   AutomationStats,
   AutomationStatsOverviewItem,
   AutomationTestRunResult,
+  B2bOrderImportApplyInput,
+  B2bOrderImportPreviewInput,
+  B2bOrderImportResult,
   BeautyJobAdminPreview,
   BeautyJobApplicantDecisionInput,
   BeautyJobApplicantsResponse,
@@ -271,6 +274,9 @@ import type {
   ProductReviewInput,
   ProductWaitlistStatus,
   ProductWaitlistSubscription,
+  ProductWishlistInput,
+  ProductWishlistItem,
+  ProductWishlistToggleResult,
   PublicBundle,
   PublicProductDetail,
   PublicProductList,
@@ -287,13 +293,17 @@ import type {
   ReferralReview,
   ReferralReviewUpdate,
   RegisterInput,
+  RemoveProductWishlistItemParams,
   ReorderResult,
   RetailCart,
+  RetailCartContactInput,
   RetailCartItemInput,
   RetailCartSummary,
   RetailCheckoutInput,
   RetailCheckoutPreview,
   RetailOrder,
+  RetailProductSubscription,
+  RetailProductSubscriptionInput,
   RetentionSettings,
   RetentionSettingsHistoryEntry,
   RetentionSettingsPreview,
@@ -7850,6 +7860,225 @@ export function useGetShopSummary<TData = Awaited<ReturnType<typeof getShopSumma
 
 
 
+
+export const getDownloadB2bOrderImportTemplateUrl = () => {
+
+
+
+
+  return `/api/shop/order-import/template`
+}
+
+/**
+ * @summary Download the UTF-8 BOM B2B order-import CSV template
+ */
+export const downloadB2bOrderImportTemplate = async ( options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getDownloadB2bOrderImportTemplateUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getDownloadB2bOrderImportTemplateQueryKey = () => {
+    return [
+    `/api/shop/order-import/template`
+    ] as const;
+    }
+
+
+export const getDownloadB2bOrderImportTemplateQueryOptions = <TData = Awaited<ReturnType<typeof downloadB2bOrderImportTemplate>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof downloadB2bOrderImportTemplate>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getDownloadB2bOrderImportTemplateQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof downloadB2bOrderImportTemplate>>> = ({ signal }) => downloadB2bOrderImportTemplate({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof downloadB2bOrderImportTemplate>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type DownloadB2bOrderImportTemplateQueryResult = NonNullable<Awaited<ReturnType<typeof downloadB2bOrderImportTemplate>>>
+export type DownloadB2bOrderImportTemplateQueryError = ErrorType<void>
+
+
+/**
+ * @summary Download the UTF-8 BOM B2B order-import CSV template
+ */
+
+export function useDownloadB2bOrderImportTemplate<TData = Awaited<ReturnType<typeof downloadB2bOrderImportTemplate>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof downloadB2bOrderImportTemplate>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getDownloadB2bOrderImportTemplateQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getPreviewB2bOrderImportUrl = () => {
+
+
+
+
+  return `/api/shop/order-import/preview`
+}
+
+/**
+ * @summary Parse and validate a B2B order-import CSV without changing the cart
+ */
+export const previewB2bOrderImport = async (b2bOrderImportPreviewInput: B2bOrderImportPreviewInput, options?: Parameters<typeof customFetch>[1]): Promise<B2bOrderImportResult> => {
+
+  return customFetch<B2bOrderImportResult>(getPreviewB2bOrderImportUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(b2bOrderImportPreviewInput)
+  }
+);}
+
+
+
+
+
+export const getPreviewB2bOrderImportMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewB2bOrderImport>>, TError,{data: BodyType<B2bOrderImportPreviewInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof previewB2bOrderImport>>, TError,{data: BodyType<B2bOrderImportPreviewInput>}, TContext> => {
+
+const mutationKey = ['previewB2bOrderImport'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof previewB2bOrderImport>>, {data: BodyType<B2bOrderImportPreviewInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  previewB2bOrderImport(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PreviewB2bOrderImportMutationResult = NonNullable<Awaited<ReturnType<typeof previewB2bOrderImport>>>
+    export type PreviewB2bOrderImportMutationBody = BodyType<B2bOrderImportPreviewInput>
+    export type PreviewB2bOrderImportMutationError = ErrorType<void>
+
+    /**
+ * @summary Parse and validate a B2B order-import CSV without changing the cart
+ */
+export const usePreviewB2bOrderImport = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewB2bOrderImport>>, TError,{data: BodyType<B2bOrderImportPreviewInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof previewB2bOrderImport>>,
+        TError,
+        {data: BodyType<B2bOrderImportPreviewInput>},
+        TContext
+      > => {
+      return useMutation(getPreviewB2bOrderImportMutationOptions(options));
+    }
+
+export const getApplyB2bOrderImportUrl = () => {
+
+
+
+
+  return `/api/shop/order-import/apply`
+}
+
+/**
+ * @summary Idempotently merge valid B2B CSV rows into the authenticated salon cart
+ */
+export const applyB2bOrderImport = async (b2bOrderImportApplyInput: B2bOrderImportApplyInput, options?: Parameters<typeof customFetch>[1]): Promise<B2bOrderImportResult> => {
+
+  return customFetch<B2bOrderImportResult>(getApplyB2bOrderImportUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(b2bOrderImportApplyInput)
+  }
+);}
+
+
+
+
+
+export const getApplyB2bOrderImportMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyB2bOrderImport>>, TError,{data: BodyType<B2bOrderImportApplyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof applyB2bOrderImport>>, TError,{data: BodyType<B2bOrderImportApplyInput>}, TContext> => {
+
+const mutationKey = ['applyB2bOrderImport'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof applyB2bOrderImport>>, {data: BodyType<B2bOrderImportApplyInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  applyB2bOrderImport(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApplyB2bOrderImportMutationResult = NonNullable<Awaited<ReturnType<typeof applyB2bOrderImport>>>
+    export type ApplyB2bOrderImportMutationBody = BodyType<B2bOrderImportApplyInput>
+    export type ApplyB2bOrderImportMutationError = ErrorType<void>
+
+    /**
+ * @summary Idempotently merge valid B2B CSV rows into the authenticated salon cart
+ */
+export const useApplyB2bOrderImport = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyB2bOrderImport>>, TError,{data: BodyType<B2bOrderImportApplyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof applyB2bOrderImport>>,
+        TError,
+        {data: BodyType<B2bOrderImportApplyInput>},
+        TContext
+      > => {
+      return useMutation(getApplyB2bOrderImportMutationOptions(options));
+    }
 
 export const getGetShopCartUrl = () => {
 
@@ -23914,6 +24143,305 @@ export const useCreateWidgetAppointment = <TError = ErrorType<void>,
       return useMutation(getCreateWidgetAppointmentMutationOptions(options));
     }
 
+export const getListProductWishlistUrl = () => {
+
+
+
+
+  return `/api/retail/wishlist`
+}
+
+/**
+ * @summary List the signed-in customer's saved B2C products, including unavailable items
+ */
+export const listProductWishlist = async ( options?: Parameters<typeof customFetch>[1]): Promise<ProductWishlistItem[]> => {
+
+  return customFetch<ProductWishlistItem[]>(getListProductWishlistUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListProductWishlistQueryKey = () => {
+    return [
+    `/api/retail/wishlist`
+    ] as const;
+    }
+
+
+export const getListProductWishlistQueryOptions = <TData = Awaited<ReturnType<typeof listProductWishlist>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listProductWishlist>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListProductWishlistQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listProductWishlist>>> = ({ signal }) => listProductWishlist({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listProductWishlist>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListProductWishlistQueryResult = NonNullable<Awaited<ReturnType<typeof listProductWishlist>>>
+export type ListProductWishlistQueryError = ErrorType<void>
+
+
+/**
+ * @summary List the signed-in customer's saved B2C products, including unavailable items
+ */
+
+export function useListProductWishlist<TData = Awaited<ReturnType<typeof listProductWishlist>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listProductWishlist>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListProductWishlistQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAddProductWishlistItemUrl = () => {
+
+
+
+
+  return `/api/retail/wishlist`
+}
+
+/**
+ * @summary Idempotently save a currently B2C-visible product
+ */
+export const addProductWishlistItem = async (productWishlistInput: ProductWishlistInput, options?: Parameters<typeof customFetch>[1]): Promise<ProductWishlistItem> => {
+
+  return customFetch<ProductWishlistItem>(getAddProductWishlistItemUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(productWishlistInput)
+  }
+);}
+
+
+
+
+
+export const getAddProductWishlistItemMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addProductWishlistItem>>, TError,{data: BodyType<ProductWishlistInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof addProductWishlistItem>>, TError,{data: BodyType<ProductWishlistInput>}, TContext> => {
+
+const mutationKey = ['addProductWishlistItem'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addProductWishlistItem>>, {data: BodyType<ProductWishlistInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  addProductWishlistItem(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AddProductWishlistItemMutationResult = NonNullable<Awaited<ReturnType<typeof addProductWishlistItem>>>
+    export type AddProductWishlistItemMutationBody = BodyType<ProductWishlistInput>
+    export type AddProductWishlistItemMutationError = ErrorType<void>
+
+    /**
+ * @summary Idempotently save a currently B2C-visible product
+ */
+export const useAddProductWishlistItem = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addProductWishlistItem>>, TError,{data: BodyType<ProductWishlistInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof addProductWishlistItem>>,
+        TError,
+        {data: BodyType<ProductWishlistInput>},
+        TContext
+      > => {
+      return useMutation(getAddProductWishlistItemMutationOptions(options));
+    }
+
+export const getToggleProductWishlistItemUrl = () => {
+
+
+
+
+  return `/api/retail/wishlist/toggle`
+}
+
+/**
+ * @summary Atomically add or remove a customer wishlist item
+ */
+export const toggleProductWishlistItem = async (productWishlistInput: ProductWishlistInput, options?: Parameters<typeof customFetch>[1]): Promise<ProductWishlistToggleResult> => {
+
+  return customFetch<ProductWishlistToggleResult>(getToggleProductWishlistItemUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(productWishlistInput)
+  }
+);}
+
+
+
+
+
+export const getToggleProductWishlistItemMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof toggleProductWishlistItem>>, TError,{data: BodyType<ProductWishlistInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof toggleProductWishlistItem>>, TError,{data: BodyType<ProductWishlistInput>}, TContext> => {
+
+const mutationKey = ['toggleProductWishlistItem'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof toggleProductWishlistItem>>, {data: BodyType<ProductWishlistInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  toggleProductWishlistItem(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ToggleProductWishlistItemMutationResult = NonNullable<Awaited<ReturnType<typeof toggleProductWishlistItem>>>
+    export type ToggleProductWishlistItemMutationBody = BodyType<ProductWishlistInput>
+    export type ToggleProductWishlistItemMutationError = ErrorType<void>
+
+    /**
+ * @summary Atomically add or remove a customer wishlist item
+ */
+export const useToggleProductWishlistItem = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof toggleProductWishlistItem>>, TError,{data: BodyType<ProductWishlistInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof toggleProductWishlistItem>>,
+        TError,
+        {data: BodyType<ProductWishlistInput>},
+        TContext
+      > => {
+      return useMutation(getToggleProductWishlistItemMutationOptions(options));
+    }
+
+export const getRemoveProductWishlistItemUrl = (productId: string,
+    params?: RemoveProductWishlistItemParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/retail/wishlist/${productId}?${stringifiedParams}` : `/api/retail/wishlist/${productId}`
+}
+
+/**
+ * @summary Remove a saved product variant from the signed-in customer's wishlist
+ */
+export const removeProductWishlistItem = async (productId: string,
+    params?: RemoveProductWishlistItemParams, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getRemoveProductWishlistItemUrl(productId,params),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRemoveProductWishlistItemMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeProductWishlistItem>>, TError,{productId: string;params?: RemoveProductWishlistItemParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeProductWishlistItem>>, TError,{productId: string;params?: RemoveProductWishlistItemParams}, TContext> => {
+
+const mutationKey = ['removeProductWishlistItem'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeProductWishlistItem>>, {productId: string;params?: RemoveProductWishlistItemParams}> = (props) => {
+          const {productId,params} = props ?? {};
+
+          return  removeProductWishlistItem(productId,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveProductWishlistItemMutationResult = NonNullable<Awaited<ReturnType<typeof removeProductWishlistItem>>>
+
+    export type RemoveProductWishlistItemMutationError = ErrorType<void>
+
+    /**
+ * @summary Remove a saved product variant from the signed-in customer's wishlist
+ */
+export const useRemoveProductWishlistItem = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeProductWishlistItem>>, TError,{productId: string;params?: RemoveProductWishlistItemParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof removeProductWishlistItem>>,
+        TError,
+        {productId: string;params?: RemoveProductWishlistItemParams},
+        TContext
+      > => {
+      return useMutation(getRemoveProductWishlistItemMutationOptions(options));
+    }
+
 export const getGetRetailCartUrl = () => {
 
 
@@ -24067,6 +24595,77 @@ export function useGetRetailCartSummary<TData = Awaited<ReturnType<typeof getRet
 
 
 
+
+export const getCaptureRetailCartContactUrl = () => {
+
+
+
+
+  return `/api/retail/cart/contact`
+}
+
+/**
+ * @summary Capture a guest email for an abandoned-cart reminder without checkout
+ */
+export const captureRetailCartContact = async (retailCartContactInput: RetailCartContactInput, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getCaptureRetailCartContactUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(retailCartContactInput)
+  }
+);}
+
+
+
+
+
+export const getCaptureRetailCartContactMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof captureRetailCartContact>>, TError,{data: BodyType<RetailCartContactInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof captureRetailCartContact>>, TError,{data: BodyType<RetailCartContactInput>}, TContext> => {
+
+const mutationKey = ['captureRetailCartContact'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof captureRetailCartContact>>, {data: BodyType<RetailCartContactInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  captureRetailCartContact(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CaptureRetailCartContactMutationResult = NonNullable<Awaited<ReturnType<typeof captureRetailCartContact>>>
+    export type CaptureRetailCartContactMutationBody = BodyType<RetailCartContactInput>
+    export type CaptureRetailCartContactMutationError = ErrorType<void>
+
+    /**
+ * @summary Capture a guest email for an abandoned-cart reminder without checkout
+ */
+export const useCaptureRetailCartContact = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof captureRetailCartContact>>, TError,{data: BodyType<RetailCartContactInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof captureRetailCartContact>>,
+        TError,
+        {data: BodyType<RetailCartContactInput>},
+        TContext
+      > => {
+      return useMutation(getCaptureRetailCartContactMutationOptions(options));
+    }
 
 export const getAddRetailCartItemUrl = () => {
 
@@ -28167,4 +28766,442 @@ export const useAdminReviewReferral = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getAdminReviewReferralMutationOptions(options));
+    }
+
+export const getListRetailProductSubscriptionsUrl = () => {
+
+
+
+
+  return `/api/customer/retail-subscriptions`
+}
+
+/**
+ * @summary List the signed-in customer's physical-product replenishment subscriptions
+ */
+export const listRetailProductSubscriptions = async ( options?: Parameters<typeof customFetch>[1]): Promise<RetailProductSubscription[]> => {
+
+  return customFetch<RetailProductSubscription[]>(getListRetailProductSubscriptionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListRetailProductSubscriptionsQueryKey = () => {
+    return [
+    `/api/customer/retail-subscriptions`
+    ] as const;
+    }
+
+
+export const getListRetailProductSubscriptionsQueryOptions = <TData = Awaited<ReturnType<typeof listRetailProductSubscriptions>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRetailProductSubscriptions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListRetailProductSubscriptionsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listRetailProductSubscriptions>>> = ({ signal }) => listRetailProductSubscriptions({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listRetailProductSubscriptions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListRetailProductSubscriptionsQueryResult = NonNullable<Awaited<ReturnType<typeof listRetailProductSubscriptions>>>
+export type ListRetailProductSubscriptionsQueryError = ErrorType<void>
+
+
+/**
+ * @summary List the signed-in customer's physical-product replenishment subscriptions
+ */
+
+export function useListRetailProductSubscriptions<TData = Awaited<ReturnType<typeof listRetailProductSubscriptions>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRetailProductSubscriptions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListRetailProductSubscriptionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateRetailProductSubscriptionUrl = () => {
+
+
+
+
+  return `/api/customer/retail-subscriptions`
+}
+
+/**
+ * @summary Create a recurring physical-product order
+ */
+export const createRetailProductSubscription = async (retailProductSubscriptionInput: RetailProductSubscriptionInput, options?: Parameters<typeof customFetch>[1]): Promise<RetailProductSubscription> => {
+
+  return customFetch<RetailProductSubscription>(getCreateRetailProductSubscriptionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(retailProductSubscriptionInput)
+  }
+);}
+
+
+
+
+
+export const getCreateRetailProductSubscriptionMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createRetailProductSubscription>>, TError,{data: BodyType<RetailProductSubscriptionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createRetailProductSubscription>>, TError,{data: BodyType<RetailProductSubscriptionInput>}, TContext> => {
+
+const mutationKey = ['createRetailProductSubscription'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createRetailProductSubscription>>, {data: BodyType<RetailProductSubscriptionInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createRetailProductSubscription(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateRetailProductSubscriptionMutationResult = NonNullable<Awaited<ReturnType<typeof createRetailProductSubscription>>>
+    export type CreateRetailProductSubscriptionMutationBody = BodyType<RetailProductSubscriptionInput>
+    export type CreateRetailProductSubscriptionMutationError = ErrorType<void>
+
+    /**
+ * @summary Create a recurring physical-product order
+ */
+export const useCreateRetailProductSubscription = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createRetailProductSubscription>>, TError,{data: BodyType<RetailProductSubscriptionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createRetailProductSubscription>>,
+        TError,
+        {data: BodyType<RetailProductSubscriptionInput>},
+        TContext
+      > => {
+      return useMutation(getCreateRetailProductSubscriptionMutationOptions(options));
+    }
+
+export const getGetRetailProductSubscriptionUrl = (subscriptionId: string,) => {
+
+
+
+
+  return `/api/customer/retail-subscriptions/${subscriptionId}`
+}
+
+/**
+ * @summary Get one owned physical-product replenishment subscription
+ */
+export const getRetailProductSubscription = async (subscriptionId: string, options?: Parameters<typeof customFetch>[1]): Promise<RetailProductSubscription> => {
+
+  return customFetch<RetailProductSubscription>(getGetRetailProductSubscriptionUrl(subscriptionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetRetailProductSubscriptionQueryKey = (subscriptionId: string,) => {
+    return [
+    `/api/customer/retail-subscriptions/${subscriptionId}`
+    ] as const;
+    }
+
+
+export const getGetRetailProductSubscriptionQueryOptions = <TData = Awaited<ReturnType<typeof getRetailProductSubscription>>, TError = ErrorType<void>>(subscriptionId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRetailProductSubscription>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetRetailProductSubscriptionQueryKey(subscriptionId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getRetailProductSubscription>>> = ({ signal }) => getRetailProductSubscription(subscriptionId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: subscriptionId !== null && subscriptionId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getRetailProductSubscription>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetRetailProductSubscriptionQueryResult = NonNullable<Awaited<ReturnType<typeof getRetailProductSubscription>>>
+export type GetRetailProductSubscriptionQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get one owned physical-product replenishment subscription
+ */
+
+export function useGetRetailProductSubscription<TData = Awaited<ReturnType<typeof getRetailProductSubscription>>, TError = ErrorType<void>>(
+ subscriptionId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRetailProductSubscription>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetRetailProductSubscriptionQueryOptions(subscriptionId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getPauseRetailProductSubscriptionUrl = (subscriptionId: string,) => {
+
+
+
+
+  return `/api/customer/retail-subscriptions/${subscriptionId}/pause`
+}
+
+/**
+ * @summary Pause an owned subscription idempotently
+ */
+export const pauseRetailProductSubscription = async (subscriptionId: string, options?: Parameters<typeof customFetch>[1]): Promise<RetailProductSubscription> => {
+
+  return customFetch<RetailProductSubscription>(getPauseRetailProductSubscriptionUrl(subscriptionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getPauseRetailProductSubscriptionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pauseRetailProductSubscription>>, TError,{subscriptionId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof pauseRetailProductSubscription>>, TError,{subscriptionId: string}, TContext> => {
+
+const mutationKey = ['pauseRetailProductSubscription'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof pauseRetailProductSubscription>>, {subscriptionId: string}> = (props) => {
+          const {subscriptionId} = props ?? {};
+
+          return  pauseRetailProductSubscription(subscriptionId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PauseRetailProductSubscriptionMutationResult = NonNullable<Awaited<ReturnType<typeof pauseRetailProductSubscription>>>
+
+    export type PauseRetailProductSubscriptionMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Pause an owned subscription idempotently
+ */
+export const usePauseRetailProductSubscription = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pauseRetailProductSubscription>>, TError,{subscriptionId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof pauseRetailProductSubscription>>,
+        TError,
+        {subscriptionId: string},
+        TContext
+      > => {
+      return useMutation(getPauseRetailProductSubscriptionMutationOptions(options));
+    }
+
+export const getResumeRetailProductSubscriptionUrl = (subscriptionId: string,) => {
+
+
+
+
+  return `/api/customer/retail-subscriptions/${subscriptionId}/resume`
+}
+
+/**
+ * @summary Resume an owned paused subscription idempotently
+ */
+export const resumeRetailProductSubscription = async (subscriptionId: string, options?: Parameters<typeof customFetch>[1]): Promise<RetailProductSubscription> => {
+
+  return customFetch<RetailProductSubscription>(getResumeRetailProductSubscriptionUrl(subscriptionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getResumeRetailProductSubscriptionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resumeRetailProductSubscription>>, TError,{subscriptionId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resumeRetailProductSubscription>>, TError,{subscriptionId: string}, TContext> => {
+
+const mutationKey = ['resumeRetailProductSubscription'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resumeRetailProductSubscription>>, {subscriptionId: string}> = (props) => {
+          const {subscriptionId} = props ?? {};
+
+          return  resumeRetailProductSubscription(subscriptionId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResumeRetailProductSubscriptionMutationResult = NonNullable<Awaited<ReturnType<typeof resumeRetailProductSubscription>>>
+
+    export type ResumeRetailProductSubscriptionMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Resume an owned paused subscription idempotently
+ */
+export const useResumeRetailProductSubscription = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resumeRetailProductSubscription>>, TError,{subscriptionId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resumeRetailProductSubscription>>,
+        TError,
+        {subscriptionId: string},
+        TContext
+      > => {
+      return useMutation(getResumeRetailProductSubscriptionMutationOptions(options));
+    }
+
+export const getCancelRetailProductSubscriptionUrl = (subscriptionId: string,) => {
+
+
+
+
+  return `/api/customer/retail-subscriptions/${subscriptionId}/cancel`
+}
+
+/**
+ * @summary Cancel an owned subscription idempotently
+ */
+export const cancelRetailProductSubscription = async (subscriptionId: string, options?: Parameters<typeof customFetch>[1]): Promise<RetailProductSubscription> => {
+
+  return customFetch<RetailProductSubscription>(getCancelRetailProductSubscriptionUrl(subscriptionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCancelRetailProductSubscriptionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelRetailProductSubscription>>, TError,{subscriptionId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelRetailProductSubscription>>, TError,{subscriptionId: string}, TContext> => {
+
+const mutationKey = ['cancelRetailProductSubscription'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelRetailProductSubscription>>, {subscriptionId: string}> = (props) => {
+          const {subscriptionId} = props ?? {};
+
+          return  cancelRetailProductSubscription(subscriptionId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CancelRetailProductSubscriptionMutationResult = NonNullable<Awaited<ReturnType<typeof cancelRetailProductSubscription>>>
+
+    export type CancelRetailProductSubscriptionMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Cancel an owned subscription idempotently
+ */
+export const useCancelRetailProductSubscription = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelRetailProductSubscription>>, TError,{subscriptionId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cancelRetailProductSubscription>>,
+        TError,
+        {subscriptionId: string},
+        TContext
+      > => {
+      return useMutation(getCancelRetailProductSubscriptionMutationOptions(options));
     }

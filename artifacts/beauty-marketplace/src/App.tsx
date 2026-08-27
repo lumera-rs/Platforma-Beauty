@@ -54,6 +54,8 @@ const RetailCartPage = lazy(() => import('./pages/retail-checkout').then((module
 const RetailCheckoutPage = lazy(() => import('./pages/retail-checkout').then((module) => ({ default: module.RetailCheckoutPage })));
 const RetailSuccessPage = lazy(() => import('./pages/retail-checkout').then((module) => ({ default: module.RetailSuccessPage })));
 const RetailTrackingPage = lazy(() => import('./pages/retail-checkout').then((module) => ({ default: module.RetailTrackingPage })));
+const CustomerWishlistPage = lazy(() => import('./pages/customer-wishlist'));
+const CustomerSubscriptionsPage = lazy(() => import('./pages/customer-subscriptions'));
 const Salons = lazy(() => import('./pages/salons'));
 const SalonProfile = lazy(() => import('./pages/salon-profile'));
 const JobseekerDashboard = lazy(() => import('./pages/jobseeker-dashboard'));
@@ -64,6 +66,7 @@ const OwnerResources = lazy(() => import('./pages/owner/resources'));
 const OwnerSalonProfile = lazy(() => import('./pages/owner/profile'));
 const OwnerServices = lazy(() => import('./pages/owner/services'));
 const OwnerShop = lazy(() => import('./pages/owner/shop'));
+const OwnerShopImportPage = lazy(() => import('./pages/owner/shop-import'));
 const OwnerCalendar = lazy(() => import('./pages/owner/calendar'));
 const OwnerLoyalty = lazy(() => import('./pages/owner/loyalty'));
 const OwnerOrders = lazy(() => import('./pages/owner/orders'));
@@ -305,6 +308,8 @@ function Router() {
         <Route path="/korpa/placanje"><JobseekerExcludedRoute><RetailCheckoutPage /></JobseekerExcludedRoute></Route>
         <Route path="/korpa/uspeh"><JobseekerExcludedRoute><RetailSuccessPage /></JobseekerExcludedRoute></Route>
         <Route path="/porudzbina/pracenje"><JobseekerExcludedRoute><RetailTrackingPage /></JobseekerExcludedRoute></Route>
+        <Route path="/lista-zelja"><RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava"><CustomerWishlistPage /></RoleGuard></Route>
+        <Route path="/moj-nalog/pretplate"><RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava"><CustomerSubscriptionsPage /></RoleGuard></Route>
         <Route path="/inspiracija"><MarketplaceGuides kind="inspiration" /></Route>
         <Route path="/recnik"><MarketplaceGuides kind="glossary" /></Route>
         <Route path="/brendovi"><MarketplaceGuides kind="brands" /></Route>
@@ -373,6 +378,7 @@ function Router() {
         <Route path="/vlasnik/shop/:supplierSlug/proizvodi/:productId"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerProductDetail /></RoleGuard></Route>
         <Route path="/vlasnik/shop/:supplierSlug"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerShop /></RoleGuard></Route>
         <Route path="/vlasnik/shop"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerShop /></RoleGuard></Route>
+        <Route path="/vlasnik/prodavnica/import"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerShopImportPage /></RoleGuard></Route>
         <Route path="/vlasnik/prodavnica/korpa"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerCartPage /></RoleGuard></Route>
         <Route path="/vlasnik/prodavnica/dostava"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerCheckoutDeliveryPage /></RoleGuard></Route>
         <Route path="/vlasnik/prodavnica/pregled"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerCheckoutReviewPage /></RoleGuard></Route>

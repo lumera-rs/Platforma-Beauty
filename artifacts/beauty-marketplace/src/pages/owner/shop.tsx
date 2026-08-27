@@ -329,9 +329,14 @@ export default function OwnerShop() {
           <div className="flex flex-col md:flex-row gap-8 items-start">
             <OwnerSidebar current="/vlasnik/shop" />
             <div className="flex-1 min-w-0 space-y-6">
-              <div>
-                <h1 className="text-3xl font-serif font-bold">B2B Profesionalna Oprema</h1>
-                <p className="text-muted-foreground">Kupujte materijale po povlašćenim cenama za partnere</p>
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                  <h1 className="text-3xl font-serif font-bold">B2B Profesionalna Oprema</h1>
+                  <p className="text-muted-foreground">Kupujte materijale po povlašćenim cenama za partnere</p>
+                </div>
+                <Button variant="outline" asChild>
+                  <Link href="/vlasnik/prodavnica/import">CSV Uvoz</Link>
+                </Button>
               </div>
 
               {!isLoadingSum && summary && (

@@ -22,6 +22,12 @@ export interface RetailOrder {
   /** @minimum 0 */
   couponDiscountRsd?: number;
   couponFreeShipping?: boolean;
+  /** @minimum 0 */
+  referralCreditMerchandiseSubtotalRsd: number;
+  /** @minimum 0 */
+  referralCreditPreCreditPayableTotalRsd: number;
+  /** @minimum 0 */
+  referralCreditAppliedRsd: number;
   createdAt: Date;
   items: RetailOrderItemsItem[];
 }

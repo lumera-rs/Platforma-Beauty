@@ -1769,6 +1769,51 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ShopSummary"
+  /shop/order-import/template:
+    get:
+      operationId: downloadB2bOrderImportTemplate
+      tags: [shop]
+      summary: Download the UTF-8 BOM B2B order-import CSV template
+      responses:
+        "200":
+          description: RFC4180 CSV with SKU and Quantity columns and an example row
+          content:
+            text/csv:
+              schema: { type: string, format: binary }
+        "401": { description: Authentication required }
+        "403": { description: Salon-owner access required }
+  /shop/order-import/preview:
+    post:
+      operationId: previewB2bOrderImport
+      tags: [shop]
+      summary: Parse and validate a B2B order-import CSV without changing the cart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/B2bOrderImportPreviewInput" }
+      responses:
+        "200": { description: "Row diagnostics, including valid rows", content: { application/json: { schema: { $ref: "#/components/schemas/B2bOrderImportResult" } } } }
+        "400": { description: "Malformed CSV, required columns missing, or import limits exceeded" }
+        "401": { description: Authentication required }
+        "403": { description: Salon-owner access required }
+  /shop/order-import/apply:
+    post:
+      operationId: applyB2bOrderImport
+      tags: [shop]
+      summary: Idempotently merge valid B2B CSV rows into the authenticated salon cart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/B2bOrderImportApplyInput" }
+      responses:
+        "200": { description: Existing idempotent import result, content: { application/json: { schema: { $ref: "#/components/schemas/B2bOrderImportResult" } } } }
+        "201": { description: Import result after cart merge, content: { application/json: { schema: { $ref: "#/components/schemas/B2bOrderImportResult" } } } }
+        "400": { description: "Malformed CSV, required columns missing, or import limits exceeded" }
+        "409": { description: Invalid rows require confirmed=true before valid rows can be applied }
+        "401": { description: Authentication required }
+        "403": { description: Salon-owner access required }
   /shop/cart:
     get:
       operationId: getShopCart
@@ -5495,6 +5540,46 @@ paths:
         "409": { description: Slot no longer available }
         "429": { description: Too many requests }
 
+  /retail/wishlist:
+    get:
+      operationId: listProductWishlist
+      tags: [shop]
+      summary: List the signed-in customer's saved B2C products, including unavailable items
+      responses:
+        "200": { description: Wishlist items, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ProductWishlistItem" } } } } }
+        "401": { description: Customer authentication required }
+        "403": { description: Customer access required }
+    post:
+      operationId: addProductWishlistItem
+      tags: [shop]
+      summary: Idempotently save a currently B2C-visible product
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ProductWishlistInput" } } } }
+      responses:
+        "200": { description: Already saved wishlist item, content: { application/json: { schema: { $ref: "#/components/schemas/ProductWishlistItem" } } } }
+        "201": { description: Saved wishlist item, content: { application/json: { schema: { $ref: "#/components/schemas/ProductWishlistItem" } } } }
+        "404": { description: Product is not B2C-visible }
+        "401": { description: Customer authentication required }
+  /retail/wishlist/toggle:
+    post:
+      operationId: toggleProductWishlistItem
+      tags: [shop]
+      summary: Atomically add or remove a customer wishlist item
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ProductWishlistInput" } } } }
+      responses:
+        "200": { description: Wishlist state, content: { application/json: { schema: { $ref: "#/components/schemas/ProductWishlistToggleResult" } } } }
+        "404": { description: Product is not B2C-visible when adding }
+        "401": { description: Customer authentication required }
+  /retail/wishlist/{productId}:
+    delete:
+      operationId: removeProductWishlistItem
+      tags: [shop]
+      summary: Remove a saved product variant from the signed-in customer's wishlist
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string } }
+        - { name: variantValue, in: query, schema: { type: string } }
+      responses:
+        "204": { description: Removed; missing entries are idempotently ignored }
+        "401": { description: Customer authentication required }
   /retail/cart:
     get:
       operationId: getRetailCart
@@ -5509,6 +5594,15 @@ paths:
       summary: Get the current retail cart item count without creating a cart
       responses:
         "200": { description: Retail cart item count, content: { application/json: { schema: { $ref: "#/components/schemas/RetailCartSummary" } } } }
+  /retail/cart/contact:
+    put:
+      operationId: captureRetailCartContact
+      tags: [shop]
+      summary: Capture a guest email for an abandoned-cart reminder without checkout
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/RetailCartContactInput" } } } }
+      responses:
+        "204": { description: Contact captured }
+        "400": { description: Invalid email address }
   /retail/cart/items:
     post:
       operationId: addRetailCartItem
@@ -6050,6 +6144,53 @@ paths:
         "200": { description: Resolved review, content: { application/json: { schema: { $ref: "#/components/schemas/ReferralReview" } } } }
         "404": { description: Referral review not found }
         "409": { description: Review was already resolved or the requested decision conflicts with terminal referral lifecycle }
+  /customer/retail-subscriptions:
+    get:
+      operationId: listRetailProductSubscriptions
+      tags: [customer]
+      summary: List the signed-in customer's physical-product replenishment subscriptions
+      responses:
+        "200": { description: Subscriptions, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/RetailProductSubscription" } } } } }
+        "401": { description: Authentication required }
+    post:
+      operationId: createRetailProductSubscription
+      tags: [customer]
+      summary: Create a recurring physical-product order
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/RetailProductSubscriptionInput" } } } }
+      responses:
+        "201": { description: Created subscription, content: { application/json: { schema: { $ref: "#/components/schemas/RetailProductSubscription" } } } }
+        "400": { description: "Invalid payment, delivery, or contact snapshot" }
+        "409": { description: Product is unavailable or quantity violates MOQ/stock }
+  /customer/retail-subscriptions/{subscriptionId}:
+    get:
+      operationId: getRetailProductSubscription
+      tags: [customer]
+      summary: Get one owned physical-product replenishment subscription
+      parameters: [{ name: subscriptionId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Subscription, content: { application/json: { schema: { $ref: "#/components/schemas/RetailProductSubscription" } } } }
+        "404": { description: Not found }
+  /customer/retail-subscriptions/{subscriptionId}/pause:
+    post:
+      operationId: pauseRetailProductSubscription
+      tags: [customer]
+      summary: Pause an owned subscription idempotently
+      parameters: [{ name: subscriptionId, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: Subscription, content: { application/json: { schema: { $ref: "#/components/schemas/RetailProductSubscription" } } } } }
+  /customer/retail-subscriptions/{subscriptionId}/resume:
+    post:
+      operationId: resumeRetailProductSubscription
+      tags: [customer]
+      summary: Resume an owned paused subscription idempotently
+      parameters: [{ name: subscriptionId, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: Subscription, content: { application/json: { schema: { $ref: "#/components/schemas/RetailProductSubscription" } } } } }
+  /customer/retail-subscriptions/{subscriptionId}/cancel:
+    post:
+      operationId: cancelRetailProductSubscription
+      tags: [customer]
+      summary: Cancel an owned subscription idempotently
+      parameters: [{ name: subscriptionId, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: Subscription, content: { application/json: { schema: { $ref: "#/components/schemas/RetailProductSubscription" } } } } }
 components:
   parameters:
     CityQuery:
@@ -6124,6 +6265,41 @@ components:
       required: true
       schema: { type: string }
   schemas:
+    RetailProductSubscription:
+      type: object
+      required: [id, productId, quantity, frequency, status, discountPercent, paymentMethod, deliveryMethod, nextDueAt, createdAt]
+      properties:
+        id: { type: string }
+        productId: { type: string }
+        quantity: { type: integer, minimum: 1 }
+        frequency: { type: string, enum: [WEEKLY, BIWEEKLY, MONTHLY, EVERY_TWO_MONTHS] }
+        status: { type: string, enum: [ACTIVE, PAUSED, CANCELLED] }
+        discountPercent: { type: integer, minimum: 0, maximum: 100 }
+        paymentMethod: { type: string, enum: [CARD, BANK_TRANSFER, CASH_ON_DELIVERY] }
+        deliveryMethod: { type: string, enum: [courier, personal_belgrade] }
+        nextDueAt: { type: string, format: date-time }
+        blockedUntil: { type: [string, "null"], format: date-time }
+        pausedAt: { type: [string, "null"], format: date-time }
+        cancelledAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+    RetailProductSubscriptionInput:
+      type: object
+      required: [productId, quantity, frequency, paymentMethod, deliveryMethod, contact, delivery]
+      properties:
+        productId: { type: string }
+        quantity: { type: integer, minimum: 1 }
+        frequency: { type: string, enum: [WEEKLY, BIWEEKLY, MONTHLY, EVERY_TWO_MONTHS] }
+        paymentMethod: { type: string, enum: [CARD, BANK_TRANSFER, CASH_ON_DELIVERY] }
+        deliveryMethod: { type: string, enum: [courier, personal_belgrade] }
+        firstDueAt: { type: string, format: date-time }
+        contact:
+          type: object
+          required: [firstName, lastName, email, phone]
+          properties: { firstName: { type: string }, lastName: { type: string }, email: { type: string }, phone: { type: string } }
+        delivery:
+          type: object
+          required: [street, city, postalCode]
+          properties: { street: { type: string }, city: { type: string }, postalCode: { type: string }, note: { type: string }, shippingCost: { type: integer, minimum: 0 } }
     ProductWaitlistSubscription:
       type: object
       required: [id, status, subscribed]
@@ -7538,6 +7714,7 @@ components:
         id: { type: string }
         itemCount: { type: integer, minimum: 0 }
         subtotal: { type: integer, minimum: 0 }
+        referralCreditMerchandiseSubtotalRsd: { type: integer, minimum: 0 }
         items:
           type: array
           items:
@@ -7579,7 +7756,7 @@ components:
         showLoyaltyPoints: { type: boolean }
         currentLoyaltyPoints: { type: integer, minimum: 0 }
         projectedLoyaltyPoints: { type: integer, minimum: 0 }
-      required: [id, itemCount, subtotal, items, savedItems, crossSellProducts, freeShippingProgress, estimatedDeliveryDate, showLoyaltyPoints, currentLoyaltyPoints, projectedLoyaltyPoints]
+      required: [id, itemCount, subtotal, referralCreditMerchandiseSubtotalRsd, items, savedItems, crossSellProducts, freeShippingProgress, estimatedDeliveryDate, showLoyaltyPoints, currentLoyaltyPoints, projectedLoyaltyPoints]
     CartCrossSellProduct:
       type: object
       properties:
@@ -7606,11 +7783,14 @@ components:
         pointsPer100Rsd: { type: integer, minimum: 0 }
         lowStockThreshold: { type: integer, minimum: 1 }
         defaultDeliveryBusinessDays: { type: integer, minimum: 1, maximum: 365 }
+        retailCartReminderEnabled: { type: boolean }
+        retailCartReminderDelayHours: { type: integer, minimum: 1, maximum: 720 }
+        retailCartReminderBrevoTemplateId: { type: [integer, "null"], minimum: 1 }
         freeShippingThreshold: { type: integer, minimum: 0 }
         version: { type: integer, minimum: 1 }
         updatedAt: { type: string, format: date-time }
         seller: { $ref: "#/components/schemas/SellerIdentity" }
-      required: [showLoyaltyPoints, pointsPer100Rsd, lowStockThreshold, defaultDeliveryBusinessDays, freeShippingThreshold, version, updatedAt, seller]
+      required: [showLoyaltyPoints, pointsPer100Rsd, lowStockThreshold, defaultDeliveryBusinessDays, retailCartReminderEnabled, retailCartReminderDelayHours, retailCartReminderBrevoTemplateId, freeShippingThreshold, version, updatedAt, seller]
     AdminShopSettingsInput:
       type: object
       additionalProperties: false
@@ -7619,10 +7799,19 @@ components:
         pointsPer100Rsd: { type: integer, minimum: 0 }
         lowStockThreshold: { type: integer, minimum: 1 }
         defaultDeliveryBusinessDays: { type: integer, minimum: 1, maximum: 365 }
+        retailCartReminderEnabled: { type: boolean }
+        retailCartReminderDelayHours: { type: integer, minimum: 1, maximum: 720 }
+        retailCartReminderBrevoTemplateId: { type: [integer, "null"], minimum: 1 }
         freeShippingThreshold: { type: integer, minimum: 0 }
         version: { type: integer, minimum: 1 }
         seller: { $ref: "#/components/schemas/SellerIdentity" }
       required: [showLoyaltyPoints, pointsPer100Rsd, lowStockThreshold, defaultDeliveryBusinessDays, freeShippingThreshold, version]
+    RetailCartContactInput:
+      type: object
+      additionalProperties: false
+      properties:
+        email: { type: string, minLength: 3, maxLength: 320 }
+      required: [email]
     SellerIdentity:
       type: object
       additionalProperties: false
@@ -7805,6 +7994,9 @@ components:
         couponCode: { type: ["string", "null"] }
         couponDiscountRsd: { type: integer, minimum: 0 }
         couponFreeShipping: { type: boolean }
+        referralCreditMerchandiseSubtotalRsd: { type: integer, minimum: 0 }
+        referralCreditPreCreditPayableTotalRsd: { type: integer, minimum: 0 }
+        referralCreditAppliedRsd: { type: integer, minimum: 0 }
         createdAt: { type: string, format: date-time }
         items:
           type: array
@@ -7819,7 +8011,7 @@ components:
               quantity: { type: integer }
               unitPrice: { type: integer }
             required: [id, productId, name, imageUrl, sku, quantity, unitPrice]
-      required: [id, orderNumber, status, paymentMethod, paymentStatus, deliveryMethod, subtotal, shippingCost, total, createdAt, items]
+      required: [id, orderNumber, status, paymentMethod, paymentStatus, deliveryMethod, subtotal, shippingCost, total, referralCreditMerchandiseSubtotalRsd, referralCreditPreCreditPayableTotalRsd, referralCreditAppliedRsd, createdAt, items]
     ProductCategory:
       type: object
       properties:
@@ -7974,7 +8166,9 @@ components:
         isNew: { type: boolean }
         isBestseller: { type: boolean }
         deliveryBusinessDaysOverride: { type: ["integer", "null"], minimum: 1, maximum: 365 }
-      required: [id, supplierId, name, category, description, imageUrl, images, price, unit, isNew, isBestseller, deliveryBusinessDaysOverride]
+        subscriptionAllowed: { type: boolean }
+        subscriptionDiscountPercent: { type: ["integer", "null"], minimum: 1, maximum: 100 }
+      required: [id, supplierId, name, category, description, imageUrl, images, price, unit, isNew, isBestseller, deliveryBusinessDaysOverride, subscriptionAllowed, subscriptionDiscountPercent]
     RelatedProductCard:
       type: object
       description: Channel-priced related-product allowlist; excludes inventory, SKU, weight, variants, wholesale administration and relationship IDs.
@@ -8101,6 +8295,7 @@ components:
         savedItems: { type: array, items: { $ref: "#/components/schemas/SavedCartItem" } }
         itemCount: { type: number, minimum: 0, multipleOf: 1 }
         subtotal: { type: number, minimum: 0, multipleOf: 1 }
+        referralCreditMerchandiseSubtotalRsd: { type: integer, minimum: 0 }
         totalWeightGrams: { type: number, minimum: 0, multipleOf: 1 }
         crossSellProducts: { type: array, items: { $ref: "#/components/schemas/CartCrossSellProduct" } }
         freeShippingProgress: { $ref: "#/components/schemas/FreeShippingProgress" }
@@ -8108,7 +8303,69 @@ components:
         showLoyaltyPoints: { type: boolean }
         currentLoyaltyPoints: { type: integer, minimum: 0 }
         projectedLoyaltyPoints: { type: integer, minimum: 0 }
-      required: [id, items, savedItems, itemCount, subtotal, totalWeightGrams, crossSellProducts, freeShippingProgress, estimatedDeliveryDate, showLoyaltyPoints, currentLoyaltyPoints, projectedLoyaltyPoints]
+      required: [id, items, savedItems, itemCount, subtotal, referralCreditMerchandiseSubtotalRsd, totalWeightGrams, crossSellProducts, freeShippingProgress, estimatedDeliveryDate, showLoyaltyPoints, currentLoyaltyPoints, projectedLoyaltyPoints]
+    B2bOrderImportPreviewInput:
+      type: object
+      additionalProperties: false
+      properties:
+        csvText: { type: string, minLength: 1, maxLength: 524288 }
+      required: [csvText]
+    B2bOrderImportApplyInput:
+      type: object
+      additionalProperties: false
+      properties:
+        csvText: { type: string, minLength: 1, maxLength: 524288 }
+        confirmed: { type: boolean, default: false }
+        idempotencyKey: { type: string, minLength: 8, maxLength: 200 }
+      required: [csvText, confirmed, idempotencyKey]
+    B2bOrderImportDiagnostic:
+      type: object
+      properties:
+        rowNumber: { type: integer, minimum: 2 }
+        sku: { type: ["string", "null"] }
+        quantity: { type: ["integer", "null"] }
+        status: { type: string, enum: [matched, unmatched, invalid] }
+        code: { type: ["string", "null"], enum: [EMPTY_SKU, INVALID_QUANTITY, SKU_NOT_FOUND, SUPPLIER_SCOPE, PRODUCT_UNAVAILABLE, VARIANT_UNAVAILABLE, MOQ_NOT_MET, INSUFFICIENT_STOCK, DUPLICATE_SKU, null] }
+        message: { type: ["string", "null"] }
+        productId: { type: ["string", "null"] }
+        variantValue: { type: ["string", "null"] }
+      required: [rowNumber, sku, quantity, status, code, message, productId, variantValue]
+    B2bOrderImportResult:
+      type: object
+      properties:
+        applied: { type: boolean }
+        idempotent: { type: boolean }
+        validRowCount: { type: integer, minimum: 0 }
+        invalidRowCount: { type: integer, minimum: 0 }
+        matchedRows: { type: array, items: { $ref: "#/components/schemas/B2bOrderImportDiagnostic" } }
+        unmatchedRows: { type: array, items: { $ref: "#/components/schemas/B2bOrderImportDiagnostic" } }
+        invalidRows: { type: array, items: { $ref: "#/components/schemas/B2bOrderImportDiagnostic" } }
+        cart: { oneOf: [{ $ref: "#/components/schemas/ShopCart" }, { type: "null" }] }
+      required: [applied, idempotent, validRowCount, invalidRowCount, matchedRows, unmatchedRows, invalidRows, cart]
+    ProductWishlistInput:
+      type: object
+      additionalProperties: false
+      properties:
+        productId: { type: string, minLength: 1 }
+        variantValue: { type: ["string", "null"], minLength: 1 }
+      required: [productId]
+    ProductWishlistItem:
+      type: object
+      properties:
+        id: { type: string }
+        productId: { type: string }
+        variantValue: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+        available: { type: boolean }
+        unavailableReason: { type: ["string", "null"], enum: [PRODUCT_INACTIVE, RETAIL_DISABLED, OUT_OF_STOCK, VARIANT_UNAVAILABLE, null] }
+        product: { oneOf: [{ $ref: "#/components/schemas/PublicProduct" }, { type: "null" }] }
+      required: [id, productId, variantValue, createdAt, available, unavailableReason, product]
+    ProductWishlistToggleResult:
+      type: object
+      properties:
+        saved: { type: boolean }
+        item: { oneOf: [{ $ref: "#/components/schemas/ProductWishlistItem" }, { type: "null" }] }
+      required: [saved, item]
     ShopCartItemInput:
       oneOf:
         - type: object
@@ -8216,6 +8473,9 @@ components:
         couponCode: { type: ["string", "null"] }
         couponDiscountRsd: { type: integer, minimum: 0 }
         couponFreeShipping: { type: boolean }
+        referralCreditMerchandiseSubtotalRsd: { type: integer, minimum: 0 }
+        referralCreditPreCreditPayableTotalRsd: { type: integer, minimum: 0 }
+        referralCreditAppliedRsd: { type: integer, minimum: 0 }
         invoice:
           type: ["object", "null"]
           properties:
@@ -8258,7 +8518,7 @@ components:
             postalCode: { type: string }
           required: [companyName, pib, registrationNumber, address, city, postalCode]
         items: { type: array, items: { $ref: "#/components/schemas/OrderItem" } }
-      required: [id, status, paymentStatus, deliveryMethod, courierServiceId, courierService, trackingNumber, trackingUrl, total, subtotal, shippingCost, totalWeightGrams, couponCode, couponDiscountRsd, couponFreeShipping, invoice, itemCount, createdAt, updatedAt, salon, delivery, billing, items]
+      required: [id, status, paymentStatus, deliveryMethod, courierServiceId, courierService, trackingNumber, trackingUrl, total, subtotal, shippingCost, totalWeightGrams, couponCode, couponDiscountRsd, couponFreeShipping, referralCreditMerchandiseSubtotalRsd, referralCreditPreCreditPayableTotalRsd, referralCreditAppliedRsd, invoice, itemCount, createdAt, updatedAt, salon, delivery, billing, items]
     SalonNotification:
       type: object
       properties:

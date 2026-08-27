@@ -33,6 +33,9 @@ const shopSettingsSchema = z.object({
   pointsPer100Rsd: z.coerce.number().min(0, "Bodovi ne mogu biti negativni"),
   lowStockThreshold: z.coerce.number().min(1, "Prag mora biti bar 1"),
   defaultDeliveryBusinessDays: z.coerce.number().min(1, "Najmanje 1 dan").max(365, "Najviše 365 dana"),
+  retailCartReminderEnabled: z.boolean().default(false),
+  retailCartReminderDelayHours: z.coerce.number().min(1).max(720).optional().nullable(),
+  retailCartReminderBrevoTemplateId: z.coerce.number().optional().nullable(),
   sellerCompanyName: z.string().optional().nullable(),
   sellerTaxId: z.string().optional().nullable(),
   sellerRegistrationNumber: z.string().optional().nullable(),
@@ -69,6 +72,7 @@ export default function AdminShopSettingsPage() {
       pointsPer100Rsd: 0,
       lowStockThreshold: 1,
       defaultDeliveryBusinessDays: 1,
+      retailCartReminderEnabled: false,
       sellerCompanyName: "",
       sellerTaxId: "",
       sellerRegistrationNumber: "",
@@ -90,6 +94,9 @@ export default function AdminShopSettingsPage() {
         pointsPer100Rsd: settings.pointsPer100Rsd,
         lowStockThreshold: settings.lowStockThreshold,
         defaultDeliveryBusinessDays: settings.defaultDeliveryBusinessDays,
+        retailCartReminderEnabled: settings.retailCartReminderEnabled ?? false,
+        retailCartReminderDelayHours: settings.retailCartReminderDelayHours,
+        retailCartReminderBrevoTemplateId: settings.retailCartReminderBrevoTemplateId,
         sellerCompanyName: settings.seller.companyName,
         sellerTaxId: settings.seller.taxId,
         sellerRegistrationNumber: settings.seller.registrationNumber,
@@ -123,6 +130,9 @@ export default function AdminShopSettingsPage() {
       pointsPer100Rsd: values.pointsPer100Rsd,
       lowStockThreshold: values.lowStockThreshold,
       defaultDeliveryBusinessDays: values.defaultDeliveryBusinessDays,
+      retailCartReminderEnabled: values.retailCartReminderEnabled,
+      retailCartReminderDelayHours: values.retailCartReminderDelayHours ?? undefined,
+      retailCartReminderBrevoTemplateId: values.retailCartReminderBrevoTemplateId ?? null,
       version: values.version,
       ...(Object.values(seller).some(Boolean) ? { seller } : {}),
     };
@@ -133,8 +143,11 @@ export default function AdminShopSettingsPage() {
           qc.setQueryData(getAdminGetShopSettingsQueryKey(), newSettings);
           toast.success("Podešavanja prodavnice su uspešno sačuvana.");
         },
-        onError: (error) => {
-          toast.error(extractApiError(error, "Nije uspelo čuvanje podešavanja."));
+        onError: (error: any) => {
+          const isConflict = error?.response?.status === 409;
+          toast.error(
+            isConflict ? "Neko je već izmenio podešavanja u međuvremenu. Osvežite stranicu." : extractApiError(error, "Nije uspelo čuvanje podešavanja.")
+          );
         }
       }
     );
@@ -230,7 +243,7 @@ export default function AdminShopSettingsPage() {
                         </FormDescription>
                       </div>
                       <FormControl>
-                        <Switch checked={field.value} onCheckedChange={field.onChange} />
+                        <Switch checked={!!field.value} onCheckedChange={field.onChange} />
                       </FormControl>
                     </FormItem>
                   )}
@@ -274,6 +287,67 @@ export default function AdminShopSettingsPage() {
                     </FormItem>
                   )}
                 />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Bell className="h-5 w-5 text-primary" /> Napuštena korpa (Maloprodaja)
+                </CardTitle>
+                <CardDescription>Podešavanja za automatsko obaveštavanje kupaca o zaboravljenim proizvodima u korpi.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <FormField
+                  control={form.control}
+                  name="retailCartReminderEnabled"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">Aktiviraj podsetnik</FormLabel>
+                        <FormDescription>
+                          Automatski šalje email kupcima koji su ostavili proizvode u korpi.
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch checked={!!field.value} onCheckedChange={field.onChange} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+
+                {form.watch("retailCartReminderEnabled") && (
+                  <div className="grid sm:grid-cols-2 gap-6 p-4 border rounded-lg bg-muted/20">
+                    <FormField
+                      control={form.control}
+                      name="retailCartReminderDelayHours"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Kašnjenje (sati)</FormLabel>
+                          <FormControl>
+                            <Input type="number" min="1" max="720" {...field} value={field.value || ""} />
+                          </FormControl>
+                          <FormDescription>Koliko sati nakon poslednje izmene korpe se šalje podsetnik.</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="retailCartReminderBrevoTemplateId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Brevo Template ID</FormLabel>
+                          <FormControl>
+                            <Input type="number" {...field} value={field.value || ""} />
+                          </FormControl>
+                          <FormDescription>ID šablona iz Brevo sistema.</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                )}
               </CardContent>
             </Card>
 

@@ -39,4 +39,11 @@ export interface PublicProduct {
      * @nullable
      */
   deliveryBusinessDaysOverride: number | null;
+  subscriptionAllowed: boolean;
+  /**
+     * @minimum 1
+     * @maximum 100
+     * @nullable
+     */
+  subscriptionDiscountPercent: number | null;
 }

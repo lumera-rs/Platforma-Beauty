@@ -20,6 +20,8 @@ export interface ShopCart {
   /** @minimum 0 */
   subtotal: number;
   /** @minimum 0 */
+  referralCreditMerchandiseSubtotalRsd: number;
+  /** @minimum 0 */
   totalWeightGrams: number;
   crossSellProducts: CartCrossSellProduct[];
   freeShippingProgress: FreeShippingProgress;

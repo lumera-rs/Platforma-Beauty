@@ -97,8 +97,8 @@ export function Navbar() {
 
           <div className="hidden md:flex items-center gap-6">
             {navLinks.map((link) => (
-              <Link 
-                key={link.href} 
+              <Link
+                key={link.href}
                 href={link.href}
                 className={cn(
                   "text-sm font-medium transition-colors hover:text-primary",
@@ -156,6 +156,14 @@ export function Navbar() {
                       <DropdownMenuItem onClick={() => setLocation('/moj-nalog?tab=favorites')}>
                         <Heart className="mr-2 h-4 w-4" />
                         Omiljeni saloni
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setLocation('/lista-zelja')}>
+                        <ShoppingBag className="mr-2 h-4 w-4" />
+                        Lista želja
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setLocation('/moj-nalog/pretplate')}>
+                        <Award className="mr-2 h-4 w-4" />
+                        Moje pretplate
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setLocation('/moj-nalog?tab=settings')}>
                         <Settings className="mr-2 h-4 w-4" />
@@ -225,10 +233,10 @@ export function Navbar() {
             )}
           </div>
 
-          <Button 
+          <Button
             ref={mobileMenuButtonRef}
-            variant="ghost" 
-            size="icon" 
+            variant="ghost"
+            size="icon"
             className="md:hidden"
             onClick={() => isMobileMenuOpen ? closeMobileMenu() : setIsMobileMenuOpen(true)}
             aria-label={isMobileMenuOpen ? "Zatvori meni" : "Otvori meni"}
@@ -244,8 +252,8 @@ export function Navbar() {
         <div ref={mobileMenuRef} className="md:hidden border-t bg-background" data-testid="mobile-menu">
           <div className="container mx-auto px-4 py-4 flex flex-col gap-4">
             {navLinks.map((link) => (
-              <Link 
-                key={link.href} 
+              <Link
+                key={link.href}
                 href={link.href}
                 className={cn(
                   "block text-sm font-medium py-2",
@@ -271,9 +279,9 @@ export function Navbar() {
                 )}
               </Link>
             )}
-            
+
             <div className="h-px bg-border my-2" />
-            
+
             {user ? (
               <div className="flex flex-col gap-2">
                 <p className="text-sm text-muted-foreground px-2 py-1">Ulogovani ste kao {user.firstName}</p>
@@ -281,6 +289,8 @@ export function Navbar() {
                   <>
                     <Link href="/moj-nalog?tab=appointments" className="py-2 px-2 text-sm" onClick={closeMobileMenu}>Moji termini</Link>
                     <Link href="/moj-nalog?tab=favorites" className="py-2 px-2 text-sm" onClick={closeMobileMenu}>Omiljeni saloni</Link>
+                    <Link href="/lista-zelja" className="py-2 px-2 text-sm" onClick={closeMobileMenu}>Lista želja</Link>
+                    <Link href="/moj-nalog/pretplate" className="py-2 px-2 text-sm" onClick={closeMobileMenu}>Moje pretplate</Link>
                     <Link href="/moj-nalog?tab=settings" className="py-2 px-2 text-sm" onClick={closeMobileMenu}>Profil</Link>
                   </>
                 )}
@@ -303,7 +313,7 @@ export function Navbar() {
                     Admin Panel
                   </Link>
                 )}
-                <button 
+                <button
                   onClick={() => { handleLogout(); closeMobileMenu(); }}
                   className="text-left text-destructive py-2 px-2 text-sm font-medium"
                 >
@@ -312,15 +322,15 @@ export function Navbar() {
               </div>
             ) : (
               <div className="flex flex-col gap-2">
-                <Link 
-                  href="/prijava" 
+                <Link
+                  href="/prijava"
                   className="block text-sm font-medium py-2 px-2"
                   onClick={closeMobileMenu}
                 >
                   Prijavi se
                 </Link>
-                <Link 
-                  href="/prijava?tab=register" 
+                <Link
+                  href="/prijava?tab=register"
                   className="block text-sm font-medium py-2 px-2 text-primary"
                   onClick={closeMobileMenu}
                 >

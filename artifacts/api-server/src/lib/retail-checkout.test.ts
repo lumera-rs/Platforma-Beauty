@@ -42,6 +42,7 @@ type RetailCheckoutPreview = {
   cart: { subtotal: number; items: Array<{ sku: string }> };
   shipping: { shippingCost: number };
   total: number;
+  merchandiseSubtotalRsd: number;
 };
 type RetailOrder = {
   id: string;
@@ -160,6 +161,11 @@ async function checkoutAndAssertSavedAmount(
   assert.equal(persisted.subtotal, preview.cart.subtotal);
   assert.equal(persisted.shippingCost, preview.shipping.shippingCost);
   assert.equal(persisted.total, preview.total);
+  assert.equal(
+    persisted.referralCreditMerchandiseSubtotalRsd,
+    preview.merchandiseSubtotalRsd,
+    "locked checkout persists the same referral base as preview",
+  );
 }
 
 test.before(async () => {
@@ -520,6 +526,34 @@ test("retail checkout saves the exact courier and personal-delivery previews", a
   assert.ok(createdProductId);
   await checkoutAndAssertSavedAmount(createdProductId, "courier", "Novi Sad");
   await checkoutAndAssertSavedAmount(createdProductId, "personal_belgrade", "Beograd");
+});
+
+test("B2C sale lines are excluded from the referral base in preview and final checkout", async () => {
+  assert.ok(createdProductId);
+  const request = retailClient();
+  assert.equal((await addRetailItem(request, createdProductId, 1)).status, 201);
+  const previewResponse = await request("/retail/checkout-preview?deliveryMethod=courier&city=Novi%20Sad");
+  assert.equal(previewResponse.status, 200);
+  const preview = await previewResponse.json() as RetailCheckoutPreview;
+  assert.equal(preview.merchandiseSubtotalRsd, 0);
+
+  const checkoutResponse = await request("/retail/checkout", {
+    method: "POST",
+    body: JSON.stringify({
+      idempotencyKey: `retail-referral-stacking-${randomUUID()}`,
+      firstName: "Retail", lastName: "Kupac", email: `stacking-${randomUUID()}@example.test`,
+      phone: "+381601234567", street: "Test ulica 1", city: "Novi Sad", postalCode: "21000",
+      paymentMethod: "BANK_TRANSFER", deliveryMethod: "courier",
+      expectedSubtotal: preview.cart.subtotal,
+      expectedShippingCost: preview.shipping.shippingCost,
+      expectedTotal: preview.total,
+    }),
+  });
+  assert.equal(checkoutResponse.status, 201);
+  const order = await checkoutResponse.json() as RetailOrder;
+  createdOrderIds.push(order.id);
+  const [persisted] = await db.select().from(retailOrdersTable).where(eq(retailOrdersTable.id, order.id));
+  assert.equal(persisted?.referralCreditMerchandiseSubtotalRsd, preview.merchandiseSubtotalRsd);
 });
 
 test("checkout and admin settings keep the canonical shipping rule after it is updated beside a duplicate", async () => {

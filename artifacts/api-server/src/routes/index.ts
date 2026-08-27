@@ -10,6 +10,7 @@ import widgetRouter from "./widget";
 import businessGuideRouter from "./business-guide";
 import beautyJobsRouter from "./beauty-jobs";
 import referralsRouter from "./referrals";
+import retailSubscriptionsRouter from "./retail-subscriptions";
 
 const router: IRouter = Router();
 
@@ -22,6 +23,7 @@ router.use(mediaRouter);
 router.use(widgetRouter);
 router.use(phase3Router);
 router.use(marketplaceRouter);
+router.use(retailSubscriptionsRouter);
 router.use(growthRouter);
 router.use(providerWebhooksRouter);
 

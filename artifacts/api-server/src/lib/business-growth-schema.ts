@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 45;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 49;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -116,6 +116,9 @@ const ENUM_LABELS: Record<string, string[]> = {
   product_waitlist_status: ["ACTIVE", "NOTIFIED", "UNSUBSCRIBED"],
   coupon_discount_type: ["PERCENTAGE", "FIXED_RSD"],
   approval_request_status: ["PENDING", "APPROVED", "REJECTED", "EXPIRED"],
+  retail_subscription_frequency: ["WEEKLY", "BIWEEKLY", "MONTHLY", "EVERY_TWO_MONTHS"],
+  retail_subscription_status: ["ACTIVE", "PAUSED", "CANCELLED"],
+  retail_subscription_attempt_status: ["PROCESSING", "CREATED", "INSUFFICIENT_STOCK", "SKIPPED"],
 };
 
 /**
@@ -668,6 +671,10 @@ function tableStatements(s: string): string[] {
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       token_hash text NOT NULL UNIQUE,
       user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      contact_email text,
+      activity_version integer NOT NULL DEFAULT 1 CHECK (activity_version >= 1),
+      reminder_enqueued_activity_version integer,
+      completed_activity_version integer,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     )`,
@@ -1897,6 +1904,17 @@ function tableStatements(s: string): string[] {
        ON ${s}.shopping_cart_items (cart_id, bundle_id) WHERE bundle_id IS NOT NULL`,
     `CREATE UNIQUE INDEX IF NOT EXISTS retail_cart_items_cart_bundle_unique
        ON ${s}.retail_cart_items (cart_id, bundle_id) WHERE bundle_id IS NOT NULL`,
+    // v48 — Persist import application receipts so a B2B upload retry cannot
+    // merge its quantities more than once.
+    `CREATE TABLE IF NOT EXISTS ${s}.b2b_cart_imports (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       salon_id uuid NOT NULL REFERENCES ${s}.salons(id) ON DELETE CASCADE,
+       cart_id uuid REFERENCES ${s}.shopping_carts(id) ON DELETE SET NULL,
+       idempotency_key text NOT NULL, content_hash text NOT NULL,
+       result jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
+       CONSTRAINT b2b_cart_imports_salon_idempotency_unique UNIQUE (salon_id, idempotency_key)
+     )`,
+    `CREATE INDEX IF NOT EXISTS b2b_cart_imports_cart_idx ON ${s}.b2b_cart_imports (cart_id)`,
     `CREATE TABLE IF NOT EXISTS ${s}.saved_shop_cart_items (
        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
        cart_id uuid NOT NULL REFERENCES ${s}.shopping_carts(id) ON DELETE CASCADE,
@@ -2002,6 +2020,18 @@ function tableStatements(s: string): string[] {
        ON ${s}.product_waitlist (product_id, salon_id) WHERE status = 'ACTIVE' AND salon_id IS NOT NULL`,
     `CREATE UNIQUE INDEX IF NOT EXISTS product_waitlist_active_user_unique
        ON ${s}.product_waitlist (product_id, user_id) WHERE status = 'ACTIVE' AND user_id IS NOT NULL`,
+    // v48 — B2C wishlists remain user-owned even when a product later becomes
+    // unavailable; only adding a new item is gated by retail visibility.
+    `CREATE TABLE IF NOT EXISTS ${s}.product_wishlists (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE,
+       product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE CASCADE,
+       variant_value text, created_at timestamptz NOT NULL DEFAULT now()
+     )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS product_wishlists_user_product_variant_unique
+       ON ${s}.product_wishlists (user_id, product_id, variant_value) NULLS NOT DISTINCT`,
+    `CREATE INDEX IF NOT EXISTS product_wishlists_product_idx ON ${s}.product_wishlists (product_id)`,
+    `CREATE INDEX IF NOT EXISTS product_wishlists_user_created_idx ON ${s}.product_wishlists (user_id, created_at)`,
     `CREATE TABLE IF NOT EXISTS ${s}.commerce_customer_notifications (
        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
        user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE,
@@ -2123,6 +2153,28 @@ function tableStatements(s: string): string[] {
     `ALTER TABLE ${s}.employees ADD COLUMN IF NOT EXISTS can_order_independently boolean NOT NULL DEFAULT false`,
     ...["seller_company_name text", "seller_tax_id text", "seller_registration_number text", "seller_address text", "seller_city text", "seller_postal_code text", "seller_bank_account text", "seller_contact_email text", "seller_contact_phone text"]
       .map((definition) => `ALTER TABLE ${s}.shop_settings ADD COLUMN IF NOT EXISTS ${definition}`),
+    // v47 — durable B2C abandoned-cart reminder state and configuration.
+    `ALTER TABLE ${s}.shop_settings ADD COLUMN IF NOT EXISTS retail_cart_reminder_enabled boolean NOT NULL DEFAULT false`,
+    `ALTER TABLE ${s}.shop_settings ADD COLUMN IF NOT EXISTS retail_cart_reminder_delay_hours integer NOT NULL DEFAULT 24`,
+    `ALTER TABLE ${s}.shop_settings ADD COLUMN IF NOT EXISTS retail_cart_reminder_brevo_template_id integer`,
+    `ALTER TABLE ${s}.retail_carts ADD COLUMN IF NOT EXISTS contact_email text`,
+    `ALTER TABLE ${s}.retail_carts ADD COLUMN IF NOT EXISTS activity_version integer NOT NULL DEFAULT 1`,
+    `ALTER TABLE ${s}.retail_carts ADD COLUMN IF NOT EXISTS reminder_enqueued_activity_version integer`,
+    `ALTER TABLE ${s}.retail_carts ADD COLUMN IF NOT EXISTS completed_activity_version integer`,
+    `CREATE INDEX IF NOT EXISTS retail_carts_reminder_sweep_idx ON ${s}.retail_carts (updated_at, activity_version)
+      WHERE reminder_enqueued_activity_version IS NULL OR reminder_enqueued_activity_version < activity_version`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'shop_settings_retail_cart_reminder_delay_check'
+          AND conrelid = '${s}.shop_settings'::regclass) THEN
+         ALTER TABLE ${s}.shop_settings ADD CONSTRAINT shop_settings_retail_cart_reminder_delay_check
+           CHECK (retail_cart_reminder_delay_hours BETWEEN 1 AND 720) NOT VALID;
+       END IF;
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'shop_settings_retail_cart_reminder_template_check'
+          AND conrelid = '${s}.shop_settings'::regclass) THEN
+         ALTER TABLE ${s}.shop_settings ADD CONSTRAINT shop_settings_retail_cart_reminder_template_check
+           CHECK (retail_cart_reminder_brevo_template_id IS NULL OR retail_cart_reminder_brevo_template_id > 0) NOT VALID;
+       END IF;
+     END $$`,
     ...["orders", "retail_orders"].flatMap((table) => [
       `ALTER TABLE ${s}.${table} ADD COLUMN IF NOT EXISTS coupon_code_snapshot text`,
       `ALTER TABLE ${s}.${table} ADD COLUMN IF NOT EXISTS coupon_discount_rsd integer NOT NULL DEFAULT 0`,
@@ -2244,6 +2296,56 @@ function tableStatements(s: string): string[] {
     `DROP TRIGGER IF EXISTS orders_invoice_snapshot_immutable ON ${s}.orders`,
     `CREATE TRIGGER orders_invoice_snapshot_immutable BEFORE UPDATE ON ${s}.orders
       FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_b2b_invoice_snapshot_update()`,
+    // v46 — customer B2C physical-product replenishment. Intentionally
+    // separate from salon plans and their billing lifecycle.
+    `CREATE TABLE IF NOT EXISTS ${s}.retail_product_subscriptions (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE RESTRICT,
+      product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE RESTRICT,
+      quantity integer NOT NULL, frequency ${s}.retail_subscription_frequency NOT NULL,
+      status ${s}.retail_subscription_status NOT NULL DEFAULT 'ACTIVE',
+      discount_percent_snapshot integer NOT NULL,
+      payment_method ${s}.payment_method NOT NULL,
+      delivery_method ${s}.delivery_method NOT NULL,
+      contact_snapshot jsonb NOT NULL, delivery_snapshot jsonb NOT NULL,
+      anchor_day integer NOT NULL,
+      next_due_at timestamptz NOT NULL, blocked_until timestamptz,
+      paused_at timestamptz, cancelled_at timestamptz, last_attempt_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT retail_product_subscriptions_quantity_check CHECK (quantity > 0),
+      CONSTRAINT retail_product_subscriptions_anchor_day_check CHECK (anchor_day BETWEEN 1 AND 31),
+      CONSTRAINT retail_product_subscriptions_discount_percent_check CHECK (discount_percent_snapshot BETWEEN 0 AND 100)
+    )`,
+    // Existing subscriptions predate anchor_day. Their current due date is the
+    // only truthful anchor available, so backfill it once before making it
+    // mandatory. Every statement remains safe on concurrent/replayed boots.
+    `ALTER TABLE ${s}.retail_product_subscriptions ADD COLUMN IF NOT EXISTS anchor_day integer`,
+    `UPDATE ${s}.retail_product_subscriptions SET anchor_day = EXTRACT(DAY FROM next_due_at)::integer WHERE anchor_day IS NULL`,
+    `ALTER TABLE ${s}.retail_product_subscriptions ALTER COLUMN anchor_day SET NOT NULL`,
+    `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='${s}.retail_product_subscriptions'::regclass AND conname='retail_product_subscriptions_anchor_day_check') THEN
+      ALTER TABLE ${s}.retail_product_subscriptions ADD CONSTRAINT retail_product_subscriptions_anchor_day_check CHECK (anchor_day BETWEEN 1 AND 31);
+    END IF; END $$`,
+    `CREATE INDEX IF NOT EXISTS retail_product_subscriptions_user_created_idx
+      ON ${s}.retail_product_subscriptions (user_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS retail_product_subscriptions_product_idx
+      ON ${s}.retail_product_subscriptions (product_id)`,
+    `CREATE INDEX IF NOT EXISTS retail_product_subscriptions_due_claim_idx
+      ON ${s}.retail_product_subscriptions (status, next_due_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.retail_product_subscription_attempts (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      subscription_id uuid NOT NULL REFERENCES ${s}.retail_product_subscriptions(id) ON DELETE CASCADE,
+      due_at timestamptz NOT NULL,
+      status ${s}.retail_subscription_attempt_status NOT NULL DEFAULT 'PROCESSING',
+      retry_count integer NOT NULL DEFAULT 0, claimed_at timestamptz NOT NULL DEFAULT now(),
+      claim_token uuid NOT NULL, order_id uuid REFERENCES ${s}.retail_orders(id) ON DELETE RESTRICT,
+      failure_reason text, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT retail_subscription_attempts_subscription_due_unique UNIQUE (subscription_id, due_at),
+      CONSTRAINT retail_subscription_attempts_retry_count_check CHECK (retry_count >= 0)
+    )`,
+    `CREATE INDEX IF NOT EXISTS retail_subscription_attempts_order_idx
+      ON ${s}.retail_product_subscription_attempts (order_id)`,
+    `CREATE INDEX IF NOT EXISTS retail_subscription_attempts_status_claimed_idx
+      ON ${s}.retail_product_subscription_attempts (status, claimed_at)`,
   ];
 }
 

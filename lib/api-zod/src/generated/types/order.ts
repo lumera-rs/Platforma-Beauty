@@ -36,6 +36,12 @@ export interface Order {
   /** @minimum 0 */
   couponDiscountRsd: number;
   couponFreeShipping: boolean;
+  /** @minimum 0 */
+  referralCreditMerchandiseSubtotalRsd: number;
+  /** @minimum 0 */
+  referralCreditPreCreditPayableTotalRsd: number;
+  /** @minimum 0 */
+  referralCreditAppliedRsd: number;
   /** @nullable */
   invoice: OrderInvoice;
   itemCount: number;

@@ -235,6 +235,11 @@ export const shopSettingsTable = pgTable("shop_settings", {
   sellerBankAccount: text("seller_bank_account"),
   sellerContactEmail: text("seller_contact_email"),
   sellerContactPhone: text("seller_contact_phone"),
+  /** B2C abandoned-cart transactional reminder configuration. */
+  retailCartReminderEnabled: boolean("retail_cart_reminder_enabled").notNull().default(false),
+  retailCartReminderDelayHours: integer("retail_cart_reminder_delay_hours").notNull().default(24),
+  /** Brevo template identifier configured by an administrator; required to enable sends. */
+  retailCartReminderBrevoTemplateId: integer("retail_cart_reminder_brevo_template_id"),
   version: integer("version").notNull().default(1),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
@@ -243,6 +248,8 @@ export const shopSettingsTable = pgTable("shop_settings", {
     ${table.pointsPer100Rsd} >= 0
     AND ${table.lowStockThreshold} >= 1
     AND ${table.defaultDeliveryBusinessDays} BETWEEN 1 AND 365
+    AND ${table.retailCartReminderDelayHours} BETWEEN 1 AND 720
+    AND (${table.retailCartReminderBrevoTemplateId} IS NULL OR ${table.retailCartReminderBrevoTemplateId} > 0)
     AND ${table.version} >= 1
   `),
 ]);
@@ -413,6 +420,23 @@ export const shoppingCartItemsTable = pgTable("shopping_cart_items", {
   check("shopping_cart_items_target_check", sql`num_nonnulls(${table.productId}, ${table.bundleId}) = 1`),
 ]);
 
+/**
+ * Receipt ledger for B2B CSV cart imports. A salon-scoped idempotency key makes
+ * an apply retry return its original diagnostics without adding lines twice.
+ */
+export const b2bCartImportsTable = pgTable("b2b_cart_imports", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
+  cartId: uuid("cart_id").references(() => shoppingCartsTable.id, { onDelete: "set null" }),
+  idempotencyKey: text("idempotency_key").notNull(),
+  contentHash: text("content_hash").notNull(),
+  result: jsonb("result").$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("b2b_cart_imports_salon_idempotency_unique").on(table.salonId, table.idempotencyKey),
+  index("b2b_cart_imports_cart_idx").on(table.cartId),
+]);
+
 export const savedShopCartItemsTable = pgTable("saved_shop_cart_items", {
   id: uuid("id").defaultRandom().primaryKey(),
   cartId: uuid("cart_id").notNull().references(() => shoppingCartsTable.id, { onDelete: "cascade" }),
@@ -506,10 +530,21 @@ export const retailCartsTable = pgTable("retail_carts", {
   id: uuid("id").defaultRandom().primaryKey(),
   tokenHash: text("token_hash").notNull().unique(),
   userId: uuid("user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  /** Voluntarily captured guest contact; never inferred from checkout fields. */
+  contactEmail: text("contact_email"),
+  /** Incremented for every cart/contact mutation that starts a new reminder activity. */
+  activityVersion: integer("activity_version").notNull().default(1),
+  /** The activity version for which an outbox reminder has already been claimed. */
+  reminderEnqueuedActivityVersion: integer("reminder_enqueued_activity_version"),
+  /** Activity version completed by checkout, so later mutations may qualify again. */
+  completedActivityVersion: integer("completed_activity_version"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("retail_carts_user_idx").on(table.userId),
+  index("retail_carts_reminder_sweep_idx").on(table.updatedAt, table.activityVersion)
+    .where(sql`${table.reminderEnqueuedActivityVersion} IS NULL OR ${table.reminderEnqueuedActivityVersion} < ${table.activityVersion}`),
+  check("retail_carts_activity_version_check", sql`${table.activityVersion} >= 1`),
 ]);
 
 export const retailCartItemsTable = pgTable("retail_cart_items", {
@@ -682,6 +717,21 @@ export const productWaitlistTable = pgTable("product_waitlist", {
     (${table.audience} = 'B2B' AND ${table.salonId} IS NOT NULL AND ${table.userId} IS NULL)
     OR (${table.audience} = 'B2C' AND ${table.userId} IS NOT NULL AND ${table.salonId} IS NULL)
   `),
+]);
+
+/** Customer-owned saved products, intentionally independent of retail carts. */
+export const productWishlistsTable = pgTable("product_wishlists", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  productId: uuid("product_id").notNull().references(() => productsTable.id, { onDelete: "cascade" }),
+  variantValue: text("variant_value"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique("product_wishlists_user_product_variant_unique")
+    .on(table.userId, table.productId, table.variantValue)
+    .nullsNotDistinct(),
+  index("product_wishlists_product_idx").on(table.productId),
+  index("product_wishlists_user_created_idx").on(table.userId, table.createdAt),
 ]);
 
 export const commerceCustomerNotificationsTable = pgTable("commerce_customer_notifications", {
