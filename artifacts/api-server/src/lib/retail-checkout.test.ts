@@ -7,25 +7,35 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
   couponsTable,
   db,
+  commerceCustomerNotificationsTable,
+  loyaltyPointLedgerTable,
   observeDatabaseQueries,
   pool,
   productCategoriesTable,
+  productWaitlistNotificationOutboxTable,
+  productWaitlistTable,
   productsTable,
+  reorderActionsTable,
   retailCartItemsTable,
   retailCartsTable,
   retailOrderItemsTable,
   retailOrdersTable,
+  savedRetailCartItemsTable,
+  shopSettingsTable,
   shippingRulesTable,
+  suppliersTable,
   usersTable,
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureBusinessGrowthSchema } from "./business-growth-schema";
+import { runProductWaitlistNotificationWorker } from "./product-waitlist-worker";
 import { ensureShippingConfigSchema } from "./shipping-config";
 
 type RetailCart = {
   id: string;
   items: Array<{ id: string; sku: string; quantity: number }>;
+  savedItems?: Array<{ id: string; quantity: number }>;
 };
 type RetailCartSummary = { itemCount: number };
 type RetailCheckoutPreview = {
@@ -44,21 +54,23 @@ type ApiError = { error: string; code?: string };
 
 const createdCartIds: string[] = [];
 const createdOrderIds: string[] = [];
+const createdUserIds: string[] = [];
 let createdCategoryId: string | undefined;
 let createdProductId: string | undefined;
+let createdSupplierId: string | undefined;
 let createdShippingRuleId: string | undefined;
 let previousShippingRule: typeof shippingRulesTable.$inferSelect | undefined;
 let baseUrl = "";
 let server: ReturnType<typeof app.listen> | undefined;
 
-function retailClient() {
+function retailClient(sessionCookie = "") {
   let cookie = "";
   return async function request(path: string, init: RequestInit = {}): Promise<Response> {
     const response = await fetch(`${baseUrl}${path}`, {
       ...init,
       headers: {
         ...(init.body ? { "content-type": "application/json" } : {}),
-        ...(cookie ? { cookie } : {}),
+        ...(cookie || sessionCookie ? { cookie: [cookie, sessionCookie].filter(Boolean).join("; ") } : {}),
         ...(init.headers ?? {}),
       },
     });
@@ -67,6 +79,27 @@ function retailClient() {
     if (token) cookie = `lumera_retail_cart=${token}`;
     return response;
   };
+}
+
+function retailCartCookie(response: Response) {
+  const token = response.headers.get("set-cookie")?.match(/lumera_retail_cart=([^;]+)/)?.[1];
+  assert.ok(token, "response must set a retail cart cookie");
+  return `lumera_retail_cart=${token}`;
+}
+
+async function createTestUser(role: "CUSTOMER" | "ADMIN" = "CUSTOMER") {
+  const marker = randomUUID();
+  const [user] = await db.insert(usersTable).values({
+    firstName: "Retail",
+    lastName: `Regression ${marker}`,
+    email: `retail-regression-${marker}@example.test`,
+    passwordHash: await hashPassword(`retail-regression-${marker}`),
+    passwordSetAt: new Date(),
+    role,
+  }).returning();
+  assert.ok(user);
+  createdUserIds.push(user.id);
+  return { user, cookie: `${sessionCookieName}=${await createSession(user.id)}` };
 }
 
 async function addRetailItem(request: ReturnType<typeof retailClient>, productId: string, quantity: number) {
@@ -157,13 +190,22 @@ test.before(async () => {
   }
 
   const suffix = randomUUID();
+  const [supplier] = await db.insert(suppliersTable).values({
+    name: `Retail checkout supplier ${suffix}`,
+    slug: `retail-checkout-supplier-${suffix}`,
+    scope: "BOTH",
+    active: true,
+  }).returning();
+  createdSupplierId = supplier!.id;
   const [category] = await db.insert(productCategoriesTable).values({
+    supplierId: supplier!.id,
     name: `Retail checkout test ${suffix}`,
     slug: `retail-checkout-test-${suffix}`,
     active: true,
   }).returning();
   createdCategoryId = category!.id;
   const [product] = await db.insert(productsTable).values({
+    supplierId: supplier!.id,
     categoryId: category!.id,
     categoryName: category!.name,
     name: `Retail proizvod ${suffix}`,
@@ -185,16 +227,25 @@ test.before(async () => {
 });
 
 test.after(async () => {
+  if (createdUserIds.length) {
+    await db.delete(loyaltyPointLedgerTable).where(inArray(loyaltyPointLedgerTable.userId, createdUserIds));
+    await db.delete(reorderActionsTable).where(inArray(reorderActionsTable.userId, createdUserIds));
+    await db.delete(commerceCustomerNotificationsTable).where(inArray(commerceCustomerNotificationsTable.userId, createdUserIds));
+    await db.delete(productWaitlistTable).where(inArray(productWaitlistTable.userId, createdUserIds));
+  }
   if (createdOrderIds.length) {
     await db.delete(retailOrderItemsTable).where(inArray(retailOrderItemsTable.orderId, createdOrderIds));
     await db.delete(retailOrdersTable).where(inArray(retailOrdersTable.id, createdOrderIds));
   }
   if (createdCartIds.length) {
     await db.delete(retailCartItemsTable).where(inArray(retailCartItemsTable.cartId, createdCartIds));
+    await db.delete(savedRetailCartItemsTable).where(inArray(savedRetailCartItemsTable.cartId, createdCartIds));
     await db.delete(retailCartsTable).where(inArray(retailCartsTable.id, createdCartIds));
   }
+  if (createdUserIds.length) await db.delete(usersTable).where(inArray(usersTable.id, createdUserIds));
   if (createdProductId) await db.delete(productsTable).where(eq(productsTable.id, createdProductId));
   if (createdCategoryId) await db.delete(productCategoriesTable).where(eq(productCategoriesTable.id, createdCategoryId));
+  if (createdSupplierId) await db.delete(suppliersTable).where(eq(suppliersTable.id, createdSupplierId));
   if (previousShippingRule) {
     await db.update(shippingRulesTable).set({
       freeShippingThreshold: previousShippingRule.freeShippingThreshold,
@@ -760,5 +811,252 @@ test("checkout marks an unavailable displayed-quote item with the stable conflic
     assert.equal(error.code, "CHECKOUT_QUOTE_CHANGED");
   } finally {
     await db.update(productsTable).set({ stock: product.stock }).where(eq(productsTable.id, createdProductId));
+  }
+});
+
+test("two customers concurrently claiming one anonymous cart produce one winner and one isolated loser", async () => {
+  assert.ok(createdProductId);
+  await db.update(productsTable).set({ stock: 10, minimumOrderQuantity: 1 }).where(eq(productsTable.id, createdProductId));
+  const anonymous = await fetch(`${baseUrl}/retail/cart/items`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ productId: createdProductId, quantity: 1 }),
+  });
+  assert.equal(anonymous.status, 201);
+  const anonymousCart = await anonymous.json() as RetailCart;
+  createdCartIds.push(anonymousCart.id);
+  const sharedCookie = retailCartCookie(anonymous);
+  const [first, second] = await Promise.all([createTestUser(), createTestUser()]);
+
+  const responses = await Promise.all([first, second].map(({ cookie }) => fetch(`${baseUrl}/retail/cart`, {
+    headers: { cookie: `${sharedCookie}; ${cookie}` },
+  })));
+  assert.deepEqual(responses.map((response) => response.status), [200, 200]);
+  const carts = await Promise.all(responses.map((response) => response.json() as Promise<RetailCart>));
+  for (const cart of carts) if (!createdCartIds.includes(cart.id)) createdCartIds.push(cart.id);
+
+  const winners = carts.filter((cart) => cart.id === anonymousCart.id && cart.items.length === 1);
+  const losers = carts.filter((cart) => cart.id !== anonymousCart.id && cart.items.length === 0);
+  assert.equal(winners.length, 1, "exactly one account claims the anonymous cart and its item");
+  assert.equal(losers.length, 1, "the losing account receives a distinct empty cart");
+  const persisted = await db.select().from(retailCartsTable).where(inArray(retailCartsTable.id, carts.map((cart) => cart.id)));
+  assert.equal(new Set(persisted.map((cart) => cart.userId)).size, 2);
+  assert.ok(persisted.every((cart) => cart.userId === first.user.id || cart.userId === second.user.id));
+});
+
+test("logout and account switching hide bound active and saved items, while the owner can restore them", async () => {
+  assert.ok(createdProductId);
+  await db.update(productsTable).set({ stock: 10, minimumOrderQuantity: 1 }).where(eq(productsTable.id, createdProductId));
+  const owner = await createTestUser();
+  const other = await createTestUser();
+  const added = await fetch(`${baseUrl}/retail/cart/items`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: owner.cookie },
+    body: JSON.stringify({ productId: createdProductId, quantity: 2 }),
+  });
+  assert.equal(added.status, 201);
+  const original = await added.json() as RetailCart;
+  createdCartIds.push(original.id);
+  const ownerCartCookie = retailCartCookie(added);
+  const ownerRequest = (path: string, init: RequestInit = {}) => fetch(`${baseUrl}${path}`, {
+    ...init,
+    headers: {
+      ...(init.body ? { "content-type": "application/json" } : {}),
+      cookie: `${ownerCartCookie}; ${owner.cookie}`,
+      ...(init.headers ?? {}),
+    },
+  });
+  const item = original.items[0];
+  assert.ok(item);
+  const savedResponse = await ownerRequest(`/retail/cart/items/${item.id}/save-for-later`, { method: "POST" });
+  assert.equal(savedResponse.status, 200);
+  const savedCart = await savedResponse.json() as RetailCart;
+  const savedItem = savedCart.savedItems?.[0];
+  assert.ok(savedItem);
+  assert.equal((await ownerRequest("/retail/cart/items", {
+    method: "POST", body: JSON.stringify({ productId: createdProductId, quantity: 1 }),
+  })).status, 201);
+
+  const [bound] = await db.select().from(retailCartsTable).where(eq(retailCartsTable.id, original.id)).limit(1);
+  assert.equal(bound?.userId, owner.user.id);
+  const logout = await fetch(`${baseUrl}/auth/logout`, {
+    method: "POST",
+    headers: { cookie: `${ownerCartCookie}; ${owner.cookie}` },
+  });
+  assert.equal(logout.status, 204);
+  const tokenOnlyResponse = await fetch(`${baseUrl}/retail/cart`, {
+    headers: { cookie: ownerCartCookie },
+  });
+  assert.equal(tokenOnlyResponse.status, 200);
+  const tokenOnlyCart = await tokenOnlyResponse.json() as RetailCart;
+  createdCartIds.push(tokenOnlyCart.id);
+  assert.notEqual(tokenOnlyCart.id, original.id);
+  assert.deepEqual(tokenOnlyCart.items, []);
+  assert.deepEqual(tokenOnlyCart.savedItems ?? [], []);
+
+  const switchedResponse = await fetch(`${baseUrl}/retail/cart`, {
+    headers: { cookie: `${ownerCartCookie}; ${other.cookie}` },
+  });
+  assert.equal(switchedResponse.status, 200);
+  const switchedCart = await switchedResponse.json() as RetailCart;
+  createdCartIds.push(switchedCart.id);
+  assert.notEqual(switchedCart.id, original.id);
+  assert.deepEqual(switchedCart.items, []);
+  assert.deepEqual(switchedCart.savedItems ?? [], []);
+
+  const restored = await fetch(`${baseUrl}/retail/cart/saved-items/${savedItem.id}/restore`, {
+    method: "POST",
+    headers: { cookie: `${ownerCartCookie}; ${sessionCookieName}=${await createSession(owner.user.id)}` },
+  });
+  assert.equal(restored.status, 200);
+  const ownerCart = await restored.json() as RetailCart;
+  assert.equal(ownerCart.id, original.id);
+  assert.equal(ownerCart.items[0]?.quantity, 3);
+  assert.deepEqual(ownerCart.savedItems ?? [], []);
+});
+
+test("a cart created under an old MOQ cannot be previewed or checked out after the MOQ rises", async () => {
+  assert.ok(createdProductId);
+  await db.update(productsTable).set({ stock: 10, minimumOrderQuantity: 1 }).where(eq(productsTable.id, createdProductId));
+  const request = retailClient();
+  assert.equal((await addRetailItem(request, createdProductId, 1)).status, 201);
+  await db.update(productsTable).set({ minimumOrderQuantity: 2 }).where(eq(productsTable.id, createdProductId));
+  try {
+    const preview = await request("/retail/checkout-preview?deliveryMethod=courier&city=Novi%20Sad");
+    assert.equal(preview.status, 200, "the stale cart remains visible so the shopper can correct it");
+    const checkout = await request("/retail/checkout", {
+      method: "POST",
+      body: JSON.stringify({
+        idempotencyKey: `retail-stale-moq-${randomUUID()}`,
+        firstName: "Retail", lastName: "MOQ", email: `moq-${randomUUID()}@example.test`,
+        phone: "+381601234567", street: "Test ulica 1", city: "Novi Sad", postalCode: "21000",
+        paymentMethod: "BANK_TRANSFER", deliveryMethod: "courier",
+      }),
+    });
+    assert.equal(checkout.status, 409);
+    assert.equal((await checkout.json() as ApiError).code, "MINIMUM_ORDER_QUANTITY");
+  } finally {
+    await db.update(productsTable).set({ minimumOrderQuantity: 1 }).where(eq(productsTable.id, createdProductId));
+  }
+});
+
+test("waitlist stock transitions create one outbox event and worker replay creates one notification", async () => {
+  assert.ok(createdProductId);
+  const customer = await createTestUser();
+  await db.update(productsTable).set({ stock: 0 }).where(eq(productsTable.id, createdProductId));
+  const subscribe = await fetch(`${baseUrl}/shop/public/products/${createdProductId}/waitlist`, {
+    method: "POST",
+    headers: { cookie: customer.cookie },
+  });
+  assert.equal(subscribe.status, 201);
+  const waitlist = await subscribe.json() as { id: string };
+
+  await db.update(productsTable).set({ stock: 1 }).where(eq(productsTable.id, createdProductId));
+  await db.update(productsTable).set({ stock: 2 }).where(eq(productsTable.id, createdProductId));
+  const outbox = await db.select().from(productWaitlistNotificationOutboxTable)
+    .where(eq(productWaitlistNotificationOutboxTable.waitlistId, waitlist.id));
+  assert.equal(outbox.length, 1, "one availability episode has one durable outbox row");
+  await db.update(productWaitlistNotificationOutboxTable).set({ createdAt: new Date(0) })
+    .where(eq(productWaitlistNotificationOutboxTable.id, outbox[0]!.id));
+  assert.deepEqual(await runProductWaitlistNotificationWorker(1), { processed: 1 });
+  await db.update(productWaitlistNotificationOutboxTable).set({ processedAt: null, createdAt: new Date(0) })
+    .where(eq(productWaitlistNotificationOutboxTable.id, outbox[0]!.id));
+  assert.deepEqual(await runProductWaitlistNotificationWorker(1), { processed: 1 });
+  const notifications = await db.select().from(commerceCustomerNotificationsTable)
+    .where(eq(commerceCustomerNotificationsTable.waitlistId, waitlist.id));
+  assert.equal(notifications.length, 1, "replaying a delivered outbox row is notification-idempotent");
+});
+
+test("authenticated checkout awards and reverses loyalty once, and repeat-last is request-idempotent", async () => {
+  assert.ok(createdProductId);
+  const customer = await createTestUser();
+  const admin = await createTestUser("ADMIN");
+  let [settingsBefore] = await db.select().from(shopSettingsTable).limit(1);
+  const ownsSettings = !settingsBefore;
+  if (!settingsBefore) {
+    [settingsBefore] = await db.insert(shopSettingsTable).values({
+      showLoyaltyPoints: true,
+      pointsPer100Rsd: 1,
+      lowStockThreshold: 5,
+      defaultDeliveryBusinessDays: 3,
+    }).returning();
+  }
+  assert.ok(settingsBefore);
+  const [productBefore] = await db.select().from(productsTable).where(eq(productsTable.id, createdProductId)).limit(1);
+  assert.ok(productBefore);
+  await db.update(shopSettingsTable).set({ showLoyaltyPoints: true, pointsPer100Rsd: 2 })
+    .where(eq(shopSettingsTable.id, settingsBefore.id));
+  await db.update(productsTable).set({
+    stock: 10, minimumOrderQuantity: 1, publicDiscountPrice: null, quantityPricingTiers: [],
+  }).where(eq(productsTable.id, createdProductId));
+  try {
+    const request = retailClient(customer.cookie);
+    assert.equal((await addRetailItem(request, createdProductId, 1)).status, 201);
+    const previewResponse = await request("/retail/checkout-preview?deliveryMethod=courier&city=Novi%20Sad");
+    assert.equal(previewResponse.status, 200);
+    const preview = await previewResponse.json() as RetailCheckoutPreview;
+    const checkout = await request("/retail/checkout", {
+      method: "POST",
+      body: JSON.stringify({
+        idempotencyKey: `retail-loyalty-${randomUUID()}`,
+        firstName: "Retail", lastName: "Loyalty", email: customer.user.email,
+        phone: "+381601234567", street: "Test ulica 1", city: "Novi Sad", postalCode: "21000",
+        paymentMethod: "BANK_TRANSFER", deliveryMethod: "courier",
+        expectedSubtotal: preview.cart.subtotal, expectedShippingCost: preview.shipping.shippingCost,
+        expectedTotal: preview.total,
+      }),
+    });
+    assert.equal(checkout.status, 201);
+    const order = await checkout.json() as RetailOrder;
+    createdOrderIds.push(order.id);
+    const awards = await db.select().from(loyaltyPointLedgerTable).where(eq(loyaltyPointLedgerTable.retailOrderId, order.id));
+    assert.equal(awards.length, 1);
+    assert.equal(awards[0]?.type, "AWARD");
+    assert.equal(awards[0]?.points, 50);
+
+    const reorderKey = `repeat-${randomUUID()}`;
+    const repeated = await Promise.all([1, 2].map(() => request("/retail/orders/repeat-last", {
+      method: "POST", headers: { "Idempotency-Key": reorderKey },
+    })));
+    assert.deepEqual(repeated.map((response) => response.status), [200, 200]);
+    const outcomes = await Promise.all(repeated.map((response) => response.json()));
+    assert.deepEqual(outcomes[0], outcomes[1]);
+    const cartAfterRepeat = (outcomes[0] as { cart: RetailCart }).cart;
+    assert.equal(cartAfterRepeat.items[0]?.quantity, 1, "a replay must not add the order twice");
+    const actions = await db.select().from(reorderActionsTable).where(and(
+      eq(reorderActionsTable.userId, customer.user.id),
+      eq(reorderActionsTable.idempotencyKey, reorderKey),
+    ));
+    assert.equal(actions.length, 1);
+
+    const cancel = () => fetch(`${baseUrl}/admin/retail-orders/${order.id}/status`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: admin.cookie },
+      body: JSON.stringify({ status: "cancelled" }),
+    });
+    assert.equal((await cancel()).status, 200);
+    assert.equal((await cancel()).status, 200);
+    const ledger = await db.select().from(loyaltyPointLedgerTable)
+      .where(eq(loyaltyPointLedgerTable.retailOrderId, order.id));
+    assert.equal(ledger.filter((entry) => entry.type === "AWARD").length, 1);
+    assert.equal(ledger.filter((entry) => entry.type === "REVERSAL").length, 1);
+    assert.equal(ledger.reduce((sum, entry) => sum + entry.points, 0), 0);
+    const [stockAfter] = await db.select({ stock: productsTable.stock }).from(productsTable)
+      .where(eq(productsTable.id, createdProductId)).limit(1);
+    assert.equal(stockAfter?.stock, 10, "repeated cancellation restores checkout stock only once");
+  } finally {
+    if (ownsSettings) {
+      await db.delete(shopSettingsTable).where(eq(shopSettingsTable.id, settingsBefore.id));
+    } else {
+      await db.update(shopSettingsTable).set({
+        showLoyaltyPoints: settingsBefore.showLoyaltyPoints,
+        pointsPer100Rsd: settingsBefore.pointsPer100Rsd,
+      }).where(eq(shopSettingsTable.id, settingsBefore.id));
+    }
+    await db.update(productsTable).set({
+      publicDiscountPrice: productBefore.publicDiscountPrice,
+      quantityPricingTiers: productBefore.quantityPricingTiers,
+      minimumOrderQuantity: productBefore.minimumOrderQuantity,
+    }).where(eq(productsTable.id, createdProductId));
   }
 });

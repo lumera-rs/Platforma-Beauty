@@ -7,11 +7,17 @@ import { eq, inArray, sql } from "drizzle-orm";
 import {
   db,
   type DatabasePoolClient,
+  loyaltyPointLedgerTable,
+  orderBundleComponentsTable,
   orderItemsTable,
   ordersTable,
+  productBundleComponentsTable,
+  productBundlesTable,
   pool,
   productCategoriesTable,
   productsTable,
+  referralCreditLedgerTable,
+  referralCreditRedemptionsTable,
   salonsTable,
   shoppingCartItemsTable,
   shoppingCartsTable,
@@ -39,6 +45,7 @@ const marker = `supplier-catalog-560-${randomUUID()}`;
 const categoryIds: string[] = [];
 const productIds: string[] = [];
 const orderIds: string[] = [];
+const bundleIds: string[] = [];
 const supplierIds: string[] = [];
 let adminId = "";
 let ownerId = "";
@@ -81,10 +88,18 @@ async function createCategory(
   return category;
 }
 
-async function addToCart(productId: string, quantity = 1) {
+async function addToCart(productId: string, quantity = 1, variantValue?: string) {
   const response = await api("/shop/cart/items", ownerCookie, {
     method: "POST",
-    body: JSON.stringify({ productId, quantity }),
+    body: JSON.stringify({ productId, quantity, ...(variantValue ? { variantValue } : {}) }),
+  });
+  assert.equal(response.status, 200, await response.text());
+}
+
+async function addBundleToCart(bundleId: string, quantity = 1) {
+  const response = await api("/shop/cart/items", ownerCookie, {
+    method: "POST",
+    body: JSON.stringify({ bundleId, quantity }),
   });
   assert.equal(response.status, 200, await response.text());
 }
@@ -247,6 +262,18 @@ test.after(async () => {
       await closed;
     }
     if (orderIds.length) {
+      await db.transaction(async (tx) => {
+        await tx.execute(sql`alter table referral_credit_ledger disable trigger referral_credit_ledger_append_only`);
+        await tx.execute(sql`alter table referral_credit_redemptions disable trigger referral_credit_redemptions_append_only`);
+        try {
+          await tx.delete(referralCreditRedemptionsTable).where(inArray(referralCreditRedemptionsTable.orderId, orderIds));
+          await tx.delete(referralCreditLedgerTable).where(eq(referralCreditLedgerTable.ownerUserId, ownerId));
+        } finally {
+          await tx.execute(sql`alter table referral_credit_ledger enable trigger referral_credit_ledger_append_only`);
+          await tx.execute(sql`alter table referral_credit_redemptions enable trigger referral_credit_redemptions_append_only`);
+        }
+      });
+      await db.delete(loyaltyPointLedgerTable).where(inArray(loyaltyPointLedgerTable.orderId, orderIds));
       await db.delete(orderItemsTable).where(inArray(orderItemsTable.orderId, orderIds));
       await db.delete(ordersTable).where(inArray(ordersTable.id, orderIds));
     }
@@ -258,6 +285,10 @@ test.after(async () => {
         await db.delete(shoppingCartsTable).where(inArray(shoppingCartsTable.id, carts.map((cart) => cart.id)));
       }
       await db.delete(salonsTable).where(eq(salonsTable.id, salonId));
+    }
+    if (bundleIds.length) {
+      await db.delete(productBundleComponentsTable).where(inArray(productBundleComponentsTable.bundleId, bundleIds));
+      await db.delete(productBundlesTable).where(inArray(productBundlesTable.id, bundleIds));
     }
     if (productIds.length) await db.delete(productsTable).where(inArray(productsTable.id, productIds));
     if (categoryIds.length) await db.delete(productCategoriesTable).where(inArray(productCategoriesTable.id, categoryIds));
@@ -653,4 +684,218 @@ test("admin products remain cross-supplier by default and filter supplier, marke
   assert.ok(lowStock.includes(conflictProduct.id));
   assert.ok(lowStock.includes(b2cProduct.id));
   assert.ok(!lowStock.includes(orderedProduct.id));
+});
+
+test("mixed B2B cancellation restores immutable base, variant, and bundle inventory once and referral credit only covers full-price lines", async () => {
+  const [category] = await db.insert(productCategoriesTable).values({
+    supplierId: supplierA.id,
+    name: `${marker} cancellation category`,
+    slug: `${marker}-cancellation-category`,
+  }).returning();
+  assert.ok(category);
+  categoryIds.push(category.id);
+
+  const fixtures = await db.insert(productsTable).values([
+    {
+      supplierId: supplierA.id,
+      categoryId: category.id,
+      categoryName: category.name,
+      name: `${marker} cancellation full price`,
+      description: marker,
+      imageUrl: "/supplier-catalog-test.jpg",
+      price: 1_000,
+      professionalEnabled: true,
+      retailEnabled: false,
+      stock: 50,
+      sku: `${marker}-cancel-full`,
+      unit: "kom",
+      weightGrams: 100,
+    },
+    {
+      supplierId: supplierA.id,
+      categoryId: category.id,
+      categoryName: category.name,
+      name: `${marker} cancellation sale variant`,
+      description: marker,
+      imageUrl: "/supplier-catalog-test.jpg",
+      price: 900,
+      discountPrice: 700,
+      professionalEnabled: true,
+      retailEnabled: false,
+      stock: 40,
+      sku: `${marker}-cancel-sale`,
+      unit: "kom",
+      weightGrams: 100,
+      variants: [{
+        label: "Crvena",
+        value: "red",
+        stock: 15,
+        sku: `${marker}-cancel-sale-red`,
+      }],
+    },
+    {
+      supplierId: supplierA.id,
+      categoryId: category.id,
+      categoryName: category.name,
+      name: `${marker} cancellation tier`,
+      description: marker,
+      imageUrl: "/supplier-catalog-test.jpg",
+      price: 800,
+      professionalEnabled: true,
+      retailEnabled: false,
+      stock: 50,
+      sku: `${marker}-cancel-tier`,
+      unit: "kom",
+      weightGrams: 100,
+      quantityPricingTiers: [{ minQuantity: 4, maxQuantity: null, unitPrice: 600 }],
+    },
+    {
+      supplierId: supplierA.id,
+      categoryId: category.id,
+      categoryName: category.name,
+      name: `${marker} cancellation bundle component`,
+      description: marker,
+      imageUrl: "/supplier-catalog-test.jpg",
+      price: 500,
+      professionalEnabled: true,
+      retailEnabled: false,
+      stock: 50,
+      sku: `${marker}-cancel-component`,
+      unit: "kom",
+      weightGrams: 100,
+    },
+  ]).returning();
+  assert.equal(fixtures.length, 4);
+  productIds.push(...fixtures.map((product) => product.id));
+  const [fullPriceProduct, saleVariantProduct, tierProduct, componentProduct] = fixtures;
+  assert.ok(fullPriceProduct);
+  assert.ok(saleVariantProduct);
+  assert.ok(tierProduct);
+  assert.ok(componentProduct);
+
+  const bundleResponse = await api("/admin/bundles", adminCookie, {
+    method: "POST",
+    body: JSON.stringify({
+      supplierId: supplierA.id,
+      name: `${marker} cancellation bundle`,
+      description: marker,
+      market: "B2B",
+      b2bPrice: 2_500,
+      b2cPrice: null,
+      components: [
+        { productId: fullPriceProduct.id, quantity: 2 },
+        { productId: componentProduct.id, quantity: 3 },
+      ],
+    }),
+  });
+  assert.equal(bundleResponse.status, 201, await bundleResponse.clone().text());
+  const bundle = await bundleResponse.json() as { id: string };
+  bundleIds.push(bundle.id);
+
+  const [cart] = await db.select({ id: shoppingCartsTable.id }).from(shoppingCartsTable)
+    .where(eq(shoppingCartsTable.salonId, salonId));
+  if (cart) await db.delete(shoppingCartItemsTable).where(eq(shoppingCartItemsTable.cartId, cart.id));
+
+  await addToCart(fullPriceProduct.id, 2);
+  await addToCart(saleVariantProduct.id, 3, "red");
+  await addToCart(tierProduct.id, 4);
+  await addBundleToCart(bundle.id, 2);
+
+  const [creditSource] = await db.insert(referralCreditLedgerTable).values({
+    walletKind: "B2B",
+    ownerUserId: ownerId,
+    salonId,
+    type: "available",
+    amountRsd: 10_000,
+    effectiveAt: new Date(),
+    reason: marker,
+    idempotencyKey: `${marker}:mixed-cancellation-credit`,
+    metadata: { marker },
+  }).returning();
+  assert.ok(creditSource);
+
+  const response = await api("/shop/checkout", ownerCookie, {
+    method: "POST",
+    body: JSON.stringify({
+      useSalonAddress: true,
+      paymentMethod: "BANK_TRANSFER",
+      deliveryMethod: "courier",
+      termsAccepted: true,
+      desiredReferralCreditRsd: 10_000,
+    }),
+  });
+  assert.equal(response.status, 201, await response.clone().text());
+  const created = await response.json() as { id: string };
+  orderIds.push(created.id);
+
+  const orderLines = await db.select().from(orderItemsTable)
+    .where(eq(orderItemsTable.orderId, created.id));
+  const linesBySource = new Map(orderLines.map((line) => [line.priceSource, line]));
+  assert.deepEqual([...linesBySource.keys()].sort(), ["BUNDLE", "FULL_PRICE", "SALE", "TIER"]);
+  assert.equal(linesBySource.get("FULL_PRICE")?.lineTotal, 2_000);
+  assert.equal(linesBySource.get("SALE")?.lineTotal, 2_100);
+  assert.equal(linesBySource.get("TIER")?.lineTotal, 2_400);
+  assert.equal(linesBySource.get("BUNDLE")?.lineTotal, 5_000);
+
+  const [savedOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, created.id));
+  assert.equal(savedOrder?.referralCreditAppliedRsd, 2_000,
+    "SALE, TIER, and BUNDLE totals must not increase the FULL_PRICE referral-credit ceiling");
+  const redemptions = await db.select().from(referralCreditRedemptionsTable)
+    .where(eq(referralCreditRedemptionsTable.orderId, created.id));
+  assert.deepEqual(redemptions.map((row) => ({
+    ledgerEntryId: row.ledgerEntryId,
+    amountRsd: row.amountRsd,
+  })), [{ ledgerEntryId: creditSource.id, amountRsd: 2_000 }]);
+
+  const inventoryAfterCheckout = Object.freeze({
+    fullPrice: 44,
+    saleProduct: 37,
+    saleVariant: 12,
+    tier: 46,
+    component: 44,
+  });
+  const productsAfterCheckout = await db.select().from(productsTable)
+    .where(inArray(productsTable.id, fixtures.map((product) => product.id)));
+  const checkoutById = new Map(productsAfterCheckout.map((product) => [product.id, product]));
+  assert.equal(checkoutById.get(fullPriceProduct.id)?.stock, inventoryAfterCheckout.fullPrice);
+  assert.equal(checkoutById.get(saleVariantProduct.id)?.stock, inventoryAfterCheckout.saleProduct);
+  assert.equal(checkoutById.get(saleVariantProduct.id)?.variants?.find((variant) => variant.value === "red")?.stock,
+    inventoryAfterCheckout.saleVariant);
+  assert.equal(checkoutById.get(tierProduct.id)?.stock, inventoryAfterCheckout.tier);
+  assert.equal(checkoutById.get(componentProduct.id)?.stock, inventoryAfterCheckout.component);
+
+  const bundleItem = orderLines.find((line) => line.priceSource === "BUNDLE");
+  assert.ok(bundleItem);
+  const immutableComponents = await db.select().from(orderBundleComponentsTable)
+    .where(eq(orderBundleComponentsTable.orderItemId, bundleItem.id));
+  assert.deepEqual(
+    immutableComponents.map((component) => ({ productId: component.productId, quantity: component.quantity }))
+      .sort((left, right) => left.productId.localeCompare(right.productId)),
+    [
+      { productId: fullPriceProduct.id, quantity: 4 },
+      { productId: componentProduct.id, quantity: 6 },
+    ].sort((left, right) => left.productId.localeCompare(right.productId)),
+  );
+
+  await db.update(productBundleComponentsTable).set({ quantity: 9 })
+    .where(eq(productBundleComponentsTable.bundleId, bundle.id));
+
+  const cancel = () => api(`/admin/orders/${created.id}`, adminCookie, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "cancelled" }),
+  });
+  const concurrent = await Promise.all([cancel(), cancel()]);
+  assert.ok(concurrent.some((result) => result.status === 200));
+  assert.ok(concurrent.every((result) => result.status === 200 || result.status === 400));
+  const repeated = await cancel();
+  assert.equal(repeated.status, 400);
+
+  const restoredProducts = await db.select().from(productsTable)
+    .where(inArray(productsTable.id, fixtures.map((product) => product.id)));
+  const restoredById = new Map(restoredProducts.map((product) => [product.id, product]));
+  assert.equal(restoredById.get(fullPriceProduct.id)?.stock, 50);
+  assert.equal(restoredById.get(saleVariantProduct.id)?.stock, 40);
+  assert.equal(restoredById.get(saleVariantProduct.id)?.variants?.find((variant) => variant.value === "red")?.stock, 15);
+  assert.equal(restoredById.get(tierProduct.id)?.stock, 50);
+  assert.equal(restoredById.get(componentProduct.id)?.stock, 50);
 });
