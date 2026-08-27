@@ -88,7 +88,7 @@ function retailCartCookie(response: Response) {
   return `lumera_retail_cart=${token}`;
 }
 
-async function createTestUser(role: "CUSTOMER" | "ADMIN" = "CUSTOMER") {
+async function createTestUser(role: "CUSTOMER" | "JOBSEEKER" | "ADMIN" = "CUSTOMER") {
   const marker = randomUUID();
   const [user] = await db.insert(usersTable).values({
     firstName: "Retail",
@@ -526,6 +526,57 @@ test("retail checkout saves the exact courier and personal-delivery previews", a
   assert.ok(createdProductId);
   await checkoutAndAssertSavedAmount(createdProductId, "courier", "Novi Sad");
   await checkoutAndAssertSavedAmount(createdProductId, "personal_belgrade", "Beograd");
+});
+
+test("guest checkout stays anonymous while CUSTOMER and JOBSEEKER orders are owned and isolated", async () => {
+  assert.ok(createdProductId);
+  const place = async (request: ReturnType<typeof retailClient>, marker: string) => {
+    assert.equal((await addRetailItem(request, createdProductId!, 1)).status, 201);
+    const previewResponse = await request("/retail/checkout-preview?deliveryMethod=courier&city=Novi%20Sad");
+    assert.equal(previewResponse.status, 200);
+    const preview = await previewResponse.json() as RetailCheckoutPreview;
+    const response = await request("/retail/checkout", {
+      method: "POST",
+      body: JSON.stringify({
+        idempotencyKey: `retail-account-${marker}-${randomUUID()}`,
+        firstName: "Retail", lastName: "Kupac", email: `${marker}-${randomUUID()}@example.test`,
+        phone: "+381601234567", street: "Test ulica 1", city: "Novi Sad", postalCode: "21000",
+        paymentMethod: "BANK_TRANSFER", deliveryMethod: "courier",
+        expectedSubtotal: preview.cart.subtotal, expectedShippingCost: preview.shipping.shippingCost, expectedTotal: preview.total,
+      }),
+    });
+    assert.equal(response.status, 201);
+    const order = await response.json() as RetailOrder;
+    createdOrderIds.push(order.id);
+    return order;
+  };
+
+  const usersBefore = await db.select({ id: usersTable.id }).from(usersTable);
+  const guest = await place(retailClient(), "guest");
+  const usersAfter = await db.select({ id: usersTable.id }).from(usersTable);
+  assert.equal(usersAfter.length, usersBefore.length, "guest checkout must never create an account");
+  const [guestRow] = await db.select().from(retailOrdersTable).where(eq(retailOrdersTable.id, guest.id));
+  assert.equal(guestRow?.userId, null);
+
+  const customer = await createTestUser("CUSTOMER");
+  const jobseeker = await createTestUser("JOBSEEKER");
+  const customerOrder = await place(retailClient(customer.cookie), "customer");
+  const jobseekerOrder = await place(retailClient(jobseeker.cookie), "jobseeker");
+  const [customerRow, jobseekerRow] = await Promise.all([
+    db.select().from(retailOrdersTable).where(eq(retailOrdersTable.id, customerOrder.id)).then((rows) => rows[0]),
+    db.select().from(retailOrdersTable).where(eq(retailOrdersTable.id, jobseekerOrder.id)).then((rows) => rows[0]),
+  ]);
+  assert.equal(customerRow?.userId, customer.user.id);
+  assert.equal(jobseekerRow?.userId, jobseeker.user.id);
+
+  const customerHistory = await retailClient(customer.cookie)("/customer/retail-orders");
+  assert.equal(customerHistory.status, 200);
+  assert.ok((await customerHistory.json() as RetailOrder[]).some((order) => order.id === customerOrder.id));
+  const jobseekerHistory = await retailClient(jobseeker.cookie)("/customer/retail-orders");
+  assert.equal(jobseekerHistory.status, 200);
+  assert.ok((await jobseekerHistory.json() as RetailOrder[]).some((order) => order.id === jobseekerOrder.id));
+  const denied = await retailClient(jobseeker.cookie)(`/customer/retail-orders/${customerOrder.id}`);
+  assert.equal(denied.status, 404, "another retail account cannot read an order by id");
 });
 
 test("B2C sale lines are excluded from the referral base in preview and final checkout", async () => {

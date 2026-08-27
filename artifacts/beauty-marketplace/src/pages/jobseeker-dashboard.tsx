@@ -1,7 +1,7 @@
 import { Link, useLocation, useRoute } from "wouter";
 import { 
   LayoutDashboard, Briefcase, GraduationCap, 
-  UserCircle, Settings, LogOut, Loader2, Bell, Gift
+  UserCircle, Settings, LogOut, Loader2, Bell, Gift, Box
 } from "lucide-react";
 import { useGetCurrentUser, useGetJobseekerDashboard, useLogout } from "@workspace/api-client-react";
 import { Layout } from "@/components/layout";
@@ -13,6 +13,7 @@ import CustomerBeautyJobsPage from "./customer-beauty-jobs";
 import BusinessEducation from "./business-education";
 import JobseekerProfile from "@/components/jobseeker/jobseeker-profile";
 import JobseekerSettings from "@/components/jobseeker/jobseeker-settings";
+import { CustomerRetailOrders } from "@/components/retail-orders";
 
 export default function JobseekerDashboard() {
   const [, params] = useRoute("/poslovi/nalog/:tab?");
@@ -44,6 +45,7 @@ export default function JobseekerDashboard() {
     { id: "pregled", label: "Pregled", icon: LayoutDashboard },
     { id: "oglasi", label: "Moji oglasi", icon: Briefcase },
     { id: "edukacije", label: "Edukacije", icon: GraduationCap },
+    { id: "porudzbine", label: "Porudžbine", icon: Box },
     { id: "profil", label: "Profil", icon: UserCircle },
     { id: "podesavanja", label: "Podešavanja", icon: Settings },
   ];
@@ -94,6 +96,13 @@ export default function JobseekerDashboard() {
           {activeTab === "pregled" && <DashboardOverview />}
           {activeTab === "oglasi" && <CustomerBeautyJobsPage hideLayout />}
           {activeTab === "edukacije" && <BusinessEducation hideLayout />}
+          {activeTab === "porudzbine" && <div className="p-6 md:p-8 space-y-6">
+            <div>
+              <h1 className="text-3xl font-serif font-bold text-foreground">Porudžbine</h1>
+              <p className="text-muted-foreground mt-1">Istorija vaših retail porudžbina.</p>
+            </div>
+            <CustomerRetailOrders />
+          </div>}
           {activeTab === "profil" && <JobseekerProfile />}
           {activeTab === "podesavanja" && <JobseekerSettings />}
         </main>

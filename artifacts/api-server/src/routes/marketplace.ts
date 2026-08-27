@@ -7,7 +7,7 @@ import
 
 import 
 {
- and, asc, count, desc, eq, exists, getTableColumns, gt, gte, ilike, inArray, isNotNull, isNull, lt, lte, ne, notInArray, or, sql
+  and, asc, count, desc, eq, exists, getTableColumns, gt, gte, ilike, inArray, isNotNull, isNull, lt, lte, ne, notInArray, or, sql, type SQL
 }
  from "drizzle-orm"
 ;
@@ -60,6 +60,9 @@ import
   appointmentSeriesTable,
   appointmentsTable,
   beautyGlossaryTable,
+  b2cNeedTagsTable,
+  b2cProductNeedTagsTable,
+  b2cProductTypesTable,
   beautyJobContactsTable,
   beautyJobListingsTable,
   courseCategoriesTable,
@@ -138,6 +141,8 @@ import
   referralCreditRedemptionsTable,
   referralMilestoneBenefitsTable,
   retailProductReviewsTable,
+   retailProductReviewReportsTable,
+   retailProductReviewModerationAuditsTable,
   reviewsTable,
   salonHoursTable,
   salonBrandsTable,
@@ -507,6 +512,7 @@ import
 }
  from "../lib/auth"
 ;
+import { canonicalPublicProductCondition, claimRecentlyViewedForUser } from "./b2c-discovery";
 
 import 
 {
@@ -4893,6 +4899,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   }
   const token = await createSession(user.id);
   res.cookie(sessionCookieName, token, cookieOptions());
+  if (isRetailAccount(user)) await claimRecentlyViewedForUser(req, res, user.id);
   res.json(LoginResponse.parse({ user: publicUser(user), message: "Uspešno ste prijavljeni." }));
 });
 
@@ -9039,6 +9046,7 @@ function productDtoWithAggregate(
     supplierId: item.supplierId,
     name: item.name,
     category: item.categoryName,
+    categoryId: item.categoryId,
     subcategory: item.subcategoryName ?? null,
     brand: item.brand ?? null,
     description: item.description,
@@ -9093,6 +9101,10 @@ function publicProductDto(item: typeof productsTable.$inferSelect) {
     subscriptionDiscountPercent: item.subscriptionAllowed
       ? item.subscriptionDiscountPercent ?? null
       : null,
+    reviewSummary: {
+      averageRating: item.averageRating,
+      reviewCount: item.reviewCount,
+    },
   };
 }
 
@@ -9427,6 +9439,10 @@ const retailCartCookieOptions = {
   path: "/",
 };
 const hashRetailToken = (token: string) => createHash("sha256").update(token).digest("hex");
+/** Retail is consumer commerce, not a salon/business capability. */
+function isRetailAccount(user: typeof usersTable.$inferSelect | null | undefined): user is typeof usersTable.$inferSelect {
+  return user?.role === "CUSTOMER" || user?.role === "JOBSEEKER";
+}
 type RetailCartItemInput = ({ productId: string } | { bundleId: string }) & { quantity: number };
 type RetailCheckoutInput = {
   idempotencyKey: string; firstName: string; lastName: string; email: string; phone: string;
@@ -9478,21 +9494,21 @@ async function retailCartForRequest(req: Request, res: Response) {
     token = randomBytes(32).toString("base64url");
     [cart] = await db.insert(retailCartsTable).values({
       tokenHash: hashRetailToken(token),
-      userId: user?.role === "CUSTOMER" ? user.id : null,
+      userId: isRetailAccount(user) ? user.id : null,
     }).returning();
     res.cookie(RETAIL_CART_COOKIE, token, retailCartCookieOptions);
   } else {
-    if (cart.userId !== null && (user?.role !== "CUSTOMER" || cart.userId !== user.id)) {
+    if (cart.userId !== null && (!isRetailAccount(user) || cart.userId !== user.id)) {
       // Account-bound carts are not bearer-token carts. A stale/shared cookie
       // after logout or account switching must start an isolated cart instead
       // of exposing the previous customer's active or saved items.
       token = randomBytes(32).toString("base64url");
       [cart] = await db.insert(retailCartsTable).values({
         tokenHash: hashRetailToken(token),
-        userId: user?.role === "CUSTOMER" ? user.id : null,
+        userId: isRetailAccount(user) ? user.id : null,
       }).returning();
       res.cookie(RETAIL_CART_COOKIE, token, retailCartCookieOptions);
-    } else if (user?.role === "CUSTOMER" && cart.userId === null) {
+    } else if (isRetailAccount(user) && cart.userId === null) {
       const [claimed] = await db.update(retailCartsTable).set({ userId: user.id, activityVersion: sql`${retailCartsTable.activityVersion} + 1`, updatedAt: new Date() })
         .where(and(eq(retailCartsTable.id, cart.id), isNull(retailCartsTable.userId))).returning();
       if (claimed) {
@@ -9527,7 +9543,7 @@ async function retailCartSummaryForRequest(req: Request) {
   if (!cart) return { itemCount: 0 };
   if (cart.userId !== null) {
     const user = await getCurrentUser(req);
-    if (user?.role !== "CUSTOMER" || user.id !== cart.userId) return { itemCount: 0 };
+    if (!isRetailAccount(user) || user.id !== cart.userId) return { itemCount: 0 };
   }
 
   const [summary] = await db.select({
@@ -9961,14 +9977,6 @@ router.get("/shop/public/products/:productId", async (req, res): Promise<void> =
   }));
 });
 
-// Retail carts are cookie-backed, so reject a JOBSEEKER before any anonymous
-// fallback cart can be created or observed.
-router.use("/retail", async (req, res, next): Promise<void> => {
-  const user = await getCurrentUser(req);
-  if (user?.role === "JOBSEEKER") { res.status(403).json({ error: "JOBSEEKER nalozi ne mogu koristiti prodavnicu, korpu ili porudžbine." }); return; }
-  next();
-});
-
 async function wishlistItemDto(entry: typeof productWishlistsTable.$inferSelect) {
   const [row] = await db.select({ product: productsTable, supplier: suppliersTable }).from(productsTable)
     .innerJoin(suppliersTable, eq(productsTable.supplierId, suppliersTable.id))
@@ -10270,7 +10278,7 @@ router.post("/retail/cart/saved-items/:savedItemId/restore", async (req, res): P
 
 router.post("/retail/orders/repeat-last", async (req, res): Promise<void> => {
   const user = await getCurrentUser(req);
-  if (user?.role !== "CUSTOMER") { res.status(401).json({ error: "Prijavite se da biste ponovili porudžbinu." }); return; }
+  if (!isRetailAccount(user)) { res.status(401).json({ error: "Prijavite se da biste ponovili porudžbinu." }); return; }
   const key = req.get("Idempotency-Key")?.trim() ?? "";
   if (key.length < 8 || key.length > 200) { res.status(400).json({ error: "Idempotency-Key zaglavlje je obavezno." }); return; }
   const cart = await retailCartForRequest(req, res);
@@ -10373,7 +10381,7 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
   if (!parsed) { res.status(400).json({ error: "Unesite kompletne i ispravne podatke za dostavu." }); return; }
   const cart = await retailCartForRequest(req, res);
   const currentUser = await getCurrentUser(req);
-  const userId = currentUser?.role === "CUSTOMER" ? currentUser.id : null;
+  const userId = isRetailAccount(currentUser) ? currentUser.id : null;
   if (parsed.paymentMethod === "CARD") {
     res.status(400).json({ error: "Plaćanje karticom biće dostupno čim se uključi siguran payment handoff." }); return;
   }
@@ -10704,7 +10712,7 @@ router.get("/retail/orders/track", async (req, res): Promise<void> => {
 
 router.get("/customer/retail-orders", async (req, res): Promise<void> => {
   const user = await getCurrentUser(req);
-  if (!user || user.role !== "CUSTOMER") { res.status(403).json({ error: "Prijava kupca je obavezna." }); return; }
+  if (!isRetailAccount(user)) { res.status(403).json({ error: "Prijava kupca ili kandidata je obavezna." }); return; }
   const orders = await db.select().from(retailOrdersTable).where(eq(retailOrdersTable.userId, user.id))
     .orderBy(desc(retailOrdersTable.createdAt), desc(retailOrdersTable.id)).limit(100);
   res.json(await retailOrdersWithItems(orders));
@@ -10712,7 +10720,7 @@ router.get("/customer/retail-orders", async (req, res): Promise<void> => {
 
 router.get("/customer/retail-orders/:orderId", async (req, res): Promise<void> => {
   const user = await getCurrentUser(req);
-  if (!user || user.role !== "CUSTOMER") { res.status(403).json({ error: "Prijava kupca je obavezna." }); return; }
+  if (!isRetailAccount(user)) { res.status(403).json({ error: "Prijava kupca ili kandidata je obavezna." }); return; }
   const [order] = await db.select().from(retailOrdersTable).where(and(
     eq(retailOrdersTable.id, req.params.orderId), eq(retailOrdersTable.userId, user.id),
   )).limit(1);
@@ -10883,41 +10891,333 @@ router.patch("/admin/retail-orders/:orderId/payment-status", async (req, res): P
 });
 
 router.get("/retail/products/:productId/reviews", async (req, res): Promise<void> => {
-  const rows = await db.select().from(retailProductReviewsTable).where(eq(retailProductReviewsTable.productId, req.params.productId))
-    .orderBy(desc(retailProductReviewsTable.updatedAt));
-  res.json(rows.map((review) => ({ id: review.id, rating: review.rating, comment: review.comment, createdAt: review.updatedAt.toISOString() })));
+  const [candidate] = await db.select({ supplierId: productsTable.supplierId })
+    .from(productsTable)
+    .innerJoin(suppliersTable, and(
+      eq(productsTable.supplierId, suppliersTable.id),
+      eq(suppliersTable.active, true),
+      inArray(suppliersTable.scope, ["B2C", "BOTH"]),
+    ))
+    .where(eq(productsTable.id, req.params.productId))
+    .limit(1);
+  if (!candidate) { res.status(404).json({ error: "Proizvod nije pronađen." }); return; }
+  const [publicProduct] = await db.select({ id: productsTable.id }).from(productsTable)
+    .where(and(eq(productsTable.id, req.params.productId), canonicalPublicProductCondition(candidate.supplierId)))
+    .limit(1);
+  if (!publicProduct) { res.status(404).json({ error: "Proizvod nije pronađen." }); return; }
+  const rows = await db.select({
+    review: retailProductReviewsTable, firstName: usersTable.firstName, lastName: usersTable.lastName,
+  }).from(retailProductReviewsTable).innerJoin(usersTable, eq(retailProductReviewsTable.userId, usersTable.id))
+    .where(and(eq(retailProductReviewsTable.productId, req.params.productId), eq(retailProductReviewsTable.moderationStatus, "PUBLISHED")))
+    .orderBy(desc(retailProductReviewsTable.updatedAt), desc(retailProductReviewsTable.id));
+  // Deliberately only return the platform's privacy-safe display form, never
+  // account identity, email, order or delivery data.
+  res.json(rows.map(({ review, firstName, lastName }) => ({
+    id: review.id, rating: review.rating, comment: review.comment, verifiedPurchase: true,
+    reviewerName: `${firstName} ${lastName.slice(0, 1)}.`.trim(),
+    createdAt: review.createdAt.toISOString(), updatedAt: review.updatedAt.toISOString(),
+  })));
+});
+
+const retailReviewStatuses = ["PUBLISHED", "REPORTED", "AUTO_FLAGGED", "REMOVED"] as const;
+const retailReportReasons = ["SPAM", "ABUSE", "HATE", "PERSONAL_INFORMATION", "MISLEADING", "OTHER"] as const;
+const RETAIL_REVIEW_AUTO_FLAG_REPORT_COUNT = 3;
+
+function retailReviewInput(body: unknown) {
+  const value = body as { rating?: unknown; comment?: unknown };
+  if (!Number.isInteger(value?.rating) || Number(value.rating) < 1 || Number(value.rating) > 5) throw new Error("Ocena mora biti između 1 i 5.");
+  if (typeof value.comment !== "string" || !value.comment.trim() || value.comment.trim().length > 2_000) throw new Error("Tekst recenzije je obavezan i može imati najviše 2000 karaktera.");
+  // Explicit deterministic safety rule: contact details or an URL are held for
+  // moderation rather than automatically made public.
+  const comment = value.comment.trim();
+  const autoFlagged = /(?:https?:\/\/|www\.|[\w.+-]+@[\w.-]+\.[a-z]{2,}|\+?\d[\d\s().-]{7,}\d)/i.test(comment);
+  return { rating: Number(value.rating), comment, autoFlagged };
+}
+
+async function retailReviewAccess(req: Request, res: Response) {
+  const user = await getCurrentUser(req);
+  if (!user) { res.status(401).json({ error: "Prijava je obavezna." }); return null; }
+  if (!user.active || !["CUSTOMER", "JOBSEEKER"].includes(user.role)) { res.status(403).json({ error: "Aktivan CUSTOMER ili JOBSEEKER nalog je obavezan." }); return null; }
+  return user;
+}
+
+async function verifiedRetailItem(userId: string, productId: string) {
+  const delivered = await db.select({ item: retailOrderItemsTable }).from(retailOrderItemsTable)
+    .innerJoin(retailOrdersTable, eq(retailOrderItemsTable.orderId, retailOrdersTable.id))
+    .where(and(eq(retailOrderItemsTable.productId, productId), eq(retailOrdersTable.userId, userId), eq(retailOrdersTable.status, "delivered")))
+    .orderBy(desc(retailOrdersTable.updatedAt), desc(retailOrderItemsTable.id)).limit(1);
+  return delivered[0]?.item ?? null;
+}
+
+async function refreshRetailProductReviewAggregate(tx: any, productId: string) {
+  // Caller owns the product row lock, so the review-state transition and its
+  // externally visible aggregate commit together.
+  const [aggregate] = await tx.select({
+    count: count(), average: sql<number>`coalesce(round(avg(${retailProductReviewsTable.rating})::numeric), 0)`,
+  }).from(retailProductReviewsTable).where(and(
+    eq(retailProductReviewsTable.productId, productId),
+    eq(retailProductReviewsTable.moderationStatus, "PUBLISHED"),
+  ));
+  await tx.update(productsTable).set({
+    averageRating: Number(aggregate?.average ?? 0), reviewCount: Number(aggregate?.count ?? 0),
+  }).where(eq(productsTable.id, productId));
+}
+
+async function lockRetailReviewProduct(tx: any, productId: string) {
+  const [product] = await tx.select({ id: productsTable.id }).from(productsTable)
+    .where(eq(productsTable.id, productId)).for("update");
+  return product;
+}
+
+router.get("/customer/retail-products/:productId/review-context", async (req, res): Promise<void> => {
+  const user = await retailReviewAccess(req, res); if (!user) return;
+  const item = await verifiedRetailItem(user.id, req.params.productId);
+  const [review] = await db.select().from(retailProductReviewsTable).where(and(
+    eq(retailProductReviewsTable.productId, req.params.productId), eq(retailProductReviewsTable.userId, user.id),
+  )).limit(1);
+  res.json({ eligible: Boolean(item), verifiedPurchase: Boolean(item), review: review ? {
+    id: review.id, rating: review.rating, comment: review.comment, moderationStatus: review.moderationStatus,
+  } : null });
 });
 
 router.post("/customer/retail-products/:productId/reviews", async (req, res): Promise<void> => {
-  const user = await getCurrentUser(req);
-  if (!user || user.role !== "CUSTOMER") { res.status(403).json({ error: "Prijava kupca je obavezna." }); return; }
-  const rating = req.body?.rating;
-  const comment = typeof req.body?.comment === "string" ? req.body.comment.trim().slice(0, 2000) : "";
-  if (!Number.isInteger(rating) || rating < 1 || rating > 5) { res.status(400).json({ error: "Ocena mora biti između 1 i 5." }); return; }
-  const delivered = await db.select({ item: retailOrderItemsTable }).from(retailOrderItemsTable)
-    .innerJoin(retailOrdersTable, eq(retailOrderItemsTable.orderId, retailOrdersTable.id))
-    .where(and(eq(retailOrderItemsTable.productId, req.params.productId), eq(retailOrdersTable.userId, user.id), eq(retailOrdersTable.status, "delivered")));
-  const item = delivered[0]?.item;
-  if (!item) { res.status(403).json({ error: "Recenziju može ostaviti samo kupac kome je proizvod dostavljen." }); return; }
-  const [existing] = await db.select().from(retailProductReviewsTable).where(and(
-    eq(retailProductReviewsTable.orderItemId, item.id), eq(retailProductReviewsTable.userId, user.id),
-  )).limit(1);
-  const [saved] = existing
-    ? await db.update(retailProductReviewsTable).set({ rating, comment, updatedAt: new Date() }).where(eq(retailProductReviewsTable.id, existing.id)).returning()
-    : await db.insert(retailProductReviewsTable).values({ productId: req.params.productId, orderItemId: item.id, userId: user.id, rating, comment }).returning();
-  res.json({ id: saved!.id, rating: saved!.rating, comment: saved!.comment, createdAt: saved!.updatedAt.toISOString() });
+  const user = await retailReviewAccess(req, res); if (!user) return;
+  let input: ReturnType<typeof retailReviewInput>;
+  try { input = retailReviewInput(req.body); } catch (error) { res.status(400).json({ error: (error as Error).message }); return; }
+  const item = await verifiedRetailItem(user.id, req.params.productId);
+  if (!item) { res.status(403).json({ error: "Recenziju može ostaviti samo korisnik sa dostavljenom porudžbinom tog proizvoda." }); return; }
+  try {
+    const saved = await db.transaction(async (tx) => {
+      if (!await lockRetailReviewProduct(tx, req.params.productId)) throw new Error("PRODUCT_NOT_FOUND");
+      const [active] = await tx.select().from(retailProductReviewsTable).where(and(
+        eq(retailProductReviewsTable.productId, req.params.productId), eq(retailProductReviewsTable.userId, user.id),
+        sql`${retailProductReviewsTable.moderationStatus} <> 'REMOVED'`,
+      )).for("update");
+      if (active) throw new Error("DUPLICATE_REVIEW");
+      // Reuse a prior self-removed row when it has the same immutable order
+      // item. This also remains compatible with the legacy item/user unique
+      // index retained during the additive rollout.
+      const [removed] = await tx.select().from(retailProductReviewsTable).where(and(
+        eq(retailProductReviewsTable.productId, req.params.productId), eq(retailProductReviewsTable.userId, user.id),
+        eq(retailProductReviewsTable.moderationStatus, "REMOVED"),
+      )).for("update");
+      const values = {
+        orderItemId: item.id, rating: input.rating, comment: input.comment,
+        moderationStatus: input.autoFlagged ? "AUTO_FLAGGED" as const : "PUBLISHED" as const,
+        moderationReason: input.autoFlagged ? "Deterministic contact-or-link safety rule." : null,
+        removedAt: null, updatedAt: new Date(),
+      };
+      const [created] = removed
+        ? await tx.update(retailProductReviewsTable).set(values).where(eq(retailProductReviewsTable.id, removed.id)).returning()
+        : await tx.insert(retailProductReviewsTable).values({ productId: req.params.productId, userId: user.id, ...values }).returning();
+      await refreshRetailProductReviewAggregate(tx, req.params.productId);
+      return created!;
+    });
+    res.status(201).json({ id: saved.id, rating: saved.rating, comment: saved.comment, verifiedPurchase: true, moderationStatus: saved.moderationStatus });
+  } catch (error) {
+    res.status((error as Error).message === "DUPLICATE_REVIEW" ? 409 : 400).json({ error: (error as Error).message === "DUPLICATE_REVIEW" ? "Već imate aktivnu recenziju za ovaj proizvod." : "Recenzija nije sačuvana." });
+  }
 });
 
-// Keep catalogue reads public while blocking authenticated JOBSEEKER accounts
-// from every stateful legacy shop surface, including direct URL attempts.
-router.use("/shop", async (req, res, next): Promise<void> => {
+router.patch("/customer/retail-products/:productId/reviews/:reviewId", async (req, res): Promise<void> => {
+  const user = await retailReviewAccess(req, res); if (!user) return;
+  let input: ReturnType<typeof retailReviewInput>;
+  try { input = retailReviewInput(req.body); } catch (error) { res.status(400).json({ error: (error as Error).message }); return; }
+  const item = await verifiedRetailItem(user.id, req.params.productId);
+  if (!item) { res.status(403).json({ error: "Nije potvrđena kupovina tog proizvoda." }); return; }
+  const saved = await db.transaction(async (tx) => {
+    if (!await lockRetailReviewProduct(tx, req.params.productId)) return null;
+    const [review] = await tx.select().from(retailProductReviewsTable).where(and(
+      eq(retailProductReviewsTable.id, req.params.reviewId), eq(retailProductReviewsTable.productId, req.params.productId),
+      eq(retailProductReviewsTable.userId, user.id),
+    )).for("update");
+    if (!review || review.moderationStatus === "REMOVED") return null;
+    const nextStatus = input.autoFlagged ? "AUTO_FLAGGED" : review.moderationStatus === "PUBLISHED" ? "PUBLISHED" : "REPORTED";
+    const [updated] = await tx.update(retailProductReviewsTable).set({
+      rating: input.rating, comment: input.comment, orderItemId: item.id, moderationStatus: nextStatus,
+      moderationReason: input.autoFlagged ? "Deterministic contact-or-link safety rule." : review.moderationReason,
+      updatedAt: new Date(),
+    }).where(eq(retailProductReviewsTable.id, review.id)).returning();
+    await refreshRetailProductReviewAggregate(tx, req.params.productId);
+    return updated!;
+  });
+  if (!saved) { res.status(404).json({ error: "Recenzija nije pronađena." }); return; }
+  res.json({ id: saved.id, rating: saved.rating, comment: saved.comment, verifiedPurchase: true, moderationStatus: saved.moderationStatus });
+});
+
+router.delete("/customer/retail-products/:productId/reviews/:reviewId", async (req, res): Promise<void> => {
+  const user = await retailReviewAccess(req, res); if (!user) return;
+  const deleted = await db.transaction(async (tx) => {
+    if (!await lockRetailReviewProduct(tx, req.params.productId)) return false;
+    const [review] = await tx.select().from(retailProductReviewsTable).where(and(
+      eq(retailProductReviewsTable.id, req.params.reviewId), eq(retailProductReviewsTable.productId, req.params.productId),
+      eq(retailProductReviewsTable.userId, user.id),
+    )).for("update");
+    if (!review || review.moderationStatus === "REMOVED") return false;
+    await tx.update(retailProductReviewsTable).set({ moderationStatus: "REMOVED", removedAt: new Date(), updatedAt: new Date() })
+      .where(eq(retailProductReviewsTable.id, review.id));
+    await refreshRetailProductReviewAggregate(tx, req.params.productId);
+    return true;
+  });
+  if (!deleted) { res.status(404).json({ error: "Recenzija nije pronađena." }); return; }
+  res.status(204).end();
+});
+
+router.post("/retail-product-reviews/:reviewId/reports", async (req, res): Promise<void> => {
   const user = await getCurrentUser(req);
-  const stateful = /^(\/cart|\/checkout|\/orders|\/notifications|\/summary|\/shipping-quote)(?:\/|$)/.test(req.path)
-    || (req.method !== "GET" && /^\/products\/[^/]+\/reviews$/.test(req.path));
-  if (user?.role === "JOBSEEKER" && stateful) {
-    res.status(403).json({ error: "JOBSEEKER nalozi ne mogu koristiti prodavnicu, korpu ili porudžbine." }); return;
+  if (!user || !user.active) { res.status(401).json({ error: "Prijava je obavezna." }); return; }
+  const reason = String(req.body?.reason ?? "");
+  const explanation = req.body?.explanation == null ? null : String(req.body.explanation).trim();
+  if (!retailReportReasons.includes(reason as typeof retailReportReasons[number]) || (explanation?.length ?? 0) > 2_000) {
+    res.status(400).json({ error: "Neispravan razlog prijave." }); return;
   }
-  next();
+  const [candidate] = await db.select({ productId: retailProductReviewsTable.productId })
+    .from(retailProductReviewsTable).where(eq(retailProductReviewsTable.id, req.params.reviewId)).limit(1);
+  if (!candidate) { res.status(404).json({ error: "Recenzija nije pronađena ili je uklonjena." }); return; }
+  const result = await db.transaction(async (tx) => {
+    // Lock order is always product -> review (the same order as create/edit/
+    // delete/moderation) so concurrent reports cannot deadlock a review write.
+    if (!await lockRetailReviewProduct(tx, candidate.productId)) return null;
+    const [review] = await tx.select().from(retailProductReviewsTable).where(and(
+      eq(retailProductReviewsTable.id, req.params.reviewId),
+      eq(retailProductReviewsTable.productId, candidate.productId),
+    )).for("update");
+    if (!review || review.moderationStatus === "REMOVED") return null;
+    const [report] = await tx.insert(retailProductReviewReportsTable).values({
+      reviewId: review.id, reporterUserId: user.id, reason: reason as "SPAM", explanation,
+    }).onConflictDoUpdate({
+      target: [retailProductReviewReportsTable.reviewId, retailProductReviewReportsTable.reporterUserId],
+      set: { reason: reason as "SPAM", explanation, updatedAt: new Date() },
+    }).returning();
+    const [reportCount] = await tx.select({ value: count() }).from(retailProductReviewReportsTable)
+      .where(eq(retailProductReviewReportsTable.reviewId, review.id));
+    const next = Number(reportCount?.value ?? 0) >= RETAIL_REVIEW_AUTO_FLAG_REPORT_COUNT ? "AUTO_FLAGGED" : "REPORTED";
+    if (review.moderationStatus === "PUBLISHED" || review.moderationStatus === "REPORTED") {
+      await tx.update(retailProductReviewsTable).set({ moderationStatus: next, updatedAt: new Date() }).where(eq(retailProductReviewsTable.id, review.id));
+      await refreshRetailProductReviewAggregate(tx, review.productId);
+    }
+    return { report, moderationStatus: next, reportCount: Number(reportCount?.value ?? 0) };
+  });
+  if (!result) { res.status(404).json({ error: "Recenzija nije pronađena ili je uklonjena." }); return; }
+  res.status(201).json({ id: result.report!.id, reportCount: result.reportCount, moderationStatus: result.moderationStatus });
+});
+
+router.get("/admin/retail-product-reviews", async (req, res): Promise<void> => {
+  if (!await requireAdmin(req, res)) return;
+  const status = String(req.query.status ?? "ALL");
+  if (status !== "ALL" && !retailReviewStatuses.includes(status as typeof retailReviewStatuses[number])) { res.status(400).json({ error: "Neispravan status." }); return; }
+  const page = Math.max(1, Number(req.query.page) || 1); const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 25));
+  const conditions = [
+    status === "ALL" ? undefined : eq(retailProductReviewsTable.moderationStatus, status as "PUBLISHED"),
+    typeof req.query.productId === "string" ? eq(retailProductReviewsTable.productId, req.query.productId) : undefined,
+    typeof req.query.supplierId === "string" ? eq(productsTable.supplierId, req.query.supplierId) : undefined,
+    req.query.from ? gte(retailProductReviewsTable.createdAt, new Date(String(req.query.from))) : undefined,
+    req.query.to ? lte(retailProductReviewsTable.createdAt, new Date(String(req.query.to))) : undefined,
+  ].filter(Boolean);
+  const where = and(...conditions as [SQL, ...SQL[]]);
+  const rows = await db.select({
+    review: retailProductReviewsTable, productName: productsTable.name, supplierId: productsTable.supplierId,
+    reportCount: sql<number>`count(${retailProductReviewReportsTable.id})`,
+  }).from(retailProductReviewsTable).innerJoin(productsTable, eq(retailProductReviewsTable.productId, productsTable.id))
+    .leftJoin(retailProductReviewReportsTable, eq(retailProductReviewReportsTable.reviewId, retailProductReviewsTable.id))
+    .where(where).groupBy(retailProductReviewsTable.id, productsTable.id)
+    .orderBy(desc(retailProductReviewsTable.updatedAt), desc(retailProductReviewsTable.id)).limit(pageSize).offset((page - 1) * pageSize);
+  const [total] = await db.select({ value: count() }).from(retailProductReviewsTable).innerJoin(productsTable, eq(retailProductReviewsTable.productId, productsTable.id)).where(where);
+  res.json({
+    items: rows.map(({ review, productName, supplierId, reportCount }) => ({
+      id: review.id,
+      productId: review.productId,
+      productName,
+      supplierId,
+      rating: review.rating,
+      comment: review.comment,
+      moderationStatus: review.moderationStatus,
+      moderationReason: review.moderationReason,
+      removedAt: review.removedAt,
+      createdAt: review.createdAt,
+      updatedAt: review.updatedAt,
+      verifiedPurchase: true,
+      reportCount: Number(reportCount),
+    })),
+    page,
+    pageSize,
+    total: Number(total?.value ?? 0),
+  });
+});
+
+router.get("/admin/retail-product-reviews/:reviewId", async (req, res): Promise<void> => {
+  if (!await requireAdmin(req, res)) return;
+  const [row] = await db.select({ review: retailProductReviewsTable, productName: productsTable.name, supplierId: productsTable.supplierId })
+    .from(retailProductReviewsTable).innerJoin(productsTable, eq(retailProductReviewsTable.productId, productsTable.id))
+    .where(eq(retailProductReviewsTable.id, req.params.reviewId)).limit(1);
+  if (!row) { res.status(404).json({ error: "Recenzija nije pronađena." }); return; }
+  const [reports, audits] = await Promise.all([
+    db.select({ reason: retailProductReviewReportsTable.reason, explanation: retailProductReviewReportsTable.explanation, createdAt: retailProductReviewReportsTable.createdAt })
+      .from(retailProductReviewReportsTable).where(eq(retailProductReviewReportsTable.reviewId, row.review.id)).orderBy(desc(retailProductReviewReportsTable.createdAt)),
+    db.select().from(retailProductReviewModerationAuditsTable).where(eq(retailProductReviewModerationAuditsTable.reviewId, row.review.id))
+      .orderBy(desc(retailProductReviewModerationAuditsTable.createdAt)),
+  ]);
+  // Admin has no need for purchaser PII either; reports are presented as
+  // reason records, not as a reporter directory.
+  res.json({
+    id: row.review.id,
+    productId: row.review.productId,
+    productName: row.productName,
+    supplierId: row.supplierId,
+    rating: row.review.rating,
+    comment: row.review.comment,
+    moderationStatus: row.review.moderationStatus,
+    moderationReason: row.review.moderationReason,
+    removedAt: row.review.removedAt,
+    createdAt: row.review.createdAt,
+    updatedAt: row.review.updatedAt,
+    verifiedPurchase: true,
+    reportCount: reports.length,
+    reports,
+    audits,
+  });
+});
+
+router.post("/admin/retail-product-reviews/:reviewId/moderation", async (req, res): Promise<void> => {
+  const moderator = await requireAdmin(req, res); if (!moderator) return;
+  const action = String(req.body?.action ?? "");
+  const reason = req.body?.reason == null ? null : String(req.body.reason).trim().slice(0, 2_000);
+  const internalNote = req.body?.internalNote == null ? null : String(req.body.internalNote).trim().slice(0, 4_000);
+  if (!["KEEP", "DISMISS_REPORTS", "REMOVE", "RESTORE"].includes(action)) { res.status(400).json({ error: "Neispravna moderatorska akcija." }); return; }
+  const [candidate] = await db.select({ productId: retailProductReviewsTable.productId })
+    .from(retailProductReviewsTable).where(eq(retailProductReviewsTable.id, req.params.reviewId)).limit(1);
+  if (!candidate) { res.status(404).json({ error: "Recenzija nije pronađena." }); return; }
+  const updated = await db.transaction(async (tx) => {
+    if (!await lockRetailReviewProduct(tx, candidate.productId)) return null;
+    const [review] = await tx.select().from(retailProductReviewsTable).where(and(
+      eq(retailProductReviewsTable.id, req.params.reviewId),
+      eq(retailProductReviewsTable.productId, candidate.productId),
+    )).for("update");
+    if (!review) return null;
+    const nextStatus = action === "REMOVE" ? "REMOVED" : "PUBLISHED";
+    // Identical retries are idempotent: retain state but record no duplicate
+    // action/audit row. Dismiss reports intentionally clears their queue.
+    const stateAlreadyApplied = review.moderationStatus === nextStatus
+      && !(action === "DISMISS_REPORTS" && review.moderationStatus !== "REMOVED");
+    if (!stateAlreadyApplied) {
+      await tx.update(retailProductReviewsTable).set({
+        moderationStatus: nextStatus,
+        removedAt: nextStatus === "REMOVED" ? new Date() : null,
+        moderationReason: reason,
+        updatedAt: new Date(),
+      }).where(eq(retailProductReviewsTable.id, review.id));
+      await tx.insert(retailProductReviewModerationAuditsTable).values({
+        reviewId: review.id, moderatorUserId: moderator.id, action: action as "KEEP",
+        previousStatus: review.moderationStatus, nextStatus, reason, internalNote,
+      });
+    }
+    if (action === "DISMISS_REPORTS") await tx.delete(retailProductReviewReportsTable).where(eq(retailProductReviewReportsTable.reviewId, review.id));
+    await refreshRetailProductReviewAggregate(tx, review.productId);
+    const [saved] = await tx.select().from(retailProductReviewsTable).where(eq(retailProductReviewsTable.id, review.id));
+    return saved!;
+  });
+  if (!updated) { res.status(404).json({ error: "Recenzija nije pronađena." }); return; }
+  res.json({ id: updated.id, moderationStatus: updated.moderationStatus, verifiedPurchase: true });
 });
 
 router.get("/shop/products", async (req, res): Promise<void> => {
@@ -17667,6 +17967,9 @@ function adminProductDto(item: typeof productsTable.$inferSelect) {
     deliveryBusinessDaysOverride: item.deliveryBusinessDaysOverride ?? null,
     subscriptionAllowed: item.subscriptionAllowed,
     subscriptionDiscountPercent: item.subscriptionDiscountPercent ?? null,
+    productTypeId: item.productTypeId ?? null,
+    ingredients: item.ingredients ?? null,
+    usageInstructions: item.usageInstructions ?? null,
     active: item.active,
     createdAt: item.createdAt.toISOString(),
   };
@@ -17945,6 +18248,17 @@ router.post("/admin/products", async (req, res): Promise<void> => {
   if (!merchandising.data) { res.status(400).json({ error: merchandising.error }); return; }
   const relationshipError = await validateMerchandisingRelationships(body.supplierId, null, merchandising.data);
   if (relationshipError) { res.status(400).json({ error: relationshipError }); return; }
+  const needTagIds = [...new Set(body.needTagIds ?? [])];
+  if (body.productTypeId) {
+    const [type] = await db.select({ id: b2cProductTypesTable.id }).from(b2cProductTypesTable)
+      .where(and(eq(b2cProductTypesTable.id, body.productTypeId), eq(b2cProductTypesTable.active, true))).limit(1);
+    if (!type) { res.status(400).json({ error: "Tip proizvoda nije aktivan." }); return; }
+  }
+  if (needTagIds.length) {
+    const tags = await db.select({ id: b2cNeedTagsTable.id }).from(b2cNeedTagsTable)
+      .where(and(inArray(b2cNeedTagsTable.id, needTagIds), eq(b2cNeedTagsTable.active, true)));
+    if (tags.length !== needTagIds.length) { res.status(400).json({ error: "Jedna ili više oznaka potreba nisu aktivne." }); return; }
+  }
   const imageReferences = [...new Set([body.imageUrl, ...(body.images ?? [])])];
   const imageOwnership = await Promise.all(imageReferences.map((url) => canClaimMediaReference({
     userId: user.id, url, scope: "product",
@@ -17983,6 +18297,9 @@ router.post("/admin/products", async (req, res): Promise<void> => {
         publicDescription: body.publicDescription?.trim() || null,
         publicPrice: body.publicPrice ?? null,
         publicDiscountPrice: body.publicDiscountPrice ?? null,
+        productTypeId: body.productTypeId ?? null,
+        ingredients: body.ingredients?.trim() || null,
+        usageInstructions: body.usageInstructions?.trim() || null,
         stock: body.stock,
         sku: body.sku,
         unit: body.unit,
@@ -17994,6 +18311,11 @@ router.post("/admin/products", async (req, res): Promise<void> => {
         ...merchandising.data,
         active: body.active ?? true,
       }).returning();
+      if (needTagIds.length) {
+        await tx.insert(b2cProductNeedTagsTable).values(needTagIds.map((needTagId) => ({
+          productId: rows[0]!.id, needTagId,
+        })));
+      }
       for (const url of imageReferences) {
         if (!await claimMediaReference({
           userId: user.id,
@@ -18200,6 +18522,18 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
   }
   const relationshipError = await validateMerchandisingRelationships(nextSupplierId, existing.id, merchandising.data);
   if (relationshipError) { res.status(400).json({ error: relationshipError }); return; }
+  const needTagIds = body.needTagIds === undefined ? undefined : [...new Set(body.needTagIds)];
+  const nextProductTypeId = body.productTypeId !== undefined ? body.productTypeId : existing.productTypeId;
+  if (nextProductTypeId) {
+    const [type] = await db.select({ id: b2cProductTypesTable.id }).from(b2cProductTypesTable)
+      .where(and(eq(b2cProductTypesTable.id, nextProductTypeId), eq(b2cProductTypesTable.active, true))).limit(1);
+    if (!type) { res.status(400).json({ error: "Tip proizvoda nije aktivan." }); return; }
+  }
+  if (needTagIds?.length) {
+    const tags = await db.select({ id: b2cNeedTagsTable.id }).from(b2cNeedTagsTable)
+      .where(and(inArray(b2cNeedTagsTable.id, needTagIds), eq(b2cNeedTagsTable.active, true)));
+    if (tags.length !== needTagIds.length) { res.status(400).json({ error: "Jedna ili više oznaka potreba nisu aktivne." }); return; }
+  }
   const managedImageReferences = imageReferences.filter((url) => mediaAssetIdFromUrl(url));
   let product: typeof productsTable.$inferSelect | undefined;
   try {
@@ -18259,6 +18593,9 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
         publicDescription: body.publicDescription !== undefined ? body.publicDescription?.trim() || null : existing.publicDescription,
         publicPrice: body.publicPrice !== undefined ? body.publicPrice : existing.publicPrice,
         publicDiscountPrice: body.publicDiscountPrice !== undefined ? body.publicDiscountPrice : existing.publicDiscountPrice,
+        productTypeId: nextProductTypeId,
+        ingredients: body.ingredients !== undefined ? body.ingredients?.trim() || null : existing.ingredients,
+        usageInstructions: body.usageInstructions !== undefined ? body.usageInstructions?.trim() || null : existing.usageInstructions,
         stock: nextStock,
         sku: body.sku ?? existing.sku,
         unit: body.unit ?? existing.unit,
@@ -18286,6 +18623,12 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
           : eq(productsTable.subscriptionDiscountPercent, existing.subscriptionDiscountPercent),
       )).returning();
       if (!rows.length) throw new ProductRelationshipConflictError();
+      if (needTagIds !== undefined) {
+        await tx.delete(b2cProductNeedTagsTable).where(eq(b2cProductNeedTagsTable.productId, existing.id));
+        if (needTagIds.length) await tx.insert(b2cProductNeedTagsTable).values(needTagIds.map((needTagId) => ({
+          productId: existing.id, needTagId,
+        })));
+      }
       if (revokedProductAssetIds.length) {
         await releaseMediaReferenceClaims({
           urls: existingImageReferences.filter((url) => revokedProductAssetIds.includes(mediaAssetIdFromUrl(url) ?? "")),

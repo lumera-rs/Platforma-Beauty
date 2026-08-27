@@ -13,6 +13,8 @@ export interface Product {
   name: string;
   category: string;
   /** @nullable */
+  categoryId?: string | null;
+  /** @nullable */
   subcategory?: string | null;
   /** @nullable */
   brand?: string | null;

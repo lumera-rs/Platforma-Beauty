@@ -2895,6 +2895,8 @@ export interface Product {
   name: string;
   category: string;
   /** @nullable */
+  categoryId?: string | null;
+  /** @nullable */
   subcategory?: string | null;
   /** @nullable */
   brand?: string | null;
@@ -3055,6 +3057,16 @@ export interface PublicBundle {
   components: BundleComponentCard[];
 }
 
+export interface RetailProductReviewSummary {
+  /**
+     * @minimum 0
+     * @maximum 5
+     */
+  averageRating: number;
+  /** @minimum 0 */
+  reviewCount: number;
+}
+
 /**
  * Customer-facing product fields only. B2B price, SKU, stock, weight, variants and salon-only review data are deliberately omitted.
  */
@@ -3095,6 +3107,7 @@ export interface PublicProduct {
      * @nullable
      */
   subscriptionDiscountPercent: number | null;
+  reviewSummary: RetailProductReviewSummary;
 }
 
 /**
@@ -3123,9 +3136,199 @@ export interface PublicProductList {
   totalPages: number;
 }
 
-export type PublicProductDetail = PublicProduct & {
+export interface B2cPublicTaxonomyValue {
+  slug: string;
+  label: string;
+}
+
+export interface B2cPublicNeedTag {
+  key: string;
+  label: string;
+}
+
+export type PublicProductDetail = PublicProduct & ({
+  /** @nullable */
+  ingredients?: string | null;
+  /** @nullable */
+  usageInstructions?: string | null;
+  productType?: B2cPublicTaxonomyValue | null;
+  needTags?: B2cPublicNeedTag[];
   relatedProducts: RelatedProductCard[];
+}) & Required<Pick<PublicProduct & ({
+  /** @nullable */
+  ingredients?: string | null;
+  /** @nullable */
+  usageInstructions?: string | null;
+  productType?: B2cPublicTaxonomyValue | null;
+  needTags?: B2cPublicNeedTag[];
+  relatedProducts: RelatedProductCard[];
+}), Extract<keyof (PublicProduct & ({
+  /** @nullable */
+  ingredients?: string | null;
+  /** @nullable */
+  usageInstructions?: string | null;
+  productType?: B2cPublicTaxonomyValue | null;
+  needTags?: B2cPublicNeedTag[];
+  relatedProducts: RelatedProductCard[];
+})), 'categoryId'>>>;
+
+export type B2cProductSort = typeof B2cProductSort[keyof typeof B2cProductSort];
+
+
+export const B2cProductSort = {
+  RECOMMENDED: 'RECOMMENDED',
+  PRICE_ASC: 'PRICE_ASC',
+  PRICE_DESC: 'PRICE_DESC',
+  NEWEST: 'NEWEST',
+  BEST_RATED: 'BEST_RATED',
+  MOST_POPULAR: 'MOST_POPULAR',
+} as const;
+
+export interface B2cFacetValue {
+  /** @nullable */
+  id?: string | null;
+  /** @nullable */
+  value?: string | null;
+  /** @nullable */
+  label?: string | null;
+  /** @minimum 0 */
+  count: number;
+}
+
+export type B2cProductSearchResponseActiveRange = {
+  /** @nullable */
+  minPrice: number | null;
+  /** @nullable */
+  maxPrice: number | null;
 };
+
+export type B2cProductSearchResponseFacets = {
+  categories: B2cFacetValue[];
+  brands: B2cFacetValue[];
+  productTypes: B2cFacetValue[];
+  needTags: B2cFacetValue[];
+};
+
+export type B2cProductSearchResponse = PublicProductList & {
+  activeRange: B2cProductSearchResponseActiveRange;
+  facets: B2cProductSearchResponseFacets;
+};
+
+export interface B2cDictionaryValue {
+  id: string;
+  slug?: string;
+  key?: string;
+  label: string;
+  active: boolean;
+  sortOrder: number;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface B2cDictionaryCreate {
+  /** @pattern ^[a-z0-9]+(?:-[a-z0-9]+)*$ */
+  slug: string;
+  /** @minLength 1 */
+  label: string;
+  active?: boolean;
+  /** @minimum 0 */
+  sortOrder?: number;
+}
+
+export interface B2cNeedTagCreate {
+  /** @pattern ^[a-z0-9]+(?:-[a-z0-9]+)*$ */
+  key: string;
+  /** @minLength 1 */
+  label: string;
+  active?: boolean;
+  /** @minimum 0 */
+  sortOrder?: number;
+}
+
+export interface B2cDictionaryUpdate {
+  /** @minimum 1 */
+  expectedVersion: number;
+  /** @minLength 1 */
+  label?: string;
+  active?: boolean;
+  /** @minimum 0 */
+  sortOrder?: number;
+}
+
+export type B2cReorderInputItemsItem = {
+  id: string;
+  /** @minimum 0 */
+  sortOrder: number;
+  /** @minimum 1 */
+  expectedVersion: number;
+};
+
+export interface B2cReorderInput {
+  /** @minItems 1 */
+  items: B2cReorderInputItemsItem[];
+}
+
+export interface B2cDisplayConfig {
+  defaultSort: B2cProductSort;
+  enabledSortOptions: B2cProductSort[];
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  pageSize: number;
+  showOutOfStock: boolean;
+  recentlyViewedEnabled: boolean;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  recentlyViewedMax: number;
+}
+
+export type AdminB2cDisplaySettings = B2cDisplayConfig & {
+  id: string;
+  version: number;
+  updatedAt: string;
+};
+
+export type AdminB2cDisplaySettingsInput = B2cDisplayConfig & {
+  /** @minimum 1 */
+  expectedVersion: number;
+};
+
+export type PublicB2cBannerPlacement = typeof PublicB2cBannerPlacement[keyof typeof PublicB2cBannerPlacement];
+
+
+export const PublicB2cBannerPlacement = {
+  HERO: 'HERO',
+  BELOW_CATEGORIES: 'BELOW_CATEGORIES',
+  IN_RESULTS: 'IN_RESULTS',
+} as const;
+
+export type PublicB2cBannerDestination = { [key: string]: unknown };
+
+export interface PublicB2cBanner {
+  id: string;
+  desktopImageUrl: string;
+  /** @nullable */
+  mobileImageUrl: string | null;
+  headline: string;
+  /** @nullable */
+  text: string | null;
+  /** @nullable */
+  ctaLabel: string | null;
+  placement: PublicB2cBannerPlacement;
+  destination: PublicB2cBannerDestination;
+}
+
+export interface AdminB2cBannerInput { [key: string]: unknown }
+
+export interface AdminB2cBannerUpdate {
+  /** @minimum 1 */
+  expectedVersion: number;
+  [key: string]: unknown;
+ }
 
 export interface ProductReview {
   id: string;
@@ -5202,6 +5405,12 @@ export interface AdminProduct {
      * @nullable
      */
   subscriptionDiscountPercent: number | null;
+  /** @nullable */
+  productTypeId: string | null;
+  /** @nullable */
+  ingredients: string | null;
+  /** @nullable */
+  usageInstructions: string | null;
   active: boolean;
   createdAt: string;
 }
@@ -5316,6 +5525,19 @@ export interface AdminProductInput {
      * @nullable
      */
   subscriptionDiscountPercent?: number | null;
+  /** @nullable */
+  productTypeId?: string | null;
+  needTagIds?: string[];
+  /**
+     * @maxLength 20000
+     * @nullable
+     */
+  ingredients?: string | null;
+  /**
+     * @maxLength 20000
+     * @nullable
+     */
+  usageInstructions?: string | null;
 }
 
 export type AdminProductUpdateSimilarProductsMode = typeof AdminProductUpdateSimilarProductsMode[keyof typeof AdminProductUpdateSimilarProductsMode];
@@ -5420,6 +5642,19 @@ export interface AdminProductUpdate {
      * @nullable
      */
   subscriptionDiscountPercent?: number | null;
+  /** @nullable */
+  productTypeId?: string | null;
+  needTagIds?: string[];
+  /**
+     * @maxLength 20000
+     * @nullable
+     */
+  ingredients?: string | null;
+  /**
+     * @maxLength 20000
+     * @nullable
+     */
+  usageInstructions?: string | null;
 }
 
 export type AdminProductBulkUpdateAction = typeof AdminProductBulkUpdateAction[keyof typeof AdminProductBulkUpdateAction];
@@ -8010,6 +8245,201 @@ export interface BeautyJobBulkModerationResult {
   results: BeautyJobBulkModerationResultResultsItem[];
 }
 
+export interface RetailProductReviewInput {
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  comment: string;
+}
+
+export type RetailReviewModerationStatus = typeof RetailReviewModerationStatus[keyof typeof RetailReviewModerationStatus];
+
+
+export const RetailReviewModerationStatus = {
+  PUBLISHED: 'PUBLISHED',
+  REPORTED: 'REPORTED',
+  AUTO_FLAGGED: 'AUTO_FLAGGED',
+  REMOVED: 'REMOVED',
+} as const;
+
+export interface PublicRetailProductReview {
+  id: string;
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  comment: string;
+  verifiedPurchase: boolean;
+  reviewerName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PublicRetailProductReviewList {
+  summary: RetailProductReviewSummary;
+  items: PublicRetailProductReview[];
+}
+
+export interface OwnRetailProductReview {
+  id: string;
+  rating: number;
+  comment: string;
+  verifiedPurchase: boolean;
+  moderationStatus: RetailReviewModerationStatus;
+}
+
+export interface RetailProductReviewContext {
+  eligible: boolean;
+  verifiedPurchase: boolean;
+  review: OwnRetailProductReview | null;
+}
+
+export type RetailProductReviewReportInputReason = typeof RetailProductReviewReportInputReason[keyof typeof RetailProductReviewReportInputReason];
+
+
+export const RetailProductReviewReportInputReason = {
+  SPAM: 'SPAM',
+  ABUSE: 'ABUSE',
+  HATE: 'HATE',
+  PERSONAL_INFORMATION: 'PERSONAL_INFORMATION',
+  MISLEADING: 'MISLEADING',
+  OTHER: 'OTHER',
+} as const;
+
+export interface RetailProductReviewReportInput {
+  reason: RetailProductReviewReportInputReason;
+  /** @maxLength 2000 */
+  explanation?: string;
+}
+
+export interface RetailProductReviewReportResult {
+  id: string;
+  reportCount: number;
+  moderationStatus: RetailReviewModerationStatus;
+}
+
+export type RetailProductReviewModerationInputAction = typeof RetailProductReviewModerationInputAction[keyof typeof RetailProductReviewModerationInputAction];
+
+
+export const RetailProductReviewModerationInputAction = {
+  KEEP: 'KEEP',
+  DISMISS_REPORTS: 'DISMISS_REPORTS',
+  REMOVE: 'REMOVE',
+  RESTORE: 'RESTORE',
+} as const;
+
+export interface RetailProductReviewModerationInput {
+  action: RetailProductReviewModerationInputAction;
+  /** @maxLength 2000 */
+  reason?: string;
+  /** @maxLength 4000 */
+  internalNote?: string;
+}
+
+export interface RetailProductReviewModerationResult {
+  id: string;
+  moderationStatus: RetailReviewModerationStatus;
+  verifiedPurchase: boolean;
+}
+
+export interface AdminRetailProductReviewItem {
+  id: string;
+  productId: string;
+  productName: string;
+  supplierId: string;
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  comment: string;
+  moderationStatus: RetailReviewModerationStatus;
+  moderationReason: string | null;
+  removedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  verifiedPurchase: boolean;
+  /** @minimum 0 */
+  reportCount: number;
+}
+
+export type AdminRetailProductReviewReportReason = typeof AdminRetailProductReviewReportReason[keyof typeof AdminRetailProductReviewReportReason];
+
+
+export const AdminRetailProductReviewReportReason = {
+  SPAM: 'SPAM',
+  ABUSE: 'ABUSE',
+  HATE: 'HATE',
+  PERSONAL_INFORMATION: 'PERSONAL_INFORMATION',
+  MISLEADING: 'MISLEADING',
+  OTHER: 'OTHER',
+} as const;
+
+export interface AdminRetailProductReviewReport {
+  reason: AdminRetailProductReviewReportReason;
+  explanation: string | null;
+  createdAt: string;
+}
+
+export type AdminRetailProductReviewAuditAction = typeof AdminRetailProductReviewAuditAction[keyof typeof AdminRetailProductReviewAuditAction];
+
+
+export const AdminRetailProductReviewAuditAction = {
+  KEEP: 'KEEP',
+  DISMISS_REPORTS: 'DISMISS_REPORTS',
+  REMOVE: 'REMOVE',
+  RESTORE: 'RESTORE',
+} as const;
+
+export interface AdminRetailProductReviewAudit {
+  id: string;
+  reviewId: string;
+  moderatorUserId: string;
+  action: AdminRetailProductReviewAuditAction;
+  previousStatus: RetailReviewModerationStatus | null;
+  nextStatus: RetailReviewModerationStatus;
+  reason: string | null;
+  internalNote: string | null;
+  createdAt: string;
+}
+
+export interface AdminRetailProductReviewList {
+  items: AdminRetailProductReviewItem[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface AdminRetailProductReviewDetail {
+  id: string;
+  productId: string;
+  productName: string;
+  supplierId: string;
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  comment: string;
+  moderationStatus: RetailReviewModerationStatus;
+  moderationReason: string | null;
+  removedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  verifiedPurchase: boolean;
+  /** @minimum 0 */
+  reportCount: number;
+  reports: AdminRetailProductReviewReport[];
+  audits: AdminRetailProductReviewAudit[];
+}
+
 export type CityQueryParameter = string;
 
 export type CategoryQueryParameter = string;
@@ -8733,7 +9163,27 @@ pageSize?: number;
 export type ListSupplierPublicProductsParams = {
 categoryId?: string;
 search?: string;
+/**
+ * Comma-separated brand values
+ */
 brand?: string;
+/**
+ * Comma-separated product type slugs
+ */
+productType?: string;
+/**
+ * Comma-separated need/problem tag keys
+ */
+needTag?: string;
+/**
+ * @minimum 0
+ */
+minPrice?: number;
+/**
+ * @minimum 0
+ */
+maxPrice?: number;
+sort?: B2cProductSort;
 /**
  * @minimum 1
  */
@@ -8743,6 +9193,31 @@ page?: number;
  * @maximum 100
  */
 pageSize?: number;
+};
+
+export type AdminDeleteB2cProductTypeParams = {
+/**
+ * @minimum 1
+ */
+expectedVersion: number;
+};
+
+export type AdminDeleteB2cNeedTagParams = {
+/**
+ * @minimum 1
+ */
+expectedVersion: number;
+};
+
+export type AdminListB2cBannersParams = {
+supplierId?: string;
+};
+
+export type AdminDeleteB2cBannerParams = {
+/**
+ * @minimum 1
+ */
+expectedVersion: number;
 };
 
 export type AdminListServiceTemplatesParams = {
@@ -8975,6 +9450,34 @@ export const AdminListRetailOrdersStatus = {
   shipped: 'shipped',
   delivered: 'delivered',
   cancelled: 'cancelled',
+} as const;
+
+export type AdminListRetailProductReviewsParams = {
+status?: AdminListRetailProductReviewsStatus;
+supplierId?: string;
+productId?: string;
+from?: string;
+to?: string;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
+
+export type AdminListRetailProductReviewsStatus = typeof AdminListRetailProductReviewsStatus[keyof typeof AdminListRetailProductReviewsStatus];
+
+
+export const AdminListRetailProductReviewsStatus = {
+  REPORTED: 'REPORTED',
+  AUTO_FLAGGED: 'AUTO_FLAGGED',
+  PUBLISHED: 'PUBLISHED',
+  REMOVED: 'REMOVED',
+  ALL: 'ALL',
 } as const;
 
 export type ListBeautyJobsParams = {

@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useGetCurrentUser } from "@workspace/api-client-react";
 import { BusinessLayout } from "@/components/business-layout";
 import { Button } from "@/components/ui/button";
-import { Loader2, LayoutDashboard, Store, Users, Star, CreditCard, MessageSquare, Menu, X, Package, FolderTree, Tags, Truck, Mail, MessageSquareText, PlugZap, FileText, GraduationCap, SlidersHorizontal, BriefcaseBusiness, ListX, Gift, Layers, Bell, Settings2 } from "lucide-react";
+import { Loader2, LayoutDashboard, Store, Users, Star, CreditCard, MessageSquare, Menu, X, Package, FolderTree, Tags, Truck, Mail, MessageSquareText, PlugZap, FileText, GraduationCap, SlidersHorizontal, BriefcaseBusiness, ListX, Gift, Layers, Bell, Settings2, Image, ListTree, ShieldAlert } from "lucide-react";
 
 const navLinks = [
   { href: "/admin", label: "Pregled", icon: LayoutDashboard },
@@ -17,13 +17,17 @@ const navLinks = [
   { href: "/admin/pretplate", label: "Pretplate", icon: CreditCard },
   { href: "/admin/edukacije", label: "Edukacije i escrow", icon: GraduationCap },
   { href: "/admin/preporuke", label: "Preporuke", icon: Gift },
-  { href: "/admin/recenzije", label: "Recenzije", icon: MessageSquare },
+  { href: "/admin/recenzije", label: "Recenzije salona", icon: MessageSquare },
+  { href: "/admin/recenzije-proizvoda", label: "Moderacija proizvoda", icon: ShieldAlert },
   { href: "/admin/dobavljaci", label: "Dobavljači", icon: FolderTree },
   { href: "/admin/proizvodi", label: "Proizvodi", icon: Package },
+  { href: "/admin/katalog/atributi", label: "Katalog atributi", icon: ListTree },
+  { href: "/admin/b2c-baneri", label: "B2C Baneri", icon: Image },
   { href: "/admin/bundle-proizvodi", label: "Paketi", icon: Layers },
   { href: "/admin/kuponi", label: "Kuponi", icon: Tags },
   { href: "/admin/lista-cekanja", label: "Lista čekanja", icon: Bell },
   { href: "/admin/podesavanja/prodavnica", label: "Podešavanja prodavnice", icon: Settings2 },
+  { href: "/admin/podesavanja-prikaza", label: "B2C Podešavanja", icon: Settings2 },
   { href: "/admin/porudzbine", label: "Porudžbine", icon: Package },
   { href: "/admin/brendovi", label: "Brendovi", icon: Tags },
   { href: "/admin/dostava", label: "Dostava", icon: Truck },

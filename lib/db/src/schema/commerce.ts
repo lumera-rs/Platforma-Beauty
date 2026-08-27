@@ -15,6 +15,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { salonsTable, usersTable } from "./core";
+import { b2cProductTypesTable } from "./b2c-catalog-taxonomy";
 
 export const orderStatusEnum = pgEnum("order_status", [
   "pending",
@@ -132,6 +133,9 @@ export const productsTable = pgTable("products", {
   publicDescription: text("public_description"),
   publicPrice: integer("public_price"),
   publicDiscountPrice: integer("public_discount_price"),
+  productTypeId: uuid("product_type_id").references(() => b2cProductTypesTable.id, { onDelete: "restrict" }),
+  ingredients: text("ingredients"),
+  usageInstructions: text("usage_instructions"),
   professionalEnabled: boolean("professional_enabled").notNull().default(true),
   stock: integer("stock").notNull().default(0),
   // Opaque customer-facing reference. Unlike SKU, this is never edited.
@@ -155,6 +159,10 @@ export const productsTable = pgTable("products", {
   deliveryBusinessDaysOverride: integer("delivery_business_days_override"),
   subscriptionAllowed: boolean("subscription_allowed").notNull().default(false),
   subscriptionDiscountPercent: integer("subscription_discount_percent"),
+  /** Denormalized from published B2C reviews only; maintained by moderation. */
+  averageRating: integer("average_rating").notNull().default(0),
+  /** Denormalized count of published B2C reviews only; maintained by moderation. */
+  reviewCount: integer("review_count").notNull().default(0),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
@@ -166,6 +174,8 @@ export const productsTable = pgTable("products", {
   index("products_retail_active_created_idx").on(table.retailEnabled, table.active, table.createdAt),
   index("products_professional_active_created_idx").on(table.professionalEnabled, table.active, table.createdAt),
   index("products_brand_active_idx").on(table.brand, table.active),
+  index("products_supplier_type_retail_active_idx").on(table.supplierId, table.productTypeId, table.retailEnabled, table.active),
+  index("products_product_type_idx").on(table.productTypeId),
 ]);
 
 export const productBundlesTable = pgTable("product_bundles", {
@@ -779,21 +789,6 @@ export const reorderActionsTable = pgTable("reorder_actions", {
     .where(sql`${table.salonId} IS NOT NULL`),
   uniqueIndex("reorder_actions_user_key_unique").on(table.userId, table.idempotencyKey)
     .where(sql`${table.userId} IS NOT NULL`),
-]);
-
-export const retailProductReviewsTable = pgTable("retail_product_reviews", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  productId: uuid("product_id").notNull().references(() => productsTable.id, { onDelete: "cascade" }),
-  orderItemId: uuid("order_item_id").notNull().references(() => retailOrderItemsTable.id, { onDelete: "cascade" }),
-  userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
-  rating: integer("rating").notNull(),
-  comment: text("comment").notNull().default(""),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [
-  uniqueIndex("retail_product_reviews_item_user_unique").on(table.orderItemId, table.userId),
-  index("retail_product_reviews_product_idx").on(table.productId),
-  index("retail_product_reviews_user_idx").on(table.userId),
 ]);
 
 export const salonNotificationsTable = pgTable("salon_notifications", {

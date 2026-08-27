@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 49;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 52;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -119,6 +119,12 @@ const ENUM_LABELS: Record<string, string[]> = {
   retail_subscription_frequency: ["WEEKLY", "BIWEEKLY", "MONTHLY", "EVERY_TWO_MONTHS"],
   retail_subscription_status: ["ACTIVE", "PAUSED", "CANCELLED"],
   retail_subscription_attempt_status: ["PROCESSING", "CREATED", "INSUFFICIENT_STOCK", "SKIPPED"],
+  b2c_banner_placement: ["HERO", "BELOW_CATEGORIES", "IN_RESULTS"],
+  b2c_banner_destination_kind: ["CATEGORY", "PRODUCT", "FILTERED_LISTING", "CUSTOM_INTERNAL_PATH"],
+  b2c_product_sort: ["RECOMMENDED", "PRICE_ASC", "PRICE_DESC", "NEWEST", "BEST_RATED", "MOST_POPULAR"],
+  retail_review_moderation_status: ["PUBLISHED", "REPORTED", "AUTO_FLAGGED", "REMOVED"],
+  retail_review_report_reason: ["SPAM", "ABUSE", "HATE", "PERSONAL_INFORMATION", "MISLEADING", "OTHER"],
+  retail_review_moderation_action: ["KEEP", "DISMISS_REPORTS", "REMOVE", "RESTORE"],
 };
 
 /**
@@ -848,10 +854,19 @@ function tableStatements(s: string): string[] {
       quantity integer NOT NULL
     )`,
     `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS product_catalog_reference text`,
-    `UPDATE ${s}.retail_order_items AS item
-       SET product_catalog_reference = product.catalog_reference
-       FROM ${s}.products AS product
-       WHERE product.id = item.product_id AND item.product_catalog_reference IS NULL`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (
+         SELECT 1 FROM pg_trigger
+         WHERE tgrelid = '${s}.retail_order_items'::regclass
+           AND tgname = 'retail_order_items_commercial_snapshot_immutable'
+           AND NOT tgisinternal
+       ) THEN
+         UPDATE ${s}.retail_order_items AS item
+           SET product_catalog_reference = product.catalog_reference
+           FROM ${s}.products AS product
+           WHERE product.id = item.product_id AND item.product_catalog_reference IS NULL;
+       END IF;
+     END $$`,
     `CREATE INDEX IF NOT EXISTS retail_order_items_order_idx ON ${s}.retail_order_items (order_id)`,
     `CREATE INDEX IF NOT EXISTS retail_order_items_product_idx ON ${s}.retail_order_items (product_id)`,
     // v19: exact immutable-reference searches use this covering lookup before
@@ -872,17 +887,26 @@ function tableStatements(s: string): string[] {
     `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS discount_snapshot integer`,
     `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS line_subtotal integer`,
     `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS line_total integer`,
-    `UPDATE ${s}.order_items AS item SET
-       supplier_id = COALESCE(item.supplier_id, product.supplier_id),
-       supplier_name = COALESCE(item.supplier_name, supplier.name),
-       supplier_slug = COALESCE(item.supplier_slug, supplier.slug),
-       product_catalog_reference = COALESCE(item.product_catalog_reference, product.catalog_reference),
-       product_sku_snapshot = COALESCE(item.product_sku_snapshot, item.product_sku, product.sku),
-       unit_price = COALESCE(item.unit_price, item.price),
-       line_subtotal = COALESCE(item.line_subtotal, item.price * item.quantity),
-       line_total = COALESCE(item.line_total, item.price * item.quantity)
-       FROM ${s}.products product JOIN ${s}.suppliers supplier ON supplier.id = product.supplier_id
-       WHERE item.product_id = product.id`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (
+         SELECT 1 FROM pg_trigger
+         WHERE tgrelid = '${s}.order_items'::regclass
+           AND tgname = 'order_items_commercial_snapshot_immutable'
+           AND NOT tgisinternal
+       ) THEN
+         UPDATE ${s}.order_items AS item SET
+           supplier_id = COALESCE(item.supplier_id, product.supplier_id),
+           supplier_name = COALESCE(item.supplier_name, supplier.name),
+           supplier_slug = COALESCE(item.supplier_slug, supplier.slug),
+           product_catalog_reference = COALESCE(item.product_catalog_reference, product.catalog_reference),
+           product_sku_snapshot = COALESCE(item.product_sku_snapshot, item.product_sku, product.sku),
+           unit_price = COALESCE(item.unit_price, item.price),
+           line_subtotal = COALESCE(item.line_subtotal, item.price * item.quantity),
+           line_total = COALESCE(item.line_total, item.price * item.quantity)
+           FROM ${s}.products product JOIN ${s}.suppliers supplier ON supplier.id = product.supplier_id
+           WHERE item.product_id = product.id;
+       END IF;
+     END $$`,
     `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS supplier_id uuid`,
     `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS supplier_name text`,
     `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS supplier_slug text`,
@@ -892,19 +916,28 @@ function tableStatements(s: string): string[] {
     `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS discount_snapshot integer`,
     `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS line_subtotal integer`,
     `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS line_total integer`,
-    `UPDATE ${s}.retail_order_items AS item SET
-       supplier_id = COALESCE(item.supplier_id, product.supplier_id),
-       supplier_name = COALESCE(item.supplier_name, supplier.name),
-       supplier_slug = COALESCE(item.supplier_slug, supplier.slug),
-       product_catalog_reference = COALESCE(item.product_catalog_reference, product.catalog_reference),
-       product_sku_snapshot = COALESCE(item.product_sku_snapshot, product.sku),
-       discount_snapshot = COALESCE(item.discount_snapshot,
-         CASE WHEN product.public_price IS NOT NULL AND product.public_price > item.unit_price
-           THEN product.public_price - item.unit_price ELSE NULL END),
-       line_subtotal = COALESCE(item.line_subtotal, item.unit_price * item.quantity),
-       line_total = COALESCE(item.line_total, item.unit_price * item.quantity)
-       FROM ${s}.products product JOIN ${s}.suppliers supplier ON supplier.id = product.supplier_id
-       WHERE item.product_id = product.id`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (
+         SELECT 1 FROM pg_trigger
+         WHERE tgrelid = '${s}.retail_order_items'::regclass
+           AND tgname = 'retail_order_items_commercial_snapshot_immutable'
+           AND NOT tgisinternal
+       ) THEN
+         UPDATE ${s}.retail_order_items AS item SET
+           supplier_id = COALESCE(item.supplier_id, product.supplier_id),
+           supplier_name = COALESCE(item.supplier_name, supplier.name),
+           supplier_slug = COALESCE(item.supplier_slug, supplier.slug),
+           product_catalog_reference = COALESCE(item.product_catalog_reference, product.catalog_reference),
+           product_sku_snapshot = COALESCE(item.product_sku_snapshot, product.sku),
+           discount_snapshot = COALESCE(item.discount_snapshot,
+             CASE WHEN product.public_price IS NOT NULL AND product.public_price > item.unit_price
+               THEN product.public_price - item.unit_price ELSE NULL END),
+           line_subtotal = COALESCE(item.line_subtotal, item.unit_price * item.quantity),
+           line_total = COALESCE(item.line_total, item.unit_price * item.quantity)
+           FROM ${s}.products product JOIN ${s}.suppliers supplier ON supplier.id = product.supplier_id
+           WHERE item.product_id = product.id;
+       END IF;
+     END $$`,
     `DO $$ BEGIN
        IF EXISTS (SELECT 1 FROM ${s}.order_items WHERE supplier_id IS NULL OR supplier_name IS NULL
          OR supplier_slug IS NULL OR (product_id IS NOT NULL AND product_catalog_reference IS NULL) OR unit_price IS NULL
@@ -2346,6 +2379,232 @@ function tableStatements(s: string): string[] {
       ON ${s}.retail_product_subscription_attempts (order_id)`,
     `CREATE INDEX IF NOT EXISTS retail_subscription_attempts_status_claimed_idx
       ON ${s}.retail_product_subscription_attempts (status, claimed_at)`,
+    `ALTER TABLE ${s}.retail_product_reviews ADD COLUMN IF NOT EXISTS moderation_status text NOT NULL DEFAULT 'APPROVED'`,
+    `CREATE INDEX IF NOT EXISTS retail_product_reviews_product_moderation_idx
+      ON ${s}.retail_product_reviews (product_id, moderation_status)`,
+    // v51 — verified B2C product reviews. This extends the former minimal
+    // review table without touching the separately-owned B2B salon review
+    // domain. Existing approved rows are published deterministically.
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS average_rating integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS review_count integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.retail_product_reviews DROP CONSTRAINT IF EXISTS retail_product_reviews_moderation_check`,
+    `ALTER TABLE ${s}.retail_product_reviews ADD COLUMN IF NOT EXISTS moderation_reason text`,
+    `ALTER TABLE ${s}.retail_product_reviews ADD COLUMN IF NOT EXISTS removed_at timestamptz`,
+    `ALTER TABLE ${s}.retail_product_reviews ALTER COLUMN moderation_status DROP DEFAULT`,
+    `DO $$ BEGIN
+       IF EXISTS (
+         SELECT 1 FROM information_schema.columns
+         WHERE table_schema = current_schema() AND table_name = 'retail_product_reviews'
+           AND column_name = 'moderation_status' AND udt_name <> 'retail_review_moderation_status'
+       ) THEN
+         UPDATE ${s}.retail_product_reviews SET moderation_status = 'PUBLISHED'
+           WHERE moderation_status IN ('APPROVED', 'PENDING');
+         UPDATE ${s}.retail_product_reviews SET moderation_status = 'REMOVED'
+           WHERE moderation_status = 'REJECTED';
+         ALTER TABLE ${s}.retail_product_reviews ALTER COLUMN moderation_status
+           TYPE ${s}.retail_review_moderation_status
+           USING moderation_status::${s}.retail_review_moderation_status;
+       END IF;
+     END $$`,
+    `ALTER TABLE ${s}.retail_product_reviews ALTER COLUMN moderation_status
+       SET DEFAULT 'PUBLISHED'::${s}.retail_review_moderation_status`,
+    `WITH ranked AS (
+       SELECT id, row_number() OVER (PARTITION BY product_id, user_id ORDER BY updated_at DESC, id DESC) AS position
+       FROM ${s}.retail_product_reviews WHERE moderation_status <> 'REMOVED'
+     )
+     UPDATE ${s}.retail_product_reviews review SET moderation_status = 'REMOVED', removed_at = coalesce(removed_at, now())
+     FROM ranked WHERE review.id = ranked.id AND ranked.position > 1`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS retail_product_reviews_product_user_active_unique
+       ON ${s}.retail_product_reviews (product_id, user_id) WHERE moderation_status <> 'REMOVED'`,
+    `CREATE INDEX IF NOT EXISTS retail_product_reviews_product_status_created_idx
+       ON ${s}.retail_product_reviews (product_id, moderation_status, created_at)`,
+    `CREATE INDEX IF NOT EXISTS retail_product_reviews_order_item_idx ON ${s}.retail_product_reviews (order_item_id)`,
+    // v52 — B2C browsing history is intentionally independent of carts.  The
+    // partial unique indexes make concurrent repeated detail views idempotent.
+    `CREATE TABLE IF NOT EXISTS ${s}.b2c_recently_viewed_products (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      viewer_token_hash text, user_id uuid REFERENCES ${s}.users(id) ON DELETE CASCADE,
+      product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE CASCADE,
+      last_viewed_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT b2c_recent_views_one_owner_check
+        CHECK (num_nonnulls(viewer_token_hash, user_id) = 1)
+    )`,
+    `CREATE INDEX IF NOT EXISTS b2c_recent_views_product_idx
+      ON ${s}.b2c_recently_viewed_products (product_id)`,
+    `CREATE INDEX IF NOT EXISTS b2c_recent_views_user_viewed_idx
+      ON ${s}.b2c_recently_viewed_products (user_id, last_viewed_at)`,
+    `CREATE INDEX IF NOT EXISTS b2c_recent_views_viewer_viewed_idx
+      ON ${s}.b2c_recently_viewed_products (viewer_token_hash, last_viewed_at)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS b2c_recent_views_user_product_unique
+      ON ${s}.b2c_recently_viewed_products (user_id, product_id) WHERE user_id IS NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS b2c_recent_views_viewer_product_unique
+      ON ${s}.b2c_recently_viewed_products (viewer_token_hash, product_id) WHERE viewer_token_hash IS NOT NULL`,
+    // Reconcile the maintained public aggregate for rows that predate v51.
+    `UPDATE ${s}.products product SET
+       average_rating = COALESCE(aggregate.average_rating, 0),
+       review_count = COALESCE(aggregate.review_count, 0)
+     FROM (
+       SELECT product_id, round(avg(rating)::numeric)::integer AS average_rating, count(*)::integer AS review_count
+       FROM ${s}.retail_product_reviews WHERE moderation_status = 'PUBLISHED'
+       GROUP BY product_id
+     ) aggregate WHERE product.id = aggregate.product_id`,
+    `UPDATE ${s}.products SET average_rating = 0, review_count = 0
+     WHERE id NOT IN (SELECT DISTINCT product_id FROM ${s}.retail_product_reviews WHERE moderation_status = 'PUBLISHED')`,
+    `CREATE TABLE IF NOT EXISTS ${s}.retail_product_review_reports (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       review_id uuid NOT NULL REFERENCES ${s}.retail_product_reviews(id) ON DELETE CASCADE,
+       reporter_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE,
+       reason ${s}.retail_review_report_reason NOT NULL, explanation text,
+       created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+       CONSTRAINT retail_review_reports_review_reporter_unique UNIQUE (review_id, reporter_user_id)
+     )`,
+    `CREATE INDEX IF NOT EXISTS retail_review_reports_review_created_idx
+       ON ${s}.retail_product_review_reports (review_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS retail_review_reports_reporter_idx
+       ON ${s}.retail_product_review_reports (reporter_user_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.retail_product_review_moderation_audits (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       review_id uuid NOT NULL REFERENCES ${s}.retail_product_reviews(id) ON DELETE CASCADE,
+       moderator_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE RESTRICT,
+       action ${s}.retail_review_moderation_action NOT NULL,
+       previous_status ${s}.retail_review_moderation_status,
+       next_status ${s}.retail_review_moderation_status NOT NULL,
+       reason text, internal_note text, created_at timestamptz NOT NULL DEFAULT now()
+     )`,
+    `CREATE INDEX IF NOT EXISTS retail_review_moderation_audits_review_created_idx
+       ON ${s}.retail_product_review_moderation_audits (review_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS retail_review_moderation_audits_moderator_created_idx
+       ON ${s}.retail_product_review_moderation_audits (moderator_user_id, created_at)`,
+    // v50 — supplier-first B2C catalog discovery. Dictionary identifiers are
+    // stable API values; referenced rows use RESTRICT and are deactivated.
+    `CREATE TABLE IF NOT EXISTS ${s}.b2c_product_types (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), slug text NOT NULL UNIQUE,
+      label text NOT NULL, active boolean NOT NULL DEFAULT true,
+      sort_order integer NOT NULL DEFAULT 0, version integer NOT NULL DEFAULT 1,
+      created_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      updated_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT b2c_product_types_slug_check CHECK (slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'),
+      CONSTRAINT b2c_product_types_version_check CHECK (version >= 1)
+    )`,
+    `CREATE INDEX IF NOT EXISTS b2c_product_types_active_sort_idx
+      ON ${s}.b2c_product_types (active, sort_order, id)`,
+    `CREATE INDEX IF NOT EXISTS b2c_product_types_created_by_idx ON ${s}.b2c_product_types (created_by_user_id)`,
+    `CREATE INDEX IF NOT EXISTS b2c_product_types_updated_by_idx ON ${s}.b2c_product_types (updated_by_user_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.b2c_need_tags (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), key text NOT NULL UNIQUE,
+      label text NOT NULL, active boolean NOT NULL DEFAULT true,
+      sort_order integer NOT NULL DEFAULT 0, version integer NOT NULL DEFAULT 1,
+      created_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      updated_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT b2c_need_tags_key_check CHECK (key ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'),
+      CONSTRAINT b2c_need_tags_version_check CHECK (version >= 1)
+    )`,
+    `CREATE INDEX IF NOT EXISTS b2c_need_tags_active_sort_idx
+      ON ${s}.b2c_need_tags (active, sort_order, id)`,
+    `CREATE INDEX IF NOT EXISTS b2c_need_tags_created_by_idx ON ${s}.b2c_need_tags (created_by_user_id)`,
+    `CREATE INDEX IF NOT EXISTS b2c_need_tags_updated_by_idx ON ${s}.b2c_need_tags (updated_by_user_id)`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS product_type_id uuid`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS ingredients text`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS usage_instructions text`,
+    `DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='${s}.products'::regclass
+        AND conname='products_product_type_id_b2c_product_types_id_fk') THEN
+        ALTER TABLE ${s}.products ADD CONSTRAINT products_product_type_id_b2c_product_types_id_fk
+          FOREIGN KEY (product_type_id) REFERENCES ${s}.b2c_product_types(id) ON DELETE RESTRICT NOT VALID;
+      END IF;
+    END $$`,
+    `ALTER TABLE ${s}.products VALIDATE CONSTRAINT products_product_type_id_b2c_product_types_id_fk`,
+    `CREATE INDEX IF NOT EXISTS products_product_type_idx ON ${s}.products (product_type_id)`,
+    `CREATE INDEX IF NOT EXISTS products_supplier_type_retail_active_idx
+      ON ${s}.products (supplier_id, product_type_id, retail_enabled, active)`,
+    `CREATE INDEX IF NOT EXISTS products_supplier_retail_price_idx
+      ON ${s}.products (supplier_id, retail_enabled, active, public_price, id)`,
+    `DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='products' AND column_name='brand') THEN
+        CREATE INDEX IF NOT EXISTS products_supplier_retail_brand_idx
+          ON ${s}.products (supplier_id, retail_enabled, active, brand, id);
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='products' AND column_name='brand')
+        AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='products' AND column_name='category_name')
+        AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='products' AND column_name='subcategory_name') THEN
+        CREATE INDEX IF NOT EXISTS products_b2c_search_idx ON ${s}.products
+          USING gin (to_tsvector('simple', coalesce(name,'') || ' ' || coalesce(brand,'') || ' ' ||
+            coalesce(category_name,'') || ' ' || coalesce(subcategory_name,'')));
+      END IF;
+    END $$`,
+    `CREATE TABLE IF NOT EXISTS ${s}.b2c_product_need_tags (
+      product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE CASCADE,
+      need_tag_id uuid NOT NULL REFERENCES ${s}.b2c_need_tags(id) ON DELETE RESTRICT,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT b2c_product_need_tags_product_tag_unique UNIQUE (product_id, need_tag_id)
+    )`,
+    `CREATE INDEX IF NOT EXISTS b2c_product_need_tags_tag_product_idx
+      ON ${s}.b2c_product_need_tags (need_tag_id, product_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.b2c_promotional_banners (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), internal_name text NOT NULL,
+      supplier_id uuid NOT NULL REFERENCES ${s}.suppliers(id) ON DELETE RESTRICT,
+      desktop_image_url text NOT NULL, mobile_image_url text, headline text NOT NULL,
+      text text, cta_label text, destination_kind ${s}.b2c_banner_destination_kind NOT NULL,
+      destination_category_id uuid REFERENCES ${s}.product_categories(id) ON DELETE RESTRICT,
+      destination_product_id uuid REFERENCES ${s}.products(id) ON DELETE RESTRICT,
+      filtered_listing jsonb, custom_internal_path text,
+      placement ${s}.b2c_banner_placement NOT NULL, active boolean NOT NULL DEFAULT true,
+      starts_at timestamptz, ends_at timestamptz, sort_order integer NOT NULL DEFAULT 0,
+      version integer NOT NULL DEFAULT 1,
+      created_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      updated_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT b2c_banners_version_check CHECK (version >= 1),
+      CONSTRAINT b2c_banners_window_check CHECK (starts_at IS NULL OR ends_at IS NULL OR starts_at < ends_at),
+      CONSTRAINT b2c_banners_internal_path_check CHECK (custom_internal_path IS NULL OR (custom_internal_path LIKE '/%' AND custom_internal_path NOT LIKE '//%')),
+      CONSTRAINT b2c_banners_destination_check CHECK (
+        (destination_kind='CATEGORY' AND num_nonnulls(destination_category_id,destination_product_id,filtered_listing,custom_internal_path)=1 AND destination_category_id IS NOT NULL)
+        OR (destination_kind='PRODUCT' AND num_nonnulls(destination_category_id,destination_product_id,filtered_listing,custom_internal_path)=1 AND destination_product_id IS NOT NULL)
+        OR (destination_kind='FILTERED_LISTING' AND num_nonnulls(destination_category_id,destination_product_id,filtered_listing,custom_internal_path)=1 AND filtered_listing IS NOT NULL)
+        OR (destination_kind='CUSTOM_INTERNAL_PATH' AND num_nonnulls(destination_category_id,destination_product_id,filtered_listing,custom_internal_path)=1 AND custom_internal_path IS NOT NULL)
+      )
+    )`,
+    `CREATE INDEX IF NOT EXISTS b2c_banners_supplier_window_sort_idx
+      ON ${s}.b2c_promotional_banners (supplier_id, active, placement, starts_at, ends_at, sort_order, id)`,
+    `CREATE INDEX IF NOT EXISTS b2c_banners_category_idx ON ${s}.b2c_promotional_banners (destination_category_id)`,
+    `CREATE INDEX IF NOT EXISTS b2c_banners_product_idx ON ${s}.b2c_promotional_banners (destination_product_id)`,
+    `CREATE INDEX IF NOT EXISTS b2c_banners_created_by_idx ON ${s}.b2c_promotional_banners (created_by_user_id)`,
+    `CREATE INDEX IF NOT EXISTS b2c_banners_updated_by_idx ON ${s}.b2c_promotional_banners (updated_by_user_id)`,
+    `CREATE OR REPLACE FUNCTION ${s}.validate_b2c_banner_destination()
+      RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.destination_category_id IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM ${s}.product_categories c WHERE c.id=NEW.destination_category_id
+            AND c.supplier_id=NEW.supplier_id FOR KEY SHARE
+        ) THEN RAISE EXCEPTION 'Banner category destination must belong to supplier'; END IF;
+        IF NEW.destination_product_id IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM ${s}.products p WHERE p.id=NEW.destination_product_id
+            AND p.supplier_id=NEW.supplier_id AND p.retail_enabled=true FOR KEY SHARE
+        ) THEN RAISE EXCEPTION 'Banner product destination must belong to supplier'; END IF;
+        RETURN NEW;
+      END $$`,
+    `DROP TRIGGER IF EXISTS b2c_banners_validate_destination ON ${s}.b2c_promotional_banners`,
+    `CREATE TRIGGER b2c_banners_validate_destination BEFORE INSERT OR UPDATE OF
+      supplier_id,destination_category_id,destination_product_id ON ${s}.b2c_promotional_banners
+      FOR EACH ROW EXECUTE FUNCTION ${s}.validate_b2c_banner_destination()`,
+    `CREATE TABLE IF NOT EXISTS ${s}.b2c_display_settings (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      default_sort ${s}.b2c_product_sort NOT NULL DEFAULT 'RECOMMENDED',
+      enabled_sort_options jsonb NOT NULL DEFAULT '["RECOMMENDED","PRICE_ASC","PRICE_DESC","NEWEST","BEST_RATED","MOST_POPULAR"]'::jsonb,
+      page_size integer NOT NULL DEFAULT 24, show_out_of_stock boolean NOT NULL DEFAULT true,
+      recently_viewed_enabled boolean NOT NULL DEFAULT true, recently_viewed_max integer NOT NULL DEFAULT 12,
+      version integer NOT NULL DEFAULT 1,
+      updated_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT b2c_display_settings_values_check CHECK (
+        page_size BETWEEN 1 AND 100 AND recently_viewed_max BETWEEN 1 AND 100
+        AND version >= 1 AND jsonb_typeof(enabled_sort_options)='array')
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS b2c_display_settings_singleton_unique ON ${s}.b2c_display_settings ((true))`,
+    `CREATE INDEX IF NOT EXISTS b2c_display_settings_updated_by_idx ON ${s}.b2c_display_settings (updated_by_user_id)`,
+    `INSERT INTO ${s}.b2c_display_settings DEFAULT VALUES ON CONFLICT DO NOTHING`,
   ];
 }
 

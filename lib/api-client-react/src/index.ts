@@ -8,5 +8,6 @@ export {
   getApiErrorMessage,
   setBaseUrl,
   setAuthTokenGetter,
+  customFetch,
 } from "./custom-fetch";
-export type { ApiErrorData, ApiErrorDetails, AuthTokenGetter } from "./custom-fetch";
+export type { ApiErrorData, ApiErrorDetails, AuthTokenGetter, CustomFetchOptions } from "./custom-fetch";

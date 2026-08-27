@@ -34,6 +34,15 @@ import {
 
 const money = (value: number) => new Intl.NumberFormat("sr-RS", { style: "currency", currency: "RSD", maximumFractionDigits: 0 }).format(value);
 
+function cartLinesForChange(items: RetailCartItemsItem[]) {
+  return items.map((item) => ({
+    id: item.id,
+    productId: item.kind === "product" ? item.productId : `bundle:${item.bundleId}`,
+    name: item.name,
+    quantity: item.quantity,
+  }));
+}
+
 function CartLines({ cart }: { cart: RetailCart }) {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -46,7 +55,10 @@ function CartLines({ cart }: { cart: RetailCart }) {
     },
     onSuccess: (data) => {
       qc.setQueryData(getGetRetailCartQueryKey(), data);
-      notifyRetailCartChanged(data.itemCount);
+      notifyRetailCartChanged(data.itemCount, changedRetailCartItem(
+        cartLinesForChange(cart.items),
+        cartLinesForChange(data.items),
+      ));
     },
     onError: (error: unknown) => {
       toast.error("Količina nije promenjena.", {
@@ -58,7 +70,10 @@ function CartLines({ cart }: { cart: RetailCart }) {
     mutation: {
       onSuccess: (data) => {
         qc.setQueryData(getGetRetailCartQueryKey(), data);
-        notifyRetailCartChanged(data.itemCount);
+        notifyRetailCartChanged(data.itemCount, changedRetailCartItem(
+          cartLinesForChange(cart.items),
+          cartLinesForChange(data.items),
+        ));
       },
       onError: (error: unknown) => {
         toast.error("Stavka nije uklonjena.", {
@@ -71,7 +86,10 @@ function CartLines({ cart }: { cart: RetailCart }) {
     mutation: {
       onSuccess: (data) => {
         qc.setQueryData(getGetRetailCartQueryKey(), data);
-        notifyRetailCartChanged(data.itemCount);
+        notifyRetailCartChanged(data.itemCount, changedRetailCartItem(
+          cartLinesForChange(cart.items),
+          cartLinesForChange(data.items),
+        ));
         toast.success("Sačuvano za kasnije");
       },
       onError: (error: unknown) => {

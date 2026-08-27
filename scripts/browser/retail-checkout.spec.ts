@@ -10,6 +10,7 @@ import {
   retailOrderItemsTable,
   retailOrdersTable,
   shippingRulesTable,
+  suppliersTable,
 } from "@workspace/db";
 
 type CheckoutPreview = {
@@ -27,6 +28,8 @@ type CheckoutOrder = {
 const createdCartIds: string[] = [];
 const createdOrderIds: string[] = [];
 let categoryId: string | undefined;
+let supplierId: string | undefined;
+let supplierSlug: string | undefined;
 let productId: string | undefined;
 let productName: string | undefined;
 
@@ -140,13 +143,24 @@ test.beforeAll(async () => {
     shippingRuleId = shippingRule!.id;
   }
 
+  const [supplier] = await db.insert(suppliersTable).values({
+    name: `Retail browser dobavljač ${suffix}`,
+    slug: `retail-browser-${suffix}`,
+    scope: "B2C",
+    active: true,
+  }).returning();
+  supplierId = supplier!.id;
+  supplierSlug = supplier!.slug;
+
   const [category] = await db.insert(productCategoriesTable).values({
+    supplierId: supplier!.id,
     name: `Retail browser ${suffix}`,
     slug: `retail-browser-${suffix}`,
     active: true,
   }).returning();
   categoryId = category!.id;
   const [product] = await db.insert(productsTable).values({
+    supplierId: supplier!.id,
     categoryId: category!.id,
     categoryName: category!.name,
     name: `Retail browser proizvod ${suffix}`,
@@ -168,6 +182,7 @@ test.beforeAll(async () => {
   productName = product!.name;
 
   const [secondProduct] = await db.insert(productsTable).values({
+    supplierId: supplier!.id,
     categoryId: category!.id,
     categoryName: category!.name,
     name: `Drugi retail browser proizvod ${suffix}`,
@@ -188,6 +203,7 @@ test.beforeAll(async () => {
   secondProductId = secondProduct!.id;
 
   const [sameNameProduct] = await db.insert(productsTable).values({
+    supplierId: supplier!.id,
     categoryId: category!.id,
     categoryName: category!.name,
     name: productName!,
@@ -221,6 +237,7 @@ test.afterAll(async () => {
   if (sameNameProductId) await db.delete(productsTable).where(eq(productsTable.id, sameNameProductId));
   if (productId) await db.delete(productsTable).where(eq(productsTable.id, productId));
   if (categoryId) await db.delete(productCategoriesTable).where(eq(productCategoriesTable.id, categoryId));
+  if (supplierId) await db.delete(suppliersTable).where(eq(suppliersTable.id, supplierId));
   if (previousShippingRule) {
     await db.update(shippingRulesTable).set({
       freeShippingThreshold: previousShippingRule.freeShippingThreshold,
@@ -637,7 +654,7 @@ test("retail cart page announces a cross-tab line change without reloading", asy
   try {
     await otherTab.goto("/korpa");
     await expect(otherTab.getByRole("heading", { name: "Vaša korpa" })).toBeVisible();
-    await otherTab.getByRole("button", { name: `Povećaj količinu proizvoda ${productName}` }).click();
+    await otherTab.getByRole("button", { name: `Povećaj količinu za ${productName}` }).click();
 
     await expect(page.getByTestId("status-cart-announcement")).toHaveText("Korpa sada ima 2 stavki.");
     await expect(page.getByTestId("status-cart-item-announcement")).toHaveText(
@@ -868,10 +885,10 @@ test("retail cart distinguishes controls for same-name products", async ({ page 
   expect(refreshedCart.items.find((item) => item.productId === productId)?.sku).toBe(firstCatalogReference);
   await page.reload();
   await expect(page.getByRole("heading", { name: "Vaša korpa" })).toBeVisible();
-  await expect(page.getByRole("button", { name: `Smanji količinu proizvoda ${productName} ${firstLabel}`, exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: `Smanji količinu proizvoda ${productName} ${sameNameLabel}`, exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: `Povećaj količinu proizvoda ${productName} ${firstLabel}`, exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: `Povećaj količinu proizvoda ${productName} ${sameNameLabel}`, exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: `Smanji količinu za ${productName} ${firstLabel}`, exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: `Smanji količinu za ${productName} ${sameNameLabel}`, exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: `Povećaj količinu za ${productName} ${firstLabel}`, exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: `Povećaj količinu za ${productName} ${sameNameLabel}`, exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: `Ukloni ${productName} ${firstLabel} iz korpe`, exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: `Ukloni ${productName} ${sameNameLabel} iz korpe`, exact: true })).toBeVisible();
 
@@ -879,7 +896,7 @@ test("retail cart distinguishes controls for same-name products", async ({ page 
     new URL(response.url()).pathname === `/api/retail/cart/items/${sameNameItem!.id}`
     && response.request().method() === "PATCH",
   );
-  await page.getByRole("button", { name: `Povećaj količinu proizvoda ${productName} ${sameNameLabel}`, exact: true }).click();
+  await page.getByRole("button", { name: `Povećaj količinu za ${productName} ${sameNameLabel}`, exact: true }).click();
   const increasedCart = await (await increaseResponse).json() as { items: Array<{ productId: string; quantity: number }> };
   expect(increasedCart.items).toEqual(expect.arrayContaining([
     expect.objectContaining({ productId: productId, quantity: 1 }),
@@ -1049,6 +1066,7 @@ test("retail checkout explains unavailable items and offers recovery without cre
 test("retail cart announces every shopper mutation through completed checkout", async ({ page }) => {
   expect(productId).toBeTruthy();
   expect(productName).toBeTruthy();
+  expect(supplierSlug).toBeTruthy();
 
   const cartResponse = await page.request.get("/api/retail/cart");
   expect(cartResponse.ok()).toBe(true);
@@ -1070,8 +1088,8 @@ test("retail cart announces every shopper mutation through completed checkout", 
     await expect(page.getByTestId("status-cart-item-announcement")).toHaveText(announcement);
   };
 
-  await page.goto("/proizvodi");
-  const productSearch = page.getByTestId("public-product-search");
+  await page.goto(`/shop/${supplierSlug}`);
+  const productSearch = page.locator("aside").getByPlaceholder("Pretraga...");
   await productSearch.fill(productName!);
   const productCard = page.getByRole("article").filter({
     has: page.getByRole("heading", { name: productName!, exact: true }),
@@ -1083,11 +1101,11 @@ test("retail cart announces every shopper mutation through completed checkout", 
 
   await page.getByTestId("link-cart").click();
   await expect(page.getByRole("heading", { name: "Vaša korpa" })).toBeVisible();
-  await page.getByRole("button", { name: `Povećaj količinu proizvoda ${productName}` }).click();
+  await page.getByRole("button", { name: `Povećaj količinu za ${productName}` }).click();
   await expectCartAnnouncement(2);
   await expectCartItemAnnouncement(`Proizvod ${productName} sada ima količinu 2.`);
 
-  await page.getByRole("button", { name: `Smanji količinu proizvoda ${productName}` }).click();
+  await page.getByRole("button", { name: `Smanji količinu za ${productName}` }).click();
   await expectCartAnnouncement(1);
   await expectCartItemAnnouncement(`Proizvod ${productName} sada ima količinu 1.`);
 
@@ -1095,7 +1113,7 @@ test("retail cart announces every shopper mutation through completed checkout", 
   await expectCartAnnouncement(0);
   await expectCartItemAnnouncement(`Proizvod ${productName} je uklonjen iz korpe.`);
 
-  await page.goto("/proizvodi");
+  await page.goto(`/shop/${supplierSlug}`);
   await productSearch.fill(productName!);
   const secondProductCard = page.getByRole("article").filter({
     has: page.getByRole("heading", { name: productName!, exact: true }),
@@ -1107,7 +1125,7 @@ test("retail cart announces every shopper mutation through completed checkout", 
 
   await page.getByTestId("link-cart").click();
   await expect(page.getByRole("heading", { name: "Vaša korpa" })).toBeVisible();
-  await page.getByRole("link", { name: "Nastavi na dostavu i plaćanje" }).click();
+  await page.getByRole("link", { name: "Nastavi na plaćanje" }).click();
   await expect(page.getByRole("heading", { name: "Dostava i plaćanje" })).toBeVisible();
   await fillCheckoutContact(page, "Novi Sad");
 

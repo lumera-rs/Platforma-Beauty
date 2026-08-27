@@ -5,6 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { RetailProductReviewSummary } from './retailProductReviewSummary';
 
 /**
  * Customer-facing product fields only. B2B price, SKU, stock, weight, variants and salon-only review data are deliberately omitted.
@@ -46,4 +47,5 @@ export interface PublicProduct {
      * @nullable
      */
   subscriptionDiscountPercent: number | null;
+  reviewSummary: RetailProductReviewSummary;
 }

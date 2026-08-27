@@ -626,7 +626,10 @@ export async function createSeoResponse(req, template) {
     // Fall through to the client app with a non-indexable response. Public API
     // outages must never cause a private-page-looking response to be indexed.
   }
-  const privateHead = `<title>LUMERA | Privatna stranica</title><meta name="description" content="${escapeHtml(fallbackDescription)}"><meta name="robots" content="noindex, follow">`;
+  const queryCanonical = hasQuery
+    ? `<link rel="canonical" href="${escapeHtml(`${origin}${pathname}`)}">`
+    : '';
+  const privateHead = `<title>LUMERA | Privatna stranica</title><meta name="description" content="${escapeHtml(fallbackDescription)}"><meta name="robots" content="noindex, follow">${queryCanonical}`;
   const html = stripSeoMetadata(template)
     .replace('</head>', `${privateHead}</head>`)
     .replace('<div id="root"></div>', `${privateDocument(pathname, origin)}<div id="root"></div>`);

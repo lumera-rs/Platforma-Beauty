@@ -78,6 +78,12 @@ export interface AdminProduct {
      * @nullable
      */
   subscriptionDiscountPercent: number | null;
+  /** @nullable */
+  productTypeId: string | null;
+  /** @nullable */
+  ingredients: string | null;
+  /** @nullable */
+  usageInstructions: string | null;
   active: boolean;
   createdAt: Date;
 }

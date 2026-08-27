@@ -5,9 +5,33 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { B2cPublicNeedTag } from './b2cPublicNeedTag';
+import type { B2cPublicTaxonomyValue } from './b2cPublicTaxonomyValue';
 import type { PublicProduct } from './publicProduct';
 import type { RelatedProductCard } from './relatedProductCard';
 
-export type PublicProductDetail = PublicProduct & {
+export type PublicProductDetail = PublicProduct & ({
+  /** @nullable */
+  ingredients?: string | null;
+  /** @nullable */
+  usageInstructions?: string | null;
+  productType?: B2cPublicTaxonomyValue | null;
+  needTags?: B2cPublicNeedTag[];
   relatedProducts: RelatedProductCard[];
-};
+}) & Required<Pick<PublicProduct & ({
+  /** @nullable */
+  ingredients?: string | null;
+  /** @nullable */
+  usageInstructions?: string | null;
+  productType?: B2cPublicTaxonomyValue | null;
+  needTags?: B2cPublicNeedTag[];
+  relatedProducts: RelatedProductCard[];
+}), Extract<keyof (PublicProduct & ({
+  /** @nullable */
+  ingredients?: string | null;
+  /** @nullable */
+  usageInstructions?: string | null;
+  productType?: B2cPublicTaxonomyValue | null;
+  needTags?: B2cPublicNeedTag[];
+  relatedProducts: RelatedProductCard[];
+})), 'categoryId'>>>;

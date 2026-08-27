@@ -39,6 +39,7 @@ import {
   servicesTable,
   subscriptionPlansTable,
   subscriptionsTable,
+  suppliersTable,
   usersTable,
 } from "@workspace/db";
 import { hashPassword } from "./auth";
@@ -50,6 +51,30 @@ import {
 import { getOrCreateShippingConfig } from "./shipping-config";
 
 let seedPromise: Promise<void> | undefined;
+const LEGACY_CATALOG_SUPPLIER_ID = "9b5970ea-0a8c-5e60-9d32-2a09f0890560";
+
+async function ensureLegacyCatalogSupplier(): Promise<string> {
+  const [existing] = await db.select({ id: suppliersTable.id })
+    .from(suppliersTable)
+    .where(eq(suppliersTable.slug, "lumera-legacy"))
+    .limit(1);
+  if (existing) return existing.id;
+
+  await db.insert(suppliersTable).values({
+    id: LEGACY_CATALOG_SUPPLIER_ID,
+    name: "LUMERA Legacy Catalog",
+    slug: "lumera-legacy",
+    scope: "BOTH",
+    active: true,
+  }).onConflictDoNothing();
+
+  const [supplier] = await db.select({ id: suppliersTable.id })
+    .from(suppliersTable)
+    .where(eq(suppliersTable.slug, "lumera-legacy"))
+    .limit(1);
+  if (!supplier) throw new Error("Unable to ensure the legacy catalog supplier");
+  return supplier.id;
+}
 
 const salonNames = [
   ["Atelier Mimoza", "atelier-mimoza", "Beograd", "Vračar"],
@@ -373,14 +398,16 @@ async function seed(): Promise<void> {
   await seedFutureBookingAvailability();
   await backfillSalonCustomers();
 
+  const legacyCatalogSupplierId = await ensureLegacyCatalogSupplier();
   const productCategoryRows = await db.insert(productCategoriesTable).values([
-    { name: "Masažna ulja", slug: "masazna-ulja" },
-    { name: "Oprema", slug: "oprema" },
-    { name: "Potrošni materijal", slug: "potrosni-materijal" },
-    { name: "Kozmetika", slug: "kozmetika" },
+    { supplierId: legacyCatalogSupplierId, name: "Masažna ulja", slug: "masazna-ulja" },
+    { supplierId: legacyCatalogSupplierId, name: "Oprema", slug: "oprema" },
+    { supplierId: legacyCatalogSupplierId, name: "Potrošni materijal", slug: "potrosni-materijal" },
+    { supplierId: legacyCatalogSupplierId, name: "Kozmetika", slug: "kozmetika" },
   ]).returning();
   const products = await db.insert(productsTable).values(
     Array.from({ length: 12 }, (_, index) => ({
+      supplierId: legacyCatalogSupplierId,
       categoryId: productCategoryRows[index % productCategoryRows.length]!.id,
       categoryName: productCategoryRows[index % productCategoryRows.length]!.name,
       name: ["Arnika masažno ulje", "Set drvenih rolera", "Profesionalni čaršav", "Vitamin C serum"][index % 4]! + ` ${index + 1}`,
@@ -708,6 +735,7 @@ async function seedCourierServices(): Promise<void> {
 }
 
 async function seedB2BShopTaxonomy(): Promise<void> {
+  const supplierId = await ensureLegacyCatalogSupplier();
   // All product categories: [name, slug, parentSlug | null, sortOrder]
   const b2bCategories: Array<[string, string, string | null, number]> = [
     // Main categories
@@ -769,17 +797,20 @@ async function seedB2BShopTaxonomy(): Promise<void> {
   ];
 
   for (const [name, slug, , sortOrder] of b2bCategories.filter(([, , p]) => p === null)) {
-    await db.insert(productCategoriesTable).values({ name, slug, sortOrder }).onConflictDoNothing();
+    await db.insert(productCategoriesTable).values({ supplierId, name, slug, sortOrder }).onConflictDoNothing();
   }
-  const parentRows = await db.select().from(productCategoriesTable).orderBy(asc(productCategoriesTable.sortOrder));
+  const parentRows = await db.select().from(productCategoriesTable)
+    .where(eq(productCategoriesTable.supplierId, supplierId))
+    .orderBy(asc(productCategoriesTable.sortOrder));
   const parentBySlug = new Map(parentRows.map((r) => [r.slug, r]));
   for (const [name, slug, parentSlug, sortOrder] of b2bCategories.filter(([, , p]) => p !== null)) {
     const parent = parentBySlug.get(parentSlug!);
     if (!parent) continue;
-    await db.insert(productCategoriesTable).values({ name, slug, parentId: parent.id, sortOrder }).onConflictDoNothing();
+    await db.insert(productCategoriesTable).values({ supplierId, name, slug, parentId: parent.id, sortOrder }).onConflictDoNothing();
   }
 
-  const allCatRows = await db.select().from(productCategoriesTable);
+  const allCatRows = await db.select().from(productCategoriesTable)
+    .where(eq(productCategoriesTable.supplierId, supplierId));
   const catBySlug = new Map(allCatRows.map((r) => [r.slug, r]));
 
   // Demo B2B products: [name, brand, categorySlug, subcategorySlug, price, discountPrice|null, unit, sku, stock, isNew, isBestseller, description, variants?, weightGrams?]
@@ -858,6 +889,7 @@ async function seedB2BShopTaxonomy(): Promise<void> {
     const parentCat = cat ? allCatRows.find((r) => r.id === cat.id) : null;
     const parentName = parentCat?.name ?? catSlug.toUpperCase();
     return {
+      supplierId,
       categoryId: cat?.id ?? null,
       categoryName: parentName,
       subcategoryName: sub?.name ?? null,

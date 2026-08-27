@@ -61,9 +61,17 @@ test('a pinned public origin cannot be replaced by forwarded host headers', asyn
 
 test('query variants and protected routes are never indexable', async () => {
   const queryResponse = await createSeoResponse(request('/saloni?city=Beograd'), template);
+  const shopQueryResponse = await createSeoResponse(request('/shop/aurora?brand=Lumera&sort=PRICE_ASC&page=2'), template);
+  const productQueryResponse = await createSeoResponse(request('/shop/aurora/proizvod/p1?ref=campaign'), template);
   const privateResponse = await createSeoResponse(request('/vlasnik/kontrolna-tabla'), template);
   assert.match(queryResponse.body, /name="robots" content="noindex, follow"/);
+  assert.match(queryResponse.body, /rel="canonical" href="https:\/\/lumera\.example\/saloni"/);
+  assert.match(shopQueryResponse.body, /name="robots" content="noindex, follow"/);
+  assert.match(shopQueryResponse.body, /rel="canonical" href="https:\/\/lumera\.example\/shop\/aurora"/);
+  assert.match(productQueryResponse.body, /name="robots" content="noindex, follow"/);
+  assert.match(productQueryResponse.body, /rel="canonical" href="https:\/\/lumera\.example\/shop\/aurora\/proizvod\/p1"/);
   assert.match(privateResponse.body, /name="robots" content="noindex, follow"/);
+  assert.doesNotMatch(privateResponse.body, /rel="canonical"/);
   assert.doesNotMatch(privateResponse.body, /<meta property="og:title"/);
 });
 

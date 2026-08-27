@@ -6,6 +6,8 @@ import test from "node:test";
 import { eq, inArray, sql } from "drizzle-orm";
 import {
   db,
+  b2cDisplaySettingsTable,
+  b2cRecentlyViewedProductsTable,
   type DatabasePoolClient,
   loyaltyPointLedgerTable,
   orderBundleComponentsTable,
@@ -29,6 +31,7 @@ import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureBusinessGrowthSchema } from "./business-growth-schema";
 import { ensureShippingConfigSchema } from "./shipping-config";
+import { claimRecentlyViewedForUser } from "../routes/b2c-discovery";
 
 type CategoryResponse = {
   id: string;
@@ -388,6 +391,48 @@ test("supplier B2B products require authentication and public products expose on
     "publicPrice", "publicDiscountPrice",
   ]) {
     assert.equal(Object.hasOwn(product, forbidden), false, `public response leaked ${forbidden}`);
+  }
+});
+
+test("public detail is passive and explicit recent recording is idempotent and merge-capped", async () => {
+  const detail = await api(`/suppliers/${supplierA.slug}/public-products/${orderedProduct.id}`);
+  assert.equal(detail.status, 200);
+  assert.equal(detail.headers.get("set-cookie"), null, "passive detail GET must not mint viewer identity");
+  const dto = await detail.json() as Record<string, unknown>;
+  assert.deepEqual(dto.reviewSummary, { averageRating: 0, reviewCount: 0 });
+
+  const [display] = await db.select().from(b2cDisplaySettingsTable).limit(1);
+  assert.ok(display);
+  const originalMaximum = display.recentlyViewedMax;
+  try {
+    await db.update(b2cDisplaySettingsTable).set({ recentlyViewedMax: 100 }).where(eq(b2cDisplaySettingsTable.id, display.id));
+    const first = await api(`/suppliers/${supplierA.slug}/recently-viewed/${orderedProduct.id}`, "", { method: "POST" });
+    assert.equal(first.status, 204);
+    const token = first.headers.get("set-cookie")?.match(/lumera_b2c_viewer=([^;]+)/)?.[1];
+    assert.ok(token);
+    const viewerCookie = `lumera_b2c_viewer=${token}`;
+    const repeat = await api(`/suppliers/${supplierA.slug}/recently-viewed/${orderedProduct.id}`, viewerCookie, { method: "POST" });
+    assert.equal(repeat.status, 204);
+    const recent = await api(`/suppliers/${supplierA.slug}/recently-viewed`, viewerCookie);
+    const recentItems = await recent.json() as Array<{ id: string }>;
+    assert.deepEqual(recentItems.map((item) => item.id), [orderedProduct.id], "repeated recording keeps one product row");
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const second = await api(`/suppliers/${supplierB.slug}/recently-viewed/${b2cProduct.id}`, viewerCookie, { method: "POST" });
+    assert.equal(second.status, 204);
+    await db.update(b2cDisplaySettingsTable).set({ recentlyViewedMax: 1 }).where(eq(b2cDisplaySettingsTable.id, display.id));
+    await claimRecentlyViewedForUser(
+      { cookies: { lumera_b2c_viewer: token } } as unknown as Parameters<typeof claimRecentlyViewedForUser>[0],
+      { clearCookie: () => undefined } as unknown as Parameters<typeof claimRecentlyViewedForUser>[1],
+      ownerId,
+    );
+    const claimed = await db.select().from(b2cRecentlyViewedProductsTable)
+      .where(eq(b2cRecentlyViewedProductsTable.userId, ownerId));
+    assert.equal(claimed.length, 1, "guest-to-user merge is capped transactionally");
+    assert.equal(claimed[0]?.productId, b2cProduct.id, "merge preserves the newest product");
+  } finally {
+    await db.delete(b2cRecentlyViewedProductsTable).where(eq(b2cRecentlyViewedProductsTable.userId, ownerId));
+    await db.update(b2cDisplaySettingsTable).set({ recentlyViewedMax: originalMaximum }).where(eq(b2cDisplaySettingsTable.id, display.id));
   }
 });
 

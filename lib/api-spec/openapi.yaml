@@ -4001,11 +4001,16 @@ paths:
         - { name: supplierSlug, in: path, required: true, schema: { type: string } }
         - { name: categoryId, in: query, schema: { type: string } }
         - { name: search, in: query, schema: { type: string } }
-        - { name: brand, in: query, schema: { type: string } }
+        - { name: brand, in: query, description: Comma-separated brand values, schema: { type: string } }
+        - { name: productType, in: query, description: Comma-separated product type slugs, schema: { type: string } }
+        - { name: needTag, in: query, description: Comma-separated need/problem tag keys, schema: { type: string } }
+        - { name: minPrice, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: maxPrice, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: sort, in: query, schema: { $ref: "#/components/schemas/B2cProductSort" } }
         - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
         - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 24 } }
       responses:
-        "200": { description: Supplier products, content: { application/json: { schema: { $ref: "#/components/schemas/PublicProductList" } } } }
+        "200": { description: Supplier-scoped products and disjunctive facets, content: { application/json: { schema: { $ref: "#/components/schemas/B2cProductSearchResponse" } } } }
         "404": { description: Supplier not found }
   /suppliers/{supplierSlug}/products/{productId}:
     get:
@@ -4029,6 +4034,152 @@ paths:
       responses:
         "200": { description: Supplier product, content: { application/json: { schema: { $ref: "#/components/schemas/PublicProductDetail" } } } }
         "404": { description: Product or supplier not found }
+  /suppliers/{supplierSlug}/recently-viewed:
+    get:
+      operationId: listRecentlyViewedProducts
+      tags: [shop]
+      summary: List the current browser or signed-in retail account's recently viewed public product cards
+      parameters:
+        - { name: supplierSlug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Supplier-scoped public product cards; no browsing identity is created by this request, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/PublicProduct" } } } } }
+        "404": { description: Supplier not found }
+  /suppliers/{supplierSlug}/recently-viewed/{productId}:
+    post:
+      operationId: recordRecentlyViewedProduct
+      tags: [shop]
+      summary: Record a successfully viewed public retail product for the current browser or signed-in CUSTOMER/JOBSEEKER account
+      parameters:
+        - { name: supplierSlug, in: path, required: true, schema: { type: string } }
+        - { name: productId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Recorded (idempotent) }
+        "404": { description: Product or supplier not found }
+  /suppliers/{supplierSlug}/banners:
+    get:
+      operationId: listSupplierB2cBanners
+      tags: [shop]
+      summary: List active in-window promotional banners for one active B2C supplier
+      parameters: [{ name: supplierSlug, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Public banners, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/PublicB2cBanner" } } } } }
+        "404": { description: Supplier not found }
+  /b2c/display-config:
+    get:
+      operationId: getB2cDisplayConfig
+      tags: [shop]
+      summary: Get display-safe global B2C configuration
+      responses:
+        "200": { description: Display configuration, content: { application/json: { schema: { $ref: "#/components/schemas/B2cDisplayConfig" } } } }
+  /admin/b2c/product-types:
+    get:
+      operationId: adminListB2cProductTypes
+      tags: [admin]
+      responses:
+        "200": { description: Product types, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/B2cDictionaryValue" } } } } }
+    post:
+      operationId: adminCreateB2cProductType
+      tags: [admin]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/B2cDictionaryCreate" } } } }
+      responses:
+        "201": { description: Created product type, content: { application/json: { schema: { $ref: "#/components/schemas/B2cDictionaryValue" } } } }
+  /admin/b2c/product-types/{id}:
+    patch:
+      operationId: adminUpdateB2cProductType
+      tags: [admin]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/B2cDictionaryUpdate" } } } }
+      responses:
+        "200": { description: Updated product type, content: { application/json: { schema: { $ref: "#/components/schemas/B2cDictionaryValue" } } } }
+        "409": { description: Version conflict or referenced value }
+    delete:
+      operationId: adminDeleteB2cProductType
+      tags: [admin]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: expectedVersion, in: query, required: true, schema: { type: integer, minimum: 1 } }
+      responses: { "204": { description: Deleted }, "409": { description: Version conflict or referenced value } }
+  /admin/b2c/product-types/reorder:
+    put:
+      operationId: adminReorderB2cProductTypes
+      tags: [admin]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/B2cReorderInput" } } } }
+      responses: { "200": { description: Reordered values } }
+  /admin/b2c/need-tags:
+    get:
+      operationId: adminListB2cNeedTags
+      tags: [admin]
+      responses:
+        "200": { description: Need tags, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/B2cDictionaryValue" } } } } }
+    post:
+      operationId: adminCreateB2cNeedTag
+      tags: [admin]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/B2cNeedTagCreate" } } } }
+      responses:
+        "201": { description: Created need tag, content: { application/json: { schema: { $ref: "#/components/schemas/B2cDictionaryValue" } } } }
+  /admin/b2c/need-tags/{id}:
+    patch:
+      operationId: adminUpdateB2cNeedTag
+      tags: [admin]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/B2cDictionaryUpdate" } } } }
+      responses: { "200": { description: Updated need tag }, "409": { description: Version conflict } }
+    delete:
+      operationId: adminDeleteB2cNeedTag
+      tags: [admin]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: expectedVersion, in: query, required: true, schema: { type: integer, minimum: 1 } }
+      responses: { "204": { description: Deleted }, "409": { description: Version conflict or referenced value } }
+  /admin/b2c/need-tags/reorder:
+    put:
+      operationId: adminReorderB2cNeedTags
+      tags: [admin]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/B2cReorderInput" } } } }
+      responses: { "200": { description: Reordered values } }
+  /admin/b2c/banners:
+    get:
+      operationId: adminListB2cBanners
+      tags: [admin]
+      parameters: [{ name: supplierId, in: query, schema: { type: string } }]
+      responses: { "200": { description: Banners } }
+    post:
+      operationId: adminCreateB2cBanner
+      tags: [admin]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AdminB2cBannerInput" } } } }
+      responses: { "201": { description: Created banner } }
+  /admin/b2c/banners/{id}:
+    patch:
+      operationId: adminUpdateB2cBanner
+      tags: [admin]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AdminB2cBannerUpdate" } } } }
+      responses: { "200": { description: Updated banner }, "409": { description: Version conflict } }
+    delete:
+      operationId: adminDeleteB2cBanner
+      tags: [admin]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: expectedVersion, in: query, required: true, schema: { type: integer, minimum: 1 } }
+      responses: { "204": { description: Deleted }, "409": { description: Version conflict } }
+  /admin/b2c/banners/reorder:
+    put:
+      operationId: adminReorderB2cBanners
+      tags: [admin]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/B2cReorderInput" } } } }
+      responses: { "200": { description: Reordered banners } }
+  /admin/b2c/display-settings:
+    get:
+      operationId: adminGetB2cDisplaySettings
+      tags: [admin]
+      responses: { "200": { description: Display settings, content: { application/json: { schema: { $ref: "#/components/schemas/AdminB2cDisplaySettings" } } } } }
+    put:
+      operationId: adminUpdateB2cDisplaySettings
+      tags: [admin]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AdminB2cDisplaySettingsInput" } } } }
+      responses:
+        "200": { description: Updated settings, content: { application/json: { schema: { $ref: "#/components/schemas/AdminB2cDisplaySettings" } } } }
+        "409": { description: Version conflict }
   /admin/service-categories:
     get:
       operationId: adminListServiceCategories
@@ -5584,7 +5735,7 @@ paths:
     get:
       operationId: getRetailCart
       tags: [shop]
-      summary: Get the current guest or customer retail cart
+      summary: Get the current guest or authenticated CUSTOMER/JOBSEEKER retail cart
       responses:
         "200": { description: Retail cart, content: { application/json: { schema: { $ref: "#/components/schemas/RetailCart" } } } }
   /retail/cart-summary:
@@ -5607,7 +5758,7 @@ paths:
     post:
       operationId: addRetailCartItem
       tags: [shop]
-      summary: Add a retail product to the separate guest/customer cart
+      summary: Add a retail product to the separate guest or CUSTOMER/JOBSEEKER cart
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/RetailCartItemInput" } } } }
       responses:
         "201": { description: Updated retail cart, content: { application/json: { schema: { $ref: "#/components/schemas/RetailCart" } } } }
@@ -5656,11 +5807,11 @@ paths:
     post:
       operationId: repeatLastRetailOrder
       tags: [shop]
-      summary: Add eligible lines from the authenticated customer's latest retail order
+      summary: Add eligible lines from the authenticated CUSTOMER or JOBSEEKER account's latest retail order
       parameters: [{ name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 8, maxLength: 200 } }]
       responses:
         "200": { description: Reorder result, content: { application/json: { schema: { $ref: "#/components/schemas/ReorderResult" } } } }
-        "401": { description: Customer authentication required }
+        "401": { description: CUSTOMER or JOBSEEKER authentication required }
   /retail/checkout-preview:
     get:
       operationId: previewRetailCheckout
@@ -5683,7 +5834,7 @@ paths:
     post:
       operationId: checkoutRetailCart
       tags: [shop]
-      summary: Create an idempotent retail order from the current cart
+      summary: Create an idempotent retail order from the current guest or authenticated CUSTOMER/JOBSEEKER cart
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/RetailCheckoutInput" } } } }
       responses:
         "201": { description: Retail order, content: { application/json: { schema: { $ref: "#/components/schemas/RetailOrder" } } } }
@@ -5702,18 +5853,18 @@ paths:
     get:
       operationId: listCustomerRetailOrders
       tags: [customer]
-      summary: List only the authenticated customer's retail orders
+      summary: List only the authenticated CUSTOMER or JOBSEEKER account's retail orders
       responses:
         "200": { description: Retail orders, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/RetailOrder" } } } } }
   /customer/retail-orders/{orderId}:
     get:
       operationId: getCustomerRetailOrder
       tags: [customer]
-      summary: Get one retail order owned by the authenticated customer
+      summary: Get one retail order owned by the authenticated CUSTOMER or JOBSEEKER account
       parameters: [{ name: orderId, in: path, required: true, schema: { type: string } }]
       responses:
         "200": { description: Retail order, content: { application/json: { schema: { $ref: "#/components/schemas/RetailOrder" } } } }
-        "404": { description: Order not found or not owned by the customer }
+        "404": { description: Order not found or not owned by the authenticated retail account }
   /admin/retail-orders:
     get:
       operationId: adminListRetailOrders
@@ -5767,15 +5918,99 @@ paths:
       summary: List public aggregated retail reviews for a product
       parameters: [{ name: productId, in: path, required: true, schema: { type: string } }]
       responses:
-        "200": { description: Public retail reviews }
-  /customer/retail-products/{productId}/reviews:
-    post:
-      operationId: upsertCustomerRetailProductReview
+        "200": { description: Public retail reviews, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/PublicRetailProductReview" } } } } }
+        "404": { description: Product is not publicly available in the B2C catalogue }
+  /suppliers/{supplierSlug}/public-products/{productId}/reviews:
+    get:
+      operationId: listSupplierPublicProductReviews
+      tags: [shop]
+      summary: List privacy-safe published verified-purchase reviews and the moderated product summary
+      parameters:
+        - { name: supplierSlug, in: path, required: true, schema: { type: string } }
+        - { name: productId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Published verified-purchase reviews only, content: { application/json: { schema: { $ref: "#/components/schemas/PublicRetailProductReviewList" } } } }
+  /customer/retail-products/{productId}/review-context:
+    get:
+      operationId: getCustomerRetailProductReviewContext
       tags: [customer]
-      summary: Create or update a review for an authenticated customer's delivered item
+      summary: Get current-account verified-purchase eligibility and own review
       parameters: [{ name: productId, in: path, required: true, schema: { type: string } }]
       responses:
-        "200": { description: Retail review saved }
+        "200": { description: Eligibility and private own-review context, content: { application/json: { schema: { $ref: "#/components/schemas/RetailProductReviewContext" } } } }
+  /customer/retail-products/{productId}/reviews:
+    post:
+      operationId: createCustomerRetailProductReview
+      tags: [customer]
+      summary: Create one verified-purchase review for an authenticated active CUSTOMER or JOBSEEKER
+      parameters: [{ name: productId, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/RetailProductReviewInput" } } } }
+      responses:
+        "201": { description: Retail review created, content: { application/json: { schema: { $ref: "#/components/schemas/OwnRetailProductReview" } } } }
+        "403": { description: No qualifying account-owned delivered retail order item }
+        "409": { description: An active review already exists for user and product }
+  /customer/retail-products/{productId}/reviews/{reviewId}:
+    patch:
+      operationId: updateCustomerRetailProductReview
+      tags: [customer]
+      summary: Update own verified-purchase review without bypassing moderation
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string } }
+        - { name: reviewId, in: path, required: true, schema: { type: string } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/RetailProductReviewInput" } } } }
+      responses:
+        "200": { description: Updated review, content: { application/json: { schema: { $ref: "#/components/schemas/OwnRetailProductReview" } } } }
+    delete:
+      operationId: deleteCustomerRetailProductReview
+      tags: [customer]
+      summary: Remove own B2C review
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string } }
+        - { name: reviewId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Review removed }
+  /retail-product-reviews/{reviewId}/reports:
+    post:
+      operationId: reportRetailProductReview
+      tags: [customer]
+      summary: Create or update one authenticated reporter's moderation report
+      parameters: [{ name: reviewId, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/RetailProductReviewReportInput" } } } }
+      responses:
+        "201": { description: Report recorded, content: { application/json: { schema: { $ref: "#/components/schemas/RetailProductReviewReportResult" } } } }
+        "404": { description: Review is missing or removed }
+  /admin/retail-product-reviews:
+    get:
+      operationId: adminListRetailProductReviews
+      tags: [admin]
+      summary: List B2C review moderation queue tabs with filters and pagination
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [REPORTED, AUTO_FLAGGED, PUBLISHED, REMOVED, ALL], default: ALL } }
+        - { name: supplierId, in: query, schema: { type: string } }
+        - { name: productId, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        "200": { description: Moderation queue, content: { application/json: { schema: { $ref: "#/components/schemas/AdminRetailProductReviewList" } } } }
+  /admin/retail-product-reviews/{reviewId}:
+    get:
+      operationId: adminGetRetailProductReview
+      tags: [admin]
+      summary: Get review moderation detail, verified badge, reports and audit history
+      parameters: [{ name: reviewId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Moderation detail, content: { application/json: { schema: { $ref: "#/components/schemas/AdminRetailProductReviewDetail" } } } }
+  /admin/retail-product-reviews/{reviewId}/moderation:
+    post:
+      operationId: adminModerateRetailProductReview
+      tags: [admin]
+      summary: Keep, dismiss reports, remove, or restore a review atomically
+      parameters: [{ name: reviewId, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/RetailProductReviewModerationInput" } } } }
+      responses:
+        "200": { description: Moderation action applied, content: { application/json: { schema: { $ref: "#/components/schemas/RetailProductReviewModerationResult" } } } }
 
   /beauty-jobs/categories:
     get:
@@ -8038,6 +8273,7 @@ components:
         supplierId: { type: string }
         name: { type: string }
         category: { type: string }
+        categoryId: { type: ["string", "null"] }
         subcategory: { type: ["string", "null"] }
         brand: { type: ["string", "null"] }
         description: { type: string }
@@ -8168,7 +8404,8 @@ components:
         deliveryBusinessDaysOverride: { type: ["integer", "null"], minimum: 1, maximum: 365 }
         subscriptionAllowed: { type: boolean }
         subscriptionDiscountPercent: { type: ["integer", "null"], minimum: 1, maximum: 100 }
-      required: [id, supplierId, name, category, description, imageUrl, images, price, unit, isNew, isBestseller, deliveryBusinessDaysOverride, subscriptionAllowed, subscriptionDiscountPercent]
+        reviewSummary: { $ref: "#/components/schemas/RetailProductReviewSummary" }
+      required: [id, supplierId, name, category, categoryId, description, imageUrl, images, price, unit, isNew, isBestseller, deliveryBusinessDaysOverride, subscriptionAllowed, subscriptionDiscountPercent, reviewSummary]
     RelatedProductCard:
       type: object
       description: Channel-priced related-product allowlist; excludes inventory, SKU, weight, variants, wholesale administration and relationship IDs.
@@ -8196,10 +8433,161 @@ components:
         - $ref: "#/components/schemas/PublicProduct"
         - type: object
           properties:
+            ingredients: { type: ["string", "null"] }
+            usageInstructions: { type: ["string", "null"] }
+            productType:
+              anyOf: [{ $ref: "#/components/schemas/B2cPublicTaxonomyValue" }, { type: "null" }]
+            needTags:
+              type: array
+              items: { $ref: "#/components/schemas/B2cPublicNeedTag" }
             relatedProducts:
               type: array
               items: { $ref: "#/components/schemas/RelatedProductCard" }
           required: [relatedProducts]
+    B2cProductSort:
+      type: string
+      enum: [RECOMMENDED, PRICE_ASC, PRICE_DESC, NEWEST, BEST_RATED, MOST_POPULAR]
+    B2cPublicTaxonomyValue:
+      type: object
+      additionalProperties: false
+      properties: { slug: { type: string }, label: { type: string } }
+      required: [slug, label]
+    B2cPublicNeedTag:
+      type: object
+      additionalProperties: false
+      properties: { key: { type: string }, label: { type: string } }
+      required: [key, label]
+    B2cFacetValue:
+      type: object
+      properties:
+        id: { type: ["string", "null"] }
+        value: { type: ["string", "null"] }
+        label: { type: ["string", "null"] }
+        count: { type: integer, minimum: 0 }
+      required: [count]
+    B2cProductSearchResponse:
+      allOf:
+        - $ref: "#/components/schemas/PublicProductList"
+        - type: object
+          properties:
+            activeRange:
+              type: object
+              properties:
+                minPrice: { type: ["integer", "null"] }
+                maxPrice: { type: ["integer", "null"] }
+              required: [minPrice, maxPrice]
+            facets:
+              type: object
+              properties:
+                categories: { type: array, items: { $ref: "#/components/schemas/B2cFacetValue" } }
+                brands: { type: array, items: { $ref: "#/components/schemas/B2cFacetValue" } }
+                productTypes: { type: array, items: { $ref: "#/components/schemas/B2cFacetValue" } }
+                needTags: { type: array, items: { $ref: "#/components/schemas/B2cFacetValue" } }
+              required: [categories, brands, productTypes, needTags]
+          required: [activeRange, facets]
+    B2cDictionaryValue:
+      type: object
+      properties:
+        id: { type: string }
+        slug: { type: string }
+        key: { type: string }
+        label: { type: string }
+        active: { type: boolean }
+        sortOrder: { type: integer }
+        version: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, label, active, sortOrder, version, createdAt, updatedAt]
+    B2cDictionaryCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        slug: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
+        label: { type: string, minLength: 1 }
+        active: { type: boolean }
+        sortOrder: { type: integer, minimum: 0 }
+      required: [slug, label]
+    B2cNeedTagCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        key: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
+        label: { type: string, minLength: 1 }
+        active: { type: boolean }
+        sortOrder: { type: integer, minimum: 0 }
+      required: [key, label]
+    B2cDictionaryUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        label: { type: string, minLength: 1 }
+        active: { type: boolean }
+        sortOrder: { type: integer, minimum: 0 }
+      required: [expectedVersion]
+    B2cReorderInput:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              id: { type: string }
+              sortOrder: { type: integer, minimum: 0 }
+              expectedVersion: { type: integer, minimum: 1 }
+            required: [id, sortOrder, expectedVersion]
+      required: [items]
+    B2cDisplayConfig:
+      type: object
+      properties:
+        defaultSort: { $ref: "#/components/schemas/B2cProductSort" }
+        enabledSortOptions: { type: array, items: { $ref: "#/components/schemas/B2cProductSort" } }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        showOutOfStock: { type: boolean }
+        recentlyViewedEnabled: { type: boolean }
+        recentlyViewedMax: { type: integer, minimum: 1, maximum: 100 }
+      required: [defaultSort, enabledSortOptions, pageSize, showOutOfStock, recentlyViewedEnabled, recentlyViewedMax]
+    AdminB2cDisplaySettings:
+      allOf:
+        - $ref: "#/components/schemas/B2cDisplayConfig"
+        - type: object
+          properties:
+            id: { type: string }
+            version: { type: integer }
+            updatedAt: { type: string, format: date-time }
+          required: [id, version, updatedAt]
+    AdminB2cDisplaySettingsInput:
+      allOf:
+        - $ref: "#/components/schemas/B2cDisplayConfig"
+        - type: object
+          properties: { expectedVersion: { type: integer, minimum: 1 } }
+          required: [expectedVersion]
+    PublicB2cBanner:
+      type: object
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        desktopImageUrl: { type: string }
+        mobileImageUrl: { type: ["string", "null"] }
+        headline: { type: string }
+        text: { type: ["string", "null"] }
+        ctaLabel: { type: ["string", "null"] }
+        placement: { type: string, enum: [HERO, BELOW_CATEGORIES, IN_RESULTS] }
+        destination: { type: object, additionalProperties: true }
+      required: [id, desktopImageUrl, mobileImageUrl, headline, text, ctaLabel, placement, destination]
+    AdminB2cBannerInput:
+      type: object
+      additionalProperties: true
+      required: [internalName, supplierId, desktopImageUrl, headline, destinationKind, placement]
+    AdminB2cBannerUpdate:
+      type: object
+      additionalProperties: true
+      properties: { expectedVersion: { type: integer, minimum: 1 } }
+      required: [expectedVersion]
     ProductReview:
       type: object
       properties:
@@ -9595,9 +9983,12 @@ components:
         deliveryBusinessDaysOverride: { type: ["integer", "null"], minimum: 1, maximum: 365 }
         subscriptionAllowed: { type: boolean }
         subscriptionDiscountPercent: { type: ["integer", "null"], minimum: 1, maximum: 100 }
+        productTypeId: { type: ["string", "null"] }
+        ingredients: { type: ["string", "null"] }
+        usageInstructions: { type: ["string", "null"] }
         active: { type: boolean }
         createdAt: { type: string, format: date-time }
-      required: [id, supplierId, name, categoryName, description, imageUrl, images, price, retailEnabled, professionalEnabled, stock, catalogReference, sku, unit, isNew, isBestseller, similarProductsMode, similarProductIds, crossSellProductIds, quantityPricingTiers, minimumOrderQuantity, deliveryBusinessDaysOverride, subscriptionAllowed, subscriptionDiscountPercent, active, createdAt]
+      required: [id, supplierId, name, categoryName, description, imageUrl, images, price, retailEnabled, professionalEnabled, stock, catalogReference, sku, unit, isNew, isBestseller, similarProductsMode, similarProductIds, crossSellProductIds, quantityPricingTiers, minimumOrderQuantity, deliveryBusinessDaysOverride, subscriptionAllowed, subscriptionDiscountPercent, productTypeId, ingredients, usageInstructions, active, createdAt]
     AdminProductList:
       type: object
       properties:
@@ -9651,6 +10042,10 @@ components:
         deliveryBusinessDaysOverride: { type: ["integer", "null"], minimum: 1, maximum: 365 }
         subscriptionAllowed: { type: boolean, default: false }
         subscriptionDiscountPercent: { type: ["integer", "null"], minimum: 1, maximum: 100 }
+        productTypeId: { type: ["string", "null"] }
+        needTagIds: { type: array, uniqueItems: true, items: { type: string } }
+        ingredients: { type: ["string", "null"], maxLength: 20000 }
+        usageInstructions: { type: ["string", "null"], maxLength: 20000 }
       required: [categoryId, name, categoryName, description, imageUrl, price, stock, sku, unit, weightGrams]
     AdminProductUpdate:
       type: object
@@ -9694,6 +10089,10 @@ components:
         deliveryBusinessDaysOverride: { type: ["integer", "null"], minimum: 1, maximum: 365 }
         subscriptionAllowed: { type: boolean }
         subscriptionDiscountPercent: { type: ["integer", "null"], minimum: 1, maximum: 100 }
+        productTypeId: { type: ["string", "null"] }
+        needTagIds: { type: array, uniqueItems: true, items: { type: string } }
+        ingredients: { type: ["string", "null"], maxLength: 20000 }
+        usageInstructions: { type: ["string", "null"], maxLength: 20000 }
     AdminProductBulkUpdate:
       type: object
       additionalProperties: false
@@ -11499,3 +11898,149 @@ components:
             properties:
               id: { type: string }
               status: { type: string, enum: [processed, not_found] }
+    RetailProductReviewInput:
+      type: object
+      additionalProperties: false
+      required: [rating, comment]
+      properties:
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string, minLength: 1, maxLength: 2000 }
+    RetailReviewModerationStatus:
+      type: string
+      enum: [PUBLISHED, REPORTED, AUTO_FLAGGED, REMOVED]
+    PublicRetailProductReview:
+      type: object
+      required: [id, rating, comment, verifiedPurchase, reviewerName, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string }
+        verifiedPurchase: { type: boolean }
+        reviewerName: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    RetailProductReviewSummary:
+      type: object
+      required: [averageRating, reviewCount]
+      properties:
+        averageRating: { type: integer, minimum: 0, maximum: 5 }
+        reviewCount: { type: integer, minimum: 0 }
+    PublicRetailProductReviewList:
+      type: object
+      required: [summary, items]
+      properties:
+        summary: { $ref: "#/components/schemas/RetailProductReviewSummary" }
+        items: { type: array, items: { $ref: "#/components/schemas/PublicRetailProductReview" } }
+    OwnRetailProductReview:
+      type: object
+      required: [id, rating, comment, verifiedPurchase, moderationStatus]
+      properties:
+        id: { type: string }
+        rating: { type: integer }
+        comment: { type: string }
+        verifiedPurchase: { type: boolean }
+        moderationStatus: { $ref: "#/components/schemas/RetailReviewModerationStatus" }
+    RetailProductReviewContext:
+      type: object
+      required: [eligible, verifiedPurchase, review]
+      properties:
+        eligible: { type: boolean }
+        verifiedPurchase: { type: boolean }
+        review: { anyOf: [{ $ref: "#/components/schemas/OwnRetailProductReview" }, { type: "null" }] }
+    RetailProductReviewReportInput:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: { type: string, enum: [SPAM, ABUSE, HATE, PERSONAL_INFORMATION, MISLEADING, OTHER] }
+        explanation: { type: string, maxLength: 2000 }
+    RetailProductReviewReportResult:
+      type: object
+      required: [id, reportCount, moderationStatus]
+      properties:
+        id: { type: string }
+        reportCount: { type: integer }
+        moderationStatus: { $ref: "#/components/schemas/RetailReviewModerationStatus" }
+    RetailProductReviewModerationInput:
+      type: object
+      additionalProperties: false
+      required: [action]
+      properties:
+        action: { type: string, enum: [KEEP, DISMISS_REPORTS, REMOVE, RESTORE] }
+        reason: { type: string, maxLength: 2000 }
+        internalNote: { type: string, maxLength: 4000 }
+    RetailProductReviewModerationResult:
+      type: object
+      required: [id, moderationStatus, verifiedPurchase]
+      properties:
+        id: { type: string }
+        moderationStatus: { $ref: "#/components/schemas/RetailReviewModerationStatus" }
+        verifiedPurchase: { type: boolean }
+    AdminRetailProductReviewItem:
+      type: object
+      additionalProperties: false
+      required: [id, productId, productName, supplierId, rating, comment, moderationStatus, moderationReason, removedAt, createdAt, updatedAt, verifiedPurchase, reportCount]
+      properties:
+        id: { type: string }
+        productId: { type: string }
+        productName: { type: string }
+        supplierId: { type: string }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string }
+        moderationStatus: { $ref: "#/components/schemas/RetailReviewModerationStatus" }
+        moderationReason: { anyOf: [{ type: string }, { type: "null" }] }
+        removedAt: { anyOf: [{ type: string, format: date-time }, { type: "null" }] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        verifiedPurchase: { type: boolean }
+        reportCount: { type: integer, minimum: 0 }
+    AdminRetailProductReviewReport:
+      type: object
+      additionalProperties: false
+      required: [reason, explanation, createdAt]
+      properties:
+        reason: { type: string, enum: [SPAM, ABUSE, HATE, PERSONAL_INFORMATION, MISLEADING, OTHER] }
+        explanation: { anyOf: [{ type: string }, { type: "null" }] }
+        createdAt: { type: string, format: date-time }
+    AdminRetailProductReviewAudit:
+      type: object
+      additionalProperties: false
+      required: [id, reviewId, moderatorUserId, action, previousStatus, nextStatus, reason, internalNote, createdAt]
+      properties:
+        id: { type: string }
+        reviewId: { type: string }
+        moderatorUserId: { type: string }
+        action: { type: string, enum: [KEEP, DISMISS_REPORTS, REMOVE, RESTORE] }
+        previousStatus: { anyOf: [{ $ref: "#/components/schemas/RetailReviewModerationStatus" }, { type: "null" }] }
+        nextStatus: { $ref: "#/components/schemas/RetailReviewModerationStatus" }
+        reason: { anyOf: [{ type: string }, { type: "null" }] }
+        internalNote: { anyOf: [{ type: string }, { type: "null" }] }
+        createdAt: { type: string, format: date-time }
+    AdminRetailProductReviewList:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AdminRetailProductReviewItem" } }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+    AdminRetailProductReviewDetail:
+      type: object
+      additionalProperties: false
+      required: [id, productId, productName, supplierId, rating, comment, moderationStatus, moderationReason, removedAt, createdAt, updatedAt, verifiedPurchase, reportCount, reports, audits]
+      properties:
+        id: { type: string }
+        productId: { type: string }
+        productName: { type: string }
+        supplierId: { type: string }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string }
+        moderationStatus: { $ref: "#/components/schemas/RetailReviewModerationStatus" }
+        moderationReason: { anyOf: [{ type: string }, { type: "null" }] }
+        removedAt: { anyOf: [{ type: string, format: date-time }, { type: "null" }] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        verifiedPurchase: { type: boolean }
+        reportCount: { type: integer, minimum: 0 }
+        reports: { type: array, items: { $ref: "#/components/schemas/AdminRetailProductReviewReport" } }
+        audits: { type: array, items: { $ref: "#/components/schemas/AdminRetailProductReviewAudit" } }

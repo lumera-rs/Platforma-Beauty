@@ -116,6 +116,10 @@ const AdminBundles = lazy(() => import('./pages/admin/bundles'));
 const AdminCoupons = lazy(() => import('./pages/admin/coupons'));
 const AdminWaitlist = lazy(() => import('./pages/admin/waitlist'));
 const AdminShopSettings = lazy(() => import('./pages/admin/shop-settings'));
+const AdminB2cBanners = lazy(() => import('./pages/admin/b2c-banners'));
+const AdminCatalogAttributes = lazy(() => import('./pages/admin/b2c-catalog-attributes'));
+const AdminRetailReviews = lazy(() => import('./pages/admin/retail-reviews'));
+const AdminB2cDisplaySettings = lazy(() => import('./pages/admin/b2c-display-settings'));
 
 const queryClient = new QueryClient();
 
@@ -258,19 +262,6 @@ function RoleGuard({
   return children;
 }
 
-function JobseekerExcludedRoute({ children }: { children: ReactNode }) {
-  const [, setLocation] = useLocation();
-  const { data, isLoading } = useGetCurrentUser();
-  const isJobseeker = data?.user?.role === "JOBSEEKER";
-
-  useEffect(() => {
-    if (!isLoading && isJobseeker) setLocation("/poslovi/nalog");
-  }, [isJobseeker, isLoading, setLocation]);
-
-  if (isLoading || isJobseeker) return <RouteLoadingFallback />;
-  return children;
-}
-
 function Router() {
   return (
     <RoutedErrorBoundary>
@@ -300,14 +291,14 @@ function Router() {
         <Route path="/poslovi/nalog"><RoleGuard allowedRoles={['JOBSEEKER']} loginPath="/prijava"><JobseekerDashboard /></RoleGuard></Route>
         <Route path="/poslovi/nalog/:tab"><RoleGuard allowedRoles={['JOBSEEKER']} loginPath="/prijava"><JobseekerDashboard /></RoleGuard></Route>
         <Route path="/poslovi/:slug/:listingId" component={BeautyJobDetail} />
-        <Route path="/proizvodi"><JobseekerExcludedRoute><PublicProducts /></JobseekerExcludedRoute></Route>
-        <Route path="/shop/:supplierSlug/proizvod/:productId"><JobseekerExcludedRoute><PublicProductDetail /></JobseekerExcludedRoute></Route>
-        <Route path="/shop/:supplierSlug"><JobseekerExcludedRoute><PublicSupplierShop /></JobseekerExcludedRoute></Route>
-        <Route path="/shop/:supplierSlug/*"><JobseekerExcludedRoute><PublicSupplierShop /></JobseekerExcludedRoute></Route>
-        <Route path="/korpa"><JobseekerExcludedRoute><RetailCartPage /></JobseekerExcludedRoute></Route>
-        <Route path="/korpa/placanje"><JobseekerExcludedRoute><RetailCheckoutPage /></JobseekerExcludedRoute></Route>
-        <Route path="/korpa/uspeh"><JobseekerExcludedRoute><RetailSuccessPage /></JobseekerExcludedRoute></Route>
-        <Route path="/porudzbina/pracenje"><JobseekerExcludedRoute><RetailTrackingPage /></JobseekerExcludedRoute></Route>
+        <Route path="/proizvodi" component={PublicProducts} />
+        <Route path="/shop/:supplierSlug/proizvod/:productId" component={PublicProductDetail} />
+        <Route path="/shop/:supplierSlug" component={PublicSupplierShop} />
+        <Route path="/shop/:supplierSlug/*" component={PublicSupplierShop} />
+        <Route path="/korpa" component={RetailCartPage} />
+        <Route path="/korpa/placanje" component={RetailCheckoutPage} />
+        <Route path="/korpa/uspeh" component={RetailSuccessPage} />
+        <Route path="/porudzbina/pracenje" component={RetailTrackingPage} />
         <Route path="/lista-zelja"><RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava"><CustomerWishlistPage /></RoleGuard></Route>
         <Route path="/moj-nalog/pretplate"><RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava"><CustomerSubscriptionsPage /></RoleGuard></Route>
         <Route path="/inspiracija"><MarketplaceGuides kind="inspiration" /></Route>
@@ -422,10 +413,14 @@ function Router() {
         <Route path="/admin/edukacije/centri/:centerId"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminEducationCenterDetail /></RoleGuard></Route>
         <Route path="/admin/edukacije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminEducationMarketplace /></RoleGuard></Route>
         <Route path="/admin/recenzije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminReviews /></RoleGuard></Route>
+        <Route path="/admin/recenzije-proizvoda"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminRetailReviews /></RoleGuard></Route>
         <Route path="/admin/bundle-proizvodi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminBundles /></RoleGuard></Route>
         <Route path="/admin/kuponi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminCoupons /></RoleGuard></Route>
         <Route path="/admin/lista-cekanja"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminWaitlist /></RoleGuard></Route>
         <Route path="/admin/podesavanja/prodavnica"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminShopSettings /></RoleGuard></Route>
+        <Route path="/admin/podesavanja-prikaza"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminB2cDisplaySettings /></RoleGuard></Route>
+        <Route path="/admin/b2c-baneri"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminB2cBanners /></RoleGuard></Route>
+        <Route path="/admin/katalog/atributi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminCatalogAttributes /></RoleGuard></Route>
 
         <Route path="/uslovi-koriscenja"><LegalPage pagePath="/uslovi-koriscenja" /></Route>
         <Route path="/politika-privatnosti"><LegalPage pagePath="/politika-privatnosti" /></Route>

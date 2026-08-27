@@ -11,9 +11,13 @@ import {
   useAdminListBrands,
   useAdminCreateBrand,
   useAdminListSuppliers,
+  useAdminListB2cProductTypes,
+  useAdminListB2cNeedTags,
   getAdminListProductsQueryKey,
   getAdminListProductCategoriesQueryKey,
   getAdminListBrandsQueryKey,
+  getAdminListB2cProductTypesQueryKey,
+  getAdminListB2cNeedTagsQueryKey,
 } from "@workspace/api-client-react";
 import type {
   AdminProduct,
@@ -87,6 +91,10 @@ const emptyForm = {
   deliveryBusinessDaysOverride: null,
   subscriptionAllowed: false,
   subscriptionDiscountPercent: null,
+  productTypeId: null,
+  needTagIds: [],
+  ingredients: null,
+  usageInstructions: null,
 } as unknown as AdminProductInput;
 
 function formatRSD(v: number) {
@@ -111,6 +119,8 @@ function ProductFormDialog({
   const { data: categories = [] } = useAdminListProductCategories();
   const { data: brands = [] } = useAdminListBrands();
   const { data: suppliers = [] } = useAdminListSuppliers();
+  const { data: productTypes = [] } = useAdminListB2cProductTypes();
+  const { data: needTags = [] } = useAdminListB2cNeedTags();
   const actionGuard = useImmediateActionGuard();
   const [newBrandName, setNewBrandName] = useState("");
 
@@ -152,6 +162,10 @@ function ProductFormDialog({
           deliveryBusinessDaysOverride: editing.deliveryBusinessDaysOverride,
           subscriptionAllowed: editing.subscriptionAllowed,
           subscriptionDiscountPercent: editing.subscriptionDiscountPercent,
+          productTypeId: editing.productTypeId ?? null,
+          needTagIds: (editing as any).needTagIds ?? [],
+          ingredients: editing.ingredients ?? null,
+          usageInstructions: editing.usageInstructions ?? null,
         }
       : { ...(emptyForm as any), supplierId: "", market: "B2B" }
   );
@@ -432,6 +446,10 @@ function ProductFormDialog({
       deliveryBusinessDaysOverride: form.deliveryBusinessDaysOverride ?? null,
       subscriptionAllowed: form.subscriptionAllowed ?? false,
       subscriptionDiscountPercent: form.subscriptionAllowed ? (form.subscriptionDiscountPercent ?? null) : null,
+      productTypeId: form.productTypeId || null,
+      needTagIds: form.needTagIds || [],
+      ingredients: form.ingredients?.trim() || null,
+      usageInstructions: form.usageInstructions?.trim() || null,
     };
     if (!actionGuard.begin("save-product")) return;
     const opts = {
@@ -639,6 +657,57 @@ function ProductFormDialog({
               </div>
             </div>
           </section>
+
+          {(form.market === "B2C" || form.market === "BOTH") && (
+            <section className="space-y-4 border rounded-xl p-4 bg-primary/5 border-primary/20">
+              <h4 className="text-sm font-semibold text-primary">B2C Otkrivanje i Sadržaj</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Tip proizvoda (Otkrivanje)</Label>
+                  <Select
+                    value={form.productTypeId || "__none__"}
+                    onValueChange={(v) => setForm({ ...form, productTypeId: v === "__none__" ? null : v })}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Izaberi tip (npr. Šampon)" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">— Bez tipa —</SelectItem>
+                      {productTypes.filter(pt => pt.active || pt.id === form.productTypeId).map(pt => (
+                        <SelectItem key={pt.id} value={pt.id}>{pt.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Oznake potreba/problema</Label>
+                  <SearchableMultiSelect
+                    options={needTags.filter(nt => nt.active || (form.needTagIds || []).includes(nt.id)).map(nt => ({ value: nt.id, label: nt.label }))}
+                    value={form.needTagIds || []}
+                    onValueChange={(vals) => setForm({ ...form, needTagIds: vals })}
+                    placeholder="Izaberi potrebe (npr. Suva kosa)"
+                    searchPlaceholder="Pretraži potrebe..."
+                  />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>Sastojci (INCI)</Label>
+                  <textarea
+                    className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 min-h-[80px]"
+                    value={form.ingredients ?? ""}
+                    onChange={(e) => setForm({ ...form, ingredients: e.target.value || null })}
+                    placeholder="Lista sastojaka..."
+                  />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>Uputstvo za upotrebu</Label>
+                  <textarea
+                    className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 min-h-[80px]"
+                    value={form.usageInstructions ?? ""}
+                    onChange={(e) => setForm({ ...form, usageInstructions: e.target.value || null })}
+                    placeholder="Kako se koristi..."
+                  />
+                </div>
+              </div>
+            </section>
+          )}
 
           {/* ── Zalihe i težina ── */}
           <section className="space-y-4 border rounded-xl p-4">

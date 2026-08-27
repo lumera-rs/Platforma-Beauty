@@ -103,4 +103,17 @@ export interface AdminProductInput {
      * @nullable
      */
   subscriptionDiscountPercent?: number | null;
+  /** @nullable */
+  productTypeId?: string | null;
+  needTagIds?: string[];
+  /**
+     * @maxLength 20000
+     * @nullable
+     */
+  ingredients?: string | null;
+  /**
+     * @maxLength 20000
+     * @nullable
+     */
+  usageInstructions?: string | null;
 }
