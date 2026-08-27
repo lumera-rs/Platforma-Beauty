@@ -19,28 +19,22 @@ export type CommerceDiscountPolicy = {
   blocksReferral(discount: Readonly<CommerceDiscount>): boolean;
 };
 
-const positiveDiscountBlocksReferral: CommerceDiscountPolicy = {
+const positiveDiscountBlocksReferral: CommerceDiscountPolicy = Object.freeze({
   blocksReferral: (discount) => discount.amountRsd > 0,
-};
+});
 
-/** Public registry so another discount family can install a stricter policy. */
-export const commerceDiscountPolicyRegistry = new Map<string, CommerceDiscountPolicy>([
-  ["SALE", positiveDiscountBlocksReferral],
-  ["TIER", positiveDiscountBlocksReferral],
-  ["BUNDLE", positiveDiscountBlocksReferral],
-  ["COUPON", positiveDiscountBlocksReferral],
-  ["LOYALTY", positiveDiscountBlocksReferral],
-]);
-
-export function registerCommerceDiscountPolicy(kind: string, policy: CommerceDiscountPolicy): () => void {
-  const normalizedKind = normalizeKind(kind);
-  const previous = commerceDiscountPolicyRegistry.get(normalizedKind);
-  commerceDiscountPolicyRegistry.set(normalizedKind, policy);
-  return () => {
-    if (previous) commerceDiscountPolicyRegistry.set(normalizedKind, previous);
-    else commerceDiscountPolicyRegistry.delete(normalizedKind);
-  };
-}
+/** Immutable policy source of truth. Unknown positive discounts use the same
+ * fail-closed policy until they are added deliberately in code and reviewed. */
+export const COMMERCE_DISCOUNT_POLICIES: Readonly<Record<
+  "SALE" | "TIER" | "BUNDLE" | "COUPON" | "LOYALTY",
+  CommerceDiscountPolicy
+>> = Object.freeze({
+  SALE: positiveDiscountBlocksReferral,
+  TIER: positiveDiscountBlocksReferral,
+  BUNDLE: positiveDiscountBlocksReferral,
+  COUPON: positiveDiscountBlocksReferral,
+  LOYALTY: positiveDiscountBlocksReferral,
+});
 
 function normalizeKind(kind: string) {
   const normalized = kind.trim().toUpperCase();
@@ -73,7 +67,9 @@ export function quoteCommerceReferralBase(lines: readonly CommerceDiscountLineIn
     const blockingDiscounts = line.discounts.filter((discount) => {
       // Unknown positive discounts fail closed. This makes adding a new
       // promotion safe before its explicit stacking policy is registered.
-      const policy = commerceDiscountPolicyRegistry.get(discount.kind) ?? positiveDiscountBlocksReferral;
+      const policy = Object.prototype.hasOwnProperty.call(COMMERCE_DISCOUNT_POLICIES, discount.kind)
+        ? COMMERCE_DISCOUNT_POLICIES[discount.kind as keyof typeof COMMERCE_DISCOUNT_POLICIES]
+        : positiveDiscountBlocksReferral;
       return policy.blocksReferral(discount);
     });
     const referralEligible = blockingDiscounts.length === 0;

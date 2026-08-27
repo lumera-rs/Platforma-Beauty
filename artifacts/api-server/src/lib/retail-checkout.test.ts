@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 import test from "node:test";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
+  couponRedemptionsTable,
   couponsTable,
   db,
   commerceCustomerNotificationsTable,
@@ -56,6 +57,8 @@ type ApiError = { error: string; code?: string };
 const createdCartIds: string[] = [];
 const createdOrderIds: string[] = [];
 const createdUserIds: string[] = [];
+const createdAuxiliaryProductIds: string[] = [];
+const createdCouponIds: string[] = [];
 let createdCategoryId: string | undefined;
 let createdProductId: string | undefined;
 let createdSupplierId: string | undefined;
@@ -239,9 +242,15 @@ test.after(async () => {
     await db.delete(commerceCustomerNotificationsTable).where(inArray(commerceCustomerNotificationsTable.userId, createdUserIds));
     await db.delete(productWaitlistTable).where(inArray(productWaitlistTable.userId, createdUserIds));
   }
+  if (createdCouponIds.length) {
+    await db.delete(couponRedemptionsTable).where(inArray(couponRedemptionsTable.couponId, createdCouponIds));
+  }
   if (createdOrderIds.length) {
     await db.delete(retailOrderItemsTable).where(inArray(retailOrderItemsTable.orderId, createdOrderIds));
     await db.delete(retailOrdersTable).where(inArray(retailOrdersTable.id, createdOrderIds));
+  }
+  if (createdCouponIds.length) {
+    await db.delete(couponsTable).where(inArray(couponsTable.id, createdCouponIds));
   }
   if (createdCartIds.length) {
     await db.delete(retailCartItemsTable).where(inArray(retailCartItemsTable.cartId, createdCartIds));
@@ -249,6 +258,9 @@ test.after(async () => {
     await db.delete(retailCartsTable).where(inArray(retailCartsTable.id, createdCartIds));
   }
   if (createdUserIds.length) await db.delete(usersTable).where(inArray(usersTable.id, createdUserIds));
+  if (createdAuxiliaryProductIds.length) {
+    await db.delete(productsTable).where(inArray(productsTable.id, createdAuxiliaryProductIds));
+  }
   if (createdProductId) await db.delete(productsTable).where(eq(productsTable.id, createdProductId));
   if (createdCategoryId) await db.delete(productCategoriesTable).where(eq(productCategoriesTable.id, createdCategoryId));
   if (createdSupplierId) await db.delete(suppliersTable).where(eq(suppliersTable.id, createdSupplierId));
@@ -348,6 +360,128 @@ test("an excluded B2C free-shipping coupon cannot waive checkout delivery", asyn
   } finally {
     await db.delete(couponsTable).where(eq(couponsTable.id, restrictedCoupon!.id));
   }
+});
+
+test("B2C preview, final checkout and persistence keep the literal legacy pricing projection", async () => {
+  assert.ok(createdSupplierId);
+  assert.ok(createdCategoryId);
+  const marker = randomUUID();
+  const [category] = await db.select().from(productCategoriesTable)
+    .where(eq(productCategoriesTable.id, createdCategoryId)).limit(1);
+  assert.ok(category);
+  const [product] = await db.insert(productsTable).values({
+    supplierId: createdSupplierId,
+    categoryId: createdCategoryId,
+    categoryName: category.name,
+    name: `Pricing parity ${marker}`,
+    description: "Pricing parity fixture.",
+    publicDescription: "Pricing parity public fixture.",
+    imageUrl: "/retail-checkout-test.jpg",
+    price: 1_000,
+    publicPrice: 1_000,
+    publicDiscountPrice: 800,
+    retailEnabled: true,
+    professionalEnabled: false,
+    stock: 5,
+    sku: `pricing-parity-${marker}`,
+    unit: "kom",
+    weightGrams: 500,
+    active: true,
+  }).returning();
+  assert.ok(product);
+  createdAuxiliaryProductIds.push(product.id);
+  const code = `PARITY-${marker.slice(0, 8)}`.toUpperCase();
+  const [coupon] = await db.insert(couponsTable).values({
+    code,
+    audience: "B2C",
+    discountType: "FIXED_RSD",
+    discountValue: 100,
+    includeProductIds: [product.id],
+  }).returning();
+  assert.ok(coupon);
+  createdCouponIds.push(coupon.id);
+
+  const request = retailClient();
+  assert.equal((await addRetailItem(request, product.id, 1)).status, 201);
+  const previewResponse = await request(
+    `/retail/checkout-preview?deliveryMethod=courier&city=Novi%20Sad&couponCode=${encodeURIComponent(code)}`,
+  );
+  assert.equal(previewResponse.status, 200);
+  const preview = await previewResponse.json() as RetailCheckoutPreview & {
+    couponDiscountRsd: number;
+    coupon: { code: string; discountRsd: number; freeShipping: boolean; allocations: Record<string, number> };
+    referralCreditAppliedRsd: number;
+    shippingRsd: number;
+    payableTotalRsd: number;
+  };
+  assert.equal(JSON.stringify({
+    subtotal: preview.cart.subtotal,
+    couponDiscountRsd: preview.couponDiscountRsd,
+    referralCreditAppliedRsd: preview.referralCreditAppliedRsd,
+    merchandiseSubtotalRsd: preview.merchandiseSubtotalRsd,
+    shippingRsd: preview.shippingRsd,
+    payableTotalRsd: preview.payableTotalRsd,
+    total: preview.total,
+  }), "{\"subtotal\":800,\"couponDiscountRsd\":100,\"referralCreditAppliedRsd\":0,\"merchandiseSubtotalRsd\":0,\"shippingRsd\":390,\"payableTotalRsd\":1090,\"total\":1090}");
+  assert.equal(preview.coupon.discountRsd, 100);
+  assert.equal(Object.values(preview.coupon.allocations).reduce((sum, amount) => sum + amount, 0), 100);
+  assert.doesNotMatch(JSON.stringify(preview), /adjustments|breakdown|COMMERCE_PRICING_POLICY|pricingPolicy/);
+
+  const checkoutResponse = await request("/retail/checkout", {
+    method: "POST",
+    body: JSON.stringify({
+      idempotencyKey: `retail-pricing-parity-${marker}`,
+      firstName: "Pricing",
+      lastName: "Parity",
+      email: `pricing-parity-${marker}@example.test`,
+      phone: "+381601234567",
+      street: "Test ulica 1",
+      city: "Novi Sad",
+      postalCode: "21000",
+      paymentMethod: "BANK_TRANSFER",
+      deliveryMethod: "courier",
+      couponCode: code,
+      expectedSubtotal: preview.cart.subtotal,
+      expectedShippingCost: preview.shipping.shippingCost,
+      expectedTotal: preview.total,
+    }),
+  });
+  assert.equal(checkoutResponse.status, 201, await checkoutResponse.clone().text());
+  const order = await checkoutResponse.json() as RetailOrder;
+  createdOrderIds.push(order.id);
+  assert.doesNotMatch(JSON.stringify(order), /adjustments|breakdown|COMMERCE_PRICING_POLICY|pricingPolicy/);
+
+  const [[savedOrder], savedLines] = await Promise.all([
+    db.select().from(retailOrdersTable).where(eq(retailOrdersTable.id, order.id)),
+    db.select().from(retailOrderItemsTable).where(eq(retailOrderItemsTable.orderId, order.id)),
+  ]);
+  assert.ok(savedOrder);
+  assert.equal(savedLines.length, 1);
+  assert.deepEqual({
+    subtotal: savedOrder.subtotal,
+    couponDiscountRsd: savedOrder.couponDiscountRsd,
+    referralBaseRsd: savedOrder.referralCreditMerchandiseSubtotalRsd,
+    referralAppliedRsd: savedOrder.referralCreditAppliedRsd,
+    shippingRsd: savedOrder.shippingCost,
+    payableTotalRsd: savedOrder.total,
+    unitPriceRsd: savedLines[0]!.unitPrice,
+    lineSubtotalRsd: savedLines[0]!.lineSubtotal,
+    lineCouponRsd: savedLines[0]!.couponDiscountRsd,
+    lineTotalRsd: savedLines[0]!.lineTotal,
+    priceSource: savedLines[0]!.priceSource,
+  }, {
+    subtotal: preview.cart.subtotal,
+    couponDiscountRsd: preview.couponDiscountRsd,
+    referralBaseRsd: preview.merchandiseSubtotalRsd,
+    referralAppliedRsd: preview.referralCreditAppliedRsd,
+    shippingRsd: preview.shippingRsd,
+    payableTotalRsd: preview.payableTotalRsd,
+    unitPriceRsd: 800,
+    lineSubtotalRsd: 800,
+    lineCouponRsd: 100,
+    lineTotalRsd: 700,
+    priceSource: "SALE",
+  });
 });
 
 test("cart and checkout retain the saved catalog reference after an SKU edit", async () => {

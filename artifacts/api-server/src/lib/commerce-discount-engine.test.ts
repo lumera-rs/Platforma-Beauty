@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  COMMERCE_DISCOUNT_POLICIES,
   commerceDiscountsForPricedLine,
   quoteCommerceReferralBase,
-  registerCommerceDiscountPolicy,
 } from "./commerce-discount-engine";
 
 test("referral base includes only clean full-price lines in a mixed cart", () => {
@@ -38,13 +38,10 @@ test("loyalty and unknown positive discounts fail closed while non-positive fact
   assert.equal(quote.referralBaseRsd, 100);
 });
 
-test("registry supports explicit policies for future discount families", () => {
-  const restore = registerCommerceDiscountPolicy("informational", { blocksReferral: () => false });
-  try {
-    assert.equal(quoteCommerceReferralBase([
-      { id: "line", amountRsd: 100, discounts: [{ kind: "INFORMATIONAL", amountRsd: 10 }] },
-    ]).referralBaseRsd, 100);
-  } finally {
-    restore();
-  }
+test("discount policy source is immutable and future families fail closed", () => {
+  assert.equal(Object.isFrozen(COMMERCE_DISCOUNT_POLICIES), true);
+  assert.deepEqual(Object.keys(COMMERCE_DISCOUNT_POLICIES), ["SALE", "TIER", "BUNDLE", "COUPON", "LOYALTY"]);
+  assert.equal(quoteCommerceReferralBase([
+    { id: "line", amountRsd: 100, discounts: [{ kind: "INFORMATIONAL", amountRsd: 10 }] },
+  ]).referralBaseRsd, 0);
 });

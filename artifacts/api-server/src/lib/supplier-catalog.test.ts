@@ -232,7 +232,7 @@ test.before(async () => {
       sku: `${marker}-ordered`,
       unit: "kom",
       weightGrams: 750,
-      variants: [{ label: "Secret variant", value: "secret", stock: 10, sku: `${marker}-variant` }],
+      variants: [{ label: "Secret variant", value: "secret", stock: 20, sku: `${marker}-variant` }],
     },
     {
       supplierId: supplierA.id,
@@ -387,11 +387,15 @@ test("supplier B2B products require authentication and public products expose on
   assert.equal(product.price, orderedProduct.publicPrice);
   assert.equal(product.description, orderedProduct.publicDescription);
   for (const forbidden of [
-    "sku", "stock", "weightGrams", "variants", "professionalEnabled",
+    "sku", "stock", "weightGrams", "professionalEnabled",
     "publicPrice", "publicDiscountPrice",
   ]) {
     assert.equal(Object.hasOwn(product, forbidden), false, `public response leaked ${forbidden}`);
   }
+  const publicVariants = product.variants as Array<Record<string, unknown>>;
+  assert.deepEqual(publicVariants.map((variant) => variant.value), ["secret"]);
+  assert.equal(Object.hasOwn(publicVariants[0]!, "stock"), false, "public variant leaked stock");
+  assert.equal(Object.hasOwn(publicVariants[0]!, "sku"), false, "public variant leaked sku");
 });
 
 test("public detail is passive and explicit recent recording is idempotent and merge-capped", async () => {
@@ -762,7 +766,7 @@ test("admin products remain cross-supplier by default and filter supplier, marke
   assert.ok(!lowStock.includes(orderedProduct.id));
 });
 
-test("mixed B2B cancellation restores immutable base, variant, and bundle inventory once and referral credit only covers full-price lines", async () => {
+test("mixed B2B cancellation preserves explicit variant precedence, restores inventory once, and limits referral credit to clean lines", async () => {
   const [category] = await db.insert(productCategoriesTable).values({
     supplierId: supplierA.id,
     name: `${marker} cancellation category`,
@@ -813,6 +817,30 @@ test("mixed B2B cancellation restores immutable base, variant, and bundle invent
       supplierId: supplierA.id,
       categoryId: category.id,
       categoryName: category.name,
+      name: `${marker} cancellation explicit variant`,
+      description: marker,
+      imageUrl: "/supplier-catalog-test.jpg",
+      price: 1_000,
+      discountPrice: 800,
+      professionalEnabled: true,
+      retailEnabled: false,
+      stock: 40,
+      sku: `${marker}-cancel-explicit`,
+      unit: "kom",
+      weightGrams: 100,
+      variants: [{
+        label: "Plava",
+        value: "blue",
+        price: 650,
+        priceAdjust: 25,
+        stock: 15,
+        sku: `${marker}-cancel-explicit-blue`,
+      }],
+    },
+    {
+      supplierId: supplierA.id,
+      categoryId: category.id,
+      categoryName: category.name,
       name: `${marker} cancellation tier`,
       description: marker,
       imageUrl: "/supplier-catalog-test.jpg",
@@ -841,11 +869,12 @@ test("mixed B2B cancellation restores immutable base, variant, and bundle invent
       weightGrams: 100,
     },
   ]).returning();
-  assert.equal(fixtures.length, 4);
+  assert.equal(fixtures.length, 5);
   productIds.push(...fixtures.map((product) => product.id));
-  const [fullPriceProduct, saleVariantProduct, tierProduct, componentProduct] = fixtures;
+  const [fullPriceProduct, saleVariantProduct, explicitVariantProduct, tierProduct, componentProduct] = fixtures;
   assert.ok(fullPriceProduct);
   assert.ok(saleVariantProduct);
+  assert.ok(explicitVariantProduct);
   assert.ok(tierProduct);
   assert.ok(componentProduct);
 
@@ -874,6 +903,7 @@ test("mixed B2B cancellation restores immutable base, variant, and bundle invent
 
   await addToCart(fullPriceProduct.id, 2);
   await addToCart(saleVariantProduct.id, 3, "red");
+  await addToCart(explicitVariantProduct.id, 2, "blue");
   await addToCart(tierProduct.id, 4);
   await addBundleToCart(bundle.id, 2);
 
@@ -890,6 +920,30 @@ test("mixed B2B cancellation restores immutable base, variant, and bundle invent
   }).returning();
   assert.ok(creditSource);
 
+  const previewResponse = await api("/shop/checkout-preview?desiredReferralCreditRsd=10000", ownerCookie);
+  assert.equal(previewResponse.status, 200, await previewResponse.clone().text());
+  const preview = await previewResponse.json() as {
+    cart: { subtotal: number };
+    shipping: { shippingCost: number };
+    total: number;
+    coupon: null;
+    couponDiscountRsd: number;
+    referralCreditAvailableRsd: number;
+    referralCreditAppliedRsd: number;
+    merchandiseSubtotalRsd: number;
+    shippingRsd: number;
+    payableTotalRsd: number;
+  };
+  assert.equal(JSON.stringify({
+    subtotal: preview.cart.subtotal,
+    couponDiscountRsd: preview.couponDiscountRsd,
+    referralCreditAppliedRsd: preview.referralCreditAppliedRsd,
+    merchandiseSubtotalRsd: preview.merchandiseSubtotalRsd,
+  }), "{\"subtotal\":12800,\"couponDiscountRsd\":0,\"referralCreditAppliedRsd\":3300,\"merchandiseSubtotalRsd\":3300}");
+  assert.equal(preview.coupon, null);
+  assert.equal(preview.referralCreditAvailableRsd, 10_000);
+  assert.doesNotMatch(JSON.stringify(preview), /adjustments|breakdown|COMMERCE_PRICING_POLICY|pricingPolicy/);
+
   const response = await api("/shop/checkout", ownerCookie, {
     method: "POST",
     body: JSON.stringify({
@@ -898,6 +952,9 @@ test("mixed B2B cancellation restores immutable base, variant, and bundle invent
       deliveryMethod: "courier",
       termsAccepted: true,
       desiredReferralCreditRsd: 10_000,
+      expectedSubtotal: preview.cart.subtotal,
+      expectedShippingCost: preview.shipping.shippingCost,
+      expectedTotal: preview.total,
     }),
   });
   assert.equal(response.status, 201, await response.clone().text());
@@ -906,22 +963,40 @@ test("mixed B2B cancellation restores immutable base, variant, and bundle invent
 
   const orderLines = await db.select().from(orderItemsTable)
     .where(eq(orderItemsTable.orderId, created.id));
-  const linesBySource = new Map(orderLines.map((line) => [line.priceSource, line]));
-  assert.deepEqual([...linesBySource.keys()].sort(), ["BUNDLE", "FULL_PRICE", "SALE", "TIER"]);
-  assert.equal(linesBySource.get("FULL_PRICE")?.lineTotal, 2_000);
-  assert.equal(linesBySource.get("SALE")?.lineTotal, 2_100);
-  assert.equal(linesBySource.get("TIER")?.lineTotal, 2_400);
-  assert.equal(linesBySource.get("BUNDLE")?.lineTotal, 5_000);
+  const linesByProduct = new Map(orderLines.flatMap((line) => line.productId ? [[line.productId, line] as const] : []));
+  assert.deepEqual(orderLines.map((line) => line.priceSource).sort(), ["BUNDLE", "FULL_PRICE", "FULL_PRICE", "SALE", "TIER"]);
+  assert.equal(linesByProduct.get(fullPriceProduct.id)?.lineTotal, 2_000);
+  assert.equal(linesByProduct.get(saleVariantProduct.id)?.lineTotal, 2_100);
+  assert.equal(linesByProduct.get(tierProduct.id)?.lineTotal, 2_400);
+  assert.equal(orderLines.find((line) => line.bundleId === bundle.id)?.lineTotal, 5_000);
+  const explicitLine = linesByProduct.get(explicitVariantProduct.id);
+  assert.deepEqual({
+    price: explicitLine?.price,
+    lineTotal: explicitLine?.lineTotal,
+    priceSource: explicitLine?.priceSource,
+    lineDiscount: explicitLine?.lineDiscount,
+    discountSnapshot: explicitLine?.discountSnapshot,
+  }, {
+    price: 650,
+    lineTotal: 1_300,
+    priceSource: "FULL_PRICE",
+    lineDiscount: 0,
+    discountSnapshot: null,
+  });
 
   const [savedOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, created.id));
-  assert.equal(savedOrder?.referralCreditAppliedRsd, 2_000,
-    "SALE, TIER, and BUNDLE totals must not increase the FULL_PRICE referral-credit ceiling");
+  assert.equal(savedOrder?.subtotal, preview.cart.subtotal);
+  assert.equal(savedOrder?.shippingCost, preview.shippingRsd);
+  assert.equal(savedOrder?.total, preview.payableTotalRsd);
+  assert.equal(savedOrder?.referralCreditMerchandiseSubtotalRsd, preview.merchandiseSubtotalRsd);
+  assert.equal(savedOrder?.referralCreditAppliedRsd, 3_300,
+    "Explicit variant prices stay clean while SALE, TIER, and BUNDLE totals do not increase the referral-credit ceiling");
   const redemptions = await db.select().from(referralCreditRedemptionsTable)
     .where(eq(referralCreditRedemptionsTable.orderId, created.id));
   assert.deepEqual(redemptions.map((row) => ({
     ledgerEntryId: row.ledgerEntryId,
     amountRsd: row.amountRsd,
-  })), [{ ledgerEntryId: creditSource.id, amountRsd: 2_000 }]);
+  })), [{ ledgerEntryId: creditSource.id, amountRsd: 3_300 }]);
 
   const inventoryAfterCheckout = Object.freeze({
     fullPrice: 44,

@@ -48,11 +48,12 @@ import {
   ReferralChannelContextError,
   projectSalonSubscriptionDue,
 } from "../lib/referral-service";
-import { quoteCoupon, type CouponLine, type CouponPolicy } from "../lib/coupon-engine";
+import { quoteCoupon, type CouponLine, type CouponPolicy, type CouponQuote } from "../lib/coupon-engine";
 import {
   commerceDiscountsForPricedLine,
   quoteCommerceReferralBase,
 } from "../lib/commerce-discount-engine";
+import { quoteResolvedCommerce, resolveProductUnitPrice, type PriceSource } from "../lib/commerce-pricing-engine";
 import {
   activeProductSale,
   activeProductSaleConditionSql,
@@ -9635,10 +9636,18 @@ function retailProductPrice(product: typeof productsTable.$inferSelect, quantity
     ? (product.quantityPricingTiers ?? []).find((candidate) => quantity >= candidate.minQuantity
       && (candidate.maxQuantity == null || quantity <= candidate.maxQuantity))
     : undefined;
+  const quoted = resolveProductUnitPrice({
+    regularUnitPriceRsd: product.publicPrice!,
+    activeSaleUnitPriceRsd: salePrice,
+    tierUnitPriceRsd: tier?.unitPrice ?? null,
+    explicitVariantUnitPriceRsd: null,
+    variantPriceAdjustRsd: 0,
+  });
   return {
-    baseUnitPrice: product.publicPrice!,
-    unitPrice: salePrice ?? tier?.unitPrice ?? product.publicPrice!,
-    priceSource: salePrice != null ? "SALE" as const : tier ? "TIER" as const : "FULL_PRICE" as const,
+    baseUnitPrice: quoted.baseUnitPriceRsd,
+    unitPrice: quoted.unitPriceRsd,
+    priceSource: quoted.priceSource === "EXPLICIT_VARIANT_PRICE" || quoted.priceSource === "BUNDLE"
+      ? "FULL_PRICE" as const : quoted.priceSource,
   };
 }
 
@@ -9654,9 +9663,11 @@ function retailVariantSelection(product: typeof productsTable.$inferSelect, vari
 
 type ReferralCommerceLine = {
   id: string;
+  quantity: number;
+  unitPrice: number;
   lineTotal: number;
   kind?: "product" | "bundle";
-  priceSource?: string;
+  priceSource?: PriceSource;
   lineDiscount?: number;
 };
 
@@ -9673,6 +9684,32 @@ function referralQuoteForCommerceLines(
       couponAllocationRsd: couponAllocations[line.id] ?? 0,
     }),
   })));
+}
+
+// Checkout routes resolve and lock catalog facts themselves.  This adapter is
+// the single arithmetic seam used after that boundary; it intentionally keeps
+// legacy DTO and persistence serialization outside the quote.
+function canonicalCommerceTotals(
+  lines: readonly ReferralCommerceLine[],
+  coupon: CouponQuote | null,
+  desiredReferralCreditRsd: number,
+  availableReferralCreditRsd: number,
+  shippingRsd: number,
+  loyaltyFreeShipping = false,
+) {
+  return quoteResolvedCommerce({
+    lines: lines.map((line) => ({
+      id: line.id, productId: null, bundleId: line.kind === "bundle" ? line.id : null, quantity: line.quantity,
+      unitPriceRsd: line.unitPrice, lineSubtotalRsd: line.lineTotal,
+      priceSource: line.priceSource ?? (line.kind === "bundle" ? "BUNDLE" : "FULL_PRICE"),
+      lineDiscountRsd: line.lineDiscount ?? 0,
+    })),
+    coupon,
+    requestedReferralCreditRsd: desiredReferralCreditRsd,
+    availableReferralCreditRsd,
+    shippingRsd,
+    loyaltyFreeShipping,
+  });
 }
 
 type CartCommerceLine = {
@@ -10464,7 +10501,6 @@ router.get("/retail/checkout-preview", async (req, res): Promise<void> => {
     customer: isRetailAccount(user) ? { userId: user.id } : {},
   });
   if (appliedCoupon && "reason" in appliedCoupon) { couponErrorResponse(res, appliedCoupon.reason); return; }
-  const couponDiscountRsd = appliedCoupon?.quote.discountRsd ?? 0;
   const config = await getShippingConfig();
   const deliveryMethod = req.query.deliveryMethod === "personal_belgrade" ? "personal_belgrade" : "courier";
   const city = typeof req.query.city === "string" ? req.query.city : "";
@@ -10472,16 +10508,15 @@ router.get("/retail/checkout-preview", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Lična dostava je dostupna samo u Beogradu." }); return;
   }
   const calculatedShipping = calculateShipping(config, view.totalWeightGrams, view.subtotal, deliveryMethod, city);
-  const shipping = appliedCoupon?.quote.freeShipping
-    ? { ...calculatedShipping, shippingCost: 0, isFreeShipping: true }
-    : calculatedShipping;
   const desired = typeof req.query.desiredReferralCreditRsd === "string" && /^\d+$/.test(req.query.desiredReferralCreditRsd)
     ? Number(req.query.desiredReferralCreditRsd) : 0;
   const available = user?.role === "CUSTOMER"
     ? await db.transaction((tx) => referralCreditBalanceInTx(tx, { ownerUserId: user.id, walletKind: "B2C" }))
     : 0;
-  const referralQuote = referralQuoteForCommerceLines(view.items, appliedCoupon?.quote.allocations);
-  const applied = Math.min(desired || available, available, referralQuote.referralBaseRsd);
+  const totals = canonicalCommerceTotals(view.items, appliedCoupon?.quote ?? null, desired || available, available, calculatedShipping.shippingCost);
+  const couponDiscountRsd = totals.couponDiscountRsd;
+  const shipping = totals.shippingRsd === calculatedShipping.shippingCost
+    ? calculatedShipping : { ...calculatedShipping, shippingCost: totals.shippingRsd, isFreeShipping: true };
   const commerce = await cartCommerceFields("B2C", view.items.map((line) => ({
     productId: line.kind === "product" ? line.productId : undefined, bundleId: line.kind === "bundle" ? line.bundleId : undefined,
     quantity: line.quantity, lineTotal: line.lineTotal, availableStock: 0,
@@ -10490,10 +10525,10 @@ router.get("/retail/checkout-preview", async (req, res): Promise<void> => {
   res.json({
     cart: { ...view, ...commerceDto, items: view.items.map((line) => ({
       ...line, lowStock: lineLowStock.get(line.kind === "product" ? line.productId : `bundle:${line.bundleId}`) ?? false,
-    })) }, shipping, total: view.subtotal - couponDiscountRsd + shipping.shippingCost - applied, paymentMethods: checkoutPaymentMethods,
-    referralCreditAvailableRsd: available, referralCreditAppliedRsd: applied,
-    merchandiseSubtotalRsd: referralQuote.referralBaseRsd, shippingRsd: shipping.shippingCost,
-    payableTotalRsd: view.subtotal - couponDiscountRsd + shipping.shippingCost - applied,
+    })) }, shipping, total: totals.payableTotalRsd, paymentMethods: checkoutPaymentMethods,
+    referralCreditAvailableRsd: available, referralCreditAppliedRsd: totals.referralAppliedRsd,
+    merchandiseSubtotalRsd: totals.referralBaseRsd, shippingRsd: totals.shippingRsd,
+    payableTotalRsd: totals.payableTotalRsd,
     coupon: appliedCoupon ? {
       code: appliedCoupon.quote.code, discountRsd: couponDiscountRsd,
       freeShipping: appliedCoupon.quote.freeShipping, allocations: appliedCoupon.quote.allocations,
@@ -10660,30 +10695,37 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
       throw new Error("retail_coupon_conflict");
     }
     const appliedCoupon = couponResult && "quote" in couponResult ? couponResult : null;
-    const couponDiscountRsd = appliedCoupon?.quote.discountRsd ?? 0;
     const calculatedShipping = calculateShipping(config, weight, subtotal, parsed.deliveryMethod, parsed.city);
-    const shipping = appliedCoupon?.quote.freeShipping
-      ? { ...calculatedShipping, shippingCost: 0, isFreeShipping: true }
-      : calculatedShipping;
-    const referralQuote = referralQuoteForCommerceLines([
+    const canonicalLines = [
       ...lines.filter((line): line is NonNullable<typeof line> => line !== null).map((line) => ({
         id: line.item.id,
+        kind: "product" as const,
+        quantity: line.item.quantity,
+        unitPrice: line.unitPrice,
         lineTotal: line.unitPrice * line.item.quantity,
         priceSource: line.pricing.priceSource,
         lineDiscount: (line.pricing.baseUnitPrice - line.unitPrice) * line.item.quantity,
       })),
       ...bundleLines.filter((line): line is NonNullable<typeof line> => line !== null).map((line) => ({
         id: line.item.id,
+        kind: "bundle" as const,
+        quantity: line.item.quantity,
+        unitPrice: line.unitPrice,
         lineTotal: line.unitPrice * line.item.quantity,
-        priceSource: "BUNDLE",
+        priceSource: "BUNDLE" as const,
         lineDiscount: 0,
       })),
-    ], appliedCoupon?.quote.allocations);
+    ];
+    const preReferralTotals = canonicalCommerceTotals(canonicalLines, appliedCoupon?.quote ?? null, parsed.desiredReferralCreditRsd, 0, calculatedShipping.shippingCost);
     const referral = userId
       ? await allocateReferralCreditInTx(tx, { ownerUserId: userId, walletKind: "B2C" }, parsed.desiredReferralCreditRsd,
-        referralQuote.referralBaseRsd)
+        preReferralTotals.referralBaseRsd)
       : { availableRsd: 0, appliedRsd: 0, allocations: [] };
-    const payableTotal = subtotal - couponDiscountRsd + shipping.shippingCost - referral.appliedRsd;
+    const totals = canonicalCommerceTotals(canonicalLines, appliedCoupon?.quote ?? null, referral.appliedRsd, referral.appliedRsd, calculatedShipping.shippingCost);
+    const couponDiscountRsd = totals.couponDiscountRsd;
+    const shipping = totals.shippingRsd === calculatedShipping.shippingCost
+      ? calculatedShipping : { ...calculatedShipping, shippingCost: totals.shippingRsd, isFreeShipping: true };
+    const payableTotal = totals.payableTotalRsd;
     if ((parsed.expectedSubtotal !== undefined && parsed.expectedSubtotal !== subtotal)
       || (parsed.expectedShippingCost !== undefined && parsed.expectedShippingCost !== shipping.shippingCost)
       || (parsed.expectedTotal !== undefined && parsed.expectedTotal !== payableTotal)) {
@@ -10699,7 +10741,7 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
       deliveryMethod: parsed.deliveryMethod, subtotal, shippingCost: shipping.shippingCost, total: payableTotal,
       couponCodeSnapshot: appliedCoupon?.quote.code ?? null, couponDiscountRsd,
       couponFreeShipping: appliedCoupon?.quote.freeShipping ?? false,
-      referralCreditMerchandiseSubtotalRsd: referralQuote.referralBaseRsd,
+      referralCreditMerchandiseSubtotalRsd: totals.referralBaseRsd,
       referralCreditPreCreditPayableTotalRsd: subtotal - couponDiscountRsd + shipping.shippingCost,
       referralCreditAppliedRsd: referral.appliedRsd,
       shippingName: `${parsed.firstName} ${parsed.lastName}`, shippingAddress: parsed.street, shippingCity: parsed.city,
@@ -11878,11 +11920,16 @@ async function getOrCreateShopCart(salonId: string) {
   return created!;
 }
 
-async function shopCartDto(salonId: string) {
+async function shopCartDto(salonId: string, includeInternalShippingWeight = false) {
   const [cart] = await db.select().from(shoppingCartsTable).where(eq(shoppingCartsTable.salonId, salonId)).limit(1);
   if (!cart) {
     const commerce = await cartCommerceFields("B2B", [], { salonId });
-    return { id: null, items: [], savedItems: [], itemCount: 0, subtotal: 0, referralCreditMerchandiseSubtotalRsd: 0, totalWeightGrams: 0, ...commerce, lineLowStock: undefined };
+    return {
+      id: null, items: [], savedItems: [], itemCount: 0, subtotal: 0,
+      referralCreditMerchandiseSubtotalRsd: 0, totalWeightGrams: 0,
+      ...(includeInternalShippingWeight ? { internalShippingWeightGrams: 0 } : {}),
+      ...commerce, lineLowStock: undefined,
+    };
   }
   const items = await db.select().from(shoppingCartItemsTable).where(eq(shoppingCartItemsTable.cartId, cart.id)).orderBy(asc(shoppingCartItemsTable.createdAt));
   const productIds = [...new Set(items.flatMap((item) => item.productId ? [item.productId] : []))];
@@ -11893,6 +11940,22 @@ async function shopCartDto(salonId: string) {
   const byId = new Map(products.map((product) => [product.id, product]));
   const bundles = bundleIds.length ? await catalogBundles("B2B") : [];
   const bundlesById = new Map(bundles.map((bundle) => [bundle.id, bundle]));
+  const bundleWeightRows = includeInternalShippingWeight && bundleIds.length
+    ? await db.select({
+      bundleId: productBundleComponentsTable.bundleId,
+      quantity: productBundleComponentsTable.quantity,
+      weightGrams: productsTable.weightGrams,
+    }).from(productBundleComponentsTable)
+      .innerJoin(productsTable, eq(productBundleComponentsTable.productId, productsTable.id))
+      .where(inArray(productBundleComponentsTable.bundleId, bundleIds))
+    : [];
+  const bundleUnitWeightGrams = new Map<string, number>();
+  for (const row of bundleWeightRows) {
+    bundleUnitWeightGrams.set(
+      row.bundleId,
+      (bundleUnitWeightGrams.get(row.bundleId) ?? 0) + row.quantity * (row.weightGrams ?? 0),
+    );
+  }
   const views = items.map((item) => {
     if (item.bundleId) {
       const bundle = bundlesById.get(item.bundleId);
@@ -11927,7 +11990,9 @@ async function shopCartDto(salonId: string) {
       lineTotal: item.unitPrice * item.quantity,
       availableStock,
       weightGrams: product?.weightGrams ?? 0,
-      priceSource: resolvedPricing?.priceSource ?? "FULL_PRICE" as const,
+      priceSource: resolvedPricing?.priceSource === "EXPLICIT_VARIANT_PRICE"
+        ? "FULL_PRICE" as const
+        : resolvedPricing?.priceSource ?? "FULL_PRICE" as const,
       lineDiscount: resolvedPricing ? (resolvedPricing.baseUnitPrice - resolvedPricing.unitPrice) * item.quantity : 0,
     };
   });
@@ -11946,6 +12011,11 @@ async function shopCartDto(salonId: string) {
     subtotal: views.reduce((sum, item) => sum + item.lineTotal, 0),
     referralCreditMerchandiseSubtotalRsd: referralQuote.referralBaseRsd,
     totalWeightGrams: views.reduce((sum, item) => sum + item.weightGrams * item.quantity, 0),
+    ...(includeInternalShippingWeight ? {
+      internalShippingWeightGrams: views.reduce((sum, item) => sum + (
+        item.kind === "bundle" ? bundleUnitWeightGrams.get(item.bundleId) ?? 0 : item.weightGrams
+      ) * item.quantity, 0),
+    } : {}),
     ...commerceDto,
     items: views.map((line) => ({ ...line, lowStock: lineLowStock.get(line.kind === "product" ? line.productId : `bundle:${line.bundleId}`) ?? false })),
   };
@@ -11996,10 +12066,17 @@ function cartLineForProduct(product: typeof productsTable.$inferSelect, variantV
     ? (product.quantityPricingTiers ?? []).find((candidate) => quantity >= candidate.minQuantity
       && (candidate.maxQuantity == null || quantity <= candidate.maxQuantity))
     : undefined;
+  const quoted = resolveProductUnitPrice({
+    regularUnitPriceRsd: product.price,
+    activeSaleUnitPriceRsd: salePrice,
+    tierUnitPriceRsd: tier?.unitPrice ?? null,
+    explicitVariantUnitPriceRsd: variant?.price ?? null,
+    variantPriceAdjustRsd: variant?.priceAdjust ?? 0,
+  });
   return {
-    unitPrice: variant?.price ?? ((tier?.unitPrice ?? salePrice ?? product.price) + (variant?.priceAdjust ?? 0)),
-    baseUnitPrice: variant?.price ?? (product.price + (variant?.priceAdjust ?? 0)),
-    priceSource: salePrice != null ? "SALE" as const : tier ? "TIER" as const : "FULL_PRICE" as const,
+    unitPrice: quoted.unitPriceRsd,
+    baseUnitPrice: quoted.baseUnitPriceRsd,
+    priceSource: quoted.priceSource,
     variantLabel: variant?.label ?? null,
     productSku: variant?.sku ?? product.sku,
   } as const;
@@ -12676,7 +12753,8 @@ router.get("/shop/checkout-profile", async (req, res): Promise<void> => {
 
 router.get("/shop/checkout-preview", async (req, res): Promise<void> => {
   const access = await requireShopAccess(req, res); if (!access) return;
-  const cart = await shopCartDto(access.salon.id);
+  const cartWithInternalWeight = await shopCartDto(access.salon.id, true);
+  const { internalShippingWeightGrams, ...cart } = cartWithInternalWeight;
   const couponCode = typeof req.query.couponCode === "string" ? req.query.couponCode : null;
   const appliedCoupon = await quoteCouponFromDb(db, {
     code: couponCode, audience: "B2B",
@@ -12684,22 +12762,25 @@ router.get("/shop/checkout-preview", async (req, res): Promise<void> => {
     customer: { salonId: access.salon.id },
   });
   if (appliedCoupon && "reason" in appliedCoupon) { couponErrorResponse(res, appliedCoupon.reason); return; }
-  const couponDiscountRsd = appliedCoupon?.quote.discountRsd ?? 0;
-  const calculatedShipping = calculateShipping(await getShippingConfig(), cart.totalWeightGrams, cart.subtotal);
-  const shipping = cart.freeShippingProgress.loyaltyFreeShipping || appliedCoupon?.quote.freeShipping
-    ? { ...calculatedShipping, shippingCost: 0, isFreeShipping: true }
-    : calculatedShipping;
+  const calculatedShipping = calculateShipping(
+    await getShippingConfig(),
+    internalShippingWeightGrams ?? cart.totalWeightGrams,
+    cart.subtotal,
+  );
   const desired = typeof req.query.desiredReferralCreditRsd === "string" && /^\d+$/.test(req.query.desiredReferralCreditRsd)
     ? Number(req.query.desiredReferralCreditRsd) : 0;
   const scope = { ownerUserId: access.salon.ownerId, walletKind: "B2B" as const, salonId: access.salon.id };
   const available = await db.transaction((tx) => referralCreditBalanceInTx(tx, scope));
-  const referralQuote = referralQuoteForCommerceLines(cart.items, appliedCoupon?.quote.allocations);
-  const applied = Math.min(desired || available, available, referralQuote.referralBaseRsd);
+  const totals = canonicalCommerceTotals(cart.items, appliedCoupon?.quote ?? null, desired || available, available,
+    calculatedShipping.shippingCost, cart.freeShippingProgress.loyaltyFreeShipping);
+  const couponDiscountRsd = totals.couponDiscountRsd;
+  const shipping = totals.shippingRsd === calculatedShipping.shippingCost
+    ? calculatedShipping : { ...calculatedShipping, shippingCost: totals.shippingRsd, isFreeShipping: true };
   const parsedPreview = GetShopCheckoutPreviewResponse.parse({
-    cart, shipping, total: cart.subtotal - couponDiscountRsd + shipping.shippingCost - applied, paymentMethods: checkoutPaymentMethods,
-    referralCreditAvailableRsd: available, referralCreditAppliedRsd: applied,
-    merchandiseSubtotalRsd: referralQuote.referralBaseRsd, shippingRsd: shipping.shippingCost,
-    payableTotalRsd: cart.subtotal - couponDiscountRsd + shipping.shippingCost - applied,
+    cart, shipping, total: totals.payableTotalRsd, paymentMethods: checkoutPaymentMethods,
+    referralCreditAvailableRsd: available, referralCreditAppliedRsd: totals.referralAppliedRsd,
+    merchandiseSubtotalRsd: totals.referralBaseRsd, shippingRsd: totals.shippingRsd,
+    payableTotalRsd: totals.payableTotalRsd,
     coupon: appliedCoupon ? {
       code: appliedCoupon.quote.code, discountRsd: couponDiscountRsd,
       freeShipping: appliedCoupon.quote.freeShipping, allocations: appliedCoupon.quote.allocations,
@@ -12844,7 +12925,7 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
       quantity: number;
       price: number;
       baseUnitPrice: number;
-      priceSource: "FULL_PRICE" | "SALE" | "TIER" | "BUNDLE";
+      priceSource: PriceSource;
       bundle: { bundle: typeof productBundlesTable.$inferSelect; components: Array<{ product: typeof productsTable.$inferSelect; quantity: number }> } | null;
     }> = productLines.map((line) => {
       const product = lockedProducts.get(line.productId)!;
@@ -12858,8 +12939,9 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
       if ("error" in pricing) {
         conflictProductName = product.name;
         tx.rollback();
+        throw new Error("Checkout transaction rollback did not abort.");
       }
-      const resolvedPricing = pricing as { unitPrice: number; baseUnitPrice: number; priceSource: "FULL_PRICE" | "SALE" | "TIER" };
+      const resolvedPricing = pricing;
       productQuantities.set(product.id, (productQuantities.get(product.id) ?? 0) + line.quantity);
       if (line.variantValue) {
         const key = `${product.id}\u0000${line.variantValue}`;
@@ -12966,24 +13048,30 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
       tx.rollback();
     }
     const appliedCoupon = couponResult && "quote" in couponResult ? couponResult : null;
-    const couponDiscountRsd = appliedCoupon?.quote.discountRsd ?? 0;
     const calculatedShipping = calculateShipping(config, totalWeightGrams, subtotal, deliveryMethod, delivery.city);
     const [tier] = await tx.select({ freeShipping: loyaltyTiersTable.freeShipping }).from(salonLoyaltyStatusesTable)
       .leftJoin(loyaltyTiersTable, eq(salonLoyaltyStatusesTable.tierId, loyaltyTiersTable.id))
       .where(eq(salonLoyaltyStatusesTable.salonId, salon.id)).limit(1);
-    const shipping = tier?.freeShipping || appliedCoupon?.quote.freeShipping
-      ? { ...calculatedShipping, shippingCost: 0, isFreeShipping: true }
-      : calculatedShipping;
-    const referralQuote = referralQuoteForCommerceLines(details.map((line) => ({
+    const canonicalLines = details.map((line) => ({
       id: line.cartLineId,
+      kind: line.bundle ? "bundle" as const : "product" as const,
+      quantity: line.quantity,
+      unitPrice: line.price,
       lineTotal: line.price * line.quantity,
       priceSource: line.priceSource,
       lineDiscount: (line.baseUnitPrice - line.price) * line.quantity,
-    })), appliedCoupon?.quote.allocations);
+    }));
+    const preReferralTotals = canonicalCommerceTotals(canonicalLines, appliedCoupon?.quote ?? null,
+      parsed.data.desiredReferralCreditRsd ?? 0, 0, calculatedShipping.shippingCost, tier?.freeShipping ?? false);
     const referral = await allocateReferralCreditInTx(tx, {
       ownerUserId: salon.ownerId, walletKind: "B2B", salonId: salon.id,
-    }, parsed.data.desiredReferralCreditRsd ?? 0, referralQuote.referralBaseRsd);
-    const payableTotal = subtotal - couponDiscountRsd + shipping.shippingCost - referral.appliedRsd;
+    }, parsed.data.desiredReferralCreditRsd ?? 0, preReferralTotals.referralBaseRsd);
+    const totals = canonicalCommerceTotals(canonicalLines, appliedCoupon?.quote ?? null, referral.appliedRsd,
+      referral.appliedRsd, calculatedShipping.shippingCost, tier?.freeShipping ?? false);
+    const couponDiscountRsd = totals.couponDiscountRsd;
+    const shipping = totals.shippingRsd === calculatedShipping.shippingCost
+      ? calculatedShipping : { ...calculatedShipping, shippingCost: totals.shippingRsd, isFreeShipping: true };
+    const payableTotal = totals.payableTotalRsd;
     if ((parsed.data.expectedSubtotal !== undefined && parsed.data.expectedSubtotal !== subtotal)
       || (parsed.data.expectedShippingCost !== undefined && parsed.data.expectedShippingCost !== shipping.shippingCost)
       || (parsed.data.expectedTotal !== undefined && parsed.data.expectedTotal !== payableTotal)) {
@@ -13010,7 +13098,7 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
       couponCodeSnapshot: appliedCoupon?.quote.code ?? null,
       couponDiscountRsd,
       couponFreeShipping: appliedCoupon?.quote.freeShipping ?? false,
-      referralCreditMerchandiseSubtotalRsd: referralQuote.referralBaseRsd,
+      referralCreditMerchandiseSubtotalRsd: totals.referralBaseRsd,
       referralCreditPreCreditPayableTotalRsd: subtotal - couponDiscountRsd + shipping.shippingCost,
       referralCreditAppliedRsd: referral.appliedRsd,
       shippingCost: shipping.shippingCost,
@@ -13062,6 +13150,9 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
       const sku = line.variant?.sku ?? line.product.sku;
       const lineCouponDiscount = appliedCoupon?.quote.allocations[line.cartLineId] ?? 0;
       const sale = line.bundle ? null : activeProductSale(line.product, "B2B");
+      const persistedPriceSource = line.priceSource === "EXPLICIT_VARIANT_PRICE"
+        ? "FULL_PRICE" as const
+        : line.priceSource;
       return {
         orderId: order!.id,
         productId: line.bundle ? null : line.product.id,
@@ -13075,10 +13166,10 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
         supplierId: supplier.id, supplierName: supplier.name, supplierSlug: supplier.slug,
         productCatalogReference: line.bundle ? null : line.product.catalogReference, productSkuSnapshot: line.bundle ? null : sku,
         market: "B2B" as const, currency: "RSD",
-        discountSnapshot: sale ? line.product.price - sale.price : null,
+        discountSnapshot: line.priceSource === "SALE" && sale ? line.product.price - sale.price : null,
         baseUnitPrice: line.bundle ? line.price : line.product.price,
         effectiveUnitPrice: line.price,
-        priceSource: line.bundle ? "BUNDLE" as const : line.priceSource,
+        priceSource: line.bundle ? "BUNDLE" as const : persistedPriceSource,
         lineDiscount: line.bundle ? 0 : (line.baseUnitPrice - line.price) * line.quantity,
         couponDiscountRsd: lineCouponDiscount,
         bundleNameSnapshot: line.bundle?.bundle.name ?? null,
