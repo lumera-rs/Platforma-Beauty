@@ -328,6 +328,7 @@ async function seed(): Promise<void> {
         bio: "Posvećena detaljima, udobnosti i rezultatima koji se vide i osećaju.",
         avatarUrl: "/lumera-media/therapist-1.jpg",
         specialties: [categories[(salonIndex + employeeIndex) % categories.length]![0], "Relaksacija"],
+        canOrderIndependently: false,
       })),
     ),
   ).returning();

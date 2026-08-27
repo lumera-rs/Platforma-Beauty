@@ -413,6 +413,16 @@ async function run(): Promise<void> {
     assert.ok(!JSON.stringify(publicProfile).includes("Test 29"), "public salon profiles must not serialize the street address");
     assert.ok(!JSON.stringify(publicProfile).includes("+381110000029"), "public salon profiles must not serialize the phone number");
     assert.ok(!JSON.stringify(publicProfile).includes(fixtureEmail("salon")), "public salon profiles must not serialize the email address");
+    const publicStaff = publicProfile.staff;
+    assert.ok(Array.isArray(publicStaff), "public salon profiles must include their active staff");
+    const publicEmployee = publicStaff.find((item): item is Record<string, unknown> =>
+      typeof item === "object" && item !== null && item.id === employee!.id,
+    );
+    assert.equal(
+      publicEmployee?.canOrderIndependently,
+      false,
+      "public salon profiles must normalize an employee's omitted purchasing permission to the database default",
+    );
 
     const publicSalonCards = await getPublicSalonCards(baseUrl, "city=Beograd");
     const publicFixtureCard = publicSalonCards.find((item) => item.id === salon!.id) as Record<string, unknown> | undefined;

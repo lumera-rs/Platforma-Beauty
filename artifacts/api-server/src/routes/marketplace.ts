@@ -5588,7 +5588,17 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
     hours: hours.map((item) => ({ day: ["Ponedeljak", "Utorak", "Sreda", "Četvrtak", "Petak", "Subota", "Nedelja"][item.weekday - 1] ?? "Ponedeljak", open: item.openTime, close: item.closeTime, closed: item.closed })),
     staff: staff.map((item) => {
       const serviceIds = employeeLinks.filter((link) => link.employeeId === item.id).map((link) => link.serviceId);
-      return { id: item.id, name: item.name, role: item.role, bio: item.bio, avatarUrl: item.avatarUrl, specialties: item.specialties, serviceIds, serviceNames: services.filter((service) => serviceIds.includes(service.id)).map((service) => service.name) };
+      return {
+        id: item.id,
+        name: item.name,
+        role: item.role,
+        bio: item.bio,
+        avatarUrl: item.avatarUrl,
+        specialties: item.specialties,
+        serviceIds,
+        serviceNames: services.filter((service) => serviceIds.includes(service.id)).map((service) => service.name),
+        canOrderIndependently: item.canOrderIndependently,
+      };
     }),
     services: services.map((item) => ({
       id: item.id,

@@ -25,6 +25,7 @@ type PendingBookingFixture = {
   ownerId: string;
   salonId: string;
   salonPath: string;
+  salonName: string;
 };
 
 type PendingBookingFixtureOptions = {
@@ -79,6 +80,7 @@ async function createPendingBookingFixture({
   const ownerEmail = `browser-pending-booking-owner-${suffix}@example.test`;
   const ownerPassword = "browser-pending-booking-owner-password";
   const customerPhone = `+38161${suffix.replaceAll("-", "").slice(0, 8)}`;
+  const salonName = `Browser salon bez instant potvrde ${suffix}`;
   let customerId: string | undefined;
   let ownerId: string | undefined;
   let salonId: string | undefined;
@@ -110,7 +112,7 @@ async function createPendingBookingFixture({
 
     const [salon] = await db.insert(salonsTable).values({
       ownerId: owner.id,
-      name: `Browser salon bez instant potvrde ${suffix}`,
+      name: salonName,
       slug: `browser-pending-booking-${suffix}`,
       city: "Beograd",
       municipality: "Vračar",
@@ -161,6 +163,7 @@ async function createPendingBookingFixture({
       ownerId: owner.id,
       salonId: salon.id,
       salonPath: `/saloni/${salon.slug}`,
+      salonName,
     };
   } catch (error) {
     if (salonId) await db.delete(salonsTable).where(eq(salonsTable.id, salonId));
@@ -328,6 +331,27 @@ async function reachBookingConfirmationAsNonCustomer(page: Page, widget: Locator
   await expect(widget.getByRole("button", { name: "Korak 4: Potvrda" })).toHaveAttribute("aria-current", "step");
   await expect(widget.getByText("Pregled rezervacije")).toBeVisible();
 }
+
+test("directory salon links open the selected public profile on desktop and mobile", async ({ page }) => {
+  const fixture = await createPendingBookingFixture({ instantBooking: true });
+
+  try {
+    for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport);
+      await page.goto("/saloni?sort=newest");
+
+      const profileLink = page.locator(`a[href="${fixture.salonPath}"]`);
+      await expect(profileLink).toBeVisible();
+      await profileLink.click();
+
+      await expect(page).toHaveURL(fixture.salonPath);
+      await expect(page.locator("h1").filter({ hasText: fixture.salonName })).toBeVisible();
+      await expect(page.getByText("Salon nije pronađen.")).toHaveCount(0);
+    }
+  } finally {
+    await cleanUpPendingBookingFixture(fixture);
+  }
+});
 
 test("customer can book from the mobile sticky trigger and the drawer remains accessible", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
