@@ -6,7 +6,7 @@ import { OwnerSidebar } from "./dashboard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Package, ArrowLeft, ExternalLink, Truck, Repeat } from "lucide-react";
+import { Loader2, Package, ArrowLeft, ExternalLink, Truck, Repeat, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const money = (n: number) => `${n.toLocaleString("sr-RS")} RSD`;
@@ -27,10 +27,36 @@ function OrderDetail({ id }: { id: string }) {
   const { data: order, isLoading } = useGetOrder(id);
   if (isLoading) return <div className="p-10 text-center"><Loader2 className="animate-spin inline" /></div>;
   if (!order) return <p>Porudžbina nije pronađena.</p>;
-  return <div className="space-y-4"><Button asChild variant="ghost"><Link href="/vlasnik/porudzbine"><ArrowLeft className="w-4 h-4 mr-2"/>Nazad na porudžbine</Link></Button>
+
+  const invoice = (order as any).invoice as { number: string; issuedAt: string } | undefined;
+  const couponCode = (order as any).couponCode as string | null | undefined;
+  const couponDiscountRsd = (order as any).couponDiscountRsd as number | null | undefined;
+  const couponFreeShipping = (order as any).couponFreeShipping as boolean | null | undefined;
+
+  return <div className="space-y-4">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <Button asChild variant="ghost"><Link href="/vlasnik/porudzbine"><ArrowLeft className="w-4 h-4 mr-2"/>Nazad na porudžbine</Link></Button>
+      {invoice && (
+        <Button asChild variant="default" className="bg-primary/10 text-primary hover:bg-primary/20">
+          <a href={`/api/shop/orders/${order.id}/invoice.pdf`} target="_blank" rel="noopener noreferrer">
+            <Download className="w-4 h-4 mr-2"/> Preuzmi fakturu {invoice.number}
+          </a>
+        </Button>
+      )}
+    </div>
     <Card><CardHeader><CardTitle className="flex justify-between">Porudžbina #{order.id.slice(0, 8)} <Badge>{order.status}</Badge></CardTitle></CardHeader><CardContent className="space-y-4">
       {order.items.map((item) => <div key={`${item.productId}-${item.variantValue}`} className="flex justify-between border-b pb-3"><div><b>{item.productName}</b><p className="text-sm text-muted-foreground">{item.variantLabel ? `${item.variantLabel}: ` : ""}{item.variantValue ?? "—"} · SKU {item.productSku ?? "—"} · {item.quantity} kom.</p></div><b>{money(item.price * item.quantity)}</b></div>)}
-      <div className="text-sm space-y-1 border-t pt-3"><div className="flex justify-between"><span>Međuzbir</span><span>{money(order.subtotal)}</span></div><div className="flex justify-between"><span>Dostava</span><span>{money(order.shippingCost)}</span></div><div className="flex justify-between font-bold text-base"><span>Ukupno</span><span>{money(order.total)}</span></div></div>
+      <div className="text-sm space-y-1 border-t pt-3">
+        <div className="flex justify-between"><span>Međuzbir</span><span>{money(order.subtotal)}</span></div>
+        {couponCode && (
+          <div className="flex justify-between text-primary">
+            <span>Kupon ({couponCode})</span>
+            <span>{couponDiscountRsd ? `-${money(couponDiscountRsd)}` : "Besplatna dostava"}</span>
+          </div>
+        )}
+        <div className="flex justify-between"><span>Dostava</span><span>{money(order.shippingCost)}</span></div>
+        <div className="flex justify-between font-bold text-base"><span>Ukupno</span><span>{money(order.total)}</span></div>
+      </div>
       <DeliveryTracking order={order} />
     </CardContent></Card>
     <div className="grid md:grid-cols-2 gap-4"><Card><CardHeader><CardTitle className="text-base">Dostava</CardTitle></CardHeader><CardContent className="text-sm">{order.delivery.recipientName}<br/>{order.delivery.address}<br/>{order.delivery.postalCode} {order.delivery.city}<br/>{order.delivery.phone}<br/>{order.delivery.note && <em>{order.delivery.note}</em>}</CardContent></Card>
@@ -61,5 +87,8 @@ export default function OwnerOrders() {
     }
   });
 
-  return <BusinessLayout><div className="container mx-auto px-4 py-8 flex flex-col md:flex-row gap-8"><OwnerSidebar current="/vlasnik/porudzbine"/><main className="flex-1 min-w-0">{params?.orderId ? <OrderDetail id={params.orderId}/> : <><div className="mb-6"><h1 className="text-3xl font-serif font-bold">B2B porudžbine</h1><p className="text-muted-foreground">Pregledajte istoriju, dostavu i račune.</p></div>{isLoading ? <Loader2 className="animate-spin"/> : orders.length === 0 ? <Card><CardContent className="p-10 text-center text-muted-foreground"><Package className="mx-auto mb-3 opacity-30"/>{page > 1 ? "Nema više porudžbina." : "Još nemate porudžbina."}</CardContent></Card> : <div className="space-y-3">{orders.map((order) => <Card key={order.id}><CardContent className="p-4 flex flex-wrap gap-3 items-center justify-between"><div><b>#{order.id.slice(0, 8)}</b><p className="text-sm text-muted-foreground">{date(order.createdAt)} · {order.itemCount} stavki</p><DeliveryTracking order={order} compact /></div><Badge>{order.status}</Badge><b>{money(order.total)}</b><div className="flex gap-2"><Button size="sm" variant="secondary" onClick={() => repeatOrder.mutate()} disabled={repeatOrder.isPending}><Repeat className="w-4 h-4 mr-1"/> Ponovi porudžbinu</Button><Button asChild variant="outline" size="sm"><Link href={`/vlasnik/porudzbine/${order.id}`}>Detalji</Link></Button></div></CardContent></Card>)}</div>}{!params?.orderId && !isLoading && (page > 1 || hasNextPage) && <div className="flex items-center justify-between gap-3 pt-4"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} data-testid="btn-prev-page">Prethodna</Button><span className="text-sm text-muted-foreground">Strana {page}</span><Button variant="outline" size="sm" disabled={!hasNextPage} onClick={() => setPage(p => p + 1)} data-testid="btn-next-page">Sledeća</Button></div>}</>}</main></div></BusinessLayout>;
+  return <BusinessLayout><div className="container mx-auto px-4 py-8 flex flex-col md:flex-row gap-8"><OwnerSidebar current="/vlasnik/porudzbine"/><main className="flex-1 min-w-0">{params?.orderId ? <OrderDetail id={params.orderId}/> : <><div className="mb-6"><h1 className="text-3xl font-serif font-bold">B2B porudžbine</h1><p className="text-muted-foreground">Pregledajte istoriju, dostavu i račune.</p></div>{isLoading ? <Loader2 className="animate-spin"/> : orders.length === 0 ? <Card><CardContent className="p-10 text-center text-muted-foreground"><Package className="mx-auto mb-3 opacity-30"/>{page > 1 ? "Nema više porudžbina." : "Još nemate porudžbina."}</CardContent></Card> : <div className="space-y-3">{orders.map((order) => {
+  const invoice = (order as any).invoice as { number: string; issuedAt: string } | undefined;
+  return <Card key={order.id}><CardContent className="p-4 flex flex-wrap gap-3 items-center justify-between"><div><b>#{order.id.slice(0, 8)}</b><p className="text-sm text-muted-foreground">{date(order.createdAt)} · {order.itemCount} stavki</p><DeliveryTracking order={order} compact /></div><Badge>{order.status}</Badge><b>{money(order.total)}</b><div className="flex gap-2">{invoice && <Button asChild variant="outline" size="sm" className="bg-primary/5 text-primary hover:bg-primary/10"><a href={`/api/shop/orders/${order.id}/invoice.pdf`} target="_blank" rel="noopener noreferrer"><Download className="w-4 h-4 mr-1"/> PDF Faktura</a></Button>}<Button size="sm" variant="secondary" onClick={() => repeatOrder.mutate()} disabled={repeatOrder.isPending}><Repeat className="w-4 h-4 mr-1"/> Ponovi porudžbinu</Button><Button asChild variant="outline" size="sm"><Link href={`/vlasnik/porudzbine/${order.id}`}>Detalji</Link></Button></div></CardContent></Card>
+})}</div>}{!params?.orderId && !isLoading && (page > 1 || hasNextPage) && <div className="flex items-center justify-between gap-3 pt-4"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} data-testid="btn-prev-page">Prethodna</Button><span className="text-sm text-muted-foreground">Strana {page}</span><Button variant="outline" size="sm" disabled={!hasNextPage} onClick={() => setPage(p => p + 1)} data-testid="btn-next-page">Sledeća</Button></div>}</>}</main></div></BusinessLayout>;
 }

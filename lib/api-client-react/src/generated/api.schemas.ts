@@ -949,6 +949,8 @@ export interface Employee {
   specialties: string[];
   serviceIds: string[];
   serviceNames: string[];
+  /** Owner-controlled B2B purchasing permission. */
+  canOrderIndependently: boolean;
 }
 
 export interface ServiceResourceRequirement {
@@ -2200,6 +2202,54 @@ export interface RetailCart {
   projectedLoyaltyPoints: number;
 }
 
+export interface SellerIdentity {
+  /**
+     * @minLength 1
+     * @maxLength 300
+     */
+  companyName: string;
+  /**
+     * @minLength 1
+     * @maxLength 300
+     */
+  taxId: string;
+  /**
+     * @minLength 1
+     * @maxLength 300
+     */
+  registrationNumber: string;
+  /**
+     * @minLength 1
+     * @maxLength 300
+     */
+  address: string;
+  /**
+     * @minLength 1
+     * @maxLength 300
+     */
+  city: string;
+  /**
+     * @minLength 1
+     * @maxLength 300
+     */
+  postalCode: string;
+  /**
+     * @minLength 1
+     * @maxLength 300
+     */
+  bankAccount: string;
+  /**
+     * @minLength 1
+     * @maxLength 300
+     */
+  contactEmail: string;
+  /**
+     * @minLength 1
+     * @maxLength 300
+     */
+  contactPhone: string;
+}
+
 export interface AdminShopSettings {
   showLoyaltyPoints: boolean;
   /** @minimum 0 */
@@ -2216,6 +2266,7 @@ export interface AdminShopSettings {
   /** @minimum 1 */
   version: number;
   updatedAt: string;
+  seller: SellerIdentity;
 }
 
 export interface AdminShopSettingsInput {
@@ -2233,6 +2284,163 @@ export interface AdminShopSettingsInput {
   freeShippingThreshold: number;
   /** @minimum 1 */
   version: number;
+  seller?: SellerIdentity;
+}
+
+/**
+ * @nullable
+ */
+export type CouponInputAudience = typeof CouponInputAudience[keyof typeof CouponInputAudience] | null;
+
+
+export const CouponInputAudience = {
+  B2B: 'B2B',
+  B2C: 'B2C',
+} as const;
+
+export type CouponInputDiscountType = typeof CouponInputDiscountType[keyof typeof CouponInputDiscountType];
+
+
+export const CouponInputDiscountType = {
+  PERCENTAGE: 'PERCENTAGE',
+  FIXED_RSD: 'FIXED_RSD',
+} as const;
+
+export interface CouponInput {
+  /** @pattern ^[A-Za-z0-9_-]{2,40}$ */
+  code: string;
+  active?: boolean;
+  /** @nullable */
+  audience?: CouponInputAudience;
+  discountType: CouponInputDiscountType;
+  /** @minimum 1 */
+  discountValue: number;
+  /** @nullable */
+  startsAt?: string | null;
+  /** @nullable */
+  endsAt?: string | null;
+  /** @minimum 0 */
+  minimumSpendRsd?: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  maximumSpendRsd?: number | null;
+  freeShipping?: boolean;
+  includeProductIds?: string[];
+  excludeProductIds?: string[];
+  includeCategoryIds?: string[];
+  excludeCategoryIds?: string[];
+  includeBundleIds?: string[];
+  excludeBundleIds?: string[];
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  usageLimit?: number | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  perCustomerUsageLimit?: number | null;
+}
+
+export type Coupon = CouponInput & {
+  id: string;
+  /** @minimum 0 */
+  usageCount: number;
+  createdAt: string;
+  updatedAt: string;
+} & Required<Pick<CouponInput & {
+  id: string;
+  /** @minimum 0 */
+  usageCount: number;
+  createdAt: string;
+  updatedAt: string;
+}, 'active' | 'audience' | 'startsAt' | 'endsAt' | 'minimumSpendRsd' | 'maximumSpendRsd' | 'freeShipping' | 'includeProductIds' | 'excludeProductIds' | 'includeCategoryIds' | 'excludeCategoryIds' | 'includeBundleIds' | 'excludeBundleIds' | 'usageLimit' | 'perCustomerUsageLimit'>>;
+
+export type CouponApplicationAllocations = {[key: string]: number};
+
+export interface CouponApplication {
+  code: string;
+  /** @minimum 0 */
+  discountRsd: number;
+  freeShipping: boolean;
+  allocations: CouponApplicationAllocations;
+}
+
+export interface ApprovalRequestInput {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  idempotencyKey: string;
+  /** @maxLength 40 */
+  couponCode?: string;
+  /** @minimum 0 */
+  desiredReferralCreditRsd?: number;
+}
+
+export interface ApprovalRejectInput {
+  /** @maxLength 1000 */
+  reason?: string;
+}
+
+export type ApprovalRequestStatus = typeof ApprovalRequestStatus[keyof typeof ApprovalRequestStatus];
+
+
+export const ApprovalRequestStatus = {
+  PENDING: 'PENDING',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+  EXPIRED: 'EXPIRED',
+} as const;
+
+export type ApprovalRequestLinesItemCatalog = {
+  /** @minimum 0 */
+  price: number;
+  /** @minimum 0 */
+  listPrice: number;
+  /** @nullable */
+  variantValue: string | null;
+};
+
+export type ApprovalRequestLinesItem = {
+  /** @nullable */
+  productId: string | null;
+  /** @nullable */
+  bundleId: string | null;
+  productName: string;
+  /** @nullable */
+  sku: string | null;
+  /** @minimum 1 */
+  quantity: number;
+  catalog: ApprovalRequestLinesItemCatalog;
+};
+
+export interface ApprovalRequest {
+  id: string;
+  status: ApprovalRequestStatus;
+  employeeId: string;
+  employeeName: string;
+  /** @minimum 0 */
+  quote: number;
+  quoteVersion: string;
+  /**
+     * @maxLength 40
+     * @nullable
+     */
+  couponCode: string | null;
+  /** @minimum 0 */
+  referralCreditIntentRsd: number;
+  /** @nullable */
+  reviewerReason: string | null;
+  createdAt: string;
+  /** @nullable */
+  decidedAt: string | null;
+  /** @nullable */
+  finalizedOrderId: string | null;
+  lines: ApprovalRequestLinesItem[];
 }
 
 export type ReorderResultAddedItem = { [key: string]: unknown };
@@ -2403,6 +2611,11 @@ export interface RetailCheckoutInput {
   expectedTotal?: number;
   /** @minimum 0 */
   desiredReferralCreditRsd?: number;
+  /**
+     * @maxLength 40
+     * @nullable
+     */
+  couponCode?: string | null;
 }
 
 export type RetailCheckoutPreviewPaymentMethodsItem = typeof RetailCheckoutPreviewPaymentMethodsItem[keyof typeof RetailCheckoutPreviewPaymentMethodsItem];
@@ -2456,6 +2669,9 @@ export interface RetailCheckoutPreview {
   shippingRsd: number;
   /** @minimum 0 */
   payableTotalRsd: number;
+  coupon: CouponApplication | null;
+  /** @minimum 0 */
+  couponDiscountRsd: number;
   paymentMethods: RetailCheckoutPreviewPaymentMethodsItem[];
 }
 
@@ -2480,6 +2696,11 @@ export interface RetailOrder {
   subtotal: number;
   shippingCost: number;
   total: number;
+  /** @nullable */
+  couponCode?: string | null;
+  /** @minimum 0 */
+  couponDiscountRsd?: number;
+  couponFreeShipping?: boolean;
   createdAt: string;
   items: RetailOrderItemsItem[];
 }
@@ -2876,6 +3097,9 @@ export interface ShopCheckoutPreview {
   shippingRsd: number;
   /** @minimum 0 */
   payableTotalRsd: number;
+  coupon: CouponApplication | null;
+  /** @minimum 0 */
+  couponDiscountRsd: number;
   paymentMethods: ShopCheckoutPreviewPaymentMethodsItem[];
 }
 
@@ -2917,6 +3141,11 @@ export interface ShopCheckoutInput {
   /** @minimum 0 */
   expectedTotal?: number;
   termsAccepted: boolean;
+  /**
+     * @maxLength 40
+     * @nullable
+     */
+  couponCode?: string | null;
 }
 
 export type OrderStatus = typeof OrderStatus[keyof typeof OrderStatus];
@@ -2950,6 +3179,14 @@ export const OrderDeliveryMethod = {
   courier: 'courier',
   personal_belgrade: 'personal_belgrade',
 } as const;
+
+/**
+ * @nullable
+ */
+export type OrderInvoice = {
+  number: string;
+  issuedAt: string;
+} | null;
 
 export type OrderSalon = {
   id: string;
@@ -3002,6 +3239,8 @@ export interface OrderItem {
   productSku?: string | null;
   quantity: number;
   price: number;
+  /** @minimum 0 */
+  couponDiscountRsd?: number;
 }
 
 export interface Order {
@@ -3021,6 +3260,13 @@ export interface Order {
   subtotal: number;
   shippingCost: number;
   totalWeightGrams: number;
+  /** @nullable */
+  couponCode: string | null;
+  /** @minimum 0 */
+  couponDiscountRsd: number;
+  couponFreeShipping: boolean;
+  /** @nullable */
+  invoice: OrderInvoice;
   itemCount: number;
   createdAt: string;
   updatedAt: string;
@@ -7771,6 +8017,10 @@ export type GetShopCheckoutPreviewParams = {
  * @minimum 0
  */
 desiredReferralCreditRsd?: number;
+/**
+ * @maxLength 40
+ */
+couponCode?: string;
 };
 
 export type ListSalonNotificationsParams = {
@@ -8391,6 +8641,10 @@ city?: string;
  * @minimum 0
  */
 desiredReferralCreditRsd?: number;
+/**
+ * @maxLength 40
+ */
+couponCode?: string;
 };
 
 export type PreviewRetailCheckoutDeliveryMethod = typeof PreviewRetailCheckoutDeliveryMethod[keyof typeof PreviewRetailCheckoutDeliveryMethod];

@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useAdminGetShopSettings, useAdminUpdateShopSettings, getAdminGetShopSettingsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, Save, Store, Truck, Bell, Award, Settings2 } from "lucide-react";
+import { Loader2, Save, Store, Truck, Bell, Award, Settings2, Building } from "lucide-react";
 import { AdminLayout } from "./layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,13 +15,42 @@ import { useToast } from "@/hooks/use-toast";
 import { extractApiError } from "@/lib/admin-form-utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
+const sellerFieldNames = [
+  "sellerCompanyName",
+  "sellerTaxId",
+  "sellerRegistrationNumber",
+  "sellerAddress",
+  "sellerCity",
+  "sellerPostalCode",
+  "sellerBankAccount",
+  "sellerContactEmail",
+  "sellerContactPhone",
+] as const;
+
 const shopSettingsSchema = z.object({
   freeShippingThreshold: z.coerce.number().min(0, "Prag ne može biti negativan"),
   showLoyaltyPoints: z.boolean(),
   pointsPer100Rsd: z.coerce.number().min(0, "Bodovi ne mogu biti negativni"),
   lowStockThreshold: z.coerce.number().min(1, "Prag mora biti bar 1"),
   defaultDeliveryBusinessDays: z.coerce.number().min(1, "Najmanje 1 dan").max(365, "Najviše 365 dana"),
+  sellerCompanyName: z.string().optional().nullable(),
+  sellerTaxId: z.string().optional().nullable(),
+  sellerRegistrationNumber: z.string().optional().nullable(),
+  sellerAddress: z.string().optional().nullable(),
+  sellerCity: z.string().optional().nullable(),
+  sellerPostalCode: z.string().optional().nullable(),
+  sellerBankAccount: z.string().optional().nullable(),
+  sellerContactEmail: z.union([z.string().email("Neispravna email adresa"), z.literal(""), z.null()]).optional(),
+  sellerContactPhone: z.string().optional().nullable(),
   version: z.number().min(1),
+}).superRefine((values, ctx) => {
+  const sellerValues = sellerFieldNames.map((field) => values[field]?.trim() ?? "");
+  if (!sellerValues.some(Boolean) || sellerValues.every(Boolean)) return;
+  sellerFieldNames.forEach((field, index) => {
+    if (!sellerValues[index]) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [field], message: "Obavezno za B2B fakture" });
+    }
+  });
 });
 
 type ShopSettingsFormValues = z.infer<typeof shopSettingsSchema>;
@@ -40,6 +69,15 @@ export default function AdminShopSettingsPage() {
       pointsPer100Rsd: 0,
       lowStockThreshold: 1,
       defaultDeliveryBusinessDays: 1,
+      sellerCompanyName: "",
+      sellerTaxId: "",
+      sellerRegistrationNumber: "",
+      sellerAddress: "",
+      sellerCity: "",
+      sellerPostalCode: "",
+      sellerBankAccount: "",
+      sellerContactEmail: "",
+      sellerContactPhone: "",
       version: 1,
     }
   });
@@ -52,14 +90,44 @@ export default function AdminShopSettingsPage() {
         pointsPer100Rsd: settings.pointsPer100Rsd,
         lowStockThreshold: settings.lowStockThreshold,
         defaultDeliveryBusinessDays: settings.defaultDeliveryBusinessDays,
+        sellerCompanyName: settings.seller.companyName,
+        sellerTaxId: settings.seller.taxId,
+        sellerRegistrationNumber: settings.seller.registrationNumber,
+        sellerAddress: settings.seller.address,
+        sellerCity: settings.seller.city,
+        sellerPostalCode: settings.seller.postalCode,
+        sellerBankAccount: settings.seller.bankAccount,
+        sellerContactEmail: settings.seller.contactEmail,
+        sellerContactPhone: settings.seller.contactPhone,
         version: settings.version,
       });
     }
   }, [settings, form]);
 
   const onSubmit = (values: ShopSettingsFormValues) => {
+    const text = (value: string | null | undefined) => (value ?? "").trim();
+    const seller = {
+      companyName: text(values.sellerCompanyName),
+      taxId: text(values.sellerTaxId),
+      registrationNumber: text(values.sellerRegistrationNumber),
+      address: text(values.sellerAddress),
+      city: text(values.sellerCity),
+      postalCode: text(values.sellerPostalCode),
+      bankAccount: text(values.sellerBankAccount),
+      contactEmail: text(values.sellerContactEmail),
+      contactPhone: text(values.sellerContactPhone),
+    };
+    const data = {
+      freeShippingThreshold: values.freeShippingThreshold,
+      showLoyaltyPoints: values.showLoyaltyPoints,
+      pointsPer100Rsd: values.pointsPer100Rsd,
+      lowStockThreshold: values.lowStockThreshold,
+      defaultDeliveryBusinessDays: values.defaultDeliveryBusinessDays,
+      version: values.version,
+      ...(Object.values(seller).some(Boolean) ? { seller } : {}),
+    };
     updateSettings.mutate(
-      { data: values },
+      { data },
       {
         onSuccess: (newSettings) => {
           qc.setQueryData(getAdminGetShopSettingsQueryKey(), newSettings);
@@ -202,6 +270,134 @@ export default function AdminShopSettingsPage() {
                         <Input type="number" min="1" {...field} />
                       </FormControl>
                       <FormDescription>Ako proizvod ima manju ili jednaku količinu, korisnicima se prikazuje upozorenje o niskim zalihama.</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Building className="h-5 w-5 text-primary" /> Podaci o prodavcu (Fakture)
+                </CardTitle>
+                <CardDescription>Ovi podaci će biti prikazani na fakturama koje se izdaju kupcima.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid sm:grid-cols-2 gap-6">
+                <FormField
+                  control={form.control}
+                  name="sellerCompanyName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Naziv firme</FormLabel>
+                      <FormControl>
+                        <Input placeholder="npr. LUMERA d.o.o." {...field} value={field.value || ""} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="sellerTaxId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>PIB</FormLabel>
+                      <FormControl>
+                        <Input placeholder="10XXXXXXX" {...field} value={field.value || ""} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="sellerRegistrationNumber"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Matični broj</FormLabel>
+                      <FormControl>
+                        <Input placeholder="XXXXXXXX" {...field} value={field.value || ""} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="sellerAddress"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Adresa sedišta</FormLabel>
+                      <FormControl>
+                        <Input placeholder="npr. Bulevar oslobođenja 12" {...field} value={field.value || ""} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="sellerCity"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Grad</FormLabel>
+                      <FormControl>
+                        <Input placeholder="npr. Novi Sad" {...field} value={field.value || ""} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="sellerPostalCode"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Poštanski broj</FormLabel>
+                      <FormControl>
+                        <Input placeholder="npr. 21000" {...field} value={field.value || ""} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="sellerBankAccount"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Broj tekućeg računa</FormLabel>
+                      <FormControl>
+                        <Input placeholder="npr. XXX-XXXXXXXXX-XX" {...field} value={field.value || ""} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="sellerContactEmail"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Kontakt Email</FormLabel>
+                      <FormControl>
+                        <Input type="email" placeholder="npr. info@lumera.rs" {...field} value={field.value || ""} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="sellerContactPhone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Kontakt telefon</FormLabel>
+                      <FormControl>
+                        <Input placeholder="npr. 06X XXX XXX" {...field} value={field.value || ""} />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

@@ -3,7 +3,7 @@ import { Link, useLocation, useRoute } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Loader2, ArrowLeft, Check, Package, AlertTriangle, Truck, CreditCard, Receipt, FileText, ChevronRight, Lock, Plus, Minus, Trash2 } from "lucide-react";
+import { Loader2, ArrowLeft, Check, Package, AlertTriangle, Truck, CreditCard, Receipt, FileText, ChevronRight, Lock, Plus, Minus, Trash2, Tag } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetShopCart,
@@ -812,7 +812,15 @@ export function OwnerCheckoutReviewPage() {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const [desiredCredit, setDesiredCredit] = useState(0);
-  const { data: preview, isLoading, isError, isFetching } = useGetShopCheckoutPreview({ desiredReferralCreditRsd: desiredCredit });
+  const [couponInput, setCouponInput] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<string | undefined>(undefined);
+  const [couponError, setCouponError] = useState<string | null>(null);
+
+  const { data: preview, isLoading, isError, error, isFetching } = useGetShopCheckoutPreview(
+    { desiredReferralCreditRsd: desiredCredit, couponCode: appliedCoupon } as any,
+    { query: { retry: (count: number, err: any) => (err?.status ?? err?.response?.status) >= 400 && (err?.status ?? err?.response?.status) < 500 ? false : count < 3, queryKey: getGetShopCheckoutPreviewQueryKey({ desiredReferralCreditRsd: desiredCredit, couponCode: appliedCoupon } as any) } as any }
+  );
+
   const checkoutMutation = useCheckoutShopCart();
   const { toast } = useToast();
   const [mounted, setMounted] = useState(false);
@@ -826,7 +834,18 @@ export function OwnerCheckoutReviewPage() {
     } else {
       setLocation("/vlasnik/prodavnica/dostava");
     }
+    const savedCoupon = sessionStorage.getItem("lumera_checkout_coupon");
+    if (savedCoupon) setAppliedCoupon(savedCoupon);
   }, [setLocation]);
+
+  useEffect(() => {
+    const errorData = (error as any)?.data ?? (error as any)?.response?.data;
+    if (isError && errorData?.code?.startsWith("COUPON_")) {
+      setCouponError(errorData.error);
+      setAppliedCoupon(undefined);
+      sessionStorage.removeItem("lumera_checkout_coupon");
+    }
+  }, [isError, error]);
 
   const form = useForm<ReviewFormValues>({
     resolver: zodResolver(reviewSchema),
@@ -848,22 +867,54 @@ export function OwnerCheckoutReviewPage() {
       note: values.note || null,
       termsAccepted: values.termsAccepted,
       desiredReferralCreditRsd: desiredCredit,
+      couponCode: appliedCoupon,
       expectedSubtotal: preview?.cart.subtotal,
       expectedTotal: preview?.total,
       expectedShippingCost: preview?.shipping.shippingCost,
     };
 
-    checkoutMutation.mutate({ data: payload }, {
+    checkoutMutation.mutate({ data: payload as any }, {
       onSuccess: (order) => {
         sessionStorage.removeItem(SESSION_STORAGE_KEY);
+        sessionStorage.removeItem("lumera_checkout_coupon");
         queryClient.invalidateQueries({ queryKey: getGetShopCartQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetShopCheckoutPreviewQueryKey() });
         queryClient.invalidateQueries({ queryKey: getListSalonNotificationsQueryKey() });
         setLocation(`/vlasnik/prodavnica/porudzbina/${order.id}/potvrda`);
       },
       onError: async (error) => {
-        if ((error as any)?.response?.status === 409) {
-          const productNames = (error as any)?.response?.data?.unavailableProducts ?? [];
+        const errorData = (error as any)?.data ?? (error as any)?.response?.data;
+        const errorStatus = (error as any)?.status ?? (error as any)?.response?.status;
+        const responseCode = errorData?.code;
+        if (responseCode === "APPROVAL_REQUIRED") {
+          const approvalKey = sessionStorage.getItem("lumera_approval_request_key") ?? crypto.randomUUID();
+          sessionStorage.setItem("lumera_approval_request_key", approvalKey);
+          const response = await fetch("/api/shop/approval-requests", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              idempotencyKey: approvalKey,
+              couponCode: appliedCoupon,
+              desiredReferralCreditRsd: desiredCredit,
+            }),
+          });
+          const approval = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            toast.error("Zahtev nije poslat.", {
+              description: approval.error ?? "Pokušajte ponovo ili se obratite vlasniku salona.",
+            });
+            return;
+          }
+          sessionStorage.removeItem("lumera_approval_request_key");
+          toast.success("Zahtev je poslat vlasniku.", {
+            description: "Zalihe i iznosi neće biti promenjeni dok vlasnik ne odobri porudžbinu.",
+          });
+          setLocation("/zaposleni");
+          return;
+        }
+        if (errorStatus === 409) {
+          const productNames = errorData?.unavailableProducts ?? [];
           const text = productNames.length === 1
             ? `Proizvod ${productNames[0]} je rasprodat, promenio cenu, ili je dobavljač neaktivan. Porudžbina nije kreirana.`
             : `Proizvodi: ${productNames.join(", ")} su rasprodati, promenili cenu, ili je dobavljač neaktivan. Porudžbina nije kreirana.`;
@@ -877,11 +928,27 @@ export function OwnerCheckoutReviewPage() {
           return;
         }
 
-        const message = (error as any)?.response?.data?.error;
+        const message = errorData?.error;
         toast.error("Porudžbina nije kreirana.", { description: message ?? "Proverite podatke za dostavu i pokušajte ponovo." });
       }
     });
   };
+
+  const handleApplyCoupon = () => {
+    if (!couponInput.trim()) return;
+    setCouponError(null);
+    const code = couponInput.trim().toUpperCase();
+    setAppliedCoupon(code);
+    sessionStorage.setItem("lumera_checkout_coupon", code);
+    setCouponInput("");
+  };
+
+  const handleRemoveCoupon = () => {
+    setCouponError(null);
+    setAppliedCoupon(undefined);
+    sessionStorage.removeItem("lumera_checkout_coupon");
+  };
+
   const submitOrder = form.handleSubmit(onSubmit);
 
   if (!mounted || !draft) return null;
@@ -1047,11 +1114,69 @@ export function OwnerCheckoutReviewPage() {
                      ))}
                    </div>
                    <Separator className="bg-border/50" />
+
+                   <div className="py-2">
+                     {appliedCoupon ? (
+                       <div className="flex items-center justify-between p-3 bg-emerald-50/50 dark:bg-emerald-950/10 border border-emerald-200 dark:border-emerald-800/30 rounded-lg">
+                         <div className="flex flex-col">
+                           <span className="font-medium flex items-center gap-2 text-emerald-800 dark:text-emerald-400">
+                             <Tag className="w-4 h-4" /> {appliedCoupon}
+                           </span>
+                           {(preview as any).coupon?.freeShipping && (
+                             <span className="text-xs text-emerald-600 dark:text-emerald-500 mt-0.5">Besplatna dostava</span>
+                           )}
+                         </div>
+                         <Button
+                           type="button"
+                           variant="ghost"
+                           size="sm"
+                           onClick={handleRemoveCoupon}
+                           disabled={isLoading || isFetching}
+                           className="text-destructive hover:bg-destructive/10 h-8"
+                         >
+                           Ukloni
+                         </Button>
+                       </div>
+                     ) : (
+                       <div className="flex flex-col gap-2">
+                         <div className="flex gap-2">
+                           <Input
+                             placeholder="Unesite kupon kod"
+                             value={couponInput}
+                             onChange={(e) => setCouponInput(e.target.value)}
+                             disabled={isLoading || isFetching}
+                             className="h-9"
+                           />
+                           <Button
+                             type="button"
+                             variant="secondary"
+                             onClick={handleApplyCoupon}
+                             disabled={isLoading || isFetching || !couponInput.trim()}
+                             className="h-9"
+                           >
+                             Primeni
+                           </Button>
+                         </div>
+                         {couponError && (
+                           <p className="text-xs text-destructive animate-in fade-in">{couponError}</p>
+                         )}
+                       </div>
+                     )}
+                   </div>
+
+                   <Separator className="bg-border/50" />
+
                    <div className="space-y-2">
                      <div className="flex justify-between text-muted-foreground">
                         <span>Međuzbir robe</span>
-                        <span>{money(preview.cart.subtotal)}</span>
+                        <span>{money((preview as any).merchandiseSubtotalRsd ?? preview.cart.subtotal)}</span>
                      </div>
+                     {(preview as any).couponDiscountRsd != null && (preview as any).couponDiscountRsd > 0 && (
+                       <div className="flex justify-between text-emerald-600 font-medium">
+                          <span>Popust (kupon)</span>
+                          <span>-{money((preview as any).couponDiscountRsd)}</span>
+                       </div>
+                     )}
                      {preview.referralCreditAvailableRsd > 0 && (
                        <div className="py-2">
                          <div className="flex justify-between text-sm mb-2">
@@ -1061,16 +1186,16 @@ export function OwnerCheckoutReviewPage() {
                            <Input
                              type="number"
                              min={0}
-                             max={Math.min(preview.referralCreditAvailableRsd, preview.merchandiseSubtotalRsd)}
+                             max={Math.min(preview.referralCreditAvailableRsd, (preview as any).merchandiseSubtotalRsd ?? preview.cart.subtotal)}
                              value={desiredCredit}
-                             onChange={(e) => setDesiredCredit(Math.min(Number(e.target.value) || 0, Math.min(preview.referralCreditAvailableRsd, preview.merchandiseSubtotalRsd)))}
+                             onChange={(e) => setDesiredCredit(Math.min(Number(e.target.value) || 0, Math.min(preview.referralCreditAvailableRsd, (preview as any).merchandiseSubtotalRsd ?? preview.cart.subtotal)))}
                              className="h-8 text-sm"
                            />
                            <Button
                              type="button"
                              variant="outline"
                              size="sm"
-                             onClick={() => setDesiredCredit(Math.min(preview.referralCreditAvailableRsd, preview.merchandiseSubtotalRsd))}
+                             onClick={() => setDesiredCredit(Math.min(preview.referralCreditAvailableRsd, (preview as any).merchandiseSubtotalRsd ?? preview.cart.subtotal))}
                              className="h-8 whitespace-nowrap text-xs"
                            >
                              Maks

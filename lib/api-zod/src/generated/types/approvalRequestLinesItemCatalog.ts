@@ -6,13 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GetShopCheckoutPreviewParams = {
-/**
- * @minimum 0
- */
-desiredReferralCreditRsd?: number;
-/**
- * @maxLength 40
- */
-couponCode?: string;
+export type ApprovalRequestLinesItemCatalog = {
+  /** @minimum 0 */
+  price: number;
+  /** @minimum 0 */
+  listPrice: number;
+  /** @nullable */
+  variantValue: string | null;
 };

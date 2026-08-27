@@ -71,4 +71,9 @@ export interface RetailCheckoutInput {
   expectedTotal?: number;
   /** @minimum 0 */
   desiredReferralCreditRsd?: number;
+  /**
+     * @maxLength 40
+     * @nullable
+     */
+  couponCode?: string | null;
 }

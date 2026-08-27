@@ -64,6 +64,8 @@ export const cartPriceSourceEnum = pgEnum("cart_price_source", ["FULL_PRICE", "S
 export const commerceAudienceEnum = pgEnum("commerce_audience", ["B2B", "B2C"]);
 export const loyaltyPointEntryTypeEnum = pgEnum("loyalty_point_entry_type", ["AWARD", "REVERSAL", "ADJUSTMENT"]);
 export const productWaitlistStatusEnum = pgEnum("product_waitlist_status", ["ACTIVE", "NOTIFIED", "UNSUBSCRIBED"]);
+export const couponDiscountTypeEnum = pgEnum("coupon_discount_type", ["PERCENTAGE", "FIXED_RSD"]);
+export const approvalRequestStatusEnum = pgEnum("approval_request_status", ["PENDING", "APPROVED", "REJECTED", "EXPIRED"]);
 
 export const suppliersTable = pgTable("suppliers", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -217,6 +219,15 @@ export const shopSettingsTable = pgTable("shop_settings", {
   pointsPer100Rsd: integer("points_per_100_rsd").notNull().default(1),
   lowStockThreshold: integer("low_stock_threshold").notNull().default(5),
   defaultDeliveryBusinessDays: integer("default_delivery_business_days").notNull().default(3),
+  sellerCompanyName: text("seller_company_name"),
+  sellerTaxId: text("seller_tax_id"),
+  sellerRegistrationNumber: text("seller_registration_number"),
+  sellerAddress: text("seller_address"),
+  sellerCity: text("seller_city"),
+  sellerPostalCode: text("seller_postal_code"),
+  sellerBankAccount: text("seller_bank_account"),
+  sellerContactEmail: text("seller_contact_email"),
+  sellerContactPhone: text("seller_contact_phone"),
   version: integer("version").notNull().default(1),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
@@ -317,6 +328,9 @@ export const ordersTable = pgTable("orders", {
   referralCreditPreCreditPayableTotalRsd: integer("referral_credit_pre_credit_payable_total_rsd").notNull().default(0),
   /** Immutable referral-credit accounting snapshot; never includes shipping. */
   referralCreditAppliedRsd: integer("referral_credit_applied_rsd").notNull().default(0),
+  couponCodeSnapshot: text("coupon_code_snapshot"),
+  couponDiscountRsd: integer("coupon_discount_rsd").notNull().default(0),
+  couponFreeShipping: boolean("coupon_free_shipping").notNull().default(false),
   referralCreditRestoredAt: timestamp("referral_credit_restored_at", { withTimezone: true }),
   totalWeightGrams: integer("total_weight_grams").notNull().default(0),
   paymentMethod: paymentMethodEnum("payment_method").notNull(),
@@ -327,6 +341,10 @@ export const ordersTable = pgTable("orders", {
   trackingNumber: text("tracking_number"),
   adminNote: text("admin_note"),
   estimatedDeliveryDate: text("estimated_delivery_date"),
+  invoiceNumber: text("invoice_number").unique(),
+  invoiceIssuedAt: timestamp("invoice_issued_at", { withTimezone: true }),
+  /** Immutable seller identity captured when the B2B invoice is finalized. */
+  sellerSnapshot: jsonb("seller_snapshot").$type<Record<string, string>>(),
   loyaltyPointsAwarded: integer("loyalty_points_awarded").notNull().default(0),
   loyaltyPointsReversedAt: timestamp("loyalty_points_reversed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -429,6 +447,8 @@ export const orderItemsTable = pgTable("order_items", {
   effectiveUnitPrice: integer("effective_unit_price").notNull().default(0),
   priceSource: cartPriceSourceEnum("price_source").notNull().default("FULL_PRICE"),
   lineDiscount: integer("line_discount").notNull().default(0),
+  /** Coupon allocation is independent from catalog priceSource/lineDiscount. */
+  couponDiscountRsd: integer("coupon_discount_rsd").notNull().default(0),
   bundleNameSnapshot: text("bundle_name_snapshot"),
   bundleComponentsSnapshot: jsonb("bundle_components_snapshot")
     .$type<Array<{ productId: string; name: string; catalogReference: string; quantity: number }>>(),
@@ -540,6 +560,9 @@ export const retailOrdersTable = pgTable("retail_orders", {
   referralCreditPreCreditPayableTotalRsd: integer("referral_credit_pre_credit_payable_total_rsd").notNull().default(0),
   /** Immutable referral-credit accounting snapshot; never includes shipping. */
   referralCreditAppliedRsd: integer("referral_credit_applied_rsd").notNull().default(0),
+  couponCodeSnapshot: text("coupon_code_snapshot"),
+  couponDiscountRsd: integer("coupon_discount_rsd").notNull().default(0),
+  couponFreeShipping: boolean("coupon_free_shipping").notNull().default(false),
   referralCreditRestoredAt: timestamp("referral_credit_restored_at", { withTimezone: true }),
   shippingCost: integer("shipping_cost").notNull().default(0),
   total: integer("total").notNull(),
@@ -588,6 +611,7 @@ export const retailOrderItemsTable = pgTable("retail_order_items", {
   effectiveUnitPrice: integer("effective_unit_price").notNull().default(0),
   priceSource: cartPriceSourceEnum("price_source").notNull().default("FULL_PRICE"),
   lineDiscount: integer("line_discount").notNull().default(0),
+  couponDiscountRsd: integer("coupon_discount_rsd").notNull().default(0),
   bundleNameSnapshot: text("bundle_name_snapshot"),
   bundleComponentsSnapshot: jsonb("bundle_components_snapshot")
     .$type<Array<{ productId: string; name: string; catalogReference: string; quantity: number }>>(),

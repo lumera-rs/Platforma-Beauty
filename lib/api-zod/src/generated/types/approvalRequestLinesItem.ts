@@ -5,21 +5,17 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { ApprovalRequestLinesItemCatalog } from './approvalRequestLinesItemCatalog';
 
-export interface OrderItem {
+export type ApprovalRequestLinesItem = {
   /** @nullable */
   productId: string | null;
   /** @nullable */
   bundleId: string | null;
   productName: string;
   /** @nullable */
-  variantValue?: string | null;
-  /** @nullable */
-  variantLabel?: string | null;
-  /** @nullable */
-  productSku?: string | null;
+  sku: string | null;
+  /** @minimum 1 */
   quantity: number;
-  price: number;
-  /** @minimum 0 */
-  couponDiscountRsd?: number;
-}
+  catalog: ApprovalRequestLinesItemCatalog;
+};

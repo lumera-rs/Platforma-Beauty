@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 43;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 44;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -114,6 +114,8 @@ const ENUM_LABELS: Record<string, string[]> = {
   commerce_audience: ["B2B", "B2C"],
   loyalty_point_entry_type: ["AWARD", "REVERSAL", "ADJUSTMENT"],
   product_waitlist_status: ["ACTIVE", "NOTIFIED", "UNSUBSCRIBED"],
+  coupon_discount_type: ["PERCENTAGE", "FIXED_RSD"],
+  approval_request_status: ["PENDING", "APPROVED", "REJECTED", "EXPIRED"],
 };
 
 /**
@@ -2110,6 +2112,88 @@ function tableStatements(s: string): string[] {
            AND EXISTS (SELECT 1 FROM ${s}.beauty_job_listings l WHERE l.user_id = u.id);
        END IF;
      END $$`,
+    // v44 — runs after all cart/bundle tables exist, and is safe to replay.
+    `ALTER TABLE ${s}.employees ADD COLUMN IF NOT EXISTS can_order_independently boolean NOT NULL DEFAULT false`,
+    ...["seller_company_name text", "seller_tax_id text", "seller_registration_number text", "seller_address text", "seller_city text", "seller_postal_code text", "seller_bank_account text", "seller_contact_email text", "seller_contact_phone text"]
+      .map((definition) => `ALTER TABLE ${s}.shop_settings ADD COLUMN IF NOT EXISTS ${definition}`),
+    ...["orders", "retail_orders"].flatMap((table) => [
+      `ALTER TABLE ${s}.${table} ADD COLUMN IF NOT EXISTS coupon_code_snapshot text`,
+      `ALTER TABLE ${s}.${table} ADD COLUMN IF NOT EXISTS coupon_discount_rsd integer NOT NULL DEFAULT 0`,
+      `ALTER TABLE ${s}.${table} ADD COLUMN IF NOT EXISTS coupon_free_shipping boolean NOT NULL DEFAULT false`,
+    ]),
+    ...["order_items", "retail_order_items"].map((table) => `ALTER TABLE ${s}.${table} ADD COLUMN IF NOT EXISTS coupon_discount_rsd integer NOT NULL DEFAULT 0`),
+    `ALTER TABLE ${s}.orders ADD COLUMN IF NOT EXISTS invoice_number text`,
+    `ALTER TABLE ${s}.orders ADD COLUMN IF NOT EXISTS invoice_issued_at timestamptz`,
+    `ALTER TABLE ${s}.orders ADD COLUMN IF NOT EXISTS seller_snapshot jsonb`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS orders_invoice_number_unique ON ${s}.orders (invoice_number) WHERE invoice_number IS NOT NULL`,
+    `CREATE TABLE IF NOT EXISTS ${s}.coupons (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), code text NOT NULL UNIQUE, active boolean NOT NULL DEFAULT true,
+      audience ${s}.commerce_audience, discount_type ${s}.coupon_discount_type NOT NULL, discount_value integer NOT NULL,
+      starts_at timestamptz, ends_at timestamptz, minimum_spend_rsd integer NOT NULL DEFAULT 0, maximum_spend_rsd integer,
+      free_shipping boolean NOT NULL DEFAULT false, include_product_ids jsonb NOT NULL DEFAULT '[]'::jsonb, exclude_product_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
+      include_category_ids jsonb NOT NULL DEFAULT '[]'::jsonb, exclude_category_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
+      include_bundle_ids jsonb NOT NULL DEFAULT '[]'::jsonb, exclude_bundle_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
+      usage_limit integer, per_customer_usage_limit integer, usage_count integer NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CHECK ((discount_type = 'PERCENTAGE' AND discount_value BETWEEN 1 AND 100) OR (discount_type = 'FIXED_RSD' AND discount_value > 0)),
+      CHECK (minimum_spend_rsd >= 0 AND (maximum_spend_rsd IS NULL OR maximum_spend_rsd >= minimum_spend_rsd)),
+      CHECK (ends_at IS NULL OR starts_at IS NULL OR ends_at > starts_at),
+      CHECK ((usage_limit IS NULL OR usage_limit > 0) AND (per_customer_usage_limit IS NULL OR per_customer_usage_limit > 0))
+    )`,
+    `CREATE INDEX IF NOT EXISTS coupons_active_dates_idx ON ${s}.coupons (active, starts_at, ends_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.coupon_redemptions (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), coupon_id uuid NOT NULL REFERENCES ${s}.coupons(id) ON DELETE RESTRICT,
+      audience ${s}.commerce_audience NOT NULL, order_id uuid REFERENCES ${s}.orders(id) ON DELETE RESTRICT, retail_order_id uuid REFERENCES ${s}.retail_orders(id) ON DELETE RESTRICT,
+      salon_id uuid REFERENCES ${s}.salons(id) ON DELETE RESTRICT, user_id uuid REFERENCES ${s}.users(id) ON DELETE RESTRICT, guest_email_normalized text,
+      code_snapshot text NOT NULL, discount_rsd integer NOT NULL DEFAULT 0, free_shipping boolean NOT NULL DEFAULT false, cancelled_at timestamptz, created_at timestamptz NOT NULL DEFAULT now(),
+      CHECK (num_nonnulls(order_id, retail_order_id) = 1), CHECK (num_nonnulls(salon_id, user_id, guest_email_normalized) = 1)
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS coupon_redemptions_order_unique ON ${s}.coupon_redemptions (order_id) WHERE order_id IS NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS coupon_redemptions_retail_order_unique ON ${s}.coupon_redemptions (retail_order_id) WHERE retail_order_id IS NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS coupon_redemptions_coupon_customer_idx ON ${s}.coupon_redemptions (coupon_id, user_id, salon_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.b2b_invoice_sequences (year integer PRIMARY KEY, last_number integer NOT NULL DEFAULT 0 CHECK (last_number >= 0), updated_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS ${s}.order_approval_requests (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), salon_id uuid NOT NULL REFERENCES ${s}.salons(id) ON DELETE RESTRICT, employee_id uuid NOT NULL REFERENCES ${s}.employees(id) ON DELETE RESTRICT,
+      submitted_by_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE RESTRICT, cart_id uuid NOT NULL REFERENCES ${s}.shopping_carts(id) ON DELETE RESTRICT, status ${s}.approval_request_status NOT NULL DEFAULT 'PENDING',
+      idempotency_key text NOT NULL, quote_version text NOT NULL, quote_snapshot jsonb NOT NULL, coupon_code text, referral_credit_intent_rsd integer NOT NULL DEFAULT 0,
+      reviewer_user_id uuid REFERENCES ${s}.users(id) ON DELETE RESTRICT, reviewer_reason text, decided_at timestamptz,
+      finalized_order_id uuid REFERENCES ${s}.orders(id) ON DELETE RESTRICT, expires_at timestamptz, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE (salon_id, idempotency_key)
+    )`,
+    `CREATE INDEX IF NOT EXISTS order_approval_requests_salon_status_created_idx ON ${s}.order_approval_requests (salon_id, status, created_at)`,
+    `CREATE INDEX IF NOT EXISTS order_approval_requests_employee_created_idx ON ${s}.order_approval_requests (employee_id, created_at)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS order_approval_requests_finalized_order_unique ON ${s}.order_approval_requests (finalized_order_id) WHERE finalized_order_id IS NOT NULL`,
+    `CREATE TABLE IF NOT EXISTS ${s}.order_approval_request_lines (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), request_id uuid NOT NULL REFERENCES ${s}.order_approval_requests(id) ON DELETE CASCADE,
+      product_id uuid REFERENCES ${s}.products(id) ON DELETE RESTRICT, bundle_id uuid REFERENCES ${s}.product_bundles(id) ON DELETE RESTRICT,
+      product_name text NOT NULL, product_sku_snapshot text, quantity integer NOT NULL, catalog_snapshot jsonb NOT NULL,
+      CHECK (num_nonnulls(product_id, bundle_id) = 1), CHECK (quantity > 0)
+    )`,
+    `CREATE INDEX IF NOT EXISTS order_approval_request_lines_request_idx ON ${s}.order_approval_request_lines (request_id)`,
+    `CREATE OR REPLACE FUNCTION ${s}.prevent_coupon_order_snapshot_update()
+      RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+        IF NEW.coupon_discount_rsd IS DISTINCT FROM OLD.coupon_discount_rsd THEN
+          RAISE EXCEPTION 'Order coupon allocation is immutable';
+        END IF;
+        RETURN NEW;
+      END $$`,
+    `DROP TRIGGER IF EXISTS order_items_coupon_snapshot_immutable ON ${s}.order_items`,
+    `CREATE TRIGGER order_items_coupon_snapshot_immutable BEFORE UPDATE ON ${s}.order_items
+      FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_coupon_order_snapshot_update()`,
+    `DROP TRIGGER IF EXISTS retail_order_items_coupon_snapshot_immutable ON ${s}.retail_order_items`,
+    `CREATE TRIGGER retail_order_items_coupon_snapshot_immutable BEFORE UPDATE ON ${s}.retail_order_items
+      FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_coupon_order_snapshot_update()`,
+    `CREATE OR REPLACE FUNCTION ${s}.prevent_b2b_invoice_snapshot_update()
+      RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+        IF OLD.invoice_issued_at IS NOT NULL AND (
+          NEW.invoice_number IS DISTINCT FROM OLD.invoice_number OR NEW.invoice_issued_at IS DISTINCT FROM OLD.invoice_issued_at
+          OR NEW.seller_snapshot IS DISTINCT FROM OLD.seller_snapshot OR NEW.coupon_code_snapshot IS DISTINCT FROM OLD.coupon_code_snapshot
+          OR NEW.coupon_discount_rsd IS DISTINCT FROM OLD.coupon_discount_rsd OR NEW.coupon_free_shipping IS DISTINCT FROM OLD.coupon_free_shipping
+        ) THEN RAISE EXCEPTION 'Finalized B2B invoice snapshot is immutable'; END IF;
+        RETURN NEW;
+      END $$`,
+    `DROP TRIGGER IF EXISTS orders_invoice_snapshot_immutable ON ${s}.orders`,
+    `CREATE TRIGGER orders_invoice_snapshot_immutable BEFORE UPDATE ON ${s}.orders
+      FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_b2b_invoice_snapshot_update()`,
   ];
 }
 

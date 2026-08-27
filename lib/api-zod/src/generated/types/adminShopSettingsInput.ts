@@ -5,6 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { SellerIdentity } from './sellerIdentity';
 
 export interface AdminShopSettingsInput {
   showLoyaltyPoints: boolean;
@@ -21,4 +22,5 @@ export interface AdminShopSettingsInput {
   freeShippingThreshold: number;
   /** @minimum 1 */
   version: number;
+  seller?: SellerIdentity;
 }

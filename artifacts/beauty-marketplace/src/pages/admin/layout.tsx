@@ -21,6 +21,7 @@ const navLinks = [
   { href: "/admin/dobavljaci", label: "Dobavljači", icon: FolderTree },
   { href: "/admin/proizvodi", label: "Proizvodi", icon: Package },
   { href: "/admin/bundle-proizvodi", label: "Paketi", icon: Layers },
+  { href: "/admin/kuponi", label: "Kuponi", icon: Tags },
   { href: "/admin/lista-cekanja", label: "Lista čekanja", icon: Bell },
   { href: "/admin/podesavanja/prodavnica", label: "Podešavanja prodavnice", icon: Settings2 },
   { href: "/admin/porudzbine", label: "Porudžbine", icon: Package },

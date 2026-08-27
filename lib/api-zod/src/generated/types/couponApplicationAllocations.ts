@@ -6,13 +6,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GetShopCheckoutPreviewParams = {
-/**
- * @minimum 0
- */
-desiredReferralCreditRsd?: number;
-/**
- * @maxLength 40
- */
-couponCode?: string;
-};
+export type CouponApplicationAllocations = {[key: string]: number};

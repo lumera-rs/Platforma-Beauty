@@ -5,6 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { CouponApplication } from './couponApplication';
 import type { RetailCart } from './retailCart';
 import type { RetailCheckoutPreviewPaymentMethodsItem } from './retailCheckoutPreviewPaymentMethodsItem';
 import type { ShippingQuote } from './shippingQuote';
@@ -24,5 +25,8 @@ export interface RetailCheckoutPreview {
   shippingRsd: number;
   /** @minimum 0 */
   payableTotalRsd: number;
+  coupon: CouponApplication | null;
+  /** @minimum 0 */
+  couponDiscountRsd: number;
   paymentMethods: RetailCheckoutPreviewPaymentMethodsItem[];
 }

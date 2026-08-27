@@ -8,6 +8,7 @@
 import type { OrderBilling } from './orderBilling';
 import type { OrderDelivery } from './orderDelivery';
 import type { OrderDeliveryMethod } from './orderDeliveryMethod';
+import type { OrderInvoice } from './orderInvoice';
 import type { OrderItem } from './orderItem';
 import type { OrderPaymentStatus } from './orderPaymentStatus';
 import type { OrderSalon } from './orderSalon';
@@ -30,6 +31,13 @@ export interface Order {
   subtotal: number;
   shippingCost: number;
   totalWeightGrams: number;
+  /** @nullable */
+  couponCode: string | null;
+  /** @minimum 0 */
+  couponDiscountRsd: number;
+  couponFreeShipping: boolean;
+  /** @nullable */
+  invoice: OrderInvoice;
   itemCount: number;
   createdAt: Date;
   updatedAt: Date;

@@ -15,4 +15,6 @@ export interface Employee {
   specialties: string[];
   serviceIds: string[];
   serviceNames: string[];
+  /** Owner-controlled B2B purchasing permission. */
+  canOrderIndependently: boolean;
 }

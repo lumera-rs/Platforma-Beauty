@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Loader2, Minus, Plus, ShoppingBag, Trash2, Check } from "lucide-react";
+import { Loader2, Minus, Plus, ShoppingBag, Trash2, Check, Tag } from "lucide-react";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
@@ -256,13 +256,38 @@ export function RetailCheckoutPage() {
   });
   const [desiredCredit, setDesiredCredit] = useState(0);
   const [idempotencyKey] = useState(() => `retail-checkout-${crypto.randomUUID()}`);
+  const [couponInput, setCouponInput] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<string | undefined>(undefined);
+  const [couponError, setCouponError] = useState<string | null>(null);
 
   const { data: cart } = useGetRetailCart();
-  const { data: preview, isLoading: previewLoading, isError: previewError } = usePreviewRetailCheckout({
+
+  useEffect(() => {
+    const savedCoupon = sessionStorage.getItem("lumera_retail_coupon");
+    if (savedCoupon) setAppliedCoupon(savedCoupon);
+  }, []);
+
+  const { data: preview, isLoading: previewLoading, isError: previewIsError, error: previewErrorObj } = usePreviewRetailCheckout({
     deliveryMethod: form.deliveryMethod,
     city: form.city,
-    desiredReferralCreditRsd: desiredCredit
-  }, { query: { enabled: !!cart && cart.items.length > 0, queryKey: ['retailCheckoutPreview', cart?.id] } });
+    desiredReferralCreditRsd: desiredCredit,
+    couponCode: appliedCoupon
+  } as any, {
+    query: {
+      enabled: !!cart && cart.items.length > 0,
+      queryKey: ['retailCheckoutPreview', cart?.id, form.deliveryMethod, form.city, desiredCredit, appliedCoupon],
+      retry: (count: number, err: any) => err?.response?.status >= 400 && err?.response?.status < 500 ? false : count < 3
+    }
+  });
+
+  useEffect(() => {
+    const errorData = (previewErrorObj as any)?.data ?? (previewErrorObj as any)?.response?.data;
+    if (previewIsError && errorData?.code?.startsWith("COUPON_")) {
+      setCouponError(errorData.error);
+      setAppliedCoupon(undefined);
+      sessionStorage.removeItem("lumera_retail_coupon");
+    }
+  }, [previewIsError, previewErrorObj]);
 
   const checkout = useCheckoutRetailCart();
   const qc = useQueryClient();
@@ -275,6 +300,21 @@ export function RetailCheckoutPage() {
 
   const update = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
 
+  const handleApplyCoupon = () => {
+    if (!couponInput.trim()) return;
+    setCouponError(null);
+    const code = couponInput.trim().toUpperCase();
+    setAppliedCoupon(code);
+    sessionStorage.setItem("lumera_retail_coupon", code);
+    setCouponInput("");
+  };
+
+  const handleRemoveCoupon = () => {
+    setCouponError(null);
+    setAppliedCoupon(undefined);
+    sessionStorage.removeItem("lumera_retail_coupon");
+  };
+
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     if (!preview) return;
@@ -286,11 +326,12 @@ export function RetailCheckoutPage() {
         expectedShippingCost: preview.shipping.shippingCost,
         expectedTotal: preview.total,
         desiredReferralCreditRsd: desiredCredit,
-
-      }
+        couponCode: appliedCoupon,
+      } as any
     }, {
       onSuccess: (order) => {
         sessionStorage.setItem("retail-order", JSON.stringify(order));
+        sessionStorage.removeItem("lumera_retail_coupon");
         qc.setQueryData(getGetRetailCartQueryKey(), null);
         notifyRetailCartChanged(0);
         setLocation(`/korpa/uspeh?order=${encodeURIComponent(order.orderNumber)}`);
@@ -379,18 +420,89 @@ export function RetailCheckoutPage() {
 
             {previewLoading ? (
               <div className="py-8 flex justify-center"><Loader2 className="animate-spin h-6 w-6 text-primary" /></div>
-            ) : previewError || !preview ? (
+            ) : couponError && (previewIsError || !preview) ? (
+              <div className="space-y-2 rounded-lg border border-destructive/20 bg-destructive/5 p-4">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Unesite kupon kod"
+                    value={couponInput}
+                    onChange={(event) => setCouponInput(event.target.value)}
+                    className="h-9 bg-background"
+                  />
+                  <Button type="button" variant="secondary" onClick={handleApplyCoupon} disabled={!couponInput.trim()} className="h-9">
+                    Primeni
+                  </Button>
+                </div>
+                <p className="text-xs text-destructive" role="alert">{couponError}</p>
+              </div>
+            ) : previewIsError || !preview ? (
               <div className="p-4 border border-destructive/20 bg-destructive/10 rounded-lg text-sm text-destructive">Nije moguće izračunati troškove isporuke.</div>
             ) : (
               <div className="space-y-3 text-sm">
-                <div className="flex justify-between"><span>Međuzbir robe</span><span>{money(preview.cart.subtotal)}</span></div>
+                <div className="py-2 border-y border-border/50 my-2">
+                  {appliedCoupon ? (
+                    <div className="flex items-center justify-between p-3 bg-emerald-50/50 dark:bg-emerald-950/10 border border-emerald-200 dark:border-emerald-800/30 rounded-lg">
+                      <div className="flex flex-col">
+                        <span className="font-medium flex items-center gap-2 text-emerald-800 dark:text-emerald-400">
+                          <Tag className="w-4 h-4" /> {appliedCoupon}
+                        </span>
+                        {(preview as Record<string, any>).coupon?.freeShipping && (
+                          <span className="text-xs text-emerald-600 dark:text-emerald-500 mt-0.5">Besplatna dostava</span>
+                        )}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleRemoveCoupon}
+                        disabled={previewLoading}
+                        className="text-destructive hover:bg-destructive/10 h-8"
+                      >
+                        Ukloni
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="Unesite kupon kod"
+                          value={couponInput}
+                          onChange={(e) => setCouponInput(e.target.value)}
+                          disabled={previewLoading}
+                          className="h-9"
+                        />
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={handleApplyCoupon}
+                          disabled={previewLoading || !couponInput.trim()}
+                          className="h-9"
+                        >
+                          Primeni
+                        </Button>
+                      </div>
+                      {couponError && (
+                        <p className="text-xs text-destructive animate-in fade-in">{couponError}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-between text-muted-foreground"><span>Međuzbir robe</span><span>{money((preview as Record<string, any>).merchandiseSubtotalRsd ?? preview.cart.subtotal)}</span></div>
+
+                {(preview as Record<string, any>).couponDiscountRsd != null && (preview as Record<string, any>).couponDiscountRsd > 0 && (
+                  <div className="flex justify-between text-emerald-600 font-medium">
+                     <span>Popust (kupon)</span>
+                     <span>-{money((preview as Record<string, any>).couponDiscountRsd)}</span>
+                  </div>
+                )}
 
                 {preview.referralCreditAvailableRsd != null && preview.referralCreditAvailableRsd > 0 && (
                   <div className="py-3 border-y border-border/50 my-2">
                     <div className="flex justify-between mb-2 text-primary font-medium"><span>Preporuke (Dostupno: {money(preview.referralCreditAvailableRsd)})</span></div>
                     <div className="flex gap-2">
-                      <Input type="number" min={0} max={Math.min(preview.referralCreditAvailableRsd, preview.merchandiseSubtotalRsd ?? preview.cart.subtotal)} value={desiredCredit} onChange={(e) => setDesiredCredit(Math.min(Number(e.target.value) || 0, Math.min(preview.referralCreditAvailableRsd ?? 0, preview.merchandiseSubtotalRsd ?? preview.cart.subtotal)))} className="h-9" />
-                      <Button type="button" variant="secondary" className="h-9 shrink-0" onClick={() => setDesiredCredit(Math.min(preview.referralCreditAvailableRsd ?? 0, preview.merchandiseSubtotalRsd ?? preview.cart.subtotal))}>Maks</Button>
+                      <Input type="number" min={0} max={Math.min(preview.referralCreditAvailableRsd, (preview as any).merchandiseSubtotalRsd ?? preview.cart.subtotal)} value={desiredCredit} onChange={(e) => setDesiredCredit(Math.min(Number(e.target.value) || 0, Math.min(preview.referralCreditAvailableRsd ?? 0, (preview as any).merchandiseSubtotalRsd ?? preview.cart.subtotal)))} className="h-9" />
+                      <Button type="button" variant="secondary" className="h-9 shrink-0" onClick={() => setDesiredCredit(Math.min(preview.referralCreditAvailableRsd ?? 0, (preview as any).merchandiseSubtotalRsd ?? preview.cart.subtotal))}>Maks</Button>
                     </div>
                     {preview.referralCreditAppliedRsd != null && preview.referralCreditAppliedRsd > 0 && (
                       <div className="flex justify-between text-emerald-600 mt-3 font-medium"><span>Primenjen kredit</span><span>-{money(preview.referralCreditAppliedRsd)}</span></div>

@@ -6,6 +6,7 @@ import {
   Box,
   BriefcaseBusiness,
   Calendar,
+  ClipboardCheck,
   Clock3,
   DollarSign,
   HeartHandshake,
@@ -57,6 +58,7 @@ export const salonOwnerNavSections: SalonOwnerNavSection[] = [
     label: "Prodaja",
     items: [
       { href: "/vlasnik/porudzbine", label: "Porudžbine", guideId: "vl-porudzbine", icon: Package },
+      { href: "/vlasnik/porudzbine-na-cekanju", label: "Odobrenja", guideId: "vl-odobrenja", icon: ClipboardCheck },
       { href: "/vlasnik/shop", label: "B2B Oprema", guideId: "vl-shop", icon: DollarSign },
     ],
   },

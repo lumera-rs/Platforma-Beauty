@@ -373,6 +373,8 @@ export const employeesTable = pgTable("employees", {
   avatarUrl: text("avatar_url").notNull(),
   email: text("email"),
   specialties: jsonb("specialties").$type<string[]>().notNull().default([]),
+  /** Owner-controlled B2B purchasing capability; employees cannot change it. */
+  canOrderIndependently: boolean("can_order_independently").notNull().default(false),
   active: boolean("active").notNull().default(true),
 }, (table) => [
   // Leading FK coverage for salonId (also filters by active).

@@ -6,13 +6,13 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GetShopCheckoutPreviewParams = {
 /**
- * @minimum 0
+ * @nullable
  */
-desiredReferralCreditRsd?: number;
-/**
- * @maxLength 40
- */
-couponCode?: string;
-};
+export type CouponInputAudience = typeof CouponInputAudience[keyof typeof CouponInputAudience] | null;
+
+
+export const CouponInputAudience = {
+  B2B: 'B2B',
+  B2C: 'B2C',
+} as const;

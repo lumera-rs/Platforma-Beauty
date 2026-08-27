@@ -31,4 +31,9 @@ export interface ShopCheckoutInput {
   /** @minimum 0 */
   expectedTotal?: number;
   termsAccepted: boolean;
+  /**
+     * @maxLength 40
+     * @nullable
+     */
+  couponCode?: string | null;
 }

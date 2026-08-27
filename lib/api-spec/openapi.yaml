@@ -1876,6 +1876,60 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ShopCheckoutProfile" }
+  /shop/approval-requests:
+    get:
+      operationId: listShopApprovalRequests
+      tags: [shop]
+      summary: List approval requests for the active salon owner
+      responses:
+        "200": { description: Requests, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ApprovalRequest" } } } } }
+    post:
+      operationId: createShopApprovalRequest
+      tags: [shop]
+      summary: Submit the active employee salon cart for approval without finalizing it
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ApprovalRequestInput" } } }
+      responses:
+        "201": { description: Submitted request, content: { application/json: { schema: { $ref: "#/components/schemas/ApprovalRequest" } } } }
+        "409": { description: Employee may order directly }
+  /shop/approval-requests/mine:
+    get:
+      operationId: listMyShopApprovalRequests
+      tags: [shop]
+      summary: List the authenticated employee's approval requests
+      responses:
+        "200": { description: Requests, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ApprovalRequest" } } } } }
+  /shop/approval-requests/{requestId}:
+    get:
+      operationId: getShopApprovalRequest
+      tags: [shop]
+      summary: Get an active-salon approval request
+      parameters: [{ name: requestId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Request detail, content: { application/json: { schema: { $ref: "#/components/schemas/ApprovalRequest" } } } }
+        "404": { description: Request not found }
+  /shop/approval-requests/{requestId}/reject:
+    post:
+      operationId: rejectShopApprovalRequest
+      tags: [shop]
+      summary: Reject a pending active-salon request
+      parameters: [{ name: requestId, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content: { application/json: { schema: { $ref: "#/components/schemas/ApprovalRejectInput" } } }
+      responses:
+        "200": { description: Rejected request, content: { application/json: { schema: { $ref: "#/components/schemas/ApprovalRequest" } } } }
+        "409": { description: Request is not pending }
+  /shop/approval-requests/{requestId}/approve:
+    post:
+      operationId: approveShopApprovalRequest
+      tags: [shop]
+      summary: Atomically approve and finalize a pending employee order request
+      parameters: [{ name: requestId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Previously finalized order, content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } } }
+        "201": { description: Newly finalized order, content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } } }
+        "409": { description: Request or checkout quote is no longer current }
   /shop/checkout-preview:
     get:
       operationId: getShopCheckoutPreview
@@ -1885,6 +1939,9 @@ paths:
         - name: desiredReferralCreditRsd
           in: query
           schema: { type: integer, minimum: 0 }
+        - name: couponCode
+          in: query
+          schema: { type: string, maxLength: 40 }
       responses:
         "200":
           description: Checkout preview
@@ -1995,6 +2052,19 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Order" }
+  /shop/orders/{orderId}/invoice.pdf:
+    get:
+      operationId: downloadShopOrderInvoice
+      tags: [shop]
+      summary: Download the immutable B2B invoice PDF for an owned order
+      parameters: [{ name: orderId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: Invoice PDF
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "404": { description: Order or invoice not found }
   /shop/shipping-quote:
     get:
       operationId: getShippingQuote
@@ -2095,6 +2165,19 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AdminOrder" }
+  /admin/orders/{orderId}/invoice.pdf:
+    get:
+      operationId: adminDownloadOrderInvoice
+      tags: [admin]
+      summary: Download the immutable B2B invoice PDF for administration
+      parameters: [{ name: orderId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: Invoice PDF
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "404": { description: Order or invoice not found }
   /admin/orders/bulk:
     patch:
       operationId: adminBulkUpdateOrders
@@ -4095,6 +4178,43 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminBrand"
+  /admin/coupons:
+    get:
+      operationId: adminListCoupons
+      tags: [admin]
+      summary: List all commerce coupons
+      responses:
+        "200": { description: Coupons, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Coupon" } } } } }
+    post:
+      operationId: adminCreateCoupon
+      tags: [admin]
+      summary: Create a coupon
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CouponInput" } } }
+      responses:
+        "201": { description: Created coupon, content: { application/json: { schema: { $ref: "#/components/schemas/Coupon" } } } }
+        "409": { description: Coupon code already exists }
+  /admin/coupons/{couponId}:
+    put:
+      operationId: adminUpdateCoupon
+      tags: [admin]
+      summary: Replace coupon rules
+      parameters: [{ name: couponId, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CouponInput" } } }
+      responses:
+        "200": { description: Updated coupon, content: { application/json: { schema: { $ref: "#/components/schemas/Coupon" } } } }
+        "404": { description: Coupon not found }
+    delete:
+      operationId: adminDeactivateCoupon
+      tags: [admin]
+      summary: Deactivate a coupon without deleting its audit history
+      parameters: [{ name: couponId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "204": { description: Coupon deactivated }
+        "404": { description: Coupon not found }
   /admin/shop-settings:
     get:
       operationId: adminGetShopSettings
@@ -5456,6 +5576,7 @@ paths:
         - { name: deliveryMethod, in: query, schema: { type: string, enum: [courier, personal_belgrade] } }
         - { name: city, in: query, schema: { type: string } }
         - { name: desiredReferralCreditRsd, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: couponCode, in: query, schema: { type: string, maxLength: 40 } }
       responses:
         "200":
           description: Checkout pricing preview
@@ -6706,7 +6827,8 @@ components:
         serviceNames:
           type: array
           items: { type: string }
-      required: [id, name, role, bio, avatarUrl, specialties, serviceIds, serviceNames]
+        canOrderIndependently: { type: boolean, description: Owner-controlled B2B purchasing permission. }
+      required: [id, name, role, bio, avatarUrl, specialties, serviceIds, serviceNames, canOrderIndependently]
     EmployeeDeactivationPreview:
       type: object
       properties:
@@ -7487,7 +7609,8 @@ components:
         freeShippingThreshold: { type: integer, minimum: 0 }
         version: { type: integer, minimum: 1 }
         updatedAt: { type: string, format: date-time }
-      required: [showLoyaltyPoints, pointsPer100Rsd, lowStockThreshold, defaultDeliveryBusinessDays, freeShippingThreshold, version, updatedAt]
+        seller: { $ref: "#/components/schemas/SellerIdentity" }
+      required: [showLoyaltyPoints, pointsPer100Rsd, lowStockThreshold, defaultDeliveryBusinessDays, freeShippingThreshold, version, updatedAt, seller]
     AdminShopSettingsInput:
       type: object
       additionalProperties: false
@@ -7498,7 +7621,115 @@ components:
         defaultDeliveryBusinessDays: { type: integer, minimum: 1, maximum: 365 }
         freeShippingThreshold: { type: integer, minimum: 0 }
         version: { type: integer, minimum: 1 }
+        seller: { $ref: "#/components/schemas/SellerIdentity" }
       required: [showLoyaltyPoints, pointsPer100Rsd, lowStockThreshold, defaultDeliveryBusinessDays, freeShippingThreshold, version]
+    SellerIdentity:
+      type: object
+      additionalProperties: false
+      properties:
+        companyName: { type: string, minLength: 1, maxLength: 300 }
+        taxId: { type: string, minLength: 1, maxLength: 300 }
+        registrationNumber: { type: string, minLength: 1, maxLength: 300 }
+        address: { type: string, minLength: 1, maxLength: 300 }
+        city: { type: string, minLength: 1, maxLength: 300 }
+        postalCode: { type: string, minLength: 1, maxLength: 300 }
+        bankAccount: { type: string, minLength: 1, maxLength: 300 }
+        contactEmail: { type: string, minLength: 1, maxLength: 300 }
+        contactPhone: { type: string, minLength: 1, maxLength: 300 }
+      required: [companyName, taxId, registrationNumber, address, city, postalCode, bankAccount, contactEmail, contactPhone]
+    CouponInput:
+      type: object
+      additionalProperties: false
+      properties:
+        code: { type: string, pattern: '^[A-Za-z0-9_-]{2,40}$' }
+        active: { type: boolean }
+        audience: { type: ["string", "null"], enum: [B2B, B2C, null] }
+        discountType: { type: string, enum: [PERCENTAGE, FIXED_RSD] }
+        discountValue: { type: integer, minimum: 1 }
+        startsAt: { type: ["string", "null"], format: date-time }
+        endsAt: { type: ["string", "null"], format: date-time }
+        minimumSpendRsd: { type: integer, minimum: 0 }
+        maximumSpendRsd: { type: ["integer", "null"], minimum: 0 }
+        freeShipping: { type: boolean }
+        includeProductIds: { type: array, items: { type: string } }
+        excludeProductIds: { type: array, items: { type: string } }
+        includeCategoryIds: { type: array, items: { type: string } }
+        excludeCategoryIds: { type: array, items: { type: string } }
+        includeBundleIds: { type: array, items: { type: string } }
+        excludeBundleIds: { type: array, items: { type: string } }
+        usageLimit: { type: ["integer", "null"], minimum: 1 }
+        perCustomerUsageLimit: { type: ["integer", "null"], minimum: 1 }
+      required: [code, discountType, discountValue]
+    Coupon:
+      allOf:
+        - $ref: "#/components/schemas/CouponInput"
+        - type: object
+          properties:
+            id: { type: string }
+            usageCount: { type: integer, minimum: 0 }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+          required: [id, active, audience, startsAt, endsAt, minimumSpendRsd, maximumSpendRsd, freeShipping, includeProductIds, excludeProductIds, includeCategoryIds, excludeCategoryIds, includeBundleIds, excludeBundleIds, usageLimit, perCustomerUsageLimit, usageCount, createdAt, updatedAt]
+    CouponApplication:
+      type: object
+      properties:
+        code: { type: string }
+        discountRsd: { type: integer, minimum: 0 }
+        freeShipping: { type: boolean }
+        allocations:
+          type: object
+          additionalProperties: { type: integer, minimum: 0 }
+      required: [code, discountRsd, freeShipping, allocations]
+    ApprovalRequestInput:
+      type: object
+      additionalProperties: false
+      properties:
+        idempotencyKey: { type: string, minLength: 1, maxLength: 200 }
+        couponCode: { type: string, maxLength: 40 }
+        desiredReferralCreditRsd: { type: integer, minimum: 0 }
+      required: [idempotencyKey]
+    ApprovalRejectInput:
+      type: object
+      additionalProperties: false
+      properties:
+        reason: { type: string, maxLength: 1000 }
+    ApprovalRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [PENDING, APPROVED, REJECTED, EXPIRED] }
+        employeeId: { type: string }
+        employeeName: { type: string }
+        quote: { type: integer, minimum: 0 }
+        quoteVersion: { type: string }
+        couponCode: { type: ["string", "null"], maxLength: 40 }
+        referralCreditIntentRsd: { type: integer, minimum: 0 }
+        reviewerReason: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+        decidedAt: { type: [string, "null"], format: date-time }
+        finalizedOrderId: { type: [string, "null"] }
+        lines:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              productId: { type: ["string", "null"] }
+              bundleId: { type: ["string", "null"] }
+              productName: { type: string }
+              sku: { type: ["string", "null"] }
+              quantity: { type: integer, minimum: 1 }
+              catalog:
+                type: object
+                additionalProperties: false
+                properties:
+                  price: { type: integer, minimum: 0 }
+                  listPrice: { type: integer, minimum: 0 }
+                  variantValue: { type: ["string", "null"] }
+                required: [price, listPrice, variantValue]
+            required: [productId, bundleId, productName, sku, quantity, catalog]
+      required: [id, status, employeeId, employeeName, quote, quoteVersion, couponCode, referralCreditIntentRsd, reviewerReason, createdAt, decidedAt, finalizedOrderId, lines]
     SavedCartItem:
       type: object
       properties:
@@ -7540,6 +7771,7 @@ components:
         expectedShippingCost: { type: integer, minimum: 0, description: "Optional delivery amount from the displayed checkout quote; checkout rejects a changed quote." }
         expectedTotal: { type: integer, minimum: 0, description: "Optional final amount from the displayed checkout quote; checkout rejects a changed quote." }
         desiredReferralCreditRsd: { type: integer, minimum: 0, default: 0 }
+        couponCode: { type: ["string", "null"], maxLength: 40 }
       required: [idempotencyKey, firstName, lastName, email, phone, street, city, postalCode, paymentMethod]
     RetailCheckoutPreview:
       type: object
@@ -7552,10 +7784,12 @@ components:
         merchandiseSubtotalRsd: { type: integer, minimum: 0 }
         shippingRsd: { type: integer, minimum: 0 }
         payableTotalRsd: { type: integer, minimum: 0 }
+        coupon: { oneOf: [{ $ref: "#/components/schemas/CouponApplication" }, { type: "null" }] }
+        couponDiscountRsd: { type: integer, minimum: 0 }
         paymentMethods:
           type: array
           items: { type: string, enum: [BANK_TRANSFER, CASH_ON_DELIVERY] }
-      required: [cart, shipping, total, paymentMethods, referralCreditAvailableRsd, referralCreditAppliedRsd, merchandiseSubtotalRsd, shippingRsd, payableTotalRsd]
+      required: [cart, shipping, total, paymentMethods, referralCreditAvailableRsd, referralCreditAppliedRsd, merchandiseSubtotalRsd, shippingRsd, payableTotalRsd, coupon, couponDiscountRsd]
     RetailOrder:
       type: object
       properties:
@@ -7568,6 +7802,9 @@ components:
         subtotal: { type: integer }
         shippingCost: { type: integer }
         total: { type: integer }
+        couponCode: { type: ["string", "null"] }
+        couponDiscountRsd: { type: integer, minimum: 0 }
+        couponFreeShipping: { type: boolean }
         createdAt: { type: string, format: date-time }
         items:
           type: array
@@ -7936,10 +8173,12 @@ components:
         merchandiseSubtotalRsd: { type: integer, minimum: 0 }
         shippingRsd: { type: integer, minimum: 0 }
         payableTotalRsd: { type: integer, minimum: 0 }
+        coupon: { oneOf: [{ $ref: "#/components/schemas/CouponApplication" }, { type: "null" }] }
+        couponDiscountRsd: { type: integer, minimum: 0 }
         paymentMethods:
           type: array
           items: { type: string, enum: [CARD, BANK_TRANSFER, CASH_ON_DELIVERY] }
-      required: [cart, shipping, total, paymentMethods, referralCreditAvailableRsd, referralCreditAppliedRsd, merchandiseSubtotalRsd, shippingRsd, payableTotalRsd]
+      required: [cart, shipping, total, paymentMethods, referralCreditAvailableRsd, referralCreditAppliedRsd, merchandiseSubtotalRsd, shippingRsd, payableTotalRsd, coupon, couponDiscountRsd]
     ShopCheckoutInput:
       type: object
       properties:
@@ -7957,6 +8196,7 @@ components:
         expectedShippingCost: { type: integer, minimum: 0 }
         expectedTotal: { type: integer, minimum: 0 }
         termsAccepted: { type: boolean }
+        couponCode: { type: ["string", "null"], maxLength: 40 }
       required: [useSalonAddress, paymentMethod, deliveryMethod, termsAccepted]
     Order:
       type: object
@@ -7973,6 +8213,15 @@ components:
         subtotal: { type: number, multipleOf: 1 }
         shippingCost: { type: number, multipleOf: 1 }
         totalWeightGrams: { type: number, multipleOf: 1 }
+        couponCode: { type: ["string", "null"] }
+        couponDiscountRsd: { type: integer, minimum: 0 }
+        couponFreeShipping: { type: boolean }
+        invoice:
+          type: ["object", "null"]
+          properties:
+            number: { type: string }
+            issuedAt: { type: string, format: date-time }
+          required: [number, issuedAt]
         itemCount: { type: number }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -8009,7 +8258,7 @@ components:
             postalCode: { type: string }
           required: [companyName, pib, registrationNumber, address, city, postalCode]
         items: { type: array, items: { $ref: "#/components/schemas/OrderItem" } }
-      required: [id, status, paymentStatus, deliveryMethod, courierServiceId, courierService, trackingNumber, trackingUrl, total, subtotal, shippingCost, totalWeightGrams, itemCount, createdAt, updatedAt, salon, delivery, billing, items]
+      required: [id, status, paymentStatus, deliveryMethod, courierServiceId, courierService, trackingNumber, trackingUrl, total, subtotal, shippingCost, totalWeightGrams, couponCode, couponDiscountRsd, couponFreeShipping, invoice, itemCount, createdAt, updatedAt, salon, delivery, billing, items]
     SalonNotification:
       type: object
       properties:
@@ -8039,6 +8288,7 @@ components:
         productSku: { type: ["string", "null"] }
         quantity: { type: number, multipleOf: 1 }
         price: { type: number, multipleOf: 1 }
+        couponDiscountRsd: { type: integer, minimum: 0 }
       required: [productId, bundleId, productName, quantity, price]
     OrderInput:
       type: object

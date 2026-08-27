@@ -1,5 +1,6 @@
 export * from "./core";
 export * from "./commerce";
+export * from "./commerce-coupon-approvals";
 export * from "./education";
 export * from "./media";
 export * from "./business-growth";

@@ -25,6 +25,7 @@ import
 }
  from "node:stream"
 ;
+import PDFDocument from "pdfkit";
 
 import 
 {
@@ -47,6 +48,7 @@ import {
   ReferralChannelContextError,
   projectSalonSubscriptionDue,
 } from "../lib/referral-service";
+import { quoteCoupon, type CouponLine, type CouponPolicy } from "../lib/coupon-engine";
 
 import 
 {
@@ -97,6 +99,11 @@ import
   lessonProgressTable,
   loyaltyTiersTable,
    loyaltyPointLedgerTable,
+   b2bInvoiceSequencesTable,
+   couponsTable,
+   couponRedemptionsTable,
+   orderApprovalRequestsTable,
+   orderApprovalRequestLinesTable,
   mediaAssetsTable,
   oauthIdentitiesTable,
   oauthLoginStatesTable,
@@ -2958,6 +2965,45 @@ export async function requireSalonEmployee(req: Request, res: Response): Promise
     return null;
   }
   return { user, employee, salon };
+}
+
+type ShopAccess = {
+  user: typeof usersTable.$inferSelect;
+  salon: typeof salonsTable.$inferSelect;
+  employee: typeof employeesTable.$inferSelect | null;
+};
+
+async function requireShopAccess(req: Request, res: Response): Promise<ShopAccess | null> {
+  const user = await current(req, res);
+  if (!user) return null;
+  if (["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(user.role)) {
+    const salon = await ownedSalon(user.id);
+    if (!salon) {
+      res.status(403).json({ error: "Nalog nije povezan sa salonom." });
+      return null;
+    }
+    return { user, salon, employee: null };
+  }
+  if (user.role !== "SALON_EMPLOYEE") {
+    res.status(403).json({ error: "Ova funkcija je dostupna salonima i njihovim zaposlenima." });
+    return null;
+  }
+  if (user.mustChangePassword) {
+    res.status(428).json({ error: "Promenite privremenu lozinku pre pristupa portalu.", code: "PASSWORD_CHANGE_REQUIRED" });
+    return null;
+  }
+  const [employee] = await db.select().from(employeesTable)
+    .where(and(eq(employeesTable.userId, user.id), eq(employeesTable.active, true))).limit(1);
+  if (!employee) {
+    res.status(403).json({ error: "Nalog zaposlenog nije povezan sa aktivnim profilom." });
+    return null;
+  }
+  const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, employee.salonId)).limit(1);
+  if (!salon) {
+    res.status(403).json({ error: "Profil zaposlenog nije povezan sa salonom." });
+    return null;
+  }
+  return { user, salon, employee };
 }
 
 function card(
@@ -7815,7 +7861,8 @@ router.get("/salon/employees", async (req, res): Promise<void> => {
     const serviceIds = serviceIdsByEmployeeId.get(item.id) ?? [];
     const account = item.userId ? accountByEmployeeId.get(item.id) : null;
     return {
-      id: item.id, name: item.name, role: item.role, bio: item.bio, avatarUrl: item.avatarUrl, email: item.email,
+       id: item.id, name: item.name, role: item.role, bio: item.bio, avatarUrl: item.avatarUrl, email: item.email,
+       canOrderIndependently: item.canOrderIndependently,
       specialties: item.specialties, serviceIds, serviceNames: serviceIds.flatMap((id) => {
         const name = serviceNameById.get(id);
         return name ? [name] : [];
@@ -7883,7 +7930,7 @@ router.post("/salon/employees/:employeeId/deactivate", async (req, res): Promise
 
 router.post("/salon/employees", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
-  const body = req.body as { name?: unknown; role?: unknown; bio?: unknown; avatarUrl?: unknown; email?: unknown; specialties?: unknown; serviceIds?: unknown };
+  const body = req.body as { name?: unknown; role?: unknown; bio?: unknown; avatarUrl?: unknown; email?: unknown; specialties?: unknown; serviceIds?: unknown; canOrderIndependently?: unknown };
   if (typeof body.name !== "string" || !body.name.trim() || typeof body.role !== "string" || !body.role.trim()) { res.status(400).json({ error: "Ime i uloga zaposlenog su obavezni." }); return; }
   const employeeName = body.name.trim();
   const employeeRole = body.role.trim();
@@ -7902,6 +7949,7 @@ router.post("/salon/employees", async (req, res): Promise<void> => {
         avatarUrl,
         email: typeof body.email === "string" && body.email.trim() ? body.email.trim().toLowerCase() : null,
         specialties: Array.isArray(body.specialties) ? body.specialties.filter((item): item is string => typeof item === "string") : [],
+        canOrderIndependently: body.canOrderIndependently === true,
       }).returning();
       if (avatarUrl && !await claimMediaReference({
         userId: access.user.id, url: avatarUrl, scope: "employee-avatar", resourceId: rows[0]!.id,
@@ -7923,7 +7971,7 @@ router.post("/salon/employees", async (req, res): Promise<void> => {
 
 router.patch("/salon/employees/:employeeId", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
-  const body = req.body as { name?: unknown; role?: unknown; bio?: unknown; avatarUrl?: unknown; email?: unknown; specialties?: unknown; serviceIds?: unknown; active?: unknown };
+  const body = req.body as { name?: unknown; role?: unknown; bio?: unknown; avatarUrl?: unknown; email?: unknown; specialties?: unknown; serviceIds?: unknown; active?: unknown; canOrderIndependently?: unknown };
   const employee = await employeeInSalon(req.params.employeeId, access.salon.id);
   if (!employee) { res.status(404).json({ error: "Zaposleni nije pronađen." }); return; }
   const nextAvatarUrl = typeof body.avatarUrl === "string" ? body.avatarUrl.trim() : employee.avatarUrl;
@@ -7978,6 +8026,7 @@ router.patch("/salon/employees/:employeeId", async (req, res): Promise<void> => 
         avatarUrl: nextAvatarUrl,
         email: typeof body.email === "string" && body.email.trim() ? body.email.trim().toLowerCase() : employee.email,
         specialties: Array.isArray(body.specialties) ? body.specialties.filter((item): item is string => typeof item === "string") : employee.specialties,
+        canOrderIndependently: typeof body.canOrderIndependently === "boolean" ? body.canOrderIndependently : employee.canOrderIndependently,
         active: nextActive,
       }).where(eq(employeesTable.id, employee.id));
       if (nextAvatarUrl !== employee.avatarUrl || !nextActive) {
@@ -9712,6 +9761,9 @@ function retailOrderDto(
     subtotal: order.subtotal,
     shippingCost: order.shippingCost,
     total: order.total,
+    couponCode: order.couponCodeSnapshot ?? null,
+    couponDiscountRsd: order.couponDiscountRsd,
+    couponFreeShipping: order.couponFreeShipping,
     trackingNumber: order.trackingNumber ?? null,
     estimatedDeliveryDate: order.estimatedDeliveryDate ?? null,
     createdAt: order.createdAt.toISOString(),
@@ -9722,6 +9774,7 @@ function retailOrderDto(
       if (item.bundleId) return {
         id: item.id, kind: "bundle" as const, bundleId: item.bundleId, name: item.productName, imageUrl: item.productImageUrl || null,
         sku: null, variantLabel: item.variantLabel ?? null, quantity: item.quantity, unitPrice: item.unitPrice,
+        couponDiscountRsd: item.couponDiscountRsd,
       };
       if (!catalogReference) throw new Error("Retail order item refers to an unavailable product.");
       if (!item.productId || !catalogReference) throw new Error("Retail order item refers to an unavailable product.");
@@ -9729,6 +9782,7 @@ function retailOrderDto(
         id: item.id, kind: "product" as const, productId: item.productId, name: item.productName, imageUrl: item.productImageUrl,
         sku: catalogReference,
         variantLabel: item.variantLabel ?? null, quantity: item.quantity, unitPrice: item.unitPrice,
+        couponDiscountRsd: item.couponDiscountRsd,
       };
     }),
   };
@@ -10101,20 +10155,31 @@ router.get("/retail/checkout-preview", async (req, res): Promise<void> => {
     return;
   }
   const view = quote.view;
+  const user = await getCurrentUser(req);
+  const couponCode = typeof req.query.couponCode === "string" ? req.query.couponCode : null;
+  const appliedCoupon = await quoteCouponFromDb(db, {
+    code: couponCode, audience: "B2C",
+    lines: await couponLinesForView(db, view.items),
+    customer: user?.role === "CUSTOMER" ? { userId: user.id } : {},
+  });
+  if (appliedCoupon && "reason" in appliedCoupon) { couponErrorResponse(res, appliedCoupon.reason); return; }
+  const couponDiscountRsd = appliedCoupon?.quote.discountRsd ?? 0;
   const config = await getShippingConfig();
   const deliveryMethod = req.query.deliveryMethod === "personal_belgrade" ? "personal_belgrade" : "courier";
   const city = typeof req.query.city === "string" ? req.query.city : "";
   if (deliveryMethod === "personal_belgrade" && (!config.personalDeliveryEnabled || !/beograd/i.test(city))) {
     res.status(400).json({ error: "Lična dostava je dostupna samo u Beogradu." }); return;
   }
-  const shipping = calculateShipping(config, view.totalWeightGrams, view.subtotal, deliveryMethod, city);
+  const calculatedShipping = calculateShipping(config, view.totalWeightGrams, view.subtotal, deliveryMethod, city);
+  const shipping = appliedCoupon?.quote.freeShipping
+    ? { ...calculatedShipping, shippingCost: 0, isFreeShipping: true }
+    : calculatedShipping;
   const desired = typeof req.query.desiredReferralCreditRsd === "string" && /^\d+$/.test(req.query.desiredReferralCreditRsd)
     ? Number(req.query.desiredReferralCreditRsd) : 0;
-  const user = await getCurrentUser(req);
   const available = user?.role === "CUSTOMER"
     ? await db.transaction((tx) => referralCreditBalanceInTx(tx, { ownerUserId: user.id, walletKind: "B2C" }))
     : 0;
-  const applied = Math.min(desired || available, available, view.subtotal);
+  const applied = Math.min(desired || available, available, Math.max(0, view.subtotal - couponDiscountRsd));
   const commerce = await cartCommerceFields("B2C", view.items.map((line) => ({
     productId: line.kind === "product" ? line.productId : undefined, bundleId: line.kind === "bundle" ? line.bundleId : undefined,
     quantity: line.quantity, lineTotal: line.lineTotal, availableStock: 0,
@@ -10123,14 +10188,20 @@ router.get("/retail/checkout-preview", async (req, res): Promise<void> => {
   res.json({
     cart: { ...view, ...commerceDto, items: view.items.map((line) => ({
       ...line, lowStock: lineLowStock.get(line.kind === "product" ? line.productId : `bundle:${line.bundleId}`) ?? false,
-    })) }, shipping, total: view.subtotal + shipping.shippingCost - applied, paymentMethods: checkoutPaymentMethods,
+    })) }, shipping, total: view.subtotal - couponDiscountRsd + shipping.shippingCost - applied, paymentMethods: checkoutPaymentMethods,
     referralCreditAvailableRsd: available, referralCreditAppliedRsd: applied,
     merchandiseSubtotalRsd: view.subtotal, shippingRsd: shipping.shippingCost,
-    payableTotalRsd: view.subtotal + shipping.shippingCost - applied,
+    payableTotalRsd: view.subtotal - couponDiscountRsd + shipping.shippingCost - applied,
+    coupon: appliedCoupon ? {
+      code: appliedCoupon.quote.code, discountRsd: couponDiscountRsd,
+      freeShipping: appliedCoupon.quote.freeShipping, allocations: appliedCoupon.quote.allocations,
+    } : null,
+    couponDiscountRsd,
   });
 });
 
 router.post("/retail/checkout", async (req, res): Promise<void> => {
+  const couponCode = typeof req.body?.couponCode === "string" ? req.body.couponCode.trim().toUpperCase() || null : null;
   const parsed = retailCheckoutInput(req.body);
   if (!parsed) { res.status(400).json({ error: "Unesite kompletne i ispravne podatke za dostavu." }); return; }
   const cart = await retailCartForRequest(req, res);
@@ -10149,6 +10220,7 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
   let stockConflict = false;
   let idempotencyConflict = false;
   let quoteConflict = false;
+  let couponFailure: string | null = null;
   let minimumOrderConflict: { name: string; minimumOrderQuantity: number } | null = null;
   const created = await db.transaction(async (tx) => {
     await tx.execute(sql`select id from retail_carts where id = ${cart.id} for update`);
@@ -10258,13 +10330,37 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
       ...bundleLines.filter((line): line is NonNullable<typeof line> => line !== null).flatMap(({ components }) => components.map(({ product }) => product.deliveryBusinessDaysOverride ?? defaultDeliveryDays)),
     ]);
     const estimatedDeliveryDate = belgradeBusinessDate(deliveryDays);
-    const shipping = calculateShipping(config, weight, subtotal, parsed.deliveryMethod, parsed.city);
+    const couponResult = await quoteCouponFromDb(tx, {
+      code: couponCode, audience: "B2C", lock: true,
+      customer: userId ? { userId } : { guestEmailNormalized: parsed.email.trim().toLowerCase() },
+      lines: [
+        ...lines.filter((line): line is NonNullable<typeof line> => line !== null).map(({ product, item, unitPrice }) => ({
+          id: item.id, productId: product.id, bundleId: null,
+          categoryIds: product.categoryId ? [product.categoryId] : [], amountRsd: unitPrice * item.quantity,
+        })),
+        ...bundleLines.filter((line): line is NonNullable<typeof line> => line !== null).map(({ bundle, item, unitPrice }) => ({
+          id: item.id, productId: null, bundleId: bundle.id, categoryIds: [], amountRsd: unitPrice * item.quantity,
+        })),
+      ],
+    });
+    if (couponResult && "reason" in couponResult) {
+      couponFailure = couponResult.reason;
+      throw new Error("retail_coupon_conflict");
+    }
+    const appliedCoupon = couponResult && "quote" in couponResult ? couponResult : null;
+    const couponDiscountRsd = appliedCoupon?.quote.discountRsd ?? 0;
+    const calculatedShipping = calculateShipping(config, weight, subtotal, parsed.deliveryMethod, parsed.city);
+    const shipping = appliedCoupon?.quote.freeShipping
+      ? { ...calculatedShipping, shippingCost: 0, isFreeShipping: true }
+      : calculatedShipping;
     const referral = userId
       ? await allocateReferralCreditInTx(tx, { ownerUserId: userId, walletKind: "B2C" }, parsed.desiredReferralCreditRsd,
-        lines.filter((line): line is NonNullable<typeof line> => line !== null && line.pricing.priceSource === "FULL_PRICE")
-          .reduce((sum, line) => sum + line.unitPrice * line.item.quantity, 0))
+        lines.filter((line): line is NonNullable<typeof line> => line !== null
+          && line.pricing.priceSource === "FULL_PRICE")
+          .reduce((sum, line) => sum + line.unitPrice * line.item.quantity
+            - (appliedCoupon?.quote.allocations[line.item.id] ?? 0), 0))
       : { availableRsd: 0, appliedRsd: 0, allocations: [] };
-    const payableTotal = subtotal + shipping.shippingCost - referral.appliedRsd;
+    const payableTotal = subtotal - couponDiscountRsd + shipping.shippingCost - referral.appliedRsd;
     if ((parsed.expectedSubtotal !== undefined && parsed.expectedSubtotal !== subtotal)
       || (parsed.expectedShippingCost !== undefined && parsed.expectedShippingCost !== shipping.shippingCost)
       || (parsed.expectedTotal !== undefined && parsed.expectedTotal !== payableTotal)) {
@@ -10278,11 +10374,24 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
       status: "pending", paymentMethod: parsed.paymentMethod,
       paymentStatus: parsed.paymentMethod === "CASH_ON_DELIVERY" ? "unpaid" : "pending",
       deliveryMethod: parsed.deliveryMethod, subtotal, shippingCost: shipping.shippingCost, total: payableTotal,
-      referralCreditMerchandiseSubtotalRsd: subtotal, referralCreditPreCreditPayableTotalRsd: subtotal + shipping.shippingCost,
+      couponCodeSnapshot: appliedCoupon?.quote.code ?? null, couponDiscountRsd,
+      couponFreeShipping: appliedCoupon?.quote.freeShipping ?? false,
+      referralCreditMerchandiseSubtotalRsd: subtotal - couponDiscountRsd,
+      referralCreditPreCreditPayableTotalRsd: subtotal - couponDiscountRsd + shipping.shippingCost,
       referralCreditAppliedRsd: referral.appliedRsd,
       shippingName: `${parsed.firstName} ${parsed.lastName}`, shippingAddress: parsed.street, shippingCity: parsed.city,
       shippingPostalCode: parsed.postalCode, shippingPhone: parsed.phone, shippingEmail: parsed.email.toLowerCase(), shippingNote: parsed.note ?? null, estimatedDeliveryDate,
     }).returning();
+    if (appliedCoupon) {
+      await tx.insert(couponRedemptionsTable).values({
+        couponId: appliedCoupon.coupon.id, audience: "B2C", retailOrderId: order!.id,
+        ...(userId ? { userId } : { guestEmailNormalized: parsed.email.trim().toLowerCase() }),
+        codeSnapshot: appliedCoupon.quote.code, discountRsd: couponDiscountRsd,
+        freeShipping: appliedCoupon.quote.freeShipping,
+      });
+      await tx.update(couponsTable).set({ usageCount: sql`${couponsTable.usageCount} + 1`, updatedAt: new Date() })
+        .where(eq(couponsTable.id, appliedCoupon.coupon.id));
+    }
     if (referral.appliedRsd) await recordReferralRedemptionInTx(tx, {
       scope: { ownerUserId: userId!, walletKind: "B2C" }, retailOrderId: order!.id,
       allocations: referral.allocations, idempotencyKey: parsed.idempotencyKey, actorUserId: userId,
@@ -10291,6 +10400,7 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
       ...lines.filter((line): line is NonNullable<typeof line> => line !== null).map(({ product, item, unitPrice, pricing }) => {
       const supplier = suppliersById.get(product.supplierId);
       if (!supplier) throw new Error("retail_stock_conflict");
+      const lineCouponDiscount = appliedCoupon?.quote.allocations[item.id] ?? 0;
       return {
         orderId: order!.id, productId: product.id, productName: product.name, productImageUrl: product.imageUrl,
         productCatalogReference: item.productCatalogReference ?? product.catalogReference,
@@ -10300,22 +10410,25 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
         discountSnapshot: pricing.baseUnitPrice > unitPrice ? pricing.baseUnitPrice - unitPrice : null,
         baseUnitPrice: pricing.baseUnitPrice, effectiveUnitPrice: unitPrice,
         priceSource: pricing.priceSource, lineDiscount: (pricing.baseUnitPrice - unitPrice) * item.quantity,
-        estimatedDeliveryDate, lineSubtotal: unitPrice * item.quantity, lineTotal: unitPrice * item.quantity,
+        couponDiscountRsd: lineCouponDiscount,
+        estimatedDeliveryDate, lineSubtotal: unitPrice * item.quantity, lineTotal: unitPrice * item.quantity - lineCouponDiscount,
       };
       }),
       ...bundleLines.filter((line): line is NonNullable<typeof line> => line !== null).map(({ bundle, item, unitPrice, components }) => {
         const supplier = suppliersById.get(bundle.supplierId);
         if (!supplier) throw new Error("retail_stock_conflict");
+        const lineCouponDiscount = appliedCoupon?.quote.allocations[item.id] ?? 0;
         return {
           orderId: order!.id, productId: null, bundleId: bundle.id, productName: bundle.name, productImageUrl: bundle.imageUrl ?? "",
           productCatalogReference: null, variantValue: null, variantLabel: null, unitPrice, quantity: item.quantity,
           supplierId: supplier.id, supplierName: supplier.name, supplierSlug: supplier.slug, productSkuSnapshot: null,
           market: "B2C" as const, currency: "RSD", discountSnapshot: null, baseUnitPrice: unitPrice,
           effectiveUnitPrice: unitPrice, priceSource: "BUNDLE" as const, lineDiscount: 0, bundleNameSnapshot: bundle.name,
+          couponDiscountRsd: lineCouponDiscount,
           bundleComponentsSnapshot: components.map(({ component, product }) => ({
             productId: product.id, name: product.name, catalogReference: product.catalogReference, quantity: component.quantity,
           })),
-          estimatedDeliveryDate, lineSubtotal: unitPrice * item.quantity, lineTotal: unitPrice * item.quantity,
+          estimatedDeliveryDate, lineSubtotal: unitPrice * item.quantity, lineTotal: unitPrice * item.quantity - lineCouponDiscount,
         };
       }),
     ];
@@ -10323,7 +10436,8 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
     const [pointSettings] = await tx.select().from(shopSettingsTable).limit(1);
     const awarded = userId
       ? await awardLoyaltyPointsInTx(tx, { audience: "B2C", userId, retailOrderId: order!.id },
-        orderItems.filter((item) => item.priceSource === "FULL_PRICE").reduce((sum, item) => sum + item.lineTotal, 0), pointSettings)
+        orderItems.filter((item) => item.priceSource === "FULL_PRICE")
+          .reduce((sum, item) => sum + item.lineTotal, 0), pointSettings)
       : 0;
     if (awarded) await tx.update(retailOrdersTable).set({ loyaltyPointsAwarded: awarded }).where(eq(retailOrdersTable.id, order!.id));
     for (const [productId, quantity] of quantityByProduct) {
@@ -10339,9 +10453,11 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
     if (error instanceof Error && error.message === "retail_stock_conflict") { stockConflict = true; return null; }
     if (error instanceof Error && error.message === "retail_idempotency_collision") { idempotencyConflict = true; return null; }
     if (error instanceof Error && error.message === "retail_moq_conflict") return null;
+    if (error instanceof Error && error.message === "retail_coupon_conflict") return null;
     throw error;
   });
   if (created === "empty") { res.status(400).json({ error: "Korpa je prazna." }); return; }
+  if (couponFailure) { couponErrorResponse(res, couponFailure); return; }
   if (idempotencyConflict) { res.status(409).json({ error: "Ovaj ključ potvrde je već iskorišćen za drugu korpu. Osvežite stranicu i pokušajte ponovo." }); return; }
   const checkoutMinimumOrderConflict = minimumOrderConflict as {
     name: string;
@@ -10498,6 +10614,27 @@ async function restockRetailBundleComponentsForCancelledOrderInTx(tx: BundleTran
   }
 }
 
+async function releaseCouponRedemptionInTx(
+  tx: BundleTransaction,
+  target: { orderId?: string; retailOrderId?: string },
+) {
+  const condition = target.orderId
+    ? eq(couponRedemptionsTable.orderId, target.orderId)
+    : eq(couponRedemptionsTable.retailOrderId, target.retailOrderId!);
+  const [redemption] = await tx.select().from(couponRedemptionsTable)
+    .where(and(condition, isNull(couponRedemptionsTable.cancelledAt))).limit(1).for("update");
+  if (!redemption) return;
+  const [released] = await tx.update(couponRedemptionsTable).set({ cancelledAt: new Date() })
+    .where(and(eq(couponRedemptionsTable.id, redemption.id), isNull(couponRedemptionsTable.cancelledAt)))
+    .returning({ id: couponRedemptionsTable.id });
+  if (released) {
+    await tx.update(couponsTable).set({
+      usageCount: sql`greatest(0, ${couponsTable.usageCount} - 1)`,
+      updatedAt: new Date(),
+    }).where(eq(couponsTable.id, redemption.couponId));
+  }
+}
+
 router.patch("/admin/retail-orders/:orderId/status", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
   const next = req.body?.status;
@@ -10515,7 +10652,10 @@ router.patch("/admin/retail-orders/:orderId/status", async (req, res): Promise<v
         eventKey: `retail-cancel:${locked.id}`, actorUserId: user.id, now,
       });
     }
-    if (cancellationTransition) await restockRetailBundleComponentsForCancelledOrderInTx(tx, locked.id);
+    if (cancellationTransition) {
+      await restockRetailBundleComponentsForCancelledOrderInTx(tx, locked.id);
+      await releaseCouponRedemptionInTx(tx, { retailOrderId: locked.id });
+    }
     const reversedPoints = cancellationTransition && !locked.loyaltyPointsReversedAt && locked.userId
       ? await reverseLoyaltyPointsInTx(tx, { audience: "B2C", userId: locked.userId, retailOrderId: locked.id, points: locked.loyaltyPointsAwarded })
       : false;
@@ -10931,6 +11071,92 @@ router.get("/shop/summary", async (req, res): Promise<void> => {
 
 const checkoutPaymentMethods = ["CARD", "BANK_TRANSFER", "CASH_ON_DELIVERY"] as const;
 
+type CouponCustomer = { salonId?: string; userId?: string; guestEmailNormalized?: string };
+type AppliedCoupon = {
+  coupon: typeof couponsTable.$inferSelect;
+  quote: Extract<ReturnType<typeof quoteCoupon>, { valid: true }>;
+};
+
+async function quoteCouponFromDb(
+  client: any,
+  input: {
+    code: string | null;
+    audience: "B2B" | "B2C";
+    lines: CouponLine[];
+    customer: CouponCustomer;
+    lock?: boolean;
+  },
+): Promise<AppliedCoupon | { reason: string } | null> {
+  if (!input.code?.trim()) return null;
+  const code = input.code.trim().toUpperCase();
+  let query = client.select().from(couponsTable).where(eq(couponsTable.code, code)).limit(1);
+  if (input.lock) query = query.for("update");
+  const [coupon] = await query;
+  if (!coupon) return { reason: "INVALID" };
+  const customerFilters = [
+    eq(couponRedemptionsTable.couponId, coupon.id),
+    isNull(couponRedemptionsTable.cancelledAt),
+  ];
+  if (input.customer.salonId) customerFilters.push(eq(couponRedemptionsTable.salonId, input.customer.salonId));
+  else if (input.customer.userId) customerFilters.push(eq(couponRedemptionsTable.userId, input.customer.userId));
+  else if (input.customer.guestEmailNormalized) customerFilters.push(eq(couponRedemptionsTable.guestEmailNormalized, input.customer.guestEmailNormalized));
+  const hasCustomerIdentity = Boolean(input.customer.salonId || input.customer.userId || input.customer.guestEmailNormalized);
+  const [usage] = hasCustomerIdentity
+    ? await client.select({ count: count() }).from(couponRedemptionsTable).where(and(...customerFilters))
+    : [{ count: 0 }];
+  const policy: CouponPolicy = {
+    code: coupon.code, active: coupon.active, audience: coupon.audience,
+    discountType: coupon.discountType, discountValue: coupon.discountValue,
+    startsAt: coupon.startsAt, endsAt: coupon.endsAt,
+    minimumSpendRsd: coupon.minimumSpendRsd, maximumSpendRsd: coupon.maximumSpendRsd,
+    freeShipping: coupon.freeShipping,
+    includeProductIds: coupon.includeProductIds, excludeProductIds: coupon.excludeProductIds,
+    includeCategoryIds: coupon.includeCategoryIds, excludeCategoryIds: coupon.excludeCategoryIds,
+    includeBundleIds: coupon.includeBundleIds, excludeBundleIds: coupon.excludeBundleIds,
+    usageLimit: coupon.usageLimit, usageCount: coupon.usageCount,
+    perCustomerUsageLimit: coupon.perCustomerUsageLimit,
+  };
+  const quoted = quoteCoupon({
+    coupon: policy, audience: input.audience, lines: input.lines,
+    now: new Date(), customerUsageCount: usage?.count ?? 0,
+  });
+  return quoted.valid ? { coupon, quote: quoted } : { reason: quoted.reason };
+}
+
+function couponErrorResponse(res: Response, reason: string) {
+  const labels: Record<string, string> = {
+    INVALID: "Kupon nije pronađen.", INACTIVE: "Kupon nije aktivan za ovu prodavnicu.",
+    NOT_STARTED: "Kupon još nije počeo da važi.", EXPIRED: "Kupon je istekao.",
+    SPEND_BOUND: "Iznos korpe ne ispunjava uslove kupona.",
+    APPLICABILITY: "Kupon ne važi za proizvode u korpi.",
+    TOTAL_LIMIT: "Ukupan broj korišćenja kupona je dostignut.",
+    CUSTOMER_LIMIT: "Iskoristili ste dozvoljeni broj korišćenja ovog kupona.",
+  };
+  res.status(409).json({ error: labels[reason] ?? "Kupon nije moguće primeniti.", code: `COUPON_${reason}` });
+}
+
+async function couponLinesForView(client: any, items: Array<{
+  id: string;
+  kind: "product" | "bundle";
+  productId?: string;
+  bundleId?: string;
+  lineTotal: number;
+}>) {
+  const productIds = items.flatMap((item) => item.kind === "product" && item.productId ? [item.productId] : []);
+  const products = productIds.length
+    ? await client.select({ id: productsTable.id, categoryId: productsTable.categoryId })
+        .from(productsTable).where(inArray(productsTable.id, productIds))
+    : [];
+  const categories = new Map<string, string>(products.map((product: { id: string; categoryId: string }) => [product.id, product.categoryId]));
+  return items.map((item): CouponLine => ({
+    id: item.id,
+    productId: item.kind === "product" ? item.productId ?? null : null,
+    bundleId: item.kind === "bundle" ? item.bundleId ?? null : null,
+    categoryIds: item.productId && categories.get(item.productId) ? [categories.get(item.productId)!] : [],
+    amountRsd: item.lineTotal,
+  }));
+}
+
 async function getOrCreateShopCart(salonId: string) {
   const [existing] = await db.select().from(shoppingCartsTable).where(eq(shoppingCartsTable.salonId, salonId)).limit(1);
   if (existing) return existing;
@@ -11058,12 +11284,12 @@ function cartLineForProduct(product: typeof productsTable.$inferSelect, variantV
 }
 
 router.get("/shop/cart", async (req, res): Promise<void> => {
-  const access = await requireSalonOwner(req, res); if (!access) return;
+  const access = await requireShopAccess(req, res); if (!access) return;
   res.json(GetShopCartResponse.parse(await shopCartDto(access.salon.id)));
 });
 
 router.post("/shop/cart/items", async (req, res): Promise<void> => {
-  const access = await requireSalonOwner(req, res); if (!access) return;
+  const access = await requireShopAccess(req, res); if (!access) return;
   const parsed = AddShopCartItemBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const requestedBundleId = "bundleId" in parsed.data ? parsed.data.bundleId : undefined;
@@ -11129,7 +11355,7 @@ router.post("/shop/cart/items", async (req, res): Promise<void> => {
 });
 
 router.patch("/shop/cart/items/:cartItemId", async (req, res): Promise<void> => {
-  const access = await requireSalonOwner(req, res); if (!access) return;
+  const access = await requireShopAccess(req, res); if (!access) return;
   const params = UpdateShopCartItemParams.safeParse(req.params);
   const body = UpdateShopCartItemBody.safeParse(req.body);
   if (!params.success || !body.success) { res.status(400).json({ error: !params.success ? params.error.message : body.error?.message ?? "Neispravan zahtev." }); return; }
@@ -11169,7 +11395,7 @@ router.patch("/shop/cart/items/:cartItemId", async (req, res): Promise<void> => 
 });
 
 router.delete("/shop/cart/items/:cartItemId", async (req, res): Promise<void> => {
-  const access = await requireSalonOwner(req, res); if (!access) return;
+  const access = await requireShopAccess(req, res); if (!access) return;
   const params = RemoveShopCartItemParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
   const [cart] = await db.select().from(shoppingCartsTable).where(eq(shoppingCartsTable.salonId, access.salon.id)).limit(1);
@@ -11185,7 +11411,7 @@ router.delete("/shop/cart/items/:cartItemId", async (req, res): Promise<void> =>
 // Saved lines intentionally retain only an identity and requested quantity.  All
 // commercial fields are rebuilt below from the live catalogue when restored.
 router.post("/shop/cart/items/:cartItemId/save-for-later", async (req, res): Promise<void> => {
-  const access = await requireSalonOwner(req, res); if (!access) return;
+  const access = await requireShopAccess(req, res); if (!access) return;
   const cart = await getOrCreateShopCart(access.salon.id);
   const moved = await db.transaction(async (tx) => {
     await tx.execute(sql`select id from shopping_carts where id = ${cart.id} for update`);
@@ -11201,7 +11427,7 @@ router.post("/shop/cart/items/:cartItemId/save-for-later", async (req, res): Pro
 });
 
 router.delete("/shop/cart/saved-items/:savedItemId", async (req, res): Promise<void> => {
-  const access = await requireSalonOwner(req, res); if (!access) return;
+  const access = await requireShopAccess(req, res); if (!access) return;
   const [cart] = await db.select().from(shoppingCartsTable).where(eq(shoppingCartsTable.salonId, access.salon.id)).limit(1);
   if (!cart) { res.status(404).json({ error: "Korpa nije pronađena." }); return; }
   await db.transaction(async (tx) => {
@@ -11213,7 +11439,7 @@ router.delete("/shop/cart/saved-items/:savedItemId", async (req, res): Promise<v
 });
 
 router.post("/shop/cart/saved-items/:savedItemId/restore", async (req, res): Promise<void> => {
-  const access = await requireSalonOwner(req, res); if (!access) return;
+  const access = await requireShopAccess(req, res); if (!access) return;
   const cart = await getOrCreateShopCart(access.salon.id);
   const result = await db.transaction(async (tx) => {
     await tx.execute(sql`select id from shopping_carts where id = ${cart.id} for update`);
@@ -11286,8 +11512,222 @@ router.post("/shop/orders/repeat-last", async (req, res): Promise<void> => {
   res.json({ ...result, cart: await shopCartDto(access.salon.id) });
 });
 
-router.get("/shop/checkout-profile", async (req, res): Promise<void> => {
+function approvalRequestDto(
+  request: typeof orderApprovalRequestsTable.$inferSelect,
+  employeeName: string,
+  lines: Array<typeof orderApprovalRequestLinesTable.$inferSelect>,
+) {
+  const snapshot = request.quoteSnapshot as { cart?: { subtotal?: number } };
+  return {
+    id: request.id,
+    status: request.status,
+    employeeId: request.employeeId,
+    employeeName,
+    quote: snapshot.cart?.subtotal ?? 0,
+    quoteVersion: request.quoteVersion,
+    couponCode: request.couponCode,
+    referralCreditIntentRsd: request.referralCreditIntentRsd,
+    reviewerReason: request.reviewerReason,
+    createdAt: request.createdAt.toISOString(),
+    decidedAt: request.decidedAt?.toISOString() ?? null,
+    finalizedOrderId: request.finalizedOrderId,
+    lines: lines.map((line) => {
+      const catalog = line.catalogSnapshot as { unitPrice?: number; variantValue?: string | null };
+      const price = catalog.unitPrice ?? 0;
+      return {
+        productId: line.productId,
+        bundleId: line.bundleId,
+        productName: line.productName,
+        sku: line.productSkuSnapshot,
+        quantity: line.quantity,
+        catalog: { price, listPrice: price, variantValue: catalog.variantValue ?? null },
+      };
+    }),
+  };
+}
+
+router.post("/shop/approval-requests", async (req, res): Promise<void> => {
+  const access = await requireSalonEmployee(req, res); if (!access) return;
+  if (access.employee.canOrderIndependently) {
+    res.status(409).json({ error: "Zaposleni sa ovlašćenjem poručuje direktno.", code: "DIRECT_ORDER_ALLOWED" }); return;
+  }
+  const body = req.body as { idempotencyKey?: unknown; couponCode?: unknown; desiredReferralCreditRsd?: unknown };
+  if (typeof body.idempotencyKey !== "string" || !body.idempotencyKey.trim() || body.idempotencyKey.length > 200) {
+    res.status(400).json({ error: "Potreban je idempotency ključ." }); return;
+  }
+  const idempotencyKey = body.idempotencyKey.trim();
+  const couponCode = typeof body.couponCode === "string" ? body.couponCode.trim().toUpperCase() || null : null;
+  const [cart] = await db.select().from(shoppingCartsTable).where(eq(shoppingCartsTable.salonId, access.salon.id)).limit(1);
+  if (!cart) { res.status(400).json({ error: "Korpa je prazna." }); return; }
+  const creation = await db.transaction(async (tx) => {
+    await tx.execute(sql`select id from shopping_carts where id = ${cart.id} for update`);
+    const existing = await tx.select().from(orderApprovalRequestsTable).where(and(
+      eq(orderApprovalRequestsTable.salonId, access.salon.id), eq(orderApprovalRequestsTable.idempotencyKey, idempotencyKey),
+    )).limit(1);
+    if (existing[0]) return { kind: "request" as const, request: existing[0] };
+    const lines = await tx.select().from(shoppingCartItemsTable).where(eq(shoppingCartItemsTable.cartId, cart.id));
+    if (!lines.length) throw new Error("approval_cart_empty");
+    const quote = await shopCartDto(access.salon.id);
+    const appliedCoupon = await quoteCouponFromDb(tx, {
+      code: couponCode,
+      audience: "B2B",
+      lines: await couponLinesForView(tx, quote.items),
+      customer: { salonId: access.salon.id },
+    });
+    if (appliedCoupon && "reason" in appliedCoupon) {
+      return { kind: "coupon-failure" as const, reason: appliedCoupon.reason };
+    }
+    const checkoutSnapshot = {
+      useSalonAddress: true,
+      deliveryMethod: "courier",
+      paymentMethod: "BANK_TRANSFER",
+      billingDetails: access.salon.companyName && access.salon.companyTaxId
+        && access.salon.companyRegistrationNumber && access.salon.companyAddress && access.salon.companyCity
+        ? {
+            companyName: access.salon.companyName, pib: access.salon.companyTaxId,
+            registrationNumber: access.salon.companyRegistrationNumber, street: access.salon.companyAddress,
+            city: access.salon.companyCity, postalCode: access.salon.companyPostalCode ?? "",
+          }
+        : null,
+    };
+    const [created] = await tx.insert(orderApprovalRequestsTable).values({
+      salonId: access.salon.id, employeeId: access.employee.id, submittedByUserId: access.user.id, cartId: cart.id,
+      idempotencyKey, quoteVersion: `${cart.updatedAt.toISOString()}:${quote.subtotal}`,
+      quoteSnapshot: { cart: quote, checkout: checkoutSnapshot },
+      couponCode,
+      referralCreditIntentRsd: Number.isInteger(body.desiredReferralCreditRsd) && (body.desiredReferralCreditRsd as number) >= 0 ? body.desiredReferralCreditRsd as number : 0,
+    }).returning();
+    await tx.insert(orderApprovalRequestLinesTable).values(lines.map((line) => ({
+      requestId: created!.id, productId: line.productId, bundleId: line.bundleId, productName: line.productName,
+      productSkuSnapshot: line.productSku, quantity: line.quantity,
+      catalogSnapshot: { variantValue: line.variantValue, unitPrice: line.unitPrice },
+    })));
+    await tx.insert(salonNotificationsTable).values({
+      salonId: access.salon.id, title: "Porudžbina čeka odobrenje",
+      message: `${access.employee.name} je poslao/la porudžbinu na odobrenje.`,
+      href: `/vlasnik/porudzbine-na-cekanju/${created!.id}`,
+    });
+    return { kind: "request" as const, request: created! };
+  }).catch((error: unknown) => error instanceof Error && error.message === "approval_cart_empty" ? null : Promise.reject(error));
+  if (!creation) { res.status(400).json({ error: "Korpa je prazna." }); return; }
+  if (creation.kind === "coupon-failure") {
+    couponErrorResponse(res, creation.reason);
+    return;
+  }
+  const request = creation.request;
+  await publishSalonNotificationUpdate(access.salon.id);
+  const requestLines = await db.select().from(orderApprovalRequestLinesTable)
+    .where(eq(orderApprovalRequestLinesTable.requestId, request.id));
+  res.status(201).json(approvalRequestDto(request, access.employee.name, requestLines));
+});
+
+router.get("/shop/approval-requests/mine", async (req, res): Promise<void> => {
+  const access = await requireSalonEmployee(req, res); if (!access) return;
+  const requests = await db.select().from(orderApprovalRequestsTable).where(and(
+    eq(orderApprovalRequestsTable.salonId, access.salon.id), eq(orderApprovalRequestsTable.employeeId, access.employee.id),
+  )).orderBy(desc(orderApprovalRequestsTable.createdAt));
+  const lines = requests.length ? await db.select().from(orderApprovalRequestLinesTable)
+    .where(inArray(orderApprovalRequestLinesTable.requestId, requests.map((request) => request.id))) : [];
+  const linesByRequest = new Map<string, typeof lines>();
+  for (const line of lines) linesByRequest.set(line.requestId, [...(linesByRequest.get(line.requestId) ?? []), line]);
+  res.json(requests.map((request) => approvalRequestDto(request, access.employee.name, linesByRequest.get(request.id) ?? [])));
+});
+
+router.get("/shop/approval-requests", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
+  const requests = await db.select({
+    request: orderApprovalRequestsTable,
+    employeeName: employeesTable.name,
+  }).from(orderApprovalRequestsTable)
+    .innerJoin(employeesTable, eq(employeesTable.id, orderApprovalRequestsTable.employeeId))
+    .where(eq(orderApprovalRequestsTable.salonId, access.salon.id))
+    .orderBy(desc(orderApprovalRequestsTable.createdAt));
+  const requestIds = requests.map(({ request }) => request.id);
+  const lines = requestIds.length ? await db.select().from(orderApprovalRequestLinesTable)
+    .where(inArray(orderApprovalRequestLinesTable.requestId, requestIds)) : [];
+  const linesByRequest = new Map<string, typeof lines>();
+  for (const line of lines) linesByRequest.set(line.requestId, [...(linesByRequest.get(line.requestId) ?? []), line]);
+  res.json(requests.map(({ request, employeeName }) => approvalRequestDto(
+    request,
+    employeeName,
+    linesByRequest.get(request.id) ?? [],
+  )));
+});
+
+router.get("/shop/approval-requests/:requestId", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const rows = await db.select({
+    request: orderApprovalRequestsTable,
+    employeeName: employeesTable.name,
+  }).from(orderApprovalRequestsTable)
+    .innerJoin(employeesTable, eq(employeesTable.id, orderApprovalRequestsTable.employeeId))
+    .where(and(eq(orderApprovalRequestsTable.id, req.params.requestId), eq(orderApprovalRequestsTable.salonId, access.salon.id)))
+    .limit(1);
+  const row = rows[0];
+  if (!row) { res.status(404).json({ error: "Zahtev nije pronađen." }); return; }
+  const lines = await db.select().from(orderApprovalRequestLinesTable)
+    .where(eq(orderApprovalRequestLinesTable.requestId, row.request.id));
+  res.json(approvalRequestDto(row.request, row.employeeName, lines));
+});
+
+router.post("/shop/approval-requests/:requestId/reject", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 1000) : null;
+  const [request] = await db.update(orderApprovalRequestsTable).set({
+    status: "REJECTED", reviewerUserId: access.user.id, reviewerReason: reason, decidedAt: new Date(), updatedAt: new Date(),
+  }).where(and(eq(orderApprovalRequestsTable.id, req.params.requestId), eq(orderApprovalRequestsTable.salonId, access.salon.id), eq(orderApprovalRequestsTable.status, "PENDING"))).returning();
+  if (!request) { res.status(409).json({ error: "Zahtev nije na čekanju ili nije pronađen.", code: "APPROVAL_NOT_PENDING" }); return; }
+  await publishSalonNotificationUpdate(access.salon.id);
+  const [employee] = await db.select({ name: employeesTable.name }).from(employeesTable)
+    .where(eq(employeesTable.id, request.employeeId)).limit(1);
+  const lines = await db.select().from(orderApprovalRequestLinesTable)
+    .where(eq(orderApprovalRequestLinesTable.requestId, request.id));
+  res.json(approvalRequestDto(request, employee?.name ?? "Zaposleni", lines));
+});
+
+router.post("/shop/approval-requests/:requestId/approve", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const [request] = await db.select().from(orderApprovalRequestsTable).where(and(
+    eq(orderApprovalRequestsTable.id, req.params.requestId),
+    eq(orderApprovalRequestsTable.salonId, access.salon.id),
+  )).limit(1);
+  if (!request) { res.status(404).json({ error: "Zahtev nije pronađen." }); return; }
+  if (request.status === "APPROVED" && request.finalizedOrderId) {
+    const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, request.finalizedOrderId)).limit(1);
+    if (!order) { res.status(409).json({ error: "Finalizovana porudžbina nije pronađena.", code: "APPROVAL_ORDER_MISSING" }); return; }
+    const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id));
+    res.json(CheckoutShopCartResponse.parse(orderDto(order, items, access.salon)));
+    return;
+  }
+  if (request.status !== "PENDING") {
+    res.status(409).json({ error: "Zahtev nije na čekanju.", code: "APPROVAL_NOT_PENDING" }); return;
+  }
+  const salon = access.salon;
+  if (!salon.companyName || !salon.companyTaxId || !salon.companyRegistrationNumber
+    || !salon.companyAddress || !salon.companyCity || !salon.companyPostalCode) {
+    res.status(409).json({ error: "Podaci salona za fakturisanje nisu kompletni.", code: "BILLING_DETAILS_INCOMPLETE" }); return;
+  }
+  const quotedSubtotal = (request.quoteSnapshot as { cart?: { subtotal?: number } }).cart?.subtotal;
+  req.body = {
+    useSalonAddress: true,
+    billingDetails: {
+      companyName: salon.companyName, pib: salon.companyTaxId,
+      registrationNumber: salon.companyRegistrationNumber, street: salon.companyAddress,
+      city: salon.companyCity, postalCode: salon.companyPostalCode,
+    },
+    paymentMethod: "BANK_TRANSFER",
+    deliveryMethod: "courier",
+    desiredReferralCreditRsd: request.referralCreditIntentRsd,
+    ...(typeof quotedSubtotal === "number" ? { expectedSubtotal: quotedSubtotal } : {}),
+    termsAccepted: true,
+    approvalRequestId: request.id,
+    couponCode: request.couponCode,
+  };
+  await checkoutShopCartHandler(req, res);
+});
+
+router.get("/shop/checkout-profile", async (req, res): Promise<void> => {
+  const access = await requireShopAccess(req, res); if (!access) return;
   const { salon, user } = access;
   const billingDefaults = salon.companyName && salon.companyTaxId && salon.companyRegistrationNumber && salon.companyAddress && salon.companyCity
     ? { companyName: salon.companyName, pib: salon.companyTaxId, registrationNumber: salon.companyRegistrationNumber, street: salon.companyAddress, city: salon.companyCity, postalCode: salon.companyPostalCode ?? "" }
@@ -11308,27 +11748,51 @@ router.get("/shop/checkout-profile", async (req, res): Promise<void> => {
 });
 
 router.get("/shop/checkout-preview", async (req, res): Promise<void> => {
-  const access = await requireSalonOwner(req, res); if (!access) return;
+  const access = await requireShopAccess(req, res); if (!access) return;
   const cart = await shopCartDto(access.salon.id);
+  const couponCode = typeof req.query.couponCode === "string" ? req.query.couponCode : null;
+  const appliedCoupon = await quoteCouponFromDb(db, {
+    code: couponCode, audience: "B2B",
+    lines: await couponLinesForView(db, cart.items),
+    customer: { salonId: access.salon.id },
+  });
+  if (appliedCoupon && "reason" in appliedCoupon) { couponErrorResponse(res, appliedCoupon.reason); return; }
+  const couponDiscountRsd = appliedCoupon?.quote.discountRsd ?? 0;
   const calculatedShipping = calculateShipping(await getShippingConfig(), cart.totalWeightGrams, cart.subtotal);
-  const shipping = cart.freeShippingProgress.loyaltyFreeShipping
+  const shipping = cart.freeShippingProgress.loyaltyFreeShipping || appliedCoupon?.quote.freeShipping
     ? { ...calculatedShipping, shippingCost: 0, isFreeShipping: true }
     : calculatedShipping;
   const desired = typeof req.query.desiredReferralCreditRsd === "string" && /^\d+$/.test(req.query.desiredReferralCreditRsd)
     ? Number(req.query.desiredReferralCreditRsd) : 0;
-  const scope = { ownerUserId: access.user.id, walletKind: "B2B" as const, salonId: access.salon.id };
+  const scope = { ownerUserId: access.salon.ownerId, walletKind: "B2B" as const, salonId: access.salon.id };
   const available = await db.transaction((tx) => referralCreditBalanceInTx(tx, scope));
-  const applied = Math.min(desired || available, available, cart.subtotal);
-  res.json(GetShopCheckoutPreviewResponse.parse({
-    cart, shipping, total: cart.subtotal + shipping.shippingCost - applied, paymentMethods: checkoutPaymentMethods,
+  const applied = Math.min(desired || available, available, Math.max(0, cart.subtotal - couponDiscountRsd));
+  const parsedPreview = GetShopCheckoutPreviewResponse.parse({
+    cart, shipping, total: cart.subtotal - couponDiscountRsd + shipping.shippingCost - applied, paymentMethods: checkoutPaymentMethods,
     referralCreditAvailableRsd: available, referralCreditAppliedRsd: applied,
     merchandiseSubtotalRsd: cart.subtotal, shippingRsd: shipping.shippingCost,
-    payableTotalRsd: cart.subtotal + shipping.shippingCost - applied,
-  }));
+    payableTotalRsd: cart.subtotal - couponDiscountRsd + shipping.shippingCost - applied,
+    coupon: appliedCoupon ? {
+      code: appliedCoupon.quote.code, discountRsd: couponDiscountRsd,
+      freeShipping: appliedCoupon.quote.freeShipping, allocations: appliedCoupon.quote.allocations,
+    } : null,
+    couponDiscountRsd,
+  });
+  res.json(parsedPreview);
 });
 
-router.post("/shop/checkout", async (req, res): Promise<void> => {
-  const access = await requireSalonOwner(req, res); if (!access) return;
+async function checkoutShopCartHandler(req: Request, res: Response): Promise<void> {
+  const access = await requireShopAccess(req, res); if (!access) return;
+  const approvalRequestId = typeof req.body?.approvalRequestId === "string" ? req.body.approvalRequestId : null;
+  const couponCode = typeof req.body?.couponCode === "string" ? req.body.couponCode.trim().toUpperCase() || null : null;
+  if (access.employee && !access.employee.canOrderIndependently && !approvalRequestId) {
+    res.status(409).json({ error: "Porudžbina mora prvo da bude odobrena od strane vlasnika.", code: "APPROVAL_REQUIRED" });
+    return;
+  }
+  if (approvalRequestId && access.employee) {
+    res.status(403).json({ error: "Samo vlasnik salona može da odobri zahtev." });
+    return;
+  }
   const parsed = CheckoutShopCartBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   if (!parsed.data.termsAccepted) { res.status(400).json({ error: "Morate prihvatiti Uslove kupovine pre potvrde porudžbine." }); return; }
@@ -11358,8 +11822,40 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
   const [cart] = await db.select().from(shoppingCartsTable).where(eq(shoppingCartsTable.salonId, salon.id)).limit(1);
   if (!cart) { res.status(400).json({ error: "Vaša korpa je prazna." }); return; }
   let conflictProductName: string | null = null;
+  let approvalConflict = false;
+  let couponFailure: string | null = null;
   const created = await db.transaction(async (tx) => {
     await tx.execute(sql`select id from shopping_carts where id = ${cart.id} for update`);
+    const [approvalRequest] = approvalRequestId
+      ? await tx.select().from(orderApprovalRequestsTable).where(and(
+          eq(orderApprovalRequestsTable.id, approvalRequestId),
+          eq(orderApprovalRequestsTable.salonId, salon.id),
+        )).limit(1).for("update")
+      : [];
+    if (approvalRequestId && (!approvalRequest || approvalRequest.cartId !== cart.id
+      || (approvalRequest.status !== "PENDING" && !(approvalRequest.status === "APPROVED" && approvalRequest.finalizedOrderId)))) {
+      approvalConflict = true;
+      tx.rollback();
+    }
+    if (approvalRequest?.status === "APPROVED" && approvalRequest.finalizedOrderId) {
+      const [existingOrder] = await tx.select().from(ordersTable)
+        .where(eq(ordersTable.id, approvalRequest.finalizedOrderId)).limit(1);
+      if (!existingOrder) {
+        approvalConflict = true;
+        tx.rollback();
+      }
+      const existingItems = await tx.select().from(orderItemsTable)
+        .where(eq(orderItemsTable.orderId, approvalRequest.finalizedOrderId));
+      return { order: existingOrder!, items: existingItems, repeatedApproval: true };
+    }
+    if (approvalRequest) {
+      const quotedSubtotal = (approvalRequest.quoteSnapshot as { cart?: { subtotal?: number } }).cart?.subtotal;
+      const currentQuoteVersion = `${cart.updatedAt.toISOString()}:${quotedSubtotal ?? ""}`;
+      if (approvalRequest.quoteVersion !== currentQuoteVersion) {
+        conflictProductName = "quote";
+        tx.rollback();
+      }
+    }
     const lines = await tx.select().from(shoppingCartItemsTable).where(eq(shoppingCartItemsTable.cartId, cart.id));
     if (!lines.length) {
       conflictProductName = "";
@@ -11413,6 +11909,7 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
     const productQuantities = new Map<string, number>();
     const variantQuantities = new Map<string, number>();
     const details: Array<{
+      cartLineId: string;
       product: typeof productsTable.$inferSelect;
       variant: { label: string; value: string; priceAdjust?: number; price?: number; stock?: number; sku?: string } | undefined;
       variantValue: string | null;
@@ -11441,6 +11938,7 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
         variantQuantities.set(key, (variantQuantities.get(key) ?? 0) + line.quantity);
       }
       return {
+        cartLineId: line.id,
         product,
         variant,
         variantValue: line.variantValue,
@@ -11463,6 +11961,7 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
         productQuantities.set(component.product!.id, (productQuantities.get(component.product!.id) ?? 0) + component.quantity * line.quantity);
       }
       details.push({
+        cartLineId: line.id,
         product: componentProducts[0]!.product!,
         variant: undefined,
         variantValue: null,
@@ -11494,22 +11993,66 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
       ? line.bundle.components.reduce((weight, component) => weight + (component.product.weightGrams ?? 0) * component.quantity, 0)
       : (line.product.weightGrams ?? 0)) * line.quantity, 0);
     const [shopSettings] = await tx.select().from(shopSettingsTable).limit(1);
+    // B2B orders are invoices: never derive seller identity from mutable live
+    // settings after this locked checkout has completed.
+    if (!shopSettings || !shopSettings.sellerCompanyName || !shopSettings.sellerTaxId
+      || !shopSettings.sellerRegistrationNumber || !shopSettings.sellerAddress || !shopSettings.sellerCity
+      || !shopSettings.sellerPostalCode || !shopSettings.sellerBankAccount || !shopSettings.sellerContactEmail
+      || !shopSettings.sellerContactPhone) {
+      throw new Error("seller_settings_incomplete");
+    }
+    const sellerSnapshot = {
+      companyName: shopSettings.sellerCompanyName, taxId: shopSettings.sellerTaxId,
+      registrationNumber: shopSettings.sellerRegistrationNumber, address: shopSettings.sellerAddress,
+      city: shopSettings.sellerCity, postalCode: shopSettings.sellerPostalCode,
+      bankAccount: shopSettings.sellerBankAccount, contactEmail: shopSettings.sellerContactEmail,
+      contactPhone: shopSettings.sellerContactPhone,
+    };
+    const invoiceYear = new Date().getFullYear();
+    const invoiceSequence = await tx.execute<{ last_number: number }>(sql`
+      INSERT INTO b2b_invoice_sequences (year, last_number, updated_at) VALUES (${invoiceYear}, 1, now())
+      ON CONFLICT (year) DO UPDATE SET last_number = b2b_invoice_sequences.last_number + 1, updated_at = now()
+      RETURNING last_number
+    `);
+    const invoiceNumber = `${invoiceYear}-${String(invoiceSequence.rows[0]!.last_number).padStart(6, "0")}`;
     const defaultDeliveryDays = shopSettings?.defaultDeliveryBusinessDays ?? 3;
     const deliveryDays = Math.max(defaultDeliveryDays, ...details.flatMap((line) => line.bundle
       ? line.bundle.components.map((component) => component.product.deliveryBusinessDaysOverride ?? defaultDeliveryDays)
       : [line.product.deliveryBusinessDaysOverride ?? defaultDeliveryDays]));
     const estimatedDeliveryDate = belgradeBusinessDate(deliveryDays);
+    const couponResult = await quoteCouponFromDb(tx, {
+      code: couponCode,
+      audience: "B2B",
+      lock: true,
+      customer: { salonId: salon.id },
+      lines: details.map((line) => ({
+        id: line.cartLineId,
+        productId: line.bundle ? null : line.product.id,
+        bundleId: line.bundle?.bundle.id ?? null,
+        categoryIds: line.bundle || !line.product.categoryId ? [] : [line.product.categoryId],
+        amountRsd: line.price * line.quantity,
+      })),
+    });
+    if (couponResult && "reason" in couponResult) {
+      couponFailure = couponResult.reason;
+      tx.rollback();
+    }
+    const appliedCoupon = couponResult && "quote" in couponResult ? couponResult : null;
+    const couponDiscountRsd = appliedCoupon?.quote.discountRsd ?? 0;
     const calculatedShipping = calculateShipping(config, totalWeightGrams, subtotal, deliveryMethod, delivery.city);
     const [tier] = await tx.select({ freeShipping: loyaltyTiersTable.freeShipping }).from(salonLoyaltyStatusesTable)
       .leftJoin(loyaltyTiersTable, eq(salonLoyaltyStatusesTable.tierId, loyaltyTiersTable.id))
       .where(eq(salonLoyaltyStatusesTable.salonId, salon.id)).limit(1);
-    const shipping = tier?.freeShipping ? { ...calculatedShipping, shippingCost: 0, isFreeShipping: true } : calculatedShipping;
+    const shipping = tier?.freeShipping || appliedCoupon?.quote.freeShipping
+      ? { ...calculatedShipping, shippingCost: 0, isFreeShipping: true }
+      : calculatedShipping;
     const referral = await allocateReferralCreditInTx(tx, {
-      ownerUserId: user.id, walletKind: "B2B", salonId: salon.id,
+      ownerUserId: salon.ownerId, walletKind: "B2B", salonId: salon.id,
     }, parsed.data.desiredReferralCreditRsd ?? 0, details
       .filter((line) => !line.bundle && line.priceSource === "FULL_PRICE")
-      .reduce((sum, line) => sum + line.price * line.quantity, 0));
-    const payableTotal = subtotal + shipping.shippingCost - referral.appliedRsd;
+      .reduce((sum, line) => sum + line.price * line.quantity
+        - (appliedCoupon?.quote.allocations[line.cartLineId] ?? 0), 0));
+    const payableTotal = subtotal - couponDiscountRsd + shipping.shippingCost - referral.appliedRsd;
     if ((parsed.data.expectedSubtotal !== undefined && parsed.data.expectedSubtotal !== subtotal)
       || (parsed.data.expectedShippingCost !== undefined && parsed.data.expectedShippingCost !== shipping.shippingCost)
       || (parsed.data.expectedTotal !== undefined && parsed.data.expectedTotal !== payableTotal)) {
@@ -11533,8 +12076,11 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
       status: "pending",
       total: payableTotal,
       subtotal,
-      referralCreditMerchandiseSubtotalRsd: subtotal,
-      referralCreditPreCreditPayableTotalRsd: subtotal + shipping.shippingCost,
+      couponCodeSnapshot: appliedCoupon?.quote.code ?? null,
+      couponDiscountRsd,
+      couponFreeShipping: appliedCoupon?.quote.freeShipping ?? false,
+      referralCreditMerchandiseSubtotalRsd: subtotal - couponDiscountRsd,
+      referralCreditPreCreditPayableTotalRsd: subtotal - couponDiscountRsd + shipping.shippingCost,
       referralCreditAppliedRsd: referral.appliedRsd,
       shippingCost: shipping.shippingCost,
       totalWeightGrams,
@@ -11556,9 +12102,21 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
       paymentStatus: parsed.data.paymentMethod === "CARD" ? "pending" : "unpaid",
       deliveryMethod,
       estimatedDeliveryDate,
+      invoiceNumber,
+      invoiceIssuedAt: new Date(),
+      sellerSnapshot,
     }).returning();
+    if (appliedCoupon) {
+      await tx.insert(couponRedemptionsTable).values({
+        couponId: appliedCoupon.coupon.id, audience: "B2B", orderId: order!.id, salonId: salon.id,
+        codeSnapshot: appliedCoupon.quote.code, discountRsd: couponDiscountRsd,
+        freeShipping: appliedCoupon.quote.freeShipping,
+      });
+      await tx.update(couponsTable).set({ usageCount: sql`${couponsTable.usageCount} + 1`, updatedAt: new Date() })
+        .where(eq(couponsTable.id, appliedCoupon.coupon.id));
+    }
     if (referral.appliedRsd) await recordReferralRedemptionInTx(tx, {
-      scope: { ownerUserId: user.id, walletKind: "B2B", salonId: salon.id },
+      scope: { ownerUserId: salon.ownerId, walletKind: "B2B", salonId: salon.id },
       orderId: order!.id, allocations: referral.allocations,
       idempotencyKey: `b2b-order:${order!.id}`, actorUserId: user.id,
     });
@@ -11571,6 +12129,7 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
       const supplier = suppliersById.get(line.bundle?.bundle.supplierId ?? line.product.supplierId);
       if (!supplier) throw new Error("B2B supplier is unavailable");
       const sku = line.variant?.sku ?? line.product.sku;
+      const lineCouponDiscount = appliedCoupon?.quote.allocations[line.cartLineId] ?? 0;
       return {
         orderId: order!.id,
         productId: line.bundle ? null : line.product.id,
@@ -11589,15 +12148,17 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
         effectiveUnitPrice: line.price,
         priceSource: line.bundle ? "BUNDLE" as const : line.priceSource,
         lineDiscount: line.bundle ? 0 : (line.baseUnitPrice - line.price) * line.quantity,
+        couponDiscountRsd: lineCouponDiscount,
         bundleNameSnapshot: line.bundle?.bundle.name ?? null,
         bundleComponentsSnapshot: line.bundle?.components.map((component) => ({ productId: component.product.id, name: component.product.name, catalogReference: component.product.catalogReference, quantity: component.quantity })) ?? null,
         estimatedDeliveryDate,
-        unitPrice: line.price, lineSubtotal: line.price * line.quantity, lineTotal: line.price * line.quantity,
+        unitPrice: line.price, lineSubtotal: line.price * line.quantity, lineTotal: line.price * line.quantity - lineCouponDiscount,
       };
     });
     const savedOrderItems = await tx.insert(orderItemsTable).values(orderItems).returning();
     const awarded = await awardLoyaltyPointsInTx(tx, { audience: "B2B", salonId: salon.id, orderId: order!.id },
-      savedOrderItems.filter((item) => item.priceSource === "FULL_PRICE").reduce((sum, item) => sum + item.lineTotal, 0), shopSettings);
+      savedOrderItems.filter((item) => item.priceSource === "FULL_PRICE")
+        .reduce((sum, item) => sum + item.lineTotal, 0), shopSettings);
     if (awarded) await tx.update(ordersTable).set({ loyaltyPointsAwarded: awarded }).where(eq(ordersTable.id, order!.id));
     const orderItemByBundleId = new Map(savedOrderItems.flatMap((item) => item.bundleId ? [[item.bundleId, item.id] as const] : []));
     const immutableComponents = details.flatMap((line) => line.bundle ? line.bundle.components.map((component) => ({
@@ -11622,26 +12183,52 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
       message: `Vaša B2B porudžbina #${order!.id.slice(0, 8).toUpperCase()} je uspešno primljena.`,
       href: `/vlasnik/porudzbine/${order!.id}`,
     });
-    return { order: order!, items: savedOrderItems };
+    if (approvalRequest) {
+      await tx.update(orderApprovalRequestsTable).set({
+        status: "APPROVED", reviewerUserId: user.id, decidedAt: new Date(),
+        finalizedOrderId: order!.id, updatedAt: new Date(),
+      }).where(and(
+        eq(orderApprovalRequestsTable.id, approvalRequest.id),
+        eq(orderApprovalRequestsTable.status, "PENDING"),
+      ));
+    }
+    return { order: order!, items: savedOrderItems, repeatedApproval: false };
   }).catch((error: unknown) => {
-    if (conflictProductName !== null) return null;
+    if (conflictProductName !== null || approvalConflict || couponFailure) return null;
+    if (error instanceof Error && error.message === "seller_settings_incomplete") return "seller-settings-incomplete" as const;
     throw error;
   });
+  if (created === "seller-settings-incomplete") {
+    res.status(409).json({ error: "Podaci prodavca nisu kompletni. Administrator mora popuniti podatke prodavca pre B2B fakturisanja.", code: "SELLER_SETTINGS_INCOMPLETE" });
+    return;
+  }
   if (!created) {
+    if (couponFailure) {
+      couponErrorResponse(res, couponFailure);
+      return;
+    }
+    if (approvalConflict) {
+      res.status(409).json({ error: "Zahtev nije na čekanju ili je već obrađen.", code: "APPROVAL_NOT_PENDING" });
+      return;
+    }
     res.status(conflictProductName ? 409 : 400).json({ error: conflictProductName === "quote" ? "Iznos porudžbine se promenio. Osvežite pregled i pokušajte ponovo." : conflictProductName ? `Zalihe za "${conflictProductName}" su se promenile tokom obrade. Osvežite korpu i pokušajte ponovo.` : "Vaša korpa je prazna.", ...(conflictProductName === "quote" ? { code: "CHECKOUT_QUOTE_CHANGED" } : {}) });
     return;
   }
-  await publishSalonNotificationUpdate(salon.id);
-  await sendTransactionalEmail({
-    eventKey: `b2b-order:${created.order.id}:created`,
-    emailType: "b2b_order_created",
-    to: { email: user.email, name: `${user.firstName} ${user.lastName}` },
-    subject: "LUMERA Biznis — porudžbina je primljena",
-    htmlContent: lumeraEmailHtml("Porudžbina je primljena", `<p>Hvala vam. Primili smo B2B porudžbinu za salon <strong>${emailSafe(salon.name)}</strong>.</p>`),
-    metadata: { orderId: created.order.id, salonId: salon.id },
-  });
-  res.status(201).json(CheckoutShopCartResponse.parse(orderDto(created.order, created.items, salon)));
-});
+  if (!created.repeatedApproval) {
+    await publishSalonNotificationUpdate(salon.id);
+    await sendTransactionalEmail({
+      eventKey: `b2b-order:${created.order.id}:created`,
+      emailType: "b2b_order_created",
+      to: { email: user.email, name: `${user.firstName} ${user.lastName}` },
+      subject: "LUMERA Biznis — porudžbina je primljena",
+      htmlContent: lumeraEmailHtml("Porudžbina je primljena", `<p>Hvala vam. Primili smo B2B porudžbinu za salon <strong>${emailSafe(salon.name)}</strong>.</p>`),
+      metadata: { orderId: created.order.id, salonId: salon.id },
+    });
+  }
+  res.status(created.repeatedApproval ? 200 : 201).json(CheckoutShopCartResponse.parse(orderDto(created.order, created.items, salon)));
+}
+
+router.post("/shop/checkout", checkoutShopCartHandler);
 
 function orderDto(
   order: typeof ordersTable.$inferSelect,
@@ -11682,6 +12269,12 @@ function orderDto(
     subtotal: order.subtotal,
     shippingCost: order.shippingCost,
     totalWeightGrams: order.totalWeightGrams,
+    invoice: order.invoiceNumber && order.invoiceIssuedAt ? {
+      number: order.invoiceNumber, issuedAt: order.invoiceIssuedAt.toISOString(),
+    } : null,
+    couponCode: order.couponCodeSnapshot ?? null,
+    couponDiscountRsd: order.couponDiscountRsd,
+    couponFreeShipping: order.couponFreeShipping,
     itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
     createdAt: order.createdAt.toISOString(),
     updatedAt: order.updatedAt.toISOString(),
@@ -11738,6 +12331,53 @@ function adminOrderDto(
     })),
   };
 }
+
+function writeB2bInvoicePdf(res: Response, order: typeof ordersTable.$inferSelect, items: Array<typeof orderItemsTable.$inferSelect>) {
+  const seller = order.sellerSnapshot;
+  if (!seller || !order.invoiceNumber || !order.invoiceIssuedAt) {
+    res.status(409).json({ error: "Faktura nema kompletan nepromenljiv snimak prodavca.", code: "INVOICE_SNAPSHOT_MISSING" });
+    return;
+  }
+  const document = new PDFDocument({ margin: 48, size: "A4" });
+  res.status(200).set({
+    "Content-Type": "application/pdf",
+    "Content-Disposition": `attachment; filename="faktura-${order.invoiceNumber}.pdf"`,
+    "Cache-Control": "private, no-store",
+  });
+  document.pipe(res);
+  document.fontSize(20).text("KOMERCIJALNA FAKTURA");
+  document.moveDown().fontSize(11).text(`Broj: ${order.invoiceNumber}`);
+  document.text(`Datum: ${order.invoiceIssuedAt.toISOString().slice(0, 10)}`);
+  document.moveDown().fontSize(12).text(String(seller.companyName));
+  document.fontSize(10).text(`PIB: ${seller.taxId}   Matični broj: ${seller.registrationNumber}`);
+  document.text(`${seller.address}, ${seller.postalCode} ${seller.city}`);
+  document.text(`Račun: ${seller.bankAccount}   ${seller.contactEmail} / ${seller.contactPhone}`);
+  document.moveDown().fontSize(12).text(`Kupac: ${order.billingCompanyName ?? order.shippingName}`);
+  document.fontSize(10).text(`${order.billingAddress ?? order.shippingAddress}, ${order.billingPostalCode ?? order.shippingPostalCode ?? ""} ${order.billingCity ?? order.shippingCity ?? ""}`);
+  document.moveDown().fontSize(11);
+  items.forEach((item) => document.text(`${item.productName} × ${item.quantity}    ${item.lineTotal.toLocaleString("sr-RS")} RSD`));
+  document.moveDown().text(`Međuzbir: ${order.subtotal.toLocaleString("sr-RS")} RSD`);
+  if (order.couponDiscountRsd) document.text(`Kupon popust: -${order.couponDiscountRsd.toLocaleString("sr-RS")} RSD`);
+  document.text(`Dostava: ${order.shippingCost.toLocaleString("sr-RS")} RSD`);
+  document.fontSize(13).text(`UKUPNO: ${order.total.toLocaleString("sr-RS")} RSD`);
+  document.end();
+}
+
+router.get("/shop/orders/:orderId/invoice.pdf", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const [order] = await db.select().from(ordersTable).where(and(eq(ordersTable.id, req.params.orderId), eq(ordersTable.salonId, access.salon.id))).limit(1);
+  if (!order) { res.status(404).json({ error: "Porudžbina nije pronađena." }); return; }
+  const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id));
+  writeB2bInvoicePdf(res, order, items);
+});
+
+router.get("/admin/orders/:orderId/invoice.pdf", async (req, res): Promise<void> => {
+  if (!await requireAdmin(req, res)) return;
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, req.params.orderId)).limit(1);
+  if (!order) { res.status(404).json({ error: "Porudžbina nije pronađena." }); return; }
+  const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id));
+  writeB2bInvoicePdf(res, order, items);
+});
 
 router.get("/shop/orders", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
@@ -12197,7 +12837,10 @@ router.patch("/admin/orders/bulk", async (req, res): Promise<void> => {
           now,
         });
       }
-      if (cancellationTransition) await restockBundleComponentsForCancelledOrderInTx(tx, order.id);
+      if (cancellationTransition) {
+        await restockBundleComponentsForCancelledOrderInTx(tx, order.id);
+        await releaseCouponRedemptionInTx(tx, { orderId: order.id });
+      }
       const reversedPoints = cancellationTransition && !order.loyaltyPointsReversedAt
         ? await reverseLoyaltyPointsInTx(tx, { audience: "B2B", salonId: order.salonId, orderId: order.id, points: order.loyaltyPointsAwarded })
         : false;
@@ -12307,7 +12950,10 @@ router.patch("/admin/orders/:orderId", async (req, res): Promise<void> => {
         actorUserId: user.id, now,
       });
     }
-    if (cancellationTransition) await restockBundleComponentsForCancelledOrderInTx(tx, locked.id);
+    if (cancellationTransition) {
+      await restockBundleComponentsForCancelledOrderInTx(tx, locked.id);
+      await releaseCouponRedemptionInTx(tx, { orderId: locked.id });
+    }
     const reversedPoints = cancellationTransition && !locked.loyaltyPointsReversedAt
       ? await reverseLoyaltyPointsInTx(tx, { audience: "B2B", salonId: locked.salonId, orderId: locked.id, points: locked.loyaltyPointsAwarded })
       : false;
@@ -17669,6 +18315,13 @@ function shopSettingsDto(settings: typeof shopSettingsTable.$inferSelect, freeSh
     freeShippingThreshold,
     version: settings.version,
     updatedAt: settings.updatedAt.toISOString(),
+    seller: {
+      companyName: settings.sellerCompanyName ?? "", taxId: settings.sellerTaxId ?? "",
+      registrationNumber: settings.sellerRegistrationNumber ?? "", address: settings.sellerAddress ?? "",
+      city: settings.sellerCity ?? "", postalCode: settings.sellerPostalCode ?? "",
+      bankAccount: settings.sellerBankAccount ?? "", contactEmail: settings.sellerContactEmail ?? "",
+      contactPhone: settings.sellerContactPhone ?? "",
+    },
   };
 }
 
@@ -17692,6 +18345,14 @@ router.put("/admin/shop-settings", async (req, res): Promise<void> => {
     || !integer(body.version, 1, 2_147_483_647)) {
     res.status(400).json({ error: "Neispravna podešavanja prodavnice." }); return;
   }
+  const seller = body.seller;
+  if (seller !== undefined && (!seller || typeof seller !== "object" || Object.values(seller).some((value) => typeof value !== "string" || value.trim().length > 300))) {
+    res.status(400).json({ error: "Unesite ispravne podatke prodavca." }); return;
+  }
+  const sellerFields = seller as Record<string, string> | undefined;
+  if (sellerFields && !["companyName", "taxId", "registrationNumber", "address", "city", "postalCode", "bankAccount", "contactEmail", "contactPhone"].every((key) => sellerFields[key]?.trim())) {
+    res.status(400).json({ error: "Svi podaci prodavca su obavezni za B2B fakture." }); return;
+  }
   const result = await db.transaction(async (tx) => {
     const [current] = await tx.select().from(shopSettingsTable).limit(1).for("update");
     if (!current) throw new Error("shop_settings_missing");
@@ -17703,6 +18364,13 @@ router.put("/admin/shop-settings", async (req, res): Promise<void> => {
       pointsPer100Rsd: body.pointsPer100Rsd as number,
       lowStockThreshold: body.lowStockThreshold as number,
       defaultDeliveryBusinessDays: body.defaultDeliveryBusinessDays as number,
+      ...(sellerFields ? {
+        sellerCompanyName: sellerFields.companyName.trim(), sellerTaxId: sellerFields.taxId.trim(),
+        sellerRegistrationNumber: sellerFields.registrationNumber.trim(), sellerAddress: sellerFields.address.trim(),
+        sellerCity: sellerFields.city.trim(), sellerPostalCode: sellerFields.postalCode.trim(),
+        sellerBankAccount: sellerFields.bankAccount.trim(), sellerContactEmail: sellerFields.contactEmail.trim().toLowerCase(),
+        sellerContactPhone: sellerFields.contactPhone.trim(),
+      } : {}),
       version: current.version + 1,
       updatedAt: new Date(),
     }).where(eq(shopSettingsTable.id, current.id)).returning();
@@ -17823,6 +18491,101 @@ router.delete("/admin/courier-services/:courierServiceId", async (req, res): Pro
   const [deleted] = await db.delete(courierServicesTable).where(eq(courierServicesTable.id, params.data.courierServiceId)).returning();
   if (!deleted) { res.status(404).json({ error: "Kurirska služba nije pronađena." }); return; }
   res.sendStatus(204);
+});
+
+function couponDto(coupon: typeof couponsTable.$inferSelect) {
+  return {
+    ...coupon,
+    startsAt: coupon.startsAt?.toISOString() ?? null,
+    endsAt: coupon.endsAt?.toISOString() ?? null,
+    createdAt: coupon.createdAt.toISOString(),
+    updatedAt: coupon.updatedAt.toISOString(),
+  };
+}
+
+function parseCouponInput(body: unknown) {
+  if (!body || typeof body !== "object") return null;
+  const value = body as Record<string, unknown>;
+  const code = typeof value.code === "string" ? value.code.trim().toUpperCase() : "";
+  const integerOrNull = (input: unknown) => input === null || input === undefined || input === ""
+    ? null
+    : Number.isInteger(input) ? input as number : Number.NaN;
+  const stringIds = (input: unknown) => Array.isArray(input)
+    ? [...new Set(input.filter((item): item is string => typeof item === "string" && /^[0-9a-f-]{36}$/i.test(item)))]
+    : [];
+  const startsAt = value.startsAt ? new Date(String(value.startsAt)) : null;
+  const endsAt = value.endsAt ? new Date(String(value.endsAt)) : null;
+  const discountValue = value.discountValue;
+  const minimumSpendRsd = value.minimumSpendRsd ?? 0;
+  const maximumSpendRsd = integerOrNull(value.maximumSpendRsd);
+  const usageLimit = integerOrNull(value.usageLimit);
+  const perCustomerUsageLimit = integerOrNull(value.perCustomerUsageLimit);
+  if (!/^[A-Z0-9_-]{2,40}$/.test(code)
+    || !["PERCENTAGE", "FIXED_RSD"].includes(String(value.discountType))
+    || !Number.isInteger(discountValue) || (discountValue as number) <= 0
+    || (value.discountType === "PERCENTAGE" && (discountValue as number) > 100)
+    || !Number.isInteger(minimumSpendRsd) || (minimumSpendRsd as number) < 0
+    || Number.isNaN(maximumSpendRsd) || (maximumSpendRsd !== null && maximumSpendRsd < (minimumSpendRsd as number))
+    || Number.isNaN(usageLimit) || (usageLimit !== null && usageLimit < 1)
+    || Number.isNaN(perCustomerUsageLimit) || (perCustomerUsageLimit !== null && perCustomerUsageLimit < 1)
+    || (value.audience !== null && value.audience !== undefined && !["B2B", "B2C"].includes(String(value.audience)))
+    || (startsAt && Number.isNaN(startsAt.getTime())) || (endsAt && Number.isNaN(endsAt.getTime()))
+    || (startsAt && endsAt && endsAt <= startsAt)) return null;
+  return {
+    code,
+    active: value.active !== false,
+    audience: value.audience === "B2B" ? "B2B" as const : value.audience === "B2C" ? "B2C" as const : null,
+    discountType: value.discountType as "PERCENTAGE" | "FIXED_RSD",
+    discountValue: discountValue as number,
+    startsAt, endsAt,
+    minimumSpendRsd: minimumSpendRsd as number,
+    maximumSpendRsd,
+    freeShipping: value.freeShipping === true,
+    includeProductIds: stringIds(value.includeProductIds),
+    excludeProductIds: stringIds(value.excludeProductIds),
+    includeCategoryIds: stringIds(value.includeCategoryIds),
+    excludeCategoryIds: stringIds(value.excludeCategoryIds),
+    includeBundleIds: stringIds(value.includeBundleIds),
+    excludeBundleIds: stringIds(value.excludeBundleIds),
+    usageLimit, perCustomerUsageLimit,
+    updatedAt: new Date(),
+  };
+}
+
+router.get("/admin/coupons", async (req, res): Promise<void> => {
+  if (!await requireAdmin(req, res)) return;
+  const coupons = await db.select().from(couponsTable).orderBy(desc(couponsTable.createdAt), asc(couponsTable.code));
+  res.json(coupons.map(couponDto));
+});
+
+router.post("/admin/coupons", async (req, res): Promise<void> => {
+  if (!await requireAdmin(req, res)) return;
+  const input = parseCouponInput(req.body);
+  if (!input) { res.status(400).json({ error: "Unesite ispravna pravila kupona." }); return; }
+  const [duplicate] = await db.select({ id: couponsTable.id }).from(couponsTable).where(eq(couponsTable.code, input.code)).limit(1);
+  if (duplicate) { res.status(409).json({ error: "Kupon sa tim kodom već postoji.", code: "COUPON_CODE_EXISTS" }); return; }
+  const [coupon] = await db.insert(couponsTable).values(input).returning();
+  res.status(201).json(couponDto(coupon!));
+});
+
+router.put("/admin/coupons/:couponId", async (req, res): Promise<void> => {
+  if (!await requireAdmin(req, res)) return;
+  const input = parseCouponInput(req.body);
+  if (!input) { res.status(400).json({ error: "Unesite ispravna pravila kupona." }); return; }
+  const [duplicate] = await db.select({ id: couponsTable.id }).from(couponsTable)
+    .where(and(eq(couponsTable.code, input.code), ne(couponsTable.id, req.params.couponId))).limit(1);
+  if (duplicate) { res.status(409).json({ error: "Kupon sa tim kodom već postoji.", code: "COUPON_CODE_EXISTS" }); return; }
+  const [coupon] = await db.update(couponsTable).set(input).where(eq(couponsTable.id, req.params.couponId)).returning();
+  if (!coupon) { res.status(404).json({ error: "Kupon nije pronađen." }); return; }
+  res.json(couponDto(coupon));
+});
+
+router.delete("/admin/coupons/:couponId", async (req, res): Promise<void> => {
+  if (!await requireAdmin(req, res)) return;
+  const [coupon] = await db.update(couponsTable).set({ active: false, updatedAt: new Date() })
+    .where(eq(couponsTable.id, req.params.couponId)).returning();
+  if (!coupon) { res.status(404).json({ error: "Kupon nije pronađen." }); return; }
+  res.status(204).send();
 });
 
 export default router;

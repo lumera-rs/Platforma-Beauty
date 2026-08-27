@@ -1,6 +1,6 @@
 import { type ComponentProps, type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
-import { useLocation } from "wouter";
-import { useQueryClient } from "@tanstack/react-query";
+import { useLocation, Link } from "wouter";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { BusinessLayout } from "@/components/business-layout";
 import { GuideHelpLink } from "@/components/guide-help-link";
 import { PasswordInput } from "@/components/password-input";
@@ -28,6 +28,7 @@ import {
   TrendingUp,
   DollarSign,
   Star,
+  ShoppingBag,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -414,6 +415,59 @@ function EmployeeOperations() {
   );
 }
 
+function EmployeeShopping() {
+  const queryClient = useQueryClient();
+  const { data: requests, isLoading } = useQuery({
+    queryKey: ["employee-approval-requests"],
+    queryFn: async () => {
+      const res = await fetch("/api/shop/approval-requests/mine", { credentials: "include" });
+      if (!res.ok) throw new Error("Neuspešno učitavanje zahteva");
+      return res.json() as Promise<any[]>;
+    }
+  });
+
+  return (
+    <Card className="h-full">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <ShoppingBag className="h-5 w-5 text-primary" /> Prodavnica i nabavka
+        </CardTitle>
+        <CardDescription>Pristupite B2B prodavnici i pratite status zahteva za kupovinu koje ste poslali vlasniku.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Button asChild className="w-full">
+          <Link href="/vlasnik/shop">Otvori B2B prodavnicu</Link>
+        </Button>
+        <div className="space-y-3 pt-2">
+          <h3 className="font-semibold text-sm border-b pb-2">Vaši zahtevi za kupovinu</h3>
+          {isLoading ? (
+            <Loader2 className="animate-spin w-5 h-5 mx-auto mt-4 text-primary" />
+          ) : requests?.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4 bg-muted/20 rounded-md">Nemate nedavnih zahteva.</p>
+          ) : (
+            <div className="space-y-3 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
+              {requests?.map((req: any) => (
+                <div key={req.id} className="text-sm p-3 border rounded-lg hover:bg-muted/10 transition-colors">
+                  <div className="flex justify-between items-center mb-1.5">
+                    <span className="font-semibold">Zahtev #{req.id.slice(0, 8)}</span>
+                    <Badge variant={req.status === 'PENDING' ? 'secondary' : req.status === 'APPROVED' ? 'default' : 'destructive'}>
+                      {req.status === 'PENDING' ? 'Na čekanju' : req.status === 'APPROVED' ? 'Odobreno' : req.status === 'REJECTED' ? 'Odbijeno' : 'Isteklo'}
+                    </Badge>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground text-xs">
+                    <span>{req.lines?.length || 0} stavki</span>
+                    <span>{new Date(req.createdAt).toLocaleDateString('sr-RS')}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function CompletedAppointmentPhotos({ appointmentId }: { appointmentId: string }) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -774,22 +828,25 @@ export default function EmployeePortal() {
               {portal.notifications.length ? portal.notifications.map((notification) => <div key={notification.id} className="border-b pb-2 last:border-0"><p className="text-sm font-medium">{notification.title}</p><p className="text-xs text-muted-foreground">{new Date(notification.date).toLocaleDateString("sr-RS")}</p></div>) : <p className="text-sm text-muted-foreground">Nemate nova obaveštenja.</p>}
             </CardContent>
           </Card>
+          <EmployeeShopping />
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-2">
           <Card>
             <CardHeader><CardTitle className="flex items-center gap-2 text-lg">Moje usluge <GuideHelpLink sectionId="za-ostalo" label="Obaveštenja, moje usluge i edukacije" /></CardTitle></CardHeader>
             <CardContent className="flex flex-wrap gap-2">
               {portal.services.length ? portal.services.map((service) => <Badge key={service.id} variant="secondary">{service.name} · {service.durationMinutes} min</Badge>) : <p className="text-sm text-muted-foreground">Salon vam još nije dodelio usluge.</p>}
             </CardContent>
           </Card>
-        </div>
-
-        <div className="grid gap-6 lg:grid-cols-2">
           <Card>
             <CardHeader><CardTitle className="flex items-center gap-2 text-lg">Odsustva i zahtevi <GuideHelpLink sectionId="za-odsustva" label="Moje radno vreme i zahtevi za odsustvo" /></CardTitle></CardHeader>
             <CardContent className="space-y-2">
               {portal.leaveRequests.length ? portal.leaveRequests.map((item) => <div key={item.id} className="flex items-center justify-between rounded-md border p-3 text-sm"><span>{formatEmployeeLeaveRequestSummary(item)}</span><Badge variant={item.status === "approved" ? "secondary" : item.status === "rejected" ? "destructive" : "default"}>{item.status === "pending" ? "Na čekanju" : item.status === "approved" ? "Odobreno" : "Odbijeno"}</Badge></div>) : <p className="text-sm text-muted-foreground">Nema poslatih zahteva.</p>}
             </CardContent>
           </Card>
+        </div>
 
+        <div className="grid gap-6 lg:grid-cols-1">
           <EmployeePerformanceTab />
         </div>
 

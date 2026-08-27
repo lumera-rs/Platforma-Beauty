@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 import test from "node:test";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
+  couponsTable,
   db,
   observeDatabaseQueries,
   pool,
@@ -19,6 +20,7 @@ import {
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
+import { ensureBusinessGrowthSchema } from "./business-growth-schema";
 import { ensureShippingConfigSchema } from "./shipping-config";
 
 type RetailCart = {
@@ -128,6 +130,7 @@ async function checkoutAndAssertSavedAmount(
 }
 
 test.before(async () => {
+  await ensureBusinessGrowthSchema();
   await ensureShippingConfigSchema();
   server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -237,6 +240,57 @@ test("cart summary does not create a cart and returns the count for an existing 
   assert.equal(existingSummary.status, 200);
   assert.equal(existingSummary.headers.get("set-cookie"), null);
   assert.deepEqual(await existingSummary.json() as RetailCartSummary, { itemCount: 1 });
+});
+
+test("an excluded B2C free-shipping coupon cannot waive checkout delivery", async () => {
+  assert.ok(createdProductId);
+  const request = retailClient();
+  assert.equal((await addRetailItem(request, createdProductId, 1)).status, 201);
+  const baselineResponse = await request("/retail/checkout-preview?deliveryMethod=courier&city=Novi%20Sad");
+  assert.equal(baselineResponse.status, 200);
+  const baseline = await baselineResponse.json() as RetailCheckoutPreview;
+  assert.ok(baseline.shipping.shippingCost > 0);
+
+  const code = `B2C-FREE-${randomUUID().slice(0, 8)}`.toUpperCase();
+  const [restrictedCoupon] = await db.insert(couponsTable).values({
+    code,
+    audience: "B2C",
+    discountType: "FIXED_RSD",
+    discountValue: 1,
+    freeShipping: true,
+    excludeProductIds: [createdProductId],
+  }).returning();
+  try {
+    const restrictedPreview = await request(
+      `/retail/checkout-preview?deliveryMethod=courier&city=Novi%20Sad&couponCode=${encodeURIComponent(code)}`,
+    );
+    assert.equal(restrictedPreview.status, 409);
+    assert.equal((await restrictedPreview.json() as ApiError).code, "COUPON_APPLICABILITY");
+
+    const restrictedCheckout = await request("/retail/checkout", {
+      method: "POST",
+      body: JSON.stringify({
+        idempotencyKey: `retail-restricted-coupon-${randomUUID()}`,
+        firstName: "Retail",
+        lastName: "Kupac",
+        email: `retail-restricted-${randomUUID()}@example.test`,
+        phone: "+381601234567",
+        street: "Test ulica 1",
+        city: "Novi Sad",
+        postalCode: "21000",
+        paymentMethod: "BANK_TRANSFER",
+        deliveryMethod: "courier",
+        couponCode: code,
+        expectedSubtotal: baseline.cart.subtotal,
+        expectedShippingCost: baseline.shipping.shippingCost,
+        expectedTotal: baseline.total,
+      }),
+    });
+    assert.equal(restrictedCheckout.status, 409);
+    assert.equal((await restrictedCheckout.json() as ApiError).code, "COUPON_APPLICABILITY");
+  } finally {
+    await db.delete(couponsTable).where(eq(couponsTable.id, restrictedCoupon!.id));
+  }
 });
 
 test("cart and checkout retain the saved catalog reference after an SKU edit", async () => {

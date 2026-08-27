@@ -6,13 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GetShopCheckoutPreviewParams = {
-/**
- * @minimum 0
- */
-desiredReferralCreditRsd?: number;
-/**
- * @maxLength 40
- */
-couponCode?: string;
-};
+export interface ApprovalRejectInput {
+  /** @maxLength 1000 */
+  reason?: string;
+}

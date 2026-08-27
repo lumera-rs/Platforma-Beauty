@@ -17,6 +17,11 @@ export interface RetailOrder {
   subtotal: number;
   shippingCost: number;
   total: number;
+  /** @nullable */
+  couponCode?: string | null;
+  /** @minimum 0 */
+  couponDiscountRsd?: number;
+  couponFreeShipping?: boolean;
   createdAt: Date;
   items: RetailOrderItemsItem[];
 }
