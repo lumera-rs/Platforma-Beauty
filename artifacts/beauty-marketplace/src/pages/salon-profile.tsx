@@ -49,6 +49,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { DiscoveryCarousel } from "@/components/discovery-carousel";
+import { fetchNativeJson } from "@/lib/native-fetch";
 
 const profileSections = [
   { id: "popular-services", label: "Popularno" },
@@ -224,8 +225,9 @@ export default function SalonProfile() {
 
   useEffect(() => {
     if (!salonData?.id || user?.role !== "CUSTOMER") return;
-    fetch(`/api/customer/favorite-employees/${salonData.id}`, { credentials: "include" })
-      .then((response) => response.ok ? response.json() : null)
+    fetchNativeJson<{ employeeId?: string | null }>(`/api/customer/favorite-employees/${salonData.id}`, { credentials: "include" }, {
+      httpErrorMessage: "Omiljeni zaposleni nije učitan.",
+    })
       .then((data) => setFavoriteEmployeeId(data?.employeeId ?? null))
       .catch(() => setFavoriteEmployeeId(null));
   }, [salonData?.id, user?.role]);
@@ -369,8 +371,16 @@ export default function SalonProfile() {
 
   const setFavorite = async (employeeId: string) => {
     if (!user) { setLocation("/prijava"); return; }
-    const response = await fetch(`/api/customer/favorite-employees/${salonData?.id}`, { method: "PUT", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ employeeId }) });
-    if (!response.ok) { toast.error("Omiljeni zaposleni nije sačuvan."); return; }
+    try {
+      await fetchNativeJson(`/api/customer/favorite-employees/${salonData?.id}`, { method: "PUT", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ employeeId }) }, {
+        httpErrorMessage: "Omiljeni zaposleni nije sačuvan. Pokušajte ponovo.",
+      });
+    } catch (error) {
+      toast.error("Omiljeni zaposleni nije sačuvan.", {
+        description: error instanceof Error ? error.message : "Pokušajte ponovo.",
+      });
+      return;
+    }
     setFavoriteEmployeeId(employeeId); selectEmployee(employeeId); toast.success("Omiljeni zaposleni je sačuvan.");
   };
 
@@ -463,9 +473,9 @@ export default function SalonProfile() {
     if (!verificationPhone.trim()) { toast.error("Unesite broj mobilnog telefona."); return; }
     setIsVerifyingPhone(true);
     try {
-      const response = await fetch("/api/auth/phone-verification/request", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phone: verificationPhone }) });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error);
+      await fetchNativeJson("/api/auth/phone-verification/request", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phone: verificationPhone }) }, {
+        httpErrorMessage: "Kod nije poslat. Pokušajte ponovo.",
+      });
       setPhoneCodeRequested(true);
       toast.success("SMS kod je poslat.");
     } catch (error) {
@@ -477,9 +487,9 @@ export default function SalonProfile() {
     if (!verificationCode.trim()) { toast.error("Unesite kod iz SMS poruke."); return; }
     setIsVerifyingPhone(true);
     try {
-      const response = await fetch("/api/auth/phone-verification/confirm", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ phone: verificationPhone, code: verificationCode }) });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error);
+      await fetchNativeJson("/api/auth/phone-verification/confirm", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ phone: verificationPhone, code: verificationCode }) }, {
+        httpErrorMessage: "Broj nije potvrđen. Pokušajte ponovo.",
+      });
       setPhoneVerifiedForBooking(true);
       toast.success("Broj telefona je potvrđen.");
     } catch (error) {

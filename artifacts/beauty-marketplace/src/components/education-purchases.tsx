@@ -4,27 +4,21 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { fetchNativeJson, NativeFetchError } from "@/lib/native-fetch";
 
 type Dispute = { id: string; enrollmentId?: string; reason: string; details: string; status: "open" | "under_review"; createdAt: string };
 type Purchase = { id: string; courseTitle: string; learnerName: string; status: string; paymentStatus: string; progress: number; purchasedAt: string; escrowStatus: string | null; escrowReleaseAt: string | null; dispute: Dispute | null };
 type Thread = { messages: { id: string; body: string; senderName: string; createdAt: string }[] };
 type ApiErrorData = { error?: string; dispute?: Dispute };
-class ApiError extends Error {
-  constructor(message: string, readonly status: number, readonly data: ApiErrorData) {
-    super(message);
-  }
-}
-const call = async <T,>(path: string, init?: RequestInit) => {
-  const response = await fetch(path, { ...init, headers: { "content-type": "application/json", ...(init?.headers ?? {}) } });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new ApiError(result.error ?? "Zahtev nije uspeo.", response.status, result);
-  return result as T;
-};
 
 export function EducationPurchases() {
   const { toast } = useToast();
   const [purchases, setPurchases] = useState<Purchase[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const call = async <T,>(path: string, init?: RequestInit) => fetchNativeJson<T>(path, {
+    ...init,
+    headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
+  }, { httpErrorMessage: "Zahtev nije uspeo. Pokušajte ponovo." });
   const load = async () => {
     try { setPurchases(await call<Purchase[]>("/api/education/purchases")); }
     catch (error) { toast.error("Edukacije nisu učitane", { description: error instanceof Error ? error.message : undefined }); setPurchases([]); }
@@ -53,8 +47,11 @@ export function EducationPurchases() {
       toast.success("Problem je prijavljen. Escrow je zamrznut dok admin ne donese odluku.");
       await load();
     } catch (error) {
-      if (error instanceof ApiError && error.status === 409 && error.data.dispute) {
-        setPurchases((current) => current?.map((item) => item.id === purchase.id ? { ...item, dispute: error.data.dispute! } : item) ?? current);
+      const existingDispute = error instanceof NativeFetchError
+        ? (error.data as ApiErrorData | undefined)?.dispute
+        : undefined;
+      if (error instanceof NativeFetchError && error.status === 409 && existingDispute) {
+        setPurchases((current) => current?.map((item) => item.id === purchase.id ? { ...item, dispute: existingDispute } : item) ?? current);
         toast.info("Problem je već prijavljen", { description: "Prikazujemo postojeći spor; nije kreiran novi zahtev." });
       } else {
         toast.error("Problem nije prijavljen", { description: error instanceof Error ? error.message : undefined });

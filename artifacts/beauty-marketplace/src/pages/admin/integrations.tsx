@@ -22,6 +22,11 @@ import {
   AdminGetIntegrationsResponse as AdminGetIntegrationsResponseSchema,
   AdminGetWebhookFreshnessResponse as AdminGetWebhookFreshnessResponseSchema,
 } from "@workspace/api-zod";
+import {
+  assertNativeFetchSuccess,
+  fetchNativeJson,
+  fetchNativeJsonResponse,
+} from "@/lib/native-fetch";
 
 type Integration = keyof AdminGetIntegrationsResponse["integrations"];
 type Card = AdminIntegrationCard & Partial<AdminWebhookIntegrationCard & AdminBrevoWebhookIntegrationCard>;
@@ -63,14 +68,10 @@ export default function AdminIntegrations() {
     freshnessRefreshController.current?.abort();
   };
   const load = async () => {
-    const response = await fetch("/api/admin/integrations", { credentials: "include" });
-    if (!response.ok) throw new Error("Podešavanja integracija nisu učitana.");
-    let body: unknown;
-    try {
-      body = await response.json();
-    } catch {
-      throw new Error("Odgovor servera za integracije nije validan JSON. Osvežite stranicu i pokušajte ponovo.");
-    }
+    const body = await fetchNativeJson<unknown>("/api/admin/integrations", { credentials: "include" }, {
+      httpErrorMessage: "Podešavanja integracija nisu učitana. Osvežite stranicu i pokušajte ponovo.",
+      invalidResponseMessage: "Odgovor servera za integracije nije validan JSON. Osvežite stranicu i pokušajte ponovo.",
+    });
     const parsed = AdminGetIntegrationsResponseSchema.safeParse(body);
     if (!parsed.success) throw new Error(integrationResponseError(parsed.error.issues));
     // Zod intentionally coerces date-like fields to Date for server-side
@@ -86,14 +87,10 @@ export default function AdminIntegrations() {
     const controller = new AbortController();
     freshnessRefreshController.current = controller;
     try {
-      const response = await fetch("/api/admin/integrations/webhook-freshness", { credentials: "include", signal: controller.signal });
-      if (!response.ok) throw new Error("Svežina webhook potvrde nije osvežena.");
-      let body: unknown;
-      try {
-        body = await response.json();
-      } catch {
-        throw new Error("Odgovor servera za svežinu webhook potvrde nije validan JSON.");
-      }
+      const body = await fetchNativeJson<unknown>("/api/admin/integrations/webhook-freshness", { credentials: "include", signal: controller.signal }, {
+        httpErrorMessage: "Svežina webhook potvrde nije osvežena.",
+        invalidResponseMessage: "Odgovor servera za svežinu webhook potvrde nije validan JSON.",
+      });
       const parsed = AdminGetWebhookFreshnessResponseSchema.safeParse(body);
       if (!parsed.success) throw new Error(integrationResponseError(parsed.error.issues));
       const payload = body as AdminGetWebhookFreshnessResponse;
@@ -211,18 +208,18 @@ export default function AdminIntegrations() {
     for (const [k, v] of Object.entries(form[integration])) {
       if (v.trim()) trimmedValues[k] = v.trim();
     }
-    const response = await fetch(`/api/admin/integrations/${integration}`, { method: "PUT", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: data!.integrations[integration].enabled, expectedVersion: data!.integrations[integration].version, values: trimmedValues }) });
-    const result = await response.json();
+    const response = await fetchNativeJsonResponse<Card & { code?: string }>(`/api/admin/integrations/${integration}`, { method: "PUT", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: data!.integrations[integration].enabled, expectedVersion: data!.integrations[integration].version, values: trimmedValues }) });
+    const result = response.data;
     if (response.status === 409 && result.code === "INTEGRATION_SETTINGS_VERSION_CONFLICT") {
       throw new Error("Podešavanja su promenjena u drugom administratorskom prozoru. Osvežite stranicu, proverite najnovije vrednosti i pokušajte ponovo.");
     }
-    if (!response.ok) throw new Error(result.error ?? "Čuvanje nije uspelo.");
-    setData({ ...data!, integrations: { ...data!.integrations, [integration]: result } });
+    const saved = assertNativeFetchSuccess(response, "Čuvanje nije uspelo.");
+    setData({ ...data!, integrations: { ...data!.integrations, [integration]: saved } });
     setForm({ ...form, [integration]: {} });
-    setSavedEnabled((previous) => previous ? { ...previous, [integration]: (result as Card).enabled } : previous);
+    setSavedEnabled((previous) => previous ? { ...previous, [integration]: saved.enabled } : previous);
     // The server marks the change only when the saved secret actually differs
     // from the effective one — re-saving an identical secret stays a plain save.
-    if ("webhookSecret" in trimmedValues && result.webhookSecretPendingReconfirmation) {
+    if ("webhookSecret" in trimmedValues && saved.webhookSecretPendingReconfirmation) {
       const smsSecret = integration === "sms";
       toast.warning(
         smsSecret
@@ -242,9 +239,7 @@ export default function AdminIntegrations() {
   const test = async (integration: Integration) => {
     const recipient = testRecipient[integration].trim();
     if ((integration === "sms" || integration === "brevo") && !recipient) { toast.error("Unesite primaoca za test poruku."); return; }
-    const response = await fetch(`/api/admin/integrations/${integration}/test`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ recipient }) });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error ?? "Test nije uspeo.");
+    const result = await fetchNativeJson<{ message: string }>(`/api/admin/integrations/${integration}/test`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ recipient }) }, { httpErrorMessage: "Test nije uspeo." });
     toast.success(result.message);
   };
   const [verifyingWebhook, setVerifyingWebhook] = useState<Record<Integration, boolean>>({ sms: false, brevo: false, google_oauth: false, facebook_oauth: false, cloudflare: false });
@@ -255,9 +250,7 @@ export default function AdminIntegrations() {
     invalidateWebhookFreshness();
     setVerifyingWebhook((previous) => ({ ...previous, [integration]: true }));
     try {
-      const response = await fetch(`/api/admin/integrations/${integration}/verify-webhook`, { method: "POST", credentials: "include" });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "Provera webhook-a nije uspela.");
+      const result = await fetchNativeJson<{ webhookVerifiedAt?: string | null; webhookVerificationStale?: boolean; message: string }>(`/api/admin/integrations/${integration}/verify-webhook`, { method: "POST", credentials: "include" }, { httpErrorMessage: "Provera webhook-a nije uspela." });
       invalidateWebhookFreshness();
       clearPendingReconfirmation(integration);
       updateWebhookVerifiedAt(integration, result.webhookVerifiedAt, result.webhookVerificationStale);
@@ -272,9 +265,7 @@ export default function AdminIntegrations() {
   const copyWebhookUrl = async (integration: Integration) => {
     setCopyingWebhookUrl((previous) => ({ ...previous, [integration]: true }));
     try {
-      const response = await fetch(`/api/admin/integrations/${integration}/webhook-url`, { credentials: "include" });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "Webhook URL nije učitan.");
+      const result = await fetchNativeJson<{ url: string; warning?: string }>(`/api/admin/integrations/${integration}/webhook-url`, { credentials: "include" }, { httpErrorMessage: "Webhook URL nije učitan." });
       await navigator.clipboard.writeText(result.url);
       toast.success("Kompletan webhook URL sa sačuvanom tajnom je kopiran.");
       // From the development preview the copied URL carries the dev address;
@@ -290,11 +281,11 @@ export default function AdminIntegrations() {
   const verifyBrevoRegistration = async () => {
     setVerifyingRegistration(true);
     try {
-      const response = await fetch("/api/admin/integrations/brevo/verify-registration", { method: "POST", credentials: "include" });
-      const result = await response.json();
+      const response = await fetchNativeJsonResponse<Record<string, unknown>>("/api/admin/integrations/brevo/verify-registration", { method: "POST", credentials: "include" });
+      const result = response.data as { staleWebhooks?: Array<{ id: number; maskedUrl: string }>; missingEvents?: unknown; reconfirmed?: boolean; message: string };
       if (Array.isArray(result.staleWebhooks)) updateStaleBrevoWebhooks(result.staleWebhooks);
       applyBrevoRegistrationResult(result, response.ok || response.status === 409);
-      if (!response.ok) throw new Error(result.error ?? "Provera registracije na Brevo nije uspela.");
+      assertNativeFetchSuccess(response, "Provera registracije na Brevo nije uspela.");
       // A development/preview verdict may be successful only in the softened
       // sense that it found the current secret elsewhere (likely production).
       // The server marks only a strict production-origin verdict as a
@@ -312,9 +303,7 @@ export default function AdminIntegrations() {
   const verifySmsRegistration = async () => {
     setVerifyingSmsRegistration(true);
     try {
-      const response = await fetch("/api/admin/integrations/sms/verify-registration", { method: "POST", credentials: "include" });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "Provera registracije nije uspela.");
+      const result = await fetchNativeJson<{ verified: boolean; message: string }>("/api/admin/integrations/sms/verify-registration", { method: "POST", credentials: "include" }, { httpErrorMessage: "Provera registracije nije uspela." });
       if (result.verified) toast.success(result.message);
       else toast.info(result.message, { duration: 15000 });
     } catch (error) {
@@ -362,9 +351,7 @@ export default function AdminIntegrations() {
   const refreshStaleBrevoWebhooks = async ({ notify = true }: { notify?: boolean } = {}) => {
     setRefreshingStaleWebhooks(true);
     try {
-      const response = await fetch("/api/admin/integrations/brevo/stale-webhooks", { credentials: "include" });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "Osvežavanje zaostalih Brevo registracija nije uspelo.");
+      const result = await fetchNativeJson<{ staleWebhooks?: Array<{ id: number; maskedUrl: string }> }>("/api/admin/integrations/brevo/stale-webhooks", { credentials: "include" }, { httpErrorMessage: "Osvežavanje zaostalih Brevo registracija nije uspelo." });
       const selectedIds = selectedStaleBrevoWebhookIds;
       updateStaleBrevoWebhooks(result.staleWebhooks ?? [], selectedIds.length ? selectedIds : undefined);
       if (notify) toast.success("Spisak zaostalih Brevo registracija je osvežen.");
@@ -399,13 +386,19 @@ export default function AdminIntegrations() {
     if (!actionGuard.begin(key)) return;
     setRegisteringWebhook(true);
     try {
-      const response = await fetch("/api/admin/integrations/brevo/register-webhook", { method: "POST", credentials: "include" });
-      const result = await response.json();
+      const response = await fetchNativeJsonResponse<{
+        staleWebhooks?: Array<{ id: number; maskedUrl: string }>;
+        missingEvents?: unknown;
+        webhookVerifiedAt?: string | null;
+        webhookVerificationStale?: boolean;
+        message: string;
+      }>("/api/admin/integrations/brevo/register-webhook", { method: "POST", credentials: "include" });
+      const result = response.data;
       // The provider may accept the update while still omitting event groups.
       // Keep those exact groups in the card before surfacing the error, rather
       // than reducing a partial repair to a transient toast.
       applyBrevoRegistrationResult(result, response.ok);
-      if (!response.ok) throw new Error(result.error ?? "Registracija webhook-a na Brevo nije uspela.");
+      assertNativeFetchSuccess(response, "Registracija webhook-a na Brevo nije uspela.");
       // One-click registration re-verified the provider registration with the
       // current secret — the server cleared the reminder; mirror it here.
       clearPendingReconfirmation("brevo");
@@ -434,10 +427,13 @@ export default function AdminIntegrations() {
     }
     setCleaningStaleWebhooks(true);
     try {
-      const response = await fetch("/api/admin/integrations/brevo/cleanup-webhooks", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: selectedIds }) });
-      const result = await response.json();
+      const response = await fetchNativeJsonResponse<{
+        staleWebhooks?: Array<{ id: number; maskedUrl: string }>;
+        message: string;
+      }>("/api/admin/integrations/brevo/cleanup-webhooks", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: selectedIds }) });
+      const result = response.data;
       if (Array.isArray(result.staleWebhooks)) updateStaleBrevoWebhooks(result.staleWebhooks, selectedIds);
-      if (!response.ok) throw new Error(result.error ?? "Uklanjanje zaostalih registracija nije uspelo.");
+      assertNativeFetchSuccess(response, "Uklanjanje zaostalih registracija nije uspelo.");
       toast.success(result.message);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Uklanjanje zaostalih registracija nije uspelo.");

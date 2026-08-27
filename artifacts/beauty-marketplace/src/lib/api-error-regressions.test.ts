@@ -10,6 +10,11 @@ import {
   type ApiErrorData,
 } from "../../../../lib/api-client-react/src/custom-fetch";
 import { extractApiError } from "./admin-form-utils";
+import {
+  assertNativeFetchSuccess,
+  NativeFetchError,
+  readNativeFetchResponse,
+} from "./native-fetch";
 
 const GENERATED_API_CLIENT_IMPORT =
   /(?:\bfrom\s*|\bimport\s*\()\s*["']@workspace\/api-client-react["']/;
@@ -308,6 +313,53 @@ test("native fetch Response handling is not mistaken for generated API error acc
   `;
 
   assert.deepEqual(findGeneratedApiErrorViolations(nativeFetchHelper), []);
+});
+
+test("native fetch helpers preserve a safe server error for unsuccessful HTTP responses", async () => {
+  const result = await readNativeFetchResponse<{ error?: string }>(
+    Response.json({ error: "Kupon sa tim kodom već postoji." }, { status: 409 }),
+  );
+
+  await assert.rejects(
+    async () => assertNativeFetchSuccess(result, "Kupon nije sačuvan. Pokušajte ponovo."),
+    (error: unknown) => {
+      assert.ok(error instanceof NativeFetchError);
+      assert.equal(error.status, 409);
+      assert.equal(error.message, "Kupon sa tim kodom već postoji.");
+      return true;
+    },
+  );
+});
+
+test("native fetch helpers reject invalid JSON with the configured recovery message", async () => {
+  await assert.rejects(
+    () => readNativeFetchResponse(
+      new Response("<!doctype html><title>Gateway error</title>", { status: 502 }),
+      { invalidResponseMessage: "Odgovor za kupone nije validan. Osvežite stranicu i pokušajte ponovo." },
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof NativeFetchError);
+      assert.equal(error.status, 502);
+      assert.equal(error.message, "Odgovor za kupone nije validan. Osvežite stranicu i pokušajte ponovo.");
+      return true;
+    },
+  );
+});
+
+test("native-fetch screens keep response parsing in the shared helpers", () => {
+  const files = [
+    "pages/admin/integrations.tsx",
+    "pages/salon-profile.tsx",
+    "hooks/use-coupons.ts",
+    "components/education-purchases.tsx",
+  ];
+  const sourceRoot = fileURLToPath(new URL("..", import.meta.url));
+
+  for (const relativePath of files) {
+    const source = readFileSync(path.join(sourceRoot, relativePath), "utf8");
+    assert.match(source, /from ["']@\/lib\/native-fetch["']/);
+    assert.doesNotMatch(source, /\.json\(\)/);
+  }
 });
 
 test("generated-client discovery excludes regression test fixtures", () => {
