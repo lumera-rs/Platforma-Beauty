@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 57;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 58;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -530,6 +530,7 @@ function tableStatements(s: string): string[] {
       )
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS commerce_experience_settings_singleton_unique ON ${s}.commerce_experience_settings ((true))`,
+    `CREATE INDEX IF NOT EXISTS commerce_experience_settings_updated_by_idx ON ${s}.commerce_experience_settings (updated_by_user_id)`,
     `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS professional_enabled boolean NOT NULL DEFAULT true`,
     // v41 — validated product merchandising configuration. JSONB keeps ordered
     // relationship ids and tier rows intact; API writes enforce their invariants.
@@ -2661,6 +2662,7 @@ function tableStatements(s: string): string[] {
       CONSTRAINT b2b_quotes_totals_check CHECK (subtotal_without_vat >= 0 AND vat_amount >= 0 AND total_with_vat = subtotal_without_vat + vat_amount)
     )`,
     `CREATE INDEX IF NOT EXISTS b2b_quotes_salon_created_idx ON ${s}.b2b_quotes (salon_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS b2b_quotes_source_cart_idx ON ${s}.b2b_quotes (source_cart_id)`,
     `CREATE TABLE IF NOT EXISTS ${s}.price_inquiries (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), supplier_id uuid NOT NULL REFERENCES ${s}.suppliers(id) ON DELETE RESTRICT,
       product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE RESTRICT,
@@ -2669,6 +2671,8 @@ function tableStatements(s: string): string[] {
       created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
     )`,
     `CREATE INDEX IF NOT EXISTS price_inquiries_status_created_idx ON ${s}.price_inquiries (status, created_at)`,
+    `CREATE INDEX IF NOT EXISTS price_inquiries_product_created_idx ON ${s}.price_inquiries (product_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS price_inquiries_supplier_idx ON ${s}.price_inquiries (supplier_id)`,
     `CREATE TABLE IF NOT EXISTS ${s}.rmas (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), rma_number text NOT NULL UNIQUE,
       order_id uuid NOT NULL REFERENCES ${s}.orders(id) ON DELETE RESTRICT,
@@ -2679,6 +2683,8 @@ function tableStatements(s: string): string[] {
       created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
     )`,
     `CREATE INDEX IF NOT EXISTS rmas_order_created_idx ON ${s}.rmas (order_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS rmas_order_item_idx ON ${s}.rmas (order_item_id)`,
+    `CREATE INDEX IF NOT EXISTS rmas_requester_user_idx ON ${s}.rmas (requester_user_id)`,
     `CREATE INDEX IF NOT EXISTS rmas_status_created_idx ON ${s}.rmas (status, created_at)`,
     // Existing v53 installations may already have B2B-only non-null columns.
     // Extend in place to a checked discriminated target; no data is rewritten.
@@ -2687,6 +2693,7 @@ function tableStatements(s: string): string[] {
     `ALTER TABLE ${s}.rmas ALTER COLUMN order_id DROP NOT NULL`,
     `ALTER TABLE ${s}.rmas ALTER COLUMN order_item_id DROP NOT NULL`,
     `CREATE INDEX IF NOT EXISTS rmas_retail_order_created_idx ON ${s}.rmas (retail_order_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS rmas_retail_order_item_idx ON ${s}.rmas (retail_order_item_id)`,
     `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'rmas_target_check' AND conrelid = '${s}.rmas'::regclass) THEN
       ALTER TABLE ${s}.rmas ADD CONSTRAINT rmas_target_check CHECK (num_nonnulls(order_id, retail_order_id) = 1 AND num_nonnulls(order_item_id, retail_order_item_id) = 1) NOT VALID;
       ALTER TABLE ${s}.rmas VALIDATE CONSTRAINT rmas_target_check;
@@ -2703,6 +2710,7 @@ function tableStatements(s: string): string[] {
       previous_status ${s}.rma_status, next_status ${s}.rma_status NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
     )`,
     `CREATE INDEX IF NOT EXISTS rma_status_history_rma_created_idx ON ${s}.rma_status_history (rma_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS rma_status_history_actor_user_idx ON ${s}.rma_status_history (actor_user_id)`,
     `CREATE TABLE IF NOT EXISTS ${s}.review_reward_issuances (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), order_id uuid NOT NULL UNIQUE REFERENCES ${s}.retail_orders(id) ON DELETE RESTRICT,
       review_id uuid NOT NULL UNIQUE, coupon_id uuid NOT NULL, percent_snapshot integer NOT NULL CHECK (percent_snapshot BETWEEN 1 AND 100),
@@ -2715,6 +2723,7 @@ function tableStatements(s: string): string[] {
       requested_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL, created_at timestamptz NOT NULL DEFAULT now()
     )`,
     `CREATE INDEX IF NOT EXISTS catalog_sync_runs_provider_created_idx ON ${s}.catalog_sync_runs (provider, created_at)`,
+    `CREATE INDEX IF NOT EXISTS catalog_sync_runs_requested_by_idx ON ${s}.catalog_sync_runs (requested_by_user_id)`,
     `CREATE TABLE IF NOT EXISTS ${s}.retail_product_review_attachments (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       review_id uuid NOT NULL REFERENCES ${s}.retail_product_reviews(id) ON DELETE CASCADE,

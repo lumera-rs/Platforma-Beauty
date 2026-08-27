@@ -33,6 +33,7 @@ export const commerceExperienceSettingsTable = pgTable("commerce_experience_sett
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   uniqueIndex("commerce_experience_settings_singleton_unique").on(sql`(true)`),
+  index("commerce_experience_settings_updated_by_idx").on(t.updatedByUserId),
   check("commerce_experience_settings_values_check", sql`
     ${t.headerIntervalSeconds} BETWEEN 2 AND 60
     AND ${t.smartSearchMode} IN ('AUTOMATIC', 'MANUAL')

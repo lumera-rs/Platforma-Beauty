@@ -106,6 +106,11 @@ async function seedLegacySchema(schema: string) {
     active boolean NOT NULL DEFAULT true,
     created_at timestamptz NOT NULL DEFAULT now()
   )`);
+  // App Storage metadata is an existing platform dependency, not part of the
+  // Business Growth rollout. The legacy fixture needs only its referenced key.
+  await q(`CREATE TABLE "${schema}".media_assets (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid()
+  )`);
   // Legacy retail carts used a unique index that treated NULL variant values as
   // distinct, so the same un-varianted product could be stored twice.
   await q(`CREATE TABLE "${schema}".retail_carts (
@@ -858,6 +863,9 @@ async function run() {
     const leadingFkIndexes: Array<[string, string]> = [
       ["automation_runs_attributed_appointment_idx", "attributed_appointment_id"],
       ["automation_runs_salon_customer_idx", "salon_customer_id"],
+      ["b2b_quotes_source_cart_idx", "source_cart_id"],
+      ["catalog_sync_runs_requested_by_idx", "requested_by_user_id"],
+      ["commerce_experience_settings_updated_by_idx", "updated_by_user_id"],
       ["customer_package_purchases_payment_confirmed_by_idx", "payment_confirmed_by_user_id"],
       ["customer_package_purchases_customer_idx", "salon_customer_id"],
       ["employee_commission_settings_updated_by_idx", "updated_by_user_id"],
@@ -865,6 +873,12 @@ async function run() {
       ["package_redemptions_reversed_by_idx", "reversed_by_user_id"],
       ["package_redemptions_customer_idx", "salon_customer_id"],
       ["platform_retention_settings_changed_by_idx", "changed_by_user_id"],
+      ["price_inquiries_product_created_idx", "product_id"],
+      ["price_inquiries_supplier_idx", "supplier_id"],
+      ["rma_status_history_actor_user_idx", "actor_user_id"],
+      ["rmas_order_item_idx", "order_item_id"],
+      ["rmas_requester_user_idx", "requester_user_id"],
+      ["rmas_retail_order_item_idx", "retail_order_item_id"],
     ];
     for (const [idxName, fkColumn] of leadingFkIndexes) {
       assert.ok(await indexExists(idxName), `leading FK index ${idxName} exists`);

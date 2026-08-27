@@ -38,6 +38,7 @@ export const b2bQuotesTable = pgTable("b2b_quotes", {
 }, (t) => [
   uniqueIndex("b2b_quotes_public_id_unique").on(t.publicId),
   index("b2b_quotes_salon_created_idx").on(t.salonId, t.createdAt),
+  index("b2b_quotes_source_cart_idx").on(t.sourceCartId),
   check("b2b_quotes_totals_check", sql`${t.subtotalWithoutVat} >= 0 AND ${t.vatAmount} >= 0 AND ${t.totalWithVat} = ${t.subtotalWithoutVat} + ${t.vatAmount}`),
 ]);
 
@@ -53,6 +54,7 @@ export const priceInquiriesTable = pgTable("price_inquiries", {
 }, (t) => [
   index("price_inquiries_status_created_idx").on(t.status, t.createdAt),
   index("price_inquiries_product_created_idx").on(t.productId, t.createdAt),
+  index("price_inquiries_supplier_idx").on(t.supplierId),
 ]);
 
 export const rmasTable = pgTable("rmas", {
@@ -70,7 +72,10 @@ export const rmasTable = pgTable("rmas", {
 }, (t) => [
   uniqueIndex("rmas_number_unique").on(t.rmaNumber),
   index("rmas_order_created_idx").on(t.orderId, t.createdAt),
+  index("rmas_order_item_idx").on(t.orderItemId),
   index("rmas_retail_order_created_idx").on(t.retailOrderId, t.createdAt),
+  index("rmas_retail_order_item_idx").on(t.retailOrderItemId),
+  index("rmas_requester_user_idx").on(t.requesterUserId),
   index("rmas_status_created_idx").on(t.status, t.createdAt),
   check("rmas_quantity_check", sql`${t.quantity} > 0`),
   check("rmas_target_check", sql`num_nonnulls(${t.orderId}, ${t.retailOrderId}) = 1 AND num_nonnulls(${t.orderItemId}, ${t.retailOrderItemId}) = 1`),
@@ -89,7 +94,10 @@ export const rmaStatusHistoryTable = pgTable("rma_status_history", {
   actorUserId: uuid("actor_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   previousStatus: rmaStatusEnum("previous_status"), nextStatus: rmaStatusEnum("next_status").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [index("rma_status_history_rma_created_idx").on(t.rmaId, t.createdAt)]);
+}, (t) => [
+  index("rma_status_history_rma_created_idx").on(t.rmaId, t.createdAt),
+  index("rma_status_history_actor_user_idx").on(t.actorUserId),
+]);
 
 /** The unique order key is the concurrency fence: only one reward can ever be issued. */
 export const reviewRewardIssuancesTable = pgTable("review_reward_issuances", {
@@ -114,4 +122,7 @@ export const catalogSyncRunsTable = pgTable("catalog_sync_runs", {
   validationErrors: jsonb("validation_errors").$type<string[]>().notNull().default([]),
   requestedByUserId: uuid("requested_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [index("catalog_sync_runs_provider_created_idx").on(t.provider, t.createdAt)]);
+}, (t) => [
+  index("catalog_sync_runs_provider_created_idx").on(t.provider, t.createdAt),
+  index("catalog_sync_runs_requested_by_idx").on(t.requestedByUserId),
+]);
