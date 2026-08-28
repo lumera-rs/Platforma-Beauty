@@ -7399,6 +7399,33 @@ components:
       properties:
         cartId: { type: string }
         addedRows: { type: integer, minimum: 0 }
+    B2bQuoteRecipientSnapshot:
+      type: object
+      required: [companyName]
+      properties:
+        companyName: { type: string }
+        registeredCompanyName: { type: string }
+        taxId: { type: string }
+        registrationNumber: { type: string }
+        address: { type: string }
+        city: { type: string }
+        postalCode: { type: string }
+        email: { type: string }
+        phone: { type: string }
+    B2bQuoteSellerSnapshot:
+      type: object
+      required: [companyName]
+      properties:
+        companyName: { type: string }
+        taxId: { type: string }
+        registrationNumber: { type: string }
+        address: { type: string }
+        city: { type: string }
+        postalCode: { type: string }
+        bankAccount: { type: string }
+        email: { type: string }
+        phone: { type: string }
+        recipient: { $ref: "#/components/schemas/B2bQuoteRecipientSnapshot" }
     B2bQuote:
       type: object
       required: [id, publicId, salonId, sellerSnapshot, itemSnapshots, subtotalWithoutVat, vatAmount, totalWithVat, currency, validUntil, createdAt]
@@ -7408,7 +7435,7 @@ components:
         salonId: { type: string }
         sourceCartId: { type: [string, "null"] }
         customerCompanyName: { type: [string, "null"] }
-        sellerSnapshot: { type: object, additionalProperties: true }
+        sellerSnapshot: { $ref: "#/components/schemas/B2bQuoteSellerSnapshot" }
         itemSnapshots: { type: array, items: { type: object, additionalProperties: true } }
         subtotalWithoutVat: { type: integer, minimum: 0 }
         vatAmount: { type: integer, minimum: 0 }

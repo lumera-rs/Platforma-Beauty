@@ -172,8 +172,40 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
   await t.test("quote is owner-bound immutable evidence and restore replaces the cart exactly", async () => {
     const owner = await cookie(salonOwner);
     const made = await api("/shop/quotes", owner, { method: "POST", body: JSON.stringify({ validityDays: 7 }) }); assert.equal(made.status, 201);
-    const quote = await made.json() as { publicId: string; itemSnapshots: Array<{ unitPrice: number; quantity: number }> };
+    const quote = await made.json() as {
+      publicId: string;
+      sellerSnapshot: {
+        companyName: string;
+        recipient?: {
+          companyName: string;
+          registeredCompanyName?: string;
+          taxId?: string;
+          registrationNumber?: string;
+          address?: string;
+          city?: string;
+          postalCode?: string;
+          email?: string;
+          phone?: string;
+        };
+      };
+      itemSnapshots: Array<{ unitPrice: number; quantity: number }>;
+    };
     assert.deepEqual(quote.itemSnapshots.map(x => [x.unitPrice, x.quantity]), [[777, 2]]);
+    assert.equal(quote.sellerSnapshot.recipient?.companyName, marker);
+    assert.equal(quote.sellerSnapshot.recipient?.registeredCompanyName, undefined);
+    const [legacyQuote] = await db.insert(b2bQuotesTable).values({
+      publicId: `legacy-${marker}`,
+      salonId,
+      sellerSnapshot: { companyName: "LUMERA" },
+      itemSnapshots: [],
+      subtotalWithoutVat: 0,
+      vatAmount: 0,
+      totalWithVat: 0,
+      validUntil: new Date(Date.now() + 86_400_000),
+    }).returning();
+    const legacyResponse = await api(`/shop/quotes/${legacyQuote!.publicId}`, owner);
+    assert.equal(legacyResponse.status, 200);
+    assert.equal("recipient" in ((await legacyResponse.json() as { sellerSnapshot: object }).sellerSnapshot), false);
     await db.update(shoppingCartItemsTable).set({ quantity: 99, unitPrice: 1 }).where(eq(shoppingCartItemsTable.cartId, ids.carts[0]!));
     assert.equal((await api(`/shop/quotes/${quote.publicId}/restore-cart`, owner, { method: "POST" })).status, 200);
     const restored = await db.select().from(shoppingCartItemsTable).where(eq(shoppingCartItemsTable.cartId, ids.carts[0]!));

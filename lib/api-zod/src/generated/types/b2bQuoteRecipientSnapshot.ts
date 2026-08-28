@@ -5,17 +5,15 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
-import type { B2bQuoteRecipientSnapshot } from './b2bQuoteRecipientSnapshot';
 
-export interface B2bQuoteSellerSnapshot {
+export interface B2bQuoteRecipientSnapshot {
   companyName: string;
+  registeredCompanyName?: string;
   taxId?: string;
   registrationNumber?: string;
   address?: string;
   city?: string;
   postalCode?: string;
-  bankAccount?: string;
   email?: string;
   phone?: string;
-  recipient?: B2bQuoteRecipientSnapshot;
 }

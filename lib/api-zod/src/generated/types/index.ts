@@ -227,6 +227,7 @@ export * from './b2bOrderImportResult';
 export * from './b2bQuote';
 export * from './b2bQuoteCurrency';
 export * from './b2bQuoteItemSnapshotsItem';
+export * from './b2bQuoteRecipientSnapshot';
 export * from './b2bQuoteSellerSnapshot';
 export * from './b2cDictionaryCreate';
 export * from './b2cDictionaryUpdate';

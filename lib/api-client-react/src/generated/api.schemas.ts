@@ -137,7 +137,30 @@ export interface BulkMatrixAddResponse {
   addedRows: number;
 }
 
-export type B2bQuoteSellerSnapshot = { [key: string]: unknown };
+export interface B2bQuoteRecipientSnapshot {
+  companyName: string;
+  registeredCompanyName?: string;
+  taxId?: string;
+  registrationNumber?: string;
+  address?: string;
+  city?: string;
+  postalCode?: string;
+  email?: string;
+  phone?: string;
+}
+
+export interface B2bQuoteSellerSnapshot {
+  companyName: string;
+  taxId?: string;
+  registrationNumber?: string;
+  address?: string;
+  city?: string;
+  postalCode?: string;
+  bankAccount?: string;
+  email?: string;
+  phone?: string;
+  recipient?: B2bQuoteRecipientSnapshot;
+}
 
 export type B2bQuoteItemSnapshotsItem = { [key: string]: unknown };
 
