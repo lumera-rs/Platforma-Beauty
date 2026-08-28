@@ -214,7 +214,7 @@ export function OwnerCartPage() {
 
   return (
     <BusinessLayout>
-      <div className="container mx-auto px-4 py-8 max-w-5xl">
+      <div className="container mx-auto max-w-5xl overflow-x-clip px-4 py-8">
         <Button variant="ghost" asChild className="mb-6 -ml-4 text-muted-foreground hover:text-foreground">
           <Link href="/vlasnik/shop"><ArrowLeft className="w-4 h-4 mr-2" /> Nazad u prodavnicu</Link>
         </Button>
@@ -250,8 +250,8 @@ export function OwnerCartPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid lg:grid-cols-3 gap-8 items-start">
-            <div className="lg:col-span-2 space-y-4">
+          <div className="grid min-w-0 items-start gap-8 lg:grid-cols-3">
+            <div className="min-w-0 space-y-4 lg:col-span-2">
               <div className="bg-card rounded-xl border border-border/50 shadow-sm overflow-hidden">
                 <div className="p-4 md:p-6 space-y-6">
                   {cart.items.map((item, i) => (
@@ -261,10 +261,10 @@ export function OwnerCartPage() {
                         <div className="w-full sm:w-24 h-24 rounded-lg bg-muted/30 border border-border/30 overflow-hidden flex-shrink-0">
                           <OptimizedImage src={item.productImageUrl ?? ""} alt={item.productName} width={96} height={96} preferredSize="thumbnail" responsiveSizes="96px" className="w-full h-full object-cover" />
                         </div>
-                        <div className="flex-1 flex flex-col justify-between">
-                          <div className="flex justify-between items-start gap-4">
-                            <div>
-                              <h3 className="font-bold text-lg leading-tight text-foreground">{item.productName}</h3>
+                        <div className="flex min-w-0 flex-1 flex-col justify-between">
+                          <div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:justify-between sm:gap-4">
+                            <div className="min-w-0">
+                              <h3 className="break-words font-bold text-lg leading-tight text-foreground">{item.productName}</h3>
                               {item.kind === 'bundle' && (
                                 <Badge className="mt-1 mb-1" variant="secondary">Paket</Badge>
                               )}
@@ -274,12 +274,12 @@ export function OwnerCartPage() {
                               {item.productSku && <p className="text-xs text-muted-foreground/70 mt-1">SKU: {item.productSku}</p>}
                               {item.lowStock && <p className="text-xs text-amber-600 font-medium mt-1">Niske zalihe</p>}
                             </div>
-                            <div className="text-right">
+                            <div className="shrink-0 text-left sm:text-right">
                               <p className="font-bold text-lg text-primary">{money(item.unitPrice)}</p>
                             </div>
                           </div>
-                          <div className="flex justify-between items-end mt-4">
-                            <div className="flex items-center space-x-1 bg-muted/20 border border-border/50 rounded-lg p-1">
+                          <div className="mt-4 flex flex-wrap items-center gap-2">
+                            <div className="flex shrink-0 items-center space-x-1 rounded-lg border border-border/50 bg-muted/20 p-1">
                               <Button
                                 aria-label={`Smanji količinu za ${item.productName}`}
                                 data-testid={`button-cart-decrement-${item.id}`}
@@ -308,7 +308,7 @@ export function OwnerCartPage() {
                               data-testid={`button-cart-remove-${item.id}`}
                               variant="ghost"
                               size="sm"
-                              className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 -mr-2"
+                              className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                               onClick={() => handleRemove(item.id)}
                               disabled={cartBusy}
                             >
@@ -317,7 +317,7 @@ export function OwnerCartPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="text-muted-foreground hover:text-primary -mr-2"
+                              className="text-muted-foreground hover:text-primary"
                               onClick={() => saveItem.mutate({ cartItemId: item.id })}
                               disabled={saveItem.isPending}
                             >
@@ -338,12 +338,12 @@ export function OwnerCartPage() {
                   </div>
                   <div className="p-4 md:p-6 space-y-4">
                     {cart.savedItems.map((saved) => (
-                      <div key={saved.id} className="flex justify-between items-center bg-background p-3 rounded-lg border">
-                        <div className="flex flex-col">
+                      <div key={saved.id} className="flex min-w-0 flex-col gap-3 rounded-lg border bg-background p-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex min-w-0 flex-col">
                           <span className="font-medium">Sačuvan artikal</span>
                           <span className="text-xs text-muted-foreground">Količina: {saved.quantity}</span>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                           <Button size="sm" variant="outline" onClick={() => restoreItem.mutate({ savedItemId: saved.id })} disabled={restoreItem.isPending}>
                             Vrati u korpu
                           </Button>
@@ -369,8 +369,8 @@ export function OwnerCartPage() {
                         <CardContent className="p-3">
                           <p className="text-xs text-muted-foreground">{product.brand}</p>
                           <h4 className="font-medium text-sm line-clamp-2 mt-1">{product.name}</h4>
-                          <div className="mt-2 flex items-baseline gap-2">
-                            <span className="font-bold text-primary">{money(product.discountPrice ?? product.price)}</span>
+                          <div className="mt-2 flex min-w-0 flex-wrap items-baseline gap-2">
+                            <span className="break-words font-bold text-primary">{money(product.discountPrice ?? product.price)}</span>
                             {product.discountPrice != null && <span className="text-xs text-muted-foreground line-through">{money(product.price)}</span>}
                           </div>
                           <Button size="sm" className="w-full mt-3" variant="secondary" onClick={() => addCartItem.mutate({ data: { productId: product.id, quantity: 1 } })}>
@@ -384,25 +384,25 @@ export function OwnerCartPage() {
               )}
             </div>
 
-            <div className="lg:col-span-1 sticky top-8">
+            <div className="min-w-0 lg:sticky lg:top-8 lg:col-span-1">
               <Card className="shadow-sm border-border/50 overflow-hidden">
                 <div className="h-2 bg-primary w-full" />
                 <CardHeader className="pb-4">
                   <CardTitle className="text-xl">Rezime korpe</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4 text-sm pb-6">
-                  <div className="flex justify-between text-muted-foreground">
+                  <div className="flex min-w-0 justify-between gap-3 text-muted-foreground">
                     <span>Proizvodi ({cart.itemCount})</span>
-                    <span>{money(cart.subtotal)}</span>
+                    <span className="min-w-0 break-words text-right">{money(cart.subtotal)}</span>
                   </div>
                   <div className="flex justify-between text-muted-foreground">
                     <span>Težina pošiljke</span>
                     <span>{(cart.totalWeightGrams / 1000).toFixed(1)} kg</span>
                   </div>
                   <Separator className="bg-border/50" />
-                  <div className="flex justify-between font-bold text-lg text-foreground">
+                  <div className="flex min-w-0 justify-between gap-3 font-bold text-lg text-foreground">
                     <span>Međuzbir</span>
-                    <span className="text-primary">{money(cart.subtotal)}</span>
+                    <span className="min-w-0 break-words text-right text-primary">{money(cart.subtotal)}</span>
                   </div>
                   {cart.freeShippingProgress && (
                     <div className="mt-4 p-3 bg-primary/5 rounded-lg border border-primary/20">
