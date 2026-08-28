@@ -14058,7 +14058,7 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
     const savedOrderItems = await tx.insert(orderItemsTable).values(orderItems).returning();
     const awarded = await awardLoyaltyPointsInTx(tx, { audience: "B2B", salonId: salon.id, orderId: order!.id },
       savedOrderItems.filter((item) => item.priceSource === "FULL_PRICE")
-        .reduce((sum, item) => sum + item.lineTotal, 0), shopSettings);
+        .reduce((sum, item) => sum + (item.lineTotal ?? item.price * item.quantity), 0), shopSettings);
     if (awarded) await tx.update(ordersTable).set({ loyaltyPointsAwarded: awarded }).where(eq(ordersTable.id, order!.id));
     const orderItemByBundleId = new Map(savedOrderItems.flatMap((item) => item.bundleId ? [[item.bundleId, item.id] as const] : []));
     const immutableComponents = details.flatMap((line) => line.bundle ? line.bundle.components.map((component) => ({
@@ -14261,7 +14261,9 @@ function writeB2bInvoicePdf(res: Response, order: typeof ordersTable.$inferSelec
   document.moveDown().fontSize(12).text(`Kupac: ${order.billingCompanyName ?? order.shippingName}`);
   document.fontSize(10).text(`${order.billingAddress ?? order.shippingAddress}, ${order.billingPostalCode ?? order.shippingPostalCode ?? ""} ${order.billingCity ?? order.shippingCity ?? ""}`);
   document.moveDown().fontSize(11);
-  items.forEach((item) => document.text(`${item.productName} × ${item.quantity}    ${item.lineTotal.toLocaleString("sr-RS")} RSD`));
+  items.forEach((item) => document.text(
+    `${item.productName} × ${item.quantity}    ${(item.lineTotal ?? item.price * item.quantity).toLocaleString("sr-RS")} RSD`,
+  ));
   document.moveDown().text(`Međuzbir: ${order.subtotal.toLocaleString("sr-RS")} RSD`);
   if (order.couponDiscountRsd) document.text(`Kupon popust: -${order.couponDiscountRsd.toLocaleString("sr-RS")} RSD`);
   document.text(`Dostava: ${order.shippingCost.toLocaleString("sr-RS")} RSD`);

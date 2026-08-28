@@ -14,3 +14,9 @@ Constraints on tables that do not yet exist in production must be validated in t
 **Why:** An unvalidated development check constraint can make publish diff introspection serialize a new table as `CREATE TABLE (...) NOT VALID`, which PostgreSQL rejects because `NOT VALID` is legal for individual constraints, not the table statement.
 
 **How to apply:** Before publishing a new schema, query `pg_constraint` for `convalidated = false`, verify the existing development rows satisfy each rule, validate the constraints through the approved development reconciliation, and recompute the production diff.
+
+Version-gated additive rollouts do not reconcile a deliberate schema relaxation once the development database already records the current rollout version.
+
+**Why:** A temporary nullable bridge existed in ORM source, but the normal reconciliation correctly skipped the already-applied rollout, leaving the live development columns strict and the Publish diff destructive.
+
+**How to apply:** After an intentional relaxation, inspect the live development nullability and recompute the Publish diff. Apply only the exact safe development-side alteration when the versioned rollout cannot represent it; never target production.
