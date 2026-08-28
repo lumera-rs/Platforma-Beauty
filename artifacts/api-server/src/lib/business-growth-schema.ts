@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 67;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 72;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -129,6 +129,11 @@ const ENUM_LABELS: Record<string, string[]> = {
   retail_review_moderation_status: ["PUBLISHED", "REPORTED", "AUTO_FLAGGED", "REMOVED"],
   retail_review_report_reason: ["SPAM", "ABUSE", "HATE", "PERSONAL_INFORMATION", "MISLEADING", "OTHER"],
   retail_review_moderation_action: ["KEEP", "DISMISS_REPORTS", "REMOVE", "RESTORE"],
+  aftercare_first_timing: ["IMMEDIATE_AFTER_COMPLETION", "NEXT_DAY"],
+  aftercare_recommendation_status: ["PENDING", "ACTIVE", "CONVERTED", "EXPIRED", "CANCELLED"],
+  aftercare_line_kind: ["PRODUCT", "PREMADE_BUNDLE", "PERSONALIZED_BUNDLE"],
+  aftercare_delivery_kind: ["FIRST", "SECOND", "REPLENISHMENT"],
+  aftercare_delivery_status: ["QUEUED", "PROCESSING", "SENT", "FAILED", "SKIPPED"],
 };
 
 /**
@@ -1022,6 +1027,36 @@ function tableStatements(s: string): string[] {
          IF current_setting('lumera.snapshot_backfill', true) = 'on' THEN RETURN NEW; END IF;
          RAISE EXCEPTION 'Order item commercial snapshot is immutable';
        END $$`,
+    // v71 — B2B order_items does not have retail-only aftercare evidence
+    // columns. Split the trigger functions so each row type references only its
+    // own physical columns.
+    `CREATE OR REPLACE FUNCTION ${s}.prevent_order_item_commercial_snapshot_update()
+       RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+       IF NEW.supplier_id IS DISTINCT FROM OLD.supplier_id OR NEW.supplier_name IS DISTINCT FROM OLD.supplier_name
+         OR NEW.supplier_slug IS DISTINCT FROM OLD.supplier_slug OR NEW.product_catalog_reference IS DISTINCT FROM OLD.product_catalog_reference
+         OR NEW.product_sku_snapshot IS DISTINCT FROM OLD.product_sku_snapshot OR NEW.market IS DISTINCT FROM OLD.market
+         OR NEW.currency IS DISTINCT FROM OLD.currency OR NEW.unit_price IS DISTINCT FROM OLD.unit_price
+         OR NEW.discount_snapshot IS DISTINCT FROM OLD.discount_snapshot OR NEW.quantity IS DISTINCT FROM OLD.quantity
+         OR NEW.line_subtotal IS DISTINCT FROM OLD.line_subtotal OR NEW.line_total IS DISTINCT FROM OLD.line_total
+         OR NEW.bundle_id IS DISTINCT FROM OLD.bundle_id OR NEW.base_unit_price IS DISTINCT FROM OLD.base_unit_price
+         OR NEW.effective_unit_price IS DISTINCT FROM OLD.effective_unit_price OR NEW.price_source IS DISTINCT FROM OLD.price_source
+         OR NEW.line_discount IS DISTINCT FROM OLD.line_discount OR NEW.bundle_name_snapshot IS DISTINCT FROM OLD.bundle_name_snapshot
+         OR NEW.bundle_components_snapshot IS DISTINCT FROM OLD.bundle_components_snapshot OR NEW.estimated_delivery_date IS DISTINCT FROM OLD.estimated_delivery_date
+         OR NEW.unit_cost_price_rsd IS DISTINCT FROM OLD.unit_cost_price_rsd OR NEW.line_cogs_rsd IS DISTINCT FROM OLD.line_cogs_rsd
+         OR NEW.referral_discount_rsd IS DISTINCT FROM OLD.referral_discount_rsd OR NEW.realized_revenue_rsd IS DISTINCT FROM OLD.realized_revenue_rsd
+         OR NEW.category_id_snapshot IS DISTINCT FROM OLD.category_id_snapshot OR NEW.category_name_snapshot IS DISTINCT FROM OLD.category_name_snapshot
+         OR NEW.brand_snapshot IS DISTINCT FROM OLD.brand_snapshot THEN RAISE EXCEPTION 'Order item commercial snapshot is immutable'; END IF;
+       RETURN NEW; END $$`,
+    `CREATE OR REPLACE FUNCTION ${s}.prevent_retail_order_item_commercial_snapshot_update()
+       RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+       IF NEW.personalized_treatment_bundle_discount_rsd IS DISTINCT FROM OLD.personalized_treatment_bundle_discount_rsd
+         OR NEW.post_treatment_recommendation_discount_rsd IS DISTINCT FROM OLD.post_treatment_recommendation_discount_rsd
+         OR NEW.aftercare_recommendation_id IS DISTINCT FROM OLD.aftercare_recommendation_id THEN
+         RAISE EXCEPTION 'Order item commercial snapshot is immutable'; END IF;
+       RETURN NEW; END $$`,
+    `DROP TRIGGER IF EXISTS retail_order_items_commercial_snapshot_immutable ON ${s}.retail_order_items`,
+    `CREATE TRIGGER retail_order_items_commercial_snapshot_immutable BEFORE UPDATE ON ${s}.retail_order_items
+       FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_retail_order_item_commercial_snapshot_update()`,
     `CREATE OR REPLACE FUNCTION ${s}.prevent_incomplete_commercial_snapshot_insert()
        RETURNS trigger LANGUAGE plpgsql AS $$
        BEGIN
@@ -1062,6 +1097,9 @@ function tableStatements(s: string): string[] {
     `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS line_total integer`,
     `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS automatic_promotion_discount_rsd integer NOT NULL DEFAULT 0`,
     `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS threshold_reward_discount_rsd integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS personalized_treatment_bundle_discount_rsd integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS post_treatment_recommendation_discount_rsd integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS aftercare_recommendation_id uuid`,
     `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS automatic_promotion_discount_rsd integer NOT NULL DEFAULT 0`,
     `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS threshold_reward_discount_rsd integer NOT NULL DEFAULT 0`,
     `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS unit_cost_price_rsd integer NOT NULL DEFAULT 0`,
@@ -1106,9 +1144,11 @@ function tableStatements(s: string): string[] {
            OR NEW.line_cogs_rsd IS DISTINCT FROM OLD.line_cogs_rsd
            OR NEW.referral_discount_rsd IS DISTINCT FROM OLD.referral_discount_rsd
            OR NEW.realized_revenue_rsd IS DISTINCT FROM OLD.realized_revenue_rsd
-           OR NEW.category_id_snapshot IS DISTINCT FROM OLD.category_id_snapshot
-           OR NEW.category_name_snapshot IS DISTINCT FROM OLD.category_name_snapshot
-           OR NEW.brand_snapshot IS DISTINCT FROM OLD.brand_snapshot THEN
+            OR NEW.category_id_snapshot IS DISTINCT FROM OLD.category_id_snapshot
+            OR NEW.category_name_snapshot IS DISTINCT FROM OLD.category_name_snapshot
+            OR NEW.brand_snapshot IS DISTINCT FROM OLD.brand_snapshot
+            OR NEW.is_reward_gift IS DISTINCT FROM OLD.is_reward_gift
+            OR NEW.reward_snapshot IS DISTINCT FROM OLD.reward_snapshot THEN
            RAISE EXCEPTION 'Order item commercial snapshot is immutable';
          END IF;
          RETURN NEW;
@@ -1240,6 +1280,44 @@ function tableStatements(s: string): string[] {
           OR NEW.line_cogs_rsd IS DISTINCT FROM OLD.line_cogs_rsd
           OR NEW.referral_discount_rsd IS DISTINCT FROM OLD.referral_discount_rsd
           OR NEW.realized_revenue_rsd IS DISTINCT FROM OLD.realized_revenue_rsd
+          OR NEW.bundle_id IS DISTINCT FROM OLD.bundle_id
+          OR NEW.base_unit_price IS DISTINCT FROM OLD.base_unit_price
+          OR NEW.effective_unit_price IS DISTINCT FROM OLD.effective_unit_price
+          OR NEW.price_source IS DISTINCT FROM OLD.price_source
+          OR NEW.line_discount IS DISTINCT FROM OLD.line_discount
+          OR NEW.bundle_name_snapshot IS DISTINCT FROM OLD.bundle_name_snapshot
+          OR NEW.bundle_components_snapshot IS DISTINCT FROM OLD.bundle_components_snapshot
+          OR NEW.estimated_delivery_date IS DISTINCT FROM OLD.estimated_delivery_date
+          OR NEW.category_id_snapshot IS DISTINCT FROM OLD.category_id_snapshot
+          OR NEW.category_name_snapshot IS DISTINCT FROM OLD.category_name_snapshot
+          OR NEW.brand_snapshot IS DISTINCT FROM OLD.brand_snapshot
+          OR NEW.is_reward_gift IS DISTINCT FROM OLD.is_reward_gift
+          OR NEW.reward_snapshot IS DISTINCT FROM OLD.reward_snapshot THEN
+          RAISE EXCEPTION 'Order item commercial snapshot is immutable';
+        END IF;
+        RETURN NEW;
+      END $$`,
+    `CREATE OR REPLACE FUNCTION ${s}.prevent_retail_order_item_commercial_snapshot_update()
+      RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.supplier_id IS DISTINCT FROM OLD.supplier_id
+          OR NEW.supplier_name IS DISTINCT FROM OLD.supplier_name
+          OR NEW.supplier_slug IS DISTINCT FROM OLD.supplier_slug
+          OR NEW.product_catalog_reference IS DISTINCT FROM OLD.product_catalog_reference
+          OR NEW.product_sku_snapshot IS DISTINCT FROM OLD.product_sku_snapshot
+          OR NEW.market IS DISTINCT FROM OLD.market OR NEW.currency IS DISTINCT FROM OLD.currency
+          OR NEW.unit_price IS DISTINCT FROM OLD.unit_price
+          OR NEW.discount_snapshot IS DISTINCT FROM OLD.discount_snapshot
+          OR NEW.quantity IS DISTINCT FROM OLD.quantity
+          OR NEW.line_subtotal IS DISTINCT FROM OLD.line_subtotal
+          OR NEW.line_total IS DISTINCT FROM OLD.line_total
+          OR NEW.unit_cost_price_rsd IS DISTINCT FROM OLD.unit_cost_price_rsd
+          OR NEW.line_cogs_rsd IS DISTINCT FROM OLD.line_cogs_rsd
+          OR NEW.referral_discount_rsd IS DISTINCT FROM OLD.referral_discount_rsd
+          OR NEW.realized_revenue_rsd IS DISTINCT FROM OLD.realized_revenue_rsd
+          OR NEW.personalized_treatment_bundle_discount_rsd IS DISTINCT FROM OLD.personalized_treatment_bundle_discount_rsd
+          OR NEW.post_treatment_recommendation_discount_rsd IS DISTINCT FROM OLD.post_treatment_recommendation_discount_rsd
+          OR NEW.aftercare_recommendation_id IS DISTINCT FROM OLD.aftercare_recommendation_id
           OR NEW.category_id_snapshot IS DISTINCT FROM OLD.category_id_snapshot
           OR NEW.category_name_snapshot IS DISTINCT FROM OLD.category_name_snapshot
           OR NEW.brand_snapshot IS DISTINCT FROM OLD.brand_snapshot
@@ -1254,7 +1332,7 @@ function tableStatements(s: string): string[] {
        FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_order_item_commercial_snapshot_update()`,
     `DROP TRIGGER IF EXISTS retail_order_items_commercial_snapshot_immutable ON ${s}.retail_order_items`,
     `CREATE TRIGGER retail_order_items_commercial_snapshot_immutable BEFORE UPDATE ON ${s}.retail_order_items
-       FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_order_item_commercial_snapshot_update()`,
+       FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_retail_order_item_commercial_snapshot_update()`,
     `DROP TRIGGER IF EXISTS order_items_commercial_snapshot_migration_guard ON ${s}.order_items`,
     `DROP TRIGGER IF EXISTS retail_order_items_commercial_snapshot_migration_guard ON ${s}.retail_order_items`,
     `CREATE OR REPLACE FUNCTION ${s}.prevent_retail_g2_snapshot_update()
@@ -2450,11 +2528,24 @@ function tableStatements(s: string): string[] {
             OR NEW.realized_revenue_rsd IS DISTINCT FROM OLD.realized_revenue_rsd
             OR NEW.category_id_snapshot IS DISTINCT FROM OLD.category_id_snapshot
             OR NEW.category_name_snapshot IS DISTINCT FROM OLD.category_name_snapshot
-            OR NEW.brand_snapshot IS DISTINCT FROM OLD.brand_snapshot THEN
+            OR NEW.brand_snapshot IS DISTINCT FROM OLD.brand_snapshot
+            OR NEW.is_reward_gift IS DISTINCT FROM OLD.is_reward_gift
+            OR NEW.reward_snapshot IS DISTINCT FROM OLD.reward_snapshot THEN
            RAISE EXCEPTION 'Order item commercial snapshot is immutable';
          END IF;
          RETURN NEW;
        END $$`,
+    // v71 replay tail: later legacy function definitions above must not rebind
+    // the split trigger functions on a fresh bootstrap.
+    `CREATE OR REPLACE FUNCTION ${s}.prevent_retail_order_item_commercial_snapshot_update()
+       RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+       IF (to_jsonb(NEW) - ARRAY['id','order_id','created_at','updated_at'])
+          IS DISTINCT FROM (to_jsonb(OLD) - ARRAY['id','order_id','created_at','updated_at']) THEN
+         RAISE EXCEPTION 'Order item commercial snapshot is immutable';
+       END IF; RETURN NEW; END $$`,
+    `DROP TRIGGER IF EXISTS retail_order_items_commercial_snapshot_immutable ON ${s}.retail_order_items`,
+    `CREATE TRIGGER retail_order_items_commercial_snapshot_immutable BEFORE UPDATE ON ${s}.retail_order_items
+       FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_retail_order_item_commercial_snapshot_update()`,
     // Existing individual marketplace users move once and only once.  No
     // dependent row is rewritten: listings, contacts, rentals and enrollments
     // keep their user foreign keys while the account boundary changes.
@@ -3052,6 +3143,249 @@ function tableStatements(s: string): string[] {
     `CREATE UNIQUE INDEX IF NOT EXISTS automatic_xy_targets_role_category_unique ON ${s}.automatic_xy_promotion_targets (promotion_id, target_role, category_id) WHERE category_id IS NOT NULL`,
     `CREATE INDEX IF NOT EXISTS automatic_xy_targets_product_idx ON ${s}.automatic_xy_promotion_targets (product_id)`,
     `CREATE INDEX IF NOT EXISTS automatic_xy_targets_category_idx ON ${s}.automatic_xy_promotion_targets (category_id)`,
+    // v68 — platform-only B2C post-treatment care. No table references salon notifications.
+    `CREATE TABLE IF NOT EXISTS ${s}.treatment_taxonomy (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), taxonomy_key text NOT NULL UNIQUE,
+      category_name text NOT NULL, treatment_name text NOT NULL, search_terms jsonb NOT NULL DEFAULT '[]'::jsonb,
+      active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT treatment_taxonomy_key_check CHECK (taxonomy_key ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$')
+    )`,
+    `CREATE INDEX IF NOT EXISTS treatment_taxonomy_active_name_idx ON ${s}.treatment_taxonomy (active, category_name, treatment_name)`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS average_duration_days integer`,
+    `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'products_average_duration_days_check' AND conrelid = '${s}.products'::regclass) THEN ALTER TABLE ${s}.products ADD CONSTRAINT products_average_duration_days_check CHECK (average_duration_days IS NULL OR average_duration_days > 0); END IF; END $$`,
+    `CREATE TABLE IF NOT EXISTS ${s}.product_treatment_mappings (
+      product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE CASCADE,
+      treatment_id uuid NOT NULL REFERENCES ${s}.treatment_taxonomy(id) ON DELETE CASCADE,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS product_treatment_mappings_unique ON ${s}.product_treatment_mappings (product_id, treatment_id)`,
+    `CREATE INDEX IF NOT EXISTS product_treatment_mappings_treatment_idx ON ${s}.product_treatment_mappings (treatment_id, product_id)`,
+    `ALTER TABLE ${s}.product_bundles ADD COLUMN IF NOT EXISTS linked_treatment_id uuid REFERENCES ${s}.treatment_taxonomy(id) ON DELETE SET NULL`,
+    `CREATE INDEX IF NOT EXISTS product_bundles_treatment_market_active_idx ON ${s}.product_bundles (linked_treatment_id, market, active)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.aftercare_settings (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), version integer NOT NULL, is_current boolean NOT NULL DEFAULT true,
+      first_timing ${s}.aftercare_first_timing NOT NULL DEFAULT 'IMMEDIATE_AFTER_COMPLETION',
+      cooldown_days integer NOT NULL DEFAULT 30, second_reminder_delay_days integer NOT NULL DEFAULT 6,
+      post_treatment_discount_enabled boolean NOT NULL DEFAULT false, post_treatment_discount_percent integer NOT NULL DEFAULT 0,
+      post_treatment_discount_validity_days integer NOT NULL DEFAULT 30, personalized_bundle_discount_percent integer NOT NULL DEFAULT 10,
+      combination_window_days integer NOT NULL DEFAULT 30, created_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT aftercare_settings_positive_days_check CHECK (cooldown_days > 0 AND second_reminder_delay_days > 0 AND post_treatment_discount_validity_days > 0 AND combination_window_days > 0),
+      CONSTRAINT aftercare_settings_percent_check CHECK (post_treatment_discount_percent BETWEEN 0 AND 100 AND personalized_bundle_discount_percent BETWEEN 1 AND 100),
+      CONSTRAINT aftercare_settings_discount_enabled_check CHECK (NOT post_treatment_discount_enabled OR post_treatment_discount_percent > 0)
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS aftercare_settings_version_unique ON ${s}.aftercare_settings (version)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS aftercare_settings_current_unique ON ${s}.aftercare_settings (is_current) WHERE is_current`,
+    `INSERT INTO ${s}.aftercare_settings (version) SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM ${s}.aftercare_settings)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.aftercare_completion_events (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), appointment_id uuid NOT NULL REFERENCES ${s}.appointments(id) ON DELETE CASCADE,
+      customer_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL, transition_key text NOT NULL, completed_at timestamptz NOT NULL,
+      available_at timestamptz NOT NULL DEFAULT now(), processed_at timestamptz, claim_token text, claim_expires_at timestamptz,
+      attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0), last_error text, created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS aftercare_completion_events_transition_unique ON ${s}.aftercare_completion_events (appointment_id, transition_key)`,
+    `CREATE INDEX IF NOT EXISTS aftercare_completion_events_due_idx ON ${s}.aftercare_completion_events (processed_at, available_at, claim_expires_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.aftercare_recommendations (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), customer_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE,
+      settings_version integer NOT NULL, status ${s}.aftercare_recommendation_status NOT NULL DEFAULT 'PENDING',
+      entitlement_token_hash text NOT NULL UNIQUE, window_started_at timestamptz NOT NULL, window_ends_at timestamptz NOT NULL,
+      activates_at timestamptz NOT NULL, entitlement_expires_at timestamptz NOT NULL, settings_snapshot jsonb NOT NULL,
+      treatment_snapshot jsonb NOT NULL, read_at timestamptz, first_sent_at timestamptz, second_sent_at timestamptz,
+      converted_at timestamptz, converted_order_id uuid REFERENCES ${s}.retail_orders(id) ON DELETE SET NULL,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT aftercare_recommendations_window_check CHECK (window_ends_at > window_started_at AND entitlement_expires_at > activates_at)
+    )`,
+    `CREATE INDEX IF NOT EXISTS aftercare_recommendations_customer_created_idx ON ${s}.aftercare_recommendations (customer_user_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS aftercare_recommendations_stats_idx ON ${s}.aftercare_recommendations (created_at, status, converted_at)`,
+    `CREATE INDEX IF NOT EXISTS aftercare_recommendations_conversion_order_idx ON ${s}.aftercare_recommendations (converted_order_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.aftercare_recommendation_appointments (
+      recommendation_id uuid NOT NULL REFERENCES ${s}.aftercare_recommendations(id) ON DELETE CASCADE,
+      appointment_id uuid NOT NULL REFERENCES ${s}.appointments(id) ON DELETE RESTRICT,
+      treatment_id uuid NOT NULL REFERENCES ${s}.treatment_taxonomy(id) ON DELETE RESTRICT, appointment_snapshot jsonb NOT NULL
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS aftercare_recommendation_appointments_appointment_unique ON ${s}.aftercare_recommendation_appointments (appointment_id)`,
+    `CREATE INDEX IF NOT EXISTS aftercare_recommendation_appointments_recommendation_idx ON ${s}.aftercare_recommendation_appointments (recommendation_id)`,
+    `CREATE INDEX IF NOT EXISTS aftercare_recommendation_appointments_treatment_idx ON ${s}.aftercare_recommendation_appointments (treatment_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.aftercare_recommendation_lines (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), recommendation_id uuid NOT NULL REFERENCES ${s}.aftercare_recommendations(id) ON DELETE CASCADE,
+      kind ${s}.aftercare_line_kind NOT NULL, product_id uuid REFERENCES ${s}.products(id) ON DELETE SET NULL,
+      bundle_id uuid REFERENCES ${s}.product_bundles(id) ON DELETE SET NULL, treatment_ids jsonb NOT NULL, covered_product_ids jsonb NOT NULL,
+      catalog_snapshot jsonb NOT NULL, pricing_snapshot jsonb NOT NULL, discount_kind text NOT NULL, discount_percent integer NOT NULL,
+      discount_allocation_snapshot jsonb NOT NULL DEFAULT '{}'::jsonb, replenishment_due_at timestamptz, replenishment_sent_at timestamptz,
+      purchased_at timestamptz, purchased_order_id uuid REFERENCES ${s}.retail_orders(id) ON DELETE SET NULL, created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT aftercare_recommendation_lines_shape_check CHECK ((kind='PRODUCT' AND product_id IS NOT NULL AND bundle_id IS NULL) OR (kind='PREMADE_BUNDLE' AND product_id IS NULL AND bundle_id IS NOT NULL) OR (kind='PERSONALIZED_BUNDLE' AND product_id IS NULL AND bundle_id IS NULL)),
+      CONSTRAINT aftercare_recommendation_lines_discount_check CHECK (discount_percent BETWEEN 0 AND 100),
+      CONSTRAINT aftercare_recommendation_lines_coverage_check CHECK (jsonb_array_length(treatment_ids) > 0 AND jsonb_array_length(covered_product_ids) > 0)
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS aftercare_recommendation_lines_product_unique ON ${s}.aftercare_recommendation_lines (recommendation_id, product_id) WHERE kind = 'PRODUCT'`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS aftercare_recommendation_lines_bundle_unique ON ${s}.aftercare_recommendation_lines (recommendation_id, bundle_id) WHERE kind = 'PREMADE_BUNDLE'`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS aftercare_recommendation_lines_personalized_unique ON ${s}.aftercare_recommendation_lines (recommendation_id) WHERE kind = 'PERSONALIZED_BUNDLE'`,
+    `CREATE INDEX IF NOT EXISTS aftercare_recommendation_lines_product_cooldown_idx ON ${s}.aftercare_recommendation_lines (product_id, purchased_at)`,
+    `CREATE INDEX IF NOT EXISTS aftercare_recommendation_lines_replenishment_idx ON ${s}.aftercare_recommendation_lines (replenishment_sent_at, replenishment_due_at)`,
+    `CREATE INDEX IF NOT EXISTS aftercare_recommendation_lines_stats_idx ON ${s}.aftercare_recommendation_lines (product_id, created_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.aftercare_deliveries (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), recommendation_id uuid NOT NULL REFERENCES ${s}.aftercare_recommendations(id) ON DELETE CASCADE,
+      line_id uuid REFERENCES ${s}.aftercare_recommendation_lines(id) ON DELETE CASCADE, kind ${s}.aftercare_delivery_kind NOT NULL,
+      status ${s}.aftercare_delivery_status NOT NULL DEFAULT 'QUEUED', event_key text NOT NULL UNIQUE, scheduled_at timestamptz NOT NULL,
+      claim_token text, claim_expires_at timestamptz, attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+      provider_message_id text, provider_status text, provider_event_at timestamptz, accepted_at timestamptz, sent_at timestamptz,
+      failed_at timestamptz, last_error text, payload_snapshot jsonb NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT aftercare_deliveries_replenishment_line_check CHECK (kind <> 'REPLENISHMENT' OR line_id IS NOT NULL)
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS aftercare_deliveries_campaign_kind_unique ON ${s}.aftercare_deliveries (recommendation_id, kind) WHERE line_id IS NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS aftercare_deliveries_line_kind_unique ON ${s}.aftercare_deliveries (recommendation_id, line_id, kind) WHERE line_id IS NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS aftercare_deliveries_due_claim_idx ON ${s}.aftercare_deliveries (status, scheduled_at, claim_expires_at)`,
+    `CREATE INDEX IF NOT EXISTS aftercare_deliveries_provider_idx ON ${s}.aftercare_deliveries (provider_message_id)`,
+    // v69 — B2C order lines retain the exact server-validated entitlement
+    // reference and allocations.  The FK is added after aftercare tables exist
+    // so legacy upgrades remain dependency-safe.
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='retail_order_items_aftercare_recommendation_fk'
+         AND conrelid='${s}.retail_order_items'::regclass) THEN
+         ALTER TABLE ${s}.retail_order_items ADD CONSTRAINT retail_order_items_aftercare_recommendation_fk
+           FOREIGN KEY (aftercare_recommendation_id) REFERENCES ${s}.aftercare_recommendations(id) ON DELETE SET NULL;
+       END IF;
+     END $$`,
+    `CREATE INDEX IF NOT EXISTS retail_order_items_aftercare_recommendation_idx
+       ON ${s}.retail_order_items (aftercare_recommendation_id) WHERE aftercare_recommendation_id IS NOT NULL`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='retail_order_items_aftercare_discount_check'
+         AND conrelid='${s}.retail_order_items'::regclass) THEN
+         ALTER TABLE ${s}.retail_order_items ADD CONSTRAINT retail_order_items_aftercare_discount_check CHECK (
+           personalized_treatment_bundle_discount_rsd >= 0
+           AND post_treatment_recommendation_discount_rsd >= 0
+           AND personalized_treatment_bundle_discount_rsd + post_treatment_recommendation_discount_rsd <= line_subtotal
+         ) NOT VALID;
+         ALTER TABLE ${s}.retail_order_items VALIDATE CONSTRAINT retail_order_items_aftercare_discount_check;
+       END IF;
+     END $$`,
+    // v70 — v69's SET NULL action conflicts with the immutable commercial
+    // evidence trigger. Keep the evidence reference intact and prevent deletion
+    // of a recommendation while an order line cites it.
+    `ALTER TABLE ${s}.retail_order_items
+       DROP CONSTRAINT IF EXISTS retail_order_items_aftercare_recommendation_fk`,
+    `ALTER TABLE ${s}.retail_order_items
+       ADD CONSTRAINT retail_order_items_aftercare_recommendation_fk
+       FOREIGN KEY (aftercare_recommendation_id)
+       REFERENCES ${s}.aftercare_recommendations(id) ON DELETE RESTRICT`,
+    `CREATE OR REPLACE FUNCTION ${s}.protect_aftercare_evidence() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+      IF NEW.customer_user_id IS DISTINCT FROM OLD.customer_user_id OR NEW.settings_version IS DISTINCT FROM OLD.settings_version
+        OR NEW.entitlement_token_hash IS DISTINCT FROM OLD.entitlement_token_hash OR NEW.settings_snapshot IS DISTINCT FROM OLD.settings_snapshot
+        OR NEW.treatment_snapshot IS DISTINCT FROM OLD.treatment_snapshot OR NEW.window_started_at IS DISTINCT FROM OLD.window_started_at
+        OR NEW.window_ends_at IS DISTINCT FROM OLD.window_ends_at OR NEW.activates_at IS DISTINCT FROM OLD.activates_at
+        OR NEW.entitlement_expires_at IS DISTINCT FROM OLD.entitlement_expires_at THEN
+        RAISE EXCEPTION 'aftercare recommendation evidence is immutable';
+      END IF; RETURN NEW; END $$`,
+    `DROP TRIGGER IF EXISTS protect_aftercare_recommendation_evidence ON ${s}.aftercare_recommendations`,
+    `CREATE TRIGGER protect_aftercare_recommendation_evidence BEFORE UPDATE ON ${s}.aftercare_recommendations FOR EACH ROW EXECUTE FUNCTION ${s}.protect_aftercare_evidence()`,
+    `CREATE OR REPLACE FUNCTION ${s}.protect_aftercare_line_evidence() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+      IF NEW.recommendation_id IS DISTINCT FROM OLD.recommendation_id OR NEW.kind IS DISTINCT FROM OLD.kind
+        OR NEW.product_id IS DISTINCT FROM OLD.product_id OR NEW.bundle_id IS DISTINCT FROM OLD.bundle_id
+        OR NEW.treatment_ids IS DISTINCT FROM OLD.treatment_ids OR NEW.covered_product_ids IS DISTINCT FROM OLD.covered_product_ids
+        OR NEW.catalog_snapshot IS DISTINCT FROM OLD.catalog_snapshot OR NEW.pricing_snapshot IS DISTINCT FROM OLD.pricing_snapshot
+        OR NEW.discount_kind IS DISTINCT FROM OLD.discount_kind OR NEW.discount_percent IS DISTINCT FROM OLD.discount_percent
+        OR NEW.discount_allocation_snapshot IS DISTINCT FROM OLD.discount_allocation_snapshot THEN
+        RAISE EXCEPTION 'aftercare recommendation line evidence is immutable';
+      END IF; RETURN NEW; END $$`,
+    `DROP TRIGGER IF EXISTS protect_aftercare_recommendation_line_evidence ON ${s}.aftercare_recommendation_lines`,
+    `CREATE TRIGGER protect_aftercare_recommendation_line_evidence BEFORE UPDATE ON ${s}.aftercare_recommendation_lines FOR EACH ROW EXECUTE FUNCTION ${s}.protect_aftercare_line_evidence()`,
+    // v72 — repair v71 deployments whose old shared order-line trigger was
+    // retained or rebound after the initial split. This tail is deliberately
+    // unconditional: a rollout recorded as v71 must receive the corrected
+    // function bodies and bindings even when every table/column already exists.
+    `CREATE OR REPLACE FUNCTION ${s}.prevent_order_item_commercial_snapshot_update()
+       RETURNS trigger LANGUAGE plpgsql AS $$
+       BEGIN
+         IF NEW.product_id IS DISTINCT FROM OLD.product_id
+           OR NEW.product_name IS DISTINCT FROM OLD.product_name
+           OR NEW.product_sku IS DISTINCT FROM OLD.product_sku
+           OR NEW.price IS DISTINCT FROM OLD.price
+           OR NEW.quantity IS DISTINCT FROM OLD.quantity
+           OR NEW.supplier_id IS DISTINCT FROM OLD.supplier_id
+           OR NEW.supplier_name IS DISTINCT FROM OLD.supplier_name
+           OR NEW.supplier_slug IS DISTINCT FROM OLD.supplier_slug
+           OR NEW.product_catalog_reference IS DISTINCT FROM OLD.product_catalog_reference
+           OR NEW.product_sku_snapshot IS DISTINCT FROM OLD.product_sku_snapshot
+           OR NEW.market IS DISTINCT FROM OLD.market OR NEW.currency IS DISTINCT FROM OLD.currency
+           OR NEW.unit_price IS DISTINCT FROM OLD.unit_price
+           OR NEW.discount_snapshot IS DISTINCT FROM OLD.discount_snapshot
+           OR NEW.line_subtotal IS DISTINCT FROM OLD.line_subtotal
+           OR NEW.line_total IS DISTINCT FROM OLD.line_total
+           OR NEW.automatic_promotion_discount_rsd IS DISTINCT FROM OLD.automatic_promotion_discount_rsd
+           OR NEW.threshold_reward_discount_rsd IS DISTINCT FROM OLD.threshold_reward_discount_rsd
+           OR NEW.bundle_id IS DISTINCT FROM OLD.bundle_id
+           OR NEW.base_unit_price IS DISTINCT FROM OLD.base_unit_price
+           OR NEW.effective_unit_price IS DISTINCT FROM OLD.effective_unit_price
+           OR NEW.price_source IS DISTINCT FROM OLD.price_source
+           OR NEW.line_discount IS DISTINCT FROM OLD.line_discount
+           OR NEW.bundle_name_snapshot IS DISTINCT FROM OLD.bundle_name_snapshot
+           OR NEW.bundle_components_snapshot IS DISTINCT FROM OLD.bundle_components_snapshot
+           OR NEW.estimated_delivery_date IS DISTINCT FROM OLD.estimated_delivery_date
+           OR NEW.unit_cost_price_rsd IS DISTINCT FROM OLD.unit_cost_price_rsd
+           OR NEW.line_cogs_rsd IS DISTINCT FROM OLD.line_cogs_rsd
+           OR NEW.referral_discount_rsd IS DISTINCT FROM OLD.referral_discount_rsd
+           OR NEW.realized_revenue_rsd IS DISTINCT FROM OLD.realized_revenue_rsd
+           OR NEW.category_id_snapshot IS DISTINCT FROM OLD.category_id_snapshot
+           OR NEW.category_name_snapshot IS DISTINCT FROM OLD.category_name_snapshot
+           OR NEW.brand_snapshot IS DISTINCT FROM OLD.brand_snapshot
+           OR NEW.is_reward_gift IS DISTINCT FROM OLD.is_reward_gift
+           OR NEW.reward_snapshot IS DISTINCT FROM OLD.reward_snapshot THEN
+           RAISE EXCEPTION 'Order item commercial snapshot is immutable';
+         END IF;
+         RETURN NEW;
+       END $$`,
+    `CREATE OR REPLACE FUNCTION ${s}.prevent_retail_order_item_commercial_snapshot_update()
+       RETURNS trigger LANGUAGE plpgsql AS $$
+       BEGIN
+         IF NEW.product_id IS DISTINCT FROM OLD.product_id
+           OR NEW.product_name IS DISTINCT FROM OLD.product_name
+           OR NEW.product_image_url IS DISTINCT FROM OLD.product_image_url
+           OR NEW.product_catalog_reference IS DISTINCT FROM OLD.product_catalog_reference
+           OR NEW.variant_value IS DISTINCT FROM OLD.variant_value
+           OR NEW.variant_label IS DISTINCT FROM OLD.variant_label
+           OR NEW.quantity IS DISTINCT FROM OLD.quantity
+           OR NEW.supplier_id IS DISTINCT FROM OLD.supplier_id
+           OR NEW.supplier_name IS DISTINCT FROM OLD.supplier_name
+           OR NEW.supplier_slug IS DISTINCT FROM OLD.supplier_slug
+           OR NEW.product_sku_snapshot IS DISTINCT FROM OLD.product_sku_snapshot
+           OR NEW.market IS DISTINCT FROM OLD.market OR NEW.currency IS DISTINCT FROM OLD.currency
+           OR NEW.unit_price IS DISTINCT FROM OLD.unit_price
+           OR NEW.discount_snapshot IS DISTINCT FROM OLD.discount_snapshot
+           OR NEW.line_subtotal IS DISTINCT FROM OLD.line_subtotal
+           OR NEW.line_total IS DISTINCT FROM OLD.line_total
+           OR NEW.automatic_promotion_discount_rsd IS DISTINCT FROM OLD.automatic_promotion_discount_rsd
+           OR NEW.threshold_reward_discount_rsd IS DISTINCT FROM OLD.threshold_reward_discount_rsd
+           OR NEW.bundle_id IS DISTINCT FROM OLD.bundle_id
+           OR NEW.base_unit_price IS DISTINCT FROM OLD.base_unit_price
+           OR NEW.effective_unit_price IS DISTINCT FROM OLD.effective_unit_price
+           OR NEW.price_source IS DISTINCT FROM OLD.price_source
+           OR NEW.line_discount IS DISTINCT FROM OLD.line_discount
+           OR NEW.bundle_name_snapshot IS DISTINCT FROM OLD.bundle_name_snapshot
+           OR NEW.bundle_components_snapshot IS DISTINCT FROM OLD.bundle_components_snapshot
+           OR NEW.estimated_delivery_date IS DISTINCT FROM OLD.estimated_delivery_date
+           OR NEW.unit_cost_price_rsd IS DISTINCT FROM OLD.unit_cost_price_rsd
+           OR NEW.line_cogs_rsd IS DISTINCT FROM OLD.line_cogs_rsd
+           OR NEW.referral_discount_rsd IS DISTINCT FROM OLD.referral_discount_rsd
+           OR NEW.realized_revenue_rsd IS DISTINCT FROM OLD.realized_revenue_rsd
+           OR NEW.personalized_treatment_bundle_discount_rsd IS DISTINCT FROM OLD.personalized_treatment_bundle_discount_rsd
+           OR NEW.post_treatment_recommendation_discount_rsd IS DISTINCT FROM OLD.post_treatment_recommendation_discount_rsd
+           OR NEW.aftercare_recommendation_id IS DISTINCT FROM OLD.aftercare_recommendation_id
+           OR NEW.category_id_snapshot IS DISTINCT FROM OLD.category_id_snapshot
+           OR NEW.category_name_snapshot IS DISTINCT FROM OLD.category_name_snapshot
+           OR NEW.brand_snapshot IS DISTINCT FROM OLD.brand_snapshot
+           OR NEW.is_reward_gift IS DISTINCT FROM OLD.is_reward_gift
+           OR NEW.reward_snapshot IS DISTINCT FROM OLD.reward_snapshot THEN
+           RAISE EXCEPTION 'Order item commercial snapshot is immutable';
+         END IF;
+         RETURN NEW;
+       END $$`,
+    `DROP TRIGGER IF EXISTS order_items_commercial_snapshot_immutable ON ${s}.order_items`,
+    `CREATE TRIGGER order_items_commercial_snapshot_immutable BEFORE UPDATE ON ${s}.order_items
+       FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_order_item_commercial_snapshot_update()`,
+    `DROP TRIGGER IF EXISTS retail_order_items_commercial_snapshot_immutable ON ${s}.retail_order_items`,
+    `CREATE TRIGGER retail_order_items_commercial_snapshot_immutable BEFORE UPDATE ON ${s}.retail_order_items
+       FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_retail_order_item_commercial_snapshot_update()`,
   ];
 }
 

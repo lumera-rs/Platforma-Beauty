@@ -18,6 +18,7 @@ import assert from "node:assert/strict";
 import { pool } from "@workspace/db";
 import {
   BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY,
+  BUSINESS_GROWTH_SCHEMA_VERSION,
   runBusinessGrowthSchemaDdl,
 } from "./business-growth-schema";
 
@@ -318,6 +319,7 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 72, "v72 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
 
     // ── Run the rollout, then exercise its legacy conversion on rerun ──────
@@ -413,7 +415,36 @@ async function run() {
         /immutable/,
         "strict commercial snapshot immutability is restored after the replay backfill",
       );
-      await runBusinessGrowthSchemaDdl(client, s); // conversion is idempotent
+      // Reproduce a completed v71 deployment with the historical shared
+      // function rebound to B2B order_items. The old body names retail-only
+      // aftercare columns that do not physically exist on order_items.
+      await q(`UPDATE "${s}".business_growth_schema_rollout SET version = 71 WHERE singleton = true`);
+      await q(`CREATE OR REPLACE FUNCTION "${s}".prevent_order_item_commercial_snapshot_update()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF NEW.unit_price IS DISTINCT FROM OLD.unit_price
+            OR NEW.personalized_treatment_bundle_discount_rsd IS DISTINCT FROM OLD.personalized_treatment_bundle_discount_rsd THEN
+            RAISE EXCEPTION 'Order item commercial snapshot is immutable';
+          END IF;
+          RETURN NEW;
+        END $$`);
+      await q(`DROP TRIGGER IF EXISTS order_items_commercial_snapshot_immutable ON "${s}".order_items`);
+      await q(`CREATE TRIGGER order_items_commercial_snapshot_immutable BEFORE UPDATE ON "${s}".order_items
+        FOR EACH ROW EXECUTE FUNCTION "${s}".prevent_order_item_commercial_snapshot_update()`);
+      await q(`DROP TRIGGER IF EXISTS retail_order_items_commercial_snapshot_immutable ON "${s}".retail_order_items`);
+      await q(`CREATE TRIGGER retail_order_items_commercial_snapshot_immutable BEFORE UPDATE ON "${s}".retail_order_items
+        FOR EACH ROW EXECUTE FUNCTION "${s}".prevent_order_item_commercial_snapshot_update()`);
+      const v71SharedBinding = (await q<{ proname: string; prosrc: string }>(
+        `SELECT p.proname, p.prosrc
+         FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid
+         WHERE t.tgrelid=$1::regclass AND t.tgname='order_items_commercial_snapshot_immutable'`,
+        [`${s}.order_items`],
+      )).rows[0]!;
+      assert.equal(v71SharedBinding.proname, "prevent_order_item_commercial_snapshot_update");
+      assert.match(v71SharedBinding.prosrc, /personalized_treatment_bundle_discount_rsd/i,
+        "legacy v71 fixture retains the old shared function with a retail-only field");
+      await runBusinessGrowthSchemaDdl(client, s); // v71 → v72 repair
+      await runBusinessGrowthSchemaDdl(client, s); // v72 replay is idempotent
       // Direct callers must serialize too (not only ensureBusinessGrowthSchema).
       // Two independently held pool connections concurrently rebuilding trigger
       // and system-catalog objects used to intermittently fail with XX000
@@ -1237,6 +1268,205 @@ async function run() {
       ),
       /duplicate key|unique/i,
       "automation_runs.event_key uniqueness enforced",
+    );
+
+    // ── v68/v69 B2C aftercare legacy upgrade and evidence fences ─────────
+    assert.ok(await columnExists("products", "average_duration_days"), "products.average_duration_days added");
+    assert.ok(await columnExists("product_bundles", "linked_treatment_id"), "bundle treatment link added");
+    for (const table of [
+      "treatment_taxonomy", "product_treatment_mappings", "aftercare_settings",
+      "aftercare_completion_events", "aftercare_recommendations",
+      "aftercare_recommendation_appointments", "aftercare_recommendation_lines", "aftercare_deliveries",
+    ]) {
+      const exists = (await q<{ present: boolean }>(
+        `SELECT to_regclass($1) IS NOT NULL AS present`, [`${s}.${table}`],
+      )).rows[0]!.present;
+      assert.equal(exists, true, `${table} created`);
+    }
+    const settings = (await q<{
+      version: number; first_timing: string; cooldown_days: number; second_reminder_delay_days: number;
+      personalized_bundle_discount_percent: number; combination_window_days: number;
+    }>(`SELECT version, first_timing, cooldown_days, second_reminder_delay_days,
+               personalized_bundle_discount_percent, combination_window_days
+          FROM "${s}".aftercare_settings WHERE is_current`)).rows[0]!;
+    assert.deepEqual(settings, {
+      version: 1, first_timing: "IMMEDIATE_AFTER_COMPLETION", cooldown_days: 30,
+      second_reminder_delay_days: 6, personalized_bundle_discount_percent: 10,
+      combination_window_days: 30,
+    }, "v68 seeds one current settings version with canonical defaults");
+    await assert.rejects(
+      q(`UPDATE "${s}".products SET average_duration_days = 0 WHERE id = $1`, [fixtures.retailProduct.id]),
+      /products_average_duration_days_check|check constraint/i,
+    );
+    await q(`UPDATE "${s}".products SET average_duration_days = 45 WHERE id = $1`, [fixtures.retailProduct.id]);
+    const treatment = (await q<{ id: string }>(
+      `INSERT INTO "${s}".treatment_taxonomy (taxonomy_key, category_name, treatment_name)
+       VALUES ('nega-lica', 'Lice', 'Nega lica') RETURNING id`,
+    )).rows[0]!;
+    await q(
+      `INSERT INTO "${s}".product_treatment_mappings (product_id, treatment_id) VALUES ($1, $2)`,
+      [fixtures.retailProduct.id, treatment.id],
+    );
+    await assert.rejects(
+      q(`INSERT INTO "${s}".product_treatment_mappings (product_id, treatment_id) VALUES ($1, $2)`,
+        [fixtures.retailProduct.id, treatment.id]),
+      /duplicate key|unique/i,
+      "product-treatment mapping is deduplicated",
+    );
+    await q(
+      `INSERT INTO "${s}".aftercare_completion_events
+         (appointment_id, customer_user_id, transition_key, completed_at)
+       VALUES ($1, $2, 'completed:1', now())`,
+      [fixtures.appointment.id, fixtures.user.id],
+    );
+    await assert.rejects(
+      q(`INSERT INTO "${s}".aftercare_completion_events
+           (appointment_id, customer_user_id, transition_key, completed_at)
+         VALUES ($1, $2, 'completed:1', now())`, [fixtures.appointment.id, fixtures.user.id]),
+      /duplicate key|unique/i,
+      "completion transition wakeup is idempotent",
+    );
+    const recommendation = (await q<{ id: string }>(
+      `INSERT INTO "${s}".aftercare_recommendations
+         (customer_user_id, settings_version, entitlement_token_hash, window_started_at, window_ends_at,
+          activates_at, entitlement_expires_at, settings_snapshot, treatment_snapshot)
+       VALUES ($1, 1, 'opaque-token-hash', now(), now() + interval '30 days', now(),
+         now() + interval '30 days', '{"cooldownDays":30}'::jsonb,
+         '[{"id":"${treatment.id}","key":"nega-lica","category":"Lice","name":"Nega lica"}]'::jsonb)
+       RETURNING id`, [fixtures.user.id],
+    )).rows[0]!;
+    const line = (await q<{ id: string }>(
+      `INSERT INTO "${s}".aftercare_recommendation_lines
+         (recommendation_id, kind, product_id, treatment_ids, covered_product_ids, catalog_snapshot,
+          pricing_snapshot, discount_kind, discount_percent)
+       VALUES ($1, 'PRODUCT', $2, $3::jsonb, $4::jsonb, '{"name":"Legacy retail product"}',
+         '{"unitPriceRsd":1000}', 'POST_TREATMENT_RECOMMENDATION_DISCOUNT', 10) RETURNING id`,
+      [recommendation.id, fixtures.retailProduct.id, JSON.stringify([treatment.id]), JSON.stringify([fixtures.retailProduct.id])],
+    )).rows[0]!;
+    await q(
+      `INSERT INTO "${s}".aftercare_deliveries
+         (recommendation_id, line_id, kind, event_key, scheduled_at, payload_snapshot)
+       VALUES ($1, $2, 'REPLENISHMENT', 'replenishment-1', now(), '{}')`,
+      [recommendation.id, line.id],
+    );
+    await assert.rejects(
+      q(`UPDATE "${s}".aftercare_recommendations SET settings_snapshot = '{}' WHERE id = $1`, [recommendation.id]),
+      /aftercare recommendation evidence is immutable/i,
+    );
+    await assert.rejects(
+      q(`UPDATE "${s}".aftercare_recommendation_lines SET discount_percent = 20 WHERE id = $1`, [line.id]),
+      /aftercare recommendation line evidence is immutable/i,
+    );
+    const expectedIndexes = [
+      "aftercare_completion_events_due_idx", "aftercare_recommendations_customer_created_idx",
+      "aftercare_recommendations_stats_idx", "aftercare_recommendation_lines_product_cooldown_idx",
+      "aftercare_recommendation_lines_replenishment_idx", "aftercare_deliveries_due_claim_idx",
+      "aftercare_deliveries_provider_idx",
+    ];
+    const foundIndexes = (await q<{ indexname: string }>(
+      `SELECT indexname FROM pg_indexes WHERE schemaname = $1 AND indexname = ANY($2::text[])`,
+      [s, expectedIndexes],
+    )).rows.map((row) => row.indexname);
+    assert.deepEqual(foundIndexes.sort(), expectedIndexes.sort(), "v68 worker/customer/stats indexes exist");
+    for (const column of [
+      "personalized_treatment_bundle_discount_rsd",
+      "post_treatment_recommendation_discount_rsd",
+      "aftercare_recommendation_id",
+    ]) assert.ok(await columnExists("retail_order_items", column), `v69 ${column} added to B2C items only`);
+    const aftercareColumns = (await q<{ column_name: string; column_default: string | null }>(
+      `SELECT column_name, column_default FROM information_schema.columns
+       WHERE table_schema=$1 AND table_name='retail_order_items'
+         AND column_name IN ('personalized_treatment_bundle_discount_rsd','post_treatment_recommendation_discount_rsd')`,
+      [s],
+    )).rows;
+    assert.equal(aftercareColumns.length, 2);
+    assert.ok(aftercareColumns.every((column) => column.column_default?.includes("0")),
+      "v69 allocations default safely to zero for legacy retail rows");
+    const v70Constraints = (await q<{ conname: string; confdeltype: string }>(
+      `SELECT conname, confdeltype FROM pg_constraint WHERE conrelid=$1::regclass
+       AND conname IN ('retail_order_items_aftercare_recommendation_fk','retail_order_items_aftercare_discount_check')`,
+      [`${s}.retail_order_items`],
+    )).rows;
+    assert.deepEqual(v70Constraints.map((row) => row.conname).sort(), [
+      "retail_order_items_aftercare_discount_check",
+      "retail_order_items_aftercare_recommendation_fk",
+    ], "v70 keeps entitlement FK and allocation conservation check");
+    assert.equal(v70Constraints.find((row) => row.conname === "retail_order_items_aftercare_recommendation_fk")?.confdeltype,
+      "r", "v70 restricts deletion rather than nulling immutable aftercare evidence");
+    // Seed a legacy evidence reference with the commercial immutability trigger
+    // disabled, then prove deletion is rejected by the FK rather than attempting
+    // the v69 SET NULL update that immutable evidence forbids.
+    const evidenceOrder = (await q<{ order_id: string }>(
+      `SELECT order_id FROM "${s}".retail_order_items LIMIT 1`,
+    )).rows[0]!;
+    await q(`ALTER TABLE "${s}".retail_order_items DISABLE TRIGGER retail_order_items_commercial_snapshot_immutable`);
+    await q(`UPDATE "${s}".retail_order_items SET aftercare_recommendation_id=$1
+      WHERE order_id=$2`, [recommendation.id, evidenceOrder.order_id]);
+    await q(`ALTER TABLE "${s}".retail_order_items ENABLE TRIGGER retail_order_items_commercial_snapshot_immutable`);
+    await assert.rejects(
+      q(`DELETE FROM "${s}".aftercare_recommendations WHERE id=$1`, [recommendation.id]),
+      /violates foreign key constraint/i,
+      "v70 does not null immutable retail evidence during recommendation cleanup",
+    );
+    const b2bImmutableFunction = (await q<{ prosrc: string }>(
+      `SELECT p.prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+       WHERE n.nspname=$1 AND p.proname='prevent_order_item_commercial_snapshot_update'`,
+      [s],
+    )).rows[0]!.prosrc;
+    const retailImmutableFunction = (await q<{ prosrc: string }>(
+      `SELECT p.prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname=$1 AND p.proname='prevent_retail_order_item_commercial_snapshot_update'`,
+      [s],
+    )).rows[0]!.prosrc;
+    assert.doesNotMatch(b2bImmutableFunction, /aftercare_recommendation_id/i,
+      "the B2B trigger function never references retail-only aftercare evidence");
+    assert.ok(retailImmutableFunction.length > 0, "the retail immutable trigger function is installed");
+    const immutableTriggerBindings = (await q<{ tgname: string; proname: string }>(
+      `SELECT t.tgname, p.proname
+       FROM pg_trigger t
+       JOIN pg_proc p ON p.oid=t.tgfoid
+       WHERE t.tgrelid IN ($1::regclass, $2::regclass)
+         AND t.tgname IN ('order_items_commercial_snapshot_immutable', 'retail_order_items_commercial_snapshot_immutable')
+       ORDER BY t.tgname`,
+      [`${s}.order_items`, `${s}.retail_order_items`],
+    )).rows;
+    assert.deepEqual(immutableTriggerBindings, [
+      { tgname: "order_items_commercial_snapshot_immutable", proname: "prevent_order_item_commercial_snapshot_update" },
+      { tgname: "retail_order_items_commercial_snapshot_immutable", proname: "prevent_retail_order_item_commercial_snapshot_update" },
+    ], "v72 repairs B2B and retail immutable trigger bindings");
+    const b2bOrder = (await q<{ id: string }>(`INSERT INTO "${s}".orders DEFAULT VALUES RETURNING id`)).rows[0]!;
+    const b2bProductSnapshot = (await q<{
+      supplier_id: string; supplier_name: string; supplier_slug: string; catalog_reference: string; sku: string | null;
+    }>(`SELECT p.supplier_id, sup.name supplier_name, sup.slug supplier_slug, p.catalog_reference, p.sku
+        FROM "${s}".products p JOIN "${s}".suppliers sup ON sup.id=p.supplier_id WHERE p.id=$1`,
+      [fixtures.retailProduct.id],
+    )).rows[0]!;
+    const b2bLine = (await q<{ id: string }>(
+      `INSERT INTO "${s}".order_items
+        (order_id, product_id, product_name, product_sku, price, quantity, supplier_id, supplier_name,
+         supplier_slug, product_catalog_reference, product_sku_snapshot, unit_price, line_subtotal, line_total)
+       VALUES ($1, $2, 'B2B immutable regression line', $3, 1000, 1, $4, $5, $6, $7, $3, 1000, 1000, 1000)
+       RETURNING id`,
+      [b2bOrder.id, fixtures.retailProduct.id, b2bProductSnapshot.sku, b2bProductSnapshot.supplier_id,
+        b2bProductSnapshot.supplier_name, b2bProductSnapshot.supplier_slug, b2bProductSnapshot.catalog_reference],
+    )).rows[0]!;
+    await assert.rejects(
+      q(`UPDATE "${s}".order_items SET unit_price=1001 WHERE id=$1`, [b2bLine.id]),
+      (error: unknown) => error instanceof Error
+        && error.message === "Order item commercial snapshot is immutable",
+      "B2B immutable updates fail with the intended exception rather than a missing retail aftercare field",
+    );
+    await assert.rejects(
+      q(`UPDATE "${s}".retail_order_items SET personalized_treatment_bundle_discount_rsd=1 WHERE order_id=$1`, [evidenceOrder.order_id]),
+      (error: unknown) => error instanceof Error
+        && error.message === "Order item commercial snapshot is immutable",
+      "retail aftercare allocation updates are protected by its separate trigger",
+    );
+    await assert.rejects(
+      q(`UPDATE "${s}".retail_order_items SET aftercare_recommendation_id=NULL WHERE order_id=$1`, [evidenceOrder.order_id]),
+      (error: unknown) => error instanceof Error
+        && error.message === "Order item commercial snapshot is immutable",
+      "retail aftercare evidence references are protected by its separate trigger",
     );
 
     console.log("Business Growth schema rollout legacy-upgrade test passed.");

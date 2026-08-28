@@ -18,6 +18,8 @@ export const COMMERCE_PRICING_POLICY = Object.freeze([
   "REGULAR_PRICE",
   "VARIANT_PRICE_ADJUST",
   "FIXED_BUNDLE_PRICE",
+  "PERSONALIZED_TREATMENT_BUNDLE_DISCOUNT",
+  "POST_TREATMENT_RECOMMENDATION_DISCOUNT",
   "AUTOMATIC_XY_PROMOTION",
   "COUPON",
   "CART_THRESHOLD_REWARD",
@@ -29,6 +31,7 @@ export const COMMERCE_PRICING_POLICY = Object.freeze([
 export type KnownAdjustmentKind =
   | "EXPLICIT_VARIANT_PRICE" | "SALE" | "TIER" | "VARIANT_PRICE_ADJUST"
   | "BUNDLE" | "COUPON" | "REFERRAL_CREDIT" | "LOYALTY"
+  | "PERSONALIZED_TREATMENT_BUNDLE_DISCOUNT" | "POST_TREATMENT_RECOMMENDATION_DISCOUNT"
   | "AUTOMATIC_XY_PROMOTION" | "CART_THRESHOLD_REWARD";
 export type PriceSource = "FULL_PRICE" | "SALE" | "TIER" | "LOYALTY_TIER_PRICE" | "EXPLICIT_VARIANT_PRICE" | "BUNDLE";
 export type CommerceMarket = "B2B" | "B2C";
@@ -69,6 +72,8 @@ export type CanonicalQuotedLine = Readonly<{
   unitPriceRsd: number;
   lineSubtotalRsd: number;
   couponAllocationRsd: number;
+  personalizedTreatmentBundleDiscountRsd: number;
+  postTreatmentRecommendationDiscountRsd: number;
   automaticPromotionAllocationRsd: number;
   thresholdRewardAllocationRsd: number;
   lineTotalRsd: number;
@@ -81,6 +86,8 @@ export type CanonicalQuote = Readonly<{
   lines: readonly CanonicalQuotedLine[];
   subtotalRsd: number;
   couponDiscountRsd: number;
+  personalizedTreatmentBundleDiscountRsd: number;
+  postTreatmentRecommendationDiscountRsd: number;
   automaticPromotionDiscountRsd: number;
   thresholdRewardDiscountRsd: number;
   thresholdQualificationSubtotalRsd: number;
@@ -96,6 +103,32 @@ export type CanonicalQuote = Readonly<{
   payableTotalRsd: number;
   coupon: CouponQuote | null;
   loyalty: Readonly<{ postCheckout: true; awardBaseRsd: number }>;
+}>;
+
+/** Evidence already authenticated and validated by the locked server path. */
+export type ValidatedAftercareEntitlement = Readonly<{
+  identity: string;
+  active: boolean;
+  percent: number;
+  expiresAt: Date;
+  coveredProductIds: readonly string[];
+  /** Normally empty. A premade bundle is eligible only when explicitly covered. */
+  coveredBundleIds?: readonly string[];
+  /**
+   * Immutable recommendation-snapshot caps.  A missing entry deliberately
+   * retains the legacy unlimited engine behaviour; locked aftercare adapters
+   * must supply every covered target (normally 1) and must never derive this
+   * from request data.
+   */
+  maximumEligibleQuantityByProductId?: Readonly<Record<string, number>>;
+  maximumEligibleQuantityByBundleId?: Readonly<Record<string, number>>;
+  /** A personalized treatment bundle is all-or-nothing across its recipe. */
+  requiresCompleteCoveredSet?: boolean;
+}>;
+
+export type B2cAftercareDiscounts = Readonly<{
+  personalizedTreatmentBundle?: ValidatedAftercareEntitlement | null;
+  postTreatmentRecommendation?: ValidatedAftercareEntitlement | null;
 }>;
 
 export type AutomaticXyPromotion = Readonly<{
@@ -133,6 +166,8 @@ export type PreparedCommerceLine = Readonly<{
   categoryIds: readonly string[];
   unitPriceRsd: number;
   lineSubtotalRsd: number;
+  personalizedTreatmentBundleDiscountRsd: number;
+  postTreatmentRecommendationDiscountRsd: number;
   automaticPromotionAllocationRsd: number;
   priceSource: PriceSource;
   baseUnitPriceRsd: number;
@@ -152,6 +187,8 @@ export type PreparedCommerceQuote = Readonly<{
     amountRsd: number;
   }>[];
   subtotalRsd: number;
+  personalizedTreatmentBundleDiscountRsd: number;
+  postTreatmentRecommendationDiscountRsd: number;
   automaticPromotionDiscountRsd: number;
   automaticPromotionSnapshots: readonly Readonly<{
     promotionId: string;
@@ -169,6 +206,8 @@ export function quoteResolvedCommerce(input: Readonly<{
     id: string; productId: string | null; bundleId: string | null; quantity: number;
     unitPriceRsd: number; lineSubtotalRsd: number; priceSource: PriceSource;
     lineDiscountRsd: number;
+    personalizedTreatmentBundleDiscountRsd?: number;
+    postTreatmentRecommendationDiscountRsd?: number;
     automaticPromotionAllocationRsd?: number;
     thresholdRewardAllocationRsd?: number;
   }>[];
@@ -178,7 +217,8 @@ export function quoteResolvedCommerce(input: Readonly<{
   shippingRsd: number;
   loyaltyFreeShipping?: boolean;
   thresholdFreeShipping?: boolean;
-}>): Pick<CanonicalQuote, "subtotalRsd" | "couponDiscountRsd" | "referralBaseRsd" | "referralAppliedRsd" | "shippingRsd" | "payableTotalRsd"> {
+}>): Pick<CanonicalQuote, "subtotalRsd" | "couponDiscountRsd" | "referralBaseRsd"
+  | "referralAppliedRsd" | "shippingRsd" | "payableTotalRsd"> {
   const coupon = input.coupon;
   const allocations = coupon?.valid ? coupon.allocations : {};
   const lineIds = new Set<string>();
@@ -194,11 +234,15 @@ export function quoteResolvedCommerce(input: Readonly<{
     nonNegative(allocations[line.id] ?? 0, "Coupon allocation");
     if ((allocations[line.id] ?? 0) > line.lineSubtotalRsd) throw new Error("Coupon allocation exceeds line subtotal.");
     const automaticAllocation = nonNegative(line.automaticPromotionAllocationRsd ?? 0, "Automatic promotion allocation");
+    const personalizedAllocation = nonNegative(line.personalizedTreatmentBundleDiscountRsd ?? 0, "Personalized treatment bundle allocation");
+    const postTreatmentAllocation = nonNegative(line.postTreatmentRecommendationDiscountRsd ?? 0, "Post-treatment recommendation allocation");
     const thresholdAllocation = nonNegative(line.thresholdRewardAllocationRsd ?? 0, "Threshold reward allocation");
-    if ((allocations[line.id] ?? 0) + automaticAllocation + thresholdAllocation > line.lineSubtotalRsd) {
+    if ((allocations[line.id] ?? 0) + personalizedAllocation + postTreatmentAllocation
+      + automaticAllocation + thresholdAllocation > line.lineSubtotalRsd) {
       throw new Error("Combined commerce allocations exceed line subtotal.");
     }
-    const finalAmount = line.lineSubtotalRsd - (allocations[line.id] ?? 0) - automaticAllocation - thresholdAllocation;
+    const finalAmount = line.lineSubtotalRsd - (allocations[line.id] ?? 0) - personalizedAllocation
+      - postTreatmentAllocation - automaticAllocation - thresholdAllocation;
     nonNegative(finalAmount, "Final line amount");
     return {
       id: line.id, amountRsd: finalAmount,
@@ -206,6 +250,8 @@ export function quoteResolvedCommerce(input: Readonly<{
         priceSource: line.priceSource === "EXPLICIT_VARIANT_PRICE" ? "FULL_PRICE" : line.priceSource,
         lineDiscountRsd: line.lineDiscountRsd, couponAllocationRsd: allocations[line.id] ?? 0,
         additionalDiscounts: [
+          { kind: "PERSONALIZED_TREATMENT_BUNDLE_DISCOUNT", amountRsd: personalizedAllocation },
+          { kind: "POST_TREATMENT_RECOMMENDATION_DISCOUNT", amountRsd: postTreatmentAllocation },
           { kind: "AUTOMATIC_XY_PROMOTION", amountRsd: automaticAllocation },
           { kind: "CART_THRESHOLD_REWARD", amountRsd: thresholdAllocation },
         ],
@@ -218,9 +264,10 @@ export function quoteResolvedCommerce(input: Readonly<{
   const subtotalRsd = input.lines.reduce((sum, line) => sum + line.lineSubtotalRsd, 0);
   const couponDiscountRsd = coupon?.valid ? coupon.discountRsd : 0;
   if (couponDiscountRsd !== Object.values(allocations).reduce((sum, value) => sum + value, 0)) throw new Error("Coupon allocation conservation failed.");
-  const cartPromotionDiscountRsd = input.lines.reduce((sum, line) => (
-    sum + (line.automaticPromotionAllocationRsd ?? 0) + (line.thresholdRewardAllocationRsd ?? 0)
-  ), 0);
+  const cartPromotionDiscountRsd = input.lines.reduce((sum, line) => sum
+    + (line.personalizedTreatmentBundleDiscountRsd ?? 0)
+    + (line.postTreatmentRecommendationDiscountRsd ?? 0)
+    + (line.automaticPromotionAllocationRsd ?? 0) + (line.thresholdRewardAllocationRsd ?? 0), 0);
   const shippingRsd = input.loyaltyFreeShipping || input.thresholdFreeShipping || (coupon?.valid && coupon.freeShipping)
     ? 0 : nonNegative(input.shippingRsd, "Shipping");
   const referralAppliedRsd = Math.min(
@@ -230,7 +277,8 @@ export function quoteResolvedCommerce(input: Readonly<{
   );
   const payableTotalRsd = subtotalRsd - couponDiscountRsd - cartPromotionDiscountRsd - referralAppliedRsd + shippingRsd;
   nonNegative(payableTotalRsd, "Payable total");
-  return Object.freeze({ subtotalRsd, couponDiscountRsd, referralBaseRsd: referral.referralBaseRsd, referralAppliedRsd, shippingRsd, payableTotalRsd });
+  return Object.freeze({ subtotalRsd, couponDiscountRsd, referralBaseRsd: referral.referralBaseRsd,
+    referralAppliedRsd, shippingRsd, payableTotalRsd });
 }
 
 function integer(value: number, field: string) {
@@ -318,11 +366,84 @@ function proportionalAllocation(
   return Object.fromEntries(shares.map((share) => [share.id, share.amount]));
 }
 
+function quoteAftercareEntitlement(
+  priced: readonly Readonly<{ line: CanonicalLineInput; lineSubtotalRsd: number }>[],
+  entitlement: ValidatedAftercareEntitlement | null | undefined,
+  now: Date,
+  priorAllocations: Readonly<Record<string, number>>,
+) {
+  const zero = Object.fromEntries(priced.map(({ line }) => [line.id, 0]));
+  if (!entitlement?.active || entitlement.expiresAt <= now) return { allocations: zero, discountRsd: 0 };
+  if (!entitlement.identity) throw new Error("Active aftercare entitlement identity is required.");
+  if (!Number.isSafeInteger(entitlement.percent) || entitlement.percent <= 0 || entitlement.percent > 100) {
+    throw new Error("Active aftercare entitlement percentage must be between 1 and 100.");
+  }
+  const products = new Set(entitlement.coveredProductIds);
+  const bundles = new Set(entitlement.coveredBundleIds ?? []);
+  if (products.size === 0 && bundles.size === 0) return { allocations: zero, discountRsd: 0 };
+  const productCaps = entitlement.maximumEligibleQuantityByProductId ?? {};
+  const bundleCaps = entitlement.maximumEligibleQuantityByBundleId ?? {};
+  const capFor = (id: string, caps: Readonly<Record<string, number>>) => {
+    const cap = caps[id];
+    if (cap == null) return Number.MAX_SAFE_INTEGER;
+    if (!Number.isSafeInteger(cap) || cap <= 0) throw new Error("Aftercare eligible quantity caps must be positive integers.");
+    return cap;
+  };
+  // Personalized recipes are only valid when the cart contains every required
+  // target at its immutable quantity.  This happens before consuming caps, so
+  // an incomplete set cannot receive a partial dynamic-bundle discount.
+  if (entitlement.requiresCompleteCoveredSet) {
+    const quantities = new Map<string, number>();
+    for (const { line } of priced) {
+      const target = line.productId && products.has(line.productId)
+        ? `product:${line.productId}`
+        : line.bundleId && bundles.has(line.bundleId) ? `bundle:${line.bundleId}` : null;
+      if (target) quantities.set(target, (quantities.get(target) ?? 0) + line.quantity);
+    }
+    for (const productId of products) {
+      if ((quantities.get(`product:${productId}`) ?? 0) < capFor(productId, productCaps)) {
+        return { allocations: zero, discountRsd: 0 };
+      }
+    }
+    for (const bundleId of bundles) {
+      if ((quantities.get(`bundle:${bundleId}`) ?? 0) < capFor(bundleId, bundleCaps)) {
+        return { allocations: zero, discountRsd: 0 };
+      }
+    }
+  }
+  // Allocate capped units in stable line order.  A product can occur on
+  // multiple variant lines; consuming a shared remaining cap prevents quantity
+  // amplification while keeping the resulting integer allocation deterministic.
+  const remainingProductUnits = new Map([...products].map((id) => [id, capFor(id, productCaps)]));
+  const remainingBundleUnits = new Map([...bundles].map((id) => [id, capFor(id, bundleCaps)]));
+  const eligible = priced.flatMap(({ line, lineSubtotalRsd }) => {
+    const id = line.productId != null && products.has(line.productId) ? line.productId
+      : line.bundleId != null && bundles.has(line.bundleId) ? line.bundleId : null;
+    if (!id) return [];
+    const remaining = line.productId != null ? remainingProductUnits : remainingBundleUnits;
+    const eligibleQuantity = Math.min(line.quantity, remaining.get(id) ?? 0);
+    remaining.set(id, (remaining.get(id) ?? 0) - eligibleQuantity);
+    if (!eligibleQuantity) return [];
+    const unitAmount = lineSubtotalRsd / line.quantity;
+    // line totals originate from an integer unit price; retain this guard for
+    // direct engine callers rather than silently rounding entitlement evidence.
+    if (!Number.isSafeInteger(unitAmount)) throw new Error("Aftercare line unit amount must be an integer.");
+    return [{
+      id: line.id,
+      amountRsd: Math.max(0, unitAmount * eligibleQuantity - (priorAllocations[line.id] ?? 0)),
+    }];
+  }).filter((line) => line.amountRsd > 0);
+  const eligibleTotal = eligible.reduce((sum, line) => sum + line.amountRsd, 0);
+  const discountRsd = Math.floor(eligibleTotal * entitlement.percent / 100);
+  return { allocations: { ...zero, ...proportionalAllocation(eligible, discountRsd) }, discountRsd };
+}
+
 function quoteAutomaticPromotions(
   market: CommerceMarket,
   now: Date,
   priced: readonly Readonly<{ line: CanonicalLineInput; pricing: CanonicalPrice; lineSubtotalRsd: number }>[],
   promotions: readonly AutomaticXyPromotion[],
+  priorAllocations: Readonly<Record<string, number>> = {},
 ) {
   const allocations: Record<string, number> = Object.fromEntries(priced.map(({ line }) => [line.id, 0]));
   const snapshots: Array<Readonly<{ promotionId: string; allocations: Readonly<Record<string, number>>; rewardUnits: number }>> = [];
@@ -369,7 +490,8 @@ function quoteAutomaticPromotions(
       if (buyIds.has(unit.id) && sharedRewards >= sharedRewardCap) continue;
       const amount = Math.floor(unit.unitPriceRsd * promotion.rewardPercent / 100);
       if (amount > 0) {
-        const remainingLineAmount = priced.find(({ line }) => line.id === unit.id)!.lineSubtotalRsd - allocations[unit.id]!;
+        const remainingLineAmount = priced.find(({ line }) => line.id === unit.id)!.lineSubtotalRsd
+          - (priorAllocations[unit.id] ?? 0) - allocations[unit.id]!;
         const applied = Math.min(amount, remainingLineAmount);
         if (applied > 0) {
           allocations[unit.id] = allocations[unit.id]! + applied;
@@ -489,6 +611,7 @@ function quoteCommerceLegacy(input: Readonly<{
     return Object.freeze({
       id: line.id, quantity: line.quantity, productId: line.productId, bundleId: line.bundleId,
       unitPriceRsd: pricing.unitPriceRsd, lineSubtotalRsd, couponAllocationRsd,
+      personalizedTreatmentBundleDiscountRsd: 0, postTreatmentRecommendationDiscountRsd: 0,
       automaticPromotionAllocationRsd, thresholdRewardAllocationRsd,
       lineTotalRsd: lineSubtotalRsd - automaticPromotionAllocationRsd - couponAllocationRsd - thresholdRewardAllocationRsd,
       priceSource: pricing.priceSource,
@@ -512,6 +635,7 @@ function quoteCommerceLegacy(input: Readonly<{
   nonNegative(payableTotalRsd, "Payable total");
   return Object.freeze({
     lines: Object.freeze(lines), subtotalRsd, couponDiscountRsd,
+    personalizedTreatmentBundleDiscountRsd: 0, postTreatmentRecommendationDiscountRsd: 0,
     automaticPromotionDiscountRsd: automatic.discountRsd, thresholdRewardDiscountRsd,
     thresholdQualificationSubtotalRsd, rewardGifts: Object.freeze(rewardGifts),
     automaticPromotionSnapshots: automatic.snapshots,
@@ -526,8 +650,12 @@ export function prepareCommerceQuote(input: Readonly<{
   market: CommerceMarket;
   lines: readonly CanonicalLineInput[];
   automaticPromotions?: readonly AutomaticXyPromotion[];
+  aftercareDiscounts?: B2cAftercareDiscounts;
   now: Date;
 }>): PreparedCommerceQuote {
+  if (input.market === "B2B" && input.aftercareDiscounts != null) {
+    throw new Error("Aftercare discounts are available only for B2C commerce.");
+  }
   const priced = input.lines.map((line) => {
     if (!line.id) throw new Error("Line id is required.");
     if (!Number.isSafeInteger(line.quantity) || line.quantity <= 0) throw new Error("Line quantity must be a positive integer.");
@@ -537,21 +665,49 @@ export function prepareCommerceQuote(input: Readonly<{
     return { line, pricing, lineSubtotalRsd };
   }).sort((a, b) => a.line.id.localeCompare(b.line.id));
   if (new Set(priced.map(({ line }) => line.id)).size !== priced.length) throw new Error("Line ids must be unique.");
-  const automatic = quoteAutomaticPromotions(input.market, input.now, priced, input.automaticPromotions ?? []);
+  const personalized = quoteAftercareEntitlement(
+    priced, input.aftercareDiscounts?.personalizedTreatmentBundle, input.now, {},
+  );
+  const postTreatment = quoteAftercareEntitlement(
+    priced, input.aftercareDiscounts?.postTreatmentRecommendation, input.now, personalized.allocations,
+  );
+  const aftercareAllocations = Object.fromEntries(priced.map(({ line }) => [
+    line.id, personalized.allocations[line.id]! + postTreatment.allocations[line.id]!,
+  ]));
+  const automatic = quoteAutomaticPromotions(
+    input.market, input.now, priced, input.automaticPromotions ?? [], aftercareAllocations,
+  );
   const lines = priced.map(({ line, pricing, lineSubtotalRsd }) => Object.freeze({
     id: line.id, quantity: line.quantity, productId: line.productId, bundleId: line.bundleId,
     categoryIds: Object.freeze([...line.categoryIds]), unitPriceRsd: pricing.unitPriceRsd, lineSubtotalRsd,
+    personalizedTreatmentBundleDiscountRsd: personalized.allocations[line.id]!,
+    postTreatmentRecommendationDiscountRsd: postTreatment.allocations[line.id]!,
     automaticPromotionAllocationRsd: automatic.allocations[line.id]!, priceSource: pricing.priceSource,
-    baseUnitPriceRsd: pricing.baseUnitPriceRsd, adjustments: pricing.adjustments,
+    baseUnitPriceRsd: pricing.baseUnitPriceRsd, adjustments: Object.freeze([
+      ...pricing.adjustments,
+      ...(personalized.allocations[line.id] ? [{
+        kind: "PERSONALIZED_TREATMENT_BUNDLE_DISCOUNT" as const,
+        amountRsd: personalized.allocations[line.id]!,
+      }] : []),
+      ...(postTreatment.allocations[line.id] ? [{
+        kind: "POST_TREATMENT_RECOMMENDATION_DISCOUNT" as const,
+        amountRsd: postTreatment.allocations[line.id]!,
+      }] : []),
+    ]),
   }));
   const couponLines = lines.map((line) => Object.freeze({
     id: line.id, productId: line.productId, bundleId: line.bundleId,
-    categoryIds: Object.freeze([...line.categoryIds]), amountRsd: line.lineSubtotalRsd - line.automaticPromotionAllocationRsd,
+    categoryIds: Object.freeze([...line.categoryIds]), amountRsd: line.lineSubtotalRsd
+      - line.personalizedTreatmentBundleDiscountRsd
+      - line.postTreatmentRecommendationDiscountRsd
+      - line.automaticPromotionAllocationRsd,
   }));
   const subtotalRsd = lines.reduce((sum, line) => sum + line.lineSubtotalRsd, 0);
   const thresholdQualificationSubtotalRsd = couponLines.reduce((sum, line) => sum + line.amountRsd, 0);
   return Object.freeze({
     market: input.market, lines: Object.freeze(lines), couponLines: Object.freeze(couponLines), subtotalRsd,
+    personalizedTreatmentBundleDiscountRsd: personalized.discountRsd,
+    postTreatmentRecommendationDiscountRsd: postTreatment.discountRsd,
     automaticPromotionDiscountRsd: automatic.discountRsd, automaticPromotionSnapshots: automatic.snapshots,
     thresholdQualificationSubtotalRsd,
   });
@@ -610,12 +766,16 @@ export function finalizeCommerceQuote(input: Readonly<{
   const thresholdFreeShipping = crossedRewards.some((reward) => reward.kind === "FREE_SHIPPING");
   const referralFacts = quoteCommerceReferralBase(input.prepared.lines.map((line) => ({
     id: line.id,
-    amountRsd: line.lineSubtotalRsd - line.automaticPromotionAllocationRsd - (allocations[line.id] ?? 0) - thresholdAllocations[line.id]!,
+    amountRsd: line.lineSubtotalRsd - line.personalizedTreatmentBundleDiscountRsd
+      - line.postTreatmentRecommendationDiscountRsd
+      - line.automaticPromotionAllocationRsd - (allocations[line.id] ?? 0) - thresholdAllocations[line.id]!,
     discounts: commerceDiscountsForPricedLine({
       priceSource: line.priceSource === "EXPLICIT_VARIANT_PRICE" ? "FULL_PRICE" : line.priceSource,
       lineDiscountRsd: (line.baseUnitPriceRsd - line.unitPriceRsd) * line.quantity,
       couponAllocationRsd: allocations[line.id] ?? 0,
       additionalDiscounts: [
+        { kind: "PERSONALIZED_TREATMENT_BUNDLE_DISCOUNT", amountRsd: line.personalizedTreatmentBundleDiscountRsd },
+        { kind: "POST_TREATMENT_RECOMMENDATION_DISCOUNT", amountRsd: line.postTreatmentRecommendationDiscountRsd },
         { kind: "AUTOMATIC_XY_PROMOTION", amountRsd: line.automaticPromotionAllocationRsd },
         { kind: "CART_THRESHOLD_REWARD", amountRsd: thresholdAllocations[line.id]! },
       ],
@@ -625,12 +785,16 @@ export function finalizeCommerceQuote(input: Readonly<{
   const lines = input.prepared.lines.map((line) => {
     const couponAllocationRsd = allocations[line.id] ?? 0;
     const thresholdRewardAllocationRsd = thresholdAllocations[line.id]!;
-    const lineTotalRsd = line.lineSubtotalRsd - line.automaticPromotionAllocationRsd - couponAllocationRsd - thresholdRewardAllocationRsd;
+    const lineTotalRsd = line.lineSubtotalRsd - line.personalizedTreatmentBundleDiscountRsd
+      - line.postTreatmentRecommendationDiscountRsd
+      - line.automaticPromotionAllocationRsd - couponAllocationRsd - thresholdRewardAllocationRsd;
     nonNegative(lineTotalRsd, "Final line amount");
     const decision = referralFacts.lines.find((fact) => fact.id === line.id)!;
     return Object.freeze({
       id: line.id, quantity: line.quantity, productId: line.productId, bundleId: line.bundleId,
       unitPriceRsd: line.unitPriceRsd, lineSubtotalRsd: line.lineSubtotalRsd, couponAllocationRsd,
+      personalizedTreatmentBundleDiscountRsd: line.personalizedTreatmentBundleDiscountRsd,
+      postTreatmentRecommendationDiscountRsd: line.postTreatmentRecommendationDiscountRsd,
       automaticPromotionAllocationRsd: line.automaticPromotionAllocationRsd, thresholdRewardAllocationRsd, lineTotalRsd,
       priceSource: line.priceSource,
       adjustments: Object.freeze([...line.adjustments,
@@ -644,10 +808,14 @@ export function finalizeCommerceQuote(input: Readonly<{
   const effectiveShipping = input.loyaltyFreeShipping || thresholdFreeShipping
     || (input.couponFreeShipping !== false && coupon.valid && coupon.freeShipping) ? 0 : shippingRsd;
   const payableTotalRsd = input.prepared.subtotalRsd - input.prepared.automaticPromotionDiscountRsd
+    - input.prepared.personalizedTreatmentBundleDiscountRsd
+    - input.prepared.postTreatmentRecommendationDiscountRsd
     - couponDiscountRsd - thresholdRewardDiscountRsd - referralAppliedRsd + effectiveShipping;
   nonNegative(payableTotalRsd, "Payable total");
   return Object.freeze({
     lines: Object.freeze(lines), subtotalRsd: input.prepared.subtotalRsd, couponDiscountRsd,
+    personalizedTreatmentBundleDiscountRsd: input.prepared.personalizedTreatmentBundleDiscountRsd,
+    postTreatmentRecommendationDiscountRsd: input.prepared.postTreatmentRecommendationDiscountRsd,
     automaticPromotionDiscountRsd: input.prepared.automaticPromotionDiscountRsd, thresholdRewardDiscountRsd,
     thresholdQualificationSubtotalRsd: input.prepared.thresholdQualificationSubtotalRsd,
     rewardGifts: Object.freeze(rewardGifts), automaticPromotionSnapshots: input.prepared.automaticPromotionSnapshots,
@@ -669,6 +837,7 @@ export function quoteCommerce(input: Readonly<{
   couponFreeShipping?: boolean;
   automaticPromotions?: readonly AutomaticXyPromotion[];
   thresholdRewards?: readonly CartThresholdReward[];
+  aftercareDiscounts?: B2cAftercareDiscounts;
 }>): CanonicalQuote {
   const prepared = prepareCommerceQuote(input);
   const lockedCouponQuote = quoteCoupon({

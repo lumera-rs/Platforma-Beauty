@@ -18,4 +18,9 @@ desiredReferralCreditRsd?: number;
  * @maxLength 40
  */
 couponCode?: string;
+/**
+ * Authenticated customer's opaque aftercare recommendation id.
+ * @pattern ^[0-9a-fA-F-]{36}$
+ */
+aftercareRecommendationId?: string;
 };

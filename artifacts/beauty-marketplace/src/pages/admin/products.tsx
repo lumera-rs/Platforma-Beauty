@@ -25,6 +25,8 @@ import {
   getAdminListBrandsQueryKey,
   getAdminListB2cProductTypesQueryKey,
   getAdminListB2cNeedTagsQueryKey,
+  useAdminListAftercareTreatments,
+  getAdminListAftercareTreatmentsQueryKey,
 } from "@workspace/api-client-react";
 import type {
   AdminProduct,
@@ -51,7 +53,7 @@ import {
 } from "@/components/ui/select";
 import {
   Loader2, Plus, Edit2, Trash2, Search, Package, ChevronLeft, ChevronRight,
-  ArrowUpDown, X, ImagePlus, Star, Layers,
+  ArrowUpDown, X, ImagePlus, Star, Layers, Sparkles
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useDebouncedSearch } from "@/hooks/use-debounce";
@@ -111,6 +113,8 @@ const emptyForm = {
   discountPriceEndsAt: null,
   publicDiscountPriceEndsAt: null,
   loyaltyPricingExcluded: false,
+  averageDurationDays: null,
+  treatmentTaxonomyIds: [],
 } as unknown as AdminProductInput;
 
 function formatRSD(v: number) {
@@ -175,6 +179,7 @@ function ProductFormDialog({
   const { data: suppliers = [] } = useAdminListSuppliers();
   const { data: productTypes = [] } = useAdminListB2cProductTypes();
   const { data: needTags = [] } = useAdminListB2cNeedTags();
+  const { data: aftercareTreatments = [] } = useAdminListAftercareTreatments();
   const actionGuard = useImmediateActionGuard();
   const [newBrandName, setNewBrandName] = useState("");
 
@@ -228,6 +233,8 @@ function ProductFormDialog({
           discountPriceEndsAt: editing.discountPriceEndsAt ?? null,
           publicDiscountPriceEndsAt: (editing as any).publicDiscountPriceEndsAt ?? null,
           loyaltyPricingExcluded: (editing as any).loyaltyPricingExcluded ?? false,
+          averageDurationDays: (editing as any).averageDurationDays ?? null,
+          treatmentTaxonomyIds: (editing as any).treatmentTaxonomyIds ?? [],
         }
       : { ...(emptyForm as any), supplierId: "", market: "B2B" }
   );
@@ -531,6 +538,8 @@ function ProductFormDialog({
       discountPriceEndsAt: form.discountPriceEndsAt || null,
       publicDiscountPriceEndsAt: (form as any).publicDiscountPriceEndsAt || null,
       loyaltyPricingExcluded: (form as any).loyaltyPricingExcluded ?? false,
+      averageDurationDays: (form as any).averageDurationDays || null,
+      treatmentTaxonomyIds: (form as any).treatmentTaxonomyIds || [],
     };
     if (!actionGuard.begin("save-product")) return;
     const opts = {
@@ -1288,6 +1297,39 @@ function ProductFormDialog({
                   <Input type="number" min="1" max="100" step="1" value={form.subscriptionDiscountPercent ?? ""} onChange={(event) => setForm({ ...form, subscriptionDiscountPercent: event.target.value === "" ? null : Number(event.target.value) })} data-testid="input-subscription-discount" />
                 </div>
               )}
+            </div>
+          </section>
+
+          {/* ── Nega posle tretmana ── */}
+          <section className="space-y-4 border rounded-xl p-4">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-primary" /> Nega posle tretmana
+              </h4>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Povezani tretmani</Label>
+                <SearchableMultiSelect
+                  options={aftercareTreatments.map((t) => ({ value: t.id, label: t.treatmentName }))}
+                  value={form.treatmentTaxonomyIds || []}
+                  onValueChange={(val) => setForm({ ...form, treatmentTaxonomyIds: val })}
+                  placeholder="Izaberite tretmane..."
+                  emptyMessage="Nema pronađenih tretmana"
+                />
+                <p className="text-xs text-muted-foreground">Kada klijent završi ovaj tretman, dobiće preporuku za ovaj proizvod.</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Prosečno trajanje proizvoda (dani)</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="3650"
+                  value={(form as any).averageDurationDays || ""}
+                  onChange={(e) => setForm({ ...form, averageDurationDays: e.target.valueAsNumber || null })}
+                />
+                <p className="text-xs text-muted-foreground">Očekivano vreme trajanja jedne bočice/pakovanja uz svakodnevnu upotrebu, kako bi se poslao podsetnik za novu kupovinu.</p>
+              </div>
             </div>
           </section>
 

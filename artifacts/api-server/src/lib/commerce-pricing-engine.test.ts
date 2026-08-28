@@ -66,6 +66,180 @@ test("literal product-price golden matrix preserves precedence, boundaries and e
   );
 });
 
+function activeEntitlement(identity: string, percent: number, coveredProductIds: string[]) {
+  return {
+    identity, active: true, percent,
+    expiresAt: new Date("2026-02-01T00:00:00.000Z"),
+    coveredProductIds,
+  };
+}
+
+test("B2C aftercare discounts apply sequentially with deterministic integer conservation", () => {
+  const quote = quoteCommerce({
+    market: "B2C",
+    lines: [line("a", product(101)), line("b", product(202)), line("uncovered", product(300))],
+    aftercareDiscounts: {
+      personalizedTreatmentBundle: activeEntitlement("personalized", 10, ["a", "b"]),
+      postTreatmentRecommendation: activeEntitlement("recommendation", 10, ["a", "b"]),
+    },
+    coupon: null, now, customerUsageCount: 0, requestedReferralCreditRsd: 500,
+    availableReferralCreditRsd: 500, shippingRsd: 0,
+  });
+  assert.equal(quote.personalizedTreatmentBundleDiscountRsd, 30);
+  assert.equal(quote.postTreatmentRecommendationDiscountRsd, 27);
+  assert.deepEqual(quote.lines.map((value) => ({
+    id: value.id,
+    personalized: value.personalizedTreatmentBundleDiscountRsd,
+    post: value.postTreatmentRecommendationDiscountRsd,
+    total: value.lineTotalRsd,
+    referralEligible: value.referralEligible,
+  })), [
+    { id: "a", personalized: 10, post: 9, total: 82, referralEligible: false },
+    { id: "b", personalized: 20, post: 18, total: 164, referralEligible: false },
+    { id: "uncovered", personalized: 0, post: 0, total: 300, referralEligible: true },
+  ]);
+  assert.equal(quote.referralBaseRsd, 300);
+  assert.equal(quote.referralAppliedRsd, 300);
+  assert.equal(quote.payableTotalRsd, 246);
+  assert.deepEqual(quote.lines[0]!.adjustments.map((adjustment) => adjustment.kind), [
+    "PERSONALIZED_TREATMENT_BUNDLE_DISCOUNT",
+    "POST_TREATMENT_RECOMMENDATION_DISCOUNT",
+  ]);
+});
+
+test("aftercare snapshot caps prevent quantity amplification and dynamic recipes fail closed when incomplete", () => {
+  const base = {
+    market: "B2C" as const,
+    coupon: null,
+    now,
+    customerUsageCount: 0,
+    requestedReferralCreditRsd: 0,
+    availableReferralCreditRsd: 0,
+    shippingRsd: 0,
+  };
+  const capped = quoteCommerce({
+    ...base,
+    lines: [line("serum", product(100), 3), line("cream", product(200), 2), line("extra", product(50))],
+    aftercareDiscounts: {
+      personalizedTreatmentBundle: {
+        ...activeEntitlement("recipe", 10, ["serum", "cream"]),
+        requiresCompleteCoveredSet: true,
+        maximumEligibleQuantityByProductId: { serum: 1, cream: 1 },
+      },
+      postTreatmentRecommendation: {
+        ...activeEntitlement("post", 10, ["serum"]),
+        maximumEligibleQuantityByProductId: { serum: 1 },
+      },
+    },
+  });
+  // Personalized applies to exactly one serum and one cream (30); post
+  // treatment then applies to the remaining capped serum amount (9).
+  assert.equal(capped.personalizedTreatmentBundleDiscountRsd, 30);
+  assert.equal(capped.postTreatmentRecommendationDiscountRsd, 9);
+  assert.deepEqual(capped.lines.map((value) => [
+    value.id, value.personalizedTreatmentBundleDiscountRsd,
+    value.postTreatmentRecommendationDiscountRsd, value.lineTotalRsd,
+  ]), [
+    ["cream", 20, 0, 380],
+    ["extra", 0, 0, 50],
+    ["serum", 10, 9, 281],
+  ]);
+  const incomplete = quoteCommerce({
+    ...base,
+    lines: [line("serum", product(100), 1)],
+    aftercareDiscounts: {
+      personalizedTreatmentBundle: {
+        ...activeEntitlement("recipe", 10, ["serum", "cream"]),
+        requiresCompleteCoveredSet: true,
+        maximumEligibleQuantityByProductId: { serum: 1, cream: 1 },
+      },
+    },
+  });
+  assert.equal(incomplete.personalizedTreatmentBundleDiscountRsd, 0);
+  assert.equal(incomplete.payableTotalRsd, 100);
+});
+
+test("aftercare runs after resolved sale/quantity/loyalty/bundle and before XY/coupon/threshold", () => {
+  const quote = quoteCommerce({
+    market: "B2C",
+    lines: [
+      line("sale", product(1_000, { activeSaleUnitPriceRsd: 800 })),
+      line("tier", product(1_000, { tierUnitPriceRsd: 700 })),
+      { id: "bundle", quantity: 1, productId: null, bundleId: "bundle-1", categoryIds: [], fixedBundleUnitPriceRsd: 500 },
+    ],
+    aftercareDiscounts: {
+      personalizedTreatmentBundle: {
+        ...activeEntitlement("p", 10, ["sale", "tier"]),
+        coveredBundleIds: ["bundle-1"],
+      },
+    },
+    automaticPromotions: [{
+      id: "xy", market: "B2C", active: true, startsAt: null, endsAt: null,
+      buyQuantity: 1, rewardQuantity: 1, rewardPercent: 50,
+      buyProductIds: ["sale"], rewardProductIds: ["tier"],
+    }],
+    coupon: policy({ discountType: "PERCENTAGE", discountValue: 10 }),
+    thresholdRewards: [{ id: "threshold", market: "B2C", active: true, thresholdRsd: 1, kind: "PERCENT_DISCOUNT", percent: 10 }],
+    now, customerUsageCount: 0, requestedReferralCreditRsd: 0, availableReferralCreditRsd: 0, shippingRsd: 0,
+  });
+  assert.equal(quote.subtotalRsd, 2_000);
+  assert.equal(quote.personalizedTreatmentBundleDiscountRsd, 200);
+  assert.equal(quote.automaticPromotionDiscountRsd, 350);
+  // Existing coupon semantics target product lines, not a bundle unless its
+  // bundle id is explicitly included; the threshold still sees all lines.
+  assert.equal(quote.couponDiscountRsd, 100);
+  assert.equal(quote.thresholdRewardDiscountRsd, 135);
+  assert.equal(quote.payableTotalRsd, 1_215);
+  assert.equal(quote.lines.find((value) => value.id === "bundle")!.priceSource, "BUNDLE");
+});
+
+test("premade bundle is fixed-price and excluded unless entitlement explicitly covers its bundle id", () => {
+  const bundle = { id: "bundle-line", quantity: 1, productId: null, bundleId: "premade", categoryIds: [], fixedBundleUnitPriceRsd: 1_000 };
+  const notCovered = quoteCommerce({
+    market: "B2C", lines: [bundle],
+    aftercareDiscounts: { personalizedTreatmentBundle: activeEntitlement("dynamic", 10, ["component"]) },
+    coupon: null, now, customerUsageCount: 0, requestedReferralCreditRsd: 0, availableReferralCreditRsd: 0, shippingRsd: 0,
+  });
+  assert.equal(notCovered.payableTotalRsd, 1_000);
+  const explicitlyCovered = quoteCommerce({
+    market: "B2C", lines: [bundle],
+    aftercareDiscounts: { personalizedTreatmentBundle: {
+      ...activeEntitlement("premade-entitlement", 10, []), coveredBundleIds: ["premade"],
+    } },
+    coupon: null, now, customerUsageCount: 0, requestedReferralCreditRsd: 0, availableReferralCreditRsd: 0, shippingRsd: 0,
+  });
+  assert.equal(explicitlyCovered.payableTotalRsd, 900);
+  assert.equal(explicitlyCovered.lines[0]!.priceSource, "BUNDLE");
+});
+
+test("inactive, expired and empty aftercare evidence is inert; malformed active and B2B evidence is rejected", () => {
+  const base = {
+    market: "B2C" as const, lines: [line("a", product(1_000))], coupon: null, now,
+    customerUsageCount: 0, requestedReferralCreditRsd: 0, availableReferralCreditRsd: 0, shippingRsd: 0,
+  };
+  for (const entitlement of [
+    { ...activeEntitlement("inactive", 50, ["a"]), active: false },
+    { ...activeEntitlement("expired", 50, ["a"]), expiresAt: now },
+    activeEntitlement("empty", 50, []),
+  ]) {
+    assert.equal(quoteCommerce({ ...base, aftercareDiscounts: { postTreatmentRecommendation: entitlement } }).payableTotalRsd, 1_000);
+  }
+  for (const percent of [0, -1, 101, 1.5]) {
+    assert.throws(() => quoteCommerce({
+      ...base,
+      aftercareDiscounts: { postTreatmentRecommendation: activeEntitlement("invalid", percent, ["a"]) },
+    }), /percentage must be between 1 and 100/i);
+  }
+  assert.throws(() => quoteCommerce({
+    ...base, market: "B2B",
+    aftercareDiscounts: { postTreatmentRecommendation: activeEntitlement("wrong-market", 10, ["a"]) },
+  }), /only for B2C/i);
+  const legacyB2b = quoteCommerce({ ...base, market: "B2B" });
+  assert.equal(legacyB2b.payableTotalRsd, 1_000);
+  assert.equal(legacyB2b.personalizedTreatmentBundleDiscountRsd, 0);
+  assert.equal(legacyB2b.postTreatmentRecommendationDiscountRsd, 0);
+});
+
 test("approved pricing policy and loyalty fallback precedence are literal", () => {
   assert.deepEqual(COMMERCE_PRICING_POLICY, [
     "EXPLICIT_VARIANT_PRICE",
@@ -75,6 +249,8 @@ test("approved pricing policy and loyalty fallback precedence are literal", () =
     "REGULAR_PRICE",
     "VARIANT_PRICE_ADJUST",
     "FIXED_BUNDLE_PRICE",
+    "PERSONALIZED_TREATMENT_BUNDLE_DISCOUNT",
+    "POST_TREATMENT_RECOMMENDATION_DISCOUNT",
     "AUTOMATIC_XY_PROMOTION",
     "COUPON",
     "CART_THRESHOLD_REWARD",

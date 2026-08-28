@@ -56,6 +56,7 @@ const RetailSuccessPage = lazy(() => import('./pages/retail-checkout').then((mod
 const ProveraStatusaPage = lazy(() => import('./pages/provera-statusa').then((module) => ({ default: module.ProveraStatusaPage })));
 const CustomerWishlistPage = lazy(() => import('./pages/customer-wishlist'));
 const CustomerSubscriptionsPage = lazy(() => import('./pages/customer-subscriptions'));
+const CustomerAftercarePage = lazy(() => import('./pages/customer-aftercare'));
 const Salons = lazy(() => import('./pages/salons'));
 const SalonProfile = lazy(() => import('./pages/salon-profile'));
 const JobseekerDashboard = lazy(() => import('./pages/jobseeker-dashboard'));
@@ -114,6 +115,8 @@ const AdminIntegrations = lazy(() => import('./pages/admin/integrations'));
 const AdminEducationMarketplace = lazy(() => import('./pages/admin/education-marketplace'));
 const AdminEducationCenterDetail = lazy(() => import('./pages/admin/education-center-detail'));
 const AdminBundles = lazy(() => import('./pages/admin/bundles'));
+const AdminAftercareSettings = lazy(() => import('./pages/admin/aftercare-settings'));
+const AdminAftercareStatistics = lazy(() => import('./pages/admin/aftercare-statistics'));
 const AdminCoupons = lazy(() => import('./pages/admin/coupons'));
 const AdminMarketinskeKampanje = lazy(() => import('./pages/admin/marketinske-kampanje'));
 const AdminNivoiKorpe = lazy(() => import('./pages/admin/nivoi-korpe'));
@@ -313,6 +316,7 @@ function Router() {
         <Route path="/provera-statusa" component={ProveraStatusaPage} />
         <Route path="/lista-zelja"><RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava"><CustomerWishlistPage /></RoleGuard></Route>
         <Route path="/moj-nalog/pretplate"><RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava"><CustomerSubscriptionsPage /></RoleGuard></Route>
+        <Route path="/moj-nalog/nega-posle-tretmana"><RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava"><CustomerAftercarePage /></RoleGuard></Route>
         <Route path="/inspiracija"><MarketplaceGuides kind="inspiration" /></Route>
         <Route path="/recnik"><MarketplaceGuides kind="glossary" /></Route>
         <Route path="/brendovi"><MarketplaceGuides kind="brands" /></Route>
@@ -429,6 +433,8 @@ function Router() {
         <Route path="/admin/recenzije-proizvoda"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminRetailReviews /></RoleGuard></Route>
         <Route path="/admin/iskustvo-kupovine"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminCommerceSettings /></RoleGuard></Route>
         <Route path="/admin/bundle-proizvodi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminBundles /></RoleGuard></Route>
+        <Route path="/admin/nega-posle-tretmana/statistika"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminAftercareStatistics /></RoleGuard></Route>
+        <Route path="/admin/nega-posle-tretmana"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminAftercareSettings /></RoleGuard></Route>
         <Route path="/admin/kuponi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminCoupons /></RoleGuard></Route>
         <Route path="/admin/marketinske-kampanje"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminMarketinskeKampanje /></RoleGuard></Route>
         <Route path="/admin/nivoi-korpe"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminNivoiKorpe /></RoleGuard></Route>

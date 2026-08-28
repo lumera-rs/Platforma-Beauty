@@ -1,0 +1,33 @@
+--- artifacts/beauty-marketplace/src/pages/customer-aftercare.tsx
++++ artifacts/beauty-marketplace/src/pages/customer-aftercare.tsx
+@@ -19,7 +19,7 @@
+ import { OptimizedImage } from "@/components/optimized-image";
+ import { useQueryClient } from "@tanstack/react-query";
+ import { useToast } from "@/hooks/use-toast";
+-import { useState, useEffect } from "react";
++import { useState, useEffect, useRef } from "react";
+ import { cn } from "@/lib/utils";
+ 
+ function money(value: number) {
+@@ -171,17 +171,20 @@
+     }
+   });
+   const markRead = useCustomerReadAftercareRecommendation();
++  const hasMarkedRead = useRef(false);
+   
+   useEffect(() => {
+-    if (rec && !rec.readAt) {
++    if (rec && !rec.readAt && !hasMarkedRead.current) {
++      hasMarkedRead.current = true;
+       markRead.mutate({ recommendationId: id }, {
+         onSuccess: () => {
+           qc.invalidateQueries({ queryKey: getCustomerListAftercareRecommendationsQueryKey() });
+           qc.invalidateQueries({ queryKey: getCustomerGetAftercareRecommendationQueryKey(id) });
+         }
+       });
+     }
+-  }, [rec, id, markRead, qc]);
++  }, [rec, id]);
+ 
+   if (isLoading) {
+     return (

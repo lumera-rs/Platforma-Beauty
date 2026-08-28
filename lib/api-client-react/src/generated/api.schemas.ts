@@ -3034,6 +3034,10 @@ export interface RetailCheckoutPreview {
   /** @minimum 0 */
   couponDiscountRsd: number;
   /** @minimum 0 */
+  personalizedTreatmentBundleDiscountRsd: number;
+  /** @minimum 0 */
+  postTreatmentRecommendationDiscountRsd: number;
+  /** @minimum 0 */
   automaticPromotionDiscountRsd: number;
   /** @minimum 0 */
   thresholdRewardDiscountRsd: number;
@@ -3398,6 +3402,47 @@ export interface BundleInput {
   active?: boolean;
 }
 
+export type AdminBundleInputMarket = typeof AdminBundleInputMarket[keyof typeof AdminBundleInputMarket];
+
+
+export const AdminBundleInputMarket = {
+  B2B: 'B2B',
+  B2C: 'B2C',
+  BOTH: 'BOTH',
+} as const;
+
+export interface AdminBundleInput {
+  supplierId: string;
+  /**
+     * @minLength 1
+     * @maxLength 250
+     */
+  name: string;
+  /**
+     * @maxLength 10000
+     * @nullable
+     */
+  description?: string | null;
+  /** @nullable */
+  imageUrl?: string | null;
+  market: AdminBundleInputMarket;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  b2bPrice: number | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  b2cPrice: number | null;
+  /** @minItems 2 */
+  components?: BundleComponentInput[];
+  active?: boolean;
+  /** @nullable */
+  aftercareTreatmentTaxonomyId?: string | null;
+}
+
 /**
  * Safe component identity and quantity. Unit prices are never exposed through bundle catalog endpoints.
  */
@@ -3438,6 +3483,293 @@ export interface Bundle {
   /** @minimum 0 */
   derivedStock: number;
   components: BundleComponentCard[];
+}
+
+export type AdminBundleMarket = typeof AdminBundleMarket[keyof typeof AdminBundleMarket];
+
+
+export const AdminBundleMarket = {
+  B2B: 'B2B',
+  B2C: 'B2C',
+  BOTH: 'BOTH',
+} as const;
+
+export interface AdminBundle {
+  id: string;
+  supplierId: string;
+  name: string;
+  /** @nullable */
+  description: string | null;
+  /** @nullable */
+  imageUrl: string | null;
+  market: AdminBundleMarket;
+  /** @nullable */
+  b2bPrice: number | null;
+  /** @nullable */
+  b2cPrice: number | null;
+  /** @nullable */
+  aftercareTreatmentTaxonomyId: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  /** @minimum 0 */
+  derivedStock: number;
+  components: BundleComponentCard[];
+}
+
+export interface AftercareTreatmentTaxonomy {
+  id: string;
+  taxonomyKey: string;
+  categoryName: string;
+  treatmentName: string;
+  searchTerms: string[];
+}
+
+export type AftercareSettingsFirstTiming = typeof AftercareSettingsFirstTiming[keyof typeof AftercareSettingsFirstTiming];
+
+
+export const AftercareSettingsFirstTiming = {
+  IMMEDIATE_AFTER_COMPLETION: 'IMMEDIATE_AFTER_COMPLETION',
+  NEXT_DAY: 'NEXT_DAY',
+} as const;
+
+export interface AftercareSettings {
+  /** @minimum 1 */
+  version: number;
+  firstTiming: AftercareSettingsFirstTiming;
+  /**
+     * @minimum 1
+     * @maximum 3650
+     */
+  cooldownDays: number;
+  /**
+     * @minimum 1
+     * @maximum 3650
+     */
+  secondReminderDelayDays: number;
+  postTreatmentDiscountEnabled: boolean;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  postTreatmentDiscountPercent: number;
+  /**
+     * @minimum 1
+     * @maximum 3650
+     */
+  postTreatmentDiscountValidityDays: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  personalizedBundleDiscountPercent: number;
+  /**
+     * @minimum 1
+     * @maximum 3650
+     */
+  combinationWindowDays: number;
+}
+
+export type AftercareSettingsUpdateFirstTiming = typeof AftercareSettingsUpdateFirstTiming[keyof typeof AftercareSettingsUpdateFirstTiming];
+
+
+export const AftercareSettingsUpdateFirstTiming = {
+  IMMEDIATE_AFTER_COMPLETION: 'IMMEDIATE_AFTER_COMPLETION',
+  NEXT_DAY: 'NEXT_DAY',
+} as const;
+
+export interface AftercareSettingsUpdate {
+  /** @minimum 1 */
+  expectedVersion: number;
+  firstTiming: AftercareSettingsUpdateFirstTiming;
+  /**
+     * @minimum 1
+     * @maximum 3650
+     */
+  cooldownDays: number;
+  /**
+     * @minimum 1
+     * @maximum 3650
+     */
+  secondReminderDelayDays: number;
+  postTreatmentDiscountEnabled: boolean;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  postTreatmentDiscountPercent: number;
+  /**
+     * @minimum 1
+     * @maximum 3650
+     */
+  postTreatmentDiscountValidityDays: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  personalizedBundleDiscountPercent: number;
+  /**
+     * @minimum 1
+     * @maximum 3650
+     */
+  combinationWindowDays: number;
+}
+
+export interface CustomerAftercareItemCard {
+  id: string;
+  name: string;
+  /** @nullable */
+  imageUrl: string | null;
+  actionPath: string;
+}
+
+export type CustomerAftercareRecommendationLineKind = typeof CustomerAftercareRecommendationLineKind[keyof typeof CustomerAftercareRecommendationLineKind];
+
+
+export const CustomerAftercareRecommendationLineKind = {
+  PRODUCT: 'PRODUCT',
+  PREMADE_BUNDLE: 'PREMADE_BUNDLE',
+  PERSONALIZED_BUNDLE: 'PERSONALIZED_BUNDLE',
+} as const;
+
+/**
+ * @nullable
+ */
+export type CustomerAftercareRecommendationLineItem = {
+  id: string;
+  name: string;
+  /** @nullable */
+  imageUrl: string | null;
+  actionPath: string;
+} | null;
+
+export interface CustomerAftercareRecommendationLine {
+  kind: CustomerAftercareRecommendationLineKind;
+  /** @nullable */
+  item: CustomerAftercareRecommendationLineItem;
+  coveredProducts: CustomerAftercareItemCard[];
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  discountPercent: number;
+  /** @nullable */
+  validUntil: string | null;
+}
+
+export type CustomerAftercareRecommendationStatus = typeof CustomerAftercareRecommendationStatus[keyof typeof CustomerAftercareRecommendationStatus];
+
+
+export const CustomerAftercareRecommendationStatus = {
+  PENDING: 'PENDING',
+  ACTIVE: 'ACTIVE',
+  CONVERTED: 'CONVERTED',
+  EXPIRED: 'EXPIRED',
+  CANCELLED: 'CANCELLED',
+} as const;
+
+export interface CustomerAftercareRecommendation {
+  id: string;
+  status: CustomerAftercareRecommendationStatus;
+  createdAt: string;
+  /** @nullable */
+  firstSentAt: string | null;
+  /** @nullable */
+  secondSentAt: string | null;
+  /** @nullable */
+  readAt: string | null;
+  expiresAt: string;
+  /** @nullable */
+  convertedAt: string | null;
+  treatments: string[];
+  tips: string[];
+  lines: CustomerAftercareRecommendationLine[];
+}
+
+export interface AftercareStatisticsKpis {
+  /** @minimum 0 */
+  recommendationsCreated: number;
+  /** @minimum 0 */
+  firstSent: number;
+  /** @minimum 0 */
+  secondSent: number;
+  /** @minimum 0 */
+  replenishmentSent: number;
+  /** @minimum 0 */
+  convertedRecommendations: number;
+  /** @minimum 0 */
+  conversionRevenueRsd: number;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  conversionRatePercent: number;
+}
+
+export interface AftercareStatisticsTimePoint {
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  date: string;
+  /** @minimum 0 */
+  recommendationsCreated: number;
+  /** @minimum 0 */
+  firstSent: number;
+  /** @minimum 0 */
+  secondSent: number;
+  /** @minimum 0 */
+  replenishmentSent: number;
+  /** @minimum 0 */
+  convertedRecommendations: number;
+  /** @minimum 0 */
+  conversionRevenueRsd: number;
+}
+
+export interface AftercareStatisticsTreatment {
+  treatmentId: string;
+  taxonomyKey: string;
+  categoryName: string;
+  treatmentName: string;
+  /** @minimum 0 */
+  recommendationsCreated: number;
+  /** @minimum 0 */
+  sent: number;
+  /** @minimum 0 */
+  convertedRecommendations: number;
+  /** @minimum 0 */
+  conversionRevenueRsd: number;
+}
+
+export type AftercareStatisticsItemKind = typeof AftercareStatisticsItemKind[keyof typeof AftercareStatisticsItemKind];
+
+
+export const AftercareStatisticsItemKind = {
+  PRODUCT: 'PRODUCT',
+  PREMADE_BUNDLE: 'PREMADE_BUNDLE',
+  PERSONALIZED_BUNDLE: 'PERSONALIZED_BUNDLE',
+} as const;
+
+export interface AftercareStatisticsItem {
+  kind: AftercareStatisticsItemKind;
+  /** @nullable */
+  itemId: string | null;
+  itemName: string;
+  /** @minimum 0 */
+  recommendationsCreated: number;
+  /** @minimum 0 */
+  sent: number;
+  /** @minimum 0 */
+  convertedRecommendations: number;
+  /** @minimum 0 */
+  conversionRevenueRsd: number;
+}
+
+export interface AftercareStatistics {
+  kpis: AftercareStatisticsKpis;
+  /** @maxItems 366 */
+  timeSeries: AftercareStatisticsTimePoint[];
+  /** @maxItems 200 */
+  byTreatment: AftercareStatisticsTreatment[];
+  /** @maxItems 200 */
+  byItem: AftercareStatisticsItem[];
 }
 
 export type PublicBundleMarket = typeof PublicBundleMarket[keyof typeof PublicBundleMarket];
@@ -5876,6 +6208,13 @@ export interface AdminProduct {
      * @nullable
      */
   costPriceRsd: number | null;
+  /**
+     * @minimum 1
+     * @maximum 3650
+     * @nullable
+     */
+  averageDurationDays: number | null;
+  treatmentTaxonomyIds: string[];
   /** @nullable */
   discountPrice: number | null;
   /** @nullable */
@@ -6002,6 +6341,14 @@ export interface AdminProductInput {
      * @nullable
      */
   costPriceRsd?: number | null;
+  /**
+     * @minimum 1
+     * @maximum 3650
+     * @nullable
+     */
+  averageDurationDays?: number | null;
+  /** @maxItems 100 */
+  treatmentTaxonomyIds?: string[];
   /**
      * @minimum 0
      * @maximum 100000000
@@ -6142,6 +6489,14 @@ export interface AdminProductUpdate {
      * @nullable
      */
   costPriceRsd?: number | null;
+  /**
+     * @minimum 1
+     * @maximum 3650
+     * @nullable
+     */
+  averageDurationDays?: number | null;
+  /** @maxItems 100 */
+  treatmentTaxonomyIds?: string[];
   /**
      * @minimum 0
      * @maximum 100000000
@@ -10433,6 +10788,59 @@ export const AdminListProductsSortDir = {
   desc: 'desc',
 } as const;
 
+export type AdminListAftercareTreatmentsParams = {
+/**
+ * @maxLength 120
+ */
+search?: string;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+};
+
+export type AdminGetAftercareStatisticsParams = {
+/**
+ * @pattern ^\d{4}-\d{2}-\d{2}$
+ */
+from: string;
+/**
+ * @pattern ^\d{4}-\d{2}-\d{2}$
+ */
+to: string;
+/**
+ * @pattern ^[0-9a-fA-F-]{36}$
+ */
+treatmentId?: string;
+/**
+ * @pattern ^[0-9a-fA-F-]{36}$
+ */
+productId?: string;
+/**
+ * @pattern ^[0-9a-fA-F-]{36}$
+ */
+bundleId?: string;
+kind?: AdminGetAftercareStatisticsKind;
+};
+
+export type AdminGetAftercareStatisticsKind = typeof AdminGetAftercareStatisticsKind[keyof typeof AdminGetAftercareStatisticsKind];
+
+
+export const AdminGetAftercareStatisticsKind = {
+  PRODUCT: 'PRODUCT',
+  PREMADE_BUNDLE: 'PREMADE_BUNDLE',
+  PERSONALIZED_BUNDLE: 'PERSONALIZED_BUNDLE',
+} as const;
+
+export type CustomerListAftercareRecommendationsParams = {
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+};
+
 export type ListSupplierProductsParams = {
 categoryId?: string;
 search?: string;
@@ -10700,6 +11108,11 @@ desiredReferralCreditRsd?: number;
  * @maxLength 40
  */
 couponCode?: string;
+/**
+ * Authenticated customer's opaque aftercare recommendation id.
+ * @pattern ^[0-9a-fA-F-]{36}$
+ */
+aftercareRecommendationId?: string;
 };
 
 export type PreviewRetailCheckoutDeliveryMethod = typeof PreviewRetailCheckoutDeliveryMethod[keyof typeof PreviewRetailCheckoutDeliveryMethod];

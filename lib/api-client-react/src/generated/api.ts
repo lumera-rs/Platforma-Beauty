@@ -29,6 +29,8 @@ import type {
   AdminBrandInput,
   AdminBrandUpdate,
   AdminBulkResult,
+  AdminBundle,
+  AdminBundleInput,
   AdminCreateEmailCampaignInput,
   AdminDeleteAutomaticXyPromotionParams,
   AdminDeleteB2cBannerParams,
@@ -38,10 +40,12 @@ import type {
   AdminDeleteCartThresholdRewardParams,
   AdminDeleteLoyaltyPricingTierParams,
   AdminFulfillmentUpdate,
+  AdminGetAftercareStatisticsParams,
   AdminGetCommerceProfitabilityParams,
   AdminGetIntegrationsResponse,
   AdminGetWebhookFreshnessResponse,
   AdminIntegrationCard,
+  AdminListAftercareTreatmentsParams,
   AdminListB2cBannersParams,
   AdminListCommerceBestsellersParams,
   AdminListEmailCampaignsResponse,
@@ -87,6 +91,10 @@ import type {
   AdminUpdateRmaStatusBody,
   AdminUser,
   AdminUserUpdate,
+  AftercareSettings,
+  AftercareSettingsUpdate,
+  AftercareStatistics,
+  AftercareTreatmentTaxonomy,
   ApiError,
   Appointment,
   AppointmentConflictError,
@@ -163,7 +171,6 @@ import type {
   BulkSaleCampaignInput,
   BulkSaleCampaignUpdate,
   Bundle,
-  BundleInput,
   BusinessRegistrationInput,
   CancelAppointmentInput,
   CartThresholdReward,
@@ -190,7 +197,9 @@ import type {
   CreateShopQuoteBody,
   CreateTreatmentPackageBody,
   CurrentUserResponse,
+  CustomerAftercareRecommendation,
   CustomerDashboard,
+  CustomerListAftercareRecommendationsParams,
   CustomerListPublicPackagesParams,
   CustomerRetentionDetail,
   CustomerRetentionItem,
@@ -16495,6 +16504,554 @@ export const useAdminCreateProduct = <TError = ErrorType<unknown>,
       return useMutation(getAdminCreateProductMutationOptions(options));
     }
 
+export const getAdminListAftercareTreatmentsUrl = (params?: AdminListAftercareTreatmentsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/aftercare/treatments?${stringifiedParams}` : `/api/admin/aftercare/treatments`
+}
+
+/**
+ * @summary List active normalized aftercare treatment taxonomy
+ */
+export const adminListAftercareTreatments = async (params?: AdminListAftercareTreatmentsParams, options?: Parameters<typeof customFetch>[1]): Promise<AftercareTreatmentTaxonomy[]> => {
+
+  return customFetch<AftercareTreatmentTaxonomy[]>(getAdminListAftercareTreatmentsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListAftercareTreatmentsQueryKey = (params?: AdminListAftercareTreatmentsParams,) => {
+    return [
+    `/api/admin/aftercare/treatments`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminListAftercareTreatmentsQueryOptions = <TData = Awaited<ReturnType<typeof adminListAftercareTreatments>>, TError = ErrorType<void>>(params?: AdminListAftercareTreatmentsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListAftercareTreatments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListAftercareTreatmentsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListAftercareTreatments>>> = ({ signal }) => adminListAftercareTreatments(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListAftercareTreatments>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminListAftercareTreatmentsQueryResult = NonNullable<Awaited<ReturnType<typeof adminListAftercareTreatments>>>
+export type AdminListAftercareTreatmentsQueryError = ErrorType<void>
+
+
+/**
+ * @summary List active normalized aftercare treatment taxonomy
+ */
+
+export function useAdminListAftercareTreatments<TData = Awaited<ReturnType<typeof adminListAftercareTreatments>>, TError = ErrorType<void>>(
+ params?: AdminListAftercareTreatmentsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListAftercareTreatments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminListAftercareTreatmentsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminGetAftercareSettingsUrl = () => {
+
+
+
+
+  return `/api/admin/aftercare/settings`
+}
+
+/**
+ * @summary Get current versioned aftercare settings
+ */
+export const adminGetAftercareSettings = async ( options?: Parameters<typeof customFetch>[1]): Promise<AftercareSettings> => {
+
+  return customFetch<AftercareSettings>(getAdminGetAftercareSettingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGetAftercareSettingsQueryKey = () => {
+    return [
+    `/api/admin/aftercare/settings`
+    ] as const;
+    }
+
+
+export const getAdminGetAftercareSettingsQueryOptions = <TData = Awaited<ReturnType<typeof adminGetAftercareSettings>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetAftercareSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetAftercareSettingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetAftercareSettings>>> = ({ signal }) => adminGetAftercareSettings({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetAftercareSettings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminGetAftercareSettingsQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetAftercareSettings>>>
+export type AdminGetAftercareSettingsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get current versioned aftercare settings
+ */
+
+export function useAdminGetAftercareSettings<TData = Awaited<ReturnType<typeof adminGetAftercareSettings>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetAftercareSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminGetAftercareSettingsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminUpdateAftercareSettingsUrl = () => {
+
+
+
+
+  return `/api/admin/aftercare/settings`
+}
+
+/**
+ * @summary Version and replace aftercare settings
+ */
+export const adminUpdateAftercareSettings = async (aftercareSettingsUpdate: AftercareSettingsUpdate, options?: Parameters<typeof customFetch>[1]): Promise<AftercareSettings> => {
+
+  return customFetch<AftercareSettings>(getAdminUpdateAftercareSettingsUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(aftercareSettingsUpdate)
+  }
+);}
+
+
+
+
+
+export const getAdminUpdateAftercareSettingsMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateAftercareSettings>>, TError,{data: BodyType<AftercareSettingsUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateAftercareSettings>>, TError,{data: BodyType<AftercareSettingsUpdate>}, TContext> => {
+
+const mutationKey = ['adminUpdateAftercareSettings'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateAftercareSettings>>, {data: BodyType<AftercareSettingsUpdate>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  adminUpdateAftercareSettings(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminUpdateAftercareSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof adminUpdateAftercareSettings>>>
+    export type AdminUpdateAftercareSettingsMutationBody = BodyType<AftercareSettingsUpdate>
+    export type AdminUpdateAftercareSettingsMutationError = ErrorType<void>
+
+    /**
+ * @summary Version and replace aftercare settings
+ */
+export const useAdminUpdateAftercareSettings = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateAftercareSettings>>, TError,{data: BodyType<AftercareSettingsUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminUpdateAftercareSettings>>,
+        TError,
+        {data: BodyType<AftercareSettingsUpdate>},
+        TContext
+      > => {
+      return useMutation(getAdminUpdateAftercareSettingsMutationOptions(options));
+    }
+
+export const getAdminGetAftercareStatisticsUrl = (params: AdminGetAftercareStatisticsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/aftercare/statistics?${stringifiedParams}` : `/api/admin/aftercare/statistics`
+}
+
+/**
+ * @summary Aggregate B2C aftercare delivery and conversion statistics
+ */
+export const adminGetAftercareStatistics = async (params: AdminGetAftercareStatisticsParams, options?: Parameters<typeof customFetch>[1]): Promise<AftercareStatistics> => {
+
+  return customFetch<AftercareStatistics>(getAdminGetAftercareStatisticsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGetAftercareStatisticsQueryKey = (params?: AdminGetAftercareStatisticsParams,) => {
+    return [
+    `/api/admin/aftercare/statistics`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminGetAftercareStatisticsQueryOptions = <TData = Awaited<ReturnType<typeof adminGetAftercareStatistics>>, TError = ErrorType<void>>(params: AdminGetAftercareStatisticsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetAftercareStatistics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetAftercareStatisticsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetAftercareStatistics>>> = ({ signal }) => adminGetAftercareStatistics(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetAftercareStatistics>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminGetAftercareStatisticsQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetAftercareStatistics>>>
+export type AdminGetAftercareStatisticsQueryError = ErrorType<void>
+
+
+/**
+ * @summary Aggregate B2C aftercare delivery and conversion statistics
+ */
+
+export function useAdminGetAftercareStatistics<TData = Awaited<ReturnType<typeof adminGetAftercareStatistics>>, TError = ErrorType<void>>(
+ params: AdminGetAftercareStatisticsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetAftercareStatistics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminGetAftercareStatisticsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCustomerListAftercareRecommendationsUrl = (params?: CustomerListAftercareRecommendationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/customer/aftercare/recommendations?${stringifiedParams}` : `/api/customer/aftercare/recommendations`
+}
+
+/**
+ * @summary List the signed-in customer's aftercare recommendations
+ */
+export const customerListAftercareRecommendations = async (params?: CustomerListAftercareRecommendationsParams, options?: Parameters<typeof customFetch>[1]): Promise<CustomerAftercareRecommendation[]> => {
+
+  return customFetch<CustomerAftercareRecommendation[]>(getCustomerListAftercareRecommendationsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getCustomerListAftercareRecommendationsQueryKey = (params?: CustomerListAftercareRecommendationsParams,) => {
+    return [
+    `/api/customer/aftercare/recommendations`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getCustomerListAftercareRecommendationsQueryOptions = <TData = Awaited<ReturnType<typeof customerListAftercareRecommendations>>, TError = ErrorType<unknown>>(params?: CustomerListAftercareRecommendationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof customerListAftercareRecommendations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getCustomerListAftercareRecommendationsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof customerListAftercareRecommendations>>> = ({ signal }) => customerListAftercareRecommendations(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof customerListAftercareRecommendations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type CustomerListAftercareRecommendationsQueryResult = NonNullable<Awaited<ReturnType<typeof customerListAftercareRecommendations>>>
+export type CustomerListAftercareRecommendationsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List the signed-in customer's aftercare recommendations
+ */
+
+export function useCustomerListAftercareRecommendations<TData = Awaited<ReturnType<typeof customerListAftercareRecommendations>>, TError = ErrorType<unknown>>(
+ params?: CustomerListAftercareRecommendationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof customerListAftercareRecommendations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getCustomerListAftercareRecommendationsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCustomerGetAftercareRecommendationUrl = (recommendationId: string,) => {
+
+
+
+
+  return `/api/customer/aftercare/recommendations/${recommendationId}`
+}
+
+/**
+ * @summary Get one signed-in customer's aftercare recommendation
+ */
+export const customerGetAftercareRecommendation = async (recommendationId: string, options?: Parameters<typeof customFetch>[1]): Promise<CustomerAftercareRecommendation> => {
+
+  return customFetch<CustomerAftercareRecommendation>(getCustomerGetAftercareRecommendationUrl(recommendationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getCustomerGetAftercareRecommendationQueryKey = (recommendationId: string,) => {
+    return [
+    `/api/customer/aftercare/recommendations/${recommendationId}`
+    ] as const;
+    }
+
+
+export const getCustomerGetAftercareRecommendationQueryOptions = <TData = Awaited<ReturnType<typeof customerGetAftercareRecommendation>>, TError = ErrorType<void>>(recommendationId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof customerGetAftercareRecommendation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getCustomerGetAftercareRecommendationQueryKey(recommendationId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof customerGetAftercareRecommendation>>> = ({ signal }) => customerGetAftercareRecommendation(recommendationId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: recommendationId !== null && recommendationId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof customerGetAftercareRecommendation>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type CustomerGetAftercareRecommendationQueryResult = NonNullable<Awaited<ReturnType<typeof customerGetAftercareRecommendation>>>
+export type CustomerGetAftercareRecommendationQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get one signed-in customer's aftercare recommendation
+ */
+
+export function useCustomerGetAftercareRecommendation<TData = Awaited<ReturnType<typeof customerGetAftercareRecommendation>>, TError = ErrorType<void>>(
+ recommendationId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof customerGetAftercareRecommendation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getCustomerGetAftercareRecommendationQueryOptions(recommendationId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCustomerReadAftercareRecommendationUrl = (recommendationId: string,) => {
+
+
+
+
+  return `/api/customer/aftercare/recommendations/${recommendationId}/read`
+}
+
+/**
+ * @summary Mark one signed-in customer's recommendation read
+ */
+export const customerReadAftercareRecommendation = async (recommendationId: string, options?: Parameters<typeof customFetch>[1]): Promise<CustomerAftercareRecommendation> => {
+
+  return customFetch<CustomerAftercareRecommendation>(getCustomerReadAftercareRecommendationUrl(recommendationId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCustomerReadAftercareRecommendationMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof customerReadAftercareRecommendation>>, TError,{recommendationId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof customerReadAftercareRecommendation>>, TError,{recommendationId: string}, TContext> => {
+
+const mutationKey = ['customerReadAftercareRecommendation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof customerReadAftercareRecommendation>>, {recommendationId: string}> = (props) => {
+          const {recommendationId} = props ?? {};
+
+          return  customerReadAftercareRecommendation(recommendationId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CustomerReadAftercareRecommendationMutationResult = NonNullable<Awaited<ReturnType<typeof customerReadAftercareRecommendation>>>
+
+    export type CustomerReadAftercareRecommendationMutationError = ErrorType<void>
+
+    /**
+ * @summary Mark one signed-in customer's recommendation read
+ */
+export const useCustomerReadAftercareRecommendation = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof customerReadAftercareRecommendation>>, TError,{recommendationId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof customerReadAftercareRecommendation>>,
+        TError,
+        {recommendationId: string},
+        TContext
+      > => {
+      return useMutation(getCustomerReadAftercareRecommendationMutationOptions(options));
+    }
+
 export const getAdminListBundlesUrl = () => {
 
 
@@ -16506,9 +17063,9 @@ export const getAdminListBundlesUrl = () => {
 /**
  * @summary List all fixed-price product bundles
  */
-export const adminListBundles = async ( options?: Parameters<typeof customFetch>[1]): Promise<Bundle[]> => {
+export const adminListBundles = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminBundle[]> => {
 
-  return customFetch<Bundle[]>(getAdminListBundlesUrl(),
+  return customFetch<AdminBundle[]>(getAdminListBundlesUrl(),
   {
     ...options,
     method: 'GET'
@@ -16583,14 +17140,14 @@ export const getAdminCreateBundleUrl = () => {
 /**
  * @summary Create a fixed-price bundle with at least two same-supplier components
  */
-export const adminCreateBundle = async (bundleInput: BundleInput, options?: Parameters<typeof customFetch>[1]): Promise<Bundle> => {
+export const adminCreateBundle = async (adminBundleInput: AdminBundleInput, options?: Parameters<typeof customFetch>[1]): Promise<AdminBundle> => {
 
-  return customFetch<Bundle>(getAdminCreateBundleUrl(),
+  return customFetch<AdminBundle>(getAdminCreateBundleUrl(),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(bundleInput)
+    body: JSON.stringify(adminBundleInput)
   }
 );}
 
@@ -16599,8 +17156,8 @@ export const adminCreateBundle = async (bundleInput: BundleInput, options?: Para
 
 
 export const getAdminCreateBundleMutationOptions = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminCreateBundle>>, TError,{data: BodyType<BundleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof adminCreateBundle>>, TError,{data: BodyType<BundleInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminCreateBundle>>, TError,{data: BodyType<AdminBundleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminCreateBundle>>, TError,{data: BodyType<AdminBundleInput>}, TContext> => {
 
 const mutationKey = ['adminCreateBundle'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -16612,7 +17169,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminCreateBundle>>, {data: BodyType<BundleInput>}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminCreateBundle>>, {data: BodyType<AdminBundleInput>}> = (props) => {
           const {data} = props ?? {};
 
           return  adminCreateBundle(data,requestOptions)
@@ -16626,18 +17183,18 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AdminCreateBundleMutationResult = NonNullable<Awaited<ReturnType<typeof adminCreateBundle>>>
-    export type AdminCreateBundleMutationBody = BodyType<BundleInput>
+    export type AdminCreateBundleMutationBody = BodyType<AdminBundleInput>
     export type AdminCreateBundleMutationError = ErrorType<void>
 
     /**
  * @summary Create a fixed-price bundle with at least two same-supplier components
  */
 export const useAdminCreateBundle = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminCreateBundle>>, TError,{data: BodyType<BundleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminCreateBundle>>, TError,{data: BodyType<AdminBundleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof adminCreateBundle>>,
         TError,
-        {data: BodyType<BundleInput>},
+        {data: BodyType<AdminBundleInput>},
         TContext
       > => {
       return useMutation(getAdminCreateBundleMutationOptions(options));
@@ -16655,14 +17212,14 @@ export const getAdminUpdateBundleUrl = (bundleId: string,) => {
  * @summary Replace bundle metadata, market prices, and optionally components
  */
 export const adminUpdateBundle = async (bundleId: string,
-    bundleInput: BundleInput, options?: Parameters<typeof customFetch>[1]): Promise<Bundle> => {
+    adminBundleInput: AdminBundleInput, options?: Parameters<typeof customFetch>[1]): Promise<AdminBundle> => {
 
-  return customFetch<Bundle>(getAdminUpdateBundleUrl(bundleId),
+  return customFetch<AdminBundle>(getAdminUpdateBundleUrl(bundleId),
   {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(bundleInput)
+    body: JSON.stringify(adminBundleInput)
   }
 );}
 
@@ -16671,8 +17228,8 @@ export const adminUpdateBundle = async (bundleId: string,
 
 
 export const getAdminUpdateBundleMutationOptions = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateBundle>>, TError,{bundleId: string;data: BodyType<BundleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateBundle>>, TError,{bundleId: string;data: BodyType<BundleInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateBundle>>, TError,{bundleId: string;data: BodyType<AdminBundleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateBundle>>, TError,{bundleId: string;data: BodyType<AdminBundleInput>}, TContext> => {
 
 const mutationKey = ['adminUpdateBundle'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -16684,7 +17241,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateBundle>>, {bundleId: string;data: BodyType<BundleInput>}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateBundle>>, {bundleId: string;data: BodyType<AdminBundleInput>}> = (props) => {
           const {bundleId,data} = props ?? {};
 
           return  adminUpdateBundle(bundleId,data,requestOptions)
@@ -16698,18 +17255,18 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AdminUpdateBundleMutationResult = NonNullable<Awaited<ReturnType<typeof adminUpdateBundle>>>
-    export type AdminUpdateBundleMutationBody = BodyType<BundleInput>
+    export type AdminUpdateBundleMutationBody = BodyType<AdminBundleInput>
     export type AdminUpdateBundleMutationError = ErrorType<void>
 
     /**
  * @summary Replace bundle metadata, market prices, and optionally components
  */
 export const useAdminUpdateBundle = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateBundle>>, TError,{bundleId: string;data: BodyType<BundleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateBundle>>, TError,{bundleId: string;data: BodyType<AdminBundleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof adminUpdateBundle>>,
         TError,
-        {bundleId: string;data: BodyType<BundleInput>},
+        {bundleId: string;data: BodyType<AdminBundleInput>},
         TContext
       > => {
       return useMutation(getAdminUpdateBundleMutationOptions(options));
@@ -16726,9 +17283,9 @@ export const getAdminDeactivateBundleUrl = (bundleId: string,) => {
 /**
  * @summary Deactivate a bundle without deleting historical references
  */
-export const adminDeactivateBundle = async (bundleId: string, options?: Parameters<typeof customFetch>[1]): Promise<Bundle> => {
+export const adminDeactivateBundle = async (bundleId: string, options?: Parameters<typeof customFetch>[1]): Promise<AdminBundle> => {
 
-  return customFetch<Bundle>(getAdminDeactivateBundleUrl(bundleId),
+  return customFetch<AdminBundle>(getAdminDeactivateBundleUrl(bundleId),
   {
     ...options,
     method: 'POST'
@@ -16856,6 +17413,83 @@ export const useAdminBulkUpdateProducts = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getAdminBulkUpdateProductsMutationOptions(options));
     }
+
+export const getAdminGetProductUrl = (productId: string,) => {
+
+
+
+
+  return `/api/admin/products/${productId}`
+}
+
+/**
+ * @summary Get an administrative product
+ */
+export const adminGetProduct = async (productId: string, options?: Parameters<typeof customFetch>[1]): Promise<AdminProduct> => {
+
+  return customFetch<AdminProduct>(getAdminGetProductUrl(productId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGetProductQueryKey = (productId: string,) => {
+    return [
+    `/api/admin/products/${productId}`
+    ] as const;
+    }
+
+
+export const getAdminGetProductQueryOptions = <TData = Awaited<ReturnType<typeof adminGetProduct>>, TError = ErrorType<void>>(productId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetProduct>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetProductQueryKey(productId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetProduct>>> = ({ signal }) => adminGetProduct(productId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: productId !== null && productId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetProduct>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminGetProductQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetProduct>>>
+export type AdminGetProductQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get an administrative product
+ */
+
+export function useAdminGetProduct<TData = Awaited<ReturnType<typeof adminGetProduct>>, TError = ErrorType<void>>(
+ productId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetProduct>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminGetProductQueryOptions(productId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getAdminUpdateProductUrl = (productId: string,) => {
 

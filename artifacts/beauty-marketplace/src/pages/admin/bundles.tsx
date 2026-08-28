@@ -2,16 +2,17 @@ import { useState, useMemo } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { 
-  useAdminListBundles, 
-  useAdminCreateBundle, 
-  useAdminUpdateBundle, 
+import {
+  useAdminListBundles,
+  useAdminCreateBundle,
+  useAdminUpdateBundle,
   useAdminDeactivateBundle,
   useAdminListSuppliers,
   useAdminListProducts,
+  useAdminListAftercareTreatments,
   getAdminListBundlesQueryKey,
   getAdminListProductsQueryKey,
-  type Bundle,
+  type AdminBundle,
   type AdminProduct
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -38,6 +39,7 @@ const bundleSchema = z.object({
   market: z.enum(["B2B", "B2C", "BOTH"]),
   b2bPrice: z.coerce.number().min(1, "Cena mora biti veća od 0").nullable().optional(),
   b2cPrice: z.coerce.number().min(1, "Cena mora biti veća od 0").nullable().optional(),
+  aftercareTreatmentTaxonomyId: z.string().nullable().optional(),
   components: z.array(
     z.object({
       productId: z.string().min(1, "Izaberite proizvod"),
@@ -61,10 +63,11 @@ export default function AdminBundlesPage() {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingBundle, setEditingBundle] = useState<Bundle | null>(null);
-  
+  const [editingBundle, setEditingBundle] = useState<AdminBundle | null>(null);
+
   const { data: bundles, isLoading, isError } = useAdminListBundles();
   const { data: suppliers } = useAdminListSuppliers();
+  const { data: treatments } = useAdminListAftercareTreatments();
   const createBundle = useAdminCreateBundle();
   const updateBundle = useAdminUpdateBundle();
   const deactivateBundle = useAdminDeactivateBundle();
@@ -81,7 +84,7 @@ export default function AdminBundlesPage() {
       components: [{ productId: "", quantity: 1 }, { productId: "", quantity: 1 }],
     }
   });
-  
+
   const selectedSupplierId = form.watch("supplierId");
   const { data: supplierProductsResp } = useAdminListProducts({ supplierId: selectedSupplierId }, { query: { enabled: !!selectedSupplierId, queryKey: ['adminListProducts', selectedSupplierId] } });
   const supplierProducts = supplierProductsResp?.items || [];
@@ -102,12 +105,13 @@ export default function AdminBundlesPage() {
       market: "BOTH",
       b2bPrice: null,
       b2cPrice: null,
+      aftercareTreatmentTaxonomyId: null,
       components: [{ productId: "", quantity: 1 }, { productId: "", quantity: 1 }],
     });
     setDialogOpen(true);
   };
 
-  const handleOpenEdit = (bundle: Bundle) => {
+  const handleOpenEdit = (bundle: AdminBundle) => {
     setEditingBundle(bundle);
     form.reset({
       supplierId: bundle.supplierId,
@@ -117,6 +121,7 @@ export default function AdminBundlesPage() {
       market: bundle.market,
       b2bPrice: bundle.b2bPrice,
       b2cPrice: bundle.b2cPrice,
+      aftercareTreatmentTaxonomyId: bundle.aftercareTreatmentTaxonomyId,
       components: bundle.components.map(c => ({ productId: c.productId, quantity: c.quantity })),
     });
     setDialogOpen(true);
@@ -125,26 +130,26 @@ export default function AdminBundlesPage() {
   const onSubmit = (values: BundleFormValues) => {
     if (editingBundle) {
       updateBundle.mutate(
-        { bundleId: editingBundle.id, data: { ...values, b2bPrice: values.b2bPrice ?? null, b2cPrice: values.b2cPrice ?? null, imageUrl: values.imageUrl ?? null, description: values.description ?? null } },
+        { bundleId: editingBundle.id, data: { ...values, b2bPrice: values.b2bPrice ?? null, b2cPrice: values.b2cPrice ?? null, imageUrl: values.imageUrl ?? null, description: values.description ?? null, aftercareTreatmentTaxonomyId: values.aftercareTreatmentTaxonomyId ?? null } },
         {
           onSuccess: () => {
             qc.invalidateQueries({ queryKey: getAdminListBundlesQueryKey() });
             toast.success("Paket je uspešno izmenjen.");
             setDialogOpen(false);
           },
-          onError: (err) => toast.error(extractApiError(err, "Nije uspelo čuvanje izmena.")),
+          onError: (err) => toast.error("Nije uspelo čuvanje izmena", { description: extractApiError(err, "Pokušajte ponovo.") }),
         }
       );
     } else {
       createBundle.mutate(
-        { data: { ...values, b2bPrice: values.b2bPrice ?? null, b2cPrice: values.b2cPrice ?? null, imageUrl: values.imageUrl ?? null, description: values.description ?? null } },
+        { data: { ...values, b2bPrice: values.b2bPrice ?? null, b2cPrice: values.b2cPrice ?? null, imageUrl: values.imageUrl ?? null, description: values.description ?? null, aftercareTreatmentTaxonomyId: values.aftercareTreatmentTaxonomyId ?? null } },
         {
           onSuccess: () => {
             qc.invalidateQueries({ queryKey: getAdminListBundlesQueryKey() });
             toast.success("Paket je uspešno kreiran.");
             setDialogOpen(false);
           },
-          onError: (err) => toast.error(extractApiError(err, "Nije uspelo kreiranje paketa.")),
+          onError: (err) => toast.error("Nije uspelo kreiranje paketa", { description: extractApiError(err, "Pokušajte ponovo.") }),
         }
       );
     }
@@ -357,6 +362,32 @@ export default function AdminBundlesPage() {
                     </FormItem>
                   )}
                 />
+                <FormField
+                  control={form.control}
+                  name="aftercareTreatmentTaxonomyId"
+                  render={({ field }) => (
+                    <FormItem className="md:col-span-2">
+                      <FormLabel>Nega posle tretmana: Povezan tretman (Opciono)</FormLabel>
+                      <Select
+                        onValueChange={(val) => field.onChange(val === "__none__" ? null : val)}
+                        value={field.value || "__none__"}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Nije povezano sa aftercare uslugom" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="__none__">Nije povezano</SelectItem>
+                          {treatments?.map(t => (
+                            <SelectItem key={t.id} value={t.id}>{t.treatmentName}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </div>
 
               <div className="space-y-4">
@@ -366,7 +397,7 @@ export default function AdminBundlesPage() {
                     <Plus className="w-4 h-4 mr-2" /> Dodaj komponentu
                   </Button>
                 </div>
-                
+
                 {fields.map((field, index) => (
                   <div key={field.id} className="flex gap-4 items-start p-4 border rounded-lg bg-muted/20">
                     <FormField

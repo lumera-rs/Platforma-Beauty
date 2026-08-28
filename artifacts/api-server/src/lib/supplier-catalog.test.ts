@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
+import { readFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
 import { eq, inArray, sql } from "drizzle-orm";
@@ -21,6 +22,7 @@ import {
   productsTable,
   referralCreditLedgerTable,
   referralCreditRedemptionsTable,
+  retailOrderItemsTable,
   salonsTable,
   shopSettingsTable,
   shoppingCartItemsTable,
@@ -33,6 +35,13 @@ import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureBusinessGrowthSchema } from "./business-growth-schema";
 import { ensureShippingConfigSchema } from "./shipping-config";
 import { claimRecentlyViewedForUser } from "../routes/b2c-discovery";
+import {
+  CreateShopApprovalRequestResponse,
+  GetShopApprovalRequestResponse,
+  ListMyShopApprovalRequestsResponseItem,
+  ListShopApprovalRequestsResponseItem,
+  RejectShopApprovalRequestResponse,
+} from "@workspace/api-zod";
 
 type CategoryResponse = {
   id: string;
@@ -1079,4 +1088,62 @@ test("mixed B2B cancellation preserves explicit variant precedence, restores inv
   assert.equal(restoredById.get(saleVariantProduct.id)?.variants?.find((variant) => variant.value === "red")?.stock, 15);
   assert.equal(restoredById.get(tierProduct.id)?.stock, 50);
   assert.equal(restoredById.get(componentProduct.id)?.stock, 50);
+});
+
+test("ApprovalRequest schemas omit aftercare while the B2B checkout contract remains unchanged", async () => {
+  const openApi = await readFile(new URL("../../../../lib/api-spec/openapi.yaml", import.meta.url), "utf8");
+  const rawApprovalRequest = openApi.match(/^    ApprovalRequest:\n([\s\S]*?)(?=^    [A-Z][A-Za-z0-9]*:)/m)?.[0];
+  assert.ok(rawApprovalRequest, "ApprovalRequest exists in the raw OpenAPI schema");
+  assert.doesNotMatch(rawApprovalRequest, /aftercareRecommendationId/);
+  for (const schema of [
+    ListShopApprovalRequestsResponseItem,
+    CreateShopApprovalRequestResponse,
+    ListMyShopApprovalRequestsResponseItem,
+    GetShopApprovalRequestResponse,
+    RejectShopApprovalRequestResponse,
+  ]) {
+    assert.equal(Object.hasOwn(schema.shape, "aftercareRecommendationId"), false,
+      "generated ApprovalRequest response schemas omit aftercare evidence");
+  }
+
+  await addToCart(orderedProduct.id);
+  const normalPreview = await api("/shop/checkout-preview", ownerCookie);
+  assert.equal(normalPreview.status, 200, await normalPreview.clone().text());
+  const canonicalPreview = await normalPreview.json() as Record<string, unknown>;
+  assert.equal("aftercareRecommendationId" in canonicalPreview, false);
+  assert.doesNotMatch(JSON.stringify(canonicalPreview), /aftercare|postTreatment|personalizedTreatment/i);
+
+  const injectedPreview = await api(`/shop/checkout-preview?aftercareRecommendationId=${randomUUID()}`, ownerCookie);
+  assert.equal(injectedPreview.status, 200, await injectedPreview.clone().text());
+  assert.deepEqual(await injectedPreview.json(), canonicalPreview);
+
+  const payload = {
+    useSalonAddress: true,
+    paymentMethod: "BANK_TRANSFER",
+    deliveryMethod: "courier",
+    termsAccepted: true,
+  };
+  const normalCheckout = await api("/shop/checkout", ownerCookie, {
+    method: "POST", body: JSON.stringify(payload),
+  });
+  assert.equal(normalCheckout.status, 201, await normalCheckout.clone().text());
+  const normalOrder = await normalCheckout.json() as Record<string, unknown>;
+  assert.equal("aftercareRecommendationId" in normalOrder, false);
+  assert.doesNotMatch(JSON.stringify(normalOrder), /aftercare|postTreatment|personalizedTreatment/i);
+  orderIds.push(normalOrder.id as string);
+  const normalLines = await db.select().from(orderItemsTable)
+    .where(eq(orderItemsTable.orderId, normalOrder.id as string));
+  assert.ok(normalLines.length > 0);
+  assert.ok(normalLines.every((line) => !Object.keys(line).some((key) => /aftercare|postTreatment|personalizedTreatment/i.test(key))));
+
+  const rejectedRecommendationId = randomUUID();
+  const rejectedCheckout = await api("/shop/checkout", ownerCookie, {
+    method: "POST",
+    body: JSON.stringify({ ...payload, aftercareRecommendationId: rejectedRecommendationId }),
+  });
+  assert.equal(rejectedCheckout.status, 400, await rejectedCheckout.clone().text());
+  const aftercareEvidence = await db.select({ id: retailOrderItemsTable.id })
+    .from(retailOrderItemsTable)
+    .where(eq(retailOrderItemsTable.aftercareRecommendationId, rejectedRecommendationId));
+  assert.equal(aftercareEvidence.length, 0);
 });

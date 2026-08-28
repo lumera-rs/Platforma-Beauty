@@ -11200,6 +11200,8 @@ export const adminListProductsResponseItemsItemPriceMultipleOf = 1;
 export const adminListProductsResponseItemsItemCostPriceRsdMin = 0;
 export const adminListProductsResponseItemsItemCostPriceRsdMax = 100000000;
 
+export const adminListProductsResponseItemsItemAverageDurationDaysMax = 3650;
+
 export const adminListProductsResponseItemsItemDiscountPriceMultipleOf = 1;
 
 export const adminListProductsResponseItemsItemPriceOnRequestDefault = false;
@@ -11265,6 +11267,8 @@ export const AdminListProductsResponse = zod.object({
   "images": zod.array(zod.string()),
   "price": zod.number().multipleOf(adminListProductsResponseItemsItemPriceMultipleOf),
   "costPriceRsd": zod.number().int().min(adminListProductsResponseItemsItemCostPriceRsdMin).max(adminListProductsResponseItemsItemCostPriceRsdMax).nullable(),
+  "averageDurationDays": zod.number().int().min(1).max(adminListProductsResponseItemsItemAverageDurationDaysMax).nullable(),
+  "treatmentTaxonomyIds": zod.array(zod.string()),
   "discountPrice": zod.number().multipleOf(adminListProductsResponseItemsItemDiscountPriceMultipleOf).nullable(),
   "discountPriceEndsAt": zod.coerce.date().nullable(),
   "retailEnabled": zod.boolean(),
@@ -11348,6 +11352,10 @@ export const adminCreateProductBodyPriceMultipleOf = 1;
 
 export const adminCreateProductBodyCostPriceRsdMin = 0;
 export const adminCreateProductBodyCostPriceRsdMax = 100000000;
+
+export const adminCreateProductBodyAverageDurationDaysMax = 3650;
+
+export const adminCreateProductBodyTreatmentTaxonomyIdsMax = 100;
 
 export const adminCreateProductBodyDiscountPriceMin = 0;
 export const adminCreateProductBodyDiscountPriceMax = 100000000;
@@ -11437,6 +11445,8 @@ export const AdminCreateProductBody = zod.object({
   "images": zod.array(zod.string()).optional(),
   "price": zod.number().min(adminCreateProductBodyPriceMin).max(adminCreateProductBodyPriceMax).multipleOf(adminCreateProductBodyPriceMultipleOf),
   "costPriceRsd": zod.number().int().min(adminCreateProductBodyCostPriceRsdMin).max(adminCreateProductBodyCostPriceRsdMax).nullish(),
+  "averageDurationDays": zod.number().int().min(1).max(adminCreateProductBodyAverageDurationDaysMax).nullish(),
+  "treatmentTaxonomyIds": zod.array(zod.string()).max(adminCreateProductBodyTreatmentTaxonomyIdsMax).optional(),
   "discountPrice": zod.number().min(adminCreateProductBodyDiscountPriceMin).max(adminCreateProductBodyDiscountPriceMax).multipleOf(adminCreateProductBodyDiscountPriceMultipleOf).nullish(),
   "discountPriceEndsAt": zod.coerce.date().nullish(),
   "retailEnabled": zod.boolean().optional(),
@@ -11502,6 +11512,8 @@ export const adminCreateProductResponsePriceMultipleOf = 1;
 export const adminCreateProductResponseCostPriceRsdMin = 0;
 export const adminCreateProductResponseCostPriceRsdMax = 100000000;
 
+export const adminCreateProductResponseAverageDurationDaysMax = 3650;
+
 export const adminCreateProductResponseDiscountPriceMultipleOf = 1;
 
 export const adminCreateProductResponsePriceOnRequestDefault = false;
@@ -11566,6 +11578,8 @@ export const AdminCreateProductResponse = zod.object({
   "images": zod.array(zod.string()),
   "price": zod.number().multipleOf(adminCreateProductResponsePriceMultipleOf),
   "costPriceRsd": zod.number().int().min(adminCreateProductResponseCostPriceRsdMin).max(adminCreateProductResponseCostPriceRsdMax).nullable(),
+  "averageDurationDays": zod.number().int().min(1).max(adminCreateProductResponseAverageDurationDaysMax).nullable(),
+  "treatmentTaxonomyIds": zod.array(zod.string()),
   "discountPrice": zod.number().multipleOf(adminCreateProductResponseDiscountPriceMultipleOf).nullable(),
   "discountPriceEndsAt": zod.coerce.date().nullable(),
   "retailEnabled": zod.boolean(),
@@ -11629,6 +11643,370 @@ export const AdminCreateProductResponse = zod.object({
 
 
 /**
+ * @summary List active normalized aftercare treatment taxonomy
+ */
+export const adminListAftercareTreatmentsQuerySearchMax = 120;
+
+export const adminListAftercareTreatmentsQueryLimitDefault = 50;
+export const adminListAftercareTreatmentsQueryLimitMax = 100;
+
+
+
+export const AdminListAftercareTreatmentsQueryParams = zod.object({
+  "search": zod.coerce.string().max(adminListAftercareTreatmentsQuerySearchMax).optional(),
+  "limit": zod.coerce.number().int().min(1).max(adminListAftercareTreatmentsQueryLimitMax).default(adminListAftercareTreatmentsQueryLimitDefault)
+})
+
+export const AdminListAftercareTreatmentsResponseItem = zod.object({
+  "id": zod.string(),
+  "taxonomyKey": zod.string(),
+  "categoryName": zod.string(),
+  "treatmentName": zod.string(),
+  "searchTerms": zod.array(zod.string())
+})
+export const AdminListAftercareTreatmentsResponse = zod.array(AdminListAftercareTreatmentsResponseItem)
+
+
+/**
+ * @summary Get current versioned aftercare settings
+ */
+
+export const adminGetAftercareSettingsResponseCooldownDaysMax = 3650;
+
+export const adminGetAftercareSettingsResponseSecondReminderDelayDaysMax = 3650;
+
+export const adminGetAftercareSettingsResponsePostTreatmentDiscountPercentMin = 0;
+export const adminGetAftercareSettingsResponsePostTreatmentDiscountPercentMax = 100;
+
+export const adminGetAftercareSettingsResponsePostTreatmentDiscountValidityDaysMax = 3650;
+
+export const adminGetAftercareSettingsResponsePersonalizedBundleDiscountPercentMax = 100;
+
+export const adminGetAftercareSettingsResponseCombinationWindowDaysMax = 3650;
+
+
+
+export const AdminGetAftercareSettingsResponse = zod.object({
+  "version": zod.number().int().min(1),
+  "firstTiming": zod.enum(['IMMEDIATE_AFTER_COMPLETION', 'NEXT_DAY']),
+  "cooldownDays": zod.number().int().min(1).max(adminGetAftercareSettingsResponseCooldownDaysMax),
+  "secondReminderDelayDays": zod.number().int().min(1).max(adminGetAftercareSettingsResponseSecondReminderDelayDaysMax),
+  "postTreatmentDiscountEnabled": zod.boolean(),
+  "postTreatmentDiscountPercent": zod.number().int().min(adminGetAftercareSettingsResponsePostTreatmentDiscountPercentMin).max(adminGetAftercareSettingsResponsePostTreatmentDiscountPercentMax),
+  "postTreatmentDiscountValidityDays": zod.number().int().min(1).max(adminGetAftercareSettingsResponsePostTreatmentDiscountValidityDaysMax),
+  "personalizedBundleDiscountPercent": zod.number().int().min(1).max(adminGetAftercareSettingsResponsePersonalizedBundleDiscountPercentMax),
+  "combinationWindowDays": zod.number().int().min(1).max(adminGetAftercareSettingsResponseCombinationWindowDaysMax)
+})
+
+
+/**
+ * @summary Version and replace aftercare settings
+ */
+
+export const adminUpdateAftercareSettingsBodyCooldownDaysMax = 3650;
+
+export const adminUpdateAftercareSettingsBodySecondReminderDelayDaysMax = 3650;
+
+export const adminUpdateAftercareSettingsBodyPostTreatmentDiscountPercentMin = 0;
+export const adminUpdateAftercareSettingsBodyPostTreatmentDiscountPercentMax = 100;
+
+export const adminUpdateAftercareSettingsBodyPostTreatmentDiscountValidityDaysMax = 3650;
+
+export const adminUpdateAftercareSettingsBodyPersonalizedBundleDiscountPercentMax = 100;
+
+export const adminUpdateAftercareSettingsBodyCombinationWindowDaysMax = 3650;
+
+
+
+export const AdminUpdateAftercareSettingsBody = zod.object({
+  "expectedVersion": zod.number().int().min(1),
+  "firstTiming": zod.enum(['IMMEDIATE_AFTER_COMPLETION', 'NEXT_DAY']),
+  "cooldownDays": zod.number().int().min(1).max(adminUpdateAftercareSettingsBodyCooldownDaysMax),
+  "secondReminderDelayDays": zod.number().int().min(1).max(adminUpdateAftercareSettingsBodySecondReminderDelayDaysMax),
+  "postTreatmentDiscountEnabled": zod.boolean(),
+  "postTreatmentDiscountPercent": zod.number().int().min(adminUpdateAftercareSettingsBodyPostTreatmentDiscountPercentMin).max(adminUpdateAftercareSettingsBodyPostTreatmentDiscountPercentMax),
+  "postTreatmentDiscountValidityDays": zod.number().int().min(1).max(adminUpdateAftercareSettingsBodyPostTreatmentDiscountValidityDaysMax),
+  "personalizedBundleDiscountPercent": zod.number().int().min(1).max(adminUpdateAftercareSettingsBodyPersonalizedBundleDiscountPercentMax),
+  "combinationWindowDays": zod.number().int().min(1).max(adminUpdateAftercareSettingsBodyCombinationWindowDaysMax)
+}).strict()
+
+
+export const adminUpdateAftercareSettingsResponseCooldownDaysMax = 3650;
+
+export const adminUpdateAftercareSettingsResponseSecondReminderDelayDaysMax = 3650;
+
+export const adminUpdateAftercareSettingsResponsePostTreatmentDiscountPercentMin = 0;
+export const adminUpdateAftercareSettingsResponsePostTreatmentDiscountPercentMax = 100;
+
+export const adminUpdateAftercareSettingsResponsePostTreatmentDiscountValidityDaysMax = 3650;
+
+export const adminUpdateAftercareSettingsResponsePersonalizedBundleDiscountPercentMax = 100;
+
+export const adminUpdateAftercareSettingsResponseCombinationWindowDaysMax = 3650;
+
+
+
+export const AdminUpdateAftercareSettingsResponse = zod.object({
+  "version": zod.number().int().min(1),
+  "firstTiming": zod.enum(['IMMEDIATE_AFTER_COMPLETION', 'NEXT_DAY']),
+  "cooldownDays": zod.number().int().min(1).max(adminUpdateAftercareSettingsResponseCooldownDaysMax),
+  "secondReminderDelayDays": zod.number().int().min(1).max(adminUpdateAftercareSettingsResponseSecondReminderDelayDaysMax),
+  "postTreatmentDiscountEnabled": zod.boolean(),
+  "postTreatmentDiscountPercent": zod.number().int().min(adminUpdateAftercareSettingsResponsePostTreatmentDiscountPercentMin).max(adminUpdateAftercareSettingsResponsePostTreatmentDiscountPercentMax),
+  "postTreatmentDiscountValidityDays": zod.number().int().min(1).max(adminUpdateAftercareSettingsResponsePostTreatmentDiscountValidityDaysMax),
+  "personalizedBundleDiscountPercent": zod.number().int().min(1).max(adminUpdateAftercareSettingsResponsePersonalizedBundleDiscountPercentMax),
+  "combinationWindowDays": zod.number().int().min(1).max(adminUpdateAftercareSettingsResponseCombinationWindowDaysMax)
+})
+
+
+/**
+ * @summary Aggregate B2C aftercare delivery and conversion statistics
+ */
+export const adminGetAftercareStatisticsQueryFromRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const adminGetAftercareStatisticsQueryToRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const adminGetAftercareStatisticsQueryTreatmentIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const adminGetAftercareStatisticsQueryProductIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const adminGetAftercareStatisticsQueryBundleIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
+export const AdminGetAftercareStatisticsQueryParams = zod.object({
+  "from": zod.coerce.string().regex(adminGetAftercareStatisticsQueryFromRegExp),
+  "to": zod.coerce.string().regex(adminGetAftercareStatisticsQueryToRegExp),
+  "treatmentId": zod.coerce.string().regex(adminGetAftercareStatisticsQueryTreatmentIdRegExp).optional(),
+  "productId": zod.coerce.string().regex(adminGetAftercareStatisticsQueryProductIdRegExp).optional(),
+  "bundleId": zod.coerce.string().regex(adminGetAftercareStatisticsQueryBundleIdRegExp).optional(),
+  "kind": zod.enum(['PRODUCT', 'PREMADE_BUNDLE', 'PERSONALIZED_BUNDLE']).optional()
+})
+
+export const adminGetAftercareStatisticsResponseKpisRecommendationsCreatedMin = 0;
+
+export const adminGetAftercareStatisticsResponseKpisFirstSentMin = 0;
+
+export const adminGetAftercareStatisticsResponseKpisSecondSentMin = 0;
+
+export const adminGetAftercareStatisticsResponseKpisReplenishmentSentMin = 0;
+
+export const adminGetAftercareStatisticsResponseKpisConvertedRecommendationsMin = 0;
+
+export const adminGetAftercareStatisticsResponseKpisConversionRevenueRsdMin = 0;
+
+export const adminGetAftercareStatisticsResponseKpisConversionRatePercentMin = 0;
+export const adminGetAftercareStatisticsResponseKpisConversionRatePercentMax = 100;
+
+export const adminGetAftercareStatisticsResponseTimeSeriesItemDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const adminGetAftercareStatisticsResponseTimeSeriesItemRecommendationsCreatedMin = 0;
+
+export const adminGetAftercareStatisticsResponseTimeSeriesItemFirstSentMin = 0;
+
+export const adminGetAftercareStatisticsResponseTimeSeriesItemSecondSentMin = 0;
+
+export const adminGetAftercareStatisticsResponseTimeSeriesItemReplenishmentSentMin = 0;
+
+export const adminGetAftercareStatisticsResponseTimeSeriesItemConvertedRecommendationsMin = 0;
+
+export const adminGetAftercareStatisticsResponseTimeSeriesItemConversionRevenueRsdMin = 0;
+
+export const adminGetAftercareStatisticsResponseTimeSeriesMax = 366;
+
+export const adminGetAftercareStatisticsResponseByTreatmentItemRecommendationsCreatedMin = 0;
+
+export const adminGetAftercareStatisticsResponseByTreatmentItemSentMin = 0;
+
+export const adminGetAftercareStatisticsResponseByTreatmentItemConvertedRecommendationsMin = 0;
+
+export const adminGetAftercareStatisticsResponseByTreatmentItemConversionRevenueRsdMin = 0;
+
+export const adminGetAftercareStatisticsResponseByTreatmentMax = 200;
+
+export const adminGetAftercareStatisticsResponseByItemItemRecommendationsCreatedMin = 0;
+
+export const adminGetAftercareStatisticsResponseByItemItemSentMin = 0;
+
+export const adminGetAftercareStatisticsResponseByItemItemConvertedRecommendationsMin = 0;
+
+export const adminGetAftercareStatisticsResponseByItemItemConversionRevenueRsdMin = 0;
+
+export const adminGetAftercareStatisticsResponseByItemMax = 200;
+
+
+
+export const AdminGetAftercareStatisticsResponse = zod.object({
+  "kpis": zod.object({
+  "recommendationsCreated": zod.number().int().min(adminGetAftercareStatisticsResponseKpisRecommendationsCreatedMin),
+  "firstSent": zod.number().int().min(adminGetAftercareStatisticsResponseKpisFirstSentMin),
+  "secondSent": zod.number().int().min(adminGetAftercareStatisticsResponseKpisSecondSentMin),
+  "replenishmentSent": zod.number().int().min(adminGetAftercareStatisticsResponseKpisReplenishmentSentMin),
+  "convertedRecommendations": zod.number().int().min(adminGetAftercareStatisticsResponseKpisConvertedRecommendationsMin),
+  "conversionRevenueRsd": zod.number().int().min(adminGetAftercareStatisticsResponseKpisConversionRevenueRsdMin),
+  "conversionRatePercent": zod.number().min(adminGetAftercareStatisticsResponseKpisConversionRatePercentMin).max(adminGetAftercareStatisticsResponseKpisConversionRatePercentMax)
+}),
+  "timeSeries": zod.array(zod.object({
+  "date": zod.string().regex(adminGetAftercareStatisticsResponseTimeSeriesItemDateRegExp),
+  "recommendationsCreated": zod.number().int().min(adminGetAftercareStatisticsResponseTimeSeriesItemRecommendationsCreatedMin),
+  "firstSent": zod.number().int().min(adminGetAftercareStatisticsResponseTimeSeriesItemFirstSentMin),
+  "secondSent": zod.number().int().min(adminGetAftercareStatisticsResponseTimeSeriesItemSecondSentMin),
+  "replenishmentSent": zod.number().int().min(adminGetAftercareStatisticsResponseTimeSeriesItemReplenishmentSentMin),
+  "convertedRecommendations": zod.number().int().min(adminGetAftercareStatisticsResponseTimeSeriesItemConvertedRecommendationsMin),
+  "conversionRevenueRsd": zod.number().int().min(adminGetAftercareStatisticsResponseTimeSeriesItemConversionRevenueRsdMin)
+})).max(adminGetAftercareStatisticsResponseTimeSeriesMax),
+  "byTreatment": zod.array(zod.object({
+  "treatmentId": zod.string(),
+  "taxonomyKey": zod.string(),
+  "categoryName": zod.string(),
+  "treatmentName": zod.string(),
+  "recommendationsCreated": zod.number().int().min(adminGetAftercareStatisticsResponseByTreatmentItemRecommendationsCreatedMin),
+  "sent": zod.number().int().min(adminGetAftercareStatisticsResponseByTreatmentItemSentMin),
+  "convertedRecommendations": zod.number().int().min(adminGetAftercareStatisticsResponseByTreatmentItemConvertedRecommendationsMin),
+  "conversionRevenueRsd": zod.number().int().min(adminGetAftercareStatisticsResponseByTreatmentItemConversionRevenueRsdMin)
+})).max(adminGetAftercareStatisticsResponseByTreatmentMax),
+  "byItem": zod.array(zod.object({
+  "kind": zod.enum(['PRODUCT', 'PREMADE_BUNDLE', 'PERSONALIZED_BUNDLE']),
+  "itemId": zod.string().nullable(),
+  "itemName": zod.string(),
+  "recommendationsCreated": zod.number().int().min(adminGetAftercareStatisticsResponseByItemItemRecommendationsCreatedMin),
+  "sent": zod.number().int().min(adminGetAftercareStatisticsResponseByItemItemSentMin),
+  "convertedRecommendations": zod.number().int().min(adminGetAftercareStatisticsResponseByItemItemConvertedRecommendationsMin),
+  "conversionRevenueRsd": zod.number().int().min(adminGetAftercareStatisticsResponseByItemItemConversionRevenueRsdMin)
+})).max(adminGetAftercareStatisticsResponseByItemMax)
+})
+
+
+/**
+ * @summary List the signed-in customer's aftercare recommendations
+ */
+export const customerListAftercareRecommendationsQueryLimitDefault = 30;
+export const customerListAftercareRecommendationsQueryLimitMax = 100;
+
+
+
+export const CustomerListAftercareRecommendationsQueryParams = zod.object({
+  "limit": zod.coerce.number().int().min(1).max(customerListAftercareRecommendationsQueryLimitMax).default(customerListAftercareRecommendationsQueryLimitDefault)
+})
+
+export const customerListAftercareRecommendationsResponseLinesItemDiscountPercentMin = 0;
+export const customerListAftercareRecommendationsResponseLinesItemDiscountPercentMax = 100;
+
+
+
+export const CustomerListAftercareRecommendationsResponseItem = zod.object({
+  "id": zod.string(),
+  "status": zod.enum(['PENDING', 'ACTIVE', 'CONVERTED', 'EXPIRED', 'CANCELLED']),
+  "createdAt": zod.coerce.date(),
+  "firstSentAt": zod.coerce.date().nullable(),
+  "secondSentAt": zod.coerce.date().nullable(),
+  "readAt": zod.coerce.date().nullable(),
+  "expiresAt": zod.coerce.date(),
+  "convertedAt": zod.coerce.date().nullable(),
+  "treatments": zod.array(zod.string()),
+  "tips": zod.array(zod.string()),
+  "lines": zod.array(zod.object({
+  "kind": zod.enum(['PRODUCT', 'PREMADE_BUNDLE', 'PERSONALIZED_BUNDLE']),
+  "item": zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string().nullable(),
+  "actionPath": zod.string()
+}).nullable(),
+  "coveredProducts": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string().nullable(),
+  "actionPath": zod.string()
+})),
+  "discountPercent": zod.number().int().min(customerListAftercareRecommendationsResponseLinesItemDiscountPercentMin).max(customerListAftercareRecommendationsResponseLinesItemDiscountPercentMax),
+  "validUntil": zod.coerce.date().nullable()
+}))
+})
+export const CustomerListAftercareRecommendationsResponse = zod.array(CustomerListAftercareRecommendationsResponseItem)
+
+
+/**
+ * @summary Get one signed-in customer's aftercare recommendation
+ */
+export const CustomerGetAftercareRecommendationParams = zod.object({
+  "recommendationId": zod.coerce.string()
+})
+
+export const customerGetAftercareRecommendationResponseLinesItemDiscountPercentMin = 0;
+export const customerGetAftercareRecommendationResponseLinesItemDiscountPercentMax = 100;
+
+
+
+export const CustomerGetAftercareRecommendationResponse = zod.object({
+  "id": zod.string(),
+  "status": zod.enum(['PENDING', 'ACTIVE', 'CONVERTED', 'EXPIRED', 'CANCELLED']),
+  "createdAt": zod.coerce.date(),
+  "firstSentAt": zod.coerce.date().nullable(),
+  "secondSentAt": zod.coerce.date().nullable(),
+  "readAt": zod.coerce.date().nullable(),
+  "expiresAt": zod.coerce.date(),
+  "convertedAt": zod.coerce.date().nullable(),
+  "treatments": zod.array(zod.string()),
+  "tips": zod.array(zod.string()),
+  "lines": zod.array(zod.object({
+  "kind": zod.enum(['PRODUCT', 'PREMADE_BUNDLE', 'PERSONALIZED_BUNDLE']),
+  "item": zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string().nullable(),
+  "actionPath": zod.string()
+}).nullable(),
+  "coveredProducts": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string().nullable(),
+  "actionPath": zod.string()
+})),
+  "discountPercent": zod.number().int().min(customerGetAftercareRecommendationResponseLinesItemDiscountPercentMin).max(customerGetAftercareRecommendationResponseLinesItemDiscountPercentMax),
+  "validUntil": zod.coerce.date().nullable()
+}))
+})
+
+
+/**
+ * @summary Mark one signed-in customer's recommendation read
+ */
+export const CustomerReadAftercareRecommendationParams = zod.object({
+  "recommendationId": zod.coerce.string()
+})
+
+export const customerReadAftercareRecommendationResponseLinesItemDiscountPercentMin = 0;
+export const customerReadAftercareRecommendationResponseLinesItemDiscountPercentMax = 100;
+
+
+
+export const CustomerReadAftercareRecommendationResponse = zod.object({
+  "id": zod.string(),
+  "status": zod.enum(['PENDING', 'ACTIVE', 'CONVERTED', 'EXPIRED', 'CANCELLED']),
+  "createdAt": zod.coerce.date(),
+  "firstSentAt": zod.coerce.date().nullable(),
+  "secondSentAt": zod.coerce.date().nullable(),
+  "readAt": zod.coerce.date().nullable(),
+  "expiresAt": zod.coerce.date(),
+  "convertedAt": zod.coerce.date().nullable(),
+  "treatments": zod.array(zod.string()),
+  "tips": zod.array(zod.string()),
+  "lines": zod.array(zod.object({
+  "kind": zod.enum(['PRODUCT', 'PREMADE_BUNDLE', 'PERSONALIZED_BUNDLE']),
+  "item": zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string().nullable(),
+  "actionPath": zod.string()
+}).nullable(),
+  "coveredProducts": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string().nullable(),
+  "actionPath": zod.string()
+})),
+  "discountPercent": zod.number().int().min(customerReadAftercareRecommendationResponseLinesItemDiscountPercentMin).max(customerReadAftercareRecommendationResponseLinesItemDiscountPercentMax),
+  "validUntil": zod.coerce.date().nullable()
+}))
+})
+
+
+/**
  * @summary List all fixed-price product bundles
  */
 export const adminListBundlesResponseDerivedStockMin = 0;
@@ -11645,6 +12023,7 @@ export const AdminListBundlesResponseItem = zod.object({
   "market": zod.enum(['B2B', 'B2C', 'BOTH']),
   "b2bPrice": zod.number().int().nullable(),
   "b2cPrice": zod.number().int().nullable(),
+  "aftercareTreatmentTaxonomyId": zod.string().nullable(),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
@@ -11689,7 +12068,8 @@ export const AdminCreateBundleBody = zod.object({
   "quantity": zod.number().int().min(1),
   "sortOrder": zod.number().int().min(adminCreateBundleBodyComponentsItemSortOrderMin).optional()
 })).min(adminCreateBundleBodyComponentsMin).optional(),
-  "active": zod.boolean().optional()
+  "active": zod.boolean().optional(),
+  "aftercareTreatmentTaxonomyId": zod.string().nullish()
 }).strict()
 
 export const adminCreateBundleResponseDerivedStockMin = 0;
@@ -11706,6 +12086,7 @@ export const AdminCreateBundleResponse = zod.object({
   "market": zod.enum(['B2B', 'B2C', 'BOTH']),
   "b2bPrice": zod.number().int().nullable(),
   "b2cPrice": zod.number().int().nullable(),
+  "aftercareTreatmentTaxonomyId": zod.string().nullable(),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
@@ -11753,7 +12134,8 @@ export const AdminUpdateBundleBody = zod.object({
   "quantity": zod.number().int().min(1),
   "sortOrder": zod.number().int().min(adminUpdateBundleBodyComponentsItemSortOrderMin).optional()
 })).min(adminUpdateBundleBodyComponentsMin).optional(),
-  "active": zod.boolean().optional()
+  "active": zod.boolean().optional(),
+  "aftercareTreatmentTaxonomyId": zod.string().nullish()
 }).strict()
 
 export const adminUpdateBundleResponseDerivedStockMin = 0;
@@ -11770,6 +12152,7 @@ export const AdminUpdateBundleResponse = zod.object({
   "market": zod.enum(['B2B', 'B2C', 'BOTH']),
   "b2bPrice": zod.number().int().nullable(),
   "b2cPrice": zod.number().int().nullable(),
+  "aftercareTreatmentTaxonomyId": zod.string().nullable(),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
@@ -11805,6 +12188,7 @@ export const AdminDeactivateBundleResponse = zod.object({
   "market": zod.enum(['B2B', 'B2C', 'BOTH']),
   "b2bPrice": zod.number().int().nullable(),
   "b2cPrice": zod.number().int().nullable(),
+  "aftercareTreatmentTaxonomyId": zod.string().nullable(),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
@@ -11841,6 +12225,151 @@ export const AdminBulkUpdateProductsResponse = zod.object({
 
 
 /**
+ * @summary Get an administrative product
+ */
+export const adminGetProductPathProductIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const AdminGetProductParams = zod.object({
+  "productId": zod.coerce.string().regex(adminGetProductPathProductIdRegExp)
+})
+
+export const adminGetProductResponsePriceMultipleOf = 1;
+
+export const adminGetProductResponseCostPriceRsdMin = 0;
+export const adminGetProductResponseCostPriceRsdMax = 100000000;
+
+export const adminGetProductResponseAverageDurationDaysMax = 3650;
+
+export const adminGetProductResponseDiscountPriceMultipleOf = 1;
+
+export const adminGetProductResponsePriceOnRequestDefault = false;
+export const adminGetProductResponseBulkMatrixEnabledDefault = false;
+export const adminGetProductResponsePublicPriceMultipleOf = 1;
+
+export const adminGetProductResponsePublicDiscountPriceMultipleOf = 1;
+
+export const adminGetProductResponseStockMin = 0;
+export const adminGetProductResponseStockMultipleOf = 1;
+
+export const adminGetProductResponseWeightGramsMultipleOf = 1;
+
+export const adminGetProductResponseVariantsItemPriceAdjustMultipleOf = 1;
+
+export const adminGetProductResponseVariantsItemPriceMin = 0;
+export const adminGetProductResponseVariantsItemPriceMultipleOf = 1;
+
+export const adminGetProductResponseVariantsItemStockMin = 0;
+export const adminGetProductResponseVariantsItemStockMultipleOf = 1;
+
+
+export const adminGetProductResponseVariantsItemSwatchTextMax = 80;
+
+export const adminGetProductResponseVariantsItemSwatchHexRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');
+export const adminGetProductResponseVariantsItemAltTextMax = 180;
+
+export const adminGetProductResponseVariantsItemSortOrderMin = 0;
+export const adminGetProductResponseVariantsItemSortOrderMax = 10000;
+
+export const adminGetProductResponseCrossSellProductIdsMax = 5;
+
+
+
+
+
+export const adminGetProductResponseDeliveryBusinessDaysOverrideMax = 365;
+
+export const adminGetProductResponseSubscriptionDiscountPercentMax = 100;
+
+export const adminGetProductResponseCharacteristicsItemNameMax = 100;
+
+export const adminGetProductResponseCharacteristicsItemValueMax = 500;
+
+export const adminGetProductResponseSearchSynonymsItemMax = 100;
+
+export const adminGetProductResponseSearchSynonymsMax = 30;
+
+
+
+export const AdminGetProductResponse = zod.object({
+  "id": zod.string(),
+  "supplierId": zod.string(),
+  "name": zod.string(),
+  "categoryId": zod.string().nullish(),
+  "categoryName": zod.string(),
+  "subcategoryName": zod.string().nullish(),
+  "brand": zod.string().nullish(),
+  "description": zod.string(),
+  "shortDescription": zod.string().nullish(),
+  "imageUrl": zod.string(),
+  "images": zod.array(zod.string()),
+  "price": zod.number().multipleOf(adminGetProductResponsePriceMultipleOf),
+  "costPriceRsd": zod.number().int().min(adminGetProductResponseCostPriceRsdMin).max(adminGetProductResponseCostPriceRsdMax).nullable(),
+  "averageDurationDays": zod.number().int().min(1).max(adminGetProductResponseAverageDurationDaysMax).nullable(),
+  "treatmentTaxonomyIds": zod.array(zod.string()),
+  "discountPrice": zod.number().multipleOf(adminGetProductResponseDiscountPriceMultipleOf).nullable(),
+  "discountPriceEndsAt": zod.coerce.date().nullable(),
+  "retailEnabled": zod.boolean(),
+  "priceOnRequest": zod.boolean().default(adminGetProductResponsePriceOnRequestDefault),
+  "bulkMatrixEnabled": zod.boolean().default(adminGetProductResponseBulkMatrixEnabledDefault),
+  "professionalEnabled": zod.boolean(),
+  "publicDescription": zod.string().nullish(),
+  "publicPrice": zod.number().min(1).multipleOf(adminGetProductResponsePublicPriceMultipleOf).nullish(),
+  "publicDiscountPrice": zod.number().min(1).multipleOf(adminGetProductResponsePublicDiscountPriceMultipleOf).nullable(),
+  "publicDiscountPriceEndsAt": zod.coerce.date().nullable(),
+  "discountPercent": zod.number().nullish(),
+  "stock": zod.number().min(adminGetProductResponseStockMin).multipleOf(adminGetProductResponseStockMultipleOf),
+  "catalogReference": zod.string().describe('Opaque immutable customer-facing catalog reference.'),
+  "sku": zod.string(),
+  "unit": zod.string(),
+  "weightGrams": zod.number().multipleOf(adminGetProductResponseWeightGramsMultipleOf).nullish(),
+  "isNew": zod.boolean(),
+  "isBestseller": zod.boolean(),
+  "variants": zod.array(zod.object({
+  "label": zod.string(),
+  "value": zod.string(),
+  "priceAdjust": zod.number().multipleOf(adminGetProductResponseVariantsItemPriceAdjustMultipleOf).optional(),
+  "price": zod.number().min(adminGetProductResponseVariantsItemPriceMin).multipleOf(adminGetProductResponseVariantsItemPriceMultipleOf).optional(),
+  "stock": zod.number().min(adminGetProductResponseVariantsItemStockMin).multipleOf(adminGetProductResponseVariantsItemStockMultipleOf).optional(),
+  "sku": zod.string().min(1).optional(),
+  "swatch": zod.object({
+  "kind": zod.enum(['TEXT', 'COLOR', 'IMAGE']),
+  "text": zod.string().max(adminGetProductResponseVariantsItemSwatchTextMax).optional(),
+  "hex": zod.string().regex(adminGetProductResponseVariantsItemSwatchHexRegExp).optional(),
+  "imageUrl": zod.string().optional()
+}).nullish(),
+  "mainImageUrl": zod.string().nullish(),
+  "altText": zod.string().max(adminGetProductResponseVariantsItemAltTextMax).nullish(),
+  "sortOrder": zod.number().int().min(adminGetProductResponseVariantsItemSortOrderMin).max(adminGetProductResponseVariantsItemSortOrderMax).optional()
+})).nullish(),
+  "variantType": zod.string().nullish(),
+  "similarProductsMode": zod.enum(['AUTO_CATEGORY', 'MANUAL']),
+  "similarProductIds": zod.array(zod.string()),
+  "crossSellProductIds": zod.array(zod.string()).max(adminGetProductResponseCrossSellProductIdsMax),
+  "quantityPricingTiers": zod.array(zod.object({
+  "minQuantity": zod.number().int().min(1),
+  "maxQuantity": zod.number().int().min(1).nullable(),
+  "unitPrice": zod.number().int().min(1)
+})),
+  "minimumOrderQuantity": zod.number().int().min(1),
+  "deliveryBusinessDaysOverride": zod.number().int().min(1).max(adminGetProductResponseDeliveryBusinessDaysOverrideMax).nullable(),
+  "subscriptionAllowed": zod.boolean(),
+  "subscriptionDiscountPercent": zod.number().int().min(1).max(adminGetProductResponseSubscriptionDiscountPercentMax).nullable(),
+  "loyaltyPricingExcluded": zod.boolean().optional(),
+  "productTypeId": zod.string().nullable(),
+  "ingredients": zod.string().nullable(),
+  "usageInstructions": zod.string().nullable(),
+  "characteristics": zod.array(zod.object({
+  "name": zod.string().min(1).max(adminGetProductResponseCharacteristicsItemNameMax),
+  "value": zod.string().min(1).max(adminGetProductResponseCharacteristicsItemValueMax)
+})),
+  "searchSynonyms": zod.array(zod.string().min(1).max(adminGetProductResponseSearchSynonymsItemMax)).max(adminGetProductResponseSearchSynonymsMax),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Update a B2B product
  */
 export const adminUpdateProductPathProductIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
@@ -11863,6 +12392,10 @@ export const adminUpdateProductBodyPriceMultipleOf = 1;
 
 export const adminUpdateProductBodyCostPriceRsdMin = 0;
 export const adminUpdateProductBodyCostPriceRsdMax = 100000000;
+
+export const adminUpdateProductBodyAverageDurationDaysMax = 3650;
+
+export const adminUpdateProductBodyTreatmentTaxonomyIdsMax = 100;
 
 export const adminUpdateProductBodyDiscountPriceMin = 0;
 export const adminUpdateProductBodyDiscountPriceMax = 100000000;
@@ -11944,6 +12477,8 @@ export const AdminUpdateProductBody = zod.object({
   "images": zod.array(zod.string()).optional(),
   "price": zod.number().min(adminUpdateProductBodyPriceMin).max(adminUpdateProductBodyPriceMax).multipleOf(adminUpdateProductBodyPriceMultipleOf).optional(),
   "costPriceRsd": zod.number().int().min(adminUpdateProductBodyCostPriceRsdMin).max(adminUpdateProductBodyCostPriceRsdMax).nullish(),
+  "averageDurationDays": zod.number().int().min(1).max(adminUpdateProductBodyAverageDurationDaysMax).nullish(),
+  "treatmentTaxonomyIds": zod.array(zod.string()).max(adminUpdateProductBodyTreatmentTaxonomyIdsMax).optional(),
   "discountPrice": zod.number().min(adminUpdateProductBodyDiscountPriceMin).max(adminUpdateProductBodyDiscountPriceMax).multipleOf(adminUpdateProductBodyDiscountPriceMultipleOf).nullish(),
   "discountPriceEndsAt": zod.coerce.date().nullish(),
   "retailEnabled": zod.boolean().optional(),
@@ -12009,6 +12544,8 @@ export const adminUpdateProductResponsePriceMultipleOf = 1;
 export const adminUpdateProductResponseCostPriceRsdMin = 0;
 export const adminUpdateProductResponseCostPriceRsdMax = 100000000;
 
+export const adminUpdateProductResponseAverageDurationDaysMax = 3650;
+
 export const adminUpdateProductResponseDiscountPriceMultipleOf = 1;
 
 export const adminUpdateProductResponsePriceOnRequestDefault = false;
@@ -12073,6 +12610,8 @@ export const AdminUpdateProductResponse = zod.object({
   "images": zod.array(zod.string()),
   "price": zod.number().multipleOf(adminUpdateProductResponsePriceMultipleOf),
   "costPriceRsd": zod.number().int().min(adminUpdateProductResponseCostPriceRsdMin).max(adminUpdateProductResponseCostPriceRsdMax).nullable(),
+  "averageDurationDays": zod.number().int().min(1).max(adminUpdateProductResponseAverageDurationDaysMax).nullable(),
+  "treatmentTaxonomyIds": zod.array(zod.string()),
   "discountPrice": zod.number().multipleOf(adminUpdateProductResponseDiscountPriceMultipleOf).nullable(),
   "discountPriceEndsAt": zod.coerce.date().nullable(),
   "retailEnabled": zod.boolean(),
@@ -12150,6 +12689,8 @@ export const adminDeleteProductResponsePriceMultipleOf = 1;
 export const adminDeleteProductResponseCostPriceRsdMin = 0;
 export const adminDeleteProductResponseCostPriceRsdMax = 100000000;
 
+export const adminDeleteProductResponseAverageDurationDaysMax = 3650;
+
 export const adminDeleteProductResponseDiscountPriceMultipleOf = 1;
 
 export const adminDeleteProductResponsePriceOnRequestDefault = false;
@@ -12214,6 +12755,8 @@ export const AdminDeleteProductResponse = zod.object({
   "images": zod.array(zod.string()),
   "price": zod.number().multipleOf(adminDeleteProductResponsePriceMultipleOf),
   "costPriceRsd": zod.number().int().min(adminDeleteProductResponseCostPriceRsdMin).max(adminDeleteProductResponseCostPriceRsdMax).nullable(),
+  "averageDurationDays": zod.number().int().min(1).max(adminDeleteProductResponseAverageDurationDaysMax).nullable(),
+  "treatmentTaxonomyIds": zod.array(zod.string()),
   "discountPrice": zod.number().multipleOf(adminDeleteProductResponseDiscountPriceMultipleOf).nullable(),
   "discountPriceEndsAt": zod.coerce.date().nullable(),
   "retailEnabled": zod.boolean(),
@@ -17706,13 +18249,15 @@ export const previewRetailCheckoutQueryDesiredReferralCreditRsdMin = 0;
 
 export const previewRetailCheckoutQueryCouponCodeMax = 40;
 
+export const previewRetailCheckoutQueryAftercareRecommendationIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
 
 export const PreviewRetailCheckoutQueryParams = zod.object({
   "deliveryMethod": zod.enum(['courier', 'personal_belgrade']).optional(),
   "city": zod.coerce.string().optional(),
   "desiredReferralCreditRsd": zod.coerce.number().int().min(previewRetailCheckoutQueryDesiredReferralCreditRsdMin).optional(),
-  "couponCode": zod.coerce.string().max(previewRetailCheckoutQueryCouponCodeMax).optional()
+  "couponCode": zod.coerce.string().max(previewRetailCheckoutQueryCouponCodeMax).optional(),
+  "aftercareRecommendationId": zod.coerce.string().regex(previewRetailCheckoutQueryAftercareRecommendationIdRegExp).optional().describe('Authenticated customer\'s opaque aftercare recommendation id.')
 })
 
 export const previewRetailCheckoutResponseCartItemCountMin = 0;
@@ -17766,6 +18311,10 @@ export const previewRetailCheckoutResponseCouponOneDiscountRsdMin = 0;
 export const previewRetailCheckoutResponseCouponOneAllocationsMinOne = 0;
 
 export const previewRetailCheckoutResponseCouponDiscountRsdMin = 0;
+
+export const previewRetailCheckoutResponsePersonalizedTreatmentBundleDiscountRsdMin = 0;
+
+export const previewRetailCheckoutResponsePostTreatmentRecommendationDiscountRsdMin = 0;
 
 export const previewRetailCheckoutResponseAutomaticPromotionDiscountRsdMin = 0;
 
@@ -17868,6 +18417,8 @@ export const PreviewRetailCheckoutResponse = zod.object({
   "allocations": zod.record(zod.string(), zod.number().int().min(previewRetailCheckoutResponseCouponOneAllocationsMinOne))
 }),zod.null()]),
   "couponDiscountRsd": zod.number().int().min(previewRetailCheckoutResponseCouponDiscountRsdMin),
+  "personalizedTreatmentBundleDiscountRsd": zod.number().int().min(previewRetailCheckoutResponsePersonalizedTreatmentBundleDiscountRsdMin),
+  "postTreatmentRecommendationDiscountRsd": zod.number().int().min(previewRetailCheckoutResponsePostTreatmentRecommendationDiscountRsdMin),
   "automaticPromotionDiscountRsd": zod.number().int().min(previewRetailCheckoutResponseAutomaticPromotionDiscountRsdMin),
   "thresholdRewardDiscountRsd": zod.number().int().min(previewRetailCheckoutResponseThresholdRewardDiscountRsdMin),
   "thresholdQualificationSubtotalRsd": zod.number().int().min(previewRetailCheckoutResponseThresholdQualificationSubtotalRsdMin),

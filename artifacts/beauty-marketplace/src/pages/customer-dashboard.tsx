@@ -54,6 +54,8 @@ import { MarketingEmailPreferences } from "@/components/marketing-email-preferen
 
 import { CustomerRetailOrders } from "@/components/retail-orders";
 
+import { AftercarePreview } from "@/components/aftercare-preview";
+
 const appointmentStatusesWithSalonContact = new Set(["pending", "confirmed", "completed"]);
 
 function CustomerPackages() {
@@ -416,6 +418,9 @@ export default function CustomerDashboard() {
             </CardContent>
           </Card>
         </div>
+
+        <AftercarePreview />
+
         {dashboard?.recommendations?.length ? (
           <section className="mb-8">
             <div className="mb-4 flex items-end justify-between gap-4">

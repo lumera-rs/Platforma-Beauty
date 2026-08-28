@@ -76,6 +76,21 @@ export const priceInquiryStatusEnum = pgEnum("price_inquiry_status", ["NEW", "CO
 export const rmaStatusEnum = pgEnum("rma_status", ["RECEIVED", "IN_REVIEW", "APPROVED", "REJECTED"]);
 export const catalogSyncStatusEnum = pgEnum("catalog_sync_status", ["NOT_CONNECTED", "VALIDATED", "FAILED"]);
 
+/** Platform-owned taxonomy. It is deliberately unrelated to salon-owned service DTOs. */
+export const treatmentTaxonomyTable = pgTable("treatment_taxonomy", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  taxonomyKey: text("taxonomy_key").notNull().unique(),
+  categoryName: text("category_name").notNull(),
+  treatmentName: text("treatment_name").notNull(),
+  searchTerms: jsonb("search_terms").$type<string[]>().notNull().default([]),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("treatment_taxonomy_active_name_idx").on(table.active, table.categoryName, table.treatmentName),
+  check("treatment_taxonomy_key_check", sql`${table.taxonomyKey} ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'`),
+]);
+
 export const suppliersTable = pgTable("suppliers", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
@@ -138,6 +153,8 @@ export const productsTable = pgTable("products", {
   price: integer("price").notNull(),
   /** Internal whole-RSD acquisition cost. Never expose outside administrator contracts. */
   costPriceRsd: integer("cost_price_rsd"),
+  /** B2C replenishment cadence. Internal/admin-only recommendation metadata. */
+  averageDurationDays: integer("average_duration_days"),
   discountPrice: integer("discount_price"),
   /** B2B sale is active strictly before this instant; null preserves legacy perpetual-sale behavior. */
   discountPriceEndsAt: timestamp("discount_price_ends_at", { withTimezone: true }),
@@ -202,6 +219,16 @@ export const productsTable = pgTable("products", {
   index("products_supplier_type_retail_active_idx").on(table.supplierId, table.productTypeId, table.retailEnabled, table.active),
   index("products_product_type_idx").on(table.productTypeId),
   check("products_cost_price_rsd_check", sql`${table.costPriceRsd} IS NULL OR ${table.costPriceRsd} >= 0`),
+  check("products_average_duration_days_check", sql`${table.averageDurationDays} IS NULL OR ${table.averageDurationDays} > 0`),
+]);
+
+export const productTreatmentMappingsTable = pgTable("product_treatment_mappings", {
+  productId: uuid("product_id").notNull().references(() => productsTable.id, { onDelete: "cascade" }),
+  treatmentId: uuid("treatment_id").notNull().references(() => treatmentTaxonomyTable.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("product_treatment_mappings_unique").on(table.productId, table.treatmentId),
+  index("product_treatment_mappings_treatment_idx").on(table.treatmentId, table.productId),
 ]);
 
 export const productBundlesTable = pgTable("product_bundles", {
@@ -213,11 +240,13 @@ export const productBundlesTable = pgTable("product_bundles", {
   market: bundleMarketEnum("market").notNull(),
   b2bPrice: integer("b2b_price"),
   b2cPrice: integer("b2c_price"),
+  linkedTreatmentId: uuid("linked_treatment_id").references(() => treatmentTaxonomyTable.id, { onDelete: "set null" }),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("product_bundles_supplier_active_idx").on(table.supplierId, table.active),
+  index("product_bundles_treatment_market_active_idx").on(table.linkedTreatmentId, table.market, table.active),
   check("product_bundles_market_prices_check", sql`
     (${table.market} = 'B2B' AND ${table.b2bPrice} > 0 AND ${table.b2cPrice} IS NULL)
     OR (${table.market} = 'B2C' AND ${table.b2cPrice} > 0 AND ${table.b2bPrice} IS NULL)
@@ -752,6 +781,10 @@ export const retailOrderItemsTable = pgTable("retail_order_items", {
   priceSource: cartPriceSourceEnum("price_source").notNull().default("FULL_PRICE"),
   lineDiscount: integer("line_discount").notNull().default(0),
   couponDiscountRsd: integer("coupon_discount_rsd").notNull().default(0),
+  /** Immutable B2C aftercare allocation evidence. */
+  personalizedTreatmentBundleDiscountRsd: integer("personalized_treatment_bundle_discount_rsd").notNull().default(0),
+  postTreatmentRecommendationDiscountRsd: integer("post_treatment_recommendation_discount_rsd").notNull().default(0),
+  aftercareRecommendationId: uuid("aftercare_recommendation_id"),
   automaticPromotionDiscountRsd: integer("automatic_promotion_discount_rsd").notNull().default(0),
   thresholdRewardDiscountRsd: integer("threshold_reward_discount_rsd").notNull().default(0),
   isRewardGift: boolean("is_reward_gift").notNull().default(false),
@@ -772,6 +805,11 @@ export const retailOrderItemsTable = pgTable("retail_order_items", {
     AND ${table.referralDiscountRsd} >= 0
     AND ${table.realizedRevenueRsd} >= 0
     AND ${table.referralDiscountRsd} <= ${table.lineTotal}
+  `),
+  check("retail_order_items_aftercare_discount_check", sql`
+    ${table.personalizedTreatmentBundleDiscountRsd} >= 0
+    AND ${table.postTreatmentRecommendationDiscountRsd} >= 0
+    AND ${table.personalizedTreatmentBundleDiscountRsd} + ${table.postTreatmentRecommendationDiscountRsd} <= ${table.lineSubtotal}
   `),
   check("retail_order_items_reward_gift_check", sql`
     (NOT ${table.isRewardGift}) OR (

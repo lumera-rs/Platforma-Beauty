@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { Loader2, Minus, Plus, ShoppingBag, Trash2, Check, Tag } from "lucide-react";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { Layout } from "@/components/layout";
@@ -183,8 +183,20 @@ function CartLines({
 
 export function RetailCartPage() {
   const { data: cart, isLoading } = useGetRetailCart();
+  const searchString = useSearch();
   const qc = useQueryClient();
   const { toast } = useToast();
+
+  const [aftercareRecommendationId] = useState<string | undefined>(
+    () => new URLSearchParams(searchString).get("aftercareRecommendationId") ?? sessionStorage.getItem("lumera_retail_aftercare") ?? undefined
+  );
+
+  useEffect(() => {
+    if (aftercareRecommendationId) {
+      sessionStorage.setItem("lumera_retail_aftercare", aftercareRecommendationId);
+    }
+  }, [aftercareRecommendationId]);
+
   const cartRef = useRef<RetailCart | undefined>(cart);
   const localMutationCountRef = useRef(0);
   const cartGenerationRef = useRef(0);
@@ -383,7 +395,7 @@ export function RetailCartPage() {
                     <p className="text-sm text-muted-foreground text-center mt-4">Procenjena isporuka: {new Date(cart.estimatedDeliveryDate).toLocaleDateString("sr-RS")}</p>
                   )}
 
-                  <Button asChild size="lg" className="w-full mt-6"><Link href="/korpa/placanje">Nastavi na plaćanje</Link></Button>
+                  <Button asChild size="lg" className="w-full mt-6"><Link href={`/korpa/placanje${aftercareRecommendationId ? `?aftercareRecommendationId=${aftercareRecommendationId}` : ""}`}>Nastavi na plaćanje</Link></Button>
                 </div>
               </div>
             </div>
@@ -396,7 +408,21 @@ export function RetailCartPage() {
 
 export function RetailCheckoutPage() {
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const { toast } = useToast();
+
+  const [aftercareRecommendationId, setAftercareRecommendationId] = useState<string | undefined>(
+    () => new URLSearchParams(searchString).get("aftercareRecommendationId") ?? sessionStorage.getItem("lumera_retail_aftercare") ?? undefined
+  );
+
+  useEffect(() => {
+    if (aftercareRecommendationId) {
+      sessionStorage.setItem("lumera_retail_aftercare", aftercareRecommendationId);
+    } else {
+      sessionStorage.removeItem("lumera_retail_aftercare");
+    }
+  }, [aftercareRecommendationId]);
+
   const [form, setForm] = useState<Pick<RetailCheckoutInput, "firstName" | "lastName" | "email" | "phone" | "street" | "city" | "postalCode" | "note" | "paymentMethod" | "deliveryMethod">>({
     firstName: "",
     lastName: "",
@@ -432,7 +458,8 @@ export function RetailCheckoutPage() {
     deliveryMethod: form.deliveryMethod,
     city: form.city,
     desiredReferralCreditRsd: desiredCredit,
-    couponCode: appliedCoupon
+    couponCode: appliedCoupon,
+    aftercareRecommendationId
   } as const;
   const {
     data: queriedPreview,
@@ -442,7 +469,7 @@ export function RetailCheckoutPage() {
   } = usePreviewRetailCheckout(previewParams, {
     query: {
       enabled: !!cart && cart.items.length > 0,
-      queryKey: ['retailCheckoutPreview', cart?.id, form.deliveryMethod, form.city, desiredCredit, appliedCoupon],
+      queryKey: ['retailCheckoutPreview', cart?.id, form.deliveryMethod, form.city, desiredCredit, appliedCoupon, aftercareRecommendationId],
       retry: false,
     }
   });
@@ -455,7 +482,7 @@ export function RetailCheckoutPage() {
     setQuoteRefreshError(null);
     setCartChangedElsewhere(false);
     setUnavailableItems(null);
-  }, [form.deliveryMethod, form.city, desiredCredit, appliedCoupon]);
+  }, [form.deliveryMethod, form.city, desiredCredit, appliedCoupon, aftercareRecommendationId]);
 
   useEffect(() => {
     const { code, message, data } = getApiErrorDetails(previewErrorObj);
@@ -463,6 +490,10 @@ export function RetailCheckoutPage() {
       setUnavailableItems(data.unavailableItems.filter((item): item is UnavailableRetailItem =>
         Boolean(item && typeof item === "object" && "productId" in item && "name" in item)));
       return;
+    }
+    if (previewIsError && code === "AFTERCARE_RECOMMENDATION_UNAVAILABLE") {
+      setAftercareRecommendationId(undefined);
+      toast.error("Preporuka za negu više nije važeća.", { description: message ?? "Cene su vraćene na standardne." });
     }
     if (previewIsError && code?.startsWith("COUPON_")) {
       setCouponError(message ?? "Kupon nije moguće primeniti.");
@@ -592,11 +623,13 @@ export function RetailCheckoutPage() {
         expectedTotal: preview.total,
         desiredReferralCreditRsd: desiredCredit,
         couponCode: appliedCoupon,
+        aftercareRecommendationId,
       } as any
     }, {
       onSuccess: (order) => {
         sessionStorage.setItem("retail-order", JSON.stringify(order));
         sessionStorage.removeItem("lumera_retail_coupon");
+        sessionStorage.removeItem("lumera_retail_aftercare");
         qc.setQueryData(getGetRetailCartQueryKey(), null);
         notifyRetailCartChanged(0);
         setLocation(`/korpa/uspeh?order=${encodeURIComponent(order.orderNumber)}`);

@@ -45,6 +45,14 @@ export interface AdminProductUpdate {
      */
   costPriceRsd?: number | null;
   /**
+     * @minimum 1
+     * @maximum 3650
+     * @nullable
+     */
+  averageDurationDays?: number | null;
+  /** @maxItems 100 */
+  treatmentTaxonomyIds?: string[];
+  /**
      * @minimum 0
      * @maximum 100000000
      * @nullable

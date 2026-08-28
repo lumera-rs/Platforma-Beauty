@@ -16,6 +16,8 @@ import {
   productWaitlistNotificationOutboxTable,
   productWaitlistTable,
   productsTable,
+  productBundlesTable,
+  productBundleComponentsTable,
   reorderActionsTable,
   retailCartItemsTable,
   retailCartsTable,
@@ -28,6 +30,8 @@ import {
   shippingRulesTable,
   suppliersTable,
   usersTable,
+  aftercareRecommendationsTable,
+  aftercareRecommendationLinesTable,
 } from "@workspace/db";
 import app from "../app";
 import {
@@ -39,6 +43,7 @@ import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureBusinessGrowthSchema } from "./business-growth-schema";
 import { runProductWaitlistNotificationWorker } from "./product-waitlist-worker";
 import { ensureShippingConfigSchema } from "./shipping-config";
+import { reconcileAftercareConversions } from "./aftercare-worker";
 
 type RetailCart = {
   id: string;
@@ -68,8 +73,10 @@ const createdOrderIds: string[] = [];
 const createdUserIds: string[] = [];
 const createdAuxiliaryProductIds: string[] = [];
 const createdCouponIds: string[] = [];
+const createdBundleIds: string[] = [];
 let createdCategoryId: string | undefined;
 let createdProductId: string | undefined;
+let createdAftercareProductId: string | undefined;
 let createdSupplierId: string | undefined;
 let createdShippingRuleId: string | undefined;
 let previousShippingRule: typeof shippingRulesTable.$inferSelect | undefined;
@@ -113,6 +120,21 @@ async function createTestUser(role: "CUSTOMER" | "JOBSEEKER" | "ADMIN" = "CUSTOM
   assert.ok(user);
   createdUserIds.push(user.id);
   return { user, cookie: `${sessionCookieName}=${await createSession(user.id)}` };
+}
+
+async function seedAftercareRecommendation(userId: string, overrides: Partial<{
+  status: "PENDING" | "ACTIVE" | "CONVERTED" | "EXPIRED" | "CANCELLED";
+  activatesAt: Date; entitlementExpiresAt: Date; firstSentAt: Date | null; convertedAt: Date | null;
+}> = {}) {
+  const now = new Date();
+  const [recommendation] = await db.insert(aftercareRecommendationsTable).values({
+    customerUserId: userId, settingsVersion: 1, entitlementTokenHash: `test-${randomUUID()}`,
+    status: "ACTIVE", windowStartedAt: now, windowEndsAt: new Date(now.getTime() + 86_400_000),
+    activatesAt: now, entitlementExpiresAt: new Date(now.getTime() + 86_400_000), firstSentAt: now,
+    settingsSnapshot: {}, treatmentSnapshot: [], ...overrides,
+  }).returning();
+  assert.ok(recommendation);
+  return recommendation;
 }
 
 async function addRetailItem(request: ReturnType<typeof retailClient>, productId: string, quantity: number) {
@@ -248,6 +270,27 @@ test.before(async () => {
     active: true,
   }).returning();
   createdProductId = product!.id;
+  const [aftercareProduct] = await db.insert(productsTable).values({
+    supplierId: supplier!.id,
+    categoryId: category!.id,
+    categoryName: category!.name,
+    name: `Aftercare retail proizvod ${suffix}`,
+    description: "Izolovan test proizvod za aftercare checkout.",
+    publicDescription: "Javni opis aftercare proizvoda.",
+    imageUrl: "/aftercare-retail-checkout-test.jpg",
+    price: 2_500,
+    publicPrice: 2_500,
+    publicDiscountPrice: 2_000,
+    costPriceRsd: 900,
+    retailEnabled: true,
+    professionalEnabled: false,
+    stock: 20,
+    sku: `aftercare-retail-checkout-${suffix}`,
+    unit: "kom",
+    weightGrams: 500,
+    active: true,
+  }).returning();
+  createdAftercareProductId = aftercareProduct!.id;
 });
 
 test.after(async () => {
@@ -273,9 +316,14 @@ test.after(async () => {
     await db.delete(retailCartsTable).where(inArray(retailCartsTable.id, createdCartIds));
   }
   if (createdUserIds.length) await db.delete(usersTable).where(inArray(usersTable.id, createdUserIds));
+  if (createdBundleIds.length) {
+    await db.delete(productBundleComponentsTable).where(inArray(productBundleComponentsTable.bundleId, createdBundleIds));
+    await db.delete(productBundlesTable).where(inArray(productBundlesTable.id, createdBundleIds));
+  }
   if (createdAuxiliaryProductIds.length) {
     await db.delete(productsTable).where(inArray(productsTable.id, createdAuxiliaryProductIds));
   }
+  if (createdAftercareProductId) await db.delete(productsTable).where(eq(productsTable.id, createdAftercareProductId));
   if (createdProductId) await db.delete(productsTable).where(eq(productsTable.id, createdProductId));
   if (createdCategoryId) await db.delete(productCategoriesTable).where(eq(productCategoriesTable.id, createdCategoryId));
   if (createdSupplierId) await db.delete(suppliersTable).where(eq(suppliersTable.id, createdSupplierId));
@@ -327,6 +375,401 @@ test("cart summary does not create a cart and returns the count for an existing 
   assert.equal(existingSummary.headers.get("set-cookie"), null);
   assert.deepEqual(await existingSummary.json() as RetailCartSummary, { itemCount: 1 });
 });
+
+test("owned active aftercare recommendation is capped, previewed, and persisted only on B2C item", async () => {
+  assert.ok(createdAftercareProductId);
+  const customer = await createTestUser();
+  const request = retailClient(customer.cookie);
+  assert.equal((await addRetailItem(request, createdAftercareProductId, 1)).status, 201);
+  const now = new Date();
+  const [recommendation] = await db.insert(aftercareRecommendationsTable).values({
+    customerUserId: customer.user.id, settingsVersion: 1, status: "ACTIVE",
+    entitlementTokenHash: `test-${randomUUID()}`, windowStartedAt: now,
+    windowEndsAt: new Date(now.getTime() + 86_400_000), activatesAt: now,
+    entitlementExpiresAt: new Date(now.getTime() + 86_400_000), firstSentAt: now,
+    settingsSnapshot: {}, treatmentSnapshot: [],
+  }).returning();
+  assert.ok(recommendation);
+  await db.insert(aftercareRecommendationLinesTable).values({
+    recommendationId: recommendation.id, kind: "PRODUCT", productId: createdAftercareProductId,
+    treatmentIds: ["00000000-0000-4000-8000-000000000001"], coveredProductIds: [createdAftercareProductId],
+    catalogSnapshot: {}, pricingSnapshot: {}, discountKind: "POST_TREATMENT_RECOMMENDATION_DISCOUNT", discountPercent: 10,
+  });
+  const previewResponse = await request(`/retail/checkout-preview?deliveryMethod=courier&city=Novi%20Sad&aftercareRecommendationId=${recommendation.id}`);
+  assert.equal(previewResponse.status, 200);
+  const preview = await previewResponse.json() as RetailCheckoutPreview & { postTreatmentRecommendationDiscountRsd: number };
+  assert.equal(preview.postTreatmentRecommendationDiscountRsd, 200);
+  const checkout = await request("/retail/checkout", { method: "POST", body: JSON.stringify({
+    idempotencyKey: `aftercare-${randomUUID()}`, firstName: "Aftercare", lastName: "Kupac",
+    email: `aftercare-${randomUUID()}@example.test`, phone: "+381601234567", street: "Test 1",
+    city: "Novi Sad", postalCode: "21000", paymentMethod: "BANK_TRANSFER", deliveryMethod: "courier",
+    aftercareRecommendationId: recommendation.id, expectedSubtotal: preview.cart.subtotal,
+    expectedShippingCost: preview.shipping.shippingCost, expectedTotal: preview.total,
+  }) });
+  assert.equal(checkout.status, 201);
+  const order = await checkout.json() as RetailOrder;
+  createdOrderIds.push(order.id);
+  const [item] = await db.select().from(retailOrderItemsTable).where(eq(retailOrderItemsTable.orderId, order.id));
+  assert.equal(item?.aftercareRecommendationId, recommendation.id);
+  assert.equal(item?.postTreatmentRecommendationDiscountRsd, 200);
+  assert.equal(item?.personalizedTreatmentBundleDiscountRsd, 0);
+  assert.equal(item?.lineCogsRsd, 900);
+  assert.equal(item?.realizedRevenueRsd, item?.lineTotal);
+});
+
+test("premade bundle keeps fixed pricing and caps only explicit post-treatment bundle evidence", async () => {
+  assert.ok(createdAftercareProductId && createdSupplierId);
+  const [component] = await db.insert(productsTable).values({
+    supplierId: createdSupplierId, categoryId: createdCategoryId, categoryName: "Aftercare bundle",
+    name: `Aftercare component ${randomUUID()}`, description: "Bundle component", publicDescription: "Bundle component",
+    imageUrl: "/retail-checkout-test.jpg", price: 1_000, publicPrice: 1_000, costPriceRsd: 300,
+    retailEnabled: true, professionalEnabled: false, stock: 8, sku: `aftercare-component-${randomUUID()}`,
+    unit: "kom", weightGrams: 100, active: true,
+  }).returning();
+  assert.ok(component); createdAuxiliaryProductIds.push(component.id);
+  const [bundle] = await db.insert(productBundlesTable).values({
+    supplierId: createdSupplierId, name: `Aftercare fixed ${randomUUID()}`, market: "B2C", b2cPrice: 1_500,
+  }).returning();
+  assert.ok(bundle); createdBundleIds.push(bundle.id);
+  await db.insert(productBundleComponentsTable).values({
+    bundleId: bundle.id, productId: createdAftercareProductId, quantity: 1, sortOrder: 0,
+  });
+  await db.insert(productBundleComponentsTable).values({
+    bundleId: bundle.id, productId: component.id, quantity: 1, sortOrder: 1,
+  });
+  const customer = await createTestUser();
+  const request = retailClient(customer.cookie);
+  const add = await request("/retail/cart/items", {
+    method: "POST", body: JSON.stringify({ bundleId: bundle.id, quantity: 2 }),
+  });
+  assert.equal(add.status, 201);
+  const recommendation = await seedAftercareRecommendation(customer.user.id);
+  await db.insert(aftercareRecommendationLinesTable).values({
+    recommendationId: recommendation.id, kind: "PREMADE_BUNDLE", bundleId: bundle.id,
+    treatmentIds: ["00000000-0000-4000-8000-000000000003"], coveredProductIds: [createdAftercareProductId],
+    catalogSnapshot: { bundleId: bundle.id, quantity: 1, priceSource: "FIXED_BUNDLE_PRICE" },
+    pricingSnapshot: { fixedUnitPriceRsd: 1_500 }, discountKind: "POST_TREATMENT_RECOMMENDATION_DISCOUNT",
+    discountPercent: 10,
+  });
+  const previewResponse = await request(`/retail/checkout-preview?deliveryMethod=courier&city=Novi%20Sad&aftercareRecommendationId=${recommendation.id}`);
+  assert.equal(previewResponse.status, 200);
+  const preview = await previewResponse.json() as RetailCheckoutPreview & {
+    personalizedTreatmentBundleDiscountRsd: number; postTreatmentRecommendationDiscountRsd: number;
+  };
+  assert.equal(preview.cart.subtotal, 3_000);
+  assert.equal(preview.personalizedTreatmentBundleDiscountRsd, 0);
+  assert.equal(preview.postTreatmentRecommendationDiscountRsd, 150,
+    "only one explicitly covered bundle unit receives aftercare discount");
+  const final = await request("/retail/checkout", { method: "POST", body: JSON.stringify({
+    idempotencyKey: `aftercare-fixed-${randomUUID()}`, firstName: "Bundle", lastName: "Kupac",
+    email: `bundle-${randomUUID()}@example.test`, phone: "+381601234567", street: "Test 1",
+    city: "Novi Sad", postalCode: "21000", paymentMethod: "BANK_TRANSFER", deliveryMethod: "courier",
+    aftercareRecommendationId: recommendation.id, expectedSubtotal: preview.cart.subtotal,
+    expectedShippingCost: preview.shipping.shippingCost, expectedTotal: preview.total,
+  }) });
+  assert.equal(final.status, 201);
+  const order = await final.json() as RetailOrder; createdOrderIds.push(order.id);
+  const [item] = await db.select().from(retailOrderItemsTable).where(eq(retailOrderItemsTable.orderId, order.id));
+  assert.equal(item?.priceSource, "BUNDLE", "persisted BUNDLE source denotes the canonical fixed bundle price");
+  assert.equal(item?.baseUnitPrice, 1_500);
+  assert.equal(item?.effectiveUnitPrice, 1_500);
+  assert.equal(item?.personalizedTreatmentBundleDiscountRsd, 0);
+  assert.equal(item?.postTreatmentRecommendationDiscountRsd, preview.postTreatmentRecommendationDiscountRsd);
+  assert.equal(item?.lineSubtotal, preview.cart.subtotal);
+  assert.equal(item?.lineTotal, preview.cart.subtotal - preview.postTreatmentRecommendationDiscountRsd);
+  assert.equal(item?.referralDiscountRsd, 0,
+    "an uncovered/full-price allocation is not reclassified as aftercare-discounted referral exclusion");
+
+  const sibling = await createTestUser();
+  const siblingRequest = retailClient(sibling.cookie);
+  assert.equal((await siblingRequest("/retail/cart/items", {
+    method: "POST", body: JSON.stringify({ bundleId: bundle.id, quantity: 1 }),
+  })).status, 201);
+  const siblingRecommendation = await seedAftercareRecommendation(sibling.user.id);
+  await db.insert(aftercareRecommendationLinesTable).values({
+    recommendationId: siblingRecommendation.id, kind: "PREMADE_BUNDLE", bundleId: bundle.id,
+    treatmentIds: ["00000000-0000-4000-8000-000000000004"], coveredProductIds: [createdAftercareProductId],
+    catalogSnapshot: { id: bundle.id }, pricingSnapshot: { fixedBundlePriceRsd: 1_500 },
+    discountKind: "FIXED_BUNDLE_PRICE", discountPercent: 0,
+  });
+  const siblingPreview = await siblingRequest(`/retail/checkout-preview?deliveryMethod=courier&city=Novi%20Sad&aftercareRecommendationId=${siblingRecommendation.id}`);
+  assert.equal(siblingPreview.status, 200);
+  const noEvidence = await siblingPreview.json() as { personalizedTreatmentBundleDiscountRsd: number; postTreatmentRecommendationDiscountRsd: number };
+  assert.equal(noEvidence.personalizedTreatmentBundleDiscountRsd, 0);
+  assert.equal(noEvidence.postTreatmentRecommendationDiscountRsd, 0);
+  const siblingFinal = await siblingRequest("/retail/checkout", { method: "POST", body: JSON.stringify({
+    idempotencyKey: `aftercare-fixed-negative-${randomUUID()}`, firstName: "Bundle", lastName: "Bez evidence",
+    email: `bundle-negative-${randomUUID()}@example.test`, phone: "+381601234567", street: "Test 1",
+    city: "Novi Sad", postalCode: "21000", paymentMethod: "BANK_TRANSFER", deliveryMethod: "courier",
+    aftercareRecommendationId: siblingRecommendation.id,
+  }) });
+  assert.equal(siblingFinal.status, 201);
+  const siblingOrder = await siblingFinal.json() as RetailOrder; createdOrderIds.push(siblingOrder.id);
+  const [siblingItem] = await db.select().from(retailOrderItemsTable)
+    .where(eq(retailOrderItemsTable.orderId, siblingOrder.id));
+  assert.equal(siblingItem?.priceSource, "BUNDLE");
+  assert.equal(siblingItem?.personalizedTreatmentBundleDiscountRsd, 0);
+  assert.equal(siblingItem?.postTreatmentRecommendationDiscountRsd, 0);
+  assert.equal(siblingItem?.aftercareRecommendationId, siblingRecommendation.id);
+
+  const uncovered = await createTestUser();
+  const uncoveredRequest = retailClient(uncovered.cookie);
+  assert.equal((await uncoveredRequest("/retail/cart/items", {
+    method: "POST", body: JSON.stringify({ bundleId: bundle.id, quantity: 1 }),
+  })).status, 201);
+  const uncoveredRecommendation = await seedAftercareRecommendation(uncovered.user.id);
+  await db.insert(aftercareRecommendationLinesTable).values({
+    recommendationId: uncoveredRecommendation.id, kind: "PRODUCT", productId: createdAftercareProductId,
+    treatmentIds: ["00000000-0000-4000-8000-000000000005"], coveredProductIds: [createdAftercareProductId],
+    catalogSnapshot: {}, pricingSnapshot: {}, discountKind: "POST_TREATMENT_RECOMMENDATION_DISCOUNT", discountPercent: 10,
+  });
+  const uncoveredPreview = await uncoveredRequest(`/retail/checkout-preview?deliveryMethod=courier&city=Novi%20Sad&aftercareRecommendationId=${uncoveredRecommendation.id}`);
+  assert.equal(uncoveredPreview.status, 409);
+  assert.equal((await uncoveredPreview.json() as ApiError).code, "AFTERCARE_RECOMMENDATION_UNAVAILABLE");
+});
+
+test("aftercare IDs fail closed identically for guest, wrong-owner, expired, converted, unsent and tampered checkout", async () => {
+  assert.ok(createdAftercareProductId);
+  const owner = await createTestUser();
+  const other = await createTestUser();
+  const now = new Date();
+  const cases = [
+    (await seedAftercareRecommendation(owner.user.id)).id,
+    (await seedAftercareRecommendation(other.user.id, {
+      activatesAt: new Date(now.getTime() - 172_800_000), entitlementExpiresAt: new Date(now.getTime() - 86_400_000),
+    })).id,
+    (await seedAftercareRecommendation(other.user.id, { status: "CONVERTED", convertedAt: now })).id,
+    (await seedAftercareRecommendation(other.user.id, { firstSentAt: null })).id,
+    "not-a-recommendation-id",
+  ];
+  for (const id of cases) {
+    const request = retailClient(other.cookie);
+    assert.equal((await addRetailItem(request, createdAftercareProductId, 1)).status, 201);
+    const preview = await request(`/retail/checkout-preview?deliveryMethod=courier&city=Novi%20Sad&aftercareRecommendationId=${id}`);
+    assert.equal(preview.status, 409);
+    assert.equal((await preview.json() as ApiError).code, "AFTERCARE_RECOMMENDATION_UNAVAILABLE");
+    const final = await request("/retail/checkout", { method: "POST", body: JSON.stringify({
+      idempotencyKey: `aftercare-denied-${randomUUID()}`, firstName: "Test", lastName: "Kupac",
+      email: `denied-${randomUUID()}@example.test`, phone: "+381601234567", street: "Test 1",
+      city: "Novi Sad", postalCode: "21000", paymentMethod: "BANK_TRANSFER", deliveryMethod: "courier",
+      aftercareRecommendationId: id,
+    }) });
+    assert.equal(final.status, 409);
+    assert.equal((await final.json() as ApiError).code, "AFTERCARE_RECOMMENDATION_UNAVAILABLE");
+  }
+  const guest = retailClient();
+  assert.equal((await addRetailItem(guest, createdAftercareProductId, 1)).status, 201);
+  const guestPreview = await guest(`/retail/checkout-preview?deliveryMethod=courier&city=Novi%20Sad&aftercareRecommendationId=${cases[0]}`);
+  assert.equal(guestPreview.status, 409);
+  const guestFinal = await guest("/retail/checkout", { method: "POST", body: JSON.stringify({
+    idempotencyKey: `aftercare-guest-${randomUUID()}`, firstName: "Test", lastName: "Gost",
+    email: `guest-${randomUUID()}@example.test`, phone: "+381601234567", street: "Test 1",
+    city: "Novi Sad", postalCode: "21000", paymentMethod: "BANK_TRANSFER", deliveryMethod: "courier",
+    aftercareRecommendationId: cases[0],
+  }) });
+  assert.equal(guestFinal.status, 409);
+  assert.equal((await guestFinal.json() as ApiError).code, "AFTERCARE_RECOMMENDATION_UNAVAILABLE");
+});
+
+test("concurrent authenticated aftercare checkout replay creates one order and one immutable evidence allocation", async () => {
+  assert.ok(createdAftercareProductId);
+  const customer = await createTestUser();
+  const request = retailClient(customer.cookie);
+  assert.equal((await addRetailItem(request, createdAftercareProductId, 1)).status, 201);
+  const recommendation = await seedAftercareRecommendation(customer.user.id);
+  await db.insert(aftercareRecommendationLinesTable).values({
+    recommendationId: recommendation.id, kind: "PRODUCT", productId: createdAftercareProductId,
+    treatmentIds: ["00000000-0000-4000-8000-000000000002"], coveredProductIds: [createdAftercareProductId],
+    catalogSnapshot: {}, pricingSnapshot: {}, discountKind: "POST_TREATMENT_RECOMMENDATION_DISCOUNT", discountPercent: 10,
+  });
+  const key = `aftercare-concurrent-${randomUUID()}`;
+  const body = JSON.stringify({
+    idempotencyKey: key, firstName: "Concurrent", lastName: "Kupac",
+    email: `concurrent-${randomUUID()}@example.test`, phone: "+381601234567", street: "Test 1",
+    city: "Novi Sad", postalCode: "21000", paymentMethod: "BANK_TRANSFER", deliveryMethod: "courier",
+    aftercareRecommendationId: recommendation.id,
+  });
+  const responses = await Promise.all([
+    request("/retail/checkout", { method: "POST", body }),
+    request("/retail/checkout", { method: "POST", body }),
+  ]);
+  assert.ok(responses.every((response) => response.status === 200 || response.status === 201 || response.status === 409));
+  assert.equal(responses.filter((response) => response.status === 201).length, 1);
+  const orders = await db.select().from(retailOrdersTable).where(eq(retailOrdersTable.idempotencyKey, key));
+  assert.equal(orders.length, 1);
+  createdOrderIds.push(orders[0]!.id);
+  const evidence = await db.select().from(retailOrderItemsTable).where(eq(retailOrderItemsTable.orderId, orders[0]!.id));
+  assert.equal(evidence.length, 1);
+  assert.equal(evidence[0]!.aftercareRecommendationId, recommendation.id);
+  assert.equal(evidence[0]!.postTreatmentRecommendationDiscountRsd, 200);
+});
+
+const assertCheckoutAftercareEvidenceReconciliation = async () => {
+  const marker = `aftercare-reconciliation-${randomUUID()}`;
+  const orderIds: string[] = [];
+  const cartIds: string[] = [];
+  let userId: string | undefined;
+  let recommendationId: string | undefined;
+  let productId: string | undefined;
+  let categoryId: string | undefined;
+  let supplierId: string | undefined;
+  try {
+    const [supplier] = await db.insert(suppliersTable).values({
+      name: `Aftercare reconciliation ${marker}`, slug: marker, scope: "B2C", active: true,
+    }).returning();
+    supplierId = supplier!.id;
+    const [category] = await db.insert(productCategoriesTable).values({
+      supplierId: supplierId!, name: `Aftercare reconciliation ${marker}`, slug: `${marker}-category`, active: true,
+    }).returning();
+    categoryId = category!.id;
+    const [product] = await db.insert(productsTable).values({
+      supplierId: supplierId!, categoryId: categoryId!, categoryName: category!.name, name: `Aftercare reconciliation ${marker}`,
+      description: "Isolated aftercare reconciliation product.", publicDescription: "Isolated product.",
+      imageUrl: "/aftercare-reconciliation.jpg", price: 2_500, publicPrice: 2_500, publicDiscountPrice: 2_000,
+      costPriceRsd: 900, retailEnabled: true, professionalEnabled: false, stock: 10,
+      sku: marker, unit: "kom", weightGrams: 500, active: true,
+    }).returning();
+    productId = product!.id;
+    const [customerUser] = await db.insert(usersTable).values({
+      firstName: "Aftercare", lastName: marker, email: `${marker}@example.test`,
+      passwordHash: await hashPassword(marker), passwordSetAt: new Date(), role: "CUSTOMER",
+    }).returning();
+    assert.ok(customerUser);
+    userId = customerUser.id;
+    const customer = {
+      user: customerUser,
+      cookie: `${sessionCookieName}=${await createSession(customerUser.id)}`,
+    };
+    const recommendation = await seedAftercareRecommendation(userId!);
+    recommendationId = recommendation.id;
+    await db.insert(aftercareRecommendationLinesTable).values({
+      recommendationId: recommendationId!, kind: "PRODUCT", productId: productId!,
+      treatmentIds: ["00000000-0000-4000-8000-000000000005"], coveredProductIds: [productId!],
+      catalogSnapshot: {}, pricingSnapshot: {}, discountKind: "POST_TREATMENT_RECOMMENDATION_DISCOUNT", discountPercent: 10,
+    });
+    const checkout = async (suffix: string) => {
+      const request = retailClient(customer.cookie);
+      const cartResponse = await request("/retail/cart");
+      assert.equal(cartResponse.status, 200);
+      cartIds.push((await cartResponse.json() as RetailCart).id);
+      assert.equal((await request("/retail/cart/items", {
+        method: "POST", body: JSON.stringify({ productId, quantity: 1 }),
+      })).status, 201);
+      const previewResponse = await request(
+        `/retail/checkout-preview?deliveryMethod=courier&city=Novi%20Sad&aftercareRecommendationId=${recommendationId}`,
+      );
+      assert.equal(previewResponse.status, 200);
+      const preview = await previewResponse.json() as RetailCheckoutPreview;
+      const response = await request("/retail/checkout", { method: "POST", body: JSON.stringify({
+        idempotencyKey: `${marker}-${suffix}`, firstName: "Evidence", lastName: "Kupac",
+        email: `${marker}-${suffix}@example.test`, phone: "+381601234567", street: "Test 1",
+        city: "Novi Sad", postalCode: "21000", paymentMethod: "BANK_TRANSFER", deliveryMethod: "courier",
+        aftercareRecommendationId: recommendationId!, expectedSubtotal: preview.cart.subtotal,
+        expectedShippingCost: preview.shipping.shippingCost, expectedTotal: preview.total,
+      }) });
+      assert.equal(response.status, 201);
+      const order = await response.json() as RetailOrder;
+      orderIds.push(order.id);
+      await db.update(retailOrdersTable).set({ status: "delivered", paymentStatus: "paid" })
+        .where(eq(retailOrdersTable.id, order.id));
+      const [item] = await db.select().from(retailOrderItemsTable)
+        .where(eq(retailOrderItemsTable.orderId, order.id));
+      assert.ok(item?.aftercareRecommendationId === recommendationId);
+      assert.ok((item?.postTreatmentRecommendationDiscountRsd ?? 0) > 0);
+      assert.ok((item?.lineCogsRsd ?? 0) > 0);
+      assert.ok((item?.realizedRevenueRsd ?? 0) > 0);
+      return { order, item: item! };
+    };
+
+    const first = await checkout("first");
+  const firstEvidence = {
+    aftercareRecommendationId: first.item.aftercareRecommendationId,
+    postTreatmentRecommendationDiscountRsd: first.item.postTreatmentRecommendationDiscountRsd,
+    personalizedTreatmentBundleDiscountRsd: first.item.personalizedTreatmentBundleDiscountRsd,
+    lineCogsRsd: first.item.lineCogsRsd,
+    realizedRevenueRsd: first.item.realizedRevenueRsd,
+  };
+    await reconcileAftercareConversions();
+  let [attributed] = await db.select().from(aftercareRecommendationsTable)
+    .where(eq(aftercareRecommendationsTable.id, recommendationId));
+  let [line] = await db.select().from(aftercareRecommendationLinesTable)
+    .where(eq(aftercareRecommendationLinesTable.recommendationId, recommendationId));
+  assert.equal(attributed?.convertedOrderId, first.order.id);
+  assert.equal(line?.purchasedOrderId, first.order.id);
+
+    await db.update(retailOrdersTable).set({ status: "cancelled", paymentStatus: "refunded" })
+    .where(eq(retailOrdersTable.id, first.order.id));
+    await reconcileAftercareConversions();
+  [attributed] = await db.select().from(aftercareRecommendationsTable)
+    .where(eq(aftercareRecommendationsTable.id, recommendationId));
+  [line] = await db.select().from(aftercareRecommendationLinesTable)
+    .where(eq(aftercareRecommendationLinesTable.recommendationId, recommendationId));
+  assert.equal(attributed?.convertedOrderId, null);
+  assert.equal(line?.purchasedOrderId, null);
+  const [firstAfterRefund] = await db.select().from(retailOrderItemsTable)
+    .where(eq(retailOrderItemsTable.id, first.item.id));
+  assert.deepEqual({
+    aftercareRecommendationId: firstAfterRefund?.aftercareRecommendationId,
+    postTreatmentRecommendationDiscountRsd: firstAfterRefund?.postTreatmentRecommendationDiscountRsd,
+    personalizedTreatmentBundleDiscountRsd: firstAfterRefund?.personalizedTreatmentBundleDiscountRsd,
+    lineCogsRsd: firstAfterRefund?.lineCogsRsd,
+    realizedRevenueRsd: firstAfterRefund?.realizedRevenueRsd,
+  }, firstEvidence);
+
+    const second = await checkout("second");
+  await db.update(retailOrdersTable).set({ createdAt: new Date(Date.now() + 1_000) })
+    .where(eq(retailOrdersTable.id, second.order.id));
+  const secondEvidence = {
+    aftercareRecommendationId: second.item.aftercareRecommendationId,
+    postTreatmentRecommendationDiscountRsd: second.item.postTreatmentRecommendationDiscountRsd,
+    personalizedTreatmentBundleDiscountRsd: second.item.personalizedTreatmentBundleDiscountRsd,
+    lineCogsRsd: second.item.lineCogsRsd,
+    realizedRevenueRsd: second.item.realizedRevenueRsd,
+  };
+    await reconcileAftercareConversions();
+  [attributed] = await db.select().from(aftercareRecommendationsTable)
+    .where(eq(aftercareRecommendationsTable.id, recommendationId));
+  [line] = await db.select().from(aftercareRecommendationLinesTable)
+    .where(eq(aftercareRecommendationLinesTable.recommendationId, recommendationId));
+  assert.equal(attributed?.convertedOrderId, second.order.id);
+  assert.equal(line?.purchasedOrderId, second.order.id);
+  const evidenceRows = await db.select().from(retailOrderItemsTable)
+    .where(inArray(retailOrderItemsTable.id, [first.item.id, second.item.id]));
+  assert.equal(evidenceRows.length, 2);
+  assert.deepEqual(evidenceRows.find((item) => item.id === first.item.id) && {
+    aftercareRecommendationId: evidenceRows.find((item) => item.id === first.item.id)!.aftercareRecommendationId,
+    postTreatmentRecommendationDiscountRsd: evidenceRows.find((item) => item.id === first.item.id)!.postTreatmentRecommendationDiscountRsd,
+    personalizedTreatmentBundleDiscountRsd: evidenceRows.find((item) => item.id === first.item.id)!.personalizedTreatmentBundleDiscountRsd,
+    lineCogsRsd: evidenceRows.find((item) => item.id === first.item.id)!.lineCogsRsd,
+    realizedRevenueRsd: evidenceRows.find((item) => item.id === first.item.id)!.realizedRevenueRsd,
+  }, firstEvidence);
+    assert.deepEqual(evidenceRows.find((item) => item.id === second.item.id) && {
+    aftercareRecommendationId: evidenceRows.find((item) => item.id === second.item.id)!.aftercareRecommendationId,
+    postTreatmentRecommendationDiscountRsd: evidenceRows.find((item) => item.id === second.item.id)!.postTreatmentRecommendationDiscountRsd,
+    personalizedTreatmentBundleDiscountRsd: evidenceRows.find((item) => item.id === second.item.id)!.personalizedTreatmentBundleDiscountRsd,
+    lineCogsRsd: evidenceRows.find((item) => item.id === second.item.id)!.lineCogsRsd,
+    realizedRevenueRsd: evidenceRows.find((item) => item.id === second.item.id)!.realizedRevenueRsd,
+    }, secondEvidence);
+  } finally {
+    if (orderIds.length) {
+      await db.delete(retailOrderItemsTable).where(inArray(retailOrderItemsTable.orderId, orderIds));
+      await db.delete(retailOrdersTable).where(inArray(retailOrdersTable.id, orderIds));
+    }
+    if (cartIds.length) {
+      await db.delete(retailCartItemsTable).where(inArray(retailCartItemsTable.cartId, cartIds));
+      await db.delete(savedRetailCartItemsTable).where(inArray(savedRetailCartItemsTable.cartId, cartIds));
+      await db.delete(retailCartsTable).where(inArray(retailCartsTable.id, cartIds));
+    }
+    if (recommendationId) await db.delete(aftercareRecommendationLinesTable)
+      .where(eq(aftercareRecommendationLinesTable.recommendationId, recommendationId));
+    if (recommendationId) await db.delete(aftercareRecommendationsTable)
+      .where(eq(aftercareRecommendationsTable.id, recommendationId));
+    if (userId) await db.delete(usersTable).where(eq(usersTable.id, userId));
+    if (productId) await db.delete(productsTable).where(eq(productsTable.id, productId));
+    if (categoryId) await db.delete(productCategoriesTable).where(eq(productCategoriesTable.id, categoryId));
+    if (supplierId) await db.delete(suppliersTable).where(eq(suppliersTable.id, supplierId));
+  }
+};
 
 test("an excluded B2C free-shipping coupon cannot waive checkout delivery", async () => {
   assert.ok(createdProductId);
@@ -1367,3 +1810,6 @@ test("retail tracking is minimized, expires, rotates by exact lookup, and is rat
   assert.equal(failures.at(-1)?.status, 429);
   assert.deepEqual(await failures[0]!.json(), await failures.at(-1)!.json());
 });
+
+test("checkout aftercare evidence remains immutable while reconciliation clears and supersedes attribution",
+  assertCheckoutAftercareEvidenceReconciliation);

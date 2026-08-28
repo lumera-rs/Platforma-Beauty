@@ -3732,6 +3732,82 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminProduct"
+  /admin/aftercare/treatments:
+    get:
+      operationId: adminListAftercareTreatments
+      tags: [admin]
+      summary: List active normalized aftercare treatment taxonomy
+      parameters:
+        - { name: search, in: query, schema: { type: string, maxLength: 120 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        "200":
+          description: Active treatment taxonomy terms
+          content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AftercareTreatmentTaxonomy" } } } }
+        "401": { description: Authentication required }
+        "403": { description: Administrator access required }
+  /admin/aftercare/settings:
+    get:
+      operationId: adminGetAftercareSettings
+      tags: [admin]
+      summary: Get current versioned aftercare settings
+      responses:
+        "200": { description: Current aftercare settings, content: { application/json: { schema: { $ref: "#/components/schemas/AftercareSettings" } } } }
+    put:
+      operationId: adminUpdateAftercareSettings
+      tags: [admin]
+      summary: Version and replace aftercare settings
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AftercareSettingsUpdate" } } }
+      responses:
+        "200": { description: Current aftercare settings, content: { application/json: { schema: { $ref: "#/components/schemas/AftercareSettings" } } } }
+        "409": { description: Stale settings version }
+  /admin/aftercare/statistics:
+    get:
+      operationId: adminGetAftercareStatistics
+      tags: [admin]
+      summary: Aggregate B2C aftercare delivery and conversion statistics
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' } }
+        - { name: to, in: query, required: true, schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' } }
+        - { name: treatmentId, in: query, schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }
+        - { name: productId, in: query, schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }
+        - { name: bundleId, in: query, schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }
+        - { name: kind, in: query, schema: { type: string, enum: [PRODUCT, PREMADE_BUNDLE, PERSONALIZED_BUNDLE] } }
+      responses:
+        "200": { description: B2C aftercare statistics, content: { application/json: { schema: { $ref: "#/components/schemas/AftercareStatistics" } } } }
+        "400": { description: Invalid date range or filter }
+        "403": { description: Administrator access required }
+  /customer/aftercare/recommendations:
+    get:
+      operationId: customerListAftercareRecommendations
+      tags: [customer]
+      summary: List the signed-in customer's aftercare recommendations
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
+      responses:
+        "200": { description: Recommendations, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/CustomerAftercareRecommendation" } } } } }
+  /customer/aftercare/recommendations/{recommendationId}:
+    get:
+      operationId: customerGetAftercareRecommendation
+      tags: [customer]
+      summary: Get one signed-in customer's aftercare recommendation
+      parameters:
+        - { name: recommendationId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Recommendation, content: { application/json: { schema: { $ref: "#/components/schemas/CustomerAftercareRecommendation" } } } }
+        "404": { description: Recommendation not found }
+  /customer/aftercare/recommendations/{recommendationId}/read:
+    post:
+      operationId: customerReadAftercareRecommendation
+      tags: [customer]
+      summary: Mark one signed-in customer's recommendation read
+      parameters:
+        - { name: recommendationId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Recommendation, content: { application/json: { schema: { $ref: "#/components/schemas/CustomerAftercareRecommendation" } } } }
+        "404": { description: Recommendation not found }
   /admin/bundles:
     get:
       operationId: adminListBundles
@@ -3742,7 +3818,7 @@ paths:
           description: Bundles including administrative market prices and derived stock
           content:
             application/json:
-              schema: { type: array, items: { $ref: "#/components/schemas/Bundle" } }
+                schema: { type: array, items: { $ref: "#/components/schemas/AdminBundle" } }
     post:
       operationId: adminCreateBundle
       tags: [admin]
@@ -3751,9 +3827,9 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/BundleInput" }
+            schema: { $ref: "#/components/schemas/AdminBundleInput" }
       responses:
-        "201": { description: Created bundle, content: { application/json: { schema: { $ref: "#/components/schemas/Bundle" } } } }
+        "201": { description: Created bundle, content: { application/json: { schema: { $ref: "#/components/schemas/AdminBundle" } } } }
         "400": { description: Invalid prices or components }
         "409": { description: "Supplier, channel, or component isolation conflict" }
   /admin/bundles/{bundleId}:
@@ -3770,9 +3846,9 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/BundleInput" }
+            schema: { $ref: "#/components/schemas/AdminBundleInput" }
       responses:
-        "200": { description: Updated bundle, content: { application/json: { schema: { $ref: "#/components/schemas/Bundle" } } } }
+        "200": { description: Updated bundle, content: { application/json: { schema: { $ref: "#/components/schemas/AdminBundle" } } } }
         "404": { description: Bundle not found }
         "409": { description: Supplier or component isolation conflict }
   /admin/bundles/{bundleId}/deactivate:
@@ -3786,7 +3862,7 @@ paths:
           required: true
           schema: { type: string }
       responses:
-        "200": { description: Deactivated bundle, content: { application/json: { schema: { $ref: "#/components/schemas/Bundle" } } } }
+        "200": { description: Deactivated bundle, content: { application/json: { schema: { $ref: "#/components/schemas/AdminBundle" } } } }
         "404": { description: Bundle not found }
   /admin/products/bulk:
     post:
@@ -3807,6 +3883,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/AdminBulkResult"
   /admin/products/{productId}:
+    get:
+      operationId: adminGetProduct
+      tags: [admin]
+      summary: Get an administrative product
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+      responses:
+        "200": { description: Product, content: { application/json: { schema: { $ref: "#/components/schemas/AdminProduct" } } } }
+        "404": { description: Product not found }
     patch:
       operationId: adminUpdateProduct
       tags: [admin]
@@ -5822,6 +5910,7 @@ paths:
         - { name: city, in: query, schema: { type: string } }
         - { name: desiredReferralCreditRsd, in: query, schema: { type: integer, minimum: 0 } }
         - { name: couponCode, in: query, schema: { type: string, maxLength: 40 } }
+        - { name: aftercareRecommendationId, in: query, description: "Authenticated customer's opaque aftercare recommendation id.", schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }
       responses:
         "200":
           description: Checkout pricing preview
@@ -8935,6 +9024,8 @@ components:
         payableTotalRsd: { type: integer, minimum: 0 }
         coupon: { oneOf: [{ $ref: "#/components/schemas/CouponApplication" }, { type: "null" }] }
         couponDiscountRsd: { type: integer, minimum: 0 }
+        personalizedTreatmentBundleDiscountRsd: { type: integer, minimum: 0 }
+        postTreatmentRecommendationDiscountRsd: { type: integer, minimum: 0 }
         automaticPromotionDiscountRsd: { type: integer, minimum: 0 }
         thresholdRewardDiscountRsd: { type: integer, minimum: 0 }
         thresholdQualificationSubtotalRsd: { type: integer, minimum: 0 }
@@ -8945,7 +9036,7 @@ components:
         paymentMethods:
           type: array
           items: { type: string, enum: [BANK_TRANSFER, CASH_ON_DELIVERY] }
-      required: [cart, shipping, total, paymentMethods, referralCreditAvailableRsd, referralCreditAppliedRsd, merchandiseSubtotalRsd, shippingRsd, payableTotalRsd, coupon, couponDiscountRsd, automaticPromotionDiscountRsd, thresholdRewardDiscountRsd, thresholdQualificationSubtotalRsd, thresholdFreeShipping, thresholdReached, thresholdNext, rewardGifts]
+      required: [cart, shipping, total, paymentMethods, referralCreditAvailableRsd, referralCreditAppliedRsd, merchandiseSubtotalRsd, shippingRsd, payableTotalRsd, coupon, couponDiscountRsd, personalizedTreatmentBundleDiscountRsd, postTreatmentRecommendationDiscountRsd, automaticPromotionDiscountRsd, thresholdRewardDiscountRsd, thresholdQualificationSubtotalRsd, thresholdFreeShipping, thresholdReached, thresholdNext, rewardGifts]
     RetailOrder:
       type: object
       properties:
@@ -9157,6 +9248,7 @@ components:
       required: [items, total, page, pageSize, totalPages]
     BundleComponentInput:
       type: object
+      additionalProperties: false
       properties:
         productId: { type: string }
         quantity: { type: integer, minimum: 1 }
@@ -9174,6 +9266,21 @@ components:
         b2cPrice: { type: ["integer", "null"], minimum: 1 }
         components: { type: array, minItems: 2, items: { $ref: "#/components/schemas/BundleComponentInput" } }
         active: { type: boolean }
+      required: [supplierId, name, market, b2bPrice, b2cPrice]
+    AdminBundleInput:
+      type: object
+      additionalProperties: false
+      properties:
+        supplierId: { type: string }
+        name: { type: string, minLength: 1, maxLength: 250 }
+        description: { type: ["string", "null"], maxLength: 10000 }
+        imageUrl: { type: ["string", "null"] }
+        market: { type: string, enum: [B2B, B2C, BOTH] }
+        b2bPrice: { type: ["integer", "null"], minimum: 1 }
+        b2cPrice: { type: ["integer", "null"], minimum: 1 }
+        components: { type: array, minItems: 2, items: { $ref: "#/components/schemas/BundleComponentInput" } }
+        active: { type: boolean }
+        aftercareTreatmentTaxonomyId: { type: ["string", "null"] }
       required: [supplierId, name, market, b2bPrice, b2cPrice]
     BundleComponentCard:
       type: object
@@ -9202,6 +9309,156 @@ components:
         derivedStock: { type: integer, minimum: 0 }
         components: { type: array, items: { $ref: "#/components/schemas/BundleComponentCard" } }
       required: [id, supplierId, name, description, imageUrl, market, b2bPrice, b2cPrice, active, createdAt, updatedAt, derivedStock, components]
+    AdminBundle:
+      type: object
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        supplierId: { type: string }
+        name: { type: string }
+        description: { type: ["string", "null"] }
+        imageUrl: { type: ["string", "null"] }
+        market: { type: string, enum: [B2B, B2C, BOTH] }
+        b2bPrice: { type: ["integer", "null"] }
+        b2cPrice: { type: ["integer", "null"] }
+        aftercareTreatmentTaxonomyId: { type: ["string", "null"] }
+        active: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        derivedStock: { type: integer, minimum: 0 }
+        components: { type: array, items: { $ref: "#/components/schemas/BundleComponentCard" } }
+      required: [id, supplierId, name, description, imageUrl, market, b2bPrice, b2cPrice, aftercareTreatmentTaxonomyId, active, createdAt, updatedAt, derivedStock, components]
+    AftercareTreatmentTaxonomy:
+      type: object
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        taxonomyKey: { type: string }
+        categoryName: { type: string }
+        treatmentName: { type: string }
+        searchTerms: { type: array, items: { type: string } }
+      required: [id, taxonomyKey, categoryName, treatmentName, searchTerms]
+    AftercareSettings:
+      type: object
+      additionalProperties: false
+      properties:
+        version: { type: integer, minimum: 1 }
+        firstTiming: { type: string, enum: [IMMEDIATE_AFTER_COMPLETION, NEXT_DAY] }
+        cooldownDays: { type: integer, minimum: 1, maximum: 3650 }
+        secondReminderDelayDays: { type: integer, minimum: 1, maximum: 3650 }
+        postTreatmentDiscountEnabled: { type: boolean }
+        postTreatmentDiscountPercent: { type: integer, minimum: 0, maximum: 100 }
+        postTreatmentDiscountValidityDays: { type: integer, minimum: 1, maximum: 3650 }
+        personalizedBundleDiscountPercent: { type: integer, minimum: 1, maximum: 100 }
+        combinationWindowDays: { type: integer, minimum: 1, maximum: 3650 }
+      required: [version, firstTiming, cooldownDays, secondReminderDelayDays, postTreatmentDiscountEnabled, postTreatmentDiscountPercent, postTreatmentDiscountValidityDays, personalizedBundleDiscountPercent, combinationWindowDays]
+    AftercareSettingsUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        firstTiming: { type: string, enum: [IMMEDIATE_AFTER_COMPLETION, NEXT_DAY] }
+        cooldownDays: { type: integer, minimum: 1, maximum: 3650 }
+        secondReminderDelayDays: { type: integer, minimum: 1, maximum: 3650 }
+        postTreatmentDiscountEnabled: { type: boolean }
+        postTreatmentDiscountPercent: { type: integer, minimum: 0, maximum: 100 }
+        postTreatmentDiscountValidityDays: { type: integer, minimum: 1, maximum: 3650 }
+        personalizedBundleDiscountPercent: { type: integer, minimum: 1, maximum: 100 }
+        combinationWindowDays: { type: integer, minimum: 1, maximum: 3650 }
+      required: [expectedVersion, firstTiming, cooldownDays, secondReminderDelayDays, postTreatmentDiscountEnabled, postTreatmentDiscountPercent, postTreatmentDiscountValidityDays, personalizedBundleDiscountPercent, combinationWindowDays]
+    CustomerAftercareItemCard:
+      type: object
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        name: { type: string }
+        imageUrl: { type: ["string", "null"] }
+        actionPath: { type: string }
+      required: [id, name, imageUrl, actionPath]
+    CustomerAftercareRecommendationLine:
+      type: object
+      additionalProperties: false
+      properties:
+        kind: { type: string, enum: [PRODUCT, PREMADE_BUNDLE, PERSONALIZED_BUNDLE] }
+        item: { type: ["object", "null"], additionalProperties: false, properties: { id: { type: string }, name: { type: string }, imageUrl: { type: ["string", "null"] }, actionPath: { type: string } }, required: [id, name, imageUrl, actionPath] }
+        coveredProducts: { type: array, items: { $ref: "#/components/schemas/CustomerAftercareItemCard" } }
+        discountPercent: { type: integer, minimum: 0, maximum: 100 }
+        validUntil: { type: ["string", "null"], format: date-time }
+      required: [kind, item, coveredProducts, discountPercent, validUntil]
+    CustomerAftercareRecommendation:
+      type: object
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [PENDING, ACTIVE, CONVERTED, EXPIRED, CANCELLED] }
+        createdAt: { type: string, format: date-time }
+        firstSentAt: { type: ["string", "null"], format: date-time }
+        secondSentAt: { type: ["string", "null"], format: date-time }
+        readAt: { type: ["string", "null"], format: date-time }
+        expiresAt: { type: string, format: date-time }
+        convertedAt: { type: ["string", "null"], format: date-time }
+        treatments: { type: array, items: { type: string } }
+        tips: { type: array, items: { type: string } }
+        lines: { type: array, items: { $ref: "#/components/schemas/CustomerAftercareRecommendationLine" } }
+      required: [id, status, createdAt, firstSentAt, secondSentAt, readAt, expiresAt, convertedAt, treatments, tips, lines]
+    AftercareStatisticsKpis:
+      type: object
+      additionalProperties: false
+      properties:
+        recommendationsCreated: { type: integer, minimum: 0 }
+        firstSent: { type: integer, minimum: 0 }
+        secondSent: { type: integer, minimum: 0 }
+        replenishmentSent: { type: integer, minimum: 0 }
+        convertedRecommendations: { type: integer, minimum: 0 }
+        conversionRevenueRsd: { type: integer, minimum: 0 }
+        conversionRatePercent: { type: number, minimum: 0, maximum: 100 }
+      required: [recommendationsCreated, firstSent, secondSent, replenishmentSent, convertedRecommendations, conversionRevenueRsd, conversionRatePercent]
+    AftercareStatisticsTimePoint:
+      type: object
+      additionalProperties: false
+      properties:
+        date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        recommendationsCreated: { type: integer, minimum: 0 }
+        firstSent: { type: integer, minimum: 0 }
+        secondSent: { type: integer, minimum: 0 }
+        replenishmentSent: { type: integer, minimum: 0 }
+        convertedRecommendations: { type: integer, minimum: 0 }
+        conversionRevenueRsd: { type: integer, minimum: 0 }
+      required: [date, recommendationsCreated, firstSent, secondSent, replenishmentSent, convertedRecommendations, conversionRevenueRsd]
+    AftercareStatisticsTreatment:
+      type: object
+      additionalProperties: false
+      properties:
+        treatmentId: { type: string }
+        taxonomyKey: { type: string }
+        categoryName: { type: string }
+        treatmentName: { type: string }
+        recommendationsCreated: { type: integer, minimum: 0 }
+        sent: { type: integer, minimum: 0 }
+        convertedRecommendations: { type: integer, minimum: 0 }
+        conversionRevenueRsd: { type: integer, minimum: 0 }
+      required: [treatmentId, taxonomyKey, categoryName, treatmentName, recommendationsCreated, sent, convertedRecommendations, conversionRevenueRsd]
+    AftercareStatisticsItem:
+      type: object
+      additionalProperties: false
+      properties:
+        kind: { type: string, enum: [PRODUCT, PREMADE_BUNDLE, PERSONALIZED_BUNDLE] }
+        itemId: { type: ["string", "null"] }
+        itemName: { type: string }
+        recommendationsCreated: { type: integer, minimum: 0 }
+        sent: { type: integer, minimum: 0 }
+        convertedRecommendations: { type: integer, minimum: 0 }
+        conversionRevenueRsd: { type: integer, minimum: 0 }
+      required: [kind, itemId, itemName, recommendationsCreated, sent, convertedRecommendations, conversionRevenueRsd]
+    AftercareStatistics:
+      type: object
+      additionalProperties: false
+      properties:
+        kpis: { $ref: "#/components/schemas/AftercareStatisticsKpis" }
+        timeSeries: { type: array, maxItems: 366, items: { $ref: "#/components/schemas/AftercareStatisticsTimePoint" } }
+        byTreatment: { type: array, maxItems: 200, items: { $ref: "#/components/schemas/AftercareStatisticsTreatment" } }
+        byItem: { type: array, maxItems: 200, items: { $ref: "#/components/schemas/AftercareStatisticsItem" } }
+      required: [kpis, timeSeries, byTreatment, byItem]
     PublicBundle:
       type: object
       description: Customer-safe fixed-price bundle. Wholesale price and all component unit prices are deliberately omitted.
@@ -10850,6 +11107,8 @@ components:
           items: { type: string }
         price: { type: number, multipleOf: 1 }
         costPriceRsd: { type: ["integer", "null"], minimum: 0, maximum: 100000000 }
+        averageDurationDays: { type: ["integer", "null"], minimum: 1, maximum: 3650 }
+        treatmentTaxonomyIds: { type: array, uniqueItems: true, items: { type: string } }
         discountPrice: { type: ["number", "null"], multipleOf: 1 }
         discountPriceEndsAt: { type: ["string", "null"], format: date-time }
         retailEnabled: { type: boolean }
@@ -10903,9 +11162,10 @@ components:
           items: { type: string, minLength: 1, maxLength: 100 }
         active: { type: boolean }
         createdAt: { type: string, format: date-time }
-      required: [id, supplierId, name, categoryName, description, imageUrl, images, price, costPriceRsd, discountPrice, discountPriceEndsAt, retailEnabled, professionalEnabled, publicDiscountPrice, publicDiscountPriceEndsAt, stock, catalogReference, sku, unit, isNew, isBestseller, similarProductsMode, similarProductIds, crossSellProductIds, quantityPricingTiers, minimumOrderQuantity, deliveryBusinessDaysOverride, subscriptionAllowed, subscriptionDiscountPercent, productTypeId, ingredients, usageInstructions, characteristics, searchSynonyms, active, createdAt]
+      required: [id, supplierId, name, categoryName, description, imageUrl, images, price, costPriceRsd, averageDurationDays, treatmentTaxonomyIds, discountPrice, discountPriceEndsAt, retailEnabled, professionalEnabled, publicDiscountPrice, publicDiscountPriceEndsAt, stock, catalogReference, sku, unit, isNew, isBestseller, similarProductsMode, similarProductIds, crossSellProductIds, quantityPricingTiers, minimumOrderQuantity, deliveryBusinessDaysOverride, subscriptionAllowed, subscriptionDiscountPercent, productTypeId, ingredients, usageInstructions, characteristics, searchSynonyms, active, createdAt]
     AdminProductList:
       type: object
+      additionalProperties: false
       properties:
         items:
           type: array
@@ -10933,6 +11193,8 @@ components:
           items: { type: string }
         price: { type: number, minimum: 0, maximum: 100000000, multipleOf: 1 }
         costPriceRsd: { type: ["integer", "null"], minimum: 0, maximum: 100000000 }
+        averageDurationDays: { type: ["integer", "null"], minimum: 1, maximum: 3650 }
+        treatmentTaxonomyIds: { type: array, uniqueItems: true, maxItems: 100, items: { type: string } }
         discountPrice: { type: ["number", "null"], minimum: 0, maximum: 100000000, multipleOf: 1 }
         discountPriceEndsAt: { type: ["string", "null"], format: date-time }
         retailEnabled: { type: boolean }
@@ -10996,6 +11258,8 @@ components:
           items: { type: string }
         price: { type: number, minimum: 0, maximum: 100000000, multipleOf: 1 }
         costPriceRsd: { type: ["integer", "null"], minimum: 0, maximum: 100000000 }
+        averageDurationDays: { type: ["integer", "null"], minimum: 1, maximum: 3650 }
+        treatmentTaxonomyIds: { type: array, uniqueItems: true, maxItems: 100, items: { type: string } }
         discountPrice: { type: ["number", "null"], minimum: 0, maximum: 100000000, multipleOf: 1 }
         discountPriceEndsAt: { type: ["string", "null"], format: date-time }
         retailEnabled: { type: boolean }

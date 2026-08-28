@@ -14,3 +14,4 @@ export * from "./referral";
 export * from "./commerce-ef";
 export * from "./commerce-g";
 export * from "./commerce-deo-g2";
+export * from "./aftercare";

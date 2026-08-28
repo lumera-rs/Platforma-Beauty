@@ -58,8 +58,10 @@ import {
   prepareCommerceQuote,
   quoteResolvedCommerce,
   resolveProductUnitPrice,
+  type B2cAftercareDiscounts,
   type PriceSource,
 } from "../lib/commerce-pricing-engine";
+import { enqueueAftercareCompletion, normalizeTreatmentTaxonomyKey } from "../lib/aftercare-domain";
 import { deoG2ProductPriceFacts, loadDeoG2RuleSnapshot, type DeoG2RuleSnapshot } from "../lib/deo-g2-rule-loader";
 import {
   activeProductSale,
@@ -139,6 +141,12 @@ import
   productBundleComponentsTable,
   productBundlesTable,
   productsTable,
+  productTreatmentMappingsTable,
+  treatmentTaxonomyTable,
+  aftercareSettingsTable,
+  aftercareRecommendationsTable,
+  aftercareRecommendationLinesTable,
+  aftercareRecommendationAppointmentsTable,
    productUpsellLinksTable,
    b2bCartImportsTable,
    productWishlistsTable,
@@ -233,6 +241,13 @@ import
   AdminCreateServiceTemplateResponse,
   AdminCreateLoyaltyTierBody,
   AdminCreateProductBody,
+  AdminListAftercareTreatmentsQueryParams,
+  AdminGetAftercareSettingsResponse,
+  AdminUpdateAftercareSettingsBody,
+  AdminUpdateAftercareSettingsResponse,
+  CustomerGetAftercareRecommendationResponse,
+  AdminGetAftercareStatisticsQueryParams,
+  AdminGetAftercareStatisticsResponse,
   AdminCreateProductCategoryBody,
   AdminCreateSubscriptionPlanBody,
   AdminDeleteBrandParams,
@@ -7408,6 +7423,10 @@ router.patch("/salon/appointments/:appointmentId", async (req, res): Promise<voi
     // (idempotent per appointment/product via the consumption ledger).
     let lowStockWarned = false;
     if (updated.status === "completed" && target.status !== "completed") {
+      await enqueueAftercareCompletion(tx, {
+        appointmentId: updated.id,
+        transitionKey: "appointment-status:completed:v1",
+      });
       const warnings = await consumeInventoryForAppointmentInTx(tx, { id: updated.id, salonId: salon.id, serviceId: updated.serviceId });
       if (updated.customerId) await recordAppointmentReferralTransitionInTx(tx, {
         appointmentId: updated.id, customerId: updated.customerId, salonId: updated.salonId,
@@ -8351,6 +8370,10 @@ router.patch("/employee/appointments/:appointmentId", async (req, res): Promise<
     // Completed treatment → auto-decrement mapped salon inventory (idempotent).
     let lowStockWarned = false;
     if (appointment.status === "completed") {
+      await enqueueAftercareCompletion(tx, {
+        appointmentId: appointment.id,
+        transitionKey: "appointment-status:completed:v1",
+      });
       const warnings = await consumeInventoryForAppointmentInTx(tx, { id: appointment.id, salonId: access.salon.id, serviceId: appointment.serviceId });
       if (appointment.customerId) await recordAppointmentReferralTransitionInTx(tx, {
         appointmentId: appointment.id, customerId: appointment.customerId, salonId: appointment.salonId, occurredAt: new Date(), valid: true,
@@ -9331,7 +9354,7 @@ type BundleComponentInput = { productId: string; quantity: number; sortOrder?: n
 type BundleInput = {
   supplierId: string; name: string; description?: string | null; imageUrl?: string | null;
   market: "B2B" | "B2C" | "BOTH"; b2bPrice?: number | null; b2cPrice?: number | null;
-  components?: BundleComponentInput[]; active?: boolean;
+  components?: BundleComponentInput[]; active?: boolean; aftercareTreatmentTaxonomyId?: string | null;
 };
 
 function bundleInput(body: unknown, creating: boolean): BundleInput | null {
@@ -9369,7 +9392,11 @@ function bundleInput(body: unknown, creating: boolean): BundleInput | null {
     }
   } else if (creating) return null;
   if (value.active !== undefined && typeof value.active !== "boolean") return null;
-  return { supplierId: value.supplierId, name: value.name.trim(), description, imageUrl, market, b2bPrice, b2cPrice, components, active: value.active as boolean | undefined };
+  const aftercareTreatmentTaxonomyId = value.aftercareTreatmentTaxonomyId === undefined ? undefined
+    : value.aftercareTreatmentTaxonomyId === null ? null
+      : typeof value.aftercareTreatmentTaxonomyId === "string" && value.aftercareTreatmentTaxonomyId ? value.aftercareTreatmentTaxonomyId : false;
+  if (aftercareTreatmentTaxonomyId === false) return null;
+  return { supplierId: value.supplierId, name: value.name.trim(), description, imageUrl, market, b2bPrice, b2cPrice, components, active: value.active as boolean | undefined, aftercareTreatmentTaxonomyId };
 }
 
 type BundleComponentCard = { productId: string; name: string; imageUrl: string; catalogReference: string; quantity: number };
@@ -9435,12 +9462,15 @@ function bundleDto(bundle: typeof productBundlesTable.$inferSelect, data: Pick<B
     components: data.components, derivedStock: data.derivedStock === Number.MAX_SAFE_INTEGER ? 0 : data.derivedStock,
   };
 }
+function adminBundleDto(bundle: typeof productBundlesTable.$inferSelect, data: Pick<BundleDetails, "components" | "derivedStock">) {
+  return { ...bundleDto(bundle, data), aftercareTreatmentTaxonomyId: bundle.linkedTreatmentId ?? null };
+}
 
 router.get("/admin/bundles", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
   const rows = await db.select().from(productBundlesTable).orderBy(asc(productBundlesTable.name), asc(productBundlesTable.id));
   const components = await bundleComponents(rows.map((row) => row.id));
-  res.json(rows.map((row) => bundleDto(row, components.get(row.id) ?? { components: [], derivedStock: 0 })));
+  res.json(rows.map((row) => adminBundleDto(row, components.get(row.id) ?? { components: [], derivedStock: 0 })));
 });
 router.post("/admin/bundles", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
@@ -9454,17 +9484,23 @@ router.post("/admin/bundles", async (req, res): Promise<void> => {
       if ((input.market === "B2B" || input.market === "BOTH") && !["B2B", "BOTH"].includes(supplier.scope)) throw new Error("bundle_supplier_scope_conflict");
       if ((input.market === "B2C" || input.market === "BOTH") && !["B2C", "BOTH"].includes(supplier.scope)) throw new Error("bundle_supplier_scope_conflict");
       await validateBundleComponentsInTx(tx, input);
+      if (input.aftercareTreatmentTaxonomyId) {
+        const [term] = await tx.select({ id: treatmentTaxonomyTable.id }).from(treatmentTaxonomyTable).where(and(
+          eq(treatmentTaxonomyTable.id, input.aftercareTreatmentTaxonomyId), eq(treatmentTaxonomyTable.active, true),
+        )).limit(1);
+        if (!term) throw new Error("aftercare_treatment_inactive");
+      }
       const [created] = await tx.insert(productBundlesTable).values({
         supplierId: input.supplierId, name: input.name, description: input.description ?? null, imageUrl: input.imageUrl ?? null,
-        market: input.market, b2bPrice: input.b2bPrice ?? null, b2cPrice: input.b2cPrice ?? null, active: input.active ?? true,
+        market: input.market, b2bPrice: input.b2bPrice ?? null, b2cPrice: input.b2cPrice ?? null, linkedTreatmentId: input.aftercareTreatmentTaxonomyId ?? null, active: input.active ?? true,
       }).returning();
       await tx.insert(productBundleComponentsTable).values(bundleComponentValues(created!.id, input.components!));
       return created!;
     });
     const components = await bundleComponents([bundle.id]);
-    res.status(201).json(bundleDto(bundle, components.get(bundle.id)!));
+    res.status(201).json(adminBundleDto(bundle, components.get(bundle.id)!));
   } catch (error) {
-    if (error instanceof Error && ["bundle_supplier_missing", "bundle_supplier_scope_conflict", "bundle_component_supplier_conflict", "bundle_component_channel_conflict"].includes(error.message)) {
+    if (error instanceof Error && ["bundle_supplier_missing", "bundle_supplier_scope_conflict", "bundle_component_supplier_conflict", "bundle_component_channel_conflict", "aftercare_treatment_inactive"].includes(error.message)) {
       res.status(409).json({ error: "Komponente paketa moraju pripadati istom dobavljaču i biti dostupne na izabranom tržištu." }); return;
     }
     throw error;
@@ -9492,16 +9528,24 @@ router.patch("/admin/bundles/:bundleId", async (req, res): Promise<void> => {
         await tx.delete(productBundleComponentsTable).where(eq(productBundleComponentsTable.bundleId, existing.id));
         await tx.insert(productBundleComponentsTable).values(bundleComponentValues(existing.id, input.components));
       }
+      if (input.aftercareTreatmentTaxonomyId) {
+        const [term] = await tx.select({ id: treatmentTaxonomyTable.id }).from(treatmentTaxonomyTable).where(and(
+          eq(treatmentTaxonomyTable.id, input.aftercareTreatmentTaxonomyId), eq(treatmentTaxonomyTable.active, true),
+        )).limit(1);
+        if (!term) throw new Error("aftercare_treatment_inactive");
+      }
       const [updated] = await tx.update(productBundlesTable).set({
         name: input.name, description: input.description ?? null, imageUrl: input.imageUrl ?? null, market: input.market,
-        b2bPrice: input.b2bPrice ?? null, b2cPrice: input.b2cPrice ?? null, active: input.active ?? existing.active, updatedAt: new Date(),
+        b2bPrice: input.b2bPrice ?? null, b2cPrice: input.b2cPrice ?? null,
+        linkedTreatmentId: input.aftercareTreatmentTaxonomyId !== undefined ? input.aftercareTreatmentTaxonomyId : existing.linkedTreatmentId,
+        active: input.active ?? existing.active, updatedAt: new Date(),
       }).where(eq(productBundlesTable.id, existing.id)).returning();
       return updated!;
     });
     const components = await bundleComponents([bundle.id]);
-    res.json(bundleDto(bundle, components.get(bundle.id)!));
+    res.json(adminBundleDto(bundle, components.get(bundle.id)!));
   } catch (error) {
-    if (error instanceof Error && ["bundle_missing", "bundle_supplier_immutable", "bundle_supplier_scope_conflict", "bundle_component_supplier_conflict", "bundle_component_channel_conflict"].includes(error.message)) {
+    if (error instanceof Error && ["bundle_missing", "bundle_supplier_immutable", "bundle_supplier_scope_conflict", "bundle_component_supplier_conflict", "bundle_component_channel_conflict", "aftercare_treatment_inactive"].includes(error.message)) {
       res.status(error.message === "bundle_missing" ? 404 : 409).json({ error: "Paket ili njegove komponente nisu važeći za dobavljača i tržište." }); return;
     }
     throw error;
@@ -9513,7 +9557,7 @@ router.post("/admin/bundles/:bundleId/deactivate", async (req, res): Promise<voi
     .where(eq(productBundlesTable.id, req.params.bundleId)).returning();
   if (!bundle) { res.status(404).json({ error: "Paket nije pronađen." }); return; }
   const components = await bundleComponents([bundle.id]);
-  res.json(bundleDto(bundle, components.get(bundle.id) ?? { components: [], derivedStock: 0 }));
+  res.json(adminBundleDto(bundle, components.get(bundle.id) ?? { components: [], derivedStock: 0 }));
 });
 
 async function catalogBundles(market: "B2B" | "B2C") {
@@ -9571,6 +9615,7 @@ type RetailCheckoutInput = {
   paymentMethod: "CARD" | "BANK_TRANSFER" | "CASH_ON_DELIVERY"; deliveryMethod: "courier" | "personal_belgrade";
   expectedSubtotal?: number; expectedShippingCost?: number; expectedTotal?: number;
   desiredReferralCreditRsd: number;
+  aftercareRecommendationId?: string;
 };
 function retailCartItemInput(body: unknown): RetailCartItemInput | null {
   const value = body as { productId?: unknown; bundleId?: unknown; variantValue?: unknown; quantity?: unknown };
@@ -9599,13 +9644,80 @@ function retailCheckoutInput(body: unknown): RetailCheckoutInput | null {
     || (paymentMethod !== "CARD" && paymentMethod !== "BANK_TRANSFER" && paymentMethod !== "CASH_ON_DELIVERY")
     || (deliveryMethod !== "courier" && deliveryMethod !== "personal_belgrade")) return null;
   const note = typeof value.note === "string" && value.note.trim().length <= 1000 ? value.note.trim() || undefined : undefined;
+  const aftercareRecommendationId = value.aftercareRecommendationId === undefined ? undefined
+    : (typeof value.aftercareRecommendationId === "string"
+      && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.aftercareRecommendationId)
+      ? value.aftercareRecommendationId : null);
+  if (aftercareRecommendationId === null) return null;
   return {
     idempotencyKey, firstName, lastName, email, phone, street, city, postalCode, note, paymentMethod, deliveryMethod,
     expectedSubtotal: expectedAmount("expectedSubtotal"),
     expectedShippingCost: expectedAmount("expectedShippingCost"),
     expectedTotal: expectedAmount("expectedTotal"),
     desiredReferralCreditRsd: expectedAmount("desiredReferralCreditRsd") ?? 0,
+    aftercareRecommendationId,
   };
+}
+
+/** Maps immutable, server-owned aftercare evidence to the pure pricing engine.
+ * Callers deliberately receive no token/settings input: an opaque recommendation
+ * id is useful only to its authenticated owner. */
+async function lockedAftercareDiscounts(
+  client: any,
+  userId: string | null,
+  recommendationId: string | null | undefined,
+  lock = false,
+): Promise<{ discounts: B2cAftercareDiscounts; recommendationId: string | null;
+  eligibleProductIds: Set<string>; eligibleBundleIds: Set<string> } | null> {
+  if (!recommendationId) return { discounts: {}, recommendationId: null,
+    eligibleProductIds: new Set(), eligibleBundleIds: new Set() };
+  if (!userId) return null;
+  if (lock) await client.execute(sql`select id from aftercare_recommendations where id=${recommendationId} for update`);
+  const [recommendation] = await client.select().from(aftercareRecommendationsTable).where(and(
+    eq(aftercareRecommendationsTable.id, recommendationId),
+    eq(aftercareRecommendationsTable.customerUserId, userId),
+  )).limit(1);
+  const now = new Date();
+  if (!recommendation || recommendation.status !== "ACTIVE" || !recommendation.firstSentAt
+    || recommendation.activatesAt > now || recommendation.entitlementExpiresAt <= now
+    || recommendation.convertedAt || recommendation.convertedOrderId) return null;
+  const lines: Array<typeof aftercareRecommendationLinesTable.$inferSelect> = await client.select()
+    .from(aftercareRecommendationLinesTable)
+    .where(eq(aftercareRecommendationLinesTable.recommendationId, recommendation.id));
+  if (!lines.length) return null;
+  const caps = (ids: readonly string[]) => Object.fromEntries(ids.map((id) => [id, 1]));
+  const personalized = lines.find((line) => line.kind === "PERSONALIZED_BUNDLE"
+    && line.discountKind === "PERSONALIZED_TREATMENT_BUNDLE_DISCOUNT" && line.discountPercent > 0);
+  const postLines = lines.filter((line) => line.discountKind === "POST_TREATMENT_RECOMMENDATION_DISCOUNT"
+    && line.discountPercent > 0);
+  const eligibleProductIds = new Set(lines.filter((line) => line.kind !== "PREMADE_BUNDLE")
+    .flatMap((line) => line.coveredProductIds));
+  const eligibleBundleIds = new Set(lines.filter((line) => line.kind === "PREMADE_BUNDLE" && line.bundleId)
+    .map((line) => line.bundleId!));
+  const personalizedDiscount = personalized ? {
+    identity: `${recommendation.id}:personalized`, active: true, percent: personalized.discountPercent,
+    expiresAt: recommendation.entitlementExpiresAt, coveredProductIds: personalized.coveredProductIds,
+    maximumEligibleQuantityByProductId: caps(personalized.coveredProductIds),
+    requiresCompleteCoveredSet: true,
+  } : null;
+  // Current recommendation creation produces one post-treatment line.  Refuse
+  // malformed mixed-percent evidence rather than selecting an arbitrary rate.
+  const postPercent = postLines[0]?.discountPercent;
+  if (postLines.some((line) => line.discountPercent !== postPercent)) return null;
+  const postProducts = [...new Set(postLines.flatMap((line) => line.kind === "PRODUCT" ? line.coveredProductIds : []))];
+  const postBundles = [...new Set(postLines.filter((line) => line.kind === "PREMADE_BUNDLE" && line.bundleId)
+    .map((line) => line.bundleId!))];
+  const postDiscount = postPercent ? {
+    identity: `${recommendation.id}:post-treatment`, active: true, percent: postPercent,
+    expiresAt: recommendation.entitlementExpiresAt, coveredProductIds: postProducts,
+    coveredBundleIds: postBundles, maximumEligibleQuantityByProductId: caps(postProducts),
+    maximumEligibleQuantityByBundleId: caps(postBundles),
+  } : null;
+  if (!personalizedDiscount && !postDiscount && !eligibleProductIds.size && !eligibleBundleIds.size) return null;
+  return { recommendationId: recommendation.id, discounts: {
+    ...(personalizedDiscount ? { personalizedTreatmentBundle: personalizedDiscount } : {}),
+    ...(postDiscount ? { postTreatmentRecommendation: postDiscount } : {}),
+  }, eligibleProductIds, eligibleBundleIds };
 }
 
 async function retailCartForRequest(req: Request, res: Response) {
@@ -10654,6 +10766,16 @@ router.post("/retail/orders/repeat-last", async (req, res): Promise<void> => {
 router.get("/retail/checkout-preview", async (req, res): Promise<void> => {
   const cart = await retailCartForRequest(req, res);
   const user = await getCurrentUser(req);
+  const aftercareRecommendationId = typeof req.query.aftercareRecommendationId === "string"
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(req.query.aftercareRecommendationId)
+    ? req.query.aftercareRecommendationId : null;
+  if (req.query.aftercareRecommendationId !== undefined && !aftercareRecommendationId) {
+    res.status(409).json({ error: "Preporuka za negu nije dostupna.", code: "AFTERCARE_RECOMMENDATION_UNAVAILABLE" }); return;
+  }
+  const aftercare = await lockedAftercareDiscounts(db, isRetailAccount(user) ? user.id : null, aftercareRecommendationId);
+  if (!aftercare) {
+    res.status(409).json({ error: "Preporuka za negu nije dostupna.", code: "AFTERCARE_RECOMMENDATION_UNAVAILABLE" }); return;
+  }
   const quote = await retailCheckoutCartQuote(cart.id, isRetailAccount(user) ? user.id : null);
   if (!quote.view) {
     res.status(409).json({
@@ -10664,7 +10786,12 @@ router.get("/retail/checkout-preview", async (req, res): Promise<void> => {
     return;
   }
   const view = quote.view;
-  const prepared = await prepareRetailCommerceQuote(db, view.items, quote.rules);
+  if (aftercare.recommendationId && !view.items.some((line) =>
+    line.kind === "product" ? aftercare.eligibleProductIds.has(line.productId)
+      : aftercare.eligibleBundleIds.has(line.bundleId))) {
+    res.status(409).json({ error: "Preporuka za negu nije dostupna.", code: "AFTERCARE_RECOMMENDATION_UNAVAILABLE" }); return;
+  }
+  const prepared = await prepareRetailCommerceQuote(db, view.items, quote.rules, "B2C", aftercare.discounts);
   const couponCode = typeof req.query.couponCode === "string" ? req.query.couponCode : null;
   const appliedCoupon = await quoteCouponFromDb(db, {
     code: couponCode, audience: "B2C",
@@ -10732,6 +10859,8 @@ router.get("/retail/checkout-preview", async (req, res): Promise<void> => {
       freeShipping: appliedCoupon.quote.freeShipping, allocations: appliedCoupon.quote.allocations,
     } : null,
     couponDiscountRsd,
+    personalizedTreatmentBundleDiscountRsd: totals.personalizedTreatmentBundleDiscountRsd,
+    postTreatmentRecommendationDiscountRsd: totals.postTreatmentRecommendationDiscountRsd,
     automaticPromotionDiscountRsd: totals.automaticPromotionDiscountRsd,
     thresholdRewardDiscountRsd: totals.thresholdRewardDiscountRsd,
     thresholdFreeShipping,
@@ -10748,6 +10877,11 @@ router.get("/retail/checkout-preview", async (req, res): Promise<void> => {
 
 router.post("/retail/checkout", async (req, res): Promise<void> => {
   const couponCode = typeof req.body?.couponCode === "string" ? req.body.couponCode.trim().toUpperCase() || null : null;
+  if (req.body?.aftercareRecommendationId !== undefined
+    && (typeof req.body.aftercareRecommendationId !== "string"
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(req.body.aftercareRecommendationId))) {
+    res.status(409).json({ error: "Preporuka za negu nije dostupna.", code: "AFTERCARE_RECOMMENDATION_UNAVAILABLE" }); return;
+  }
   const parsed = retailCheckoutInput(req.body);
   if (!parsed) { res.status(400).json({ error: "Unesite kompletne i ispravne podatke za dostavu." }); return; }
   const cart = await retailCartForRequest(req, res);
@@ -10767,6 +10901,7 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
   let idempotencyConflict = false;
   let quoteConflict = false;
   let couponFailure: string | null = null;
+  let aftercareFailure = false;
   let rewardUnavailable = false;
   let minimumOrderConflict: { name: string; minimumOrderQuantity: number } | null = null;
   const created = await db.transaction(async (tx) => {
@@ -10903,7 +11038,17 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
         unitPrice: line.unitPrice, priceSource: "BUNDLE" as const,
       })),
     ];
-    const prepared = await prepareRetailCommerceQuote(tx, quoteItems, deoRules);
+    // Re-load under the same cart/catalog checkout transaction. Preview is
+    // advisory only; a consumed, revoked or expired recommendation can never
+    // survive to the final quote.
+    const aftercare = await lockedAftercareDiscounts(tx, userId, parsed.aftercareRecommendationId, true);
+    if (!aftercare) { aftercareFailure = true; throw new Error("retail_aftercare_conflict"); }
+    if (aftercare.recommendationId && !quoteItems.some((line) =>
+      line.kind === "product" ? aftercare.eligibleProductIds.has(line.productId)
+        : aftercare.eligibleBundleIds.has(line.bundleId))) {
+      aftercareFailure = true; throw new Error("retail_aftercare_conflict");
+    }
+    const prepared = await prepareRetailCommerceQuote(tx, quoteItems, deoRules, "B2C", aftercare.discounts);
     subtotal = prepared.subtotalRsd;
     const couponResult = await quoteCouponFromDb(tx, {
       code: couponCode, audience: "B2C", lock: true,
@@ -10995,6 +11140,9 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
         thresholdQualificationSubtotalRsd: totals.thresholdQualificationSubtotalRsd,
         automaticPromotionDiscountRsd: totals.automaticPromotionDiscountRsd,
         thresholdRewardDiscountRsd: totals.thresholdRewardDiscountRsd,
+        personalizedTreatmentBundleDiscountRsd: totals.personalizedTreatmentBundleDiscountRsd,
+        postTreatmentRecommendationDiscountRsd: totals.postTreatmentRecommendationDiscountRsd,
+        aftercareRecommendationId: aftercare.recommendationId,
         thresholdFreeShipping: deoRules.thresholdRewards.some((rule) => rule.active
           && rule.kind === "FREE_SHIPPING" && rule.thresholdRsd <= totals.thresholdQualificationSubtotalRsd),
       },
@@ -11042,6 +11190,9 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
          thresholdRewardDiscountRsd: finalizedLine.thresholdRewardAllocationRsd,
          unitCostPriceRsd, lineCogsRsd: unitCostPriceRsd * item.quantity,
          referralDiscountRsd, realizedRevenueRsd: finalizedLine.lineTotalRsd - referralDiscountRsd,
+         personalizedTreatmentBundleDiscountRsd: finalizedLine.personalizedTreatmentBundleDiscountRsd,
+         postTreatmentRecommendationDiscountRsd: finalizedLine.postTreatmentRecommendationDiscountRsd,
+         aftercareRecommendationId: aftercare.eligibleProductIds.has(product.id) ? aftercare.recommendationId : null,
          estimatedDeliveryDate, lineSubtotal: finalizedLine.lineSubtotalRsd, lineTotal: finalizedLine.lineTotalRsd,
       };
       }),
@@ -11067,6 +11218,9 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
            thresholdRewardDiscountRsd: finalizedLine.thresholdRewardAllocationRsd,
            unitCostPriceRsd, lineCogsRsd: unitCostPriceRsd * item.quantity,
            referralDiscountRsd, realizedRevenueRsd: finalizedLine.lineTotalRsd - referralDiscountRsd,
+          personalizedTreatmentBundleDiscountRsd: finalizedLine.personalizedTreatmentBundleDiscountRsd,
+          postTreatmentRecommendationDiscountRsd: finalizedLine.postTreatmentRecommendationDiscountRsd,
+          aftercareRecommendationId: aftercare.eligibleBundleIds.has(bundle.id) ? aftercare.recommendationId : null,
           bundleComponentsSnapshot: components.map(({ component, product }) => ({
             productId: product.id, name: product.name, catalogReference: product.catalogReference, quantity: component.quantity,
           })),
@@ -11085,6 +11239,8 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
            categoryIdSnapshot: gift.product.categoryId, categoryNameSnapshot: gift.product.categoryName, brandSnapshot: gift.product.brand,
           discountSnapshot: null, baseUnitPrice: 0, effectiveUnitPrice: 0, priceSource: "FULL_PRICE" as const,
           lineDiscount: 0, couponDiscountRsd: 0, automaticPromotionDiscountRsd: 0,
+          personalizedTreatmentBundleDiscountRsd: 0, postTreatmentRecommendationDiscountRsd: 0,
+          aftercareRecommendationId: null,
           thresholdRewardDiscountRsd: 0, lineSubtotal: 0, lineTotal: 0, estimatedDeliveryDate,
            unitCostPriceRsd: gift.product.costPriceRsd ?? 0,
            lineCogsRsd: (gift.product.costPriceRsd ?? 0) * gift.quantity,
@@ -11128,10 +11284,14 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
     if (error instanceof Error && error.message === "retail_idempotency_collision") { idempotencyConflict = true; return null; }
     if (error instanceof Error && error.message === "retail_moq_conflict") return null;
     if (error instanceof Error && error.message === "retail_coupon_conflict") return null;
+    if (error instanceof Error && error.message === "retail_aftercare_conflict") return null;
     throw error;
   });
   if (created === "empty") { res.status(400).json({ error: "Korpa je prazna." }); return; }
   if (couponFailure) { couponErrorResponse(res, couponFailure); return; }
+  if (aftercareFailure) {
+    res.status(409).json({ error: "Preporuka za negu nije dostupna.", code: "AFTERCARE_RECOMMENDATION_UNAVAILABLE" }); return;
+  }
   if (idempotencyConflict) { res.status(409).json({ error: "Ovaj ključ potvrde je već iskorišćen za drugu korpu. Osvežite stranicu i pokušajte ponovo." }); return; }
   const checkoutMinimumOrderConflict = minimumOrderConflict as {
     name: string;
@@ -12403,13 +12563,14 @@ async function prepareRetailCommerceQuote(
   }>,
   rules: DeoG2RuleSnapshot,
   market: "B2B" | "B2C" = "B2C",
+  aftercareDiscounts?: B2cAftercareDiscounts,
 ) {
   const couponLines = await couponLinesForView(client, items.map((item) => ({
     ...item, lineTotal: item.unitPrice * item.quantity,
   })));
   const categoriesByLine = new Map(couponLines.map((line) => [line.id, line.categoryIds]));
   return prepareCommerceQuote({
-    market, now: rules.now, automaticPromotions: rules.automaticPromotions,
+    market, now: rules.now, automaticPromotions: rules.automaticPromotions, aftercareDiscounts,
     lines: items.map((item) => {
       if (item.kind === "bundle") {
         return {
@@ -19020,7 +19181,7 @@ router.patch("/admin/service-categories/:categoryId", async (req, res): Promise<
   res.json(AdminUpdateServiceCategoryResponse.parse(adminServiceCategoryDto(category, Number(serviceCount?.count ?? 0))));
 });
 
-function adminProductDto(item: typeof productsTable.$inferSelect) {
+function adminProductDto(item: typeof productsTable.$inferSelect, treatmentTaxonomyIds: string[] = []) {
   const discountPercent = item.discountPrice ? Math.round((1 - item.discountPrice / item.price) * 100) : null;
   return {
     id: item.id,
@@ -19036,6 +19197,8 @@ function adminProductDto(item: typeof productsTable.$inferSelect) {
     images: item.images ?? [],
     price: item.price,
     costPriceRsd: item.costPriceRsd ?? null,
+    averageDurationDays: item.averageDurationDays ?? null,
+    treatmentTaxonomyIds,
     discountPrice: item.discountPrice ?? null,
     discountPriceEndsAt: item.discountPriceEndsAt ?? null,
     retailEnabled: item.retailEnabled,
@@ -19073,6 +19236,16 @@ function adminProductDto(item: typeof productsTable.$inferSelect) {
     active: item.active,
     createdAt: item.createdAt.toISOString(),
   };
+}
+
+async function productTreatmentIds(productIds: string[]) {
+  if (!productIds.length) return new Map<string, string[]>();
+  const rows = await db.select().from(productTreatmentMappingsTable)
+    .where(inArray(productTreatmentMappingsTable.productId, productIds))
+    .orderBy(asc(productTreatmentMappingsTable.productId), asc(productTreatmentMappingsTable.treatmentId));
+  const result = new Map<string, string[]>();
+  for (const row of rows) result.set(row.productId, [...(result.get(row.productId) ?? []), row.treatmentId]);
+  return result;
 }
 
 type QuantityPricingTier = { minQuantity: number; maxQuantity: number | null; unitPrice: number };
@@ -19280,6 +19453,271 @@ router.get("/admin/product-waitlist", async (req, res): Promise<void> => {
   });
 });
 
+function aftercareSettingsDto(row: typeof aftercareSettingsTable.$inferSelect) {
+  return {
+    version: row.version, firstTiming: row.firstTiming, cooldownDays: row.cooldownDays,
+    secondReminderDelayDays: row.secondReminderDelayDays,
+    postTreatmentDiscountEnabled: row.postTreatmentDiscountEnabled,
+    postTreatmentDiscountPercent: row.postTreatmentDiscountPercent,
+    postTreatmentDiscountValidityDays: row.postTreatmentDiscountValidityDays,
+    personalizedBundleDiscountPercent: row.personalizedBundleDiscountPercent,
+    combinationWindowDays: row.combinationWindowDays,
+  };
+}
+
+router.get("/admin/aftercare/treatments", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsed = AdminListAftercareTreatmentsQueryParams.safeParse(req.query);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const services = await db.select({
+    categoryName: servicesTable.categoryName, name: servicesTable.name,
+    tags: servicesTable.tags, packageTreatments: servicesTable.packageTreatments,
+  }).from(servicesTable).where(eq(servicesTable.active, true));
+  const terms = new Map<string, { categoryName: string; treatmentName: string; searchTerms: string[] }>();
+  for (const service of services) {
+    const names = [service.name, ...(Array.isArray(service.tags) ? service.tags : []),
+      ...(Array.isArray(service.packageTreatments) ? service.packageTreatments : [])]
+      .filter((value): value is string => typeof value === "string" && Boolean(value.trim()));
+    for (const name of names) {
+      const categoryName = service.categoryName.trim();
+      const treatmentName = name.trim();
+      const key = normalizeTreatmentTaxonomyKey(categoryName, treatmentName);
+      const prior = terms.get(key);
+      terms.set(key, {
+        categoryName, treatmentName,
+        searchTerms: [...new Set([...(prior?.searchTerms ?? []), categoryName, treatmentName])].sort(),
+      });
+    }
+  }
+  for (const [taxonomyKey, term] of terms) {
+    await db.insert(treatmentTaxonomyTable).values({ taxonomyKey, ...term, active: true })
+      .onConflictDoUpdate({ target: treatmentTaxonomyTable.taxonomyKey, set: {
+        categoryName: term.categoryName, treatmentName: term.treatmentName, searchTerms: term.searchTerms,
+        active: true, updatedAt: new Date(),
+      } });
+  }
+  const search = parsed.data.search?.trim().toLowerCase();
+  const rows = await db.select().from(treatmentTaxonomyTable).where(and(
+    eq(treatmentTaxonomyTable.active, true),
+    search ? sql`lower(${treatmentTaxonomyTable.categoryName} || ' ' || ${treatmentTaxonomyTable.treatmentName} || ' ' || ${treatmentTaxonomyTable.searchTerms}::text) like ${`%${search}%`}` : undefined,
+  )).orderBy(asc(treatmentTaxonomyTable.categoryName), asc(treatmentTaxonomyTable.treatmentName), asc(treatmentTaxonomyTable.id))
+    .limit(parsed.data.limit ?? 50);
+  res.json(rows.map((row) => ({ id: row.id, taxonomyKey: row.taxonomyKey, categoryName: row.categoryName, treatmentName: row.treatmentName, searchTerms: row.searchTerms })));
+});
+
+router.get("/admin/aftercare/settings", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  let [current] = await db.select().from(aftercareSettingsTable).where(eq(aftercareSettingsTable.isCurrent, true)).limit(1);
+  if (!current) [current] = await db.insert(aftercareSettingsTable).values({ version: 1, createdByUserId: user.id }).returning();
+  res.json(AdminGetAftercareSettingsResponse.parse(aftercareSettingsDto(current!)));
+});
+
+router.put("/admin/aftercare/settings", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsed = AdminUpdateAftercareSettingsBody.safeParse(req.body);
+  if (!parsed.success || (parsed.success && parsed.data.postTreatmentDiscountEnabled && parsed.data.postTreatmentDiscountPercent === 0)) {
+    res.status(400).json({ error: parsed.success ? "Uključen popust mora biti veći od nule." : parsed.error.message }); return;
+  }
+  const input = parsed.data;
+  const current = await db.transaction(async (tx) => {
+    await tx.execute(sql`select id from aftercare_settings where is_current = true for update`);
+    const [existing] = await tx.select().from(aftercareSettingsTable).where(eq(aftercareSettingsTable.isCurrent, true)).limit(1);
+    if (!existing || existing.version !== input.expectedVersion) throw new Error("aftercare_settings_stale");
+    const next = aftercareSettingsDto({ ...existing, ...input });
+    const unchanged = Object.entries(next).every(([key, value]) => key === "version" || existing[key as keyof typeof existing] === value);
+    if (unchanged) return existing;
+    await tx.update(aftercareSettingsTable).set({ isCurrent: false }).where(eq(aftercareSettingsTable.id, existing.id));
+    const [created] = await tx.insert(aftercareSettingsTable).values({
+      ...next, version: existing.version + 1, isCurrent: true, createdByUserId: user.id,
+    }).returning();
+    return created!;
+  }).catch((error: unknown) => {
+    if (error instanceof Error && error.message === "aftercare_settings_stale") return null;
+    throw error;
+  });
+  if (!current) { res.status(409).json({ error: "Podešavanja su promenjena. Osvežite podatke i pokušajte ponovo." }); return; }
+  res.json(AdminUpdateAftercareSettingsResponse.parse(aftercareSettingsDto(current)));
+});
+
+router.get("/admin/aftercare/statistics", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsed = AdminGetAftercareStatisticsQueryParams.safeParse(req.query);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const query = parsed.data;
+  const from = query.from;
+  const to = query.to;
+  const fromInstant = new Date(`${from}T00:00:00.000Z`);
+  const toInstant = new Date(`${to}T00:00:00.000Z`);
+  if (Number.isNaN(fromInstant.valueOf()) || Number.isNaN(toInstant.valueOf())
+    || fromInstant.toISOString().slice(0, 10) !== from || toInstant.toISOString().slice(0, 10) !== to
+    || from > to || (toInstant.valueOf() - fromInstant.valueOf()) / 86_400_000 > 365) {
+    res.status(400).json({ error: "Raspon datuma mora biti ISO datum i najviše 366 dana." }); return;
+  }
+  const filters = [
+    query.treatmentId ? sql`exists (select 1 from aftercare_recommendation_appointments ara where ara.recommendation_id = r.id and ara.treatment_id = ${query.treatmentId})` : undefined,
+    query.productId ? sql`exists (select 1 from aftercare_recommendation_lines arl where arl.recommendation_id = r.id and arl.product_id = ${query.productId})` : undefined,
+    query.bundleId ? sql`exists (select 1 from aftercare_recommendation_lines arl where arl.recommendation_id = r.id and arl.bundle_id = ${query.bundleId})` : undefined,
+    query.kind ? sql`exists (select 1 from aftercare_recommendation_lines arl where arl.recommendation_id = r.id and arl.kind = ${query.kind})` : undefined,
+  ].filter((value): value is NonNullable<typeof value> => Boolean(value));
+  const predicate = filters.length ? sql`and ${sql.join(filters, sql` and `)}` : sql``;
+  const data = await db.transaction(async (tx) => {
+    await tx.execute(sql`set transaction isolation level repeatable read`);
+    const [kpis] = (await tx.execute<{
+      recommendations_created: string; first_sent: string; second_sent: string; replenishment_sent: string;
+      converted: string; revenue: string;
+    }>(sql`
+      with scoped as (
+        select r.* from aftercare_recommendations r
+        where r.created_at >= ${from}::date and r.created_at < ${to}::date + interval '1 day' ${predicate}
+      ), delivery_counts as (
+        select d.kind, count(*)::text as count from aftercare_deliveries d join scoped r on r.id = d.recommendation_id
+        where d.status = 'SENT' group by d.kind
+      )
+      select count(*)::text recommendations_created,
+        coalesce((select count from delivery_counts where kind = 'FIRST'), '0') first_sent,
+        coalesce((select count from delivery_counts where kind = 'SECOND'), '0') second_sent,
+        coalesce((select count from delivery_counts where kind = 'REPLENISHMENT'), '0') replenishment_sent,
+        count(*) filter (where converted_at is not null)::text converted,
+        coalesce(sum((select total from retail_orders ro where ro.id = scoped.converted_order_id)), 0)::text revenue
+      from scoped
+    `)).rows;
+    const timeSeries = (await tx.execute<{ date: string; recommendations_created: string; first_sent: string; second_sent: string; replenishment_sent: string; converted: string; revenue: string }>(sql`
+      with scoped as (select r.* from aftercare_recommendations r where r.created_at >= ${from}::date and r.created_at < ${to}::date + interval '1 day' ${predicate}),
+      daily_rec as (select r.created_at::date as bucket_date,count(*)::text recommendations_created,count(*) filter(where r.converted_at is not null)::text converted,coalesce(sum(ro.total) filter(where r.converted_at is not null),0)::text revenue from scoped r left join retail_orders ro on ro.id=r.converted_order_id group by r.created_at::date),
+      daily_delivery as (select r.created_at::date as bucket_date,count(*) filter(where d.kind='FIRST')::text first_sent,count(*) filter(where d.kind='SECOND')::text second_sent,count(*) filter(where d.kind='REPLENISHMENT')::text replenishment_sent from scoped r left join aftercare_deliveries d on d.recommendation_id=r.id and d.status='SENT' group by r.created_at::date)
+      select dr.bucket_date::text date,dr.recommendations_created,coalesce(dd.first_sent,'0') first_sent,coalesce(dd.second_sent,'0') second_sent,coalesce(dd.replenishment_sent,'0') replenishment_sent,dr.converted,dr.revenue from daily_rec dr join daily_delivery dd on dd.bucket_date=dr.bucket_date order by dr.bucket_date limit 366
+    `)).rows;
+    const byTreatment = (await tx.execute<{ treatment_id:string; taxonomy_key:string; category_name:string; treatment_name:string; recommendations_created:string; sent:string; converted:string; revenue:string }>(sql`
+      with scoped as (select r.* from aftercare_recommendations r where r.created_at >= ${from}::date and r.created_at < ${to}::date + interval '1 day' ${predicate}),
+      sent as (select distinct d.id,d.recommendation_id from aftercare_deliveries d join scoped r on r.id=d.recommendation_id where d.status='SENT')
+      select t.id treatment_id,t.taxonomy_key,t.category_name,t.treatment_name,count(distinct r.id)::text recommendations_created,
+        count(distinct s.id)::text sent,count(distinct r.id) filter(where r.converted_at is not null)::text converted,
+        coalesce(sum(distinct ro.total) filter(where r.converted_at is not null),0)::text revenue
+      from scoped r join aftercare_recommendation_appointments a on a.recommendation_id=r.id join treatment_taxonomy t on t.id=a.treatment_id
+      left join sent s on s.recommendation_id=r.id left join retail_orders ro on ro.id=r.converted_order_id
+      group by t.id,t.taxonomy_key,t.category_name,t.treatment_name order by count(distinct r.id) desc,t.taxonomy_key limit 200
+    `)).rows;
+    const byItem = (await tx.execute<{ kind:"PRODUCT"|"PREMADE_BUNDLE"|"PERSONALIZED_BUNDLE"; item_id:string|null; item_name:string; recommendations_created:string; sent:string; converted:string; revenue:string }>(sql`
+      with scoped as (select r.* from aftercare_recommendations r where r.created_at >= ${from}::date and r.created_at < ${to}::date + interval '1 day' ${predicate}),
+      lines as (select l.* from aftercare_recommendation_lines l join scoped r on r.id=l.recommendation_id),
+      conversion_target as (
+        select distinct on (r.id) r.id recommendation_id,l.id line_id
+        from scoped r join lines l on l.recommendation_id=r.id
+        join retail_order_items oi on oi.order_id=r.converted_order_id and oi.aftercare_recommendation_id=r.id
+        where r.converted_at is not null and (
+          (l.kind='PERSONALIZED_BUNDLE' and oi.personalized_treatment_bundle_discount_rsd > 0 and l.covered_product_ids @> jsonb_build_array(oi.product_id::text))
+          or (l.kind='PREMADE_BUNDLE' and oi.bundle_id=l.bundle_id)
+          or (l.kind='PRODUCT' and oi.product_id=l.product_id)
+        )
+        order by r.id,
+          case when l.kind='PERSONALIZED_BUNDLE' and oi.personalized_treatment_bundle_discount_rsd > 0 and l.covered_product_ids @> jsonb_build_array(oi.product_id::text) then 1
+            when l.kind='PREMADE_BUNDLE' and oi.bundle_id=l.bundle_id then 2 else 3 end,
+          l.id
+      ), fallback_target as (
+        select distinct on (r.id) r.id recommendation_id,l.id line_id
+        from scoped r join lines l on l.recommendation_id=r.id
+        where r.converted_at is not null and not exists(select 1 from conversion_target ct where ct.recommendation_id=r.id)
+        order by r.id,case l.kind when 'PRODUCT' then 1 when 'PREMADE_BUNDLE' then 2 else 3 end,l.id
+      ), targets as (select * from conversion_target union all select * from fallback_target),
+      sent as (select d.line_id,count(*)::text count from aftercare_deliveries d join scoped r on r.id=d.recommendation_id where d.status='SENT' and d.line_id is not null group by d.line_id)
+      select l.kind,case when l.kind='PRODUCT' then l.product_id when l.kind='PREMADE_BUNDLE' then l.bundle_id else null end item_id,
+        coalesce(l.catalog_snapshot->>'name',case when l.kind='PERSONALIZED_BUNDLE' then 'Personalized bundle' else 'Unavailable item' end) item_name,
+        count(*)::text recommendations_created,coalesce(sum(s.count::int),0)::text sent,
+        count(*) filter(where t.line_id=l.id)::text converted,
+        coalesce(sum(ro.total) filter(where t.line_id=l.id),0)::text revenue
+      from lines l join scoped r on r.id=l.recommendation_id left join targets t on t.recommendation_id=r.id left join sent s on s.line_id=l.id left join retail_orders ro on ro.id=r.converted_order_id
+      group by l.kind,item_id,item_name order by count(*) desc,l.kind,item_id nulls first limit 200
+    `)).rows;
+    return { kpis: kpis!, timeSeries, byTreatment, byItem };
+  });
+  const n = (value: string | undefined) => Number(value ?? 0);
+  const created = n(data.kpis.recommendations_created); const converted = n(data.kpis.converted);
+  res.json(AdminGetAftercareStatisticsResponse.parse({
+    kpis: { recommendationsCreated: created, firstSent: n(data.kpis.first_sent), secondSent: n(data.kpis.second_sent),
+      replenishmentSent: n(data.kpis.replenishment_sent), convertedRecommendations: converted, conversionRevenueRsd: n(data.kpis.revenue),
+      conversionRatePercent: created ? Number((converted * 100 / created).toFixed(2)) : 0 },
+    timeSeries: data.timeSeries.map((row) => ({ date: row.date, recommendationsCreated: n(row.recommendations_created),
+      firstSent: n(row.first_sent), secondSent: n(row.second_sent), replenishmentSent: n(row.replenishment_sent), convertedRecommendations: n(row.converted), conversionRevenueRsd: n(row.revenue) })),
+    byTreatment: data.byTreatment.map((row) => ({ treatmentId: row.treatment_id, taxonomyKey: row.taxonomy_key, categoryName: row.category_name, treatmentName: row.treatment_name, recommendationsCreated: n(row.recommendations_created), sent: n(row.sent), convertedRecommendations: n(row.converted), conversionRevenueRsd: n(row.revenue) })),
+    byItem: data.byItem.map((row) => ({ kind: row.kind, itemId: row.item_id, itemName: row.item_name, recommendationsCreated: n(row.recommendations_created), sent: n(row.sent), convertedRecommendations: n(row.converted), conversionRevenueRsd: n(row.revenue) })),
+  }));
+});
+
+async function customerAftercareRecommendationDto(recommendation: typeof aftercareRecommendationsTable.$inferSelect) {
+  const lines = await db.select().from(aftercareRecommendationLinesTable)
+    .where(eq(aftercareRecommendationLinesTable.recommendationId, recommendation.id))
+    .orderBy(asc(aftercareRecommendationLinesTable.createdAt), asc(aftercareRecommendationLinesTable.id));
+  const productIds = [...new Set(lines.flatMap((line) => [
+    ...(line.productId ? [line.productId] : []), ...line.coveredProductIds,
+  ]))];
+  const products = productIds.length ? await db.select({
+    id: productsTable.id, name: productsTable.name, imageUrl: productsTable.imageUrl,
+  }).from(productsTable).where(and(inArray(productsTable.id, productIds), eq(productsTable.active, true),
+    eq(productsTable.retailEnabled, true), isNotNull(productsTable.publicDescription), isNotNull(productsTable.publicPrice))) : [];
+  const productsById = new Map(products.map((product) => [product.id, product]));
+  const bundles = lines.some((line) => line.bundleId)
+    ? await db.select({ id: productBundlesTable.id, name: productBundlesTable.name, imageUrl: productBundlesTable.imageUrl })
+      .from(productBundlesTable).where(and(inArray(productBundlesTable.id, lines.flatMap((line) => line.bundleId ? [line.bundleId] : [])),
+        eq(productBundlesTable.active, true), inArray(productBundlesTable.market, ["B2C", "BOTH"]))) : [];
+  const bundlesById = new Map(bundles.map((bundle) => [bundle.id, bundle]));
+  const card = (item: { id: string; name: string; imageUrl: string | null }, actionPath: string) => ({
+    id: item.id, name: item.name, imageUrl: item.imageUrl, actionPath,
+  });
+  return CustomerGetAftercareRecommendationResponse.parse({
+    id: recommendation.id, status: recommendation.status, createdAt: recommendation.createdAt,
+    firstSentAt: recommendation.firstSentAt, secondSentAt: recommendation.secondSentAt, readAt: recommendation.readAt,
+    expiresAt: recommendation.entitlementExpiresAt, convertedAt: recommendation.convertedAt,
+    treatments: recommendation.treatmentSnapshot.map((treatment) => `${treatment.category}: ${treatment.name}`),
+    tips: [],
+    lines: lines.map((line) => {
+      const product = line.productId ? productsById.get(line.productId) : undefined;
+      const bundle = line.bundleId ? bundlesById.get(line.bundleId) : undefined;
+      return {
+        kind: line.kind,
+        item: product ? card(product, `/shop/public/products/${product.id}`)
+          : bundle ? card(bundle, `/shop/public/bundles/${bundle.id}`) : null,
+        coveredProducts: line.coveredProductIds.flatMap((id) => {
+          const covered = productsById.get(id);
+          return covered ? [card(covered, `/shop/public/products/${covered.id}`)] : [];
+        }),
+        discountPercent: line.discountPercent,
+        validUntil: recommendation.entitlementExpiresAt,
+      };
+    }),
+  });
+}
+
+async function customerAftercareAccess(req: Request, res: Response) {
+  return retailReviewAccess(req, res);
+}
+
+router.get("/customer/aftercare/recommendations", async (req, res): Promise<void> => {
+  const user = await customerAftercareAccess(req, res); if (!user) return;
+  const rawLimit = req.query.limit === undefined ? 30 : Number(req.query.limit);
+  if (!Number.isInteger(rawLimit) || rawLimit < 1 || rawLimit > 100) { res.status(400).json({ error: "limit mora biti između 1 i 100." }); return; }
+  const recommendations = await db.select().from(aftercareRecommendationsTable).where(eq(aftercareRecommendationsTable.customerUserId, user.id))
+    .orderBy(desc(aftercareRecommendationsTable.createdAt), desc(aftercareRecommendationsTable.id)).limit(rawLimit);
+  res.json(await Promise.all(recommendations.map(customerAftercareRecommendationDto)));
+});
+
+router.get("/customer/aftercare/recommendations/:recommendationId", async (req, res): Promise<void> => {
+  const user = await customerAftercareAccess(req, res); if (!user) return;
+  const [recommendation] = await db.select().from(aftercareRecommendationsTable).where(and(
+    eq(aftercareRecommendationsTable.id, req.params.recommendationId), eq(aftercareRecommendationsTable.customerUserId, user.id),
+  )).limit(1);
+  if (!recommendation) { res.status(404).json({ error: "Preporuka nije pronađena." }); return; }
+  res.json(await customerAftercareRecommendationDto(recommendation));
+});
+
+router.post("/customer/aftercare/recommendations/:recommendationId/read", async (req, res): Promise<void> => {
+  const user = await customerAftercareAccess(req, res); if (!user) return;
+  const [recommendation] = await db.update(aftercareRecommendationsTable).set({ readAt: sql`coalesce(${aftercareRecommendationsTable.readAt}, now())`, updatedAt: new Date() })
+    .where(and(eq(aftercareRecommendationsTable.id, req.params.recommendationId), eq(aftercareRecommendationsTable.customerUserId, user.id)))
+    .returning();
+  if (!recommendation) { res.status(404).json({ error: "Preporuka nije pronađena." }); return; }
+  res.json(await customerAftercareRecommendationDto(recommendation));
+});
+
 router.get("/admin/products", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
   const parsed = AdminListProductsQueryParams.safeParse({
@@ -19328,7 +19766,8 @@ router.get("/admin/products", async (req, res): Promise<void> => {
   ]);
   const total = Number(countRow?.count ?? 0);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  res.json({ items: items.map(adminProductDto), total, page, pageSize, totalPages });
+  const treatments = await productTreatmentIds(items.map((item) => item.id));
+  res.json({ items: items.map((item) => adminProductDto(item, treatments.get(item.id))), total, page, pageSize, totalPages });
 });
 
 router.post("/admin/products", async (req, res): Promise<void> => {
@@ -19409,6 +19848,7 @@ router.post("/admin/products", async (req, res): Promise<void> => {
         images: body.images ?? [],
         price: body.price,
         costPriceRsd: body.costPriceRsd ?? null,
+        averageDurationDays: body.averageDurationDays ?? null,
         discountPrice: body.discountPrice ?? null,
         discountPriceEndsAt: body.discountPriceEndsAt ? new Date(body.discountPriceEndsAt) : null,
         retailEnabled: body.retailEnabled ?? false,
@@ -19441,6 +19881,13 @@ router.post("/admin/products", async (req, res): Promise<void> => {
           productId: rows[0]!.id, needTagId,
         })));
       }
+      const treatmentTaxonomyIds = [...new Set(body.treatmentTaxonomyIds ?? [])];
+      if (treatmentTaxonomyIds.length) {
+        const activeTerms = await tx.select({ id: treatmentTaxonomyTable.id }).from(treatmentTaxonomyTable)
+          .where(and(inArray(treatmentTaxonomyTable.id, treatmentTaxonomyIds), eq(treatmentTaxonomyTable.active, true)));
+        if (activeTerms.length !== treatmentTaxonomyIds.length) throw new Error("aftercare_treatment_inactive");
+        await tx.insert(productTreatmentMappingsTable).values(treatmentTaxonomyIds.map((treatmentId) => ({ productId: rows[0]!.id, treatmentId })));
+      }
       await replaceProductUpsells(tx, rows[0]!, body.upsellProductIds ?? []);
       for (const url of imageReferences) {
         if (!await claimMediaReference({
@@ -19459,11 +19906,14 @@ router.post("/admin/products", async (req, res): Promise<void> => {
     if (error instanceof ProductRelationshipConflictError) {
       res.status(409).json({ error: "Povezani proizvod je promenjen tokom čuvanja." }); return;
     }
+    if (error instanceof Error && error.message === "aftercare_treatment_inactive") {
+      res.status(400).json({ error: "Jedan ili više tretmana ne postoje ili nisu aktivni." }); return;
+    }
     if (!(error instanceof MediaClaimConflictError)) throw error;
     res.status(409).json({ error: "Jedna fotografija je u međuvremenu povezana sa drugim zapisom." });
     return;
   }
-  res.status(201).json(adminProductDto(product!));
+  res.status(201).json(adminProductDto(product!, body.treatmentTaxonomyIds ?? []));
 });
 
 router.post("/admin/products/bulk", async (req, res): Promise<void> => {
@@ -19554,6 +20004,16 @@ router.post("/admin/products/bulk", async (req, res): Promise<void> => {
     }
   }
   res.json({ updated });
+});
+
+router.get("/admin/products/:productId", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsed = AdminUpdateProductParams.safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const [product] = await db.select().from(productsTable).where(eq(productsTable.id, parsed.data.productId)).limit(1);
+  if (!product) { res.status(404).json({ error: "Proizvod nije pronađen." }); return; }
+  const treatments = await productTreatmentIds([product.id]);
+  res.json(adminProductDto(product, treatments.get(product.id)));
 });
 
 router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
@@ -19726,6 +20186,7 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
         images: nextImages,
         price: nextPrice,
         costPriceRsd: body.costPriceRsd !== undefined ? body.costPriceRsd : existing.costPriceRsd,
+        averageDurationDays: body.averageDurationDays !== undefined ? body.averageDurationDays : existing.averageDurationDays,
         discountPrice: nextDiscount,
         discountPriceEndsAt: body.discountPriceEndsAt !== undefined
           ? body.discountPriceEndsAt ? new Date(body.discountPriceEndsAt) : null
@@ -19779,6 +20240,17 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
           productId: existing.id, needTagId,
         })));
       }
+      if (body.treatmentTaxonomyIds !== undefined) {
+        const treatmentTaxonomyIds = [...new Set(body.treatmentTaxonomyIds)];
+        if (treatmentTaxonomyIds.length) {
+          const activeTerms = await tx.select({ id: treatmentTaxonomyTable.id }).from(treatmentTaxonomyTable)
+            .where(and(inArray(treatmentTaxonomyTable.id, treatmentTaxonomyIds), eq(treatmentTaxonomyTable.active, true)));
+          if (activeTerms.length !== treatmentTaxonomyIds.length) throw new Error("aftercare_treatment_inactive");
+        }
+        await tx.delete(productTreatmentMappingsTable).where(eq(productTreatmentMappingsTable.productId, existing.id));
+        if (treatmentTaxonomyIds.length) await tx.insert(productTreatmentMappingsTable)
+          .values(treatmentTaxonomyIds.map((treatmentId) => ({ productId: existing.id, treatmentId })));
+      }
       if (body.upsellProductIds !== undefined) {
         await replaceProductUpsells(tx, rows[0]!, body.upsellProductIds);
       }
@@ -19795,11 +20267,15 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
     if (error instanceof ProductRelationshipConflictError) {
       res.status(409).json({ error: "Povezani proizvod je promenjen tokom čuvanja." }); return;
     }
+    if (error instanceof Error && error.message === "aftercare_treatment_inactive") {
+      res.status(400).json({ error: "Jedan ili više tretmana ne postoje ili nisu aktivni." }); return;
+    }
     if (!(error instanceof MediaClaimConflictError)) throw error;
     res.status(409).json({ error: "Jedna fotografija je u međuvremenu povezana sa drugim zapisom." });
     return;
   }
-  res.json(adminProductDto(product!));
+  const treatments = body.treatmentTaxonomyIds ?? (await productTreatmentIds([product!.id])).get(product!.id) ?? [];
+  res.json(adminProductDto(product!, treatments));
 });
 
 router.delete("/admin/products/:productId", async (req, res): Promise<void> => {

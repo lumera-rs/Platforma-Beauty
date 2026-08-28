@@ -114,7 +114,7 @@ async function brevoJson<T>(path: string, body: unknown): Promise<T> {
   return response.status === 204 ? {} as T : response.json() as Promise<T>;
 }
 
-const brevoTransactionalEmailTransport: TransactionalEmailTransport = {
+export const brevoTransactionalEmailTransport: TransactionalEmailTransport = {
   async send(input) {
     const from = await sender();
     if (!from) return { skipped: true, errorMessage: "BREVO_SENDER_EMAIL nije podešen." };

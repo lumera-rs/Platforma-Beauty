@@ -36,6 +36,7 @@ import { runProductWaitlistNotificationWorker } from "./lib/product-waitlist-wor
 import { runRetailSubscriptionWorker } from "./lib/retail-subscription-worker";
 import { runRetailCartReminderSweep } from "./lib/retail-cart-reminders";
 import { runRetailReviewInvitationSweep } from "./lib/review-invitations";
+import { runAftercareWorker } from "./lib/aftercare-worker";
 
 const rawPort = process.env["PORT"];
 
@@ -156,6 +157,10 @@ const retailReviewInvitationSweep = createResilientScheduledJob({
   job: "retail-review-invitation-sweep",
   run: runRetailReviewInvitationSweep,
 });
+const aftercareWorker = createResilientScheduledJob({
+  job: "aftercare-worker",
+  run: runAftercareWorker,
+});
 const scheduledJobs = [
   rescheduledConfirmationRetries,
   educationSessionMaintenance,
@@ -175,6 +180,7 @@ const scheduledJobs = [
   retailSubscriptionCycles,
   retailCartReminderSweep,
   retailReviewInvitationSweep,
+  aftercareWorker,
 ];
 
 const retryInterval = setInterval(() => {
@@ -256,6 +262,13 @@ const automationWorkerInterval = setInterval(() => {
 automationWorkerInterval.unref();
 void automationWorker.run();
 
+// Platform B2C aftercare outbox, delivery, conversion and replenishment sweep.
+const aftercareWorkerInterval = setInterval(() => {
+  void aftercareWorker.run();
+}, 15 * 60_000);
+aftercareWorkerInterval.unref();
+void aftercareWorker.run();
+
 // Delivery-report silence alerts: if automation messages went out recently but
 // no verified webhook events arrived, email administrators (deduplicated per
 // cooldown window through the email outbox — never one email per tick).
@@ -309,6 +322,7 @@ function clearScheduledTasks(): void {
   clearInterval(compatibilityImageCleanupInterval);
   clearInterval(communicationArchiveInterval);
   clearInterval(automationWorkerInterval);
+  clearInterval(aftercareWorkerInterval);
   clearInterval(deliveryReportAlertInterval);
   clearInterval(databaseMetricsInterval);
   for (const scheduledJob of scheduledJobs) scheduledJob.stop();

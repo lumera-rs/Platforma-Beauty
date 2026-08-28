@@ -32,6 +32,10 @@ export interface RetailCheckoutPreview {
   /** @minimum 0 */
   couponDiscountRsd: number;
   /** @minimum 0 */
+  personalizedTreatmentBundleDiscountRsd: number;
+  /** @minimum 0 */
+  postTreatmentRecommendationDiscountRsd: number;
+  /** @minimum 0 */
   automaticPromotionDiscountRsd: number;
   /** @minimum 0 */
   thresholdRewardDiscountRsd: number;

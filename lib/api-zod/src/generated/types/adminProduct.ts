@@ -33,6 +33,13 @@ export interface AdminProduct {
      * @nullable
      */
   costPriceRsd: number | null;
+  /**
+     * @minimum 1
+     * @maximum 3650
+     * @nullable
+     */
+  averageDurationDays: number | null;
+  treatmentTaxonomyIds: string[];
   /** @nullable */
   discountPrice: number | null;
   /** @nullable */
