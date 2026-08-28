@@ -319,7 +319,7 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
-    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 73, "v73 is the current production schema rollout");
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 74, "v74 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
 
     // ── Run the rollout, then exercise its legacy conversion on rerun ──────
@@ -1039,6 +1039,11 @@ async function run() {
     const leadingFkIndexes: Array<[string, string]> = [
       ["automation_runs_attributed_appointment_idx", "attributed_appointment_id"],
       ["automation_runs_salon_customer_idx", "salon_customer_id"],
+      ["aftercare_completion_events_customer_user_idx", "customer_user_id"],
+      ["aftercare_deliveries_line_idx", "line_id"],
+      ["aftercare_recommendation_lines_bundle_idx", "bundle_id"],
+      ["aftercare_recommendation_lines_purchased_order_idx", "purchased_order_id"],
+      ["aftercare_settings_created_by_user_idx", "created_by_user_id"],
       ["b2b_quotes_source_cart_idx", "source_cart_id"],
       ["catalog_sync_runs_requested_by_idx", "requested_by_user_id"],
       ["commerce_experience_settings_updated_by_idx", "updated_by_user_id"],

@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 73;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 74;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -3176,6 +3176,7 @@ function tableStatements(s: string): string[] {
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS aftercare_settings_version_unique ON ${s}.aftercare_settings (version)`,
     `CREATE UNIQUE INDEX IF NOT EXISTS aftercare_settings_current_unique ON ${s}.aftercare_settings (is_current) WHERE is_current`,
+    `CREATE INDEX IF NOT EXISTS aftercare_settings_created_by_user_idx ON ${s}.aftercare_settings (created_by_user_id)`,
     `INSERT INTO ${s}.aftercare_settings (version) SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM ${s}.aftercare_settings)`,
     `CREATE TABLE IF NOT EXISTS ${s}.aftercare_completion_events (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), appointment_id uuid NOT NULL REFERENCES ${s}.appointments(id) ON DELETE CASCADE,
@@ -3184,6 +3185,7 @@ function tableStatements(s: string): string[] {
       attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0), last_error text, created_at timestamptz NOT NULL DEFAULT now()
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS aftercare_completion_events_transition_unique ON ${s}.aftercare_completion_events (appointment_id, transition_key)`,
+    `CREATE INDEX IF NOT EXISTS aftercare_completion_events_customer_user_idx ON ${s}.aftercare_completion_events (customer_user_id)`,
     `CREATE INDEX IF NOT EXISTS aftercare_completion_events_due_idx ON ${s}.aftercare_completion_events (processed_at, available_at, claim_expires_at)`,
     `CREATE TABLE IF NOT EXISTS ${s}.aftercare_recommendations (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), customer_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE,
@@ -3221,6 +3223,8 @@ function tableStatements(s: string): string[] {
     `CREATE UNIQUE INDEX IF NOT EXISTS aftercare_recommendation_lines_bundle_unique ON ${s}.aftercare_recommendation_lines (recommendation_id, bundle_id) WHERE kind = 'PREMADE_BUNDLE'`,
     `CREATE UNIQUE INDEX IF NOT EXISTS aftercare_recommendation_lines_personalized_unique ON ${s}.aftercare_recommendation_lines (recommendation_id) WHERE kind = 'PERSONALIZED_BUNDLE'`,
     `CREATE INDEX IF NOT EXISTS aftercare_recommendation_lines_product_cooldown_idx ON ${s}.aftercare_recommendation_lines (product_id, purchased_at)`,
+    `CREATE INDEX IF NOT EXISTS aftercare_recommendation_lines_bundle_idx ON ${s}.aftercare_recommendation_lines (bundle_id)`,
+    `CREATE INDEX IF NOT EXISTS aftercare_recommendation_lines_purchased_order_idx ON ${s}.aftercare_recommendation_lines (purchased_order_id)`,
     `CREATE INDEX IF NOT EXISTS aftercare_recommendation_lines_replenishment_idx ON ${s}.aftercare_recommendation_lines (replenishment_sent_at, replenishment_due_at)`,
     `CREATE INDEX IF NOT EXISTS aftercare_recommendation_lines_stats_idx ON ${s}.aftercare_recommendation_lines (product_id, created_at)`,
     `CREATE TABLE IF NOT EXISTS ${s}.aftercare_deliveries (
@@ -3235,6 +3239,7 @@ function tableStatements(s: string): string[] {
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS aftercare_deliveries_campaign_kind_unique ON ${s}.aftercare_deliveries (recommendation_id, kind) WHERE line_id IS NULL`,
     `CREATE UNIQUE INDEX IF NOT EXISTS aftercare_deliveries_line_kind_unique ON ${s}.aftercare_deliveries (recommendation_id, line_id, kind) WHERE line_id IS NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS aftercare_deliveries_line_idx ON ${s}.aftercare_deliveries (line_id)`,
     `CREATE INDEX IF NOT EXISTS aftercare_deliveries_due_claim_idx ON ${s}.aftercare_deliveries (status, scheduled_at, claim_expires_at)`,
     `CREATE INDEX IF NOT EXISTS aftercare_deliveries_provider_idx ON ${s}.aftercare_deliveries (provider_message_id)`,
     // v69 — B2C order lines retain the exact server-validated entitlement
@@ -3393,6 +3398,8 @@ function tableStatements(s: string): string[] {
        VALIDATE CONSTRAINT shop_settings_retail_cart_reminder_delay_check`,
     `ALTER TABLE ${s}.shop_settings
        VALIDATE CONSTRAINT shop_settings_retail_cart_reminder_template_check`,
+    // v74 — every aftercare FK gets a leading index so deletes/updates on its
+    // parent cannot force scans as recommendation and delivery history grows.
   ];
 }
 

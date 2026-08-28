@@ -42,6 +42,7 @@ export const aftercareSettingsTable = pgTable("aftercare_settings", {
 }, (table) => [
   uniqueIndex("aftercare_settings_version_unique").on(table.version),
   uniqueIndex("aftercare_settings_current_unique").on(table.isCurrent).where(sql`${table.isCurrent}`),
+  index("aftercare_settings_created_by_user_idx").on(table.createdByUserId),
   check("aftercare_settings_positive_days_check", sql`${table.cooldownDays} > 0 AND ${table.secondReminderDelayDays} > 0 AND ${table.postTreatmentDiscountValidityDays} > 0 AND ${table.combinationWindowDays} > 0`),
   check("aftercare_settings_percent_check", sql`${table.postTreatmentDiscountPercent} BETWEEN 0 AND 100 AND ${table.personalizedBundleDiscountPercent} BETWEEN 1 AND 100`),
   check("aftercare_settings_discount_enabled_check", sql`NOT ${table.postTreatmentDiscountEnabled} OR ${table.postTreatmentDiscountPercent} > 0`),
@@ -63,6 +64,7 @@ export const aftercareCompletionEventsTable = pgTable("aftercare_completion_even
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("aftercare_completion_events_transition_unique").on(table.appointmentId, table.transitionKey),
+  index("aftercare_completion_events_customer_user_idx").on(table.customerUserId),
   index("aftercare_completion_events_due_idx").on(table.processedAt, table.availableAt, table.claimExpiresAt),
   check("aftercare_completion_events_attempts_check", sql`${table.attempts} >= 0`),
 ]);
@@ -130,6 +132,8 @@ export const aftercareRecommendationLinesTable = pgTable("aftercare_recommendati
   uniqueIndex("aftercare_recommendation_lines_personalized_unique").on(table.recommendationId)
     .where(sql`${table.kind} = 'PERSONALIZED_BUNDLE'`),
   index("aftercare_recommendation_lines_product_cooldown_idx").on(table.productId, table.purchasedAt),
+  index("aftercare_recommendation_lines_bundle_idx").on(table.bundleId),
+  index("aftercare_recommendation_lines_purchased_order_idx").on(table.purchasedOrderId),
   index("aftercare_recommendation_lines_replenishment_idx").on(table.replenishmentSentAt, table.replenishmentDueAt),
   index("aftercare_recommendation_lines_stats_idx").on(table.productId, table.createdAt),
   check("aftercare_recommendation_lines_shape_check", sql`
@@ -167,6 +171,7 @@ export const aftercareDeliveriesTable = pgTable("aftercare_deliveries", {
     .where(sql`${table.lineId} IS NULL`),
   uniqueIndex("aftercare_deliveries_line_kind_unique").on(table.recommendationId, table.lineId, table.kind)
     .where(sql`${table.lineId} IS NOT NULL`),
+  index("aftercare_deliveries_line_idx").on(table.lineId),
   index("aftercare_deliveries_due_claim_idx").on(table.status, table.scheduledAt, table.claimExpiresAt),
   index("aftercare_deliveries_provider_idx").on(table.providerMessageId),
   check("aftercare_deliveries_attempts_check", sql`${table.attempts} >= 0`),
