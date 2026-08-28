@@ -114,6 +114,8 @@ const AdminEducationMarketplace = lazy(() => import('./pages/admin/education-mar
 const AdminEducationCenterDetail = lazy(() => import('./pages/admin/education-center-detail'));
 const AdminBundles = lazy(() => import('./pages/admin/bundles'));
 const AdminCoupons = lazy(() => import('./pages/admin/coupons'));
+const AdminMarketinskeKampanje = lazy(() => import('./pages/admin/marketinske-kampanje'));
+const AdminNivoiKorpe = lazy(() => import('./pages/admin/nivoi-korpe'));
 const AdminWaitlist = lazy(() => import('./pages/admin/waitlist'));
 const AdminCommerceSettings = lazy(() => import('./pages/admin/commerce-settings'));
 const AdminShopSettings = lazy(() => import('./pages/admin/shop-settings'));
@@ -425,6 +427,8 @@ function Router() {
         <Route path="/admin/iskustvo-kupovine"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminCommerceSettings /></RoleGuard></Route>
         <Route path="/admin/bundle-proizvodi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminBundles /></RoleGuard></Route>
         <Route path="/admin/kuponi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminCoupons /></RoleGuard></Route>
+        <Route path="/admin/marketinske-kampanje"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminMarketinskeKampanje /></RoleGuard></Route>
+        <Route path="/admin/nivoi-korpe"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminNivoiKorpe /></RoleGuard></Route>
         <Route path="/admin/lista-cekanja"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminWaitlist /></RoleGuard></Route>
         <Route path="/admin/podesavanja/prodavnica"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminShopSettings /></RoleGuard></Route>
         <Route path="/admin/podesavanja-prikaza"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminB2cDisplaySettings /></RoleGuard></Route>

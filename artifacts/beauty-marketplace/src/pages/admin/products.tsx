@@ -17,6 +17,9 @@ import {
   useAdminListSuppliers,
   useAdminListB2cProductTypes,
   useAdminListB2cNeedTags,
+  useGetPublicProductUpsells,
+  useAdminReplaceProductUpsells,
+  getGetPublicProductUpsellsQueryKey,
   getAdminListProductsQueryKey,
   getAdminListProductCategoriesQueryKey,
   getAdminListBrandsQueryKey,
@@ -106,6 +109,7 @@ const emptyForm = {
   searchSynonyms: [],
   discountPriceEndsAt: null,
   publicDiscountPriceEndsAt: null,
+  loyaltyPricingExcluded: false,
 } as unknown as AdminProductInput;
 
 function formatRSD(v: number) {
@@ -132,6 +136,19 @@ function ProductFormDialog({
   const deleteDocument = useAdminDeleteProductDocument();
   const { data: documents = [], refetch: refetchDocs } = useListProductDocuments(editing?.id || "", { audience: "B2C" }, { query: { enabled: !!editing?.id, queryKey: getListProductDocumentsQueryKey(editing?.id || "", { audience: "B2C" }) } });
   const [uploadingDocs, setUploadingDocs] = useState(false);
+
+  // --- Upsells ---
+  const { data: upsellsData } = useGetPublicProductUpsells(editing?.id || "", { query: { enabled: !!editing?.id, queryKey: getGetPublicProductUpsellsQueryKey(editing?.id || "") } });
+  const replaceUpsells = useAdminReplaceProductUpsells();
+  const [upsellIds, setUpsellIds] = useState<string[]>([]);
+  const [hasUnsavedUpsells, setHasUnsavedUpsells] = useState(false);
+
+  useEffect(() => {
+    if (upsellsData?.items && !hasUnsavedUpsells) {
+      setUpsellIds(upsellsData.items.map(u => u.id));
+    }
+  }, [upsellsData, hasUnsavedUpsells]);
+  // ---------------
 
   const handleDocumentUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (!editing?.id) return;
@@ -208,6 +225,7 @@ function ProductFormDialog({
           searchSynonyms: editing.searchSynonyms ?? [],
           discountPriceEndsAt: editing.discountPriceEndsAt ?? null,
           publicDiscountPriceEndsAt: (editing as any).publicDiscountPriceEndsAt ?? null,
+          loyaltyPricingExcluded: (editing as any).loyaltyPricingExcluded ?? false,
         }
       : { ...(emptyForm as any), supplierId: "", market: "B2B" }
   );
@@ -498,22 +516,43 @@ function ProductFormDialog({
       searchSynonyms: form.searchSynonyms || [],
       discountPriceEndsAt: form.discountPriceEndsAt || null,
       publicDiscountPriceEndsAt: (form as any).publicDiscountPriceEndsAt || null,
+      loyaltyPricingExcluded: (form as any).loyaltyPricingExcluded ?? false,
     };
     if (!actionGuard.begin("save-product")) return;
     const opts = {
-      onSuccess: () => {
-        toast.success(editing ? "Sačuvano" : "Kreirano", { description: `Proizvod je uspešno ${editing ? "ažuriran" : "kreiran"}.` });
-        queryClient.invalidateQueries({ queryKey: getAdminListProductsQueryKey() });
-        onSaved();
-        actionGuard.end("save-product");
+      onSuccess: (savedProduct: AdminProduct) => {
+        const afterSave = () => {
+          toast.success(editing ? "Sačuvano" : "Kreirano", { description: `Proizvod je uspešno ${editing ? "ažuriran" : "kreiran"}.` });
+          queryClient.invalidateQueries({ queryKey: getAdminListProductsQueryKey() });
+          onSaved();
+          actionGuard.end("save-product");
+        };
+
+        if (hasUnsavedUpsells) {
+          replaceUpsells.mutate(
+            { productId: savedProduct.id, data: { alternativeProductIds: upsellIds } },
+            {
+              onSuccess: () => {
+                queryClient.invalidateQueries({ queryKey: getGetPublicProductUpsellsQueryKey(savedProduct.id) });
+                afterSave();
+              },
+              onError: (err) => {
+                toast.error("Proizvod je sačuvan, ali Upsell alternative nisu ažurirane.");
+                afterSave();
+              }
+            }
+          );
+        } else {
+          afterSave();
+        }
       },
       onError: (err: unknown) => {
         toast.error("Greška", { description: extractApiError(err, "Proizvod nije sačuvan.") });
         actionGuard.end("save-product");
       },
     };
-    if (editing) updateProduct.mutate({ productId: editing.id, data: payload }, opts);
-    else createProduct.mutate({ data: payload }, opts);
+    if (editing) updateProduct.mutate({ productId: editing.id, data: payload }, opts as any);
+    else createProduct.mutate({ data: payload }, opts as any);
   };
 
   return (
@@ -722,9 +761,15 @@ function ProductFormDialog({
           <section className="space-y-4 border rounded-xl p-4">
             <h4 className="text-sm font-semibold text-foreground flex items-center justify-between">
               Cena i popust
-              <div className="flex items-center gap-2 text-sm font-normal">
-                <Switch checked={form.priceOnRequest} onCheckedChange={(c) => setForm({ ...form, priceOnRequest: c })} id="price-on-request" />
-                <Label htmlFor="price-on-request" className="cursor-pointer">Cena na upit (Price on request)</Label>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 text-sm font-normal">
+                  <Switch checked={(form as any).loyaltyPricingExcluded} onCheckedChange={(c) => setForm({ ...form, loyaltyPricingExcluded: c } as any)} id="loyalty-excluded" />
+                  <Label htmlFor="loyalty-excluded" className="cursor-pointer">Isključi iz Loyalty Popusta</Label>
+                </div>
+                <div className="flex items-center gap-2 text-sm font-normal">
+                  <Switch checked={form.priceOnRequest} onCheckedChange={(c) => setForm({ ...form, priceOnRequest: c })} id="price-on-request" />
+                  <Label htmlFor="price-on-request" className="cursor-pointer">Cena na upit (Price on request)</Label>
+                </div>
               </div>
             </h4>
             {!form.priceOnRequest && (
@@ -1115,6 +1160,51 @@ function ProductFormDialog({
                 <p className="mt-2 text-xs text-destructive" data-testid="error-cross-sell-count">Izaberite još najmanje {3 - (form.crossSellProductIds?.length ?? 0)} proizvoda ili uklonite sve.</p>
               )}
             </div>
+
+            <div className="border-t pt-5">
+              <h4 className="text-sm font-semibold text-foreground">Upsell alternative (do 3 proizvoda)</h4>
+              <p className="mt-1 mb-3 text-xs text-muted-foreground">Ovi proizvodi će biti predloženi kupcu pre dodavanja u korpu (npr. veće pakovanje). Poređajte ih po prioritetu.</p>
+              <div className="space-y-3">
+                <SearchableCombobox
+                  value=""
+                  onValueChange={(val) => {
+                    if (val && !upsellIds.includes(val) && upsellIds.length < 3) {
+                      setUpsellIds([...upsellIds, val]);
+                      setHasUnsavedUpsells(true);
+                    }
+                  }}
+                  options={relatedProductOptions.filter(o => !upsellIds.includes(o.value))}
+                  placeholder={form.supplierId ? (upsellIds.length >= 3 ? "Maksimalno 3 alternative" : "Dodajte alternativu") : "Prvo izaberite dobavljača"}
+                  searchPlaceholder="Pretraži..."
+                  disabled={!form.supplierId || upsellIds.length >= 3}
+                />
+                {upsellIds.length > 0 && (
+                  <div className="space-y-2">
+                    {upsellIds.map((id, index) => {
+                      const prodOpt = relatedProductOptions.find(o => o.value === id) || { label: "Učitavanje..." };
+                      return (
+                        <div key={id} className="flex items-center justify-between p-2 border rounded-md bg-muted/20">
+                          <span className="text-sm font-medium">{index + 1}. {prodOpt.label}</span>
+                          <div className="flex gap-1">
+                            <Button type="button" variant="ghost" size="icon" className="h-6 w-6" disabled={index === 0} onClick={() => {
+                              const newArr = [...upsellIds];
+                              [newArr[index], newArr[index - 1]] = [newArr[index - 1], newArr[index]];
+                              setUpsellIds(newArr);
+                              setHasUnsavedUpsells(true);
+                            }}><ArrowUpDown className="w-3 h-3" /></Button>
+                            <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => {
+                              setUpsellIds(upsellIds.filter(uid => uid !== id));
+                              setHasUnsavedUpsells(true);
+                            }}><Trash2 className="w-3 h-3" /></Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
           </section>
 
           {/* ── Uslovi kupovine ── */}

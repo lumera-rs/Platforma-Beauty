@@ -1,13 +1,19 @@
 import { Link, useRoute } from "wouter";
 import { useState } from "react";
-import { useAddShopCartItem, useGetSupplierProduct, useListProductReviews, useUpsertProductReview, getGetShopCartQueryKey, getGetSupplierProductQueryKey, getGetShopSummaryQueryKey, getListProductReviewsQueryKey, useGetB2bProductWaitlistStatus, useSubscribeB2bProductWaitlist, useUnsubscribeB2bProductWaitlist, getGetB2bProductWaitlistStatusQueryKey } from "@workspace/api-client-react";
+import {
+  useAddShopCartItem, useGetSupplierProduct, useListProductReviews, useUpsertProductReview,
+  getGetShopCartQueryKey, getGetSupplierProductQueryKey, getGetShopSummaryQueryKey, getListProductReviewsQueryKey,
+  useGetB2bProductWaitlistStatus, useSubscribeB2bProductWaitlist, useUnsubscribeB2bProductWaitlist, getGetB2bProductWaitlistStatusQueryKey,
+  useGetPublicProductUpsells, getGetPublicProductUpsellsQueryKey,
+  useGetPublicProductAutomaticXyPromotions, getGetPublicProductAutomaticXyPromotionsQueryKey
+} from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Star, ArrowLeft, ShoppingCart, Bell, CheckCircle } from "lucide-react";
+import { Loader2, Star, ArrowLeft, ShoppingCart, Bell, CheckCircle, Tag } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { OptimizedImage } from "@/components/optimized-image";
 import { PriceInquiryDialog } from "@/components/price-inquiry-dialog";
@@ -58,6 +64,11 @@ export default function OwnerProductDetail() {
   const { data: product, isLoading } = useGetSupplierProduct(supplierSlug, id);
   const { data: documents = [] } = useListProductDocuments(id, { audience: "B2B" }, { query: { enabled: !!id, queryKey: getListProductDocumentsQueryKey(id, { audience: "B2B" }) } });
   const { data: reviews = [] } = useListProductReviews(id, { query: { enabled: !!id, queryKey: getListProductReviewsQueryKey(id) } });
+
+  const { data: upsellsData } = useGetPublicProductUpsells(id, { query: { enabled: !!id, queryKey: getGetPublicProductUpsellsQueryKey(id) } });
+  const { data: xyData } = useGetPublicProductAutomaticXyPromotions(id, { query: { enabled: !!id, queryKey: getGetPublicProductAutomaticXyPromotionsQueryKey(id) } });
+  const activeXy = xyData?.items?.[0];
+
   const qc = useQueryClient(); const mutation = useUpsertProductReview(); const { toast } = useToast(); const [rating, setRating] = useState(5); const [comment, setComment] = useState("");
   const [variantValue, setVariantValue] = useState("");
   const [activeImage, setActiveImage] = useState<string | null>(null);
@@ -119,6 +130,12 @@ export default function OwnerProductDetail() {
             <div>
               <p className="text-sm text-primary">{product.brand ?? product.category}</p>
               <h1 className="text-3xl font-serif font-bold mt-1">{product.name}</h1>
+
+              {activeXy && (
+                <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 bg-rose-100 text-rose-700 font-bold text-sm rounded-full border border-rose-200 shadow-sm">
+                  <Tag className="w-4 h-4" /> Kupi {activeXy.buyQuantity}, dobij {activeXy.rewardQuantity} {activeXy.rewardPercent === 100 ? "besplatno" : `uz ${activeXy.rewardPercent}% popusta`}
+                </div>
+              )}
 
               <div className="mt-4 text-muted-foreground whitespace-pre-line text-sm">
                 <ResponsiveProductTabs product={product} documents={documents} />
@@ -203,6 +220,23 @@ export default function OwnerProductDetail() {
                     </Link>
                   );
                 })}
+              </div>
+            </section>
+          )}
+
+          {upsellsData?.items && upsellsData.items.length > 0 && (
+            <section data-testid="section-upsells">
+              <h2 className="mb-4 text-xl font-bold">Bolja ponuda za vas</h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {upsellsData.items.map((upsell) => (
+                  <Link key={upsell.id} href={`/vlasnik/shop/${supplierSlug}/proizvodi/${upsell.id}`} className="flex items-center gap-4 rounded-xl border bg-card p-3 hover:shadow-md transition-shadow">
+                    <OptimizedImage src={upsell.imageUrl || ""} alt={upsell.name} className="w-20 h-20 rounded-md object-cover bg-muted" width={80} height={80} preferredSize="thumbnail" />
+                    <div>
+                      <h3 className="line-clamp-2 text-sm font-semibold">{upsell.name}</h3>
+                      <p className="mt-1 font-bold text-primary">{upsell.priceOnRequest ? "Cena na upit" : `${upsell.price?.toLocaleString("sr-RS")} RSD`}</p>
+                    </div>
+                  </Link>
+                ))}
               </div>
             </section>
           )}

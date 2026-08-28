@@ -1,26 +1,75 @@
 import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { TrendingUp, Gift, Award, Check, Crown, Truck, BadgeCheck } from "lucide-react";
-import { useGetLoyaltyStatus, useGetCurrentUser, useListLoyaltyTiers, getGetLoyaltyStatusQueryKey, getListLoyaltyTiersQueryKey } from "@workspace/api-client-react";
+import { TrendingUp, Gift, Award, Check, Crown, Truck, BadgeCheck, Percent } from "lucide-react";
+import {
+  useGetLoyaltyStatus,
+  useGetCurrentUser,
+  useListLoyaltyTiers,
+  useGetCustomerLoyaltyPricing,
+  getGetLoyaltyStatusQueryKey,
+  getListLoyaltyTiersQueryKey,
+  getGetCustomerLoyaltyPricingQueryKey
+} from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 
 export default function OwnerLoyalty() {
   const { data: userResp } = useGetCurrentUser();
   const { data: status, isLoading } = useGetLoyaltyStatus({ query: { enabled: !!userResp?.user, queryKey: getGetLoyaltyStatusQueryKey() }});
+  const { data: pricingProgress } = useGetCustomerLoyaltyPricing({ query: { enabled: !!userResp?.user, queryKey: getGetCustomerLoyaltyPricingQueryKey() }});
   const { data: tiers = [] } = useListLoyaltyTiers({ query: { enabled: !!userResp?.user, queryKey: getListLoyaltyTiersQueryKey() } });
 
   return (
     <BusinessLayout>
       <div className="container mx-auto px-4 py-8 flex flex-col md:flex-row gap-8 items-start">
         <OwnerSidebar current="/vlasnik/loyalty" />
-        
+
         <div className="flex-1 space-y-6 w-full">
           <div>
             <h1 className="text-3xl font-serif font-bold">Loyalty Program</h1>
             <p className="text-muted-foreground">Nagrade za naše najbolje partnere</p>
           </div>
-          
+
+          {pricingProgress && (
+            <Card className="bg-gradient-to-br from-emerald-500/10 to-transparent border-emerald-500/20">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-emerald-800 dark:text-emerald-400">
+                  <Percent className="w-5 h-5" /> Nivo cena i popusti na robu
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex justify-between items-end">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Vaš trenutni B2B nivo popusta:</p>
+                    {pricingProgress.effectiveTier ? (
+                      <p className="text-2xl font-bold text-foreground mt-1">
+                        {pricingProgress.effectiveTier.name} <span className="text-emerald-600">(-{pricingProgress.effectiveTier.discountPercent}%)</span>
+                      </p>
+                    ) : (
+                      <p className="text-xl font-bold text-foreground mt-1">Osnovne cene</p>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-muted-foreground">Potrošnja (poslednjih 30 dana)</p>
+                    <p className="text-xl font-bold text-foreground">{pricingProgress.netSettledSpendRsd.toLocaleString()} RSD</p>
+                  </div>
+                </div>
+
+                {pricingProgress.nextTier && (
+                  <div className="pt-4 border-t border-border/50">
+                    <div className="flex justify-between text-sm mb-2">
+                      <span>Sledeći nivo: <strong>{pricingProgress.nextTier.name}</strong></span>
+                      <span className="text-emerald-600 font-medium">Još {(pricingProgress.nextTier.spendThresholdRsd - pricingProgress.netSettledSpendRsd).toLocaleString()} RSD</span>
+                    </div>
+                    <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                      <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${pricingProgress.nextTier.progressPercent}%` }} />
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {status && (
             <>
               <div className="bg-gradient-to-r from-accent/20 to-primary/10 rounded-2xl p-8 border border-accent/20">

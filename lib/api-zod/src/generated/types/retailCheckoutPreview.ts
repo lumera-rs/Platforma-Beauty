@@ -5,6 +5,9 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { CheckoutRewardGiftDescriptor } from './checkoutRewardGiftDescriptor';
+import type { CheckoutThresholdNextDescriptor } from './checkoutThresholdNextDescriptor';
+import type { CheckoutThresholdRewardDescriptor } from './checkoutThresholdRewardDescriptor';
 import type { CouponApplication } from './couponApplication';
 import type { RetailCart } from './retailCart';
 import type { RetailCheckoutPreviewPaymentMethodsItem } from './retailCheckoutPreviewPaymentMethodsItem';
@@ -28,5 +31,15 @@ export interface RetailCheckoutPreview {
   coupon: CouponApplication | null;
   /** @minimum 0 */
   couponDiscountRsd: number;
+  /** @minimum 0 */
+  automaticPromotionDiscountRsd: number;
+  /** @minimum 0 */
+  thresholdRewardDiscountRsd: number;
+  /** @minimum 0 */
+  thresholdQualificationSubtotalRsd: number;
+  thresholdFreeShipping: boolean;
+  thresholdReached: CheckoutThresholdRewardDescriptor[];
+  thresholdNext: CheckoutThresholdNextDescriptor | null;
+  rewardGifts: CheckoutRewardGiftDescriptor[];
   paymentMethods: RetailCheckoutPreviewPaymentMethodsItem[];
 }

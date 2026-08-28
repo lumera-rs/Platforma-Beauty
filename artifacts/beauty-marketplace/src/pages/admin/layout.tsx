@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useGetCurrentUser } from "@workspace/api-client-react";
 import { BusinessLayout } from "@/components/business-layout";
 import { Button } from "@/components/ui/button";
-import { Loader2, LayoutDashboard, Store, Users, Star, CreditCard, MessageSquare, Menu, X, Package, FolderTree, Tags, Truck, Mail, MessageSquareText, PlugZap, FileText, GraduationCap, SlidersHorizontal, BriefcaseBusiness, ListX, Gift, Layers, Bell, Settings2, Image, ListTree, ShieldAlert, Facebook, MailQuestion, AlertCircle } from "lucide-react";
+import { Loader2, LayoutDashboard, Store, Users, Star, CreditCard, MessageSquare, Menu, X, Package, FolderTree, Tags, Truck, Mail, MessageSquareText, PlugZap, FileText, GraduationCap, SlidersHorizontal, BriefcaseBusiness, ListX, Gift, Layers, Bell, Settings2, Image, ListTree, ShieldAlert, Facebook, MailQuestion, AlertCircle, ShoppingBag, Megaphone } from "lucide-react";
 
 const navLinks = [
   { href: "/admin", label: "Pregled", icon: LayoutDashboard },
@@ -19,6 +19,8 @@ const navLinks = [
   { href: "/admin/preporuke", label: "Preporuke", icon: Gift },
   { href: "/admin/recenzije", label: "Recenzije salona", icon: MessageSquare },
   { href: "/admin/recenzije-proizvoda", label: "Moderacija proizvoda", icon: ShieldAlert },
+  { href: "/admin/marketinske-kampanje", label: "Marketinške kampanje", icon: Megaphone },
+  { href: "/admin/nivoi-korpe", label: "Nivoi korpe", icon: ShoppingBag },
   { href: "/admin/dobavljaci", label: "Dobavljači", icon: FolderTree },
   { href: "/admin/proizvodi", label: "Proizvodi", icon: Package },
   { href: "/admin/katalog/atributi", label: "Katalog atributi", icon: ListTree },
@@ -121,8 +123,8 @@ export function AdminLayout({ children }: { children: ReactNode }) {
         return (
           <Link key={link.href} href={link.href}
             className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
-              isActive 
-                ? 'bg-primary text-primary-foreground shadow-sm' 
+              isActive
+                ? 'bg-primary text-primary-foreground shadow-sm'
                 : 'hover:bg-muted text-muted-foreground hover:text-foreground'
             } ${adminFocusClass}`}
             data-testid={`admin-nav-${link.href.replace('/admin', '').replace('/', '') || 'dashboard'}`}

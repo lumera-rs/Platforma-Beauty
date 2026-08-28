@@ -94,6 +94,8 @@ export interface AdminProductInput {
   similarProductIds?: string[];
   /** @maxItems 5 */
   crossSellProductIds?: string[];
+  /** @maxItems 3 */
+  upsellProductIds?: string[];
   quantityPricingTiers?: QuantityPricingTier[];
   /** @minimum 1 */
   minimumOrderQuantity?: number;
@@ -110,6 +112,7 @@ export interface AdminProductInput {
      * @nullable
      */
   subscriptionDiscountPercent?: number | null;
+  loyaltyPricingExcluded?: boolean;
   /** @nullable */
   productTypeId?: string | null;
   needTagIds?: string[];

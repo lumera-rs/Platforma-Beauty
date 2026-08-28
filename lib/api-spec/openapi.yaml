@@ -6830,6 +6830,163 @@ paths:
         - { name: documentId, in: path, required: true, schema: { type: string } }
       responses:
         "204": { description: Deleted }
+  /admin/products/{productId}/upsells:
+    put:
+      operationId: adminReplaceProductUpsells
+      tags: [admin]
+      summary: Replace the ordered upsell products for a product
+      parameters: [{ name: productId, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UpsellProductInput" } } } }
+      responses:
+        "200": { description: Saved upsell links, content: { application/json: { schema: { $ref: "#/components/schemas/UpsellProductInput" } } } }
+        "400": { description: Invalid or unavailable product links }
+        "401": { description: Authentication required }
+        "403": { description: Administrator access required }
+  /public/products/{productId}/upsells:
+    get:
+      operationId: getPublicProductUpsells
+      tags: [shop]
+      summary: List public upsell products
+      parameters: [{ name: productId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Public upsell products, content: { application/json: { schema: { $ref: "#/components/schemas/UpsellProductList" } } } }
+        "400": { description: Invalid product }
+  /admin/loyalty-pricing-tiers:
+    get:
+      operationId: adminListLoyaltyPricingTiers
+      tags: [admin]
+      responses:
+        "200": { description: Loyalty pricing tiers, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/PricingLoyaltyTier" } } } } }
+        "401": { description: Authentication required }
+        "403": { description: Administrator access required }
+    post:
+      operationId: adminCreateLoyaltyPricingTier
+      tags: [admin]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PricingLoyaltyTierInput" } } } }
+      responses:
+        "201": { description: Created loyalty tier, content: { application/json: { schema: { $ref: "#/components/schemas/PricingLoyaltyTier" } } } }
+        "400": { description: Invalid or duplicate tier }
+        "401": { description: Authentication required }
+        "403": { description: Administrator access required }
+  /admin/loyalty-pricing-tiers/{id}:
+    patch:
+      operationId: adminUpdateLoyaltyPricingTier
+      tags: [admin]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PricingLoyaltyTierUpdate" } } } }
+      responses:
+        "200": { description: Updated loyalty tier, content: { application/json: { schema: { $ref: "#/components/schemas/PricingLoyaltyTier" } } } }
+        "401": { description: Authentication required }
+        "403": { description: Administrator access required }
+        "404": { description: Tier not found }
+        "409": { description: Version or threshold conflict }
+    delete:
+      operationId: adminDeleteLoyaltyPricingTier
+      tags: [admin]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: version, in: query, required: true, schema: { type: integer, minimum: 1 } }]
+      responses:
+        "204": { description: Deleted }
+        "401": { description: Authentication required }
+        "403": { description: Administrator access required }
+        "409": { description: Tier not found or changed }
+  /customer/loyalty-pricing:
+    get:
+      operationId: getCustomerLoyaltyPricing
+      tags: [customer, loyalty]
+      responses:
+        "200": { description: Customer loyalty progress, content: { application/json: { schema: { $ref: "#/components/schemas/LoyaltyProgress" } } } }
+        "401": { description: Authentication required }
+        "403": { description: Customer or salon-owner access required }
+  /admin/bulk-sale-campaigns:
+    get:
+      operationId: adminListBulkSaleCampaigns
+      tags: [admin]
+      responses:
+        "200": { description: Bulk sale campaigns, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/BulkSaleCampaign" } } } } }
+        "401": { description: Authentication required }
+        "403": { description: Administrator access required }
+    post:
+      operationId: adminCreateBulkSaleCampaign
+      tags: [admin]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BulkSaleCampaignInput" } } } }
+      responses:
+        "201": { description: Created campaign, content: { application/json: { schema: { $ref: "#/components/schemas/BulkSaleCampaign" } } } }
+        "400": { description: Invalid campaign or targets }
+        "401": { description: Authentication required }
+        "403": { description: Administrator access required }
+  /admin/bulk-sale-campaigns/{id}:
+    patch:
+      operationId: adminUpdateBulkSaleCampaign
+      tags: [admin]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BulkSaleCampaignUpdate" } } } }
+      responses:
+        "200": { description: Updated campaign, content: { application/json: { schema: { $ref: "#/components/schemas/BulkSaleCampaign" } } } }
+        "401": { description: Authentication required }
+        "403": { description: Administrator access required }
+        "404": { description: Campaign not found }
+        "409": { description: Version conflict or invalid campaign }
+    delete:
+      operationId: adminDeleteBulkSaleCampaign
+      tags: [admin]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: version, in: query, required: true, schema: { type: integer, minimum: 1 } }]
+      responses: { "204": { description: Deleted }, "401": { description: Authentication required }, "403": { description: Administrator access required }, "409": { description: Campaign not found or changed } }
+  /admin/cart-threshold-rewards:
+    get:
+      operationId: adminListCartThresholdRewards
+      tags: [admin]
+      responses: { "200": { description: Cart threshold rewards, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/CartThresholdReward" } } } } }, "401": { description: Authentication required }, "403": { description: Administrator access required } }
+    post:
+      operationId: adminCreateCartThresholdReward
+      tags: [admin]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CartThresholdRewardInput" } } } }
+      responses: { "201": { description: Created reward, content: { application/json: { schema: { $ref: "#/components/schemas/CartThresholdReward" } } } }, "400": { description: Invalid or duplicate reward }, "401": { description: Authentication required }, "403": { description: Administrator access required } }
+  /admin/cart-threshold-rewards/{id}:
+    patch:
+      operationId: adminUpdateCartThresholdReward
+      tags: [admin]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CartThresholdRewardUpdate" } } } }
+      responses: { "200": { description: Updated reward, content: { application/json: { schema: { $ref: "#/components/schemas/CartThresholdReward" } } } }, "401": { description: Authentication required }, "403": { description: Administrator access required }, "404": { description: Reward not found }, "409": { description: Version conflict or invalid reward } }
+    delete:
+      operationId: adminDeleteCartThresholdReward
+      tags: [admin]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: version, in: query, required: true, schema: { type: integer, minimum: 1 } }]
+      responses: { "204": { description: Deleted }, "401": { description: Authentication required }, "403": { description: Administrator access required }, "409": { description: Reward not found or changed } }
+  /customer/cart-threshold-rewards:
+    get:
+      operationId: getCustomerCartThresholdRewards
+      tags: [customer, loyalty]
+      parameters: [{ name: subtotalRsd, in: query, required: true, schema: { type: integer, minimum: 0 } }]
+      responses: { "200": { description: Reached and next cart rewards, content: { application/json: { schema: { $ref: "#/components/schemas/CartThresholdRewardProgress" } } } }, "400": { description: Invalid subtotal }, "401": { description: Authentication required }, "403": { description: Customer or salon-owner access required } }
+  /admin/automatic-xy-promotions:
+    get:
+      operationId: adminListAutomaticXyPromotions
+      tags: [admin]
+      responses: { "200": { description: Automatic X plus Y promotions, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AutomaticXyPromotion" } } } } }, "401": { description: Authentication required }, "403": { description: Administrator access required } }
+    post:
+      operationId: adminCreateAutomaticXyPromotion
+      tags: [admin]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AutomaticXyPromotionInput" } } } }
+      responses: { "201": { description: Created promotion, content: { application/json: { schema: { $ref: "#/components/schemas/AutomaticXyPromotion" } } } }, "400": { description: Invalid promotion or targets }, "401": { description: Authentication required }, "403": { description: Administrator access required } }
+  /admin/automatic-xy-promotions/{id}:
+    patch:
+      operationId: adminUpdateAutomaticXyPromotion
+      tags: [admin]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AutomaticXyPromotionUpdate" } } } }
+      responses: { "200": { description: Updated promotion, content: { application/json: { schema: { $ref: "#/components/schemas/AutomaticXyPromotion" } } } }, "401": { description: Authentication required }, "403": { description: Administrator access required }, "404": { description: Promotion not found }, "409": { description: Version conflict or invalid promotion } }
+    delete:
+      operationId: adminDeleteAutomaticXyPromotion
+      tags: [admin]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: version, in: query, required: true, schema: { type: integer, minimum: 1 } }]
+      responses: { "204": { description: Deleted }, "401": { description: Authentication required }, "403": { description: Administrator access required }, "409": { description: Promotion not found or changed } }
+  /public/products/{productId}/automatic-xy-promotions:
+    get:
+      operationId: getPublicProductAutomaticXyPromotions
+      tags: [shop]
+      parameters: [{ name: productId, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: Active product promotion descriptors, content: { application/json: { schema: { $ref: "#/components/schemas/AutomaticXyPromotionList" } } } }, "400": { description: Invalid product }, "404": { description: Product not found } }
 components:
   parameters:
     CityQuery:
@@ -8748,10 +8905,17 @@ components:
         payableTotalRsd: { type: integer, minimum: 0 }
         coupon: { oneOf: [{ $ref: "#/components/schemas/CouponApplication" }, { type: "null" }] }
         couponDiscountRsd: { type: integer, minimum: 0 }
+        automaticPromotionDiscountRsd: { type: integer, minimum: 0 }
+        thresholdRewardDiscountRsd: { type: integer, minimum: 0 }
+        thresholdQualificationSubtotalRsd: { type: integer, minimum: 0 }
+        thresholdFreeShipping: { type: boolean }
+        thresholdReached: { type: array, items: { $ref: "#/components/schemas/CheckoutThresholdRewardDescriptor" } }
+        thresholdNext: { oneOf: [{ $ref: "#/components/schemas/CheckoutThresholdNextDescriptor" }, { type: "null" }] }
+        rewardGifts: { type: array, items: { $ref: "#/components/schemas/CheckoutRewardGiftDescriptor" } }
         paymentMethods:
           type: array
           items: { type: string, enum: [BANK_TRANSFER, CASH_ON_DELIVERY] }
-      required: [cart, shipping, total, paymentMethods, referralCreditAvailableRsd, referralCreditAppliedRsd, merchandiseSubtotalRsd, shippingRsd, payableTotalRsd, coupon, couponDiscountRsd]
+      required: [cart, shipping, total, paymentMethods, referralCreditAvailableRsd, referralCreditAppliedRsd, merchandiseSubtotalRsd, shippingRsd, payableTotalRsd, coupon, couponDiscountRsd, automaticPromotionDiscountRsd, thresholdRewardDiscountRsd, thresholdQualificationSubtotalRsd, thresholdFreeShipping, thresholdReached, thresholdNext, rewardGifts]
     RetailOrder:
       type: object
       properties:
@@ -8965,6 +9129,7 @@ components:
           items: { $ref: "#/components/schemas/ProductCharacteristic" }
         subscriptionAllowed: { type: boolean }
         subscriptionDiscountPercent: { type: ["integer", "null"], minimum: 1, maximum: 100 }
+        loyaltyPricingExcluded: { type: boolean, default: false }
         reviewSummary: { $ref: "#/components/schemas/RetailProductReviewSummary" }
         variantType: { type: ["string", "null"] }
         variants:
@@ -9400,10 +9565,14 @@ components:
         payableTotalRsd: { type: integer, minimum: 0 }
         coupon: { oneOf: [{ $ref: "#/components/schemas/CouponApplication" }, { type: "null" }] }
         couponDiscountRsd: { type: integer, minimum: 0 }
+        automaticPromotionDiscountRsd: { type: integer, minimum: 0 }
+        thresholdRewardDiscountRsd: { type: integer, minimum: 0 }
+        thresholdQualificationSubtotalRsd: { type: integer, minimum: 0 }
+        rewardGifts: { type: array, items: { $ref: "#/components/schemas/CheckoutRewardGiftDescriptor" } }
         paymentMethods:
           type: array
           items: { type: string, enum: [CARD, BANK_TRANSFER, CASH_ON_DELIVERY] }
-      required: [cart, shipping, total, paymentMethods, referralCreditAvailableRsd, referralCreditAppliedRsd, merchandiseSubtotalRsd, shippingRsd, payableTotalRsd, coupon, couponDiscountRsd]
+      required: [cart, shipping, total, paymentMethods, referralCreditAvailableRsd, referralCreditAppliedRsd, merchandiseSubtotalRsd, shippingRsd, payableTotalRsd, coupon, couponDiscountRsd, automaticPromotionDiscountRsd, thresholdRewardDiscountRsd, thresholdQualificationSubtotalRsd, rewardGifts]
     ShopCheckoutInput:
       type: object
       properties:
@@ -10585,6 +10754,7 @@ components:
         deliveryBusinessDaysOverride: { type: ["integer", "null"], minimum: 1, maximum: 365 }
         subscriptionAllowed: { type: boolean }
         subscriptionDiscountPercent: { type: ["integer", "null"], minimum: 1, maximum: 100 }
+        loyaltyPricingExcluded: { type: boolean }
         productTypeId: { type: ["string", "null"] }
         ingredients: { type: ["string", "null"] }
         usageInstructions: { type: ["string", "null"] }
@@ -10651,11 +10821,13 @@ components:
         similarProductsMode: { type: string, enum: [AUTO_CATEGORY, MANUAL], default: AUTO_CATEGORY }
         similarProductIds: { type: array, uniqueItems: true, items: { type: string }, default: [] }
         crossSellProductIds: { type: array, uniqueItems: true, maxItems: 5, items: { type: string }, default: [] }
+        upsellProductIds: { type: array, uniqueItems: true, maxItems: 3, items: { type: string }, default: [] }
         quantityPricingTiers: { type: array, items: { $ref: "#/components/schemas/QuantityPricingTier" }, default: [] }
         minimumOrderQuantity: { type: integer, minimum: 1, default: 1 }
         deliveryBusinessDaysOverride: { type: ["integer", "null"], minimum: 1, maximum: 365 }
         subscriptionAllowed: { type: boolean, default: false }
         subscriptionDiscountPercent: { type: ["integer", "null"], minimum: 1, maximum: 100 }
+        loyaltyPricingExcluded: { type: boolean, default: false }
         productTypeId: { type: ["string", "null"] }
         needTagIds: { type: array, uniqueItems: true, items: { type: string } }
         ingredients: { type: ["string", "null"], maxLength: 20000 }
@@ -10711,11 +10883,13 @@ components:
         similarProductsMode: { type: string, enum: [AUTO_CATEGORY, MANUAL] }
         similarProductIds: { type: array, uniqueItems: true, items: { type: string } }
         crossSellProductIds: { type: array, uniqueItems: true, maxItems: 5, items: { type: string } }
+        upsellProductIds: { type: array, uniqueItems: true, maxItems: 3, items: { type: string } }
         quantityPricingTiers: { type: array, items: { $ref: "#/components/schemas/QuantityPricingTier" } }
         minimumOrderQuantity: { type: integer, minimum: 1 }
         deliveryBusinessDaysOverride: { type: ["integer", "null"], minimum: 1, maximum: 365 }
         subscriptionAllowed: { type: boolean }
         subscriptionDiscountPercent: { type: ["integer", "null"], minimum: 1, maximum: 100 }
+        loyaltyPricingExcluded: { type: boolean }
         productTypeId: { type: ["string", "null"] }
         needTagIds: { type: array, uniqueItems: true, items: { type: string } }
         ingredients: { type: ["string", "null"], maxLength: 20000 }
@@ -12774,3 +12948,313 @@ components:
         smartSearchProductIds: { type: array, maxItems: 5, items: { type: string } }
         bestsellerPeriodDays: { type: integer, enum: [30, 60] }
         version: { type: integer, minimum: 1 }
+    Market:
+      type: string
+      enum: [B2B, B2C, BOTH]
+    VersionedRule:
+      type: object
+      required: [id, version, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        version: { type: integer, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    RuleTarget:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [productId]
+          properties: { productId: { type: string } }
+        - type: object
+          additionalProperties: false
+          required: [categoryId]
+          properties: { categoryId: { type: string } }
+    UpsellProduct:
+      type: object
+      required: [id, name, imageUrl, price, priceOnRequest, sortOrder]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        imageUrl: { type: ["string", "null"] }
+        price: { type: ["integer", "null"], minimum: 0 }
+        priceOnRequest: { type: boolean }
+        sortOrder: { type: integer, minimum: 1 }
+    UpsellProductList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/UpsellProduct" } }
+    UpsellProductInput:
+      type: object
+      additionalProperties: false
+      required: [alternativeProductIds]
+      properties:
+        productId: { type: string, description: Returned source product id. }
+        alternativeProductIds: { type: array, maxItems: 3, uniqueItems: true, items: { type: string } }
+    PricingLoyaltyTier:
+      allOf:
+        - $ref: "#/components/schemas/VersionedRule"
+        - type: object
+          required: [name, market, spendThresholdRsd, discountPercent, active]
+          properties:
+            name: { type: string, minLength: 1 }
+            market: { $ref: "#/components/schemas/Market" }
+            spendThresholdRsd: { type: integer, minimum: 0 }
+            discountPercent: { type: integer, minimum: 1, maximum: 100 }
+            active: { type: boolean }
+    PricingLoyaltyTierInput:
+      type: object
+      additionalProperties: false
+      required: [name, market, spendThresholdRsd, discountPercent]
+      properties:
+        name: { type: string, minLength: 1 }
+        market: { $ref: "#/components/schemas/Market" }
+        spendThresholdRsd: { type: integer, minimum: 0 }
+        discountPercent: { type: integer, minimum: 1, maximum: 100 }
+        active: { type: boolean, default: true }
+    PricingLoyaltyTierUpdate:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: integer, minimum: 1 }
+        name: { type: string, minLength: 1 }
+        market: { $ref: "#/components/schemas/Market" }
+        spendThresholdRsd: { type: integer, minimum: 0 }
+        discountPercent: { type: integer, minimum: 1, maximum: 100 }
+        active: { type: boolean }
+    LoyaltyProgress:
+      type: object
+      required: [market, netSettledSpendRsd, effectiveTier, nextTier]
+      properties:
+        market: { type: string, enum: [B2B, B2C] }
+        netSettledSpendRsd: { type: integer, minimum: 0 }
+        effectiveTier:
+          type: ["object", "null"]
+          properties:
+            id: { type: string }
+            name: { type: string }
+            discountPercent: { type: integer, minimum: 1, maximum: 100 }
+            spendThresholdRsd: { type: integer, minimum: 0 }
+          required: [id, name, discountPercent, spendThresholdRsd]
+        nextTier:
+          type: ["object", "null"]
+          properties:
+            id: { type: string }
+            name: { type: string }
+            spendThresholdRsd: { type: integer, minimum: 0 }
+            progressPercent: { type: integer, minimum: 0, maximum: 100 }
+          required: [id, name, spendThresholdRsd, progressPercent]
+    BulkSaleCampaign:
+      allOf:
+        - $ref: "#/components/schemas/VersionedRule"
+        - type: object
+          required: [name, market, discountType, discountValue, startsAt, endsAt, status, targets]
+          properties:
+            name: { type: string, minLength: 1 }
+            market: { $ref: "#/components/schemas/Market" }
+            discountType: { type: string, enum: [PERCENT, FIXED_RSD] }
+            discountValue: { type: integer, minimum: 1 }
+            startsAt: { type: string, format: date-time }
+            endsAt: { type: ["string", "null"], format: date-time }
+            status: { type: string, enum: [DRAFT, ACTIVE] }
+            targets: { type: array, minItems: 1, items: { $ref: "#/components/schemas/RuleTarget" } }
+    BulkSaleCampaignInput:
+      type: object
+      additionalProperties: false
+      required: [name, market, discountType, discountValue, startsAt, endsAt, status, targets]
+      properties:
+        name: { type: string, minLength: 1 }
+        market: { $ref: "#/components/schemas/Market" }
+        discountType: { type: string, enum: [PERCENT, FIXED_RSD] }
+        discountValue: { type: integer, minimum: 1, description: Percent values cannot exceed 100. }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: ["string", "null"], format: date-time }
+        status: { type: string, enum: [DRAFT, ACTIVE] }
+        targets: { type: array, minItems: 1, items: { $ref: "#/components/schemas/RuleTarget" } }
+    BulkSaleCampaignUpdate:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: integer, minimum: 1 }
+        name: { type: string, minLength: 1 }
+        market: { $ref: "#/components/schemas/Market" }
+        discountType: { type: string, enum: [PERCENT, FIXED_RSD] }
+        discountValue: { type: integer, minimum: 1 }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: ["string", "null"], format: date-time }
+        status: { type: string, enum: [DRAFT, ACTIVE] }
+        targets: { type: array, minItems: 1, items: { $ref: "#/components/schemas/RuleTarget" } }
+    CartThresholdReward:
+      type: object
+      required: [id, name, market, spendThresholdRsd, rewardKind, discountPercent, giftProductId, giftQuantity, active, version, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        market: { $ref: "#/components/schemas/Market" }
+        spendThresholdRsd: { type: integer, minimum: 0 }
+        rewardKind: { type: string, enum: [FREE_SHIPPING, GIFT_PRODUCT, PERCENT_DISCOUNT] }
+        discountPercent: { type: ["integer", "null"], minimum: 1, maximum: 100 }
+        giftProductId: { type: ["string", "null"] }
+        giftQuantity: { type: ["integer", "null"], minimum: 1 }
+        active: { type: boolean }
+        version: { type: integer, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CartThresholdRewardInput:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [name, market, spendThresholdRsd, rewardKind, active]
+          properties:
+            name: { type: string, minLength: 1 }
+            market: { $ref: "#/components/schemas/Market" }
+            spendThresholdRsd: { type: integer, minimum: 0 }
+            rewardKind: { type: string, const: FREE_SHIPPING }
+            active: { type: boolean }
+        - type: object
+          additionalProperties: false
+          required: [name, market, spendThresholdRsd, rewardKind, giftProductId, giftQuantity, active]
+          properties:
+            name: { type: string, minLength: 1 }
+            market: { $ref: "#/components/schemas/Market" }
+            spendThresholdRsd: { type: integer, minimum: 0 }
+            rewardKind: { type: string, const: GIFT_PRODUCT }
+            giftProductId: { type: string }
+            giftQuantity: { type: integer, minimum: 1 }
+            active: { type: boolean }
+        - type: object
+          additionalProperties: false
+          required: [name, market, spendThresholdRsd, rewardKind, discountPercent, active]
+          properties:
+            name: { type: string, minLength: 1 }
+            market: { $ref: "#/components/schemas/Market" }
+            spendThresholdRsd: { type: integer, minimum: 0 }
+            rewardKind: { type: string, const: PERCENT_DISCOUNT }
+            discountPercent: { type: integer, minimum: 1, maximum: 100 }
+            active: { type: boolean }
+    CartThresholdRewardUpdate:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: integer, minimum: 1 }
+        name: { type: string, minLength: 1 }
+        market: { $ref: "#/components/schemas/Market" }
+        spendThresholdRsd: { type: integer, minimum: 0 }
+        rewardKind: { type: string, enum: [FREE_SHIPPING, GIFT_PRODUCT, PERCENT_DISCOUNT] }
+        discountPercent: { type: integer, minimum: 1, maximum: 100 }
+        giftProductId: { type: string }
+        giftQuantity: { type: integer, minimum: 1 }
+        active: { type: boolean }
+    CartThresholdRewardProgress:
+      type: object
+      required: [reached, next]
+      properties:
+        reached: { type: array, items: { $ref: "#/components/schemas/CartThresholdRewardDescriptor" } }
+        next: { oneOf: [{ $ref: "#/components/schemas/CartThresholdRewardDescriptor" }, { type: "null" }] }
+    CartThresholdRewardDescriptor:
+      type: object
+      required: [id, name, spendThresholdRsd, rewardKind, discountPercent, giftQuantity]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        spendThresholdRsd: { type: integer, minimum: 0 }
+        rewardKind: { type: string, enum: [FREE_SHIPPING, GIFT_PRODUCT, PERCENT_DISCOUNT] }
+        discountPercent: { type: ["integer", "null"], minimum: 1, maximum: 100 }
+        giftQuantity: { type: ["integer", "null"], minimum: 1 }
+    AutomaticXyPromotion:
+      type: object
+      required: [id, name, market, buyQuantity, rewardQuantity, rewardPercent, perOrderRewardUnitCap, startsAt, endsAt, status, buyTargets, rewardTargets, version, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        market: { $ref: "#/components/schemas/Market" }
+        buyQuantity: { type: integer, minimum: 1 }
+        rewardQuantity: { type: integer, minimum: 1 }
+        rewardPercent: { type: integer, minimum: 1, maximum: 100 }
+        perOrderRewardUnitCap: { type: ["integer", "null"], minimum: 1 }
+        startsAt: { type: ["string", "null"], format: date-time }
+        endsAt: { type: ["string", "null"], format: date-time }
+        status: { type: string, enum: [DRAFT, ACTIVE] }
+        buyTargets: { type: array, items: { $ref: "#/components/schemas/RuleTarget" } }
+        rewardTargets: { type: array, items: { $ref: "#/components/schemas/RuleTarget" } }
+        version: { type: integer, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AutomaticXyPromotionInput:
+      type: object
+      additionalProperties: false
+      required: [name, market, buyQuantity, rewardQuantity, rewardPercent, startsAt, endsAt, status, buyTargets, rewardTargets]
+      properties:
+        name: { type: string, minLength: 1 }
+        market: { $ref: "#/components/schemas/Market" }
+        buyQuantity: { type: integer, minimum: 1 }
+        rewardQuantity: { type: integer, minimum: 1 }
+        rewardPercent: { type: integer, minimum: 1, maximum: 100 }
+        perOrderRewardUnitCap: { type: ["integer", "null"], minimum: 1 }
+        startsAt: { type: ["string", "null"], format: date-time }
+        endsAt: { type: ["string", "null"], format: date-time }
+        status: { type: string, enum: [DRAFT, ACTIVE] }
+        buyTargets: { type: array, minItems: 1, items: { $ref: "#/components/schemas/RuleTarget" } }
+        rewardTargets: { type: array, minItems: 1, items: { $ref: "#/components/schemas/RuleTarget" } }
+    AutomaticXyPromotionUpdate:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: integer, minimum: 1 }
+        name: { type: string, minLength: 1 }
+        market: { $ref: "#/components/schemas/Market" }
+        buyQuantity: { type: integer, minimum: 1 }
+        rewardQuantity: { type: integer, minimum: 1 }
+        rewardPercent: { type: integer, minimum: 1, maximum: 100 }
+        perOrderRewardUnitCap: { type: ["integer", "null"], minimum: 1 }
+        startsAt: { type: ["string", "null"], format: date-time }
+        endsAt: { type: ["string", "null"], format: date-time }
+        status: { type: string, enum: [DRAFT, ACTIVE] }
+        buyTargets: { type: array, minItems: 1, items: { $ref: "#/components/schemas/RuleTarget" } }
+        rewardTargets: { type: array, minItems: 1, items: { $ref: "#/components/schemas/RuleTarget" } }
+    AutomaticXyPromotionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, name, buyQuantity, rewardQuantity, rewardPercent, perOrderRewardUnitCap]
+            properties:
+              id: { type: string }
+              name: { type: string }
+              buyQuantity: { type: integer, minimum: 1 }
+              rewardQuantity: { type: integer, minimum: 1 }
+              rewardPercent: { type: integer, minimum: 1, maximum: 100 }
+              perOrderRewardUnitCap: { type: ["integer", "null"], minimum: 1 }
+    CheckoutThresholdRewardDescriptor:
+      type: object
+      required: [id, thresholdRsd, kind]
+      properties:
+        id: { type: string }
+        thresholdRsd: { type: integer, minimum: 0 }
+        kind: { type: string, enum: [FREE_SHIPPING, GIFT_PRODUCT, PERCENT_DISCOUNT] }
+    CheckoutThresholdNextDescriptor:
+      allOf:
+        - $ref: "#/components/schemas/CheckoutThresholdRewardDescriptor"
+        - type: object
+          required: [remainingRsd]
+          properties:
+            remainingRsd: { type: integer, minimum: 0 }
+    CheckoutRewardGiftDescriptor:
+      type: object
+      required: [rewardId, productId, productName, productImageUrl, quantity, unitPrice, price, thresholdLabel]
+      properties:
+        rewardId: { type: string }
+        productId: { type: string }
+        productName: { type: string }
+        productImageUrl: { type: ["string", "null"] }
+        quantity: { type: integer, minimum: 1 }
+        unitPrice: { type: integer, const: 0 }
+        price: { type: integer, const: 0 }
+        thresholdLabel: { type: string }

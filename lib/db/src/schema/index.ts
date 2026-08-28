@@ -13,3 +13,4 @@ export * from "./beauty-jobs";
 export * from "./referral";
 export * from "./commerce-ef";
 export * from "./commerce-g";
+export * from "./commerce-deo-g2";

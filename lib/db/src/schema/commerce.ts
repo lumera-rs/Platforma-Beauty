@@ -61,7 +61,9 @@ export const subscriptionStatusEnum = pgEnum("subscription_status", [
 export const supplierScopeEnum = pgEnum("supplier_scope", ["B2B", "B2C", "BOTH"]);
 export const similarProductsModeEnum = pgEnum("similar_products_mode", ["AUTO_CATEGORY", "MANUAL"]);
 export const bundleMarketEnum = pgEnum("bundle_market", ["B2B", "B2C", "BOTH"]);
-export const cartPriceSourceEnum = pgEnum("cart_price_source", ["FULL_PRICE", "SALE", "TIER", "BUNDLE"]);
+export const cartPriceSourceEnum = pgEnum("cart_price_source", [
+  "FULL_PRICE", "SALE", "TIER", "LOYALTY_TIER_PRICE", "BUNDLE",
+]);
 export const commerceAudienceEnum = pgEnum("commerce_audience", ["B2B", "B2C"]);
 export const loyaltyPointEntryTypeEnum = pgEnum("loyalty_point_entry_type", ["AWARD", "REVERSAL", "ADJUSTMENT"]);
 export const productWaitlistStatusEnum = pgEnum("product_waitlist_status", ["ACTIVE", "NOTIFIED", "UNSUBSCRIBED"]);
@@ -172,6 +174,8 @@ export const productsTable = pgTable("products", {
   deliveryBusinessDaysOverride: integer("delivery_business_days_override"),
   subscriptionAllowed: boolean("subscription_allowed").notNull().default(false),
   subscriptionDiscountPercent: integer("subscription_discount_percent"),
+  /** Excludes this SKU from the currently effective loyalty pricing tier. */
+  loyaltyPricingExcluded: boolean("loyalty_pricing_excluded").notNull().default(false),
   /** Manual override; zero effective sellable stock also implies price-on-request. */
   priceOnRequest: boolean("price_on_request").notNull().default(false),
   bulkMatrixEnabled: boolean("bulk_matrix_enabled").notNull().default(false),
@@ -380,6 +384,8 @@ export const ordersTable = pgTable("orders", {
   couponCodeSnapshot: text("coupon_code_snapshot"),
   couponDiscountRsd: integer("coupon_discount_rsd").notNull().default(0),
   couponFreeShipping: boolean("coupon_free_shipping").notNull().default(false),
+  /** Immutable Deo G2 rule/configuration and allocation evidence. */
+  promotionSnapshot: jsonb("promotion_snapshot").$type<Record<string, unknown>>(),
   referralCreditRestoredAt: timestamp("referral_credit_restored_at", { withTimezone: true }),
   totalWeightGrams: integer("total_weight_grams").notNull().default(0),
   paymentMethod: paymentMethodEnum("payment_method").notNull(),
@@ -518,6 +524,12 @@ export const orderItemsTable = pgTable("order_items", {
   lineDiscount: integer("line_discount").notNull().default(0),
   /** Coupon allocation is independent from catalog priceSource/lineDiscount. */
   couponDiscountRsd: integer("coupon_discount_rsd").notNull().default(0),
+  automaticPromotionDiscountRsd: integer("automatic_promotion_discount_rsd").notNull().default(0),
+  thresholdRewardDiscountRsd: integer("threshold_reward_discount_rsd").notNull().default(0),
+  /** A threshold GIFT_PRODUCT line is inventory-bearing but never commercial. */
+  isRewardGift: boolean("is_reward_gift").notNull().default(false),
+  /** Immutable threshold-rule and product facts that granted this line. */
+  rewardSnapshot: jsonb("reward_snapshot").$type<Record<string, unknown>>(),
   bundleNameSnapshot: text("bundle_name_snapshot"),
   bundleComponentsSnapshot: jsonb("bundle_components_snapshot")
     .$type<Array<{ productId: string; name: string; catalogReference: string; quantity: number }>>(),
@@ -528,6 +540,13 @@ export const orderItemsTable = pgTable("order_items", {
   index("order_items_product_idx").on(table.productId),
   index("order_items_supplier_idx").on(table.supplierId),
   check("order_items_target_check", sql`num_nonnulls(${table.productId}, ${table.bundleId}) = 1`),
+  check("order_items_reward_gift_check", sql`
+    (NOT ${table.isRewardGift}) OR (
+      ${table.productId} IS NOT NULL AND ${table.bundleId} IS NULL
+      AND ${table.unitPrice} = 0 AND ${table.price} = 0
+      AND ${table.lineSubtotal} = 0 AND ${table.lineTotal} = 0
+      AND ${table.rewardSnapshot} IS NOT NULL
+    )`),
 ]);
 
 export const orderBundleComponentsTable = pgTable("order_bundle_components", {
@@ -646,6 +665,8 @@ export const retailOrdersTable = pgTable("retail_orders", {
   couponCodeSnapshot: text("coupon_code_snapshot"),
   couponDiscountRsd: integer("coupon_discount_rsd").notNull().default(0),
   couponFreeShipping: boolean("coupon_free_shipping").notNull().default(false),
+  /** Immutable G2 rule identities, versions, qualification and allocations. */
+  promotionSnapshot: jsonb("promotion_snapshot").$type<Record<string, unknown>>(),
   referralCreditRestoredAt: timestamp("referral_credit_restored_at", { withTimezone: true }),
   shippingCost: integer("shipping_cost").notNull().default(0),
   total: integer("total").notNull(),
@@ -695,6 +716,10 @@ export const retailOrderItemsTable = pgTable("retail_order_items", {
   priceSource: cartPriceSourceEnum("price_source").notNull().default("FULL_PRICE"),
   lineDiscount: integer("line_discount").notNull().default(0),
   couponDiscountRsd: integer("coupon_discount_rsd").notNull().default(0),
+  automaticPromotionDiscountRsd: integer("automatic_promotion_discount_rsd").notNull().default(0),
+  thresholdRewardDiscountRsd: integer("threshold_reward_discount_rsd").notNull().default(0),
+  isRewardGift: boolean("is_reward_gift").notNull().default(false),
+  rewardSnapshot: jsonb("reward_snapshot").$type<Record<string, unknown>>(),
   bundleNameSnapshot: text("bundle_name_snapshot"),
   bundleComponentsSnapshot: jsonb("bundle_components_snapshot")
     .$type<Array<{ productId: string; name: string; catalogReference: string; quantity: number }>>(),
@@ -705,6 +730,12 @@ export const retailOrderItemsTable = pgTable("retail_order_items", {
   index("retail_order_items_catalog_reference_order_idx").on(table.productCatalogReference, table.orderId),
   index("retail_order_items_supplier_idx").on(table.supplierId),
   check("retail_order_items_target_check", sql`num_nonnulls(${table.productId}, ${table.bundleId}) = 1`),
+  check("retail_order_items_reward_gift_check", sql`
+    (NOT ${table.isRewardGift}) OR (
+      ${table.productId} IS NOT NULL AND ${table.bundleId} IS NULL
+      AND ${table.unitPrice} = 0 AND ${table.lineSubtotal} = 0
+      AND ${table.lineTotal} = 0 AND ${table.rewardSnapshot} IS NOT NULL
+    )`),
 ]);
 
 export const loyaltyPointLedgerTable = pgTable("loyalty_point_ledger", {

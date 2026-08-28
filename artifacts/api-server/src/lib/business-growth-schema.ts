@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 58;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 64;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -110,7 +110,7 @@ const ENUM_LABELS: Record<string, string[]> = {
   supplier_scope: ["B2B", "B2C", "BOTH"],
   similar_products_mode: ["AUTO_CATEGORY", "MANUAL"],
   bundle_market: ["B2B", "B2C", "BOTH"],
-  cart_price_source: ["FULL_PRICE", "SALE", "TIER", "BUNDLE"],
+  cart_price_source: ["FULL_PRICE", "SALE", "TIER", "LOYALTY_TIER_PRICE", "BUNDLE"],
   commerce_audience: ["B2B", "B2C"],
   loyalty_point_entry_type: ["AWARD", "REVERSAL", "ADJUSTMENT"],
   product_waitlist_status: ["ACTIVE", "NOTIFIED", "UNSUBSCRIBED"],
@@ -860,6 +860,33 @@ function tableStatements(s: string): string[] {
     `ALTER TABLE ${s}.retail_orders ADD COLUMN IF NOT EXISTS referral_credit_pre_credit_payable_total_rsd integer NOT NULL DEFAULT 0`,
     `ALTER TABLE ${s}.retail_orders ADD COLUMN IF NOT EXISTS referral_credit_applied_rsd integer NOT NULL DEFAULT 0`,
     `ALTER TABLE ${s}.retail_orders ADD COLUMN IF NOT EXISTS referral_credit_restored_at timestamptz`,
+    // v62 — B2C G2 checkout is immutable evidence: rule ids/versions/config,
+    // qualification result and allocations are deliberately snapshots, never FKs.
+    `ALTER TABLE ${s}.retail_orders ADD COLUMN IF NOT EXISTS promotion_snapshot jsonb`,
+    // v63 — B2B uses the same immutable G2 evidence boundary as retail.
+    `ALTER TABLE ${s}.orders ADD COLUMN IF NOT EXISTS promotion_snapshot jsonb`,
+    `CREATE OR REPLACE FUNCTION ${s}.prevent_order_promotion_snapshot_update()
+      RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.promotion_snapshot IS DISTINCT FROM OLD.promotion_snapshot THEN
+          RAISE EXCEPTION 'Order promotion snapshot is immutable';
+        END IF;
+        RETURN NEW;
+      END $$`,
+    `DROP TRIGGER IF EXISTS orders_promotion_snapshot_immutable ON ${s}.orders`,
+    `CREATE TRIGGER orders_promotion_snapshot_immutable BEFORE UPDATE ON ${s}.orders
+       FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_order_promotion_snapshot_update()`,
+    `CREATE OR REPLACE FUNCTION ${s}.prevent_retail_order_promotion_snapshot_update()
+      RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.promotion_snapshot IS DISTINCT FROM OLD.promotion_snapshot THEN
+          RAISE EXCEPTION 'Retail order promotion snapshot is immutable';
+        END IF;
+        RETURN NEW;
+      END $$`,
+    `DROP TRIGGER IF EXISTS retail_orders_promotion_snapshot_immutable ON ${s}.retail_orders`,
+    `CREATE TRIGGER retail_orders_promotion_snapshot_immutable BEFORE UPDATE ON ${s}.retail_orders
+       FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_retail_order_promotion_snapshot_update()`,
     `ALTER TABLE ${s}.retail_orders DROP CONSTRAINT IF EXISTS retail_orders_idempotency_key_key`,
     `CREATE UNIQUE INDEX IF NOT EXISTS retail_orders_cart_idempotency_unique
        ON ${s}.retail_orders (cart_id, idempotency_key) WHERE cart_id IS NOT NULL`,
@@ -953,6 +980,47 @@ function tableStatements(s: string): string[] {
     `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS discount_snapshot integer`,
     `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS line_subtotal integer`,
     `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS line_total integer`,
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS automatic_promotion_discount_rsd integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS threshold_reward_discount_rsd integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS automatic_promotion_discount_rsd integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS threshold_reward_discount_rsd integer NOT NULL DEFAULT 0`,
+    // v64 — GIFT_PRODUCT rewards are explicit immutable, zero-price inventory lines.
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS is_reward_gift boolean NOT NULL DEFAULT false`,
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS reward_snapshot jsonb`,
+    `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS is_reward_gift boolean NOT NULL DEFAULT false`,
+    `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS reward_snapshot jsonb`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'retail_order_items_reward_gift_check'
+         AND conrelid = '${s}.retail_order_items'::regclass) THEN
+         ALTER TABLE ${s}.retail_order_items ADD CONSTRAINT retail_order_items_reward_gift_check
+           CHECK (NOT is_reward_gift OR (product_id IS NOT NULL AND unit_price = 0 AND line_subtotal = 0 AND line_total = 0 AND reward_snapshot IS NOT NULL)) NOT VALID;
+       END IF;
+     END $$`,
+    `ALTER TABLE ${s}.retail_order_items VALIDATE CONSTRAINT retail_order_items_reward_gift_check`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'order_items_reward_gift_check'
+         AND conrelid = '${s}.order_items'::regclass) THEN
+         ALTER TABLE ${s}.order_items ADD CONSTRAINT order_items_reward_gift_check
+           CHECK (NOT is_reward_gift OR (product_id IS NOT NULL AND price = 0 AND unit_price = 0 AND line_subtotal = 0 AND line_total = 0 AND reward_snapshot IS NOT NULL)) NOT VALID;
+       END IF;
+     END $$`,
+    `ALTER TABLE ${s}.order_items VALIDATE CONSTRAINT order_items_reward_gift_check`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'order_items_g2_discount_check'
+         AND conrelid = '${s}.order_items'::regclass) THEN
+         ALTER TABLE ${s}.order_items ADD CONSTRAINT order_items_g2_discount_check
+           CHECK (automatic_promotion_discount_rsd >= 0 AND threshold_reward_discount_rsd >= 0) NOT VALID;
+       END IF;
+     END $$`,
+    `ALTER TABLE ${s}.order_items VALIDATE CONSTRAINT order_items_g2_discount_check`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'retail_order_items_g2_discount_check'
+         AND conrelid = '${s}.retail_order_items'::regclass) THEN
+         ALTER TABLE ${s}.retail_order_items ADD CONSTRAINT retail_order_items_g2_discount_check
+           CHECK (automatic_promotion_discount_rsd >= 0 AND threshold_reward_discount_rsd >= 0) NOT VALID;
+       END IF;
+     END $$`,
+    `ALTER TABLE ${s}.retail_order_items VALIDATE CONSTRAINT retail_order_items_g2_discount_check`,
     `DO $$ BEGIN
        IF NOT EXISTS (
          SELECT 1 FROM pg_trigger
@@ -1023,7 +1091,9 @@ function tableStatements(s: string): string[] {
           OR NEW.discount_snapshot IS DISTINCT FROM OLD.discount_snapshot
           OR NEW.quantity IS DISTINCT FROM OLD.quantity
           OR NEW.line_subtotal IS DISTINCT FROM OLD.line_subtotal
-          OR NEW.line_total IS DISTINCT FROM OLD.line_total THEN
+          OR NEW.line_total IS DISTINCT FROM OLD.line_total
+          OR NEW.is_reward_gift IS DISTINCT FROM OLD.is_reward_gift
+          OR NEW.reward_snapshot IS DISTINCT FROM OLD.reward_snapshot THEN
           RAISE EXCEPTION 'Order item commercial snapshot is immutable';
         END IF;
         RETURN NEW;
@@ -1034,6 +1104,30 @@ function tableStatements(s: string): string[] {
     `DROP TRIGGER IF EXISTS retail_order_items_commercial_snapshot_immutable ON ${s}.retail_order_items`,
     `CREATE TRIGGER retail_order_items_commercial_snapshot_immutable BEFORE UPDATE ON ${s}.retail_order_items
        FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_order_item_commercial_snapshot_update()`,
+    `CREATE OR REPLACE FUNCTION ${s}.prevent_retail_g2_snapshot_update()
+      RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.automatic_promotion_discount_rsd IS DISTINCT FROM OLD.automatic_promotion_discount_rsd
+          OR NEW.threshold_reward_discount_rsd IS DISTINCT FROM OLD.threshold_reward_discount_rsd THEN
+          RAISE EXCEPTION 'Retail G2 promotion allocations are immutable';
+        END IF;
+        RETURN NEW;
+      END $$`,
+    `DROP TRIGGER IF EXISTS retail_order_items_g2_snapshot_immutable ON ${s}.retail_order_items`,
+    `CREATE TRIGGER retail_order_items_g2_snapshot_immutable BEFORE UPDATE ON ${s}.retail_order_items
+       FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_retail_g2_snapshot_update()`,
+    `CREATE OR REPLACE FUNCTION ${s}.prevent_order_g2_snapshot_update()
+      RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.automatic_promotion_discount_rsd IS DISTINCT FROM OLD.automatic_promotion_discount_rsd
+          OR NEW.threshold_reward_discount_rsd IS DISTINCT FROM OLD.threshold_reward_discount_rsd THEN
+          RAISE EXCEPTION 'Order G2 promotion allocations are immutable';
+        END IF;
+        RETURN NEW;
+      END $$`,
+    `DROP TRIGGER IF EXISTS order_items_g2_snapshot_immutable ON ${s}.order_items`,
+    `CREATE TRIGGER order_items_g2_snapshot_immutable BEFORE UPDATE ON ${s}.order_items
+       FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_order_g2_snapshot_update()`,
     `CREATE TABLE IF NOT EXISTS ${s}.retail_product_reviews (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE CASCADE,
@@ -2731,6 +2825,73 @@ function tableStatements(s: string): string[] {
       created_at timestamptz NOT NULL DEFAULT now()
     )`,
     `CREATE INDEX IF NOT EXISTS retail_product_review_attachments_review_idx ON ${s}.retail_product_review_attachments (review_id)`,
+    // v60 — Deo G2 normalized, versioned rule definitions.  Rule rows are
+    // deliberately separate from catalog products: expiring a campaign never
+    // rewrites a product price, and immutable orders retain their snapshots.
+    `CREATE TABLE IF NOT EXISTS ${s}.product_upsell_links (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE CASCADE,
+      alternative_product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE RESTRICT, sort_order integer NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(), CHECK (product_id <> alternative_product_id), CHECK (sort_order BETWEEN 1 AND 3),
+      UNIQUE (product_id, alternative_product_id), UNIQUE (product_id, sort_order)
+    )`,
+    `CREATE INDEX IF NOT EXISTS product_upsell_links_alternative_idx ON ${s}.product_upsell_links (alternative_product_id)`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS loyalty_pricing_excluded boolean NOT NULL DEFAULT false`,
+    `CREATE TABLE IF NOT EXISTS ${s}.loyalty_pricing_tiers (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL, market text NOT NULL, spend_threshold_rsd integer NOT NULL,
+      discount_percent integer NOT NULL, active boolean NOT NULL DEFAULT true, version integer NOT NULL DEFAULT 1,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      UNIQUE (market, name), CHECK (market IN ('B2B','B2C','BOTH')), CHECK (spend_threshold_rsd >= 0),
+      CHECK (discount_percent BETWEEN 1 AND 100), CHECK (version >= 1)
+    )`,
+    `CREATE INDEX IF NOT EXISTS loyalty_pricing_tiers_market_active_threshold_idx ON ${s}.loyalty_pricing_tiers (market, active, spend_threshold_rsd)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.loyalty_pricing_tier_product_exclusions (
+      tier_id uuid NOT NULL REFERENCES ${s}.loyalty_pricing_tiers(id) ON DELETE CASCADE,
+      product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE RESTRICT, UNIQUE (tier_id, product_id)
+    )`,
+    `CREATE INDEX IF NOT EXISTS loyalty_pricing_tier_product_exclusions_product_idx ON ${s}.loyalty_pricing_tier_product_exclusions (product_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.bulk_sale_campaigns (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL, market text NOT NULL, discount_type text NOT NULL,
+      discount_value integer NOT NULL, starts_at timestamptz NOT NULL, ends_at timestamptz, status text NOT NULL DEFAULT 'DRAFT',
+      version integer NOT NULL DEFAULT 1, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CHECK (market IN ('B2B','B2C','BOTH')), CHECK (discount_type IN ('PERCENT','FIXED_RSD')), CHECK (discount_value > 0),
+      CHECK (status IN ('DRAFT','ACTIVE')), CHECK (ends_at IS NULL OR ends_at > starts_at), CHECK (version >= 1)
+    )`,
+    `CREATE INDEX IF NOT EXISTS bulk_sale_campaigns_market_status_schedule_idx ON ${s}.bulk_sale_campaigns (market, status, starts_at, ends_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.bulk_sale_campaign_targets (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), campaign_id uuid NOT NULL REFERENCES ${s}.bulk_sale_campaigns(id) ON DELETE CASCADE,
+      product_id uuid REFERENCES ${s}.products(id) ON DELETE CASCADE, category_id uuid REFERENCES ${s}.product_categories(id) ON DELETE CASCADE,
+      CHECK (num_nonnulls(product_id, category_id) = 1)
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS bulk_sale_campaign_targets_product_unique ON ${s}.bulk_sale_campaign_targets (campaign_id, product_id) WHERE product_id IS NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS bulk_sale_campaign_targets_category_unique ON ${s}.bulk_sale_campaign_targets (campaign_id, category_id) WHERE category_id IS NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS bulk_sale_campaign_targets_product_idx ON ${s}.bulk_sale_campaign_targets (product_id)`,
+    `CREATE INDEX IF NOT EXISTS bulk_sale_campaign_targets_category_idx ON ${s}.bulk_sale_campaign_targets (category_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.cart_threshold_rewards (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL, market text NOT NULL, spend_threshold_rsd integer NOT NULL,
+      reward_kind text NOT NULL, discount_percent integer, gift_product_id uuid REFERENCES ${s}.products(id) ON DELETE RESTRICT,
+      gift_quantity integer, active boolean NOT NULL DEFAULT true, version integer NOT NULL DEFAULT 1,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CHECK (market IN ('B2B','B2C','BOTH')), CHECK (spend_threshold_rsd >= 0), CHECK (reward_kind IN ('FREE_SHIPPING','GIFT_PRODUCT','PERCENT_DISCOUNT')),
+      CHECK ((reward_kind = 'FREE_SHIPPING' AND discount_percent IS NULL AND gift_product_id IS NULL AND gift_quantity IS NULL) OR (reward_kind = 'PERCENT_DISCOUNT' AND discount_percent BETWEEN 1 AND 100 AND gift_product_id IS NULL AND gift_quantity IS NULL) OR (reward_kind = 'GIFT_PRODUCT' AND gift_product_id IS NOT NULL AND gift_quantity > 0 AND discount_percent IS NULL)), CHECK (version >= 1)
+    )`,
+    `CREATE INDEX IF NOT EXISTS cart_threshold_rewards_market_active_threshold_idx ON ${s}.cart_threshold_rewards (market, active, spend_threshold_rsd)`,
+    `CREATE INDEX IF NOT EXISTS cart_threshold_rewards_gift_product_idx ON ${s}.cart_threshold_rewards (gift_product_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.automatic_xy_promotions (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL, market text NOT NULL, buy_quantity integer NOT NULL,
+      reward_quantity integer NOT NULL, reward_percent integer NOT NULL, per_order_reward_unit_cap integer, starts_at timestamptz, ends_at timestamptz,
+      status text NOT NULL DEFAULT 'DRAFT', version integer NOT NULL DEFAULT 1, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CHECK (market IN ('B2B','B2C','BOTH')), CHECK (buy_quantity > 0 AND reward_quantity > 0 AND reward_percent BETWEEN 1 AND 100 AND (per_order_reward_unit_cap IS NULL OR per_order_reward_unit_cap > 0)), CHECK (status IN ('DRAFT','ACTIVE')), CHECK (ends_at IS NULL OR starts_at IS NULL OR ends_at > starts_at), CHECK (version >= 1)
+    )`,
+    `CREATE INDEX IF NOT EXISTS automatic_xy_promotions_market_status_schedule_idx ON ${s}.automatic_xy_promotions (market, status, starts_at, ends_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.automatic_xy_promotion_targets (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), promotion_id uuid NOT NULL REFERENCES ${s}.automatic_xy_promotions(id) ON DELETE CASCADE,
+      target_role text NOT NULL, product_id uuid REFERENCES ${s}.products(id) ON DELETE CASCADE, category_id uuid REFERENCES ${s}.product_categories(id) ON DELETE CASCADE,
+      CHECK (target_role IN ('BUY','REWARD')), CHECK (num_nonnulls(product_id, category_id) = 1)
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS automatic_xy_targets_role_product_unique ON ${s}.automatic_xy_promotion_targets (promotion_id, target_role, product_id) WHERE product_id IS NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS automatic_xy_targets_role_category_unique ON ${s}.automatic_xy_promotion_targets (promotion_id, target_role, category_id) WHERE category_id IS NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS automatic_xy_targets_product_idx ON ${s}.automatic_xy_promotion_targets (product_id)`,
+    `CREATE INDEX IF NOT EXISTS automatic_xy_targets_category_idx ON ${s}.automatic_xy_promotion_targets (category_id)`,
   ];
 }
 

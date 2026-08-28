@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { Link, useLocation, useRoute, useSearch } from "wouter";
 import { useCountdown } from "@/hooks/use-countdown";
-import { ChevronLeft, ChevronRight, Loader2, Search, ShoppingBag, Sparkles, Building2, Bell, CheckCircle, Package, Eye, Heart, CalendarClock, Filter, X, Star, Flag, Clock, ShieldCheck, MessageSquare, Timer } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Search, ShoppingBag, Sparkles, Building2, Bell, CheckCircle, Package, Eye, Heart, CalendarClock, Filter, X, Star, Flag, Clock, ShieldCheck, MessageSquare, Timer, Tag } from "lucide-react";
 import {
   useGetSupplierPublicProduct, useListSupplierPublicProducts, useListPublicSuppliers,
   useGetPublicSupplier, useListSupplierCategories, getGetPublicSupplierQueryKey,
@@ -19,6 +19,8 @@ import {
   useGetCustomerRetailProductReviewContext, getGetCustomerRetailProductReviewContextQueryKey,
   useCreateCustomerRetailProductReview,
   useReportRetailProductReview,
+  useGetPublicProductUpsells, getGetPublicProductUpsellsQueryKey,
+  useGetPublicProductAutomaticXyPromotions, getGetPublicProductAutomaticXyPromotionsQueryKey,
   RetailProductSubscriptionInputFrequency, RetailProductSubscriptionInputPaymentMethod, RetailProductSubscriptionInputDeliveryMethod,
   B2cProductSort
 } from "@workspace/api-client-react";
@@ -1022,6 +1024,10 @@ export function PublicProductDetailPage() {
   const { data: supplier } = useGetPublicSupplier(supplierSlug, { query: { enabled: !!supplierSlug, queryKey: getGetPublicSupplierQueryKey(supplierSlug) } });
   const { data: product, isLoading, isError } = useGetSupplierPublicProduct(supplierSlug, productId, { query: { enabled: !!supplierSlug && !!productId, queryKey: getGetSupplierPublicProductQueryKey(supplierSlug, productId) } });
 
+  const { data: upsellsData } = useGetPublicProductUpsells(productId, { query: { enabled: !!productId, queryKey: getGetPublicProductUpsellsQueryKey(productId) } });
+  const { data: xyData } = useGetPublicProductAutomaticXyPromotions(productId, { query: { enabled: !!productId, queryKey: getGetPublicProductAutomaticXyPromotionsQueryKey(productId) } });
+  const activeXy = xyData?.items?.[0];
+
   const recordView = useRecordRecentlyViewedProduct();
   useEffect(() => {
     if (supplierSlug && productId) {
@@ -1164,6 +1170,12 @@ export function PublicProductDetailPage() {
               )}
             </h1>
 
+            {activeXy && (
+              <div className="mt-2 mb-2 inline-flex items-center gap-1.5 px-3 py-1 bg-rose-100 text-rose-700 font-bold text-sm rounded-full border border-rose-200 shadow-sm">
+                <Tag className="w-4 h-4" /> Kupi {activeXy.buyQuantity}, dobij {activeXy.rewardQuantity} {activeXy.rewardPercent === 100 ? "besplatno" : `uz ${activeXy.rewardPercent}% popusta`}
+              </div>
+            )}
+
             <a href="#reviews" className="inline-block hover:opacity-80 transition-opacity">
               <StarRating rating={rating} count={count} />
             </a>
@@ -1270,6 +1282,23 @@ export function PublicProductDetailPage() {
             </div>
           </div>
         </section>
+
+        {upsellsData?.items && upsellsData.items.length > 0 && (
+          <section className="mt-16 pt-10 border-t" data-testid="section-public-upsells">
+            <h2 className="mb-6 font-serif text-2xl font-bold">Bolja ponuda za vas</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {upsellsData.items.map((upsell) => (
+                <Link key={upsell.id} href={`/shop/${supplierSlug}/proizvod/${upsell.id}`} className="flex items-center gap-4 rounded-xl border bg-card p-3 hover:shadow-md transition-shadow">
+                  <OptimizedImage src={upsell.imageUrl || ""} alt={upsell.name} className="w-20 h-20 rounded-md object-cover bg-muted" width={80} height={80} preferredSize="thumbnail" />
+                  <div>
+                    <h3 className="line-clamp-2 text-sm font-semibold">{upsell.name}</h3>
+                    <p className="mt-1 font-bold text-primary">{upsell.priceOnRequest ? "Cena na upit" : `${upsell.price?.toLocaleString("sr-RS")} RSD`}</p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
 
         <ProductReviews supplierSlug={supplierSlug} productId={productId} isCustomer={isCustomer} />
 

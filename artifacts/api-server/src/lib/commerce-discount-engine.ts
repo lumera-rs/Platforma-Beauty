@@ -2,7 +2,10 @@
  * Pure, market-agnostic discount stacking policy. Callers provide the final
  * line amount and every discount fact which contributed to that amount.
  */
-export type CommerceDiscountKind = "SALE" | "TIER" | "BUNDLE" | "COUPON" | "LOYALTY" | (string & {});
+export type CommerceDiscountKind =
+  | "SALE" | "TIER" | "BUNDLE" | "COUPON" | "LOYALTY"
+  | "AUTOMATIC_XY_PROMOTION" | "CART_THRESHOLD_REWARD"
+  | (string & {});
 
 export type CommerceDiscount = {
   kind: CommerceDiscountKind;
@@ -26,7 +29,8 @@ const positiveDiscountBlocksReferral: CommerceDiscountPolicy = Object.freeze({
 /** Immutable policy source of truth. Unknown positive discounts use the same
  * fail-closed policy until they are added deliberately in code and reviewed. */
 export const COMMERCE_DISCOUNT_POLICIES: Readonly<Record<
-  "SALE" | "TIER" | "BUNDLE" | "COUPON" | "LOYALTY",
+  "SALE" | "TIER" | "BUNDLE" | "COUPON" | "LOYALTY"
+  | "AUTOMATIC_XY_PROMOTION" | "CART_THRESHOLD_REWARD",
   CommerceDiscountPolicy
 >> = Object.freeze({
   SALE: positiveDiscountBlocksReferral,
@@ -34,6 +38,8 @@ export const COMMERCE_DISCOUNT_POLICIES: Readonly<Record<
   BUNDLE: positiveDiscountBlocksReferral,
   COUPON: positiveDiscountBlocksReferral,
   LOYALTY: positiveDiscountBlocksReferral,
+  AUTOMATIC_XY_PROMOTION: positiveDiscountBlocksReferral,
+  CART_THRESHOLD_REWARD: positiveDiscountBlocksReferral,
 });
 
 function normalizeKind(kind: string) {
@@ -95,7 +101,8 @@ export function commerceDiscountsForPricedLine(input: {
   additionalDiscounts?: readonly CommerceDiscount[];
 }): CommerceDiscount[] {
   const discounts: CommerceDiscount[] = [...(input.additionalDiscounts ?? [])];
-  const source = normalizeKind(input.priceSource);
+  const normalizedSource = normalizeKind(input.priceSource);
+  const source = normalizedSource === "LOYALTY_TIER_PRICE" ? "LOYALTY" : normalizedSource;
   if (source !== "FULL_PRICE") {
     // Bundle prices do not necessarily expose a list-price delta, but the
     // bundle promotion itself is still a positive discount family.

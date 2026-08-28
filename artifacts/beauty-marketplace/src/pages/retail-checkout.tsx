@@ -31,6 +31,8 @@ import {
   RetailCheckoutInputDeliveryMethod,
   type RetailCheckoutInput,
   type RetailCheckoutPreview,
+  type CheckoutThresholdNextDescriptor,
+  type CheckoutThresholdRewardDescriptor,
   type RetailCartItemsItem,
   type RetailCart,
 } from "@workspace/api-client-react";
@@ -702,6 +704,25 @@ export function RetailCheckoutPage() {
           <aside className="sticky top-6 h-fit min-w-0 rounded-xl border bg-card p-4 shadow-sm sm:p-6">
             <h2 className="font-bold text-xl mb-4">Pregled porudžbine</h2>
 
+            {preview && preview.thresholdNext && (
+              <div className="mb-4 bg-muted/30 p-3 rounded-lg border text-sm">
+                <p className="font-medium text-foreground">
+                  Fali još <strong className="text-primary">{money(preview.thresholdNext.remainingRsd)}</strong> za nagradu:
+                  <span className="font-bold ml-1">
+                    {preview.thresholdNext.kind === "FREE_SHIPPING" && "Besplatna dostava"}
+                    {preview.thresholdNext.kind === "GIFT_PRODUCT" && "Poklon proizvod"}
+                    {preview.thresholdNext.kind === "PERCENT_DISCOUNT" && "Dodatni popust"}
+                  </span>
+                </p>
+                <div className="mt-2 h-2 w-full bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary transition-all duration-500 ease-out"
+                    style={{ width: `${Math.min(100, (preview.thresholdQualificationSubtotalRsd / preview.thresholdNext.thresholdRsd) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="space-y-3 max-h-64 overflow-y-auto pr-2 mb-6">
               {cart.items.map(item => (
                 <div key={item.id} className="flex justify-between text-sm items-center">
@@ -709,6 +730,14 @@ export function RetailCheckoutPage() {
                     <span className="truncate" title={item.name}>{item.quantity}x {item.name}</span>
                   </div>
                   <span className="font-medium">{money(item.lineTotal)}</span>
+                </div>
+              ))}
+              {preview?.rewardGifts?.map((gift, i) => (
+                <div key={`gift-${i}`} className="flex justify-between text-sm items-center text-emerald-600 bg-emerald-500/10 p-2 rounded">
+                  <div className="flex flex-col w-2/3">
+                    <span className="truncate font-semibold flex items-center gap-1">🎁 1x {gift.productName}</span>
+                  </div>
+                  <span className="font-bold">Besplatno</span>
                 </div>
               ))}
             </div>
@@ -810,8 +839,14 @@ export function RetailCheckoutPage() {
                   )}
                 </div>
 
-                <div className="flex justify-between gap-4 text-muted-foreground"><span>Međuzbir robe</span><span className="shrink-0">{money(preview.cart.subtotal)}</span></div>
+                <div className="flex justify-between gap-4 text-muted-foreground"><span>Međuzbir robe</span><span className="shrink-0">{money(preview.merchandiseSubtotalRsd ?? preview.cart.subtotal)}</span></div>
 
+                {preview.automaticPromotionDiscountRsd != null && preview.automaticPromotionDiscountRsd > 0 && (
+                  <div className="flex justify-between text-emerald-600 font-medium"><span>X+Y popust</span><span>-{money(preview.automaticPromotionDiscountRsd)}</span></div>
+                )}
+                {preview.thresholdRewardDiscountRsd != null && preview.thresholdRewardDiscountRsd > 0 && (
+                  <div className="flex justify-between text-emerald-600 font-medium"><span>Nivo korpe popust</span><span>-{money(preview.thresholdRewardDiscountRsd)}</span></div>
+                )}
                 {(preview as Record<string, any>).couponDiscountRsd != null && (preview as Record<string, any>).couponDiscountRsd > 0 && (
                   <div className="flex justify-between text-emerald-600 font-medium">
                      <span>Popust (kupon)</span>
@@ -834,7 +869,14 @@ export function RetailCheckoutPage() {
                   </div>
                 )}
 
-                <div className="flex justify-between"><span>Dostava</span><span>{money(preview.shipping.shippingCost)}</span></div>
+                <div className="flex justify-between">
+                  <span>Dostava</span>
+                  {preview.thresholdFreeShipping ? (
+                    <span className="text-emerald-600 font-bold">Besplatno</span>
+                  ) : (
+                    <span>{money(preview.shipping.shippingCost)}</span>
+                  )}
+                </div>
 
                 <div className="flex justify-between border-t pt-4 mt-2">
                   <span className="font-bold text-lg">Ukupno za uplatu</span>

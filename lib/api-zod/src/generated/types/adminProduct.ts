@@ -85,6 +85,7 @@ export interface AdminProduct {
      * @nullable
      */
   subscriptionDiscountPercent: number | null;
+  loyaltyPricingExcluded?: boolean;
   /** @nullable */
   productTypeId: string | null;
   /** @nullable */

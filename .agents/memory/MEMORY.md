@@ -113,3 +113,4 @@
 - [Deterministic FK default seeds](deterministic-fk-default-seeds.md) — fixed parent UUID defaults need recoverable seeds and explicit tenant-scoped child IDs.
 - [Public commerce route parity](public-commerce-route-parity.md) — shadow handlers and nested cards must share canonical eligibility, POR, inventory, and response semantics.
 - [Bundle shipping weight parity](bundle-shipping-weight-parity.md) — preview and locked checkout must derive bundle weight from components without expanding public cart DTOs.
+- [Loyalty settled-spend eligibility](loyalty-settled-spend-eligibility.md) — count paid delivered orders and delivered unpaid COD only; B2B qualification rolls up per owner.

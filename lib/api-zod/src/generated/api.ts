@@ -3421,6 +3421,7 @@ export const listPublicProductsResponseItemsItemCharacteristicsItemValueMax = 50
 
 export const listPublicProductsResponseItemsItemSubscriptionDiscountPercentMax = 100;
 
+export const listPublicProductsResponseItemsItemLoyaltyPricingExcludedDefault = false;
 export const listPublicProductsResponseItemsItemReviewSummaryAverageRatingMin = 0;
 export const listPublicProductsResponseItemsItemReviewSummaryAverageRatingMax = 5;
 
@@ -3457,6 +3458,7 @@ export const ListPublicProductsResponse = zod.object({
 })),
   "subscriptionAllowed": zod.boolean(),
   "subscriptionDiscountPercent": zod.number().int().min(1).max(listPublicProductsResponseItemsItemSubscriptionDiscountPercentMax).nullable(),
+  "loyaltyPricingExcluded": zod.boolean().default(listPublicProductsResponseItemsItemLoyaltyPricingExcludedDefault),
   "reviewSummary": zod.object({
   "averageRating": zod.number().int().min(listPublicProductsResponseItemsItemReviewSummaryAverageRatingMin).max(listPublicProductsResponseItemsItemReviewSummaryAverageRatingMax),
   "reviewCount": zod.number().int().min(listPublicProductsResponseItemsItemReviewSummaryReviewCountMin)
@@ -3505,6 +3507,7 @@ export const getPublicProductResponseOneCharacteristicsItemValueMax = 500;
 
 export const getPublicProductResponseOneSubscriptionDiscountPercentMax = 100;
 
+export const getPublicProductResponseOneLoyaltyPricingExcludedDefault = false;
 export const getPublicProductResponseOneReviewSummaryAverageRatingMin = 0;
 export const getPublicProductResponseOneReviewSummaryAverageRatingMax = 5;
 
@@ -3542,6 +3545,7 @@ export const GetPublicProductResponse = zod.object({
 })),
   "subscriptionAllowed": zod.boolean(),
   "subscriptionDiscountPercent": zod.number().int().min(1).max(getPublicProductResponseOneSubscriptionDiscountPercentMax).nullable(),
+  "loyaltyPricingExcluded": zod.boolean().default(getPublicProductResponseOneLoyaltyPricingExcludedDefault),
   "reviewSummary": zod.object({
   "averageRating": zod.number().int().min(getPublicProductResponseOneReviewSummaryAverageRatingMin).max(getPublicProductResponseOneReviewSummaryAverageRatingMax),
   "reviewCount": zod.number().int().min(getPublicProductResponseOneReviewSummaryReviewCountMin)
@@ -6050,6 +6054,13 @@ export const getShopCheckoutPreviewResponseCouponOneAllocationsMinOne = 0;
 
 export const getShopCheckoutPreviewResponseCouponDiscountRsdMin = 0;
 
+export const getShopCheckoutPreviewResponseAutomaticPromotionDiscountRsdMin = 0;
+
+export const getShopCheckoutPreviewResponseThresholdRewardDiscountRsdMin = 0;
+
+export const getShopCheckoutPreviewResponseThresholdQualificationSubtotalRsdMin = 0;
+
+
 
 
 export const GetShopCheckoutPreviewResponse = zod.object({
@@ -6145,6 +6156,19 @@ export const GetShopCheckoutPreviewResponse = zod.object({
   "allocations": zod.record(zod.string(), zod.number().int().min(getShopCheckoutPreviewResponseCouponOneAllocationsMinOne))
 }),zod.null()]),
   "couponDiscountRsd": zod.number().int().min(getShopCheckoutPreviewResponseCouponDiscountRsdMin),
+  "automaticPromotionDiscountRsd": zod.number().int().min(getShopCheckoutPreviewResponseAutomaticPromotionDiscountRsdMin),
+  "thresholdRewardDiscountRsd": zod.number().int().min(getShopCheckoutPreviewResponseThresholdRewardDiscountRsdMin),
+  "thresholdQualificationSubtotalRsd": zod.number().int().min(getShopCheckoutPreviewResponseThresholdQualificationSubtotalRsdMin),
+  "rewardGifts": zod.array(zod.object({
+  "rewardId": zod.string(),
+  "productId": zod.string(),
+  "productName": zod.string(),
+  "productImageUrl": zod.string().nullable(),
+  "quantity": zod.number().int().min(1),
+  "unitPrice": zod.literal(0),
+  "price": zod.literal(0),
+  "thresholdLabel": zod.string()
+})),
   "paymentMethods": zod.array(zod.enum(['CARD', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']))
 })
 
@@ -11273,6 +11297,7 @@ export const AdminListProductsResponse = zod.object({
   "deliveryBusinessDaysOverride": zod.number().int().min(1).max(adminListProductsResponseItemsItemDeliveryBusinessDaysOverrideMax).nullable(),
   "subscriptionAllowed": zod.boolean(),
   "subscriptionDiscountPercent": zod.number().int().min(1).max(adminListProductsResponseItemsItemSubscriptionDiscountPercentMax).nullable(),
+  "loyaltyPricingExcluded": zod.boolean().optional(),
   "productTypeId": zod.string().nullable(),
   "ingredients": zod.string().nullable(),
   "usageInstructions": zod.string().nullable(),
@@ -11349,6 +11374,9 @@ export const adminCreateProductBodySimilarProductIdsDefault = [];
 export const adminCreateProductBodyCrossSellProductIdsDefault = [];
 export const adminCreateProductBodyCrossSellProductIdsMax = 5;
 
+export const adminCreateProductBodyUpsellProductIdsDefault = [];
+export const adminCreateProductBodyUpsellProductIdsMax = 3;
+
 
 
 
@@ -11360,6 +11388,7 @@ export const adminCreateProductBodyDeliveryBusinessDaysOverrideMax = 365;
 export const adminCreateProductBodySubscriptionAllowedDefault = false;
 export const adminCreateProductBodySubscriptionDiscountPercentMax = 100;
 
+export const adminCreateProductBodyLoyaltyPricingExcludedDefault = false;
 export const adminCreateProductBodyIngredientsMax = 20000;
 
 export const adminCreateProductBodyUsageInstructionsMax = 20000;
@@ -11426,6 +11455,7 @@ export const AdminCreateProductBody = zod.object({
   "similarProductsMode": zod.enum(['AUTO_CATEGORY', 'MANUAL']).default(adminCreateProductBodySimilarProductsModeDefault),
   "similarProductIds": zod.array(zod.string()).default(adminCreateProductBodySimilarProductIdsDefault),
   "crossSellProductIds": zod.array(zod.string()).max(adminCreateProductBodyCrossSellProductIdsMax).default(adminCreateProductBodyCrossSellProductIdsDefault),
+  "upsellProductIds": zod.array(zod.string()).max(adminCreateProductBodyUpsellProductIdsMax).default(adminCreateProductBodyUpsellProductIdsDefault),
   "quantityPricingTiers": zod.array(zod.object({
   "minQuantity": zod.number().int().min(1),
   "maxQuantity": zod.number().int().min(1).nullable(),
@@ -11435,6 +11465,7 @@ export const AdminCreateProductBody = zod.object({
   "deliveryBusinessDaysOverride": zod.number().int().min(1).max(adminCreateProductBodyDeliveryBusinessDaysOverrideMax).nullish(),
   "subscriptionAllowed": zod.boolean().default(adminCreateProductBodySubscriptionAllowedDefault),
   "subscriptionDiscountPercent": zod.number().int().min(1).max(adminCreateProductBodySubscriptionDiscountPercentMax).nullish(),
+  "loyaltyPricingExcluded": zod.boolean().default(adminCreateProductBodyLoyaltyPricingExcludedDefault),
   "productTypeId": zod.string().nullish(),
   "needTagIds": zod.array(zod.string()).optional(),
   "ingredients": zod.string().max(adminCreateProductBodyIngredientsMax).nullish(),
@@ -11559,6 +11590,7 @@ export const AdminCreateProductResponse = zod.object({
   "deliveryBusinessDaysOverride": zod.number().int().min(1).max(adminCreateProductResponseDeliveryBusinessDaysOverrideMax).nullable(),
   "subscriptionAllowed": zod.boolean(),
   "subscriptionDiscountPercent": zod.number().int().min(1).max(adminCreateProductResponseSubscriptionDiscountPercentMax).nullable(),
+  "loyaltyPricingExcluded": zod.boolean().optional(),
   "productTypeId": zod.string().nullable(),
   "ingredients": zod.string().nullable(),
   "usageInstructions": zod.string().nullable(),
@@ -11846,6 +11878,8 @@ export const adminUpdateProductBodyVariantsItemSortOrderMax = 10000;
 
 export const adminUpdateProductBodyCrossSellProductIdsMax = 5;
 
+export const adminUpdateProductBodyUpsellProductIdsMax = 3;
+
 
 
 
@@ -11920,6 +11954,7 @@ export const AdminUpdateProductBody = zod.object({
   "similarProductsMode": zod.enum(['AUTO_CATEGORY', 'MANUAL']).optional(),
   "similarProductIds": zod.array(zod.string()).optional(),
   "crossSellProductIds": zod.array(zod.string()).max(adminUpdateProductBodyCrossSellProductIdsMax).optional(),
+  "upsellProductIds": zod.array(zod.string()).max(adminUpdateProductBodyUpsellProductIdsMax).optional(),
   "quantityPricingTiers": zod.array(zod.object({
   "minQuantity": zod.number().int().min(1),
   "maxQuantity": zod.number().int().min(1).nullable(),
@@ -11929,6 +11964,7 @@ export const AdminUpdateProductBody = zod.object({
   "deliveryBusinessDaysOverride": zod.number().int().min(1).max(adminUpdateProductBodyDeliveryBusinessDaysOverrideMax).nullish(),
   "subscriptionAllowed": zod.boolean().optional(),
   "subscriptionDiscountPercent": zod.number().int().min(1).max(adminUpdateProductBodySubscriptionDiscountPercentMax).nullish(),
+  "loyaltyPricingExcluded": zod.boolean().optional(),
   "productTypeId": zod.string().nullish(),
   "needTagIds": zod.array(zod.string()).optional(),
   "ingredients": zod.string().max(adminUpdateProductBodyIngredientsMax).nullish(),
@@ -12053,6 +12089,7 @@ export const AdminUpdateProductResponse = zod.object({
   "deliveryBusinessDaysOverride": zod.number().int().min(1).max(adminUpdateProductResponseDeliveryBusinessDaysOverrideMax).nullable(),
   "subscriptionAllowed": zod.boolean(),
   "subscriptionDiscountPercent": zod.number().int().min(1).max(adminUpdateProductResponseSubscriptionDiscountPercentMax).nullable(),
+  "loyaltyPricingExcluded": zod.boolean().optional(),
   "productTypeId": zod.string().nullable(),
   "ingredients": zod.string().nullable(),
   "usageInstructions": zod.string().nullable(),
@@ -12189,6 +12226,7 @@ export const AdminDeleteProductResponse = zod.object({
   "deliveryBusinessDaysOverride": zod.number().int().min(1).max(adminDeleteProductResponseDeliveryBusinessDaysOverrideMax).nullable(),
   "subscriptionAllowed": zod.boolean(),
   "subscriptionDiscountPercent": zod.number().int().min(1).max(adminDeleteProductResponseSubscriptionDiscountPercentMax).nullable(),
+  "loyaltyPricingExcluded": zod.boolean().optional(),
   "productTypeId": zod.string().nullable(),
   "ingredients": zod.string().nullable(),
   "usageInstructions": zod.string().nullable(),
@@ -12603,6 +12641,7 @@ export const listSupplierPublicProductsResponseOneItemsItemCharacteristicsItemVa
 
 export const listSupplierPublicProductsResponseOneItemsItemSubscriptionDiscountPercentMax = 100;
 
+export const listSupplierPublicProductsResponseOneItemsItemLoyaltyPricingExcludedDefault = false;
 export const listSupplierPublicProductsResponseOneItemsItemReviewSummaryAverageRatingMin = 0;
 export const listSupplierPublicProductsResponseOneItemsItemReviewSummaryAverageRatingMax = 5;
 
@@ -12647,6 +12686,7 @@ export const ListSupplierPublicProductsResponse = zod.object({
 })),
   "subscriptionAllowed": zod.boolean(),
   "subscriptionDiscountPercent": zod.number().int().min(1).max(listSupplierPublicProductsResponseOneItemsItemSubscriptionDiscountPercentMax).nullable(),
+  "loyaltyPricingExcluded": zod.boolean().default(listSupplierPublicProductsResponseOneItemsItemLoyaltyPricingExcludedDefault),
   "reviewSummary": zod.object({
   "averageRating": zod.number().int().min(listSupplierPublicProductsResponseOneItemsItemReviewSummaryAverageRatingMin).max(listSupplierPublicProductsResponseOneItemsItemReviewSummaryAverageRatingMax),
   "reviewCount": zod.number().int().min(listSupplierPublicProductsResponseOneItemsItemReviewSummaryReviewCountMin)
@@ -12826,6 +12866,7 @@ export const getSupplierPublicProductResponseOneCharacteristicsItemValueMax = 50
 
 export const getSupplierPublicProductResponseOneSubscriptionDiscountPercentMax = 100;
 
+export const getSupplierPublicProductResponseOneLoyaltyPricingExcludedDefault = false;
 export const getSupplierPublicProductResponseOneReviewSummaryAverageRatingMin = 0;
 export const getSupplierPublicProductResponseOneReviewSummaryAverageRatingMax = 5;
 
@@ -12863,6 +12904,7 @@ export const GetSupplierPublicProductResponse = zod.object({
 })),
   "subscriptionAllowed": zod.boolean(),
   "subscriptionDiscountPercent": zod.number().int().min(1).max(getSupplierPublicProductResponseOneSubscriptionDiscountPercentMax).nullable(),
+  "loyaltyPricingExcluded": zod.boolean().default(getSupplierPublicProductResponseOneLoyaltyPricingExcludedDefault),
   "reviewSummary": zod.object({
   "averageRating": zod.number().int().min(getSupplierPublicProductResponseOneReviewSummaryAverageRatingMin).max(getSupplierPublicProductResponseOneReviewSummaryAverageRatingMax),
   "reviewCount": zod.number().int().min(getSupplierPublicProductResponseOneReviewSummaryReviewCountMin)
@@ -12928,6 +12970,7 @@ export const listRecentlyViewedProductsResponseCharacteristicsItemValueMax = 500
 
 export const listRecentlyViewedProductsResponseSubscriptionDiscountPercentMax = 100;
 
+export const listRecentlyViewedProductsResponseLoyaltyPricingExcludedDefault = false;
 export const listRecentlyViewedProductsResponseReviewSummaryAverageRatingMin = 0;
 export const listRecentlyViewedProductsResponseReviewSummaryAverageRatingMax = 5;
 
@@ -12963,6 +13006,7 @@ export const ListRecentlyViewedProductsResponseItem = zod.object({
 })),
   "subscriptionAllowed": zod.boolean(),
   "subscriptionDiscountPercent": zod.number().int().min(1).max(listRecentlyViewedProductsResponseSubscriptionDiscountPercentMax).nullable(),
+  "loyaltyPricingExcluded": zod.boolean().default(listRecentlyViewedProductsResponseLoyaltyPricingExcludedDefault),
   "reviewSummary": zod.object({
   "averageRating": zod.number().int().min(listRecentlyViewedProductsResponseReviewSummaryAverageRatingMin).max(listRecentlyViewedProductsResponseReviewSummaryAverageRatingMax),
   "reviewCount": zod.number().int().min(listRecentlyViewedProductsResponseReviewSummaryReviewCountMin)
@@ -16389,6 +16433,7 @@ export const listProductWishlistResponseProductOneCharacteristicsItemValueMax = 
 
 export const listProductWishlistResponseProductOneSubscriptionDiscountPercentMax = 100;
 
+export const listProductWishlistResponseProductOneLoyaltyPricingExcludedDefault = false;
 export const listProductWishlistResponseProductOneReviewSummaryAverageRatingMin = 0;
 export const listProductWishlistResponseProductOneReviewSummaryAverageRatingMax = 5;
 
@@ -16431,6 +16476,7 @@ export const ListProductWishlistResponseItem = zod.object({
 })),
   "subscriptionAllowed": zod.boolean(),
   "subscriptionDiscountPercent": zod.number().int().min(1).max(listProductWishlistResponseProductOneSubscriptionDiscountPercentMax).nullable(),
+  "loyaltyPricingExcluded": zod.boolean().default(listProductWishlistResponseProductOneLoyaltyPricingExcludedDefault),
   "reviewSummary": zod.object({
   "averageRating": zod.number().int().min(listProductWishlistResponseProductOneReviewSummaryAverageRatingMin).max(listProductWishlistResponseProductOneReviewSummaryAverageRatingMax),
   "reviewCount": zod.number().int().min(listProductWishlistResponseProductOneReviewSummaryReviewCountMin)
@@ -16481,6 +16527,7 @@ export const addProductWishlistItemResponseProductOneCharacteristicsItemValueMax
 
 export const addProductWishlistItemResponseProductOneSubscriptionDiscountPercentMax = 100;
 
+export const addProductWishlistItemResponseProductOneLoyaltyPricingExcludedDefault = false;
 export const addProductWishlistItemResponseProductOneReviewSummaryAverageRatingMin = 0;
 export const addProductWishlistItemResponseProductOneReviewSummaryAverageRatingMax = 5;
 
@@ -16523,6 +16570,7 @@ export const AddProductWishlistItemResponse = zod.object({
 })),
   "subscriptionAllowed": zod.boolean(),
   "subscriptionDiscountPercent": zod.number().int().min(1).max(addProductWishlistItemResponseProductOneSubscriptionDiscountPercentMax).nullable(),
+  "loyaltyPricingExcluded": zod.boolean().default(addProductWishlistItemResponseProductOneLoyaltyPricingExcludedDefault),
   "reviewSummary": zod.object({
   "averageRating": zod.number().int().min(addProductWishlistItemResponseProductOneReviewSummaryAverageRatingMin).max(addProductWishlistItemResponseProductOneReviewSummaryAverageRatingMax),
   "reviewCount": zod.number().int().min(addProductWishlistItemResponseProductOneReviewSummaryReviewCountMin)
@@ -16572,6 +16620,7 @@ export const toggleProductWishlistItemResponseItemOneProductOneCharacteristicsIt
 
 export const toggleProductWishlistItemResponseItemOneProductOneSubscriptionDiscountPercentMax = 100;
 
+export const toggleProductWishlistItemResponseItemOneProductOneLoyaltyPricingExcludedDefault = false;
 export const toggleProductWishlistItemResponseItemOneProductOneReviewSummaryAverageRatingMin = 0;
 export const toggleProductWishlistItemResponseItemOneProductOneReviewSummaryAverageRatingMax = 5;
 
@@ -16616,6 +16665,7 @@ export const ToggleProductWishlistItemResponse = zod.object({
 })),
   "subscriptionAllowed": zod.boolean(),
   "subscriptionDiscountPercent": zod.number().int().min(1).max(toggleProductWishlistItemResponseItemOneProductOneSubscriptionDiscountPercentMax).nullable(),
+  "loyaltyPricingExcluded": zod.boolean().default(toggleProductWishlistItemResponseItemOneProductOneLoyaltyPricingExcludedDefault),
   "reviewSummary": zod.object({
   "averageRating": zod.number().int().min(toggleProductWishlistItemResponseItemOneProductOneReviewSummaryAverageRatingMin).max(toggleProductWishlistItemResponseItemOneProductOneReviewSummaryAverageRatingMax),
   "reviewCount": zod.number().int().min(toggleProductWishlistItemResponseItemOneProductOneReviewSummaryReviewCountMin)
@@ -17681,6 +17731,19 @@ export const previewRetailCheckoutResponseCouponOneAllocationsMinOne = 0;
 
 export const previewRetailCheckoutResponseCouponDiscountRsdMin = 0;
 
+export const previewRetailCheckoutResponseAutomaticPromotionDiscountRsdMin = 0;
+
+export const previewRetailCheckoutResponseThresholdRewardDiscountRsdMin = 0;
+
+export const previewRetailCheckoutResponseThresholdQualificationSubtotalRsdMin = 0;
+
+export const previewRetailCheckoutResponseThresholdReachedItemThresholdRsdMin = 0;
+
+export const previewRetailCheckoutResponseThresholdNextOneOneThresholdRsdMin = 0;
+
+export const previewRetailCheckoutResponseThresholdNextOneTwoRemainingRsdMin = 0;
+
+
 
 
 export const PreviewRetailCheckoutResponse = zod.object({
@@ -17769,6 +17832,32 @@ export const PreviewRetailCheckoutResponse = zod.object({
   "allocations": zod.record(zod.string(), zod.number().int().min(previewRetailCheckoutResponseCouponOneAllocationsMinOne))
 }),zod.null()]),
   "couponDiscountRsd": zod.number().int().min(previewRetailCheckoutResponseCouponDiscountRsdMin),
+  "automaticPromotionDiscountRsd": zod.number().int().min(previewRetailCheckoutResponseAutomaticPromotionDiscountRsdMin),
+  "thresholdRewardDiscountRsd": zod.number().int().min(previewRetailCheckoutResponseThresholdRewardDiscountRsdMin),
+  "thresholdQualificationSubtotalRsd": zod.number().int().min(previewRetailCheckoutResponseThresholdQualificationSubtotalRsdMin),
+  "thresholdFreeShipping": zod.boolean(),
+  "thresholdReached": zod.array(zod.object({
+  "id": zod.string(),
+  "thresholdRsd": zod.number().int().min(previewRetailCheckoutResponseThresholdReachedItemThresholdRsdMin),
+  "kind": zod.enum(['FREE_SHIPPING', 'GIFT_PRODUCT', 'PERCENT_DISCOUNT'])
+})),
+  "thresholdNext": zod.union([zod.object({
+  "id": zod.string(),
+  "thresholdRsd": zod.number().int().min(previewRetailCheckoutResponseThresholdNextOneOneThresholdRsdMin),
+  "kind": zod.enum(['FREE_SHIPPING', 'GIFT_PRODUCT', 'PERCENT_DISCOUNT'])
+}).and(zod.object({
+  "remainingRsd": zod.number().int().min(previewRetailCheckoutResponseThresholdNextOneTwoRemainingRsdMin)
+})),zod.null()]),
+  "rewardGifts": zod.array(zod.object({
+  "rewardId": zod.string(),
+  "productId": zod.string(),
+  "productName": zod.string(),
+  "productImageUrl": zod.string().nullable(),
+  "quantity": zod.number().int().min(1),
+  "unitPrice": zod.literal(0),
+  "price": zod.literal(0),
+  "thresholdLabel": zod.string()
+})),
   "paymentMethods": zod.array(zod.enum(['BANK_TRANSFER', 'CASH_ON_DELIVERY']))
 })
 
@@ -21044,3 +21133,745 @@ export const AdminDeleteProductDocumentParams = zod.object({
 })
 
 export const AdminDeleteProductDocumentResponse = zod.void()
+
+
+/**
+ * @summary Replace the ordered upsell products for a product
+ */
+export const AdminReplaceProductUpsellsParams = zod.object({
+  "productId": zod.coerce.string()
+})
+
+export const adminReplaceProductUpsellsBodyAlternativeProductIdsMax = 3;
+
+
+
+export const AdminReplaceProductUpsellsBody = zod.object({
+  "productId": zod.string().optional().describe('Returned source product id.'),
+  "alternativeProductIds": zod.array(zod.string()).max(adminReplaceProductUpsellsBodyAlternativeProductIdsMax)
+}).strict()
+
+export const adminReplaceProductUpsellsResponseAlternativeProductIdsMax = 3;
+
+
+
+export const AdminReplaceProductUpsellsResponse = zod.object({
+  "productId": zod.string().optional().describe('Returned source product id.'),
+  "alternativeProductIds": zod.array(zod.string()).max(adminReplaceProductUpsellsResponseAlternativeProductIdsMax)
+})
+
+
+/**
+ * @summary List public upsell products
+ */
+export const GetPublicProductUpsellsParams = zod.object({
+  "productId": zod.coerce.string()
+})
+
+export const getPublicProductUpsellsResponseItemsItemPriceMin = 0;
+
+
+
+
+export const GetPublicProductUpsellsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string().nullable(),
+  "price": zod.number().int().min(getPublicProductUpsellsResponseItemsItemPriceMin).nullable(),
+  "priceOnRequest": zod.boolean(),
+  "sortOrder": zod.number().int().min(1)
+}))
+})
+
+
+
+
+export const adminListLoyaltyPricingTiersResponseTwoSpendThresholdRsdMin = 0;
+
+export const adminListLoyaltyPricingTiersResponseTwoDiscountPercentMax = 100;
+
+
+
+export const AdminListLoyaltyPricingTiersResponseItem = zod.object({
+  "id": zod.string(),
+  "version": zod.number().int().min(1),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "name": zod.string().min(1),
+  "market": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "spendThresholdRsd": zod.number().int().min(adminListLoyaltyPricingTiersResponseTwoSpendThresholdRsdMin),
+  "discountPercent": zod.number().int().min(1).max(adminListLoyaltyPricingTiersResponseTwoDiscountPercentMax),
+  "active": zod.boolean()
+}))
+export const AdminListLoyaltyPricingTiersResponse = zod.array(AdminListLoyaltyPricingTiersResponseItem)
+
+
+
+export const adminCreateLoyaltyPricingTierBodySpendThresholdRsdMin = 0;
+
+export const adminCreateLoyaltyPricingTierBodyDiscountPercentMax = 100;
+
+export const adminCreateLoyaltyPricingTierBodyActiveDefault = true;
+
+export const AdminCreateLoyaltyPricingTierBody = zod.object({
+  "name": zod.string().min(1),
+  "market": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "spendThresholdRsd": zod.number().int().min(adminCreateLoyaltyPricingTierBodySpendThresholdRsdMin),
+  "discountPercent": zod.number().int().min(1).max(adminCreateLoyaltyPricingTierBodyDiscountPercentMax),
+  "active": zod.boolean().default(adminCreateLoyaltyPricingTierBodyActiveDefault)
+}).strict()
+
+
+
+export const adminCreateLoyaltyPricingTierResponseTwoSpendThresholdRsdMin = 0;
+
+export const adminCreateLoyaltyPricingTierResponseTwoDiscountPercentMax = 100;
+
+
+
+export const AdminCreateLoyaltyPricingTierResponse = zod.object({
+  "id": zod.string(),
+  "version": zod.number().int().min(1),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "name": zod.string().min(1),
+  "market": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "spendThresholdRsd": zod.number().int().min(adminCreateLoyaltyPricingTierResponseTwoSpendThresholdRsdMin),
+  "discountPercent": zod.number().int().min(1).max(adminCreateLoyaltyPricingTierResponseTwoDiscountPercentMax),
+  "active": zod.boolean()
+}))
+
+
+export const AdminUpdateLoyaltyPricingTierParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+
+
+export const adminUpdateLoyaltyPricingTierBodySpendThresholdRsdMin = 0;
+
+export const adminUpdateLoyaltyPricingTierBodyDiscountPercentMax = 100;
+
+
+
+export const AdminUpdateLoyaltyPricingTierBody = zod.object({
+  "version": zod.number().int().min(1),
+  "name": zod.string().min(1).optional(),
+  "market": zod.enum(['B2B', 'B2C', 'BOTH']).optional(),
+  "spendThresholdRsd": zod.number().int().min(adminUpdateLoyaltyPricingTierBodySpendThresholdRsdMin).optional(),
+  "discountPercent": zod.number().int().min(1).max(adminUpdateLoyaltyPricingTierBodyDiscountPercentMax).optional(),
+  "active": zod.boolean().optional()
+}).strict()
+
+
+
+export const adminUpdateLoyaltyPricingTierResponseTwoSpendThresholdRsdMin = 0;
+
+export const adminUpdateLoyaltyPricingTierResponseTwoDiscountPercentMax = 100;
+
+
+
+export const AdminUpdateLoyaltyPricingTierResponse = zod.object({
+  "id": zod.string(),
+  "version": zod.number().int().min(1),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "name": zod.string().min(1),
+  "market": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "spendThresholdRsd": zod.number().int().min(adminUpdateLoyaltyPricingTierResponseTwoSpendThresholdRsdMin),
+  "discountPercent": zod.number().int().min(1).max(adminUpdateLoyaltyPricingTierResponseTwoDiscountPercentMax),
+  "active": zod.boolean()
+}))
+
+
+export const AdminDeleteLoyaltyPricingTierParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+
+
+
+export const AdminDeleteLoyaltyPricingTierQueryParams = zod.object({
+  "version": zod.coerce.number().int().min(1)
+})
+
+export const AdminDeleteLoyaltyPricingTierResponse = zod.void()
+
+
+export const getCustomerLoyaltyPricingResponseNetSettledSpendRsdMin = 0;
+
+export const getCustomerLoyaltyPricingResponseEffectiveTierDiscountPercentMax = 100;
+
+export const getCustomerLoyaltyPricingResponseEffectiveTierSpendThresholdRsdMin = 0;
+
+export const getCustomerLoyaltyPricingResponseNextTierSpendThresholdRsdMin = 0;
+
+export const getCustomerLoyaltyPricingResponseNextTierProgressPercentMin = 0;
+export const getCustomerLoyaltyPricingResponseNextTierProgressPercentMax = 100;
+
+
+
+export const GetCustomerLoyaltyPricingResponse = zod.object({
+  "market": zod.enum(['B2B', 'B2C']),
+  "netSettledSpendRsd": zod.number().int().min(getCustomerLoyaltyPricingResponseNetSettledSpendRsdMin),
+  "effectiveTier": zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "discountPercent": zod.number().int().min(1).max(getCustomerLoyaltyPricingResponseEffectiveTierDiscountPercentMax),
+  "spendThresholdRsd": zod.number().int().min(getCustomerLoyaltyPricingResponseEffectiveTierSpendThresholdRsdMin)
+}).nullable(),
+  "nextTier": zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "spendThresholdRsd": zod.number().int().min(getCustomerLoyaltyPricingResponseNextTierSpendThresholdRsdMin),
+  "progressPercent": zod.number().int().min(getCustomerLoyaltyPricingResponseNextTierProgressPercentMin).max(getCustomerLoyaltyPricingResponseNextTierProgressPercentMax)
+}).nullable()
+})
+
+
+
+
+
+
+
+
+export const AdminListBulkSaleCampaignsResponseItem = zod.object({
+  "id": zod.string(),
+  "version": zod.number().int().min(1),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "name": zod.string().min(1),
+  "market": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "discountType": zod.enum(['PERCENT', 'FIXED_RSD']),
+  "discountValue": zod.number().int().min(1),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date().nullable(),
+  "status": zod.enum(['DRAFT', 'ACTIVE']),
+  "targets": zod.array(zod.union([zod.object({
+  "productId": zod.string()
+}),zod.object({
+  "categoryId": zod.string()
+})])).min(1)
+}))
+export const AdminListBulkSaleCampaignsResponse = zod.array(AdminListBulkSaleCampaignsResponseItem)
+
+
+
+
+
+
+
+export const AdminCreateBulkSaleCampaignBody = zod.object({
+  "name": zod.string().min(1),
+  "market": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "discountType": zod.enum(['PERCENT', 'FIXED_RSD']),
+  "discountValue": zod.number().int().min(1).describe('Percent values cannot exceed 100.'),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date().nullable(),
+  "status": zod.enum(['DRAFT', 'ACTIVE']),
+  "targets": zod.array(zod.union([zod.object({
+  "productId": zod.string()
+}),zod.object({
+  "categoryId": zod.string()
+})])).min(1)
+}).strict()
+
+
+
+
+
+
+
+export const AdminCreateBulkSaleCampaignResponse = zod.object({
+  "id": zod.string(),
+  "version": zod.number().int().min(1),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "name": zod.string().min(1),
+  "market": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "discountType": zod.enum(['PERCENT', 'FIXED_RSD']),
+  "discountValue": zod.number().int().min(1),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date().nullable(),
+  "status": zod.enum(['DRAFT', 'ACTIVE']),
+  "targets": zod.array(zod.union([zod.object({
+  "productId": zod.string()
+}),zod.object({
+  "categoryId": zod.string()
+})])).min(1)
+}))
+
+
+export const AdminUpdateBulkSaleCampaignParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+
+
+
+
+
+
+export const AdminUpdateBulkSaleCampaignBody = zod.object({
+  "version": zod.number().int().min(1),
+  "name": zod.string().min(1).optional(),
+  "market": zod.enum(['B2B', 'B2C', 'BOTH']).optional(),
+  "discountType": zod.enum(['PERCENT', 'FIXED_RSD']).optional(),
+  "discountValue": zod.number().int().min(1).optional(),
+  "startsAt": zod.coerce.date().optional(),
+  "endsAt": zod.coerce.date().nullish(),
+  "status": zod.enum(['DRAFT', 'ACTIVE']).optional(),
+  "targets": zod.array(zod.union([zod.object({
+  "productId": zod.string()
+}),zod.object({
+  "categoryId": zod.string()
+})])).min(1).optional()
+}).strict()
+
+
+
+
+
+
+
+export const AdminUpdateBulkSaleCampaignResponse = zod.object({
+  "id": zod.string(),
+  "version": zod.number().int().min(1),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "name": zod.string().min(1),
+  "market": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "discountType": zod.enum(['PERCENT', 'FIXED_RSD']),
+  "discountValue": zod.number().int().min(1),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date().nullable(),
+  "status": zod.enum(['DRAFT', 'ACTIVE']),
+  "targets": zod.array(zod.union([zod.object({
+  "productId": zod.string()
+}),zod.object({
+  "categoryId": zod.string()
+})])).min(1)
+}))
+
+
+export const AdminDeleteBulkSaleCampaignParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+
+
+
+export const AdminDeleteBulkSaleCampaignQueryParams = zod.object({
+  "version": zod.coerce.number().int().min(1)
+})
+
+export const AdminDeleteBulkSaleCampaignResponse = zod.void()
+
+
+export const adminListCartThresholdRewardsResponseSpendThresholdRsdMin = 0;
+
+export const adminListCartThresholdRewardsResponseDiscountPercentMax = 100;
+
+
+
+
+
+export const AdminListCartThresholdRewardsResponseItem = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "market": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "spendThresholdRsd": zod.number().int().min(adminListCartThresholdRewardsResponseSpendThresholdRsdMin),
+  "rewardKind": zod.enum(['FREE_SHIPPING', 'GIFT_PRODUCT', 'PERCENT_DISCOUNT']),
+  "discountPercent": zod.number().int().min(1).max(adminListCartThresholdRewardsResponseDiscountPercentMax).nullable(),
+  "giftProductId": zod.string().nullable(),
+  "giftQuantity": zod.number().int().min(1).nullable(),
+  "active": zod.boolean(),
+  "version": zod.number().int().min(1),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const AdminListCartThresholdRewardsResponse = zod.array(AdminListCartThresholdRewardsResponseItem)
+
+
+
+export const adminCreateCartThresholdRewardBodyOneSpendThresholdRsdMin = 0;
+
+
+export const adminCreateCartThresholdRewardBodyTwoSpendThresholdRsdMin = 0;
+
+
+
+export const adminCreateCartThresholdRewardBodyThreeSpendThresholdRsdMin = 0;
+
+export const adminCreateCartThresholdRewardBodyThreeDiscountPercentMax = 100;
+
+
+
+export const AdminCreateCartThresholdRewardBody = zod.union([zod.object({
+  "name": zod.string().min(1),
+  "market": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "spendThresholdRsd": zod.number().int().min(adminCreateCartThresholdRewardBodyOneSpendThresholdRsdMin),
+  "rewardKind": zod.literal("FREE_SHIPPING"),
+  "active": zod.boolean()
+}),zod.object({
+  "name": zod.string().min(1),
+  "market": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "spendThresholdRsd": zod.number().int().min(adminCreateCartThresholdRewardBodyTwoSpendThresholdRsdMin),
+  "rewardKind": zod.literal("GIFT_PRODUCT"),
+  "giftProductId": zod.string(),
+  "giftQuantity": zod.number().int().min(1),
+  "active": zod.boolean()
+}),zod.object({
+  "name": zod.string().min(1),
+  "market": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "spendThresholdRsd": zod.number().int().min(adminCreateCartThresholdRewardBodyThreeSpendThresholdRsdMin),
+  "rewardKind": zod.literal("PERCENT_DISCOUNT"),
+  "discountPercent": zod.number().int().min(1).max(adminCreateCartThresholdRewardBodyThreeDiscountPercentMax),
+  "active": zod.boolean()
+})])
+
+export const adminCreateCartThresholdRewardResponseSpendThresholdRsdMin = 0;
+
+export const adminCreateCartThresholdRewardResponseDiscountPercentMax = 100;
+
+
+
+
+
+export const AdminCreateCartThresholdRewardResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "market": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "spendThresholdRsd": zod.number().int().min(adminCreateCartThresholdRewardResponseSpendThresholdRsdMin),
+  "rewardKind": zod.enum(['FREE_SHIPPING', 'GIFT_PRODUCT', 'PERCENT_DISCOUNT']),
+  "discountPercent": zod.number().int().min(1).max(adminCreateCartThresholdRewardResponseDiscountPercentMax).nullable(),
+  "giftProductId": zod.string().nullable(),
+  "giftQuantity": zod.number().int().min(1).nullable(),
+  "active": zod.boolean(),
+  "version": zod.number().int().min(1),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+export const AdminUpdateCartThresholdRewardParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+
+
+export const adminUpdateCartThresholdRewardBodySpendThresholdRsdMin = 0;
+
+export const adminUpdateCartThresholdRewardBodyDiscountPercentMax = 100;
+
+
+
+
+export const AdminUpdateCartThresholdRewardBody = zod.object({
+  "version": zod.number().int().min(1),
+  "name": zod.string().min(1).optional(),
+  "market": zod.enum(['B2B', 'B2C', 'BOTH']).optional(),
+  "spendThresholdRsd": zod.number().int().min(adminUpdateCartThresholdRewardBodySpendThresholdRsdMin).optional(),
+  "rewardKind": zod.enum(['FREE_SHIPPING', 'GIFT_PRODUCT', 'PERCENT_DISCOUNT']).optional(),
+  "discountPercent": zod.number().int().min(1).max(adminUpdateCartThresholdRewardBodyDiscountPercentMax).optional(),
+  "giftProductId": zod.string().optional(),
+  "giftQuantity": zod.number().int().min(1).optional(),
+  "active": zod.boolean().optional()
+}).strict()
+
+export const adminUpdateCartThresholdRewardResponseSpendThresholdRsdMin = 0;
+
+export const adminUpdateCartThresholdRewardResponseDiscountPercentMax = 100;
+
+
+
+
+
+export const AdminUpdateCartThresholdRewardResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "market": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "spendThresholdRsd": zod.number().int().min(adminUpdateCartThresholdRewardResponseSpendThresholdRsdMin),
+  "rewardKind": zod.enum(['FREE_SHIPPING', 'GIFT_PRODUCT', 'PERCENT_DISCOUNT']),
+  "discountPercent": zod.number().int().min(1).max(adminUpdateCartThresholdRewardResponseDiscountPercentMax).nullable(),
+  "giftProductId": zod.string().nullable(),
+  "giftQuantity": zod.number().int().min(1).nullable(),
+  "active": zod.boolean(),
+  "version": zod.number().int().min(1),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+export const AdminDeleteCartThresholdRewardParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+
+
+
+export const AdminDeleteCartThresholdRewardQueryParams = zod.object({
+  "version": zod.coerce.number().int().min(1)
+})
+
+export const AdminDeleteCartThresholdRewardResponse = zod.void()
+
+
+export const getCustomerCartThresholdRewardsQuerySubtotalRsdMin = 0;
+
+
+
+export const GetCustomerCartThresholdRewardsQueryParams = zod.object({
+  "subtotalRsd": zod.coerce.number().int().min(getCustomerCartThresholdRewardsQuerySubtotalRsdMin)
+})
+
+export const getCustomerCartThresholdRewardsResponseReachedItemSpendThresholdRsdMin = 0;
+
+export const getCustomerCartThresholdRewardsResponseReachedItemDiscountPercentMax = 100;
+
+
+export const getCustomerCartThresholdRewardsResponseNextOneSpendThresholdRsdMin = 0;
+
+export const getCustomerCartThresholdRewardsResponseNextOneDiscountPercentMax = 100;
+
+
+
+
+export const GetCustomerCartThresholdRewardsResponse = zod.object({
+  "reached": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "spendThresholdRsd": zod.number().int().min(getCustomerCartThresholdRewardsResponseReachedItemSpendThresholdRsdMin),
+  "rewardKind": zod.enum(['FREE_SHIPPING', 'GIFT_PRODUCT', 'PERCENT_DISCOUNT']),
+  "discountPercent": zod.number().int().min(1).max(getCustomerCartThresholdRewardsResponseReachedItemDiscountPercentMax).nullable(),
+  "giftQuantity": zod.number().int().min(1).nullable()
+})),
+  "next": zod.union([zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "spendThresholdRsd": zod.number().int().min(getCustomerCartThresholdRewardsResponseNextOneSpendThresholdRsdMin),
+  "rewardKind": zod.enum(['FREE_SHIPPING', 'GIFT_PRODUCT', 'PERCENT_DISCOUNT']),
+  "discountPercent": zod.number().int().min(1).max(getCustomerCartThresholdRewardsResponseNextOneDiscountPercentMax).nullable(),
+  "giftQuantity": zod.number().int().min(1).nullable()
+}),zod.null()])
+})
+
+
+
+
+export const adminListAutomaticXyPromotionsResponseRewardPercentMax = 100;
+
+
+
+
+
+export const AdminListAutomaticXyPromotionsResponseItem = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "market": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "buyQuantity": zod.number().int().min(1),
+  "rewardQuantity": zod.number().int().min(1),
+  "rewardPercent": zod.number().int().min(1).max(adminListAutomaticXyPromotionsResponseRewardPercentMax),
+  "perOrderRewardUnitCap": zod.number().int().min(1).nullable(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
+  "status": zod.enum(['DRAFT', 'ACTIVE']),
+  "buyTargets": zod.array(zod.union([zod.object({
+  "productId": zod.string()
+}),zod.object({
+  "categoryId": zod.string()
+})])),
+  "rewardTargets": zod.array(zod.union([zod.object({
+  "productId": zod.string()
+}),zod.object({
+  "categoryId": zod.string()
+})])),
+  "version": zod.number().int().min(1),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const AdminListAutomaticXyPromotionsResponse = zod.array(AdminListAutomaticXyPromotionsResponseItem)
+
+
+
+
+
+export const adminCreateAutomaticXyPromotionBodyRewardPercentMax = 100;
+
+
+
+
+
+
+export const AdminCreateAutomaticXyPromotionBody = zod.object({
+  "name": zod.string().min(1),
+  "market": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "buyQuantity": zod.number().int().min(1),
+  "rewardQuantity": zod.number().int().min(1),
+  "rewardPercent": zod.number().int().min(1).max(adminCreateAutomaticXyPromotionBodyRewardPercentMax),
+  "perOrderRewardUnitCap": zod.number().int().min(1).nullish(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
+  "status": zod.enum(['DRAFT', 'ACTIVE']),
+  "buyTargets": zod.array(zod.union([zod.object({
+  "productId": zod.string()
+}),zod.object({
+  "categoryId": zod.string()
+})])).min(1),
+  "rewardTargets": zod.array(zod.union([zod.object({
+  "productId": zod.string()
+}),zod.object({
+  "categoryId": zod.string()
+})])).min(1)
+}).strict()
+
+
+
+export const adminCreateAutomaticXyPromotionResponseRewardPercentMax = 100;
+
+
+
+
+
+export const AdminCreateAutomaticXyPromotionResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "market": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "buyQuantity": zod.number().int().min(1),
+  "rewardQuantity": zod.number().int().min(1),
+  "rewardPercent": zod.number().int().min(1).max(adminCreateAutomaticXyPromotionResponseRewardPercentMax),
+  "perOrderRewardUnitCap": zod.number().int().min(1).nullable(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
+  "status": zod.enum(['DRAFT', 'ACTIVE']),
+  "buyTargets": zod.array(zod.union([zod.object({
+  "productId": zod.string()
+}),zod.object({
+  "categoryId": zod.string()
+})])),
+  "rewardTargets": zod.array(zod.union([zod.object({
+  "productId": zod.string()
+}),zod.object({
+  "categoryId": zod.string()
+})])),
+  "version": zod.number().int().min(1),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+export const AdminUpdateAutomaticXyPromotionParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+
+
+
+
+export const adminUpdateAutomaticXyPromotionBodyRewardPercentMax = 100;
+
+
+
+
+
+
+export const AdminUpdateAutomaticXyPromotionBody = zod.object({
+  "version": zod.number().int().min(1),
+  "name": zod.string().min(1).optional(),
+  "market": zod.enum(['B2B', 'B2C', 'BOTH']).optional(),
+  "buyQuantity": zod.number().int().min(1).optional(),
+  "rewardQuantity": zod.number().int().min(1).optional(),
+  "rewardPercent": zod.number().int().min(1).max(adminUpdateAutomaticXyPromotionBodyRewardPercentMax).optional(),
+  "perOrderRewardUnitCap": zod.number().int().min(1).nullish(),
+  "startsAt": zod.coerce.date().nullish(),
+  "endsAt": zod.coerce.date().nullish(),
+  "status": zod.enum(['DRAFT', 'ACTIVE']).optional(),
+  "buyTargets": zod.array(zod.union([zod.object({
+  "productId": zod.string()
+}),zod.object({
+  "categoryId": zod.string()
+})])).min(1).optional(),
+  "rewardTargets": zod.array(zod.union([zod.object({
+  "productId": zod.string()
+}),zod.object({
+  "categoryId": zod.string()
+})])).min(1).optional()
+}).strict()
+
+
+
+export const adminUpdateAutomaticXyPromotionResponseRewardPercentMax = 100;
+
+
+
+
+
+export const AdminUpdateAutomaticXyPromotionResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "market": zod.enum(['B2B', 'B2C', 'BOTH']),
+  "buyQuantity": zod.number().int().min(1),
+  "rewardQuantity": zod.number().int().min(1),
+  "rewardPercent": zod.number().int().min(1).max(adminUpdateAutomaticXyPromotionResponseRewardPercentMax),
+  "perOrderRewardUnitCap": zod.number().int().min(1).nullable(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
+  "status": zod.enum(['DRAFT', 'ACTIVE']),
+  "buyTargets": zod.array(zod.union([zod.object({
+  "productId": zod.string()
+}),zod.object({
+  "categoryId": zod.string()
+})])),
+  "rewardTargets": zod.array(zod.union([zod.object({
+  "productId": zod.string()
+}),zod.object({
+  "categoryId": zod.string()
+})])),
+  "version": zod.number().int().min(1),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+export const AdminDeleteAutomaticXyPromotionParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+
+
+
+export const AdminDeleteAutomaticXyPromotionQueryParams = zod.object({
+  "version": zod.coerce.number().int().min(1)
+})
+
+export const AdminDeleteAutomaticXyPromotionResponse = zod.void()
+
+
+export const GetPublicProductAutomaticXyPromotionsParams = zod.object({
+  "productId": zod.coerce.string()
+})
+
+
+
+export const getPublicProductAutomaticXyPromotionsResponseItemsItemRewardPercentMax = 100;
+
+
+
+
+export const GetPublicProductAutomaticXyPromotionsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "buyQuantity": zod.number().int().min(1),
+  "rewardQuantity": zod.number().int().min(1),
+  "rewardPercent": zod.number().int().min(1).max(getPublicProductAutomaticXyPromotionsResponseItemsItemRewardPercentMax),
+  "perOrderRewardUnitCap": zod.number().int().min(1).nullable()
+}))
+})

@@ -53,7 +53,14 @@ import {
   commerceDiscountsForPricedLine,
   quoteCommerceReferralBase,
 } from "../lib/commerce-discount-engine";
-import { quoteResolvedCommerce, resolveProductUnitPrice, type PriceSource } from "../lib/commerce-pricing-engine";
+import {
+  finalizeCommerceQuote,
+  prepareCommerceQuote,
+  quoteResolvedCommerce,
+  resolveProductUnitPrice,
+  type PriceSource,
+} from "../lib/commerce-pricing-engine";
+import { deoG2ProductPriceFacts, loadDeoG2RuleSnapshot, type DeoG2RuleSnapshot } from "../lib/deo-g2-rule-loader";
 import {
   activeProductSale,
   activeProductSaleConditionSql,
@@ -132,6 +139,7 @@ import
   productBundleComponentsTable,
   productBundlesTable,
   productsTable,
+   productUpsellLinksTable,
    b2bCartImportsTable,
    productWishlistsTable,
    productWaitlistTable,
@@ -9150,6 +9158,27 @@ function publicProductDto(item: typeof productsTable.$inferSelect) {
   };
 }
 
+async function replaceProductUpsells(
+  tx: any,
+  product: typeof productsTable.$inferSelect,
+  alternativeIds: readonly string[],
+) {
+  if (alternativeIds.length > 3 || new Set(alternativeIds).size !== alternativeIds.length || alternativeIds.includes(product.id)) {
+    throw new ProductRelationshipConflictError();
+  }
+  if (alternativeIds.length) {
+    const alternatives = await tx.select().from(productsTable).where(and(inArray(productsTable.id, [...alternativeIds]), eq(productsTable.active, true)));
+    if (alternatives.length !== alternativeIds.length || alternatives.some((alternative: typeof productsTable.$inferSelect) =>
+      (!product.retailEnabled || !alternative.retailEnabled) && (!product.professionalEnabled || !alternative.professionalEnabled))) {
+      throw new ProductRelationshipConflictError();
+    }
+  }
+  await tx.delete(productUpsellLinksTable).where(eq(productUpsellLinksTable.productId, product.id));
+  if (alternativeIds.length) await tx.insert(productUpsellLinksTable).values(alternativeIds.map((alternativeProductId, index) => ({
+    productId: product.id, alternativeProductId, sortOrder: index + 1,
+  })));
+}
+
 /** Calendar arithmetic deliberately never serializes an instant as a date. */
 function belgradeBusinessDate(days: number, from = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -9630,8 +9659,18 @@ function retailLineDto(item: typeof retailCartItemsTable.$inferSelect, catalogRe
   };
 }
 
-function retailProductPrice(product: typeof productsTable.$inferSelect, quantity: number) {
-  const salePrice = activeProductSale(product, "B2C")?.price ?? null;
+function retailProductPrice(
+  product: typeof productsTable.$inferSelect,
+  quantity: number,
+  rules?: DeoG2RuleSnapshot,
+) {
+  const manualSalePrice = activeProductSale(product, "B2C")?.price ?? null;
+  const g2 = rules ? deoG2ProductPriceFacts({
+    snapshot: rules, productId: product.id, categoryId: product.categoryId,
+    regularUnitPriceRsd: product.publicPrice!, manualSaleUnitPriceRsd: manualSalePrice,
+    productLoyaltyExcluded: product.loyaltyPricingExcluded,
+  }) : null;
+  const salePrice = g2?.activeSaleUnitPriceRsd ?? manualSalePrice;
   const tier = salePrice == null
     ? (product.quantityPricingTiers ?? []).find((candidate) => quantity >= candidate.minQuantity
       && (candidate.maxQuantity == null || quantity <= candidate.maxQuantity))
@@ -9640,6 +9679,7 @@ function retailProductPrice(product: typeof productsTable.$inferSelect, quantity
     regularUnitPriceRsd: product.publicPrice!,
     activeSaleUnitPriceRsd: salePrice,
     tierUnitPriceRsd: tier?.unitPrice ?? null,
+    loyaltyTierUnitPriceRsd: g2?.loyaltyTierUnitPriceRsd ?? null,
     explicitVariantUnitPriceRsd: null,
     variantPriceAdjustRsd: 0,
   });
@@ -9846,7 +9886,7 @@ async function retailCartDto(cartId: string) {
   };
 }
 
-async function retailCheckoutCartQuote(cartId: string) {
+async function retailCheckoutCartQuote(cartId: string, userId: string | null = null) {
   const cartItems = await db.select().from(retailCartItemsTable)
     .where(eq(retailCartItemsTable.cartId, cartId)).orderBy(asc(retailCartItemsTable.createdAt));
   const productItems = cartItems.filter((item): item is typeof item & { productId: string; bundleId: null } => item.productId !== null);
@@ -9866,6 +9906,9 @@ async function retailCheckoutCartQuote(cartId: string) {
   const products = productIds.length
     ? await db.select().from(productsTable).where(and(inArray(productsTable.id, productIds), activeCategoryCondition(), activeSupplierCondition("B2C")))
     : [];
+  const rules = await loadDeoG2RuleSnapshot(db, {
+    market: "B2C", now: new Date(), productIds, userId,
+  });
   const byId = new Map(products.map((product) => [product.id, product]));
   const quantityByProduct = new Map<string, number>();
   const quantityByVariant = new Map<string, number>();
@@ -9892,7 +9935,7 @@ async function retailCheckoutCartQuote(cartId: string) {
       || product.publicPrice == null || !selection || selection.available < requiredStock) {
       return null;
     }
-    const pricing = retailProductPrice(product, item.quantity);
+    const pricing = retailProductPrice(product, item.quantity, rules);
     const unitPrice = pricing.unitPrice;
     return {
       ...retailLineDto(item, item.productCatalogReference ?? product.catalogReference, selection.variant?.label ?? null),
@@ -9940,6 +9983,7 @@ async function retailCheckoutCartQuote(cartId: string) {
       subtotal: validLines.reduce((sum, item) => sum + item.lineTotal, 0),
       totalWeightGrams: validLines.reduce((sum, item) => sum + item.weightGrams * item.quantity, 0),
     },
+    rules,
     unavailableItems: [],
   };
 }
@@ -10483,7 +10527,8 @@ router.post("/retail/orders/repeat-last", async (req, res): Promise<void> => {
 
 router.get("/retail/checkout-preview", async (req, res): Promise<void> => {
   const cart = await retailCartForRequest(req, res);
-  const quote = await retailCheckoutCartQuote(cart.id);
+  const user = await getCurrentUser(req);
+  const quote = await retailCheckoutCartQuote(cart.id, isRetailAccount(user) ? user.id : null);
   if (!quote.view) {
     res.status(409).json({
       error: "Dostupnost ili cena proizvoda u korpi se promenila. Osvežite korpu i pokušajte ponovo.",
@@ -10493,11 +10538,11 @@ router.get("/retail/checkout-preview", async (req, res): Promise<void> => {
     return;
   }
   const view = quote.view;
-  const user = await getCurrentUser(req);
+  const prepared = await prepareRetailCommerceQuote(db, view.items, quote.rules);
   const couponCode = typeof req.query.couponCode === "string" ? req.query.couponCode : null;
   const appliedCoupon = await quoteCouponFromDb(db, {
     code: couponCode, audience: "B2C",
-    lines: await couponLinesForView(db, view.items),
+    lines: prepared.couponLines.map((line) => ({ ...line, categoryIds: [...line.categoryIds] })),
     customer: isRetailAccount(user) ? { userId: user.id } : {},
   });
   if (appliedCoupon && "reason" in appliedCoupon) { couponErrorResponse(res, appliedCoupon.reason); return; }
@@ -10513,7 +10558,34 @@ router.get("/retail/checkout-preview", async (req, res): Promise<void> => {
   const available = user?.role === "CUSTOMER"
     ? await db.transaction((tx) => referralCreditBalanceInTx(tx, { ownerUserId: user.id, walletKind: "B2C" }))
     : 0;
-  const totals = canonicalCommerceTotals(view.items, appliedCoupon?.quote ?? null, desired || available, available, calculatedShipping.shippingCost);
+  const totals = finalizeCommerceQuote({
+    prepared,
+    lockedCouponQuote: appliedCoupon?.quote ?? quoteCoupon({
+      coupon: null,
+      audience: "B2C",
+      lines: prepared.couponLines.map((line) => ({ ...line, categoryIds: [...line.categoryIds] })),
+      now: new Date(),
+      customerUsageCount: 0,
+    }),
+    thresholdRewards: quote.rules.thresholdRewards,
+    requestedReferralCreditRsd: desired || available,
+    availableReferralCreditRsd: available,
+    shippingRsd: calculatedShipping.shippingCost,
+  });
+  const rewardGifts = await thresholdGiftDescriptors(db, totals.rewardGifts, quote.rules, "B2C");
+  if (!rewardGifts) {
+    res.status(409).json({
+      error: "Nagradni proizvod više nije dostupan. Osvežite pregled i pokušajte ponovo.",
+      code: "CHECKOUT_REWARD_UNAVAILABLE",
+    });
+    return;
+  }
+  const crossedThresholdRewards = quote.rules.thresholdRewards.filter((rule) => rule.active
+    && rule.thresholdRsd <= totals.thresholdQualificationSubtotalRsd);
+  const nextThresholdReward = quote.rules.thresholdRewards
+    .filter((rule) => rule.active && rule.thresholdRsd > totals.thresholdQualificationSubtotalRsd)
+    .sort((left, right) => left.thresholdRsd - right.thresholdRsd || left.id.localeCompare(right.id))[0];
+  const thresholdFreeShipping = crossedThresholdRewards.some((rule) => rule.kind === "FREE_SHIPPING");
   const couponDiscountRsd = totals.couponDiscountRsd;
   const shipping = totals.shippingRsd === calculatedShipping.shippingCost
     ? calculatedShipping : { ...calculatedShipping, shippingCost: totals.shippingRsd, isFreeShipping: true };
@@ -10534,6 +10606,17 @@ router.get("/retail/checkout-preview", async (req, res): Promise<void> => {
       freeShipping: appliedCoupon.quote.freeShipping, allocations: appliedCoupon.quote.allocations,
     } : null,
     couponDiscountRsd,
+    automaticPromotionDiscountRsd: totals.automaticPromotionDiscountRsd,
+    thresholdRewardDiscountRsd: totals.thresholdRewardDiscountRsd,
+    thresholdFreeShipping,
+    thresholdReached: crossedThresholdRewards.map((rule) => ({ id: rule.id, thresholdRsd: rule.thresholdRsd, kind: rule.kind })),
+    thresholdNext: nextThresholdReward ? {
+      id: nextThresholdReward.id, thresholdRsd: nextThresholdReward.thresholdRsd,
+      remainingRsd: nextThresholdReward.thresholdRsd - totals.thresholdQualificationSubtotalRsd,
+      kind: nextThresholdReward.kind,
+    } : null,
+    thresholdQualificationSubtotalRsd: totals.thresholdQualificationSubtotalRsd,
+    rewardGifts: rewardGifts.map(({ product, rewardSnapshot, ...gift }) => gift),
   });
 });
 
@@ -10558,6 +10641,7 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
   let idempotencyConflict = false;
   let quoteConflict = false;
   let couponFailure: string | null = null;
+  let rewardUnavailable = false;
   let minimumOrderConflict: { name: string; minimumOrderQuantity: number } | null = null;
   const created = await db.transaction(async (tx) => {
     await tx.execute(sql`select id from retail_carts where id = ${cart.id} for update`);
@@ -10593,6 +10677,12 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
       await tx.execute(sql`select id from product_categories where supplier_id = ${supplierId} order by id for update`);
     }
     const products = await tx.select().from(productsTable).where(and(inArray(productsTable.id, productIds), activeCategoryCondition(), activeSupplierCondition("B2C")));
+    // Reload rule facts within the same checkout transaction as product and
+    // inventory locks. A changed campaign/tier therefore changes the expected
+    // quote rather than silently charging a stale preview.
+    const deoRules = await loadDeoG2RuleSnapshot(tx, {
+      market: "B2C", now: new Date(), productIds, userId,
+    });
     const byId = new Map(products.map((product) => [product.id, product]));
     const supplierRows = await tx.select().from(suppliersTable)
       .where(and(inArray(suppliersTable.id, [...new Set([...products.map((product) => product.supplierId), ...bundles.map((bundle) => bundle.supplierId)])]),
@@ -10654,7 +10744,7 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
         };
         throw new Error("retail_moq_conflict");
       }
-      const pricing = retailProductPrice(product, item.quantity);
+      const pricing = retailProductPrice(product, item.quantity, deoRules);
       const unitPrice = pricing.unitPrice;
       subtotal += unitPrice * item.quantity;
       weight += (product.weightGrams ?? 0) * item.quantity;
@@ -10677,18 +10767,22 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
       ...bundleLines.filter((line): line is NonNullable<typeof line> => line !== null).flatMap(({ components }) => components.map(({ product }) => product.deliveryBusinessDaysOverride ?? defaultDeliveryDays)),
     ]);
     const estimatedDeliveryDate = belgradeBusinessDate(deliveryDays);
+    const quoteItems = [
+      ...lines.filter((line): line is NonNullable<typeof line> => line !== null).map((line) => ({
+        id: line.item.id, kind: "product" as const, productId: line.product.id, quantity: line.item.quantity,
+        unitPrice: line.unitPrice, baseUnitPrice: line.pricing.baseUnitPrice, priceSource: line.pricing.priceSource,
+      })),
+      ...bundleLines.filter((line): line is NonNullable<typeof line> => line !== null).map((line) => ({
+        id: line.item.id, kind: "bundle" as const, bundleId: line.bundle.id, quantity: line.item.quantity,
+        unitPrice: line.unitPrice, priceSource: "BUNDLE" as const,
+      })),
+    ];
+    const prepared = await prepareRetailCommerceQuote(tx, quoteItems, deoRules);
+    subtotal = prepared.subtotalRsd;
     const couponResult = await quoteCouponFromDb(tx, {
       code: couponCode, audience: "B2C", lock: true,
       customer: userId ? { userId } : { guestEmailNormalized: parsed.email.trim().toLowerCase() },
-      lines: [
-        ...lines.filter((line): line is NonNullable<typeof line> => line !== null).map(({ product, item, unitPrice }) => ({
-          id: item.id, productId: product.id, bundleId: null,
-          categoryIds: product.categoryId ? [product.categoryId] : [], amountRsd: unitPrice * item.quantity,
-        })),
-        ...bundleLines.filter((line): line is NonNullable<typeof line> => line !== null).map(({ bundle, item, unitPrice }) => ({
-          id: item.id, productId: null, bundleId: bundle.id, categoryIds: [], amountRsd: unitPrice * item.quantity,
-        })),
-      ],
+      lines: prepared.couponLines.map((line) => ({ ...line, categoryIds: [...line.categoryIds] })),
     });
     if (couponResult && "reason" in couponResult) {
       couponFailure = couponResult.reason;
@@ -10696,32 +10790,40 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
     }
     const appliedCoupon = couponResult && "quote" in couponResult ? couponResult : null;
     const calculatedShipping = calculateShipping(config, weight, subtotal, parsed.deliveryMethod, parsed.city);
-    const canonicalLines = [
-      ...lines.filter((line): line is NonNullable<typeof line> => line !== null).map((line) => ({
-        id: line.item.id,
-        kind: "product" as const,
-        quantity: line.item.quantity,
-        unitPrice: line.unitPrice,
-        lineTotal: line.unitPrice * line.item.quantity,
-        priceSource: line.pricing.priceSource,
-        lineDiscount: (line.pricing.baseUnitPrice - line.unitPrice) * line.item.quantity,
-      })),
-      ...bundleLines.filter((line): line is NonNullable<typeof line> => line !== null).map((line) => ({
-        id: line.item.id,
-        kind: "bundle" as const,
-        quantity: line.item.quantity,
-        unitPrice: line.unitPrice,
-        lineTotal: line.unitPrice * line.item.quantity,
-        priceSource: "BUNDLE" as const,
-        lineDiscount: 0,
-      })),
-    ];
-    const preReferralTotals = canonicalCommerceTotals(canonicalLines, appliedCoupon?.quote ?? null, parsed.desiredReferralCreditRsd, 0, calculatedShipping.shippingCost);
+    const lockedCouponQuote = appliedCoupon?.quote ?? quoteCoupon({
+      coupon: null,
+      audience: "B2C",
+      lines: prepared.couponLines.map((line) => ({ ...line, categoryIds: [...line.categoryIds] })),
+      now: deoRules.now,
+      customerUsageCount: 0,
+    });
+    const preReferralTotals = finalizeCommerceQuote({
+      prepared, lockedCouponQuote, thresholdRewards: deoRules.thresholdRewards,
+      requestedReferralCreditRsd: parsed.desiredReferralCreditRsd, availableReferralCreditRsd: 0,
+      shippingRsd: calculatedShipping.shippingCost,
+    });
     const referral = userId
       ? await allocateReferralCreditInTx(tx, { ownerUserId: userId, walletKind: "B2C" }, parsed.desiredReferralCreditRsd,
         preReferralTotals.referralBaseRsd)
       : { availableRsd: 0, appliedRsd: 0, allocations: [] };
-    const totals = canonicalCommerceTotals(canonicalLines, appliedCoupon?.quote ?? null, referral.appliedRsd, referral.appliedRsd, calculatedShipping.shippingCost);
+    const totals = finalizeCommerceQuote({
+      prepared, lockedCouponQuote, thresholdRewards: deoRules.thresholdRewards,
+      requestedReferralCreditRsd: referral.appliedRsd, availableReferralCreditRsd: referral.appliedRsd,
+      shippingRsd: calculatedShipping.shippingCost,
+    });
+    // Gift products are locked and checked after the finalized threshold
+    // calculation; aggregate same-SKU levels before any inventory mutation.
+    const rewardGifts = await thresholdGiftDescriptors(tx, totals.rewardGifts, deoRules, "B2C", true);
+    if (!rewardGifts) { rewardUnavailable = true; stockError = "nagradni proizvod"; throw new Error("retail_stock_conflict"); }
+    const giftSupplierIds = [...new Set(rewardGifts.map((gift) => gift.product.supplierId))];
+    if (giftSupplierIds.length) for (const supplier of await tx.select().from(suppliersTable)
+      .where(inArray(suppliersTable.id, giftSupplierIds))) suppliersById.set(supplier.id, supplier);
+    for (const gift of rewardGifts) {
+      const combined = (quantityByProduct.get(gift.productId) ?? 0) + gift.quantity;
+      if (gift.product.stock < combined) { rewardUnavailable = true; stockError = gift.product.name; throw new Error("retail_stock_conflict"); }
+      quantityByProduct.set(gift.productId, combined);
+      byId.set(gift.productId, gift.product);
+    }
     const couponDiscountRsd = totals.couponDiscountRsd;
     const shipping = totals.shippingRsd === calculatedShipping.shippingCost
       ? calculatedShipping : { ...calculatedShipping, shippingCost: totals.shippingRsd, isFreeShipping: true };
@@ -10741,8 +10843,35 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
       deliveryMethod: parsed.deliveryMethod, subtotal, shippingCost: shipping.shippingCost, total: payableTotal,
       couponCodeSnapshot: appliedCoupon?.quote.code ?? null, couponDiscountRsd,
       couponFreeShipping: appliedCoupon?.quote.freeShipping ?? false,
+      promotionSnapshot: {
+        campaigns: deoRules.campaigns.map((rule) => ({
+          id: rule.id, version: rule.version, market: rule.market, status: rule.status,
+          discountType: rule.discountType, discountValue: rule.discountValue,
+          startsAt: rule.startsAt, endsAt: rule.endsAt,
+          productIds: rule.productIds, categoryIds: rule.categoryIds,
+        })),
+        loyaltyTier: deoRules.loyaltyTier,
+        loyaltyExcludedProductIds: [...deoRules.loyaltyExcludedProductIds],
+        automaticPromotions: deoRules.automaticPromotions.map((rule) => ({
+          id: rule.id, version: rule.version, name: rule.name, market: rule.market, startsAt: rule.startsAt,
+          endsAt: rule.endsAt, buyQuantity: rule.buyQuantity, rewardQuantity: rule.rewardQuantity,
+          rewardPercent: rule.rewardPercent, perOrderRewardUnitCap: rule.perOrderRewardUnitCap,
+          buyProductIds: rule.buyProductIds, buyCategoryIds: rule.buyCategoryIds,
+          rewardProductIds: rule.rewardProductIds, rewardCategoryIds: rule.rewardCategoryIds,
+        })),
+        thresholdRewards: deoRules.thresholdRewards.map((rule) => ({
+          id: rule.id, version: rule.version, name: rule.name, market: rule.market, thresholdRsd: rule.thresholdRsd,
+          kind: rule.kind, percent: rule.percent, giftProductId: rule.giftProductId, giftQuantity: rule.giftQuantity,
+        })),
+        automaticApplications: totals.automaticPromotionSnapshots,
+        thresholdQualificationSubtotalRsd: totals.thresholdQualificationSubtotalRsd,
+        automaticPromotionDiscountRsd: totals.automaticPromotionDiscountRsd,
+        thresholdRewardDiscountRsd: totals.thresholdRewardDiscountRsd,
+        thresholdFreeShipping: deoRules.thresholdRewards.some((rule) => rule.active
+          && rule.kind === "FREE_SHIPPING" && rule.thresholdRsd <= totals.thresholdQualificationSubtotalRsd),
+      },
       referralCreditMerchandiseSubtotalRsd: totals.referralBaseRsd,
-      referralCreditPreCreditPayableTotalRsd: subtotal - couponDiscountRsd + shipping.shippingCost,
+      referralCreditPreCreditPayableTotalRsd: payableTotal + referral.appliedRsd,
       referralCreditAppliedRsd: referral.appliedRsd,
       shippingName: `${parsed.firstName} ${parsed.lastName}`, shippingAddress: parsed.street, shippingCity: parsed.city,
       shippingPostalCode: parsed.postalCode, shippingPhone: parsed.phone, shippingEmail: parsed.email.toLowerCase(), shippingNote: parsed.note ?? null, estimatedDeliveryDate,
@@ -10765,7 +10894,8 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
        ...lines.filter((line): line is NonNullable<typeof line> => line !== null).map(({ product, item, variant, unitPrice, pricing }) => {
       const supplier = suppliersById.get(product.supplierId);
       if (!supplier) throw new Error("retail_stock_conflict");
-      const lineCouponDiscount = appliedCoupon?.quote.allocations[item.id] ?? 0;
+       const finalizedLine = totals.lines.find((candidate) => candidate.id === item.id)!;
+       const lineCouponDiscount = finalizedLine.couponAllocationRsd;
       return {
         orderId: order!.id, productId: product.id, productName: product.name, productImageUrl: product.imageUrl,
         productCatalogReference: item.productCatalogReference ?? product.catalogReference,
@@ -10776,13 +10906,16 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
         baseUnitPrice: pricing.baseUnitPrice, effectiveUnitPrice: unitPrice,
         priceSource: pricing.priceSource, lineDiscount: (pricing.baseUnitPrice - unitPrice) * item.quantity,
         couponDiscountRsd: lineCouponDiscount,
-        estimatedDeliveryDate, lineSubtotal: unitPrice * item.quantity, lineTotal: unitPrice * item.quantity - lineCouponDiscount,
+         automaticPromotionDiscountRsd: finalizedLine.automaticPromotionAllocationRsd,
+         thresholdRewardDiscountRsd: finalizedLine.thresholdRewardAllocationRsd,
+         estimatedDeliveryDate, lineSubtotal: finalizedLine.lineSubtotalRsd, lineTotal: finalizedLine.lineTotalRsd,
       };
       }),
       ...bundleLines.filter((line): line is NonNullable<typeof line> => line !== null).map(({ bundle, item, unitPrice, components }) => {
         const supplier = suppliersById.get(bundle.supplierId);
         if (!supplier) throw new Error("retail_stock_conflict");
-        const lineCouponDiscount = appliedCoupon?.quote.allocations[item.id] ?? 0;
+         const finalizedLine = totals.lines.find((candidate) => candidate.id === item.id)!;
+         const lineCouponDiscount = finalizedLine.couponAllocationRsd;
         return {
           orderId: order!.id, productId: null, bundleId: bundle.id, productName: bundle.name, productImageUrl: bundle.imageUrl ?? "",
           productCatalogReference: null, variantValue: null, variantLabel: null, unitPrice, quantity: item.quantity,
@@ -10790,10 +10923,27 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
           market: "B2C" as const, currency: "RSD", discountSnapshot: null, baseUnitPrice: unitPrice,
           effectiveUnitPrice: unitPrice, priceSource: "BUNDLE" as const, lineDiscount: 0, bundleNameSnapshot: bundle.name,
           couponDiscountRsd: lineCouponDiscount,
+           automaticPromotionDiscountRsd: finalizedLine.automaticPromotionAllocationRsd,
+           thresholdRewardDiscountRsd: finalizedLine.thresholdRewardAllocationRsd,
           bundleComponentsSnapshot: components.map(({ component, product }) => ({
             productId: product.id, name: product.name, catalogReference: product.catalogReference, quantity: component.quantity,
           })),
-          estimatedDeliveryDate, lineSubtotal: unitPrice * item.quantity, lineTotal: unitPrice * item.quantity - lineCouponDiscount,
+           estimatedDeliveryDate, lineSubtotal: finalizedLine.lineSubtotalRsd, lineTotal: finalizedLine.lineTotalRsd,
+        };
+      }),
+      ...rewardGifts.map((gift) => {
+        const supplier = suppliersById.get(gift.product.supplierId);
+        if (!supplier) throw new Error("retail_stock_conflict");
+        return {
+          orderId: order!.id, productId: gift.product.id, productName: gift.product.name,
+          productImageUrl: gift.product.imageUrl, productCatalogReference: gift.product.catalogReference,
+          variantValue: null, variantLabel: null, unitPrice: 0, quantity: gift.quantity,
+          supplierId: supplier.id, supplierName: supplier.name, supplierSlug: supplier.slug,
+          productSkuSnapshot: gift.product.sku, market: "B2C" as const, currency: "RSD",
+          discountSnapshot: null, baseUnitPrice: 0, effectiveUnitPrice: 0, priceSource: "FULL_PRICE" as const,
+          lineDiscount: 0, couponDiscountRsd: 0, automaticPromotionDiscountRsd: 0,
+          thresholdRewardDiscountRsd: 0, lineSubtotal: 0, lineTotal: 0, estimatedDeliveryDate,
+          isRewardGift: true, rewardSnapshot: gift.rewardSnapshot,
         };
       }),
     ];
@@ -10852,7 +11002,7 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
   if (quoteConflict) {
     res.status(409).json({
       error: "Iznos porudžbine se promenio. Osvežite pregled i pokušajte ponovo.",
-      code: "CHECKOUT_QUOTE_CHANGED",
+      code: rewardUnavailable ? "CHECKOUT_REWARD_UNAVAILABLE" : "CHECKOUT_QUOTE_CHANGED",
     });
     return;
   }
@@ -11913,6 +12063,93 @@ async function couponLinesForView(client: any, items: Array<{
   }));
 }
 
+/** Convert the already-resolved retail catalog projection into the pricing
+ * engine's canonical input.  This is intentionally shared by preview and the
+ * locked path so X+Y always precedes the DB-backed coupon quote. */
+async function prepareRetailCommerceQuote(
+  client: any,
+  items: Array<{
+    id: string; kind: "product" | "bundle"; productId?: string; bundleId?: string;
+    quantity: number; unitPrice: number; baseUnitPrice?: number; priceSource?: PriceSource;
+  }>,
+  rules: DeoG2RuleSnapshot,
+  market: "B2B" | "B2C" = "B2C",
+) {
+  const couponLines = await couponLinesForView(client, items.map((item) => ({
+    ...item, lineTotal: item.unitPrice * item.quantity,
+  })));
+  const categoriesByLine = new Map(couponLines.map((line) => [line.id, line.categoryIds]));
+  return prepareCommerceQuote({
+    market, now: rules.now, automaticPromotions: rules.automaticPromotions,
+    lines: items.map((item) => {
+      if (item.kind === "bundle") {
+        return {
+          id: item.id, quantity: item.quantity, productId: null, bundleId: item.bundleId ?? null,
+          categoryIds: [], fixedBundleUnitPriceRsd: item.unitPrice,
+        };
+      }
+      const source = item.priceSource ?? "FULL_PRICE";
+      const base = item.baseUnitPrice ?? item.unitPrice;
+      return {
+        id: item.id, quantity: item.quantity, productId: item.productId ?? null, bundleId: null,
+        categoryIds: categoriesByLine.get(item.id) ?? [],
+        product: {
+          regularUnitPriceRsd: base,
+          activeSaleUnitPriceRsd: source === "SALE" ? item.unitPrice : null,
+          tierUnitPriceRsd: source === "TIER" ? item.unitPrice : null,
+          loyaltyTierUnitPriceRsd: source === "LOYALTY_TIER_PRICE" ? item.unitPrice : null,
+          explicitVariantUnitPriceRsd: source === "EXPLICIT_VARIANT_PRICE" ? item.unitPrice : null,
+          variantPriceAdjustRsd: 0,
+        },
+      };
+    }),
+  });
+}
+
+/** Resolve the inventory-bearing side of an already-finalized GIFT_PRODUCT rule.
+ * This is deliberately separate from pricing: gift lines never enter coupons,
+ * referral accounting or merchandise totals. */
+async function thresholdGiftDescriptors(
+  client: any,
+  gifts: readonly Readonly<{ rewardId: string; productId: string; quantity: number }>[],
+  rules: DeoG2RuleSnapshot,
+  market: "B2B" | "B2C",
+  lock = false,
+) {
+  const ids = [...new Set(gifts.map((gift) => gift.productId))].sort();
+  if (lock) for (const id of ids) await client.execute(sql`select id from products where id = ${id} for update`);
+  const products: Array<typeof productsTable.$inferSelect> = ids.length ? await client.select().from(productsTable).where(and(
+    inArray(productsTable.id, ids), eq(productsTable.active, true),
+    market === "B2C" ? eq(productsTable.retailEnabled, true) : eq(productsTable.professionalEnabled, true),
+    activeCategoryCondition(), activeSupplierCondition(market),
+  )) as Array<typeof productsTable.$inferSelect> : [];
+  const byId = new Map<string, typeof productsTable.$inferSelect>(products.map((product) => [product.id, product]));
+  const required = new Map<string, number>();
+  for (const gift of gifts) required.set(gift.productId, (required.get(gift.productId) ?? 0) + gift.quantity);
+  // Reward rules have no variant selection. Variant-only stock can therefore
+  // never be safely promised as a generic gift.
+  if (ids.length !== products.length || [...required].some(([id, quantity]) => {
+    const product = byId.get(id);
+    return !product || (product.variants?.length ?? 0) > 0 || product.stock < quantity;
+  })) return null;
+  const ruleById = new Map(rules.thresholdRewards.map((rule) => [rule.id, rule]));
+  return gifts.map((gift) => {
+    const product = byId.get(gift.productId)!;
+    const rule = ruleById.get(gift.rewardId)!;
+    return {
+      rewardId: gift.rewardId, productId: product.id, productName: product.name, productImageUrl: product.imageUrl,
+      quantity: gift.quantity, unitPrice: 0, price: 0,
+      thresholdLabel: `${rule.name} (${rule.thresholdRsd.toLocaleString("sr-RS")} RSD)`,
+      rewardSnapshot: {
+        rewardId: rule.id, ruleVersion: rule.version, ruleName: rule.name, thresholdRsd: rule.thresholdRsd,
+        productId: product.id, productName: product.name, productImageUrl: product.imageUrl,
+        productCatalogReference: product.catalogReference, quantity: gift.quantity,
+      },
+      product,
+    };
+  });
+}
+
 async function getOrCreateShopCart(salonId: string) {
   const [existing] = await db.select().from(shoppingCartsTable).where(eq(shoppingCartsTable.salonId, salonId)).limit(1);
   if (existing) return existing;
@@ -11937,6 +12174,9 @@ async function shopCartDto(salonId: string, includeInternalShippingWeight = fals
   const products = productIds.length ? await db.select().from(productsTable).where(and(
     inArray(productsTable.id, productIds), eq(productsTable.professionalEnabled, true), activeCategoryCondition(), activeSupplierCondition("B2B"),
   )) : [];
+  const deoRules = await loadDeoG2RuleSnapshot(db, {
+    market: "B2B", now: new Date(), productIds, salonId,
+  });
   const byId = new Map(products.map((product) => [product.id, product]));
   const bundles = bundleIds.length ? await catalogBundles("B2B") : [];
   const bundlesById = new Map(bundles.map((bundle) => [bundle.id, bundle]));
@@ -11974,7 +12214,7 @@ async function shopCartDto(salonId: string, includeInternalShippingWeight = fals
     const product = byId.get(item.productId);
     const variant = item.variantValue ? product?.variants?.find((candidate) => candidate.value === item.variantValue) : undefined;
     const availableStock = variant?.stock ?? product?.stock ?? 0;
-    const pricing = product ? cartLineForProduct(product, item.variantValue ?? undefined, item.quantity) : null;
+    const pricing = product ? cartLineForProduct(product, item.variantValue ?? undefined, item.quantity, deoRules) : null;
     const resolvedPricing = pricing && !("error" in pricing) ? pricing : null;
     return {
       id: item.id,
@@ -11985,9 +12225,11 @@ async function shopCartDto(salonId: string, includeInternalShippingWeight = fals
       variantValue: item.variantValue,
       variantLabel: item.variantLabel,
       productSku: item.productSku,
-      unitPrice: item.unitPrice,
+      // Cart rows are a selection, not a price lock.  Reproject the current
+      // campaign/tier/loyalty price so preview uses the same G2 facts as final.
+      unitPrice: resolvedPricing?.unitPrice ?? item.unitPrice,
       quantity: item.quantity,
-      lineTotal: item.unitPrice * item.quantity,
+      lineTotal: (resolvedPricing?.unitPrice ?? item.unitPrice) * item.quantity,
       availableStock,
       weightGrams: product?.weightGrams ?? 0,
       priceSource: resolvedPricing?.priceSource === "EXPLICIT_VARIANT_PRICE"
@@ -12044,7 +12286,12 @@ async function bundleForCartInTx(tx: BundleTransaction, bundleId: string, market
   return { bundle, components, derivedStock: Math.min(...components.map(({ product, quantity }) => Math.floor(product.stock / quantity))) };
 }
 
-function cartLineForProduct(product: typeof productsTable.$inferSelect, variantValue: string | undefined, quantity: number) {
+function cartLineForProduct(
+  product: typeof productsTable.$inferSelect,
+  variantValue: string | undefined,
+  quantity: number,
+  rules?: DeoG2RuleSnapshot,
+) {
   const variants = product.variants ?? [];
   if (variants.length > 0 && !variantValue) return { error: `Izaberite varijantu za proizvod "${product.name}".` } as const;
   if (variants.length === 0 && variantValue) return { error: `Proizvod "${product.name}" nema dostupne varijante.` } as const;
@@ -12061,7 +12308,13 @@ function cartLineForProduct(product: typeof productsTable.$inferSelect, variantV
   }
   // A sale is the one and only product discount. Quantity tiers apply only to
   // full-price products, never on top of a channel sale or a bundle price.
-  const salePrice = activeProductSale(product, "B2B")?.price ?? null;
+  const manualSalePrice = activeProductSale(product, "B2B")?.price ?? null;
+  const g2 = rules ? deoG2ProductPriceFacts({
+    snapshot: rules, productId: product.id, categoryId: product.categoryId,
+    regularUnitPriceRsd: product.price, manualSaleUnitPriceRsd: manualSalePrice,
+    productLoyaltyExcluded: product.loyaltyPricingExcluded,
+  }) : null;
+  const salePrice = g2?.activeSaleUnitPriceRsd ?? manualSalePrice;
   const tier = salePrice == null
     ? (product.quantityPricingTiers ?? []).find((candidate) => quantity >= candidate.minQuantity
       && (candidate.maxQuantity == null || quantity <= candidate.maxQuantity))
@@ -12070,6 +12323,7 @@ function cartLineForProduct(product: typeof productsTable.$inferSelect, variantV
     regularUnitPriceRsd: product.price,
     activeSaleUnitPriceRsd: salePrice,
     tierUnitPriceRsd: tier?.unitPrice ?? null,
+    loyaltyTierUnitPriceRsd: g2?.loyaltyTierUnitPriceRsd ?? null,
     explicitVariantUnitPriceRsd: variant?.price ?? null,
     variantPriceAdjustRsd: variant?.priceAdjust ?? 0,
   });
@@ -12572,10 +12826,21 @@ router.post("/shop/approval-requests", async (req, res): Promise<void> => {
     const lines = await tx.select().from(shoppingCartItemsTable).where(eq(shoppingCartItemsTable.cartId, cart.id));
     if (!lines.length) throw new Error("approval_cart_empty");
     const quote = await shopCartDto(access.salon.id);
+    const rules = await loadDeoG2RuleSnapshot(tx, {
+      market: "B2B", now: new Date(),
+      productIds: quote.items.flatMap((line) => line.kind === "product" ? [line.productId] : []),
+      salonId: access.salon.id,
+    });
+    const prepared = await prepareRetailCommerceQuote(tx, quote.items.map((line) => ({
+      id: line.id, kind: line.kind, productId: line.kind === "product" ? line.productId : undefined,
+      bundleId: line.kind === "bundle" ? line.bundleId : undefined, quantity: line.quantity,
+      unitPrice: line.unitPrice, baseUnitPrice: line.unitPrice + line.lineDiscount / line.quantity,
+      priceSource: line.priceSource,
+    })), rules, "B2B");
     const appliedCoupon = await quoteCouponFromDb(tx, {
       code: couponCode,
       audience: "B2B",
-      lines: await couponLinesForView(tx, quote.items),
+      lines: prepared.couponLines.map((line) => ({ ...line, categoryIds: [...line.categoryIds] })),
       customer: { salonId: access.salon.id },
     });
     if (appliedCoupon && "reason" in appliedCoupon) {
@@ -12756,23 +13021,50 @@ router.get("/shop/checkout-preview", async (req, res): Promise<void> => {
   const cartWithInternalWeight = await shopCartDto(access.salon.id, true);
   const { internalShippingWeightGrams, ...cart } = cartWithInternalWeight;
   const couponCode = typeof req.query.couponCode === "string" ? req.query.couponCode : null;
+  const productIds = cart.items.flatMap((line) => line.kind === "product" ? [line.productId] : []);
+  const rules = await loadDeoG2RuleSnapshot(db, {
+    market: "B2B", now: new Date(), productIds, salonId: access.salon.id,
+  });
+  const prepared = await prepareRetailCommerceQuote(db, cart.items.map((line) => ({
+    id: line.id, kind: line.kind, productId: line.kind === "product" ? line.productId : undefined,
+    bundleId: line.kind === "bundle" ? line.bundleId : undefined, quantity: line.quantity,
+    unitPrice: line.unitPrice, baseUnitPrice: line.unitPrice + line.lineDiscount / line.quantity,
+    priceSource: line.priceSource,
+  })), rules, "B2B");
   const appliedCoupon = await quoteCouponFromDb(db, {
     code: couponCode, audience: "B2B",
-    lines: await couponLinesForView(db, cart.items),
+    lines: prepared.couponLines.map((line) => ({ ...line, categoryIds: [...line.categoryIds] })),
     customer: { salonId: access.salon.id },
   });
   if (appliedCoupon && "reason" in appliedCoupon) { couponErrorResponse(res, appliedCoupon.reason); return; }
   const calculatedShipping = calculateShipping(
     await getShippingConfig(),
     internalShippingWeightGrams ?? cart.totalWeightGrams,
-    cart.subtotal,
+    prepared.subtotalRsd,
   );
   const desired = typeof req.query.desiredReferralCreditRsd === "string" && /^\d+$/.test(req.query.desiredReferralCreditRsd)
     ? Number(req.query.desiredReferralCreditRsd) : 0;
   const scope = { ownerUserId: access.salon.ownerId, walletKind: "B2B" as const, salonId: access.salon.id };
   const available = await db.transaction((tx) => referralCreditBalanceInTx(tx, scope));
-  const totals = canonicalCommerceTotals(cart.items, appliedCoupon?.quote ?? null, desired || available, available,
-    calculatedShipping.shippingCost, cart.freeShippingProgress.loyaltyFreeShipping);
+  const lockedCouponQuote = appliedCoupon?.quote ?? quoteCoupon({
+    coupon: null, audience: "B2B",
+    lines: prepared.couponLines.map((line) => ({ ...line, categoryIds: [...line.categoryIds] })),
+    now: rules.now, customerUsageCount: 0,
+  });
+  const totals = finalizeCommerceQuote({
+    prepared, lockedCouponQuote, thresholdRewards: rules.thresholdRewards,
+    requestedReferralCreditRsd: desired || available, availableReferralCreditRsd: available,
+    shippingRsd: calculatedShipping.shippingCost,
+    loyaltyFreeShipping: cart.freeShippingProgress.loyaltyFreeShipping,
+  });
+  const rewardGifts = await thresholdGiftDescriptors(db, totals.rewardGifts, rules, "B2B");
+  if (!rewardGifts) {
+    res.status(409).json({
+      error: "Nagradni proizvod više nije dostupan. Osvežite pregled i pokušajte ponovo.",
+      code: "CHECKOUT_REWARD_UNAVAILABLE",
+    });
+    return;
+  }
   const couponDiscountRsd = totals.couponDiscountRsd;
   const shipping = totals.shippingRsd === calculatedShipping.shippingCost
     ? calculatedShipping : { ...calculatedShipping, shippingCost: totals.shippingRsd, isFreeShipping: true };
@@ -12786,8 +13078,20 @@ router.get("/shop/checkout-preview", async (req, res): Promise<void> => {
       freeShipping: appliedCoupon.quote.freeShipping, allocations: appliedCoupon.quote.allocations,
     } : null,
     couponDiscountRsd,
+    automaticPromotionDiscountRsd: totals.automaticPromotionDiscountRsd,
+    thresholdRewardDiscountRsd: totals.thresholdRewardDiscountRsd,
+    thresholdQualificationSubtotalRsd: totals.thresholdQualificationSubtotalRsd,
+    rewardGifts: rewardGifts.map(({ product, rewardSnapshot, ...gift }) => gift),
   });
-  res.json(parsedPreview);
+  // Keep the established public shape while exposing the canonical G2 facts to
+  // clients that understand the staged checkout seam.
+  res.json({
+    ...parsedPreview,
+    automaticPromotionDiscountRsd: totals.automaticPromotionDiscountRsd,
+    thresholdRewardDiscountRsd: totals.thresholdRewardDiscountRsd,
+    thresholdQualificationSubtotalRsd: totals.thresholdQualificationSubtotalRsd,
+    rewardGifts: rewardGifts.map(({ product, rewardSnapshot, ...gift }) => gift),
+  });
 });
 
 async function checkoutShopCartHandler(req: Request, res: Response): Promise<void> {
@@ -12833,6 +13137,7 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
   let conflictProductName: string | null = null;
   let approvalConflict = false;
   let couponFailure: string | null = null;
+  let rewardUnavailable = false;
   const created = await db.transaction(async (tx) => {
     await tx.execute(sql`select id from shopping_carts where id = ${cart.id} for update`);
     const [approvalRequest] = approvalRequestId
@@ -12901,6 +13206,9 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
       activeCategoryCondition(),
     ));
     const lockedProducts = new Map(validProducts.map((product) => [product.id, product]));
+    const deoRules = await loadDeoG2RuleSnapshot(tx, {
+      market: "B2B", now: new Date(), productIds, salonId: salon.id,
+    });
     const bundleSuppliers = bundleIds.length ? await tx.select({ id: suppliersTable.id }).from(suppliersTable).where(and(
       inArray(suppliersTable.id, bundles.map((bundle) => bundle.supplierId)), eq(suppliersTable.active, true), inArray(suppliersTable.scope, ["B2B", "BOTH"]),
     )) : [];
@@ -12935,7 +13243,7 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
         conflictProductName = product.name;
         tx.rollback();
       }
-      const pricing = cartLineForProduct(product, line.variantValue ?? undefined, line.quantity);
+      const pricing = cartLineForProduct(product, line.variantValue ?? undefined, line.quantity, deoRules);
       if ("error" in pricing) {
         conflictProductName = product.name;
         tx.rollback();
@@ -12998,7 +13306,7 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
         tx.rollback();
       }
     }
-    const subtotal = details.reduce((sum, line) => sum + line.price * line.quantity, 0);
+    let subtotal = details.reduce((sum, line) => sum + line.price * line.quantity, 0);
     const totalWeightGrams = details.reduce((sum, line) => sum + (line.bundle
       ? line.bundle.components.reduce((weight, component) => weight + (component.product.weightGrams ?? 0) * component.quantity, 0)
       : (line.product.weightGrams ?? 0)) * line.quantity, 0);
@@ -13030,18 +13338,21 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
       ? line.bundle.components.map((component) => component.product.deliveryBusinessDaysOverride ?? defaultDeliveryDays)
       : [line.product.deliveryBusinessDaysOverride ?? defaultDeliveryDays]));
     const estimatedDeliveryDate = belgradeBusinessDate(deliveryDays);
+    // The catalog and G2 snapshot are locked above.  From here on B2B follows
+    // the same immutable prepare -> locked coupon -> finalize boundary as B2C.
+    const prepared = await prepareRetailCommerceQuote(tx, details.map((line) => ({
+      id: line.cartLineId, kind: line.bundle ? "bundle" as const : "product" as const,
+      productId: line.bundle ? undefined : line.product.id,
+      bundleId: line.bundle?.bundle.id, quantity: line.quantity, unitPrice: line.price,
+      baseUnitPrice: line.baseUnitPrice, priceSource: line.priceSource,
+    })), deoRules, "B2B");
+    subtotal = prepared.subtotalRsd;
     const couponResult = await quoteCouponFromDb(tx, {
       code: couponCode,
       audience: "B2B",
       lock: true,
       customer: { salonId: salon.id },
-      lines: details.map((line) => ({
-        id: line.cartLineId,
-        productId: line.bundle ? null : line.product.id,
-        bundleId: line.bundle?.bundle.id ?? null,
-        categoryIds: line.bundle || !line.product.categoryId ? [] : [line.product.categoryId],
-        amountRsd: line.price * line.quantity,
-      })),
+      lines: prepared.couponLines.map((line) => ({ ...line, categoryIds: [...line.categoryIds] })),
     });
     if (couponResult && "reason" in couponResult) {
       couponFailure = couponResult.reason;
@@ -13052,22 +13363,32 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
     const [tier] = await tx.select({ freeShipping: loyaltyTiersTable.freeShipping }).from(salonLoyaltyStatusesTable)
       .leftJoin(loyaltyTiersTable, eq(salonLoyaltyStatusesTable.tierId, loyaltyTiersTable.id))
       .where(eq(salonLoyaltyStatusesTable.salonId, salon.id)).limit(1);
-    const canonicalLines = details.map((line) => ({
-      id: line.cartLineId,
-      kind: line.bundle ? "bundle" as const : "product" as const,
-      quantity: line.quantity,
-      unitPrice: line.price,
-      lineTotal: line.price * line.quantity,
-      priceSource: line.priceSource,
-      lineDiscount: (line.baseUnitPrice - line.price) * line.quantity,
-    }));
-    const preReferralTotals = canonicalCommerceTotals(canonicalLines, appliedCoupon?.quote ?? null,
-      parsed.data.desiredReferralCreditRsd ?? 0, 0, calculatedShipping.shippingCost, tier?.freeShipping ?? false);
+    const lockedCouponQuote = appliedCoupon?.quote ?? quoteCoupon({
+      coupon: null, audience: "B2B",
+      lines: prepared.couponLines.map((line) => ({ ...line, categoryIds: [...line.categoryIds] })),
+      now: deoRules.now, customerUsageCount: 0,
+    });
+    const preReferralTotals = finalizeCommerceQuote({
+      prepared, lockedCouponQuote, thresholdRewards: deoRules.thresholdRewards,
+      requestedReferralCreditRsd: parsed.data.desiredReferralCreditRsd ?? 0, availableReferralCreditRsd: 0,
+      shippingRsd: calculatedShipping.shippingCost, loyaltyFreeShipping: tier?.freeShipping ?? false,
+    });
     const referral = await allocateReferralCreditInTx(tx, {
       ownerUserId: salon.ownerId, walletKind: "B2B", salonId: salon.id,
     }, parsed.data.desiredReferralCreditRsd ?? 0, preReferralTotals.referralBaseRsd);
-    const totals = canonicalCommerceTotals(canonicalLines, appliedCoupon?.quote ?? null, referral.appliedRsd,
-      referral.appliedRsd, calculatedShipping.shippingCost, tier?.freeShipping ?? false);
+    const totals = finalizeCommerceQuote({
+      prepared, lockedCouponQuote, thresholdRewards: deoRules.thresholdRewards,
+      requestedReferralCreditRsd: referral.appliedRsd, availableReferralCreditRsd: referral.appliedRsd,
+      shippingRsd: calculatedShipping.shippingCost, loyaltyFreeShipping: tier?.freeShipping ?? false,
+    });
+    const rewardGifts = await thresholdGiftDescriptors(tx, totals.rewardGifts, deoRules, "B2B", true);
+    if (!rewardGifts) { rewardUnavailable = true; conflictProductName = "nagradni proizvod"; tx.rollback(); }
+    for (const gift of rewardGifts ?? []) {
+      const combined = (productQuantities.get(gift.productId) ?? 0) + gift.quantity;
+      if (gift.product.stock < combined) { rewardUnavailable = true; conflictProductName = gift.product.name; tx.rollback(); }
+      productQuantities.set(gift.productId, combined);
+      lockedProducts.set(gift.productId, gift.product);
+    }
     const couponDiscountRsd = totals.couponDiscountRsd;
     const shipping = totals.shippingRsd === calculatedShipping.shippingCost
       ? calculatedShipping : { ...calculatedShipping, shippingCost: totals.shippingRsd, isFreeShipping: true };
@@ -13098,6 +13419,34 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
       couponCodeSnapshot: appliedCoupon?.quote.code ?? null,
       couponDiscountRsd,
       couponFreeShipping: appliedCoupon?.quote.freeShipping ?? false,
+      promotionSnapshot: {
+        campaigns: deoRules.campaigns.map((rule) => ({
+          id: rule.id, version: rule.version, market: rule.market, status: rule.status,
+          discountType: rule.discountType, discountValue: rule.discountValue, startsAt: rule.startsAt,
+          endsAt: rule.endsAt, productIds: rule.productIds, categoryIds: rule.categoryIds,
+        })),
+        loyaltyTier: deoRules.loyaltyTier,
+        loyaltyExcludedProductIds: [...deoRules.loyaltyExcludedProductIds],
+        automaticPromotions: deoRules.automaticPromotions.map((rule) => ({
+          id: rule.id, version: rule.version, name: rule.name, market: rule.market,
+          startsAt: rule.startsAt, endsAt: rule.endsAt, buyQuantity: rule.buyQuantity,
+          rewardQuantity: rule.rewardQuantity, rewardPercent: rule.rewardPercent,
+          perOrderRewardUnitCap: rule.perOrderRewardUnitCap, buyProductIds: rule.buyProductIds,
+          buyCategoryIds: rule.buyCategoryIds, rewardProductIds: rule.rewardProductIds,
+          rewardCategoryIds: rule.rewardCategoryIds,
+        })),
+        thresholdRewards: deoRules.thresholdRewards.map((rule) => ({
+          id: rule.id, version: rule.version, name: rule.name, market: rule.market,
+          thresholdRsd: rule.thresholdRsd, kind: rule.kind, percent: rule.percent,
+          giftProductId: rule.giftProductId, giftQuantity: rule.giftQuantity,
+        })),
+        automaticApplications: totals.automaticPromotionSnapshots,
+        thresholdQualificationSubtotalRsd: totals.thresholdQualificationSubtotalRsd,
+        automaticPromotionDiscountRsd: totals.automaticPromotionDiscountRsd,
+        thresholdRewardDiscountRsd: totals.thresholdRewardDiscountRsd,
+        thresholdFreeShipping: deoRules.thresholdRewards.some((rule) => rule.active
+          && rule.kind === "FREE_SHIPPING" && rule.thresholdRsd <= totals.thresholdQualificationSubtotalRsd),
+      },
       referralCreditMerchandiseSubtotalRsd: totals.referralBaseRsd,
       referralCreditPreCreditPayableTotalRsd: subtotal - couponDiscountRsd + shipping.shippingCost,
       referralCreditAppliedRsd: referral.appliedRsd,
@@ -13141,14 +13490,18 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
     });
     const supplierRows = await tx.select().from(suppliersTable).where(inArray(
       suppliersTable.id,
-      [...new Set(details.map((line) => line.bundle?.bundle.supplierId ?? line.product.supplierId))],
+      [...new Set([
+        ...details.map((line) => line.bundle?.bundle.supplierId ?? line.product.supplierId),
+        ...(rewardGifts ?? []).map((gift) => gift.product.supplierId),
+      ])],
     ));
     const suppliersById = new Map(supplierRows.map((supplier) => [supplier.id, supplier]));
-    const orderItems = details.map((line) => {
+    const orderItems: Array<any> = details.map((line) => {
       const supplier = suppliersById.get(line.bundle?.bundle.supplierId ?? line.product.supplierId);
       if (!supplier) throw new Error("B2B supplier is unavailable");
       const sku = line.variant?.sku ?? line.product.sku;
       const lineCouponDiscount = appliedCoupon?.quote.allocations[line.cartLineId] ?? 0;
+      const finalizedLine = totals.lines.find((candidate) => candidate.id === line.cartLineId)!;
       const sale = line.bundle ? null : activeProductSale(line.product, "B2B");
       const persistedPriceSource = line.priceSource === "EXPLICIT_VARIANT_PRICE"
         ? "FULL_PRICE" as const
@@ -13172,12 +13525,29 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
         priceSource: line.bundle ? "BUNDLE" as const : persistedPriceSource,
         lineDiscount: line.bundle ? 0 : (line.baseUnitPrice - line.price) * line.quantity,
         couponDiscountRsd: lineCouponDiscount,
+        automaticPromotionDiscountRsd: finalizedLine.automaticPromotionAllocationRsd,
+        thresholdRewardDiscountRsd: finalizedLine.thresholdRewardAllocationRsd,
         bundleNameSnapshot: line.bundle?.bundle.name ?? null,
         bundleComponentsSnapshot: line.bundle?.components.map((component) => ({ productId: component.product.id, name: component.product.name, catalogReference: component.product.catalogReference, quantity: component.quantity })) ?? null,
         estimatedDeliveryDate,
-        unitPrice: line.price, lineSubtotal: line.price * line.quantity, lineTotal: line.price * line.quantity - lineCouponDiscount,
+        unitPrice: line.price, lineSubtotal: finalizedLine.lineSubtotalRsd, lineTotal: finalizedLine.lineTotalRsd,
       };
     });
+    for (const gift of rewardGifts ?? []) {
+      const supplier = suppliersById.get(gift.product.supplierId);
+      if (!supplier) throw new Error("B2B supplier is unavailable");
+      orderItems.push({
+        orderId: order!.id, productId: gift.product.id, bundleId: null, productName: gift.product.name,
+        productSku: gift.product.sku, variantValue: null, variantLabel: null, quantity: gift.quantity, price: 0,
+        supplierId: supplier.id, supplierName: supplier.name, supplierSlug: supplier.slug,
+        productCatalogReference: gift.product.catalogReference, productSkuSnapshot: gift.product.sku,
+        market: "B2B" as const, currency: "RSD", discountSnapshot: null, baseUnitPrice: 0,
+        effectiveUnitPrice: 0, priceSource: "FULL_PRICE" as const, lineDiscount: 0,
+        couponDiscountRsd: 0, automaticPromotionDiscountRsd: 0, thresholdRewardDiscountRsd: 0,
+        bundleNameSnapshot: null, bundleComponentsSnapshot: null, estimatedDeliveryDate,
+        unitPrice: 0, lineSubtotal: 0, lineTotal: 0, isRewardGift: true, rewardSnapshot: gift.rewardSnapshot,
+      });
+    }
     const savedOrderItems = await tx.insert(orderItemsTable).values(orderItems).returning();
     const awarded = await awardLoyaltyPointsInTx(tx, { audience: "B2B", salonId: salon.id, orderId: order!.id },
       savedOrderItems.filter((item) => item.priceSource === "FULL_PRICE")
@@ -13234,7 +13604,7 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
       res.status(409).json({ error: "Zahtev nije na čekanju ili je već obrađen.", code: "APPROVAL_NOT_PENDING" });
       return;
     }
-    res.status(conflictProductName ? 409 : 400).json({ error: conflictProductName === "quote" ? "Iznos porudžbine se promenio. Osvežite pregled i pokušajte ponovo." : conflictProductName ? `Zalihe za "${conflictProductName}" su se promenile tokom obrade. Osvežite korpu i pokušajte ponovo.` : "Vaša korpa je prazna.", ...(conflictProductName === "quote" ? { code: "CHECKOUT_QUOTE_CHANGED" } : {}) });
+    res.status(conflictProductName ? 409 : 400).json({ error: conflictProductName === "quote" ? "Iznos porudžbine se promenio. Osvežite pregled i pokušajte ponovo." : conflictProductName ? `Zalihe za "${conflictProductName}" su se promenile tokom obrade. Osvežite korpu i pokušajte ponovo.` : "Vaša korpa je prazna.", ...(conflictProductName === "quote" ? { code: "CHECKOUT_QUOTE_CHANGED" } : rewardUnavailable ? { code: "CHECKOUT_REWARD_UNAVAILABLE" } : {}) });
     return;
   }
   if (!created.repeatedApproval) {
@@ -18291,6 +18661,7 @@ function adminProductDto(item: typeof productsTable.$inferSelect) {
     deliveryBusinessDaysOverride: item.deliveryBusinessDaysOverride ?? null,
     subscriptionAllowed: item.subscriptionAllowed,
     subscriptionDiscountPercent: item.subscriptionDiscountPercent ?? null,
+    loyaltyPricingExcluded: item.loyaltyPricingExcluded,
     productTypeId: item.productTypeId ?? null,
     ingredients: item.ingredients ?? null,
     usageInstructions: item.usageInstructions ?? null,
@@ -18658,6 +19029,7 @@ router.post("/admin/products", async (req, res): Promise<void> => {
         variantType: body.variantType?.trim() || null,
         variants: body.variants ?? null,
         ...merchandising.data,
+        loyaltyPricingExcluded: body.loyaltyPricingExcluded ?? false,
         active: body.active ?? true,
       }).returning();
       if (needTagIds.length) {
@@ -18665,6 +19037,7 @@ router.post("/admin/products", async (req, res): Promise<void> => {
           productId: rows[0]!.id, needTagId,
         })));
       }
+      await replaceProductUpsells(tx, rows[0]!, body.upsellProductIds ?? []);
       for (const url of imageReferences) {
         if (!await claimMediaReference({
           userId: user.id,
@@ -18976,6 +19349,7 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
         variantType: body.variantType !== undefined ? body.variantType?.trim() || null : existing.variantType,
         variants: nextVariants,
         ...merchandising.data,
+        loyaltyPricingExcluded: body.loyaltyPricingExcluded ?? existing.loyaltyPricingExcluded,
         active: nextActive,
       }).where(and(
         eq(productsTable.id, productId),
@@ -18999,6 +19373,9 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
         if (needTagIds.length) await tx.insert(b2cProductNeedTagsTable).values(needTagIds.map((needTagId) => ({
           productId: existing.id, needTagId,
         })));
+      }
+      if (body.upsellProductIds !== undefined) {
+        await replaceProductUpsells(tx, rows[0]!, body.upsellProductIds);
       }
       if (revokedProductAssetIds.length) {
         await releaseMediaReferenceClaims({

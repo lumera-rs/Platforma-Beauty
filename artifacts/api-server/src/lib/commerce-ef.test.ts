@@ -16,6 +16,7 @@ import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureBusinessGrowthSchema } from "./business-growth-schema";
 import { runRetailReviewInvitationSweep } from "./review-invitations";
 import { validatedSwatch } from "../routes/commerce-ef";
+import { settledCommerceSpend } from "./deo-g2-rule-loader";
 
 const marker = `commerce-ef-${randomUUID()}`;
 const ids = { users: [] as string[], salons: [] as string[], suppliers: [] as string[], categories: [] as string[], products: [] as string[], carts: [] as string[], orders: [] as string[], retailCarts: [] as string[], retailOrders: [] as string[], assets: [] as string[] };
@@ -79,6 +80,28 @@ test.before(async () => {
   settings = (await db.select().from(shopSettingsTable).limit(1))[0];
   assert.ok(settings); await db.update(shopSettingsTable).set({ reviewRewardsEnabled: true, reviewInvitationDelayDays: 7, reviewRewardPercent: 17, reviewRewardValidityDays: 31 }).where(eq(shopSettingsTable.id, settings!.id));
   server = app.listen(0, "127.0.0.1"); await once(server, "listening"); base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api`;
+});
+
+test("loyalty settled spend includes paid and delivered COD only in both markets", async () => {
+  const retailRows = await db.insert(retailOrdersTable).values([
+    { orderNumber: `${marker}-loyalty-paid`, cartId: ids.retailCarts[0]!, userId: customer, trackingTokenHash: randomUUID(), idempotencyKey: randomUUID(), status: "delivered", paymentMethod: "CARD", paymentStatus: "paid", subtotal: 1000, total: 1000, shippingName: marker, shippingAddress: "Test 1", shippingCity: "Beograd", shippingPostalCode: "11000", shippingPhone: "+381601234567", shippingEmail: `${marker}@example.test` },
+    { orderNumber: `${marker}-loyalty-cod`, cartId: ids.retailCarts[0]!, userId: customer, trackingTokenHash: randomUUID(), idempotencyKey: randomUUID(), status: "delivered", paymentMethod: "CASH_ON_DELIVERY", paymentStatus: "unpaid", subtotal: 2000, total: 2000, shippingName: marker, shippingAddress: "Test 1", shippingCity: "Beograd", shippingPostalCode: "11000", shippingPhone: "+381601234567", shippingEmail: `${marker}@example.test` },
+    { orderNumber: `${marker}-loyalty-bank`, cartId: ids.retailCarts[0]!, userId: customer, trackingTokenHash: randomUUID(), idempotencyKey: randomUUID(), status: "delivered", paymentMethod: "BANK_TRANSFER", paymentStatus: "unpaid", subtotal: 4000, total: 4000, shippingName: marker, shippingAddress: "Test 1", shippingCity: "Beograd", shippingPostalCode: "11000", shippingPhone: "+381601234567", shippingEmail: `${marker}@example.test` },
+    { orderNumber: `${marker}-loyalty-refunded`, cartId: ids.retailCarts[0]!, userId: customer, trackingTokenHash: randomUUID(), idempotencyKey: randomUUID(), status: "delivered", paymentMethod: "CARD", paymentStatus: "refunded", subtotal: 8000, total: 8000, shippingName: marker, shippingAddress: "Test 1", shippingCity: "Beograd", shippingPostalCode: "11000", shippingPhone: "+381601234567", shippingEmail: `${marker}@example.test` },
+  ]).returning({ id: retailOrdersTable.id });
+  ids.retailOrders.push(...retailRows.map((row) => row.id));
+
+  const b2bRows = await db.insert(ordersTable).values([
+    { salonId, status: "delivered", total: 1000, subtotal: 1000, shippingName: marker, shippingAddress: "Test 1", paymentMethod: "CARD", paymentStatus: "paid" },
+    { salonId, status: "delivered", total: 2000, subtotal: 2000, shippingName: marker, shippingAddress: "Test 1", paymentMethod: "CASH_ON_DELIVERY", paymentStatus: "unpaid" },
+    { salonId, status: "delivered", total: 4000, subtotal: 4000, shippingName: marker, shippingAddress: "Test 1", paymentMethod: "BANK_TRANSFER", paymentStatus: "unpaid" },
+    { salonId, status: "delivered", total: 8000, subtotal: 8000, shippingName: marker, shippingAddress: "Test 1", paymentMethod: "CARD", paymentStatus: "refunded" },
+  ]).returning({ id: ordersTable.id });
+  ids.orders.push(...b2bRows.map((row) => row.id));
+
+  assert.equal(await settledCommerceSpend(db, { market: "B2C", userId: customer }), 3000);
+  assert.equal(await settledCommerceSpend(db, { market: "B2B", ownerUserId: salonOwner }), 3000);
+  assert.equal(await settledCommerceSpend(db, { market: "B2B", salonId }), 3000);
 });
 
 test.after(async () => {

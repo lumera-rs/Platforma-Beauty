@@ -2981,6 +2981,40 @@ export interface ShippingQuote {
   availableMethods: DeliveryMethodOption[];
 }
 
+export type CheckoutThresholdRewardDescriptorKind = typeof CheckoutThresholdRewardDescriptorKind[keyof typeof CheckoutThresholdRewardDescriptorKind];
+
+
+export const CheckoutThresholdRewardDescriptorKind = {
+  FREE_SHIPPING: 'FREE_SHIPPING',
+  GIFT_PRODUCT: 'GIFT_PRODUCT',
+  PERCENT_DISCOUNT: 'PERCENT_DISCOUNT',
+} as const;
+
+export interface CheckoutThresholdRewardDescriptor {
+  id: string;
+  /** @minimum 0 */
+  thresholdRsd: number;
+  kind: CheckoutThresholdRewardDescriptorKind;
+}
+
+export type CheckoutThresholdNextDescriptor = CheckoutThresholdRewardDescriptor & {
+  /** @minimum 0 */
+  remainingRsd: number;
+};
+
+export interface CheckoutRewardGiftDescriptor {
+  rewardId: string;
+  productId: string;
+  productName: string;
+  /** @nullable */
+  productImageUrl: string | null;
+  /** @minimum 1 */
+  quantity: number;
+  unitPrice: 0;
+  price: 0;
+  thresholdLabel: string;
+}
+
 export interface RetailCheckoutPreview {
   cart: RetailCart;
   shipping: ShippingQuote;
@@ -2999,6 +3033,16 @@ export interface RetailCheckoutPreview {
   coupon: CouponApplication | null;
   /** @minimum 0 */
   couponDiscountRsd: number;
+  /** @minimum 0 */
+  automaticPromotionDiscountRsd: number;
+  /** @minimum 0 */
+  thresholdRewardDiscountRsd: number;
+  /** @minimum 0 */
+  thresholdQualificationSubtotalRsd: number;
+  thresholdFreeShipping: boolean;
+  thresholdReached: CheckoutThresholdRewardDescriptor[];
+  thresholdNext: CheckoutThresholdNextDescriptor | null;
+  rewardGifts: CheckoutRewardGiftDescriptor[];
   paymentMethods: RetailCheckoutPreviewPaymentMethodsItem[];
 }
 
@@ -3320,6 +3364,7 @@ export interface PublicProduct {
      * @nullable
      */
   subscriptionDiscountPercent: number | null;
+  loyaltyPricingExcluded?: boolean;
   reviewSummary: RetailProductReviewSummary;
   /** @nullable */
   variantType: string | null;
@@ -3812,6 +3857,13 @@ export interface ShopCheckoutPreview {
   coupon: CouponApplication | null;
   /** @minimum 0 */
   couponDiscountRsd: number;
+  /** @minimum 0 */
+  automaticPromotionDiscountRsd: number;
+  /** @minimum 0 */
+  thresholdRewardDiscountRsd: number;
+  /** @minimum 0 */
+  thresholdQualificationSubtotalRsd: number;
+  rewardGifts: CheckoutRewardGiftDescriptor[];
   paymentMethods: ShopCheckoutPreviewPaymentMethodsItem[];
 }
 
@@ -5673,6 +5725,7 @@ export interface AdminProduct {
      * @nullable
      */
   subscriptionDiscountPercent: number | null;
+  loyaltyPricingExcluded?: boolean;
   /** @nullable */
   productTypeId: string | null;
   /** @nullable */
@@ -5790,6 +5843,8 @@ export interface AdminProductInput {
   similarProductIds?: string[];
   /** @maxItems 5 */
   crossSellProductIds?: string[];
+  /** @maxItems 3 */
+  upsellProductIds?: string[];
   quantityPricingTiers?: QuantityPricingTier[];
   /** @minimum 1 */
   minimumOrderQuantity?: number;
@@ -5806,6 +5861,7 @@ export interface AdminProductInput {
      * @nullable
      */
   subscriptionDiscountPercent?: number | null;
+  loyaltyPricingExcluded?: boolean;
   /** @nullable */
   productTypeId?: string | null;
   needTagIds?: string[];
@@ -5921,6 +5977,8 @@ export interface AdminProductUpdate {
   similarProductIds?: string[];
   /** @maxItems 5 */
   crossSellProductIds?: string[];
+  /** @maxItems 3 */
+  upsellProductIds?: string[];
   quantityPricingTiers?: QuantityPricingTier[];
   /** @minimum 1 */
   minimumOrderQuantity?: number;
@@ -5937,6 +5995,7 @@ export interface AdminProductUpdate {
      * @nullable
      */
   subscriptionDiscountPercent?: number | null;
+  loyaltyPricingExcluded?: boolean;
   /** @nullable */
   productTypeId?: string | null;
   needTagIds?: string[];
@@ -8939,6 +8998,515 @@ export interface CommerceExperienceSettingsInput {
   version: number;
 }
 
+export type Market = typeof Market[keyof typeof Market];
+
+
+export const Market = {
+  B2B: 'B2B',
+  B2C: 'B2C',
+  BOTH: 'BOTH',
+} as const;
+
+export interface VersionedRule {
+  id: string;
+  /** @minimum 1 */
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type RuleTarget = {
+  productId: string;
+} | {
+  categoryId: string;
+};
+
+export interface UpsellProduct {
+  id: string;
+  name: string;
+  /** @nullable */
+  imageUrl: string | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  price: number | null;
+  priceOnRequest: boolean;
+  /** @minimum 1 */
+  sortOrder: number;
+}
+
+export interface UpsellProductList {
+  items: UpsellProduct[];
+}
+
+export interface UpsellProductInput {
+  /** Returned source product id. */
+  productId?: string;
+  /** @maxItems 3 */
+  alternativeProductIds: string[];
+}
+
+export type PricingLoyaltyTier = VersionedRule & {
+  /** @minLength 1 */
+  name: string;
+  market: Market;
+  /** @minimum 0 */
+  spendThresholdRsd: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  discountPercent: number;
+  active: boolean;
+};
+
+export interface PricingLoyaltyTierInput {
+  /** @minLength 1 */
+  name: string;
+  market: Market;
+  /** @minimum 0 */
+  spendThresholdRsd: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  discountPercent: number;
+  active?: boolean;
+}
+
+export interface PricingLoyaltyTierUpdate {
+  /** @minimum 1 */
+  version: number;
+  /** @minLength 1 */
+  name?: string;
+  market?: Market;
+  /** @minimum 0 */
+  spendThresholdRsd?: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  discountPercent?: number;
+  active?: boolean;
+}
+
+export type LoyaltyProgressMarket = typeof LoyaltyProgressMarket[keyof typeof LoyaltyProgressMarket];
+
+
+export const LoyaltyProgressMarket = {
+  B2B: 'B2B',
+  B2C: 'B2C',
+} as const;
+
+/**
+ * @nullable
+ */
+export type LoyaltyProgressEffectiveTier = {
+  id: string;
+  name: string;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  discountPercent: number;
+  /** @minimum 0 */
+  spendThresholdRsd: number;
+} | null;
+
+/**
+ * @nullable
+ */
+export type LoyaltyProgressNextTier = {
+  id: string;
+  name: string;
+  /** @minimum 0 */
+  spendThresholdRsd: number;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  progressPercent: number;
+} | null;
+
+export interface LoyaltyProgress {
+  market: LoyaltyProgressMarket;
+  /** @minimum 0 */
+  netSettledSpendRsd: number;
+  /** @nullable */
+  effectiveTier: LoyaltyProgressEffectiveTier;
+  /** @nullable */
+  nextTier: LoyaltyProgressNextTier;
+}
+
+export type BulkSaleCampaignDiscountType = typeof BulkSaleCampaignDiscountType[keyof typeof BulkSaleCampaignDiscountType];
+
+
+export const BulkSaleCampaignDiscountType = {
+  PERCENT: 'PERCENT',
+  FIXED_RSD: 'FIXED_RSD',
+} as const;
+
+export type BulkSaleCampaignStatus = typeof BulkSaleCampaignStatus[keyof typeof BulkSaleCampaignStatus];
+
+
+export const BulkSaleCampaignStatus = {
+  DRAFT: 'DRAFT',
+  ACTIVE: 'ACTIVE',
+} as const;
+
+export type BulkSaleCampaign = VersionedRule & ({
+  /** @minLength 1 */
+  name: string;
+  market: Market;
+  discountType: BulkSaleCampaignDiscountType;
+  /** @minimum 1 */
+  discountValue: number;
+  startsAt: string;
+  /** @nullable */
+  endsAt: string | null;
+  status: BulkSaleCampaignStatus;
+  /** @minItems 1 */
+  targets: RuleTarget[];
+});
+
+export type BulkSaleCampaignInputDiscountType = typeof BulkSaleCampaignInputDiscountType[keyof typeof BulkSaleCampaignInputDiscountType];
+
+
+export const BulkSaleCampaignInputDiscountType = {
+  PERCENT: 'PERCENT',
+  FIXED_RSD: 'FIXED_RSD',
+} as const;
+
+export type BulkSaleCampaignInputStatus = typeof BulkSaleCampaignInputStatus[keyof typeof BulkSaleCampaignInputStatus];
+
+
+export const BulkSaleCampaignInputStatus = {
+  DRAFT: 'DRAFT',
+  ACTIVE: 'ACTIVE',
+} as const;
+
+export interface BulkSaleCampaignInput {
+  /** @minLength 1 */
+  name: string;
+  market: Market;
+  discountType: BulkSaleCampaignInputDiscountType;
+  /**
+     * Percent values cannot exceed 100.
+     * @minimum 1
+     */
+  discountValue: number;
+  startsAt: string;
+  /** @nullable */
+  endsAt: string | null;
+  status: BulkSaleCampaignInputStatus;
+  /** @minItems 1 */
+  targets: RuleTarget[];
+}
+
+export type BulkSaleCampaignUpdateDiscountType = typeof BulkSaleCampaignUpdateDiscountType[keyof typeof BulkSaleCampaignUpdateDiscountType];
+
+
+export const BulkSaleCampaignUpdateDiscountType = {
+  PERCENT: 'PERCENT',
+  FIXED_RSD: 'FIXED_RSD',
+} as const;
+
+export type BulkSaleCampaignUpdateStatus = typeof BulkSaleCampaignUpdateStatus[keyof typeof BulkSaleCampaignUpdateStatus];
+
+
+export const BulkSaleCampaignUpdateStatus = {
+  DRAFT: 'DRAFT',
+  ACTIVE: 'ACTIVE',
+} as const;
+
+export interface BulkSaleCampaignUpdate {
+  /** @minimum 1 */
+  version: number;
+  /** @minLength 1 */
+  name?: string;
+  market?: Market;
+  discountType?: BulkSaleCampaignUpdateDiscountType;
+  /** @minimum 1 */
+  discountValue?: number;
+  startsAt?: string;
+  /** @nullable */
+  endsAt?: string | null;
+  status?: BulkSaleCampaignUpdateStatus;
+  /** @minItems 1 */
+  targets?: RuleTarget[];
+}
+
+export type CartThresholdRewardRewardKind = typeof CartThresholdRewardRewardKind[keyof typeof CartThresholdRewardRewardKind];
+
+
+export const CartThresholdRewardRewardKind = {
+  FREE_SHIPPING: 'FREE_SHIPPING',
+  GIFT_PRODUCT: 'GIFT_PRODUCT',
+  PERCENT_DISCOUNT: 'PERCENT_DISCOUNT',
+} as const;
+
+export interface CartThresholdReward {
+  id: string;
+  name: string;
+  market: Market;
+  /** @minimum 0 */
+  spendThresholdRsd: number;
+  rewardKind: CartThresholdRewardRewardKind;
+  /**
+     * @minimum 1
+     * @maximum 100
+     * @nullable
+     */
+  discountPercent: number | null;
+  /** @nullable */
+  giftProductId: string | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  giftQuantity: number | null;
+  active: boolean;
+  /** @minimum 1 */
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CartThresholdRewardInput = {
+  /** @minLength 1 */
+  name: string;
+  market: Market;
+  /** @minimum 0 */
+  spendThresholdRsd: number;
+  rewardKind: 'FREE_SHIPPING';
+  active: boolean;
+} | {
+  /** @minLength 1 */
+  name: string;
+  market: Market;
+  /** @minimum 0 */
+  spendThresholdRsd: number;
+  rewardKind: 'GIFT_PRODUCT';
+  giftProductId: string;
+  /** @minimum 1 */
+  giftQuantity: number;
+  active: boolean;
+} | {
+  /** @minLength 1 */
+  name: string;
+  market: Market;
+  /** @minimum 0 */
+  spendThresholdRsd: number;
+  rewardKind: 'PERCENT_DISCOUNT';
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  discountPercent: number;
+  active: boolean;
+};
+
+export type CartThresholdRewardUpdateRewardKind = typeof CartThresholdRewardUpdateRewardKind[keyof typeof CartThresholdRewardUpdateRewardKind];
+
+
+export const CartThresholdRewardUpdateRewardKind = {
+  FREE_SHIPPING: 'FREE_SHIPPING',
+  GIFT_PRODUCT: 'GIFT_PRODUCT',
+  PERCENT_DISCOUNT: 'PERCENT_DISCOUNT',
+} as const;
+
+export interface CartThresholdRewardUpdate {
+  /** @minimum 1 */
+  version: number;
+  /** @minLength 1 */
+  name?: string;
+  market?: Market;
+  /** @minimum 0 */
+  spendThresholdRsd?: number;
+  rewardKind?: CartThresholdRewardUpdateRewardKind;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  discountPercent?: number;
+  giftProductId?: string;
+  /** @minimum 1 */
+  giftQuantity?: number;
+  active?: boolean;
+}
+
+export type CartThresholdRewardDescriptorRewardKind = typeof CartThresholdRewardDescriptorRewardKind[keyof typeof CartThresholdRewardDescriptorRewardKind];
+
+
+export const CartThresholdRewardDescriptorRewardKind = {
+  FREE_SHIPPING: 'FREE_SHIPPING',
+  GIFT_PRODUCT: 'GIFT_PRODUCT',
+  PERCENT_DISCOUNT: 'PERCENT_DISCOUNT',
+} as const;
+
+export interface CartThresholdRewardDescriptor {
+  id: string;
+  name: string;
+  /** @minimum 0 */
+  spendThresholdRsd: number;
+  rewardKind: CartThresholdRewardDescriptorRewardKind;
+  /**
+     * @minimum 1
+     * @maximum 100
+     * @nullable
+     */
+  discountPercent: number | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  giftQuantity: number | null;
+}
+
+export interface CartThresholdRewardProgress {
+  reached: CartThresholdRewardDescriptor[];
+  next: CartThresholdRewardDescriptor | null;
+}
+
+export type AutomaticXyPromotionStatus = typeof AutomaticXyPromotionStatus[keyof typeof AutomaticXyPromotionStatus];
+
+
+export const AutomaticXyPromotionStatus = {
+  DRAFT: 'DRAFT',
+  ACTIVE: 'ACTIVE',
+} as const;
+
+export interface AutomaticXyPromotion {
+  id: string;
+  name: string;
+  market: Market;
+  /** @minimum 1 */
+  buyQuantity: number;
+  /** @minimum 1 */
+  rewardQuantity: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  rewardPercent: number;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  perOrderRewardUnitCap: number | null;
+  /** @nullable */
+  startsAt: string | null;
+  /** @nullable */
+  endsAt: string | null;
+  status: AutomaticXyPromotionStatus;
+  buyTargets: RuleTarget[];
+  rewardTargets: RuleTarget[];
+  /** @minimum 1 */
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type AutomaticXyPromotionInputStatus = typeof AutomaticXyPromotionInputStatus[keyof typeof AutomaticXyPromotionInputStatus];
+
+
+export const AutomaticXyPromotionInputStatus = {
+  DRAFT: 'DRAFT',
+  ACTIVE: 'ACTIVE',
+} as const;
+
+export interface AutomaticXyPromotionInput {
+  /** @minLength 1 */
+  name: string;
+  market: Market;
+  /** @minimum 1 */
+  buyQuantity: number;
+  /** @minimum 1 */
+  rewardQuantity: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  rewardPercent: number;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  perOrderRewardUnitCap?: number | null;
+  /** @nullable */
+  startsAt: string | null;
+  /** @nullable */
+  endsAt: string | null;
+  status: AutomaticXyPromotionInputStatus;
+  /** @minItems 1 */
+  buyTargets: RuleTarget[];
+  /** @minItems 1 */
+  rewardTargets: RuleTarget[];
+}
+
+export type AutomaticXyPromotionUpdateStatus = typeof AutomaticXyPromotionUpdateStatus[keyof typeof AutomaticXyPromotionUpdateStatus];
+
+
+export const AutomaticXyPromotionUpdateStatus = {
+  DRAFT: 'DRAFT',
+  ACTIVE: 'ACTIVE',
+} as const;
+
+export interface AutomaticXyPromotionUpdate {
+  /** @minimum 1 */
+  version: number;
+  /** @minLength 1 */
+  name?: string;
+  market?: Market;
+  /** @minimum 1 */
+  buyQuantity?: number;
+  /** @minimum 1 */
+  rewardQuantity?: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  rewardPercent?: number;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  perOrderRewardUnitCap?: number | null;
+  /** @nullable */
+  startsAt?: string | null;
+  /** @nullable */
+  endsAt?: string | null;
+  status?: AutomaticXyPromotionUpdateStatus;
+  /** @minItems 1 */
+  buyTargets?: RuleTarget[];
+  /** @minItems 1 */
+  rewardTargets?: RuleTarget[];
+}
+
+export type AutomaticXyPromotionListItemsItem = {
+  id: string;
+  name: string;
+  /** @minimum 1 */
+  buyQuantity: number;
+  /** @minimum 1 */
+  rewardQuantity: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  rewardPercent: number;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  perOrderRewardUnitCap: number | null;
+};
+
+export interface AutomaticXyPromotionList {
+  items: AutomaticXyPromotionListItemsItem[];
+}
+
 export type CityQueryParameter = string;
 
 export type CategoryQueryParameter = string;
@@ -10505,3 +11073,38 @@ export const ListProductDocumentsAudience = {
   B2B: 'B2B',
   B2C: 'B2C',
 } as const;
+
+export type AdminDeleteLoyaltyPricingTierParams = {
+/**
+ * @minimum 1
+ */
+version: number;
+};
+
+export type AdminDeleteBulkSaleCampaignParams = {
+/**
+ * @minimum 1
+ */
+version: number;
+};
+
+export type AdminDeleteCartThresholdRewardParams = {
+/**
+ * @minimum 1
+ */
+version: number;
+};
+
+export type GetCustomerCartThresholdRewardsParams = {
+/**
+ * @minimum 0
+ */
+subtotalRsd: number;
+};
+
+export type AdminDeleteAutomaticXyPromotionParams = {
+/**
+ * @minimum 1
+ */
+version: number;
+};

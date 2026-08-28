@@ -59,6 +59,7 @@ export interface PublicProduct {
      * @nullable
      */
   subscriptionDiscountPercent: number | null;
+  loyaltyPricingExcluded?: boolean;
   reviewSummary: RetailProductReviewSummary;
   /** @nullable */
   variantType: string | null;

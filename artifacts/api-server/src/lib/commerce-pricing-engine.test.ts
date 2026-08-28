@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  COMMERCE_PRICING_POLICY,
+  finalizeCommerceQuote,
+  prepareCommerceQuote,
   quoteCommerce,
   quoteResolvedCommerce,
   resolveProductUnitPrice,
@@ -61,6 +64,119 @@ test("literal product-price golden matrix preserves precedence, boundaries and e
     resolveProductUnitPrice(product(1_000, { activeSaleUnitPriceRsd: 800, variantPriceAdjustRsd: 25 })).adjustments,
     [{ kind: "SALE", amountRsd: 200 }, { kind: "VARIANT_PRICE_ADJUST", amountRsd: 25 }],
   );
+});
+
+test("approved pricing policy and loyalty fallback precedence are literal", () => {
+  assert.deepEqual(COMMERCE_PRICING_POLICY, [
+    "EXPLICIT_VARIANT_PRICE",
+    "ACTIVE_SALE",
+    "QUANTITY_TIER",
+    "LOYALTY_TIER_PRICE",
+    "REGULAR_PRICE",
+    "VARIANT_PRICE_ADJUST",
+    "FIXED_BUNDLE_PRICE",
+    "AUTOMATIC_XY_PROMOTION",
+    "COUPON",
+    "CART_THRESHOLD_REWARD",
+    "REFERRAL_CREDIT",
+    "SHIPPING",
+    "POST_CHECKOUT_LOYALTY",
+  ]);
+  assert.deepEqual(resolveProductUnitPrice({
+    ...product(1_000),
+    loyaltyTierUnitPriceRsd: 900,
+    variantPriceAdjustRsd: 10,
+  }), {
+    unitPriceRsd: 910,
+    baseUnitPriceRsd: 1_010,
+    priceSource: "LOYALTY_TIER_PRICE",
+    adjustments: [
+      { kind: "LOYALTY", amountRsd: 100 },
+      { kind: "VARIANT_PRICE_ADJUST", amountRsd: 10 },
+    ],
+  });
+  assert.equal(resolveProductUnitPrice({
+    ...product(1_000),
+    tierUnitPriceRsd: 850,
+    loyaltyTierUnitPriceRsd: 900,
+  }).unitPriceRsd, 850);
+  assert.equal(resolveProductUnitPrice({
+    ...product(1_000),
+    activeSaleUnitPriceRsd: 800,
+    tierUnitPriceRsd: 850,
+    loyaltyTierUnitPriceRsd: 900,
+  }).unitPriceRsd, 800);
+});
+
+test("X+Y, coupon and cumulative threshold rewards use literal stage bases", () => {
+  const quote = quoteCommerce({
+    market: "B2C",
+    lines: [
+      line("buy", product(100), 2),
+      line("reward", product(50), 2),
+    ],
+    automaticPromotions: [{
+      id: "xy",
+      market: "BOTH",
+      active: true,
+      startsAt: null,
+      endsAt: null,
+      buyQuantity: 2,
+      rewardQuantity: 1,
+      rewardPercent: 100,
+      buyProductIds: ["buy"],
+      rewardProductIds: ["reward"],
+    }],
+    coupon: policy({ discountValue: 10, includeProductIds: ["buy", "reward"] }),
+    thresholdRewards: [
+      { id: "percent-5", market: "BOTH", active: true, thresholdRsd: 100, kind: "PERCENT_DISCOUNT", percent: 5 },
+      { id: "percent-10", market: "B2C", active: true, thresholdRsd: 200, kind: "PERCENT_DISCOUNT", percent: 10 },
+      { id: "shipping", market: "BOTH", active: true, thresholdRsd: 200, kind: "FREE_SHIPPING" },
+      { id: "gift", market: "B2C", active: true, thresholdRsd: 250, kind: "GIFT_PRODUCT", giftProductId: "gift-product", giftQuantity: 2 },
+    ],
+    now,
+    customerUsageCount: 0,
+    requestedReferralCreditRsd: 999,
+    availableReferralCreditRsd: 999,
+    shippingRsd: 390,
+  });
+  assert.deepEqual(quote.lines.map((value) => ({
+    id: value.id,
+    xy: value.automaticPromotionAllocationRsd,
+    coupon: value.couponAllocationRsd,
+    threshold: value.thresholdRewardAllocationRsd,
+    total: value.lineTotalRsd,
+    referralEligible: value.referralEligible,
+  })), [
+    { id: "buy", xy: 0, coupon: 8, threshold: 19, total: 173, referralEligible: false },
+    { id: "reward", xy: 50, coupon: 2, threshold: 5, total: 43, referralEligible: false },
+  ]);
+  assert.deepEqual({
+    subtotal: quote.subtotalRsd,
+    qualification: quote.thresholdQualificationSubtotalRsd,
+    xy: quote.automaticPromotionDiscountRsd,
+    coupon: quote.couponDiscountRsd,
+    threshold: quote.thresholdRewardDiscountRsd,
+    referralBase: quote.referralBaseRsd,
+    shipping: quote.shippingRsd,
+    payable: quote.payableTotalRsd,
+    gifts: quote.rewardGifts,
+  }, {
+    subtotal: 300,
+    qualification: 250,
+    xy: 50,
+    coupon: 10,
+    threshold: 24,
+    referralBase: 0,
+    shipping: 0,
+    payable: 216,
+    gifts: [{ rewardId: "gift", productId: "gift-product", quantity: 2 }],
+  });
+  assert.deepEqual(quote.automaticPromotionSnapshots, [{
+    promotionId: "xy",
+    allocations: { reward: 50 },
+    rewardUnits: 1,
+  }]);
 });
 
 test("both-market fixed bundles and coupons have literal deterministic allocations", () => {
@@ -161,4 +277,43 @@ test("invalid coupon and invalid price inputs fail closed at zero and integer bo
     coupon: { valid: true, code: "X", discountRsd: 1, freeShipping: false, allocations: { missing: 1 }, eligibleSubtotalRsd: 10 },
     requestedReferralCreditRsd: 0, availableReferralCreditRsd: 0, shippingRsd: 0,
   }), /Coupon allocation references an unknown commerce line/);
+});
+
+test("prepared quotes lock post-X+Y coupon inputs and finalization preserves stage conservation", () => {
+  const prepared = prepareCommerceQuote({
+    market: "B2C",
+    lines: [line("same-pool", product(100), 3)],
+    now,
+    automaticPromotions: [{
+      id: "same", market: "BOTH", active: true, startsAt: null, endsAt: null,
+      buyQuantity: 2, rewardQuantity: 1, rewardPercent: 100, buyProductIds: ["same-pool"], rewardProductIds: ["same-pool"],
+    }],
+  });
+  assert.deepEqual({
+    couponLines: prepared.couponLines,
+    automatic: prepared.automaticPromotionDiscountRsd,
+    snapshots: prepared.automaticPromotionSnapshots,
+    qualification: prepared.thresholdQualificationSubtotalRsd,
+  }, {
+    couponLines: [{ id: "same-pool", productId: "same-pool", bundleId: null, categoryIds: [], amountRsd: 200 }],
+    automatic: 100,
+    snapshots: [{ promotionId: "same", allocations: { "same-pool": 100 }, rewardUnits: 1 }],
+    qualification: 200,
+  });
+  const final = finalizeCommerceQuote({
+    prepared,
+    lockedCouponQuote: {
+      valid: true, code: "LOCKED", discountRsd: 20, freeShipping: false,
+      allocations: { "same-pool": 20 }, eligibleSubtotalRsd: 200,
+    },
+    thresholdRewards: [
+      { id: "five", market: "BOTH", active: true, thresholdRsd: 1, kind: "PERCENT_DISCOUNT", percent: 5 },
+      { id: "ten", market: "BOTH", active: true, thresholdRsd: 1, kind: "PERCENT_DISCOUNT", percent: 10 },
+    ],
+    requestedReferralCreditRsd: 10, availableReferralCreditRsd: 10, shippingRsd: 0,
+  });
+  assert.deepEqual(
+    { xy: final.automaticPromotionDiscountRsd, coupon: final.couponDiscountRsd, threshold: final.thresholdRewardDiscountRsd, total: final.payableTotalRsd, referral: final.referralAppliedRsd },
+    { xy: 100, coupon: 20, threshold: 18, total: 162, referral: 0 },
+  );
 });

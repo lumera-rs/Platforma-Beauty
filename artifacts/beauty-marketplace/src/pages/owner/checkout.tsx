@@ -1182,10 +1182,35 @@ export function OwnerCheckoutReviewPage() {
                    <Separator className="bg-border/50" />
 
                    <div className="space-y-2">
+                     {preview?.rewardGifts?.length > 0 && (
+                       <div className="mb-4 space-y-2">
+                         {preview.rewardGifts.map((gift, i) => (
+                           <div key={`gift-${i}`} className="flex justify-between text-sm items-center text-emerald-600 bg-emerald-500/10 p-2 rounded">
+                             <div className="flex flex-col w-2/3">
+                               <span className="truncate font-semibold flex items-center gap-1">🎁 1x {gift.productName}</span>
+                             </div>
+                             <span className="font-bold">Besplatno</span>
+                           </div>
+                         ))}
+                       </div>
+                     )}
+
                      <div className="flex justify-between text-muted-foreground">
                         <span>Međuzbir robe</span>
                         <span>{money((preview as any).merchandiseSubtotalRsd ?? preview.cart.subtotal)}</span>
                      </div>
+                     {preview.automaticPromotionDiscountRsd > 0 && (
+                       <div className="flex justify-between text-emerald-600 font-medium">
+                          <span>X+Y popust</span>
+                          <span>-{money(preview.automaticPromotionDiscountRsd)}</span>
+                       </div>
+                     )}
+                     {preview.thresholdRewardDiscountRsd > 0 && (
+                       <div className="flex justify-between text-emerald-600 font-medium">
+                          <span>Nivo korpe popust</span>
+                          <span>-{money(preview.thresholdRewardDiscountRsd)}</span>
+                       </div>
+                     )}
                      {(preview as any).couponDiscountRsd != null && (preview as any).couponDiscountRsd > 0 && (
                        <div className="flex justify-between text-emerald-600 font-medium">
                           <span>Popust (kupon)</span>
