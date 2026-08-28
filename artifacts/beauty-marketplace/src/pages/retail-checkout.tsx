@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { Loader2, Minus, Plus, ShoppingBag, Trash2, Check, Tag } from "lucide-react";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
@@ -18,6 +18,8 @@ import {
   useSaveRetailCartItemForLater,
   useRestoreSavedRetailCartItem,
   useRemoveSavedRetailCartItem,
+  getRetailCart,
+  previewRetailCheckout,
   usePreviewRetailCheckout,
   useCheckoutRetailCart,
   useAddRetailCartItem,
@@ -28,6 +30,7 @@ import {
   RetailCheckoutInputPaymentMethod,
   RetailCheckoutInputDeliveryMethod,
   type RetailCheckoutInput,
+  type RetailCheckoutPreview,
   type RetailCartItemsItem,
   type RetailCart,
 } from "@workspace/api-client-react";
@@ -43,9 +46,27 @@ function cartLinesForChange(items: RetailCartItemsItem[]) {
   }));
 }
 
-function CartLines({ cart }: { cart: RetailCart }) {
+function retailCartFingerprint(cart: RetailCart) {
+  return JSON.stringify(cart.items.map((item) => [item.id, item.quantity]));
+}
+
+type UnavailableRetailItem = { productId: string; name: string };
+
+function CartLines({
+  cart,
+  onLocalMutationStart,
+  onLocalMutationSettled,
+}: {
+  cart: RetailCart;
+  onLocalMutationStart?: () => void;
+  onLocalMutationSettled?: () => void;
+}) {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const nameCounts = new Map<string, number>();
+  for (const item of cart.items) {
+    nameCounts.set(item.name, (nameCounts.get(item.name) ?? 0) + 1);
+  }
   const updateItem = useMutation({
     mutationFn: async ({ cartItemId, data }: { cartItemId: string, data: { quantity: number } }) => {
       return updateRetailCartItem(cartItemId, {
@@ -60,6 +81,8 @@ function CartLines({ cart }: { cart: RetailCart }) {
         cartLinesForChange(data.items),
       ));
     },
+    onMutate: onLocalMutationStart,
+    onSettled: onLocalMutationSettled,
     onError: (error: unknown) => {
       toast.error("Količina nije promenjena.", {
         description: getApiErrorMessage(error, "Osvežite korpu i pokušajte ponovo."),
@@ -68,6 +91,7 @@ function CartLines({ cart }: { cart: RetailCart }) {
   });
   const removeItem = useRemoveRetailCartItem({
     mutation: {
+      onMutate: onLocalMutationStart,
       onSuccess: (data) => {
         qc.setQueryData(getGetRetailCartQueryKey(), data);
         notifyRetailCartChanged(data.itemCount, changedRetailCartItem(
@@ -80,10 +104,12 @@ function CartLines({ cart }: { cart: RetailCart }) {
           description: getApiErrorMessage(error, "Osvežite korpu i pokušajte ponovo."),
         });
       },
+      onSettled: onLocalMutationSettled,
     }
   });
   const saveItem = useSaveRetailCartItemForLater({
     mutation: {
+      onMutate: onLocalMutationStart,
       onSuccess: (data) => {
         qc.setQueryData(getGetRetailCartQueryKey(), data);
         notifyRetailCartChanged(data.itemCount, changedRetailCartItem(
@@ -92,6 +118,7 @@ function CartLines({ cart }: { cart: RetailCart }) {
         ));
         toast.success("Sačuvano za kasnije");
       },
+      onSettled: onLocalMutationSettled,
       onError: (error: unknown) => {
         toast.error("Stavka nije sačuvana za kasnije.", {
           description: getApiErrorMessage(error, "Pokušajte ponovo."),
@@ -103,7 +130,11 @@ function CartLines({ cart }: { cart: RetailCart }) {
   return (
     <div className="space-y-4">
       <div className="bg-card rounded-xl border p-4 sm:p-6 space-y-6">
-        {cart.items.map((item, i) => (
+        {cart.items.map((item, i) => {
+          const itemLabel = (nameCounts.get(item.name) ?? 0) > 1 && item.sku
+            ? `${item.name} (šifra proizvoda ${item.sku})`
+            : item.name;
+          return (
           <div key={item.id} className="flex flex-col sm:flex-row gap-4 relative">
             {i > 0 && <div className="absolute -top-3 left-0 right-0 h-px bg-border/50" />}
             <div className="w-full sm:w-24 h-24 shrink-0 rounded-lg bg-muted overflow-hidden">
@@ -130,18 +161,19 @@ function CartLines({ cart }: { cart: RetailCart }) {
               </div>
               <div className="flex justify-between items-end mt-4">
                 <div className="flex items-center gap-1 border rounded-lg p-1">
-                  <Button aria-label={`Smanji količinu za ${item.name}`} size="icon" variant="ghost" className="h-8 w-8" onClick={() => item.quantity > 1 ? updateItem.mutate({ cartItemId: item.id, data: { quantity: item.quantity - 1 } }) : removeItem.mutate({ cartItemId: item.id })} disabled={updateItem.isPending}><Minus className="h-3.5 w-3.5" /></Button>
+                  <Button aria-label={`Smanji količinu za ${itemLabel}`} size="icon" variant="ghost" className="h-8 w-8" onClick={() => item.quantity > 1 ? updateItem.mutate({ cartItemId: item.id, data: { quantity: item.quantity - 1 } }) : removeItem.mutate({ cartItemId: item.id })} disabled={updateItem.isPending}><Minus className="h-3.5 w-3.5" /></Button>
                   <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
-                  <Button aria-label={`Povećaj količinu za ${item.name}`} size="icon" variant="ghost" className="h-8 w-8" onClick={() => updateItem.mutate({ cartItemId: item.id, data: { quantity: item.quantity + 1 } })} disabled={updateItem.isPending}><Plus className="h-3.5 w-3.5" /></Button>
+                  <Button aria-label={`Povećaj količinu za ${itemLabel}`} size="icon" variant="ghost" className="h-8 w-8" onClick={() => updateItem.mutate({ cartItemId: item.id, data: { quantity: item.quantity + 1 } })} disabled={updateItem.isPending}><Plus className="h-3.5 w-3.5" /></Button>
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-primary" onClick={() => saveItem.mutate({ cartItemId: item.id })} disabled={saveItem.isPending}>Sačuvaj</Button>
-                  <Button aria-label={`Ukloni ${item.name} iz korpe`} size="sm" variant="ghost" className="text-destructive hover:bg-destructive/10" onClick={() => removeItem.mutate({ cartItemId: item.id })} disabled={removeItem.isPending}><Trash2 className="h-4 w-4" /></Button>
+                  <Button aria-label={`Ukloni ${itemLabel} iz korpe`} size="sm" variant="ghost" className="text-destructive hover:bg-destructive/10" onClick={() => removeItem.mutate({ cartItemId: item.id })} disabled={removeItem.isPending}><Trash2 className="h-4 w-4" /></Button>
                 </div>
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -151,9 +183,66 @@ export function RetailCartPage() {
   const { data: cart, isLoading } = useGetRetailCart();
   const qc = useQueryClient();
   const { toast } = useToast();
+  const cartRef = useRef<RetailCart | undefined>(cart);
+  const localMutationCountRef = useRef(0);
+  const cartGenerationRef = useRef(0);
+
+  useEffect(() => {
+    cartRef.current = cart;
+  }, [cart]);
+
+  const onLocalMutationStart = () => {
+    cartGenerationRef.current += 1;
+    localMutationCountRef.current += 1;
+  };
+  const onLocalMutationSettled = () => {
+    localMutationCountRef.current = Math.max(0, localMutationCountRef.current - 1);
+  };
+
+  useEffect(() => {
+    let active = true;
+    let checking = false;
+    const check = async () => {
+      if (checking || localMutationCountRef.current > 0) return;
+      checking = true;
+      const generation = cartGenerationRef.current;
+      try {
+        const latest = await getRetailCart();
+        if (!active || localMutationCountRef.current > 0 || generation !== cartGenerationRef.current) return;
+        const current = cartRef.current;
+        if (
+          current
+          && retailCartFingerprint(latest) === retailCartFingerprint(current)
+          && latest.subtotal === current.subtotal
+        ) return;
+        qc.setQueryData(getGetRetailCartQueryKey(), latest);
+        if (current) {
+          notifyRetailCartChanged(latest.itemCount, changedRetailCartItem(
+            cartLinesForChange(current.items),
+            cartLinesForChange(latest.items),
+          ));
+        }
+      } catch {
+        // A later focus or interval check retries transient failures.
+      } finally {
+        checking = false;
+      }
+    };
+    const interval = window.setInterval(() => { void check(); }, 4_000);
+    const onVisible = () => { if (document.visibilityState === "visible") void check(); };
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [qc]);
 
   const restoreItem = useRestoreSavedRetailCartItem({
     mutation: {
+      onMutate: onLocalMutationStart,
       onSuccess: (data) => {
         qc.setQueryData(getGetRetailCartQueryKey(), data);
         notifyRetailCartChanged(data.itemCount);
@@ -164,22 +253,26 @@ export function RetailCartPage() {
           description: getApiErrorMessage(error, "Pokušajte ponovo."),
         });
       },
+      onSettled: onLocalMutationSettled,
     }
   });
 
   const removeSaved = useRemoveSavedRetailCartItem({
     mutation: {
+      onMutate: onLocalMutationStart,
       onSuccess: (data) => qc.setQueryData(getGetRetailCartQueryKey(), data),
       onError: (error: unknown) => {
         toast.error("Sačuvana stavka nije uklonjena.", {
           description: getApiErrorMessage(error, "Pokušajte ponovo."),
         });
       },
+      onSettled: onLocalMutationSettled,
     }
   });
 
   const addItem = useAddRetailCartItem({
     mutation: {
+      onMutate: onLocalMutationStart,
       onSuccess: (data) => {
         qc.setQueryData(getGetRetailCartQueryKey(), data);
         notifyRetailCartChanged(data.itemCount);
@@ -190,6 +283,7 @@ export function RetailCartPage() {
           description: getApiErrorMessage(error, "Proverite dostupnost proizvoda i pokušajte ponovo."),
         });
       },
+      onSettled: onLocalMutationSettled,
     }
   });
 
@@ -204,13 +298,17 @@ export function RetailCartPage() {
           <div className="mt-10 rounded-2xl border p-12 text-center bg-card shadow-sm">
             <ShoppingBag className="mx-auto h-12 w-12 text-muted-foreground mb-4 opacity-50" />
             <h2 className="text-xl font-semibold">Korpa je prazna</h2>
-            <p className="mt-2 text-muted-foreground max-w-sm mx-auto">Nemate proizvoda u korpi. Pregledajte naš katalog i pronađite nešto za sebe.</p>
+            <p className="mt-2 text-muted-foreground max-w-sm mx-auto">Korpa je prazna. Pregledajte naš katalog i pronađite nešto za sebe.</p>
             <Button asChild className="mt-6" size="lg"><Link href="/proizvodi">Pregledajte proizvode</Link></Button>
           </div>
         ) : (
           <div className="grid lg:grid-cols-3 gap-8 mt-8 items-start">
             <div className="lg:col-span-2 space-y-8">
-              <CartLines cart={cart} />
+              <CartLines
+                cart={cart}
+                onLocalMutationStart={onLocalMutationStart}
+                onLocalMutationSettled={onLocalMutationSettled}
+              />
 
               {cart.savedItems?.length > 0 && (
                 <div className="bg-card rounded-xl border shadow-sm overflow-hidden">
@@ -314,6 +412,12 @@ export function RetailCheckoutPage() {
   const [couponInput, setCouponInput] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState<string | undefined>(undefined);
   const [couponError, setCouponError] = useState<string | null>(null);
+  const [previewOverride, setPreviewOverride] = useState<RetailCheckoutPreview | null>(null);
+  const [refreshingPreview, setRefreshingPreview] = useState(false);
+  const [quoteRefreshMessage, setQuoteRefreshMessage] = useState<string | null>(null);
+  const [quoteRefreshError, setQuoteRefreshError] = useState<string | null>(null);
+  const [cartChangedElsewhere, setCartChangedElsewhere] = useState(false);
+  const [unavailableItems, setUnavailableItems] = useState<UnavailableRetailItem[] | null>(null);
 
   const { data: cart } = useGetRetailCart();
 
@@ -322,24 +426,42 @@ export function RetailCheckoutPage() {
     if (savedCoupon) setAppliedCoupon(savedCoupon);
   }, []);
 
-  const { data: preview, isLoading: previewLoading, isError: previewIsError, error: previewErrorObj } = usePreviewRetailCheckout({
+  const previewParams = {
     deliveryMethod: form.deliveryMethod,
     city: form.city,
     desiredReferralCreditRsd: desiredCredit,
     couponCode: appliedCoupon
-  } as any, {
+  } as const;
+  const {
+    data: queriedPreview,
+    isLoading: queriedPreviewLoading,
+    isError: previewIsError,
+    error: previewErrorObj,
+  } = usePreviewRetailCheckout(previewParams, {
     query: {
       enabled: !!cart && cart.items.length > 0,
       queryKey: ['retailCheckoutPreview', cart?.id, form.deliveryMethod, form.city, desiredCredit, appliedCoupon],
-      retry: (count: number, err: unknown) => {
-        const { status } = getApiErrorDetails(err);
-        return status !== undefined && status >= 400 && status < 500 ? false : count < 3;
-      },
+      retry: false,
     }
   });
+  const preview = previewOverride ?? queriedPreview;
+  const previewLoading = queriedPreviewLoading || refreshingPreview;
 
   useEffect(() => {
-    const { code, message } = getApiErrorDetails(previewErrorObj);
+    setPreviewOverride(null);
+    setQuoteRefreshMessage(null);
+    setQuoteRefreshError(null);
+    setCartChangedElsewhere(false);
+    setUnavailableItems(null);
+  }, [form.deliveryMethod, form.city, desiredCredit, appliedCoupon]);
+
+  useEffect(() => {
+    const { code, message, data } = getApiErrorDetails(previewErrorObj);
+    if (previewIsError && code === "CHECKOUT_QUOTE_CHANGED" && Array.isArray(data?.unavailableItems)) {
+      setUnavailableItems(data.unavailableItems.filter((item): item is UnavailableRetailItem =>
+        Boolean(item && typeof item === "object" && "productId" in item && "name" in item)));
+      return;
+    }
     if (previewIsError && code?.startsWith("COUPON_")) {
       setCouponError(message ?? "Kupon nije moguće primeniti.");
       setAppliedCoupon(undefined);
@@ -355,6 +477,89 @@ export function RetailCheckoutPage() {
       setForm((current) => ({ ...current, deliveryMethod: "courier" }));
     }
   }, [form.city, form.deliveryMethod]);
+
+  const refreshCheckoutQuote = async (previousPreview: RetailCheckoutPreview | null) => {
+    setRefreshingPreview(true);
+    setPreviewOverride(null);
+    setQuoteRefreshMessage(null);
+    setQuoteRefreshError(null);
+    setCartChangedElsewhere(false);
+    setUnavailableItems(null);
+    try {
+      const currentCart = await getRetailCart();
+      qc.setQueryData(getGetRetailCartQueryKey(), currentCart);
+      if (!currentCart.items.length) return;
+
+      const nextPreview = await previewRetailCheckout(previewParams);
+      qc.setQueryData(getGetRetailCartQueryKey(), nextPreview.cart);
+      setPreviewOverride(nextPreview);
+      const previousShipping = previousPreview?.shipping.shippingCost;
+      const previousTotal = previousPreview?.total;
+      const shippingChange = previousShipping !== undefined && previousShipping !== nextPreview.shipping.shippingCost
+        ? ` (prethodno ${money(previousShipping)})`
+        : "";
+      const totalChange = previousTotal !== undefined && previousTotal !== nextPreview.total
+        ? ` (prethodno ${money(previousTotal)})`
+        : "";
+      setQuoteRefreshMessage(
+        `Pregled je osvežen. Dostava je sada ${money(nextPreview.shipping.shippingCost)}${shippingChange}, ukupno za plaćanje ${money(nextPreview.total)}${totalChange}.`,
+      );
+    } catch (error) {
+      const details = getApiErrorDetails(error);
+      const unavailable = details.data?.unavailableItems;
+      if (details.code === "CHECKOUT_QUOTE_CHANGED" && Array.isArray(unavailable)) {
+        setUnavailableItems(unavailable.filter((item): item is UnavailableRetailItem =>
+          Boolean(item && typeof item === "object" && "productId" in item && "name" in item)));
+      } else {
+        const message = details.message ?? "Pregled porudžbine nije mogao da se osveži.";
+        setQuoteRefreshError(message);
+        toast.error(message);
+      }
+    } finally {
+      setRefreshingPreview(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!cart || cartChangedElsewhere || refreshingPreview) return;
+    let active = true;
+    let checking = false;
+    const check = async () => {
+      if (checking) return;
+      checking = true;
+      try {
+        const latest = await getRetailCart();
+        if (!active || retailCartFingerprint(latest) === retailCartFingerprint(cart)) return;
+        notifyRetailCartChanged(latest.itemCount, changedRetailCartItem(
+          cartLinesForChange(cart.items),
+          cartLinesForChange(latest.items),
+        ));
+        if (!latest.items.length) {
+          qc.setQueryData(getGetRetailCartQueryKey(), latest);
+          setPreviewOverride(null);
+        } else if (!cart.items.length) {
+          qc.setQueryData(getGetRetailCartQueryKey(), latest);
+          await refreshCheckoutQuote(null);
+        } else {
+          setCartChangedElsewhere(true);
+        }
+      } catch {
+        // Confirmation still revalidates the cart server-side.
+      } finally {
+        checking = false;
+      }
+    };
+    const interval = window.setInterval(() => { void check(); }, 4_000);
+    const onVisible = () => { if (document.visibilityState === "visible") void check(); };
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [cart, cartChangedElsewhere, refreshingPreview, qc]);
 
   const update = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
 
@@ -395,11 +600,12 @@ export function RetailCheckoutPage() {
         setLocation(`/korpa/uspeh?order=${encodeURIComponent(order.orderNumber)}`);
       },
       onError: (error: unknown) => {
+        if (getApiErrorDetails(error).code === "CHECKOUT_QUOTE_CHANGED") {
+          void refreshCheckoutQuote(preview);
+          return;
+        }
         toast.error("Porudžbina nije potvrđena.", {
-          description: getApiErrorMessage(
-            error,
-            "Proverite podatke i pokušajte ponovo. Uneti podaci su sačuvani.",
-          ),
+          description: getApiErrorMessage(error, "Proverite podatke i pokušajte ponovo. Uneti podaci su sačuvani."),
         });
       }
     });
@@ -409,6 +615,32 @@ export function RetailCheckoutPage() {
 
   if (!cart || cart.items.length === 0) {
     return <Layout><main className="mx-auto min-h-screen max-w-4xl px-4 py-10"><h1 className="font-serif text-4xl font-bold">Dostava i plaćanje</h1><div className="mt-10 rounded-2xl border p-8 text-center"><ShoppingBag className="mx-auto h-10 w-10 text-muted-foreground" /><p className="mt-3">Korpa je prazna.</p><Button asChild className="mt-5"><Link href="/proizvodi">Pregledajte proizvode</Link></Button></div></main></Layout>;
+  }
+
+  if (unavailableItems) {
+    const productNames = unavailableItems.map((item) => item.name);
+    const unavailableHeading = productNames.length > 1 ? "Proizvodi više nisu dostupni" : "Proizvod više nije dostupan";
+    const unavailableMessage = productNames.length === 0
+      ? <>Jedan od proizvoda u vašoj korpi je rasprodat ili više nije aktivan. Porudžbina nije kreirana.</>
+      : productNames.length === 1
+        ? <>Proizvod <strong>{productNames[0]}</strong> je rasprodat ili više nije aktivan. Porudžbina nije kreirana.</>
+        : <>Proizvodi <strong>{productNames.join(", ")}</strong> su rasprodati ili više nisu aktivni. Porudžbina nije kreirana.</>;
+    return (
+      <Layout>
+        <main className="mx-auto min-h-screen max-w-2xl px-4 py-10">
+          <h1 className="font-serif text-3xl font-bold sm:text-4xl">Dostava i plaćanje</h1>
+          <div data-testid="unavailable-item-recovery" role="alert" aria-live="assertive" className="mt-10 rounded-2xl border border-destructive/30 bg-destructive/5 p-8">
+            <h2 className="text-xl font-semibold">{unavailableHeading}</h2>
+            <p className="mt-3 text-muted-foreground">{unavailableMessage}</p>
+            <p className="mt-2 text-muted-foreground">Vratite se u korpu da uklonite proizvod ili nastavite sa pregledom drugih proizvoda.</p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Button variant="outline" asChild><Link href="/korpa">Vrati se u korpu</Link></Button>
+              <Button asChild><Link href="/proizvodi">Nastavi sa kupovinom</Link></Button>
+            </div>
+          </div>
+        </main>
+      </Layout>
+    );
   }
 
   return (
@@ -481,9 +713,25 @@ export function RetailCheckoutPage() {
               ))}
             </div>
 
-            {previewLoading ? (
+            {cartChangedElsewhere && (
+              <div role="alert" aria-live="assertive" className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+                <p className="font-medium">Korpa je u međuvremenu izmenjena</p>
+                <p className="mt-1 text-muted-foreground">Sadržaj korpe je promenjen. Osvežite pregled pre potvrde porudžbine.</p>
+                <Button type="button" variant="outline" size="sm" className="mt-3" disabled={previewLoading} onClick={() => void refreshCheckoutQuote(preview ?? null)}>
+                  Osveži pregled
+                </Button>
+              </div>
+            )}
+            {quoteRefreshMessage && (
+              <div role="status" aria-live="polite" className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">
+                <p className="font-medium">Promena iznosa je osvežena</p>
+                <p className="mt-1 text-muted-foreground">{quoteRefreshMessage}</p>
+              </div>
+            )}
+
+            {previewLoading && !preview ? (
               <div className="py-8 flex justify-center"><Loader2 className="animate-spin h-6 w-6 text-primary" /></div>
-            ) : couponError && (previewIsError || !preview) ? (
+            ) : couponError && ((previewIsError && !previewOverride) || !preview) ? (
               <div className="space-y-2 rounded-lg border border-destructive/20 bg-destructive/5 p-4">
                 <div className="flex gap-2">
                   <Input
@@ -498,8 +746,19 @@ export function RetailCheckoutPage() {
                 </div>
                 <p className="text-xs text-destructive" role="alert">{couponError}</p>
               </div>
-            ) : previewIsError || !preview ? (
-              <div className="p-4 border border-destructive/20 bg-destructive/10 rounded-lg text-sm text-destructive">Nije moguće izračunati troškove isporuke.</div>
+            ) : quoteRefreshError || (previewIsError && !previewOverride) || !preview ? (
+              <div role="alert" aria-live="assertive" className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm">
+                <p className="font-medium text-destructive">Pregled nije osvežen</p>
+                <p className="mt-1 text-muted-foreground">
+                  {quoteRefreshError ?? getApiErrorDetails(previewErrorObj).message ?? "Nije moguće izračunati troškove isporuke."}
+                </p>
+                <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => void refreshCheckoutQuote(null)}>
+                  Pokušaj ponovo
+                </Button>
+                <Button type="submit" className="mt-4 h-12 w-full text-lg" disabled>
+                  Potvrdi porudžbinu
+                </Button>
+              </div>
             ) : (
               <div className="space-y-3 text-sm">
                 <div className="py-2 border-y border-border/50 my-2">
@@ -582,7 +841,7 @@ export function RetailCheckoutPage() {
                   <strong className="text-2xl text-primary">{money(preview.total)}</strong>
                 </div>
 
-                <Button type="submit" className="w-full mt-6 h-12 text-lg" disabled={checkout.isPending || previewLoading}>
+                <Button type="submit" className="w-full mt-6 h-12 text-lg" disabled={checkout.isPending || previewLoading || cartChangedElsewhere || !preview}>
                   {checkout.isPending ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
                   Potvrdi porudžbinu
                 </Button>

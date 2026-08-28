@@ -13,6 +13,8 @@ import {
   suppliersTable,
 } from "@workspace/db";
 
+test.describe.configure({ mode: "serial" });
+
 type CheckoutPreview = {
   cart: { id: string; subtotal: number };
   shipping: { shippingCost: number };
@@ -32,12 +34,21 @@ let supplierId: string | undefined;
 let supplierSlug: string | undefined;
 let productId: string | undefined;
 let productName: string | undefined;
+let productSku: string | undefined;
 
 let secondProductId: string | undefined;
 let sameNameProductId: string | undefined;
 let shippingRuleId: string | undefined;
 
 let previousShippingRule: typeof shippingRulesTable.$inferSelect | undefined;
+const shippingValues = {
+  freeShippingThreshold: 10_000,
+  tiers: [{ maxWeightGrams: 1_000, price: 390, label: "do 1 kg" }],
+  personalDeliveryEnabled: true,
+  personalDeliveryName: "Lična dostava u Beogradu",
+  personalDeliveryPrice: 650,
+  personalDeliveryDescription: "Test lična dostava.",
+};
 const money = (amount: number) => new Intl.NumberFormat("sr-RS", {
   style: "currency",
   currency: "RSD",
@@ -78,7 +89,7 @@ async function assertDisplayedAndSavedTotal(
   await fillCheckoutContact(page, city);
 
   if (deliveryMethod === "personal_belgrade") {
-    await page.locator('input[type="radio"]').nth(1).check();
+    await page.getByRole("radio", { name: "Lična dostava (Samo Beograd)" }).check();
     const previewResponse = await page.request.get(
       `/api/retail/checkout-preview?deliveryMethod=personal_belgrade&city=${encodeURIComponent(city)}`,
     );
@@ -89,7 +100,7 @@ async function assertDisplayedAndSavedTotal(
     return;
   }
 
-  await page.locator('input[type="radio"]').first().check();
+  await page.getByRole("radio", { name: "Kurirska dostava" }).check();
   const previewResponse = await page.request.get(
     `/api/retail/checkout-preview?deliveryMethod=courier&city=${encodeURIComponent(city)}`,
   );
@@ -121,14 +132,6 @@ async function submitAndAssertOrder(page: Page, preview: CheckoutPreview) {
 
 test.beforeAll(async () => {
   const suffix = randomUUID();
-  const shippingValues = {
-    freeShippingThreshold: 10_000,
-    tiers: [{ maxWeightGrams: 1_000, price: 390, label: "do 1 kg" }],
-    personalDeliveryEnabled: true,
-    personalDeliveryName: "Lična dostava u Beogradu",
-    personalDeliveryPrice: 650,
-    personalDeliveryDescription: "Test lična dostava.",
-  };
   [previousShippingRule] = await db.select().from(shippingRulesTable)
     .orderBy(asc(shippingRulesTable.id))
     .limit(1);
@@ -180,6 +183,7 @@ test.beforeAll(async () => {
   }).returning();
   productId = product!.id;
   productName = product!.name;
+  productSku = product!.sku;
 
   const [secondProduct] = await db.insert(productsTable).values({
     supplierId: supplier!.id,
@@ -222,6 +226,37 @@ test.beforeAll(async () => {
     active: true,
   }).returning();
   sameNameProductId = sameNameProduct!.id;
+});
+
+test.beforeEach(async () => {
+  expect(productId).toBeTruthy();
+  expect(productSku).toBeTruthy();
+  expect(secondProductId).toBeTruthy();
+  expect(sameNameProductId).toBeTruthy();
+  expect(shippingRuleId).toBeTruthy();
+
+  await Promise.all([
+    db.update(productsTable).set({
+      active: true,
+      publicDiscountPrice: 2_000,
+      sku: productSku!,
+      stock: 8,
+    }).where(eq(productsTable.id, productId!)),
+    db.update(productsTable).set({
+      active: true,
+      publicDiscountPrice: 2_400,
+      stock: 8,
+    }).where(eq(productsTable.id, secondProductId!)),
+    db.update(productsTable).set({
+      active: true,
+      publicDiscountPrice: 2_400,
+      stock: 8,
+    }).where(eq(productsTable.id, sameNameProductId!)),
+    db.update(shippingRulesTable).set({
+      ...shippingValues,
+      updatedAt: new Date(),
+    }).where(eq(shippingRulesTable.id, shippingRuleId!)),
+  ]);
 });
 
 test.afterAll(async () => {
@@ -320,7 +355,7 @@ test("retail checkout refreshes a changed quote before allowing confirmation aga
 
   await createCartAndOpenCheckout(page);
   await fillCheckoutContact(page, "Novi Sad");
-  const confirmButton = page.locator("form").getByRole("button");
+  const confirmButton = page.getByRole("button", { name: "Potvrdi porudžbinu" });
   await expect(confirmButton).toBeEnabled();
 
   expect(productId).toBeTruthy();
@@ -369,7 +404,7 @@ test("retail checkout refreshes a changed delivery fee before allowing confirmat
 
   await createCartAndOpenCheckout(page);
   await fillCheckoutContact(page, "Novi Sad");
-  const confirmButton = page.locator("form").getByRole("button");
+  const confirmButton = page.getByRole("button", { name: "Potvrdi porudžbinu" });
   await expect(confirmButton).toBeEnabled();
 
   expect(shippingRuleId).toBeTruthy();
@@ -484,7 +519,7 @@ test("retail checkout offers a retry after the initial quote fails without reloa
   await expect(confirmButton).toBeDisabled();
 
   await fillCheckoutContact(page, "Beograd");
-  await page.locator('input[type="radio"]').nth(1).check();
+  await page.getByRole("radio", { name: "Lična dostava (Samo Beograd)" }).check();
   await expect(retryButton).toBeVisible();
 
   allowPreview = true;
@@ -557,7 +592,7 @@ test("retail checkout backs out to the empty-cart state when the cart is emptied
   await fillCheckoutContact(page, "Novi Sad");
   const checkoutUrl = page.url();
   const paymentForm = page.locator("form");
-  const confirmButton = paymentForm.getByRole("button");
+  const confirmButton = paymentForm.getByRole("button", { name: "Potvrdi porudžbinu" });
   await expect(confirmButton).toBeEnabled();
 
   const cartResponse = await page.request.get("/api/retail/cart");
@@ -606,7 +641,7 @@ test("retail checkout recovers when an item is added after the cart was emptied 
   await fillCheckoutContact(page, "Novi Sad");
   const checkoutUrl = page.url();
   const paymentForm = page.locator("form");
-  const confirmButton = paymentForm.getByRole("button");
+  const confirmButton = paymentForm.getByRole("button", { name: "Potvrdi porudžbinu" });
   await expect(confirmButton).toBeEnabled();
 
   const cartResponse = await page.request.get("/api/retail/cart");
@@ -1036,7 +1071,7 @@ test("retail cart page ignores a stale poll response while a local edit is in fl
     await staleCaptured;
 
     // Local edit while the stale poll response is still pending.
-    await page.getByRole("button").filter({ has: page.locator("svg.lucide-plus") }).first().click();
+    await page.getByRole("button", { name: `Povećaj količinu za ${productName}` }).click();
     await expect(page.getByText(money(4_000), { exact: true }).first()).toBeVisible();
 
     releaseStaleResponse?.();
@@ -1134,7 +1169,7 @@ test("retail cart announces every shopper mutation through completed checkout", 
   };
 
   await page.goto(`/shop/${supplierSlug}`);
-  const productSearch = page.locator("aside").getByPlaceholder("Pretraga...");
+  const productSearch = page.getByPlaceholder("Pretraga proizvoda...");
   await productSearch.fill(productName!);
   const productCard = page.getByRole("article").filter({
     has: page.getByRole("heading", { name: productName!, exact: true }),
