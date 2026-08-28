@@ -21,6 +21,7 @@ import {
   customerPackagePurchasesTable,
   packageRedemptionsTable,
   employeeCommissionSettingsTable,
+  employeeLocationAssignmentsTable,
   employeesTable,
   appointmentsTable,
   salonCustomersTable,
@@ -2105,8 +2106,36 @@ router.get("/growth/employees/performance", async (req, res, next) => {
     if (!ctx) { res.status(403).json({ error: "Salon owner required.", code: "FORBIDDEN" }); return; }
 
     const { from, to } = req.query as { from?: string; to?: string };
-    const metrics = await getEmployeePerformance({ salonId: ctx.salon.id, from, to });
-    res.json(metrics);
+    const scope = req.query["scope"] === "all" ? "all" : "location";
+    const locations = scope === "all"
+      ? await db.select({ id: salonsTable.id, name: salonsTable.name }).from(salonsTable).where(eq(salonsTable.ownerId, ctx.user.id))
+      : [{ id: ctx.salon.id, name: ctx.salon.name }];
+    const metrics = await getEmployeePerformance({ salonIds: locations.map((location) => location.id), from, to });
+    // Calculate each location independently for a transparent breakdown. The
+    // aggregate above is still the canonical total and counts each appointment
+    // once by its own salonId; this is presentation/audit detail only.
+    const metricsByLocation = await Promise.all(locations.map(async (location) => ({
+      location,
+      metrics: await getEmployeePerformance({ salonId: location.id, from, to }),
+    })));
+    const employees = metrics.map((metric) => ({
+      ...metric,
+      locationBreakdown: metricsByLocation.flatMap(({ location, metrics: atLocation }) => {
+        const locationMetric = atLocation.find((item) => item.employeeId === metric.employeeId);
+        return locationMetric ? [{
+          salonId: location.id,
+          locationName: location.name,
+          completedAppointments: locationMetric.completedAppointments,
+          totalRevenue: locationMetric.totalRevenue,
+          estimatedCommission: locationMetric.estimatedCommission,
+          noShowCount: locationMetric.noShowCount,
+          cancelledCount: locationMetric.cancelledCount,
+        }] : [];
+      }),
+    }));
+    // Scope is returned alongside the data so caches cannot confuse the
+    // owner-wide aggregation with an active-location response.
+    res.json({ scope, locations, employees });
   } catch (err) { next(err); }
 });
 
@@ -2125,7 +2154,16 @@ router.patch("/growth/employees/:employeeId/commission", async (req, res, next) 
     const [employee] = await db
       .select({ id: employeesTable.id })
       .from(employeesTable)
-      .where(and(eq(employeesTable.id, req.params["employeeId"]!), eq(employeesTable.salonId, ctx.salon.id)))
+      .innerJoin(employeeLocationAssignmentsTable, and(
+        eq(employeeLocationAssignmentsTable.employeeId, employeesTable.id),
+        eq(employeeLocationAssignmentsTable.salonId, ctx.salon.id),
+        eq(employeeLocationAssignmentsTable.active, true),
+      ))
+      .innerJoin(salonsTable, and(
+        eq(salonsTable.id, employeeLocationAssignmentsTable.salonId),
+        eq(salonsTable.ownerId, ctx.user.id),
+      ))
+      .where(eq(employeesTable.id, req.params["employeeId"]!))
       .limit(1);
     if (!employee) { res.status(404).json({ error: "Employee not found.", code: "NOT_FOUND" }); return; }
 

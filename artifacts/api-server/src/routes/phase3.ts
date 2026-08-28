@@ -5,6 +5,7 @@ import {
   appointmentsTable,
   db,
   employeeClockEntriesTable,
+  employeeLocationAssignmentsTable,
   employeesTable,
   mediaAssetsTable,
   productsTable,
@@ -393,11 +394,14 @@ router.get("/salon/clock-entries", async (req, res): Promise<void> => {
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-  const employees = await db.select().from(employeesTable).where(and(
-    eq(employeesTable.salonId, access.salon.id),
-    eq(employeesTable.active, true),
-    ...(employeeId ? [eq(employeesTable.id, employeeId)] : []),
-  )).orderBy(asc(employeesTable.name));
+  const employees = await db.select({ employee: employeesTable }).from(employeeLocationAssignmentsTable)
+    .innerJoin(employeesTable, eq(employeesTable.id, employeeLocationAssignmentsTable.employeeId))
+    .where(and(
+      eq(employeeLocationAssignmentsTable.salonId, access.salon.id),
+      eq(employeeLocationAssignmentsTable.active, true),
+      eq(employeesTable.active, true),
+      ...(employeeId ? [eq(employeesTable.id, employeeId)] : []),
+    )).orderBy(asc(employeesTable.name)).then((rows) => rows.map((row) => row.employee));
   const employeeIds = employees.map((employee) => employee.id);
   if (!employeeIds.length) { res.json([]); return; }
 
@@ -515,10 +519,13 @@ router.get("/employee/shift-swaps", async (req, res): Promise<void> => {
   const [outgoing, incoming, colleagues] = await Promise.all([
     loadSwaps(and(eq(shiftSwapRequestsTable.requesterEmployeeId, access.employee.id))),
     loadSwaps(and(eq(shiftSwapRequestsTable.targetEmployeeId, access.employee.id))),
-    db.select({ id: employeesTable.id, name: employeesTable.name }).from(employeesTable).where(and(
-      eq(employeesTable.salonId, access.salon.id),
-      eq(employeesTable.active, true),
-    )).orderBy(asc(employeesTable.name)),
+    db.select({ id: employeesTable.id, name: employeesTable.name }).from(employeeLocationAssignmentsTable)
+      .innerJoin(employeesTable, eq(employeesTable.id, employeeLocationAssignmentsTable.employeeId))
+      .where(and(
+        eq(employeeLocationAssignmentsTable.salonId, access.salon.id),
+        eq(employeeLocationAssignmentsTable.active, true),
+        eq(employeesTable.active, true),
+      )).orderBy(asc(employeesTable.name)),
   ]);
   res.json({
     outgoing: outgoing.map(swapResponse),
@@ -540,11 +547,14 @@ router.post("/employee/shift-swaps", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Ne možete predložiti zamenu samom sebi." });
     return;
   }
-  const [colleague] = await db.select({ id: employeesTable.id }).from(employeesTable).where(and(
-    eq(employeesTable.id, targetEmployeeId),
-    eq(employeesTable.salonId, access.salon.id),
-    eq(employeesTable.active, true),
-  )).limit(1);
+  const [colleague] = await db.select({ id: employeesTable.id }).from(employeeLocationAssignmentsTable)
+    .innerJoin(employeesTable, eq(employeesTable.id, employeeLocationAssignmentsTable.employeeId))
+    .where(and(
+      eq(employeesTable.id, targetEmployeeId),
+      eq(employeeLocationAssignmentsTable.salonId, access.salon.id),
+      eq(employeeLocationAssignmentsTable.active, true),
+      eq(employeesTable.active, true),
+    )).limit(1);
   if (!colleague) { res.status(400).json({ error: "Kolega nije pronađen u vašem salonu." }); return; }
   const [open] = await db.select({ id: shiftSwapRequestsTable.id }).from(shiftSwapRequestsTable).where(and(
     eq(shiftSwapRequestsTable.requesterEmployeeId, access.employee.id),

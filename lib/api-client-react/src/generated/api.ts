@@ -194,6 +194,8 @@ import type {
   CreatePriceInquiry201,
   CreatePriceInquiryBody,
   CreateRetailOrderRmaBody,
+  CreateSalonLocationInput,
+  CreateSalonLocationResult,
   CreateShopQuoteBody,
   CreateTreatmentPackageBody,
   CurrentUserResponse,
@@ -260,7 +262,12 @@ import type {
   EmployeeGetMyPerformanceParams,
   EmployeeLeaveRequest,
   EmployeeLeaveRequestCreate,
+  EmployeeLocationAssignment,
+  EmployeeLocationAssignmentUpdate,
+  EmployeeLocationScheduleUpdate,
+  EmployeeLocationScheduleWindow,
   EmployeePerformanceMetrics,
+  EmployeePerformanceResponse,
   EmployeeShiftSwapOverview,
   EmployeeTimeBlock,
   EmployeeTimeBlockInput,
@@ -276,6 +283,7 @@ import type {
   GetSalonCalendarDayParams,
   GetSalonDashboardParams,
   GetShippingQuoteParams,
+  GetShopApprovalRequestParams,
   GetShopCheckoutPreviewParams,
   GetWidgetAvailabilityParams,
   GrowthAdminSummary,
@@ -312,6 +320,7 @@ import type {
   ListSalonTimeBlocksParams,
   ListSalonsParams,
   ListServiceTemplatesParams,
+  ListShopApprovalRequestsParams,
   ListSupplierProductsParams,
   ListSupplierPublicProductsParams,
   LoginInput,
@@ -6139,6 +6148,302 @@ export function useListSalonEmployees<TData = Awaited<ReturnType<typeof listSalo
 
 
 
+export const getCreateSalonLocationUrl = () => {
+
+
+
+
+  return `/api/salon/locations`
+}
+
+/**
+ * @summary Create an additional independently operated location for the current owner
+ */
+export const createSalonLocation = async (createSalonLocationInput: CreateSalonLocationInput, options?: Parameters<typeof customFetch>[1]): Promise<CreateSalonLocationResult> => {
+
+  return customFetch<CreateSalonLocationResult>(getCreateSalonLocationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createSalonLocationInput)
+  }
+);}
+
+
+
+
+
+export const getCreateSalonLocationMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonLocation>>, TError,{data: BodyType<CreateSalonLocationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSalonLocation>>, TError,{data: BodyType<CreateSalonLocationInput>}, TContext> => {
+
+const mutationKey = ['createSalonLocation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSalonLocation>>, {data: BodyType<CreateSalonLocationInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createSalonLocation(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateSalonLocationMutationResult = NonNullable<Awaited<ReturnType<typeof createSalonLocation>>>
+    export type CreateSalonLocationMutationBody = BodyType<CreateSalonLocationInput>
+    export type CreateSalonLocationMutationError = ErrorType<void>
+
+    /**
+ * @summary Create an additional independently operated location for the current owner
+ */
+export const useCreateSalonLocation = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonLocation>>, TError,{data: BodyType<CreateSalonLocationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createSalonLocation>>,
+        TError,
+        {data: BodyType<CreateSalonLocationInput>},
+        TContext
+      > => {
+      return useMutation(getCreateSalonLocationMutationOptions(options));
+    }
+
+export const getListEmployeeLocationAssignmentsUrl = (employeeId: string,) => {
+
+
+
+
+  return `/api/salon/employees/${employeeId}/locations`
+}
+
+/**
+ * @summary List owner-managed location assignments for an employee
+ */
+export const listEmployeeLocationAssignments = async (employeeId: string, options?: Parameters<typeof customFetch>[1]): Promise<EmployeeLocationAssignment[]> => {
+
+  return customFetch<EmployeeLocationAssignment[]>(getListEmployeeLocationAssignmentsUrl(employeeId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListEmployeeLocationAssignmentsQueryKey = (employeeId: string,) => {
+    return [
+    `/api/salon/employees/${employeeId}/locations`
+    ] as const;
+    }
+
+
+export const getListEmployeeLocationAssignmentsQueryOptions = <TData = Awaited<ReturnType<typeof listEmployeeLocationAssignments>>, TError = ErrorType<void>>(employeeId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEmployeeLocationAssignments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListEmployeeLocationAssignmentsQueryKey(employeeId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listEmployeeLocationAssignments>>> = ({ signal }) => listEmployeeLocationAssignments(employeeId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: employeeId !== null && employeeId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEmployeeLocationAssignments>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListEmployeeLocationAssignmentsQueryResult = NonNullable<Awaited<ReturnType<typeof listEmployeeLocationAssignments>>>
+export type ListEmployeeLocationAssignmentsQueryError = ErrorType<void>
+
+
+/**
+ * @summary List owner-managed location assignments for an employee
+ */
+
+export function useListEmployeeLocationAssignments<TData = Awaited<ReturnType<typeof listEmployeeLocationAssignments>>, TError = ErrorType<void>>(
+ employeeId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEmployeeLocationAssignments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListEmployeeLocationAssignmentsQueryOptions(employeeId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpsertEmployeeLocationAssignmentUrl = (employeeId: string,
+    salonId: string,) => {
+
+
+
+
+  return `/api/salon/employees/${employeeId}/locations/${salonId}`
+}
+
+/**
+ * @summary Create or update an employee location assignment
+ */
+export const upsertEmployeeLocationAssignment = async (employeeId: string,
+    salonId: string,
+    employeeLocationAssignmentUpdate: EmployeeLocationAssignmentUpdate, options?: Parameters<typeof customFetch>[1]): Promise<EmployeeLocationAssignment> => {
+
+  return customFetch<EmployeeLocationAssignment>(getUpsertEmployeeLocationAssignmentUrl(employeeId,salonId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(employeeLocationAssignmentUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpsertEmployeeLocationAssignmentMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertEmployeeLocationAssignment>>, TError,{employeeId: string;salonId: string;data: BodyType<EmployeeLocationAssignmentUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof upsertEmployeeLocationAssignment>>, TError,{employeeId: string;salonId: string;data: BodyType<EmployeeLocationAssignmentUpdate>}, TContext> => {
+
+const mutationKey = ['upsertEmployeeLocationAssignment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof upsertEmployeeLocationAssignment>>, {employeeId: string;salonId: string;data: BodyType<EmployeeLocationAssignmentUpdate>}> = (props) => {
+          const {employeeId,salonId,data} = props ?? {};
+
+          return  upsertEmployeeLocationAssignment(employeeId,salonId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpsertEmployeeLocationAssignmentMutationResult = NonNullable<Awaited<ReturnType<typeof upsertEmployeeLocationAssignment>>>
+    export type UpsertEmployeeLocationAssignmentMutationBody = BodyType<EmployeeLocationAssignmentUpdate>
+    export type UpsertEmployeeLocationAssignmentMutationError = ErrorType<void>
+
+    /**
+ * @summary Create or update an employee location assignment
+ */
+export const useUpsertEmployeeLocationAssignment = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertEmployeeLocationAssignment>>, TError,{employeeId: string;salonId: string;data: BodyType<EmployeeLocationAssignmentUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof upsertEmployeeLocationAssignment>>,
+        TError,
+        {employeeId: string;salonId: string;data: BodyType<EmployeeLocationAssignmentUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpsertEmployeeLocationAssignmentMutationOptions(options));
+    }
+
+export const getReplaceEmployeeLocationScheduleUrl = (employeeId: string,
+    salonId: string,) => {
+
+
+
+
+  return `/api/salon/employees/${employeeId}/locations/${salonId}/schedule`
+}
+
+/**
+ * @summary Replace weekly schedule windows for one active employee location assignment
+ */
+export const replaceEmployeeLocationSchedule = async (employeeId: string,
+    salonId: string,
+    employeeLocationScheduleUpdate: EmployeeLocationScheduleUpdate, options?: Parameters<typeof customFetch>[1]): Promise<EmployeeLocationScheduleWindow[]> => {
+
+  return customFetch<EmployeeLocationScheduleWindow[]>(getReplaceEmployeeLocationScheduleUrl(employeeId,salonId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(employeeLocationScheduleUpdate)
+  }
+);}
+
+
+
+
+
+export const getReplaceEmployeeLocationScheduleMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceEmployeeLocationSchedule>>, TError,{employeeId: string;salonId: string;data: BodyType<EmployeeLocationScheduleUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof replaceEmployeeLocationSchedule>>, TError,{employeeId: string;salonId: string;data: BodyType<EmployeeLocationScheduleUpdate>}, TContext> => {
+
+const mutationKey = ['replaceEmployeeLocationSchedule'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof replaceEmployeeLocationSchedule>>, {employeeId: string;salonId: string;data: BodyType<EmployeeLocationScheduleUpdate>}> = (props) => {
+          const {employeeId,salonId,data} = props ?? {};
+
+          return  replaceEmployeeLocationSchedule(employeeId,salonId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReplaceEmployeeLocationScheduleMutationResult = NonNullable<Awaited<ReturnType<typeof replaceEmployeeLocationSchedule>>>
+    export type ReplaceEmployeeLocationScheduleMutationBody = BodyType<EmployeeLocationScheduleUpdate>
+    export type ReplaceEmployeeLocationScheduleMutationError = ErrorType<void>
+
+    /**
+ * @summary Replace weekly schedule windows for one active employee location assignment
+ */
+export const useReplaceEmployeeLocationSchedule = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceEmployeeLocationSchedule>>, TError,{employeeId: string;salonId: string;data: BodyType<EmployeeLocationScheduleUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof replaceEmployeeLocationSchedule>>,
+        TError,
+        {employeeId: string;salonId: string;data: BodyType<EmployeeLocationScheduleUpdate>},
+        TContext
+      > => {
+      return useMutation(getReplaceEmployeeLocationScheduleMutationOptions(options));
+    }
+
 export const getGetSalonEmployeeDeactivationPreviewUrl = (employeeId: string,) => {
 
 
@@ -8826,20 +9131,27 @@ export function useGetShopCheckoutProfile<TData = Awaited<ReturnType<typeof getS
 
 
 
-export const getListShopApprovalRequestsUrl = () => {
+export const getListShopApprovalRequestsUrl = (params?: ListShopApprovalRequestsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/shop/approval-requests`
+  return stringifiedParams.length > 0 ? `/api/shop/approval-requests?${stringifiedParams}` : `/api/shop/approval-requests`
 }
 
 /**
- * @summary List approval requests for the active salon owner
+ * @summary List approval requests for the active location or every location owned by the owner
  */
-export const listShopApprovalRequests = async ( options?: Parameters<typeof customFetch>[1]): Promise<ApprovalRequest[]> => {
+export const listShopApprovalRequests = async (params?: ListShopApprovalRequestsParams, options?: Parameters<typeof customFetch>[1]): Promise<ApprovalRequest[]> => {
 
-  return customFetch<ApprovalRequest[]>(getListShopApprovalRequestsUrl(),
+  return customFetch<ApprovalRequest[]>(getListShopApprovalRequestsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -8852,23 +9164,23 @@ export const listShopApprovalRequests = async ( options?: Parameters<typeof cust
 
 
 
-export const getListShopApprovalRequestsQueryKey = () => {
+export const getListShopApprovalRequestsQueryKey = (params?: ListShopApprovalRequestsParams,) => {
     return [
-    `/api/shop/approval-requests`
+    `/api/shop/approval-requests`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getListShopApprovalRequestsQueryOptions = <TData = Awaited<ReturnType<typeof listShopApprovalRequests>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listShopApprovalRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListShopApprovalRequestsQueryOptions = <TData = Awaited<ReturnType<typeof listShopApprovalRequests>>, TError = ErrorType<unknown>>(params?: ListShopApprovalRequestsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listShopApprovalRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListShopApprovalRequestsQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getListShopApprovalRequestsQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listShopApprovalRequests>>> = ({ signal }) => listShopApprovalRequests({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listShopApprovalRequests>>> = ({ signal }) => listShopApprovalRequests(params, { signal, ...requestOptions });
 
 
 
@@ -8882,15 +9194,15 @@ export type ListShopApprovalRequestsQueryError = ErrorType<unknown>
 
 
 /**
- * @summary List approval requests for the active salon owner
+ * @summary List approval requests for the active location or every location owned by the owner
  */
 
 export function useListShopApprovalRequests<TData = Awaited<ReturnType<typeof listShopApprovalRequests>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listShopApprovalRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: ListShopApprovalRequestsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listShopApprovalRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getListShopApprovalRequestsQueryOptions(options)
+  const queryOptions = getListShopApprovalRequestsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -9051,20 +9363,29 @@ export function useListMyShopApprovalRequests<TData = Awaited<ReturnType<typeof 
 
 
 
-export const getGetShopApprovalRequestUrl = (requestId: string,) => {
+export const getGetShopApprovalRequestUrl = (requestId: string,
+    params?: GetShopApprovalRequestParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/shop/approval-requests/${requestId}`
+  return stringifiedParams.length > 0 ? `/api/shop/approval-requests/${requestId}?${stringifiedParams}` : `/api/shop/approval-requests/${requestId}`
 }
 
 /**
- * @summary Get an active-salon approval request
+ * @summary Get an approval request in the active location or any owner-owned location
  */
-export const getShopApprovalRequest = async (requestId: string, options?: Parameters<typeof customFetch>[1]): Promise<ApprovalRequest> => {
+export const getShopApprovalRequest = async (requestId: string,
+    params?: GetShopApprovalRequestParams, options?: Parameters<typeof customFetch>[1]): Promise<ApprovalRequest> => {
 
-  return customFetch<ApprovalRequest>(getGetShopApprovalRequestUrl(requestId),
+  return customFetch<ApprovalRequest>(getGetShopApprovalRequestUrl(requestId,params),
   {
     ...options,
     method: 'GET'
@@ -9077,23 +9398,25 @@ export const getShopApprovalRequest = async (requestId: string, options?: Parame
 
 
 
-export const getGetShopApprovalRequestQueryKey = (requestId: string,) => {
+export const getGetShopApprovalRequestQueryKey = (requestId: string,
+    params?: GetShopApprovalRequestParams,) => {
     return [
-    `/api/shop/approval-requests/${requestId}`
+    `/api/shop/approval-requests/${requestId}`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getGetShopApprovalRequestQueryOptions = <TData = Awaited<ReturnType<typeof getShopApprovalRequest>>, TError = ErrorType<void>>(requestId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShopApprovalRequest>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetShopApprovalRequestQueryOptions = <TData = Awaited<ReturnType<typeof getShopApprovalRequest>>, TError = ErrorType<void>>(requestId: string,
+    params?: GetShopApprovalRequestParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShopApprovalRequest>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetShopApprovalRequestQueryKey(requestId);
+  const queryKey =  queryOptions?.queryKey ?? getGetShopApprovalRequestQueryKey(requestId,params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getShopApprovalRequest>>> = ({ signal }) => getShopApprovalRequest(requestId, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getShopApprovalRequest>>> = ({ signal }) => getShopApprovalRequest(requestId,params, { signal, ...requestOptions });
 
 
 
@@ -9107,15 +9430,16 @@ export type GetShopApprovalRequestQueryError = ErrorType<void>
 
 
 /**
- * @summary Get an active-salon approval request
+ * @summary Get an approval request in the active location or any owner-owned location
  */
 
 export function useGetShopApprovalRequest<TData = Awaited<ReturnType<typeof getShopApprovalRequest>>, TError = ErrorType<void>>(
- requestId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShopApprovalRequest>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ requestId: string,
+    params?: GetShopApprovalRequestParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShopApprovalRequest>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetShopApprovalRequestQueryOptions(requestId,options)
+  const queryOptions = getGetShopApprovalRequestQueryOptions(requestId,params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -23939,11 +24263,11 @@ export const getOwnerListEmployeePerformanceUrl = (params?: OwnerListEmployeePer
 }
 
 /**
- * @summary List employee performance metrics for the active salon (owner)
+ * @summary List employee performance metrics for the active location or all owner locations
  */
-export const ownerListEmployeePerformance = async (params?: OwnerListEmployeePerformanceParams, options?: Parameters<typeof customFetch>[1]): Promise<EmployeePerformanceMetrics[]> => {
+export const ownerListEmployeePerformance = async (params?: OwnerListEmployeePerformanceParams, options?: Parameters<typeof customFetch>[1]): Promise<EmployeePerformanceResponse> => {
 
-  return customFetch<EmployeePerformanceMetrics[]>(getOwnerListEmployeePerformanceUrl(params),
+  return customFetch<EmployeePerformanceResponse>(getOwnerListEmployeePerformanceUrl(params),
   {
     ...options,
     method: 'GET'
@@ -23986,7 +24310,7 @@ export type OwnerListEmployeePerformanceQueryError = ErrorType<void>
 
 
 /**
- * @summary List employee performance metrics for the active salon (owner)
+ * @summary List employee performance metrics for the active location or all owner locations
  */
 
 export function useOwnerListEmployeePerformance<TData = Awaited<ReturnType<typeof ownerListEmployeePerformance>>, TError = ErrorType<void>>(

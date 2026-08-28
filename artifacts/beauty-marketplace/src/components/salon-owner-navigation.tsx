@@ -2,9 +2,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useLogout } from "@workspace/api-client-react";
 import { LogOut, ShoppingCart } from "lucide-react";
 import { Link, useLocation } from "wouter";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { GuideHelpLink } from "@/components/guide-help-link";
 import { cn } from "@/lib/utils";
+import { OwnerLocationWizard } from "@/components/owner-location-wizard";
 import { salonOwnerNavSections, type SalonOwnerNavLink } from "@/lib/salon-owner-navigation";
 
 type SalonOwnerNavigationProps = {
@@ -37,6 +39,56 @@ export function SalonOwnerNavigation({
   const queryClient = useQueryClient();
   const logout = useLogout();
   const dark = variant === "dark";
+  const [loadedLocations, setLoadedLocations] = useState<Array<{ id: string; name: string }>>([]);
+  const [loadedActiveLocationId, setLoadedActiveLocationId] = useState("");
+  const [switchingLocation, setSwitchingLocation] = useState(false);
+  // The desktop sidebar is rendered independently from the business header.
+  // Hydrating here keeps its selector identical to the header/mobile selector.
+  useEffect(() => {
+    if (managedSalons.length || onSwitchSalon) return;
+    let cancelled = false;
+    void fetch("/api/salon/managed-salons", { credentials: "include" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Lokacije nisu dostupne.");
+        return response.json() as Promise<{ activeSalonId: string | null; salons: Array<{ id: string; name: string }> }>;
+      })
+      .then((payload) => {
+        if (!cancelled) {
+          setLoadedLocations(payload.salons);
+          setLoadedActiveLocationId(payload.activeSalonId ?? "");
+        }
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [managedSalons.length, onSwitchSalon]);
+
+  const locations = managedSalons.length ? managedSalons : loadedLocations;
+  const selectedLocationId = activeSalonId || loadedActiveLocationId;
+  const isChangingLocation = isSwitchingSalon || switchingLocation;
+  const switchLocation = async (salonId: string) => {
+    if (onSwitchSalon) {
+      onSwitchSalon(salonId);
+      return;
+    }
+    if (!salonId || salonId === selectedLocationId || switchingLocation) return;
+    setSwitchingLocation(true);
+    try {
+      const response = await fetch("/api/salon/active-salon", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ salonId }),
+      });
+      if (!response.ok) throw new Error("Promena aktivne lokacije nije uspela.");
+      setLoadedActiveLocationId(salonId);
+      await queryClient.cancelQueries();
+      queryClient.clear();
+      // Preserve filters, deep links, and anchor state after the scope change.
+      window.location.assign(window.location.pathname + window.location.search + window.location.hash);
+    } catch {
+      setSwitchingLocation(false);
+    }
+  };
 
   const handleLogout = () => {
     logout.mutate(undefined, {
@@ -50,34 +102,35 @@ export function SalonOwnerNavigation({
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="salon-owner-navigation">
-      {(managedSalons.length > 1 || onSwitchSalon) && (
+      {(locations.length > 1 || onSwitchSalon) && (
         <div className={cn("shrink-0 space-y-3 border-b p-3", dark ? "border-white/10" : "border-border")}>
-          {managedSalons.length > 1 && onSwitchSalon ? (
+          {locations.length > 1 ? (
             <div className="space-y-1.5">
               <label
-                htmlFor="owner-mobile-active-salon"
+                htmlFor="owner-active-location"
                 className={cn("text-xs font-semibold", dark ? "text-background/70" : "text-muted-foreground")}
               >
-                Aktivni salon
+                Aktivna lokacija
               </label>
               <select
-                id="owner-mobile-active-salon"
-                aria-label="Aktivni salon (mobilni)"
-                disabled={isSwitchingSalon}
+                id="owner-active-location"
+                aria-label="Aktivna lokacija"
+                disabled={isChangingLocation}
                 className={cn(
                   "w-full rounded-md border px-3 py-2 text-sm disabled:cursor-wait disabled:opacity-70",
                   dark ? "border-white/20 bg-white/10 text-white" : "bg-background text-foreground",
                 )}
-                value={activeSalonId}
-                onChange={(event) => onSwitchSalon(event.target.value)}
-                data-testid="owner-mobile-salon-select"
+                value={selectedLocationId}
+                onChange={(event) => { void switchLocation(event.target.value); }}
+                data-testid="owner-location-select"
               >
-                {managedSalons.map((salon) => (
+                {locations.map((salon) => (
                   <option className="text-foreground" key={salon.id} value={salon.id}>{salon.name}</option>
                 ))}
               </select>
             </div>
           ) : null}
+          <OwnerLocationWizard triggerLabel="Dodaj lokaciju" triggerClassName="w-full justify-start" />
           <Link
             href="/vlasnik/prodavnica/korpa"
             onClick={onNavigate}

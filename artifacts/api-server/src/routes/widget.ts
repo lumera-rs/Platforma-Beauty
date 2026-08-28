@@ -2,6 +2,7 @@ import { Router, type IRouter, type Request, type Response, type NextFunction } 
 import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   db,
+  employeeLocationAssignmentsTable,
   employeeServicesTable,
   employeesTable,
   salonCustomersTable,
@@ -106,10 +107,13 @@ router.get("/widget/salons/:slug", async (req, res): Promise<void> => {
     eq(servicesTable.salonId, salon.id),
     eq(servicesTable.active, true),
   )).orderBy(asc(servicesTable.categoryName), asc(servicesTable.name));
-  const employees = await db.select().from(employeesTable).where(and(
-    eq(employeesTable.salonId, salon.id),
-    eq(employeesTable.active, true),
-  )).orderBy(asc(employeesTable.name));
+  const employees = await db.select({ employee: employeesTable }).from(employeeLocationAssignmentsTable)
+    .innerJoin(employeesTable, eq(employeesTable.id, employeeLocationAssignmentsTable.employeeId))
+    .where(and(
+      eq(employeeLocationAssignmentsTable.salonId, salon.id),
+      eq(employeeLocationAssignmentsTable.active, true),
+      eq(employeesTable.active, true),
+    )).orderBy(asc(employeesTable.name)).then((rows) => rows.map((row) => row.employee));
   const mappings = employees.length
     ? await db.select().from(employeeServicesTable).where(inArray(employeeServicesTable.employeeId, employees.map((employee) => employee.id)))
     : [];

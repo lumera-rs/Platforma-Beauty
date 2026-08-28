@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { BadgeCheck, CircleAlert, Copy, CreditCard, ExternalLink, House, ImagePlus, Loader2, Save, Trash2, UserRoundCheck, Video, Zap } from "lucide-react";
 import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
+import { OwnerLocationWizard } from "@/components/owner-location-wizard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -141,16 +142,19 @@ export default function OwnerSalonProfile() {
       <div className="container mx-auto flex flex-col items-start gap-8 px-4 py-8 md:flex-row">
         <OwnerSidebar current="/vlasnik/profil" />
         <main className="w-full max-w-2xl space-y-6">
-          <div>
-            <p className="text-sm font-medium text-primary">Javni profil</p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+            <p className="text-sm font-medium text-primary">Profil lokacije</p>
             <h1 className="mt-1 font-serif text-3xl font-bold">Predstavljanje i dostupnost</h1>
-            <p className="mt-2 text-muted-foreground">Podesite šta klijenti vide na profilu i po čemu mogu da pronađu vaš salon.</p>
+            <p className="mt-2 text-muted-foreground">Podesite šta klijenti vide na profilu i po čemu mogu da pronađu ovu lokaciju.</p>
+            </div>
+            <OwnerLocationWizard />
           </div>
 
           {isLoading ? (
             <div className="flex justify-center p-16"><Loader2 className="h-7 w-7 animate-spin text-primary" /></div>
           ) : !salon ? (
-            <Card><CardContent className="p-6 text-muted-foreground">Profil salona trenutno nije dostupan.</CardContent></Card>
+            <Card><CardContent className="p-6 text-muted-foreground">Profil lokacije trenutno nije dostupan.</CardContent></Card>
           ) : (
             <form className="space-y-6" onSubmit={save}>
               <Card>

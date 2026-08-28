@@ -109,8 +109,9 @@ import
   emailCampaignsTable,
   emailDeliveriesTable,
   employeesTable,
+   employeeLocationAssignmentsTable,
+   employeeLocationSchedulesTable,
   employeeLeaveRequestsTable,
-  employeeSchedulesTable,
   employeeServicesTable,
   employeeTimeOffTable,
   favoritesTable,
@@ -188,6 +189,9 @@ import
   appointmentResourceAllocationsTable,
   customerPackagePurchasesTable,
   packagePurchaseServiceLinksTable,
+  treatmentPackagesTable,
+  packageServiceLinksTable,
+  salonLocationCreationRequestsTable,
   subscriptionPlansTable,
   suppliersTable,
   subscriptionsTable,
@@ -322,6 +326,8 @@ import
   CheckoutShopCartResponse,
   CreateSalonServiceBody,
   CreateSalonServiceResponse,
+   CreateSalonLocationBody,
+   CreateSalonLocationResponse,
   CreateSalonServicesBatchBody,
   CreateSalonServicesBatchResponse,
   DeleteSalonServiceParams,
@@ -1057,9 +1063,14 @@ async function employeeInSalon(employeeId: string, salonId: string) {
   const [employee] = await db
     .select()
     .from(employeesTable)
-    .where(and(eq(employeesTable.id, employeeId), eq(employeesTable.salonId, salonId)))
+    .innerJoin(employeeLocationAssignmentsTable, and(
+      eq(employeeLocationAssignmentsTable.employeeId, employeesTable.id),
+      eq(employeeLocationAssignmentsTable.salonId, salonId),
+      eq(employeeLocationAssignmentsTable.active, true),
+    ))
+    .where(and(eq(employeesTable.id, employeeId), eq(employeesTable.active, true)))
     .limit(1);
-  return employee ?? null;
+  return employee?.employees ?? null;
 }
 
 export function appointmentEndTime(startTime: string, durationMinutes: number) {
@@ -1090,7 +1101,7 @@ function employeeWorksAt(
   date: string,
   startTime: string,
   endTime: string,
-  schedules: (typeof employeeSchedulesTable.$inferSelect)[],
+  schedules: (typeof employeeLocationSchedulesTable.$inferSelect)[],
   timeOff: (typeof employeeTimeOffTable.$inferSelect)[],
 ) {
   // Legacy rows (and approved leave) have null/null times and block every slot
@@ -1107,7 +1118,14 @@ function employeeWorksAt(
 }
 
 export async function eligibleEmployees(salonId: string, serviceId: string, preferredEmployeeId?: string | null) {
-  const employees = await db.select().from(employeesTable).where(and(eq(employeesTable.salonId, salonId), eq(employeesTable.active, true)));
+  const employees = await db.select({ employee: employeesTable }).from(employeesTable)
+    .innerJoin(employeeLocationAssignmentsTable, and(
+      eq(employeeLocationAssignmentsTable.employeeId, employeesTable.id),
+      eq(employeeLocationAssignmentsTable.salonId, salonId),
+      eq(employeeLocationAssignmentsTable.active, true),
+    ))
+    .where(eq(employeesTable.active, true))
+    .then((rows) => rows.map((row) => row.employee));
   const ids = employees.map((employee) => employee.id);
   const links = ids.length ? await db.select().from(employeeServicesTable).where(and(inArray(employeeServicesTable.employeeId, ids), eq(employeeServicesTable.serviceId, serviceId))) : [];
   const serviceEmployeeIds = new Set(links.map((item) => item.employeeId));
@@ -1124,7 +1142,7 @@ type ReservedAppointment = {
 type EmployeeAvailabilityContext = {
   candidates: (typeof employeesTable.$inferSelect)[];
   appointments: (typeof appointmentsTable.$inferSelect)[];
-  schedules: (typeof employeeSchedulesTable.$inferSelect)[];
+  schedules: (typeof employeeLocationSchedulesTable.$inferSelect)[];
   timeOff: (typeof employeeTimeOffTable.$inferSelect)[];
 };
 
@@ -1172,7 +1190,14 @@ async function availableEmployeeWithDb(
   reservedAppointments: ReservedAppointment[] = [],
   ignoredAppointmentIds: Set<string> = new Set(),
 ) {
-  const employees = await store.select().from(employeesTable).where(and(eq(employeesTable.salonId, salonId), eq(employeesTable.active, true)));
+  const employees = await store.select({ employee: employeesTable }).from(employeesTable)
+    .innerJoin(employeeLocationAssignmentsTable, and(
+      eq(employeeLocationAssignmentsTable.employeeId, employeesTable.id),
+      eq(employeeLocationAssignmentsTable.salonId, salonId),
+      eq(employeeLocationAssignmentsTable.active, true),
+    ))
+    .where(eq(employeesTable.active, true))
+    .then((rows: { employee: typeof employeesTable.$inferSelect }[]) => rows.map((row) => row.employee));
   const ids = employees.map((employee: typeof employeesTable.$inferSelect) => employee.id);
   const links = ids.length ? await store.select().from(employeeServicesTable).where(and(inArray(employeeServicesTable.employeeId, ids), eq(employeeServicesTable.serviceId, serviceId))) : [];
   const candidateIds = new Set(links.map((item: typeof employeeServicesTable.$inferSelect) => item.employeeId));
@@ -1182,14 +1207,22 @@ async function availableEmployeeWithDb(
   // `store` is often a transaction session. A pg client can execute only one
   // query at a time, so keep these reads sequential instead of queueing them
   // with Promise.all on the transaction's single connection.
+  // An employee is a single person, even when assigned to several locations:
+  // appointments at another assigned location must also prevent a double-book.
   const sameWeek = await store.select().from(appointmentsTable).where(and(
-    eq(appointmentsTable.salonId, salonId),
+    inArray(appointmentsTable.employeeId, candidates.map((employee: typeof employeesTable.$inferSelect) => employee.id)),
     sql`${appointmentsTable.date} >= ${weekStart} and ${appointmentsTable.date} <= ${date}`,
   ));
-  const schedules = await store.select().from(employeeSchedulesTable)
-    .where(inArray(employeeSchedulesTable.employeeId, candidates.map((employee: typeof employeesTable.$inferSelect) => employee.id)));
+  const schedules = await store.select().from(employeeLocationSchedulesTable)
+    .where(and(
+      inArray(employeeLocationSchedulesTable.employeeId, candidates.map((employee: typeof employeesTable.$inferSelect) => employee.id)),
+      eq(employeeLocationSchedulesTable.salonId, salonId),
+    ));
   const timeOff = await store.select().from(employeeTimeOffTable)
-    .where(inArray(employeeTimeOffTable.employeeId, candidates.map((employee: typeof employeesTable.$inferSelect) => employee.id)));
+    .where(and(
+      inArray(employeeTimeOffTable.employeeId, candidates.map((employee: typeof employeesTable.$inferSelect) => employee.id)),
+      or(isNull(employeeTimeOffTable.salonId), eq(employeeTimeOffTable.salonId, salonId)),
+    ));
   return selectAvailableEmployeeFromContext(
     { candidates, appointments: sameWeek, schedules, timeOff },
     date, startTime, endTime, reservedAppointments, ignoredAppointmentIds,
@@ -1265,7 +1298,7 @@ function computeFirstAvailableServiceSlots(input: {
   employees: (typeof employeesTable.$inferSelect)[];
   appointments: (typeof appointmentsTable.$inferSelect)[];
   employeeServices: (typeof employeeServicesTable.$inferSelect)[];
-  schedules: (typeof employeeSchedulesTable.$inferSelect)[];
+  schedules: (typeof employeeLocationSchedulesTable.$inferSelect)[];
   timeOff: (typeof employeeTimeOffTable.$inferSelect)[];
   now: Date;
   /** Map from serviceId → ResourceRequirement[]. Only services with requirements need filtering. */
@@ -1340,25 +1373,38 @@ async function computeFirstAvailableByService(salonId: string): Promise<FirstAva
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
   const horizonEnd = dateAtOffset(now, FIRST_AVAILABLE_HORIZON_DAYS - 1);
-  const [services, employees, appointments] = await Promise.all([
+  const [services, employees] = await Promise.all([
     db.select().from(servicesTable).where(and(eq(servicesTable.salonId, salonId), eq(servicesTable.active, true))),
-    db.select().from(employeesTable).where(and(eq(employeesTable.salonId, salonId), eq(employeesTable.active, true))),
-    db.select().from(appointmentsTable).where(and(
-      eq(appointmentsTable.salonId, salonId),
-      gte(appointmentsTable.date, today),
-      lte(appointmentsTable.date, horizonEnd),
-      ne(appointmentsTable.status, "cancelled"),
-    )),
+    db.select({ employee: employeesTable }).from(employeesTable)
+      .innerJoin(employeeLocationAssignmentsTable, and(
+        eq(employeeLocationAssignmentsTable.employeeId, employeesTable.id),
+        eq(employeeLocationAssignmentsTable.salonId, salonId),
+        eq(employeeLocationAssignmentsTable.active, true),
+      ))
+      .where(eq(employeesTable.active, true))
+      .then((rows) => rows.map((row) => row.employee)),
   ]);
   const employeeIds = employees.map((employee) => employee.id);
   const serviceIds = services.map((s) => s.id);
-  const [relevantLinks, relevantSchedules, relevantTimeOff, rawRequirements, rawAllocations] = await Promise.all([
+  const [appointments, relevantLinks, relevantSchedules, relevantTimeOff, rawRequirements, rawAllocations] = await Promise.all([
+    // Candidates can work at several locations. Their personal diary is global,
+    // while services, schedules, and resources remain scoped to this location.
+    employeeIds.length ? db.select().from(appointmentsTable).where(and(
+      inArray(appointmentsTable.employeeId, employeeIds),
+      gte(appointmentsTable.date, today),
+      lte(appointmentsTable.date, horizonEnd),
+      ne(appointmentsTable.status, "cancelled"),
+    )) : Promise.resolve([] as (typeof appointmentsTable.$inferSelect)[]),
     employeeIds.length ? db.select().from(employeeServicesTable).where(inArray(employeeServicesTable.employeeId, employeeIds)) : Promise.resolve([]),
-    employeeIds.length ? db.select().from(employeeSchedulesTable).where(inArray(employeeSchedulesTable.employeeId, employeeIds)) : Promise.resolve([]),
+    employeeIds.length ? db.select().from(employeeLocationSchedulesTable).where(and(
+      inArray(employeeLocationSchedulesTable.employeeId, employeeIds),
+      eq(employeeLocationSchedulesTable.salonId, salonId),
+    )) : Promise.resolve([]),
     employeeIds.length ? db.select().from(employeeTimeOffTable).where(and(
       inArray(employeeTimeOffTable.employeeId, employeeIds),
       lte(employeeTimeOffTable.startDate, horizonEnd),
       gte(employeeTimeOffTable.endDate, today),
+      or(isNull(employeeTimeOffTable.salonId), eq(employeeTimeOffTable.salonId, salonId)),
     )) : Promise.resolve([] as (typeof employeeTimeOffTable.$inferSelect)[]),
     serviceIds.length ? db.select({
       serviceId: serviceResourceRequirementsTable.serviceId,
@@ -3023,6 +3069,32 @@ export type SalonEmployeeAccess = {
   salon: typeof salonsTable.$inferSelect;
 };
 
+/**
+ * Resolves an employee's current location independently of the legacy
+ * employees.salonId column. The latter remains the historic location, while
+ * employee_location_assignments is the sole authorization source for a
+ * multi-location employee.
+ */
+async function resolveActiveEmployeeSalon(employeeId: string) {
+  const [assignment] = await db.select().from(employeeLocationAssignmentsTable)
+    .where(and(
+      eq(employeeLocationAssignmentsTable.employeeId, employeeId),
+      eq(employeeLocationAssignmentsTable.active, true),
+    ))
+    .orderBy(
+      desc(employeeLocationAssignmentsTable.isDefault),
+      asc(employeeLocationAssignmentsTable.createdAt),
+      asc(employeeLocationAssignmentsTable.salonId),
+    )
+    .limit(1);
+  if (!assignment) return null;
+
+  const [salon] = await db.select().from(salonsTable)
+    .where(eq(salonsTable.id, assignment.salonId))
+    .limit(1);
+  return salon ?? null;
+}
+
 export async function requireSalonEmployee(req: Request, res: Response): Promise<SalonEmployeeAccess | null> {
   const user = await current(req, res);
   if (!user) return null;
@@ -3040,7 +3112,9 @@ export async function requireSalonEmployee(req: Request, res: Response): Promise
     res.status(403).json({ error: "Nalog zaposlenog nije povezan sa aktivnim profilom." });
     return null;
   }
-  const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, employee.salonId)).limit(1);
+  // Employees never inherit an owner's activeSalonId. Their portal is pinned to
+  // their active default assignment (with a deterministic assigned fallback).
+  const salon = await resolveActiveEmployeeSalon(employee.id);
   if (!salon) {
     res.status(403).json({ error: "Profil zaposlenog nije povezan sa salonom." });
     return null;
@@ -3079,7 +3153,10 @@ async function requireShopAccess(req: Request, res: Response): Promise<ShopAcces
     res.status(403).json({ error: "Nalog zaposlenog nije povezan sa aktivnim profilom." });
     return null;
   }
-  const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, employee.salonId)).limit(1);
+  // Keep shop operations in precisely the same assignment-scoped location as
+  // the employee portal; employees.salonId is a legacy/historic location and
+  // must never authorize a fallback here.
+  const salon = await resolveActiveEmployeeSalon(employee.id);
   if (!salon) {
     res.status(403).json({ error: "Profil zaposlenog nije povezan sa salonom." });
     return null;
@@ -5126,8 +5203,11 @@ router.get("/salons", async (req, res): Promise<void> => {
         on ${employeeServicesTable.serviceId} = ${servicesTable.id}
       inner join ${employeesTable}
         on ${employeesTable.id} = ${employeeServicesTable.employeeId}
-       and ${employeesTable.salonId} = ${salonsTable.id}
        and ${employeesTable.active} = true
+      inner join ${employeeLocationAssignmentsTable}
+        on ${employeeLocationAssignmentsTable.employeeId} = ${employeesTable.id}
+        and ${employeeLocationAssignmentsTable.salonId} = ${salonsTable.id}
+        and ${employeeLocationAssignmentsTable.active} = true
       where ${servicesTable.salonId} = ${salonsTable.id}
         and ${servicesTable.active} = true
         and slot_hour::integer * 60 + ${servicesTable.durationMinutes} <= 1440
@@ -5139,6 +5219,7 @@ router.get("/salons", async (req, res): Promise<void> => {
               <= (now() at time zone 'UTC')::date + day_offset::integer
             and ${employeeTimeOffTable.endDate}
               >= (now() at time zone 'UTC')::date + day_offset::integer
+             and (${employeeTimeOffTable.salonId} is null or ${employeeTimeOffTable.salonId} = ${salonsTable.id})
              and (
                ${employeeTimeOffTable.startTime} is null
                or ${employeeTimeOffTable.endTime} is null
@@ -5153,32 +5234,34 @@ router.get("/salons", async (req, res): Promise<void> => {
         and (
           not exists (
             select 1
-            from ${employeeSchedulesTable}
-            where ${employeeSchedulesTable.employeeId} = ${employeesTable.id}
-              and ${employeeSchedulesTable.weekday}
+            from ${employeeLocationSchedulesTable}
+            where ${employeeLocationSchedulesTable.employeeId} = ${employeesTable.id}
+              and ${employeeLocationSchedulesTable.salonId} = ${salonsTable.id}
+              and ${employeeLocationSchedulesTable.weekday}
                 = extract(isodow from ((now() at time zone 'UTC')::date + day_offset::integer))::integer
           )
           or exists (
             select 1
-            from ${employeeSchedulesTable}
-            where ${employeeSchedulesTable.employeeId} = ${employeesTable.id}
-              and ${employeeSchedulesTable.weekday}
+            from ${employeeLocationSchedulesTable}
+            where ${employeeLocationSchedulesTable.employeeId} = ${employeesTable.id}
+              and ${employeeLocationSchedulesTable.salonId} = ${salonsTable.id}
+              and ${employeeLocationSchedulesTable.weekday}
                 = extract(isodow from ((now() at time zone 'UTC')::date + day_offset::integer))::integer
-              and ${employeeSchedulesTable.startTime}
+              and ${employeeLocationSchedulesTable.startTime}
                 <= to_char(make_time(slot_hour::integer, 0, 0), 'HH24:MI')
-              and ${employeeSchedulesTable.endTime}
+              and ${employeeLocationSchedulesTable.endTime}
                 >= to_char(
                   make_time(slot_hour::integer, 0, 0) + make_interval(mins => ${servicesTable.durationMinutes}),
                   'HH24:MI'
                 )
               and not (
-                ${employeeSchedulesTable.breakStart} is not null
-                and ${employeeSchedulesTable.breakEnd} is not null
-                and to_char(make_time(slot_hour::integer, 0, 0), 'HH24:MI') < ${employeeSchedulesTable.breakEnd}
+                ${employeeLocationSchedulesTable.breakStart} is not null
+                and ${employeeLocationSchedulesTable.breakEnd} is not null
+                and to_char(make_time(slot_hour::integer, 0, 0), 'HH24:MI') < ${employeeLocationSchedulesTable.breakEnd}
                 and to_char(
                   make_time(slot_hour::integer, 0, 0) + make_interval(mins => ${servicesTable.durationMinutes}),
                   'HH24:MI'
-                ) > ${employeeSchedulesTable.breakStart}
+                ) > ${employeeLocationSchedulesTable.breakStart}
               )
           )
         )
@@ -5559,7 +5642,14 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
   if (!salon) { res.status(404).json({ error: "Salon nije pronađen." }); return; }
   const [services, staff, hours, reviews, firstAvailability] = await Promise.all([
     db.select().from(servicesTable).where(and(eq(servicesTable.salonId, salon.id), eq(servicesTable.active, true))),
-    db.select().from(employeesTable).where(and(eq(employeesTable.salonId, salon.id), eq(employeesTable.active, true))),
+    db.select({ employee: employeesTable }).from(employeesTable)
+      .innerJoin(employeeLocationAssignmentsTable, and(
+        eq(employeeLocationAssignmentsTable.employeeId, employeesTable.id),
+        eq(employeeLocationAssignmentsTable.salonId, salon.id),
+        eq(employeeLocationAssignmentsTable.active, true),
+      ))
+      .where(eq(employeesTable.active, true))
+      .then((rows) => rows.map((row) => row.employee)),
     db.select().from(salonHoursTable).where(eq(salonHoursTable.salonId, salon.id)).orderBy(asc(salonHoursTable.weekday)),
     db.select().from(reviewsTable)
       .where(and(eq(reviewsTable.salonId, salon.id), eq(reviewsTable.visible, true)))
@@ -6311,6 +6401,7 @@ router.get("/salon/dashboard", async (req, res): Promise<void> => {
     : [salon];
   const scopeSalonIds = scopeSalons.map((item) => item.id);
   if (!scopeSalonIds.length) { res.status(404).json({ error: "Salon nije pronađen." }); return; }
+  const scopeSalonIdList = sql.join(scopeSalonIds.map((id) => sql`${id}::uuid`), sql`, `);
   // Bound reads to what the dashboard renders instead of the salon's whole
   // history: today's list uses a SQL date predicate + order + limit, and the
   // month stats are SQL aggregates over the current calendar month.
@@ -6321,7 +6412,12 @@ router.get("/salon/dashboard", async (req, res): Promise<void> => {
     value.setUTCMonth(value.getUTCMonth() + 1);
     return value.toISOString().slice(0, 10);
   })();
-  const [services, todayAppointments, monthStatsRows, locationStatsRows, loyaltyData] = await Promise.all([
+  const previousMonthStart = (() => {
+    const value = new Date(`${monthStart}T00:00:00.000Z`);
+    value.setUTCMonth(value.getUTCMonth() - 1);
+    return value.toISOString().slice(0, 10);
+  })();
+  const [services, todayAppointments, monthStatsRows, previousMonthStatsRows, locationStatsRows, loyaltyData] = await Promise.all([
     db.select().from(servicesTable).where(eq(servicesTable.salonId, salon.id)),
     appointmentList(
       and(inArray(appointmentsTable.salonId, scopeSalonIds), eq(appointmentsTable.date, today)),
@@ -6331,17 +6427,38 @@ router.get("/salon/dashboard", async (req, res): Promise<void> => {
     db.select({
       revenueThisMonth: sql<number>`coalesce(sum(${appointmentsTable.price}) filter (where ${appointmentsTable.status} = 'completed'), 0)`,
       bookingsThisMonth: count(),
-      newCustomers: sql<number>`count(distinct coalesce(${appointmentsTable.customerId}, ${appointmentsTable.salonCustomerId}))`,
+      // A customer is new only when this is their first appointment in the
+      // selected scope, not merely their first appointment this month.
+      newCustomers: sql<number>`count(distinct coalesce(${appointmentsTable.customerId}, ${appointmentsTable.salonCustomerId})) filter (where not exists (
+        select 1 from ${appointmentsTable} previous_appointment
+        where previous_appointment.salon_id in (${scopeSalonIdList})
+          and coalesce(previous_appointment.customer_id, previous_appointment.salon_customer_id)
+            = coalesce(${appointmentsTable.customerId}, ${appointmentsTable.salonCustomerId})
+          and previous_appointment.appointment_date < ${monthStart}
+      ))`,
     }).from(appointmentsTable).where(and(
       inArray(appointmentsTable.salonId, scopeSalonIds),
       gte(appointmentsTable.date, monthStart),
       lt(appointmentsTable.date, nextMonthStart),
     )),
     db.select({
+      revenue: sql<number>`coalesce(sum(${appointmentsTable.price}) filter (where ${appointmentsTable.status} = 'completed'), 0)`,
+    }).from(appointmentsTable).where(and(
+      inArray(appointmentsTable.salonId, scopeSalonIds),
+      gte(appointmentsTable.date, previousMonthStart),
+      lt(appointmentsTable.date, monthStart),
+    )),
+    db.select({
       salonId: appointmentsTable.salonId,
       revenueThisMonth: sql<number>`coalesce(sum(${appointmentsTable.price}) filter (where ${appointmentsTable.status} = 'completed'), 0)`,
       bookingsThisMonth: count(),
-      newCustomers: sql<number>`count(distinct coalesce(${appointmentsTable.customerId}, ${appointmentsTable.salonCustomerId}))`,
+      newCustomers: sql<number>`count(distinct coalesce(${appointmentsTable.customerId}, ${appointmentsTable.salonCustomerId})) filter (where not exists (
+        select 1 from ${appointmentsTable} previous_appointment
+        where previous_appointment.salon_id = ${appointmentsTable.salonId}
+          and coalesce(previous_appointment.customer_id, previous_appointment.salon_customer_id)
+            = coalesce(${appointmentsTable.customerId}, ${appointmentsTable.salonCustomerId})
+          and previous_appointment.appointment_date < ${monthStart}
+      ))`,
     }).from(appointmentsTable).where(and(
       inArray(appointmentsTable.salonId, scopeSalonIds),
       gte(appointmentsTable.date, monthStart),
@@ -6350,6 +6467,8 @@ router.get("/salon/dashboard", async (req, res): Promise<void> => {
     loyaltyStatusForOwner(user.id),
   ]);
   const monthStats = monthStatsRows[0];
+  const previousRevenue = Number(previousMonthStatsRows[0]?.revenue ?? 0);
+  const currentRevenue = Number(monthStats?.revenueThisMonth ?? 0);
   const statsBySalonId = new Map(locationStatsRows.map((item) => [item.salonId, item]));
   const locations = scopeSalons.map((item) => {
     const stats = statsBySalonId.get(item.id);
@@ -6373,11 +6492,14 @@ router.get("/salon/dashboard", async (req, res): Promise<void> => {
     salon: card(salon, services),
     locations,
     todayAppointments,
-    revenueThisMonth: Number(monthStats?.revenueThisMonth ?? 0),
+    revenueThisMonth: currentRevenue,
     bookingsThisMonth: Number(monthStats?.bookingsThisMonth ?? 0),
     newCustomers: Number(monthStats?.newCustomers ?? 0),
     rating,
-    revenueChange: 12,
+    // Keep the comparison window and the location predicate exactly aligned
+    // with the current revenue aggregate. A zero baseline has no percentage
+    // change, so return 0 rather than an invented/infinite value.
+    revenueChange: previousRevenue > 0 ? Math.round((currentRevenue - previousRevenue) / previousRevenue * 10000) / 100 : 0,
     loyalty: loyaltyData,
   }));
 });
@@ -6594,11 +6716,17 @@ router.get("/salon/time-blocks", async (req, res): Promise<void> => {
   }
   const employeeIds = parsed.data.employeeId
     ? [parsed.data.employeeId]
-    : (await db.select({ id: employeesTable.id }).from(employeesTable).where(eq(employeesTable.salonId, access.salon.id))).map((employee) => employee.id);
+    : (await db.select({ id: employeesTable.id }).from(employeesTable)
+      .innerJoin(employeeLocationAssignmentsTable, and(
+        eq(employeeLocationAssignmentsTable.employeeId, employeesTable.id),
+        eq(employeeLocationAssignmentsTable.salonId, access.salon.id),
+        eq(employeeLocationAssignmentsTable.active, true),
+      )).where(eq(employeesTable.active, true))).map((employee) => employee.id);
   const blocks = employeeIds.length ? await db.select().from(employeeTimeOffTable).where(and(
     inArray(employeeTimeOffTable.employeeId, employeeIds),
     eq(employeeTimeOffTable.startDate, parsed.data.date),
     eq(employeeTimeOffTable.endDate, parsed.data.date),
+    or(isNull(employeeTimeOffTable.salonId), eq(employeeTimeOffTable.salonId, access.salon.id)),
     isNotNull(employeeTimeOffTable.startTime),
     isNotNull(employeeTimeOffTable.endTime),
   )).orderBy(asc(employeeTimeOffTable.startTime), asc(employeeTimeOffTable.id)) : [];
@@ -6634,7 +6762,7 @@ router.post("/salon/time-blocks", async (req, res): Promise<void> => {
     if (appointments.some((appointment) => overlapsAppointment(parsed.data.startTime, parsed.data.endTime, appointment))) return null;
     const [block] = await tx.insert(employeeTimeOffTable).values({
       employeeId: employee.id, startDate: parsed.data.date, endDate: parsed.data.date,
-      startTime: parsed.data.startTime, endTime: parsed.data.endTime, reason: parsed.data.reason.trim(),
+      salonId: access.salon.id, startTime: parsed.data.startTime, endTime: parsed.data.endTime, reason: parsed.data.reason.trim(),
     }).returning();
     return block!;
   });
@@ -6653,9 +6781,11 @@ router.delete("/salon/time-blocks/:timeBlockId", async (req, res): Promise<void>
     eq(employeeTimeOffTable.id, params.data.timeBlockId),
     isNotNull(employeeTimeOffTable.startTime),
     isNotNull(employeeTimeOffTable.endTime),
-    exists(db.select({ id: employeesTable.id }).from(employeesTable).where(and(
-      eq(employeesTable.id, employeeTimeOffTable.employeeId),
-      eq(employeesTable.salonId, access.salon.id),
+    or(isNull(employeeTimeOffTable.salonId), eq(employeeTimeOffTable.salonId, access.salon.id)),
+    exists(db.select({ id: employeeLocationAssignmentsTable.id }).from(employeeLocationAssignmentsTable).where(and(
+      eq(employeeLocationAssignmentsTable.employeeId, employeeTimeOffTable.employeeId),
+      eq(employeeLocationAssignmentsTable.salonId, access.salon.id),
+      eq(employeeLocationAssignmentsTable.active, true),
     ))),
   )).returning({ id: employeeTimeOffTable.id });
   if (!deleted.length) { res.status(404).json({ error: "Blok nije pronađen." }); return; }
@@ -6680,28 +6810,36 @@ router.get("/salon/availability/search", async (req, res): Promise<void> => {
 
   const endDate = dateAtOffset(new Date(`${parsed.data.startDate}T12:00:00.000Z`), 6);
   const appointmentStart = mondayOf(parsed.data.startDate);
-  const employees = await db.select().from(employeesTable).where(and(
-    eq(employeesTable.salonId, access.salon.id),
-    eq(employeesTable.active, true),
-  ));
+  const employees = await db.select({ employee: employeesTable }).from(employeesTable)
+    .innerJoin(employeeLocationAssignmentsTable, and(
+      eq(employeeLocationAssignmentsTable.employeeId, employeesTable.id),
+      eq(employeeLocationAssignmentsTable.salonId, access.salon.id),
+      eq(employeeLocationAssignmentsTable.active, true),
+    ))
+    .where(eq(employeesTable.active, true)).then((rows) => rows.map((row) => row.employee));
   const employeeIds = employees.map((employee) => employee.id);
   const [links, appointments, schedules, timeOff, requirements, resourceAllocations] = await Promise.all([
     employeeIds.length ? db.select().from(employeeServicesTable).where(and(
       inArray(employeeServicesTable.employeeId, employeeIds),
       eq(employeeServicesTable.serviceId, service.id),
     )) : Promise.resolve([] as (typeof employeeServicesTable.$inferSelect)[]),
-    db.select().from(appointmentsTable).where(and(
-      eq(appointmentsTable.salonId, access.salon.id),
+    // Never offer a person who is already booked at another assigned location.
+    // The schedule below is deliberately still only this requested location.
+    employeeIds.length ? db.select().from(appointmentsTable).where(and(
+      inArray(appointmentsTable.employeeId, employeeIds),
       gte(appointmentsTable.date, appointmentStart),
       lte(appointmentsTable.date, endDate),
-    )),
-    employeeIds.length ? db.select().from(employeeSchedulesTable).where(
-      inArray(employeeSchedulesTable.employeeId, employeeIds),
-    ) : Promise.resolve([] as (typeof employeeSchedulesTable.$inferSelect)[]),
+      ne(appointmentsTable.status, "cancelled"),
+    )) : Promise.resolve([] as (typeof appointmentsTable.$inferSelect)[]),
+    employeeIds.length ? db.select().from(employeeLocationSchedulesTable).where(and(
+      inArray(employeeLocationSchedulesTable.employeeId, employeeIds),
+      eq(employeeLocationSchedulesTable.salonId, access.salon.id),
+    )) : Promise.resolve([] as (typeof employeeLocationSchedulesTable.$inferSelect)[]),
     employeeIds.length ? db.select().from(employeeTimeOffTable).where(and(
       inArray(employeeTimeOffTable.employeeId, employeeIds),
       lte(employeeTimeOffTable.startDate, endDate),
       gte(employeeTimeOffTable.endDate, parsed.data.startDate),
+      or(isNull(employeeTimeOffTable.salonId), eq(employeeTimeOffTable.salonId, access.salon.id)),
     )) : Promise.resolve([] as (typeof employeeTimeOffTable.$inferSelect)[]),
     fetchServiceResourceRequirements(db, service.id),
     db.select({
@@ -6758,23 +6896,29 @@ router.get("/salon/calendar-day", async (req, res): Promise<void> => {
   if (!parsed.success || !isValidCalendarDate(parsed.data.date)) {
     res.status(400).json({ error: parsed.success ? "Datum nije ispravan." : parsed.error.message }); return;
   }
-  const employees = await db.select().from(employeesTable).where(and(
-    eq(employeesTable.salonId, access.salon.id),
-    eq(employeesTable.active, true),
-  )).orderBy(asc(employeesTable.name), asc(employeesTable.id));
+  const employees = await db.select({ employee: employeesTable }).from(employeesTable)
+    .innerJoin(employeeLocationAssignmentsTable, and(
+      eq(employeeLocationAssignmentsTable.employeeId, employeesTable.id),
+      eq(employeeLocationAssignmentsTable.salonId, access.salon.id),
+      eq(employeeLocationAssignmentsTable.active, true),
+    ))
+    .where(eq(employeesTable.active, true))
+    .orderBy(asc(employeesTable.name), asc(employeesTable.id)).then((rows) => rows.map((row) => row.employee));
   const employeeIds = employees.map((employee) => employee.id);
   const weekday = ((new Date(`${parsed.data.date}T12:00:00.000Z`).getUTCDay() + 6) % 7) + 1;
   const [schedules, allDayLeave] = await Promise.all([
-    employeeIds.length ? db.select().from(employeeSchedulesTable).where(and(
-      inArray(employeeSchedulesTable.employeeId, employeeIds),
-      eq(employeeSchedulesTable.weekday, weekday),
-    )) : Promise.resolve([] as (typeof employeeSchedulesTable.$inferSelect)[]),
+    employeeIds.length ? db.select().from(employeeLocationSchedulesTable).where(and(
+      inArray(employeeLocationSchedulesTable.employeeId, employeeIds),
+      eq(employeeLocationSchedulesTable.salonId, access.salon.id),
+      eq(employeeLocationSchedulesTable.weekday, weekday),
+    )) : Promise.resolve([] as (typeof employeeLocationSchedulesTable.$inferSelect)[]),
     employeeIds.length ? db.select().from(employeeTimeOffTable).where(and(
       inArray(employeeTimeOffTable.employeeId, employeeIds),
       lte(employeeTimeOffTable.startDate, parsed.data.date),
       gte(employeeTimeOffTable.endDate, parsed.data.date),
       isNull(employeeTimeOffTable.startTime),
       isNull(employeeTimeOffTable.endTime),
+      or(isNull(employeeTimeOffTable.salonId), eq(employeeTimeOffTable.salonId, access.salon.id)),
     )) : Promise.resolve([] as (typeof employeeTimeOffTable.$inferSelect)[]),
   ]);
   const response = employees.map((employee) => {
@@ -7359,10 +7503,13 @@ router.patch("/salon/appointments/:appointmentId", async (req, res): Promise<voi
   const result = await db.transaction(async (tx) => {
     await lockAppointmentResources(tx, salon.id);
     if (body.data.employeeId) {
-      const [requestedEmployee] = await tx.select({ id: employeesTable.id }).from(employeesTable).where(and(
-        eq(employeesTable.id, body.data.employeeId),
-        eq(employeesTable.salonId, salon.id),
-      )).limit(1);
+      const [requestedEmployee] = await tx.select({ id: employeesTable.id }).from(employeesTable)
+        .innerJoin(employeeLocationAssignmentsTable, and(
+          eq(employeeLocationAssignmentsTable.employeeId, employeesTable.id),
+          eq(employeeLocationAssignmentsTable.salonId, salon.id),
+          eq(employeeLocationAssignmentsTable.active, true),
+        ))
+        .where(and(eq(employeesTable.id, body.data.employeeId), eq(employeesTable.active, true))).limit(1);
       if (!requestedEmployee) return { error: "foreign-employee" as const };
     }
     const [target] = await tx.select().from(appointmentsTable).where(and(
@@ -7912,6 +8059,177 @@ router.delete("/salon/services/:serviceId", async (req, res): Promise<void> => {
   res.status(204).end();
 });
 
+function stableRequestJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableRequestJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableRequestJson(record[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function additionalLocationProfile(
+  salon: typeof salonsTable.$inferSelect,
+  services: (typeof servicesTable.$inferSelect)[],
+) {
+  return {
+    ...card(salon, services, []),
+    gallery: [],
+    videoUrl: null,
+    description: salon.description,
+    topServices: [],
+    hours: [],
+    staff: [],
+    services: services.map((service) => ({
+      id: service.id,
+      category: service.categoryName,
+      name: service.name,
+      description: service.description,
+      durationMinutes: service.durationMinutes,
+      price: service.price,
+      promoPrice: service.promoPrice,
+      tags: service.tags,
+      packageTreatments: service.packageTreatments,
+      imageUrl: service.imageUrl,
+      active: service.active,
+      homeServiceAvailable: service.homeServiceAvailable,
+      homeServiceFee: service.homeServiceFee,
+      homeServiceMinimumOrder: service.homeServiceMinimumOrder,
+      resourceRequirements: [],
+    })),
+    reviews: [],
+    returnClientRate: null,
+    homeServiceRadiusKm: salon.homeServiceRadiusKm,
+  };
+}
+
+router.post("/salon/locations", async (req, res, next): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const parsed = CreateSalonLocationBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message, code: "VALIDATION_ERROR" }); return; }
+  const body = parsed.data;
+  if ((body.copyServices || body.copyPackages) && !body.sourceSalonId) {
+    res.status(400).json({ error: "Za kopiranje je potrebna izvorna lokacija.", code: "COPY_REQUIRES_SOURCE" });
+    return;
+  }
+  if (body.copyPackages && !body.copyServices) {
+    res.status(400).json({ error: "Paketi se mogu kopirati samo zajedno sa uslugama.", code: "COPY_PACKAGES_REQUIRES_SERVICES" });
+    return;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) {
+    res.status(400).json({ error: "Email adresa nije ispravna.", code: "VALIDATION_ERROR" });
+    return;
+  }
+  // Hash the normalized, validated command rather than raw JSON so property
+  // order cannot turn an otherwise identical retry into a conflict.
+  const requestHash = createHash("sha256").update(stableRequestJson(body)).digest("hex");
+  try {
+    const result = await db.transaction(async (tx) => {
+      const [prior] = await tx.select().from(salonLocationCreationRequestsTable).where(and(
+        eq(salonLocationCreationRequestsTable.ownerId, access.user.id),
+        eq(salonLocationCreationRequestsTable.idempotencyKey, body.idempotencyKey),
+      )).limit(1);
+      if (prior) {
+        if (prior.requestHash !== requestHash) return { conflict: true as const };
+        return { replay: prior.response };
+      }
+
+      let source: typeof salonsTable.$inferSelect | undefined;
+      if (body.sourceSalonId) {
+        [source] = await tx.select().from(salonsTable).where(and(
+          eq(salonsTable.id, body.sourceSalonId),
+          eq(salonsTable.ownerId, access.user.id),
+        )).limit(1);
+        if (!source) return { forbidden: true as const };
+      }
+      const [location] = await tx.insert(salonsTable).values({
+        ownerId: access.user.id,
+        name: body.name, city: body.city, municipality: body.municipality, address: body.address,
+        postalCode: body.postalCode ?? null, phone: body.phone, email: body.email,
+        shortDescription: body.shortDescription, description: body.description, imageUrl: body.imageUrl,
+        // A UUID suffix avoids a read-then-write slug race while retaining a
+        // meaningful, stable-looking location URL.
+        slug: `${businessSlug(body.name, access.user.id)}-${randomUUID().slice(0, 8)}`,
+      }).returning();
+      const warnings: string[] = [];
+      const sourceServices = source && body.copyServices
+        ? await tx.select().from(servicesTable).where(eq(servicesTable.salonId, source.id))
+        : [];
+      const serviceMap = new Map<string, string>();
+      const copiedServices: (typeof servicesTable.$inferSelect)[] = [];
+      for (const service of sourceServices) {
+        const [copy] = await tx.insert(servicesTable).values({
+          salonId: location!.id, categoryId: service.categoryId, categoryName: service.categoryName,
+          name: service.name, description: service.description, durationMinutes: service.durationMinutes,
+          price: service.price, promoPrice: service.promoPrice, tags: service.tags,
+          packageTreatments: service.packageTreatments, imageUrl: service.imageUrl, active: service.active,
+          homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee,
+          homeServiceMinimumOrder: service.homeServiceMinimumOrder,
+        }).returning();
+        copiedServices.push(copy!);
+        serviceMap.set(service.id, copy!.id);
+      }
+      let copiedPackages = 0;
+      let copiedPackageServiceLinks = 0;
+      if (source && body.copyPackages) {
+        const packages = await tx.select().from(treatmentPackagesTable).where(eq(treatmentPackagesTable.salonId, source.id));
+        for (const pkg of packages) {
+          const [copy] = await tx.insert(treatmentPackagesTable).values({
+            salonId: location!.id, name: pkg.name, description: pkg.description, priceInDinars: pkg.priceInDinars,
+            sessionCount: pkg.sessionCount, validityDays: pkg.validityDays, active: pkg.active, quotaPolicy: pkg.quotaPolicy,
+          }).returning();
+          copiedPackages += 1;
+          const links = await tx.select().from(packageServiceLinksTable).where(eq(packageServiceLinksTable.packageId, pkg.id));
+          const mapped = links.flatMap((link) => {
+            const serviceId = serviceMap.get(link.serviceId);
+            return serviceId ? [{ packageId: copy!.id, serviceId, quota: link.quota }] : [];
+          });
+          if (mapped.length) await tx.insert(packageServiceLinksTable).values(mapped);
+          copiedPackageServiceLinks += mapped.length;
+          if (mapped.length !== links.length) warnings.push(`Neki linkovi paketa "${pkg.name}" nisu mogli biti kopirani.`);
+        }
+      }
+      if (body.activateAfterCreate) {
+        await tx.update(usersTable).set({ activeSalonId: location!.id, updatedAt: new Date() })
+          .where(eq(usersTable.id, access.user.id));
+      }
+      const profile = additionalLocationProfile(location!, copiedServices);
+      const response = CreateSalonLocationResponse.parse({
+        location: profile, salon: profile, copiedServices: copiedServices.length, copiedPackages,
+        copiedPackageServiceLinks, warnings,
+      });
+      await tx.insert(salonLocationCreationRequestsTable).values({
+        ownerId: access.user.id, idempotencyKey: body.idempotencyKey, requestHash, response,
+      });
+      return { response };
+    });
+    if ("forbidden" in result) { res.status(403).json({ error: "Izvorna lokacija ne pripada vlasniku.", code: "FORBIDDEN" }); return; }
+    if ("conflict" in result) { res.status(409).json({ error: "Idempotency ključ je već upotrebljen za drugi zahtev.", code: "IDEMPOTENCY_KEY_REUSED" }); return; }
+    // The command's OpenAPI success contract is 201; an idempotent replay is
+    // the same already-created representation, not a second creation.
+    res.status(201).json("replay" in result ? result.replay : result.response);
+  } catch (error) {
+    // A concurrent first use of the same key loses the unique-index race. The
+    // losing transaction is rolled back, then reads the winner's durable
+    // response instead of surfacing a spurious 500 or creating another salon.
+    if ((error as { code?: string }).code === "23505") {
+      const [winner] = await db.select().from(salonLocationCreationRequestsTable).where(and(
+        eq(salonLocationCreationRequestsTable.ownerId, access.user.id),
+        eq(salonLocationCreationRequestsTable.idempotencyKey, body.idempotencyKey),
+      )).limit(1);
+      if (winner) {
+        if (winner.requestHash !== requestHash) {
+          res.status(409).json({ error: "Idempotency ključ je već upotrebljen za drugi zahtev.", code: "IDEMPOTENCY_KEY_REUSED" });
+          return;
+        }
+        res.status(201).json(winner.response);
+        return;
+      }
+    }
+    next(error);
+  }
+});
+
 router.get("/salon/employees", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const { salon } = access;
@@ -7929,7 +8247,12 @@ router.get("/salon/employees", async (req, res): Promise<void> => {
     })
       .from(employeesTable)
       .leftJoin(usersTable, eq(usersTable.id, employeesTable.userId))
-      .where(and(eq(employeesTable.salonId, salon.id), eq(employeesTable.active, true)))
+      .innerJoin(employeeLocationAssignmentsTable, and(
+        eq(employeeLocationAssignmentsTable.employeeId, employeesTable.id),
+        eq(employeeLocationAssignmentsTable.salonId, salon.id),
+        eq(employeeLocationAssignmentsTable.active, true),
+      ))
+      .where(eq(employeesTable.active, true))
       .orderBy(asc(employeesTable.name), asc(employeesTable.id))
       .limit(500),
     db.select().from(servicesTable)
@@ -7968,12 +8291,193 @@ router.get("/salon/employees", async (req, res): Promise<void> => {
   }));
 });
 
-async function employeeDeactivationPreview(employee: typeof employeesTable.$inferSelect) {
-  const [future] = await db.select({ count: count() }).from(appointmentsTable).where(and(
-    eq(appointmentsTable.salonId, employee.salonId),
+async function employeeAndOwnedLocation(ownerId: string, employeeId: string, salonId: string) {
+  const [employee] = await db.select({ employee: employeesTable }).from(employeesTable)
+    .innerJoin(employeeLocationAssignmentsTable, and(
+      eq(employeeLocationAssignmentsTable.employeeId, employeesTable.id),
+      eq(employeeLocationAssignmentsTable.active, true),
+    ))
+    .innerJoin(salonsTable, eq(salonsTable.id, employeeLocationAssignmentsTable.salonId))
+    .where(and(eq(employeesTable.id, employeeId), eq(salonsTable.ownerId, ownerId))).limit(1);
+  const [salon] = await db.select().from(salonsTable)
+    .where(and(eq(salonsTable.id, salonId), eq(salonsTable.ownerId, ownerId))).limit(1);
+  return employee?.employee && salon ? { employee: employee.employee, salon } : null;
+}
+
+router.get("/salon/employees/:employeeId/locations", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const employee = await employeeAndOwnedLocation(access.user.id, req.params.employeeId, access.salon.id);
+  if (!employee) { res.status(404).json({ error: "Zaposleni nije pronađen." }); return; }
+  const rows = await db.select({ assignment: employeeLocationAssignmentsTable, name: salonsTable.name })
+    .from(employeeLocationAssignmentsTable).innerJoin(salonsTable, eq(salonsTable.id, employeeLocationAssignmentsTable.salonId))
+    .where(and(eq(employeeLocationAssignmentsTable.employeeId, employee.employee.id), eq(salonsTable.ownerId, access.user.id)));
+  const schedules = await db.select().from(employeeLocationSchedulesTable)
+    .where(eq(employeeLocationSchedulesTable.employeeId, employee.employee.id));
+  res.json(rows.map(({ assignment, name }) => ({
+    employeeId: assignment.employeeId, salonId: assignment.salonId, locationId: assignment.salonId, locationName: name,
+    active: assignment.active, isDefault: assignment.isDefault,
+    scheduleWindows: schedules.filter((schedule) => schedule.salonId === assignment.salonId).map((schedule) => ({
+      weekday: schedule.weekday, startTime: schedule.startTime, endTime: schedule.endTime,
+      breakStart: schedule.breakStart, breakEnd: schedule.breakEnd,
+    })),
+  })));
+});
+
+router.put("/salon/employees/:employeeId/locations/:salonId", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const target = await employeeAndOwnedLocation(access.user.id, req.params.employeeId, req.params.salonId);
+  if (!target) { res.status(403).json({ error: "Zaposleni i lokacija moraju pripadati vašem nalogu." }); return; }
+  const body = req.body as { active?: unknown; isDefault?: unknown };
+  if (typeof body.active !== "boolean" && typeof body.isDefault !== "boolean") { res.status(400).json({ error: "Navedite active ili isDefault." }); return; }
+  if (body.active === false) {
+    const [future] = await db.select({ id: appointmentsTable.id }).from(appointmentsTable).where(and(
+      eq(appointmentsTable.employeeId, target.employee.id), eq(appointmentsTable.salonId, target.salon.id),
+      gte(appointmentsTable.date, new Date().toISOString().slice(0, 10)), ne(appointmentsTable.status, "cancelled"),
+    )).limit(1);
+    if (future) { res.status(409).json({ error: "Deaktivacija bi ostavila buduće termine bez zaposlenog." }); return; }
+  }
+  const assignment = await db.transaction(async (tx) => {
+    if (body.isDefault === true) await tx.update(employeeLocationAssignmentsTable).set({ isDefault: false, updatedAt: new Date() })
+      .where(eq(employeeLocationAssignmentsTable.employeeId, target.employee.id));
+    const assignmentValues: typeof employeeLocationAssignmentsTable.$inferInsert = {
+      employeeId: target.employee.id, salonId: target.salon.id,
+      active: typeof body.active === "boolean" ? body.active : true,
+      isDefault: typeof body.isDefault === "boolean" ? body.isDefault : false,
+    };
+    const [saved] = await tx.insert(employeeLocationAssignmentsTable).values(assignmentValues).onConflictDoUpdate({
+      target: [employeeLocationAssignmentsTable.employeeId, employeeLocationAssignmentsTable.salonId],
+      set: { ...(typeof body.active === "boolean" ? { active: body.active } : {}),
+        ...(typeof body.isDefault === "boolean" ? { isDefault: body.isDefault } : {}), updatedAt: new Date() },
+    }).returning();
+    return saved!;
+  });
+  res.json({ employeeId: assignment.employeeId, salonId: assignment.salonId, locationId: assignment.salonId,
+    locationName: target.salon.name, active: assignment.active, isDefault: assignment.isDefault, scheduleWindows: [] });
+});
+
+export type LocationScheduleWindow = {
+  weekday: number;
+  startTime: string;
+  endTime: string;
+  breakStart?: string | null;
+  breakEnd?: string | null;
+};
+
+const WALL_CLOCK_TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+export function validateLocationScheduleWindows(windows: LocationScheduleWindow[]): string | null {
+  for (const window of windows) {
+    if (!WALL_CLOCK_TIME.test(window.startTime) || !WALL_CLOCK_TIME.test(window.endTime)) {
+      return "Vreme rasporeda mora biti u formatu HH:mm.";
+    }
+    if (window.startTime >= window.endTime) return "Kraj radnog vremena mora biti posle početka.";
+    const hasBreakStart = window.breakStart !== undefined && window.breakStart !== null;
+    const hasBreakEnd = window.breakEnd !== undefined && window.breakEnd !== null;
+    if (hasBreakStart !== hasBreakEnd) return "Početak i kraj pauze moraju biti navedeni zajedno.";
+    if (hasBreakStart && hasBreakEnd) {
+      if (!WALL_CLOCK_TIME.test(window.breakStart!) || !WALL_CLOCK_TIME.test(window.breakEnd!)) {
+        return "Vreme pauze mora biti u formatu HH:mm.";
+      }
+      if (window.breakStart! >= window.breakEnd!) return "Kraj pauze mora biti posle početka.";
+      if (window.breakStart! < window.startTime || window.breakEnd! > window.endTime) {
+        return "Pauza mora biti u okviru radnog vremena.";
+      }
+    }
+  }
+  for (let index = 0; index < windows.length; index += 1) {
+    for (let other = index + 1; other < windows.length; other += 1) {
+      const left = windows[index]!;
+      const right = windows[other]!;
+      if (left.weekday === right.weekday && left.startTime < right.endTime && left.endTime > right.startTime) {
+        return "Radni prozori za isti dan ne smeju se preklapati niti duplirati.";
+      }
+    }
+  }
+  return null;
+}
+
+async function lockEmployeeLocationSchedules(store: any, employeeId: string) {
+  // All location schedules for an employee participate in one overlap
+  // invariant. A transaction-scoped advisory lock also works when the target
+  // location has no existing rows to lock.
+  await store.execute(sql`select pg_advisory_xact_lock(hashtext(${`lumera:employee-location-schedules:${employeeId}`}))`);
+}
+
+router.put("/salon/employees/:employeeId/locations/:salonId/schedule", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const target = await employeeAndOwnedLocation(access.user.id, req.params.employeeId, req.params.salonId);
+  if (!target) { res.status(403).json({ error: "Zaposleni i lokacija moraju pripadati vašem nalogu." }); return; }
+  const body = req.body as { windows?: unknown };
+  if (!Array.isArray(body.windows) || !body.windows.every((window) => window && typeof window === "object"
+    && Number.isInteger((window as { weekday?: unknown }).weekday) && (window as { weekday: number }).weekday >= 1
+    && (window as { weekday: number }).weekday <= 7 && typeof (window as { startTime?: unknown }).startTime === "string"
+    && typeof (window as { endTime?: unknown }).endTime === "string")) {
+    res.status(400).json({ error: "Nevažeći raspored." }); return;
+  }
+  const [assignment] = await db.select().from(employeeLocationAssignmentsTable).where(and(
+    eq(employeeLocationAssignmentsTable.employeeId, target.employee.id), eq(employeeLocationAssignmentsTable.salonId, target.salon.id),
+    eq(employeeLocationAssignmentsTable.active, true),
+  )).limit(1);
+  if (!assignment) { res.status(409).json({ error: "Raspored se može menjati samo za aktivnu dodelu lokacije." }); return; }
+  const windows = body.windows as { weekday: number; startTime: string; endTime: string; breakStart?: string | null; breakEnd?: string | null }[];
+  const formatError = validateLocationScheduleWindows(windows);
+  if (formatError) { res.status(400).json({ error: formatError }); return; }
+  try {
+    await db.transaction(async (tx) => {
+      await lockEmployeeLocationSchedules(tx, target.employee.id);
+      // Validate the entire prospective set before deleting anything. Other
+      // locations are read only when their assignment is still active.
+      const otherSchedules = await tx.select({
+        schedule: employeeLocationSchedulesTable,
+      }).from(employeeLocationSchedulesTable)
+        .innerJoin(employeeLocationAssignmentsTable, and(
+          eq(employeeLocationAssignmentsTable.employeeId, employeeLocationSchedulesTable.employeeId),
+          eq(employeeLocationAssignmentsTable.salonId, employeeLocationSchedulesTable.salonId),
+          eq(employeeLocationAssignmentsTable.active, true),
+        ))
+        .where(and(
+          eq(employeeLocationSchedulesTable.employeeId, target.employee.id),
+          ne(employeeLocationSchedulesTable.salonId, target.salon.id),
+        ));
+      const conflicting = otherSchedules.some(({ schedule }) => windows.some((window) =>
+        window.weekday === schedule.weekday
+        && window.startTime < schedule.endTime
+        && window.endTime > schedule.startTime,
+      ));
+      if (conflicting) throw new Error("LOCATION_SCHEDULE_CONFLICT");
+      await tx.delete(employeeLocationSchedulesTable).where(and(
+        eq(employeeLocationSchedulesTable.employeeId, target.employee.id),
+        eq(employeeLocationSchedulesTable.salonId, target.salon.id),
+      ));
+      if (windows.length) await tx.insert(employeeLocationSchedulesTable).values(windows.map((window) => ({
+        employeeId: target.employee.id, salonId: target.salon.id, weekday: window.weekday, startTime: window.startTime, endTime: window.endTime,
+        breakStart: window.breakStart ?? null, breakEnd: window.breakEnd ?? null,
+      })));
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "LOCATION_SCHEDULE_CONFLICT") {
+      res.status(409).json({ error: "Raspored se preklapa sa aktivnim rasporedom zaposlenog na drugoj lokaciji." });
+      return;
+    }
+    throw error;
+  }
+  res.json(windows.map((window) => ({ ...window, breakStart: window.breakStart ?? null, breakEnd: window.breakEnd ?? null })));
+});
+
+async function employeeDeactivationPreview(employee: typeof employeesTable.$inferSelect, ownerId: string, store: any = db) {
+  const [future] = await store.select({ count: count() }).from(appointmentsTable).where(and(
     eq(appointmentsTable.employeeId, employee.id),
     gte(appointmentsTable.date, new Date().toISOString().slice(0, 10)),
     ne(appointmentsTable.status, "cancelled"),
+    exists(store.select({ id: employeeLocationAssignmentsTable.id })
+      .from(employeeLocationAssignmentsTable)
+      .innerJoin(salonsTable, eq(salonsTable.id, employeeLocationAssignmentsTable.salonId))
+      .where(and(
+        eq(employeeLocationAssignmentsTable.employeeId, employee.id),
+        eq(employeeLocationAssignmentsTable.salonId, appointmentsTable.salonId),
+        eq(employeeLocationAssignmentsTable.active, true),
+        eq(salonsTable.ownerId, ownerId),
+      ))),
   ));
   return {
     employeeId: employee.id,
@@ -7987,7 +8491,7 @@ router.get("/salon/employees/:employeeId/deactivation-preview", async (req, res)
   const access = await requireSalonOwner(req, res); if (!access) return;
   const employee = await employeeInSalon(req.params.employeeId, access.salon.id);
   if (!employee) { res.status(404).json({ error: "Zaposleni nije pronađen." }); return; }
-  res.json(await employeeDeactivationPreview(employee));
+  res.json(await employeeDeactivationPreview(employee, access.user.id));
 });
 
 router.post("/salon/employees/:employeeId/deactivate", async (req, res): Promise<void> => {
@@ -7995,7 +8499,11 @@ router.post("/salon/employees/:employeeId/deactivate", async (req, res): Promise
   const employee = await employeeInSalon(req.params.employeeId, access.salon.id);
   if (!employee) { res.status(404).json({ error: "Zaposleni nije pronađen." }); return; }
   if (!employee.active) { res.status(409).json({ error: "Zaposleni je već deaktiviran." }); return; }
-  const preview = await employeeDeactivationPreview(employee);
+  const preview = await employeeDeactivationPreview(employee, access.user.id);
+  if (preview.futureAppointmentCount > 0) {
+    res.status(409).json({ error: "Deaktivacija nije moguća dok zaposleni ima buduće termine na aktivnim lokacijama.", futureAppointmentCount: preview.futureAppointmentCount });
+    return;
+  }
   const revokedAvatarIds = [mediaAssetIdFromUrl(employee.avatarUrl)].filter((id): id is string => Boolean(id));
   if (revokedAvatarIds.length) {
     try {
@@ -8006,21 +8514,35 @@ router.post("/salon/employees/:employeeId/deactivate", async (req, res): Promise
       return;
     }
   }
-  await db.transaction(async (tx) => {
-    await tx.update(employeesTable).set({ active: false }).where(eq(employeesTable.id, employee.id));
-    await releaseMediaReferenceClaims({
-      urls: [employee.avatarUrl],
-      resourceId: employee.id,
-      visibility: "private",
-    }, tx);
-    if (employee.userId) {
-      await tx.update(usersTable).set({ active: false, updatedAt: new Date() }).where(and(
-        eq(usersTable.id, employee.userId),
-        eq(usersTable.role, "SALON_EMPLOYEE"),
-      ));
-      await tx.delete(sessionsTable).where(eq(sessionsTable.userId, employee.userId));
+  try {
+    await db.transaction(async (tx) => {
+      // Recheck inside the write transaction so a sibling-location appointment
+      // cannot be created between preview and global deactivation.
+      const currentPreview = await employeeDeactivationPreview(employee, access.user.id, tx);
+      if (currentPreview.futureAppointmentCount > 0) throw new Error("EMPLOYEE_DEACTIVATION_FUTURE_APPOINTMENTS");
+      await tx.update(employeesTable).set({ active: false }).where(eq(employeesTable.id, employee.id));
+      await tx.update(employeeLocationAssignmentsTable).set({ active: false, isDefault: false, updatedAt: new Date() })
+        .where(eq(employeeLocationAssignmentsTable.employeeId, employee.id));
+      await releaseMediaReferenceClaims({
+        urls: [employee.avatarUrl],
+        resourceId: employee.id,
+        visibility: "private",
+      }, tx);
+      if (employee.userId) {
+        await tx.update(usersTable).set({ active: false, updatedAt: new Date() }).where(and(
+          eq(usersTable.id, employee.userId),
+          eq(usersTable.role, "SALON_EMPLOYEE"),
+        ));
+        await tx.delete(sessionsTable).where(eq(sessionsTable.userId, employee.userId));
+      }
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "EMPLOYEE_DEACTIVATION_FUTURE_APPOINTMENTS") {
+      res.status(409).json({ error: "Deaktivacija nije moguća dok zaposleni ima buduće termine na aktivnim lokacijama." });
+      return;
     }
-  });
+    throw error;
+  }
   res.json({ employeeId: employee.id, deactivated: true, futureAppointmentCount: preview.futureAppointmentCount, loginAccountDeactivated: Boolean(employee.userId) });
 });
 
@@ -8047,6 +8569,12 @@ router.post("/salon/employees", async (req, res): Promise<void> => {
         specialties: Array.isArray(body.specialties) ? body.specialties.filter((item): item is string => typeof item === "string") : [],
         canOrderIndependently: body.canOrderIndependently === true,
       }).returning();
+      await tx.insert(employeeLocationAssignmentsTable).values({
+        employeeId: rows[0]!.id,
+        salonId: access.salon.id,
+        active: true,
+        isDefault: true,
+      });
       if (avatarUrl && !await claimMediaReference({
         userId: access.user.id, url: avatarUrl, scope: "employee-avatar", resourceId: rows[0]!.id,
       }, tx)) {
@@ -8112,7 +8640,13 @@ router.patch("/salon/employees/:employeeId", async (req, res): Promise<void> => 
         throw new MediaClaimConflictError();
       }
       if (serviceIds) {
-        await tx.delete(employeeServicesTable).where(eq(employeeServicesTable.employeeId, employee.id));
+        await tx.delete(employeeServicesTable).where(and(
+          eq(employeeServicesTable.employeeId, employee.id),
+          exists(tx.select({ id: servicesTable.id }).from(servicesTable).where(and(
+            eq(servicesTable.id, employeeServicesTable.serviceId),
+            eq(servicesTable.salonId, access.salon.id),
+          ))),
+        ));
         if (serviceIds.length) await tx.insert(employeeServicesTable).values(serviceIds.map((serviceId) => ({ employeeId: employee.id, serviceId })));
       }
       await tx.update(employeesTable).set({
@@ -8184,7 +8718,12 @@ router.post("/salon/employees/:employeeId/access/reset-password", async (req, re
 
 router.get("/salon/leave-requests", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
-  const employees = await db.select().from(employeesTable).where(eq(employeesTable.salonId, access.salon.id));
+  const employees = await db.select({ employee: employeesTable }).from(employeesTable)
+    .innerJoin(employeeLocationAssignmentsTable, and(
+      eq(employeeLocationAssignmentsTable.employeeId, employeesTable.id),
+      eq(employeeLocationAssignmentsTable.salonId, access.salon.id),
+      eq(employeeLocationAssignmentsTable.active, true),
+    )).then((rows) => rows.map((row) => row.employee));
   const employeeIds = employees.map((employee) => employee.id);
   const requests = employeeIds.length
     ? await db.select().from(employeeLeaveRequestsTable)
@@ -8266,8 +8805,14 @@ router.get("/employee/portal", async (req, res): Promise<void> => {
       .where(and(employeeScope, gte(appointmentsTable.createdAt, recentCreatedThreshold)))
       .orderBy(desc(appointmentsTable.createdAt), desc(appointmentsTable.id))
       .limit(EMPLOYEE_PORTAL_NOTIFICATION_LIMIT),
-    db.select().from(employeeSchedulesTable).where(eq(employeeSchedulesTable.employeeId, employee.id)).orderBy(asc(employeeSchedulesTable.weekday)),
-    db.select().from(employeeTimeOffTable).where(eq(employeeTimeOffTable.employeeId, employee.id)),
+    db.select().from(employeeLocationSchedulesTable).where(and(
+      eq(employeeLocationSchedulesTable.employeeId, employee.id),
+      eq(employeeLocationSchedulesTable.salonId, salon.id),
+    )).orderBy(asc(employeeLocationSchedulesTable.weekday)),
+    db.select().from(employeeTimeOffTable).where(and(
+      eq(employeeTimeOffTable.employeeId, employee.id),
+      or(isNull(employeeTimeOffTable.salonId), eq(employeeTimeOffTable.salonId, salon.id)),
+    )),
     db.select().from(employeeLeaveRequestsTable).where(eq(employeeLeaveRequestsTable.employeeId, employee.id)).orderBy(desc(employeeLeaveRequestsTable.createdAt)),
     db.select({
       id: servicesTable.id,
@@ -13264,6 +13809,7 @@ function approvalRequestDto(
   request: typeof orderApprovalRequestsTable.$inferSelect,
   employeeName: string,
   lines: Array<typeof orderApprovalRequestLinesTable.$inferSelect>,
+  locationName?: string,
 ) {
   const snapshot = request.quoteSnapshot as { cart?: { subtotal?: number } };
   return {
@@ -13271,6 +13817,10 @@ function approvalRequestDto(
     status: request.status,
     employeeId: request.employeeId,
     employeeName,
+    // Requests always remain operationally bound to this exact location. The
+    // label makes an owner-wide queue unambiguous without changing mutations'
+    // active-location authorization.
+    locationName: locationName ?? null,
     quote: snapshot.cart?.subtotal ?? 0,
     quoteVersion: request.quoteVersion,
     couponCode: request.couponCode,
@@ -13394,39 +13944,58 @@ router.get("/shop/approval-requests/mine", async (req, res): Promise<void> => {
 
 router.get("/shop/approval-requests", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
+  const scope = req.query.scope === "all" ? "all" : "location";
+  const scopeSalonIds = scope === "all"
+    ? (await db.select({ id: salonsTable.id }).from(salonsTable).where(eq(salonsTable.ownerId, access.user.id))).map((row) => row.id)
+    : [access.salon.id];
   const requests = await db.select({
     request: orderApprovalRequestsTable,
     employeeName: employeesTable.name,
+    locationName: salonsTable.name,
   }).from(orderApprovalRequestsTable)
     .innerJoin(employeesTable, eq(employeesTable.id, orderApprovalRequestsTable.employeeId))
-    .where(eq(orderApprovalRequestsTable.salonId, access.salon.id))
+    .innerJoin(salonsTable, and(
+      eq(salonsTable.id, orderApprovalRequestsTable.salonId),
+      eq(salonsTable.ownerId, access.user.id),
+    ))
+    .where(inArray(orderApprovalRequestsTable.salonId, scopeSalonIds))
     .orderBy(desc(orderApprovalRequestsTable.createdAt));
   const requestIds = requests.map(({ request }) => request.id);
   const lines = requestIds.length ? await db.select().from(orderApprovalRequestLinesTable)
     .where(inArray(orderApprovalRequestLinesTable.requestId, requestIds)) : [];
   const linesByRequest = new Map<string, typeof lines>();
   for (const line of lines) linesByRequest.set(line.requestId, [...(linesByRequest.get(line.requestId) ?? []), line]);
-  res.json(requests.map(({ request, employeeName }) => approvalRequestDto(
+  res.json(requests.map(({ request, employeeName, locationName }) => approvalRequestDto(
     request,
     employeeName,
     linesByRequest.get(request.id) ?? [],
+    locationName,
   )));
 });
 
 router.get("/shop/approval-requests/:requestId", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
+  const scope = req.query.scope === "all" ? "all" : "location";
   const rows = await db.select({
     request: orderApprovalRequestsTable,
     employeeName: employeesTable.name,
+    locationName: salonsTable.name,
   }).from(orderApprovalRequestsTable)
     .innerJoin(employeesTable, eq(employeesTable.id, orderApprovalRequestsTable.employeeId))
-    .where(and(eq(orderApprovalRequestsTable.id, req.params.requestId), eq(orderApprovalRequestsTable.salonId, access.salon.id)))
+    .innerJoin(salonsTable, and(
+      eq(salonsTable.id, orderApprovalRequestsTable.salonId),
+      eq(salonsTable.ownerId, access.user.id),
+    ))
+    .where(and(
+      eq(orderApprovalRequestsTable.id, req.params.requestId),
+      scope === "all" ? undefined : eq(orderApprovalRequestsTable.salonId, access.salon.id),
+    ))
     .limit(1);
   const row = rows[0];
   if (!row) { res.status(404).json({ error: "Zahtev nije pronađen." }); return; }
   const lines = await db.select().from(orderApprovalRequestLinesTable)
     .where(eq(orderApprovalRequestLinesTable.requestId, row.request.id));
-  res.json(approvalRequestDto(row.request, row.employeeName, lines));
+  res.json(approvalRequestDto(row.request, row.employeeName, lines, row.locationName));
 });
 
 router.post("/shop/approval-requests/:requestId/reject", async (req, res): Promise<void> => {
@@ -17358,8 +17927,14 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
 
   // Validate all employees belong to caller's salon
   const employees = employeeIds.length
-    ? await db.select().from(employeesTable)
-        .where(and(inArray(employeesTable.id, employeeIds), eq(employeesTable.salonId, salon.id), eq(employeesTable.active, true)))
+    ? await db.select({ employee: employeesTable }).from(employeesTable)
+        .innerJoin(employeeLocationAssignmentsTable, and(
+          eq(employeeLocationAssignmentsTable.employeeId, employeesTable.id),
+          eq(employeeLocationAssignmentsTable.salonId, salon.id),
+          eq(employeeLocationAssignmentsTable.active, true),
+        ))
+        .where(and(inArray(employeesTable.id, employeeIds), eq(employeesTable.active, true)))
+        .then((rows) => rows.map((row) => row.employee))
     : [];
   if (employees.length !== employeeIds.length) {
     res.status(403).json({ error: "Jedan ili više zaposlenih ne pripada vašem salonu ili nisu aktivni." }); return;

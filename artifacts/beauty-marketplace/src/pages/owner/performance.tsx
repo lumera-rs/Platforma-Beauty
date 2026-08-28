@@ -5,6 +5,7 @@ import {
   useOwnerListEmployeePerformance,
   useOwnerUpdateEmployeeCommission,
   useGetCurrentUser,
+  getOwnerListEmployeePerformanceQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ export default function OwnerPerformance() {
   const { toast } = useToast();
 
   const [dateRange, setDateRange] = useState<"this_month" | "last_month" | "last_30">("this_month");
+  const [scope, setScope] = useState<"location" | "all">("location");
   
   const rangeParams = useMemo(() => {
     const today = new Date();
@@ -47,12 +49,15 @@ export default function OwnerPerformance() {
     };
   }, [dateRange]);
 
-  const { data: metrics, isLoading } = useOwnerListEmployeePerformance(
-    rangeParams,
+  const performanceParams = useMemo(() => ({ ...rangeParams, scope }), [rangeParams, scope]);
+  const { data: performance, isLoading } = useOwnerListEmployeePerformance(
+    performanceParams,
     {
       query: {
         enabled: !!userResp?.user,
-        queryKey: ['owner-employee-performance', rangeParams.from, rangeParams.to]
+        // Scope is part of the cache identity: all-location figures must never
+        // be shown briefly for the active location (or vice versa).
+        queryKey: getOwnerListEmployeePerformanceQueryKey(performanceParams)
       }
     }
   );
@@ -97,8 +102,9 @@ export default function OwnerPerformance() {
     });
   };
 
-  const totalRevenue = metrics?.reduce((acc, m) => acc + m.totalRevenue, 0) || 0;
-  const totalCommission = metrics?.reduce((acc, m) => acc + m.estimatedCommission, 0) || 0;
+  const metrics = performance?.employees ?? [];
+  const totalRevenue = metrics.reduce((acc, m) => acc + m.totalRevenue, 0);
+  const totalCommission = metrics.reduce((acc, m) => acc + m.estimatedCommission, 0);
   
   return (
     <BusinessLayout>
@@ -111,15 +117,21 @@ export default function OwnerPerformance() {
               <h1 className="text-3xl font-serif font-bold text-foreground">Performanse tima</h1>
               <p className="text-muted-foreground mt-1">Pratite učinak zaposlenih i obračunajte provizije.</p>
             </div>
-            <select
-              className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
-              value={dateRange}
-              onChange={e => setDateRange(e.target.value as any)}
-            >
-              <option value="this_month">Ovaj mesec</option>
-              <option value="last_month">Prošli mesec</option>
-              <option value="last_30">Poslednjih 30 dana</option>
-            </select>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="inline-flex rounded-lg border bg-muted/40 p-1" aria-label="Opseg performansi">
+                <Button type="button" size="sm" variant={scope === "location" ? "default" : "ghost"} aria-pressed={scope === "location"} onClick={() => setScope("location")}>Aktivna lokacija</Button>
+                <Button type="button" size="sm" variant={scope === "all" ? "default" : "ghost"} aria-pressed={scope === "all"} onClick={() => setScope("all")}>Sve lokacije</Button>
+              </div>
+              <select
+                className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+                value={dateRange}
+                onChange={e => setDateRange(e.target.value as "this_month" | "last_month" | "last_30")}
+              >
+                <option value="this_month">Ovaj mesec</option>
+                <option value="last_month">Prošli mesec</option>
+                <option value="last_30">Poslednjih 30 dana</option>
+              </select>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -150,11 +162,11 @@ export default function OwnerPerformance() {
             <CardContent className="p-0">
               {isLoading ? (
                 <div className="flex justify-center p-12"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
-              ) : metrics?.length === 0 ? (
+              ) : metrics.length === 0 ? (
                 <div className="p-12 text-center text-muted-foreground">Nema podataka za odabrani period.</div>
               ) : (
                 <div className="divide-y">
-                  {metrics?.map((m: any) => (
+                  {metrics.map((m) => (
                     <div key={m.employeeId} className="p-4 flex flex-col lg:flex-row gap-6 hover:bg-muted/10 transition-colors">
                       <div className="flex-1">
                         <div className="flex items-center justify-between mb-3">
@@ -207,6 +219,20 @@ export default function OwnerPerformance() {
                           <span>No-show: {m.noShowCount}</span>
                           <span>Otkazano: {m.cancelledCount}</span>
                         </div>
+                        {scope === "all" && m.locationBreakdown.length > 0 && (
+                          <div className="mt-3 rounded-lg border bg-muted/10">
+                            <p className="border-b px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Po lokaciji</p>
+                            <div className="divide-y">
+                              {m.locationBreakdown.map((item) => (
+                                <div key={item.salonId} className="grid gap-1 px-3 py-2 text-sm sm:grid-cols-[1fr_auto_auto] sm:gap-4">
+                                  <span className="font-medium">{item.locationName}</span>
+                                  <span>{item.completedAppointments} termina</span>
+                                  <span className="font-semibold">{item.totalRevenue.toLocaleString()} RSD</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}

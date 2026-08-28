@@ -1418,6 +1418,11 @@ export interface MediaAsset {
 export interface EmployeeDeactivationPreview {
   employeeId: string;
   employeeName: string;
+  /**
+     * Exact salon location that owns this request; present for owner queue reads.
+     * @nullable
+     */
+  locationName?: string | null;
   /** @minimum 0 */
   futureAppointmentCount: number;
   hasLoginAccount: boolean;
@@ -2748,6 +2753,7 @@ export interface ApprovalRequest {
   status: ApprovalRequestStatus;
   employeeId: string;
   employeeName: string;
+  locationName: string;
   /** @minimum 0 */
   quote: number;
   quoteVersion: string;
@@ -7637,6 +7643,16 @@ export const EmployeePerformanceMetricsCommissionType = {
   fixed_per_treatment: 'fixed_per_treatment',
 } as const;
 
+export type EmployeePerformanceMetricsLocationBreakdownItem = {
+  salonId: string;
+  locationName: string;
+  completedAppointments: number;
+  totalRevenue: number;
+  estimatedCommission: number;
+  noShowCount: number;
+  cancelledCount: number;
+};
+
 export interface EmployeePerformanceMetrics {
   employeeId: string;
   employeeName: string;
@@ -7658,6 +7674,27 @@ export interface EmployeePerformanceMetrics {
      * @maximum 1
      */
   rebookingRate: number;
+  /** Exact-location metrics for this employee within the selected scope. */
+  locationBreakdown: EmployeePerformanceMetricsLocationBreakdownItem[];
+}
+
+export type EmployeePerformanceResponseScope = typeof EmployeePerformanceResponseScope[keyof typeof EmployeePerformanceResponseScope];
+
+
+export const EmployeePerformanceResponseScope = {
+  location: 'location',
+  all: 'all',
+} as const;
+
+export type EmployeePerformanceResponseLocationsItem = {
+  id: string;
+  name: string;
+};
+
+export interface EmployeePerformanceResponse {
+  scope: EmployeePerformanceResponseScope;
+  locations: EmployeePerformanceResponseLocationsItem[];
+  employees: EmployeePerformanceMetrics[];
 }
 
 export type EmployeeCommissionSettingsCommissionType = typeof EmployeeCommissionSettingsCommissionType[keyof typeof EmployeeCommissionSettingsCommissionType];
@@ -8414,6 +8451,124 @@ export interface SalonCalendarDayEmployee {
   unavailable: boolean;
   /** @nullable */
   unavailableReason: string | null;
+}
+
+export interface EmployeeLocationScheduleWindow {
+  /**
+     * @minimum 1
+     * @maximum 7
+     */
+  weekday: number;
+  /** @pattern ^\d{2}:\d{2}$ */
+  startTime: string;
+  /** @pattern ^\d{2}:\d{2}$ */
+  endTime: string;
+  /**
+     * @nullable
+     * @pattern ^\d{2}:\d{2}$
+     */
+  breakStart: string | null;
+  /**
+     * @nullable
+     * @pattern ^\d{2}:\d{2}$
+     */
+  breakEnd: string | null;
+}
+
+export interface EmployeeLocationScheduleUpdate {
+  windows: EmployeeLocationScheduleWindow[];
+}
+
+export interface EmployeeLocationAssignmentUpdate {
+  active?: boolean;
+  isDefault?: boolean;
+}
+
+export interface EmployeeLocationAssignment {
+  employeeId: string;
+  salonId: string;
+  /** Compatibility alias for salonId. */
+  locationId: string;
+  locationName: string;
+  active: boolean;
+  isDefault: boolean;
+  scheduleWindows: EmployeeLocationScheduleWindow[];
+}
+
+export interface CreateSalonLocationInput {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  idempotencyKey: string;
+  /** @nullable */
+  sourceSalonId?: string | null;
+  copyServices?: boolean;
+  copyPackages?: boolean;
+  activateAfterCreate?: boolean;
+  /**
+     * @minLength 1
+     * @maxLength 160
+     */
+  name: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  city: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  municipality: string;
+  /**
+     * @minLength 1
+     * @maxLength 250
+     */
+  address: string;
+  /**
+     * @maxLength 30
+     * @nullable
+     */
+  postalCode?: string | null;
+  /**
+     * @minLength 1
+     * @maxLength 50
+     */
+  phone: string;
+  /**
+     * @minLength 3
+     * @maxLength 254
+     */
+  email: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  shortDescription: string;
+  /**
+     * @minLength 1
+     * @maxLength 10000
+     */
+  description: string;
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  imageUrl: string;
+}
+
+export interface CreateSalonLocationResult {
+  location: SalonProfile;
+  /** Compatibility alias for location. */
+  salon: SalonProfile;
+  /** @minimum 0 */
+  copiedServices: number;
+  /** @minimum 0 */
+  copiedPackages: number;
+  /** @minimum 0 */
+  copiedPackageServiceLinks: number;
+  warnings: string[];
 }
 
 export interface WidgetAppointmentCreate {
@@ -10402,6 +10557,30 @@ page?: number;
 pageSize?: number;
 };
 
+export type ListShopApprovalRequestsParams = {
+scope?: ListShopApprovalRequestsScope;
+};
+
+export type ListShopApprovalRequestsScope = typeof ListShopApprovalRequestsScope[keyof typeof ListShopApprovalRequestsScope];
+
+
+export const ListShopApprovalRequestsScope = {
+  location: 'location',
+  all: 'all',
+} as const;
+
+export type GetShopApprovalRequestParams = {
+scope?: GetShopApprovalRequestScope;
+};
+
+export type GetShopApprovalRequestScope = typeof GetShopApprovalRequestScope[keyof typeof GetShopApprovalRequestScope];
+
+
+export const GetShopApprovalRequestScope = {
+  location: 'location',
+  all: 'all',
+} as const;
+
 export type GetShopCheckoutPreviewParams = {
 /**
  * @minimum 0
@@ -11101,9 +11280,18 @@ export const OwnerListCustomerPackagesStatus = {
 } as const;
 
 export type OwnerListEmployeePerformanceParams = {
+scope?: OwnerListEmployeePerformanceScope;
 from?: string;
 to?: string;
 };
+
+export type OwnerListEmployeePerformanceScope = typeof OwnerListEmployeePerformanceScope[keyof typeof OwnerListEmployeePerformanceScope];
+
+
+export const OwnerListEmployeePerformanceScope = {
+  location: 'location',
+  all: 'all',
+} as const;
 
 export type EmployeeGetMyPerformanceParams = {
 from?: string;

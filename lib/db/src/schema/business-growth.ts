@@ -302,6 +302,21 @@ export const packageServiceLinksTable = pgTable("package_service_links", {
   index("package_service_links_service_idx").on(table.serviceId),
 ]);
 
+/**
+ * Durable owner-scoped idempotency evidence for creating an additional salon
+ * location. Stored response data makes a successful retry a true replay.
+ */
+export const salonLocationCreationRequestsTable = pgTable("salon_location_creation_requests", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  ownerId: uuid("owner_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  idempotencyKey: text("idempotency_key").notNull(),
+  requestHash: text("request_hash").notNull(),
+  response: jsonb("response").$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("salon_location_creation_requests_owner_key_unique").on(table.ownerId, table.idempotencyKey),
+]);
+
 // ---------------------------------------------------------------------------
 // Purchase-time snapshot of covered services (immutable after purchase)
 //

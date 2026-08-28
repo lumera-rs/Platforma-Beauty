@@ -30,7 +30,7 @@ export type SalonOwnerNavLink = {
 };
 
 export type SalonOwnerNavSection = {
-  label: "Pregled" | "Salon" | "Prodaja" | "Rast" | "Marketplace" | "Ostalo";
+  label: "Pregled" | "Lokacija" | "Prodaja" | "Rast" | "Marketplace" | "Ostalo";
   items: SalonOwnerNavLink[];
 };
 
@@ -43,11 +43,11 @@ export const salonOwnerNavSections: SalonOwnerNavSection[] = [
     ],
   },
   {
-    label: "Salon",
+    label: "Lokacija",
     items: [
       { href: "/vlasnik/usluge", label: "Usluge", guideId: "vl-usluge", icon: Settings },
       { href: "/vlasnik/resursi", label: "Resursi", guideId: "vl-resursi", icon: LayoutGrid },
-      { href: "/vlasnik/profil", label: "Profil salona", guideId: "vl-profil", icon: Store },
+      { href: "/vlasnik/profil", label: "Profil lokacije", guideId: "vl-profil", icon: Store },
       { href: "/vlasnik/zaposleni", label: "Zaposleni", guideId: "vl-zaposleni", icon: Users },
       { href: "/vlasnik/radno-vreme", label: "Radno vreme", guideId: "vl-radno-vreme", icon: Clock3 },
       { href: "/vlasnik/inventar", label: "Zalihe", guideId: "vl-inventar", icon: Package },

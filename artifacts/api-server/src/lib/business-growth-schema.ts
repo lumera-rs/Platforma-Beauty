@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 74;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 76;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -1768,6 +1768,19 @@ function tableStatements(s: string): string[] {
        END IF;
      END $$`,
     `CREATE UNIQUE INDEX IF NOT EXISTS package_service_links_unique ON ${s}.package_service_links (package_id, service_id)`,
+    // v76 — owner-scoped, durable idempotency/replay evidence for the
+    // additional-location command. Response is retained verbatim so retries do
+    // not create another independently-operated location.
+    `CREATE TABLE IF NOT EXISTS ${s}.salon_location_creation_requests (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      owner_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE,
+      idempotency_key text NOT NULL,
+      request_hash text NOT NULL,
+      response jsonb NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS salon_location_creation_requests_owner_key_unique
+      ON ${s}.salon_location_creation_requests (owner_id, idempotency_key)`,
     `CREATE INDEX IF NOT EXISTS package_service_links_service_idx ON ${s}.package_service_links (service_id)`,
 
     // ── customer_package_purchases (referenced by snapshot + redemptions) ─────
@@ -3398,6 +3411,63 @@ function tableStatements(s: string): string[] {
        VALIDATE CONSTRAINT shop_settings_retail_cart_reminder_delay_check`,
     `ALTER TABLE ${s}.shop_settings
        VALIDATE CONSTRAINT shop_settings_retail_cart_reminder_template_check`,
+    // v75 — additive location assignments and schedules. employees.salon_id
+    // remains the legacy/default location; no historic appointment is moved.
+    `CREATE TABLE IF NOT EXISTS ${s}.employee_location_assignments (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      employee_id uuid NOT NULL REFERENCES ${s}.employees(id) ON DELETE CASCADE,
+      salon_id uuid NOT NULL REFERENCES ${s}.salons(id) ON DELETE CASCADE,
+      active boolean NOT NULL DEFAULT true,
+      is_default boolean NOT NULL DEFAULT false,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      UNIQUE (employee_id, salon_id)
+    )`,
+    `CREATE INDEX IF NOT EXISTS employee_location_assignments_salon_active_idx
+      ON ${s}.employee_location_assignments (salon_id, active)`,
+    `CREATE INDEX IF NOT EXISTS employee_location_assignments_employee_active_idx
+      ON ${s}.employee_location_assignments (employee_id, active)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS employee_location_assignments_one_default_unique
+      ON ${s}.employee_location_assignments (employee_id) WHERE is_default = true`,
+    // One-time-safe legacy backfill. Conflict makes repeated startup a no-op
+    // and never reactivates an owner-deactivated assignment.
+    `INSERT INTO ${s}.employee_location_assignments
+       (employee_id, salon_id, active, is_default)
+     SELECT id, salon_id, true, true FROM ${s}.employees
+     ON CONFLICT (employee_id, salon_id) DO NOTHING`,
+    `CREATE TABLE IF NOT EXISTS ${s}.employee_location_schedules (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      employee_id uuid NOT NULL REFERENCES ${s}.employees(id) ON DELETE CASCADE,
+      salon_id uuid NOT NULL REFERENCES ${s}.salons(id) ON DELETE CASCADE,
+      weekday integer NOT NULL,
+      start_time text NOT NULL,
+      end_time text NOT NULL,
+      break_start text,
+      break_end text,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      UNIQUE (employee_id, salon_id, weekday, start_time, end_time)
+    )`,
+    `CREATE INDEX IF NOT EXISTS employee_location_schedules_employee_salon_weekday_idx
+      ON ${s}.employee_location_schedules (employee_id, salon_id, weekday)`,
+    // Preserve legacy schedules as the schedule of the legacy/default salon.
+    // Some historical schemas predate employee_schedules entirely, so defer
+    // parsing the legacy-table query until the guarded branch is entered.
+    `DO $$ BEGIN
+       IF to_regclass('${s}.employee_schedules') IS NOT NULL THEN
+         INSERT INTO ${s}.employee_location_schedules
+           (employee_id, salon_id, weekday, start_time, end_time, break_start, break_end)
+         SELECT es.employee_id, e.salon_id, es.weekday, es.start_time, es.end_time, es.break_start, es.break_end
+         FROM ${s}.employee_schedules es
+         INNER JOIN ${s}.employees e ON e.id = es.employee_id
+         ON CONFLICT (employee_id, salon_id, weekday, start_time, end_time) DO NOTHING;
+       END IF;
+     END $$`,
+    // A NULL location continues to mean leave at every location.
+    `ALTER TABLE ${s}.employee_time_off ADD COLUMN IF NOT EXISTS salon_id uuid
+      REFERENCES ${s}.salons(id) ON DELETE CASCADE`,
+    `CREATE INDEX IF NOT EXISTS employee_time_off_employee_salon_start_idx
+      ON ${s}.employee_time_off (employee_id, salon_id, start_date)`,
     // v74 — every aftercare FK gets a leading index so deletes/updates on its
     // parent cannot force scans as recommendation and delivery history grows.
   ];

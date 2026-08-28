@@ -3259,6 +3259,402 @@ export const ListSalonEmployeesResponse = zod.array(ListSalonEmployeesResponseIt
 
 
 /**
+ * @summary Create an additional independently operated location for the current owner
+ */
+export const createSalonLocationBodyIdempotencyKeyMax = 200;
+
+export const createSalonLocationBodyCopyServicesDefault = false;
+export const createSalonLocationBodyCopyPackagesDefault = false;
+export const createSalonLocationBodyActivateAfterCreateDefault = false;
+export const createSalonLocationBodyNameMax = 160;
+
+export const createSalonLocationBodyCityMax = 100;
+
+export const createSalonLocationBodyMunicipalityMax = 100;
+
+export const createSalonLocationBodyAddressMax = 250;
+
+export const createSalonLocationBodyPostalCodeMax = 30;
+
+export const createSalonLocationBodyPhoneMax = 50;
+
+export const createSalonLocationBodyEmailMin = 3;
+export const createSalonLocationBodyEmailMax = 254;
+
+export const createSalonLocationBodyShortDescriptionMax = 500;
+
+export const createSalonLocationBodyDescriptionMax = 10000;
+
+export const createSalonLocationBodyImageUrlMax = 2000;
+
+
+
+export const CreateSalonLocationBody = zod.object({
+  "idempotencyKey": zod.string().min(1).max(createSalonLocationBodyIdempotencyKeyMax),
+  "sourceSalonId": zod.string().nullish(),
+  "copyServices": zod.boolean().default(createSalonLocationBodyCopyServicesDefault),
+  "copyPackages": zod.boolean().default(createSalonLocationBodyCopyPackagesDefault),
+  "activateAfterCreate": zod.boolean().default(createSalonLocationBodyActivateAfterCreateDefault),
+  "name": zod.string().min(1).max(createSalonLocationBodyNameMax),
+  "city": zod.string().min(1).max(createSalonLocationBodyCityMax),
+  "municipality": zod.string().min(1).max(createSalonLocationBodyMunicipalityMax),
+  "address": zod.string().min(1).max(createSalonLocationBodyAddressMax),
+  "postalCode": zod.string().max(createSalonLocationBodyPostalCodeMax).nullish(),
+  "phone": zod.string().min(1).max(createSalonLocationBodyPhoneMax),
+  "email": zod.string().min(createSalonLocationBodyEmailMin).max(createSalonLocationBodyEmailMax),
+  "shortDescription": zod.string().min(1).max(createSalonLocationBodyShortDescriptionMax),
+  "description": zod.string().min(1).max(createSalonLocationBodyDescriptionMax),
+  "imageUrl": zod.string().min(1).max(createSalonLocationBodyImageUrlMax)
+})
+
+
+export const createSalonLocationResponseLocationTwoTopServicesItemPriceMin = 0;
+
+export const createSalonLocationResponseLocationTwoTopServicesItemPromoPriceMin = 0;
+
+
+export const createSalonLocationResponseLocationTwoServicesItemHomeServiceFeeMin = 0;
+
+export const createSalonLocationResponseLocationTwoServicesItemHomeServiceMinimumOrderMin = 0;
+
+export const createSalonLocationResponseLocationTwoServicesItemResourceRequirementsItemQuantityMultipleOf = 1;
+
+export const createSalonLocationResponseLocationTwoReviewsItemRatingMax = 5;
+export const createSalonLocationResponseLocationTwoReviewsItemRatingMultipleOf = 1;
+
+export const createSalonLocationResponseLocationTwoReviewsItemDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const createSalonLocationResponseLocationTwoReturnClientRateMin = 0;
+export const createSalonLocationResponseLocationTwoReturnClientRateMax = 100;
+
+export const createSalonLocationResponseLocationTwoHomeServiceRadiusKmMax = 100;
+
+
+export const createSalonLocationResponseSalonTwoTopServicesItemPriceMin = 0;
+
+export const createSalonLocationResponseSalonTwoTopServicesItemPromoPriceMin = 0;
+
+
+export const createSalonLocationResponseSalonTwoServicesItemHomeServiceFeeMin = 0;
+
+export const createSalonLocationResponseSalonTwoServicesItemHomeServiceMinimumOrderMin = 0;
+
+export const createSalonLocationResponseSalonTwoServicesItemResourceRequirementsItemQuantityMultipleOf = 1;
+
+export const createSalonLocationResponseSalonTwoReviewsItemRatingMax = 5;
+export const createSalonLocationResponseSalonTwoReviewsItemRatingMultipleOf = 1;
+
+export const createSalonLocationResponseSalonTwoReviewsItemDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const createSalonLocationResponseSalonTwoReturnClientRateMin = 0;
+export const createSalonLocationResponseSalonTwoReturnClientRateMax = 100;
+
+export const createSalonLocationResponseSalonTwoHomeServiceRadiusKmMax = 100;
+
+export const createSalonLocationResponseCopiedServicesMin = 0;
+
+export const createSalonLocationResponseCopiedPackagesMin = 0;
+
+export const createSalonLocationResponseCopiedPackageServiceLinksMin = 0;
+
+
+
+export const CreateSalonLocationResponse = zod.object({
+  "location": zod.object({
+  "id": zod.string(),
+  "slug": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "municipality": zod.string(),
+  "imageUrl": zod.string(),
+  "rating": zod.number(),
+  "reviewCount": zod.number(),
+  "shortDescription": zod.string(),
+  "popularServices": zod.array(zod.string()),
+  "startingPrice": zod.number(),
+  "earliestSlot": zod.string().nullish(),
+  "homeService": zod.boolean(),
+  "featured": zod.boolean(),
+  "topSalon": zod.boolean(),
+  "acceptsCards": zod.boolean(),
+  "instantBooking": zod.boolean(),
+  "servesMen": zod.boolean(),
+  "isVerified": zod.boolean(),
+  "hasDiscount": zod.boolean(),
+  "openSunday": zod.boolean(),
+  "lastBookedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+}).and(zod.object({
+  "gallery": zod.array(zod.string()),
+  "videoUrl": zod.string().nullable(),
+  "description": zod.string(),
+  "topServices": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "durationMinutes": zod.number().min(1),
+  "price": zod.number().min(createSalonLocationResponseLocationTwoTopServicesItemPriceMin),
+  "promoPrice": zod.number().min(createSalonLocationResponseLocationTwoTopServicesItemPromoPriceMin).nullable(),
+  "bookingCount": zod.number().min(1)
+})),
+  "hours": zod.array(zod.object({
+  "day": zod.string(),
+  "open": zod.string(),
+  "close": zod.string(),
+  "closed": zod.boolean()
+})),
+  "staff": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "role": zod.string(),
+  "bio": zod.string(),
+  "avatarUrl": zod.string(),
+  "specialties": zod.array(zod.string()),
+  "serviceIds": zod.array(zod.string()),
+  "serviceNames": zod.array(zod.string()),
+  "canOrderIndependently": zod.boolean().describe('Owner-controlled B2B purchasing permission.')
+})),
+  "services": zod.array(zod.object({
+  "id": zod.string(),
+  "category": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "durationMinutes": zod.number(),
+  "price": zod.number(),
+  "promoPrice": zod.number().nullish(),
+  "tags": zod.array(zod.string()).optional(),
+  "packageTreatments": zod.number().nullish(),
+  "imageUrl": zod.string(),
+  "active": zod.boolean(),
+  "homeServiceAvailable": zod.boolean(),
+  "homeServiceFee": zod.number().min(createSalonLocationResponseLocationTwoServicesItemHomeServiceFeeMin),
+  "homeServiceMinimumOrder": zod.number().min(createSalonLocationResponseLocationTwoServicesItemHomeServiceMinimumOrderMin).nullable(),
+  "resourceRequirements": zod.array(zod.object({
+  "resourceId": zod.string(),
+  "quantity": zod.number().min(1).multipleOf(createSalonLocationResponseLocationTwoServicesItemResourceRequirementsItemQuantityMultipleOf)
+}))
+})),
+  "reviews": zod.array(zod.object({
+  "id": zod.string(),
+  "authorName": zod.string(),
+  "avatarUrl": zod.string().nullable(),
+  "verifiedBooking": zod.boolean(),
+  "rating": zod.number().min(1).max(createSalonLocationResponseLocationTwoReviewsItemRatingMax).multipleOf(createSalonLocationResponseLocationTwoReviewsItemRatingMultipleOf),
+  "text": zod.string(),
+  "date": zod.string().regex(createSalonLocationResponseLocationTwoReviewsItemDateRegExp),
+  "serviceName": zod.string()
+})),
+  "returnClientRate": zod.number().min(createSalonLocationResponseLocationTwoReturnClientRateMin).max(createSalonLocationResponseLocationTwoReturnClientRateMax).nullable(),
+  "homeServiceRadiusKm": zod.number().min(1).max(createSalonLocationResponseLocationTwoHomeServiceRadiusKmMax)
+})),
+  "salon": zod.object({
+  "id": zod.string(),
+  "slug": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "municipality": zod.string(),
+  "imageUrl": zod.string(),
+  "rating": zod.number(),
+  "reviewCount": zod.number(),
+  "shortDescription": zod.string(),
+  "popularServices": zod.array(zod.string()),
+  "startingPrice": zod.number(),
+  "earliestSlot": zod.string().nullish(),
+  "homeService": zod.boolean(),
+  "featured": zod.boolean(),
+  "topSalon": zod.boolean(),
+  "acceptsCards": zod.boolean(),
+  "instantBooking": zod.boolean(),
+  "servesMen": zod.boolean(),
+  "isVerified": zod.boolean(),
+  "hasDiscount": zod.boolean(),
+  "openSunday": zod.boolean(),
+  "lastBookedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+}).and(zod.object({
+  "gallery": zod.array(zod.string()),
+  "videoUrl": zod.string().nullable(),
+  "description": zod.string(),
+  "topServices": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "durationMinutes": zod.number().min(1),
+  "price": zod.number().min(createSalonLocationResponseSalonTwoTopServicesItemPriceMin),
+  "promoPrice": zod.number().min(createSalonLocationResponseSalonTwoTopServicesItemPromoPriceMin).nullable(),
+  "bookingCount": zod.number().min(1)
+})),
+  "hours": zod.array(zod.object({
+  "day": zod.string(),
+  "open": zod.string(),
+  "close": zod.string(),
+  "closed": zod.boolean()
+})),
+  "staff": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "role": zod.string(),
+  "bio": zod.string(),
+  "avatarUrl": zod.string(),
+  "specialties": zod.array(zod.string()),
+  "serviceIds": zod.array(zod.string()),
+  "serviceNames": zod.array(zod.string()),
+  "canOrderIndependently": zod.boolean().describe('Owner-controlled B2B purchasing permission.')
+})),
+  "services": zod.array(zod.object({
+  "id": zod.string(),
+  "category": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "durationMinutes": zod.number(),
+  "price": zod.number(),
+  "promoPrice": zod.number().nullish(),
+  "tags": zod.array(zod.string()).optional(),
+  "packageTreatments": zod.number().nullish(),
+  "imageUrl": zod.string(),
+  "active": zod.boolean(),
+  "homeServiceAvailable": zod.boolean(),
+  "homeServiceFee": zod.number().min(createSalonLocationResponseSalonTwoServicesItemHomeServiceFeeMin),
+  "homeServiceMinimumOrder": zod.number().min(createSalonLocationResponseSalonTwoServicesItemHomeServiceMinimumOrderMin).nullable(),
+  "resourceRequirements": zod.array(zod.object({
+  "resourceId": zod.string(),
+  "quantity": zod.number().min(1).multipleOf(createSalonLocationResponseSalonTwoServicesItemResourceRequirementsItemQuantityMultipleOf)
+}))
+})),
+  "reviews": zod.array(zod.object({
+  "id": zod.string(),
+  "authorName": zod.string(),
+  "avatarUrl": zod.string().nullable(),
+  "verifiedBooking": zod.boolean(),
+  "rating": zod.number().min(1).max(createSalonLocationResponseSalonTwoReviewsItemRatingMax).multipleOf(createSalonLocationResponseSalonTwoReviewsItemRatingMultipleOf),
+  "text": zod.string(),
+  "date": zod.string().regex(createSalonLocationResponseSalonTwoReviewsItemDateRegExp),
+  "serviceName": zod.string()
+})),
+  "returnClientRate": zod.number().min(createSalonLocationResponseSalonTwoReturnClientRateMin).max(createSalonLocationResponseSalonTwoReturnClientRateMax).nullable(),
+  "homeServiceRadiusKm": zod.number().min(1).max(createSalonLocationResponseSalonTwoHomeServiceRadiusKmMax)
+})).describe('Compatibility alias for location.'),
+  "copiedServices": zod.number().int().min(createSalonLocationResponseCopiedServicesMin),
+  "copiedPackages": zod.number().int().min(createSalonLocationResponseCopiedPackagesMin),
+  "copiedPackageServiceLinks": zod.number().int().min(createSalonLocationResponseCopiedPackageServiceLinksMin),
+  "warnings": zod.array(zod.string())
+})
+
+
+/**
+ * @summary List owner-managed location assignments for an employee
+ */
+export const ListEmployeeLocationAssignmentsParams = zod.object({
+  "employeeId": zod.coerce.string()
+})
+
+export const listEmployeeLocationAssignmentsResponseScheduleWindowsItemWeekdayMax = 7;
+
+export const listEmployeeLocationAssignmentsResponseScheduleWindowsItemStartTimeRegExp = new RegExp('^\\d{2}:\\d{2}$');
+export const listEmployeeLocationAssignmentsResponseScheduleWindowsItemEndTimeRegExp = new RegExp('^\\d{2}:\\d{2}$');
+export const listEmployeeLocationAssignmentsResponseScheduleWindowsItemBreakStartRegExp = new RegExp('^\\d{2}:\\d{2}$');
+export const listEmployeeLocationAssignmentsResponseScheduleWindowsItemBreakEndRegExp = new RegExp('^\\d{2}:\\d{2}$');
+
+
+export const ListEmployeeLocationAssignmentsResponseItem = zod.object({
+  "employeeId": zod.string(),
+  "salonId": zod.string(),
+  "locationId": zod.string().describe('Compatibility alias for salonId.'),
+  "locationName": zod.string(),
+  "active": zod.boolean(),
+  "isDefault": zod.boolean(),
+  "scheduleWindows": zod.array(zod.object({
+  "weekday": zod.number().int().min(1).max(listEmployeeLocationAssignmentsResponseScheduleWindowsItemWeekdayMax),
+  "startTime": zod.string().regex(listEmployeeLocationAssignmentsResponseScheduleWindowsItemStartTimeRegExp),
+  "endTime": zod.string().regex(listEmployeeLocationAssignmentsResponseScheduleWindowsItemEndTimeRegExp),
+  "breakStart": zod.string().regex(listEmployeeLocationAssignmentsResponseScheduleWindowsItemBreakStartRegExp).nullable(),
+  "breakEnd": zod.string().regex(listEmployeeLocationAssignmentsResponseScheduleWindowsItemBreakEndRegExp).nullable()
+}))
+})
+export const ListEmployeeLocationAssignmentsResponse = zod.array(ListEmployeeLocationAssignmentsResponseItem)
+
+
+/**
+ * @summary Create or update an employee location assignment
+ */
+export const UpsertEmployeeLocationAssignmentParams = zod.object({
+  "employeeId": zod.coerce.string(),
+  "salonId": zod.coerce.string()
+})
+
+export const UpsertEmployeeLocationAssignmentBody = zod.object({
+  "active": zod.boolean().optional(),
+  "isDefault": zod.boolean().optional()
+})
+
+export const upsertEmployeeLocationAssignmentResponseScheduleWindowsItemWeekdayMax = 7;
+
+export const upsertEmployeeLocationAssignmentResponseScheduleWindowsItemStartTimeRegExp = new RegExp('^\\d{2}:\\d{2}$');
+export const upsertEmployeeLocationAssignmentResponseScheduleWindowsItemEndTimeRegExp = new RegExp('^\\d{2}:\\d{2}$');
+export const upsertEmployeeLocationAssignmentResponseScheduleWindowsItemBreakStartRegExp = new RegExp('^\\d{2}:\\d{2}$');
+export const upsertEmployeeLocationAssignmentResponseScheduleWindowsItemBreakEndRegExp = new RegExp('^\\d{2}:\\d{2}$');
+
+
+export const UpsertEmployeeLocationAssignmentResponse = zod.object({
+  "employeeId": zod.string(),
+  "salonId": zod.string(),
+  "locationId": zod.string().describe('Compatibility alias for salonId.'),
+  "locationName": zod.string(),
+  "active": zod.boolean(),
+  "isDefault": zod.boolean(),
+  "scheduleWindows": zod.array(zod.object({
+  "weekday": zod.number().int().min(1).max(upsertEmployeeLocationAssignmentResponseScheduleWindowsItemWeekdayMax),
+  "startTime": zod.string().regex(upsertEmployeeLocationAssignmentResponseScheduleWindowsItemStartTimeRegExp),
+  "endTime": zod.string().regex(upsertEmployeeLocationAssignmentResponseScheduleWindowsItemEndTimeRegExp),
+  "breakStart": zod.string().regex(upsertEmployeeLocationAssignmentResponseScheduleWindowsItemBreakStartRegExp).nullable(),
+  "breakEnd": zod.string().regex(upsertEmployeeLocationAssignmentResponseScheduleWindowsItemBreakEndRegExp).nullable()
+}))
+})
+
+
+/**
+ * @summary Replace weekly schedule windows for one active employee location assignment
+ */
+export const ReplaceEmployeeLocationScheduleParams = zod.object({
+  "employeeId": zod.coerce.string(),
+  "salonId": zod.coerce.string()
+})
+
+export const replaceEmployeeLocationScheduleBodyWindowsItemWeekdayMax = 7;
+
+export const replaceEmployeeLocationScheduleBodyWindowsItemStartTimeRegExp = new RegExp('^\\d{2}:\\d{2}$');
+export const replaceEmployeeLocationScheduleBodyWindowsItemEndTimeRegExp = new RegExp('^\\d{2}:\\d{2}$');
+export const replaceEmployeeLocationScheduleBodyWindowsItemBreakStartRegExp = new RegExp('^\\d{2}:\\d{2}$');
+export const replaceEmployeeLocationScheduleBodyWindowsItemBreakEndRegExp = new RegExp('^\\d{2}:\\d{2}$');
+
+
+export const ReplaceEmployeeLocationScheduleBody = zod.object({
+  "windows": zod.array(zod.object({
+  "weekday": zod.number().int().min(1).max(replaceEmployeeLocationScheduleBodyWindowsItemWeekdayMax),
+  "startTime": zod.string().regex(replaceEmployeeLocationScheduleBodyWindowsItemStartTimeRegExp),
+  "endTime": zod.string().regex(replaceEmployeeLocationScheduleBodyWindowsItemEndTimeRegExp),
+  "breakStart": zod.string().regex(replaceEmployeeLocationScheduleBodyWindowsItemBreakStartRegExp).nullable(),
+  "breakEnd": zod.string().regex(replaceEmployeeLocationScheduleBodyWindowsItemBreakEndRegExp).nullable()
+}))
+})
+
+export const replaceEmployeeLocationScheduleResponseWeekdayMax = 7;
+
+export const replaceEmployeeLocationScheduleResponseStartTimeRegExp = new RegExp('^\\d{2}:\\d{2}$');
+export const replaceEmployeeLocationScheduleResponseEndTimeRegExp = new RegExp('^\\d{2}:\\d{2}$');
+export const replaceEmployeeLocationScheduleResponseBreakStartRegExp = new RegExp('^\\d{2}:\\d{2}$');
+export const replaceEmployeeLocationScheduleResponseBreakEndRegExp = new RegExp('^\\d{2}:\\d{2}$');
+
+
+export const ReplaceEmployeeLocationScheduleResponseItem = zod.object({
+  "weekday": zod.number().int().min(1).max(replaceEmployeeLocationScheduleResponseWeekdayMax),
+  "startTime": zod.string().regex(replaceEmployeeLocationScheduleResponseStartTimeRegExp),
+  "endTime": zod.string().regex(replaceEmployeeLocationScheduleResponseEndTimeRegExp),
+  "breakStart": zod.string().regex(replaceEmployeeLocationScheduleResponseBreakStartRegExp).nullable(),
+  "breakEnd": zod.string().regex(replaceEmployeeLocationScheduleResponseBreakEndRegExp).nullable()
+})
+export const ReplaceEmployeeLocationScheduleResponse = zod.array(ReplaceEmployeeLocationScheduleResponseItem)
+
+
+/**
  * @summary Get the impact of deactivating a salon employee
  */
 export const GetSalonEmployeeDeactivationPreviewParams = zod.object({
@@ -3272,6 +3668,7 @@ export const getSalonEmployeeDeactivationPreviewResponseFutureAppointmentCountMi
 export const GetSalonEmployeeDeactivationPreviewResponse = zod.object({
   "employeeId": zod.string(),
   "employeeName": zod.string(),
+  "locationName": zod.string().nullish().describe('Exact salon location that owns this request; present for owner queue reads.'),
   "futureAppointmentCount": zod.number().min(getSalonEmployeeDeactivationPreviewResponseFutureAppointmentCountMin),
   "hasLoginAccount": zod.boolean()
 })
@@ -5660,8 +6057,14 @@ export const GetShopCheckoutProfileResponse = zod.object({
 
 
 /**
- * @summary List approval requests for the active salon owner
+ * @summary List approval requests for the active location or every location owned by the owner
  */
+export const listShopApprovalRequestsQueryScopeDefault = `location`;
+
+export const ListShopApprovalRequestsQueryParams = zod.object({
+  "scope": zod.enum(['location', 'all']).default(listShopApprovalRequestsQueryScopeDefault)
+})
+
 export const listShopApprovalRequestsResponseQuoteMin = 0;
 
 export const listShopApprovalRequestsResponseCouponCodeMax = 40;
@@ -5680,6 +6083,7 @@ export const ListShopApprovalRequestsResponseItem = zod.object({
   "status": zod.enum(['PENDING', 'APPROVED', 'REJECTED', 'EXPIRED']),
   "employeeId": zod.string(),
   "employeeName": zod.string(),
+  "locationName": zod.string(),
   "quote": zod.number().int().min(listShopApprovalRequestsResponseQuoteMin),
   "quoteVersion": zod.string(),
   "couponCode": zod.string().max(listShopApprovalRequestsResponseCouponCodeMax).nullable(),
@@ -5739,6 +6143,7 @@ export const CreateShopApprovalRequestResponse = zod.object({
   "status": zod.enum(['PENDING', 'APPROVED', 'REJECTED', 'EXPIRED']),
   "employeeId": zod.string(),
   "employeeName": zod.string(),
+  "locationName": zod.string(),
   "quote": zod.number().int().min(createShopApprovalRequestResponseQuoteMin),
   "quoteVersion": zod.string(),
   "couponCode": zod.string().max(createShopApprovalRequestResponseCouponCodeMax).nullable(),
@@ -5783,6 +6188,7 @@ export const ListMyShopApprovalRequestsResponseItem = zod.object({
   "status": zod.enum(['PENDING', 'APPROVED', 'REJECTED', 'EXPIRED']),
   "employeeId": zod.string(),
   "employeeName": zod.string(),
+  "locationName": zod.string(),
   "quote": zod.number().int().min(listMyShopApprovalRequestsResponseQuoteMin),
   "quoteVersion": zod.string(),
   "couponCode": zod.string().max(listMyShopApprovalRequestsResponseCouponCodeMax).nullable(),
@@ -5808,10 +6214,16 @@ export const ListMyShopApprovalRequestsResponse = zod.array(ListMyShopApprovalRe
 
 
 /**
- * @summary Get an active-salon approval request
+ * @summary Get an approval request in the active location or any owner-owned location
  */
 export const GetShopApprovalRequestParams = zod.object({
   "requestId": zod.coerce.string()
+})
+
+export const getShopApprovalRequestQueryScopeDefault = `location`;
+
+export const GetShopApprovalRequestQueryParams = zod.object({
+  "scope": zod.enum(['location', 'all']).default(getShopApprovalRequestQueryScopeDefault)
 })
 
 export const getShopApprovalRequestResponseQuoteMin = 0;
@@ -5832,6 +6244,7 @@ export const GetShopApprovalRequestResponse = zod.object({
   "status": zod.enum(['PENDING', 'APPROVED', 'REJECTED', 'EXPIRED']),
   "employeeId": zod.string(),
   "employeeName": zod.string(),
+  "locationName": zod.string(),
   "quote": zod.number().int().min(getShopApprovalRequestResponseQuoteMin),
   "quoteVersion": zod.string(),
   "couponCode": zod.string().max(getShopApprovalRequestResponseCouponCodeMax).nullable(),
@@ -5888,6 +6301,7 @@ export const RejectShopApprovalRequestResponse = zod.object({
   "status": zod.enum(['PENDING', 'APPROVED', 'REJECTED', 'EXPIRED']),
   "employeeId": zod.string(),
   "employeeName": zod.string(),
+  "locationName": zod.string(),
   "quote": zod.number().int().min(rejectShopApprovalRequestResponseQuoteMin),
   "quoteVersion": zod.string(),
   "couponCode": zod.string().max(rejectShopApprovalRequestResponseCouponCodeMax).nullable(),
@@ -15852,19 +16266,28 @@ export const OwnerListCustomerPackagesResponse = zod.array(OwnerListCustomerPack
 
 
 /**
- * @summary List employee performance metrics for the active salon (owner)
+ * @summary List employee performance metrics for the active location or all owner locations
  */
+export const ownerListEmployeePerformanceQueryScopeDefault = `location`;
+
 export const OwnerListEmployeePerformanceQueryParams = zod.object({
+  "scope": zod.enum(['location', 'all']).default(ownerListEmployeePerformanceQueryScopeDefault),
   "from": zod.date().optional(),
   "to": zod.date().optional()
 })
 
-export const ownerListEmployeePerformanceResponseRebookingRateMin = 0;
-export const ownerListEmployeePerformanceResponseRebookingRateMax = 1;
+export const ownerListEmployeePerformanceResponseEmployeesItemRebookingRateMin = 0;
+export const ownerListEmployeePerformanceResponseEmployeesItemRebookingRateMax = 1;
 
 
 
-export const OwnerListEmployeePerformanceResponseItem = zod.object({
+export const OwnerListEmployeePerformanceResponse = zod.object({
+  "scope": zod.enum(['location', 'all']),
+  "locations": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string()
+})),
+  "employees": zod.array(zod.object({
   "employeeId": zod.string(),
   "employeeName": zod.string(),
   "completedAppointments": zod.number(),
@@ -15878,9 +16301,18 @@ export const OwnerListEmployeePerformanceResponseItem = zod.object({
   "averageAppointmentValue": zod.number(),
   "averageRating": zod.number().describe('Average rating × 10 (10–50 scale), 0 if no reviews'),
   "reviewCount": zod.number(),
-  "rebookingRate": zod.number().min(ownerListEmployeePerformanceResponseRebookingRateMin).max(ownerListEmployeePerformanceResponseRebookingRateMax).describe('Fraction of customers who booked a second appointment')
+  "rebookingRate": zod.number().min(ownerListEmployeePerformanceResponseEmployeesItemRebookingRateMin).max(ownerListEmployeePerformanceResponseEmployeesItemRebookingRateMax).describe('Fraction of customers who booked a second appointment'),
+  "locationBreakdown": zod.array(zod.object({
+  "salonId": zod.string(),
+  "locationName": zod.string(),
+  "completedAppointments": zod.number(),
+  "totalRevenue": zod.number(),
+  "estimatedCommission": zod.number(),
+  "noShowCount": zod.number(),
+  "cancelledCount": zod.number()
+})).describe('Exact-location metrics for this employee within the selected scope.')
+}))
 })
-export const OwnerListEmployeePerformanceResponse = zod.array(OwnerListEmployeePerformanceResponseItem)
 
 
 /**
@@ -15945,7 +16377,16 @@ export const EmployeeGetMyPerformanceResponse = zod.object({
   "averageAppointmentValue": zod.number(),
   "averageRating": zod.number().describe('Average rating × 10 (10–50 scale), 0 if no reviews'),
   "reviewCount": zod.number(),
-  "rebookingRate": zod.number().min(employeeGetMyPerformanceResponseRebookingRateMin).max(employeeGetMyPerformanceResponseRebookingRateMax).describe('Fraction of customers who booked a second appointment')
+  "rebookingRate": zod.number().min(employeeGetMyPerformanceResponseRebookingRateMin).max(employeeGetMyPerformanceResponseRebookingRateMax).describe('Fraction of customers who booked a second appointment'),
+  "locationBreakdown": zod.array(zod.object({
+  "salonId": zod.string(),
+  "locationName": zod.string(),
+  "completedAppointments": zod.number(),
+  "totalRevenue": zod.number(),
+  "estimatedCommission": zod.number(),
+  "noShowCount": zod.number(),
+  "cancelledCount": zod.number()
+})).describe('Exact-location metrics for this employee within the selected scope.')
 })
 
 

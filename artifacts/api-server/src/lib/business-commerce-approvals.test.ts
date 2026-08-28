@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
-import { count, eq, inArray } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import {
   b2bInvoiceSequencesTable,
   couponRedemptionsTable,
@@ -11,6 +11,7 @@ import {
   db,
   emailDeliveriesTable,
   employeesTable,
+  employeeLocationAssignmentsTable,
   loyaltyPointLedgerTable,
   orderApprovalRequestLinesTable,
   orderApprovalRequestsTable,
@@ -121,6 +122,12 @@ test.before(async () => {
     bio: "Task 562", avatarUrl: "/task-562-employee.jpg", canOrderIndependently: false,
   }).returning();
   employeeId = employee!.id;
+  await db.insert(employeeLocationAssignmentsTable).values({
+    employeeId,
+    salonId,
+    active: true,
+    isDefault: true,
+  });
   const [supplier] = await db.insert(suppliersTable).values({
     name: `Task 562 supplier ${marker}`, slug: marker, scope: "B2B",
   }).returning();
@@ -356,4 +363,120 @@ test("employee approval is side-effect free, approval finalizes exactly once, an
     .where(eq(couponRedemptionsTable.orderId, order!.id));
   assert.ok(releasedRedemption?.cancelledAt);
   assert.equal((await db.select().from(couponsTable).where(eq(couponsTable.id, couponId)))[0]?.usageCount, 0);
+});
+
+test("employee shop context follows the active default assignment", async () => {
+  const [secondSalon] = await db.insert(salonsTable).values({
+    ownerId,
+    name: `Task 562 second salon ${marker}`,
+    slug: `${marker}-second`,
+    city: "Novi Sad",
+    municipality: "Centar",
+    address: "Test 562 2",
+    postalCode: "21000",
+    phone: "+381601112234",
+    email: `${marker}-second-salon@example.test`,
+    companyName: "Task 562 kupac B",
+    companyTaxId: "108888888",
+    companyRegistrationNumber: "20888888",
+    companyAddress: "Test 562 2",
+    companyCity: "Novi Sad",
+    companyPostalCode: "21000",
+    shortDescription: "Task 562 B",
+    description: "Task 562 B",
+    imageUrl: "/task-562-second.jpg",
+  }).returning();
+  assert.ok(secondSalon);
+
+  try {
+    // A remains the employee's legacy profile location. B must win exclusively
+    // because it is the current active default assignment.
+    await db.transaction(async (tx) => {
+      await tx.update(employeeLocationAssignmentsTable)
+        .set({ isDefault: false, updatedAt: new Date() })
+        .where(and(
+          eq(employeeLocationAssignmentsTable.employeeId, employeeId),
+          eq(employeeLocationAssignmentsTable.salonId, salonId),
+        ));
+      await tx.insert(employeeLocationAssignmentsTable).values({
+        employeeId, salonId: secondSalon!.id, active: true, isDefault: true,
+      });
+    });
+
+    const cart = await request("/shop/cart", employeeUserId);
+    assert.equal(cart.status, 200);
+
+    const checkoutProfile = await request("/shop/checkout-profile", employeeUserId);
+    assert.equal(checkoutProfile.status, 200);
+    const profile = await checkoutProfile.json() as { activeSalonId: string; deliverySalons: Array<{ id: string }> };
+    assert.equal(profile.activeSalonId, secondSalon.id);
+    assert.deepEqual(profile.deliverySalons.map((salon) => salon.id), [secondSalon.id]);
+
+    assert.equal((await request("/shop/cart/items", employeeUserId, {
+      method: "POST",
+      body: JSON.stringify({ productId: productIds[0], quantity: 1 }),
+    })).status, 200);
+    const [secondSalonCart] = await db.select({ id: shoppingCartsTable.id })
+      .from(shoppingCartsTable)
+      .where(eq(shoppingCartsTable.salonId, secondSalon.id));
+    assert.ok(secondSalonCart, "employee cart mutation must use the default B assignment");
+    const approval = await request("/shop/approval-requests", employeeUserId, {
+      method: "POST",
+      body: JSON.stringify({ idempotencyKey: `${marker}-location-b` }),
+    });
+    assert.equal(approval.status, 201);
+    const approvalId = (await approval.json() as { id: string }).id;
+    const [saved] = await db.select().from(orderApprovalRequestsTable)
+      .where(eq(orderApprovalRequestsTable.id, approvalId));
+    assert.equal(saved?.salonId, secondSalon.id);
+
+    // Removing B must not fall back to its legacy employee.salonId value. The
+    // only permitted fallback is the remaining active A assignment.
+    await db.transaction(async (tx) => {
+      await tx.update(employeeLocationAssignmentsTable)
+        .set({ active: false, isDefault: false, updatedAt: new Date() })
+        .where(and(
+          eq(employeeLocationAssignmentsTable.employeeId, employeeId),
+          eq(employeeLocationAssignmentsTable.salonId, secondSalon!.id),
+        ));
+      await tx.update(employeeLocationAssignmentsTable)
+        .set({ isDefault: true, updatedAt: new Date() })
+        .where(and(
+          eq(employeeLocationAssignmentsTable.employeeId, employeeId),
+          eq(employeeLocationAssignmentsTable.salonId, salonId),
+          eq(employeeLocationAssignmentsTable.active, true),
+        ));
+    });
+    const fallbackCart = await request("/shop/cart", employeeUserId);
+    assert.equal(fallbackCart.status, 200);
+    const fallbackProfile = await request("/shop/checkout-profile", employeeUserId);
+    assert.equal(fallbackProfile.status, 200);
+    assert.equal((await fallbackProfile.json() as { activeSalonId: string }).activeSalonId, salonId);
+
+    await db.update(employeeLocationAssignmentsTable)
+      .set({ active: false, isDefault: false, updatedAt: new Date() })
+      .where(and(
+        eq(employeeLocationAssignmentsTable.employeeId, employeeId),
+        eq(employeeLocationAssignmentsTable.salonId, salonId),
+      ));
+    assert.equal(
+      (await request("/shop/cart", employeeUserId)).status,
+      403,
+      "an employee with no active assignment must not regain legacy-location shop access",
+    );
+    await db.update(employeeLocationAssignmentsTable)
+      .set({ active: true, isDefault: true, updatedAt: new Date() })
+      .where(and(
+        eq(employeeLocationAssignmentsTable.employeeId, employeeId),
+        eq(employeeLocationAssignmentsTable.salonId, salonId),
+      ));
+  } finally {
+    const requestIds = (await db.select({ id: orderApprovalRequestsTable.id }).from(orderApprovalRequestsTable)
+      .where(eq(orderApprovalRequestsTable.salonId, secondSalon!.id))).map((row) => row.id);
+    if (requestIds.length) await db.delete(orderApprovalRequestLinesTable)
+      .where(inArray(orderApprovalRequestLinesTable.requestId, requestIds));
+    await db.delete(orderApprovalRequestsTable).where(eq(orderApprovalRequestsTable.salonId, secondSalon!.id));
+    await db.delete(shoppingCartsTable).where(eq(shoppingCartsTable.salonId, secondSalon!.id));
+    await db.delete(salonsTable).where(eq(salonsTable.id, secondSalon!.id));
+  }
 });

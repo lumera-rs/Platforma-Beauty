@@ -18,6 +18,7 @@ type ApprovalRequest = {
   status: "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED";
   employeeName: string;
   employeeId: string;
+  locationName?: string;
   quote: number;
   quoteVersion: number;
   couponCode: string | null;
@@ -35,22 +36,22 @@ type ApprovalRequest = {
   }>;
 };
 
-function useGetApprovalRequests() {
+function useGetApprovalRequests(scope: "location" | "all") {
   return useQuery({
-    queryKey: ["approval-requests"],
+    queryKey: ["approval-requests", scope],
     queryFn: async () => {
-      const res = await fetch("/api/shop/approval-requests", { credentials: "include" });
+      const res = await fetch(`/api/shop/approval-requests?scope=${scope}`, { credentials: "include" });
       if (!res.ok) throw new Error("Neuspešno učitavanje zahteva");
       return res.json() as Promise<ApprovalRequest[]>;
     }
   });
 }
 
-function useGetApprovalRequest(id: string) {
+function useGetApprovalRequest(id: string, scope: "location" | "all") {
   return useQuery({
-    queryKey: ["approval-requests", id],
+    queryKey: ["approval-requests", scope, id],
     queryFn: async () => {
-      const res = await fetch(`/api/shop/approval-requests/${id}`, { credentials: "include" });
+      const res = await fetch(`/api/shop/approval-requests/${id}?scope=${scope}`, { credentials: "include" });
       if (!res.ok) throw new Error("Neuspešno učitavanje zahteva");
       return res.json() as Promise<ApprovalRequest>;
     },
@@ -58,8 +59,8 @@ function useGetApprovalRequest(id: string) {
   });
 }
 
-function ApprovalRequestDetail({ id }: { id: string }) {
-  const { data: request, isLoading } = useGetApprovalRequest(id);
+function ApprovalRequestDetail({ id, scope }: { id: string; scope: "location" | "all" }) {
+  const { data: request, isLoading } = useGetApprovalRequest(id, scope);
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [rejectReason, setRejectReason] = useState("");
@@ -132,6 +133,7 @@ function ApprovalRequestDetail({ id }: { id: string }) {
               </CardTitle>
               <CardDescription className="mt-1 flex items-center gap-4 text-sm">
                 <span><span className="font-medium text-foreground">Zaposleni:</span> {request.employeeName}</span>
+                {request.locationName && <span><span className="font-medium text-foreground">Lokacija:</span> {request.locationName}</span>}
                 <span><span className="font-medium text-foreground">Kreirano:</span> {date(request.createdAt)}</span>
               </CardDescription>
             </div>
@@ -250,7 +252,8 @@ function ApprovalRequestDetail({ id }: { id: string }) {
 export default function OwnerOrderApprovals() {
   const [, params] = useRoute("/vlasnik/porudzbine-na-cekanju/:id");
   const detailId = params?.id;
-  const { data: requests = [], isLoading } = useGetApprovalRequests();
+  const [scope, setScope] = useState<"location" | "all">("location");
+  const { data: requests = [], isLoading } = useGetApprovalRequests(scope);
 
   return (
     <BusinessLayout>
@@ -259,14 +262,20 @@ export default function OwnerOrderApprovals() {
         
         <main className="flex-1 min-w-0 w-full space-y-6">
           {detailId ? (
-            <ApprovalRequestDetail id={detailId} />
+            <ApprovalRequestDetail id={detailId} scope={scope} />
           ) : (
             <>
-              <div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
                 <h1 className="text-3xl font-serif font-bold mb-2">Odobrenja porudžbina</h1>
                 <p className="text-muted-foreground">
                   Pregledajte i odobrite zahteve za nabavku opreme koje su podneli vaši zaposleni.
                 </p>
+                </div>
+                <div className="inline-flex rounded-lg border bg-muted/40 p-1">
+                  <Button size="sm" type="button" variant={scope === "location" ? "default" : "ghost"} onClick={() => setScope("location")}>Aktivna lokacija</Button>
+                  <Button size="sm" type="button" variant={scope === "all" ? "default" : "ghost"} onClick={() => setScope("all")}>Sve lokacije</Button>
+                </div>
               </div>
               
               {isLoading ? (
@@ -304,6 +313,7 @@ export default function OwnerOrderApprovals() {
                             <p className="text-sm text-muted-foreground">
                               Zahtev #{req.id.slice(0, 8)} · {req.lines.length} stavki · Podneto: {date(req.createdAt)}
                             </p>
+                            {scope === "all" && req.locationName && <p className="mt-1 text-sm font-medium text-primary">Lokacija: {req.locationName}</p>}
                           </div>
                         </div>
                         <div className="flex items-center gap-4 md:flex-col md:items-end self-start md:self-auto w-full md:w-auto mt-2 md:mt-0 justify-between">

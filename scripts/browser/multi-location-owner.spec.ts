@@ -2,7 +2,7 @@ import { randomBytes, randomUUID, scrypt as scryptCallback } from "node:crypto";
 import { promisify } from "node:util";
 import { expect, test, type Page } from "@playwright/test";
 import { eq, inArray } from "drizzle-orm";
-import { db, salonsTable, usersTable } from "@workspace/db";
+import { db, referralCodesTable, salonsTable, usersTable } from "@workspace/db";
 
 const scrypt = promisify(scryptCallback);
 
@@ -65,6 +65,7 @@ async function createFixture(): Promise<Fixture> {
 async function cleanUpFixture(fixture: Fixture): Promise<void> {
   await db.update(usersTable).set({ activeSalonId: null }).where(eq(usersTable.id, fixture.ownerId));
   await db.delete(salonsTable).where(inArray(salonsTable.id, [fixture.firstSalonId, fixture.secondSalonId]));
+  await db.delete(referralCodesTable).where(eq(referralCodesTable.referrerUserId, fixture.ownerId));
   await db.delete(usersTable).where(eq(usersTable.id, fixture.ownerId));
 }
 
@@ -87,15 +88,16 @@ test("owner can use the all-locations dashboard and switch location from mobile 
     await page.getByRole("button", { name: "Sve lokacije" }).click();
     await expect(page.getByText("Zbirni pregled za svih 2 lokacija")).toBeVisible();
     await expect(page.getByText("Učinak po lokaciji")).toBeVisible();
-    await expect(page.getByRole("main").getByText(fixture.firstSalonName, { exact: true })).toBeVisible();
-    await expect(page.getByRole("main").getByText(fixture.secondSalonName, { exact: true })).toBeVisible();
+    await expect(page.getByRole("main").getByRole("paragraph").filter({ hasText: fixture.firstSalonName })).toBeVisible();
+    await expect(page.getByRole("main").getByRole("paragraph").filter({ hasText: fixture.secondSalonName })).toBeVisible();
 
     await page.getByRole("button", { name: "Otvori meni" }).click();
-    await expect(page.getByTestId("owner-mobile-cart-link")).toBeVisible();
-    await expect(page.getByTestId("owner-mobile-cart-link")).toHaveAttribute("href", "/vlasnik/prodavnica/korpa");
-    const mobileSalonSelect = page.getByLabel("Aktivni salon (mobilni)");
+    const mobileMenu = page.getByTestId("business-mobile-menu");
+    await expect(mobileMenu.getByTestId("owner-mobile-cart-link")).toBeVisible();
+    await expect(mobileMenu.getByTestId("owner-mobile-cart-link")).toHaveAttribute("href", "/vlasnik/prodavnica/korpa");
+    const mobileSalonSelect = mobileMenu.getByLabel("Aktivna lokacija");
     await expect(mobileSalonSelect).toBeVisible();
-    await expect(page.getByRole("link", { name: "Otvori korpu" }))
+    await expect(mobileMenu.getByRole("link", { name: "Otvori korpu" }))
       .toHaveAttribute("href", "/vlasnik/prodavnica/korpa");
     const switchResponse = page.waitForResponse((response) =>
       response.request().method() === "PUT"

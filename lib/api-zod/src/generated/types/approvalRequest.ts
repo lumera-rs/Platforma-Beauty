@@ -13,6 +13,7 @@ export interface ApprovalRequest {
   status: ApprovalRequestStatus;
   employeeId: string;
   employeeName: string;
+  locationName: string;
   /** @minimum 0 */
   quote: number;
   quoteVersion: string;

@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { salonNotificationsQueryKey } from "@/lib/salon-notifications";
 import { salonOwnerNavLinks } from "@/lib/salon-owner-navigation";
 import { SalonOwnerNavigation } from "@/components/salon-owner-navigation";
+import { OwnerLocationWizard } from "@/components/owner-location-wizard";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,6 +30,7 @@ export function BusinessNavbar() {
   const logout = useLogout();
   const user = userResp?.user;
   const isSalonOperator = user?.role === "SALON_OWNER" || user?.role === "EDUKATIVNI_CENTAR";
+  const canSwitchLocations = user?.role === "SALON_OWNER";
   const { data: cart } = useGetShopCart({ query: { enabled: isSalonOperator, queryKey: getGetShopCartQueryKey() } });
   const notificationsQueryKey = useMemo(() => salonNotificationsQueryKey(user?.id), [user?.id]);
   const { data: notifications = [] } = useListSalonNotifications({ page: 1, pageSize: 100 }, {
@@ -96,14 +98,14 @@ export function BusinessNavbar() {
   };
 
   useEffect(() => {
-    if (!isSalonOperator) return;
+    if (!canSwitchLocations) return;
     fetch("/api/salon/managed-salons").then(async (response) => {
       if (!response.ok) return;
       const payload = await response.json() as { activeSalonId: string | null; salons: Array<{ id: string; name: string; slug: string }> };
       setManagedSalons(payload.salons);
       setActiveSalonId(payload.activeSalonId ?? "");
     }).catch(() => undefined);
-  }, [isSalonOperator]);
+  }, [canSwitchLocations]);
 
   useEffect(() => {
     if (!isSalonOperator) return;
@@ -161,7 +163,7 @@ export function BusinessNavbar() {
     // URL so campaign period selections remain intentional across a salon
     // switch (and other shareable query state is not silently discarded).
     const nextLocation = window.location.pathname + window.location.search + window.location.hash;
-    window.location.assign(nextLocation.startsWith("/vlasnik") ? nextLocation : "/vlasnik");
+    window.location.assign(nextLocation);
   };
 
   const getNavLinks = (): BusinessNavLink[] => {
@@ -236,11 +238,12 @@ export function BusinessNavbar() {
               Nazad na Market
             </Link>
 
-            {isSalonOperator && managedSalons.length > 1 && (
-              <select aria-label="Aktivni salon" disabled={isSwitchingSalon} className="hidden lg:block max-w-48 rounded-md border border-white/20 bg-white/10 px-2 py-1 text-sm text-white disabled:cursor-wait disabled:opacity-70" value={activeSalonId} onChange={(event) => { void switchSalon(event.target.value); }}>
+            {canSwitchLocations && managedSalons.length > 1 && (
+              <select aria-label="Aktivna lokacija" disabled={isSwitchingSalon} className="hidden lg:block max-w-48 rounded-md border border-white/20 bg-white/10 px-2 py-1 text-sm text-white disabled:cursor-wait disabled:opacity-70" value={activeSalonId} onChange={(event) => { void switchSalon(event.target.value); }}>
                 {managedSalons.map((salon) => <option className="text-foreground" key={salon.id} value={salon.id}>{salon.name}</option>)}
               </select>
             )}
+            {canSwitchLocations && <OwnerLocationWizard triggerLabel="Nova lokacija" triggerClassName="hidden lg:inline-flex border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white" />}
             {isSalonOperator && (
               <Button variant="ghost" size="icon" className="relative text-white hover:bg-white/10 hover:text-white" asChild>
                 <Link href="/vlasnik/obavestenja" aria-label={`Obaveštenja${unreadNotificationCount ? `, ${unreadNotificationCount} nepročitano` : ""}`} data-testid="link-notifications">
@@ -342,10 +345,10 @@ export function BusinessNavbar() {
               variant="dark"
               onNavigate={closeMobileMenu}
               unreadNotificationCount={unreadNotificationCount}
-              managedSalons={managedSalons}
+              managedSalons={canSwitchLocations ? managedSalons : []}
               activeSalonId={activeSalonId}
               isSwitchingSalon={isSwitchingSalon}
-              onSwitchSalon={(salonId) => { void switchSalon(salonId); }}
+              onSwitchSalon={canSwitchLocations ? (salonId) => { void switchSalon(salonId); } : undefined}
               cartItemCount={cart?.itemCount ?? 0}
             />
           ) : (

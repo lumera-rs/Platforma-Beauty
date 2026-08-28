@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { format, startOfMonth, startOfWeek, endOfWeek } from "date-fns";
 import { srLatn } from "date-fns/locale";
@@ -10,6 +10,9 @@ import {
   useListSalonShiftSwaps,
   useReviewSalonShiftSwap,
   useUpdateSalonClockEntry,
+  useListEmployeeLocationAssignments,
+  useReplaceEmployeeLocationSchedule,
+  getListEmployeeLocationAssignmentsQueryKey,
 } from "@workspace/api-client-react";
 import { BusinessLayout } from "@/components/business-layout";
 import { Button } from "@/components/ui/button";
@@ -45,6 +48,8 @@ export default function OwnerStaffOps() {
   const [from, setFrom] = useState(format(startOfWeek(today, { weekStartsOn: 1 }), "yyyy-MM-dd"));
   const [to, setTo] = useState(format(endOfWeek(today, { weekStartsOn: 1 }), "yyyy-MM-dd"));
   const [editing, setEditing] = useState<{ id: string; clockOutAt: string; note: string } | null>(null);
+  const [employees, setEmployees] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const period = useMemo(() => ({ from, to }), [from, to]);
@@ -52,6 +57,12 @@ export default function OwnerStaffOps() {
   const swaps = useListSalonShiftSwaps({ query: { queryKey: getListSalonShiftSwapsQueryKey() } });
   const correctEntry = useUpdateSalonClockEntry();
   const reviewSwap = useReviewSalonShiftSwap();
+  useEffect(() => {
+    void fetch("/api/salon/employees", { credentials: "include" })
+      .then(async (response) => response.ok ? response.json() as Promise<Array<{ id: string; name: string }>> : [])
+      .then(setEmployees)
+      .catch(() => undefined);
+  }, []);
 
   const refreshClock = () => queryClient.invalidateQueries({ queryKey: getListSalonClockEntriesQueryKey(period) });
   const refreshSwaps = () => queryClient.invalidateQueries({ queryKey: getListSalonShiftSwapsQueryKey() });
@@ -100,6 +111,7 @@ export default function OwnerStaffOps() {
             <h1 className="font-serif text-3xl font-bold">Radno vreme i zamene</h1>
             <p className="mt-1 text-muted-foreground">Proverite evidenciju smena, ispravite otvorene unose i odobrite zamene.</p>
           </div>
+          <LocationScheduleEditor employees={employees} selectedEmployeeId={selectedEmployeeId} setSelectedEmployeeId={setSelectedEmployeeId} />
 
           <Card>
             <CardHeader className="gap-4">
@@ -175,6 +187,62 @@ export default function OwnerStaffOps() {
       </Dialog>
     </BusinessLayout>
   );
+}
+
+const weekdayNames = ["", "Ponedeljak", "Utorak", "Sreda", "Četvrtak", "Petak", "Subota", "Nedelja"];
+
+function LocationScheduleEditor({ employees, selectedEmployeeId, setSelectedEmployeeId }: {
+  employees: Array<{ id: string; name: string }>;
+  selectedEmployeeId: string;
+  setSelectedEmployeeId: (id: string) => void;
+}) {
+  return <Card>
+    <CardHeader>
+      <CardTitle>Raspored po lokaciji</CardTitle>
+      <CardDescription>Izaberite zaposlenog, zatim lokaciju na kojoj je dodeljen. Preklapanja sa njegovim drugim lokacijama nisu dozvoljena.</CardDescription>
+    </CardHeader>
+    <CardContent>
+      <Label htmlFor="schedule-employee">Zaposleni</Label>
+      <select id="schedule-employee" className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={selectedEmployeeId} onChange={(event) => setSelectedEmployeeId(event.target.value)}>
+        <option value="">Izaberite zaposlenog</option>
+        {employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
+      </select>
+      {selectedEmployeeId && <EmployeeLocationSchedule employeeId={selectedEmployeeId} />}
+    </CardContent>
+  </Card>;
+}
+
+function EmployeeLocationSchedule({ employeeId }: { employeeId: string }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const assignments = useListEmployeeLocationAssignments(employeeId);
+  const [salonId, setSalonId] = useState("");
+  const [windows, setWindows] = useState<Array<{ weekday: number; startTime: string; endTime: string; breakStart: string | null; breakEnd: string | null }>>([]);
+  const replaceSchedule = useReplaceEmployeeLocationSchedule();
+  const active = (assignments.data ?? []).filter((assignment) => assignment.active);
+  useEffect(() => {
+    if (!salonId && active[0]) setSalonId(active[0].salonId);
+    if (salonId && !active.some((assignment) => assignment.salonId === salonId)) setSalonId(active[0]?.salonId ?? "");
+  }, [active, salonId]);
+  const selected = active.find((assignment) => assignment.salonId === salonId);
+  useEffect(() => { setWindows(selected?.scheduleWindows ?? []); }, [selected?.salonId, selected?.scheduleWindows]);
+  const overlaps = windows.some((window) => active.some((assignment) => assignment.salonId !== salonId && assignment.scheduleWindows.some((other) => other.weekday === window.weekday && window.startTime < other.endTime && other.startTime < window.endTime)));
+  const updateDay = (weekday: number, key: "startTime" | "endTime", value: string) => setWindows((current) => {
+    const found = current.find((window) => window.weekday === weekday);
+    return found ? current.map((window) => window.weekday === weekday ? { ...window, [key]: value } : window) : [...current, { weekday, startTime: key === "startTime" ? value : "09:00", endTime: key === "endTime" ? value : "17:00", breakStart: null, breakEnd: null }];
+  });
+  if (assignments.isLoading) return <div className="flex justify-center p-6"><Loader2 className="h-5 w-5 animate-spin" /></div>;
+  if (!active.length) return <p className="mt-4 text-sm text-muted-foreground">Zaposleni nema aktivnu dodelu lokacije. Dodelu uredite na stranici Zaposleni.</p>;
+  return <div className="mt-5 space-y-4">
+    <div><Label htmlFor="schedule-location">Lokacija</Label><select id="schedule-location" className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={salonId} onChange={(event) => setSalonId(event.target.value)}>{active.map((assignment) => <option key={assignment.salonId} value={assignment.salonId}>{assignment.locationName}{assignment.isDefault ? " (podrazumevana)" : ""}</option>)}</select></div>
+    <div className="space-y-2">{weekdayNames.slice(1).map((name, index) => {
+      const weekday = index + 1; const window = windows.find((item) => item.weekday === weekday);
+      return <div className="grid grid-cols-[1fr_auto_auto] items-center gap-2 text-sm" key={weekday}><span>{name}</span><Input aria-label={`${name} početak`} type="time" value={window?.startTime ?? ""} onChange={(event) => updateDay(weekday, "startTime", event.target.value)} /><Input aria-label={`${name} kraj`} type="time" value={window?.endTime ?? ""} onChange={(event) => updateDay(weekday, "endTime", event.target.value)} /></div>;
+    })}</div>
+    <p className="rounded-md bg-muted p-3 text-xs text-muted-foreground">Rotacija: {windows.length ? windows.map((window) => `${weekdayNames[window.weekday].slice(0, 3)} ${window.startTime}–${window.endTime}`).join(" · ") : "nema radnih dana na ovoj lokaciji"}.</p>
+    {overlaps && <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="mr-1 inline h-4 w-4" />Raspored se preklapa sa rasporedom na drugoj lokaciji. Izmenite vreme pre čuvanja.</p>}
+    <Button disabled={replaceSchedule.isPending || overlaps || !salonId} onClick={() => replaceSchedule.mutate({ employeeId, salonId, data: { windows } }, { onSuccess: () => { toast.success("Raspored lokacije je sačuvan."); void queryClient.invalidateQueries({ queryKey: getListEmployeeLocationAssignmentsQueryKey(employeeId) }); }, onError: (error) => toast.error(error instanceof Error ? error.message : "Raspored nije sačuvan.") })}>Sačuvaj raspored lokacije</Button>
+  </div>;
 }
 
 function AppointmentPreview({ name, appointments }: { name: string; appointments: { id: string; startTime: string; endTime: string; serviceName: string; customerName?: string | null; status: string }[] }) {

@@ -1383,6 +1383,101 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/Employee" }
+  /salon/locations:
+    post:
+      operationId: createSalonLocation
+      tags: [salon-management]
+      summary: Create an additional independently operated location for the current owner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSalonLocationInput" }
+      responses:
+        "201":
+          description: Location created, optionally with copied service and package definitions
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreateSalonLocationResult" }
+        "400": { description: Invalid location profile or unsafe package copy request }
+        "403": { description: Salon-owner access required or source location is not owned }
+        "409": { description: Idempotency key was previously used with a different request }
+  /salon/employees/{employeeId}/locations:
+    get:
+      operationId: listEmployeeLocationAssignments
+      tags: [salon-management]
+      summary: List owner-managed location assignments for an employee
+      parameters:
+        - name: employeeId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Assignments, including location schedule metadata
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EmployeeLocationAssignment" }
+        "403": { description: Employee or a requested location is outside the current owner }
+        "404": { description: Employee not found }
+  /salon/employees/{employeeId}/locations/{salonId}:
+    put:
+      operationId: upsertEmployeeLocationAssignment
+      tags: [salon-management]
+      summary: Create or update an employee location assignment
+      parameters:
+        - name: employeeId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: salonId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmployeeLocationAssignmentUpdate" }
+      responses:
+        "200":
+          description: Updated assignment
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmployeeLocationAssignment" }
+        "403": { description: Employee or location is outside the current owner }
+        "409": { description: Deactivation would strand future appointments }
+  /salon/employees/{employeeId}/locations/{salonId}/schedule:
+    put:
+      operationId: replaceEmployeeLocationSchedule
+      tags: [salon-management]
+      summary: Replace weekly schedule windows for one active employee location assignment
+      parameters:
+        - name: employeeId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: salonId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmployeeLocationScheduleUpdate" }
+      responses:
+        "200":
+          description: Updated location schedule
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EmployeeLocationScheduleWindow" }
+        "403": { description: Employee or location is outside the current owner }
+        "409": { description: Schedule would strand future appointments }
   /salon/employees/{employeeId}/deactivation-preview:
     get:
       operationId: getSalonEmployeeDeactivationPreview
@@ -1925,7 +2020,11 @@ paths:
     get:
       operationId: listShopApprovalRequests
       tags: [shop]
-      summary: List approval requests for the active salon owner
+      summary: List approval requests for the active location or every location owned by the owner
+      parameters:
+        - name: scope
+          in: query
+          schema: { type: string, enum: [location, all], default: location }
       responses:
         "200": { description: Requests, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ApprovalRequest" } } } } }
     post:
@@ -1949,8 +2048,12 @@ paths:
     get:
       operationId: getShopApprovalRequest
       tags: [shop]
-      summary: Get an active-salon approval request
-      parameters: [{ name: requestId, in: path, required: true, schema: { type: string } }]
+      summary: Get an approval request in the active location or any owner-owned location
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string } }
+        - name: scope
+          in: query
+          schema: { type: string, enum: [location, all], default: location }
       responses:
         "200": { description: Request detail, content: { application/json: { schema: { $ref: "#/components/schemas/ApprovalRequest" } } } }
         "404": { description: Request not found }
@@ -5174,8 +5277,11 @@ paths:
     get:
       operationId: ownerListEmployeePerformance
       tags: [growth]
-      summary: List employee performance metrics for the active salon (owner)
+      summary: List employee performance metrics for the active location or all owner locations
       parameters:
+        - name: scope
+          in: query
+          schema: { type: string, enum: [location, all], default: location }
         - name: from
           in: query
           schema: { type: string, format: date }
@@ -5188,8 +5294,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items: { $ref: "#/components/schemas/EmployeePerformanceMetrics" }
+                $ref: "#/components/schemas/EmployeePerformanceResponse"
         "401": { description: Authentication required }
         "403": { description: Salon owner required }
 
@@ -8056,6 +8161,9 @@ components:
       properties:
         employeeId: { type: string }
         employeeName: { type: string }
+        locationName:
+          type: ["string", "null"]
+          description: Exact salon location that owns this request; present for owner queue reads.
         futureAppointmentCount: { type: number, minimum: 0 }
         hasLoginAccount: { type: boolean }
       required: [employeeId, employeeName, futureAppointmentCount, hasLoginAccount]
@@ -8939,6 +9047,7 @@ components:
         status: { type: string, enum: [PENDING, APPROVED, REJECTED, EXPIRED] }
         employeeId: { type: string }
         employeeName: { type: string }
+        locationName: { type: string }
         quote: { type: integer, minimum: 0 }
         quoteVersion: { type: string }
         couponCode: { type: ["string", "null"], maxLength: 40 }
@@ -8967,7 +9076,7 @@ components:
                   variantValue: { type: ["string", "null"] }
                 required: [price, listPrice, variantValue]
             required: [productId, bundleId, productName, sku, quantity, catalog]
-      required: [id, status, employeeId, employeeName, quote, quoteVersion, couponCode, referralCreditIntentRsd, reviewerReason, createdAt, decidedAt, finalizedOrderId, lines]
+      required: [id, status, employeeId, employeeName, locationName, quote, quoteVersion, couponCode, referralCreditIntentRsd, reviewerReason, createdAt, decidedAt, finalizedOrderId, lines]
     SavedCartItem:
       type: object
       properties:
@@ -12126,7 +12235,37 @@ components:
         averageRating: { type: number, description: "Average rating × 10 (10–50 scale), 0 if no reviews" }
         reviewCount: { type: number }
         rebookingRate: { type: number, minimum: 0, maximum: 1, description: "Fraction of customers who booked a second appointment" }
-      required: [employeeId, employeeName, completedAppointments, totalRevenue, commissionType, commissionPercent, fixedAmountInDinars, estimatedCommission, noShowCount, cancelledCount, averageAppointmentValue, averageRating, reviewCount, rebookingRate]
+        locationBreakdown:
+          type: array
+          description: Exact-location metrics for this employee within the selected scope.
+          items:
+            type: object
+            properties:
+              salonId: { type: string }
+              locationName: { type: string }
+              completedAppointments: { type: number }
+              totalRevenue: { type: number }
+              estimatedCommission: { type: number }
+              noShowCount: { type: number }
+              cancelledCount: { type: number }
+            required: [salonId, locationName, completedAppointments, totalRevenue, estimatedCommission, noShowCount, cancelledCount]
+      required: [employeeId, employeeName, completedAppointments, totalRevenue, commissionType, commissionPercent, fixedAmountInDinars, estimatedCommission, noShowCount, cancelledCount, averageAppointmentValue, averageRating, reviewCount, rebookingRate, locationBreakdown]
+    EmployeePerformanceResponse:
+      type: object
+      properties:
+        scope: { type: string, enum: [location, all] }
+        locations:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+            required: [id, name]
+        employees:
+          type: array
+          items: { $ref: "#/components/schemas/EmployeePerformanceMetrics" }
+      required: [scope, locations, employees]
 
     EmployeeCommissionSettings:
       type: object
@@ -12705,6 +12844,72 @@ components:
         unavailable: { type: boolean }
         unavailableReason: { type: ["string", "null"] }
       required: [employeeId, name, role, hasExplicitSchedule, scheduleWindows, unavailable, unavailableReason]
+    EmployeeLocationScheduleWindow:
+      type: object
+      properties:
+        weekday: { type: integer, minimum: 1, maximum: 7 }
+        startTime: { type: string, pattern: '^\d{2}:\d{2}$' }
+        endTime: { type: string, pattern: '^\d{2}:\d{2}$' }
+        breakStart: { type: ["string", "null"], pattern: '^\d{2}:\d{2}$' }
+        breakEnd: { type: ["string", "null"], pattern: '^\d{2}:\d{2}$' }
+      required: [weekday, startTime, endTime, breakStart, breakEnd]
+    EmployeeLocationScheduleUpdate:
+      type: object
+      properties:
+        windows:
+          type: array
+          items: { $ref: "#/components/schemas/EmployeeLocationScheduleWindow" }
+      required: [windows]
+    EmployeeLocationAssignmentUpdate:
+      type: object
+      properties:
+        active: { type: boolean }
+        isDefault: { type: boolean }
+      minProperties: 1
+    EmployeeLocationAssignment:
+      type: object
+      properties:
+        employeeId: { type: string }
+        salonId: { type: string }
+        locationId: { type: string, description: Compatibility alias for salonId. }
+        locationName: { type: string }
+        active: { type: boolean }
+        isDefault: { type: boolean }
+        scheduleWindows:
+          type: array
+          items: { $ref: "#/components/schemas/EmployeeLocationScheduleWindow" }
+      required: [employeeId, salonId, locationId, locationName, active, isDefault, scheduleWindows]
+    CreateSalonLocationInput:
+      type: object
+      properties:
+        idempotencyKey: { type: string, minLength: 1, maxLength: 200 }
+        sourceSalonId: { type: ["string", "null"] }
+        copyServices: { type: boolean, default: false }
+        copyPackages: { type: boolean, default: false }
+        activateAfterCreate: { type: boolean, default: false }
+        name: { type: string, minLength: 1, maxLength: 160 }
+        city: { type: string, minLength: 1, maxLength: 100 }
+        municipality: { type: string, minLength: 1, maxLength: 100 }
+        address: { type: string, minLength: 1, maxLength: 250 }
+        postalCode: { type: ["string", "null"], maxLength: 30 }
+        phone: { type: string, minLength: 1, maxLength: 50 }
+        # The endpoint validates mailbox syntax. Avoid OpenAPI `format: email`
+        # because this workspace's Zod-3 generator emits a Zod-4-only helper.
+        email: { type: string, minLength: 3, maxLength: 254 }
+        shortDescription: { type: string, minLength: 1, maxLength: 500 }
+        description: { type: string, minLength: 1, maxLength: 10000 }
+        imageUrl: { type: string, minLength: 1, maxLength: 2000 }
+      required: [idempotencyKey, name, city, municipality, address, phone, email, shortDescription, description, imageUrl]
+    CreateSalonLocationResult:
+      type: object
+      properties:
+        location: { $ref: "#/components/schemas/SalonProfile" }
+        salon: { $ref: "#/components/schemas/SalonProfile", description: Compatibility alias for location. }
+        copiedServices: { type: integer, minimum: 0 }
+        copiedPackages: { type: integer, minimum: 0 }
+        copiedPackageServiceLinks: { type: integer, minimum: 0 }
+        warnings: { type: array, items: { type: string } }
+      required: [location, salon, copiedServices, copiedPackages, copiedPackageServiceLinks, warnings]
     WidgetAppointmentCreate:
       type: object
       properties:

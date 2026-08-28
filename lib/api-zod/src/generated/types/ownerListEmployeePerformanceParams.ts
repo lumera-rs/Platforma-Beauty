@@ -5,8 +5,10 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { OwnerListEmployeePerformanceScope } from './ownerListEmployeePerformanceScope';
 
 export type OwnerListEmployeePerformanceParams = {
+scope?: OwnerListEmployeePerformanceScope;
 from?: Date;
 to?: Date;
 };

@@ -383,6 +383,27 @@ export const employeesTable = pgTable("employees", {
   index("employees_user_idx").on(table.userId),
 ]);
 
+/**
+ * An employee may work at more than one salon owned by the same owner. `salonId`
+ * on employees remains the legacy/default location and is intentionally not
+ * replaced: historic appointments and integrations still depend on it.
+ */
+export const employeeLocationAssignmentsTable = pgTable("employee_location_assignments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  employeeId: uuid("employee_id").notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
+  salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
+  active: boolean("active").notNull().default(true),
+  isDefault: boolean("is_default").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("employee_location_assignments_employee_salon_unique").on(table.employeeId, table.salonId),
+  index("employee_location_assignments_salon_active_idx").on(table.salonId, table.active),
+  index("employee_location_assignments_employee_active_idx").on(table.employeeId, table.active),
+  uniqueIndex("employee_location_assignments_one_default_unique")
+    .on(table.employeeId).where(sql`${table.isDefault} = true`),
+]);
+
 export const employeeSchedulesTable = pgTable("employee_schedules", {
   id: uuid("id").defaultRandom().primaryKey(),
   employeeId: uuid("employee_id").notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
@@ -396,9 +417,34 @@ export const employeeSchedulesTable = pgTable("employee_schedules", {
   index("employee_schedules_employee_weekday_idx").on(table.employeeId, table.weekday),
 ]);
 
+/**
+ * Location-specific schedules are additive. The legacy employee_schedules table
+ * remains readable for old deployments and is backfilled into this table at
+ * rollout; new scheduling must use this table for an assigned location.
+ */
+export const employeeLocationSchedulesTable = pgTable("employee_location_schedules", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  employeeId: uuid("employee_id").notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
+  salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
+  weekday: integer("weekday").notNull(),
+  startTime: text("start_time").notNull(),
+  endTime: text("end_time").notNull(),
+  breakStart: text("break_start"),
+  breakEnd: text("break_end"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("employee_location_schedules_window_unique")
+    .on(table.employeeId, table.salonId, table.weekday, table.startTime, table.endTime),
+  index("employee_location_schedules_employee_salon_weekday_idx")
+    .on(table.employeeId, table.salonId, table.weekday),
+]);
+
 export const employeeTimeOffTable = pgTable("employee_time_off", {
   id: uuid("id").defaultRandom().primaryKey(),
   employeeId: uuid("employee_id").notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
+  /** Null means all assigned locations (legacy-compatible). */
+  salonId: uuid("salon_id").references(() => salonsTable.id, { onDelete: "cascade" }),
   startDate: date("start_date", { mode: "string" }).notNull(),
   endDate: date("end_date", { mode: "string" }).notNull(),
   // Null/null is a legacy-compatible all-day absence. Non-null values represent
@@ -409,6 +455,7 @@ export const employeeTimeOffTable = pgTable("employee_time_off", {
 }, (table) => [
   // Leading FK coverage: all time-off for an employee, ordered by date range.
   index("employee_time_off_employee_start_idx").on(table.employeeId, table.startDate),
+  index("employee_time_off_employee_salon_start_idx").on(table.employeeId, table.salonId, table.startDate),
   check("employee_time_off_times_together_check", sql`(${table.startTime} is null) = (${table.endTime} is null)`),
   check("employee_time_off_time_order_check", sql`${table.startTime} is null or ${table.startTime} < ${table.endTime}`),
 ]);

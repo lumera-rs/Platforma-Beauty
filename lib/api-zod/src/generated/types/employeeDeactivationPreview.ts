@@ -9,6 +9,11 @@
 export interface EmployeeDeactivationPreview {
   employeeId: string;
   employeeName: string;
+  /**
+     * Exact salon location that owns this request; present for owner queue reads.
+     * @nullable
+     */
+  locationName?: string | null;
   /** @minimum 0 */
   futureAppointmentCount: number;
   hasLoginAccount: boolean;

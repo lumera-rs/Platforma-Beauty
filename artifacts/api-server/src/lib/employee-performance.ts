@@ -14,11 +14,12 @@
  * package_redemptions.original_appointment_price, not the zeroed price column.
  */
 
-import { and, eq, gte, lte, sql, isNotNull } from "drizzle-orm";
+import { and, eq, gte, inArray, lte, sql, isNotNull } from "drizzle-orm";
 import {
   db,
   appointmentsTable,
   employeesTable,
+  employeeLocationAssignmentsTable,
   employeeCommissionSettingsTable,
   packageRedemptionsTable,
   reviewsTable,
@@ -46,7 +47,9 @@ export interface EmployeePerformanceMetrics {
 }
 
 export interface EmployeePerformanceInput {
-  salonId: string;
+  /** Kept for single-location callers; salonIds is used for owner-wide reads. */
+  salonId?: string;
+  salonIds?: string[];
   employeeId?: string;
   from?: string; // ISO YYYY-MM-DD
   to?: string;
@@ -55,10 +58,20 @@ export interface EmployeePerformanceInput {
 export async function getEmployeePerformance(
   input: EmployeePerformanceInput,
 ): Promise<EmployeePerformanceMetrics[]> {
-  // Base filter for employees active in this salon
+  const salonIds = input.salonIds ?? (input.salonId ? [input.salonId] : []);
+  if (!salonIds.length) return [];
+  const salonScopeSql = sql.join(salonIds.map((salonId) => sql`${salonId}::uuid`), sql`, `);
+  // Do not use employees.salonId as an ownership shortcut here: an employee may
+  // be assigned to several locations. EXISTS avoids multiplying an employee
+  // (and therefore their appointments) once for every assignment.
   const employeeFilter = and(
-    eq(employeesTable.salonId, input.salonId),
     eq(employeesTable.active, true),
+    sql`exists (
+      select 1 from ${employeeLocationAssignmentsTable} employee_location
+      where employee_location.employee_id = ${employeesTable.id}
+        and employee_location.salon_id in (${salonScopeSql})
+        and employee_location.active = true
+    )`,
     ...(input.employeeId ? [eq(employeesTable.id, input.employeeId)] : []),
   );
 
@@ -81,6 +94,7 @@ export async function getEmployeePerformance(
       appointmentsTable,
       and(
         eq(appointmentsTable.employeeId, employeesTable.id),
+          inArray(appointmentsTable.salonId, salonIds),
         ...appointmentDateFilters,
       ),
     )
@@ -96,7 +110,7 @@ export async function getEmployeePerformance(
   // A package appointment has price = 0; the original price lives in
   // package_redemptions.original_appointment_price.
   const apptDetailFilter = and(
-    eq(appointmentsTable.salonId, input.salonId),
+    inArray(appointmentsTable.salonId, salonIds),
     eq(appointmentsTable.status, "completed"),
     ...(input.employeeId ? [eq(appointmentsTable.employeeId, input.employeeId)] : []),
     ...appointmentDateFilters,
@@ -123,7 +137,7 @@ export async function getEmployeePerformance(
   const commissionSettings = await db
     .select()
     .from(employeeCommissionSettingsTable)
-    .where(eq(employeeCommissionSettingsTable.salonId, input.salonId));
+    .where(inArray(employeeCommissionSettingsTable.salonId, salonIds));
   const commissionMap = new Map(commissionSettings.map((cs) => [cs.employeeId, cs]));
 
   // ── Build per-employee revenue + commission maps ──────────────────────────
@@ -170,7 +184,7 @@ export async function getEmployeePerformance(
     })
     .from(reviewsTable)
     .where(and(
-      eq(reviewsTable.salonId, input.salonId),
+      inArray(reviewsTable.salonId, salonIds),
       eq(reviewsTable.visible, true),
       isNotNull(reviewsTable.employeeId),
       ...(input.employeeId ? [eq(reviewsTable.employeeId, input.employeeId)] : []),
@@ -194,7 +208,7 @@ export async function getEmployeePerformance(
           salon_customer_id,
           count(*) AS cnt
         FROM appointments
-        WHERE salon_id = ${input.salonId}
+        WHERE salon_id in (${salonScopeSql})
           AND status = 'completed'
           ${input.employeeId ? sql`AND employee_id = ${input.employeeId}` : sql``}
           ${input.from ? sql`AND appointment_date >= ${input.from}` : sql``}

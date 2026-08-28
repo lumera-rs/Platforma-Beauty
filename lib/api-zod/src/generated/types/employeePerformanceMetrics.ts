@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { EmployeePerformanceMetricsCommissionType } from './employeePerformanceMetricsCommissionType';
+import type { EmployeePerformanceMetricsLocationBreakdownItem } from './employeePerformanceMetricsLocationBreakdownItem';
 
 export interface EmployeePerformanceMetrics {
   employeeId: string;
@@ -28,4 +29,6 @@ export interface EmployeePerformanceMetrics {
      * @maximum 1
      */
   rebookingRate: number;
+  /** Exact-location metrics for this employee within the selected scope. */
+  locationBreakdown: EmployeePerformanceMetricsLocationBreakdownItem[];
 }

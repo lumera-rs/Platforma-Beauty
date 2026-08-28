@@ -6,6 +6,11 @@ import { and, eq, inArray } from "drizzle-orm";
 import {
   appointmentsTable,
   db,
+  employeeLocationAssignmentsTable,
+  employeeLocationSchedulesTable,
+  employeesTable,
+  employeeServicesTable,
+  referralCodesTable,
   salonLoyaltyStatusesTable,
   salonsTable,
   servicesTable,
@@ -31,6 +36,7 @@ async function run(): Promise<void> {
   let salonIds: string[] = [];
   let serviceIds: string[] = [];
   let planIds: string[] = [];
+  let employeeId: string | undefined;
 
   try {
     const [owner, otherOwner] = await db.insert(usersTable).values([
@@ -122,6 +128,23 @@ async function run(): Promise<void> {
     ]).returning();
     assert.ok(firstService && secondService);
     serviceIds = [firstService.id, secondService.id];
+    const [employee] = await db.insert(employeesTable).values({
+      salonId: first.id,
+      name: `Zaposleni ${suffix}`,
+      role: "Stilista",
+      bio: "",
+      avatarUrl: "",
+    }).returning();
+    assert.ok(employee);
+    employeeId = employee.id;
+    await db.insert(employeeLocationAssignmentsTable).values([
+      { employeeId: employee.id, salonId: first.id, active: true, isDefault: true },
+      { employeeId: employee.id, salonId: second.id, active: true, isDefault: false },
+    ]);
+    await db.insert(employeeServicesTable).values([
+      { employeeId: employee.id, serviceId: firstService.id },
+      { employeeId: employee.id, serviceId: secondService.id },
+    ]);
     await db.insert(appointmentsTable).values([
       {
         salonId: first.id,
@@ -169,6 +192,11 @@ async function run(): Promise<void> {
       const response = await fetch(`${baseUrl}${path}`, { headers: { cookie } });
       return { response, body: await response.json() as Json };
     };
+    const put = (path: string, body: unknown) => fetch(`${baseUrl}${path}`, {
+      method: "PUT",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
 
     const locationDashboard = await get("/salon/dashboard");
     assert.equal(locationDashboard.response.status, 200);
@@ -204,6 +232,46 @@ async function run(): Promise<void> {
     const secondDashboard = await get("/salon/dashboard");
     assert.equal(secondDashboard.body.revenueThisMonth, 2400, "switch must refresh the active location context");
 
+    const removedSecondLocationServices = await fetch(`${baseUrl}/salon/employees/${employee.id}`, {
+      method: "PATCH",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ serviceIds: [] }),
+    });
+    assert.equal(removedSecondLocationServices.status, 200);
+    const remainingEmployeeServices = await db.select().from(employeeServicesTable)
+      .where(eq(employeeServicesTable.employeeId, employee.id));
+    assert.deepEqual(
+      remainingEmployeeServices.map((link) => link.serviceId),
+      [firstService.id],
+      "saving B must preserve A mappings while honoring an explicit removal at B",
+    );
+
+    const [firstSchedule, secondSchedule] = await Promise.all([
+      put(`/salon/employees/${employee.id}/locations/${first.id}/schedule`, {
+        windows: [{ weekday: 1, startTime: "09:00", endTime: "13:00" }],
+      }),
+      put(`/salon/employees/${employee.id}/locations/${second.id}/schedule`, {
+        windows: [{ weekday: 1, startTime: "11:00", endTime: "15:00" }],
+      }),
+    ]);
+    assert.deepEqual(
+      [firstSchedule.status, secondSchedule.status].sort(),
+      [200, 409],
+      "overlapping concurrent location writes must yield exactly one success and one conflict",
+    );
+    const finalSchedules = await db.select().from(employeeLocationSchedulesTable)
+      .where(eq(employeeLocationSchedulesTable.employeeId, employee.id));
+    assert.equal(finalSchedules.length, 1, "the rejected concurrent write must leave no overlapping final state");
+    assert.ok(
+      (finalSchedules[0]!.salonId === first.id
+        && finalSchedules[0]!.startTime === "09:00"
+        && finalSchedules[0]!.endTime === "13:00")
+      || (finalSchedules[0]!.salonId === second.id
+        && finalSchedules[0]!.startTime === "11:00"
+        && finalSchedules[0]!.endTime === "15:00"),
+      "the final schedule must be exactly the successful location's window",
+    );
+
     const forbiddenSwitch = await fetch(`${baseUrl}/salon/active-salon`, {
       method: "PUT",
       headers: { cookie, "content-type": "application/json" },
@@ -232,6 +300,7 @@ async function run(): Promise<void> {
     if (server) await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));
     if (salonIds.length) {
       await db.update(usersTable).set({ activeSalonId: null }).where(inArray(usersTable.id, [ownerId, otherOwnerId].filter((id): id is string => Boolean(id))));
+      if (employeeId) await db.delete(employeesTable).where(eq(employeesTable.id, employeeId));
       await db.delete(subscriptionsTable).where(inArray(subscriptionsTable.salonId, salonIds));
       await db.delete(salonLoyaltyStatusesTable).where(inArray(salonLoyaltyStatusesTable.salonId, salonIds));
       await db.delete(appointmentsTable).where(inArray(appointmentsTable.salonId, salonIds));
@@ -240,6 +309,10 @@ async function run(): Promise<void> {
     }
     if (planIds.length) await db.delete(subscriptionPlansTable).where(inArray(subscriptionPlansTable.id, planIds));
     const userIds = [ownerId, otherOwnerId].filter((id): id is string => Boolean(id));
+    // Referral codes intentionally restrict deletion of their referrer. Remove
+    // fixture-owned codes before users so an unrelated referral-path assertion
+    // cannot leave this multi-location fixture behind.
+    if (userIds.length) await db.delete(referralCodesTable).where(inArray(referralCodesTable.referrerUserId, userIds));
     if (userIds.length) await db.delete(usersTable).where(inArray(usersTable.id, userIds));
     await pool.end();
   }
