@@ -10,12 +10,22 @@ import {
   employeeLocationSchedulesTable,
   employeesTable,
   employeeServicesTable,
+  loyaltyPointLedgerTable,
+  orderItemsTable,
+  ordersTable,
+  productCategoriesTable,
+  productsTable,
   referralCodesTable,
   salonLoyaltyStatusesTable,
+  salonNotificationsTable,
   salonsTable,
   servicesTable,
+  shopSettingsTable,
+  shoppingCartItemsTable,
+  shoppingCartsTable,
   subscriptionPlansTable,
   subscriptionsTable,
+  suppliersTable,
   usersTable,
   pool,
 } from "@workspace/db";
@@ -37,9 +47,31 @@ async function run(): Promise<void> {
   let serviceIds: string[] = [];
   let planIds: string[] = [];
   let employeeId: string | undefined;
+  let employeeUserId: string | undefined;
+  let supplierId: string | undefined;
+  let categoryId: string | undefined;
+  let productId: string | undefined;
+  let orderId: string | undefined;
+  let shopSettingsBefore: typeof shopSettingsTable.$inferSelect | undefined;
 
   try {
-    const [owner, otherOwner] = await db.insert(usersTable).values([
+    [shopSettingsBefore] = await db.select().from(shopSettingsTable).limit(1);
+    assert.ok(shopSettingsBefore, "demo data must provide shop settings");
+    await db.update(shopSettingsTable).set({
+      sellerCompanyName: `Multi seller ${suffix}`,
+      sellerTaxId: "101234567",
+      sellerRegistrationNumber: "20123456",
+      sellerAddress: "Prodavac 1",
+      sellerCity: "Beograd",
+      sellerPostalCode: "11000",
+      sellerBankAccount: "100-123456789-10",
+      sellerContactEmail: `multi-seller-${suffix}@example.test`,
+      sellerContactPhone: "+381601234567",
+      version: shopSettingsBefore.version + 1,
+      updatedAt: new Date(),
+    }).where(eq(shopSettingsTable.id, shopSettingsBefore.id));
+
+    const [owner, otherOwner, employeeUser] = await db.insert(usersTable).values([
       {
         firstName: "Multi",
         lastName: "Owner",
@@ -56,10 +88,19 @@ async function run(): Promise<void> {
         passwordSetAt: new Date(),
         role: "SALON_OWNER",
       },
+      {
+        firstName: "Multi",
+        lastName: "Employee",
+        email: `multi-employee-${suffix}@example.test`,
+        passwordHash,
+        passwordSetAt: new Date(),
+        role: "SALON_EMPLOYEE",
+      },
     ]).returning();
-    assert.ok(owner && otherOwner);
+    assert.ok(owner && otherOwner && employeeUser);
     ownerId = owner.id;
     otherOwnerId = otherOwner.id;
+    employeeUserId = employeeUser.id;
 
     const [first, second, foreign] = await db.insert(salonsTable).values([
       {
@@ -145,10 +186,12 @@ async function run(): Promise<void> {
     serviceIds = [firstService.id, secondService.id];
     const [employee] = await db.insert(employeesTable).values({
       salonId: first.id,
+      userId: employeeUser.id,
       name: `Zaposleni ${suffix}`,
       role: "Stilista",
       bio: "",
       avatarUrl: "",
+      canOrderIndependently: true,
     }).returning();
     assert.ok(employee);
     employeeId = employee.id;
@@ -198,8 +241,42 @@ async function run(): Promise<void> {
       { salonId: second.id, planId: trialPlan.id, status: "active", dueAmount: 6500 },
     ]);
 
+    const [supplier] = await db.insert(suppliersTable).values({
+      name: `Multi supplier ${suffix}`,
+      slug: `multi-supplier-${suffix}`,
+      scope: "B2B",
+    }).returning();
+    assert.ok(supplier);
+    supplierId = supplier.id;
+    const [category] = await db.insert(productCategoriesTable).values({
+      supplierId: supplier.id,
+      name: `Multi category ${suffix}`,
+      slug: `multi-category-${suffix}`,
+    }).returning();
+    assert.ok(category);
+    categoryId = category.id;
+    const [product] = await db.insert(productsTable).values({
+      supplierId: supplier.id,
+      categoryId: category.id,
+      categoryName: category.name,
+      name: `Multi product ${suffix}`,
+      description: "Proizvod za proveru isporuke na drugu lokaciju.",
+      imageUrl: "/test.jpg",
+      price: 1500,
+      professionalEnabled: true,
+      retailEnabled: false,
+      stock: 10,
+      sku: `MULTI-${suffix}`,
+      unit: "kom",
+      weightGrams: 100,
+    }).returning();
+    assert.ok(product);
+    productId = product.id;
+
     const session = await createSession(owner.id);
     const cookie = `${sessionCookieName}=${session}`;
+    const employeeCookie = `${sessionCookieName}=${await createSession(employeeUser.id)}`;
+    const otherOwnerCookie = `${sessionCookieName}=${await createSession(otherOwner.id)}`;
     server = app.listen(0, "127.0.0.1");
     await once(server, "listening");
     const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api`;
@@ -256,6 +333,39 @@ async function run(): Promise<void> {
     );
     assert.ok(deliverySalons.every((location) => location.addressComplete && location.billingComplete));
 
+    const addToCart = await fetch(`${baseUrl}/shop/cart/items`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ productId: product.id, quantity: 1 }),
+    });
+    assert.equal(addToCart.status, 200, await addToCart.text());
+
+    const employeeCheckout = await fetch(`${baseUrl}/shop/checkout`, {
+      method: "POST",
+      headers: { cookie: employeeCookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        useSalonAddress: true,
+        deliverySalonId: second.id,
+        deliveryMethod: "courier",
+        paymentMethod: "BANK_TRANSFER",
+        termsAccepted: true,
+      }),
+    });
+    assert.equal(employeeCheckout.status, 403, "employees must not redirect an active salon's cart to a sibling location");
+
+    const foreignOwnerCheckout = await fetch(`${baseUrl}/shop/checkout`, {
+      method: "POST",
+      headers: { cookie: otherOwnerCookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        useSalonAddress: true,
+        deliverySalonId: second.id,
+        deliveryMethod: "courier",
+        paymentMethod: "BANK_TRANSFER",
+        termsAccepted: true,
+      }),
+    });
+    assert.equal(foreignOwnerCheckout.status, 403, "another owner must not use the selected sibling delivery location");
+
     const foreignCheckout = await fetch(`${baseUrl}/shop/checkout`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
@@ -268,6 +378,43 @@ async function run(): Promise<void> {
       }),
     });
     assert.equal(foreignCheckout.status, 403, "checkout must reject another owner's location before accessing the active cart");
+
+    const completedCheckout = await fetch(`${baseUrl}/shop/checkout`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        useSalonAddress: true,
+        deliverySalonId: second.id,
+        deliveryMethod: "courier",
+        paymentMethod: "BANK_TRANSFER",
+        termsAccepted: true,
+      }),
+    });
+    const completedOrder = await completedCheckout.json() as Json;
+    assert.equal(completedCheckout.status, 201, JSON.stringify(completedOrder));
+    orderId = String(completedOrder.id);
+    const [storedOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+    assert.ok(storedOrder);
+    assert.equal(storedOrder.salonId, first.id, "the completed order must remain owned by the active salon");
+    assert.deepEqual(
+      {
+        name: storedOrder.shippingName,
+        address: storedOrder.shippingAddress,
+        city: storedOrder.shippingCity,
+        postalCode: storedOrder.shippingPostalCode,
+        phone: storedOrder.shippingPhone,
+        email: storedOrder.shippingEmail,
+      },
+      {
+        name: second.name,
+        address: second.address,
+        city: second.city,
+        postalCode: second.postalCode,
+        phone: second.phone,
+        email: second.email,
+      },
+      "the immutable delivery snapshot must contain only the selected sibling location",
+    );
 
     const loyalty = await get("/loyalty/status");
     assert.equal(loyalty.response.status, 200);
@@ -354,8 +501,47 @@ async function run(): Promise<void> {
     assert.deepEqual(secondServices.map((service) => service.id), [secondService.id], "public profile must not leak sibling services");
   } finally {
     if (server) await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));
+    if (shopSettingsBefore) {
+      await db.update(shopSettingsTable).set({
+        showLoyaltyPoints: shopSettingsBefore.showLoyaltyPoints,
+        pointsPer100Rsd: shopSettingsBefore.pointsPer100Rsd,
+        lowStockThreshold: shopSettingsBefore.lowStockThreshold,
+        defaultDeliveryBusinessDays: shopSettingsBefore.defaultDeliveryBusinessDays,
+        sellerCompanyName: shopSettingsBefore.sellerCompanyName,
+        sellerTaxId: shopSettingsBefore.sellerTaxId,
+        sellerRegistrationNumber: shopSettingsBefore.sellerRegistrationNumber,
+        sellerAddress: shopSettingsBefore.sellerAddress,
+        sellerCity: shopSettingsBefore.sellerCity,
+        sellerPostalCode: shopSettingsBefore.sellerPostalCode,
+        sellerBankAccount: shopSettingsBefore.sellerBankAccount,
+        sellerContactEmail: shopSettingsBefore.sellerContactEmail,
+        sellerContactPhone: shopSettingsBefore.sellerContactPhone,
+        retailCartReminderEnabled: shopSettingsBefore.retailCartReminderEnabled,
+        retailCartReminderDelayHours: shopSettingsBefore.retailCartReminderDelayHours,
+        retailCartReminderBrevoTemplateId: shopSettingsBefore.retailCartReminderBrevoTemplateId,
+        quoteValidityDays: shopSettingsBefore.quoteValidityDays,
+        reviewRewardsEnabled: shopSettingsBefore.reviewRewardsEnabled,
+        reviewInvitationDelayDays: shopSettingsBefore.reviewInvitationDelayDays,
+        reviewRewardPercent: shopSettingsBefore.reviewRewardPercent,
+        reviewRewardValidityDays: shopSettingsBefore.reviewRewardValidityDays,
+        version: shopSettingsBefore.version,
+        updatedAt: shopSettingsBefore.updatedAt,
+      }).where(eq(shopSettingsTable.id, shopSettingsBefore.id));
+    }
     if (salonIds.length) {
-      await db.update(usersTable).set({ activeSalonId: null }).where(inArray(usersTable.id, [ownerId, otherOwnerId].filter((id): id is string => Boolean(id))));
+      await db.update(usersTable).set({ activeSalonId: null }).where(inArray(usersTable.id, [ownerId, otherOwnerId, employeeUserId].filter((id): id is string => Boolean(id))));
+      if (orderId) {
+        await db.delete(loyaltyPointLedgerTable).where(eq(loyaltyPointLedgerTable.orderId, orderId));
+        await db.delete(orderItemsTable).where(eq(orderItemsTable.orderId, orderId));
+        await db.delete(ordersTable).where(eq(ordersTable.id, orderId));
+      }
+      await db.delete(salonNotificationsTable).where(inArray(salonNotificationsTable.salonId, salonIds));
+      const carts = await db.select({ id: shoppingCartsTable.id }).from(shoppingCartsTable)
+        .where(inArray(shoppingCartsTable.salonId, salonIds));
+      if (carts.length) {
+        await db.delete(shoppingCartItemsTable).where(inArray(shoppingCartItemsTable.cartId, carts.map((cart) => cart.id)));
+        await db.delete(shoppingCartsTable).where(inArray(shoppingCartsTable.id, carts.map((cart) => cart.id)));
+      }
       if (employeeId) await db.delete(employeesTable).where(eq(employeesTable.id, employeeId));
       await db.delete(subscriptionsTable).where(inArray(subscriptionsTable.salonId, salonIds));
       await db.delete(salonLoyaltyStatusesTable).where(inArray(salonLoyaltyStatusesTable.salonId, salonIds));
@@ -364,7 +550,10 @@ async function run(): Promise<void> {
       await db.delete(salonsTable).where(inArray(salonsTable.id, salonIds));
     }
     if (planIds.length) await db.delete(subscriptionPlansTable).where(inArray(subscriptionPlansTable.id, planIds));
-    const userIds = [ownerId, otherOwnerId].filter((id): id is string => Boolean(id));
+    if (productId) await db.delete(productsTable).where(eq(productsTable.id, productId));
+    if (categoryId) await db.delete(productCategoriesTable).where(eq(productCategoriesTable.id, categoryId));
+    if (supplierId) await db.delete(suppliersTable).where(eq(suppliersTable.id, supplierId));
+    const userIds = [ownerId, otherOwnerId, employeeUserId].filter((id): id is string => Boolean(id));
     // Referral codes intentionally restrict deletion of their referrer. Remove
     // fixture-owned codes before users so an unrelated referral-path assertion
     // cannot leave this multi-location fixture behind.
