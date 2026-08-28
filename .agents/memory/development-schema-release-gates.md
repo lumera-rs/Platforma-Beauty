@@ -32,3 +32,9 @@ An additive FK cannot target a lookup row that exists only after application sta
 **Why:** Existing production rows received a deterministic FK default while the migration created an empty lookup table, so validation failed before the rollout could seed that key.
 
 **How to apply:** For the first additive Publish, omit only the affected FK while retaining the typed non-null key. Let the versioned startup rollout seed and validate the lookup, then restore the ORM FK in the immediate hardening Publish.
+
+Runtime-created expression indexes can be valid in PostgreSQL but serialize into malformed Publish SQL when absent from the production schema.
+
+**Why:** A valid GIN `to_tsvector` index was reconstructed with its operator class inserted inside the function expression, causing migration parsing to fail before deployment.
+
+**How to apply:** Inspect exact `CREATE INDEX` statements in the Publish plan. For a first-release bridge, omit only the unsafe development index, let the versioned rollout create it after startup, then restore development parity after production succeeds.
