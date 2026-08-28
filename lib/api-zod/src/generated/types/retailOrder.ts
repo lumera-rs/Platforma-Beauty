@@ -5,12 +5,18 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { RetailOrderFulfillmentStatus } from './retailOrderFulfillmentStatus';
 import type { RetailOrderItemsItem } from './retailOrderItemsItem';
 
 export interface RetailOrder {
   id: string;
   orderNumber: string;
   status: string;
+  fulfillmentStatus: RetailOrderFulfillmentStatus;
+  /** @nullable */
+  trackingNumber: string | null;
+  /** @nullable */
+  trackingUrl: string | null;
   paymentMethod: string;
   paymentStatus: string;
   deliveryMethod: string;

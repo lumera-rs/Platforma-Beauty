@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useGetCurrentUser } from "@workspace/api-client-react";
 import { BusinessLayout } from "@/components/business-layout";
 import { Button } from "@/components/ui/button";
-import { Loader2, LayoutDashboard, Store, Users, Star, CreditCard, MessageSquare, Menu, X, Package, FolderTree, Tags, Truck, Mail, MessageSquareText, PlugZap, FileText, GraduationCap, SlidersHorizontal, BriefcaseBusiness, ListX, Gift, Layers, Bell, Settings2, Image, ListTree, ShieldAlert, Facebook, MailQuestion, AlertCircle, ShoppingBag, Megaphone } from "lucide-react";
+import { Loader2, LayoutDashboard, Store, Users, Star, CreditCard, MessageSquare, Menu, X, Package, FolderTree, Tags, Truck, Mail, MessageSquareText, PlugZap, FileText, GraduationCap, SlidersHorizontal, BriefcaseBusiness, ListX, Gift, Layers, Bell, Settings2, Image, ListTree, ShieldAlert, Facebook, MailQuestion, AlertCircle, ShoppingBag, Megaphone, TrendingUp } from "lucide-react";
 
 const navLinks = [
   { href: "/admin", label: "Pregled", icon: LayoutDashboard },
@@ -23,6 +23,7 @@ const navLinks = [
   { href: "/admin/nivoi-korpe", label: "Nivoi korpe", icon: ShoppingBag },
   { href: "/admin/dobavljaci", label: "Dobavljači", icon: FolderTree },
   { href: "/admin/proizvodi", label: "Proizvodi", icon: Package },
+  { href: "/admin/profitabilnost", label: "Profitabilnost", icon: TrendingUp },
   { href: "/admin/katalog/atributi", label: "Katalog atributi", icon: ListTree },
   { href: "/admin/b2c-baneri", label: "B2C Baneri", icon: Image },
   { href: "/admin/bundle-proizvodi", label: "Paketi", icon: Layers },

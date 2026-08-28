@@ -37,6 +37,8 @@ import type {
   AdminDeleteBulkSaleCampaignParams,
   AdminDeleteCartThresholdRewardParams,
   AdminDeleteLoyaltyPricingTierParams,
+  AdminFulfillmentUpdate,
+  AdminGetCommerceProfitabilityParams,
   AdminGetIntegrationsResponse,
   AdminGetWebhookFreshnessResponse,
   AdminIntegrationCard,
@@ -64,6 +66,8 @@ import type {
   AdminProductList,
   AdminProductUpdate,
   AdminProductWaitlistPage,
+  AdminProfitabilityReport,
+  AdminRetailOrder,
   AdminRetailProductReviewDetail,
   AdminRetailProductReviewList,
   AdminReview,
@@ -346,6 +350,7 @@ import type {
   PublicProduct,
   PublicProductDetail,
   PublicProductList,
+  PublicRetailOrderTracking,
   PublicRetailProductReview,
   PublicRetailProductReviewList,
   PurchasePackageBody,
@@ -378,6 +383,7 @@ import type {
   RetailProductReviewReportResult,
   RetailProductSubscription,
   RetailProductSubscriptionInput,
+  RetailTrackingLookupInput,
   RetentionSettings,
   RetentionSettingsHistoryEntry,
   RetentionSettingsPreview,
@@ -26886,9 +26892,9 @@ export const getTrackRetailOrderUrl = (params: TrackRetailOrderParams,) => {
 /**
  * @summary Track a retail order using its opaque guest access token
  */
-export const trackRetailOrder = async (params: TrackRetailOrderParams, options?: Parameters<typeof customFetch>[1]): Promise<RetailOrder> => {
+export const trackRetailOrder = async (params: TrackRetailOrderParams, options?: Parameters<typeof customFetch>[1]): Promise<PublicRetailOrderTracking> => {
 
-  return customFetch<RetailOrder>(getTrackRetailOrderUrl(params),
+  return customFetch<PublicRetailOrderTracking>(getTrackRetailOrderUrl(params),
   {
     ...options,
     method: 'GET'
@@ -26908,7 +26914,7 @@ export const getTrackRetailOrderQueryKey = (params?: TrackRetailOrderParams,) =>
     }
 
 
-export const getTrackRetailOrderQueryOptions = <TData = Awaited<ReturnType<typeof trackRetailOrder>>, TError = ErrorType<unknown>>(params: TrackRetailOrderParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof trackRetailOrder>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getTrackRetailOrderQueryOptions = <TData = Awaited<ReturnType<typeof trackRetailOrder>>, TError = ErrorType<void>>(params: TrackRetailOrderParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof trackRetailOrder>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -26927,14 +26933,14 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type TrackRetailOrderQueryResult = NonNullable<Awaited<ReturnType<typeof trackRetailOrder>>>
-export type TrackRetailOrderQueryError = ErrorType<unknown>
+export type TrackRetailOrderQueryError = ErrorType<void>
 
 
 /**
  * @summary Track a retail order using its opaque guest access token
  */
 
-export function useTrackRetailOrder<TData = Awaited<ReturnType<typeof trackRetailOrder>>, TError = ErrorType<unknown>>(
+export function useTrackRetailOrder<TData = Awaited<ReturnType<typeof trackRetailOrder>>, TError = ErrorType<void>>(
  params: TrackRetailOrderParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof trackRetailOrder>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -26951,6 +26957,77 @@ export function useTrackRetailOrder<TData = Awaited<ReturnType<typeof trackRetai
 
 
 
+
+export const getLookupRetailOrderTrackingUrl = () => {
+
+
+
+
+  return `/api/retail/orders/track/lookup`
+}
+
+/**
+ * @summary Look up retail tracking by exact order number and normalized email
+ */
+export const lookupRetailOrderTracking = async (retailTrackingLookupInput: RetailTrackingLookupInput, options?: Parameters<typeof customFetch>[1]): Promise<PublicRetailOrderTracking> => {
+
+  return customFetch<PublicRetailOrderTracking>(getLookupRetailOrderTrackingUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(retailTrackingLookupInput)
+  }
+);}
+
+
+
+
+
+export const getLookupRetailOrderTrackingMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof lookupRetailOrderTracking>>, TError,{data: BodyType<RetailTrackingLookupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof lookupRetailOrderTracking>>, TError,{data: BodyType<RetailTrackingLookupInput>}, TContext> => {
+
+const mutationKey = ['lookupRetailOrderTracking'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof lookupRetailOrderTracking>>, {data: BodyType<RetailTrackingLookupInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  lookupRetailOrderTracking(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LookupRetailOrderTrackingMutationResult = NonNullable<Awaited<ReturnType<typeof lookupRetailOrderTracking>>>
+    export type LookupRetailOrderTrackingMutationBody = BodyType<RetailTrackingLookupInput>
+    export type LookupRetailOrderTrackingMutationError = ErrorType<void>
+
+    /**
+ * @summary Look up retail tracking by exact order number and normalized email
+ */
+export const useLookupRetailOrderTracking = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof lookupRetailOrderTracking>>, TError,{data: BodyType<RetailTrackingLookupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof lookupRetailOrderTracking>>,
+        TError,
+        {data: BodyType<RetailTrackingLookupInput>},
+        TContext
+      > => {
+      return useMutation(getLookupRetailOrderTrackingMutationOptions(options));
+    }
 
 export const getListCustomerRetailOrdersUrl = () => {
 
@@ -27201,9 +27278,9 @@ export const getAdminGetRetailOrderUrl = (orderId: string,) => {
 /**
  * @summary Get the retail order snapshot and customer delivery details
  */
-export const adminGetRetailOrder = async (orderId: string, options?: Parameters<typeof customFetch>[1]): Promise<RetailOrder> => {
+export const adminGetRetailOrder = async (orderId: string, options?: Parameters<typeof customFetch>[1]): Promise<AdminRetailOrder> => {
 
-  return customFetch<RetailOrder>(getAdminGetRetailOrderUrl(orderId),
+  return customFetch<AdminRetailOrder>(getAdminGetRetailOrderUrl(orderId),
   {
     ...options,
     method: 'GET'
@@ -27278,14 +27355,15 @@ export const getAdminUpdateRetailOrderStatusUrl = (orderId: string,) => {
 /**
  * @summary Update retail fulfillment status
  */
-export const adminUpdateRetailOrderStatus = async (orderId: string, options?: Parameters<typeof customFetch>[1]): Promise<RetailOrder> => {
+export const adminUpdateRetailOrderStatus = async (orderId: string,
+    adminFulfillmentUpdate: AdminFulfillmentUpdate, options?: Parameters<typeof customFetch>[1]): Promise<AdminRetailOrder> => {
 
-  return customFetch<RetailOrder>(getAdminUpdateRetailOrderStatusUrl(orderId),
+  return customFetch<AdminRetailOrder>(getAdminUpdateRetailOrderStatusUrl(orderId),
   {
     ...options,
-    method: 'PATCH'
-
-
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminFulfillmentUpdate)
   }
 );}
 
@@ -27294,8 +27372,8 @@ export const adminUpdateRetailOrderStatus = async (orderId: string, options?: Pa
 
 
 export const getAdminUpdateRetailOrderStatusMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetailOrderStatus>>, TError,{orderId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetailOrderStatus>>, TError,{orderId: string}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetailOrderStatus>>, TError,{orderId: string;data: BodyType<AdminFulfillmentUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetailOrderStatus>>, TError,{orderId: string;data: BodyType<AdminFulfillmentUpdate>}, TContext> => {
 
 const mutationKey = ['adminUpdateRetailOrderStatus'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -27307,10 +27385,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateRetailOrderStatus>>, {orderId: string}> = (props) => {
-          const {orderId} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateRetailOrderStatus>>, {orderId: string;data: BodyType<AdminFulfillmentUpdate>}> = (props) => {
+          const {orderId,data} = props ?? {};
 
-          return  adminUpdateRetailOrderStatus(orderId,requestOptions)
+          return  adminUpdateRetailOrderStatus(orderId,data,requestOptions)
         }
 
 
@@ -27321,22 +27399,106 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AdminUpdateRetailOrderStatusMutationResult = NonNullable<Awaited<ReturnType<typeof adminUpdateRetailOrderStatus>>>
-
+    export type AdminUpdateRetailOrderStatusMutationBody = BodyType<AdminFulfillmentUpdate>
     export type AdminUpdateRetailOrderStatusMutationError = ErrorType<unknown>
 
     /**
  * @summary Update retail fulfillment status
  */
 export const useAdminUpdateRetailOrderStatus = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetailOrderStatus>>, TError,{orderId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetailOrderStatus>>, TError,{orderId: string;data: BodyType<AdminFulfillmentUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof adminUpdateRetailOrderStatus>>,
         TError,
-        {orderId: string},
+        {orderId: string;data: BodyType<AdminFulfillmentUpdate>},
         TContext
       > => {
       return useMutation(getAdminUpdateRetailOrderStatusMutationOptions(options));
     }
+
+export const getAdminGetCommerceProfitabilityUrl = (params: AdminGetCommerceProfitabilityParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/commerce/profitability?${stringifiedParams}` : `/api/admin/commerce/profitability`
+}
+
+/**
+ * @summary Aggregate immutable B2C/B2B order-line profitability snapshots
+ */
+export const adminGetCommerceProfitability = async (params: AdminGetCommerceProfitabilityParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminProfitabilityReport> => {
+
+  return customFetch<AdminProfitabilityReport>(getAdminGetCommerceProfitabilityUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGetCommerceProfitabilityQueryKey = (params?: AdminGetCommerceProfitabilityParams,) => {
+    return [
+    `/api/admin/commerce/profitability`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminGetCommerceProfitabilityQueryOptions = <TData = Awaited<ReturnType<typeof adminGetCommerceProfitability>>, TError = ErrorType<void>>(params: AdminGetCommerceProfitabilityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetCommerceProfitability>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetCommerceProfitabilityQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetCommerceProfitability>>> = ({ signal }) => adminGetCommerceProfitability(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetCommerceProfitability>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminGetCommerceProfitabilityQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetCommerceProfitability>>>
+export type AdminGetCommerceProfitabilityQueryError = ErrorType<void>
+
+
+/**
+ * @summary Aggregate immutable B2C/B2B order-line profitability snapshots
+ */
+
+export function useAdminGetCommerceProfitability<TData = Awaited<ReturnType<typeof adminGetCommerceProfitability>>, TError = ErrorType<void>>(
+ params: AdminGetCommerceProfitabilityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetCommerceProfitability>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminGetCommerceProfitabilityQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getAdminUpdateRetailPaymentStatusUrl = (orderId: string,) => {
 

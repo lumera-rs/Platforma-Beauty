@@ -1433,7 +1433,7 @@ async function run() {
     });
     return item;
   }
-  async function bulkUpdate(orderIds: string[], update: { status?: "cancelled"; paymentStatus?: "refunded" }) {
+  async function bulkUpdate(orderIds: string[], update: { status?: "cancelled" | "shipped"; paymentStatus?: "refunded" }) {
     return fetch(`http://127.0.0.1:${port}/api/admin/orders/bulk`, {
       method: "PATCH",
       headers: {
@@ -1452,6 +1452,12 @@ async function run() {
   ]);
   assert.ok(cancelledStamped[0]!.referralCreditRestoredAt, "bulk cancellation stamps credited order");
   assert.equal(noCreditStamped[0]!.referralCreditRestoredAt, null, "mixed no-credit order is not stamped");
+  assert.equal(cancelledStamped[0]!.fulfillmentStatus, "CANCELLED");
+  assert.equal(cancelledStamped[0]!.status, "cancelled");
+  const bulkCannotShipWithoutTracking = await order(salonOne);
+  assert.equal((await bulkUpdate([bulkCannotShipWithoutTracking.id], { status: "shipped" })).status, 400);
+  const [notShipped] = await db.select().from(ordersTable).where(eq(ordersTable.id, bulkCannotShipWithoutTracking.id)).limit(1);
+  assert.notEqual(notShipped?.fulfillmentStatus, "SHIPPED");
 
   const bulkRefunded = await creditedBulkOrder(110);
   assert.equal((await bulkUpdate([bulkRefunded.id], { paymentStatus: "refunded" })).status, 200);

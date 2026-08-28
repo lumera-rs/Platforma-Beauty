@@ -5848,7 +5848,18 @@ paths:
       summary: Track a retail order using its opaque guest access token
       parameters: [{ name: token, in: query, required: true, schema: { type: string, minLength: 32 } }]
       responses:
-        "200": { description: Retail order, content: { application/json: { schema: { $ref: "#/components/schemas/RetailOrder" } } } }
+        "200": { description: Minimized public tracking state, content: { application/json: { schema: { $ref: "#/components/schemas/PublicRetailOrderTracking" } } } }
+        "404": { description: "Generic not-found response for invalid, expired, or revoked tokens" }
+  /retail/orders/track/lookup:
+    post:
+      operationId: lookupRetailOrderTracking
+      tags: [shop]
+      summary: Look up retail tracking by exact order number and normalized email
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/RetailTrackingLookupInput" } } } }
+      responses:
+        "200": { description: Minimized public tracking state; a fresh opaque link is emailed, content: { application/json: { schema: { $ref: "#/components/schemas/PublicRetailOrderTracking" } } } }
+        "404": { description: Generic failure for every credential mismatch }
+        "429": { description: Generic rate-limit response }
   /customer/retail-orders:
     get:
       operationId: listCustomerRetailOrders
@@ -5863,7 +5874,7 @@ paths:
       summary: Get one retail order owned by the authenticated CUSTOMER or JOBSEEKER account
       parameters: [{ name: orderId, in: path, required: true, schema: { type: string } }]
       responses:
-        "200": { description: Retail order, content: { application/json: { schema: { $ref: "#/components/schemas/RetailOrder" } } } }
+        "200": { description: Customer-owned retail order, content: { application/json: { schema: { $ref: "#/components/schemas/RetailOrder" } } } }
         "404": { description: Order not found or not owned by the authenticated retail account }
   /admin/retail-orders:
     get:
@@ -5894,15 +5905,34 @@ paths:
       summary: Get the retail order snapshot and customer delivery details
       parameters: [{ name: orderId, in: path, required: true, schema: { type: string } }]
       responses:
-        "200": { description: Retail order, content: { application/json: { schema: { $ref: "#/components/schemas/RetailOrder" } } } }
+        "200": { description: Retail order and fulfillment audit, content: { application/json: { schema: { $ref: "#/components/schemas/AdminRetailOrder" } } } }
   /admin/retail-orders/{orderId}/status:
     patch:
       operationId: adminUpdateRetailOrderStatus
       tags: [admin]
       summary: Update retail fulfillment status
       parameters: [{ name: orderId, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AdminFulfillmentUpdate" } } } }
       responses:
-        "200": { description: Updated retail order, content: { application/json: { schema: { $ref: "#/components/schemas/RetailOrder" } } } }
+        "200": { description: Updated retail order, content: { application/json: { schema: { $ref: "#/components/schemas/AdminRetailOrder" } } } }
+  /admin/commerce/profitability:
+    get:
+      operationId: adminGetCommerceProfitability
+      tags: [admin]
+      summary: Aggregate immutable B2C/B2B order-line profitability snapshots
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+        - { name: market, in: query, schema: { type: string, enum: [B2C, B2B, BOTH], default: BOTH } }
+        - { name: supplierId, in: query, schema: { type: string } }
+        - { name: categoryId, in: query, schema: { type: string } }
+        - { name: brand, in: query, schema: { type: string, minLength: 1, maxLength: 120 } }
+        - { name: productId, in: query, schema: { type: string } }
+        - { name: granularity, in: query, schema: { type: string, enum: [DAY, WEEK, MONTH], default: DAY } }
+      responses:
+        "200": { description: "Profitability KPIs, time series, and bounded product groups", content: { application/json: { schema: { $ref: "#/components/schemas/AdminProfitabilityReport" } } } }
+        "400": { description: Invalid or unbounded date/filter range }
+        "403": { description: Administrator access required }
   /admin/retail-orders/{orderId}/payment-status:
     patch:
       operationId: adminUpdateRetailPaymentStatus
@@ -8922,6 +8952,9 @@ components:
         id: { type: string }
         orderNumber: { type: string }
         status: { type: string }
+        fulfillmentStatus: { type: string, enum: [RECEIVED, PREPARING, PACKING, SHIPPED, COMPLETED, CANCELLED] }
+        trackingNumber: { type: ["string", "null"] }
+        trackingUrl: { type: ["string", "null"] }
         paymentMethod: { type: string }
         paymentStatus: { type: string }
         deliveryMethod: { type: string }
@@ -8948,7 +8981,104 @@ components:
               quantity: { type: integer }
               unitPrice: { type: integer }
             required: [id, productId, name, imageUrl, sku, quantity, unitPrice]
-      required: [id, orderNumber, status, paymentMethod, paymentStatus, deliveryMethod, subtotal, shippingCost, total, referralCreditMerchandiseSubtotalRsd, referralCreditPreCreditPayableTotalRsd, referralCreditAppliedRsd, createdAt, items]
+      required: [id, orderNumber, status, fulfillmentStatus, trackingNumber, trackingUrl, paymentMethod, paymentStatus, deliveryMethod, subtotal, shippingCost, total, referralCreditMerchandiseSubtotalRsd, referralCreditPreCreditPayableTotalRsd, referralCreditAppliedRsd, createdAt, items]
+    RetailTrackingLookupInput:
+      type: object
+      additionalProperties: false
+      properties:
+        orderNumber: { type: string, minLength: 1, maxLength: 80 }
+        email: { type: string, minLength: 5, maxLength: 320, pattern: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$' }
+      required: [orderNumber, email]
+    PublicRetailOrderTracking:
+      type: object
+      additionalProperties: false
+      properties:
+        orderNumber: { type: string }
+        status: { type: string, enum: [RECEIVED, PREPARING, PACKING, SHIPPED, COMPLETED, CANCELLED] }
+        statusLabel: { type: string }
+        createdAt: { type: string, format: date-time }
+        statusUpdatedAt: { type: string, format: date-time }
+        progressStage: { type: integer, minimum: 0, maximum: 5 }
+        trackingNumber: { type: ["string", "null"] }
+        courierUrl: { type: ["string", "null"] }
+      required: [orderNumber, status, statusLabel, createdAt, statusUpdatedAt, progressStage, trackingNumber, courierUrl]
+    AdminFulfillmentUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        fulfillmentStatus: { type: string, enum: [RECEIVED, PREPARING, PACKING, SHIPPED, COMPLETED, CANCELLED] }
+        status: { type: string, enum: [pending, confirmed, paid, processing, shipped, delivered, cancelled], deprecated: true }
+        trackingNumber: { type: ["string", "null"], maxLength: 120 }
+        trackingUrl: { type: ["string", "null"], format: uri, maxLength: 1000 }
+      anyOf:
+        - required: [fulfillmentStatus]
+        - required: [status]
+    FulfillmentHistoryEntry:
+      type: object
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        actorName: { type: string }
+        field: { type: string }
+        previousValue: { type: ["string", "null"] }
+        nextValue: { type: ["string", "null"] }
+        note: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+      required: [id, actorName, field, previousValue, nextValue, note, createdAt]
+    AdminRetailOrder:
+      allOf:
+        - { $ref: "#/components/schemas/RetailOrder" }
+        - type: object
+          properties:
+            fulfillmentHistory: { type: array, items: { $ref: "#/components/schemas/FulfillmentHistoryEntry" } }
+          required: [fulfillmentHistory]
+    AdminProfitabilityKpis:
+      type: object
+      additionalProperties: false
+      properties:
+        revenueRsd: { type: integer }
+        cogsRsd: { type: integer }
+        profitRsd: { type: integer }
+        marginPercent: { type: ["number", "null"] }
+        units: { type: integer, minimum: 0 }
+      required: [revenueRsd, cogsRsd, profitRsd, marginPercent, units]
+    AdminProfitabilityPoint:
+      type: object
+      additionalProperties: false
+      properties:
+        period: { type: string }
+        revenueRsd: { type: integer }
+        cogsRsd: { type: integer }
+        profitRsd: { type: integer }
+        marginPercent: { type: ["number", "null"] }
+      required: [period, revenueRsd, cogsRsd, profitRsd, marginPercent]
+    AdminProfitabilityProductRow:
+      type: object
+      additionalProperties: false
+      properties:
+        productId: { type: ["string", "null"] }
+        productName: { type: string }
+        supplierId: { type: string }
+        supplierName: { type: string }
+        categoryId: { type: ["string", "null"] }
+        categoryName: { type: ["string", "null"] }
+        brand: { type: ["string", "null"] }
+        units: { type: integer, minimum: 0 }
+        realizedRevenueRsd: { type: integer }
+        cogsRsd: { type: integer }
+        profitRsd: { type: integer }
+        marginPercent: { type: ["number", "null"] }
+        averageDiscountPercent: { type: ["number", "null"] }
+      required: [productId, productName, supplierId, supplierName, categoryId, categoryName, brand, units, realizedRevenueRsd, cogsRsd, profitRsd, marginPercent, averageDiscountPercent]
+    AdminProfitabilityReport:
+      type: object
+      additionalProperties: false
+      properties:
+        kpis: { $ref: "#/components/schemas/AdminProfitabilityKpis" }
+        timeSeries: { type: array, maxItems: 366, items: { $ref: "#/components/schemas/AdminProfitabilityPoint" } }
+        products: { type: array, maxItems: 200, items: { $ref: "#/components/schemas/AdminProfitabilityProductRow" } }
+        treatment: { type: string }
+      required: [kpis, timeSeries, products, treatment]
     ProductCategory:
       type: object
       properties:
@@ -9597,6 +9727,7 @@ components:
       properties:
         id: { type: string }
         status: { type: string, enum: [pending, confirmed, paid, processing, shipped, delivered, cancelled] }
+        fulfillmentStatus: { type: string, enum: [RECEIVED, PREPARING, PACKING, SHIPPED, COMPLETED, CANCELLED] }
         paymentStatus: { type: string, enum: [unpaid, pending, paid, refunded, failed] }
         deliveryMethod: { type: string, enum: [courier, personal_belgrade] }
         courierServiceId: { type: ["string", "null"] }
@@ -9655,7 +9786,7 @@ components:
             postalCode: { type: string }
           required: [companyName, pib, registrationNumber, address, city, postalCode]
         items: { type: array, items: { $ref: "#/components/schemas/OrderItem" } }
-      required: [id, status, paymentStatus, deliveryMethod, courierServiceId, courierService, trackingNumber, trackingUrl, total, subtotal, shippingCost, totalWeightGrams, couponCode, couponDiscountRsd, couponFreeShipping, referralCreditMerchandiseSubtotalRsd, referralCreditPreCreditPayableTotalRsd, referralCreditAppliedRsd, invoice, itemCount, createdAt, updatedAt, salon, delivery, billing, items]
+      required: [id, status, fulfillmentStatus, paymentStatus, deliveryMethod, courierServiceId, courierService, trackingNumber, trackingUrl, total, subtotal, shippingCost, totalWeightGrams, couponCode, couponDiscountRsd, couponFreeShipping, referralCreditMerchandiseSubtotalRsd, referralCreditPreCreditPayableTotalRsd, referralCreditAppliedRsd, invoice, itemCount, createdAt, updatedAt, salon, delivery, billing, items]
     SalonNotification:
       type: object
       properties:
@@ -9730,9 +9861,11 @@ components:
       additionalProperties: false
       properties:
         status: { type: string, enum: [confirmed, shipped, delivered, cancelled] }
+        fulfillmentStatus: { type: string, enum: [RECEIVED, PREPARING, PACKING, SHIPPED, COMPLETED, CANCELLED] }
         paymentStatus: { type: string, enum: [unpaid, pending, paid, refunded, failed] }
         courierServiceId: { type: ["string", "null"] }
         trackingNumber: { type: ["string", "null"], maxLength: 120 }
+        trackingUrl: { type: ["string", "null"], format: uri, maxLength: 1000 }
         adminNote: { type: ["string", "null"], maxLength: 2000 }
     AdminOrderBulkUpdate:
       type: object
@@ -10700,6 +10833,7 @@ components:
       required: [name, value]
     AdminProduct:
       type: object
+      additionalProperties: false
       properties:
         id: { type: string }
         supplierId: { type: string }
@@ -10715,6 +10849,7 @@ components:
           type: array
           items: { type: string }
         price: { type: number, multipleOf: 1 }
+        costPriceRsd: { type: ["integer", "null"], minimum: 0, maximum: 100000000 }
         discountPrice: { type: ["number", "null"], multipleOf: 1 }
         discountPriceEndsAt: { type: ["string", "null"], format: date-time }
         retailEnabled: { type: boolean }
@@ -10768,7 +10903,7 @@ components:
           items: { type: string, minLength: 1, maxLength: 100 }
         active: { type: boolean }
         createdAt: { type: string, format: date-time }
-      required: [id, supplierId, name, categoryName, description, imageUrl, images, price, discountPrice, discountPriceEndsAt, retailEnabled, professionalEnabled, publicDiscountPrice, publicDiscountPriceEndsAt, stock, catalogReference, sku, unit, isNew, isBestseller, similarProductsMode, similarProductIds, crossSellProductIds, quantityPricingTiers, minimumOrderQuantity, deliveryBusinessDaysOverride, subscriptionAllowed, subscriptionDiscountPercent, productTypeId, ingredients, usageInstructions, characteristics, searchSynonyms, active, createdAt]
+      required: [id, supplierId, name, categoryName, description, imageUrl, images, price, costPriceRsd, discountPrice, discountPriceEndsAt, retailEnabled, professionalEnabled, publicDiscountPrice, publicDiscountPriceEndsAt, stock, catalogReference, sku, unit, isNew, isBestseller, similarProductsMode, similarProductIds, crossSellProductIds, quantityPricingTiers, minimumOrderQuantity, deliveryBusinessDaysOverride, subscriptionAllowed, subscriptionDiscountPercent, productTypeId, ingredients, usageInstructions, characteristics, searchSynonyms, active, createdAt]
     AdminProductList:
       type: object
       properties:
@@ -10797,6 +10932,7 @@ components:
           type: array
           items: { type: string }
         price: { type: number, minimum: 0, maximum: 100000000, multipleOf: 1 }
+        costPriceRsd: { type: ["integer", "null"], minimum: 0, maximum: 100000000 }
         discountPrice: { type: ["number", "null"], minimum: 0, maximum: 100000000, multipleOf: 1 }
         discountPriceEndsAt: { type: ["string", "null"], format: date-time }
         retailEnabled: { type: boolean }
@@ -10859,6 +10995,7 @@ components:
           type: array
           items: { type: string }
         price: { type: number, minimum: 0, maximum: 100000000, multipleOf: 1 }
+        costPriceRsd: { type: ["integer", "null"], minimum: 0, maximum: 100000000 }
         discountPrice: { type: ["number", "null"], minimum: 0, maximum: 100000000, multipleOf: 1 }
         discountPriceEndsAt: { type: ["string", "null"], format: date-time }
         retailEnabled: { type: boolean }

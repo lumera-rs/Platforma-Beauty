@@ -16,7 +16,10 @@
  */
 import assert from "node:assert/strict";
 import { pool } from "@workspace/db";
-import { runBusinessGrowthSchemaDdl } from "./business-growth-schema";
+import {
+  BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY,
+  runBusinessGrowthSchemaDdl,
+} from "./business-growth-schema";
 
 const TEST_SCHEMA = `bg_upgrade_test_${Date.now()}`;
 
@@ -321,6 +324,65 @@ async function run() {
     const client = await pool.connect();
     try {
       await runBusinessGrowthSchemaDdl(client, s);
+      // Reproduce a partially-completed v65 upgrade: the commercial immutable
+      // trigger already exists, while a historical line still needs its new
+      // realized-revenue snapshot backfilled.  This used to fail on replay
+      // because the trigger rejected the migration's own UPDATE.
+      const productSnapshot = (await q<{
+        supplier_id: string; supplier_name: string; supplier_slug: string;
+        catalog_reference: string; sku: string | null;
+      }>(`SELECT p.supplier_id, sup.name supplier_name, sup.slug supplier_slug,
+           p.catalog_reference, p.sku
+          FROM "${s}".products p JOIN "${s}".suppliers sup ON sup.id = p.supplier_id
+          WHERE p.id = $1`, [fixtures.retailProduct.id])).rows[0]!;
+      const replayOrder = (await q<{ id: string }>(
+        `INSERT INTO "${s}".retail_orders
+           (order_number, cart_id, tracking_token_hash, idempotency_key, payment_method,
+            subtotal, shipping_cost, total, shipping_name, shipping_address, shipping_city,
+            shipping_postal_code, shipping_phone, shipping_email)
+         VALUES ('TRIGGER-REPLAY-1', $1, 'trigger-replay-token', 'trigger-replay-key',
+           'BANK_TRANSFER', 1000, 0, 1000, 'Legacy', 'Ulica 1', 'Beograd', '11000',
+           '+381600000000', 'legacy@bg.test') RETURNING id`,
+        [fixtures.retailCart.id],
+      )).rows[0]!;
+      await q(
+        `INSERT INTO "${s}".retail_order_items
+           (order_id, product_id, product_name, product_image_url, product_catalog_reference,
+            product_sku_snapshot, supplier_id, supplier_name, supplier_slug, market, currency,
+            unit_price, quantity, line_subtotal, line_total, base_unit_price, effective_unit_price,
+            price_source, line_discount, realized_revenue_rsd)
+         VALUES ($1, $2, 'Trigger replay product', '/legacy-retail.jpg', $3, $4, $5, $6, $7,
+           'B2C', 'RSD', 1000, 1, 1000, 1000, 1000, 1000, 'FULL_PRICE', 0, 0)`,
+        [replayOrder.id, fixtures.retailProduct.id, productSnapshot.catalog_reference,
+          productSnapshot.sku, productSnapshot.supplier_id, productSnapshot.supplier_name, productSnapshot.supplier_slug],
+      );
+      // Model an old checkout worker writing an incomplete pre-constraint line
+      // while a later bootstrap is about to replay.  The replay must repair it
+      // even though the immutable trigger is already present; before the
+      // transactional table lock/gated backfill this shape made validation fail.
+      await q(`ALTER TABLE "${s}".retail_order_items ALTER COLUMN supplier_id DROP NOT NULL`);
+      await q(`ALTER TABLE "${s}".retail_order_items ALTER COLUMN supplier_name DROP NOT NULL`);
+      await q(`ALTER TABLE "${s}".retail_order_items ALTER COLUMN supplier_slug DROP NOT NULL`);
+      const incompleteOrder = (await q<{ id: string }>(
+        `INSERT INTO "${s}".retail_orders
+           (order_number, cart_id, tracking_token_hash, idempotency_key, payment_method,
+            subtotal, shipping_cost, total, shipping_name, shipping_address, shipping_city,
+            shipping_postal_code, shipping_phone, shipping_email)
+         VALUES ('TRIGGER-RACE-1', $1, 'trigger-race-token', 'trigger-race-key',
+           'BANK_TRANSFER', 1000, 0, 1000, 'Legacy', 'Ulica 1', 'Beograd', '11000',
+           '+381600000001', 'legacy@bg.test') RETURNING id`,
+        [fixtures.retailCart.id],
+      )).rows[0]!;
+      await q(
+        `INSERT INTO "${s}".retail_order_items
+           (order_id, product_id, product_name, product_image_url, product_catalog_reference,
+            unit_price, quantity, line_subtotal, line_total, base_unit_price,
+            effective_unit_price, price_source, line_discount)
+         VALUES ($1, $2, 'Concurrent legacy line', '/legacy-retail.jpg', $3,
+           1000, 1, 1000, 1000, 1000, 1000, 'FULL_PRICE', 0)`,
+        [incompleteOrder.id, fixtures.retailProduct.id, productSnapshot.catalog_reference],
+      );
+      await q(`UPDATE "${s}".business_growth_schema_rollout SET version = 65 WHERE singleton = true`);
       // A legacy individual listing is exactly the historical data that v29
       // converts.  Its FK remains intact when the account role changes.
       const category = (await q<{ id: string }>(
@@ -333,7 +395,48 @@ async function run() {
         [category.id, fixtures.user.id],
       );
       await runBusinessGrowthSchemaDdl(client, s); // second run must be a no-op
+      const replaySnapshot = (await q<{ realized_revenue_rsd: number }>(
+        `SELECT realized_revenue_rsd FROM "${s}".retail_order_items WHERE order_id = $1`,
+        [replayOrder.id],
+      )).rows[0]!;
+      assert.equal(replaySnapshot.realized_revenue_rsd, 1000,
+        "trigger-present replay backfills realized revenue before restoring strict immutability");
+      const repairedConcurrentLine = (await q<{ supplier_id: string; supplier_name: string; supplier_slug: string }>(
+        `SELECT supplier_id, supplier_name, supplier_slug FROM "${s}".retail_order_items WHERE order_id = $1`,
+        [incompleteOrder.id],
+      )).rows[0]!;
+      assert.equal(repairedConcurrentLine.supplier_id, productSnapshot.supplier_id);
+      assert.equal(repairedConcurrentLine.supplier_name, productSnapshot.supplier_name);
+      assert.equal(repairedConcurrentLine.supplier_slug, productSnapshot.supplier_slug);
+      await assert.rejects(
+        q(`UPDATE "${s}".retail_order_items SET realized_revenue_rsd = 1 WHERE order_id = $1`, [replayOrder.id]),
+        /immutable/,
+        "strict commercial snapshot immutability is restored after the replay backfill",
+      );
       await runBusinessGrowthSchemaDdl(client, s); // conversion is idempotent
+      // Direct callers must serialize too (not only ensureBusinessGrowthSchema).
+      // Two independently held pool connections concurrently rebuilding trigger
+      // and system-catalog objects used to intermittently fail with XX000
+      // "tuple concurrently updated".
+      const [concurrentA, concurrentB] = await Promise.all([pool.connect(), pool.connect()]);
+      try {
+        // Simulate an older-version process: it owns the same stable lock even
+        // though its schema version constant would differ. The current runner
+        // must block and may not return/skip before that owner completes.
+        await concurrentA.query("SELECT pg_advisory_lock($1)", [BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY]);
+        let currentReturned = false;
+        const currentRun = runBusinessGrowthSchemaDdl(concurrentB, s)
+          .then(() => { currentReturned = true; });
+        await new Promise((resolve) => setTimeout(resolve, 75));
+        assert.equal(currentReturned, false,
+          "current-version rollout waits for the stable lock held by an older-version owner");
+        await concurrentA.query("SELECT pg_advisory_unlock($1)", [BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY]);
+        await currentRun;
+        assert.equal(currentReturned, true, "waiting rollout runs and verifies readiness after lock acquisition");
+      } finally {
+        concurrentA.release();
+        concurrentB.release();
+      }
     } finally {
       await client.query(`SET search_path TO "$user", public`).catch(() => {});
       client.release();

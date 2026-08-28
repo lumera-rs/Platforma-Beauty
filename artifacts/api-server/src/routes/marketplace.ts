@@ -151,6 +151,8 @@ import
    reorderActionsTable,
   retailOrdersTable,
   retailOrderItemsTable,
+  retailOrderStatusHistoryTable,
+  retailTrackingRateLimitsTable,
   referralCreditLedgerTable,
   referralCreditRedemptionsTable,
   referralMilestoneBenefitsTable,
@@ -769,6 +771,36 @@ function emailCampaignView(campaign: typeof emailCampaignsTable.$inferSelect) {
 
 function emailSafe(value: string) {
   return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
+}
+
+/**
+ * Allocate the already-finalized referral credit over eligible merchandise
+ * lines. This never re-quotes a promotion: it only makes the order-level,
+ * immutable allocation explicit for profitability reporting.
+ */
+function allocateFinalReferralDiscount(
+  lines: readonly { id: string; lineTotalRsd: number; referralEligible: boolean }[],
+  referralAppliedRsd: number,
+) {
+  const eligible = lines
+    .filter((line) => line.referralEligible && line.lineTotalRsd > 0)
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const total = eligible.reduce((sum, line) => sum + line.lineTotalRsd, 0);
+  if (!referralAppliedRsd) return new Map(lines.map((line) => [line.id, 0]));
+  if (!Number.isSafeInteger(referralAppliedRsd) || referralAppliedRsd < 0 || referralAppliedRsd > total) {
+    throw new Error("Final referral allocation is invalid.");
+  }
+  const shares = eligible.map((line) => {
+    const numerator = referralAppliedRsd * line.lineTotalRsd;
+    return { id: line.id, amount: Math.floor(numerator / total), remainder: numerator % total };
+  });
+  let remainder = referralAppliedRsd - shares.reduce((sum, share) => sum + share.amount, 0);
+  shares.sort((a, b) => b.remainder - a.remainder || a.id.localeCompare(b.id));
+  for (let index = 0; remainder > 0; index += 1, remainder -= 1) shares[index]!.amount += 1;
+  return new Map([
+    ...lines.map((line) => [line.id, 0] as const),
+    ...shares.map((share) => [share.id, share.amount] as const),
+  ]);
 }
 
 function appointmentLabel(appointment: typeof appointmentsTable.$inferSelect, salon: typeof salonsTable.$inferSelect, service: typeof servicesTable.$inferSelect) {
@@ -9997,6 +10029,7 @@ function retailOrderDto(
     id: order.id,
     orderNumber: order.orderNumber,
     status: order.status,
+    fulfillmentStatus: order.fulfillmentStatus,
     paymentMethod: order.paymentMethod,
     paymentStatus: order.paymentStatus,
     deliveryMethod: order.deliveryMethod,
@@ -10012,6 +10045,7 @@ function retailOrderDto(
     trackingNumber: order.trackingNumber ?? null,
     estimatedDeliveryDate: order.estimatedDeliveryDate ?? null,
     createdAt: order.createdAt.toISOString(),
+    trackingUrl: order.trackingUrl ?? null,
     contact: { name: order.shippingName, email: order.shippingEmail, phone: order.shippingPhone },
     delivery: { address: order.shippingAddress, city: order.shippingCity, postalCode: order.shippingPostalCode, note: order.shippingNote ?? null },
     items: items.map((item) => {
@@ -10031,6 +10065,98 @@ function retailOrderDto(
       };
     }),
   };
+}
+
+async function adminRetailOrderDetail(order: typeof retailOrdersTable.$inferSelect) {
+  const [detail, history] = await Promise.all([
+    retailOrderWithItems(order),
+    db.select().from(retailOrderStatusHistoryTable)
+      .where(eq(retailOrderStatusHistoryTable.retailOrderId, order.id))
+      .orderBy(desc(retailOrderStatusHistoryTable.createdAt)),
+  ]);
+  return {
+    ...detail,
+    fulfillmentHistory: history.map((event) => ({
+      id: event.id, actorName: event.actorName, field: event.field,
+      previousValue: event.previousValue ?? null, nextValue: event.nextValue ?? null,
+      note: event.note ?? null, createdAt: event.createdAt.toISOString(),
+    })),
+  };
+}
+
+const fulfillmentTransitions: Record<string, readonly string[]> = {
+  RECEIVED: ["PREPARING", "CANCELLED"],
+  PREPARING: ["PACKING", "CANCELLED"],
+  PACKING: ["SHIPPED", "CANCELLED"],
+  SHIPPED: ["COMPLETED"],
+  COMPLETED: [],
+  CANCELLED: [],
+};
+
+function validProviderUrl(value: string | null | undefined) {
+  if (value == null || value === "") return true;
+  try {
+    const url = new URL(value);
+    return (url.protocol === "https:" || url.protocol === "http:") && Boolean(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function legacyStatusForFulfillment(status: string): typeof retailOrdersTable.$inferInsert.status {
+  return status === "CANCELLED" ? "cancelled"
+    : status === "COMPLETED" ? "delivered"
+    : status === "SHIPPED" ? "shipped"
+    : status === "PACKING" || status === "PREPARING" ? "processing"
+    : "pending";
+}
+
+function publicTrackingDto(order: typeof retailOrdersTable.$inferSelect) {
+  const stage = { RECEIVED: 1, PREPARING: 2, PACKING: 3, SHIPPED: 4, COMPLETED: 5, CANCELLED: 0 }[order.fulfillmentStatus];
+  const label = {
+    RECEIVED: "Porudžbina primljena", PREPARING: "Priprema se", PACKING: "Pakovanje",
+    SHIPPED: "Poslata", COMPLETED: "Isporučena", CANCELLED: "Otkazana",
+  }[order.fulfillmentStatus];
+  return {
+    orderNumber: order.orderNumber,
+    status: order.fulfillmentStatus,
+    statusLabel: label,
+    createdAt: order.createdAt.toISOString(),
+    statusUpdatedAt: order.updatedAt.toISOString(),
+    progressStage: stage,
+    trackingNumber: order.trackingNumber ?? null,
+    courierUrl: order.trackingUrl ?? null,
+  };
+}
+
+async function retailLookupRateLimited(req: Request) {
+  const clientKeyHash = createHash("sha256").update(req.ip || "unknown").digest("hex");
+  const result = await db.execute<{ request_count: number }>(sql`
+    INSERT INTO ${retailTrackingRateLimitsTable}
+      (client_key_hash, window_started_at, request_count, updated_at)
+    VALUES (${clientKeyHash}, now(), 1, now())
+    ON CONFLICT (client_key_hash) DO UPDATE SET
+      request_count = CASE
+        WHEN ${retailTrackingRateLimitsTable.windowStartedAt} <= now() - interval '60 seconds' THEN 1
+        ELSE ${retailTrackingRateLimitsTable.requestCount} + 1
+      END,
+      window_started_at = CASE
+        WHEN ${retailTrackingRateLimitsTable.windowStartedAt} <= now() - interval '60 seconds' THEN now()
+        ELSE ${retailTrackingRateLimitsTable.windowStartedAt}
+      END,
+      updated_at = now()
+    RETURNING request_count
+  `);
+  await db.execute(sql`
+    WITH stale AS (
+      SELECT client_key_hash FROM ${retailTrackingRateLimitsTable}
+      WHERE updated_at < now() - interval '1 day'
+      ORDER BY updated_at LIMIT 100
+    )
+    DELETE FROM ${retailTrackingRateLimitsTable}
+    WHERE client_key_hash IN (SELECT client_key_hash FROM stale)
+  `);
+  return Number(result.rows[0]?.request_count ?? 1) > 10;
 }
 
 async function retailOrderWithItems(order: typeof retailOrdersTable.$inferSelect) {
@@ -10837,7 +10963,9 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
     trackingToken = randomBytes(32).toString("base64url");
     const orderNumber = `LR-${randomUUID().replace(/-/g, "").slice(0, 10).toUpperCase()}`;
     const [order] = await tx.insert(retailOrdersTable).values({
-      orderNumber, cartId: cart.id, userId, trackingTokenHash: hashRetailToken(trackingToken), idempotencyKey: parsed.idempotencyKey,
+      orderNumber, cartId: cart.id, userId, trackingTokenHash: hashRetailToken(trackingToken),
+      trackingTokenExpiresAt: new Date(deoRules.now.getTime() + 180 * 24 * 60 * 60 * 1000),
+      idempotencyKey: parsed.idempotencyKey,
       status: "pending", paymentMethod: parsed.paymentMethod,
       paymentStatus: parsed.paymentMethod === "CASH_ON_DELIVERY" ? "unpaid" : "pending",
       deliveryMethod: parsed.deliveryMethod, subtotal, shippingCost: shipping.shippingCost, total: payableTotal,
@@ -10890,24 +11018,30 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
       scope: { ownerUserId: userId!, walletKind: "B2C" }, retailOrderId: order!.id,
       allocations: referral.allocations, idempotencyKey: parsed.idempotencyKey, actorUserId: userId,
     });
+    const referralAllocations = allocateFinalReferralDiscount(totals.lines, totals.referralAppliedRsd);
     const orderItems = [
        ...lines.filter((line): line is NonNullable<typeof line> => line !== null).map(({ product, item, variant, unitPrice, pricing }) => {
       const supplier = suppliersById.get(product.supplierId);
       if (!supplier) throw new Error("retail_stock_conflict");
        const finalizedLine = totals.lines.find((candidate) => candidate.id === item.id)!;
        const lineCouponDiscount = finalizedLine.couponAllocationRsd;
+       const referralDiscountRsd = referralAllocations.get(item.id) ?? 0;
+       const unitCostPriceRsd = product.costPriceRsd ?? 0;
       return {
         orderId: order!.id, productId: product.id, productName: product.name, productImageUrl: product.imageUrl,
         productCatalogReference: item.productCatalogReference ?? product.catalogReference,
          variantValue: item.variantValue, variantLabel: variant?.label ?? null, unitPrice, quantity: item.quantity,
         supplierId: supplier.id, supplierName: supplier.name, supplierSlug: supplier.slug,
          productSkuSnapshot: variant?.sku ?? product.sku, market: "B2C" as const, currency: "RSD",
+         categoryIdSnapshot: product.categoryId, categoryNameSnapshot: product.categoryName, brandSnapshot: product.brand,
         discountSnapshot: pricing.baseUnitPrice > unitPrice ? pricing.baseUnitPrice - unitPrice : null,
         baseUnitPrice: pricing.baseUnitPrice, effectiveUnitPrice: unitPrice,
         priceSource: pricing.priceSource, lineDiscount: (pricing.baseUnitPrice - unitPrice) * item.quantity,
         couponDiscountRsd: lineCouponDiscount,
          automaticPromotionDiscountRsd: finalizedLine.automaticPromotionAllocationRsd,
          thresholdRewardDiscountRsd: finalizedLine.thresholdRewardAllocationRsd,
+         unitCostPriceRsd, lineCogsRsd: unitCostPriceRsd * item.quantity,
+         referralDiscountRsd, realizedRevenueRsd: finalizedLine.lineTotalRsd - referralDiscountRsd,
          estimatedDeliveryDate, lineSubtotal: finalizedLine.lineSubtotalRsd, lineTotal: finalizedLine.lineTotalRsd,
       };
       }),
@@ -10916,15 +11050,23 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
         if (!supplier) throw new Error("retail_stock_conflict");
          const finalizedLine = totals.lines.find((candidate) => candidate.id === item.id)!;
          const lineCouponDiscount = finalizedLine.couponAllocationRsd;
+         const referralDiscountRsd = referralAllocations.get(item.id) ?? 0;
+         const unitCostPriceRsd = components.reduce(
+           (sum, { component, product }) => sum + (product.costPriceRsd ?? 0) * component.quantity,
+           0,
+         );
         return {
           orderId: order!.id, productId: null, bundleId: bundle.id, productName: bundle.name, productImageUrl: bundle.imageUrl ?? "",
           productCatalogReference: null, variantValue: null, variantLabel: null, unitPrice, quantity: item.quantity,
           supplierId: supplier.id, supplierName: supplier.name, supplierSlug: supplier.slug, productSkuSnapshot: null,
+           categoryIdSnapshot: null, categoryNameSnapshot: null, brandSnapshot: null,
           market: "B2C" as const, currency: "RSD", discountSnapshot: null, baseUnitPrice: unitPrice,
           effectiveUnitPrice: unitPrice, priceSource: "BUNDLE" as const, lineDiscount: 0, bundleNameSnapshot: bundle.name,
           couponDiscountRsd: lineCouponDiscount,
            automaticPromotionDiscountRsd: finalizedLine.automaticPromotionAllocationRsd,
            thresholdRewardDiscountRsd: finalizedLine.thresholdRewardAllocationRsd,
+           unitCostPriceRsd, lineCogsRsd: unitCostPriceRsd * item.quantity,
+           referralDiscountRsd, realizedRevenueRsd: finalizedLine.lineTotalRsd - referralDiscountRsd,
           bundleComponentsSnapshot: components.map(({ component, product }) => ({
             productId: product.id, name: product.name, catalogReference: product.catalogReference, quantity: component.quantity,
           })),
@@ -10940,9 +11082,13 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
           variantValue: null, variantLabel: null, unitPrice: 0, quantity: gift.quantity,
           supplierId: supplier.id, supplierName: supplier.name, supplierSlug: supplier.slug,
           productSkuSnapshot: gift.product.sku, market: "B2C" as const, currency: "RSD",
+           categoryIdSnapshot: gift.product.categoryId, categoryNameSnapshot: gift.product.categoryName, brandSnapshot: gift.product.brand,
           discountSnapshot: null, baseUnitPrice: 0, effectiveUnitPrice: 0, priceSource: "FULL_PRICE" as const,
           lineDiscount: 0, couponDiscountRsd: 0, automaticPromotionDiscountRsd: 0,
           thresholdRewardDiscountRsd: 0, lineSubtotal: 0, lineTotal: 0, estimatedDeliveryDate,
+           unitCostPriceRsd: gift.product.costPriceRsd ?? 0,
+           lineCogsRsd: (gift.product.costPriceRsd ?? 0) * gift.quantity,
+           referralDiscountRsd: 0, realizedRevenueRsd: 0,
           isRewardGift: true, rewardSnapshot: gift.rewardSnapshot,
         };
       }),
@@ -11016,14 +11162,17 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
   }
   const detail = await retailOrderWithItems(created.order);
   if (!created.repeat && trackingToken) {
-    const trackingUrl = `${process.env["APP_BASE_URL"]?.replace(/\/$/, "") ?? ""}/porudzbina/pracenje?token=${encodeURIComponent(trackingToken)}`;
-    void sendTransactionalEmail({
-      eventKey: `retail-order:${created.order.id}:confirmation`, emailType: "retail_order_confirmation",
-      to: { email: created.order.shippingEmail, name: created.order.shippingName },
-      subject: `LUMERA — porudžbina ${created.order.orderNumber} je primljena`,
-      htmlContent: lumeraEmailHtml("Porudžbina je primljena", `<p>Hvala! Primili smo vašu porudžbinu <strong>${emailSafe(created.order.orderNumber)}</strong>.</p><p>Praćenje: <a href="${emailSafe(trackingUrl)}">otvorite status porudžbine</a>.</p>`),
-      metadata: { retailOrderId: created.order.id },
-    });
+    const origin = configuredAppOrigin();
+    if (origin && (new URL(origin).protocol === "https:" || process.env.NODE_ENV !== "production")) {
+      const trackingUrl = `${origin}/porudzbina/pracenje?token=${encodeURIComponent(trackingToken)}`;
+      void sendTransactionalEmail({
+        eventKey: `retail-order:${created.order.id}:confirmation`, emailType: "retail_order_confirmation",
+        to: { email: created.order.shippingEmail, name: created.order.shippingName },
+        subject: `LUMERA — porudžbina ${created.order.orderNumber} je primljena`,
+        htmlContent: lumeraEmailHtml("Porudžbina je primljena", `<p>Hvala! Primili smo vašu porudžbinu <strong>${emailSafe(created.order.orderNumber)}</strong>.</p><p>Praćenje: <a href="${emailSafe(trackingUrl)}">otvorite status porudžbine</a>.</p>`),
+        metadata: { retailOrderId: created.order.id },
+      });
+    }
     const phone = normalizedPhone(created.order.shippingPhone);
     if (phone) void sendSms({
       eventKey: `retail-order:${created.order.id}:confirmation`, salonId: null, appointmentId: null,
@@ -11039,9 +11188,45 @@ router.get("/retail/orders/track", async (req, res): Promise<void> => {
   const [order] = await db.select().from(retailOrdersTable).where(and(
     eq(retailOrdersTable.trackingTokenHash, hashRetailToken(token)),
     isNull(retailOrdersTable.trackingTokenRevokedAt),
+    gt(retailOrdersTable.trackingTokenExpiresAt, new Date()),
   )).limit(1);
   if (!order) { res.status(404).json({ error: "Porudžbina nije pronađena." }); return; }
-  res.json(await retailOrderWithItems(order));
+  res.json(publicTrackingDto(order));
+});
+
+router.post("/retail/orders/track/lookup", async (req, res): Promise<void> => {
+  const generic = { error: "Porudžbina nije pronađena." };
+  if (await retailLookupRateLimited(req)) { res.status(429).json(generic); return; }
+  const orderNumber = typeof req.body?.orderNumber === "string" ? req.body.orderNumber.trim() : "";
+  const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+  if (!orderNumber || orderNumber.length > 80 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    res.status(404).json(generic); return;
+  }
+  const token = randomBytes(32).toString("base64url");
+  const now = new Date();
+  const [order] = await db.update(retailOrdersTable).set({
+    trackingTokenHash: hashRetailToken(token),
+    trackingTokenExpiresAt: new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000),
+    trackingTokenRotatedAt: now,
+    trackingTokenRevokedAt: null,
+  }).where(and(
+    eq(retailOrdersTable.orderNumber, orderNumber),
+    sql`lower(btrim(${retailOrdersTable.shippingEmail})) = ${email}`,
+  )).returning();
+  if (!order) { res.status(404).json(generic); return; }
+  const origin = configuredAppOrigin();
+  if (origin && (new URL(origin).protocol === "https:" || process.env.NODE_ENV !== "production")) {
+    const trackingUrl = `${origin}/porudzbina/pracenje?token=${encodeURIComponent(token)}`;
+    void sendTransactionalEmail({
+      eventKey: `retail-order:${order.id}:tracking-rotation:${now.toISOString()}`,
+      emailType: "retail_order_tracking",
+      to: { email: order.shippingEmail, name: order.shippingName },
+      subject: `LUMERA — praćenje porudžbine ${order.orderNumber}`,
+      htmlContent: lumeraEmailHtml("Praćenje porudžbine", `<p><a href="${emailSafe(trackingUrl)}">Otvorite status porudžbine</a>.</p>`),
+      metadata: { retailOrderId: order.id },
+    });
+  }
+  res.json(publicTrackingDto(order));
 });
 
 router.get("/customer/retail-orders", async (req, res): Promise<void> => {
@@ -11114,11 +11299,119 @@ router.get("/admin/retail-orders", async (req, res): Promise<void> => {
   res.json(await retailOrdersWithItems(orders));
 });
 
+router.get("/admin/commerce/profitability", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const fromText = typeof req.query.from === "string" ? req.query.from : "";
+  const toText = typeof req.query.to === "string" ? req.query.to : "";
+  if ((req.query.market !== undefined && !["B2C", "B2B", "BOTH"].includes(String(req.query.market)))
+    || (req.query.granularity !== undefined && !["DAY", "WEEK", "MONTH"].includes(String(req.query.granularity)))) {
+    res.status(400).json({ error: "Tržište ili vremenska granularnost nisu ispravni." }); return;
+  }
+  const market = req.query.market === "B2C" || req.query.market === "B2B" || req.query.market === "BOTH"
+    ? req.query.market : "BOTH";
+  const granularity = req.query.granularity === "WEEK" || req.query.granularity === "MONTH"
+    ? req.query.granularity : "DAY";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromText) || !/^\d{4}-\d{2}-\d{2}$/.test(toText)) {
+    res.status(400).json({ error: "Datumi moraju biti u YYYY-MM-DD formatu." }); return;
+  }
+  const from = new Date(`${fromText}T00:00:00.000Z`);
+  const through = new Date(`${toText}T00:00:00.000Z`);
+  const toExclusive = new Date(through.getTime() + 24 * 60 * 60 * 1000);
+  const days = Math.floor((toExclusive.getTime() - from.getTime()) / (24 * 60 * 60 * 1000));
+  if (!Number.isFinite(days) || days < 1 || days > 366) {
+    res.status(400).json({ error: "Opseg mora sadržati između 1 i 366 dana." }); return;
+  }
+  const supplierId = typeof req.query.supplierId === "string" ? req.query.supplierId : null;
+  const categoryId = typeof req.query.categoryId === "string" ? req.query.categoryId : null;
+  const productId = typeof req.query.productId === "string" ? req.query.productId : null;
+  const brand = typeof req.query.brand === "string" ? req.query.brand.trim() : null;
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if ([supplierId, categoryId, productId].some((value) => value && !uuid.test(value))
+    || (brand != null && (!brand || brand.length > 120))) {
+    res.status(400).json({ error: "Filter profitabilnosti nije ispravan." }); return;
+  }
+  const dimensions = (alias: "i") => sql`
+    AND (${supplierId}::uuid IS NULL OR ${sql.raw(alias)}.supplier_id = ${supplierId}::uuid)
+    AND (${categoryId}::uuid IS NULL OR ${sql.raw(alias)}.category_id_snapshot = ${categoryId}::uuid)
+    AND (${productId}::uuid IS NULL OR ${sql.raw(alias)}.product_id = ${productId}::uuid)
+    AND (${brand}::text IS NULL OR lower(${sql.raw(alias)}.brand_snapshot) = lower(${brand}::text))
+  `;
+  const selects: SQL[] = [];
+  if (market !== "B2B") selects.push(sql`
+    SELECT 'B2C'::text market, o.created_at, i.product_id, i.product_name,
+      i.supplier_id, i.supplier_name, i.category_id_snapshot category_id,
+      i.category_name_snapshot category_name, i.brand_snapshot brand,
+      i.quantity, i.realized_revenue_rsd revenue, i.line_cogs_rsd cogs,
+      greatest(0, i.base_unit_price * i.quantity) base_revenue
+    FROM retail_order_items i JOIN retail_orders o ON o.id = i.order_id
+    WHERE o.created_at >= ${from} AND o.created_at < ${toExclusive}
+      AND o.status <> 'cancelled' AND o.fulfillment_status <> 'CANCELLED'
+      AND o.payment_status <> 'refunded' ${dimensions("i")}
+  `);
+  if (market !== "B2C") selects.push(sql`
+    SELECT 'B2B'::text market, o.created_at, i.product_id, i.product_name,
+      i.supplier_id, i.supplier_name, i.category_id_snapshot category_id,
+      i.category_name_snapshot category_name, i.brand_snapshot brand,
+      i.quantity, i.realized_revenue_rsd revenue, i.line_cogs_rsd cogs,
+      greatest(0, i.base_unit_price * i.quantity) base_revenue
+    FROM order_items i JOIN orders o ON o.id = i.order_id
+    WHERE o.created_at >= ${from} AND o.created_at < ${toExclusive}
+      AND o.status <> 'cancelled' AND o.fulfillment_status <> 'CANCELLED'
+      AND o.payment_status <> 'refunded' ${dimensions("i")}
+  `);
+  const union = sql.join(selects, sql` UNION ALL `);
+  const bucket = granularity.toLowerCase();
+  const [kpiResult, seriesResult, productsResult] = await Promise.all([
+    db.execute<{ revenue: number; cogs: number; units: number }>(sql`
+      WITH lines AS (${union}) SELECT coalesce(sum(revenue), 0)::int revenue,
+        coalesce(sum(cogs), 0)::int cogs, coalesce(sum(quantity), 0)::int units FROM lines`),
+    db.execute<{ period: string; revenue: number; cogs: number }>(sql`
+      WITH lines AS (${union}),
+      bucketed AS (
+        SELECT date_trunc(${bucket}, created_at) AS period, revenue, cogs
+        FROM lines
+      )
+      SELECT to_char(period, 'YYYY-MM-DD') period,
+        sum(revenue)::int revenue, sum(cogs)::int cogs FROM bucketed
+      GROUP BY period ORDER BY period LIMIT 366`),
+    db.execute<{ product_id: string | null; product_name: string; supplier_id: string; supplier_name: string;
+      category_id: string | null; category_name: string | null; brand: string | null;
+      units: number; revenue: number; cogs: number; base_revenue: number }>(sql`
+      WITH lines AS (${union}) SELECT product_id, product_name, supplier_id, supplier_name,
+        category_id, category_name, brand, sum(quantity)::int units, sum(revenue)::int revenue,
+        sum(cogs)::int cogs, sum(base_revenue)::int base_revenue
+      FROM lines GROUP BY product_id, product_name, supplier_id, supplier_name, category_id, category_name, brand
+      ORDER BY sum(revenue) DESC, product_name ASC LIMIT 200`),
+  ]);
+  const margin = (revenue: number, profit: number) => revenue ? Math.round(profit * 10_000 / revenue) / 100 : null;
+  const kpi = kpiResult.rows[0] ?? { revenue: 0, cogs: 0, units: 0 };
+  const kpiProfit = Number(kpi.revenue) - Number(kpi.cogs);
+  res.json({
+    kpis: { revenueRsd: Number(kpi.revenue), cogsRsd: Number(kpi.cogs), profitRsd: kpiProfit,
+      marginPercent: margin(Number(kpi.revenue), kpiProfit), units: Number(kpi.units) },
+    timeSeries: seriesResult.rows.map((row) => {
+      const profit = Number(row.revenue) - Number(row.cogs);
+      return { period: row.period, revenueRsd: Number(row.revenue), cogsRsd: Number(row.cogs),
+        profitRsd: profit, marginPercent: margin(Number(row.revenue), profit) };
+    }),
+    products: productsResult.rows.map((row) => {
+      const revenue = Number(row.revenue); const cogs = Number(row.cogs); const profit = revenue - cogs;
+      const base = Number(row.base_revenue);
+      return { productId: row.product_id, productName: row.product_name, supplierId: row.supplier_id,
+        supplierName: row.supplier_name, categoryId: row.category_id, categoryName: row.category_name,
+        brand: row.brand, units: Number(row.units), realizedRevenueRsd: revenue, cogsRsd: cogs,
+        profitRsd: profit, marginPercent: margin(revenue, profit),
+        averageDiscountPercent: base ? Math.round((base - revenue) * 10_000 / base) / 100 : null };
+    }),
+    treatment: "Cancelled orders and refunded orders are excluded; shipping is excluded. Delivered refunds therefore reverse merchandise revenue and COGS by exclusion.",
+  });
+});
+
 router.get("/admin/retail-orders/:orderId", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
   const [order] = await db.select().from(retailOrdersTable).where(eq(retailOrdersTable.id, req.params.orderId)).limit(1);
   if (!order) { res.status(404).json({ error: "Retail porudžbina nije pronađena." }); return; }
-  res.json(await retailOrderWithItems(order));
+  res.json(await adminRetailOrderDetail(order));
 });
 
 async function restockRetailBundleComponentsForCancelledOrderInTx(tx: BundleTransaction, orderId: string) {
@@ -11165,15 +11458,31 @@ async function releaseCouponRedemptionInTx(
 
 router.patch("/admin/retail-orders/:orderId/status", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
-  const next = req.body?.status;
-  if (typeof next !== "string" || !["pending", "confirmed", "paid", "processing", "shipped", "delivered", "cancelled"].includes(next)) {
-    res.status(400).json({ error: "Neispravan status porudžbine." }); return;
+  const legacyFulfillment = {
+    pending: "RECEIVED", confirmed: "PREPARING", paid: "PREPARING", processing: "PACKING",
+    shipped: "SHIPPED", delivered: "COMPLETED", cancelled: "CANCELLED",
+  } as const;
+  const next = req.body?.fulfillmentStatus
+    ?? (typeof req.body?.status === "string" ? legacyFulfillment[req.body.status as keyof typeof legacyFulfillment] : undefined);
+  const trackingNumber = req.body?.trackingNumber === null ? null
+    : typeof req.body?.trackingNumber === "string" ? req.body.trackingNumber.trim() || null : undefined;
+  const trackingUrl = req.body?.trackingUrl === null ? null
+    : typeof req.body?.trackingUrl === "string" ? req.body.trackingUrl.trim() || null : undefined;
+  if (typeof next !== "string" || !Object.hasOwn(fulfillmentTransitions, next)
+    || (trackingUrl !== undefined && !validProviderUrl(trackingUrl))) {
+    res.status(400).json({ error: "Neispravan status ili URL za praćenje." }); return;
   }
+  let transitionError = false;
   const order = await db.transaction(async (tx) => {
     const [locked] = await tx.select().from(retailOrdersTable).where(eq(retailOrdersTable.id, req.params.orderId)).for("update");
     if (!locked) return null;
+    if (next !== locked.fulfillmentStatus && !fulfillmentTransitions[locked.fulfillmentStatus]?.includes(next)) {
+      transitionError = true; return null;
+    }
+    const effectiveTrackingNumber = trackingNumber === undefined ? locked.trackingNumber : trackingNumber;
+    if (next === "SHIPPED" && !effectiveTrackingNumber) { transitionError = true; return null; }
     const now = new Date();
-    const cancellationTransition = next === "cancelled" && locked.status !== "cancelled";
+    const cancellationTransition = next === "CANCELLED" && locked.fulfillmentStatus !== "CANCELLED";
     if (cancellationTransition && locked.referralCreditAppliedRsd > 0 && !locked.referralCreditRestoredAt && locked.userId) {
       await restoreReferralCreditForOrderInTx(tx, {
         scope: { ownerUserId: locked.userId, walletKind: "B2C" }, retailOrderId: locked.id,
@@ -11188,14 +11497,29 @@ router.patch("/admin/retail-orders/:orderId/status", async (req, res): Promise<v
       ? await reverseLoyaltyPointsInTx(tx, { audience: "B2C", userId: locked.userId, retailOrderId: locked.id, points: locked.loyaltyPointsAwarded })
       : false;
     const [saved] = await tx.update(retailOrdersTable).set({
-      status: next as typeof retailOrdersTable.$inferInsert.status, updatedAt: now,
+      fulfillmentStatus: next as typeof retailOrdersTable.$inferInsert.fulfillmentStatus,
+      status: legacyStatusForFulfillment(next), updatedAt: now,
+      ...(trackingNumber !== undefined ? { trackingNumber } : {}),
+      ...(trackingUrl !== undefined ? { trackingUrl } : {}),
       ...(cancellationTransition && locked.referralCreditAppliedRsd > 0 && !locked.referralCreditRestoredAt ? { referralCreditRestoredAt: now } : {}),
       ...(reversedPoints ? { loyaltyPointsReversedAt: now } : {}),
     }).where(eq(retailOrdersTable.id, locked.id)).returning();
+    for (const [field, previousValue, nextValue] of [
+      ["fulfillmentStatus", locked.fulfillmentStatus, next],
+      ["trackingNumber", locked.trackingNumber, trackingNumber],
+      ["trackingUrl", locked.trackingUrl, trackingUrl],
+    ] as const) if (nextValue !== undefined && previousValue !== nextValue) {
+      await tx.insert(retailOrderStatusHistoryTable).values({
+        retailOrderId: locked.id, actorUserId: user.id,
+        actorName: `${user.firstName} ${user.lastName}`.trim() || "Administrator",
+        field, previousValue, nextValue,
+      });
+    }
     return saved!;
   });
+  if (transitionError) { res.status(409).json({ error: next === "SHIPPED" ? "Broj za praćenje je obavezan, a promena mora pratiti tok isporuke." : "Promena statusa nije dozvoljena." }); return; }
   if (!order) { res.status(404).json({ error: "Retail porudžbina nije pronađena." }); return; }
-  res.json(await retailOrderWithItems(order));
+  res.json(await adminRetailOrderDetail(order));
 });
 
 router.patch("/admin/retail-orders/:orderId/payment-status", async (req, res): Promise<void> => {
@@ -11218,10 +11542,15 @@ router.patch("/admin/retail-orders/:orderId/payment-status", async (req, res): P
       paymentStatus: next as typeof retailOrdersTable.$inferInsert.paymentStatus, updatedAt: now,
       ...(next === "refunded" && locked.referralCreditAppliedRsd > 0 && !locked.referralCreditRestoredAt ? { referralCreditRestoredAt: now } : {}),
     }).where(eq(retailOrdersTable.id, locked.id)).returning();
+    if (next !== locked.paymentStatus) await tx.insert(retailOrderStatusHistoryTable).values({
+      retailOrderId: locked.id, actorUserId: user.id,
+      actorName: `${user.firstName} ${user.lastName}`.trim() || "Administrator",
+      field: "paymentStatus", previousValue: locked.paymentStatus, nextValue: next,
+    });
     return saved!;
   });
   if (!order) { res.status(404).json({ error: "Retail porudžbina nije pronađena." }); return; }
-  res.json(await retailOrderWithItems(order));
+  res.json(await adminRetailOrderDetail(order));
 });
 
 router.get("/retail/products/:productId/reviews", async (req, res): Promise<void> => {
@@ -13496,12 +13825,20 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
       ])],
     ));
     const suppliersById = new Map(supplierRows.map((supplier) => [supplier.id, supplier]));
+    const referralAllocations = allocateFinalReferralDiscount(totals.lines, totals.referralAppliedRsd);
     const orderItems: Array<any> = details.map((line) => {
       const supplier = suppliersById.get(line.bundle?.bundle.supplierId ?? line.product.supplierId);
       if (!supplier) throw new Error("B2B supplier is unavailable");
       const sku = line.variant?.sku ?? line.product.sku;
       const lineCouponDiscount = appliedCoupon?.quote.allocations[line.cartLineId] ?? 0;
       const finalizedLine = totals.lines.find((candidate) => candidate.id === line.cartLineId)!;
+      const referralDiscountRsd = referralAllocations.get(line.cartLineId) ?? 0;
+      const unitCostPriceRsd = line.bundle
+        ? line.bundle.components.reduce(
+          (sum, component) => sum + (component.product.costPriceRsd ?? 0) * component.quantity,
+          0,
+        )
+        : line.product.costPriceRsd ?? 0;
       const sale = line.bundle ? null : activeProductSale(line.product, "B2B");
       const persistedPriceSource = line.priceSource === "EXPLICIT_VARIANT_PRICE"
         ? "FULL_PRICE" as const
@@ -13518,6 +13855,9 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
         price: line.price,
         supplierId: supplier.id, supplierName: supplier.name, supplierSlug: supplier.slug,
         productCatalogReference: line.bundle ? null : line.product.catalogReference, productSkuSnapshot: line.bundle ? null : sku,
+        categoryIdSnapshot: line.bundle ? null : line.product.categoryId,
+        categoryNameSnapshot: line.bundle ? null : line.product.categoryName,
+        brandSnapshot: line.bundle ? null : line.product.brand,
         market: "B2B" as const, currency: "RSD",
         discountSnapshot: line.priceSource === "SALE" && sale ? line.product.price - sale.price : null,
         baseUnitPrice: line.bundle ? line.price : line.product.price,
@@ -13527,6 +13867,8 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
         couponDiscountRsd: lineCouponDiscount,
         automaticPromotionDiscountRsd: finalizedLine.automaticPromotionAllocationRsd,
         thresholdRewardDiscountRsd: finalizedLine.thresholdRewardAllocationRsd,
+        unitCostPriceRsd, lineCogsRsd: unitCostPriceRsd * line.quantity,
+        referralDiscountRsd, realizedRevenueRsd: finalizedLine.lineTotalRsd - referralDiscountRsd,
         bundleNameSnapshot: line.bundle?.bundle.name ?? null,
         bundleComponentsSnapshot: line.bundle?.components.map((component) => ({ productId: component.product.id, name: component.product.name, catalogReference: component.product.catalogReference, quantity: component.quantity })) ?? null,
         estimatedDeliveryDate,
@@ -13541,11 +13883,15 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
         productSku: gift.product.sku, variantValue: null, variantLabel: null, quantity: gift.quantity, price: 0,
         supplierId: supplier.id, supplierName: supplier.name, supplierSlug: supplier.slug,
         productCatalogReference: gift.product.catalogReference, productSkuSnapshot: gift.product.sku,
+        categoryIdSnapshot: gift.product.categoryId, categoryNameSnapshot: gift.product.categoryName, brandSnapshot: gift.product.brand,
         market: "B2B" as const, currency: "RSD", discountSnapshot: null, baseUnitPrice: 0,
         effectiveUnitPrice: 0, priceSource: "FULL_PRICE" as const, lineDiscount: 0,
         couponDiscountRsd: 0, automaticPromotionDiscountRsd: 0, thresholdRewardDiscountRsd: 0,
         bundleNameSnapshot: null, bundleComponentsSnapshot: null, estimatedDeliveryDate,
         unitPrice: 0, lineSubtotal: 0, lineTotal: 0, isRewardGift: true, rewardSnapshot: gift.rewardSnapshot,
+        unitCostPriceRsd: gift.product.costPriceRsd ?? 0,
+        lineCogsRsd: (gift.product.costPriceRsd ?? 0) * gift.quantity,
+        referralDiscountRsd: 0, realizedRevenueRsd: 0,
       });
     }
     const savedOrderItems = await tx.insert(orderItemsTable).values(orderItems).returning();
@@ -13653,12 +13999,13 @@ function orderDto(
   return {
     id: order.id,
     status: order.status,
+    fulfillmentStatus: order.fulfillmentStatus,
     paymentStatus: order.paymentStatus,
     deliveryMethod: order.deliveryMethod,
     courierServiceId: order.courierServiceId ?? null,
     courierService: courier?.name ?? order.courierService ?? (order.deliveryMethod === "personal_belgrade" ? "Lična dostava" : null),
     trackingNumber: order.trackingNumber ?? null,
-    trackingUrl: trackingUrlFor(courier?.trackingUrlTemplate, order.trackingNumber, order.deliveryMethod),
+    trackingUrl: order.trackingUrl ?? trackingUrlFor(courier?.trackingUrlTemplate, order.trackingNumber, order.deliveryMethod),
     total: order.total,
     subtotal: order.subtotal,
     shippingCost: order.shippingCost,
@@ -14204,6 +14551,14 @@ router.patch("/admin/orders/bulk", async (req, res): Promise<void> => {
   if (!body.success || (!body.data.status && !body.data.paymentStatus)) {
     res.status(400).json({ error: body.success ? "Izaberite status isporuke ili plaćanja." : body.error.message }); return;
   }
+  const bulkLegacyFulfillment = {
+    pending: "RECEIVED", confirmed: "PREPARING", paid: "PREPARING", processing: "PACKING",
+    shipped: "SHIPPED", delivered: "COMPLETED", cancelled: "CANCELLED",
+  } as const;
+  const fulfillmentUpdate = body.data.status ? bulkLegacyFulfillment[body.data.status] : undefined;
+  if (fulfillmentUpdate === "SHIPPED") {
+    res.status(400).json({ error: "Masovna otprema nije dozvoljena bez pojedinačnog broja za praćenje." }); return;
+  }
   const sortedOrderIds = [...body.data.orderIds].sort();
   const transactionResult = await db.transaction(async (tx) => {
     // All contenders acquire order locks in the same stable order. Besides
@@ -14215,6 +14570,11 @@ router.patch("/admin/orders/bulk", async (req, res): Promise<void> => {
       .for("update");
     if (selected.length !== sortedOrderIds.length) return { error: "not_found" as const };
     if (body.data.status && selected.some((order) => !allowedOrderTransitions[order.status]?.includes(body.data.status!))) {
+      return { error: "invalid_transition" as const };
+    }
+    if (fulfillmentUpdate && selected.some((order) =>
+      fulfillmentUpdate !== order.fulfillmentStatus
+      && !fulfillmentTransitions[order.fulfillmentStatus]?.includes(fulfillmentUpdate))) {
       return { error: "invalid_transition" as const };
     }
     const result = [];
@@ -14243,7 +14603,10 @@ router.patch("/admin/orders/bulk", async (req, res): Promise<void> => {
         ? await reverseLoyaltyPointsInTx(tx, { audience: "B2B", salonId: order.salonId, orderId: order.id, points: order.loyaltyPointsAwarded })
         : false;
       const update = {
-        ...(body.data.status ? { status: body.data.status } : {}),
+        ...(fulfillmentUpdate ? {
+          fulfillmentStatus: fulfillmentUpdate,
+          status: legacyStatusForFulfillment(fulfillmentUpdate),
+        } : {}),
         ...(body.data.paymentStatus ? { paymentStatus: body.data.paymentStatus } : {}),
         ...(restoresCredit ? { referralCreditRestoredAt: now } : {}),
         ...(reversedPoints ? { loyaltyPointsReversedAt: now } : {}),
@@ -14251,7 +14614,8 @@ router.patch("/admin/orders/bulk", async (req, res): Promise<void> => {
       };
       const [saved] = await tx.update(ordersTable).set(update).where(eq(ordersTable.id, order.id)).returning();
       for (const [field, previousValue, nextValue] of [
-        ["status", order.status, body.data.status],
+        ["status", order.status, fulfillmentUpdate ? legacyStatusForFulfillment(fulfillmentUpdate) : undefined],
+        ["fulfillmentStatus", order.fulfillmentStatus, fulfillmentUpdate],
         ["paymentStatus", order.paymentStatus, body.data.paymentStatus],
       ] as const) {
         if (nextValue && previousValue !== nextValue) {
@@ -14313,38 +14677,62 @@ router.patch("/admin/orders/:orderId", async (req, res): Promise<void> => {
   if (!params.success || !body.success) { res.status(400).json({ error: !params.success ? params.error.message : body.error?.message ?? "Neispravan zahtev." }); return; }
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, params.data.orderId)).limit(1);
   if (!order) { res.status(404).json({ error: "Porudžbina nije pronađena." }); return; }
-  if (body.data.status && !allowedOrderTransitions[order.status]?.includes(body.data.status)) {
-    res.status(400).json({ error: "Ova promena statusa nije dozvoljena." }); return;
+  const legacyFulfillment = {
+    pending: "RECEIVED", confirmed: "PREPARING", paid: "PREPARING", processing: "PACKING",
+    shipped: "SHIPPED", delivered: "COMPLETED", cancelled: "CANCELLED",
+  } as const;
+  const legacyCanonical = body.data.status ? legacyFulfillment[body.data.status] : undefined;
+  if (body.data.fulfillmentStatus && legacyCanonical
+    && body.data.fulfillmentStatus !== legacyCanonical) {
+    res.status(400).json({ error: "Status i tok isporuke su međusobno protivrečni." }); return;
+  }
+  const fulfillmentUpdate = body.data.fulfillmentStatus ?? legacyCanonical;
+  if (body.data.trackingUrl !== undefined && !validProviderUrl(body.data.trackingUrl)) {
+    res.status(400).json({ error: "URL za praćenje mora biti validan http/https URL." }); return;
   }
   let selectedCourier: typeof courierServicesTable.$inferSelect | null | undefined;
   if (body.data.courierServiceId !== undefined && body.data.courierServiceId !== null) {
     [selectedCourier] = await db.select().from(courierServicesTable).where(eq(courierServicesTable.id, body.data.courierServiceId)).limit(1);
     if (!selectedCourier) { res.status(400).json({ error: "Izabrana kurirska služba ne postoji." }); return; }
   }
-  const update = {
-    ...(body.data.status ? { status: body.data.status } : {}),
+  const nonFulfillmentUpdate = {
     ...(body.data.paymentStatus ? { paymentStatus: body.data.paymentStatus } : {}),
     ...(body.data.courierServiceId !== undefined ? {
       courierServiceId: selectedCourier?.id ?? null,
       courierService: selectedCourier?.name ?? null,
     } : {}),
     ...(body.data.trackingNumber !== undefined ? { trackingNumber: body.data.trackingNumber } : {}),
+    ...(body.data.trackingUrl !== undefined ? { trackingUrl: body.data.trackingUrl } : {}),
     ...(body.data.adminNote !== undefined ? { adminNote: body.data.adminNote } : {}),
-    updatedAt: new Date(),
   };
-  const { updated, deliveryChanged } = await db.transaction(async (tx) => {
+  let transactionResult: {
+    updated: typeof ordersTable.$inferSelect;
+    deliveryChanged: boolean;
+    previousStatus: typeof ordersTable.$inferSelect.status;
+  };
+  try {
+    transactionResult = await db.transaction(async (tx) => {
     const [locked] = await tx.select().from(ordersTable).where(eq(ordersTable.id, order.id)).for("update");
     if (!locked) throw new Error("Order disappeared during update.");
-    const restoresCredit = (body.data.status === "cancelled" || body.data.paymentStatus === "refunded")
+    if (fulfillmentUpdate && fulfillmentUpdate !== locked.fulfillmentStatus
+      && !fulfillmentTransitions[locked.fulfillmentStatus]?.includes(fulfillmentUpdate)) {
+      throw new ProductRelationshipConflictError();
+    }
+    if (fulfillmentUpdate === "SHIPPED"
+      && !(body.data.trackingNumber !== undefined ? body.data.trackingNumber : locked.trackingNumber)?.trim()) {
+      throw new ProductRelationshipConflictError();
+    }
+    const restoresCredit = (fulfillmentUpdate === "CANCELLED" || body.data.paymentStatus === "refunded")
       && locked.referralCreditAppliedRsd > 0 && !locked.referralCreditRestoredAt;
-    const cancellationTransition = body.data.status === "cancelled" && locked.status !== "cancelled";
+    const cancellationTransition = fulfillmentUpdate === "CANCELLED"
+      && locked.fulfillmentStatus !== "CANCELLED";
     const now = new Date();
     if (restoresCredit) {
       const [scopeSalon] = await tx.select({ ownerId: salonsTable.ownerId }).from(salonsTable)
         .where(eq(salonsTable.id, locked.salonId)).limit(1);
       if (scopeSalon) await restoreReferralCreditForOrderInTx(tx, {
         scope: { ownerUserId: scopeSalon.ownerId, walletKind: "B2B", salonId: locked.salonId },
-        orderId: locked.id, eventKey: `b2b-${body.data.status === "cancelled" ? "cancel" : "refund"}:${locked.id}`,
+        orderId: locked.id, eventKey: `b2b-${fulfillmentUpdate === "CANCELLED" ? "cancel" : "refund"}:${locked.id}`,
         actorUserId: user.id, now,
       });
     }
@@ -14356,27 +14744,34 @@ router.patch("/admin/orders/:orderId", async (req, res): Promise<void> => {
       ? await reverseLoyaltyPointsInTx(tx, { audience: "B2B", salonId: locked.salonId, orderId: locked.id, points: locked.loyaltyPointsAwarded })
       : false;
     const [saved] = await tx.update(ordersTable).set({
-      ...update,
+      ...nonFulfillmentUpdate,
+      ...(fulfillmentUpdate ? {
+        fulfillmentStatus: fulfillmentUpdate,
+        status: legacyStatusForFulfillment(fulfillmentUpdate),
+      } : {}),
       ...(restoresCredit ? { referralCreditRestoredAt: now } : {}),
       ...(reversedPoints ? { loyaltyPointsReversedAt: now } : {}),
+      updatedAt: now,
     }).where(eq(ordersTable.id, locked.id)).returning();
     const changes = [
-      ["status", order.status, body.data.status],
-      ["paymentStatus", order.paymentStatus, body.data.paymentStatus],
-        ["courierService", order.courierService, body.data.courierServiceId === undefined ? undefined : selectedCourier?.name ?? null],
-      ["trackingNumber", order.trackingNumber, body.data.trackingNumber],
-      ["adminNote", order.adminNote, body.data.adminNote],
+      ["status", locked.status, fulfillmentUpdate ? saved!.status : undefined],
+      ["fulfillmentStatus", locked.fulfillmentStatus, fulfillmentUpdate ? saved!.fulfillmentStatus : undefined],
+      ["paymentStatus", locked.paymentStatus, body.data.paymentStatus === undefined ? undefined : saved!.paymentStatus],
+      ["courierService", locked.courierService, body.data.courierServiceId === undefined ? undefined : saved!.courierService],
+      ["trackingNumber", locked.trackingNumber, body.data.trackingNumber === undefined ? undefined : saved!.trackingNumber],
+      ["trackingUrl", locked.trackingUrl, body.data.trackingUrl === undefined ? undefined : saved!.trackingUrl],
+      ["adminNote", locked.adminNote, body.data.adminNote === undefined ? undefined : saved!.adminNote],
     ] as const;
     for (const [field, previousValue, nextValue] of changes) {
       if (nextValue !== undefined && previousValue !== nextValue) {
         await tx.insert(orderStatusHistoryTable).values({
-          orderId: order.id, actorUserId: user.id, actorName: `${user.firstName} ${user.lastName}`.trim() || "Administrator",
+          orderId: locked.id, actorUserId: user.id, actorName: `${user.firstName} ${user.lastName}`.trim() || "Administrator",
           field, previousValue: previousValue ?? null, nextValue: nextValue ?? null,
         });
       }
     }
-    const deliveryChanged = (body.data.courierServiceId !== undefined && order.courierServiceId !== (selectedCourier?.id ?? null))
-      || (body.data.trackingNumber !== undefined && order.trackingNumber !== body.data.trackingNumber);
+    const deliveryChanged = (body.data.courierServiceId !== undefined && locked.courierServiceId !== saved!.courierServiceId)
+      || (body.data.trackingNumber !== undefined && locked.trackingNumber !== saved!.trackingNumber);
     if (deliveryChanged) {
       const courierName = selectedCourier?.name ?? order.courierService ?? "dostava";
       const tracking = body.data.trackingNumber ?? order.trackingNumber;
@@ -14387,19 +14782,26 @@ router.patch("/admin/orders/:orderId", async (req, res): Promise<void> => {
         href: `/vlasnik/porudzbine/${order.id}`,
       });
     }
-    return { updated: saved!, deliveryChanged };
-  });
+      return { updated: saved!, deliveryChanged, previousStatus: locked.status };
+    });
+  } catch (error) {
+    if (error instanceof ProductRelationshipConflictError) {
+      res.status(409).json({ error: "Porudžbina je u međuvremenu promenjena; osvežite podatke." }); return;
+    }
+    throw error;
+  }
+  const { updated, deliveryChanged, previousStatus } = transactionResult;
   if (deliveryChanged) await publishSalonNotificationUpdate(order.salonId);
   const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, updated.salonId)).limit(1);
-  if (body.data.status && body.data.status !== order.status) {
+  if (fulfillmentUpdate && updated.status !== previousStatus) {
     const [owner] = await db.select().from(usersTable).where(eq(usersTable.id, salon!.ownerId)).limit(1);
     if (owner) await sendTransactionalEmail({
-      eventKey: `b2b-order:${updated.id}:status:${body.data.status}`,
+      eventKey: `b2b-order:${updated.id}:status:${updated.status}`,
       emailType: "b2b_order_status",
       to: { email: owner.email, name: `${owner.firstName} ${owner.lastName}` },
-      subject: `LUMERA Biznis — status porudžbine: ${body.data.status}`,
-      htmlContent: lumeraEmailHtml("Status porudžbine je ažuriran", `<p>Porudžbina za ${emailSafe(salon!.name)} sada ima status <strong>${emailSafe(body.data.status)}</strong>${updated.trackingNumber ? `. Broj za praćenje: <strong>${emailSafe(updated.trackingNumber)}</strong>.` : ""}</p>`),
-      metadata: { orderId: updated.id, salonId: salon!.id, status: body.data.status },
+      subject: `LUMERA Biznis — status porudžbine: ${updated.status}`,
+      htmlContent: lumeraEmailHtml("Status porudžbine je ažuriran", `<p>Porudžbina za ${emailSafe(salon!.name)} sada ima status <strong>${emailSafe(updated.status)}</strong>${updated.trackingNumber ? `. Broj za praćenje: <strong>${emailSafe(updated.trackingNumber)}</strong>.` : ""}</p>`),
+      metadata: { orderId: updated.id, salonId: salon!.id, status: updated.status },
     });
   }
   const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, updated.id));
@@ -18633,6 +19035,7 @@ function adminProductDto(item: typeof productsTable.$inferSelect) {
     imageUrl: item.imageUrl,
     images: item.images ?? [],
     price: item.price,
+    costPriceRsd: item.costPriceRsd ?? null,
     discountPrice: item.discountPrice ?? null,
     discountPriceEndsAt: item.discountPriceEndsAt ?? null,
     retailEnabled: item.retailEnabled,
@@ -19005,6 +19408,7 @@ router.post("/admin/products", async (req, res): Promise<void> => {
         imageUrl: body.imageUrl,
         images: body.images ?? [],
         price: body.price,
+        costPriceRsd: body.costPriceRsd ?? null,
         discountPrice: body.discountPrice ?? null,
         discountPriceEndsAt: body.discountPriceEndsAt ? new Date(body.discountPriceEndsAt) : null,
         retailEnabled: body.retailEnabled ?? false,
@@ -19321,6 +19725,7 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
         imageUrl: nextImageUrl,
         images: nextImages,
         price: nextPrice,
+        costPriceRsd: body.costPriceRsd !== undefined ? body.costPriceRsd : existing.costPriceRsd,
         discountPrice: nextDiscount,
         discountPriceEndsAt: body.discountPriceEndsAt !== undefined
           ? body.discountPriceEndsAt ? new Date(body.discountPriceEndsAt) : null

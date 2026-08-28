@@ -3046,6 +3046,18 @@ export interface RetailCheckoutPreview {
   paymentMethods: RetailCheckoutPreviewPaymentMethodsItem[];
 }
 
+export type RetailOrderFulfillmentStatus = typeof RetailOrderFulfillmentStatus[keyof typeof RetailOrderFulfillmentStatus];
+
+
+export const RetailOrderFulfillmentStatus = {
+  RECEIVED: 'RECEIVED',
+  PREPARING: 'PREPARING',
+  PACKING: 'PACKING',
+  SHIPPED: 'SHIPPED',
+  COMPLETED: 'COMPLETED',
+  CANCELLED: 'CANCELLED',
+} as const;
+
 export type RetailOrderItemsItem = {
   id: string;
   productId: string;
@@ -3061,6 +3073,11 @@ export interface RetailOrder {
   id: string;
   orderNumber: string;
   status: string;
+  fulfillmentStatus: RetailOrderFulfillmentStatus;
+  /** @nullable */
+  trackingNumber: string | null;
+  /** @nullable */
+  trackingUrl: string | null;
   paymentMethod: string;
   paymentStatus: string;
   deliveryMethod: string;
@@ -3080,6 +3097,161 @@ export interface RetailOrder {
   referralCreditAppliedRsd: number;
   createdAt: string;
   items: RetailOrderItemsItem[];
+}
+
+export interface RetailTrackingLookupInput {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  orderNumber: string;
+  /**
+     * @minLength 5
+     * @maxLength 320
+     * @pattern ^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$
+     */
+  email: string;
+}
+
+export type PublicRetailOrderTrackingStatus = typeof PublicRetailOrderTrackingStatus[keyof typeof PublicRetailOrderTrackingStatus];
+
+
+export const PublicRetailOrderTrackingStatus = {
+  RECEIVED: 'RECEIVED',
+  PREPARING: 'PREPARING',
+  PACKING: 'PACKING',
+  SHIPPED: 'SHIPPED',
+  COMPLETED: 'COMPLETED',
+  CANCELLED: 'CANCELLED',
+} as const;
+
+export interface PublicRetailOrderTracking {
+  orderNumber: string;
+  status: PublicRetailOrderTrackingStatus;
+  statusLabel: string;
+  createdAt: string;
+  statusUpdatedAt: string;
+  /**
+     * @minimum 0
+     * @maximum 5
+     */
+  progressStage: number;
+  /** @nullable */
+  trackingNumber: string | null;
+  /** @nullable */
+  courierUrl: string | null;
+}
+
+export type AdminFulfillmentUpdateFulfillmentStatus = typeof AdminFulfillmentUpdateFulfillmentStatus[keyof typeof AdminFulfillmentUpdateFulfillmentStatus];
+
+
+export const AdminFulfillmentUpdateFulfillmentStatus = {
+  RECEIVED: 'RECEIVED',
+  PREPARING: 'PREPARING',
+  PACKING: 'PACKING',
+  SHIPPED: 'SHIPPED',
+  COMPLETED: 'COMPLETED',
+  CANCELLED: 'CANCELLED',
+} as const;
+
+/**
+ * @deprecated
+ */
+export type AdminFulfillmentUpdateStatus = typeof AdminFulfillmentUpdateStatus[keyof typeof AdminFulfillmentUpdateStatus];
+
+
+export const AdminFulfillmentUpdateStatus = {
+  pending: 'pending',
+  confirmed: 'confirmed',
+  paid: 'paid',
+  processing: 'processing',
+  shipped: 'shipped',
+  delivered: 'delivered',
+  cancelled: 'cancelled',
+} as const;
+
+export type AdminFulfillmentUpdate = (unknown & ({
+  fulfillmentStatus?: AdminFulfillmentUpdateFulfillmentStatus;
+  /** @deprecated */
+  status?: AdminFulfillmentUpdateStatus;
+  /**
+     * @maxLength 120
+     * @nullable
+     */
+  trackingNumber?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  trackingUrl?: string | null;
+}));
+
+export interface FulfillmentHistoryEntry {
+  id: string;
+  actorName: string;
+  field: string;
+  /** @nullable */
+  previousValue: string | null;
+  /** @nullable */
+  nextValue: string | null;
+  /** @nullable */
+  note: string | null;
+  createdAt: string;
+}
+
+export type AdminRetailOrder = RetailOrder & {
+  fulfillmentHistory: FulfillmentHistoryEntry[];
+};
+
+export interface AdminProfitabilityKpis {
+  revenueRsd: number;
+  cogsRsd: number;
+  profitRsd: number;
+  /** @nullable */
+  marginPercent: number | null;
+  /** @minimum 0 */
+  units: number;
+}
+
+export interface AdminProfitabilityPoint {
+  period: string;
+  revenueRsd: number;
+  cogsRsd: number;
+  profitRsd: number;
+  /** @nullable */
+  marginPercent: number | null;
+}
+
+export interface AdminProfitabilityProductRow {
+  /** @nullable */
+  productId: string | null;
+  productName: string;
+  supplierId: string;
+  supplierName: string;
+  /** @nullable */
+  categoryId: string | null;
+  /** @nullable */
+  categoryName: string | null;
+  /** @nullable */
+  brand: string | null;
+  /** @minimum 0 */
+  units: number;
+  realizedRevenueRsd: number;
+  cogsRsd: number;
+  profitRsd: number;
+  /** @nullable */
+  marginPercent: number | null;
+  /** @nullable */
+  averageDiscountPercent: number | null;
+}
+
+export interface AdminProfitabilityReport {
+  kpis: AdminProfitabilityKpis;
+  /** @maxItems 366 */
+  timeSeries: AdminProfitabilityPoint[];
+  /** @maxItems 200 */
+  products: AdminProfitabilityProductRow[];
+  treatment: string;
 }
 
 export type ProductCategorySubcategoriesItem = {
@@ -3925,6 +4097,18 @@ export const OrderStatus = {
   cancelled: 'cancelled',
 } as const;
 
+export type OrderFulfillmentStatus = typeof OrderFulfillmentStatus[keyof typeof OrderFulfillmentStatus];
+
+
+export const OrderFulfillmentStatus = {
+  RECEIVED: 'RECEIVED',
+  PREPARING: 'PREPARING',
+  PACKING: 'PACKING',
+  SHIPPED: 'SHIPPED',
+  COMPLETED: 'COMPLETED',
+  CANCELLED: 'CANCELLED',
+} as const;
+
 export type OrderPaymentStatus = typeof OrderPaymentStatus[keyof typeof OrderPaymentStatus];
 
 
@@ -4010,6 +4194,7 @@ export interface OrderItem {
 export interface Order {
   id: string;
   status: OrderStatus;
+  fulfillmentStatus: OrderFulfillmentStatus;
   paymentStatus: OrderPaymentStatus;
   deliveryMethod: OrderDeliveryMethod;
   /** @nullable */
@@ -4148,6 +4333,18 @@ export const AdminOrderUpdateStatus = {
   cancelled: 'cancelled',
 } as const;
 
+export type AdminOrderUpdateFulfillmentStatus = typeof AdminOrderUpdateFulfillmentStatus[keyof typeof AdminOrderUpdateFulfillmentStatus];
+
+
+export const AdminOrderUpdateFulfillmentStatus = {
+  RECEIVED: 'RECEIVED',
+  PREPARING: 'PREPARING',
+  PACKING: 'PACKING',
+  SHIPPED: 'SHIPPED',
+  COMPLETED: 'COMPLETED',
+  CANCELLED: 'CANCELLED',
+} as const;
+
 export type AdminOrderUpdatePaymentStatus = typeof AdminOrderUpdatePaymentStatus[keyof typeof AdminOrderUpdatePaymentStatus];
 
 
@@ -4161,6 +4358,7 @@ export const AdminOrderUpdatePaymentStatus = {
 
 export interface AdminOrderUpdate {
   status?: AdminOrderUpdateStatus;
+  fulfillmentStatus?: AdminOrderUpdateFulfillmentStatus;
   paymentStatus?: AdminOrderUpdatePaymentStatus;
   /** @nullable */
   courierServiceId?: string | null;
@@ -4169,6 +4367,11 @@ export interface AdminOrderUpdate {
      * @nullable
      */
   trackingNumber?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  trackingUrl?: string | null;
   /**
      * @maxLength 2000
      * @nullable
@@ -5667,6 +5870,12 @@ export interface AdminProduct {
   imageUrl: string;
   images: string[];
   price: number;
+  /**
+     * @minimum 0
+     * @maximum 100000000
+     * @nullable
+     */
+  costPriceRsd: number | null;
   /** @nullable */
   discountPrice: number | null;
   /** @nullable */
@@ -5787,6 +5996,12 @@ export interface AdminProductInput {
      * @maximum 100000000
      */
   price: number;
+  /**
+     * @minimum 0
+     * @maximum 100000000
+     * @nullable
+     */
+  costPriceRsd?: number | null;
   /**
      * @minimum 0
      * @maximum 100000000
@@ -5921,6 +6136,12 @@ export interface AdminProductUpdate {
      * @maximum 100000000
      */
   price?: number;
+  /**
+     * @minimum 0
+     * @maximum 100000000
+     * @nullable
+     */
+  costPriceRsd?: number | null;
   /**
      * @minimum 0
      * @maximum 100000000
@@ -10517,6 +10738,39 @@ export const AdminListRetailOrdersStatus = {
   shipped: 'shipped',
   delivered: 'delivered',
   cancelled: 'cancelled',
+} as const;
+
+export type AdminGetCommerceProfitabilityParams = {
+from: string;
+to: string;
+market?: AdminGetCommerceProfitabilityMarket;
+supplierId?: string;
+categoryId?: string;
+/**
+ * @minLength 1
+ * @maxLength 120
+ */
+brand?: string;
+productId?: string;
+granularity?: AdminGetCommerceProfitabilityGranularity;
+};
+
+export type AdminGetCommerceProfitabilityMarket = typeof AdminGetCommerceProfitabilityMarket[keyof typeof AdminGetCommerceProfitabilityMarket];
+
+
+export const AdminGetCommerceProfitabilityMarket = {
+  B2C: 'B2C',
+  B2B: 'B2B',
+  BOTH: 'BOTH',
+} as const;
+
+export type AdminGetCommerceProfitabilityGranularity = typeof AdminGetCommerceProfitabilityGranularity[keyof typeof AdminGetCommerceProfitabilityGranularity];
+
+
+export const AdminGetCommerceProfitabilityGranularity = {
+  DAY: 'DAY',
+  WEEK: 'WEEK',
+  MONTH: 'MONTH',
 } as const;
 
 export type AdminListRetailProductReviewsParams = {

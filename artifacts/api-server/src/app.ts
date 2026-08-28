@@ -6,7 +6,9 @@ import { logger } from "./lib/logger";
 import { apiErrorHandler, normalizeAdminErrorResponses } from "./lib/api-errors";
 
 const app: Express = express();
-app.set("trust proxy", 1);
+// Replit deployments have one controlled edge proxy. Local/test processes are
+// directly reachable, so forwarded headers must not influence req.ip there.
+app.set("trust proxy", process.env["REPLIT_DEPLOYMENT"] ? 1 : false);
 
 app.use(
   pinoHttp({

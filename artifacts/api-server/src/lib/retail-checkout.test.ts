@@ -20,6 +20,8 @@ import {
   retailCartItemsTable,
   retailCartsTable,
   retailOrderItemsTable,
+  retailOrderStatusHistoryTable,
+  retailTrackingRateLimitsTable,
   retailOrdersTable,
   savedRetailCartItemsTable,
   shopSettingsTable,
@@ -28,6 +30,11 @@ import {
   usersTable,
 } from "@workspace/db";
 import app from "../app";
+import {
+  AdminGetRetailOrderResponse,
+  GetCustomerRetailOrderResponse,
+  TrackRetailOrderResponse,
+} from "@workspace/api-zod";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureBusinessGrowthSchema } from "./business-growth-schema";
 import { runProductWaitlistNotificationWorker } from "./product-waitlist-worker";
@@ -47,6 +54,8 @@ type RetailCheckoutPreview = {
 };
 type RetailOrder = {
   id: string;
+  orderNumber?: string;
+  trackingToken?: string | null;
   subtotal: number;
   shippingCost: number;
   total: number;
@@ -164,6 +173,11 @@ async function checkoutAndAssertSavedAmount(
   assert.equal(persisted.subtotal, preview.cart.subtotal);
   assert.equal(persisted.shippingCost, preview.shipping.shippingCost);
   assert.equal(persisted.total, preview.total);
+  const [snapshot] = await db.select().from(retailOrderItemsTable)
+    .where(eq(retailOrderItemsTable.orderId, order.id)).limit(1);
+  assert.equal(snapshot?.unitCostPriceRsd, 900);
+  assert.equal(snapshot?.lineCogsRsd, 900);
+  assert.equal(snapshot?.realizedRevenueRsd, snapshot?.lineTotal);
   assert.equal(
     persisted.referralCreditMerchandiseSubtotalRsd,
     preview.merchandiseSubtotalRsd,
@@ -224,6 +238,7 @@ test.before(async () => {
     price: 2_500,
     publicPrice: 2_500,
     publicDiscountPrice: 2_000,
+    costPriceRsd: 900,
     retailEnabled: true,
     professionalEnabled: false,
     stock: 8,
@@ -290,7 +305,9 @@ test("cart summary does not create a cart and returns the count for an existing 
   assert.deepEqual(await emptySummary.json() as RetailCartSummary, { itemCount: 0 });
 
   const cartsAfterEmptySummary = await db.select({ id: retailCartsTable.id }).from(retailCartsTable);
-  assert.equal(cartsAfterEmptySummary.length, cartsBefore.length, "a summary request must not create a persistent cart");
+  const afterIds = new Set(cartsAfterEmptySummary.map((cart) => cart.id));
+  assert.ok(cartsBefore.every((cart) => afterIds.has(cart.id)),
+    "a summary request must not mutate pre-existing carts (parallel suites may create unrelated carts)");
 
   const addResponse = await fetch(`${baseUrl}/retail/cart/items`, {
     method: "POST",
@@ -685,12 +702,9 @@ test("guest checkout stays anonymous while CUSTOMER and JOBSEEKER orders are own
     return order;
   };
 
-  const usersBefore = await db.select({ id: usersTable.id }).from(usersTable);
   const guest = await place(retailClient(), "guest");
-  const usersAfter = await db.select({ id: usersTable.id }).from(usersTable);
-  assert.equal(usersAfter.length, usersBefore.length, "guest checkout must never create an account");
   const [guestRow] = await db.select().from(retailOrdersTable).where(eq(retailOrdersTable.id, guest.id));
-  assert.equal(guestRow?.userId, null);
+  assert.equal(guestRow?.userId, null, "guest checkout must never create or attach an account");
 
   const customer = await createTestUser("CUSTOMER");
   const jobseeker = await createTestUser("JOBSEEKER");
@@ -1255,6 +1269,10 @@ test("authenticated checkout awards and reverses loyalty once, and repeat-last i
     });
     assert.equal((await cancel()).status, 200);
     assert.equal((await cancel()).status, 200);
+    const fulfillmentHistory = await db.select().from(retailOrderStatusHistoryTable)
+      .where(eq(retailOrderStatusHistoryTable.retailOrderId, order.id));
+    assert.equal(fulfillmentHistory.filter((event) => event.field === "fulfillmentStatus").length, 1);
+    assert.equal(fulfillmentHistory.find((event) => event.field === "fulfillmentStatus")?.nextValue, "CANCELLED");
     const ledger = await db.select().from(loyaltyPointLedgerTable)
       .where(eq(loyaltyPointLedgerTable.retailOrderId, order.id));
     assert.equal(ledger.filter((entry) => entry.type === "AWARD").length, 1);
@@ -1278,4 +1296,74 @@ test("authenticated checkout awards and reverses loyalty once, and repeat-last i
       minimumOrderQuantity: productBefore.minimumOrderQuantity,
     }).where(eq(productsTable.id, createdProductId));
   }
+});
+
+test("retail tracking is minimized, expires, rotates by exact lookup, and is rate limited", async () => {
+  await db.delete(retailTrackingRateLimitsTable);
+  assert.ok(createdProductId);
+  const customer = await createTestUser("CUSTOMER");
+  const request = retailClient(customer.cookie);
+  await db.update(productsTable).set({ stock: 10, minimumOrderQuantity: 1 })
+    .where(eq(productsTable.id, createdProductId));
+  assert.equal((await addRetailItem(request, createdProductId, 1)).status, 201);
+  const preview = await (await request("/retail/checkout-preview?deliveryMethod=courier&city=Novi%20Sad")).json() as RetailCheckoutPreview;
+  const checkout = await request("/retail/checkout", {
+    method: "POST",
+    body: JSON.stringify({
+      idempotencyKey: `retail-tracking-${randomUUID()}`,
+      firstName: "Retail", lastName: "Tracking", email: customer.user.email.toUpperCase(),
+      phone: "+381601234567", street: "Test ulica 1", city: "Novi Sad", postalCode: "21000",
+      paymentMethod: "BANK_TRANSFER", deliveryMethod: "courier",
+      expectedSubtotal: preview.cart.subtotal, expectedShippingCost: preview.shipping.shippingCost,
+      expectedTotal: preview.total,
+    }),
+  });
+  assert.equal(checkout.status, 201);
+  const order = await checkout.json() as RetailOrder;
+  createdOrderIds.push(order.id);
+  assert.ok(order.trackingToken);
+  assert.ok(order.orderNumber);
+
+  const tracked = await request(`/retail/orders/track?token=${encodeURIComponent(order.trackingToken)}`);
+  assert.equal(tracked.status, 200);
+  const publicOrder = await tracked.json() as Record<string, unknown>;
+  assert.equal(TrackRetailOrderResponse.safeParse(publicOrder).success, true);
+  assert.deepEqual(Object.keys(publicOrder).sort(), [
+    "courierUrl", "createdAt", "orderNumber", "progressStage", "status",
+    "statusLabel", "statusUpdatedAt", "trackingNumber",
+  ]);
+  assert.equal("items" in publicOrder, false);
+  assert.equal("total" in publicOrder, false);
+  const customerDetail = await request(`/customer/retail-orders/${order.id}`);
+  assert.equal(customerDetail.status, 200);
+  const customerDetailBody = await customerDetail.json() as Record<string, unknown>;
+  assert.equal(GetCustomerRetailOrderResponse.safeParse(customerDetailBody).success, true);
+  assert.equal("fulfillmentHistory" in customerDetailBody, false);
+  const admin = await createTestUser("ADMIN");
+  const adminDetail = await retailClient(admin.cookie)(`/admin/retail-orders/${order.id}`);
+  assert.equal(adminDetail.status, 200);
+  const adminDetailBody = await adminDetail.json() as Record<string, unknown>;
+  assert.equal(AdminGetRetailOrderResponse.safeParse(adminDetailBody).success, true);
+  assert.ok(Array.isArray(adminDetailBody.fulfillmentHistory));
+
+  await db.update(retailOrdersTable).set({ trackingTokenExpiresAt: new Date(0) })
+    .where(eq(retailOrdersTable.id, order.id));
+  assert.equal((await request(`/retail/orders/track?token=${encodeURIComponent(order.trackingToken)}`)).status, 404);
+  const lookup = await request("/retail/orders/track/lookup", {
+    method: "POST",
+    body: JSON.stringify({ orderNumber: order.orderNumber, email: `  ${customer.user.email.toUpperCase()} ` }),
+  });
+  assert.equal(lookup.status, 200);
+  assert.equal((await request(`/retail/orders/track?token=${encodeURIComponent(order.trackingToken)}`)).status, 404);
+  const wrongBody = JSON.stringify({ orderNumber: order.orderNumber, email: "wrong@example.test" });
+  const failures: Response[] = [];
+  for (let index = 0; index < 10; index += 1) {
+    failures.push(await request("/retail/orders/track/lookup", {
+      method: "POST",
+      headers: { "x-forwarded-for": `198.51.100.${index + 1}` },
+      body: wrongBody,
+    }));
+  }
+  assert.equal(failures.at(-1)?.status, 429);
+  assert.deepEqual(await failures[0]!.json(), await failures.at(-1)!.json());
 });

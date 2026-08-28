@@ -53,7 +53,7 @@ const PublicSupplierShop = lazy(() => import('./pages/public-products').then((mo
 const RetailCartPage = lazy(() => import('./pages/retail-checkout').then((module) => ({ default: module.RetailCartPage })));
 const RetailCheckoutPage = lazy(() => import('./pages/retail-checkout').then((module) => ({ default: module.RetailCheckoutPage })));
 const RetailSuccessPage = lazy(() => import('./pages/retail-checkout').then((module) => ({ default: module.RetailSuccessPage })));
-const RetailTrackingPage = lazy(() => import('./pages/retail-checkout').then((module) => ({ default: module.RetailTrackingPage })));
+const ProveraStatusaPage = lazy(() => import('./pages/provera-statusa').then((module) => ({ default: module.ProveraStatusaPage })));
 const CustomerWishlistPage = lazy(() => import('./pages/customer-wishlist'));
 const CustomerSubscriptionsPage = lazy(() => import('./pages/customer-subscriptions'));
 const Salons = lazy(() => import('./pages/salons'));
@@ -102,6 +102,7 @@ const AdminRetentionSettings = lazy(() => import('./pages/admin/retention-settin
 const AdminSubscriptions = lazy(() => import('./pages/admin/subscriptions'));
 const AdminReviews = lazy(() => import('./pages/admin/reviews'));
 const AdminProducts = lazy(() => import('./pages/admin/products'));
+const AdminProfitability = lazy(() => import('./pages/admin/profitabilnost'));
 const AdminSuppliers = lazy(() => import('./pages/admin/suppliers'));
 const AdminSupplierDetail = lazy(() => import('./pages/admin/supplier-detail'));
 const AdminBrands = lazy(() => import('./pages/admin/brands'));
@@ -308,7 +309,8 @@ function Router() {
         <Route path="/korpa" component={RetailCartPage} />
         <Route path="/korpa/placanje" component={RetailCheckoutPage} />
         <Route path="/korpa/uspeh" component={RetailSuccessPage} />
-        <Route path="/porudzbina/pracenje" component={RetailTrackingPage} />
+        <Route path="/porudzbina/pracenje" component={ProveraStatusaPage} />
+        <Route path="/provera-statusa" component={ProveraStatusaPage} />
         <Route path="/lista-zelja"><RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava"><CustomerWishlistPage /></RoleGuard></Route>
         <Route path="/moj-nalog/pretplate"><RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava"><CustomerSubscriptionsPage /></RoleGuard></Route>
         <Route path="/inspiracija"><MarketplaceGuides kind="inspiration" /></Route>
@@ -410,6 +412,7 @@ function Router() {
         <Route path="/admin/loyalty"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminLoyalty /></RoleGuard></Route>
         <Route path="/admin/retencija"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminRetentionSettings /></RoleGuard></Route>
         <Route path="/admin/proizvodi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminProducts /></RoleGuard></Route>
+        <Route path="/admin/profitabilnost"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminProfitability /></RoleGuard></Route>
         <Route path="/admin/dobavljaci/:supplierId"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSupplierDetail /></RoleGuard></Route>
         <Route path="/admin/dobavljaci"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSuppliers /></RoleGuard></Route>
         <Route path="/admin/brendovi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminBrands /></RoleGuard></Route>

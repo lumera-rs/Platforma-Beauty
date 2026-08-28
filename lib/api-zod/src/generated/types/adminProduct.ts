@@ -27,6 +27,12 @@ export interface AdminProduct {
   imageUrl: string;
   images: string[];
   price: number;
+  /**
+     * @minimum 0
+     * @maximum 100000000
+     * @nullable
+     */
+  costPriceRsd: number | null;
   /** @nullable */
   discountPrice: number | null;
   /** @nullable */

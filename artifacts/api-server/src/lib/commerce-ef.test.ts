@@ -104,6 +104,46 @@ test("loyalty settled spend includes paid and delivered COD only in both markets
   assert.equal(await settledCommerceSpend(db, { market: "B2B", salonId }), 3000);
 });
 
+test("admin profitability aggregates immutable B2C/B2B snapshots and excludes cancelled/refunded lines", async () => {
+  const at = new Date("2025-01-15T12:00:00.000Z");
+  const [product] = await db.select().from(productsTable).where(eq(productsTable.id, productId));
+  assert.ok(product);
+  const snapshot = {
+    productId, productName: `${marker} profitability`, supplierId: product!.supplierId,
+    supplierName: marker, supplierSlug: marker, categoryIdSnapshot: product!.categoryId,
+    categoryNameSnapshot: marker, brandSnapshot: marker, baseUnitPrice: 1000,
+  };
+  const [includedB2b] = await db.insert(ordersTable).values({ salonId, status: "delivered", fulfillmentStatus: "COMPLETED", paymentStatus: "paid", total: 2000, subtotal: 2000, shippingName: marker, shippingAddress: "Test", paymentMethod: "CARD", createdAt: at }).returning();
+  ids.orders.push(includedB2b!.id);
+  await db.insert(orderItemsTable).values({ orderId: includedB2b!.id, ...snapshot, quantity: 2, price: 1000, unitPrice: 1000, lineSubtotal: 2000, lineTotal: 2000, unitCostPriceRsd: 300, lineCogsRsd: 600, realizedRevenueRsd: 1800 });
+  const [includedB2c] = await db.insert(retailOrdersTable).values({ orderNumber: `${marker}-profit-included`, cartId: ids.retailCarts[0]!, trackingTokenHash: randomUUID(), idempotencyKey: randomUUID(), status: "delivered", fulfillmentStatus: "COMPLETED", paymentStatus: "paid", paymentMethod: "CARD", subtotal: 1000, total: 1000, shippingName: marker, shippingAddress: "Test", shippingCity: "Beograd", shippingPostalCode: "11000", shippingPhone: "+381601234567", shippingEmail: `${marker}@example.test`, createdAt: at }).returning();
+  ids.retailOrders.push(includedB2c!.id);
+  await db.insert(retailOrderItemsTable).values({ orderId: includedB2c!.id, ...snapshot, productImageUrl: "/test.jpg", unitPrice: 1000, quantity: 1, lineSubtotal: 1000, lineTotal: 1000, unitCostPriceRsd: 400, lineCogsRsd: 400, realizedRevenueRsd: 900 });
+
+  const [excludedB2b] = await db.insert(ordersTable).values({ salonId, status: "cancelled", fulfillmentStatus: "CANCELLED", paymentStatus: "paid", total: 999, subtotal: 999, shippingName: marker, shippingAddress: "Test", paymentMethod: "CARD", createdAt: at }).returning();
+  ids.orders.push(excludedB2b!.id);
+  await db.insert(orderItemsTable).values({ orderId: excludedB2b!.id, ...snapshot, quantity: 1, price: 999, unitPrice: 999, lineSubtotal: 999, lineTotal: 999, unitCostPriceRsd: 1, lineCogsRsd: 1, realizedRevenueRsd: 999 });
+  const [excludedB2c] = await db.insert(retailOrdersTable).values({ orderNumber: `${marker}-profit-refund`, cartId: ids.retailCarts[0]!, trackingTokenHash: randomUUID(), idempotencyKey: randomUUID(), status: "delivered", fulfillmentStatus: "COMPLETED", paymentStatus: "refunded", paymentMethod: "CARD", subtotal: 999, total: 999, shippingName: marker, shippingAddress: "Test", shippingCity: "Beograd", shippingPostalCode: "11000", shippingPhone: "+381601234567", shippingEmail: `${marker}@example.test`, createdAt: at }).returning();
+  ids.retailOrders.push(excludedB2c!.id);
+  await db.insert(retailOrderItemsTable).values({ orderId: excludedB2c!.id, ...snapshot, productImageUrl: "/test.jpg", unitPrice: 999, quantity: 1, lineSubtotal: 999, lineTotal: 999, unitCostPriceRsd: 1, lineCogsRsd: 1, realizedRevenueRsd: 999 });
+
+  const adminCookie = await cookie(admin);
+  const get = (extra = "") => api(`/admin/commerce/profitability?from=2025-01-15&to=2025-01-15&productId=${productId}${extra}`, adminCookie);
+  for (const [granularity, period] of [["DAY", "2025-01-15"], ["WEEK", "2025-01-13"], ["MONTH", "2025-01-01"]] as const) {
+    const response = await get(`&granularity=${granularity}`);
+    assert.equal(response.status, 200);
+    const report = await response.json() as { kpis: { revenueRsd: number; cogsRsd: number; profitRsd: number; marginPercent: number; units: number }; timeSeries: Array<{ period: string }>; products: Array<{ productId: string; realizedRevenueRsd: number; cogsRsd: number }> };
+    assert.deepEqual(report.kpis, { revenueRsd: 2700, cogsRsd: 1000, profitRsd: 1700, marginPercent: 62.96, units: 3 });
+    assert.equal(report.timeSeries[0]?.period, period);
+    assert.deepEqual(report.products.map((row) => ({ productId: row.productId, revenueRsd: row.realizedRevenueRsd, cogsRsd: row.cogsRsd })), [{ productId, revenueRsd: 2700, cogsRsd: 1000 }]);
+  }
+  for (const [market, revenue, cogs, units] of [["B2C", 900, 400, 1], ["B2B", 1800, 600, 2], ["BOTH", 2700, 1000, 3]] as const) {
+    const response = await get(`&market=${market}&supplierId=${product!.supplierId}&categoryId=${product!.categoryId}&brand=${encodeURIComponent(marker)}`);
+    const report = await response.json() as { kpis: { revenueRsd: number; cogsRsd: number; units: number } };
+    assert.equal(response.status, 200); assert.deepEqual(report.kpis, { revenueRsd: revenue, cogsRsd: cogs, profitRsd: revenue - cogs, marginPercent: Math.round((revenue - cogs) * 10000 / revenue) / 100, units });
+  }
+});
+
 test.after(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await db.delete(emailDeliveriesTable).where(eq(emailDeliveriesTable.recipientEmail, `CUSTOMER-${marker}@example.test`));

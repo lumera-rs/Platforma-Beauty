@@ -23,7 +23,7 @@ import {
   usePreviewRetailCheckout,
   useCheckoutRetailCart,
   useAddRetailCartItem,
-  useTrackRetailOrder,
+
   getGetRetailCartQueryKey,
   getApiErrorDetails,
   getApiErrorMessage,
@@ -913,57 +913,8 @@ export function RetailSuccessPage() {
         <p className="mt-2 text-muted-foreground">Poslali smo vam email sa potvrdom i detaljima porudžbine.</p>
         <div className="mt-8 flex gap-4">
           <Button variant="outline" asChild size="lg"><Link href="/proizvodi">Nastavi kupovinu</Link></Button>
-          {token && <Button onClick={() => setLocation(`/porudzbina/pracenje?token=${encodeURIComponent(token)}`)} size="lg">Prati porudžbinu</Button>}
+          {token && <Button onClick={() => setLocation(`/provera-statusa?token=${encodeURIComponent(token)}`)} size="lg">Prati porudžbinu</Button>}
         </div>
-      </main>
-    </Layout>
-  );
-}
-
-export function RetailTrackingPage() {
-  const token = new URLSearchParams(window.location.search).get("token") ?? "";
-  const { data: order, isLoading, isError } = useTrackRetailOrder(
-    { token },
-    { query: { enabled: token.length >= 32, queryKey: ['retailOrderAnonymous', token] } },
-  );
-
-  return (
-    <Layout>
-      <main className="mx-auto min-h-screen max-w-3xl px-4 py-12">
-        <h1 className="font-serif text-4xl font-bold mb-8">Praćenje porudžbine</h1>
-        {!token || isError ? (
-          <div className="p-6 border border-destructive/20 bg-destructive/5 rounded-xl text-destructive text-center">Veza za praćenje nije važeća.</div>
-        ) : isLoading || !order ? (
-          <div className="flex justify-center p-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
-        ) : (
-          <div className="rounded-xl border bg-card p-6 shadow-sm space-y-6">
-            <div className="flex justify-between items-start border-b pb-4">
-              <div>
-                <p className="text-sm text-muted-foreground">Broj porudžbine</p>
-                <p className="font-mono font-medium text-lg mt-1">{order.orderNumber}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm text-muted-foreground">Status</p>
-                <Badge className="mt-1" variant="outline">{order.status}</Badge>
-              </div>
-            </div>
-            <div>
-              <h3 className="font-bold mb-4">Stavke porudžbine</h3>
-              <div className="space-y-3">
-                {order.items.map((item) => (
-                  <div key={item.id} className="flex justify-between items-center text-sm">
-                    <span>{item.quantity}× {item.name}</span>
-                    <span className="font-medium">{money(item.unitPrice * item.quantity)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="border-t pt-4 flex justify-between items-center">
-              <span className="font-bold text-lg">Ukupno</span>
-              <strong className="text-2xl text-primary">{money(order.total)}</strong>
-            </div>
-          </div>
-        )}
       </main>
     </Layout>
   );

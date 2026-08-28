@@ -26,6 +26,9 @@ export const orderStatusEnum = pgEnum("order_status", [
   "delivered",
   "cancelled",
 ]);
+export const fulfillmentStatusEnum = pgEnum("fulfillment_status", [
+  "RECEIVED", "PREPARING", "PACKING", "SHIPPED", "COMPLETED", "CANCELLED",
+]);
 
 export const paymentMethodEnum = pgEnum("payment_method", [
   "CARD",
@@ -133,6 +136,8 @@ export const productsTable = pgTable("products", {
   imageUrl: text("image_url").notNull(),
   images: jsonb("images").$type<string[]>().notNull().default([]),
   price: integer("price").notNull(),
+  /** Internal whole-RSD acquisition cost. Never expose outside administrator contracts. */
+  costPriceRsd: integer("cost_price_rsd"),
   discountPrice: integer("discount_price"),
   /** B2B sale is active strictly before this instant; null preserves legacy perpetual-sale behavior. */
   discountPriceEndsAt: timestamp("discount_price_ends_at", { withTimezone: true }),
@@ -196,6 +201,7 @@ export const productsTable = pgTable("products", {
   index("products_brand_active_idx").on(table.brand, table.active),
   index("products_supplier_type_retail_active_idx").on(table.supplierId, table.productTypeId, table.retailEnabled, table.active),
   index("products_product_type_idx").on(table.productTypeId),
+  check("products_cost_price_rsd_check", sql`${table.costPriceRsd} IS NULL OR ${table.costPriceRsd} >= 0`),
 ]);
 
 export const productBundlesTable = pgTable("product_bundles", {
@@ -358,6 +364,7 @@ export const ordersTable = pgTable("orders", {
   id: uuid("id").defaultRandom().primaryKey(),
   salonId: uuid("salon_id").notNull().references(() => salonsTable.id),
   status: orderStatusEnum("status").notNull().default("pending"),
+  fulfillmentStatus: fulfillmentStatusEnum("fulfillment_status").notNull().default("RECEIVED"),
   total: integer("total").notNull(),
   shippingCost: integer("shipping_cost").notNull().default(0),
   shippingName: text("shipping_name").notNull(),
@@ -394,6 +401,7 @@ export const ordersTable = pgTable("orders", {
   courierServiceId: uuid("courier_service_id").references(() => courierServicesTable.id, { onDelete: "set null" }),
   courierService: text("courier_service"),
   trackingNumber: text("tracking_number"),
+  trackingUrl: text("tracking_url"),
   adminNote: text("admin_note"),
   estimatedDeliveryDate: text("estimated_delivery_date"),
   invoiceNumber: text("invoice_number").unique(),
@@ -511,12 +519,20 @@ export const orderItemsTable = pgTable("order_items", {
   supplierSlug: text("supplier_slug").notNull(),
   productCatalogReference: text("product_catalog_reference"),
   productSkuSnapshot: text("product_sku_snapshot"),
+  categoryIdSnapshot: uuid("category_id_snapshot"),
+  categoryNameSnapshot: text("category_name_snapshot"),
+  brandSnapshot: text("brand_snapshot"),
   market: text("market").notNull().default("B2B"),
   currency: text("currency").notNull().default("RSD"),
   unitPrice: integer("unit_price").notNull(),
   discountSnapshot: integer("discount_snapshot"),
   lineSubtotal: integer("line_subtotal").notNull(),
   lineTotal: integer("line_total").notNull(),
+  /** Immutable internal profitability evidence captured under the checkout lock. */
+  unitCostPriceRsd: integer("unit_cost_price_rsd").notNull().default(0),
+  lineCogsRsd: integer("line_cogs_rsd").notNull().default(0),
+  referralDiscountRsd: integer("referral_discount_rsd").notNull().default(0),
+  realizedRevenueRsd: integer("realized_revenue_rsd").notNull().default(0),
   bundleId: uuid("bundle_id"),
   baseUnitPrice: integer("base_unit_price").notNull().default(0),
   effectiveUnitPrice: integer("effective_unit_price").notNull().default(0),
@@ -540,6 +556,13 @@ export const orderItemsTable = pgTable("order_items", {
   index("order_items_product_idx").on(table.productId),
   index("order_items_supplier_idx").on(table.supplierId),
   check("order_items_target_check", sql`num_nonnulls(${table.productId}, ${table.bundleId}) = 1`),
+  check("order_items_profit_snapshot_check", sql`
+    ${table.unitCostPriceRsd} >= 0
+    AND ${table.lineCogsRsd} >= 0
+    AND ${table.referralDiscountRsd} >= 0
+    AND ${table.realizedRevenueRsd} >= 0
+    AND ${table.referralDiscountRsd} <= ${table.lineTotal}
+  `),
   check("order_items_reward_gift_check", sql`
     (NOT ${table.isRewardGift}) OR (
       ${table.productId} IS NOT NULL AND ${table.bundleId} IS NULL
@@ -649,9 +672,13 @@ export const retailOrdersTable = pgTable("retail_orders", {
   cartId: uuid("cart_id").notNull().references(() => retailCartsTable.id, { onDelete: "restrict" }),
   userId: uuid("user_id").references(() => usersTable.id, { onDelete: "set null" }),
   trackingTokenHash: text("tracking_token_hash").notNull().unique(),
+  trackingTokenExpiresAt: timestamp("tracking_token_expires_at", { withTimezone: true })
+    .notNull().default(sql`now() + interval '180 days'`),
+  trackingTokenRotatedAt: timestamp("tracking_token_rotated_at", { withTimezone: true }),
   trackingTokenRevokedAt: timestamp("tracking_token_revoked_at", { withTimezone: true }),
   idempotencyKey: text("idempotency_key").notNull(),
   status: orderStatusEnum("status").notNull().default("pending"),
+  fulfillmentStatus: fulfillmentStatusEnum("fulfillment_status").notNull().default("RECEIVED"),
   paymentMethod: paymentMethodEnum("payment_method").notNull(),
   paymentStatus: paymentStatusEnum("payment_status").notNull().default("unpaid"),
   deliveryMethod: deliveryMethodEnum("delivery_method").notNull().default("courier"),
@@ -678,6 +705,7 @@ export const retailOrdersTable = pgTable("retail_orders", {
   shippingEmail: text("shipping_email").notNull(),
   shippingNote: text("shipping_note"),
   trackingNumber: text("tracking_number"),
+  trackingUrl: text("tracking_url"),
   estimatedDeliveryDate: text("estimated_delivery_date"),
   loyaltyPointsAwarded: integer("loyalty_points_awarded").notNull().default(0),
   loyaltyPointsReversedAt: timestamp("loyalty_points_reversed_at", { withTimezone: true }),
@@ -705,11 +733,19 @@ export const retailOrderItemsTable = pgTable("retail_order_items", {
   supplierName: text("supplier_name").notNull(),
   supplierSlug: text("supplier_slug").notNull(),
   productSkuSnapshot: text("product_sku_snapshot"),
+  categoryIdSnapshot: uuid("category_id_snapshot"),
+  categoryNameSnapshot: text("category_name_snapshot"),
+  brandSnapshot: text("brand_snapshot"),
   market: text("market").notNull().default("B2C"),
   currency: text("currency").notNull().default("RSD"),
   discountSnapshot: integer("discount_snapshot"),
   lineSubtotal: integer("line_subtotal").notNull(),
   lineTotal: integer("line_total").notNull(),
+  /** Immutable internal profitability evidence captured under the checkout lock. */
+  unitCostPriceRsd: integer("unit_cost_price_rsd").notNull().default(0),
+  lineCogsRsd: integer("line_cogs_rsd").notNull().default(0),
+  referralDiscountRsd: integer("referral_discount_rsd").notNull().default(0),
+  realizedRevenueRsd: integer("realized_revenue_rsd").notNull().default(0),
   bundleId: uuid("bundle_id"),
   baseUnitPrice: integer("base_unit_price").notNull().default(0),
   effectiveUnitPrice: integer("effective_unit_price").notNull().default(0),
@@ -730,12 +766,43 @@ export const retailOrderItemsTable = pgTable("retail_order_items", {
   index("retail_order_items_catalog_reference_order_idx").on(table.productCatalogReference, table.orderId),
   index("retail_order_items_supplier_idx").on(table.supplierId),
   check("retail_order_items_target_check", sql`num_nonnulls(${table.productId}, ${table.bundleId}) = 1`),
+  check("retail_order_items_profit_snapshot_check", sql`
+    ${table.unitCostPriceRsd} >= 0
+    AND ${table.lineCogsRsd} >= 0
+    AND ${table.referralDiscountRsd} >= 0
+    AND ${table.realizedRevenueRsd} >= 0
+    AND ${table.referralDiscountRsd} <= ${table.lineTotal}
+  `),
   check("retail_order_items_reward_gift_check", sql`
     (NOT ${table.isRewardGift}) OR (
       ${table.productId} IS NOT NULL AND ${table.bundleId} IS NULL
       AND ${table.unitPrice} = 0 AND ${table.lineSubtotal} = 0
       AND ${table.lineTotal} = 0 AND ${table.rewardSnapshot} IS NOT NULL
     )`),
+]);
+
+export const retailOrderStatusHistoryTable = pgTable("retail_order_status_history", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  retailOrderId: uuid("retail_order_id").notNull().references(() => retailOrdersTable.id, { onDelete: "cascade" }),
+  actorUserId: uuid("actor_user_id"),
+  actorName: text("actor_name").notNull().default("Administrator"),
+  field: text("field").notNull(),
+  previousValue: text("previous_value"),
+  nextValue: text("next_value"),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("retail_order_status_history_order_created_idx").on(table.retailOrderId, table.createdAt),
+]);
+
+export const retailTrackingRateLimitsTable = pgTable("retail_tracking_rate_limits", {
+  clientKeyHash: text("client_key_hash").primaryKey(),
+  windowStartedAt: timestamp("window_started_at", { withTimezone: true }).notNull(),
+  requestCount: integer("request_count").notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("retail_tracking_rate_limits_updated_idx").on(table.updatedAt),
+  check("retail_tracking_rate_limits_count_check", sql`${table.requestCount} >= 0`),
 ]);
 
 export const loyaltyPointLedgerTable = pgTable("loyalty_point_ledger", {

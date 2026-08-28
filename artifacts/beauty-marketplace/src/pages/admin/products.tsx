@@ -76,6 +76,7 @@ const emptyForm = {
   imageUrl: "",
   images: [],
   price: 0,
+  costPriceRsd: null,
   discountPrice: null,
   retailEnabled: false,
   professionalEnabled: true,
@@ -192,6 +193,7 @@ function ProductFormDialog({
           imageUrl: editing.imageUrl,
           images: editing.images ?? [],
           price: editing.price,
+          costPriceRsd: editing.costPriceRsd ?? null,
           discountPrice: editing.discountPrice ?? null,
           retailEnabled: editing.retailEnabled,
           professionalEnabled: editing.professionalEnabled,
@@ -233,6 +235,7 @@ function ProductFormDialog({
   // Raw string state so numeric inputs aren't clobbered while typing
   const [rawNums, setRawNums] = useState(() => ({
     price: editing ? String(editing.price) : "0",
+    costPriceRsd: editing?.costPriceRsd != null ? String(editing.costPriceRsd) : "",
     discountPrice: editing?.discountPrice != null ? String(editing.discountPrice) : "",
     publicPrice: editing?.publicPrice != null ? String(editing.publicPrice) : "",
     publicDiscountPrice: editing?.publicDiscountPrice != null ? String(editing.publicDiscountPrice) : "",
@@ -312,11 +315,16 @@ function ProductFormDialog({
 
   // Discount percent display — parsed from rawNums for live feedback
   const rawPrice = parseFloat(rawNums.price);
+  const rawCostPrice = parseFloat(rawNums.costPriceRsd);
   const rawDiscount = rawNums.discountPrice.trim() !== "" ? parseFloat(rawNums.discountPrice) : NaN;
   const discountPercent =
     !isNaN(rawDiscount) && !isNaN(rawPrice) && rawPrice > 0 && rawDiscount < rawPrice
       ? Math.round((1 - rawDiscount / rawPrice) * 100)
       : null;
+
+  const hasCost = !isNaN(rawCostPrice) && rawCostPrice > 0;
+  const grossProfit = hasCost && !isNaN(rawPrice) && rawPrice > rawCostPrice ? rawPrice - rawCostPrice : null;
+  const margin = hasCost && !isNaN(rawPrice) && rawPrice > rawCostPrice ? Math.round(((rawPrice - rawCostPrice) / rawPrice) * 100) : null;
 
   const isPending = createProduct.isPending || updateProduct.isPending;
   const variantStockTotal = (form.variants ?? []).reduce((sum, variant) => sum + (variant.stock ?? 0), 0);
@@ -410,6 +418,11 @@ function ProductFormDialog({
     const priceParsed = form.priceOnRequest ? { ok: true as const, value: 0 } : parseStrictInt(submittedRawNums.price, { label: "Redovna cena", allowNegative: false, allowZero: false });
     if (!priceParsed.ok) { toast.error("Greška", { description: priceParsed.message }); return; }
 
+    const costPriceParsed = submittedRawNums.costPriceRsd.trim() === ""
+      ? { ok: true as const, value: null }
+      : parseStrictInt(submittedRawNums.costPriceRsd, { label: "Nabavna cena", allowNegative: false, allowZero: true });
+    if (!costPriceParsed.ok) { toast.error("Greška", { description: costPriceParsed.message }); return; }
+
     const discountParsed = form.priceOnRequest || submittedRawNums.discountPrice.trim() === ""
       ? { ok: true as const, value: null }
       : parseStrictInt(submittedRawNums.discountPrice, { label: "Akcijska cena", allowNegative: false, allowZero: false });
@@ -492,6 +505,7 @@ function ProductFormDialog({
       priceOnRequest: form.priceOnRequest,
       bulkMatrixEnabled: form.bulkMatrixEnabled,
       price: priceParsed.value,
+      costPriceRsd: costPriceParsed.value,
       discountPrice: discountParsed.value,
       publicDescription: form.publicDescription?.trim() || null,
       publicPrice: publicPriceParsed.value,
@@ -773,7 +787,14 @@ function ProductFormDialog({
               </div>
             </h4>
             {!form.priceOnRequest && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="space-y-2">
+                <Label>Nabavna cena (RSD)</Label>
+                <Input type="number" min="0" step="1" value={rawNums.costPriceRsd} onChange={(e) => updateRawNums((current) => ({ ...current, costPriceRsd: e.target.value }))} data-testid="input-product-cost-price" placeholder="Opcijono" />
+                {grossProfit !== null && (
+                  <p className="text-xs text-muted-foreground mt-1">Bruto profit: {formatRSD(grossProfit)} ({margin}%)</p>
+                )}
+              </div>
               <div className="space-y-2">
                 <Label>Redovna cena (RSD) *</Label>
                 <Input type="number" min="0" step="1" value={rawNums.price} onChange={(e) => updateRawNums((current) => ({ ...current, price: e.target.value }))} data-testid="input-product-price" />
@@ -788,19 +809,18 @@ function ProductFormDialog({
                   data-testid="input-product-discount"
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Popust</Label>
+              <div className="space-y-2 flex flex-col justify-end pb-2">
                 <div className="h-10 flex items-center">
                   {discountPercent != null ? (
-                    <Badge className="bg-destructive text-white border-none">-{discountPercent}%</Badge>
+                    <Badge className="bg-destructive text-white border-none">-{discountPercent}% popusta</Badge>
                   ) : (
-                    <span className="text-sm text-muted-foreground">Automatski se računa</span>
+                    <span className="text-sm text-muted-foreground">Automatski popust</span>
                   )}
                 </div>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-2 lg:col-span-4">
                 <Label>Jedinica mere *</Label>
-                <Input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} placeholder="kom / 500 ml / set" />
+                <Input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} placeholder="kom / 500 ml / set" className="max-w-xs" />
               </div>
             </div>
             )}

@@ -37,45 +37,143 @@ type RetailOrder = {
   items: Array<{ id: string; name: string; sku: string; quantity: number; unitPrice: number }>;
 };
 
+
+import { useAdminListRetailOrders, getAdminListRetailOrdersQueryKey, useAdminUpdateRetailOrderStatus } from "@workspace/api-client-react";
+
+function RetailOrderCard({ order, update }: { order: any, update: any }) {
+  const [tracking, setTracking] = useState(order.trackingNumber ?? "");
+  const [url, setUrl] = useState(order.trackingUrl ?? "");
+  const [fulfillment, setFulfillment] = useState(order.fulfillmentStatus ?? "RECEIVED");
+  const actionGuard = useImmediateActionGuard();
+
+  const save = () => {
+    if (!actionGuard.begin(`retail-ops:${order.id}`)) return;
+    update.mutate({ orderId: order.id, data: {
+      fulfillmentStatus: fulfillment,
+      trackingNumber: tracking || null,
+      trackingUrl: url || null
+    }}, { onSettled: () => actionGuard.end(`retail-ops:${order.id}`) });
+  };
+
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 font-semibold">
+              {order.orderNumber}
+              <Badge>Retail</Badge>
+              <Badge variant="outline">{statusLabel[order.status] || order.status}</Badge>
+            </div>
+            <p className="text-sm text-muted-foreground">{order.contact.name} · {order.contact.email} · {order.contact.phone}</p>
+            <p className="mt-1 text-sm">{order.delivery.address}, {order.delivery.postalCode} {order.delivery.city}</p>
+            <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+              {order.items.map((item: any) => (
+                <p key={item.id}>{item.quantity}× {item.name} · Referenca: <span className="font-medium text-foreground">{item.sku}</span></p>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex min-w-48 flex-col gap-2">
+            <div className="text-right mb-2"><strong>{money(order.total)}</strong></div>
+            <Select value={fulfillment} onValueChange={setFulfillment}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Fulfillment" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="RECEIVED">Primljeno</SelectItem>
+                <SelectItem value="PREPARING">U pripremi</SelectItem>
+                <SelectItem value="PACKING">Pakovanje</SelectItem>
+                <SelectItem value="SHIPPED">Poslato (Preuzeto)</SelectItem>
+                <SelectItem value="COMPLETED">Završeno</SelectItem>
+                <SelectItem value="CANCELLED">Otkazano</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input value={tracking} onChange={(e) => setTracking(e.target.value)} placeholder="Broj pošiljke" />
+            <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="URL za praćenje" />
+            <Button onClick={save} disabled={update.isPending || actionGuard.isActive(`retail-ops:${order.id}`)}>Sačuvaj praćenje</Button>
+          </div>
+        </div>
+
+        {order.fulfillmentHistory?.length > 0 && (
+          <div className="mt-4 border-t pt-4">
+            <h4 className="text-sm font-semibold mb-2">Istorija praćenja</h4>
+            <ol className="space-y-2">
+              {order.fulfillmentHistory.map((event: any) => (
+                <li key={event.id} className="border-l-2 border-primary/30 pl-3 text-xs">
+                  <b>{event.actorName}</b> je promenio <b>{event.field}</b> sa „{event.previousValue ?? "—"}“ na „{event.nextValue ?? "—"}“
+                  <br /><span className="text-muted-foreground">{new Date(event.createdAt).toLocaleString("sr-RS")}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function AdminRetailOrders() {
-  const [orders, setOrders] = useState<RetailOrder[] | null>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
   const debouncedSearch = useDebouncedSearch(search);
   const { toast } = useToast();
-  const actionGuard = useImmediateActionGuard();
-  const load = () => {
-    const params = new URLSearchParams();
-    if (status !== "all") params.set("status", status);
-    if (debouncedSearch) params.set("search", debouncedSearch);
-    const query = params.toString();
-    return void fetch(`/api/admin/retail-orders${query ? `?${query}` : ""}`, { credentials: "include" })
-    .then((response) => response.ok ? response.json() : Promise.reject()).then(setOrders).catch(() => setOrders([]));
-  };
-  useEffect(load, [status, debouncedSearch]);
-  const updateStatus = async (orderId: string, nextStatus: string) => {
-    const key = `retail-status:${orderId}`;
-    if (!actionGuard.begin(key)) return;
-    try {
-      const response = await fetch(`/api/admin/retail-orders/${orderId}/status`, { method: "PATCH", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ status: nextStatus }) });
-      if (!response.ok) { toast.error("Status nije sačuvan."); return; }
-      toast.success("Status retail porudžbine je sačuvan."); load();
-    } finally { actionGuard.end(key); }
-  };
-  const updatePaymentStatus = async (orderId: string, paymentStatus: string) => {
-    const key = `retail-payment:${orderId}`;
-    if (!actionGuard.begin(key)) return;
-    try {
-      const response = await fetch(`/api/admin/retail-orders/${orderId}/payment-status`, { method: "PATCH", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ paymentStatus }) });
-      if (!response.ok) { toast.error("Status plaćanja nije sačuvan."); return; }
-      toast.success("Status plaćanja je sačuvan."); load();
-    } finally { actionGuard.end(key); }
-  };
-  return <div className="space-y-5"><div className="flex flex-wrap items-end justify-between gap-3"><div><h1 className="text-3xl font-serif font-bold">Retail porudžbine</h1><p className="text-muted-foreground">Kupci, gosti, dostava i javne cene.</p></div><div className="flex gap-2"><Button variant="outline" asChild><Link href="/admin/porudzbine">B2B</Link></Button><Button onClick={() => window.print()} variant="outline"><Printer className="mr-2 h-4 w-4" />Štampaj</Button></div></div>
-     <Card><CardContent className="flex flex-wrap gap-3 p-4"><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Broj, kupac ili referenca proizvoda" className="min-w-64 flex-1" /><Select value={status} onValueChange={setStatus}><SelectTrigger className="max-w-52"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">Svi statusi</SelectItem>{statuses.map((item) => <SelectItem key={item} value={item}>{statusLabel[item]}</SelectItem>)}</SelectContent></Select></CardContent></Card>
-     {!orders ? <Loader2 className="animate-spin" /> : orders.length === 0 ? <Card><CardContent className="p-8 text-center text-muted-foreground">Nema retail porudžbina za izabrani filter.</CardContent></Card> : <div className="space-y-3">{orders.map((order) => <Card key={order.id}><CardContent className="p-4"><div className="flex flex-wrap items-start justify-between gap-4"><div><div className="flex items-center gap-2 font-semibold">{order.orderNumber}<Badge>Retail</Badge></div><p className="text-sm text-muted-foreground">{order.contact.name} · {order.contact.email} · {order.contact.phone}</p><p className="mt-1 text-sm">{order.delivery.address}, {order.delivery.postalCode} {order.delivery.city}</p><div className="mt-2 space-y-1 text-sm text-muted-foreground">{order.items.map((item) => <p key={item.id}>{item.quantity}× {item.name} · Referenca: <span className="font-medium text-foreground">{item.sku}</span></p>)}</div></div><div className="flex min-w-48 flex-col items-end gap-2"><strong>{money(order.total)}</strong><Select value={order.paymentStatus} onValueChange={(next) => void updatePaymentStatus(order.id, next)}><SelectTrigger className="w-40" disabled={actionGuard.isActive(`retail-payment:${order.id}`)}><SelectValue /></SelectTrigger><SelectContent>{paymentStatuses.map((item) => <SelectItem key={item} value={item}>{statusLabel[item]}</SelectItem>)}</SelectContent></Select><Select value={order.status} onValueChange={(next) => void updateStatus(order.id, next)}><SelectTrigger className="w-40" disabled={actionGuard.isActive(`retail-status:${order.id}`)}><SelectValue /></SelectTrigger><SelectContent>{statuses.map((item) => <SelectItem key={item} value={item}>{statusLabel[item]}</SelectItem>)}</SelectContent></Select></div></div></CardContent></Card>)}</div>}
+  const qc = useQueryClient();
+  const params = useMemo(() => ({
+    ...(status !== "all" ? { status: status as any } : {}),
+
+    ...(debouncedSearch ? { search: debouncedSearch } : {})
+  }), [status, debouncedSearch]);
+
+  const { data: ordersData, isLoading } = useAdminListRetailOrders(params, { query: { queryKey: getAdminListRetailOrdersQueryKey(params) } });
+  const orders = Array.isArray(ordersData) ? ordersData : [];
+  const update = useAdminUpdateRetailOrderStatus({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getAdminListRetailOrdersQueryKey(params) });
+        toast.success("Podaci su uspešno sačuvani.");
+      },
+      onError: () => toast.error("Nije uspelo čuvanje podataka.")
+    }
+  });
+
+  return <div className="space-y-5">
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h1 className="text-3xl font-serif font-bold">Retail porudžbine</h1>
+        <p className="text-muted-foreground">Kupci, gosti, dostava i javne cene.</p>
+      </div>
+      <div className="flex gap-2">
+        <Button variant="outline" asChild><Link href="/admin/porudzbine">B2B</Link></Button>
+        <Button onClick={() => window.print()} variant="outline"><Printer className="mr-2 h-4 w-4" />Štampaj</Button>
+      </div>
+    </div>
+
+    <Card>
+      <CardContent className="flex flex-wrap gap-3 p-4">
+        <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Broj, kupac ili referenca proizvoda" className="min-w-64 flex-1" />
+        <Select value={status} onValueChange={setStatus}>
+          <SelectTrigger className="max-w-52"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Svi statusi</SelectItem>
+            {statuses.map((item) => <SelectItem key={item} value={item}>{statusLabel[item]}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </CardContent>
+    </Card>
+
+    {isLoading ? <Loader2 className="animate-spin" /> : orders.length === 0 ? (
+      <Card><CardContent className="p-8 text-center text-muted-foreground">Nema retail porudžbina za izabrani filter.</CardContent></Card>
+    ) : (
+      <div className="space-y-3">
+        {orders.map((order) => (
+          <RetailOrderCard key={order.id} order={order} update={update} />
+        ))}
+      </div>
+    )}
   </div>;
 }
+
 
 function OrderPrintDocuments({ orders, mode }: { orders: PrintOrder[]; mode: "packing" | "invoice" }) {
   const invoice = mode === "invoice";
@@ -123,6 +221,8 @@ function AdminOrderDetail({ orderId }: { orderId: string }) {
   const update = useAdminUpdateOrderStatus({ mutation: { onSuccess: () => { qc.invalidateQueries({ queryKey: getAdminListOrdersQueryKey() }); qc.invalidateQueries({ queryKey: getAdminGetOrderQueryKey(orderId) }); toast.success("Operativni podaci su sačuvani."); } } });
   const [courierId, setCourierId] = useState<string | null | undefined>(undefined);
   const [tracking, setTracking] = useState<string | undefined>(undefined);
+  const [url, setUrl] = useState<string | undefined>(undefined);
+  const [fulfillment, setFulfillment] = useState<string | undefined>(undefined);
   const [note, setNote] = useState<string | undefined>(undefined);
   const [printMode, setPrintMode] = useState<"packing" | "invoice">("packing");
   const printOrder = (mode: "packing" | "invoice") => { setPrintMode(mode); requestAnimationFrame(() => requestAnimationFrame(() => window.print())); };
@@ -136,6 +236,8 @@ function AdminOrderDetail({ orderId }: { orderId: string }) {
     update.mutate({ orderId, data: {
     ...(courierId !== undefined ? { courierServiceId: courierId } : {}),
     ...(tracking !== undefined ? { trackingNumber: tracking || null } : {}),
+    ...(url !== undefined ? { trackingUrl: url || null } : {}),
+    ...(fulfillment !== undefined ? { fulfillmentStatus: fulfillment as any } : {}),
     ...(note !== undefined ? { adminNote: note || null } : {}),
     } }, { onSettled: () => actionGuard.end("ops") });
   };
@@ -150,7 +252,7 @@ function AdminOrderDetail({ orderId }: { orderId: string }) {
       <Card className="lg:col-span-2"><CardHeader><CardTitle className="text-lg">Stavke i iznos</CardTitle></CardHeader><CardContent className="space-y-3">{order.items.map(item => <div key={`${item.productId}-${item.variantValue ?? "base"}`} className="flex justify-between border-b pb-3 last:border-0"><div><b>{item.productName}</b><p className="text-sm text-muted-foreground">SKU: {item.productSku ?? "—"} · {item.quantity} kom.</p></div><b>{money(item.price * item.quantity)}</b></div>)}<div className="ml-auto max-w-xs space-y-1 border-t pt-3 text-sm"><div className="flex justify-between"><span>Međuzbir</span><span>{money(order.subtotal)}</span></div>{couponCode && <div className="flex justify-between text-primary"><span>Kupon ({couponCode})</span><span>{couponDiscountRsd ? `-${money(couponDiscountRsd)}` : "Besplatna dostava"}</span></div>}<div className="flex justify-between"><span>Dostava</span><span>{money(order.shippingCost)}</span></div><div className="flex justify-between font-bold text-base"><span>Ukupno</span><span>{money(order.total)}</span></div></div></CardContent></Card>
       <Card><CardHeader><CardTitle className="text-base">Salon i dostava</CardTitle></CardHeader><CardContent className="space-y-3 text-sm"><Link href={`/admin/saloni/${order.salon.id}`} className="font-semibold text-primary hover:underline">{order.salon.name}</Link><p>{order.delivery.recipientName}<br />{order.delivery.address}<br />{order.delivery.postalCode} {order.delivery.city}<br />{order.delivery.phone}</p><p className="rounded bg-muted p-2">{order.deliveryMethod === "personal_belgrade" ? "Lična dostava — Beograd" : "Kurirska dostava"}</p><div className="rounded border bg-muted/30 p-2"><p className="font-medium">{salonProfile?.orderCount ?? "—"} porudžbina · {salonProfile ? money(salonProfile.orderTotal) : "Učitavanje…"}</p><Link href={`/admin/saloni/${order.salon.id}`} className="text-primary hover:underline">Pogledaj profil salona</Link></div></CardContent></Card>
     </div>
-      <Card><CardHeader><CardTitle className="flex gap-2 text-lg"><Truck className="h-5 w-5" />Operativni podaci</CardTitle></CardHeader><CardContent className="grid gap-4 md:grid-cols-2"><div><Label>Kurirska služba</Label><Select value={courierId === undefined ? order.courierServiceId ?? "__none" : courierId ?? "__none"} onValueChange={value => setCourierId(value === "__none" ? null : value)}><SelectTrigger data-testid="select-order-courier"><SelectValue placeholder="Izaberite kurira" /></SelectTrigger><SelectContent><SelectItem value="__none">Nije izabrano</SelectItem>{courierServices.filter(service => service.active || service.id === order.courierServiceId).map(service => <SelectItem key={service.id} value={service.id}>{service.name}</SelectItem>)}</SelectContent></Select>{!order.courierServiceId && order.courierService && <p className="mt-1 text-xs text-muted-foreground">Prethodno sačuvano: {order.courierService}</p>}</div><div><Label>Broj za praćenje</Label><Input value={tracking ?? order.trackingNumber ?? ""} onChange={e => setTracking(e.target.value)} placeholder="Broj pošiljke" data-testid="input-order-tracking" /></div><div className="md:col-span-2"><Label>Interna beleška</Label><Input value={note ?? order.adminNote ?? ""} onChange={e => setNote(e.target.value)} placeholder="Vidljivo samo administratorima" /></div><div className="flex flex-wrap gap-2 md:col-span-2"><Button onClick={saveOps} disabled={update.isPending || actionGuard.isActive("ops")}>Sačuvaj operativne podatke</Button><Select value={order.status} onValueChange={status => updateOrderField("delivery-status", { status: status as "confirmed" | "shipped" | "delivered" | "cancelled" })}><SelectTrigger className="w-48" disabled={update.isPending || actionGuard.isActive("delivery-status")}><SelectValue /></SelectTrigger><SelectContent>{["confirmed", "shipped", "delivered", "cancelled"].map(s => <SelectItem key={s} value={s}>{statusLabel[s]}</SelectItem>)}</SelectContent></Select><Select value={order.paymentStatus} onValueChange={paymentStatus => updateOrderField("payment-status", { paymentStatus: paymentStatus as "unpaid" | "pending" | "paid" | "refunded" | "failed" })}><SelectTrigger className="w-44" disabled={update.isPending || actionGuard.isActive("payment-status")}><SelectValue /></SelectTrigger><SelectContent>{paymentStatuses.map(s => <SelectItem key={s} value={s}>{statusLabel[s]}</SelectItem>)}</SelectContent></Select></div></CardContent></Card>
+      <Card><CardHeader><CardTitle className="flex gap-2 text-lg"><Truck className="h-5 w-5" />Operativni podaci</CardTitle></CardHeader><CardContent className="grid gap-4 md:grid-cols-2"><div><Label>Kurirska služba</Label><Select value={courierId === undefined ? order.courierServiceId ?? "__none" : courierId ?? "__none"} onValueChange={value => setCourierId(value === "__none" ? null : value)}><SelectTrigger data-testid="select-order-courier"><SelectValue placeholder="Izaberite kurira" /></SelectTrigger><SelectContent><SelectItem value="__none">Nije izabrano</SelectItem>{courierServices.filter(service => service.active || service.id === order.courierServiceId).map(service => <SelectItem key={service.id} value={service.id}>{service.name}</SelectItem>)}</SelectContent></Select>{!order.courierServiceId && order.courierService && <p className="mt-1 text-xs text-muted-foreground">Prethodno sačuvano: {order.courierService}</p>}</div><div><Label>Broj za praćenje</Label><Input value={tracking ?? order.trackingNumber ?? ""} onChange={e => setTracking(e.target.value)} placeholder="Broj pošiljke" data-testid="input-order-tracking" /></div><div><Label>URL za praćenje</Label><Input value={url ?? order.trackingUrl ?? ""} onChange={e => setUrl(e.target.value)} placeholder="URL do sajta kurira" /></div><div><Label>Fulfillment status</Label><Select value={fulfillment ?? order.fulfillmentStatus ?? "RECEIVED"} onValueChange={setFulfillment}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="RECEIVED">Primljeno</SelectItem><SelectItem value="PREPARING">U pripremi</SelectItem><SelectItem value="PACKING">Pakovanje</SelectItem><SelectItem value="SHIPPED">Poslato (Preuzeto)</SelectItem><SelectItem value="COMPLETED">Završeno</SelectItem><SelectItem value="CANCELLED">Otkazano</SelectItem></SelectContent></Select></div><div className="md:col-span-2"><Label>Interna beleška</Label><Input value={note ?? order.adminNote ?? ""} onChange={e => setNote(e.target.value)} placeholder="Vidljivo samo administratorima" /></div><div className="flex flex-wrap gap-2 md:col-span-2"><Button onClick={saveOps} disabled={update.isPending || actionGuard.isActive("ops")}>Sačuvaj operativne podatke</Button><Select value={order.status} onValueChange={status => updateOrderField("delivery-status", { status: status as "confirmed" | "shipped" | "delivered" | "cancelled" })}><SelectTrigger className="w-48" disabled={update.isPending || actionGuard.isActive("delivery-status")}><SelectValue /></SelectTrigger><SelectContent>{["confirmed", "shipped", "delivered", "cancelled"].map(s => <SelectItem key={s} value={s}>{statusLabel[s]}</SelectItem>)}</SelectContent></Select><Select value={order.paymentStatus} onValueChange={paymentStatus => updateOrderField("payment-status", { paymentStatus: paymentStatus as "unpaid" | "pending" | "paid" | "refunded" | "failed" })}><SelectTrigger className="w-44" disabled={update.isPending || actionGuard.isActive("payment-status")}><SelectValue /></SelectTrigger><SelectContent>{paymentStatuses.map(s => <SelectItem key={s} value={s}>{statusLabel[s]}</SelectItem>)}</SelectContent></Select></div></CardContent></Card>
     {order.billing && <Card><CardHeader><CardTitle className="text-base">Podaci za fakturu</CardTitle></CardHeader><CardContent className="text-sm">{order.billing.companyName}<br />PIB: {order.billing.pib} · MB: {order.billing.registrationNumber}<br />{order.billing.address}, {order.billing.postalCode} {order.billing.city}</CardContent></Card>}
     <Card><CardHeader><CardTitle className="flex gap-2 text-lg"><StickyNote className="h-5 w-5" />Audit istorija</CardTitle></CardHeader><CardContent>{order.history.length ? <ol className="space-y-3">{order.history.map(event => <li key={event.id} className="border-l-2 border-primary/30 pl-3 text-sm"><b>{event.actorName}</b> je promenio <b>{event.field}</b> sa „{event.previousValue ?? "—"}“ na „{event.nextValue ?? "—"}“<br /><span className="text-muted-foreground">{new Date(event.createdAt).toLocaleString("sr-RS")}</span></li>)}</ol> : <p className="text-sm text-muted-foreground">Nema zabeleženih promena.</p>}</CardContent></Card>
     <OrderPrintDocuments orders={[order]} mode={printMode} />

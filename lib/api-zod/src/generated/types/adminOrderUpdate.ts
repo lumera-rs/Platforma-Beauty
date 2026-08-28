@@ -5,11 +5,13 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { AdminOrderUpdateFulfillmentStatus } from './adminOrderUpdateFulfillmentStatus';
 import type { AdminOrderUpdatePaymentStatus } from './adminOrderUpdatePaymentStatus';
 import type { AdminOrderUpdateStatus } from './adminOrderUpdateStatus';
 
 export interface AdminOrderUpdate {
   status?: AdminOrderUpdateStatus;
+  fulfillmentStatus?: AdminOrderUpdateFulfillmentStatus;
   paymentStatus?: AdminOrderUpdatePaymentStatus;
   /** @nullable */
   courierServiceId?: string | null;
@@ -18,6 +20,11 @@ export interface AdminOrderUpdate {
      * @nullable
      */
   trackingNumber?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  trackingUrl?: string | null;
   /**
      * @maxLength 2000
      * @nullable

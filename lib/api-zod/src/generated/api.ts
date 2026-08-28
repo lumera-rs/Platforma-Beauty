@@ -5901,6 +5901,7 @@ export const approveShopApprovalRequestResponseItemsItemCouponDiscountRsdMin = 0
 export const ApproveShopApprovalRequestResponse = zod.object({
   "id": zod.string(),
   "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
+  "fulfillmentStatus": zod.enum(['RECEIVED', 'PREPARING', 'PACKING', 'SHIPPED', 'COMPLETED', 'CANCELLED']),
   "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
   "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
   "courierServiceId": zod.string().nullable(),
@@ -6259,6 +6260,7 @@ export const checkoutShopCartResponseItemsItemCouponDiscountRsdMin = 0;
 export const CheckoutShopCartResponse = zod.object({
   "id": zod.string(),
   "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
+  "fulfillmentStatus": zod.enum(['RECEIVED', 'PREPARING', 'PACKING', 'SHIPPED', 'COMPLETED', 'CANCELLED']),
   "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
   "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
   "courierServiceId": zod.string().nullable(),
@@ -6407,6 +6409,7 @@ export const listOrdersResponseItemsItemCouponDiscountRsdMin = 0;
 export const ListOrdersResponseItem = zod.object({
   "id": zod.string(),
   "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
+  "fulfillmentStatus": zod.enum(['RECEIVED', 'PREPARING', 'PACKING', 'SHIPPED', 'COMPLETED', 'CANCELLED']),
   "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
   "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
   "courierServiceId": zod.string().nullable(),
@@ -6512,6 +6515,7 @@ export const getOrderResponseItemsItemCouponDiscountRsdMin = 0;
 export const GetOrderResponse = zod.object({
   "id": zod.string(),
   "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
+  "fulfillmentStatus": zod.enum(['RECEIVED', 'PREPARING', 'PACKING', 'SHIPPED', 'COMPLETED', 'CANCELLED']),
   "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
   "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
   "courierServiceId": zod.string().nullable(),
@@ -6672,6 +6676,7 @@ export const adminListOrdersResponseOneItemsItemCouponDiscountRsdMin = 0;
 export const AdminListOrdersResponseItem = zod.object({
   "id": zod.string(),
   "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
+  "fulfillmentStatus": zod.enum(['RECEIVED', 'PREPARING', 'PACKING', 'SHIPPED', 'COMPLETED', 'CANCELLED']),
   "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
   "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
   "courierServiceId": zod.string().nullable(),
@@ -6781,6 +6786,7 @@ export const adminGetOrderResponseOneItemsItemCouponDiscountRsdMin = 0;
 export const AdminGetOrderResponse = zod.object({
   "id": zod.string(),
   "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
+  "fulfillmentStatus": zod.enum(['RECEIVED', 'PREPARING', 'PACKING', 'SHIPPED', 'COMPLETED', 'CANCELLED']),
   "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
   "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
   "courierServiceId": zod.string().nullable(),
@@ -6864,15 +6870,19 @@ export const AdminUpdateOrderStatusParams = zod.object({
 
 export const adminUpdateOrderStatusBodyTrackingNumberMax = 120;
 
+export const adminUpdateOrderStatusBodyTrackingUrlMax = 1000;
+
 export const adminUpdateOrderStatusBodyAdminNoteMax = 2000;
 
 
 
 export const AdminUpdateOrderStatusBody = zod.object({
   "status": zod.enum(['confirmed', 'shipped', 'delivered', 'cancelled']).optional(),
+  "fulfillmentStatus": zod.enum(['RECEIVED', 'PREPARING', 'PACKING', 'SHIPPED', 'COMPLETED', 'CANCELLED']).optional(),
   "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']).optional(),
   "courierServiceId": zod.string().nullish(),
   "trackingNumber": zod.string().max(adminUpdateOrderStatusBodyTrackingNumberMax).nullish(),
+  "trackingUrl": zod.string().url().max(adminUpdateOrderStatusBodyTrackingUrlMax).nullish(),
   "adminNote": zod.string().max(adminUpdateOrderStatusBodyAdminNoteMax).nullish()
 }).strict()
 
@@ -6903,6 +6913,7 @@ export const adminUpdateOrderStatusResponseOneItemsItemCouponDiscountRsdMin = 0;
 export const AdminUpdateOrderStatusResponse = zod.object({
   "id": zod.string(),
   "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
+  "fulfillmentStatus": zod.enum(['RECEIVED', 'PREPARING', 'PACKING', 'SHIPPED', 'COMPLETED', 'CANCELLED']),
   "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
   "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
   "courierServiceId": zod.string().nullable(),
@@ -7026,6 +7037,7 @@ export const adminBulkUpdateOrdersResponseOneItemsItemCouponDiscountRsdMin = 0;
 export const AdminBulkUpdateOrdersResponseItem = zod.object({
   "id": zod.string(),
   "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
+  "fulfillmentStatus": zod.enum(['RECEIVED', 'PREPARING', 'PACKING', 'SHIPPED', 'COMPLETED', 'CANCELLED']),
   "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
   "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
   "courierServiceId": zod.string().nullable(),
@@ -11185,6 +11197,9 @@ export const AdminListProductsQueryParams = zod.object({
 
 export const adminListProductsResponseItemsItemPriceMultipleOf = 1;
 
+export const adminListProductsResponseItemsItemCostPriceRsdMin = 0;
+export const adminListProductsResponseItemsItemCostPriceRsdMax = 100000000;
+
 export const adminListProductsResponseItemsItemDiscountPriceMultipleOf = 1;
 
 export const adminListProductsResponseItemsItemPriceOnRequestDefault = false;
@@ -11249,6 +11264,7 @@ export const AdminListProductsResponse = zod.object({
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
   "price": zod.number().multipleOf(adminListProductsResponseItemsItemPriceMultipleOf),
+  "costPriceRsd": zod.number().int().min(adminListProductsResponseItemsItemCostPriceRsdMin).max(adminListProductsResponseItemsItemCostPriceRsdMax).nullable(),
   "discountPrice": zod.number().multipleOf(adminListProductsResponseItemsItemDiscountPriceMultipleOf).nullable(),
   "discountPriceEndsAt": zod.coerce.date().nullable(),
   "retailEnabled": zod.boolean(),
@@ -11329,6 +11345,9 @@ export const adminCreateProductBodyNameRegExp = new RegExp('.*\\S.*');
 export const adminCreateProductBodyPriceMin = 0;
 export const adminCreateProductBodyPriceMax = 100000000;
 export const adminCreateProductBodyPriceMultipleOf = 1;
+
+export const adminCreateProductBodyCostPriceRsdMin = 0;
+export const adminCreateProductBodyCostPriceRsdMax = 100000000;
 
 export const adminCreateProductBodyDiscountPriceMin = 0;
 export const adminCreateProductBodyDiscountPriceMax = 100000000;
@@ -11417,6 +11436,7 @@ export const AdminCreateProductBody = zod.object({
   "imageUrl": zod.string().min(1),
   "images": zod.array(zod.string()).optional(),
   "price": zod.number().min(adminCreateProductBodyPriceMin).max(adminCreateProductBodyPriceMax).multipleOf(adminCreateProductBodyPriceMultipleOf),
+  "costPriceRsd": zod.number().int().min(adminCreateProductBodyCostPriceRsdMin).max(adminCreateProductBodyCostPriceRsdMax).nullish(),
   "discountPrice": zod.number().min(adminCreateProductBodyDiscountPriceMin).max(adminCreateProductBodyDiscountPriceMax).multipleOf(adminCreateProductBodyDiscountPriceMultipleOf).nullish(),
   "discountPriceEndsAt": zod.coerce.date().nullish(),
   "retailEnabled": zod.boolean().optional(),
@@ -11478,6 +11498,9 @@ export const AdminCreateProductBody = zod.object({
 }).strict()
 
 export const adminCreateProductResponsePriceMultipleOf = 1;
+
+export const adminCreateProductResponseCostPriceRsdMin = 0;
+export const adminCreateProductResponseCostPriceRsdMax = 100000000;
 
 export const adminCreateProductResponseDiscountPriceMultipleOf = 1;
 
@@ -11542,6 +11565,7 @@ export const AdminCreateProductResponse = zod.object({
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
   "price": zod.number().multipleOf(adminCreateProductResponsePriceMultipleOf),
+  "costPriceRsd": zod.number().int().min(adminCreateProductResponseCostPriceRsdMin).max(adminCreateProductResponseCostPriceRsdMax).nullable(),
   "discountPrice": zod.number().multipleOf(adminCreateProductResponseDiscountPriceMultipleOf).nullable(),
   "discountPriceEndsAt": zod.coerce.date().nullable(),
   "retailEnabled": zod.boolean(),
@@ -11837,6 +11861,9 @@ export const adminUpdateProductBodyPriceMin = 0;
 export const adminUpdateProductBodyPriceMax = 100000000;
 export const adminUpdateProductBodyPriceMultipleOf = 1;
 
+export const adminUpdateProductBodyCostPriceRsdMin = 0;
+export const adminUpdateProductBodyCostPriceRsdMax = 100000000;
+
 export const adminUpdateProductBodyDiscountPriceMin = 0;
 export const adminUpdateProductBodyDiscountPriceMax = 100000000;
 export const adminUpdateProductBodyDiscountPriceMultipleOf = 1;
@@ -11916,6 +11943,7 @@ export const AdminUpdateProductBody = zod.object({
   "imageUrl": zod.string().min(1).optional(),
   "images": zod.array(zod.string()).optional(),
   "price": zod.number().min(adminUpdateProductBodyPriceMin).max(adminUpdateProductBodyPriceMax).multipleOf(adminUpdateProductBodyPriceMultipleOf).optional(),
+  "costPriceRsd": zod.number().int().min(adminUpdateProductBodyCostPriceRsdMin).max(adminUpdateProductBodyCostPriceRsdMax).nullish(),
   "discountPrice": zod.number().min(adminUpdateProductBodyDiscountPriceMin).max(adminUpdateProductBodyDiscountPriceMax).multipleOf(adminUpdateProductBodyDiscountPriceMultipleOf).nullish(),
   "discountPriceEndsAt": zod.coerce.date().nullish(),
   "retailEnabled": zod.boolean().optional(),
@@ -11977,6 +12005,9 @@ export const AdminUpdateProductBody = zod.object({
 }).strict()
 
 export const adminUpdateProductResponsePriceMultipleOf = 1;
+
+export const adminUpdateProductResponseCostPriceRsdMin = 0;
+export const adminUpdateProductResponseCostPriceRsdMax = 100000000;
 
 export const adminUpdateProductResponseDiscountPriceMultipleOf = 1;
 
@@ -12041,6 +12072,7 @@ export const AdminUpdateProductResponse = zod.object({
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
   "price": zod.number().multipleOf(adminUpdateProductResponsePriceMultipleOf),
+  "costPriceRsd": zod.number().int().min(adminUpdateProductResponseCostPriceRsdMin).max(adminUpdateProductResponseCostPriceRsdMax).nullable(),
   "discountPrice": zod.number().multipleOf(adminUpdateProductResponseDiscountPriceMultipleOf).nullable(),
   "discountPriceEndsAt": zod.coerce.date().nullable(),
   "retailEnabled": zod.boolean(),
@@ -12115,6 +12147,9 @@ export const AdminDeleteProductParams = zod.object({
 
 export const adminDeleteProductResponsePriceMultipleOf = 1;
 
+export const adminDeleteProductResponseCostPriceRsdMin = 0;
+export const adminDeleteProductResponseCostPriceRsdMax = 100000000;
+
 export const adminDeleteProductResponseDiscountPriceMultipleOf = 1;
 
 export const adminDeleteProductResponsePriceOnRequestDefault = false;
@@ -12178,6 +12213,7 @@ export const AdminDeleteProductResponse = zod.object({
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
   "price": zod.number().multipleOf(adminDeleteProductResponsePriceMultipleOf),
+  "costPriceRsd": zod.number().int().min(adminDeleteProductResponseCostPriceRsdMin).max(adminDeleteProductResponseCostPriceRsdMax).nullable(),
   "discountPrice": zod.number().multipleOf(adminDeleteProductResponseDiscountPriceMultipleOf).nullable(),
   "discountPriceEndsAt": zod.coerce.date().nullable(),
   "retailEnabled": zod.boolean(),
@@ -17937,6 +17973,9 @@ export const CheckoutRetailCartResponse = zod.object({
   "id": zod.string(),
   "orderNumber": zod.string(),
   "status": zod.string(),
+  "fulfillmentStatus": zod.enum(['RECEIVED', 'PREPARING', 'PACKING', 'SHIPPED', 'COMPLETED', 'CANCELLED']),
+  "trackingNumber": zod.string().nullable(),
+  "trackingUrl": zod.string().nullable(),
   "paymentMethod": zod.string(),
   "paymentStatus": zod.string(),
   "deliveryMethod": zod.string(),
@@ -17973,42 +18012,54 @@ export const TrackRetailOrderQueryParams = zod.object({
   "token": zod.coerce.string().min(trackRetailOrderQueryTokenMin)
 })
 
-export const trackRetailOrderResponseCouponDiscountRsdMin = 0;
-
-export const trackRetailOrderResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
-
-export const trackRetailOrderResponseReferralCreditPreCreditPayableTotalRsdMin = 0;
-
-export const trackRetailOrderResponseReferralCreditAppliedRsdMin = 0;
+export const trackRetailOrderResponseProgressStageMin = 0;
+export const trackRetailOrderResponseProgressStageMax = 5;
 
 
 
 export const TrackRetailOrderResponse = zod.object({
-  "id": zod.string(),
   "orderNumber": zod.string(),
-  "status": zod.string(),
-  "paymentMethod": zod.string(),
-  "paymentStatus": zod.string(),
-  "deliveryMethod": zod.string(),
-  "subtotal": zod.number().int(),
-  "shippingCost": zod.number().int(),
-  "total": zod.number().int(),
-  "couponCode": zod.string().nullish(),
-  "couponDiscountRsd": zod.number().int().min(trackRetailOrderResponseCouponDiscountRsdMin).optional(),
-  "couponFreeShipping": zod.boolean().optional(),
-  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(trackRetailOrderResponseReferralCreditMerchandiseSubtotalRsdMin),
-  "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(trackRetailOrderResponseReferralCreditPreCreditPayableTotalRsdMin),
-  "referralCreditAppliedRsd": zod.number().int().min(trackRetailOrderResponseReferralCreditAppliedRsdMin),
+  "status": zod.enum(['RECEIVED', 'PREPARING', 'PACKING', 'SHIPPED', 'COMPLETED', 'CANCELLED']),
+  "statusLabel": zod.string(),
   "createdAt": zod.coerce.date(),
-  "items": zod.array(zod.object({
-  "id": zod.string(),
-  "productId": zod.string(),
-  "name": zod.string(),
-  "imageUrl": zod.string(),
-  "sku": zod.string().describe('Immutable customer-facing catalog reference.'),
-  "quantity": zod.number().int(),
-  "unitPrice": zod.number().int()
-}))
+  "statusUpdatedAt": zod.coerce.date(),
+  "progressStage": zod.number().int().min(trackRetailOrderResponseProgressStageMin).max(trackRetailOrderResponseProgressStageMax),
+  "trackingNumber": zod.string().nullable(),
+  "courierUrl": zod.string().nullable()
+})
+
+
+/**
+ * @summary Look up retail tracking by exact order number and normalized email
+ */
+export const lookupRetailOrderTrackingBodyOrderNumberMax = 80;
+
+export const lookupRetailOrderTrackingBodyEmailMin = 5;
+export const lookupRetailOrderTrackingBodyEmailMax = 320;
+
+
+export const lookupRetailOrderTrackingBodyEmailRegExp = new RegExp('^[^\\\\s@]+@[^\\\\s@]+\\\\.[^\\\\s@]+$');
+
+
+export const LookupRetailOrderTrackingBody = zod.object({
+  "orderNumber": zod.string().min(1).max(lookupRetailOrderTrackingBodyOrderNumberMax),
+  "email": zod.string().min(lookupRetailOrderTrackingBodyEmailMin).max(lookupRetailOrderTrackingBodyEmailMax).regex(lookupRetailOrderTrackingBodyEmailRegExp)
+})
+
+export const lookupRetailOrderTrackingResponseProgressStageMin = 0;
+export const lookupRetailOrderTrackingResponseProgressStageMax = 5;
+
+
+
+export const LookupRetailOrderTrackingResponse = zod.object({
+  "orderNumber": zod.string(),
+  "status": zod.enum(['RECEIVED', 'PREPARING', 'PACKING', 'SHIPPED', 'COMPLETED', 'CANCELLED']),
+  "statusLabel": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "statusUpdatedAt": zod.coerce.date(),
+  "progressStage": zod.number().int().min(lookupRetailOrderTrackingResponseProgressStageMin).max(lookupRetailOrderTrackingResponseProgressStageMax),
+  "trackingNumber": zod.string().nullable(),
+  "courierUrl": zod.string().nullable()
 })
 
 
@@ -18029,6 +18080,9 @@ export const ListCustomerRetailOrdersResponseItem = zod.object({
   "id": zod.string(),
   "orderNumber": zod.string(),
   "status": zod.string(),
+  "fulfillmentStatus": zod.enum(['RECEIVED', 'PREPARING', 'PACKING', 'SHIPPED', 'COMPLETED', 'CANCELLED']),
+  "trackingNumber": zod.string().nullable(),
+  "trackingUrl": zod.string().nullable(),
   "paymentMethod": zod.string(),
   "paymentStatus": zod.string(),
   "deliveryMethod": zod.string(),
@@ -18076,6 +18130,9 @@ export const GetCustomerRetailOrderResponse = zod.object({
   "id": zod.string(),
   "orderNumber": zod.string(),
   "status": zod.string(),
+  "fulfillmentStatus": zod.enum(['RECEIVED', 'PREPARING', 'PACKING', 'SHIPPED', 'COMPLETED', 'CANCELLED']),
+  "trackingNumber": zod.string().nullable(),
+  "trackingUrl": zod.string().nullable(),
   "paymentMethod": zod.string(),
   "paymentStatus": zod.string(),
   "deliveryMethod": zod.string(),
@@ -18127,6 +18184,9 @@ export const AdminListRetailOrdersResponseItem = zod.object({
   "id": zod.string(),
   "orderNumber": zod.string(),
   "status": zod.string(),
+  "fulfillmentStatus": zod.enum(['RECEIVED', 'PREPARING', 'PACKING', 'SHIPPED', 'COMPLETED', 'CANCELLED']),
+  "trackingNumber": zod.string().nullable(),
+  "trackingUrl": zod.string().nullable(),
   "paymentMethod": zod.string(),
   "paymentStatus": zod.string(),
   "deliveryMethod": zod.string(),
@@ -18160,13 +18220,13 @@ export const AdminGetRetailOrderParams = zod.object({
   "orderId": zod.coerce.string()
 })
 
-export const adminGetRetailOrderResponseCouponDiscountRsdMin = 0;
+export const adminGetRetailOrderResponseOneCouponDiscountRsdMin = 0;
 
-export const adminGetRetailOrderResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+export const adminGetRetailOrderResponseOneReferralCreditMerchandiseSubtotalRsdMin = 0;
 
-export const adminGetRetailOrderResponseReferralCreditPreCreditPayableTotalRsdMin = 0;
+export const adminGetRetailOrderResponseOneReferralCreditPreCreditPayableTotalRsdMin = 0;
 
-export const adminGetRetailOrderResponseReferralCreditAppliedRsdMin = 0;
+export const adminGetRetailOrderResponseOneReferralCreditAppliedRsdMin = 0;
 
 
 
@@ -18174,6 +18234,9 @@ export const AdminGetRetailOrderResponse = zod.object({
   "id": zod.string(),
   "orderNumber": zod.string(),
   "status": zod.string(),
+  "fulfillmentStatus": zod.enum(['RECEIVED', 'PREPARING', 'PACKING', 'SHIPPED', 'COMPLETED', 'CANCELLED']),
+  "trackingNumber": zod.string().nullable(),
+  "trackingUrl": zod.string().nullable(),
   "paymentMethod": zod.string(),
   "paymentStatus": zod.string(),
   "deliveryMethod": zod.string(),
@@ -18181,11 +18244,11 @@ export const AdminGetRetailOrderResponse = zod.object({
   "shippingCost": zod.number().int(),
   "total": zod.number().int(),
   "couponCode": zod.string().nullish(),
-  "couponDiscountRsd": zod.number().int().min(adminGetRetailOrderResponseCouponDiscountRsdMin).optional(),
+  "couponDiscountRsd": zod.number().int().min(adminGetRetailOrderResponseOneCouponDiscountRsdMin).optional(),
   "couponFreeShipping": zod.boolean().optional(),
-  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(adminGetRetailOrderResponseReferralCreditMerchandiseSubtotalRsdMin),
-  "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(adminGetRetailOrderResponseReferralCreditPreCreditPayableTotalRsdMin),
-  "referralCreditAppliedRsd": zod.number().int().min(adminGetRetailOrderResponseReferralCreditAppliedRsdMin),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(adminGetRetailOrderResponseOneReferralCreditMerchandiseSubtotalRsdMin),
+  "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(adminGetRetailOrderResponseOneReferralCreditPreCreditPayableTotalRsdMin),
+  "referralCreditAppliedRsd": zod.number().int().min(adminGetRetailOrderResponseOneReferralCreditAppliedRsdMin),
   "createdAt": zod.coerce.date(),
   "items": zod.array(zod.object({
   "id": zod.string(),
@@ -18196,7 +18259,17 @@ export const AdminGetRetailOrderResponse = zod.object({
   "quantity": zod.number().int(),
   "unitPrice": zod.number().int()
 }))
-})
+}).and(zod.object({
+  "fulfillmentHistory": zod.array(zod.object({
+  "id": zod.string(),
+  "actorName": zod.string(),
+  "field": zod.string(),
+  "previousValue": zod.string().nullable(),
+  "nextValue": zod.string().nullable(),
+  "note": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+}))
+}))
 
 
 /**
@@ -18206,13 +18279,26 @@ export const AdminUpdateRetailOrderStatusParams = zod.object({
   "orderId": zod.coerce.string()
 })
 
-export const adminUpdateRetailOrderStatusResponseCouponDiscountRsdMin = 0;
+export const adminUpdateRetailOrderStatusBodyThreeTrackingNumberMax = 120;
 
-export const adminUpdateRetailOrderStatusResponseReferralCreditMerchandiseSubtotalRsdMin = 0;
+export const adminUpdateRetailOrderStatusBodyThreeTrackingUrlMax = 1000;
 
-export const adminUpdateRetailOrderStatusResponseReferralCreditPreCreditPayableTotalRsdMin = 0;
 
-export const adminUpdateRetailOrderStatusResponseReferralCreditAppliedRsdMin = 0;
+
+export const AdminUpdateRetailOrderStatusBody = zod.union([zod.unknown(),zod.unknown()]).and(zod.object({
+  "fulfillmentStatus": zod.enum(['RECEIVED', 'PREPARING', 'PACKING', 'SHIPPED', 'COMPLETED', 'CANCELLED']).optional(),
+  "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']).optional(),
+  "trackingNumber": zod.string().max(adminUpdateRetailOrderStatusBodyThreeTrackingNumberMax).nullish(),
+  "trackingUrl": zod.string().url().max(adminUpdateRetailOrderStatusBodyThreeTrackingUrlMax).nullish()
+}))
+
+export const adminUpdateRetailOrderStatusResponseOneCouponDiscountRsdMin = 0;
+
+export const adminUpdateRetailOrderStatusResponseOneReferralCreditMerchandiseSubtotalRsdMin = 0;
+
+export const adminUpdateRetailOrderStatusResponseOneReferralCreditPreCreditPayableTotalRsdMin = 0;
+
+export const adminUpdateRetailOrderStatusResponseOneReferralCreditAppliedRsdMin = 0;
 
 
 
@@ -18220,6 +18306,9 @@ export const AdminUpdateRetailOrderStatusResponse = zod.object({
   "id": zod.string(),
   "orderNumber": zod.string(),
   "status": zod.string(),
+  "fulfillmentStatus": zod.enum(['RECEIVED', 'PREPARING', 'PACKING', 'SHIPPED', 'COMPLETED', 'CANCELLED']),
+  "trackingNumber": zod.string().nullable(),
+  "trackingUrl": zod.string().nullable(),
   "paymentMethod": zod.string(),
   "paymentStatus": zod.string(),
   "deliveryMethod": zod.string(),
@@ -18227,11 +18316,11 @@ export const AdminUpdateRetailOrderStatusResponse = zod.object({
   "shippingCost": zod.number().int(),
   "total": zod.number().int(),
   "couponCode": zod.string().nullish(),
-  "couponDiscountRsd": zod.number().int().min(adminUpdateRetailOrderStatusResponseCouponDiscountRsdMin).optional(),
+  "couponDiscountRsd": zod.number().int().min(adminUpdateRetailOrderStatusResponseOneCouponDiscountRsdMin).optional(),
   "couponFreeShipping": zod.boolean().optional(),
-  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(adminUpdateRetailOrderStatusResponseReferralCreditMerchandiseSubtotalRsdMin),
-  "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(adminUpdateRetailOrderStatusResponseReferralCreditPreCreditPayableTotalRsdMin),
-  "referralCreditAppliedRsd": zod.number().int().min(adminUpdateRetailOrderStatusResponseReferralCreditAppliedRsdMin),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(adminUpdateRetailOrderStatusResponseOneReferralCreditMerchandiseSubtotalRsdMin),
+  "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(adminUpdateRetailOrderStatusResponseOneReferralCreditPreCreditPayableTotalRsdMin),
+  "referralCreditAppliedRsd": zod.number().int().min(adminUpdateRetailOrderStatusResponseOneReferralCreditAppliedRsdMin),
   "createdAt": zod.coerce.date(),
   "items": zod.array(zod.object({
   "id": zod.string(),
@@ -18242,6 +18331,79 @@ export const AdminUpdateRetailOrderStatusResponse = zod.object({
   "quantity": zod.number().int(),
   "unitPrice": zod.number().int()
 }))
+}).and(zod.object({
+  "fulfillmentHistory": zod.array(zod.object({
+  "id": zod.string(),
+  "actorName": zod.string(),
+  "field": zod.string(),
+  "previousValue": zod.string().nullable(),
+  "nextValue": zod.string().nullable(),
+  "note": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+}))
+}))
+
+
+/**
+ * @summary Aggregate immutable B2C/B2B order-line profitability snapshots
+ */
+export const adminGetCommerceProfitabilityQueryMarketDefault = `BOTH`;
+export const adminGetCommerceProfitabilityQueryBrandMax = 120;
+
+export const adminGetCommerceProfitabilityQueryGranularityDefault = `DAY`;
+
+export const AdminGetCommerceProfitabilityQueryParams = zod.object({
+  "from": zod.date(),
+  "to": zod.date(),
+  "market": zod.enum(['B2C', 'B2B', 'BOTH']).default(adminGetCommerceProfitabilityQueryMarketDefault),
+  "supplierId": zod.coerce.string().optional(),
+  "categoryId": zod.coerce.string().optional(),
+  "brand": zod.coerce.string().min(1).max(adminGetCommerceProfitabilityQueryBrandMax).optional(),
+  "productId": zod.coerce.string().optional(),
+  "granularity": zod.enum(['DAY', 'WEEK', 'MONTH']).default(adminGetCommerceProfitabilityQueryGranularityDefault)
+})
+
+export const adminGetCommerceProfitabilityResponseKpisUnitsMin = 0;
+
+export const adminGetCommerceProfitabilityResponseTimeSeriesMax = 366;
+
+export const adminGetCommerceProfitabilityResponseProductsItemUnitsMin = 0;
+
+export const adminGetCommerceProfitabilityResponseProductsMax = 200;
+
+
+
+export const AdminGetCommerceProfitabilityResponse = zod.object({
+  "kpis": zod.object({
+  "revenueRsd": zod.number().int(),
+  "cogsRsd": zod.number().int(),
+  "profitRsd": zod.number().int(),
+  "marginPercent": zod.number().nullable(),
+  "units": zod.number().int().min(adminGetCommerceProfitabilityResponseKpisUnitsMin)
+}),
+  "timeSeries": zod.array(zod.object({
+  "period": zod.string(),
+  "revenueRsd": zod.number().int(),
+  "cogsRsd": zod.number().int(),
+  "profitRsd": zod.number().int(),
+  "marginPercent": zod.number().nullable()
+})).max(adminGetCommerceProfitabilityResponseTimeSeriesMax),
+  "products": zod.array(zod.object({
+  "productId": zod.string().nullable(),
+  "productName": zod.string(),
+  "supplierId": zod.string(),
+  "supplierName": zod.string(),
+  "categoryId": zod.string().nullable(),
+  "categoryName": zod.string().nullable(),
+  "brand": zod.string().nullable(),
+  "units": zod.number().int().min(adminGetCommerceProfitabilityResponseProductsItemUnitsMin),
+  "realizedRevenueRsd": zod.number().int(),
+  "cogsRsd": zod.number().int(),
+  "profitRsd": zod.number().int(),
+  "marginPercent": zod.number().nullable(),
+  "averageDiscountPercent": zod.number().nullable()
+})).max(adminGetCommerceProfitabilityResponseProductsMax),
+  "treatment": zod.string()
 })
 
 
@@ -18266,6 +18428,9 @@ export const AdminUpdateRetailPaymentStatusResponse = zod.object({
   "id": zod.string(),
   "orderNumber": zod.string(),
   "status": zod.string(),
+  "fulfillmentStatus": zod.enum(['RECEIVED', 'PREPARING', 'PACKING', 'SHIPPED', 'COMPLETED', 'CANCELLED']),
+  "trackingNumber": zod.string().nullable(),
+  "trackingUrl": zod.string().nullable(),
   "paymentMethod": zod.string(),
   "paymentStatus": zod.string(),
   "deliveryMethod": zod.string(),

@@ -22,17 +22,17 @@ import { logger } from "./logger";
  *    startup fails loudly.
  *
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
- * changes. The advisory lock key is derived from it so a new rollout version
- * takes its own lock slot.
+ * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 64;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 67;
 
 /**
- * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
- * is an ASCII-derived namespace ("BG" = 0x4247) and the low word is the schema
- * version, so different versions and unrelated bootstraps never collide.
+ * Stable advisory lock key for every Business Growth rollout version. It is
+ * deliberately pinned to the key shipped by v65, so an already-running v65
+ * process and this v66 process contend during the first rolling deployment;
+ * all future versions must keep this value unchanged.
  */
-const ADVISORY_LOCK_KEY = 0x42470000 + BUSINESS_GROWTH_SCHEMA_VERSION;
+export const BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY = 0x42470000 + 65;
 
 /**
  * Every expected label for each Phase 2 enum. `create if absent AND add every
@@ -42,6 +42,7 @@ const ADVISORY_LOCK_KEY = 0x42470000 + BUSINESS_GROWTH_SCHEMA_VERSION;
 const ENUM_LABELS: Record<string, string[]> = {
   integration_key: ["sms", "brevo", "google_oauth", "facebook_oauth", "cloudflare"],
   order_status: ["pending", "confirmed", "paid", "processing", "shipped", "delivered", "cancelled"],
+  fulfillment_status: ["RECEIVED", "PREPARING", "PACKING", "SHIPPED", "COMPLETED", "CANCELLED"],
   payment_method: ["CARD", "BANK_TRANSFER", "CASH_AT_SALON", "CASH_ON_DELIVERY", "FREE"],
   payment_status: ["unpaid", "pending", "paid", "refunded", "failed"],
   delivery_method: ["courier", "personal_belgrade"],
@@ -184,7 +185,7 @@ function tableStatements(s: string): string[] {
     // Retention's stratified preview seeks from a random UUID within each salon
     // and reads a bounded circular range. Keep the production bootstrap aligned
     // with core.ts so legacy customer tables never fall back to a full sort.
-    `CREATE INDEX CONCURRENTLY IF NOT EXISTS salon_customers_salon_id_idx
+    `CREATE INDEX IF NOT EXISTS salon_customers_salon_id_idx
        ON ${s}.salon_customers (salon_id, id)`,
 
     // v12: Customer-safe retail storefront fields. These deliberately remain
@@ -617,6 +618,17 @@ function tableStatements(s: string): string[] {
        END IF;
      END $$`,
     `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS supplier_id uuid`,
+    // v65 — administrator-only catalog COGS and immutable order-line
+    // profitability snapshots. Legacy lines are explicitly zero-safe.
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS cost_price_rsd integer`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'products_cost_price_rsd_check'
+         AND conrelid = '${s}.products'::regclass) THEN
+         ALTER TABLE ${s}.products ADD CONSTRAINT products_cost_price_rsd_check
+           CHECK (cost_price_rsd IS NULL OR cost_price_rsd >= 0) NOT VALID;
+       END IF;
+     END $$`,
+    `ALTER TABLE ${s}.products VALIDATE CONSTRAINT products_cost_price_rsd_check`,
     `UPDATE ${s}.products
        SET supplier_id = '9b5970ea-0a8c-5e60-9d32-2a09f0890560'
        WHERE supplier_id IS NULL`,
@@ -850,6 +862,57 @@ function tableStatements(s: string): string[] {
       UNIQUE (cart_id, idempotency_key)
     )`,
     `ALTER TABLE ${s}.retail_orders ADD COLUMN IF NOT EXISTS cart_id uuid REFERENCES ${s}.retail_carts(id) ON DELETE RESTRICT`,
+    `ALTER TABLE ${s}.orders ADD COLUMN IF NOT EXISTS fulfillment_status ${s}.fulfillment_status NOT NULL DEFAULT 'RECEIVED'`,
+    `ALTER TABLE ${s}.retail_orders ADD COLUMN IF NOT EXISTS fulfillment_status ${s}.fulfillment_status NOT NULL DEFAULT 'RECEIVED'`,
+    `DO $$ BEGIN
+       IF EXISTS (SELECT 1 FROM information_schema.columns
+          WHERE table_schema = current_schema() AND table_name = 'orders' AND column_name = 'status') THEN
+         UPDATE ${s}.orders SET fulfillment_status = CASE
+           WHEN status = 'cancelled' THEN 'CANCELLED'::${s}.fulfillment_status
+           WHEN status = 'delivered' THEN 'COMPLETED'::${s}.fulfillment_status
+           WHEN status = 'shipped' THEN 'SHIPPED'::${s}.fulfillment_status
+           WHEN status = 'processing' THEN 'PREPARING'::${s}.fulfillment_status
+           ELSE 'RECEIVED'::${s}.fulfillment_status END
+           WHERE fulfillment_status = 'RECEIVED';
+       END IF;
+     END $$`,
+    `DO $$ BEGIN
+       IF EXISTS (SELECT 1 FROM information_schema.columns
+          WHERE table_schema = current_schema() AND table_name = 'retail_orders' AND column_name = 'status') THEN
+         UPDATE ${s}.retail_orders SET fulfillment_status = CASE
+           WHEN status = 'cancelled' THEN 'CANCELLED'::${s}.fulfillment_status
+           WHEN status = 'delivered' THEN 'COMPLETED'::${s}.fulfillment_status
+           WHEN status = 'shipped' THEN 'SHIPPED'::${s}.fulfillment_status
+           WHEN status = 'processing' THEN 'PREPARING'::${s}.fulfillment_status
+           ELSE 'RECEIVED'::${s}.fulfillment_status END
+           WHERE fulfillment_status = 'RECEIVED';
+       END IF;
+     END $$`,
+    `ALTER TABLE ${s}.orders ADD COLUMN IF NOT EXISTS tracking_url text`,
+    `ALTER TABLE ${s}.retail_orders ADD COLUMN IF NOT EXISTS tracking_url text`,
+    `ALTER TABLE ${s}.retail_orders ADD COLUMN IF NOT EXISTS tracking_token_expires_at timestamptz`,
+    `ALTER TABLE ${s}.retail_orders ADD COLUMN IF NOT EXISTS tracking_token_rotated_at timestamptz`,
+    `UPDATE ${s}.retail_orders SET tracking_token_expires_at = created_at + interval '180 days'
+       WHERE tracking_token_expires_at IS NULL`,
+    `ALTER TABLE ${s}.retail_orders ALTER COLUMN tracking_token_expires_at SET NOT NULL`,
+    `ALTER TABLE ${s}.retail_orders ALTER COLUMN tracking_token_expires_at SET DEFAULT (now() + interval '180 days')`,
+    `CREATE TABLE IF NOT EXISTS ${s}.retail_order_status_history (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       retail_order_id uuid NOT NULL REFERENCES ${s}.retail_orders(id) ON DELETE CASCADE,
+       actor_user_id uuid, actor_name text NOT NULL DEFAULT 'Administrator',
+       field text NOT NULL, previous_value text, next_value text, note text,
+       created_at timestamptz NOT NULL DEFAULT now()
+     )`,
+    `CREATE INDEX IF NOT EXISTS retail_order_status_history_order_created_idx
+       ON ${s}.retail_order_status_history (retail_order_id, created_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.retail_tracking_rate_limits (
+       client_key_hash text PRIMARY KEY,
+       window_started_at timestamptz NOT NULL,
+       request_count integer NOT NULL DEFAULT 0 CHECK (request_count >= 0),
+       updated_at timestamptz NOT NULL DEFAULT now()
+     )`,
+    `CREATE INDEX IF NOT EXISTS retail_tracking_rate_limits_updated_idx
+       ON ${s}.retail_tracking_rate_limits (updated_at)`,
     // v37 — explicit immutable quote snapshots make the pre-credit and
     // payable amounts auditable even when regular order totals are repurposed.
     `ALTER TABLE ${s}.orders ADD COLUMN IF NOT EXISTS referral_credit_merchandise_subtotal_rsd integer NOT NULL DEFAULT 0`,
@@ -935,7 +998,7 @@ function tableStatements(s: string): string[] {
     `CREATE INDEX IF NOT EXISTS retail_order_items_product_idx ON ${s}.retail_order_items (product_id)`,
     // v19: exact immutable-reference searches use this covering lookup before
     // joining the bounded admin result back to retail_orders.
-    `CREATE INDEX CONCURRENTLY IF NOT EXISTS retail_order_items_catalog_reference_order_idx
+    `CREATE INDEX IF NOT EXISTS retail_order_items_catalog_reference_order_idx
        ON ${s}.retail_order_items (product_catalog_reference, order_id)`,
     // v39 — immutable supplier and commercial line snapshots. Populate from
     // the product/catalog as it exists during rollout before making the facts
@@ -951,26 +1014,43 @@ function tableStatements(s: string): string[] {
     `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS discount_snapshot integer`,
     `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS line_subtotal integer`,
     `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS line_total integer`,
-    `DO $$ BEGIN
-       IF NOT EXISTS (
-         SELECT 1 FROM pg_trigger
-         WHERE tgrelid = '${s}.order_items'::regclass
-           AND tgname = 'order_items_commercial_snapshot_immutable'
-           AND NOT tgisinternal
-       ) THEN
-         UPDATE ${s}.order_items AS item SET
-           supplier_id = COALESCE(item.supplier_id, product.supplier_id),
-           supplier_name = COALESCE(item.supplier_name, supplier.name),
-           supplier_slug = COALESCE(item.supplier_slug, supplier.slug),
-           product_catalog_reference = COALESCE(item.product_catalog_reference, product.catalog_reference),
-           product_sku_snapshot = COALESCE(item.product_sku_snapshot, item.product_sku, product.sku),
-           unit_price = COALESCE(item.unit_price, item.price),
-           line_subtotal = COALESCE(item.line_subtotal, item.price * item.quantity),
-           line_total = COALESCE(item.line_total, item.price * item.quantity)
-           FROM ${s}.products product JOIN ${s}.suppliers supplier ON supplier.id = product.supplier_id
-           WHERE item.product_id = product.id;
-       END IF;
-     END $$`,
+    // Fail closed outside this session while the migration is in progress. A
+    // failed rollout therefore cannot leave a permissive trigger behind.
+    `CREATE OR REPLACE FUNCTION ${s}.prevent_order_item_commercial_snapshot_update()
+       RETURNS trigger LANGUAGE plpgsql AS $$
+       BEGIN
+         IF current_setting('lumera.snapshot_backfill', true) = 'on' THEN RETURN NEW; END IF;
+         RAISE EXCEPTION 'Order item commercial snapshot is immutable';
+       END $$`,
+    `CREATE OR REPLACE FUNCTION ${s}.prevent_incomplete_commercial_snapshot_insert()
+       RETURNS trigger LANGUAGE plpgsql AS $$
+       BEGIN
+         IF current_setting('lumera.snapshot_backfill', true) = 'on' THEN RETURN NEW; END IF;
+         IF NEW.supplier_id IS NULL OR NEW.supplier_name IS NULL OR NEW.supplier_slug IS NULL
+           OR (NEW.product_id IS NOT NULL AND NEW.product_catalog_reference IS NULL)
+           OR NEW.unit_price IS NULL OR NEW.line_subtotal IS NULL OR NEW.line_total IS NULL THEN
+           RAISE EXCEPTION 'Commercial order-item snapshot is required during migration';
+         END IF;
+         RETURN NEW;
+       END $$`,
+    `DROP TRIGGER IF EXISTS order_items_commercial_snapshot_migration_guard ON ${s}.order_items`,
+    `CREATE TRIGGER order_items_commercial_snapshot_migration_guard BEFORE INSERT OR UPDATE ON ${s}.order_items
+       FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_incomplete_commercial_snapshot_insert()`,
+    `DROP TRIGGER IF EXISTS retail_order_items_commercial_snapshot_migration_guard ON ${s}.retail_order_items`,
+    `CREATE TRIGGER retail_order_items_commercial_snapshot_migration_guard BEFORE INSERT OR UPDATE ON ${s}.retail_order_items
+       FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_incomplete_commercial_snapshot_insert()`,
+    `SELECT set_config('lumera.snapshot_backfill', 'on', false)`,
+    `UPDATE ${s}.order_items AS item SET
+       supplier_id = COALESCE(item.supplier_id, product.supplier_id),
+       supplier_name = COALESCE(item.supplier_name, supplier.name),
+       supplier_slug = COALESCE(item.supplier_slug, supplier.slug),
+       product_catalog_reference = COALESCE(item.product_catalog_reference, product.catalog_reference),
+       product_sku_snapshot = COALESCE(item.product_sku_snapshot, item.product_sku, product.sku),
+       unit_price = COALESCE(item.unit_price, item.price),
+       line_subtotal = COALESCE(item.line_subtotal, item.price * item.quantity),
+       line_total = COALESCE(item.line_total, item.price * item.quantity)
+       FROM ${s}.products product JOIN ${s}.suppliers supplier ON supplier.id = product.supplier_id
+       WHERE item.product_id = product.id`,
     `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS supplier_id uuid`,
     `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS supplier_name text`,
     `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS supplier_slug text`,
@@ -984,6 +1064,78 @@ function tableStatements(s: string): string[] {
     `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS threshold_reward_discount_rsd integer NOT NULL DEFAULT 0`,
     `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS automatic_promotion_discount_rsd integer NOT NULL DEFAULT 0`,
     `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS threshold_reward_discount_rsd integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS unit_cost_price_rsd integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS line_cogs_rsd integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS referral_discount_rsd integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS realized_revenue_rsd integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS category_id_snapshot uuid`,
+    `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS category_name_snapshot text`,
+    `ALTER TABLE ${s}.order_items ADD COLUMN IF NOT EXISTS brand_snapshot text`,
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS unit_cost_price_rsd integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS line_cogs_rsd integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS referral_discount_rsd integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS realized_revenue_rsd integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS category_id_snapshot uuid`,
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS category_name_snapshot text`,
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS brand_snapshot text`,
+    // A prior rollout may already have the immutable trigger installed when a
+    // deployment retries this additive backfill.  Replace its shared function
+    // first with a session-gated version, then enable that gate only for the
+    // two controlled legacy updates below.  The final definition later in this
+    // rollout is strict again.  `runBusinessGrowthSchemaDdl` resets the gate in
+    // a finally block, including on failure, so a pooled connection can never
+    // retain a bypass.
+    `CREATE OR REPLACE FUNCTION ${s}.prevent_order_item_commercial_snapshot_update()
+       RETURNS trigger LANGUAGE plpgsql AS $$
+       BEGIN
+         IF current_setting('lumera.snapshot_backfill', true) = 'on' THEN
+           RETURN NEW;
+         END IF;
+         IF NEW.supplier_id IS DISTINCT FROM OLD.supplier_id
+           OR NEW.supplier_name IS DISTINCT FROM OLD.supplier_name
+           OR NEW.supplier_slug IS DISTINCT FROM OLD.supplier_slug
+           OR NEW.product_catalog_reference IS DISTINCT FROM OLD.product_catalog_reference
+           OR NEW.product_sku_snapshot IS DISTINCT FROM OLD.product_sku_snapshot
+           OR NEW.market IS DISTINCT FROM OLD.market OR NEW.currency IS DISTINCT FROM OLD.currency
+           OR NEW.unit_price IS DISTINCT FROM OLD.unit_price
+           OR NEW.discount_snapshot IS DISTINCT FROM OLD.discount_snapshot
+           OR NEW.quantity IS DISTINCT FROM OLD.quantity
+           OR NEW.line_subtotal IS DISTINCT FROM OLD.line_subtotal
+           OR NEW.line_total IS DISTINCT FROM OLD.line_total
+           OR NEW.unit_cost_price_rsd IS DISTINCT FROM OLD.unit_cost_price_rsd
+           OR NEW.line_cogs_rsd IS DISTINCT FROM OLD.line_cogs_rsd
+           OR NEW.referral_discount_rsd IS DISTINCT FROM OLD.referral_discount_rsd
+           OR NEW.realized_revenue_rsd IS DISTINCT FROM OLD.realized_revenue_rsd
+           OR NEW.category_id_snapshot IS DISTINCT FROM OLD.category_id_snapshot
+           OR NEW.category_name_snapshot IS DISTINCT FROM OLD.category_name_snapshot
+           OR NEW.brand_snapshot IS DISTINCT FROM OLD.brand_snapshot THEN
+           RAISE EXCEPTION 'Order item commercial snapshot is immutable';
+         END IF;
+         RETURN NEW;
+       END $$`,
+    `SELECT set_config('lumera.snapshot_backfill', 'on', false)`,
+    `UPDATE ${s}.order_items SET realized_revenue_rsd = line_total
+       WHERE realized_revenue_rsd = 0 AND line_total > 0`,
+    `UPDATE ${s}.retail_order_items SET realized_revenue_rsd = line_total
+       WHERE realized_revenue_rsd = 0 AND line_total > 0`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'order_items_profit_snapshot_check'
+         AND conrelid = '${s}.order_items'::regclass) THEN
+         ALTER TABLE ${s}.order_items ADD CONSTRAINT order_items_profit_snapshot_check CHECK (
+           unit_cost_price_rsd >= 0 AND line_cogs_rsd >= 0 AND referral_discount_rsd >= 0
+           AND realized_revenue_rsd >= 0 AND referral_discount_rsd <= line_total
+         ) NOT VALID;
+       END IF;
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'retail_order_items_profit_snapshot_check'
+         AND conrelid = '${s}.retail_order_items'::regclass) THEN
+         ALTER TABLE ${s}.retail_order_items ADD CONSTRAINT retail_order_items_profit_snapshot_check CHECK (
+           unit_cost_price_rsd >= 0 AND line_cogs_rsd >= 0 AND referral_discount_rsd >= 0
+           AND realized_revenue_rsd >= 0 AND referral_discount_rsd <= line_total
+         ) NOT VALID;
+       END IF;
+     END $$`,
+    `ALTER TABLE ${s}.order_items VALIDATE CONSTRAINT order_items_profit_snapshot_check`,
+    `ALTER TABLE ${s}.retail_order_items VALIDATE CONSTRAINT retail_order_items_profit_snapshot_check`,
     // v64 — GIFT_PRODUCT rewards are explicit immutable, zero-price inventory lines.
     `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS is_reward_gift boolean NOT NULL DEFAULT false`,
     `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS reward_snapshot jsonb`,
@@ -1021,28 +1173,20 @@ function tableStatements(s: string): string[] {
        END IF;
      END $$`,
     `ALTER TABLE ${s}.retail_order_items VALIDATE CONSTRAINT retail_order_items_g2_discount_check`,
-    `DO $$ BEGIN
-       IF NOT EXISTS (
-         SELECT 1 FROM pg_trigger
-         WHERE tgrelid = '${s}.retail_order_items'::regclass
-           AND tgname = 'retail_order_items_commercial_snapshot_immutable'
-           AND NOT tgisinternal
-       ) THEN
-         UPDATE ${s}.retail_order_items AS item SET
-           supplier_id = COALESCE(item.supplier_id, product.supplier_id),
-           supplier_name = COALESCE(item.supplier_name, supplier.name),
-           supplier_slug = COALESCE(item.supplier_slug, supplier.slug),
-           product_catalog_reference = COALESCE(item.product_catalog_reference, product.catalog_reference),
-           product_sku_snapshot = COALESCE(item.product_sku_snapshot, product.sku),
-           discount_snapshot = COALESCE(item.discount_snapshot,
-             CASE WHEN product.public_price IS NOT NULL AND product.public_price > item.unit_price
-               THEN product.public_price - item.unit_price ELSE NULL END),
-           line_subtotal = COALESCE(item.line_subtotal, item.unit_price * item.quantity),
-           line_total = COALESCE(item.line_total, item.unit_price * item.quantity)
-           FROM ${s}.products product JOIN ${s}.suppliers supplier ON supplier.id = product.supplier_id
-           WHERE item.product_id = product.id;
-       END IF;
-     END $$`,
+    `UPDATE ${s}.retail_order_items AS item SET
+       supplier_id = COALESCE(item.supplier_id, product.supplier_id),
+       supplier_name = COALESCE(item.supplier_name, supplier.name),
+       supplier_slug = COALESCE(item.supplier_slug, supplier.slug),
+       product_catalog_reference = COALESCE(item.product_catalog_reference, product.catalog_reference),
+       product_sku_snapshot = COALESCE(item.product_sku_snapshot, product.sku),
+       discount_snapshot = COALESCE(item.discount_snapshot,
+         CASE WHEN product.public_price IS NOT NULL AND product.public_price > item.unit_price
+           THEN product.public_price - item.unit_price ELSE NULL END),
+       line_subtotal = COALESCE(item.line_subtotal, item.unit_price * item.quantity),
+       line_total = COALESCE(item.line_total, item.unit_price * item.quantity)
+       FROM ${s}.products product JOIN ${s}.suppliers supplier ON supplier.id = product.supplier_id
+       WHERE item.product_id = product.id`,
+    `SELECT set_config('lumera.snapshot_backfill', 'off', false)`,
     `DO $$ BEGIN
        IF EXISTS (SELECT 1 FROM ${s}.order_items WHERE supplier_id IS NULL OR supplier_name IS NULL
          OR supplier_slug IS NULL OR (product_id IS NOT NULL AND product_catalog_reference IS NULL) OR unit_price IS NULL
@@ -1092,6 +1236,13 @@ function tableStatements(s: string): string[] {
           OR NEW.quantity IS DISTINCT FROM OLD.quantity
           OR NEW.line_subtotal IS DISTINCT FROM OLD.line_subtotal
           OR NEW.line_total IS DISTINCT FROM OLD.line_total
+          OR NEW.unit_cost_price_rsd IS DISTINCT FROM OLD.unit_cost_price_rsd
+          OR NEW.line_cogs_rsd IS DISTINCT FROM OLD.line_cogs_rsd
+          OR NEW.referral_discount_rsd IS DISTINCT FROM OLD.referral_discount_rsd
+          OR NEW.realized_revenue_rsd IS DISTINCT FROM OLD.realized_revenue_rsd
+          OR NEW.category_id_snapshot IS DISTINCT FROM OLD.category_id_snapshot
+          OR NEW.category_name_snapshot IS DISTINCT FROM OLD.category_name_snapshot
+          OR NEW.brand_snapshot IS DISTINCT FROM OLD.brand_snapshot
           OR NEW.is_reward_gift IS DISTINCT FROM OLD.is_reward_gift
           OR NEW.reward_snapshot IS DISTINCT FROM OLD.reward_snapshot THEN
           RAISE EXCEPTION 'Order item commercial snapshot is immutable';
@@ -1104,6 +1255,8 @@ function tableStatements(s: string): string[] {
     `DROP TRIGGER IF EXISTS retail_order_items_commercial_snapshot_immutable ON ${s}.retail_order_items`,
     `CREATE TRIGGER retail_order_items_commercial_snapshot_immutable BEFORE UPDATE ON ${s}.retail_order_items
        FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_order_item_commercial_snapshot_update()`,
+    `DROP TRIGGER IF EXISTS order_items_commercial_snapshot_migration_guard ON ${s}.order_items`,
+    `DROP TRIGGER IF EXISTS retail_order_items_commercial_snapshot_migration_guard ON ${s}.retail_order_items`,
     `CREATE OR REPLACE FUNCTION ${s}.prevent_retail_g2_snapshot_update()
       RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN
@@ -1158,10 +1311,10 @@ function tableStatements(s: string): string[] {
     // Returning-client attribution checks completed appointment history by
     // customer and date for every attributed campaign appointment. Keep this
     // partial index aligned with the correlated EXISTS predicate; excluding
-    // non-completed appointments makes the hot history probe smaller. The
-    // statement is autocommitted so CONCURRENTLY avoids blocking appointment
-    // writes while an existing production table is indexed.
-    `CREATE INDEX CONCURRENTLY IF NOT EXISTS appointments_salon_customer_completed_date_idx
+    // non-completed appointments makes the hot history probe smaller. Regular
+    // CREATE INDEX avoids CREATE INDEX CONCURRENTLY waiting on the virtual
+    // transactions of processes blocked on the rollout advisory lock.
+    `CREATE INDEX IF NOT EXISTS appointments_salon_customer_completed_date_idx
        ON ${s}.appointments (salon_customer_id, appointment_date)
        WHERE status = 'completed'`,
 
@@ -1205,20 +1358,20 @@ function tableStatements(s: string): string[] {
     // provider_message_id + email_type = 'automation'; this partial index keeps
     // that per-event lookup cheap as sent email history grows. Legacy databases
     // may predate the provider_message_id column, so ensure it exists first.
-    // Built CONCURRENTLY (statements run in autocommit, so this is legal) to
-    // avoid a write-blocking lock on the large, actively written table.
+    // Regular index DDL is required by the blocking rollout lock: concurrent
+    // index builds can deadlock with advisory-lock waiters' virtual transactions.
     // Mirrors email_deliveries_provider_message_idx in lib/db/src/schema/core.ts.
     `ALTER TABLE ${s}.email_deliveries ADD COLUMN IF NOT EXISTS provider_message_id text`,
-    `CREATE INDEX CONCURRENTLY IF NOT EXISTS email_deliveries_provider_message_idx
+    `CREATE INDEX IF NOT EXISTS email_deliveries_provider_message_idx
        ON ${s}.email_deliveries (provider_message_id)
        WHERE email_type = 'automation'`,
     // v23: bounded Beauty Poslovi delivery-issue dashboard scans and alert
     // cooldown history. These partial indexes mirror core.ts and exclude every
     // unrelated transactional email from the operational hot path.
-    `CREATE INDEX CONCURRENTLY IF NOT EXISTS email_deliveries_beauty_job_issue_idx
+    `CREATE INDEX IF NOT EXISTS email_deliveries_beauty_job_issue_idx
        ON ${s}.email_deliveries (status, created_at)
        WHERE email_type IN ('beauty_job_new_contact', 'beauty_job_author_reply', 'beauty_job_moderation', 'beauty_job_expiry_warning')`,
-    `CREATE INDEX CONCURRENTLY IF NOT EXISTS email_deliveries_beauty_job_alert_history_idx
+    `CREATE INDEX IF NOT EXISTS email_deliveries_beauty_job_alert_history_idx
        ON ${s}.email_deliveries (recipient_email, created_at)
        WHERE email_type = 'beauty_job_delivery_alert'`,
 
@@ -1281,7 +1434,7 @@ function tableStatements(s: string): string[] {
            CHECK (start_time IS NULL OR start_time < end_time);
        END IF;
      END $$`,
-    `CREATE INDEX CONCURRENTLY IF NOT EXISTS employee_time_off_employee_date_time_idx
+    `CREATE INDEX IF NOT EXISTS employee_time_off_employee_date_time_idx
        ON ${s}.employee_time_off (employee_id, start_date, end_date, start_time, end_time)`,
     `DO $$ BEGIN
        IF NOT EXISTS (
@@ -2290,7 +2443,14 @@ function tableStatements(s: string): string[] {
            OR NEW.line_discount IS DISTINCT FROM OLD.line_discount
            OR NEW.bundle_name_snapshot IS DISTINCT FROM OLD.bundle_name_snapshot
            OR NEW.bundle_components_snapshot IS DISTINCT FROM OLD.bundle_components_snapshot
-           OR NEW.estimated_delivery_date IS DISTINCT FROM OLD.estimated_delivery_date THEN
+            OR NEW.estimated_delivery_date IS DISTINCT FROM OLD.estimated_delivery_date
+            OR NEW.unit_cost_price_rsd IS DISTINCT FROM OLD.unit_cost_price_rsd
+            OR NEW.line_cogs_rsd IS DISTINCT FROM OLD.line_cogs_rsd
+            OR NEW.referral_discount_rsd IS DISTINCT FROM OLD.referral_discount_rsd
+            OR NEW.realized_revenue_rsd IS DISTINCT FROM OLD.realized_revenue_rsd
+            OR NEW.category_id_snapshot IS DISTINCT FROM OLD.category_id_snapshot
+            OR NEW.category_name_snapshot IS DISTINCT FROM OLD.category_name_snapshot
+            OR NEW.brand_snapshot IS DISTINCT FROM OLD.brand_snapshot THEN
            RAISE EXCEPTION 'Order item commercial snapshot is immutable';
          END IF;
          RETURN NEW;
@@ -2909,19 +3069,61 @@ export async function runBusinessGrowthSchemaDdl(
   schemaName: string,
 ): Promise<void> {
   const quoted = quoteSchema(schemaName);
-  // Constrain unqualified name resolution inside DO blocks to the target schema.
-  await client.query(`SET search_path TO ${quoted}`);
+  // This runner is also used directly by isolated upgrade tests. Keep the
+  // serialization boundary here so every caller serializes catalog/trigger
+  // mutations before issuing any DDL.
+  let locked = false;
+  // Blocking is intentional: no process may report readiness until it has
+  // acquired the stable cross-version lock and run its own current rollout.
+  await client.query(
+    "SELECT pg_advisory_lock($1)",
+    [BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY],
+  );
+  locked = true;
+  try {
+    // Constrain unqualified name resolution inside DO blocks to the target schema.
+    await client.query(`SET search_path TO ${quoted}`);
+    const rolloutTable = `${schemaName}.business_growth_schema_rollout`;
+    const existingRollout = await client.query<{ relation: string | null }>(
+      "SELECT to_regclass($1)::text AS relation", [rolloutTable],
+    );
+    if (existingRollout.rows[0]?.relation) {
+      const state = await client.query<{ version: number }>(
+        `SELECT version FROM ${quoted}.business_growth_schema_rollout WHERE singleton = true`,
+      );
+      if ((state.rows[0]?.version ?? 0) >= BUSINESS_GROWTH_SCHEMA_VERSION) return;
+    }
+    const statements: string[] = [];
+    for (const [typeName, labels] of Object.entries(ENUM_LABELS)) {
+      statements.push(...enumBootstrapStatements(quoted, typeName, labels));
+    }
+    statements.push(...tableStatements(quoted));
 
-  const statements: string[] = [];
-  for (const [typeName, labels] of Object.entries(ENUM_LABELS)) {
-    statements.push(...enumBootstrapStatements(quoted, typeName, labels));
-  }
-  statements.push(...tableStatements(quoted));
-
-  // Autocommit: each statement commits on its own. Do NOT wrap in a transaction
-  // (ALTER TYPE ADD VALUE cannot be followed by use of the value in the same tx).
-  for (const statement of statements) {
-    await client.query(statement);
+    // Most rollout statements intentionally autocommit (ALTER TYPE ADD VALUE
+    // cannot be followed by use of the value in the same transaction).
+    for (const statement of statements) {
+      await client.query(statement);
+    }
+    await client.query(`CREATE TABLE IF NOT EXISTS ${quoted}.business_growth_schema_rollout (
+      singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+      version integer NOT NULL,
+      completed_at timestamptz NOT NULL DEFAULT now()
+    )`);
+    await client.query(
+      `INSERT INTO ${quoted}.business_growth_schema_rollout (singleton, version, completed_at)
+       VALUES (true, $1, now())
+       ON CONFLICT (singleton) DO UPDATE SET version = EXCLUDED.version, completed_at = EXCLUDED.completed_at`,
+      [BUSINESS_GROWTH_SCHEMA_VERSION],
+    );
+  } finally {
+    // Custom GUCs are session scoped. Always close the narrowly-scoped
+    // migration bypass before this client can return to the pool.
+    await client.query("ROLLBACK").catch(() => {});
+    await client.query(`SELECT set_config('lumera.snapshot_backfill', 'off', false)`);
+    if (locked) await client.query(
+      "SELECT pg_advisory_unlock($1)",
+      [BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY],
+    ).catch(() => {});
   }
 }
 
@@ -2934,11 +3136,8 @@ export async function runBusinessGrowthSchemaDdl(
 export async function ensureBusinessGrowthSchema(schemaName = "public"): Promise<void> {
   quoteSchema(schemaName); // validate early, before acquiring resources
   const client = await pool.connect();
-  let locked = false;
   const previousSearchPath = await currentSearchPath(client);
   try {
-    await client.query("SELECT pg_advisory_lock($1)", [ADVISORY_LOCK_KEY]);
-    locked = true;
     await runBusinessGrowthSchemaDdl(client, schemaName);
     logger.info(
       { version: BUSINESS_GROWTH_SCHEMA_VERSION, schema: schemaName },
@@ -2950,13 +3149,6 @@ export async function ensureBusinessGrowthSchema(schemaName = "public"): Promise
       await client.query(`SET search_path TO ${previousSearchPath}`);
     } catch {
       /* best-effort; the client is released regardless */
-    }
-    if (locked) {
-      try {
-        await client.query("SELECT pg_advisory_unlock($1)", [ADVISORY_LOCK_KEY]);
-      } catch {
-        /* advisory locks auto-release on session end; ignore */
-      }
     }
     client.release();
   }

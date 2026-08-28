@@ -12,6 +12,7 @@ import {
   loyaltyPointLedgerTable,
   orderBundleComponentsTable,
   orderItemsTable,
+  orderStatusHistoryTable,
   ordersTable,
   productBundleComponentsTable,
   productBundlesTable,
@@ -1031,15 +1032,44 @@ test("mixed B2B cancellation preserves explicit variant precedence, restores inv
   await db.update(productBundleComponentsTable).set({ quantity: 9 })
     .where(eq(productBundleComponentsTable.bundleId, bundle.id));
 
+  const historyBeforeConflict = await db.select({ id: orderStatusHistoryTable.id })
+    .from(orderStatusHistoryTable).where(eq(orderStatusHistoryTable.orderId, created.id));
+  const contradictory = await api(`/admin/orders/${created.id}`, adminCookie, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "confirmed", fulfillmentStatus: "PACKING" }),
+  });
+  assert.equal(contradictory.status, 400);
+  const [unchangedAfterConflict] = await db.select().from(ordersTable).where(eq(ordersTable.id, created.id));
+  assert.equal(unchangedAfterConflict?.status, savedOrder?.status);
+  assert.equal(unchangedAfterConflict?.fulfillmentStatus, savedOrder?.fulfillmentStatus);
+  const historyAfterConflict = await db.select({ id: orderStatusHistoryTable.id })
+    .from(orderStatusHistoryTable).where(eq(orderStatusHistoryTable.orderId, created.id));
+  assert.equal(historyAfterConflict.length, historyBeforeConflict.length);
+
   const cancel = () => api(`/admin/orders/${created.id}`, adminCookie, {
     method: "PATCH",
-    body: JSON.stringify({ status: "cancelled" }),
+    body: JSON.stringify({ fulfillmentStatus: "CANCELLED" }),
   });
-  const concurrent = await Promise.all([cancel(), cancel()]);
-  assert.ok(concurrent.some((result) => result.status === 200));
-  assert.ok(concurrent.every((result) => result.status === 200 || result.status === 400));
+  const blocker = await pool.connect();
+  await blocker.query("BEGIN");
+  await blocker.query("SELECT id FROM orders WHERE id = $1 FOR UPDATE", [created.id]);
+  const cancellation = cancel();
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  const staleLegacy = api(`/admin/orders/${created.id}`, adminCookie, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "confirmed" }),
+  });
+  await new Promise((resolve) => setTimeout(resolve, 75));
+  await blocker.query("COMMIT");
+  blocker.release();
+  const [cancelledResponse, staleResponse] = await Promise.all([cancellation, staleLegacy]);
+  assert.equal(cancelledResponse.status, 200);
+  assert.equal(staleResponse.status, 409);
+  const [terminalOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, created.id));
+  assert.equal(terminalOrder?.fulfillmentStatus, "CANCELLED");
+  assert.equal(terminalOrder?.status, "cancelled");
   const repeated = await cancel();
-  assert.equal(repeated.status, 400);
+  assert.equal(repeated.status, 200);
 
   const restoredProducts = await db.select().from(productsTable)
     .where(inArray(productsTable.id, fixtures.map((product) => product.id)));

@@ -43,6 +43,12 @@ export interface AdminProductInput {
      * @maximum 100000000
      * @nullable
      */
+  costPriceRsd?: number | null;
+  /**
+     * @minimum 0
+     * @maximum 100000000
+     * @nullable
+     */
   discountPrice?: number | null;
   /** @nullable */
   discountPriceEndsAt?: Date | null;
