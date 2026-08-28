@@ -438,6 +438,7 @@ export const employeeLocationSchedulesTable = pgTable("employee_location_schedul
     .on(table.employeeId, table.salonId, table.weekday, table.startTime, table.endTime),
   index("employee_location_schedules_employee_salon_weekday_idx")
     .on(table.employeeId, table.salonId, table.weekday),
+  index("employee_location_schedules_salon_idx").on(table.salonId),
 ]);
 
 export const employeeTimeOffTable = pgTable("employee_time_off", {
@@ -456,6 +457,7 @@ export const employeeTimeOffTable = pgTable("employee_time_off", {
   // Leading FK coverage: all time-off for an employee, ordered by date range.
   index("employee_time_off_employee_start_idx").on(table.employeeId, table.startDate),
   index("employee_time_off_employee_salon_start_idx").on(table.employeeId, table.salonId, table.startDate),
+  index("employee_time_off_salon_idx").on(table.salonId),
   check("employee_time_off_times_together_check", sql`(${table.startTime} is null) = (${table.endTime} is null)`),
   check("employee_time_off_time_order_check", sql`${table.startTime} is null or ${table.startTime} < ${table.endTime}`),
 ]);

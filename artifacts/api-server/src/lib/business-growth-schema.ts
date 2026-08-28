@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 76;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 77;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -3450,6 +3450,8 @@ function tableStatements(s: string): string[] {
     )`,
     `CREATE INDEX IF NOT EXISTS employee_location_schedules_employee_salon_weekday_idx
       ON ${s}.employee_location_schedules (employee_id, salon_id, weekday)`,
+    `CREATE INDEX IF NOT EXISTS employee_location_schedules_salon_idx
+      ON ${s}.employee_location_schedules (salon_id)`,
     // Preserve legacy schedules as the schedule of the legacy/default salon.
     // Some historical schemas predate employee_schedules entirely, so defer
     // parsing the legacy-table query until the guarded branch is entered.
@@ -3468,6 +3470,8 @@ function tableStatements(s: string): string[] {
       REFERENCES ${s}.salons(id) ON DELETE CASCADE`,
     `CREATE INDEX IF NOT EXISTS employee_time_off_employee_salon_start_idx
       ON ${s}.employee_time_off (employee_id, salon_id, start_date)`,
+    `CREATE INDEX IF NOT EXISTS employee_time_off_salon_idx
+      ON ${s}.employee_time_off (salon_id)`,
     // v74 — every aftercare FK gets a leading index so deletes/updates on its
     // parent cannot force scans as recommendation and delivery history grows.
   ];
