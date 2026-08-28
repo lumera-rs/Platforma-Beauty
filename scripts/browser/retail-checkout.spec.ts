@@ -1083,6 +1083,55 @@ test("retail cart page ignores a stale poll response while a local edit is in fl
   }
 });
 
+test("retail cart page ignores a stale poll response after restoring a saved item", async ({ page }) => {
+  let holdNextCartGet = false;
+  let notifyStaleCaptured: (() => void) | undefined;
+  let releaseStaleResponse: (() => void) | undefined;
+  const staleCaptured = new Promise<void>((resolve) => { notifyStaleCaptured = resolve; });
+  const staleReleased = new Promise<void>((resolve) => { releaseStaleResponse = resolve; });
+  await page.route("**/api/retail/cart", async (route) => {
+    if (route.request().method() !== "GET" || !holdNextCartGet) {
+      await route.continue();
+      return;
+    }
+    holdNextCartGet = false;
+    const staleResponse = await route.fetch();
+    notifyStaleCaptured?.();
+    await staleReleased;
+    await route.fulfill({ response: staleResponse });
+  });
+
+  await createCartAndOpenCartPage(page, [productId!, secondProductId!]);
+  await expect(page.getByText(money(4_400), { exact: true }).first()).toBeVisible();
+  const secondProductLine = page.locator("div.relative").filter({
+    has: page.getByRole("heading", { name: new RegExp(`^Drugi retail browser proizvod`) }),
+  });
+  await secondProductLine.getByRole("button", { name: "Sačuvaj" }).click();
+  await expect(page.getByRole("heading", { name: "Sačuvano za kasnije (1)" })).toBeVisible();
+  await expect(page.getByText(money(2_000), { exact: true }).first()).toBeVisible();
+
+  try {
+    holdNextCartGet = true;
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await staleCaptured;
+
+    await page.getByRole("button", { name: "Vrati u korpu" }).click();
+    await expect(page.getByText(money(4_400), { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Sačuvano za kasnije (1)" })).toHaveCount(0);
+    await expect(page.getByTestId("status-cart-announcement")).toHaveText("Korpa sada ima 2 stavki.");
+    await expect(page.getByText("Stavka vraćena u korpu")).toBeVisible();
+
+    releaseStaleResponse?.();
+    await page.waitForTimeout(1_000);
+    await expect(page.getByText(money(4_400), { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Sačuvano za kasnije (1)" })).toHaveCount(0);
+    await expect(page.getByTestId("status-cart-announcement")).toHaveText("Korpa sada ima 2 stavki.");
+    await expect(page.getByText("Stavka vraćena u korpu")).toBeVisible();
+  } finally {
+    releaseStaleResponse?.();
+  }
+});
+
 test("retail checkout explains unavailable items and offers recovery without creating an order", async ({ page }) => {
   expect(secondProductId).toBeTruthy();
   await createCartAndOpenCheckout(page, [productId!, secondProductId!]);
