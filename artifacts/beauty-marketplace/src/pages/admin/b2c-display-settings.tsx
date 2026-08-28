@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useAdminGetB2cDisplaySettings, useAdminUpdateB2cDisplaySettings, getAdminGetB2cDisplaySettingsQueryKey, B2cProductSort } from "@workspace/api-client-react";
+import { getApiErrorDetails, useAdminGetB2cDisplaySettings, useAdminUpdateB2cDisplaySettings, getAdminGetB2cDisplaySettingsQueryKey, B2cProductSort } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, Save, Settings2, SlidersHorizontal, MonitorSmartphone } from "lucide-react";
 import { AdminLayout } from "./layout";
@@ -80,8 +80,8 @@ export default function AdminB2cDisplaySettingsPage() {
           qc.setQueryData(getAdminGetB2cDisplaySettingsQueryKey(), newSettings);
           toast.success("B2C podešavanja prikaza su uspešno sačuvana.");
         },
-        onError: (error: any) => {
-          const isConflict = error?.response?.status === 409;
+        onError: (error: unknown) => {
+          const isConflict = getApiErrorDetails(error).status === 409;
           toast.error(
             isConflict ? "Neko je već izmenio podešavanja u međuvremenu. Osvežite stranicu." : extractApiError(error, "Nije uspelo čuvanje podešavanja.")
           );

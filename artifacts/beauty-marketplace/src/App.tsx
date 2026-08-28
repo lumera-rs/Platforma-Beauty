@@ -3,10 +3,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useGetCurrentUser, type UserRole } from '@workspace/api-client-react';
 import { Loader2 } from 'lucide-react';
 import { ErrorBoundary } from '@/components/error-boundary';
-import { Toaster } from '@/components/ui/toaster';
-import { TooltipProvider } from '@/components/ui/tooltip';
-import { ClientSeoMetadata } from '@/components/client-seo-metadata';
-import { RetailCartStatus } from '@/components/retail-cart-status';
 import {
   Link,
   Route,
@@ -19,9 +15,13 @@ import {
 import { homeForRole } from './lib/role-routing';
 import { loginPathWithReturnTo } from './lib/auth-return';
 
-// Every page boundary stays out of the initial bundle. Shared application
-// providers, guards and the small route fallback are intentionally eager.
+// Route pages and non-critical app-shell layers stay out of the initial bundle.
+// Query state, guards and the small route fallback remain intentionally eager.
 const Home = lazy(() => import('./pages/home'));
+const ClientSeoMetadata = lazy(() => import('./components/client-seo-metadata').then((module) => ({ default: module.ClientSeoMetadata })));
+const RetailCartStatus = lazy(() => import('./components/retail-cart-status').then((module) => ({ default: module.RetailCartStatus })));
+const Toaster = lazy(() => import('./components/ui/toaster').then((module) => ({ default: module.Toaster })));
+const TooltipProvider = lazy(() => import('./components/ui/tooltip').then((module) => ({ default: module.TooltipProvider })));
 const Layout = lazy(() => import('./components/layout').then((module) => ({ default: module.Layout })));
 const Auth = lazy(() => import('./pages/auth'));
 const BusinessAuth = lazy(() => import('./pages/business-auth'));
@@ -479,14 +479,20 @@ function RoutedErrorBoundary({ children }: { children: ReactNode }) {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-          <ClientSeoMetadata />
-          <RetailCartStatus />
-          <Router />
-        </WouterRouter>
-        <Toaster />
-      </TooltipProvider>
+      <Suspense fallback={<RouteLoadingFallback />}>
+        <TooltipProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+            <Suspense fallback={null}>
+              <ClientSeoMetadata />
+              <RetailCartStatus />
+            </Suspense>
+            <Router />
+          </WouterRouter>
+          <Suspense fallback={null}>
+            <Toaster />
+          </Suspense>
+        </TooltipProvider>
+      </Suspense>
     </QueryClientProvider>
   );
 }

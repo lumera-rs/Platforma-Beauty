@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useAdminGetShopSettings, useAdminUpdateShopSettings, getAdminGetShopSettingsQueryKey } from "@workspace/api-client-react";
+import { getApiErrorDetails, useAdminGetShopSettings, useAdminUpdateShopSettings, getAdminGetShopSettingsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, Save, Store, Truck, Bell, Award, Settings2, Building } from "lucide-react";
 import { AdminLayout } from "./layout";
@@ -143,8 +143,8 @@ export default function AdminShopSettingsPage() {
           qc.setQueryData(getAdminGetShopSettingsQueryKey(), newSettings);
           toast.success("Podešavanja prodavnice su uspešno sačuvana.");
         },
-        onError: (error: any) => {
-          const isConflict = error?.response?.status === 409;
+        onError: (error: unknown) => {
+          const isConflict = getApiErrorDetails(error).status === 409;
           toast.error(
             isConflict ? "Neko je već izmenio podešavanja u međuvremenu. Osvežite stranicu." : extractApiError(error, "Nije uspelo čuvanje podešavanja.")
           );
