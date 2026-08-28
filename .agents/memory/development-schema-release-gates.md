@@ -20,3 +20,9 @@ Version-gated additive rollouts do not reconcile a deliberate schema relaxation 
 **Why:** A temporary nullable bridge existed in ORM source, but the normal reconciliation correctly skipped the already-applied rollout, leaving the live development columns strict and the Publish diff destructive.
 
 **How to apply:** After an intentional relaxation, inspect the live development nullability and recompute the Publish diff. Apply only the exact safe development-side alteration when the versioned rollout cannot represent it; never target production.
+
+Runtime-created tables inside the published schema must also have matching ORM declarations, and bare boolean checks should use explicit comparisons.
+
+**Why:** Publish introspection reconstructed a valid runtime-created `CHECK (singleton)` as invalid nested SQL, `CHECK (CHECK (singleton))`, even though ordinary validation and schema-diff warnings were clean.
+
+**How to apply:** Mirror runtime-managed public tables in the ORM, define boolean checks as expression-only comparisons such as `singleton = true`, normalize the live development constraint, and inspect the exact generated migration statement.

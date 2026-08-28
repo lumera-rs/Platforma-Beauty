@@ -326,6 +326,15 @@ async function run() {
     const client = await pool.connect();
     try {
       await runBusinessGrowthSchemaDdl(client, s);
+      const rolloutSingletonConstraint = (await q<{ definition: string }>(
+        `SELECT pg_get_constraintdef(oid) AS definition
+         FROM pg_constraint
+         WHERE conrelid=$1::regclass
+           AND conname='business_growth_schema_rollout_singleton_check'`,
+        [`${s}.business_growth_schema_rollout`],
+      )).rows[0];
+      assert.match(rolloutSingletonConstraint?.definition ?? "", /CHECK \(\(singleton = true\)\)/,
+        "rollout ledger uses an expression-only singleton check safe for publish introspection");
       // Reproduce a partially-completed v65 upgrade: the commercial immutable
       // trigger already exists, while a historical line still needs its new
       // realized-revenue snapshot backfilled.  This used to fail on replay

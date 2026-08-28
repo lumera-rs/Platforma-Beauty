@@ -1,5 +1,6 @@
 import {
   boolean,
+  check,
   date,
   index,
   integer,
@@ -11,7 +12,26 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { salonsTable, employeesTable, servicesTable, appointmentsTable, salonCustomersTable, usersTable, reviewsTable } from "./core";
+
+// ---------------------------------------------------------------------------
+// Versioned rollout ledger
+// ---------------------------------------------------------------------------
+
+/**
+ * Mirrors the rollout ledger created by the API startup migration.
+ *
+ * Keeping this table in the Drizzle schema prevents publish-time introspection
+ * from treating the raw CHECK definition as an already-wrapped SQL fragment.
+ */
+export const businessGrowthSchemaRolloutTable = pgTable("business_growth_schema_rollout", {
+  singleton: boolean("singleton").primaryKey().notNull().default(true),
+  version: integer("version").notNull(),
+  completedAt: timestamp("completed_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  check("business_growth_schema_rollout_singleton_check", sql`${table.singleton} = true`),
+]);
 
 // ---------------------------------------------------------------------------
 // Enums

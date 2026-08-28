@@ -3453,7 +3453,7 @@ export async function runBusinessGrowthSchemaDdl(
       await client.query(statement);
     }
     await client.query(`CREATE TABLE IF NOT EXISTS ${quoted}.business_growth_schema_rollout (
-      singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+      singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton = true),
       version integer NOT NULL,
       completed_at timestamptz NOT NULL DEFAULT now()
     )`);
