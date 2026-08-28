@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { useCreateShopQuote } from "@workspace/api-client-react";
+import { useCreateShopQuote, useGetShopCheckoutProfile } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { extractApiError } from "@/lib/admin-form-utils";
 import { Loader2, FileText, CheckCircle } from "lucide-react";
@@ -21,6 +21,13 @@ export function CreateShopQuoteDialog({
 
   const { toast } = useToast();
   const createQuote = useCreateShopQuote();
+  const { data: profile } = useGetShopCheckoutProfile();
+
+  useEffect(() => {
+    if (!open || !profile) return;
+    const activeSalon = profile.deliverySalons.find((salon) => salon.id === profile.activeSalonId);
+    setCustomerCompanyName(activeSalon?.companyDetails.companyName || profile.salonName);
+  }, [open, profile]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,13 +71,19 @@ export function CreateShopQuoteDialog({
           <form onSubmit={handleSubmit}>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 font-serif text-2xl"><FileText className="w-5 h-5 text-primary" /> Kreiraj PDF ponudu</DialogTitle>
-              <DialogDescription>Napravite zvaničnu PDF ponudu od sadržaja vaše korpe (važi 7 dana).</DialogDescription>
+               <DialogDescription>
+                 PDF ponuda služi za preuzimanje, deljenje i interno odobrenje. Nije faktura i njenim kreiranjem se porudžbina ne završava.
+               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
+              <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground space-y-1">
+                <p>Cene i dostupnost mogu se promeniti pre konačne kupovine.</p>
+                <p>Stavke ostaju u korpi, pa posle možete da se vratite, izmenite ih i završite kupovinu.</p>
+              </div>
               <div className="space-y-2">
-                <Label>Naziv klijenta (opciono)</Label>
-                <Input value={customerCompanyName} onChange={e => setCustomerCompanyName(e.target.value)} placeholder="Unesite naziv firme klijenta..." />
-                <p className="text-xs text-muted-foreground">Ukoliko unosite, ovaj naziv će biti prikazan na PDF ponudi.</p>
+                <Label>Naziv primaoca / firme (opciona izmena)</Label>
+                <Input data-testid="input-quote-recipient" value={customerCompanyName} onChange={e => setCustomerCompanyName(e.target.value)} placeholder="Naziv firme primaoca" />
+                <p className="text-xs text-muted-foreground">Unos menja samo prikazani naziv primaoca; registrovani podaci aktivnog salona ostaju merodavni.</p>
               </div>
             </div>
             <DialogFooter>

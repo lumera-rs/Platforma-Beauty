@@ -164,12 +164,26 @@ router.post("/shop/quotes", async (req, res): Promise<void> => {
   const withoutVat = Math.round(total / 1.2);
   const [quote] = await db.insert(b2bQuotesTable).values({
     publicId: randomBytes(24).toString("base64url"), salonId: salon.id, sourceCartId: cart.id,
-    customerCompanyName: clean(req.body?.customerCompanyName, 200) || null,
+    // The client may override only the visible recipient label. The quote
+    // always remains owned by, and derives registered details from, this
+    // authenticated active salon.
+    customerCompanyName: clean(req.body?.customerCompanyName, 200) || salon.companyName || salon.name,
     sellerSnapshot: {
       companyName: settings?.sellerCompanyName ?? "LUMERA", taxId: settings?.sellerTaxId ?? undefined,
       registrationNumber: settings?.sellerRegistrationNumber ?? undefined, address: settings?.sellerAddress ?? undefined,
       city: settings?.sellerCity ?? undefined, postalCode: settings?.sellerPostalCode ?? undefined,
       bankAccount: settings?.sellerBankAccount ?? undefined, email: settings?.sellerContactEmail ?? undefined, phone: settings?.sellerContactPhone ?? undefined,
+      recipient: {
+        companyName: clean(req.body?.customerCompanyName, 200) || salon.companyName || salon.name,
+        registeredCompanyName: salon.companyName ?? undefined,
+        taxId: salon.companyTaxId ?? undefined,
+        registrationNumber: salon.companyRegistrationNumber ?? undefined,
+        address: salon.companyAddress ?? undefined,
+        city: salon.companyCity ?? undefined,
+        postalCode: salon.companyPostalCode ?? undefined,
+        email: salon.email || undefined,
+        phone: salon.phone || undefined,
+      },
     },
     itemSnapshots: items.map((item) => ({ productId: item.productId, bundleId: item.bundleId, productName: item.productName,
       productImageUrl: item.productImageUrl, variantValue: item.variantValue, variantLabel: item.variantLabel,
@@ -281,10 +295,34 @@ router.post("/shop/quotes/:publicId/restore-cart", async (req, res): Promise<voi
 });
 router.get("/shop/quotes/:publicId/pdf", async (req, res): Promise<void> => {
   const quote = await ownedQuote(req, res); if (!quote) return;
+  const recipient = quote.sellerSnapshot.recipient;
+  const [legacySalon] = recipient
+    ? []
+    : await db.select().from(salonsTable).where(eq(salonsTable.id, quote.salonId)).limit(1);
+  if (!recipient && !legacySalon) { res.status(404).json({ error: "Quote salon not found." }); return; }
   res.type("application/pdf"); res.setHeader("Content-Disposition", `inline; filename=\"quote-${quote.publicId}.pdf\"`);
   const pdf = new PDFDocument({ margin: 48 }); pdf.pipe(res);
   pdf.fontSize(20).text("LUMERA B2B ponuda").moveDown().fontSize(10);
   pdf.text(`Broj: ${quote.publicId}`).text(`Vazi do: ${quote.validUntil.toISOString().slice(0, 10)}`).moveDown();
+  pdf.fontSize(12).text("Primalac").fontSize(10);
+  const recipientName = recipient?.companyName || quote.customerCompanyName || legacySalon?.companyName || legacySalon?.name || "";
+  const registeredCompanyName = recipient?.registeredCompanyName ?? legacySalon?.companyName;
+  const taxId = recipient?.taxId ?? legacySalon?.companyTaxId;
+  const registrationNumber = recipient?.registrationNumber ?? legacySalon?.companyRegistrationNumber;
+  const address = recipient?.address ?? legacySalon?.companyAddress;
+  const postalCode = recipient?.postalCode ?? legacySalon?.companyPostalCode;
+  const city = recipient?.city ?? legacySalon?.companyCity;
+  const email = recipient?.email ?? legacySalon?.email;
+  const phone = recipient?.phone ?? legacySalon?.phone;
+  pdf.text(recipientName);
+  if (registeredCompanyName && registeredCompanyName !== recipientName) pdf.text(`Registrovana firma: ${registeredCompanyName}`);
+  if (taxId) pdf.text(`PIB: ${taxId}`);
+  if (registrationNumber) pdf.text(`Maticni broj: ${registrationNumber}`);
+  const registeredAddress = [address, postalCode, city].filter(Boolean).join(", ");
+  if (registeredAddress) pdf.text(`Sediste: ${registeredAddress}`);
+  if (email) pdf.text(`Email: ${email}`);
+  if (phone) pdf.text(`Telefon: ${phone}`);
+  pdf.moveDown();
   for (const item of quote.itemSnapshots) pdf.text(`${item.productName}${item.variantLabel ? ` - ${item.variantLabel}` : ""}  ${item.quantity} x ${item.unitPrice} RSD = ${item.lineTotal} RSD`);
   pdf.moveDown().text(`Osnovica: ${quote.subtotalWithoutVat} RSD`).text(`PDV: ${quote.vatAmount} RSD`).fontSize(12).text(`Ukupno: ${quote.totalWithVat} RSD`);
   pdf.end();

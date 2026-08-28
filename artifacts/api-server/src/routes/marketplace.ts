@@ -13488,10 +13488,42 @@ router.post("/shop/approval-requests/:requestId/approve", async (req, res): Prom
 router.get("/shop/checkout-profile", async (req, res): Promise<void> => {
   const access = await requireShopAccess(req, res); if (!access) return;
   const { salon, user } = access;
-  const billingDefaults = salon.companyName && salon.companyTaxId && salon.companyRegistrationNumber && salon.companyAddress && salon.companyCity
-    ? { companyName: salon.companyName, pib: salon.companyTaxId, registrationNumber: salon.companyRegistrationNumber, street: salon.companyAddress, city: salon.companyCity, postalCode: salon.companyPostalCode ?? "" }
-    : null;
+  const accessibleSalons = access.employee
+    ? [salon]
+    : await db.select().from(salonsTable)
+      .where(eq(salonsTable.ownerId, user.id))
+      .orderBy(asc(salonsTable.createdAt), asc(salonsTable.id));
+  const checkoutSalon = (row: typeof salonsTable.$inferSelect) => {
+    const address = {
+      recipientName: row.name,
+      street: row.address,
+      city: row.city,
+      postalCode: row.postalCode ?? "",
+      phone: row.phone,
+      email: row.email,
+    };
+    const addressComplete = Object.values(address).every((value) => value.trim().length > 0);
+    const billingComplete = !!(row.companyName?.trim() && row.companyTaxId?.trim()
+      && row.companyRegistrationNumber?.trim() && row.companyAddress?.trim()
+      && row.companyCity?.trim() && row.companyPostalCode?.trim());
+    const companyDetails = {
+      companyName: row.companyName ?? "",
+      pib: row.companyTaxId ?? "",
+      registrationNumber: row.companyRegistrationNumber ?? "",
+      street: row.companyAddress ?? "",
+      city: row.companyCity ?? "",
+      postalCode: row.companyPostalCode ?? "",
+    };
+    const billingDetails = billingComplete ? {
+      ...companyDetails,
+    } : null;
+    return { id: row.id, name: row.name, address, addressComplete, companyDetails, billingDetails, billingComplete };
+  };
+  const deliverySalons = accessibleSalons.map(checkoutSalon);
+  const activeCheckoutSalon = checkoutSalon(salon);
   res.json(GetShopCheckoutProfileResponse.parse({
+    profileKey: `${user.id}:${salon.id}`,
+    activeSalonId: salon.id,
     salonName: salon.name,
     salonAddress: {
       recipientName: `${user.firstName} ${user.lastName}`.trim() || salon.name,
@@ -13501,7 +13533,8 @@ router.get("/shop/checkout-profile", async (req, res): Promise<void> => {
       phone: salon.phone,
       email: salon.email,
     },
-    billingDefaults,
+    billingDefaults: activeCheckoutSalon.billingDetails,
+    deliverySalons,
     paymentMethods: checkoutPaymentMethods,
   }));
 });
@@ -13600,14 +13633,28 @@ async function checkoutShopCartHandler(req: Request, res: Response): Promise<voi
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   if (!parsed.data.termsAccepted) { res.status(400).json({ error: "Morate prihvatiti Uslove kupovine pre potvrde porudžbine." }); return; }
   const { salon, user } = access;
+  let selectedDeliverySalon = salon;
+  if (parsed.data.useSalonAddress && parsed.data.deliverySalonId && parsed.data.deliverySalonId !== salon.id) {
+    if (access.employee) {
+      res.status(403).json({ error: "Zaposleni može izabrati samo adresu svog salona." }); return;
+    }
+    const [ownedDeliverySalon] = await db.select().from(salonsTable).where(and(
+      eq(salonsTable.id, parsed.data.deliverySalonId),
+      eq(salonsTable.ownerId, user.id),
+    )).limit(1);
+    if (!ownedDeliverySalon) {
+      res.status(403).json({ error: "Izabrana adresa salona nije dostupna ovom nalogu." }); return;
+    }
+    selectedDeliverySalon = ownedDeliverySalon;
+  }
   const delivery = parsed.data.useSalonAddress
     ? {
-        recipientName: `${user.firstName} ${user.lastName}`.trim() || salon.name,
-        street: salon.address,
-        city: salon.city,
-        postalCode: salon.postalCode ?? "",
-        phone: salon.phone,
-        email: salon.email,
+        recipientName: selectedDeliverySalon.name,
+        street: selectedDeliverySalon.address,
+        city: selectedDeliverySalon.city,
+        postalCode: selectedDeliverySalon.postalCode ?? "",
+        phone: selectedDeliverySalon.phone,
+        email: selectedDeliverySalon.email,
       }
     : parsed.data.deliveryAddress;
   if (!delivery || [delivery.recipientName, delivery.street, delivery.city, delivery.postalCode, delivery.phone, delivery.email].some((value) => !value?.trim())) {

@@ -8758,7 +8758,7 @@ export const getGetShopCheckoutProfileUrl = () => {
 }
 
 /**
- * @summary Get the current salon delivery and billing defaults
+ * @summary Get authorized delivery salons and active-salon billing defaults
  */
 export const getShopCheckoutProfile = async ( options?: Parameters<typeof customFetch>[1]): Promise<ShopCheckoutProfile> => {
 
@@ -8805,7 +8805,7 @@ export type GetShopCheckoutProfileQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Get the current salon delivery and billing defaults
+ * @summary Get authorized delivery salons and active-salon billing defaults
  */
 
 export function useGetShopCheckoutProfile<TData = Awaited<ReturnType<typeof getShopCheckoutProfile>>, TError = ErrorType<unknown>>(

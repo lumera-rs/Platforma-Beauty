@@ -1914,7 +1914,7 @@ paths:
     get:
       operationId: getShopCheckoutProfile
       tags: [shop]
-      summary: Get the current salon delivery and billing defaults
+      summary: Get authorized delivery salons and active-salon billing defaults
       responses:
         "200":
           description: Checkout profile
@@ -9929,16 +9929,45 @@ components:
     ShopCheckoutProfile:
       type: object
       properties:
+        profileKey: { type: string, description: Authenticated profile and active-salon scope key for checkout draft isolation. }
+        activeSalonId: { type: string }
         salonName: { type: string }
         salonAddress: { $ref: "#/components/schemas/DeliveryAddressInput" }
         billingDefaults:
           type: ["object", "null"]
           allOf:
             - $ref: "#/components/schemas/BillingDetailsInput"
+        deliverySalons:
+          type: array
+          items: { $ref: "#/components/schemas/ShopCheckoutSalon" }
         paymentMethods:
           type: array
           items: { type: string, enum: [CARD, BANK_TRANSFER, CASH_ON_DELIVERY] }
-      required: [salonName, salonAddress, billingDefaults, paymentMethods]
+      required: [profileKey, activeSalonId, salonName, salonAddress, billingDefaults, deliverySalons, paymentMethods]
+    ShopCheckoutSalon:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        address: { $ref: "#/components/schemas/DeliveryAddressInput" }
+        addressComplete: { type: boolean }
+        companyDetails: { $ref: "#/components/schemas/ShopCheckoutCompanyDetails" }
+        billingDetails:
+          type: ["object", "null"]
+          allOf:
+            - $ref: "#/components/schemas/BillingDetailsInput"
+        billingComplete: { type: boolean }
+      required: [id, name, address, addressComplete, companyDetails, billingDetails, billingComplete]
+    ShopCheckoutCompanyDetails:
+      type: object
+      properties:
+        companyName: { type: string }
+        pib: { type: string }
+        registrationNumber: { type: string }
+        street: { type: string }
+        city: { type: string }
+        postalCode: { type: string }
+      required: [companyName, pib, registrationNumber, street, city, postalCode]
     ShopCheckoutPreview:
       type: object
       properties:
@@ -9964,6 +9993,9 @@ components:
       type: object
       properties:
         useSalonAddress: { type: boolean }
+        deliverySalonId:
+          type: ["string", "null"]
+          description: Authorized salon whose registered delivery address is selected. The active salon remains cart and order owner.
         deliveryAddress: { $ref: "#/components/schemas/DeliveryAddressInput" }
         billingDetails:
           type: ["object", "null"]

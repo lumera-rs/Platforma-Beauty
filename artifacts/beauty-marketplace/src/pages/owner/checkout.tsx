@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation, useRoute } from "wouter";
-import { useForm } from "react-hook-form";
+import { useForm, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Loader2, ArrowLeft, Check, Package, AlertTriangle, Truck, CreditCard, Receipt, FileText, ChevronRight, Lock, Plus, Minus, Trash2, Tag } from "lucide-react";
@@ -46,6 +46,7 @@ import { SHOP_CART_MUTATION_KEY, shopCartMutationQueue, useMutationQueueBusy } f
 import { CreateShopQuoteDialog } from "@/components/create-shop-quote-dialog";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const SESSION_STORAGE_KEY = "lumera_checkout_draft";
 
@@ -449,6 +450,7 @@ export function OwnerCartPage() {
 
 const deliverySchema = z.object({
   useSalonAddress: z.boolean(),
+  deliverySalonId: z.string().optional(),
   deliveryMethod: z.enum(["courier", "personal_belgrade"]),
   deliveryAddress: z.object({
     recipientName: z.string().min(2, "Unesite ime primaoca"),
@@ -487,12 +489,15 @@ const deliverySchema = z.object({
 });
 
 type DeliveryFormValues = z.infer<typeof deliverySchema>;
+type CheckoutDraftEnvelope = { profileKey: string; values: DeliveryFormValues };
 
 export function OwnerCheckoutDeliveryPage() {
   const [, setLocation] = useLocation();
   const { data: profile, isLoading, isError } = useGetShopCheckoutProfile();
   const { data: preview } = useGetShopCheckoutPreview();
   const [mounted, setMounted] = useState(false);
+  const [validationSummary, setValidationSummary] = useState<string | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -507,66 +512,73 @@ export function OwnerCheckoutDeliveryPage() {
 
   useEffect(() => {
     if (!profile) return;
-    const savedSalonAddressIsComplete = [
-      profile.salonAddress.recipientName,
-      profile.salonAddress.street,
-      profile.salonAddress.city,
-      profile.salonAddress.postalCode,
-      profile.salonAddress.phone,
-      profile.salonAddress.email,
-    ].every((value) => value?.trim());
+    const activeSalon = profile.deliverySalons.find((item) => item.id === profile.activeSalonId);
+    const savedSalonAddressIsComplete = !!activeSalon?.addressComplete;
     try {
       const saved = sessionStorage.getItem(SESSION_STORAGE_KEY);
       if (saved) {
-        const parsed = JSON.parse(saved);
-        form.reset({ ...parsed, useSalonAddress: savedSalonAddressIsComplete ? parsed.useSalonAddress : false });
-      } else {
+        const parsed = JSON.parse(saved) as Partial<CheckoutDraftEnvelope>;
+        const selectedIsAccessible = profile.deliverySalons.some((item) => item.id === parsed.values?.deliverySalonId && item.addressComplete);
+        if (parsed.profileKey === profile.profileKey && parsed.values) {
+          form.reset({
+            ...parsed.values,
+            useSalonAddress: parsed.values.useSalonAddress && selectedIsAccessible,
+            deliverySalonId: selectedIsAccessible ? parsed.values.deliverySalonId : undefined,
+          });
+          return;
+        }
+        sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      }
+      {
+        const billingDefaults = activeSalon?.billingDetails ?? profile.billingDefaults;
         form.reset({
           useSalonAddress: savedSalonAddressIsComplete,
-          useBilling: !!profile.billingDefaults,
-           deliveryMethod: "courier",
-          billingDetails: profile.billingDefaults ? {
-            companyName: profile.billingDefaults.companyName,
-            pib: profile.billingDefaults.pib,
-            registrationNumber: profile.billingDefaults.registrationNumber,
-            street: profile.billingDefaults.street,
-            city: profile.billingDefaults.city,
-            postalCode: profile.billingDefaults.postalCode,
-          } : undefined,
-          deliveryAddress: {
-             recipientName: profile.salonAddress.recipientName,
-             street: profile.salonAddress.street,
-             city: profile.salonAddress.city,
-             postalCode: profile.salonAddress.postalCode,
-             phone: profile.salonAddress.phone,
-             email: profile.salonAddress.email,
-          }
+          deliverySalonId: savedSalonAddressIsComplete ? profile.activeSalonId : undefined,
+          useBilling: !!billingDefaults,
+          deliveryMethod: "courier",
+          billingDetails: billingDefaults ?? undefined,
+          deliveryAddress: activeSalon?.address ?? profile.salonAddress,
         });
       }
-    } catch (e) {
-      // Ignored
+    } catch {
+      sessionStorage.removeItem(SESSION_STORAGE_KEY);
     }
   }, [profile, form]);
 
   const onSubmit = (values: DeliveryFormValues) => {
-    sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(values));
+    if (!profile) return;
+    setValidationSummary(null);
+    sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ profileKey: profile.profileKey, values } satisfies CheckoutDraftEnvelope));
     setLocation("/vlasnik/prodavnica/pregled");
+  };
+
+  const onInvalid = (errors: FieldErrors<DeliveryFormValues>) => {
+    if (errors.deliveryAddress) form.setValue("useSalonAddress", false);
+    if (errors.billingDetails) form.setValue("useBilling", true);
+    const message = "Proverite označena obavezna polja pre nastavka.";
+    setValidationSummary(message);
+    toast.error("Podaci za dostavu nisu kompletni.", { description: message });
+    const first = errors.deliveryAddress
+      ? `deliveryAddress.${Object.keys(errors.deliveryAddress)[0]}`
+      : errors.billingDetails
+        ? `billingDetails.${Object.keys(errors.billingDetails)[0]}`
+        : Object.keys(errors)[0];
+    if (!first) return;
+    requestAnimationFrame(() => {
+      form.setFocus(first as keyof DeliveryFormValues);
+      document.querySelector<HTMLElement>(`[name="${first}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
   };
 
   const useSalonAddress = form.watch("useSalonAddress");
   const useBilling = form.watch("useBilling");
   const deliveryMethod = form.watch("deliveryMethod");
-  const destinationCity = useSalonAddress ? profile?.salonAddress.city : form.watch("deliveryAddress.city");
+  const deliverySalonId = form.watch("deliverySalonId");
+  const selectedSalon = profile?.deliverySalons.find((item) => item.id === deliverySalonId);
+  const destinationCity = useSalonAddress ? selectedSalon?.address.city : form.watch("deliveryAddress.city");
   const personalOption = preview?.shipping.availableMethods.find(method => method.id === "personal_belgrade");
   const personalAvailable = !!personalOption?.available && /beograd/i.test(destinationCity ?? "");
-  const savedSalonAddressIsComplete = !!profile && [
-    profile.salonAddress.recipientName,
-    profile.salonAddress.street,
-    profile.salonAddress.city,
-    profile.salonAddress.postalCode,
-    profile.salonAddress.phone,
-    profile.salonAddress.email,
-  ].every((value) => value?.trim());
+  const completeDeliverySalons = profile?.deliverySalons.filter((item) => item.addressComplete) ?? [];
 
   if (!mounted) return null;
 
@@ -591,13 +603,20 @@ export function OwnerCheckoutDeliveryPage() {
           <div className="grid lg:grid-cols-3 gap-8 items-start">
             <div className="lg:col-span-2">
               <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8" id="delivery-form">
-                   {!savedSalonAddressIsComplete && (
+                <form onSubmit={form.handleSubmit(onSubmit, onInvalid)} className="space-y-8" id="delivery-form">
+                   {validationSummary && (
+                     <Alert variant="destructive" data-testid="alert-delivery-validation">
+                       <AlertTriangle className="h-4 w-4" />
+                       <AlertTitle>Nedostaju podaci</AlertTitle>
+                       <AlertDescription>{validationSummary}</AlertDescription>
+                     </Alert>
+                   )}
+                   {completeDeliverySalons.length === 0 && (
                      <Alert className="border-amber-300 bg-amber-50 text-amber-950">
                        <AlertTriangle className="h-4 w-4" />
                        <AlertTitle>Dopunite adresu za ovu porudžbinu</AlertTitle>
                        <AlertDescription>
-                         Adresi salona nedostaje poštanski broj. Unesite ga u nastavku; sačuvaćemo je uz ovu porudžbinu.
+                          Nijedna dostupna adresa salona nije kompletna. Izaberite drugu adresu i unesite sve podatke, uključujući poštanski broj.
                        </AlertDescription>
                      </Alert>
                    )}
@@ -611,55 +630,49 @@ export function OwnerCheckoutDeliveryPage() {
                     <div className="p-6 space-y-6">
                       <FormField
                         control={form.control}
-                        name="useSalonAddress"
+                        name="deliverySalonId"
                         render={({ field }) => (
-                          <FormItem className="space-y-4">
-                            <FormControl>
-                              <RadioGroup
-                                onValueChange={(val) => field.onChange(val === "true")}
-                                defaultValue={field.value ? "true" : "false"}
-                                className="grid sm:grid-cols-2 gap-4"
-                              >
-                                <div>
-                                  <RadioGroupItem value="true" id="salon" className="peer sr-only" disabled={!savedSalonAddressIsComplete} />
-                                  <Label
-                                    htmlFor="salon"
-                                    className={`flex flex-col items-start justify-between rounded-xl border-2 border-border/50 bg-card p-4 peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/5 transition-all ${savedSalonAddressIsComplete ? "cursor-pointer hover:bg-muted/20" : "cursor-not-allowed opacity-60"}`}
-                                  >
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <div className="w-4 h-4 rounded-full border border-primary flex items-center justify-center">
-                                        {field.value && <div className="w-2 h-2 rounded-full bg-primary" />}
-                                      </div>
-                                      <span className="font-bold">Moj salon</span>
-                                    </div>
-                                    <div className="text-sm text-muted-foreground font-normal space-y-1">
-                                       <p className="font-medium text-foreground">{profile.salonName}</p>
-                                      <p>{profile.salonAddress.recipientName}</p>
-                                      <p>{profile.salonAddress.street}</p>
-                                      <p>{profile.salonAddress.postalCode} {profile.salonAddress.city}</p>
-                                      <p>{profile.salonAddress.phone}</p>
-                                       <p>{profile.salonAddress.email}</p>
-                                     {!savedSalonAddressIsComplete && <p className="pt-1 text-amber-700">Nedostaje poštanski broj</p>}
-                                    </div>
-                                  </Label>
-                                </div>
-                                <div>
-                                  <RadioGroupItem value="false" id="other" className="peer sr-only" />
-                                  <Label
-                                    htmlFor="other"
-                                    className="flex flex-col items-start justify-between rounded-xl border-2 border-border/50 bg-card p-4 hover:bg-muted/20 peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/5 cursor-pointer h-full transition-all"
-                                  >
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <div className="w-4 h-4 rounded-full border border-primary flex items-center justify-center">
-                                        {!field.value && <div className="w-2 h-2 rounded-full bg-primary" />}
-                                      </div>
-                                      <span className="font-bold">Druga adresa</span>
-                                    </div>
-                                    <p className="text-sm text-muted-foreground font-normal">Unesite alternativnu adresu za isporuku ove porudžbine.</p>
-                                  </Label>
-                                </div>
-                              </RadioGroup>
-                            </FormControl>
+                          <FormItem>
+                            <FormLabel>Izaberite adresu</FormLabel>
+                            <Select
+                              value={useSalonAddress && field.value ? field.value : "__manual__"}
+                              onValueChange={(value) => {
+                                if (value === "__manual__") {
+                                  form.setValue("useSalonAddress", false, { shouldValidate: true });
+                                  field.onChange(undefined);
+                                  return;
+                                }
+                                const nextSalon = profile.deliverySalons.find((item) => item.id === value);
+                                form.setValue("useSalonAddress", true, { shouldValidate: true });
+                                field.onChange(value);
+                                if (useBilling && nextSalon) {
+                                  form.setValue("billingDetails", nextSalon.companyDetails, { shouldValidate: true });
+                                }
+                              }}
+                            >
+                              <FormControl>
+                                <SelectTrigger data-testid="select-delivery-address">
+                                  <SelectValue placeholder="Izaberite adresu salona ili drugu adresu" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {completeDeliverySalons.map((item) => (
+                                  <SelectItem key={item.id} value={item.id}>
+                                    {item.name} — {item.address.street}, {item.address.postalCode} {item.address.city}
+                                  </SelectItem>
+                                ))}
+                                <SelectItem value="__manual__">Druga / ručno uneta adresa</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            {selectedSalon && useSalonAddress && (
+                              <div className="rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground">
+                                <p className="font-medium text-foreground">{selectedSalon.name}</p>
+                                <p>{selectedSalon.address.recipientName}</p>
+                                <p>{selectedSalon.address.street}</p>
+                                <p>{selectedSalon.address.postalCode} {selectedSalon.address.city}</p>
+                                <p>{selectedSalon.address.phone} · {selectedSalon.address.email}</p>
+                              </div>
+                            )}
                           </FormItem>
                         )}
                       />
@@ -724,7 +737,16 @@ export function OwnerCheckoutDeliveryPage() {
                               <FormDescription>Poreski identifikacioni podaci za izdavanje e-fakture</FormDescription>
                             </div>
                             <FormControl>
-                              <Checkbox checked={field.value} onCheckedChange={field.onChange} className="w-5 h-5" />
+                              <Checkbox
+                                checked={field.value}
+                                onCheckedChange={(checked) => {
+                                  field.onChange(checked);
+                                  if (checked && selectedSalon) {
+                                    form.setValue("billingDetails", selectedSalon.companyDetails, { shouldValidate: true });
+                                  }
+                                }}
+                                className="w-5 h-5"
+                              />
                             </FormControl>
                           </FormItem>
                         )}
@@ -792,7 +814,7 @@ export function OwnerCheckoutDeliveryPage() {
                   ) : <Skeleton className="h-24 w-full" />}
                 </CardContent>
                 <div className="p-4 bg-muted/10 border-t border-border/30 lg:hidden">
-                   <Button onClick={() => form.handleSubmit(onSubmit)()} size="lg" className="w-full text-base font-medium h-12 shadow-sm">
+                    <Button type="submit" form="delivery-form" size="lg" className="w-full text-base font-medium h-12 shadow-sm">
                      Nastavi <ChevronRight className="w-5 h-5 ml-2" />
                    </Button>
                 </div>
@@ -825,6 +847,7 @@ export function OwnerCheckoutReviewPage() {
   const [couponInput, setCouponInput] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState<string | undefined>(undefined);
   const [couponError, setCouponError] = useState<string | null>(null);
+  const { data: checkoutProfile } = useGetShopCheckoutProfile();
 
   const { data: preview, isLoading, isError, error, isFetching } = useGetShopCheckoutPreview(
     { desiredReferralCreditRsd: desiredCredit, couponCode: appliedCoupon } as any,
@@ -841,15 +864,37 @@ export function OwnerCheckoutReviewPage() {
 
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!checkoutProfile) return;
     const saved = sessionStorage.getItem(SESSION_STORAGE_KEY);
     if (saved) {
-      setDraft(JSON.parse(saved));
+      try {
+        const parsed = JSON.parse(saved) as Partial<CheckoutDraftEnvelope>;
+        if (parsed.profileKey === checkoutProfile.profileKey && parsed.values) {
+          const selectedIsAccessible = !parsed.values.useSalonAddress
+            || checkoutProfile.deliverySalons.some((item) => item.id === parsed.values?.deliverySalonId && item.addressComplete);
+          if (selectedIsAccessible) {
+            setDraft(parsed.values);
+          } else {
+            sessionStorage.removeItem(SESSION_STORAGE_KEY);
+            setLocation("/vlasnik/prodavnica/dostava");
+          }
+        } else {
+          sessionStorage.removeItem(SESSION_STORAGE_KEY);
+          setLocation("/vlasnik/prodavnica/dostava");
+        }
+      } catch {
+        sessionStorage.removeItem(SESSION_STORAGE_KEY);
+        setLocation("/vlasnik/prodavnica/dostava");
+      }
     } else {
       setLocation("/vlasnik/prodavnica/dostava");
     }
     const savedCoupon = sessionStorage.getItem("lumera_checkout_coupon");
     if (savedCoupon) setAppliedCoupon(savedCoupon);
-  }, [setLocation]);
+  }, [checkoutProfile, setLocation]);
 
   useEffect(() => {
     const { code, message } = getApiErrorDetails(error);
@@ -873,6 +918,7 @@ export function OwnerCheckoutReviewPage() {
     if (!draft) return;
     const payload = {
       useSalonAddress: draft.useSalonAddress,
+      deliverySalonId: draft.useSalonAddress ? draft.deliverySalonId : null,
       deliveryMethod: draft.deliveryMethod,
       deliveryAddress: draft.useSalonAddress ? undefined : draft.deliveryAddress,
       billingDetails: draft.useBilling ? draft.billingDetails : null,
@@ -965,6 +1011,7 @@ export function OwnerCheckoutReviewPage() {
   };
 
   const submitOrder = form.handleSubmit(onSubmit);
+  const reviewedSalon = checkoutProfile?.deliverySalons.find((item) => item.id === draft?.deliverySalonId);
 
   if (!mounted || !draft) return null;
 
@@ -997,8 +1044,15 @@ export function OwnerCheckoutReviewPage() {
                     <Link href="/vlasnik/prodavnica/dostava" className="text-xs text-primary hover:underline font-medium">Izmeni</Link>
                   </CardHeader>
                   <CardContent className="py-4 text-sm text-muted-foreground space-y-1">
-                    {draft.useSalonAddress ? (
-                       <p>{draft.deliveryMethod === "personal_belgrade" ? "Lična dostava na adresu salona u Beogradu." : "Kurirska isporuka na adresu salona iz profila."}</p>
+                    {draft.useSalonAddress && reviewedSalon ? (
+                      <>
+                        <p className="font-medium text-foreground">{reviewedSalon.address.recipientName}</p>
+                        <p>{reviewedSalon.address.street}</p>
+                        <p>{reviewedSalon.address.postalCode} {reviewedSalon.address.city}</p>
+                        <p>{reviewedSalon.address.phone}</p>
+                        <p>{reviewedSalon.address.email}</p>
+                        <p className="pt-1">{draft.deliveryMethod === "personal_belgrade" ? "Lična dostava" : "Kurirska isporuka"}</p>
+                      </>
                     ) : (
                       <>
                         <p className="font-medium text-foreground">{draft.deliveryAddress?.recipientName}</p>
@@ -1020,7 +1074,7 @@ export function OwnerCheckoutReviewPage() {
                         <p className="font-medium text-foreground">{draft.billingDetails.companyName}</p>
                         <p>PIB: {draft.billingDetails.pib}</p>
                         <p>MB: {draft.billingDetails.registrationNumber}</p>
-                        <p>{draft.billingDetails.street}, {draft.billingDetails.city}</p>
+                        <p>{draft.billingDetails.street}, {draft.billingDetails.postalCode} {draft.billingDetails.city}</p>
                       </>
                     ) : (
                       <p>Standardni račun za fizičko lice (bez PIB-a).</p>

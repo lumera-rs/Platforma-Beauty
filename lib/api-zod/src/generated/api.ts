@@ -5577,7 +5577,7 @@ export const RepeatLastShopOrderResponse = zod.object({
 
 
 /**
- * @summary Get the current salon delivery and billing defaults
+ * @summary Get authorized delivery salons and active-salon billing defaults
  */
 
 
@@ -5593,7 +5593,21 @@ export const getShopCheckoutProfileResponseSalonAddressEmailMin = 3;
 
 
 
+
+
+export const getShopCheckoutProfileResponseDeliverySalonsItemAddressEmailMin = 3;
+
+
+
+
+
+
+
+
+
 export const GetShopCheckoutProfileResponse = zod.object({
+  "profileKey": zod.string().describe('Authenticated profile and active-salon scope key for checkout draft isolation.'),
+  "activeSalonId": zod.string(),
   "salonName": zod.string(),
   "salonAddress": zod.object({
   "recipientName": zod.string().min(1),
@@ -5611,6 +5625,36 @@ export const GetShopCheckoutProfileResponse = zod.object({
   "city": zod.string().min(1),
   "postalCode": zod.string().min(1)
 }).nullable(),
+  "deliverySalons": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "address": zod.object({
+  "recipientName": zod.string().min(1),
+  "street": zod.string().min(1),
+  "city": zod.string().min(1),
+  "postalCode": zod.string(),
+  "phone": zod.string().min(1),
+  "email": zod.string().min(getShopCheckoutProfileResponseDeliverySalonsItemAddressEmailMin)
+}),
+  "addressComplete": zod.boolean(),
+  "companyDetails": zod.object({
+  "companyName": zod.string(),
+  "pib": zod.string(),
+  "registrationNumber": zod.string(),
+  "street": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string()
+}),
+  "billingDetails": zod.object({
+  "companyName": zod.string().min(1),
+  "pib": zod.string().min(1),
+  "registrationNumber": zod.string().min(1),
+  "street": zod.string().min(1),
+  "city": zod.string().min(1),
+  "postalCode": zod.string().min(1)
+}).nullable(),
+  "billingComplete": zod.boolean()
+})),
   "paymentMethods": zod.array(zod.enum(['CARD', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']))
 })
 
@@ -6206,6 +6250,7 @@ export const checkoutShopCartBodyCouponCodeMax = 40;
 
 export const CheckoutShopCartBody = zod.object({
   "useSalonAddress": zod.boolean(),
+  "deliverySalonId": zod.string().nullish().describe('Authorized salon whose registered delivery address is selected. The active salon remains cart and order owner.'),
   "deliveryAddress": zod.object({
   "recipientName": zod.string().min(1),
   "street": zod.string().min(1),

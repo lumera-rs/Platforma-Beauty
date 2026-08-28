@@ -13,6 +13,10 @@ import {
 export type QuoteSellerSnapshot = {
   companyName: string; taxId?: string; registrationNumber?: string; address?: string;
   city?: string; postalCode?: string; bankAccount?: string; email?: string; phone?: string;
+  recipient?: {
+    companyName: string; registeredCompanyName?: string; taxId?: string; registrationNumber?: string;
+    address?: string; city?: string; postalCode?: string; email?: string; phone?: string;
+  };
 };
 export type QuoteItemSnapshot = {
   productId: string | null; bundleId: string | null; productName: string; productImageUrl: string;

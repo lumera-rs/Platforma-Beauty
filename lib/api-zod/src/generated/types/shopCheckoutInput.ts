@@ -12,6 +12,11 @@ import type { ShopCheckoutInputPaymentMethod } from './shopCheckoutInputPaymentM
 
 export interface ShopCheckoutInput {
   useSalonAddress: boolean;
+  /**
+     * Authorized salon whose registered delivery address is selected. The active salon remains cart and order owner.
+     * @nullable
+     */
+  deliverySalonId?: string | null;
   deliveryAddress?: DeliveryAddressInput;
   /** @nullable */
   billingDetails?: BillingDetailsInput | null;

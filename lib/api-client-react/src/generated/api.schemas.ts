@@ -4326,11 +4326,35 @@ export const ShopCheckoutProfilePaymentMethodsItem = {
   CASH_ON_DELIVERY: 'CASH_ON_DELIVERY',
 } as const;
 
+export interface ShopCheckoutCompanyDetails {
+  companyName: string;
+  pib: string;
+  registrationNumber: string;
+  street: string;
+  city: string;
+  postalCode: string;
+}
+
+export interface ShopCheckoutSalon {
+  id: string;
+  name: string;
+  address: DeliveryAddressInput;
+  addressComplete: boolean;
+  companyDetails: ShopCheckoutCompanyDetails;
+  /** @nullable */
+  billingDetails: BillingDetailsInput | null;
+  billingComplete: boolean;
+}
+
 export interface ShopCheckoutProfile {
+  /** Authenticated profile and active-salon scope key for checkout draft isolation. */
+  profileKey: string;
+  activeSalonId: string;
   salonName: string;
   salonAddress: DeliveryAddressInput;
   /** @nullable */
   billingDefaults: BillingDetailsInput | null;
+  deliverySalons: ShopCheckoutSalon[];
   paymentMethods: ShopCheckoutProfilePaymentMethodsItem[];
 }
 
@@ -4390,6 +4414,11 @@ export const ShopCheckoutInputDeliveryMethod = {
 
 export interface ShopCheckoutInput {
   useSalonAddress: boolean;
+  /**
+     * Authorized salon whose registered delivery address is selected. The active salon remains cart and order owner.
+     * @nullable
+     */
+  deliverySalonId?: string | null;
   deliveryAddress?: DeliveryAddressInput;
   /** @nullable */
   billingDetails?: BillingDetailsInput | null;

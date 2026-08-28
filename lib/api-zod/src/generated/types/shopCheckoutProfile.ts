@@ -8,11 +8,16 @@
 import type { BillingDetailsInput } from './billingDetailsInput';
 import type { DeliveryAddressInput } from './deliveryAddressInput';
 import type { ShopCheckoutProfilePaymentMethodsItem } from './shopCheckoutProfilePaymentMethodsItem';
+import type { ShopCheckoutSalon } from './shopCheckoutSalon';
 
 export interface ShopCheckoutProfile {
+  /** Authenticated profile and active-salon scope key for checkout draft isolation. */
+  profileKey: string;
+  activeSalonId: string;
   salonName: string;
   salonAddress: DeliveryAddressInput;
   /** @nullable */
   billingDefaults: BillingDetailsInput | null;
+  deliverySalons: ShopCheckoutSalon[];
   paymentMethods: ShopCheckoutProfilePaymentMethodsItem[];
 }
