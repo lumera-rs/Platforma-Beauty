@@ -6,7 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { B2bQuoteCurrency } from './b2bQuoteCurrency';
-import type { B2bQuoteItemSnapshotsItem } from './b2bQuoteItemSnapshotsItem';
+import type { B2bQuoteItemSnapshot } from './b2bQuoteItemSnapshot';
 import type { B2bQuoteSellerSnapshot } from './b2bQuoteSellerSnapshot';
 
 export interface B2bQuote {
@@ -18,7 +18,7 @@ export interface B2bQuote {
   /** @nullable */
   customerCompanyName?: string | null;
   sellerSnapshot: B2bQuoteSellerSnapshot;
-  itemSnapshots: B2bQuoteItemSnapshotsItem[];
+  itemSnapshots: B2bQuoteItemSnapshot[];
   /** @minimum 0 */
   subtotalWithoutVat: number;
   /** @minimum 0 */

@@ -162,7 +162,24 @@ export interface B2bQuoteSellerSnapshot {
   recipient?: B2bQuoteRecipientSnapshot;
 }
 
-export type B2bQuoteItemSnapshotsItem = { [key: string]: unknown };
+export interface B2bQuoteItemSnapshot {
+  /** @nullable */
+  productId: string | null;
+  /** @nullable */
+  bundleId: string | null;
+  productName: string;
+  productImageUrl: string;
+  /** @nullable */
+  variantValue: string | null;
+  /** @nullable */
+  variantLabel: string | null;
+  /** @nullable */
+  productSku: string | null;
+  unitPrice: number;
+  /** @minimum 1 */
+  quantity: number;
+  lineTotal: number;
+}
 
 export type B2bQuoteCurrency = typeof B2bQuoteCurrency[keyof typeof B2bQuoteCurrency];
 
@@ -180,7 +197,7 @@ export interface B2bQuote {
   /** @nullable */
   customerCompanyName?: string | null;
   sellerSnapshot: B2bQuoteSellerSnapshot;
-  itemSnapshots: B2bQuoteItemSnapshotsItem[];
+  itemSnapshots: B2bQuoteItemSnapshot[];
   /** @minimum 0 */
   subtotalWithoutVat: number;
   /** @minimum 0 */

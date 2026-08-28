@@ -7426,6 +7426,20 @@ components:
         email: { type: string }
         phone: { type: string }
         recipient: { $ref: "#/components/schemas/B2bQuoteRecipientSnapshot" }
+    B2bQuoteItemSnapshot:
+      type: object
+      required: [productId, bundleId, productName, productImageUrl, variantValue, variantLabel, productSku, unitPrice, quantity, lineTotal]
+      properties:
+        productId: { type: [string, "null"] }
+        bundleId: { type: [string, "null"] }
+        productName: { type: string }
+        productImageUrl: { type: string }
+        variantValue: { type: [string, "null"] }
+        variantLabel: { type: [string, "null"] }
+        productSku: { type: [string, "null"] }
+        unitPrice: { type: integer }
+        quantity: { type: integer, minimum: 1 }
+        lineTotal: { type: integer }
     B2bQuote:
       type: object
       required: [id, publicId, salonId, sellerSnapshot, itemSnapshots, subtotalWithoutVat, vatAmount, totalWithVat, currency, validUntil, createdAt]
@@ -7436,7 +7450,9 @@ components:
         sourceCartId: { type: [string, "null"] }
         customerCompanyName: { type: [string, "null"] }
         sellerSnapshot: { $ref: "#/components/schemas/B2bQuoteSellerSnapshot" }
-        itemSnapshots: { type: array, items: { type: object, additionalProperties: true } }
+        itemSnapshots:
+          type: array
+          items: { $ref: "#/components/schemas/B2bQuoteItemSnapshot" }
         subtotalWithoutVat: { type: integer, minimum: 0 }
         vatAmount: { type: integer, minimum: 0 }
         totalWithVat: { type: integer, minimum: 0 }

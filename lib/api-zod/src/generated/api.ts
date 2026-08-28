@@ -21669,6 +21669,7 @@ export const CreateShopQuoteBody = zod.object({
   "validityDays": zod.number().int().min(1).max(createShopQuoteBodyValidityDaysMax).optional()
 })
 
+
 export const createShopQuoteResponseSubtotalWithoutVatMin = 0;
 
 export const createShopQuoteResponseVatAmountMin = 0;
@@ -21705,7 +21706,18 @@ export const CreateShopQuoteResponse = zod.object({
   "phone": zod.string().optional()
 }).optional()
 }),
-  "itemSnapshots": zod.array(zod.record(zod.string(), zod.unknown())),
+  "itemSnapshots": zod.array(zod.object({
+  "productId": zod.string().nullable(),
+  "bundleId": zod.string().nullable(),
+  "productName": zod.string(),
+  "productImageUrl": zod.string(),
+  "variantValue": zod.string().nullable(),
+  "variantLabel": zod.string().nullable(),
+  "productSku": zod.string().nullable(),
+  "unitPrice": zod.number().int(),
+  "quantity": zod.number().int().min(1),
+  "lineTotal": zod.number().int()
+})),
   "subtotalWithoutVat": zod.number().int().min(createShopQuoteResponseSubtotalWithoutVatMin),
   "vatAmount": zod.number().int().min(createShopQuoteResponseVatAmountMin),
   "totalWithVat": zod.number().int().min(createShopQuoteResponseTotalWithVatMin),
@@ -21807,6 +21819,7 @@ export const GetShopQuoteParams = zod.object({
   "publicId": zod.coerce.string().min(getShopQuotePathPublicIdMin).max(getShopQuotePathPublicIdMax)
 })
 
+
 export const getShopQuoteResponseSubtotalWithoutVatMin = 0;
 
 export const getShopQuoteResponseVatAmountMin = 0;
@@ -21843,7 +21856,18 @@ export const GetShopQuoteResponse = zod.object({
   "phone": zod.string().optional()
 }).optional()
 }),
-  "itemSnapshots": zod.array(zod.record(zod.string(), zod.unknown())),
+  "itemSnapshots": zod.array(zod.object({
+  "productId": zod.string().nullable(),
+  "bundleId": zod.string().nullable(),
+  "productName": zod.string(),
+  "productImageUrl": zod.string(),
+  "variantValue": zod.string().nullable(),
+  "variantLabel": zod.string().nullable(),
+  "productSku": zod.string().nullable(),
+  "unitPrice": zod.number().int(),
+  "quantity": zod.number().int().min(1),
+  "lineTotal": zod.number().int()
+})),
   "subtotalWithoutVat": zod.number().int().min(getShopQuoteResponseSubtotalWithoutVatMin),
   "vatAmount": zod.number().int().min(getShopQuoteResponseVatAmountMin),
   "totalWithVat": zod.number().int().min(getShopQuoteResponseTotalWithVatMin),
