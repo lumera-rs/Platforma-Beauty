@@ -26,3 +26,9 @@ Runtime-created tables inside the published schema must also have matching ORM d
 **Why:** Publish introspection reconstructed a valid runtime-created `CHECK (singleton)` as invalid nested SQL, `CHECK (CHECK (singleton))`, even though ordinary validation and schema-diff warnings were clean.
 
 **How to apply:** Mirror runtime-managed public tables in the ORM, define boolean checks as expression-only comparisons such as `singleton = true`, normalize the live development constraint, and inspect the exact generated migration statement.
+
+An additive FK cannot target a lookup row that exists only after application startup; Publish validates the migration before startup seed logic runs.
+
+**Why:** Existing production rows received a deterministic FK default while the migration created an empty lookup table, so validation failed before the rollout could seed that key.
+
+**How to apply:** For the first additive Publish, omit only the affected FK while retaining the typed non-null key. Let the versioned startup rollout seed and validate the lookup, then restore the ORM FK in the immediate hardening Publish.

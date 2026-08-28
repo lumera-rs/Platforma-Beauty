@@ -107,7 +107,9 @@ export const suppliersTable = pgTable("suppliers", {
 
 export const productCategoriesTable = pgTable("product_categories", {
   id: uuid("id").defaultRandom().primaryKey(),
-  supplierId: uuid("supplier_id").notNull().default("9b5970ea-0a8c-5e60-9d32-2a09f0890560").references(() => suppliersTable.id, { onDelete: "restrict" }),
+  // Temporary first-Publish bridge: production receives the deterministic
+  // legacy supplier row during startup before this FK is restored in source.
+  supplierId: uuid("supplier_id").notNull().default("9b5970ea-0a8c-5e60-9d32-2a09f0890560"),
   name: text("name").notNull(),
   slug: text("slug").notNull(),
   // RESTRICT deliberately prevents accidental deletion of a whole category tree.
@@ -140,7 +142,9 @@ export const productCategoriesTable = pgTable("product_categories", {
 
 export const productsTable = pgTable("products", {
   id: uuid("id").defaultRandom().primaryKey(),
-  supplierId: uuid("supplier_id").notNull().default("9b5970ea-0a8c-5e60-9d32-2a09f0890560").references(() => suppliersTable.id, { onDelete: "restrict" }),
+  // See productCategoriesTable.supplierId: the FK returns after the bridge
+  // deployment has seeded production's deterministic legacy supplier.
+  supplierId: uuid("supplier_id").notNull().default("9b5970ea-0a8c-5e60-9d32-2a09f0890560"),
   categoryId: uuid("category_id").references(() => productCategoriesTable.id, { onDelete: "set null" }),
   categoryName: text("category_name").notNull(),
   subcategoryName: text("subcategory_name"),
