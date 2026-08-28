@@ -600,8 +600,8 @@ export function OwnerCheckoutDeliveryPage() {
         ) : isError || !profile ? (
           <Alert variant="destructive" className="max-w-3xl mx-auto"><AlertTriangle className="h-4 w-4" /><AlertTitle>Greška</AlertTitle><AlertDescription>Nismo uspeli da učitamo vaš profil. Pokušajte ponovo.</AlertDescription></Alert>
         ) : (
-          <div className="grid lg:grid-cols-3 gap-8 items-start">
-            <div className="lg:col-span-2">
+          <div className="grid min-w-0 items-start gap-8 lg:grid-cols-3">
+            <div className="min-w-0 lg:col-span-2">
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit, onInvalid)} className="space-y-8" id="delivery-form">
                    {validationSummary && (
@@ -665,7 +665,7 @@ export function OwnerCheckoutDeliveryPage() {
                               </SelectContent>
                             </Select>
                             {selectedSalon && useSalonAddress && (
-                              <div className="rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground">
+                              <div className="max-w-full break-words rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground">
                                 <p className="font-medium text-foreground">{selectedSalon.name}</p>
                                 <p>{selectedSalon.address.recipientName}</p>
                                 <p>{selectedSalon.address.street}</p>

@@ -76,11 +76,11 @@ async function signIn(page: Page, fixture: Fixture): Promise<void> {
   expect(response).toBeOK();
 }
 
-test("owner can use the all-locations dashboard and switch location from mobile navigation", async ({ page }) => {
+test("owner can use the all-locations dashboard and switch location on desktop and mobile", async ({ page }) => {
   const fixture = await createFixture();
 
   try {
-    await page.setViewportSize({ width: 390, height: 844 });
+    await page.setViewportSize({ width: 1280, height: 900 });
     await signIn(page, fixture);
     await page.goto("/vlasnik");
     await expect(page.getByText(`${fixture.firstSalonName} - Pregled poslovanja`)).toBeVisible();
@@ -91,6 +91,25 @@ test("owner can use the all-locations dashboard and switch location from mobile 
     await expect(page.getByRole("main").getByRole("paragraph").filter({ hasText: fixture.firstSalonName })).toBeVisible();
     await expect(page.getByRole("main").getByRole("paragraph").filter({ hasText: fixture.secondSalonName })).toBeVisible();
 
+    const desktopSalonSelect = page.getByLabel("Aktivni salon", { exact: true });
+    await expect(desktopSalonSelect).toBeVisible();
+    let switchResponse = page.waitForResponse((response) =>
+      response.request().method() === "PUT"
+      && new URL(response.url()).pathname === "/api/salon/active-salon",
+    );
+    await desktopSalonSelect.selectOption(fixture.secondSalonId);
+    expect((await switchResponse).status()).toBe(200);
+    await expect(page.getByText(`${fixture.secondSalonName} - Pregled poslovanja`)).toBeVisible();
+
+    switchResponse = page.waitForResponse((response) =>
+      response.request().method() === "PUT"
+      && new URL(response.url()).pathname === "/api/salon/active-salon",
+    );
+    await page.getByLabel("Aktivni salon", { exact: true }).selectOption(fixture.firstSalonId);
+    expect((await switchResponse).status()).toBe(200);
+    await expect(page.getByText(`${fixture.firstSalonName} - Pregled poslovanja`)).toBeVisible();
+
+    await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole("button", { name: "Otvori meni" }).click();
     const mobileMenu = page.getByTestId("business-mobile-menu");
     await expect(mobileMenu.getByTestId("owner-mobile-cart-link")).toBeVisible();
@@ -99,7 +118,7 @@ test("owner can use the all-locations dashboard and switch location from mobile 
     await expect(mobileSalonSelect).toBeVisible();
     await expect(mobileMenu.getByRole("link", { name: "Otvori korpu" }))
       .toHaveAttribute("href", "/vlasnik/prodavnica/korpa");
-    const switchResponse = page.waitForResponse((response) =>
+    switchResponse = page.waitForResponse((response) =>
       response.request().method() === "PUT"
       && new URL(response.url()).pathname === "/api/salon/active-salon",
     );

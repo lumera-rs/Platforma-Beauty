@@ -69,8 +69,15 @@ async function run(): Promise<void> {
         city: "Beograd",
         municipality: "Vračar",
         address: "Test 1",
+        postalCode: "11000",
         phone: "+381110000101",
         email: `multi-first-${suffix}@example.test`,
+        companyName: `Multi firma ${suffix}`,
+        companyTaxId: "100000001",
+        companyRegistrationNumber: "20000001",
+        companyAddress: "Poslovna 1",
+        companyCity: "Beograd",
+        companyPostalCode: "11000",
         shortDescription: "Prva test lokacija.",
         description: "Prva lokacija za proveru poslovanja na više lokacija.",
         imageUrl: "/test.jpg",
@@ -82,8 +89,15 @@ async function run(): Promise<void> {
         city: "Novi Sad",
         municipality: "Centar",
         address: "Test 2",
+        postalCode: "21000",
         phone: "+381110000102",
         email: `multi-second-${suffix}@example.test`,
+        companyName: `Multi firma ogranak ${suffix}`,
+        companyTaxId: "100000002",
+        companyRegistrationNumber: "20000002",
+        companyAddress: "Poslovna 2",
+        companyCity: "Novi Sad",
+        companyPostalCode: "21000",
         shortDescription: "Druga test lokacija.",
         description: "Druga lokacija za proveru poslovanja na više lokacija.",
         imageUrl: "/test.jpg",
@@ -95,6 +109,7 @@ async function run(): Promise<void> {
         city: "Niš",
         municipality: "Medijana",
         address: "Test 3",
+        postalCode: "18000",
         phone: "+381110000103",
         email: `multi-foreign-${suffix}@example.test`,
         shortDescription: "Tuđa test lokacija.",
@@ -212,6 +227,47 @@ async function run(): Promise<void> {
     assert.equal(allDashboard.body.revenueThisMonth, 3600, "all-locations dashboard must sum completed revenue");
     assert.equal(allDashboard.body.bookingsThisMonth, 2, "all-locations dashboard must sum bookings");
     assert.equal((allDashboard.body.locations as Json[]).length, 2, "all-locations dashboard must list each owned location");
+
+    const checkoutProfile = await get("/shop/checkout-profile");
+    assert.equal(checkoutProfile.response.status, 200);
+    assert.equal(checkoutProfile.body.activeSalonId, first.id);
+    assert.equal(checkoutProfile.body.profileKey, `${owner.id}:${first.id}`, "checkout drafts must be isolated by account and active location");
+    const deliverySalons = checkoutProfile.body.deliverySalons as Array<{
+      id: string;
+      address: { street: string; postalCode: string };
+      addressComplete: boolean;
+      billingComplete: boolean;
+    }>;
+    assert.deepEqual(
+      deliverySalons.map((location) => location.id).sort(),
+      [first.id, second.id].sort(),
+      "checkout must expose only the owner's locations",
+    );
+    const deliverySalonsById = new Map(deliverySalons.map((location) => [location.id, location]));
+    assert.deepEqual(
+      [deliverySalonsById.get(first.id)?.address.street, deliverySalonsById.get(first.id)?.address.postalCode],
+      ["Test 1", "11000"],
+      "the first location must keep its own delivery address",
+    );
+    assert.deepEqual(
+      [deliverySalonsById.get(second.id)?.address.street, deliverySalonsById.get(second.id)?.address.postalCode],
+      ["Test 2", "21000"],
+      "the second location must keep its own delivery address",
+    );
+    assert.ok(deliverySalons.every((location) => location.addressComplete && location.billingComplete));
+
+    const foreignCheckout = await fetch(`${baseUrl}/shop/checkout`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        useSalonAddress: true,
+        deliverySalonId: foreign.id,
+        deliveryMethod: "courier",
+        paymentMethod: "BANK_TRANSFER",
+        termsAccepted: true,
+      }),
+    });
+    assert.equal(foreignCheckout.status, 403, "checkout must reject another owner's location before accessing the active cart");
 
     const loyalty = await get("/loyalty/status");
     assert.equal(loyalty.response.status, 200);
