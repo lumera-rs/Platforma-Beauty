@@ -319,7 +319,7 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
-    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 72, "v72 is the current production schema rollout");
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 73, "v73 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
 
     // ── Run the rollout, then exercise its legacy conversion on rerun ──────
@@ -443,8 +443,50 @@ async function run() {
       assert.equal(v71SharedBinding.proname, "prevent_order_item_commercial_snapshot_update");
       assert.match(v71SharedBinding.prosrc, /personalized_treatment_bundle_discount_rsd/i,
         "legacy v71 fixture retains the old shared function with a retail-only field");
-      await runBusinessGrowthSchemaDdl(client, s); // v71 → v72 repair
-      await runBusinessGrowthSchemaDdl(client, s); // v72 replay is idempotent
+      await runBusinessGrowthSchemaDdl(client, s); // v71 → current repair
+      await runBusinessGrowthSchemaDdl(client, s); // current replay is idempotent
+      // Reproduce a completed v72 database: v47 left these constraints
+      // NOT VALID, which causes the publish schema-diff generator to emit
+      // invalid inline CREATE TABLE syntax on a production fork.
+      await q(`ALTER TABLE "${s}".shop_settings
+        DROP CONSTRAINT shop_settings_retail_cart_reminder_delay_check,
+        DROP CONSTRAINT shop_settings_retail_cart_reminder_template_check`);
+      await q(`ALTER TABLE "${s}".shop_settings
+        ADD CONSTRAINT shop_settings_retail_cart_reminder_delay_check
+          CHECK (retail_cart_reminder_delay_hours BETWEEN 1 AND 720) NOT VALID,
+        ADD CONSTRAINT shop_settings_retail_cart_reminder_template_check
+          CHECK (retail_cart_reminder_brevo_template_id IS NULL OR retail_cart_reminder_brevo_template_id > 0) NOT VALID`);
+      await q(`UPDATE "${s}".business_growth_schema_rollout SET version = 72 WHERE singleton = true`);
+      const v72InvalidConstraints = (await q<{ conname: string; convalidated: boolean }>(
+        `SELECT conname, convalidated
+         FROM pg_constraint
+         WHERE conrelid=$1::regclass
+           AND conname IN (
+             'shop_settings_retail_cart_reminder_delay_check',
+             'shop_settings_retail_cart_reminder_template_check'
+           )
+         ORDER BY conname`,
+        [`${s}.shop_settings`],
+      )).rows;
+      assert.equal(v72InvalidConstraints.length, 2);
+      assert.ok(v72InvalidConstraints.every((constraint) => !constraint.convalidated),
+        "v72 fixture retains both publish-breaking NOT VALID constraints");
+      await runBusinessGrowthSchemaDdl(client, s); // v72 → v73 validation repair
+      await runBusinessGrowthSchemaDdl(client, s); // v73 replay is idempotent
+      const v73ValidatedConstraints = (await q<{ conname: string; convalidated: boolean }>(
+        `SELECT conname, convalidated
+         FROM pg_constraint
+         WHERE conrelid=$1::regclass
+           AND conname IN (
+             'shop_settings_retail_cart_reminder_delay_check',
+             'shop_settings_retail_cart_reminder_template_check'
+           )
+         ORDER BY conname`,
+        [`${s}.shop_settings`],
+      )).rows;
+      assert.equal(v73ValidatedConstraints.length, 2);
+      assert.ok(v73ValidatedConstraints.every((constraint) => constraint.convalidated),
+        "v73 validates both shop-settings constraints before publish introspection");
       // Direct callers must serialize too (not only ensureBusinessGrowthSchema).
       // Two independently held pool connections concurrently rebuilding trigger
       // and system-catalog objects used to intermittently fail with XX000

@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 72;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 73;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -3386,6 +3386,13 @@ function tableStatements(s: string): string[] {
     `DROP TRIGGER IF EXISTS retail_order_items_commercial_snapshot_immutable ON ${s}.retail_order_items`,
     `CREATE TRIGGER retail_order_items_commercial_snapshot_immutable BEFORE UPDATE ON ${s}.retail_order_items
        FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_retail_order_item_commercial_snapshot_update()`,
+    // v73 — v47 added these checks as NOT VALID but never validated them.
+    // Replit Publish introspects the development schema and cannot reproduce
+    // NOT VALID checks inline inside CREATE TABLE, so finish their validation.
+    `ALTER TABLE ${s}.shop_settings
+       VALIDATE CONSTRAINT shop_settings_retail_cart_reminder_delay_check`,
+    `ALTER TABLE ${s}.shop_settings
+       VALIDATE CONSTRAINT shop_settings_retail_cart_reminder_template_check`,
   ];
 }
 
