@@ -2582,12 +2582,12 @@ function tableStatements(s: string): string[] {
        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'shop_settings_retail_cart_reminder_delay_check'
           AND conrelid = '${s}.shop_settings'::regclass) THEN
          ALTER TABLE ${s}.shop_settings ADD CONSTRAINT shop_settings_retail_cart_reminder_delay_check
-           CHECK (retail_cart_reminder_delay_hours BETWEEN 1 AND 720) NOT VALID;
+            CHECK (retail_cart_reminder_delay_hours BETWEEN 1 AND 720);
        END IF;
        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'shop_settings_retail_cart_reminder_template_check'
           AND conrelid = '${s}.shop_settings'::regclass) THEN
          ALTER TABLE ${s}.shop_settings ADD CONSTRAINT shop_settings_retail_cart_reminder_template_check
-           CHECK (retail_cart_reminder_brevo_template_id IS NULL OR retail_cart_reminder_brevo_template_id > 0) NOT VALID;
+            CHECK (retail_cart_reminder_brevo_template_id IS NULL OR retail_cart_reminder_brevo_template_id > 0);
        END IF;
      END $$`,
     ...["orders", "retail_orders"].flatMap((table) => [
