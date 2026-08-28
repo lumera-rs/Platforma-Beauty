@@ -543,12 +543,9 @@ export const orderItemsTable = pgTable("order_items", {
   price: integer("price").notNull(),
   // Immutable commercial evidence. These values must never be re-derived from
   // current catalog data when an order is viewed or refunded.
-  // Publish bridge: legacy production rows predate these immutable snapshots.
-  // Keep them nullable for the additive release so Replit can preserve those
-  // rows; the versioned rollout backfills them before enforcing NOT NULL.
-  supplierId: uuid("supplier_id"),
-  supplierName: text("supplier_name"),
-  supplierSlug: text("supplier_slug"),
+  supplierId: uuid("supplier_id").notNull(),
+  supplierName: text("supplier_name").notNull(),
+  supplierSlug: text("supplier_slug").notNull(),
   productCatalogReference: text("product_catalog_reference"),
   productSkuSnapshot: text("product_sku_snapshot"),
   categoryIdSnapshot: uuid("category_id_snapshot"),
@@ -556,10 +553,10 @@ export const orderItemsTable = pgTable("order_items", {
   brandSnapshot: text("brand_snapshot"),
   market: text("market").notNull().default("B2B"),
   currency: text("currency").notNull().default("RSD"),
-  unitPrice: integer("unit_price"),
+  unitPrice: integer("unit_price").notNull(),
   discountSnapshot: integer("discount_snapshot"),
-  lineSubtotal: integer("line_subtotal"),
-  lineTotal: integer("line_total"),
+  lineSubtotal: integer("line_subtotal").notNull(),
+  lineTotal: integer("line_total").notNull(),
   /** Immutable internal profitability evidence captured under the checkout lock. */
   unitCostPriceRsd: integer("unit_cost_price_rsd").notNull().default(0),
   lineCogsRsd: integer("line_cogs_rsd").notNull().default(0),
