@@ -335,7 +335,7 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
-    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 78, "v78 is the current production schema rollout");
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 79, "v79 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
 
     // ── Run the rollout, then exercise its legacy conversion on rerun ──────

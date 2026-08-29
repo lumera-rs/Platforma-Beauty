@@ -682,6 +682,7 @@ export const bookingGroupsTable = pgTable("booking_groups", {
   index("booking_groups_salon_created_idx").on(table.salonId, table.createdAt),
   index("booking_groups_customer_idx").on(table.customerId),
   index("booking_groups_salon_customer_idx").on(table.salonCustomerId),
+  index("booking_groups_created_by_idx").on(table.createdByUserId),
 ]);
 
 export const appointmentsTable = pgTable("appointments", {
@@ -742,6 +743,11 @@ export const appointmentsTable = pgTable("appointments", {
   index("appointments_service_idx").on(table.serviceId),
   index("appointments_series_idx").on(table.seriesId),
   index("appointments_booking_group_idx").on(table.bookingGroupId),
+  index("appointments_created_by_idx").on(table.createdByUserId),
+  index("appointments_updated_by_idx").on(table.updatedByUserId),
+  index("appointments_cancelled_by_idx").on(table.cancelledByUserId),
+  index("appointments_completed_by_idx").on(table.completedByUserId),
+  index("appointments_no_show_by_idx").on(table.noShowByUserId),
 ]);
 
 /** Ordered treatment plan snapshots, compatible with each appointment's legacy service_id. */
@@ -965,6 +971,7 @@ export const salonResourceDowntimeTable = pgTable("salon_resource_downtime", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("salon_resource_downtime_resource_window_idx").on(table.resourceId, table.startsAt, table.endsAt),
+  index("salon_resource_downtime_created_by_idx").on(table.createdByUserId),
   check("salon_resource_downtime_window_check", sql`${table.startsAt} < ${table.endsAt}`),
 ]);
 

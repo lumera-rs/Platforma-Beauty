@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 78;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 79;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -3529,6 +3529,7 @@ function tableStatements(s: string): string[] {
     `CREATE INDEX IF NOT EXISTS booking_groups_salon_created_idx ON ${s}.booking_groups (salon_id, created_at)`,
     `CREATE INDEX IF NOT EXISTS booking_groups_customer_idx ON ${s}.booking_groups (customer_id)`,
     `CREATE INDEX IF NOT EXISTS booking_groups_salon_customer_idx ON ${s}.booking_groups (salon_customer_id)`,
+    `CREATE INDEX IF NOT EXISTS booking_groups_created_by_idx ON ${s}.booking_groups (created_by_user_id)`,
     `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS booking_group_id uuid
        REFERENCES ${s}.booking_groups(id) ON DELETE SET NULL`,
     `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS planned_date date`,
@@ -3546,6 +3547,12 @@ function tableStatements(s: string): string[] {
     `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS no_show_at timestamptz`,
     `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS no_show_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL`,
     `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()`,
+    // v79 — leading indexes for the user-audit foreign keys introduced by v78.
+    `CREATE INDEX IF NOT EXISTS appointments_created_by_idx ON ${s}.appointments (created_by_user_id)`,
+    `CREATE INDEX IF NOT EXISTS appointments_updated_by_idx ON ${s}.appointments (updated_by_user_id)`,
+    `CREATE INDEX IF NOT EXISTS appointments_cancelled_by_idx ON ${s}.appointments (cancelled_by_user_id)`,
+    `CREATE INDEX IF NOT EXISTS appointments_completed_by_idx ON ${s}.appointments (completed_by_user_id)`,
+    `CREATE INDEX IF NOT EXISTS appointments_no_show_by_idx ON ${s}.appointments (no_show_by_user_id)`,
     // Copy, never normalize or rewrite, the legacy customer-visible wall-clock values.
     `UPDATE ${s}.appointments SET
        planned_date=COALESCE(planned_date, appointment_date),
@@ -3625,6 +3632,8 @@ function tableStatements(s: string): string[] {
      )`,
     `CREATE INDEX IF NOT EXISTS salon_resource_downtime_resource_window_idx
        ON ${s}.salon_resource_downtime (resource_id, starts_at, ends_at)`,
+    `CREATE INDEX IF NOT EXISTS salon_resource_downtime_created_by_idx
+       ON ${s}.salon_resource_downtime (created_by_user_id)`,
     `CREATE TABLE IF NOT EXISTS ${s}.customer_notifications (
        id uuid PRIMARY KEY DEFAULT gen_random_uuid(), event_key text NOT NULL UNIQUE,
        user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE,
