@@ -1941,6 +1941,22 @@ export interface BookingGroupInput {
   notes?: string | null;
 }
 
+export type ManualBookingGroupInputGuest = {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  firstName: string;
+  /** @maxLength 100 */
+  lastName?: string;
+  /**
+     * @minLength 5
+     * @maxLength 50
+     */
+  phone: string;
+  /** @maxLength 320 */
+  email?: string;
+};
 export interface BookingGroupRescheduleTreatmentInput {
   appointmentId: string;
   date: string;
@@ -2131,6 +2147,10 @@ export interface BookingGroupOperationResult {
   gapWarning: string | null;
 }
 
+/**
+ * Present when the canonical active booking-group layout invariant failed.
+ */
+export type BookingGroupConflictCode = typeof BookingGroupConflictCode[keyof typeof BookingGroupConflictCode];
 export type AppointmentLifecycleInputAction = typeof AppointmentLifecycleInputAction[keyof typeof AppointmentLifecycleInputAction];
 
 
@@ -12473,3 +12493,36 @@ export type AdminDeleteAutomaticXyPromotionParams = {
  */
 version: number;
 };
+
+export const BookingGroupConflictCode = {
+  BOOKING_GROUP_LAYOUT_CONFLICT: 'BOOKING_GROUP_LAYOUT_CONFLICT',
+} as const;
+
+export interface BookingGroupConflict {
+  /** Present when the canonical active booking-group layout invariant failed. */
+  code?: BookingGroupConflictCode;
+  error: string;
+}
+
+export interface ManualBookingGroupInput {
+  salonCustomerId?: string;
+  guest?: ManualBookingGroupInputGuest;
+  /**
+     * @minItems 1
+     * @maxItems 5
+     */
+  treatments: ManualBookingGroupTreatmentInput[];
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  notes?: string | null;
+}
+
+export interface ManualBookingGroupTreatmentInput {
+  serviceId: string;
+  date: string;
+  /** @nullable */
+  employeeId?: string | null;
+  startTime: string;
+}

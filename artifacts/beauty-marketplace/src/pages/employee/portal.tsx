@@ -34,9 +34,11 @@ import { toast } from "sonner";
 import {
   getGetCurrentUserQueryKey,
   getGetEmployeeClockQueryKey,
+  getApiErrorMessage,
   getListEmployeeAppointmentTreatmentPhotosQueryKey,
   getListEmployeeShiftSwapsQueryKey,
   useCancelEmployeeShiftSwap,
+  useCancelBookingGroup,
   useCreateEmployeeShiftSwap,
   useCreateEmployeeTreatmentPhoto,
   useEmployeeClockIn,
@@ -50,6 +52,7 @@ import {
   useListEmployeeAssignedLocations,
   useSelectEmployeeActiveLocation,
   getListEmployeeAssignedLocationsQueryKey,
+  useCreateEmployeeBookingGroup,
   useSearchEmployeeAvailability,
   getSearchEmployeeAvailabilityQueryKey,
   type SearchEmployeeAvailabilityParams,
@@ -70,6 +73,7 @@ type Appointment = {
   date: string;
   startTime: string;
   endTime: string;
+  bookingGroupId: string | null;
   seriesId: string | null;
   status: "pending" | "confirmed" | "completed" | "cancelled" | "no-show";
   notes: string | null;
@@ -102,6 +106,7 @@ type Portal = {
 
 type Slot = { date: string; startTime: string };
 
+type GroupTreatment = Slot & { serviceId: string };
 const weekdays = ["Ponedeljak", "Utorak", "Sreda", "Četvrtak", "Petak", "Subota", "Nedelja"];
 const statusLabel: Record<Appointment["status"], string> = {
   pending: "Na čekanju",
@@ -512,6 +517,8 @@ export default function EmployeePortal() {
   const [date, setDate] = useState(today());
   const [visibleMonth, setVisibleMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [editing, setEditing] = useState<Appointment | null>(null);
+  const [groupCancellationIds, setGroupCancellationIds] = useState<string[]>([]);
+  const [groupCancellationReason, setGroupCancellationReason] = useState("");
   const [bookingOpen, setBookingOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [leaveOpen, setLeaveOpen] = useState(false);
@@ -525,6 +532,11 @@ export default function EmployeePortal() {
     slots: [{ date: today(), startTime: "10:00" }] as Slot[],
   });
   const [seriesMode, setSeriesMode] = useState(false);
+  const [groupMode, setGroupMode] = useState(false);
+  const [groupTreatments, setGroupTreatments] = useState<GroupTreatment[]>([]);
+  const [createdBookingGroup, setCreatedBookingGroup] = useState<{
+    appointments: Array<{ id: string; serviceName: string; date: string; startTime: string; endTime: string; employeeName: string }>;
+  } | null>(null);
   const [employeeAvailabilityStart, setEmployeeAvailabilityStart] = useState(today());
   const [seriesRule, setSeriesRule] = useState("weekly");
   const [seriesCount, setSeriesCount] = useState("5");
@@ -539,19 +551,23 @@ export default function EmployeePortal() {
     query: { queryKey: getListEmployeeAssignedLocationsQueryKey() },
   });
   const selectLocationMutation = useSelectEmployeeActiveLocation();
+  const createBookingGroup = useCreateEmployeeBookingGroup();
+  const cancelBookingGroup = useCancelBookingGroup();
   const employeeAvailabilityParams = useMemo<SearchEmployeeAvailabilityParams>(() => ({
     serviceId: booking.serviceId,
     startDate: employeeAvailabilityStart,
   }), [booking.serviceId, employeeAvailabilityStart]);
   const { data: employeeAvailabilitySlots, isFetching: employeeAvailabilityFetching, error: employeeAvailabilityError, refetch: refetchEmployeeAvailability } = useSearchEmployeeAvailability(
     employeeAvailabilityParams,
-    { query: { enabled: bookingOpen && !seriesMode && !!booking.serviceId, queryKey: getSearchEmployeeAvailabilityQueryKey(employeeAvailabilityParams) } },
+    { query: { enabled: bookingOpen && !seriesMode && !groupMode && !!booking.serviceId, queryKey: getSearchEmployeeAvailabilityQueryKey(employeeAvailabilityParams) } },
   );
 
   const handleLocationChange = (salonId: string) => {
     if (!salonId || salonId === locationsQuery.data?.activeSalonId) return;
     setBookingOpen(false);
     setSeriesMode(false);
+    setGroupMode(false);
+    setGroupTreatments([]);
     setSeriesPreview(null);
     setEmployeeAvailabilityStart(today());
     setBooking((current) => ({ ...current, serviceId: "", salonCustomerId: "", firstName: "", lastName: "", phone: "", email: "", slots: [{ date: today(), startTime: "" }] }));
@@ -592,15 +608,19 @@ export default function EmployeePortal() {
     void load(true);
   }, []);
   useEffect(() => {
-    if (!bookingOpen || seriesMode || booking.slots.length !== 1 || !booking.slots[0]?.startTime) return;
+    setGroupCancellationIds(editing?.bookingGroupId ? [editing.id] : []);
+    setGroupCancellationReason("");
+  }, [editing?.id, editing?.bookingGroupId]);
+  useEffect(() => {
+    if (!bookingOpen || seriesMode || groupMode || booking.slots.length !== 1 || !booking.slots[0]?.startTime) return;
     const selected = booking.slots[0];
     if (!employeeAvailabilitySlots?.some((slot) => slot.date === selected.date && slot.startTime === selected.startTime)) {
       setBooking((current) => ({ ...current, slots: [{ date: employeeAvailabilityStart, startTime: "" }] }));
     }
-  }, [booking.slots, bookingOpen, employeeAvailabilitySlots, employeeAvailabilityStart, seriesMode]);
+  }, [booking.slots, bookingOpen, employeeAvailabilitySlots, employeeAvailabilityStart, groupMode, seriesMode]);
   useEffect(() => {
-    if (bookingOpen && !seriesMode && booking.serviceId) void refetchEmployeeAvailability();
-  }, [booking.serviceId, bookingOpen, employeeAvailabilityStart, refetchEmployeeAvailability, seriesMode]);
+    if (bookingOpen && !seriesMode && !groupMode && booking.serviceId) void refetchEmployeeAvailability();
+  }, [booking.serviceId, bookingOpen, employeeAvailabilityStart, groupMode, refetchEmployeeAvailability, seriesMode]);
 
   const appointments = useMemo(
     () => (portal?.appointments ?? [])
@@ -608,6 +628,39 @@ export default function EmployeePortal() {
       .sort((a, b) => a.startTime.localeCompare(b.startTime)),
     [date, portal],
   );
+  const editableGroupAppointments = useMemo(
+    () => editing?.bookingGroupId
+      ? (portal?.appointments ?? []).filter((appointment) =>
+        appointment.bookingGroupId === editing.bookingGroupId
+        && ["pending", "confirmed"].includes(appointment.status))
+      : [],
+    [editing?.bookingGroupId, portal?.appointments],
+  );
+
+  const cancelSelectedGroupTreatments = () => {
+    if (!editing?.bookingGroupId || !groupCancellationIds.length) return;
+    if (!window.confirm(`Otkazati ${groupCancellationIds.length === 1 ? "izabrani tretman" : `${groupCancellationIds.length} izabrana tretmana`} iz grupne rezervacije?`)) return;
+    cancelBookingGroup.mutate({
+      bookingGroupId: editing.bookingGroupId,
+      data: {
+        appointmentIds: groupCancellationIds,
+        ...(groupCancellationReason.trim() ? { reason: groupCancellationReason.trim() } : {}),
+      },
+    }, {
+      onSuccess: async () => {
+        toast.success(groupCancellationIds.length === editableGroupAppointments.length
+          ? "Vaši tretmani iz grupne rezervacije su otkazani."
+          : "Izabrani tretmani su otkazani, a preostali raspored je potvrđen.");
+        setEditing(null);
+        await load(false);
+      },
+      onError: (error) => {
+        toast.error("Grupna rezervacija nije otkazana.", {
+          description: getApiErrorMessage(error, "Izbor bi ostavio nekoherentan raspored. Izaberite drugi skup tretmana."),
+        });
+      },
+    });
+  };
   const appointmentDateKeys = useMemo(
     () => new Set((portal?.appointments ?? []).map((appointment) => appointmentDateKey(appointment.date))),
     [portal],
@@ -667,6 +720,39 @@ export default function EmployeePortal() {
 
   const book = async () => {
     try {
+      if (groupMode) {
+        if (groupTreatments.length < 2 || groupTreatments.some((treatment) => !treatment.serviceId || !treatment.date || !treatment.startTime)) {
+          toast.error("Dodajte najmanje dva tretmana sa uslugom, datumom i vremenom.");
+          return;
+        }
+        if (!booking.salonCustomerId && (!booking.firstName.trim() || !booking.phone.trim())) {
+          toast.error("Unesite ime i telefon klijenta.");
+          return;
+        }
+        const group = await createBookingGroup.mutateAsync({
+          data: {
+            salonCustomerId: booking.salonCustomerId || undefined,
+            guest: booking.salonCustomerId ? undefined : {
+              firstName: booking.firstName.trim(),
+              lastName: booking.lastName.trim() || undefined,
+              phone: booking.phone.trim(),
+              email: booking.email.trim() || undefined,
+            },
+            treatments: groupTreatments.map(({ serviceId, date, startTime }) => ({ serviceId, date, startTime })),
+          },
+        });
+        setCreatedBookingGroup({
+          appointments: group.appointments.map(({ id, serviceName, date, startTime, endTime, employeeName }) => ({ id, serviceName, date, startTime, endTime, employeeName })),
+        });
+        queryClient.invalidateQueries({ queryKey: getSearchEmployeeAvailabilityQueryKey() });
+        toast.success("Grupna rezervacija je uspešno zakazana.");
+        setBookingOpen(false);
+        setGroupMode(false);
+        setGroupTreatments([]);
+        setBooking((current) => ({ ...current, salonCustomerId: "", firstName: "", lastName: "", phone: "", email: "", slots: [{ date: today(), startTime: "10:00" }] }));
+        await load();
+        return;
+      }
       if (seriesMode && !seriesPreview?.allAvailable) {
         toast.error("Prvo proverite da su svi termini iz serije slobodni.");
         return;
@@ -705,7 +791,11 @@ export default function EmployeePortal() {
       }));
       await load();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Zakazivanje nije uspelo.");
+      const isLayoutConflict = error && typeof error === "object" && "status" in error
+        && (error as { status?: number }).status === 409;
+      toast.error(isLayoutConflict
+        ? "Raspored ove grupne rezervacije više nije slobodan. Proverite datume i vremena tretmana, pa pokušajte ponovo."
+        : error instanceof Error ? error.message : "Zakazivanje nije uspelo.");
     }
   };
 
@@ -945,8 +1035,55 @@ export default function EmployeePortal() {
             <DialogHeader><DialogTitle>Tok termina</DialogTitle></DialogHeader>
             {editing && <div className="space-y-4">
               <p className="text-sm text-muted-foreground">{editing.customerName} · {editing.serviceName}</p>
+              {editing.bookingGroupId && (
+                <section className="space-y-3 rounded-xl border border-primary/20 bg-primary/[0.03] p-4" data-testid={`employee-group-cancellation-${editing.bookingGroupId}`}>
+                  <div>
+                    <h3 className="font-semibold">Otkazivanje grupne rezervacije</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">Izaberite jedan ili više tretmana koji su dodeljeni vama. Promena će biti sačuvana samo ako preostali raspored ostaje povezan i smislen.</p>
+                  </div>
+                  <div className="space-y-2">
+                    {editableGroupAppointments.map((appointment) => (
+                      <label key={appointment.id} className="flex items-start gap-3 rounded-lg border bg-background p-3 text-sm">
+                        <input
+                          className="mt-1"
+                          type="checkbox"
+                          checked={groupCancellationIds.includes(appointment.id)}
+                          onChange={(event) => setGroupCancellationIds((current) =>
+                            event.target.checked
+                              ? [...new Set([...current, appointment.id])]
+                              : current.filter((id) => id !== appointment.id))}
+                          data-testid={`employee-group-cancel-select-${appointment.id}`}
+                        />
+                        <span><strong>{appointment.serviceName}</strong><br /><span className="text-muted-foreground">{dateLabel(appointment.date)} · {appointment.startTime}–{appointment.endTime}</span></span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor={`employee-group-cancel-reason-${editing.bookingGroupId}`} className="text-xs">Razlog otkazivanja (opciono)</Label>
+                    <Textarea
+                      id={`employee-group-cancel-reason-${editing.bookingGroupId}`}
+                      value={groupCancellationReason}
+                      onChange={(event) => setGroupCancellationReason(event.target.value)}
+                      maxLength={1000}
+                      placeholder="Unesite razlog za audit zapis"
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    className="w-full"
+                    disabled={!groupCancellationIds.length || cancelBookingGroup.isPending}
+                    onClick={cancelSelectedGroupTreatments}
+                    data-testid={`employee-group-cancel-submit-${editing.bookingGroupId}`}
+                  >
+                    {cancelBookingGroup.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Otkaži izabrane tretmane
+                  </Button>
+                </section>
+              )}
               <AppointmentLifecyclePanel
                 appointment={editing}
+                allowCancel={!editing.bookingGroupId}
                 onUpdated={async (updated) => {
                   setEditing((current) => current ? { ...current, ...updated, customerPhone: current.customerPhone } : null);
                   setPortal((current) => current ? {
@@ -984,7 +1121,11 @@ export default function EmployeePortal() {
                 <div><Label>Email (opciono)</Label><Input className="mt-1" type="email" value={booking.email} onChange={(event) => setBooking({ ...booking, email: event.target.value })} /></div>
               </div>}
               <div className="rounded-lg border bg-muted/20 p-3">
-                <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={seriesMode} onChange={(event) => { const nextSeriesMode = event.target.checked; setSeriesMode(nextSeriesMode); setSeriesPreview(null); if (!nextSeriesMode) setBooking((current) => ({ ...current, slots: [{ date: employeeAvailabilityStart, startTime: "" }] })); }} /><Repeat2 className="h-4 w-4 text-primary" />Zakaži seriju termina</label>
+                <div className="flex flex-wrap gap-x-5 gap-y-3">
+                  <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={seriesMode} onChange={(event) => { const nextSeriesMode = event.target.checked; setSeriesMode(nextSeriesMode); setGroupMode(false); setGroupTreatments([]); setSeriesPreview(null); if (!nextSeriesMode) setBooking((current) => ({ ...current, slots: [{ date: employeeAvailabilityStart, startTime: "" }] })); }} /><Repeat2 className="h-4 w-4 text-primary" />Zakaži seriju termina</label>
+                  <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={groupMode} onChange={(event) => { const nextGroupMode = event.target.checked; setGroupMode(nextGroupMode); setSeriesMode(false); setSeriesPreview(null); if (nextGroupMode) setGroupTreatments([{ serviceId: booking.serviceId, date: employeeAvailabilityStart, startTime: "10:00" }, { serviceId: booking.serviceId, date: employeeAvailabilityStart, startTime: "11:00" }]); }} /><CalendarDays className="h-4 w-4 text-primary" />Grupa različitih tretmana</label>
+                </div>
+                {groupMode && <p className="mt-3 text-xs text-muted-foreground">Ovo nije ponavljajuća serija: svaki red je zaseban tretman u jednoj grupnoj rezervaciji i dodeljuje se vama.</p>}
                 {seriesMode && <div className="mt-3 flex flex-wrap gap-2">
                   <select className="h-9 rounded-md border bg-background px-2 text-sm" value={seriesRule} onChange={(event) => setSeriesRule(event.target.value)}>
                     <option value="daily">Svaki dan</option>
@@ -999,7 +1140,7 @@ export default function EmployeePortal() {
                   <Button type="button" size="sm" variant="outline" onClick={previewEmployeeSeries}>Proveri</Button>
                 </div>}
               </div>
-              {!seriesMode && <div className="space-y-2">
+              {!seriesMode && !groupMode && <div className="space-y-2">
                 <Label>Početak perioda</Label>
                 <Input type="date" min={today()} value={employeeAvailabilityStart} data-testid="employee-availability-start-date" onChange={(event) => { setEmployeeAvailabilityStart(event.target.value); setBooking((current) => ({ ...current, slots: [{ date: event.target.value, startTime: "" }] })); }} />
                 <InternalStaffAvailabilityPicker startDate={employeeAvailabilityStart} slots={employeeAvailabilitySlots} isLoading={employeeAvailabilityFetching} error={employeeAvailabilityError} selectedSlot={booking.slots[0]?.startTime ? { date: booking.slots[0].date, startTime: booking.slots[0].startTime, employeeId: employeeAvailabilitySlots?.find((slot) => slot.date === booking.slots[0]?.date && slot.startTime === booking.slots[0]?.startTime)?.employeeId ?? "" } : null} onSelectSlot={(slot) => setBooking((current) => ({ ...current, slots: [{ date: slot.date, startTime: slot.startTime }] }))} testId="employee-appointment-availability" />
@@ -1017,7 +1158,48 @@ export default function EmployeePortal() {
                 })}
                 <Button type="button" size="sm" variant="outline" onClick={() => { setBooking({ ...booking, slots: [...booking.slots, { date: booking.slots.at(-1)?.date ?? today(), startTime: "10:00" }] }); setSeriesPreview(null); }}><Plus className="mr-1 h-3.5 w-3.5" />Zakaži još jedan termin</Button>
               </div>}
-              <Button className="w-full" onClick={book} disabled={!seriesMode && (employeeAvailabilityFetching || !!employeeAvailabilityError || booking.slots.length !== 1 || !employeeAvailabilitySlots?.some((slot) => slot.date === booking.slots[0]?.date && slot.startTime === booking.slots[0]?.startTime))}>Zakaži {seriesMode ? "seriju" : "termin"}</Button>
+              {groupMode && <div className="space-y-3">
+                <Label>Tretmani u grupi</Label>
+                {groupTreatments.map((treatment, index) => (
+                  <div className="grid gap-2 rounded-lg border bg-background p-3 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]" key={index}>
+                    <select aria-label={`Usluga tretmana ${index + 1}`} className="h-10 min-w-0 rounded-md border bg-background px-3 text-sm" value={treatment.serviceId} onChange={(event) => setGroupTreatments((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, serviceId: event.target.value } : item))}>
+                      <option value="">Izaberite uslugu</option>
+                      {portal.services.map((service) => <option key={service.id} value={service.id}>{service.name} · {service.durationMinutes} min</option>)}
+                    </select>
+                    <Input aria-label={`Datum tretmana ${index + 1}`} type="date" min={today()} value={treatment.date} onChange={(event) => setGroupTreatments((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, date: event.target.value } : item))} />
+                    <Input aria-label={`Vreme tretmana ${index + 1}`} type="time" value={treatment.startTime} onChange={(event) => setGroupTreatments((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, startTime: event.target.value } : item))} />
+                    <Button type="button" variant="outline" size="icon" aria-label={`Ukloni tretman ${index + 1}`} disabled={groupTreatments.length <= 2} onClick={() => setGroupTreatments((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 className="h-4 w-4" /></Button>
+                  </div>
+                ))}
+                <Button type="button" size="sm" variant="outline" disabled={groupTreatments.length >= 5} onClick={() => setGroupTreatments((current) => [...current, { serviceId: booking.serviceId, date: current.at(-1)?.date ?? today(), startTime: current.at(-1)?.startTime ?? "10:00" }])}><Plus className="mr-1 h-3.5 w-3.5" />Dodaj tretman</Button>
+              </div>}
+              <Button className="w-full" onClick={book} disabled={createBookingGroup.isPending || (!seriesMode && !groupMode && (employeeAvailabilityFetching || !!employeeAvailabilityError || booking.slots.length !== 1 || !employeeAvailabilitySlots?.some((slot) => slot.date === booking.slots[0]?.date && slot.startTime === booking.slots[0]?.startTime)))}>{createBookingGroup.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Zakaži {groupMode ? "grupu tretmana" : seriesMode ? "seriju" : "termin"}</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={!!createdBookingGroup} onOpenChange={(open) => !open && setCreatedBookingGroup(null)}>
+          <DialogContent className="max-h-[90dvh] w-[calc(100vw-1rem)] max-w-2xl overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5 text-emerald-600" />Grupna rezervacija je zakazana</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">Svi tretmani su sačuvani kao jedna rezervacija i dodeljeni su zaposlenom koji je prijavljen.</p>
+              <div className="overflow-hidden rounded-lg border">
+                <div className="hidden grid-cols-[minmax(0,1fr)_auto_auto] gap-3 bg-muted/50 px-4 py-2 text-xs font-semibold text-muted-foreground sm:grid">
+                  <span>Usluga i zaposleni</span><span>Datum</span><span>Vreme</span>
+                </div>
+                <div className="divide-y">
+                  {createdBookingGroup?.appointments.map((appointment) => (
+                    <div className="grid gap-1 px-4 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center sm:gap-3" key={appointment.id}>
+                      <div><p className="font-medium">{appointment.serviceName}</p><p className="text-xs text-muted-foreground">{appointment.employeeName}</p></div>
+                      <span className="text-muted-foreground">{shortDateLabel(appointment.date)}</span>
+                      <span className="font-medium">{appointment.startTime}–{appointment.endTime}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <Button className="w-full" onClick={() => setCreatedBookingGroup(null)}>U redu</Button>
             </div>
           </DialogContent>
         </Dialog>

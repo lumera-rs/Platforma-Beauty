@@ -120,9 +120,11 @@ export function AppointmentGeneralNote({ children }: { children: string }) {
 export function AppointmentLifecyclePanel({
   appointment,
   onUpdated,
+  allowCancel = true,
 }: {
   appointment: LifecycleAppointment;
   onUpdated: (appointment: Appointment) => void | Promise<void>;
+  allowCancel?: boolean;
 }) {
   const mutation = useTransitionAppointmentLifecycle();
   const queryClient = useQueryClient();
@@ -198,7 +200,7 @@ export function AppointmentLifecyclePanel({
               <Button type="button" variant="outline" disabled={mutation.isPending} onClick={() => transition("no-show")} data-testid={`button-no-show-${appointment.id}`}>
                 <UserX className="mr-2 h-4 w-4" />Nije došao
               </Button>
-              <div className="space-y-1 sm:col-span-2">
+              {allowCancel && <div className="space-y-1 sm:col-span-2">
                 <Label htmlFor={`cancel-reason-${appointment.id}`} className="text-xs">Razlog otkazivanja (opciono)</Label>
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <Input id={`cancel-reason-${appointment.id}`} value={reason} onChange={(event) => setReason(event.target.value)} maxLength={1000} placeholder="Unesite razlog za audit zapis" data-testid={`input-cancel-reason-${appointment.id}`} />
@@ -206,7 +208,7 @@ export function AppointmentLifecyclePanel({
                     <X className="mr-2 h-4 w-4" />Otkaži termin
                   </Button>
                 </div>
-              </div>
+              </div>}
             </>
           )}
         </div>

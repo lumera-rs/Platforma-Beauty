@@ -325,8 +325,6 @@ router.post("/widget/salons/:slug/booking-groups", async (req, res): Promise<voi
   }
   if (!contact) { res.status(500).json({ error: "Kreiranje klijenta nije uspelo — pokušajte ponovo." }); return; }
   const byId = new Map(services.map((service) => [service.id, service]));
-  const [settings] = await db.select().from(salonBookingSettingsTable)
-    .where(eq(salonBookingSettingsTable.salonId, salon.id)).limit(1);
   try {
     const created = await db.transaction(async (tx) => {
       await lockAppointmentResources(tx, salon.id, treatments.map((item) => ({ date: item.date })));
@@ -357,8 +355,11 @@ router.post("/widget/salons/:slug/booking-groups", async (req, res): Promise<voi
           endTime: appointmentEndTime(endTime, service.bufferMinutes)!, bufferMinutes: 0,
         })));
       }
-      if (!bookingGroupLayoutValid(planned.map((entry) => ({
+      const [settings] = await tx.select().from(salonBookingSettingsTable)
+        .where(eq(salonBookingSettingsTable.salonId, salon.id)).for("share").limit(1);
+      if (!bookingGroupLayoutValid(planned.map((entry, position) => ({
         date: entry.item.date, startTime: entry.item.startTime, endTime: entry.endTime,
+        position,
       })), settings?.maxVisitGapMinutes ?? 0)) throw new Error("INVALID_LAYOUT");
       await lockAppointmentResources(tx, salon.id, planned.flatMap((entry, index) => [
         { date: entry.item.date, employeeId: entry.employeeId },
@@ -436,6 +437,7 @@ router.post("/widget/salons/:slug/booking-groups", async (req, res): Promise<voi
   } catch (error) {
     if (error instanceof Error && (error.message === "STALE_SLOT" || error.message === "INVALID_TIME" || error.message === "INVALID_LAYOUT")) {
       res.status(error.message === "INVALID_TIME" ? 400 : 409).json({
+        ...(error.message === "INVALID_LAYOUT" ? { code: "BOOKING_GROUP_LAYOUT_CONFLICT" } : {}),
         error: error.message === "INVALID_TIME" ? "Vreme tretmana nije ispravno."
           : error.message === "INVALID_LAYOUT" ? "Izabrani tretmani nisu u dozvoljenom redosledu ili razmaku."
           : "Jedan od termina više nije dostupan — izaberite drugi.",

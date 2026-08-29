@@ -23,6 +23,7 @@ import {
   useListCustomerAppointmentTreatmentPhotos,
   useRepeatLastRetailOrder,
   getApiErrorMessage,
+  type Appointment,
 } from "@workspace/api-client-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -185,6 +186,7 @@ export default function CustomerDashboard() {
   const queryClient = useQueryClient();
   const [providerToDisconnect, setProviderToDisconnect] = useState<"google" | "facebook" | null>(null);
   const [appointmentToCancel, setAppointmentToCancel] = useState<string | null>(null);
+  const [lastChangedGroup, setLastChangedGroup] = useState<Appointment[]>([]);
   const [phone, setPhone] = useState("");
   const [phoneCode, setPhoneCode] = useState("");
   const [phoneBusy, setPhoneBusy] = useState(false);
@@ -287,8 +289,9 @@ export default function CustomerDashboard() {
       cancelGroupMutation.mutate(
         { bookingGroupId: groupedAppointment.bookingGroupId, data: { appointmentIds: [id], reason: "Korisnik otkazao jedan tretman" } },
         {
-          onSuccess: () => {
-            toast.success("Tretman je otkazan", { description: "Ostali tretmani iz grupne rezervacije ostaju nepromenjeni." });
+          onSuccess: (data) => {
+            setLastChangedGroup(data.group?.appointments ?? []);
+            toast.success("Tretman je otkazan", { description: "Raspored preostalih tretmana je proverio salon." });
             setAppointmentToCancel(null);
             refetchDash();
             refetchAppts();
@@ -320,7 +323,8 @@ export default function CustomerDashboard() {
   const handleCancelGroup = (bookingGroupId: string) => {
     if (!window.confirm("Otkazati sve aktivne tretmane iz ove grupne rezervacije?")) return;
     cancelGroupMutation.mutate({ bookingGroupId, data: { reason: "Korisnik otkazao celu grupnu rezervaciju" } }, {
-      onSuccess: () => {
+      onSuccess: (data) => {
+        setLastChangedGroup(data.group?.appointments ?? []);
         toast.success("Grupna rezervacija je otkazana");
         refetchDash();
         refetchAppts();
@@ -521,6 +525,26 @@ export default function CustomerDashboard() {
           </TabsContent>
 
           <TabsContent value="appointments" className="mt-0 space-y-4">
+            {lastChangedGroup.length > 0 && (
+              <Card className="border-primary/30 bg-primary/5">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Ažuriran raspored grupne rezervacije</CardTitle>
+                  <CardDescription>Server je proverio ceo raspored posle izmene.</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-2 sm:grid-cols-2">
+                  {lastChangedGroup.map((appointment) => (
+                    <div key={appointment.id} className="rounded-lg border bg-background p-3 text-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-semibold">{appointment.serviceName}</p>
+                        {getStatusBadge(appointment.status)}
+                      </div>
+                      <p className="mt-1 text-muted-foreground">{appointment.date} · {appointment.startTime}–{appointment.endTime}</p>
+                      <p className="text-muted-foreground">Zaposleni: {appointment.employeeName}</p>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
             {isApptsLoading ? (
                Array(3).fill(0).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)
             ) : appointments?.length === 0 ? (

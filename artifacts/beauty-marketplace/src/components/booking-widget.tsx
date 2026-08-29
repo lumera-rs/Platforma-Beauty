@@ -15,6 +15,7 @@ import {
   type CurrentUserResponse,
   type GroupedTreatmentRequest,
   type GroupedAvailabilityCandidate,
+  type Appointment,
   useGetGroupedBookingAvailability,
   useCreateBookingGroup,
 
@@ -51,6 +52,7 @@ export function BookingWidget(props: BookingWidgetProps) {
   const [dateError, setDateError] = useState<string | null>(null);
   const [allowMultipleDays, setAllowMultipleDays] = useState(false);
   const [selectedCandidate, setSelectedCandidate] = useState<GroupedAvailabilityCandidate | null>(null);
+  const [completedAppointments, setCompletedAppointments] = useState<Appointment[]>([]);
   const analyticsDimensions = () => ({
     treatment_count: cart.length,
     customer_type: props.user ? "authenticated" : "guest",
@@ -139,9 +141,10 @@ export function BookingWidget(props: BookingWidgetProps) {
 
   const createMutation = useCreateBookingGroup({
     mutation: {
-      onSuccess: () => {
+      onSuccess: (data) => {
         void queryClient.invalidateQueries({ queryKey: getListMyAppointmentsQueryKey() });
         void queryClient.invalidateQueries({ queryKey: getGetCustomerDashboardQueryKey() });
+        setCompletedAppointments(data.appointments);
         setStep("SUCCESS");
         trackEvent("grouped_booking_completed", analyticsDimensions());
       },
@@ -170,6 +173,7 @@ export function BookingWidget(props: BookingWidgetProps) {
   const resetFlow = () => {
     setCart([]);
     setSelectedCandidate(null);
+    setCompletedAppointments([]);
     setStep("CART");
   };
 
@@ -358,7 +362,18 @@ export function BookingWidget(props: BookingWidgetProps) {
               <CheckCircle2 className="h-10 w-10" />
             </div>
             <h2 className="mb-2 text-2xl font-serif font-bold text-foreground">Uspešno zakazano!</h2>
-            <p className="mb-8 text-muted-foreground text-sm max-w-[280px]">Vaš termin je u obradi. Dobićete potvrdu uskoro.</p>
+            <p className="mb-4 text-muted-foreground text-sm max-w-[320px]">Vaša grupna rezervacija je primljena. Dobićete potvrdu uskoro.</p>
+            <div className="mb-6 w-full space-y-2 text-left" aria-label="Raspored grupne rezervacije">
+              {completedAppointments.map((appointment) => (
+                <div key={appointment.id} className="rounded-xl border bg-background p-3">
+                  <p className="font-semibold text-foreground">{appointment.serviceName}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {appointment.date} · {appointment.startTime}–{appointment.endTime}
+                  </p>
+                  <p className="text-sm text-muted-foreground">Zaposleni: {appointment.employeeName}</p>
+                </div>
+              ))}
+            </div>
             <Button onClick={() => { resetFlow(); props.onViewAppointments(); }} className="w-full font-medium" size="lg">Moji termini</Button>
           </div>
         )}

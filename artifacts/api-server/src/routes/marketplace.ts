@@ -525,6 +525,10 @@ import
   UpdateManagedSalonProfileBody,
   CreateSalonAppointmentBody,
   CreateSalonAppointmentResponse,
+  CreateSalonBookingGroupBody,
+  CreateSalonBookingGroupResponse,
+  CreateEmployeeBookingGroupBody,
+  CreateEmployeeBookingGroupResponse,
   CreateSalonAppointmentSeriesBody,
   CreateSalonAppointmentSeriesResponse,
   CreateSalonTimeBlockBody,
@@ -766,6 +770,13 @@ export function setAdminSummaryAfterFirstReadForTest(
 
 class MediaClaimConflictError extends Error {}
 class ProductRelationshipConflictError extends Error {}
+class BookingGroupLayoutConflictError extends Error {
+  readonly code = "BOOKING_GROUP_LAYOUT_CONFLICT";
+
+  constructor() {
+    super("Aktivni tretmani grupne rezervacije moraju ostati u dozvoljenom redosledu i razmaku.");
+  }
+}
 
 function cookieOptions() {
   return { httpOnly: true, sameSite: "lax" as const, secure: process.env.NODE_ENV === "production", maxAge: 1000 * 60 * 60 * 24 * 14, path: "/" };
@@ -6399,6 +6410,232 @@ router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<v
   res.json(GetGroupedBookingAvailabilityResponse.parse({ salonId: salon.id, generatedAt: new Date(), candidates }));
 });
 
+type StaffBookingGroupAccess = {
+  user: typeof usersTable.$inferSelect;
+  salon: typeof salonsTable.$inferSelect;
+  employee: typeof employeesTable.$inferSelect | null;
+};
+
+async function createStaffBookingGroup(
+  req: Request,
+  res: Response,
+  access: StaffBookingGroupAccess,
+): Promise<void> {
+  const schema = access.employee ? CreateEmployeeBookingGroupBody : CreateSalonBookingGroupBody;
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  if (Boolean(parsed.data.salonCustomerId) === Boolean(parsed.data.guest)) {
+    res.status(400).json({ error: "Izaberite CRM klijenta ili unesite podatke novog gosta." }); return;
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const treatments = parsed.data.treatments.map((item) => ({ ...item, date: calendarDate(item.date) }));
+  if (treatments.some((item) => !isValidCalendarDate(item.date) || item.date < today)) {
+    res.status(400).json({ error: "Datum tretmana nije ispravan." }); return;
+  }
+  const serviceIds = [...new Set(treatments.map((item) => item.serviceId))];
+  const services = await db.select().from(servicesTable).where(and(
+    eq(servicesTable.salonId, access.salon.id),
+    eq(servicesTable.active, true),
+    inArray(servicesTable.id, serviceIds),
+  ));
+  if (services.length !== serviceIds.length) {
+    res.status(404).json({ error: "Jedna ili više usluga nisu pronađene u ovom salonu." }); return;
+  }
+  if (access.employee) {
+    const assignments = await db.select().from(employeeServicesTable).where(and(
+      eq(employeeServicesTable.employeeId, access.employee.id),
+      inArray(employeeServicesTable.serviceId, serviceIds),
+    ));
+    if (assignments.length !== serviceIds.length || treatments.some((item) =>
+      item.employeeId !== undefined && item.employeeId !== null && item.employeeId !== access.employee!.id)) {
+      res.status(403).json({ error: "Zaposleni može grupisati samo svoje dodeljene tretmane." }); return;
+    }
+  }
+  const byId = new Map(services.map((service) => [service.id, service]));
+  try {
+    const created = await db.transaction(async (tx) => {
+      await lockAppointmentResources(tx, access.salon.id, treatments.map((item) => ({ date: item.date })));
+      let contact: typeof salonCustomersTable.$inferSelect;
+      let newlyCreatedContact = false;
+      if (parsed.data.salonCustomerId) {
+        const [existing] = await tx.select().from(salonCustomersTable).where(and(
+          eq(salonCustomersTable.id, parsed.data.salonCustomerId),
+          eq(salonCustomersTable.salonId, access.salon.id),
+        )).limit(1);
+        if (!existing) throw new AppointmentSeriesError("CRM klijent ne pripada ovom salonu.", 403);
+        contact = existing;
+      } else {
+        const phone = parsed.data.guest!.phone.trim();
+        const phoneNormalized = normalizedPhone(phone);
+        if (!phoneNormalized) throw new AppointmentSeriesError("Telefon gosta nije ispravan.", 400);
+        const [existing] = await tx.select().from(salonCustomersTable).where(and(
+          eq(salonCustomersTable.salonId, access.salon.id),
+          eq(salonCustomersTable.phoneNormalized, phoneNormalized),
+        )).limit(1);
+        if (existing) {
+          contact = existing;
+        } else {
+          const [registered] = await tx.select().from(usersTable)
+            .where(eq(usersTable.phoneNormalized, phoneNormalized)).limit(1);
+          [contact] = await tx.insert(salonCustomersTable).values({
+            salonId: access.salon.id,
+            firstName: parsed.data.guest!.firstName.trim(),
+            lastName: parsed.data.guest!.lastName?.trim() ?? "",
+            phone,
+            phoneNormalized,
+            email: parsed.data.guest!.email?.trim().toLowerCase() || null,
+            userId: registered?.id ?? null,
+          }).returning();
+          newlyCreatedContact = true;
+        }
+      }
+      if (access.employee && !newlyCreatedContact) {
+        const [previous] = await tx.select({ id: appointmentsTable.id }).from(appointmentsTable).where(and(
+          eq(appointmentsTable.employeeId, access.employee.id),
+          eq(appointmentsTable.salonCustomerId, contact.id),
+        )).limit(1);
+        if (!previous) throw new AppointmentSeriesError("Možete izabrati samo klijenta kog ste već uslužili.", 403);
+      }
+      const requirements = await Promise.all(treatments.map((item) =>
+        fetchServiceResourceRequirements(tx, item.serviceId)));
+      const planned: Array<{
+        item: (typeof treatments)[number];
+        service: typeof servicesTable.$inferSelect;
+        employeeId: string;
+        endTime: string;
+      }> = [];
+      const reservedAppointments: Array<{ employeeId: string; date: string; startTime: string; endTime: string; bufferMinutes: number; resourceIds: string[] }> = [];
+      const resourceReservations: Array<{ resourceId: string; quantity: number; date: string; startTime: string; endTime: string; bufferMinutes: number }> = [];
+      for (let index = 0; index < treatments.length; index += 1) {
+        const item = treatments[index]!;
+        const service = byId.get(item.serviceId)!;
+        const endTime = appointmentEndTime(item.startTime, service.durationMinutes);
+        if (!endTime) throw new AppointmentSeriesError("Vreme tretmana nije ispravno.", 400);
+        const slots = await canonicalAvailability({
+          salonId: access.salon.id,
+          service,
+          dates: [item.date],
+          employeeId: access.employee?.id ?? item.employeeId ?? null,
+          store: tx,
+          reservedAppointments,
+          resourceReservations,
+        });
+        const slot = slots.find((candidate) =>
+          candidate.startTime === item.startTime && candidate.endTime === endTime);
+        if (!slot) throw new AppointmentSeriesError("Jedan od termina više nije slobodan.", 409);
+        planned.push({ item, service, employeeId: slot.employeeId, endTime });
+        reservedAppointments.push({
+          employeeId: slot.employeeId, date: item.date, startTime: item.startTime, endTime,
+          bufferMinutes: service.bufferMinutes, resourceIds: requirements[index]!.map((entry) => entry.resourceId),
+        });
+        resourceReservations.push(...requirements[index]!.map((entry) => ({
+          resourceId: entry.resourceId, quantity: entry.quantity, date: item.date, startTime: item.startTime,
+          endTime: appointmentEndTime(endTime, service.bufferMinutes)!, bufferMinutes: 0,
+        })));
+      }
+      const [settings] = await tx.select({ maxVisitGapMinutes: salonBookingSettingsTable.maxVisitGapMinutes })
+        .from(salonBookingSettingsTable).where(eq(salonBookingSettingsTable.salonId, access.salon.id)).for("share").limit(1);
+      if (!bookingGroupLayoutValid(planned.map((entry, position) => ({
+        date: entry.item.date, startTime: entry.item.startTime, endTime: entry.endTime, position,
+      })), settings?.maxVisitGapMinutes ?? 0)) throw new BookingGroupLayoutConflictError();
+      await lockAppointmentResources(tx, access.salon.id, planned.flatMap((entry, index) => [
+        { date: entry.item.date, employeeId: entry.employeeId },
+        ...requirements[index]!.map((requirement) => ({ date: entry.item.date, resourceId: requirement.resourceId })),
+      ]));
+      // A resolved employee may also work at another location. Re-check after
+      // acquiring the global employee/resource keys so cross-location writers
+      // cannot invalidate the optimistic choices made under the location lock.
+      const revalidationAppointments: typeof reservedAppointments = [];
+      const revalidationResources: typeof resourceReservations = [];
+      for (let index = 0; index < planned.length; index += 1) {
+        const entry = planned[index]!;
+        const slots = await canonicalAvailability({
+          salonId: access.salon.id, service: entry.service, dates: [entry.item.date],
+          employeeId: entry.employeeId, store: tx,
+          reservedAppointments: revalidationAppointments,
+          resourceReservations: revalidationResources,
+        });
+        if (!slots.some((slot) => slot.startTime === entry.item.startTime
+          && slot.endTime === entry.endTime && slot.employeeId === entry.employeeId)) {
+          throw new AppointmentSeriesError("Jedan od termina više nije slobodan.", 409);
+        }
+        revalidationAppointments.push({
+          employeeId: entry.employeeId, date: entry.item.date, startTime: entry.item.startTime,
+          endTime: entry.endTime, bufferMinutes: entry.service.bufferMinutes,
+          resourceIds: requirements[index]!.map((item) => item.resourceId),
+        });
+        revalidationResources.push(...requirements[index]!.map((item) => ({
+          resourceId: item.resourceId, quantity: item.quantity, date: entry.item.date,
+          startTime: entry.item.startTime,
+          endTime: appointmentEndTime(entry.endTime, entry.service.bufferMinutes)!,
+          bufferMinutes: 0,
+        })));
+      }
+      const [group] = await tx.insert(bookingGroupsTable).values({
+        salonId: access.salon.id,
+        customerId: contact.userId,
+        salonCustomerId: contact.id,
+        createdByUserId: access.user.id,
+        notes: parsed.data.notes ?? null,
+      }).returning();
+      const appointments = [];
+      for (let position = 0; position < planned.length; position += 1) {
+        const entry = planned[position]!;
+        const appointment = await insertInitializedAppointmentInTx(tx, {
+          salonId: access.salon.id, customerId: contact.userId, salonCustomerId: contact.id,
+          employeeId: entry.employeeId, serviceId: entry.service.id, bookingGroupId: group!.id,
+          date: entry.item.date, startTime: entry.item.startTime, endTime: entry.endTime,
+          durationMinutes: entry.service.durationMinutes, price: entry.service.promoPrice ?? entry.service.price,
+          notes: parsed.data.notes ?? null, plannedDate: entry.item.date,
+          plannedStartTime: entry.item.startTime, plannedEndTime: entry.endTime,
+        }, "confirmed", access.user.id);
+        await tx.insert(appointmentTreatmentsTable).values({
+          appointmentId: appointment!.id, serviceId: entry.service.id, employeeId: entry.employeeId,
+          position, durationMinutes: entry.service.durationMinutes, bufferMinutes: entry.service.bufferMinutes,
+          price: entry.service.promoPrice ?? entry.service.price,
+          plannedStartTime: entry.item.startTime, plannedEndTime: entry.endTime,
+        });
+        const bufferedEnd = appointmentEndTime(entry.endTime, entry.service.bufferMinutes);
+        if (!bufferedEnd) throw new AppointmentSeriesError("Bafer tretmana izlazi van dana.", 409);
+        await allocateResourcesInTx(tx, access.salon.id, requirements[position]!, appointment!.id,
+          entry.item.date, entry.item.startTime, requirements[position]!.length ? bufferedEnd : entry.endTime);
+        appointments.push({ appointment: appointment!, service: entry.service, employeeId: entry.employeeId });
+      }
+      return { group: group!, appointments, contact };
+    });
+    const employees = await db.select().from(employeesTable).where(inArray(
+      employeesTable.id, created.appointments.map((item) => item.employeeId)));
+    const employeeById = new Map(employees.map((employee) => [employee.id, employee]));
+    const views = await Promise.all(created.appointments.map(async (item) =>
+      appointmentView(item.appointment, access.salon, item.service, created.contact,
+        employeeById.get(item.employeeId)!, true, null,
+        await getAllocationsForAppointment(db, item.appointment.id))));
+    const response = { id: created.group.id, salonId: access.salon.id, appointments: views, createdAt: created.group.createdAt };
+    (access.employee ? CreateEmployeeBookingGroupResponse : CreateSalonBookingGroupResponse).parse(response);
+    await sendBookingGroupConfirmation(created.group.id);
+    await publishSalonNotificationUpdate(access.salon.id);
+    res.status(201).json(response);
+  } catch (error) {
+    if (error instanceof BookingGroupLayoutConflictError) {
+      res.status(409).json({ code: error.code, error: error.message }); return;
+    }
+    if (error instanceof AppointmentSeriesError || error instanceof ResourceCapacityError) {
+      res.status(error instanceof AppointmentSeriesError ? error.status : 409).json({ error: error.message }); return;
+    }
+    throw error;
+  }
+}
+
+router.post("/salon/booking-groups", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  await createStaffBookingGroup(req, res, { ...access, employee: null });
+});
+
+router.post("/employee/booking-groups", async (req, res): Promise<void> => {
+  const access = await requireSalonEmployee(req, res); if (!access) return;
+  await createStaffBookingGroup(req, res, access);
+});
+
 router.post("/booking-groups", async (req, res): Promise<void> => {
   const user = await requireCustomer(req, res); if (!user) return;
   const parsed = CreateBookingGroupBody.safeParse(req.body);
@@ -6414,7 +6651,6 @@ router.post("/booking-groups", async (req, res): Promise<void> => {
     ?? (await db.select().from(salonCustomersTable).where(and(eq(salonCustomersTable.salonId, salon.id), eq(salonCustomersTable.userId, user.id))).limit(1))[0];
   if (!crm) { res.status(409).json({ error: "Klijent nije dostupan u salonu." }); return; }
   const byId = new Map(services.map((service) => [service.id, service]));
-  const settings = await bookingSettingsView(salon.id);
   try {
     const created = await db.transaction(async (tx) => {
       const requirements = await Promise.all(parsed.data.treatments.map((t) => fetchServiceResourceRequirements(tx, t.serviceId)));
@@ -6451,10 +6687,12 @@ router.post("/booking-groups", async (req, res): Promise<void> => {
           endTime: appointmentEndTime(endTime, service.bufferMinutes)!, bufferMinutes: 0,
         })));
       }
+      const [groupSettings] = await tx.select({ maxVisitGapMinutes: salonBookingSettingsTable.maxVisitGapMinutes })
+        .from(salonBookingSettingsTable).where(eq(salonBookingSettingsTable.salonId, salon.id)).for("share").limit(1);
       if (!bookingGroupLayoutValid(planned.map((entry) => ({
         date: entry.date, startTime: entry.item.startTime, endTime: entry.endTime,
-      })), settings.maxVisitGapMinutes)) {
-        throw new AppointmentSeriesError("Izabrani tretmani nisu u dozvoljenom redosledu ili razmaku.", 409);
+      })), groupSettings?.maxVisitGapMinutes ?? 0)) {
+        throw new BookingGroupLayoutConflictError();
       }
       await lockAppointmentResources(tx, salon.id, [
         ...planned.map((entry) => ({ date: entry.date, employeeId: entry.employeeId })),
@@ -6496,7 +6734,6 @@ router.post("/booking-groups", async (req, res): Promise<void> => {
         const [employee] = await tx.select().from(employeesTable).where(eq(employeesTable.id, employeeId)).limit(1);
         appointments.push({ appointment: appointment!, employee: employee!, service });
       }
-      await notifyCustomer(tx, { userId: user.id, eventKey: `booking-group:${group!.id}:created`, category: "booking", title: "Termini su zakazani", body: `Zakazano je ${appointments.length} tretmana u salonu ${salon.name}.`, deepLink: "/moji-termini" });
       return { group: group!, appointments };
     });
     const views = await Promise.all(created.appointments.map(async ({ appointment, employee, service }) =>
@@ -6506,6 +6743,9 @@ router.post("/booking-groups", async (req, res): Promise<void> => {
     await sendBookingGroupConfirmation(created.group.id);
     res.status(201).json(CreateBookingGroupResponse.parse({ id: created.group.id, salonId: salon.id, appointments: views, createdAt: created.group.createdAt }));
   } catch (error) {
+    if (error instanceof BookingGroupLayoutConflictError) {
+      res.status(409).json({ code: error.code, error: error.message }); return;
+    }
     if (error instanceof AppointmentSeriesError || error instanceof ResourceCapacityError) { res.status(error instanceof AppointmentSeriesError ? error.status : 409).json({ error: error.message }); return; }
     throw error;
   }
@@ -6540,31 +6780,19 @@ async function bookingGroupAccess(req: Request, res: Response, groupId: string) 
   return null;
 }
 
-function groupGapWarning(
-  appointments: Array<{ date: string; startTime: string; endTime: string; status: string }>,
-  maxGapMinutes: number,
-) {
-  const active = appointments.filter((item) => item.status !== "cancelled")
-    .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
-  for (let index = 1; index < active.length; index++) {
-    const previous = active[index - 1]!;
-    const next = active[index]!;
-    if (previous.date !== next.date) return `Tretmani su raspoređeni na više dana (željeni maksimalni razmak je ${maxGapMinutes} min).`;
-    const [endHour, endMinute] = previous.endTime.split(":").map(Number);
-    const [startHour, startMinute] = next.startTime.split(":").map(Number);
-    const gap = startHour! * 60 + startMinute! - (endHour! * 60 + endMinute!);
-    if (gap > maxGapMinutes) return `Razmak između tretmana je ${gap} min (željeni maksimum je ${maxGapMinutes} min).`;
-  }
-  return null;
-}
-
 export function bookingGroupLayoutValid(
-  treatments: Array<{ date: string; startTime: string; endTime: string }>,
+  treatments: Array<{ date: string; startTime: string; endTime: string; position?: number }>,
   maxGapMinutes: number,
 ) {
-  for (let index = 1; index < treatments.length; index++) {
-    const previous = treatments[index - 1]!;
-    const next = treatments[index]!;
+  if (!Number.isInteger(maxGapMinutes) || maxGapMinutes < 0) return false;
+  const ordered = treatments.map((treatment, index) => ({
+    ...treatment,
+    position: treatment.position ?? index,
+  })).sort((a, b) => a.position - b.position);
+  if (new Set(ordered.map((item) => item.position)).size !== ordered.length) return false;
+  for (let index = 1; index < ordered.length; index++) {
+    const previous = ordered[index - 1]!;
+    const next = ordered[index]!;
     if (next.date < previous.date) return false;
     if (next.date !== previous.date) continue;
     const [endHour, endMinute] = previous.endTime.split(":").map(Number);
@@ -6573,6 +6801,34 @@ export function bookingGroupLayoutValid(
     if (gap < 0 || gap > maxGapMinutes) return false;
   }
   return true;
+}
+
+async function assertActiveBookingGroupLayoutInTx(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  salonId: string,
+  members: Array<{ id: string; date: string; startTime: string; endTime: string; status: string }>,
+) {
+  const active = members.filter((item) => item.status === "pending" || item.status === "confirmed");
+  if (active.length < 2) return;
+  const treatments = await tx.select({
+    appointmentId: appointmentTreatmentsTable.appointmentId,
+    position: appointmentTreatmentsTable.position,
+  }).from(appointmentTreatmentsTable).where(inArray(
+    appointmentTreatmentsTable.appointmentId,
+    active.map((item) => item.id),
+  ));
+  const positionById = new Map(treatments.map((item) => [item.appointmentId, item.position]));
+  if (positionById.size !== active.length) throw new BookingGroupLayoutConflictError();
+  const [settings] = await tx.select({ maxVisitGapMinutes: salonBookingSettingsTable.maxVisitGapMinutes })
+    .from(salonBookingSettingsTable).where(eq(salonBookingSettingsTable.salonId, salonId)).for("share").limit(1);
+  if (!bookingGroupLayoutValid(active.map((item) => ({
+    date: item.date,
+    startTime: item.startTime,
+    endTime: item.endTime,
+    position: positionById.get(item.id)!,
+  })), settings?.maxVisitGapMinutes ?? 0)) {
+    throw new BookingGroupLayoutConflictError();
+  }
 }
 
 router.patch("/booking-groups/:bookingGroupId/reschedule", async (req, res): Promise<void> => {
@@ -6687,7 +6943,7 @@ router.patch("/booking-groups/:bookingGroupId/reschedule", async (req, res): Pro
         const moved = planned.find((item) => item.appointment.id === member.id);
         return moved ? { ...member, date: moved.date, startTime: moved.startTime, endTime: moved.endTime } : member;
       });
-      const settings = await bookingSettingsView(access.salon.id);
+      await assertActiveBookingGroupLayoutInTx(tx, access.salon.id, finalMembers);
       if (access.group.customerId) {
         await notifyCustomer(tx, {
           userId: access.group.customerId, eventKey: `booking-group:${access.group.id}:rescheduled:${Date.now()}`,
@@ -6699,12 +6955,15 @@ router.patch("/booking-groups/:bookingGroupId/reschedule", async (req, res): Pro
         salonId: access.salon.id, title: "Izmenjena grupna rezervacija",
         message: `Izmenjeno je ${planned.length} tretmana iz grupne rezervacije.`, href: "/vlasnik/termini",
       });
-      return groupGapWarning(finalMembers, settings.maxVisitGapMinutes);
+      return null;
     });
     const group = await bookingGroupView(access.group.id);
     await publishSalonNotificationUpdate(access.salon.id);
     res.json(RescheduleBookingGroupResponse.parse({ group, gapWarning: warning }));
   } catch (error) {
+    if (error instanceof BookingGroupLayoutConflictError) {
+      res.status(409).json({ code: error.code, error: error.message }); return;
+    }
     if (error instanceof AppointmentSeriesError || error instanceof ResourceCapacityError) {
       res.status(error instanceof AppointmentSeriesError ? error.status : 409).json({ error: error.message }); return;
     }
@@ -6732,6 +6991,9 @@ router.post("/booking-groups/:bookingGroupId/cancel", async (req, res): Promise<
       if (affected.some((item) => item.arrivedAt || item.actualStartedAt)) {
         throw new AppointmentSeriesError("Pristigli ili započeti tretman ne može biti otkazan.", 409);
       }
+      const finalMembers = members.map((member) =>
+        affected.some((item) => item.id === member.id) ? { ...member, status: "cancelled" } : member);
+      await assertActiveBookingGroupLayoutInTx(tx, access.salon.id, finalMembers);
       await lockAppointmentResources(tx, access.salon.id, affected.map((item) => ({ date: item.date, employeeId: item.employeeId })));
       const cancelledAt = new Date();
       const [settings] = await tx.select().from(salonBookingSettingsTable)
@@ -6744,6 +7006,7 @@ router.post("/booking-groups/:bookingGroupId/cancel", async (req, res): Promise<
         const cancelled = await cancelAppointmentInTx(tx, {
           appointmentId: appointment.id, actorId: access.user.id, occurredAt: cancelledAt,
           reason: body.data.reason ?? "Otkazan tretman iz grupne rezervacije",
+          allowBookingGroupMutation: true,
         });
         if (!("appointment" in cancelled)) throw new AppointmentSeriesError("Termin je u međuvremenu promenjen.", 409);
       }
@@ -6769,6 +7032,9 @@ router.post("/booking-groups/:bookingGroupId/cancel", async (req, res): Promise<
     await publishSalonNotificationUpdate(access.salon.id);
     res.json(CancelBookingGroupResponse.parse({ group, gapWarning: null }));
   } catch (error) {
+    if (error instanceof BookingGroupLayoutConflictError) {
+      res.status(409).json({ code: error.code, error: error.message }); return;
+    }
     if (error instanceof AppointmentSeriesError) { res.status(error.status).json({ error: error.message }); return; }
     throw error;
   }
@@ -6871,7 +7137,7 @@ router.patch("/appointments/:appointmentId", async (req, res): Promise<void> => 
   const user = await requireCustomer(req, res); if (!user) return;
   const [params, body] = [UpdateAppointmentParams.safeParse(req.params), UpdateAppointmentBody.safeParse(req.body)];
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci za izmenu termina nisu ispravni." }); return; }
-  let result: { appointment: typeof appointmentsTable.$inferSelect; service: typeof servicesTable.$inferSelect; employee: typeof employeesTable.$inferSelect } | { error: "not-found" | "changed" | "invalid-time" | "unavailable" };
+  let result: { appointment: typeof appointmentsTable.$inferSelect; service: typeof servicesTable.$inferSelect; employee: typeof employeesTable.$inferSelect } | { error: "not-found" | "changed" | "invalid-time" | "unavailable" | "booking-group" };
   try {
     result = await db.transaction(async (tx) => {
       const [initial] = await tx.select().from(appointmentsTable).where(and(
@@ -6879,6 +7145,7 @@ router.patch("/appointments/:appointmentId", async (req, res): Promise<void> => 
         eq(appointmentsTable.customerId, user.id),
       )).limit(1);
       if (!initial) return { error: "not-found" as const };
+      if (initial.bookingGroupId) return { error: "booking-group" as const };
 
       const date = body.data.date ? calendarDate(body.data.date) : initial.date;
       const startTime = body.data.startTime ?? initial.startTime;
@@ -6935,9 +7202,11 @@ router.patch("/appointments/:appointmentId", async (req, res): Promise<void> => 
   if ("error" in result) {
     const error = result.error;
     res.status(error === "not-found" ? 404 : error === "invalid-time" ? 400 : 409).json({
+      ...(error === "booking-group" ? { code: "BOOKING_GROUP_MUTATION_REQUIRED" } : {}),
       error: error === "not-found" ? "Termin nije pronađen."
         : error === "invalid-time" ? "Trajanje termina izlazi van radnog dana."
           : error === "unavailable" ? "Termin više nije slobodan kod izabranog zaposlenog."
+            : error === "booking-group" ? "Tretman iz grupne rezervacije mora se menjati kroz grupni raspored."
             : "Termin je u međuvremenu promenjen. Osvežite raspored i pokušajte ponovo.",
     });
     return;
@@ -6980,7 +7249,13 @@ async function applyAppointmentCompletionEffectsInTx(
 /** Canonical cancellation; callers perform their own tenant/actor authorization. */
 async function cancelAppointmentInTx(
   tx: MarketplaceTransaction,
-  input: { appointmentId: string; actorId: string; occurredAt: Date; reason: string | null },
+  input: {
+    appointmentId: string;
+    actorId: string;
+    occurredAt: Date;
+    reason: string | null;
+    allowBookingGroupMutation?: boolean;
+  },
 ) {
   const [initial] = await tx.select().from(appointmentsTable)
     .where(eq(appointmentsTable.id, input.appointmentId)).limit(1);
@@ -6989,6 +7264,9 @@ async function cancelAppointmentInTx(
   const [appointment] = await tx.select().from(appointmentsTable)
     .where(eq(appointmentsTable.id, initial.id)).for("update").limit(1);
   if (!appointment) return { error: "not-found" as const };
+  if (appointment.bookingGroupId && !input.allowBookingGroupMutation) {
+    return { error: "booking-group" as const };
+  }
   if (!canTransitionAppointmentLifecycle(appointment, "cancel", input.occurredAt)) {
     return { error: "invalid-transition" as const };
   }
@@ -7049,6 +7327,9 @@ router.post("/appointments/:appointmentId/lifecycle", async (req, res): Promise<
       const cancelled = await cancelAppointmentInTx(tx, {
         appointmentId: appointment.id, actorId: actor.id, occurredAt, reason: body.data.reason ?? null,
       });
+      if ("error" in cancelled && cancelled.error === "booking-group") {
+        return { changed: "booking-group" as const };
+      }
       return "appointment" in cancelled
         ? { changed: "ok" as const, appointment: cancelled.appointment, lowStockWarned: false }
         : { changed: "invalid" as const };
@@ -7098,6 +7379,8 @@ router.post("/appointments/:appointmentId/lifecycle", async (req, res): Promise<
   if (result.changed !== "ok") {
     res.status(409).json(result.changed === "late"
       ? { error: "Preostalo vreme nije dovoljno za tretman.", code: "INSUFFICIENT_USEFUL_TIME", remainingMinutes: result.remainingMinutes, minimumUsefulMinutes: result.minimumUsefulMinutes, plannedEndAt: result.plannedEndAt }
+      : result.changed === "booking-group"
+        ? { error: "Tretman iz grupne rezervacije mora se otkazati kroz grupni raspored.", code: "BOOKING_GROUP_MUTATION_REQUIRED" }
       : { error: "Ova promena statusa nije dozvoljena.", code: "INVALID_TRANSITION" });
     return;
   }
@@ -7131,6 +7414,7 @@ router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<voi
     const cancelled = await cancelAppointmentInTx(tx, {
       appointmentId: initial.id, actorId: user.id, occurredAt: cancelledAt, reason: body.data.reason ?? null,
     });
+    if ("error" in cancelled && cancelled.error === "booking-group") return { error: "booking-group" as const };
     if (!("appointment" in cancelled)) return { error: "changed" as const };
     const appointment = cancelled.appointment!;
     if (lateCancellation) {
@@ -7145,7 +7429,10 @@ router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<voi
   });
   if ("error" in result) {
     res.status(result.error === "not-found" ? 404 : 409).json({
-      error: result.error === "not-found" ? "Termin nije pronađen." : "Termin je u međuvremenu promenjen ili otkazan.",
+      ...(result.error === "booking-group" ? { code: "BOOKING_GROUP_MUTATION_REQUIRED" } : {}),
+      error: result.error === "not-found" ? "Termin nije pronađen."
+        : result.error === "booking-group" ? "Tretman iz grupne rezervacije mora se otkazati kroz grupni raspored."
+          : "Termin je u međuvremenu promenjen ili otkazan.",
     });
     return;
   }

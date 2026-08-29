@@ -124,3 +124,4 @@
 - [Availability branch preloading](availability-branch-preloading.md) — combinatorial previews reuse one request-scoped data snapshot while rerunning the canonical engine per branch.
 - [Availability window completeness](availability-window-completeness.md) — an empty calendar day is authoritative only when the server response cannot truncate earlier in the window.
 - [Employee schedule weekdays](employee-schedule-weekdays.md) — location schedule fixtures use ISO weekdays 1–7; zero-based days silently trigger fallback availability.
+- [Grouped booking mutation boundary](grouped-booking-mutation-boundary.md) — every legacy single-item mutation must defer to the canonical group layout boundary.

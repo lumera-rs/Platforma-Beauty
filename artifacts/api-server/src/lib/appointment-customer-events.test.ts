@@ -2,9 +2,39 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   appointmentReminderGroupingKey,
+  bookingGroupScheduleDetails,
   deliverSelectedReminderChannels,
   reviewInvitationSweepBounds,
 } from "./appointment-customer-events";
+
+test("group confirmation schedule lists every treatment in canonical order", () => {
+  const schedule = bookingGroupScheduleDetails([
+    {
+      id: "appointment-2",
+      serviceName: "Feniranje",
+      employeeName: "Mina",
+      date: "2026-03-10",
+      startTime: "11:00",
+      endTime: "11:45",
+    },
+    {
+      id: "appointment-1",
+      serviceName: "Šišanje <premium>",
+      employeeName: "Ana & tim",
+      date: "2026-03-10",
+      startTime: "10:00",
+      endTime: "10:45",
+    },
+  ]);
+
+  assert.deepEqual(schedule.textLines, [
+    "Šišanje <premium> — 2026-03-10, 10:00–10:45, Ana & tim",
+    "Feniranje — 2026-03-10, 11:00–11:45, Mina",
+  ]);
+  assert.match(schedule.htmlList, /Šišanje &lt;premium&gt;/);
+  assert.match(schedule.htmlList, /Ana &amp; tim/);
+  assert.ok(schedule.htmlList.indexOf("Šišanje") < schedule.htmlList.indexOf("Feniranje"));
+});
 
 test("reminder grouping deduplicates treatments per booking day", () => {
   const first = appointmentReminderGroupingKey({

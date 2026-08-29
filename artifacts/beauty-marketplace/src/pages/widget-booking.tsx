@@ -7,7 +7,8 @@ import {
   getGetWidgetSalonQueryKey,
   getApiErrorDetails,
   type GroupedTreatmentRequest,
-  type GroupedAvailabilityCandidate
+  type GroupedAvailabilityCandidate,
+  type Appointment
 } from "@workspace/api-client-react";
 import { addDays, startOfToday } from "date-fns";
 import { Loader2, Calendar, Clock, ChevronRight, ChevronLeft, CheckCircle2, AlertCircle, Plus, Trash2, Scissors } from "lucide-react";
@@ -58,6 +59,7 @@ export default function WidgetBooking() {
   const [viewMode, setViewMode] = useAvailabilityViewMode();
 
   const [selectedCandidate, setSelectedCandidate] = useState<GroupedAvailabilityCandidate | null>(null);
+  const [completedAppointments, setCompletedAppointments] = useState<Appointment[]>([]);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   const [contact, setContact] = useState({
@@ -77,7 +79,8 @@ export default function WidgetBooking() {
 
   const createMutation = useCreateWidgetBookingGroup({
     mutation: {
-      onSuccess: () => {
+      onSuccess: (data) => {
+        setCompletedAppointments(data.appointments);
         setStep("SUCCESS");
         trackEvent("grouped_booking_completed", analyticsDimensions());
       },
@@ -162,6 +165,7 @@ export default function WidgetBooking() {
     setStep("CART");
     setCart([]);
     setSelectedCandidate(null);
+    setCompletedAppointments([]);
     setFromDate(todayDate);
     setToDate(todayDate);
     setDateError(null);
@@ -511,9 +515,20 @@ export default function WidgetBooking() {
                 <CheckCircle2 className="h-10 w-10" />
               </div>
               <h2 className="mb-2 text-2xl font-serif font-bold text-foreground">Zahtev je poslat!</h2>
-              <p className="mb-8 text-muted-foreground text-sm max-w-[280px]">
-                Vaš termin je uspešno zakazan. Dobićete potvrdu od salona u najkraćem roku.
+              <p className="mb-4 text-muted-foreground text-sm max-w-[320px]">
+                Vaša grupna rezervacija je uspešno zakazana. Dobićete potvrdu od salona u najkraćem roku.
               </p>
+              <div className="mb-6 w-full space-y-2 text-left" aria-label="Raspored grupne rezervacije">
+                {completedAppointments.map((appointment) => (
+                  <div key={appointment.id} className="rounded-xl border bg-background p-3">
+                    <p className="font-semibold text-foreground">{appointment.serviceName}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {appointment.date} · {appointment.startTime}–{appointment.endTime}
+                    </p>
+                    <p className="text-sm text-muted-foreground">Zaposleni: {appointment.employeeName}</p>
+                  </div>
+                ))}
+              </div>
               <Button onClick={resetFlow} variant="outline" className="w-full font-medium rounded-xl h-11" data-testid="button-reset">
                 Zakaži još jedan termin
               </Button>

@@ -485,7 +485,55 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/BookingGroup" }
-        "409": { description: One or more selected treatment slots are no longer available }
+        "409":
+          description: A selected slot is unavailable, or the canonical active-group layout would be invalid
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BookingGroupConflict" }
+  /salon/booking-groups:
+    post:
+      operationId: createSalonBookingGroup
+      tags: [salon-management]
+      summary: Atomically create a manual grouped booking for a CRM customer or guest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ManualBookingGroupInput" }
+      responses:
+        "201":
+          description: Created real booking group and its linked appointments
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BookingGroup" }
+        "403": { description: Salon owner access required }
+        "409":
+          description: A slot, resource, or canonical group layout conflicts
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BookingGroupConflict" }
+  /employee/booking-groups:
+    post:
+      operationId: createEmployeeBookingGroup
+      tags: [employee-portal]
+      summary: Atomically create a manual grouped booking assigned to the signed-in employee
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ManualBookingGroupInput" }
+      responses:
+        "201":
+          description: Created real booking group and its linked appointments
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BookingGroup" }
+        "403": { description: Active employee access or customer relationship required }
+        "409":
+          description: A slot, resource, or canonical group layout conflicts
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BookingGroupConflict" }
   /booking-groups/{bookingGroupId}/reschedule:
     patch:
       operationId: rescheduleBookingGroup
@@ -503,13 +551,17 @@ paths:
             schema: { $ref: "#/components/schemas/BookingGroupRescheduleInput" }
       responses:
         "200":
-          description: Updated group; gapWarning explicitly reports a layout outside the salon preference
+          description: Updated group; gapWarning is retained for compatibility and is null for invariant-preserving mutations
           content:
             application/json:
               schema: { $ref: "#/components/schemas/BookingGroupOperationResult" }
         "403": { description: The actor may not manage this group }
         "404": { description: Booking group not found }
-        "409": { description: One or more selected slots are no longer available }
+        "409":
+          description: A selected slot is unavailable, or the canonical active remainder would be invalid
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BookingGroupConflict" }
   /booking-groups/{bookingGroupId}/cancel:
     post:
       operationId: cancelBookingGroup
@@ -533,6 +585,11 @@ paths:
               schema: { $ref: "#/components/schemas/BookingGroupOperationResult" }
         "403": { description: The actor may not manage this group }
         "404": { description: Booking group not found }
+        "409":
+          description: Cancelling the selected members would leave an invalid active remainder
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BookingGroupConflict" }
   /appointments:
     get:
       operationId: listMyAppointments
@@ -8837,6 +8894,33 @@ components:
           items: { $ref: "#/components/schemas/BookingGroupTreatmentInput" }
         notes: { type: ["string", "null"], maxLength: 1000 }
       required: [salonId, date, treatments]
+    ManualBookingGroupInput:
+      type: object
+      properties:
+        salonCustomerId: { type: string }
+        guest:
+          type: object
+          properties:
+            firstName: { type: string, minLength: 1, maxLength: 100 }
+            lastName: { type: string, maxLength: 100 }
+            phone: { type: string, minLength: 5, maxLength: 50 }
+            email: { type: string, maxLength: 320 }
+          required: [firstName, phone]
+        treatments:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { $ref: "#/components/schemas/ManualBookingGroupTreatmentInput" }
+        notes: { type: ["string", "null"], maxLength: 1000 }
+      required: [treatments]
+    ManualBookingGroupTreatmentInput:
+      type: object
+      properties:
+        serviceId: { type: string }
+        date: { type: string, format: date }
+        employeeId: { type: ["string", "null"] }
+        startTime: { type: string }
+      required: [serviceId, date, startTime]
     BookingGroupRescheduleTreatmentInput:
       type: object
       properties:
@@ -8870,6 +8954,15 @@ components:
         group: { $ref: "#/components/schemas/BookingGroup" }
         gapWarning: { type: ["string", "null"] }
       required: [group, gapWarning]
+    BookingGroupConflict:
+      type: object
+      properties:
+        code:
+          type: string
+          enum: [BOOKING_GROUP_LAYOUT_CONFLICT]
+          description: Present when the canonical active booking-group layout invariant failed.
+        error: { type: string }
+      required: [error]
     BookingGroup:
       type: object
       properties:

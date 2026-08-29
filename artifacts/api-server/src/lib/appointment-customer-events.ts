@@ -13,6 +13,7 @@ import {
   appointmentsTable,
   db,
   emailDeliveriesTable,
+  employeesTable,
   phoneVerificationProofsTable,
   reviewInvitationsTable,
   salonBookingSettingsTable,
@@ -24,9 +25,16 @@ import {
 import { lumeraEmailHtml, sendTransactionalEmail } from "./brevo";
 import { notifyCustomer } from "./customer-notifications";
 import { sendSms } from "./sms";
-
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+export type BookingGroupScheduleItem = {
+  id: string;
+  serviceName: string;
+  employeeName: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+};
 function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
 }
@@ -71,10 +79,25 @@ async function verifiedPhone(user: typeof usersTable.$inferSelect | undefined) {
 
 /** Emits one confirmation per group, never one per treatment. */
 export async function sendBookingGroupConfirmation(bookingGroupId: string) {
-  const items = await db.select().from(appointmentsTable)
-    .where(eq(appointmentsTable.bookingGroupId, bookingGroupId));
-  if (!items.length) return { email: false, sms: false };
-  items.sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+  const rows = await db.select({
+    appointment: appointmentsTable,
+    serviceName: servicesTable.name,
+    employeeName: employeesTable.name,
+  }).from(appointmentsTable)
+    .innerJoin(servicesTable, eq(servicesTable.id, appointmentsTable.serviceId))
+    .innerJoin(employeesTable, eq(employeesTable.id, appointmentsTable.employeeId))
+    .where(eq(appointmentsTable.bookingGroupId, bookingGroupId))
+    .orderBy(asc(appointmentsTable.date), asc(appointmentsTable.startTime), asc(appointmentsTable.id));
+  if (!rows.length) return { email: false, sms: false };
+  const items = rows.map((row) => row.appointment);
+  const schedule = bookingGroupScheduleDetails(rows.map((row) => ({
+    id: row.appointment.id,
+    serviceName: row.serviceName,
+    employeeName: row.employeeName,
+    date: row.appointment.date,
+    startTime: row.appointment.startTime,
+    endTime: row.appointment.endTime,
+  })));
   const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, items[0]!.salonId)).limit(1);
   if (!salon) return { email: false, sms: false };
   const { contact, user } = await recipientForAppointments(items);
@@ -83,9 +106,9 @@ export async function sendBookingGroupConfirmation(bookingGroupId: string) {
     eventKey: `booking-group:${bookingGroupId}:created`,
     category: "booking",
     title: "Termini su zakazani",
-    body: `Zakazano je ${items.length} tretmana u salonu ${salon.name}.`,
+    body: `Zakazano je ${items.length} tretmana u salonu ${salon.name}:\n${schedule.textLines.join("\n")}`,
     deepLink: "/moji-termini",
-    metadata: { bookingGroupId, appointmentIds: items.map((item) => item.id) },
+    metadata: { bookingGroupId, appointmentIds: items.map((item) => item.id), schedule: schedule.ordered },
   });
   const email = user?.email ?? contact?.email ?? null;
   const first = items[0]!;
@@ -97,8 +120,8 @@ export async function sendBookingGroupConfirmation(bookingGroupId: string) {
       appointmentId: first.id,
       to: { email, name: user?.firstName ?? contact?.firstName },
       subject: `LUMERA — potvrda grupne rezervacije`,
-      htmlContent: lumeraEmailHtml("Rezervacija je primljena", `<p>Rezervisali ste ${items.length} tretmana u salonu <strong>${escapeHtml(salon.name)}</strong>.</p><p>Prvi tretman je ${first.date} u ${first.startTime}.</p>`),
-      metadata: { bookingGroupId, appointmentIds: items.map((item) => item.id) },
+      htmlContent: lumeraEmailHtml("Rezervacija je primljena", `<p>Rezervisali ste ${items.length} tretmana u salonu <strong>${escapeHtml(salon.name)}</strong>.</p>${schedule.htmlList}`),
+      metadata: { bookingGroupId, appointmentIds: items.map((item) => item.id), schedule: schedule.ordered },
     });
   }
   const phone = await verifiedPhone(user);
@@ -292,4 +315,17 @@ export async function runAppointmentReviewInvitationSweep(options: {
     if (candidates.length < batchSize) break;
   }
   return { considered, created, pages };
+}
+
+export function bookingGroupScheduleDetails(items: BookingGroupScheduleItem[]) {
+  const ordered = [...items].sort((a, b) =>
+    a.date.localeCompare(b.date)
+    || a.startTime.localeCompare(b.startTime)
+    || a.id.localeCompare(b.id));
+  const textLines = ordered.map((item) =>
+    `${item.serviceName} — ${item.date}, ${item.startTime}–${item.endTime}, ${item.employeeName}`);
+  const htmlList = `<ol>${ordered.map((item) =>
+    `<li><strong>${escapeHtml(item.serviceName)}</strong> — ${escapeHtml(item.date)}, ${escapeHtml(item.startTime)}–${escapeHtml(item.endTime)}, zaposleni: ${escapeHtml(item.employeeName)}</li>`)
+    .join("")}</ol>`;
+  return { ordered, textLines, htmlList };
 }
