@@ -39,6 +39,7 @@ import {
 import { lumeraEmailHtml, sendTransactionalEmail } from "./brevo";
 import { logger } from "./logger";
 import { recordEducationEnrollmentReferralTransitionInTx } from "./referral-service";
+import { notifyCustomer } from "./customer-notifications";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -306,6 +307,15 @@ export async function cancelEducationSession(
           actionUrl: `/edukacije/${course.id}`,
           eventKey,
         }).onConflictDoNothing();
+         await notifyCustomer(tx, {
+           userId,
+           eventKey: `education-session-cancel:${sessionId}:customer:${userId}`,
+           category: "education",
+           title: "Termin edukacije je otkazan",
+           body: `Termin kursa „${course.title}" je otkazan.`,
+           deepLink: `/edukacije/${course.id}`,
+           metadata: { courseId: course.id, sessionId },
+         });
       }
 
       return { refundedEnrollmentIds, cancelledWaitlistIds, enrolledUserIds: allUserIds };
@@ -702,6 +712,15 @@ async function promoteNextWaitlistEntry(
       eventKey: `education-waitlist:${promoted.id}:offered`,
     })
     .onConflictDoNothing();
+  await notifyCustomer(tx, {
+    userId: promoted.userId,
+    eventKey: `education-waitlist:${promoted.id}:offered:customer`,
+    category: "education",
+    title: "Slobodno mesto je dostupno!",
+    body: `Vaše mesto za kurs „${course.title}" je dostupno naredna 24 sata.`,
+    deepLink: `/edukacije/${course.id}`,
+    metadata: { courseId: course.id, sessionId: session.id, waitlistId: promoted.id, expiresAt },
+  });
 
   return promoted;
 }

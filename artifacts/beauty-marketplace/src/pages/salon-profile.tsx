@@ -3,14 +3,14 @@ import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { 
-  useGetSalon, 
-  useGetSalonAvailability, 
-  useCreateAppointment, 
-  useGetCurrentUser, 
-  useGetCustomerSalonReview, 
-  useUpsertCustomerSalonReview, 
-  useDeleteCustomerSalonReview, 
+import {
+  useGetSalon,
+  useGetSalonAvailability,
+  useCreateAppointment,
+  useGetCurrentUser,
+  useGetCustomerSalonReview,
+  useUpsertCustomerSalonReview,
+  useDeleteCustomerSalonReview,
   useGetSalonFirstAvailable,
   useListSalons,
   useCustomerListPublicPackages,
@@ -18,8 +18,8 @@ import {
   useListJobseekerSalonInterests,
   useReplaceJobseekerSalonInterests,
   getGetCustomerDashboardQueryKey,
-  getGetSalonAvailabilityQueryKey, 
-  getGetSalonQueryKey, 
+  getGetSalonAvailabilityQueryKey,
+  getGetSalonQueryKey,
   getGetCustomerSalonReviewQueryKey,
   getGetSalonFirstAvailableQueryKey,
   getListMyAppointmentsQueryKey,
@@ -98,7 +98,8 @@ export default function SalonProfile() {
   const { draft, saveDraft, clearDraft } = useBookingDraft(user?.role === "CUSTOMER" ? user.id : undefined);
 
   const salonData = salon;
-  
+
+  const [cart, setCart] = useState<{serviceId: string, employeeId?: string | null}[]>([]);
   const [selectedService, setSelectedService] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [selectedEmployee, setSelectedEmployee] = useState<string | null>(null);
@@ -127,17 +128,17 @@ export default function SalonProfile() {
   const restoredSelection = useRef<string | null>(null);
   const [activeSection, setActiveSection] = useState("services");
   const [expandedServiceId, setExpandedServiceId] = useState<string | null>(null);
-  
+
   const [quickBookTarget, setQuickBookTarget] = useState<{
     serviceId: string;
     date: string;
     startTime: string;
     employeeId: string | null;
   } | null>(null);
-  
+
   const dateStr = format(selectedDate, 'yyyy-MM-dd');
   const availabilityEmployeeId = employeeSelection === "any" ? undefined : selectedEmployee || undefined;
-  
+
   const { data: availability, isLoading: isLoadingAvailability } = useGetSalonAvailability(
     salonData?.id || "",
     { serviceId: selectedService || "", date: dateStr, employeeId: availabilityEmployeeId },
@@ -169,7 +170,7 @@ export default function SalonProfile() {
   const createAppointment = useCreateAppointment();
   const upsertReview = useUpsertCustomerSalonReview();
   const deleteCustomerSalonReview = useDeleteCustomerSalonReview();
-  
+
   const { data: publicPackages, isLoading: isLoadingPackages } = useCustomerListPublicPackages(
     { salonId: salonData?.id || "" },
     {
@@ -218,8 +219,8 @@ export default function SalonProfile() {
   );
 
   const nearbySalons = useMemo(() => {
-    const list = Array.isArray(nearbySalonsResponse) 
-      ? nearbySalonsResponse 
+    const list = Array.isArray(nearbySalonsResponse)
+      ? nearbySalonsResponse
       : (nearbySalonsResponse as any)?.salons || (nearbySalonsResponse as any)?.data || [];
     return list.filter((s: any) => s.id !== salonData?.id).slice(0, 5);
   }, [nearbySalonsResponse, salonData?.id]);
@@ -353,8 +354,8 @@ export default function SalonProfile() {
   useEffect(() => {
     if (quickBookTarget && !isLoadingAvailability && salonData) {
       if (selectedService === quickBookTarget.serviceId && dateStr === quickBookTarget.date) {
-        const matchingSlot = availability?.find(s => 
-          s.start === quickBookTarget.startTime && 
+        const matchingSlot = availability?.find(s =>
+          s.start === quickBookTarget.startTime &&
           (!quickBookTarget.employeeId || s.employeeId === quickBookTarget.employeeId)
         );
         if (matchingSlot) {
@@ -403,7 +404,7 @@ export default function SalonProfile() {
       toast.error("Zakazivanje nije dostupno", { description: "Za zakazivanje termina prijavite se klijentskim nalogom." });
       return;
     }
-    
+
     if (!salonData || !selectedService || !selectedSlot) return;
 
     createAppointment.mutate({
@@ -815,10 +816,10 @@ export default function SalonProfile() {
       </div>
 
       <div className="container mx-auto px-4 py-12 md:py-16 flex flex-col lg:flex-row gap-12 lg:gap-16 relative">
-        
+
         {/* Left Column: Services & Staff */}
         <div className="flex-1 space-y-20">
-          
+
            {salonData.topServices.length > 0 && (
             <section id="popular-services">
               <h2 className="text-3xl font-serif font-bold mb-8 flex items-center gap-3">
@@ -912,7 +913,7 @@ export default function SalonProfile() {
                       const hasPromotion = promotionalPrice !== null && promotionalPrice < service.price;
                       return (
                         <div
-                          key={service.id} 
+                          key={service.id}
                           role={user?.role === "JOBSEEKER" ? undefined : "button"}
                           tabIndex={user?.role === "JOBSEEKER" ? undefined : 0}
                           aria-pressed={user?.role === "JOBSEEKER" ? undefined : selectedService === service.id}
@@ -993,8 +994,8 @@ export default function SalonProfile() {
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               {eligibleStaff.map(employee => (
-                <div 
-                  key={employee.id} 
+                <div
+                  key={employee.id}
                   className={`p-6 rounded-2xl border transition-all cursor-pointer flex items-start gap-5 bg-card shadow-sm ${selectedEmployee === employee.id ? 'border-primary ring-2 ring-primary/20 bg-primary/5' : 'border-border/60 hover:border-primary/40 hover:shadow-md'}`}
                   onClick={() => selectEmployee(selectedEmployee === employee.id ? null : employee.id)}
                 >
@@ -1005,9 +1006,9 @@ export default function SalonProfile() {
                      {employee.specialties?.length ? <p className="mt-2 text-sm text-muted-foreground leading-snug">{employee.specialties.join(" · ")}</p> : null}
                   </div>
                    {user?.role === "CUSTOMER" && (
-                     <button 
-                       className="p-2.5 hover:bg-muted rounded-full transition-colors shrink-0 -mt-2 -mr-2" 
-                       aria-label={`Omiljeni zaposleni ${employee.name}`} 
+                     <button
+                       className="p-2.5 hover:bg-muted rounded-full transition-colors shrink-0 -mt-2 -mr-2"
+                       aria-label={`Omiljeni zaposleni ${employee.name}`}
                        onClick={(event) => { event.stopPropagation(); setFavorite(employee.id).catch(() => toast.error("Omiljeni zaposleni nije sačuvan.")); }}
                      >
                        <Heart className={`h-6 w-6 transition-colors ${favoriteEmployeeId === employee.id ? "fill-primary text-primary" : "text-muted-foreground"}`} />
@@ -1180,80 +1181,28 @@ export default function SalonProfile() {
         {/* Right Column: Booking Widget */}
         <div className={user?.role === "JOBSEEKER" ? "hidden" : "hidden lg:block w-[400px] shrink-0"}>
           <div className="sticky top-24 pt-4" id="booking-widget">
-            <BookingWidget 
-              salon={salonData}
-              user={user}
-              eligibleStaff={eligibleStaff}
-              selectedService={selectedService}
-              setSelectedService={setSelectedService}
-              selectedEmployee={selectedEmployee}
-              setSelectedEmployee={selectEmployee}
-              isAnyEmployeeSelected={employeeSelection === "any"}
-              favoriteEmployeeId={favoriteEmployeeId}
-              setFavorite={setFavorite}
-              selectedDate={selectedDate}
-              setSelectedDate={setSelectedDate}
-              selectedSlot={selectedSlot}
-              setSelectedSlot={setSelectedSlot}
-              availability={availability}
-              isLoadingAvailability={isLoadingAvailability || !!quickBookTarget}
-              onBook={handleBook}
-              isBooking={createAppointment.isPending}
-              isSuccess={isSuccess}
-              bookingStatus={bookingStatus}
-              onViewAppointments={() => setLocation("/moj-nalog")}
-              step={bookingStep}
-              setStep={setBookingStep}
-              hasInteractedWithEmployee={hasInteractedWithEmployee}
-              setHasInteractedWithEmployee={setHasInteractedWithEmployee}
-              className="rounded-3xl shadow-xl border-border/60 max-h-[calc(100vh-8rem)]"
-            />
+            <BookingWidget
+ salon={salonData}
+ user={user}
+ selectedService={selectedService}
+ setSelectedService={setSelectedService}
+ onViewAppointments={() => setLocation("/moj-nalog")}
+ />
           </div>
         </div>
       </div>
-      
+
       {/* Mobile Booking Elements */}
       <div className={user?.role === "JOBSEEKER" ? "hidden" : "lg:hidden"}>
-      <MobileBookingTrigger 
-          salon={salonData} 
-          selectedService={selectedService} 
-          selectedSlot={selectedSlot} 
-          onOpen={() => setIsMobileDrawerOpen(true)} 
-        />
+      <MobileBookingTrigger salon={salonData} cartCount={0} onOpen={() => setIsMobileDrawerOpen(true)} />
       <MobileBookingDrawer isOpen={isMobileDrawerOpen} onClose={() => setIsMobileDrawerOpen(false)} scrollContainerRef={mobileBookingScrollRef}>
-           <BookingWidget 
-              salon={salonData}
-              user={user}
-              eligibleStaff={eligibleStaff}
-              selectedService={selectedService}
-              setSelectedService={setSelectedService}
-              selectedEmployee={selectedEmployee}
-              setSelectedEmployee={selectEmployee}
-              isAnyEmployeeSelected={employeeSelection === "any"}
-              favoriteEmployeeId={favoriteEmployeeId}
-              setFavorite={setFavorite}
-              selectedDate={selectedDate}
-              setSelectedDate={setSelectedDate}
-              selectedSlot={selectedSlot}
-              setSelectedSlot={setSelectedSlot}
-              availability={availability}
-              isLoadingAvailability={isLoadingAvailability || !!quickBookTarget}
-              onBook={handleBook}
-              isBooking={createAppointment.isPending}
-              isSuccess={isSuccess}
-              bookingStatus={bookingStatus}
-              onViewAppointments={() => {
-                setIsMobileDrawerOpen(false);
-                setLocation("/moj-nalog");
-              }}
-              step={bookingStep}
-              setStep={setBookingStep}
-              hasInteractedWithEmployee={hasInteractedWithEmployee}
-              setHasInteractedWithEmployee={setHasInteractedWithEmployee}
-              onCloseMobile={() => setIsMobileDrawerOpen(false)}
-               scrollContainerRef={mobileBookingScrollRef}
-              className="h-auto min-h-full border-0 rounded-none shadow-none"
-            />
+           <BookingWidget
+ salon={salonData}
+ user={user}
+ selectedService={selectedService}
+ setSelectedService={setSelectedService}
+ onViewAppointments={() => setLocation("/moj-nalog")}
+ />
       </MobileBookingDrawer>
       <Dialog open={locationDialogOpen} onOpenChange={setLocationDialogOpen}>
         <DialogContent className="max-w-lg">
@@ -1321,9 +1270,9 @@ export default function SalonProfile() {
                <Label>Ocena (1-5)</Label>
                <div className="flex gap-2">
                  {[1, 2, 3, 4, 5].map((star) => (
-                   <button 
-                     key={star} 
-                     type="button" 
+                   <button
+                     key={star}
+                     type="button"
                      className="p-2 -m-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-full transition-transform hover:scale-110"
                      onClick={() => setReviewRating(star)}
                       aria-label={`${star} od 5 zvezdica`}
@@ -1336,20 +1285,20 @@ export default function SalonProfile() {
 
              <div className="space-y-3">
                <Label>Vaš utisak</Label>
-               <Textarea 
+               <Textarea
                   id="review-text"
-                 placeholder="Sve je bilo odlično, veoma sam zadovoljan/na uslugom..." 
-                 value={reviewText} 
+                 placeholder="Sve je bilo odlično, veoma sam zadovoljan/na uslugom..."
+                 value={reviewText}
                  onChange={(e) => setReviewText(e.target.value)}
-                 className="min-h-[120px] resize-none" 
+                 className="min-h-[120px] resize-none"
                />
              </div>
 
              <div className="flex items-start gap-3 bg-muted/30 p-4 rounded-xl border">
-               <Checkbox 
-                 id="show-photo" 
-                 checked={showProfilePhoto} 
-                 onCheckedChange={(checked) => setShowProfilePhoto(checked === true)} 
+               <Checkbox
+                 id="show-photo"
+                 checked={showProfilePhoto}
+                 onCheckedChange={(checked) => setShowProfilePhoto(checked === true)}
                  className="mt-1"
                />
                <div className="space-y-1.5 leading-none">

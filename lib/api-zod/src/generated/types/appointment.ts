@@ -10,6 +10,7 @@ import type { AppointmentRescheduledConfirmation } from './appointmentReschedule
 import type { AppointmentStatus } from './appointmentStatus';
 import type { AppointmentTreatmentAddress } from './appointmentTreatmentAddress';
 import type { AppointmentTreatmentLocation } from './appointmentTreatmentLocation';
+import type { GroupedTreatmentSlot } from './groupedTreatmentSlot';
 
 export interface Appointment {
   id: string;
@@ -41,4 +42,25 @@ export interface Appointment {
   /** @nullable */
   rescheduledConfirmation?: AppointmentRescheduledConfirmation;
   allocatedResources: AllocatedResource[];
+  /** @nullable */
+  bookingGroupId?: string | null;
+  treatments?: GroupedTreatmentSlot[];
+  /** @nullable */
+  plannedDate?: Date | null;
+  /** @nullable */
+  plannedStartTime?: string | null;
+  /** @nullable */
+  plannedEndTime?: string | null;
+  /** @nullable */
+  actualStartedAt?: Date | null;
+  /** @nullable */
+  actualCompletedAt?: Date | null;
+  /** @nullable */
+  confirmedAt?: Date | null;
+  /** @nullable */
+  cancelledAt?: Date | null;
+  /** @nullable */
+  completedAt?: Date | null;
+  /** @nullable */
+  noShowAt?: Date | null;
 }

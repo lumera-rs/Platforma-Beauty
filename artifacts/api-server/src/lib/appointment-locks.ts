@@ -27,7 +27,9 @@ export async function lockAppointmentResources(store: any, salonId: string, reso
     .filter((resource): resource is AppointmentLockResource & { employeeId: string } => Boolean(resource.employeeId))
     .map((resource) => `${resource.date}:${resource.employeeId}`))].sort();
   for (const employee of employees) {
-    await store.execute(sql`select pg_advisory_xact_lock(hashtext(${`lumera:appointments:employee:${salonId}:${employee}`}))`);
+    // Employee occupancy is global across assigned locations. Do not include
+    // salonId in this key or simultaneous bookings at sibling locations race.
+    await store.execute(sql`select pg_advisory_xact_lock(hashtext(${`lumera:appointments:employee:${employee}`}))`);
   }
   // Resource locks come after employee locks, stable-sorted to prevent deadlocks.
   const resourceKeys = [...new Set(resources

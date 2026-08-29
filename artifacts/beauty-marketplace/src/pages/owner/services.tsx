@@ -2,12 +2,12 @@ import { useState, useMemo, useEffect } from "react";
 import { BusinessLayout } from "@/components/business-layout";
 import { OptimizedImage } from "@/components/optimized-image";
 import { OwnerSidebar } from "./dashboard";
-import { 
-  useListSalonServices, 
-  useCreateSalonService, 
-  useUpdateSalonService, 
+import {
+  useListSalonServices,
+  useCreateSalonService,
+  useUpdateSalonService,
   useDeleteSalonService,
-  useGetCurrentUser, 
+  useGetCurrentUser,
   getListSalonServicesQueryKey,
   useListServiceTemplates,
   useCreateSalonServicesBatch,
@@ -16,7 +16,8 @@ import {
   useGetServiceConsumptions,
   usePutServiceConsumptions,
   useListProducts,
-  getGetServiceConsumptionsQueryKey
+  getGetServiceConsumptionsQueryKey,
+  type ServiceInput
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -73,7 +74,7 @@ function TemplateLibrary({ onBatchCreated }: { onBatchCreated: () => void }) {
   }, [templates]);
 
   const filteredTemplates = useMemo(() => {
-    return activeTemplates.filter(t => 
+    return activeTemplates.filter(t =>
       (category === "all" || t.mainCategory === category) && (
         t.name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
         t.mainCategory.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
@@ -137,8 +138,8 @@ function TemplateLibrary({ onBatchCreated }: { onBatchCreated: () => void }) {
       <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-card p-4 rounded-xl border shadow-sm">
         <div className="relative flex-1 w-full max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input 
-            placeholder="Pretraži biblioteku šablona..." 
+          <Input
+            placeholder="Pretraži biblioteku šablona..."
             className="pl-9"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -172,12 +173,12 @@ function TemplateLibrary({ onBatchCreated }: { onBatchCreated: () => void }) {
           {filteredTemplates.map(t => {
             const isSelected = selectedIds.has(t.id);
             return (
-              <div 
-                key={t.id} 
+              <div
+                key={t.id}
                 onClick={() => toggleSelection(t)}
                 className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                  isSelected 
-                    ? "border-primary bg-primary/5 ring-1 ring-primary/20" 
+                  isSelected
+                    ? "border-primary bg-primary/5 ring-1 ring-primary/20"
                     : "bg-card hover:border-primary/50 hover:shadow-sm"
                 }`}
               >
@@ -209,7 +210,7 @@ function TemplateLibrary({ onBatchCreated }: { onBatchCreated: () => void }) {
               Unesite cenu i prilagodite trajanje za usluge koje dodajete u svoj cenovnik.
             </p>
           </DialogHeader>
-          
+
           <div className="flex-1 overflow-y-auto pr-2 space-y-4 py-4 custom-scrollbar">
             {selectedTemplates.map(t => (
               <div key={t.id} className="p-4 rounded-lg border bg-card space-y-3">
@@ -225,8 +226,8 @@ function TemplateLibrary({ onBatchCreated }: { onBatchCreated: () => void }) {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label className="text-xs">Vaša cena (RSD) *</Label>
-                    <Input 
-                      type="number" 
+                    <Input
+                      type="number"
                       min="0"
                       value={configs[t.id]?.price || ""}
                       onChange={(e) => setConfigs(prev => ({ ...prev, [t.id]: { ...prev[t.id], price: e.target.value } }))}
@@ -235,8 +236,8 @@ function TemplateLibrary({ onBatchCreated }: { onBatchCreated: () => void }) {
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Trajanje (min) *</Label>
-                    <Input 
-                      type="number" 
+                    <Input
+                      type="number"
                       min="5"
                       step="5"
                       value={configs[t.id]?.duration || ""}
@@ -261,15 +262,15 @@ function TemplateLibrary({ onBatchCreated }: { onBatchCreated: () => void }) {
   );
 }
 
-function ConsumptionDialog({ 
-  serviceId, 
+function ConsumptionDialog({
+  serviceId,
   serviceName,
-  open, 
-  onOpenChange 
-}: { 
+  open,
+  onOpenChange
+}: {
   serviceId: string;
   serviceName: string;
-  open: boolean; 
+  open: boolean;
   onOpenChange: (o: boolean) => void;
 }) {
   const { data: consumptions, isLoading: isConsumptionsLoading } = useGetServiceConsumptions(serviceId, {
@@ -327,7 +328,7 @@ function ConsumptionDialog({
         <DialogHeader>
           <DialogTitle>Potrošnja materijala</DialogTitle>
           <p className="text-sm text-muted-foreground">
-            Konfigurišite koje proizvode troši usluga <strong>{serviceName}</strong>. 
+            Konfigurišite koje proizvode troši usluga <strong>{serviceName}</strong>.
             Zalihe u inventaru će se automatski smanjivati po završetku termina.
           </p>
         </DialogHeader>
@@ -366,7 +367,7 @@ function ConsumptionDialog({
                         </option>
                       ))}
                     </select>
-                    
+
                     <Input
                       type="number"
                       step="0.01"
@@ -381,7 +382,7 @@ function ConsumptionDialog({
                       }}
                       required
                     />
-                    
+
                     <Button
                       type="button"
                       variant="ghost"
@@ -415,6 +416,7 @@ function ConsumptionDialog({
 }
 
 export default function OwnerServices() {
+  const queryClient = useQueryClient();
   const { data: userResp } = useGetCurrentUser();
   const { data: services, isLoading, refetch } = useListSalonServices({ query: { enabled: !!userResp?.user, queryKey: getListSalonServicesQueryKey() }});
   const { data: resources } = useListSalonResources({ query: { enabled: !!userResp?.user, queryKey: getListSalonResourcesQueryKey() } });
@@ -428,13 +430,14 @@ export default function OwnerServices() {
   const [activeTab, setActiveTab] = useState("my-services");
   const [deleteTarget, setDeleteTarget] = useState<NonNullable<typeof services>[number] | null>(null);
   const [uploadingServiceImage, setUploadingServiceImage] = useState(false);
-  
+
   const activeHomeServiceCount = services?.filter((service) => service.active && service.homeServiceAvailable).length ?? 0;
 
   const [formData, setFormData] = useState({
     name: "",
     category: "Frizura",
     durationMinutes: 30,
+    bufferMinutes: 0,
     price: 1500,
     description: "",
     imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=200",
@@ -444,25 +447,45 @@ export default function OwnerServices() {
 
   const resetForm = () => {
     setEditingId(null);
-    setFormData({ name: "", category: "Frizura", durationMinutes: 30, price: 1500, description: "", imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=200", active: true, homeServiceAvailable: false, homeServiceFee: 0, homeServiceMinimumOrder: "", resourceRequirements: [] });
+    setFormData({ name: "", category: "Frizura", durationMinutes: 30, bufferMinutes: 0, price: 1500, description: "", imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=200", active: true, homeServiceAvailable: false, homeServiceFee: 0, homeServiceMinimumOrder: "", resourceRequirements: [] });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const payload = {
+    const bufferMinutes = Number(formData.bufferMinutes);
+    if (!Number.isInteger(bufferMinutes) || bufferMinutes < 0) {
+      toast.error("Neispravno buffer vreme", { description: "Buffer vreme mora biti ceo broj minuta, nula ili više." });
+      return;
+    }
+    const payload: ServiceInput = {
       ...formData,
       durationMinutes: Number(formData.durationMinutes),
+      bufferMinutes,
       price: Number(formData.price),
       homeServiceFee: formData.homeServiceAvailable ? Number(formData.homeServiceFee) : 0,
       homeServiceMinimumOrder: formData.homeServiceAvailable && formData.homeServiceMinimumOrder !== "" ? Number(formData.homeServiceMinimumOrder) : null,
       resourceRequirements: formData.resourceRequirements.filter(r => r.resourceId && r.quantity > 0)
     };
     const callbacks = {
-      onSuccess: () => {
+      onSuccess: async (savedService: NonNullable<typeof services>[number]) => {
+        queryClient.setQueryData<NonNullable<typeof services>>(
+          getListSalonServicesQueryKey(),
+          (current) => {
+            if (!current) return [savedService];
+            const existingIndex = current.findIndex((service) => service.id === savedService.id);
+            if (existingIndex === -1) return [...current, savedService];
+            return current.map((service, index) => index === existingIndex ? savedService : service);
+          },
+        );
+        await queryClient.invalidateQueries({ queryKey: getListSalonServicesQueryKey() });
         toast.success(editingId ? "Usluga izmenjena" : "Usluga dodata");
         setOpen(false);
         resetForm();
-        refetch();
+      },
+      onError: (error: unknown) => {
+        toast.error("Čuvanje usluge nije uspelo", {
+          description: error instanceof Error ? error.message : "Pokušajte ponovo.",
+        });
       }
     };
     if (editingId) updateMutation.mutate({ serviceId: editingId, data: payload }, callbacks);
@@ -484,7 +507,7 @@ export default function OwnerServices() {
 
   const editService = (service: NonNullable<typeof services>[number]) => {
     setEditingId(service.id);
-    setFormData({ name: service.name, category: service.category, durationMinutes: service.durationMinutes, price: service.price, description: service.description, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder?.toString() ?? "", resourceRequirements: service.resourceRequirements ?? [] });
+    setFormData({ name: service.name, category: service.category, durationMinutes: service.durationMinutes, bufferMinutes: service.bufferMinutes ?? 0, price: service.price, description: service.description, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder?.toString() ?? "", resourceRequirements: service.resourceRequirements ?? [] });
     setOpen(true);
   };
 
@@ -515,7 +538,7 @@ export default function OwnerServices() {
     <BusinessLayout>
       <div className="container mx-auto px-4 py-8 flex flex-col md:flex-row gap-8 items-start">
         <OwnerSidebar current="/vlasnik/usluge" />
-        
+
         <div className="flex-1 space-y-6 w-full min-w-0">
           <div>
             <h1 className="text-3xl font-serif font-bold text-foreground">Usluge salona</h1>
@@ -549,6 +572,10 @@ export default function OwnerServices() {
                         <div className="space-y-2">
                           <Label>Trajanje (min)</Label>
                           <Input type="number" value={formData.durationMinutes} onChange={e => setFormData({...formData, durationMinutes: Number(e.target.value)})} required min="5" step="5" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Buffer vreme (min)</Label>
+                          <Input type="number" value={formData.bufferMinutes} onChange={e => setFormData({...formData, bufferMinutes: Number(e.target.value)})} min="0" step="1" required />
                         </div>
                         <div className="space-y-2">
                           <Label>Cena (RSD)</Label>
@@ -702,7 +729,7 @@ export default function OwnerServices() {
                             {service.active && service.homeServiceAvailable && <Badge className="text-[10px] gap-1 bg-primary/10 text-primary border-primary/20"><House className="h-3 w-3" /> Na adresi</Badge>}
                              {!service.canBePermanentlyDeleted && <Badge variant="secondary" className="text-[10px] gap-1"><AlertCircle className="h-3 w-3" /> Istorija termina</Badge>}
                           </div>
-                          <p className="text-sm text-muted-foreground mb-1">{service.category} • {service.durationMinutes} min</p>
+                          <p className="text-sm text-muted-foreground mb-1">{service.category} • {service.durationMinutes} min{service.bufferMinutes ? ` + ${service.bufferMinutes}m buffer` : ''}</p>
                           <div className="flex items-baseline gap-2">
                             <p className="font-semibold text-primary">{service.price} RSD</p>
                             {service.promoPrice && <p className="text-sm line-through text-muted-foreground">{service.promoPrice} RSD</p>}

@@ -37,6 +37,10 @@ import { runRetailSubscriptionWorker } from "./lib/retail-subscription-worker";
 import { runRetailCartReminderSweep } from "./lib/retail-cart-reminders";
 import { runRetailReviewInvitationSweep } from "./lib/review-invitations";
 import { runAftercareWorker } from "./lib/aftercare-worker";
+import {
+  runAppointmentReminderSweep,
+  runAppointmentReviewInvitationSweep,
+} from "./lib/appointment-customer-events";
 
 const rawPort = process.env["PORT"];
 
@@ -161,6 +165,14 @@ const aftercareWorker = createResilientScheduledJob({
   job: "aftercare-worker",
   run: runAftercareWorker,
 });
+const appointmentReminders = createResilientScheduledJob({
+  job: "appointment-reminders",
+  run: runAppointmentReminderSweep,
+});
+const appointmentReviewInvitations = createResilientScheduledJob({
+  job: "appointment-review-invitations",
+  run: runAppointmentReviewInvitationSweep,
+});
 const scheduledJobs = [
   rescheduledConfirmationRetries,
   educationSessionMaintenance,
@@ -181,6 +193,8 @@ const scheduledJobs = [
   retailCartReminderSweep,
   retailReviewInvitationSweep,
   aftercareWorker,
+  appointmentReminders,
+  appointmentReviewInvitations,
 ];
 
 const retryInterval = setInterval(() => {
@@ -233,6 +247,13 @@ void retailCartReminderSweep.run();
 const retailReviewInvitationSweepInterval = setInterval(() => { void retailReviewInvitationSweep.run(); }, 60 * 60_000);
 retailReviewInvitationSweepInterval.unref();
 void retailReviewInvitationSweep.run();
+const appointmentCustomerEventsInterval = setInterval(() => {
+  void appointmentReminders.run();
+  void appointmentReviewInvitations.run();
+}, 60_000);
+appointmentCustomerEventsInterval.unref();
+void appointmentReminders.run();
+void appointmentReviewInvitations.run();
 
 const educationGalleryCleanupInterval = setInterval(() => {
   void educationGalleryCleanup.run();
@@ -314,6 +335,7 @@ function clearScheduledTasks(): void {
   clearInterval(retailSubscriptionCyclesInterval);
   clearInterval(retailCartReminderSweepInterval);
   clearInterval(retailReviewInvitationSweepInterval);
+  clearInterval(appointmentCustomerEventsInterval);
   clearInterval(educationMaintenanceInterval);
   clearInterval(beautyJobsExpiryInterval);
   clearInterval(referralMaintenanceInterval);

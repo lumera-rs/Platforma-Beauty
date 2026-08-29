@@ -484,6 +484,8 @@ export const servicesTable = pgTable("services", {
   name: text("name").notNull(),
   description: text("description").notNull(),
   durationMinutes: integer("duration_minutes").notNull(),
+  /** Calendar occupancy after treatment; does not change the customer-visible end time. */
+  bufferMinutes: integer("buffer_minutes").notNull().default(0),
   price: integer("price").notNull(),
   promoPrice: integer("promo_price"),
   tags: jsonb("tags").$type<string[]>().notNull().default([]),
@@ -500,6 +502,7 @@ export const servicesTable = pgTable("services", {
   index("services_salon_category_idx").on(table.salonId, table.categoryId),
   // Leading FK coverage for categoryId alone (global category browse).
   index("services_category_idx").on(table.categoryId),
+  check("services_buffer_minutes_check", sql`${table.bufferMinutes} >= 0`),
 ]);
 
 export const productBrandsTable = pgTable("product_brands", {
@@ -579,6 +582,48 @@ export const salonHoursTable = pgTable("salon_hours", {
   index("salon_hours_salon_weekday_idx").on(table.salonId, table.weekday),
 ]);
 
+/** Per-location policy used by every calendar availability and lifecycle flow. */
+export const salonBookingSettingsTable = pgTable("salon_booking_settings", {
+  salonId: uuid("salon_id").primaryKey().references(() => salonsTable.id, { onDelete: "cascade" }),
+  slotGranularityMinutes: integer("slot_granularity_minutes").notNull().default(15),
+  minimumLeadTimeMinutes: integer("minimum_lead_time_minutes").notNull().default(0),
+  cancellationDeadlineMinutes: integer("cancellation_deadline_minutes").notNull().default(0),
+  reminderOffsetsMinutes: jsonb("reminder_offsets_minutes").$type<number[]>().notNull().default([]),
+  reminderChannels: jsonb("reminder_channels").$type<Array<"email" | "sms" | "push">>().notNull().default([]),
+  maxVisitGapMinutes: integer("max_visit_gap_minutes").notNull().default(0),
+  minimumUsefulLateTreatmentMinutes: integer("minimum_useful_late_treatment_minutes").notNull().default(0),
+  updatedByUserId: uuid("updated_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  check("salon_booking_settings_granularity_check", sql`${table.slotGranularityMinutes} in (5, 10, 15, 30)`),
+  check("salon_booking_settings_nonnegative_check", sql`
+    ${table.minimumLeadTimeMinutes} >= 0
+    and ${table.cancellationDeadlineMinutes} >= 0
+    and ${table.maxVisitGapMinutes} >= 0
+    and ${table.minimumUsefulLateTreatmentMinutes} >= 0`),
+  index("salon_booking_settings_updated_by_idx").on(table.updatedByUserId),
+]);
+
+/** A date override may close the location or provide replacement opening hours. */
+export const salonDateHoursTable = pgTable("salon_date_hours", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
+  date: date("date", { mode: "string" }).notNull(),
+  closed: boolean("closed").notNull().default(false),
+  openTime: text("open_time"),
+  closeTime: text("close_time"),
+  reason: text("reason"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("salon_date_hours_salon_date_unique").on(table.salonId, table.date),
+  check("salon_date_hours_window_check", sql`
+    (${table.closed} and ${table.openTime} is null and ${table.closeTime} is null)
+    or (not ${table.closed} and ${table.openTime} is not null and ${table.closeTime} is not null
+      and ${table.openTime} < ${table.closeTime})`),
+]);
+
 export const salonCustomersTable = pgTable("salon_customers", {
   id: uuid("id").defaultRandom().primaryKey(),
   salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
@@ -623,6 +668,22 @@ export const appointmentSeriesTable = pgTable("appointment_series", {
   index("appointment_series_created_by_idx").on(table.createdByUserId),
 ]);
 
+/** One customer checkout/visit can contain several ordered appointments. */
+export const bookingGroupsTable = pgTable("booking_groups", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
+  customerId: uuid("customer_id").references(() => usersTable.id, { onDelete: "set null" }),
+  salonCustomerId: uuid("salon_customer_id").references(() => salonCustomersTable.id, { onDelete: "set null" }),
+  createdByUserId: uuid("created_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("booking_groups_salon_created_idx").on(table.salonId, table.createdAt),
+  index("booking_groups_customer_idx").on(table.customerId),
+  index("booking_groups_salon_customer_idx").on(table.salonCustomerId),
+]);
+
 export const appointmentsTable = pgTable("appointments", {
   id: uuid("id").defaultRandom().primaryKey(),
   salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
@@ -631,6 +692,7 @@ export const appointmentsTable = pgTable("appointments", {
   employeeId: uuid("employee_id").references(() => employeesTable.id, { onDelete: "set null" }),
   serviceId: uuid("service_id").notNull().references(() => servicesTable.id),
   seriesId: uuid("series_id").references(() => appointmentSeriesTable.id, { onDelete: "set null" }),
+  bookingGroupId: uuid("booking_group_id").references(() => bookingGroupsTable.id, { onDelete: "set null" }),
   date: date("appointment_date", { mode: "string" }).notNull(),
   startTime: text("start_time").notNull(),
   endTime: text("end_time").notNull(),
@@ -645,7 +707,23 @@ export const appointmentsTable = pgTable("appointments", {
   status: appointmentStatusEnum("status").notNull().default("pending"),
   notes: text("notes"),
   cancellationReason: text("cancellation_reason"),
+  /** Additive planning snapshot; rollout copies legacy visible date/times verbatim. */
+  plannedDate: date("planned_date", { mode: "string" }),
+  plannedStartTime: text("planned_start_time"),
+  plannedEndTime: text("planned_end_time"),
+  actualStartedAt: timestamp("actual_started_at", { withTimezone: true }),
+  actualCompletedAt: timestamp("actual_completed_at", { withTimezone: true }),
+  createdByUserId: uuid("created_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  updatedByUserId: uuid("updated_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  cancelledByUserId: uuid("cancelled_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  completedByUserId: uuid("completed_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  noShowAt: timestamp("no_show_at", { withTimezone: true }),
+  noShowByUserId: uuid("no_show_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   // Primary schedule query: salon day-view, optionally filtered by employee/status.
   index("appointments_schedule_lookup_index").on(table.salonId, table.date, table.employeeId, table.status),
@@ -663,6 +741,31 @@ export const appointmentsTable = pgTable("appointments", {
     .where(sql`${table.status} = 'completed'`),
   index("appointments_service_idx").on(table.serviceId),
   index("appointments_series_idx").on(table.seriesId),
+  index("appointments_booking_group_idx").on(table.bookingGroupId),
+]);
+
+/** Ordered treatment plan snapshots, compatible with each appointment's legacy service_id. */
+export const appointmentTreatmentsTable = pgTable("appointment_treatments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  appointmentId: uuid("appointment_id").notNull().references(() => appointmentsTable.id, { onDelete: "cascade" }),
+  serviceId: uuid("service_id").notNull().references(() => servicesTable.id, { onDelete: "restrict" }),
+  employeeId: uuid("employee_id").references(() => employeesTable.id, { onDelete: "set null" }),
+  position: integer("position").notNull(),
+  durationMinutes: integer("duration_minutes").notNull(),
+  bufferMinutes: integer("buffer_minutes").notNull().default(0),
+  price: integer("price").notNull(),
+  plannedStartTime: text("planned_start_time"),
+  plannedEndTime: text("planned_end_time"),
+  actualStartedAt: timestamp("actual_started_at", { withTimezone: true }),
+  actualCompletedAt: timestamp("actual_completed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("appointment_treatments_appointment_position_unique").on(table.appointmentId, table.position),
+  index("appointment_treatments_service_idx").on(table.serviceId),
+  index("appointment_treatments_employee_idx").on(table.employeeId),
+  check("appointment_treatments_position_check", sql`${table.position} >= 0`),
+  check("appointment_treatments_duration_check", sql`${table.durationMinutes} > 0 and ${table.bufferMinutes} >= 0`),
 ]);
 
 export const smsDeliveriesTable = pgTable("sms_deliveries", {
@@ -849,6 +952,53 @@ export const appointmentResourceAllocationsTable = pgTable("appointment_resource
   index("appointment_resource_allocations_resource_idx").on(table.resourceId),
   // Leading FK coverage for appointmentId.
   index("appointment_resource_allocations_appointment_idx").on(table.appointmentId),
+]);
+
+/** Date/time intervals when a bookable resource cannot be allocated. */
+export const salonResourceDowntimeTable = pgTable("salon_resource_downtime", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  resourceId: uuid("resource_id").notNull().references(() => salonResourcesTable.id, { onDelete: "cascade" }),
+  startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+  endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+  reason: text("reason"),
+  createdByUserId: uuid("created_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("salon_resource_downtime_resource_window_idx").on(table.resourceId, table.startsAt, table.endsAt),
+  check("salon_resource_downtime_window_check", sql`${table.startsAt} < ${table.endsAt}`),
+]);
+
+/** Durable, product-wide customer inbox; eventKey makes producer retries safe. */
+export const customerNotificationsTable = pgTable("customer_notifications", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  eventKey: text("event_key").notNull().unique(),
+  userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  category: text("category").notNull(),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  deepLink: text("deep_link"),
+  readAt: timestamp("read_at", { withTimezone: true }),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("customer_notifications_user_created_idx").on(table.userId, table.createdAt),
+  index("customer_notifications_user_unread_idx").on(table.userId, table.createdAt)
+    .where(sql`${table.readAt} is null`),
+]);
+
+/** Durable proof that a completed visit generated at most one review invitation. */
+export const reviewInvitationsTable = pgTable("review_invitations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  eventKey: text("event_key").notNull().unique(),
+  appointmentId: uuid("appointment_id").notNull().references(() => appointmentsTable.id, { onDelete: "cascade" }),
+  customerId: uuid("customer_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  notificationId: uuid("notification_id").references(() => customerNotificationsTable.id, { onDelete: "set null" }),
+  invitedAt: timestamp("invited_at", { withTimezone: true }).notNull().defaultNow(),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+}, (table) => [
+  uniqueIndex("review_invitations_appointment_unique").on(table.appointmentId),
+  index("review_invitations_customer_idx").on(table.customerId, table.invitedAt),
+  index("review_invitations_notification_idx").on(table.notificationId),
 ]);
 
 // ---------------------------------------------------------------------------

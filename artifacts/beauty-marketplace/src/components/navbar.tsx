@@ -1,7 +1,7 @@
 import { Link, useLocation } from "wouter";
-import { User, LogOut, Menu, X, Calendar, LayoutDashboard, Award, ChevronDown, Heart, Settings, BriefcaseBusiness, ShoppingBag } from "lucide-react";
+import { User, LogOut, Menu, X, Calendar, LayoutDashboard, Award, ChevronDown, Heart, Settings, BriefcaseBusiness, ShoppingBag, Bell } from "lucide-react";
 import { Button } from "./ui/button";
-import { getGetRetailCartSummaryQueryKey, useGetCurrentUser, useGetRetailCartSummary, useLogout } from "@workspace/api-client-react";
+import { getGetRetailCartSummaryQueryKey, useGetCurrentUser, useGetRetailCartSummary, useLogout, useListCustomerNotifications, getListCustomerNotificationsQueryKey } from "@workspace/api-client-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
@@ -31,6 +31,12 @@ export function Navbar() {
     },
   });
   const cartItemCount = cartSummary?.itemCount ?? 0;
+
+  const { data: notificationsPage } = useListCustomerNotifications(
+    { limit: 1 },
+    { query: { enabled: !!user && user.role === 'CUSTOMER', queryKey: getListCustomerNotificationsQueryKey({ limit: 1 }) } }
+  );
+  const unreadNotificationCount = notificationsPage?.unreadCount ?? 0;
 
   const closeMobileMenu = useCallback(() => {
     setIsMobileMenuOpen(false);
@@ -117,6 +123,18 @@ export function Navbar() {
               <BriefcaseBusiness className="h-3.5 w-3.5" />
               Za salone i biznise
             </Link>
+            {user?.role === "CUSTOMER" && (
+              <Button variant="ghost" size="icon" className="relative" asChild>
+                <Link href="/moj-nalog?tab=notifications" aria-label={`Obaveštenja${unreadNotificationCount > 0 ? `, ${unreadNotificationCount} nepročitano` : ""}`}>
+                  <Bell className="h-5 w-5" />
+                  {unreadNotificationCount > 0 && (
+                    <span className="absolute -right-1 -top-1 min-w-5 h-5 rounded-full bg-accent px-1 text-center text-[10px] font-bold leading-5 text-accent-foreground">
+                      {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
+                    </span>
+                  )}
+                </Link>
+              </Button>
+            )}
             {user?.role !== "JOBSEEKER" && (
               <Button variant="ghost" size="icon" className="relative" asChild>
                 <Link href="/korpa" aria-label={`Korpa${cartItemCount && cartItemCount > 0 ? `, ${cartItemCount} stavki` : ""}`} data-testid="link-cart">
@@ -152,6 +170,11 @@ export function Navbar() {
                       <DropdownMenuItem onClick={() => setLocation('/moj-nalog?tab=appointments')}>
                         <Calendar className="mr-2 h-4 w-4" />
                         Moji termini
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setLocation('/moj-nalog?tab=notifications')}>
+                        <Bell className="mr-2 h-4 w-4" />
+                        Obaveštenja
+                        {unreadNotificationCount > 0 && <span className="ml-auto inline-flex h-5 items-center justify-center rounded-full bg-accent px-2 text-[10px] font-bold text-accent-foreground">{unreadNotificationCount}</span>}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setLocation('/moj-nalog?tab=favorites')}>
                         <Heart className="mr-2 h-4 w-4" />

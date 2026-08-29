@@ -5,6 +5,7 @@ import {
   appointmentResourceAllocationsTable,
   appointmentsTable,
   db,
+  employeeLocationAssignmentsTable,
   employeeServicesTable,
   employeesTable,
   pool,
@@ -14,12 +15,14 @@ import {
   usersTable,
 } from "@workspace/db";
 import { lockAppointmentResources } from "./appointment-locks";
+import { canonicalAvailability } from "./availability-store";
 import { assertNoPgBusyClientWarnings } from "./pg-busy-client.test-support";
 import { ensureDemoData } from "./seed";
 
 const suffix = randomUUID();
 const date = "2099-10-18";
 const movedDate = "2099-10-19";
+const crossLocationDate = "2099-10-20";
 const pause = (milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 
 async function run(): Promise<void> {
@@ -56,7 +59,41 @@ async function run(): Promise<void> {
     bio: "",
     avatarUrl: "",
   }).returning();
+  await db.insert(employeeLocationAssignmentsTable).values({
+    employeeId: employee!.id,
+    salonId: salon!.id,
+    active: true,
+    isDefault: true,
+  });
   await db.insert(employeeServicesTable).values({ employeeId: employee!.id, serviceId: service!.id });
+  const [siblingSalon] = await db.insert(salonsTable).values({
+    ownerId: owner.id,
+    name: `Sibling concurrency salon ${suffix}`,
+    slug: `sibling-concurrency-salon-${suffix}`,
+    city: "Novi Sad",
+    municipality: "Centar",
+    address: "Test 27",
+    phone: "+381110000027",
+    email: `sibling-concurrency-${suffix}@example.test`,
+    shortDescription: "Druga lokacija za proveru globalnog zaključavanja.",
+    description: "Izolovana sestrinska lokacija.",
+    imageUrl: "/test.jpg",
+  }).returning();
+  const [siblingService] = await db.insert(servicesTable).values({
+    salonId: siblingSalon!.id,
+    categoryName: "Test",
+    name: "Termin druge lokacije",
+    description: "Usluga za globalno zaključavanje zaposlenog.",
+    durationMinutes: 60,
+    price: 1000,
+    imageUrl: "/test.jpg",
+  }).returning();
+  await db.insert(employeeLocationAssignmentsTable).values({
+    employeeId: employee!.id,
+    salonId: siblingSalon!.id,
+    active: true,
+  });
+  await db.insert(employeeServicesTable).values({ employeeId: employee!.id, serviceId: siblingService!.id });
 
   try {
     // -------------------------------------------------------------------------
@@ -89,6 +126,56 @@ async function run(): Promise<void> {
 
     const created = await Promise.all([createAtSameTime(), createAtSameTime()]);
     assert.equal(created.filter(Boolean).length, 1, "only one concurrent booking may claim an employee slot");
+
+    const createWithNullEmployee = async (
+      targetSalon: typeof salon,
+      targetService: typeof service,
+    ) => db.transaction(async (tx) => {
+      await lockAppointmentResources(tx, targetSalon!.id, [{ date: crossLocationDate }]);
+      const initial = await canonicalAvailability({
+        salonId: targetSalon!.id,
+        service: targetService!,
+        dates: [crossLocationDate],
+        employeeId: null,
+        store: tx,
+      });
+      const selected = initial.find((slot) => slot.startTime === "10:00");
+      if (!selected) return false;
+      await lockAppointmentResources(tx, targetSalon!.id, [{
+        date: crossLocationDate,
+        employeeId: selected.employeeId,
+      }]);
+      const locked = await canonicalAvailability({
+        salonId: targetSalon!.id,
+        service: targetService!,
+        dates: [crossLocationDate],
+        employeeId: selected.employeeId,
+        store: tx,
+      });
+      if (!locked.some((slot) => slot.startTime === "10:00")) return false;
+      await pause(40);
+      await tx.insert(appointmentsTable).values({
+        salonId: targetSalon!.id,
+        employeeId: selected.employeeId,
+        serviceId: targetService!.id,
+        date: crossLocationDate,
+        startTime: "10:00",
+        endTime: "11:00",
+        durationMinutes: 60,
+        price: 1000,
+        status: "confirmed",
+      });
+      return true;
+    });
+    const crossLocationCreated = await Promise.all([
+      createWithNullEmployee(salon, service),
+      createWithNullEmployee(siblingSalon, siblingService),
+    ]);
+    assert.equal(
+      crossLocationCreated.filter(Boolean).length,
+      1,
+      "null-employee resolution at sibling locations must be revalidated under one global employee lock",
+    );
 
     const [seriesMember] = await db.insert(appointmentsTable).values({
       salonId: salon!.id,
@@ -277,6 +364,7 @@ async function run(): Promise<void> {
     console.log("Resource capacity concurrency tests passed.");
   } finally {
     await db.delete(salonsTable).where(eq(salonsTable.id, salon!.id));
+    await db.delete(salonsTable).where(eq(salonsTable.id, siblingSalon!.id));
   }
 }
 

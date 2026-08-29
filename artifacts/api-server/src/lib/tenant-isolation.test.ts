@@ -39,6 +39,7 @@ import {
   educationNotificationsTable,
   educationThreadsTable,
   employeeLeaveRequestsTable,
+  employeeLocationAssignmentsTable,
   employeesTable,
   employeeServicesTable,
   ordersTable,
@@ -238,6 +239,11 @@ async function run(): Promise<void> {
         role: "Stilist", bio: "", avatarUrl: "",
       },
     ]).returning();
+    await db.insert(employeeLocationAssignmentsTable).values([
+      { employeeId: empA!.id, salonId: salonA!.id, active: true, isDefault: true },
+      { employeeId: empAOther!.id, salonId: salonA!.id, active: true, isDefault: true },
+      { employeeId: empB!.id, salonId: salonB!.id, active: true, isDefault: true },
+    ]);
     await db.insert(employeeServicesTable).values({ employeeId: empA!.id, serviceId: serviceA!.id });
     await db.insert(employeeServicesTable).values({ employeeId: empAOther!.id, serviceId: serviceA!.id });
     await db.insert(employeeServicesTable).values({ employeeId: empB!.id, serviceId: serviceB!.id });

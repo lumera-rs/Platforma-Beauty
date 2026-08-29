@@ -13,6 +13,8 @@ export interface SalonManagedService {
   name: string;
   description: string;
   durationMinutes: number;
+  /** @minimum 0 */
+  bufferMinutes?: number;
   price: number;
   /** @nullable */
   promoPrice?: number | null;

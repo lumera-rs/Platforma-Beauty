@@ -1,30 +1,40 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import {
+  appointmentTreatmentsTable,
+  appointmentsTable,
+  bookingGroupsTable,
   db,
   employeeLocationAssignmentsTable,
   employeeServicesTable,
   employeesTable,
   salonCustomersTable,
+  salonBookingSettingsTable,
   salonNotificationsTable,
   salonsTable,
   servicesTable,
   usersTable,
 } from "@workspace/db";
 import {
+  CreateWidgetBookingGroupBody,
+  CreateWidgetBookingGroupResponse,
   CreateWidgetAppointmentBody,
   GetWidgetAvailabilityQueryParams,
 } from "@workspace/api-zod";
 import { ensureDemoData } from "../lib/seed";
 import { publishSalonNotificationUpdate } from "../lib/salon-notification-events";
+import { canonicalAvailability } from "../lib/availability-store";
 import {
+  allocateResourcesInTx,
   appointmentEndTime,
-  availableEmployee,
+  bookingGroupLayoutValid,
   createAllocatedAppointment,
-  eligibleEmployees,
+  fetchServiceResourceRequirements,
   normalizedPhone,
 } from "./marketplace";
 import { getCurrentUser } from "../lib/auth";
+import { lockAppointmentResources } from "../lib/appointment-locks";
+import { sendBookingGroupConfirmation } from "../lib/appointment-customer-events";
 
 const router: IRouter = Router();
 
@@ -74,8 +84,11 @@ function rateLimited(key: string, max: number): boolean {
 }
 
 function clientKey(req: Request, slug: string): string {
-  const forwarded = req.headers["x-forwarded-for"];
-  const ip = (typeof forwarded === "string" ? forwarded.split(",")[0]?.trim() : null) || req.socket.remoteAddress || "unknown";
+  // Express derives req.ip from the application's explicit trust-proxy policy.
+  // Never parse X-Forwarded-For here: on direct/local connections it is
+  // attacker-controlled, while behind the known deployment edge Express
+  // safely removes the configured number of trusted proxy hops.
+  const ip = req.ip || req.socket.remoteAddress || "unknown";
   return `${ip}:${slug}`;
 }
 
@@ -158,17 +171,17 @@ router.get("/widget/salons/:slug/availability", async (req, res): Promise<void> 
     eq(servicesTable.active, true),
   )).limit(1);
   if (!service) { res.status(404).json({ error: "Usluga nije pronađena." }); return; }
-  const candidates = await eligibleEmployees(salon.id, service.id, employeeId ?? null);
-  if (!candidates.length) { res.json([]); return; }
-  const slots: { start: string; end: string; employeeId: string; employeeName: string }[] = [];
-  for (let hour = 9; hour < 17; hour += 1) {
-    const start = `${String(hour).padStart(2, "0")}:00`;
-    const end = appointmentEndTime(start, service.durationMinutes);
-    if (!end) continue;
-    const employee = await availableEmployee(salon.id, service.id, date, start, end, employeeId ?? null);
-    if (employee) slots.push({ start, end, employeeId: employee.id, employeeName: employee.name });
+  const granularity = Number(req.query.granularityMinutes ?? 30);
+  if (!Number.isInteger(granularity) || granularity < 5 || granularity > 180) {
+    res.status(400).json({ error: "Granularnost termina nije ispravna." }); return;
   }
-  res.json(slots);
+  const slots = await canonicalAvailability({
+    salonId: salon.id, service, dates: [date], employeeId: employeeId ?? null,
+    granularityMinutes: granularity,
+  });
+  res.json(slots.map(({ startTime, endTime, employeeId: slotEmployeeId, employeeName }) => ({
+    start: startTime, end: endTime, employeeId: slotEmployeeId, employeeName,
+  })));
 });
 
 router.post("/widget/salons/:slug/appointments", async (req, res): Promise<void> => {
@@ -263,6 +276,174 @@ router.post("/widget/salons/:slug/appointments", async (req, res): Promise<void>
     serviceName: service.name,
     salonName: salon.name,
   });
+});
+
+router.post("/widget/salons/:slug/booking-groups", async (req, res): Promise<void> => {
+  const slug = String(req.params.slug);
+  if (guardRate(req, res, slug, RATE_MAX_BOOKINGS)) return;
+  const signedInUser = await getCurrentUser(req);
+  if (signedInUser?.role === "JOBSEEKER") {
+    res.status(403).json({ error: "JOBSEEKER nalozi ne mogu zakazivati termine." });
+    return;
+  }
+  const parsed = CreateWidgetBookingGroupBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const today = new Date().toISOString().slice(0, 10);
+  const treatments = parsed.data.treatments.map((item) => ({
+    ...item,
+    date: item.date.toISOString().slice(0, 10),
+  }));
+  if (treatments.some((item) => item.date < today || !/^\d{2}:\d{2}$/.test(item.startTime))) {
+    res.status(400).json({ error: "Izaberite važeći današnji ili budući termin." });
+    return;
+  }
+  const salon = await widgetSalon(slug);
+  if (!salon) { res.status(404).json({ error: "Salon nije dostupan za online zakazivanje." }); return; }
+  const services = await db.select().from(servicesTable).where(and(
+    eq(servicesTable.salonId, salon.id), eq(servicesTable.active, true),
+    inArray(servicesTable.id, treatments.map((item) => item.serviceId)),
+  ));
+  if (services.length !== new Set(treatments.map((item) => item.serviceId)).size) {
+    res.status(404).json({ error: "Jedna ili više usluga nisu pronađene." }); return;
+  }
+  const phoneNormalized = normalizedPhone(parsed.data.phone);
+  if (!phoneNormalized) { res.status(400).json({ error: "Unesite važeći broj telefona." }); return; }
+  let [contact] = await db.select().from(salonCustomersTable).where(and(
+    eq(salonCustomersTable.salonId, salon.id), eq(salonCustomersTable.phoneNormalized, phoneNormalized),
+  )).limit(1);
+  if (!contact) {
+    const [registeredUser] = await db.select({ id: usersTable.id }).from(usersTable)
+      .where(eq(usersTable.phoneNormalized, phoneNormalized)).limit(1);
+    await db.insert(salonCustomersTable).values({
+      salonId: salon.id, firstName: parsed.data.firstName.trim(), lastName: parsed.data.lastName.trim(),
+      phone: parsed.data.phone.trim(), phoneNormalized, userId: registeredUser?.id ?? null,
+      email: parsed.data.email?.trim().toLowerCase() || null,
+    }).onConflictDoNothing();
+    [contact] = await db.select().from(salonCustomersTable).where(and(
+      eq(salonCustomersTable.salonId, salon.id), eq(salonCustomersTable.phoneNormalized, phoneNormalized),
+    )).limit(1);
+  }
+  if (!contact) { res.status(500).json({ error: "Kreiranje klijenta nije uspelo — pokušajte ponovo." }); return; }
+  const byId = new Map(services.map((service) => [service.id, service]));
+  const [settings] = await db.select().from(salonBookingSettingsTable)
+    .where(eq(salonBookingSettingsTable.salonId, salon.id)).limit(1);
+  try {
+    const created = await db.transaction(async (tx) => {
+      await lockAppointmentResources(tx, salon.id, treatments.map((item) => ({ date: item.date })));
+      const requirements: Array<Awaited<ReturnType<typeof fetchServiceResourceRequirements>>> = [];
+      const planned: Array<{ item: (typeof treatments)[number]; service: typeof servicesTable.$inferSelect; employeeId: string; endTime: string }> = [];
+      const reservedAppointments: Array<{ employeeId: string; date: string; startTime: string; endTime: string; bufferMinutes: number; resourceIds: string[] }> = [];
+      const resourceReservations: Array<{ resourceId: string; quantity: number; date: string; startTime: string; endTime: string; bufferMinutes: number }> = [];
+      for (const item of treatments) {
+        const service = byId.get(item.serviceId)!;
+        const endTime = appointmentEndTime(item.startTime, service.durationMinutes);
+        if (!endTime) throw new Error("INVALID_TIME");
+        const serviceRequirements = await fetchServiceResourceRequirements(tx, service.id);
+        requirements.push(serviceRequirements);
+        const slots = await canonicalAvailability({
+          salonId: salon.id, service, dates: [item.date], employeeId: item.employeeId ?? null, store: tx,
+          reservedAppointments, resourceReservations,
+        });
+        const slot = slots.find((candidate) => candidate.startTime === item.startTime && candidate.endTime === endTime);
+        if (!slot || planned.some((entry) => entry.item.date === item.date && entry.employeeId === slot.employeeId
+          && entry.item.startTime < endTime && entry.endTime > item.startTime)) throw new Error("STALE_SLOT");
+        planned.push({ item, service, employeeId: slot.employeeId, endTime });
+        reservedAppointments.push({
+          employeeId: slot.employeeId, date: item.date, startTime: item.startTime, endTime,
+          bufferMinutes: service.bufferMinutes, resourceIds: serviceRequirements.map((entry) => entry.resourceId),
+        });
+        resourceReservations.push(...serviceRequirements.map((entry) => ({
+          resourceId: entry.resourceId, quantity: entry.quantity, date: item.date, startTime: item.startTime,
+          endTime: appointmentEndTime(endTime, service.bufferMinutes)!, bufferMinutes: 0,
+        })));
+      }
+      if (!bookingGroupLayoutValid(planned.map((entry) => ({
+        date: entry.item.date, startTime: entry.item.startTime, endTime: entry.endTime,
+      })), settings?.maxVisitGapMinutes ?? 0)) throw new Error("INVALID_LAYOUT");
+      await lockAppointmentResources(tx, salon.id, planned.flatMap((entry, index) => [
+        { date: entry.item.date, employeeId: entry.employeeId },
+        ...requirements[index]!.map((requirement) => ({ date: entry.item.date, resourceId: requirement.resourceId })),
+      ]));
+      const revalidationAppointments: typeof reservedAppointments = [];
+      const revalidationResources: typeof resourceReservations = [];
+      for (let index = 0; index < planned.length; index += 1) {
+        const entry = planned[index]!;
+        const slots = await canonicalAvailability({
+          salonId: salon.id, service: entry.service, dates: [entry.item.date],
+          employeeId: entry.employeeId, store: tx,
+          reservedAppointments: revalidationAppointments, resourceReservations: revalidationResources,
+        });
+        if (!slots.some((slot) => slot.startTime === entry.item.startTime && slot.endTime === entry.endTime
+          && slot.employeeId === entry.employeeId)) throw new Error("STALE_SLOT");
+        revalidationAppointments.push({
+          employeeId: entry.employeeId, date: entry.item.date, startTime: entry.item.startTime, endTime: entry.endTime,
+          bufferMinutes: entry.service.bufferMinutes, resourceIds: requirements[index]!.map((item) => item.resourceId),
+        });
+        revalidationResources.push(...requirements[index]!.map((item) => ({
+          resourceId: item.resourceId, quantity: item.quantity, date: entry.item.date, startTime: entry.item.startTime,
+          endTime: appointmentEndTime(entry.endTime, entry.service.bufferMinutes)!, bufferMinutes: 0,
+        })));
+      }
+      const [group] = await tx.insert(bookingGroupsTable).values({
+        salonId: salon.id, customerId: null, salonCustomerId: contact!.id, createdByUserId: null,
+        notes: parsed.data.note?.trim() || null,
+      }).returning();
+      const appointments = [];
+      for (let position = 0; position < planned.length; position++) {
+        const entry = planned[position]!;
+        const [appointment] = await tx.insert(appointmentsTable).values({
+          salonId: salon.id, customerId: null, salonCustomerId: contact!.id, employeeId: entry.employeeId,
+          serviceId: entry.service.id, bookingGroupId: group!.id, date: entry.item.date,
+          startTime: entry.item.startTime, endTime: entry.endTime, durationMinutes: entry.service.durationMinutes,
+          price: entry.service.promoPrice ?? entry.service.price, status: "pending",
+          notes: parsed.data.note?.trim() || null, plannedDate: entry.item.date,
+          plannedStartTime: entry.item.startTime, plannedEndTime: entry.endTime,
+        }).returning();
+        await tx.insert(appointmentTreatmentsTable).values({
+          appointmentId: appointment!.id, serviceId: entry.service.id, employeeId: entry.employeeId,
+          position, durationMinutes: entry.service.durationMinutes, bufferMinutes: entry.service.bufferMinutes,
+          price: entry.service.promoPrice ?? entry.service.price,
+          plannedStartTime: entry.item.startTime, plannedEndTime: entry.endTime,
+        });
+        const bufferedEnd = appointmentEndTime(entry.endTime, entry.service.bufferMinutes);
+        if (!bufferedEnd) throw new Error("STALE_SLOT");
+        await allocateResourcesInTx(tx, salon.id, requirements[position]!, appointment!.id, entry.item.date,
+          entry.item.startTime, requirements[position]!.length ? bufferedEnd : entry.endTime);
+        const [employee] = await tx.select().from(employeesTable).where(eq(employeesTable.id, entry.employeeId)).limit(1);
+        appointments.push({ appointment: appointment!, employee: employee!, service: entry.service });
+      }
+      await tx.insert(salonNotificationsTable).values({
+        salonId: salon.id, title: "Nova grupna rezervacija sa sajta",
+        message: `${contact!.firstName} ${contact!.lastName} je preko widgeta zatražio/la ${appointments.length} tretmana.`,
+        href: "/vlasnik/termini",
+      });
+      return { group: group!, appointments };
+    });
+    await publishSalonNotificationUpdate(salon.id);
+    await sendBookingGroupConfirmation(created.group.id);
+    res.status(201).json(CreateWidgetBookingGroupResponse.parse({
+      id: created.group.id, salonId: salon.id, createdAt: created.group.createdAt,
+      appointments: created.appointments.map(({ appointment, employee, service }) => ({
+        id: appointment.id, salonId: salon.id, salonSlug: salon.slug, salonName: salon.name,
+        serviceId: service.id, customerName: `${contact!.firstName} ${contact!.lastName}`,
+        serviceName: service.name, employeeId: employee.id, employeeName: employee.name,
+        date: appointment.date, startTime: appointment.startTime, endTime: appointment.endTime,
+        durationMinutes: appointment.durationMinutes, price: appointment.price, treatmentLocation: "salon",
+        travelFee: 0, treatmentAddress: null, seriesId: null, bookingGroupId: created.group.id,
+        status: appointment.status, notes: appointment.notes, allocatedResources: [],
+      })),
+    }));
+  } catch (error) {
+    if (error instanceof Error && (error.message === "STALE_SLOT" || error.message === "INVALID_TIME" || error.message === "INVALID_LAYOUT")) {
+      res.status(error.message === "INVALID_TIME" ? 400 : 409).json({
+        error: error.message === "INVALID_TIME" ? "Vreme tretmana nije ispravno."
+          : error.message === "INVALID_LAYOUT" ? "Izabrani tretmani nisu u dozvoljenom redosledu ili razmaku."
+          : "Jedan od termina više nije dostupan — izaberite drugi.",
+      });
+      return;
+    }
+    throw error;
+  }
 });
 
 export default router;

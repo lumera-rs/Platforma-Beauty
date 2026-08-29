@@ -445,6 +445,90 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SalonFirstAvailable" }
         "404": { description: Salon not found }
+  /salons/{salonId}/grouped-availability:
+    post:
+      operationId: getGroupedBookingAvailability
+      tags: [appointments]
+      summary: Find contiguous or bounded-gap availability for an ordered treatment group
+      parameters:
+        - $ref: "#/components/parameters/SalonId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GroupedAvailabilityInput" }
+      responses:
+        "200":
+          description: Grouped booking candidates with an ordered slot for every treatment
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GroupedAvailabilityResponse" }
+        "400": { description: Invalid date range or treatment selection }
+        "404": { description: "Salon, service, or employee not found" }
+  /booking-groups:
+    post:
+      operationId: createBookingGroup
+      tags: [appointments]
+      summary: Atomically book an ordered group of treatments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BookingGroupInput" }
+      responses:
+        "201":
+          description: Created booking group
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BookingGroup" }
+        "409": { description: One or more selected treatment slots are no longer available }
+  /booking-groups/{bookingGroupId}/reschedule:
+    patch:
+      operationId: rescheduleBookingGroup
+      tags: [appointments]
+      summary: Atomically reschedule selected active members, or the complete active booking group
+      parameters:
+        - name: bookingGroupId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BookingGroupRescheduleInput" }
+      responses:
+        "200":
+          description: Updated group; gapWarning explicitly reports a layout outside the salon preference
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BookingGroupOperationResult" }
+        "403": { description: The actor may not manage this group }
+        "404": { description: Booking group not found }
+        "409": { description: One or more selected slots are no longer available }
+  /booking-groups/{bookingGroupId}/cancel:
+    post:
+      operationId: cancelBookingGroup
+      tags: [appointments]
+      summary: Atomically cancel selected active members, or all active members of a booking group
+      parameters:
+        - name: bookingGroupId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BookingGroupCancelInput" }
+      responses:
+        "200":
+          description: Updated booking group
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BookingGroupOperationResult" }
+        "403": { description: The actor may not manage this group }
+        "404": { description: Booking group not found }
   /appointments:
     get:
       operationId: listMyAppointments
@@ -555,6 +639,70 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Appointment"
+  /appointments/{appointmentId}/lifecycle:
+    post:
+      operationId: transitionAppointmentLifecycle
+      tags: [appointments]
+      summary: Record an audited appointment lifecycle transition
+      parameters:
+        - $ref: "#/components/parameters/AppointmentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AppointmentLifecycleInput" }
+      responses:
+        "200":
+          description: Appointment with actual timing and lifecycle audit state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Appointment" }
+        "409": { description: Transition is invalid for the current lifecycle state }
+  /customer/notifications:
+    get:
+      operationId: listCustomerNotifications
+      tags: [customer]
+      summary: List the signed-in customer's durable notification inbox
+      parameters:
+        - name: unreadOnly
+          in: query
+          schema: { type: boolean, default: false }
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 30 }
+      responses:
+        "200":
+          description: Stable reverse-chronological notification page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerNotificationPage" }
+  /customer/notifications/{notificationId}/read:
+    post:
+      operationId: markCustomerNotificationRead
+      tags: [customer]
+      summary: Idempotently mark a customer notification read
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Updated notification
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerNotification" }
+        "404": { description: Notification not found }
+  /customer/notifications/read-all:
+    post:
+      operationId: markAllCustomerNotificationsRead
+      tags: [customer]
+      summary: Mark every current customer notification read
+      responses:
+        "204": { description: All notifications marked read }
   /customer/dashboard:
     get:
       operationId: getCustomerDashboard
@@ -738,6 +886,35 @@ paths:
               schema: { $ref: "#/components/schemas/SalonProfileMedia" }
         "400": { description: Invalid profile media }
         "403": { description: Salon-owner access required }
+  /salon/booking-settings:
+    get:
+      operationId: getSalonBookingSettings
+      tags: [salon-management]
+      summary: Get active location booking policy, date overrides, and resource downtime
+      responses:
+        "200":
+          description: Dynamic calendar settings for the active location
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SalonBookingSettings" }
+        "403": { description: Salon management access required }
+    put:
+      operationId: replaceSalonBookingSettings
+      tags: [salon-management]
+      summary: Replace active location booking policy and calendar exceptions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SalonBookingSettingsInput" }
+      responses:
+        "200":
+          description: Replaced dynamic calendar settings
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SalonBookingSettings" }
+        "400": { description: "Invalid granularity, reminder, hours, or downtime values" }
+        "403": { description: Salon management access required }
   /media/uploads:
     post:
       operationId: requestMediaUpload
@@ -5883,6 +6060,28 @@ paths:
         "404": { description: Salon or service not found }
         "409": { description: Slot no longer available }
         "429": { description: Too many requests }
+  /widget/salons/{slug}/booking-groups:
+    post:
+      operationId: createWidgetBookingGroup
+      tags: [widget]
+      summary: Public rate-limited grouped booking for an anonymous salon customer
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WidgetBookingGroupCreate" }
+      responses:
+        "201":
+          description: Grouped appointment request created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BookingGroup" }
+        "400": { description: Invalid booking data }
+        "404": { description: Salon or service not found }
+        "409": { description: One or more slots are no longer available }
+        "429": { description: Too many requests }
 
   /retail/wishlist:
     get:
@@ -8273,6 +8472,7 @@ components:
         name: { type: string }
         description: { type: string }
         durationMinutes: { type: number }
+        bufferMinutes: { type: number, minimum: 0, default: 0 }
         price: { type: number }
         promoPrice: { type: ["number", "null"] }
         tags: { type: array, items: { type: string } }
@@ -8294,6 +8494,7 @@ components:
         name: { type: string }
         description: { type: string }
         durationMinutes: { type: number }
+        bufferMinutes: { type: number, minimum: 0, default: 0 }
         price: { type: number }
         promoPrice: { type: ["number", "null"] }
         tags: { type: array, items: { type: string } }
@@ -8414,6 +8615,210 @@ components:
           type: array
           items: { type: string }
       required: [review, eligibleServices]
+    BookingReminderChannel:
+      type: string
+      enum: [email, sms, push]
+    SalonDateHours:
+      type: object
+      properties:
+        id: { type: string }
+        date: { type: string, format: date }
+        closed: { type: boolean }
+        openTime:
+          type: ["string", "null"]
+          pattern: '^(?:[01][0-9]|2[0-3]):[0-5][0-9]$'
+        closeTime:
+          type: ["string", "null"]
+          pattern: '^(?:[01][0-9]|2[0-3]):[0-5][0-9]$'
+        reason: { type: ["string", "null"] }
+      required: [date, closed, openTime, closeTime, reason]
+    ResourceDowntime:
+      type: object
+      properties:
+        id: { type: string }
+        resourceId: { type: string }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        reason: { type: ["string", "null"] }
+      required: [resourceId, startsAt, endsAt, reason]
+    SalonBookingSettingsInput:
+      type: object
+      properties:
+        slotGranularityMinutes: { type: integer, enum: [5, 10, 15, 30], default: 15 }
+        minimumLeadTimeMinutes: { type: integer, minimum: 0 }
+        cancellationDeadlineMinutes: { type: integer, minimum: 0 }
+        reminderOffsetsMinutes:
+          type: array
+          uniqueItems: true
+          items: { type: integer, minimum: 0 }
+        reminderChannels:
+          type: array
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/BookingReminderChannel" }
+        maxVisitGapMinutes: { type: integer, minimum: 0, default: 0 }
+        minimumUsefulLateTreatmentMinutes: { type: integer, minimum: 0 }
+        dateHours:
+          type: array
+          items: { $ref: "#/components/schemas/SalonDateHours" }
+        resourceDowntime:
+          type: array
+          items: { $ref: "#/components/schemas/ResourceDowntime" }
+      required: [slotGranularityMinutes, minimumLeadTimeMinutes, cancellationDeadlineMinutes, reminderOffsetsMinutes, reminderChannels, maxVisitGapMinutes, minimumUsefulLateTreatmentMinutes, dateHours, resourceDowntime]
+    SalonBookingSettings:
+      allOf:
+        - $ref: "#/components/schemas/SalonBookingSettingsInput"
+        - type: object
+          properties:
+            salonId: { type: string }
+            updatedAt: { type: string, format: date-time }
+          required: [salonId, updatedAt]
+    GroupedTreatmentRequest:
+      type: object
+      properties:
+        serviceId: { type: string }
+        employeeId: { type: ["string", "null"] }
+      required: [serviceId]
+    GroupedAvailabilityInput:
+      type: object
+      properties:
+        treatments:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { $ref: "#/components/schemas/GroupedTreatmentRequest" }
+        fromDate: { type: string, format: date }
+        toDate: { type: string, format: date }
+        allowMultipleDays:
+          type: boolean
+          default: false
+          description: False keeps every treatment on one calendar day; true permits later treatments on later days.
+      required: [treatments, fromDate, toDate]
+    GroupedTreatmentSlot:
+      type: object
+      properties:
+        position: { type: integer, minimum: 0 }
+        serviceId: { type: string }
+        date: { type: string, format: date }
+        employeeId: { type: ["string", "null"] }
+        startTime: { type: string }
+        endTime: { type: string }
+        bufferMinutes: { type: integer, minimum: 0 }
+      required: [position, serviceId, date, employeeId, startTime, endTime, bufferMinutes]
+    GroupedAvailabilityCandidate:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        startTime: { type: string }
+        endTime: { type: string }
+        treatments:
+          type: array
+          items: { $ref: "#/components/schemas/GroupedTreatmentSlot" }
+      required: [date, startTime, endTime, treatments]
+    GroupedAvailabilityResponse:
+      type: object
+      properties:
+        salonId: { type: string }
+        generatedAt: { type: string, format: date-time }
+        candidates:
+          type: array
+          maxItems: 5
+          items: { $ref: "#/components/schemas/GroupedAvailabilityCandidate" }
+      required: [salonId, generatedAt, candidates]
+    BookingGroupTreatmentInput:
+      type: object
+      properties:
+        serviceId: { type: string }
+        date: { type: string, format: date }
+        employeeId: { type: ["string", "null"] }
+        startTime: { type: string }
+      required: [serviceId, startTime]
+    BookingGroupInput:
+      type: object
+      properties:
+        salonId: { type: string }
+        date: { type: string, format: date }
+        treatments:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { $ref: "#/components/schemas/BookingGroupTreatmentInput" }
+        notes: { type: ["string", "null"], maxLength: 1000 }
+      required: [salonId, date, treatments]
+    BookingGroupRescheduleTreatmentInput:
+      type: object
+      properties:
+        appointmentId: { type: string }
+        date: { type: string, format: date }
+        startTime: { type: string }
+        employeeId: { type: ["string", "null"] }
+      required: [appointmentId, date, startTime]
+    BookingGroupRescheduleInput:
+      type: object
+      properties:
+        treatments:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { $ref: "#/components/schemas/BookingGroupRescheduleTreatmentInput" }
+      required: [treatments]
+    BookingGroupCancelInput:
+      type: object
+      properties:
+        appointmentIds:
+          type: array
+          minItems: 1
+          maxItems: 5
+          uniqueItems: true
+          items: { type: string }
+        reason: { type: ["string", "null"], maxLength: 1000 }
+    BookingGroupOperationResult:
+      type: object
+      properties:
+        group: { $ref: "#/components/schemas/BookingGroup" }
+        gapWarning: { type: ["string", "null"] }
+      required: [group, gapWarning]
+    BookingGroup:
+      type: object
+      properties:
+        id: { type: string }
+        salonId: { type: string }
+        appointments:
+          type: array
+          items: { $ref: "#/components/schemas/Appointment" }
+        createdAt: { type: string, format: date-time }
+      required: [id, salonId, appointments, createdAt]
+    AppointmentLifecycleInput:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [confirm, start, complete, cancel, no-show]
+        occurredAt: { type: string, format: date-time }
+        reason: { type: ["string", "null"], maxLength: 1000 }
+      required: [action]
+    CustomerNotification:
+      type: object
+      properties:
+        id: { type: string }
+        eventKey: { type: string }
+        category:
+          type: string
+          enum: [booking, reminder, cancellation, review, loyalty, commerce, education, system]
+        title: { type: string }
+        body: { type: string }
+        deepLink: { type: ["string", "null"] }
+        readAt: { type: ["string", "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+      required: [id, eventKey, category, title, body, deepLink, readAt, createdAt]
+    CustomerNotificationPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/CustomerNotification" }
+        nextCursor: { type: ["string", "null"] }
+        unreadCount: { type: integer, minimum: 0 }
+      required: [items, nextCursor, unreadCount]
     TimeSlot:
       type: object
       properties:
@@ -8492,6 +8897,19 @@ components:
         allocatedResources:
           type: array
           items: { $ref: "#/components/schemas/AllocatedResource" }
+        bookingGroupId: { type: ["string", "null"] }
+        treatments:
+          type: array
+          items: { $ref: "#/components/schemas/GroupedTreatmentSlot" }
+        plannedDate: { type: ["string", "null"], format: date }
+        plannedStartTime: { type: ["string", "null"] }
+        plannedEndTime: { type: ["string", "null"] }
+        actualStartedAt: { type: ["string", "null"], format: date-time }
+        actualCompletedAt: { type: ["string", "null"], format: date-time }
+        confirmedAt: { type: ["string", "null"], format: date-time }
+        cancelledAt: { type: ["string", "null"], format: date-time }
+        completedAt: { type: ["string", "null"], format: date-time }
+        noShowAt: { type: ["string", "null"], format: date-time }
       required: [id, salonId, salonSlug, salonName, serviceId, customerName, serviceName, employeeId, employeeName, date, startTime, endTime, durationMinutes, price, treatmentLocation, travelFee, treatmentAddress, status, allocatedResources]
     AppointmentSalonContact:
       type: object
@@ -8879,6 +9297,7 @@ components:
         name: { type: string, minLength: 1, pattern: '.*\S.*' }
         description: { type: string }
         durationMinutes: { type: number, minimum: 5 }
+        bufferMinutes: { type: number, minimum: 0, default: 0 }
         price: { type: number, minimum: 0 }
         promoPrice: { type: ["number", "null"] }
         imageUrl: { type: string }
@@ -12978,6 +13397,27 @@ components:
         serviceName: { type: string }
         salonName: { type: string }
       required: [appointmentId, status, date, startTime, endTime, employeeName, serviceName, salonName]
+    WidgetBookingGroupCreate:
+      type: object
+      properties:
+        firstName: { type: string, minLength: 1, maxLength: 80 }
+        lastName: { type: string, minLength: 1, maxLength: 80 }
+        phone: { type: string, minLength: 5, maxLength: 30 }
+        email: { type: ["string", "null"], maxLength: 160 }
+        note: { type: ["string", "null"], maxLength: 500 }
+        treatments:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items:
+            type: object
+            properties:
+              serviceId: { type: string }
+              employeeId: { type: ["string", "null"] }
+              date: { type: string, format: date }
+              startTime: { type: string }
+            required: [serviceId, date, startTime]
+      required: [firstName, lastName, phone, treatments]
     BeautyJobListing:
       type: object
       properties:

@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 77;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 78;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -134,6 +134,7 @@ const ENUM_LABELS: Record<string, string[]> = {
   aftercare_line_kind: ["PRODUCT", "PREMADE_BUNDLE", "PERSONALIZED_BUNDLE"],
   aftercare_delivery_kind: ["FIRST", "SECOND", "REPLENISHMENT"],
   aftercare_delivery_status: ["QUEUED", "PROCESSING", "SENT", "FAILED", "SKIPPED"],
+  salon_resource_type: ["chair", "booth", "bed", "room", "equipment", "other"],
 };
 
 /**
@@ -3472,6 +3473,180 @@ function tableStatements(s: string): string[] {
       ON ${s}.employee_time_off (employee_id, salon_id, start_date)`,
     `CREATE INDEX IF NOT EXISTS employee_time_off_salon_idx
       ON ${s}.employee_time_off (salon_id)`,
+    // v78 — Dynamic Booking Calendar. All changes are additive; legacy
+    // date/start/end remain the public compatibility fields.
+    `ALTER TABLE ${s}.services ADD COLUMN IF NOT EXISTS buffer_minutes integer NOT NULL DEFAULT 0`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='services_buffer_minutes_check'
+         AND conrelid='${s}.services'::regclass) THEN
+         ALTER TABLE ${s}.services ADD CONSTRAINT services_buffer_minutes_check
+           CHECK (buffer_minutes >= 0) NOT VALID;
+       END IF;
+     END $$`,
+    `ALTER TABLE ${s}.services VALIDATE CONSTRAINT services_buffer_minutes_check`,
+    `CREATE TABLE IF NOT EXISTS ${s}.salon_booking_settings (
+       salon_id uuid PRIMARY KEY REFERENCES ${s}.salons(id) ON DELETE CASCADE,
+       slot_granularity_minutes integer NOT NULL DEFAULT 15,
+       minimum_lead_time_minutes integer NOT NULL DEFAULT 0,
+       cancellation_deadline_minutes integer NOT NULL DEFAULT 0,
+       reminder_offsets_minutes jsonb NOT NULL DEFAULT '[]'::jsonb,
+       reminder_channels jsonb NOT NULL DEFAULT '[]'::jsonb,
+       max_visit_gap_minutes integer NOT NULL DEFAULT 0,
+       minimum_useful_late_treatment_minutes integer NOT NULL DEFAULT 0,
+       updated_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+       created_at timestamptz NOT NULL DEFAULT now(),
+       updated_at timestamptz NOT NULL DEFAULT now(),
+       CONSTRAINT salon_booking_settings_granularity_check
+         CHECK (slot_granularity_minutes IN (5, 10, 15, 30)),
+       CONSTRAINT salon_booking_settings_nonnegative_check CHECK (
+         minimum_lead_time_minutes >= 0 AND cancellation_deadline_minutes >= 0
+         AND max_visit_gap_minutes >= 0 AND minimum_useful_late_treatment_minutes >= 0)
+     )`,
+    `CREATE INDEX IF NOT EXISTS salon_booking_settings_updated_by_idx
+       ON ${s}.salon_booking_settings (updated_by_user_id)`,
+    `INSERT INTO ${s}.salon_booking_settings (salon_id)
+       SELECT id FROM ${s}.salons ON CONFLICT (salon_id) DO NOTHING`,
+    `CREATE TABLE IF NOT EXISTS ${s}.salon_date_hours (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       salon_id uuid NOT NULL REFERENCES ${s}.salons(id) ON DELETE CASCADE,
+       date date NOT NULL, closed boolean NOT NULL DEFAULT false,
+       open_time text, close_time text, reason text,
+       created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+       UNIQUE (salon_id, date),
+       CONSTRAINT salon_date_hours_window_check CHECK (
+         (closed AND open_time IS NULL AND close_time IS NULL)
+         OR (NOT closed AND open_time IS NOT NULL AND close_time IS NOT NULL AND open_time < close_time))
+     )`,
+    `CREATE TABLE IF NOT EXISTS ${s}.booking_groups (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       salon_id uuid NOT NULL REFERENCES ${s}.salons(id) ON DELETE CASCADE,
+       customer_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+       salon_customer_id uuid REFERENCES ${s}.salon_customers(id) ON DELETE SET NULL,
+       created_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+       notes text, created_at timestamptz NOT NULL DEFAULT now(),
+       updated_at timestamptz NOT NULL DEFAULT now()
+     )`,
+    `CREATE INDEX IF NOT EXISTS booking_groups_salon_created_idx ON ${s}.booking_groups (salon_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS booking_groups_customer_idx ON ${s}.booking_groups (customer_id)`,
+    `CREATE INDEX IF NOT EXISTS booking_groups_salon_customer_idx ON ${s}.booking_groups (salon_customer_id)`,
+    `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS booking_group_id uuid
+       REFERENCES ${s}.booking_groups(id) ON DELETE SET NULL`,
+    `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS planned_date date`,
+    `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS planned_start_time text`,
+    `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS planned_end_time text`,
+    `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS actual_started_at timestamptz`,
+    `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS actual_completed_at timestamptz`,
+    `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS created_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL`,
+    `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS updated_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL`,
+    `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS confirmed_at timestamptz`,
+    `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS cancelled_at timestamptz`,
+    `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS cancelled_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL`,
+    `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS completed_at timestamptz`,
+    `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS completed_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL`,
+    `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS no_show_at timestamptz`,
+    `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS no_show_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL`,
+    `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()`,
+    // Copy, never normalize or rewrite, the legacy customer-visible wall-clock values.
+    `UPDATE ${s}.appointments SET
+       planned_date=COALESCE(planned_date, appointment_date),
+       planned_start_time=COALESCE(planned_start_time, start_time),
+       planned_end_time=COALESCE(planned_end_time, end_time)
+     WHERE (planned_date IS NULL AND appointment_date IS NOT NULL)
+        OR (planned_start_time IS NULL AND start_time IS NOT NULL)
+        OR (planned_end_time IS NULL AND end_time IS NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS appointments_booking_group_idx ON ${s}.appointments (booking_group_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.appointment_treatments (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       appointment_id uuid NOT NULL REFERENCES ${s}.appointments(id) ON DELETE CASCADE,
+       service_id uuid NOT NULL REFERENCES ${s}.services(id) ON DELETE RESTRICT,
+       employee_id uuid REFERENCES ${s}.employees(id) ON DELETE SET NULL,
+       position integer NOT NULL, duration_minutes integer NOT NULL,
+       buffer_minutes integer NOT NULL DEFAULT 0, price integer NOT NULL,
+       planned_start_time text, planned_end_time text,
+       actual_started_at timestamptz, actual_completed_at timestamptz,
+       created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+       UNIQUE (appointment_id, position),
+       CONSTRAINT appointment_treatments_position_check CHECK (position >= 0),
+       CONSTRAINT appointment_treatments_duration_check CHECK (duration_minutes > 0 AND buffer_minutes >= 0)
+     )`,
+    // Every old single-service appointment becomes a one-treatment plan. The
+    // guarded shape also permits deliberately sparse historical/test fixtures.
+    `INSERT INTO ${s}.appointment_treatments
+       (appointment_id, service_id, employee_id, position, duration_minutes, buffer_minutes,
+        price, planned_start_time, planned_end_time)
+     SELECT a.id, a.service_id, a.employee_id, 0, a.duration_minutes,
+       COALESCE(svc.buffer_minutes, 0), a.price, a.start_time, a.end_time
+     FROM ${s}.appointments a JOIN ${s}.services svc ON svc.id=a.service_id
+     WHERE a.service_id IS NOT NULL AND a.duration_minutes IS NOT NULL AND a.duration_minutes > 0
+       AND a.price IS NOT NULL
+     ON CONFLICT (appointment_id, position) DO NOTHING`,
+    `CREATE INDEX IF NOT EXISTS appointment_treatments_service_idx ON ${s}.appointment_treatments (service_id)`,
+    `CREATE INDEX IF NOT EXISTS appointment_treatments_employee_idx ON ${s}.appointment_treatments (employee_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.salon_resources (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       salon_id uuid NOT NULL REFERENCES ${s}.salons(id) ON DELETE CASCADE,
+       name text NOT NULL, type ${s}.salon_resource_type NOT NULL DEFAULT 'other',
+       capacity integer NOT NULL DEFAULT 1, active boolean NOT NULL DEFAULT true,
+       created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+       UNIQUE (salon_id, name),
+       CONSTRAINT salon_resources_capacity_positive CHECK (capacity >= 1)
+     )`,
+    `CREATE INDEX IF NOT EXISTS salon_resources_salon_active_idx
+       ON ${s}.salon_resources (salon_id, active)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.service_resource_requirements (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       service_id uuid NOT NULL REFERENCES ${s}.services(id) ON DELETE CASCADE,
+       resource_id uuid NOT NULL REFERENCES ${s}.salon_resources(id) ON DELETE CASCADE,
+       quantity integer NOT NULL DEFAULT 1, created_at timestamptz NOT NULL DEFAULT now(),
+       UNIQUE (service_id, resource_id),
+       CONSTRAINT service_resource_requirements_quantity_positive CHECK (quantity >= 1)
+     )`,
+    `CREATE INDEX IF NOT EXISTS service_resource_requirements_resource_idx
+       ON ${s}.service_resource_requirements (resource_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.appointment_resource_allocations (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       appointment_id uuid NOT NULL REFERENCES ${s}.appointments(id) ON DELETE CASCADE,
+       resource_id uuid NOT NULL REFERENCES ${s}.salon_resources(id) ON DELETE CASCADE,
+       quantity integer NOT NULL DEFAULT 1, created_at timestamptz NOT NULL DEFAULT now(),
+       UNIQUE (appointment_id, resource_id),
+       CONSTRAINT appointment_resource_allocations_quantity_positive CHECK (quantity >= 1)
+     )`,
+    `CREATE INDEX IF NOT EXISTS appointment_resource_allocations_resource_idx
+       ON ${s}.appointment_resource_allocations (resource_id)`,
+    `CREATE INDEX IF NOT EXISTS appointment_resource_allocations_appointment_idx
+       ON ${s}.appointment_resource_allocations (appointment_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.salon_resource_downtime (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       resource_id uuid NOT NULL REFERENCES ${s}.salon_resources(id) ON DELETE CASCADE,
+       starts_at timestamptz NOT NULL, ends_at timestamptz NOT NULL, reason text,
+       created_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+       created_at timestamptz NOT NULL DEFAULT now(),
+       CONSTRAINT salon_resource_downtime_window_check CHECK (starts_at < ends_at)
+     )`,
+    `CREATE INDEX IF NOT EXISTS salon_resource_downtime_resource_window_idx
+       ON ${s}.salon_resource_downtime (resource_id, starts_at, ends_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.customer_notifications (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), event_key text NOT NULL UNIQUE,
+       user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE,
+       category text NOT NULL, title text NOT NULL, body text NOT NULL, deep_link text,
+       read_at timestamptz, metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+       created_at timestamptz NOT NULL DEFAULT now()
+     )`,
+    `CREATE INDEX IF NOT EXISTS customer_notifications_user_created_idx
+       ON ${s}.customer_notifications (user_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS customer_notifications_user_unread_idx
+       ON ${s}.customer_notifications (user_id, created_at) WHERE read_at IS NULL`,
+    `CREATE TABLE IF NOT EXISTS ${s}.review_invitations (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), event_key text NOT NULL UNIQUE,
+       appointment_id uuid NOT NULL UNIQUE REFERENCES ${s}.appointments(id) ON DELETE CASCADE,
+       customer_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE,
+       notification_id uuid REFERENCES ${s}.customer_notifications(id) ON DELETE SET NULL,
+       invited_at timestamptz NOT NULL DEFAULT now(), reviewed_at timestamptz
+     )`,
+    `CREATE INDEX IF NOT EXISTS review_invitations_customer_idx
+       ON ${s}.review_invitations (customer_id, invited_at)`,
+    `CREATE INDEX IF NOT EXISTS review_invitations_notification_idx
+       ON ${s}.review_invitations (notification_id)`,
     // v74 — every aftercare FK gets a leading index so deletes/updates on its
     // parent cannot force scans as recommendation and delivery history grows.
   ];

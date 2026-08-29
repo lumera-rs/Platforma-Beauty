@@ -85,7 +85,9 @@ async function seedLegacySchema(schema: string) {
   await q(`CREATE TABLE "${schema}".services (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     salon_id uuid NOT NULL REFERENCES "${schema}".salons(id) ON DELETE CASCADE,
-    name text NOT NULL
+    name text NOT NULL,
+    duration_minutes integer NOT NULL DEFAULT 45,
+    price integer NOT NULL DEFAULT 2500
   )`);
   // Legacy catalog tables before supplier ownership and customer-safe public
   // storefront fields. The upgrade must replace global category uniqueness
@@ -177,8 +179,15 @@ async function seedLegacySchema(schema: string) {
   await q(`CREATE TABLE "${schema}".appointments (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     salon_id uuid NOT NULL REFERENCES "${schema}".salons(id) ON DELETE CASCADE,
+    customer_id uuid REFERENCES "${schema}".users(id),
     salon_customer_id uuid,
+    employee_id uuid REFERENCES "${schema}".employees(id),
+    service_id uuid REFERENCES "${schema}".services(id),
     appointment_date date,
+    start_time text,
+    end_time text,
+    duration_minutes integer,
+    price integer,
     status text
   )`);
   await q(`CREATE TABLE "${schema}".reviews (
@@ -270,7 +279,14 @@ async function seedLegacySchema(schema: string) {
   const employee = (await q<{ id: string }>(`INSERT INTO "${schema}".employees (salon_id, name) VALUES ($1, 'Emp') RETURNING id`, [salon.id])).rows[0]!;
   const service = (await q<{ id: string }>(`INSERT INTO "${schema}".services (salon_id, name) VALUES ($1, 'Svc') RETURNING id`, [salon.id])).rows[0]!;
   const customer = (await q<{ id: string }>(`INSERT INTO "${schema}".salon_customers (salon_id, display_name) VALUES ($1, 'Cust') RETURNING id`, [salon.id])).rows[0]!;
-  const appointment = (await q<{ id: string }>(`INSERT INTO "${schema}".appointments (salon_id) VALUES ($1) RETURNING id`, [salon.id])).rows[0]!;
+  const appointment = (await q<{ id: string }>(
+    `INSERT INTO "${schema}".appointments
+       (salon_id, customer_id, salon_customer_id, employee_id, service_id,
+        appointment_date, start_time, end_time, duration_minutes, price, status)
+     VALUES ($1, $2, $3, $4, $5, '2026-02-03', '09:10', '09:55', 45, 2500, 'confirmed')
+     RETURNING id`,
+    [salon.id, user.id, customer.id, employee.id, service.id],
+  )).rows[0]!;
   const retailCategory = (await q<{ id: string }>(
     `INSERT INTO "${schema}".product_categories (name, slug)
      VALUES ('Legacy retail category', 'legacy-retail-category') RETURNING id`,
@@ -319,7 +335,7 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
-    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 77, "v77 is the current production schema rollout");
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 78, "v78 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
 
     // ── Run the rollout, then exercise its legacy conversion on rerun ──────
@@ -526,6 +542,41 @@ async function run() {
 
     // Reset connection search_path for our raw assertions (pool client rotates).
     await q(`SET search_path TO "${s}"`);
+
+    // ── v78 dynamic booking calendar additive upgrade ─────────────────────
+    const calendarAppointment = (await q<{
+      appointment_date: string; start_time: string; end_time: string;
+      planned_date: string; planned_start_time: string; planned_end_time: string;
+    }>(`SELECT appointment_date::text, start_time, end_time, planned_date::text,
+               planned_start_time, planned_end_time
+          FROM "${s}".appointments WHERE id=$1`, [fixtures.appointment.id])).rows[0]!;
+    assert.deepEqual(calendarAppointment, {
+      appointment_date: "2026-02-03",
+      start_time: "09:10",
+      end_time: "09:55",
+      planned_date: "2026-02-03",
+      planned_start_time: "09:10",
+      planned_end_time: "09:55",
+    }, "v78 backfills planning fields without changing legacy visible times");
+    const legacyAppointmentTreatment = (await q<{
+      service_id: string; position: number; duration_minutes: number; price: number;
+    }>(`SELECT service_id, position, duration_minutes, price
+          FROM "${s}".appointment_treatments WHERE appointment_id=$1`,
+      [fixtures.appointment.id])).rows[0]!;
+    assert.deepEqual(legacyAppointmentTreatment, {
+      service_id: fixtures.service.id, position: 0, duration_minutes: 45, price: 2500,
+    }, "v78 turns each legacy appointment into one ordered treatment");
+    const bookingDefaults = (await q<{
+      slot_granularity_minutes: number; max_visit_gap_minutes: number;
+    }>(`SELECT slot_granularity_minutes, max_visit_gap_minutes
+          FROM "${s}".salon_booking_settings WHERE salon_id=$1`, [fixtures.salon.id])).rows[0]!;
+    assert.deepEqual(bookingDefaults, { slot_granularity_minutes: 15, max_visit_gap_minutes: 0 });
+    assert.ok(await objectExists(
+      `SELECT to_regclass($1) IS NOT NULL AS exists`, [`${s}.customer_notifications`],
+    ), "v78 durable customer notification table exists");
+    assert.ok(await objectExists(
+      `SELECT to_regclass($1) IS NOT NULL AS exists`, [`${s}.review_invitations`],
+    ), "v78 review invitation idempotency table exists");
 
     // ── v29 JOBSEEKER account boundary ────────────────────────────────────
     const roleLabels = (await q<{ enumlabel: string }>(

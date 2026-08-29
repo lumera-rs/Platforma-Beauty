@@ -9,6 +9,7 @@ import {
   getListMyAppointmentsQueryKey,
   getListCustomerAppointmentTreatmentPhotosQueryKey,
   useCancelAppointment,
+  useCancelBookingGroup,
   useDisconnectAuthSignInMethod,
   useGetAuthSignInMethods,
   useGetCustomerDashboard,
@@ -55,6 +56,7 @@ import { MarketingEmailPreferences } from "@/components/marketing-email-preferen
 import { CustomerRetailOrders } from "@/components/retail-orders";
 
 import { AftercarePreview } from "@/components/aftercare-preview";
+import { CustomerNotifications } from "@/components/customer-notifications";
 
 const appointmentStatusesWithSalonContact = new Set(["pending", "confirmed", "completed"]);
 
@@ -186,7 +188,7 @@ export default function CustomerDashboard() {
   const [phoneCode, setPhoneCode] = useState("");
   const [phoneBusy, setPhoneBusy] = useState(false);
   const [contactAppointmentId, setContactAppointmentId] = useState<string | null>(null);
-  
+
   useEffect(() => {
     if (!isUserLoading && !userResp?.user) {
       setLocation("/prijava");
@@ -197,7 +199,13 @@ export default function CustomerDashboard() {
   const APPOINTMENTS_PAGE_SIZE = 20;
   const [appointmentsPage, setAppointmentsPage] = useState(1);
   const appointmentsParams = useMemo(() => ({ page: appointmentsPage, pageSize: APPOINTMENTS_PAGE_SIZE }), [appointmentsPage]);
-  const { data: appointments, isLoading: isApptsLoading, refetch: refetchAppts } = useListMyAppointments(appointmentsParams, { query: { enabled: !!userResp?.user, queryKey: getListMyAppointmentsQueryKey(appointmentsParams) }});
+  const { data: appointments, isLoading: isApptsLoading, refetch: refetchAppts } = useListMyAppointments(appointmentsParams, {
+    query: {
+      enabled: !!userResp?.user,
+      queryKey: getListMyAppointmentsQueryKey(appointmentsParams),
+      refetchOnMount: "always",
+    },
+  });
   const { data: signInMethods, isLoading: isSignInMethodsLoading, refetch: refetchSignInMethods } = useGetAuthSignInMethods({
     query: { enabled: !!userResp?.user, queryKey: getGetAuthSignInMethodsQueryKey() },
   });
@@ -214,14 +222,15 @@ export default function CustomerDashboard() {
     },
   );
   const { draft } = useBookingDraft(userResp?.user?.role === "CUSTOMER" ? userResp.user.id : undefined);
-  
+
   const cancelMutation = useCancelAppointment();
+  const cancelGroupMutation = useCancelBookingGroup();
   const disconnectMutation = useDisconnectAuthSignInMethod();
   // Wouter's useLocation() only tracks the pathname, so navigating from
   // /moj-nalog to /moj-nalog?tab=... never re-renders through it. useSearch()
   // subscribes to the query string itself, which is what drives the tabs.
   const requestedTab = new URLSearchParams(searchString).get("tab");
-  const activeTab = requestedTab === "favorites" || requestedTab === "settings" || requestedTab === "education" || requestedTab === "packages" || requestedTab === "orders" ? requestedTab : "appointments";
+  const activeTab = requestedTab === "favorites" || requestedTab === "settings" || requestedTab === "education" || requestedTab === "packages" || requestedTab === "orders" || requestedTab === "notifications" ? requestedTab : "appointments";
   const tabsSectionRef = useRef<HTMLDivElement>(null);
   const tabsListRef = useRef<HTMLDivElement>(null);
   const previousTabRef = useRef<string | null>(null);
@@ -272,6 +281,24 @@ export default function CustomerDashboard() {
   }, [searchString, refetchSignInMethods, setLocation, toast]);
 
   const handleCancel = (id: string) => {
+    const groupedAppointment = appointments?.find((appointment) => appointment.id === id && appointment.bookingGroupId);
+    if (groupedAppointment?.bookingGroupId) {
+      cancelGroupMutation.mutate(
+        { bookingGroupId: groupedAppointment.bookingGroupId, data: { appointmentIds: [id], reason: "Korisnik otkazao jedan tretman" } },
+        {
+          onSuccess: () => {
+            toast.success("Tretman je otkazan", { description: "Ostali tretmani iz grupne rezervacije ostaju nepromenjeni." });
+            setAppointmentToCancel(null);
+            refetchDash();
+            refetchAppts();
+          },
+          onError: (error: unknown) => toast.error("Tretman nije otkazan", {
+            description: getApiErrorMessage(error, "Osvežite listu i pokušajte ponovo."),
+          }),
+        },
+      );
+      return;
+    }
     cancelMutation.mutate(
       { appointmentId: id, data: { reason: "Korisnik otkazao" } },
       {
@@ -288,6 +315,19 @@ export default function CustomerDashboard() {
         }),
       },
     );
+  };
+  const handleCancelGroup = (bookingGroupId: string) => {
+    if (!window.confirm("Otkazati sve aktivne tretmane iz ove grupne rezervacije?")) return;
+    cancelGroupMutation.mutate({ bookingGroupId, data: { reason: "Korisnik otkazao celu grupnu rezervaciju" } }, {
+      onSuccess: () => {
+        toast.success("Grupna rezervacija je otkazana");
+        refetchDash();
+        refetchAppts();
+      },
+      onError: (error: unknown) => toast.error("Rezervacija nije otkazana", {
+        description: getApiErrorMessage(error, "Osvežite listu i pokušajte ponovo."),
+      }),
+    });
   };
 
   const disconnectProvider = () => {
@@ -391,7 +431,7 @@ export default function CustomerDashboard() {
               </CardContent>
             </Card>
           )}
-        
+
         {/* Stats Row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-8">
           <Card>
@@ -454,6 +494,9 @@ export default function CustomerDashboard() {
             <TabsTrigger value="appointments" className="shrink-0 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
               Moji Termini
             </TabsTrigger>
+            <TabsTrigger value="notifications" className="shrink-0 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
+              Obaveštenja
+            </TabsTrigger>
             <TabsTrigger value="favorites" className="shrink-0 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
               Omiljeni Saloni ({dashboard?.favoriteCount || 0})
             </TabsTrigger>
@@ -470,6 +513,10 @@ export default function CustomerDashboard() {
               Podešavanja Naloga
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="notifications" className="mt-0">
+            <CustomerNotifications />
+          </TabsContent>
 
           <TabsContent value="appointments" className="mt-0 space-y-4">
             {isApptsLoading ? (
@@ -500,7 +547,13 @@ export default function CustomerDashboard() {
                           <div className="flex items-center gap-2 mb-1">
                             <h4 className="font-bold text-lg">{appt.serviceName}</h4>
                             {getStatusBadge(appt.status)}
+                            {appt.bookingGroupId && <Badge variant="outline">Grupna rezervacija</Badge>}
                           </div>
+                          {appt.bookingGroupId && (
+                            <p className="mb-2 text-xs text-muted-foreground">
+                              Tretmani u grupi: {appointments.filter((item) => item.bookingGroupId === appt.bookingGroupId).map((item) => item.serviceName).join(" · ")}
+                            </p>
+                          )}
                           <Link href={`/saloni/${appt.salonSlug}`} className="text-primary font-medium text-sm hover:underline flex items-center gap-1 mb-2">
                             <MapPin className="w-3.5 h-3.5" /> {appt.salonName}
                           </Link>
@@ -538,7 +591,12 @@ export default function CustomerDashboard() {
                           )}
                           {(appt.status === 'pending' || appt.status === 'confirmed') && (
                             <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10 border-destructive/20" onClick={() => setAppointmentToCancel(appt.id)} disabled={cancelMutation.isPending}>
-                              Otkaži termin
+                              {appt.bookingGroupId ? "Otkaži samo ovaj tretman" : "Otkaži termin"}
+                            </Button>
+                          )}
+                          {appt.bookingGroupId && (appt.status === "pending" || appt.status === "confirmed") && (
+                            <Button variant="destructive" size="sm" onClick={() => handleCancelGroup(appt.bookingGroupId!)} disabled={cancelGroupMutation.isPending}>
+                              Otkaži celu grupu
                             </Button>
                           )}
                         </div>

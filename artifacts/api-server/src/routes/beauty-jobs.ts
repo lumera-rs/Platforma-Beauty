@@ -46,6 +46,7 @@ import {
   retryBeautyJobEmailDelivery,
 } from "../lib/beauty-jobs-email";
 import { listBeautyJobDeliveryIssues } from "../lib/beauty-jobs-delivery-monitor";
+import { notifyCustomer } from "../lib/customer-notifications";
 
 const router = Router();
 type BeautyJobTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -508,6 +509,17 @@ router.post("/beauty-jobs/:listingId/applicants/decision", async (req, res, next
         contactId: contact.id, listingId: listing.id, fromStatus: contact.authorStatus, toStatus: target,
         privateNote: b.data.internalNote ?? null, actorUserId: user.id, createdAt: now,
       });
+      await notifyCustomer(tx, {
+        userId: contact.applicantUserId,
+        eventKey: `beauty-job:application:${contact.id}:decision:${target}`,
+        category: "system",
+        title: target === "accepted" ? "Prijava je prihvaćena" : "Odluka o prijavi",
+        body: target === "accepted"
+          ? `Vaša prijava za „${listing.title}“ je prihvaćena.`
+          : `Poslodavac je završio pregled vaše prijave za „${listing.title}“.`,
+        deepLink: `/beauty-jobs/${listing.id}`,
+        metadata: { listingId: listing.id, contactId: contact.id, decision: target },
+      });
     }
     return true;
   });
@@ -817,6 +829,17 @@ router.post("/beauty-jobs/:listingId/contact", async (req, res, next) => { try {
       title: "Novi kontakt za oglas",
       body: listing.title,
     }).returning();
+    if (listing.type === "job") {
+      await notifyCustomer(tx, {
+        userId: user.id,
+        eventKey: `beauty-job:application:${created!.id}:submitted`,
+        category: "system",
+        title: "Prijava je poslata",
+        body: `Vaša prijava za „${listing.title}“ je poslata.`,
+        deepLink: `/beauty-jobs/${listing.id}`,
+        metadata: { listingId: listing.id, contactId: created!.id },
+      });
+    }
     await enqueueBeautyJobEmail(tx, {
       eventKey: `beauty-job:contact:${created!.id}:recipient:${recipient}`,
       emailType: "beauty_job_new_contact",
@@ -886,6 +909,15 @@ router.patch("/beauty-jobs/contacts/:contactId", async (req, res, next) => { try
         actorUserId: user.id,
         createdAt: decisionAt!,
       });
+      await notifyCustomer(tx, {
+        userId: updated!.applicantUserId,
+        eventKey: `beauty-job:application:${updated!.id}:decision:${nextAuthorStatus}`,
+        category: "system",
+        title: nextAuthorStatus === "accepted" ? "Prijava je prihvaćena" : "Odluka o prijavi",
+        body: `Status vaše prijave za „${fresh.listing.title}“ je promenjen.`,
+        deepLink: `/beauty-jobs/${fresh.listing.id}`,
+        metadata: { listingId: fresh.listing.id, contactId: updated!.id, decision: nextAuthorStatus },
+      });
     }
     if (!isFirstReply) return { kind: "ok" as const, updated: updated!, eventKey: null };
     const [replyNotification] = await tx.insert(beautyJobNotificationsTable).values({
@@ -896,6 +928,15 @@ router.patch("/beauty-jobs/contacts/:contactId", async (req, res, next) => { try
       title: "Odgovor na vaš kontakt",
       body: fresh.listing.title,
     }).returning();
+    await notifyCustomer(tx, {
+      userId: updated!.applicantUserId,
+      eventKey: `beauty-job:application:${updated!.id}:interview-update`,
+      category: "system",
+      title: "Nova poruka o prijavi",
+      body: `Poslodavac je odgovorio na prijavu za „${fresh.listing.title}“.`,
+      deepLink: `/beauty-jobs/${fresh.listing.id}`,
+      metadata: { listingId: fresh.listing.id, contactId: updated!.id },
+    });
     const eventKey = `beauty-job:reply:${updated!.id}:recipient:${updated!.applicantUserId}`;
     await enqueueBeautyJobEmail(tx, {
       eventKey,

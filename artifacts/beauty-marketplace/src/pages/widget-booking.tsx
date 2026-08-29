@@ -1,18 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useParams, useSearch } from "wouter";
 import {
   useGetWidgetSalon,
-  useGetWidgetAvailability,
-  useCreateWidgetAppointment,
+  useCreateWidgetBookingGroup,
+  useGetGroupedBookingAvailability,
   getGetWidgetSalonQueryKey,
-  getGetWidgetAvailabilityQueryKey,
   getApiErrorDetails,
-  isNetworkError,
+  type GroupedTreatmentRequest,
+  type GroupedAvailabilityCandidate
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
-import { format, addDays, isSameDay, parseISO, startOfToday } from "date-fns";
-import { srLatn } from "date-fns/locale";
-import { Loader2, Calendar, Clock, User, ChevronRight, ChevronLeft, MapPin, CheckCircle2, AlertCircle, WifiOff, RotateCcw } from "lucide-react";
+import { addDays, startOfToday } from "date-fns";
+import { Loader2, Calendar, Clock, ChevronRight, ChevronLeft, CheckCircle2, AlertCircle, Plus, Trash2, Scissors } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,69 +19,43 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatDateOnly, formatLocalDateOnly, parseLocalDateOnly } from "@/lib/date-only";
 
 // Step Enum
-type Step = "SERVICE" | "EMPLOYEE" | "DATETIME" | "CONTACT" | "SUCCESS";
-
-function TemporaryWidgetError({
-  description,
-  isRetrying,
-  onRetry,
-  compact = false,
-}: {
-  description: string;
-  isRetrying: boolean;
-  onRetry: () => void;
-  compact?: boolean;
-}) {
-  return (
-    <div
-      className={compact
-        ? "rounded-lg border border-dashed bg-card p-8 text-center"
-        : "flex h-full min-h-screen flex-col items-center justify-center bg-background p-4 text-center"}
-      data-testid={compact ? "widget-availability-error" : "widget-temporary-error"}
-    >
-      <WifiOff className="mb-4 h-12 w-12 text-muted-foreground" />
-      <h2 className="mb-2 text-xl font-semibold">Zakazivanje trenutno nije dostupno</h2>
-      <p className="mb-5 max-w-sm text-sm text-muted-foreground">{description}</p>
-      <Button type="button" variant="outline" onClick={onRetry} disabled={isRetrying}>
-        {isRetrying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
-        Pokušaj ponovo
-      </Button>
-    </div>
-  );
-}
+type Step = "CART" | "EMPLOYEE" | "DATETIME" | "CONTACT" | "SUCCESS";
 
 export default function WidgetBooking() {
   const { slug } = useParams<{ slug: string }>();
   const searchString = useSearch();
   const searchParams = new URLSearchParams(searchString);
   const boja = searchParams.get("boja");
-  
+
   const { toast } = useToast();
-  const queryClient = useQueryClient();
 
   const {
     data: salon,
     isLoading: isLoadingSalon,
-    isFetching: isFetchingSalon,
     isError: isErrorSalon,
-    error: salonError,
     refetch: refetchSalon,
   } = useGetWidgetSalon(
-    slug ?? "", 
+    slug ?? "",
     { query: { enabled: !!slug, queryKey: getGetWidgetSalonQueryKey(slug ?? ""), retry: false } }
   );
 
   // State
-  const [step, setStep] = useState<Step>("SERVICE");
-  const [serviceId, setServiceId] = useState<string | null>(null);
-  const [employeeId, setEmployeeId] = useState<string | null>(null); // null means "Bilo ko" (Any)
-  const [selectedDate, setSelectedDate] = useState<Date>(startOfToday());
-  const [startTime, setStartTime] = useState<string | null>(null);
-  const [finalSlotEmployeeId, setFinalSlotEmployeeId] = useState<string | null>(null);
+  const [step, setStep] = useState<Step>("CART");
+  const [cart, setCart] = useState<GroupedTreatmentRequest[]>([]);
+
+  // We use a date range now
+  const todayDate = formatLocalDateOnly(startOfToday())!;
+  const [fromDate, setFromDate] = useState(todayDate);
+  const [toDate, setToDate] = useState(todayDate);
+  const [dateError, setDateError] = useState<string | null>(null);
+  const [allowMultipleDays, setAllowMultipleDays] = useState(false);
+
+  const [selectedCandidate, setSelectedCandidate] = useState<GroupedAvailabilityCandidate | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  
+
   const [contact, setContact] = useState({
     firstName: "",
     lastName: "",
@@ -92,406 +64,402 @@ export default function WidgetBooking() {
     note: ""
   });
 
-  const createMutation = useCreateWidgetAppointment({
+  const createMutation = useCreateWidgetBookingGroup({
     mutation: {
       onSuccess: () => {
         setStep("SUCCESS");
-        // Invalidate slots to ensure next user sees fresh data
-        queryClient.invalidateQueries({ queryKey: getGetWidgetAvailabilityQueryKey(slug ?? "", { serviceId: serviceId!, date: format(selectedDate, 'yyyy-MM-dd') }) });
       },
       onError: (err: unknown) => {
-        const { status, message } = getApiErrorDetails(err);
-        if (status === 409) {
-          toast.error("Termin je upravo zauzet", { description: "Molimo izaberite drugo vreme." });
-          queryClient.invalidateQueries({ queryKey: getGetWidgetAvailabilityQueryKey(slug ?? "", { serviceId: serviceId!, date: format(selectedDate, 'yyyy-MM-dd') }) });
-          setStep("DATETIME");
-          setStartTime(null);
-        } else if (status === 429) {
-          toast.error("Previše zahteva", { description: message ?? "Pokušajte ponovo za koji minut." });
-        } else {
-          toast.error("Greška", { description: message ?? "Nije moguće zakazati termin. Pokušajte ponovo." });
-        }
+        const { message } = getApiErrorDetails(err);
+        toast.error("Greška pri zakazivanju", { description: message });
       }
     }
   });
 
-  // Derived state
-  const selectedService = useMemo(() => salon?.services.find(s => s.id === serviceId), [salon, serviceId]);
-  const availableEmployees = useMemo(() => {
-    if (!salon || !serviceId) return [];
-    return salon.employees.filter(e => e.serviceIds.includes(serviceId));
-  }, [salon, serviceId]);
+  const availabilityMutation = useGetGroupedBookingAvailability();
 
-  // Availability Query
-  const dateStr = format(selectedDate, 'yyyy-MM-dd');
-  const {
-    data: slots,
-    isLoading: isLoadingSlots,
-    isFetching: isFetchingSlots,
-    isError: isErrorSlots,
-    error: slotsError,
-    refetch: refetchSlots,
-  } = useGetWidgetAvailability(
-    slug ?? "",
-    { serviceId: serviceId!, date: dateStr, employeeId: employeeId || undefined },
-    { 
-      query: { 
-        enabled: !!slug && !!serviceId && step === "DATETIME", 
-        queryKey: getGetWidgetAvailabilityQueryKey(slug ?? "", { serviceId: serviceId!, date: dateStr, employeeId: employeeId || undefined }),
-        retry: false,
-      } 
+  const [availabilityResponse, setAvailabilityResponse] = useState<any>(null);
+
+  const refetchAvailability = () => {
+    const parsedFrom = parseLocalDateOnly(fromDate);
+    const parsedTo = parseLocalDateOnly(toDate);
+    const today = formatLocalDateOnly(startOfToday())!;
+    const maximumTo = parsedFrom ? formatLocalDateOnly(addDays(parsedFrom, 14)) : null;
+    if (!parsedFrom || !parsedTo) {
+      setDateError("Unesite ispravne datume.");
+      setAvailabilityResponse({ candidates: [] });
+      setSelectedCandidate(null);
+      return;
     }
-  );
-
-  // Group services by category
-  const servicesByCategory = useMemo(() => {
-    if (!salon) return {};
-    return salon.services.reduce((acc, service) => {
-      const cat = service.categoryName || "Ostalo";
-      if (!acc[cat]) acc[cat] = [];
-      acc[cat].push(service);
-      return acc;
-    }, {} as Record<string, typeof salon.services>);
-  }, [salon]);
-
-  // Generate 7 days for the date picker
-  const upcomingDays = useMemo(() => {
-    return Array.from({ length: 7 }).map((_, i) => addDays(startOfToday(), i));
-  }, []);
-
-  useEffect(() => {
-    const viewport = scrollAreaRef.current?.querySelector<HTMLElement>("[data-radix-scroll-area-viewport]");
-    viewport?.scrollTo({ top: 0, behavior: "auto" });
-  }, [selectedDate, step]);
-
-  // Handlers
-  const handleServiceSelect = (id: string) => {
-    setServiceId(id);
-    setEmployeeId(null);
-    setStartTime(null);
-    setStep("EMPLOYEE");
+    if (fromDate < today || toDate < fromDate || (maximumTo && toDate > maximumTo)) {
+      setDateError("Izaberite period od danas, najduže 14 dana, bez obrnutog raspona.");
+      setAvailabilityResponse({ candidates: [] });
+      setSelectedCandidate(null);
+      return;
+    }
+    setDateError(null);
+    availabilityMutation.mutate({
+      salonId: salon?.id ?? "",
+      data: {
+        treatments: cart,
+        fromDate,
+        toDate,
+        allowMultipleDays,
+      }
+    }, {
+      onSuccess: (data) => setAvailabilityResponse(data),
+      onError: () => setAvailabilityResponse({ candidates: [] }),
+    });
   };
 
-  const handleEmployeeSelect = (id: string | null) => {
-    setEmployeeId(id);
-    setStartTime(null);
-    setStep("DATETIME");
+  const isLoadingAvailability = availabilityMutation.isPending;
+  const isFetchingAvailability = availabilityMutation.isPending;
+
+  // Styling
+  const customColor = boja ? `#${boja}` : undefined;
+  const styleVars = customColor ? { "--primary": customColor, "--ring": customColor } as React.CSSProperties : {};
+
+  // Helpers
+  const resetFlow = () => {
+    setStep("CART");
+    setCart([]);
+    setSelectedCandidate(null);
+    setFromDate(todayDate);
+    setToDate(todayDate);
+    setDateError(null);
+    setContact({ firstName: "", lastName: "", phone: "", email: "", note: "" });
   };
 
-  const handleSlotSelect = (time: string, empId: string) => {
-    setStartTime(time);
-    setFinalSlotEmployeeId(empId);
-    setStep("CONTACT");
+  const nextStep = (target: Step) => {
+    setStep(target);
+    scrollAreaRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const prevStep = (target: Step) => {
+    setStep(target);
+    scrollAreaRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!slug || !serviceId || !startTime) return;
+    if (!salon || !selectedCandidate || cart.length === 0) return;
+
     createMutation.mutate({
-      slug,
+      slug: salon.slug,
       data: {
-        serviceId,
-        employeeId: finalSlotEmployeeId || employeeId || null,
-        date: format(selectedDate, 'yyyy-MM-dd'),
-        startTime,
-        firstName: contact.firstName.trim(),
-        lastName: contact.lastName.trim(),
-        phone: contact.phone.trim(),
-        email: contact.email.trim() || null,
-        note: contact.note.trim() || null
+        firstName: contact.firstName,
+        lastName: contact.lastName,
+        phone: contact.phone,
+        email: contact.email || null,
+        note: contact.note || null,
+        treatments: selectedCandidate.treatments.map((t, i) => ({
+          serviceId: t.serviceId,
+          employeeId: t.employeeId,
+          date: t.date,
+          startTime: t.startTime
+        }))
       }
     });
   };
 
-  const resetFlow = () => {
-    setStep("SERVICE");
-    setServiceId(null);
-    setEmployeeId(null);
-    setStartTime(null);
-    setContact({ firstName: "", lastName: "", phone: "", email: "", note: "" });
+  if (isLoadingSalon) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background" style={styleVars}>
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (isErrorSalon || !salon) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background" style={styleVars}>
+        <div className="text-center p-8">
+          <AlertCircle className="mb-4 h-12 w-12 mx-auto text-muted-foreground" />
+          <h2 className="mb-2 text-xl font-semibold">Salon nije pronađen</h2>
+          <Button onClick={() => refetchSalon()} variant="outline">Pokušaj ponovo</Button>
+        </div>
+      </div>
+    );
+  }
+
+  const addToCart = (serviceId: string) => {
+    if (cart.length >= 5) {
+      toast.error("Maksimalno 5 usluga po terminu");
+      return;
+    }
+    setCart([...cart, { serviceId }]);
   };
 
-  // Convert hex to HSL for CSS variable
-  const cssVars = useMemo(() => {
-    if (!boja) return {};
-    let hex = boja.replace(/^#/, '');
-    if (hex.length === 3) hex = hex.split('').map(x => x + x).join('');
-    if (hex.length !== 6) return {};
-    const r = parseInt(hex.substring(0, 2), 16) / 255;
-    const g = parseInt(hex.substring(2, 4), 16) / 255;
-    const b = parseInt(hex.substring(4, 6), 16) / 255;
-    const max = Math.max(r, g, b), min = Math.min(r, g, b);
-    let h = 0, s = 0, l = (max + min) / 2;
-    if (max !== min) {
-      const d = max - min;
-      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-      switch (max) {
-        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-        case g: h = (b - r) / d + 2; break;
-        case b: h = (r - g) / d + 4; break;
-      }
-      h /= 6;
-    }
-    return { 
-      '--primary': `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`,
-      '--ring': `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`
-    } as React.CSSProperties;
-  }, [boja]);
-
-  const salonErrorDetails = getApiErrorDetails(salonError);
-  const salonErrorDescription = isNetworkError(salonError)
-    ? "Proverite internet vezu i pokušajte ponovo."
-    : "Došlo je do privremenog problema sa serverom. Pokušajte ponovo za nekoliko trenutaka.";
-
-  if (isErrorSalon && salonErrorDetails.status === 404) {
-    return (
-      <div className="flex h-screen flex-col items-center justify-center bg-background p-4 text-center" style={cssVars}>
-        <AlertCircle className="mb-4 h-12 w-12 text-muted-foreground" />
-        <h2 className="mb-2 text-xl font-semibold">Salon nije pronađen</h2>
-        <p className="text-sm text-muted-foreground">Proverite da li je link ispravan.</p>
-      </div>
-    );
-  }
-
-  if (isErrorSalon) {
-    return (
-      <div style={cssVars}>
-        <TemporaryWidgetError
-          description={salonErrorDescription}
-          isRetrying={isFetchingSalon}
-          onRetry={() => void refetchSalon()}
-        />
-      </div>
-    );
-  }
-
-  if (isLoadingSalon || !salon) {
-    return (
-      <div className="flex h-screen flex-col bg-background p-4" style={cssVars}>
-        <Skeleton className="mb-6 h-8 w-3/4" />
-        <Skeleton className="mb-4 h-24 w-full" />
-        <Skeleton className="mb-4 h-24 w-full" />
-        <Skeleton className="mb-4 h-24 w-full" />
-      </div>
-    );
-  }
+  const removeFromCart = (index: number) => {
+    setCart(cart.filter((_, i) => i !== index));
+  };
 
   return (
-    <div 
-      className="flex h-[100dvh] w-full flex-col bg-background text-foreground antialiased selection:bg-primary/20 overflow-hidden" 
-      style={cssVars}
-      data-testid="page-widget-booking"
-    >
+    <div className="flex h-screen w-full flex-col bg-background text-foreground" style={styleVars}>
       {/* Header */}
-      <header className="flex shrink-0 items-center justify-between border-b bg-card/50 px-4 py-3 backdrop-blur-md">
-        <div className="flex flex-col">
-          <span className="text-sm font-medium tracking-tight truncate">{salon.name}</span>
-          <span className="flex items-center text-[11px] text-muted-foreground"><MapPin className="mr-1 h-3 w-3" />{salon.city}</span>
-        </div>
-        {step !== "SERVICE" && step !== "SUCCESS" && (
-          <Button aria-label="Nazad" variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => {
-            if (step === "EMPLOYEE") setStep("SERVICE");
-            if (step === "DATETIME") setStep("EMPLOYEE");
-            if (step === "CONTACT") setStep("DATETIME");
+      <header className="flex h-14 shrink-0 items-center border-b px-4 bg-card shadow-sm sticky top-0 z-10">
+        {step !== "CART" && step !== "SUCCESS" && (
+          <Button variant="ghost" size="icon" className="-ml-2 mr-2" onClick={() => {
+            if (step === "EMPLOYEE") prevStep("CART");
+            else if (step === "DATETIME") prevStep("EMPLOYEE");
+            else if (step === "CONTACT") prevStep("DATETIME");
           }}>
-            <ChevronLeft className="h-4 w-4" />
+            <ChevronLeft className="h-5 w-5" />
           </Button>
         )}
+        <div className="flex flex-1 flex-col">
+          <h1 className="text-sm font-bold leading-tight">{salon.name}</h1>
+          <p className="text-xs text-muted-foreground leading-tight truncate">{salon.address}, {salon.city}</p>
+        </div>
       </header>
 
       {/* Progress */}
-      {step !== "SUCCESS" && (
-        <div className="h-1 w-full bg-muted">
-          <div 
-            className="h-full bg-primary transition-all duration-300 ease-out" 
-            style={{ width: `${step === 'SERVICE' ? 25 : step === 'EMPLOYEE' ? 50 : step === 'DATETIME' ? 75 : 100}%` }} 
-          />
-        </div>
-      )}
+      <div className="h-1 w-full bg-muted shrink-0">
+        <div
+          className="h-full bg-primary transition-all duration-300"
+          style={{ width: `${step === "CART" ? 25 : step === "EMPLOYEE" ? 50 : step === "DATETIME" ? 75 : step === "CONTACT" ? 90 : 100}%` }}
+        />
+      </div>
 
-      {/* Body */}
-      <ScrollArea ref={scrollAreaRef} data-testid="widget-booking-scroll-area" className="flex-1 bg-muted/10 px-4 py-4">
-        <div className="mx-auto w-full max-w-md pb-8">
-          
-          {/* STEP 1: SERVICE */}
-          {step === "SERVICE" && (
-            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <h2 className="mb-4 text-lg font-serif font-bold">Izaberite uslugu</h2>
-              <div className="space-y-6">
-                {Object.entries(servicesByCategory).map(([category, services]) => (
-                  <div key={category}>
-                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{category}</h3>
-                    <div className="space-y-2">
-                      {services.map(svc => (
-                        <Card 
-                          key={svc.id} 
-                          className="cursor-pointer transition-colors hover:border-primary/50" 
-                          onClick={() => handleServiceSelect(svc.id)}
-                          data-testid={`service-select-${svc.id}`}
-                        >
-                          <CardContent className="flex items-center justify-between p-3">
-                            <div className="flex flex-col">
-                              <span className="font-medium">{svc.name}</span>
-                              <span className="text-xs text-muted-foreground">{svc.durationMinutes} min</span>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <div className="flex flex-col items-end">
-                                {svc.promoPrice ? (
-                                  <>
-                                    <span className="text-xs text-muted-foreground line-through">{svc.price} RSD</span>
-                                    <span className="font-semibold text-primary">{svc.promoPrice} RSD</span>
-                                  </>
-                                ) : (
-                                  <span className="font-semibold">{svc.price} RSD</span>
-                                )}
-                              </div>
-                              <ChevronRight className="h-4 w-4 text-muted-foreground opacity-50" />
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+      <ScrollArea className="flex-1" ref={scrollAreaRef}>
+        <div className="mx-auto w-full max-w-md p-4 pb-24">
 
-          {/* STEP 2: EMPLOYEE */}
-          {step === "EMPLOYEE" && selectedService && (
-            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div className="mb-6 rounded-lg bg-card p-3 shadow-sm border">
-                <span className="block text-[10px] uppercase text-muted-foreground">Odabrana usluga</span>
-                <span className="font-medium">{selectedService.name}</span>
-              </div>
-              <h2 className="mb-4 text-lg font-serif font-bold">Izaberite zaposlenog</h2>
-              <div className="space-y-2">
-                <Card 
-                  className="cursor-pointer transition-colors hover:border-primary/50" 
-                  onClick={() => handleEmployeeSelect(null)}
-                  data-testid="employee-select-any"
-                >
-                  <CardContent className="flex items-center justify-between p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-                        <User className="h-5 w-5" />
+          {step === "CART" && (
+            <div className="animate-in slide-in-from-right-4 duration-300">
+              <h2 className="mb-4 text-xl font-serif font-bold text-foreground">Izaberite usluge</h2>
+
+              <div className="mb-6 space-y-3">
+                {salon.services.map(service => (
+                  <Card key={service.id} className="overflow-hidden border shadow-sm transition-all hover:border-primary/40 cursor-pointer" onClick={() => addToCart(service.id)}>
+                    <CardContent className="p-3 flex justify-between items-center gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-sm truncate">{service.name}</p>
+                        <p className="text-xs text-muted-foreground">{service.categoryName} • {service.durationMinutes} min</p>
                       </div>
-                      <span className="font-medium">Bilo ko</span>
-                    </div>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground opacity-50" />
-                  </CardContent>
-                </Card>
-                {availableEmployees.map(emp => (
-                  <Card 
-                    key={emp.id} 
-                    className="cursor-pointer transition-colors hover:border-primary/50" 
-                    onClick={() => handleEmployeeSelect(emp.id)}
-                    data-testid={`employee-select-${emp.id}`}
-                  >
-                    <CardContent className="flex items-center justify-between p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                          {emp.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="flex flex-col">
-                          <span className="font-medium">{emp.name}</span>
-                          {emp.role && <span className="text-xs text-muted-foreground">{emp.role}</span>}
-                        </div>
+                      <div className="text-right shrink-0 flex items-center gap-3">
+                        <span className="font-bold text-sm text-primary">{service.promoPrice ?? service.price} RSD</span>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full bg-primary/10 text-primary hover:bg-primary/20"><Plus className="w-4 h-4" /></Button>
                       </div>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground opacity-50" />
                     </CardContent>
                   </Card>
                 ))}
               </div>
+
+              {cart.length > 0 && (
+                <div className="fixed bottom-0 left-0 right-0 p-4 bg-background border-t shadow-[0_-10px_20px_rgba(0,0,0,0.05)] z-20">
+                  <div className="max-w-md mx-auto">
+                    <div className="flex items-center justify-between mb-3 text-sm">
+                      <span className="font-medium text-muted-foreground">Izabrano usluga: {cart.length}</span>
+                      <span className="font-bold text-lg text-primary">
+                        {cart.reduce((sum, item) => {
+                          const s = salon.services.find(x => x.id === item.serviceId);
+                          return sum + (s?.promoPrice ?? s?.price ?? 0);
+                        }, 0)} RSD
+                      </span>
+                    </div>
+                    <Button className="w-full h-12 text-base font-bold rounded-xl" onClick={() => nextStep("EMPLOYEE")}>
+                      Nastavi ({cart.length}) <ChevronRight className="w-5 h-5 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* STEP 3: DATETIME */}
-          {step === "DATETIME" && selectedService && (
-            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <h2 className="mb-4 text-lg font-serif font-bold">Kada želite termin?</h2>
-              
-              {/* Date strip */}
-              <div className="mb-6 -mx-4 flex overflow-x-auto px-4 pb-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                <div className="flex gap-2">
-                  {upcomingDays.map(date => {
-                    const isSelected = isSameDay(date, selectedDate);
-                    return (
-                      <button
-                        key={date.toISOString()}
-                        onClick={() => setSelectedDate(date)}
-                        className={`flex flex-col items-center justify-center rounded-xl border p-2 min-w-[4rem] transition-colors ${
-                          isSelected 
-                            ? 'bg-primary border-primary text-primary-foreground shadow-md' 
-                            : 'bg-card hover:bg-muted'
-                        }`}
-                      >
-                        <span className={`text-[10px] uppercase ${isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
-                          {format(date, 'eee', { locale: srLatn })}
-                        </span>
-                        <span className="text-lg font-bold">{format(date, 'd')}</span>
-                      </button>
-                    )
-                  })}
-                </div>
+          {step === "EMPLOYEE" && (
+            <div className="animate-in slide-in-from-right-4 duration-300">
+              <h2 className="mb-4 text-xl font-serif font-bold text-foreground">Željeni zaposleni</h2>
+              <p className="text-sm text-muted-foreground mb-4">Ukoliko želite, možete izabrati specifičnog zaposlenog za svaku uslugu.</p>
+
+              <div className="space-y-4 mb-6">
+                {cart.map((item, index) => {
+                  const s = salon.services.find(x => x.id === item.serviceId);
+                  const eligibleStaff = salon.employees.filter(e => e.serviceIds.includes(item.serviceId));
+                  return (
+                    <Card key={index} className="overflow-hidden border shadow-sm">
+                      <CardContent className="p-3">
+                        <div className="flex justify-between items-start mb-3">
+                          <div>
+                            <p className="font-semibold text-sm">{s?.name}</p>
+                            <p className="text-xs text-muted-foreground">{s?.durationMinutes} min</p>
+                          </div>
+                          <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:bg-destructive/10 -mt-1 -mr-1" onClick={() => removeFromCart(index)}><Trash2 className="w-4 h-4" /></Button>
+                        </div>
+
+                        <Label className="text-xs mb-1.5 block text-muted-foreground">Izaberite radnika</Label>
+                        <select
+                          className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm font-medium"
+                          value={item.employeeId ?? ""}
+                          onChange={(e) => {
+                            const newCart = [...cart];
+                            newCart[index].employeeId = e.target.value === "" ? null : e.target.value;
+                            setCart(newCart);
+                          }}
+                        >
+                          <option value="">Bilo ko (prvi dostupan)</option>
+                          {eligibleStaff.map(emp => (
+                            <option key={emp.id} value={emp.id}>{emp.name}</option>
+                          ))}
+                        </select>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
 
-              {/* Slots */}
-              <div>
-                <h3 className="mb-3 text-sm font-medium">Slobodni termini</h3>
-                {isLoadingSlots ? (
-                  <div className="flex justify-center p-8"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
-                ) : isErrorSlots ? (
-                  <TemporaryWidgetError
-                    compact
-                    description={isNetworkError(slotsError)
-                      ? "Proverite internet vezu i pokušajte ponovo."
-                      : "Došlo je do privremenog problema pri učitavanju termina. Pokušajte ponovo."}
-                    isRetrying={isFetchingSlots}
-                    onRetry={() => void refetchSlots()}
+              {cart.length === 0 ? (
+                <div className="text-center p-8">
+                  <Scissors className="w-12 h-12 mx-auto text-muted-foreground/30 mb-3" />
+                  <p className="text-muted-foreground">Nemate izabranih usluga.</p>
+                  <Button variant="outline" className="mt-4" onClick={() => prevStep("CART")}>Vrati se na usluge</Button>
+                </div>
+              ) : (
+                <div className="fixed bottom-0 left-0 right-0 p-4 bg-background border-t shadow-[0_-10px_20px_rgba(0,0,0,0.05)] z-20">
+                  <div className="max-w-md mx-auto">
+                    <Button className="w-full h-12 text-base font-bold rounded-xl" onClick={() => nextStep("DATETIME")}>
+                      Izaberi vreme <ChevronRight className="w-5 h-5 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {step === "DATETIME" && (
+            <div className="animate-in slide-in-from-right-4 duration-300">
+              <h2 className="mb-4 text-xl font-serif font-bold text-foreground">Kada želite termin?</h2>
+
+              <div className="mb-6 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Od</Label>
+                    <Input type="date" min={todayDate} value={fromDate} onChange={e => {
+                      const value = e.target.value;
+                      setFromDate(value);
+                      setSelectedCandidate(null);
+                      setAvailabilityResponse(null);
+                      if (!parseLocalDateOnly(value)) {
+                        setDateError("Unesite ispravan početni datum.");
+                        return;
+                      }
+                      setDateError(null);
+                      if (!parseLocalDateOnly(toDate) || toDate < value) setToDate(value);
+                    }} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Do</Label>
+                    <Input
+                      type="date"
+                      min={parseLocalDateOnly(fromDate) ? fromDate : todayDate}
+                      max={parseLocalDateOnly(fromDate) ? formatLocalDateOnly(addDays(parseLocalDateOnly(fromDate)!, 14)) ?? undefined : undefined}
+                      value={toDate}
+                      onChange={e => {
+                        const value = e.target.value;
+                        setToDate(value);
+                        setSelectedCandidate(null);
+                        setAvailabilityResponse(null);
+                        setDateError(!parseLocalDateOnly(value) || value < fromDate ? "Krajnji datum mora biti ispravan i posle početnog." : null);
+                      }}
+                    />
+                  </div>
+                </div>
+                {dateError && <p className="text-sm text-destructive" role="alert">{dateError}</p>}
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={allowMultipleDays}
+                    onChange={(event) => { setAllowMultipleDays(event.target.checked); setSelectedCandidate(null); }}
                   />
-                ) : !slots || slots.length === 0 ? (
-                  <div className="rounded-lg border border-dashed p-8 text-center bg-card">
-                    <Calendar className="mx-auto mb-2 h-8 w-8 text-muted-foreground opacity-20" />
-                    <p className="text-sm font-medium">Nema slobodnih termina</p>
-                    <p className="text-xs text-muted-foreground mt-1">Izaberite drugi datum ili zaposlenog.</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                    {slots.map((slot, idx) => (
-                      <button
-                        key={`${slot.start}-${slot.employeeId}-${idx}`}
-                        onClick={() => handleSlotSelect(slot.start, slot.employeeId)}
-                        data-testid={`slot-${slot.start}`}
-                        className="rounded-lg border bg-card py-2 text-center text-sm font-medium transition-colors hover:border-primary hover:bg-primary/5 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1"
-                      >
-                        {slot.start}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                  Dozvoli da tretmani budu raspoređeni na više dana
+                </label>
+
+                <Button className="w-full" variant="outline" onClick={() => refetchAvailability()} disabled={isFetchingAvailability}>
+                  {isFetchingAvailability ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Calendar className="w-4 h-4 mr-2" />}
+                  Proveri dostupnost
+                </Button>
               </div>
+
+              {isLoadingAvailability || isFetchingAvailability ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-20 w-full rounded-xl" />
+                  <Skeleton className="h-20 w-full rounded-xl" />
+                  <Skeleton className="h-20 w-full rounded-xl" />
+                </div>
+              ) : availabilityResponse?.candidates?.some((candidate: any) =>
+                formatDateOnly(candidate.date, "yyyy-MM-dd")
+                && candidate.treatments?.every((treatment: any) => formatDateOnly(treatment.date, "yyyy-MM-dd"))
+              ) ? (
+                <div className="space-y-3 mb-20">
+                  {availabilityResponse.candidates.filter((candidate: any) =>
+                    formatDateOnly(candidate.date, "yyyy-MM-dd")
+                    && candidate.treatments?.every((treatment: any) => formatDateOnly(treatment.date, "yyyy-MM-dd"))
+                  ).map((c: any, i: number) => (
+                    <Card
+                      key={i}
+                      className={`overflow-hidden cursor-pointer transition-all border-2 ${selectedCandidate === c ? 'border-primary bg-primary/5 ring-4 ring-primary/10' : 'border-border hover:border-primary/40 shadow-sm'}`}
+                      onClick={() => setSelectedCandidate(c)}
+                    >
+                      <CardContent className="p-4">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="font-bold text-base text-foreground">{formatDateOnly(c.date, "dd. MM. yyyy.")}</span>
+                          <span className="font-bold text-primary text-lg flex items-center bg-primary/10 px-2.5 py-0.5 rounded-md"><Clock className="w-4 h-4 mr-1.5" /> {c.startTime}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground font-medium flex items-center mb-3">Završava u {c.endTime}</p>
+
+                        <div className="space-y-1.5 border-t pt-3">
+                          {c.treatments.map((t: any, tidx: number) => {
+                            const svc = salon.services.find(s => s.id === t.serviceId);
+                            const emp = salon.employees.find(e => e.id === t.employeeId);
+                            return (
+                              <div key={tidx} className="flex justify-between items-center text-xs">
+                                <span className="font-medium truncate pr-2">{svc?.name}</span>
+                                <span className="text-muted-foreground whitespace-nowrap">{t.date !== c.date ? `${formatDateOnly(t.date, "dd.MM.")} · ` : ""}{t.startTime} • {emp?.name || "Bilo ko"}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              ) : availabilityResponse ? (
+                <div className="text-center p-8 bg-muted/20 rounded-xl border border-dashed">
+                  <Clock className="w-10 h-10 mx-auto text-muted-foreground/40 mb-3" />
+                  <p className="text-muted-foreground font-medium text-sm">Nema slobodnih termina za izabrani period i kombinaciju usluga.</p>
+                  <p className="text-xs text-muted-foreground mt-2">Pokušajte sa širim rasponom datuma ili uklonite neke usluge.</p>
+                </div>
+              ) : null}
+
+              {selectedCandidate && (
+                <div className="fixed bottom-0 left-0 right-0 p-4 bg-background border-t shadow-[0_-10px_20px_rgba(0,0,0,0.05)] z-20">
+                  <div className="max-w-md mx-auto">
+                    <Button className="w-full h-12 text-base font-bold rounded-xl" onClick={() => nextStep("CONTACT")}>
+                      Nastavi <ChevronRight className="w-5 h-5 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* STEP 4: CONTACT */}
-          {step === "CONTACT" && selectedService && startTime && (
-            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div className="mb-6 rounded-lg bg-card p-4 shadow-sm border space-y-2">
-                <div className="flex items-center justify-between border-b pb-2">
-                  <span className="text-xs font-medium text-muted-foreground">Usluga</span>
-                  <span className="text-sm font-semibold">{selectedService.name}</span>
+          {step === "CONTACT" && (
+            <div className="animate-in slide-in-from-right-4 duration-300">
+              <h2 className="mb-4 text-xl font-serif font-bold text-foreground">Vaši podaci</h2>
+
+              <div className="mb-6 rounded-xl border bg-muted/30 p-4">
+                <div className="flex items-center justify-between border-b pb-3 mb-3 text-sm">
+                  <span className="text-muted-foreground">Izabrane usluge</span>
+                  <span className="font-bold">{cart.length}</span>
                 </div>
-                <div className="flex items-center justify-between pt-1">
-                  <span className="text-xs font-medium text-muted-foreground">Vreme</span>
-                  <span className="text-sm font-semibold text-primary flex items-center gap-1">
-                    <Clock className="h-3.5 w-3.5" /> 
-                    {format(selectedDate, 'dd. MM. yyyy.', { locale: srLatn })} u {startTime}
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Termin</span>
+                  <span className="font-bold text-primary flex items-center">
+                    <Clock className="h-3.5 w-3.5 mr-1" />
+                    {selectedCandidate && `${formatDateOnly(selectedCandidate.date, "dd.MM.") ?? "Nepoznat datum"} u ${selectedCandidate.startTime}`}
                   </span>
                 </div>
               </div>
 
-              <h2 className="mb-4 text-lg font-serif font-bold">Vaši podaci</h2>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
@@ -517,7 +485,7 @@ export default function WidgetBooking() {
                 </div>
 
                 <div className="pt-2">
-                  <Button type="submit" className="w-full h-12 text-base font-semibold" disabled={createMutation.isPending} data-testid="button-submit">
+                  <Button type="submit" className="w-full h-12 text-base font-semibold rounded-xl shadow-md" disabled={createMutation.isPending} data-testid="button-submit">
                     {createMutation.isPending ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : "Potvrdi zakazivanje"}
                   </Button>
                 </div>
@@ -528,17 +496,16 @@ export default function WidgetBooking() {
             </div>
           )}
 
-          {/* STEP 5: SUCCESS */}
           {step === "SUCCESS" && (
             <div className="flex flex-col items-center justify-center text-center animate-in zoom-in-95 duration-500 py-8">
-              <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+              <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 shadow-sm">
                 <CheckCircle2 className="h-10 w-10" />
               </div>
               <h2 className="mb-2 text-2xl font-serif font-bold text-foreground">Zahtev je poslat!</h2>
               <p className="mb-8 text-muted-foreground text-sm max-w-[280px]">
-                Vaš termin je u obradi. Dobićete potvrdu od salona <strong>{salon.name}</strong> u najkraćem roku.
+                Vaš termin je uspešno zakazan. Dobićete potvrdu od salona u najkraćem roku.
               </p>
-              <Button onClick={resetFlow} variant="outline" className="w-full font-medium" data-testid="button-reset">
+              <Button onClick={resetFlow} variant="outline" className="w-full font-medium rounded-xl h-11" data-testid="button-reset">
                 Zakaži još jedan termin
               </Button>
             </div>

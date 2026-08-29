@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { SearchableCombobox, type SearchableComboboxOption } from "@/components/ui/searchable-combobox";
+import { BookingSettingsForm } from "@/components/owner/booking-settings-form";
 import { QuickPackageDialog } from "@/components/owner/quick-package-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -25,6 +26,7 @@ import {
   usePreviewSalonAppointmentSeries,
   usePreviewSalonAppointmentSeriesMove,
   useCancelSalonAppointmentSeries,
+  useCancelBookingGroup,
   useMoveSalonAppointmentSeries,
   useGetCurrentUser,
   useListSalonAppointments,
@@ -56,7 +58,7 @@ import {
   type PackagePurchase,
   type SalonPackageAppointmentSlot
 } from "@workspace/api-client-react";
-import { CalendarDays, Clock3, House, Loader2, MapPin, MessageSquareOff, Pencil, Plus, Repeat2, Trash2, UserRoundPlus, Search, Ban, AlignLeft, CalendarRange } from "lucide-react";
+import { CalendarDays, Clock3, House, Loader2, MapPin, MessageSquareOff, Pencil, Plus, Repeat2, Trash2, UserRoundPlus, Search, Ban, AlignLeft, CalendarRange, Settings } from "lucide-react";
 
 function dateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -329,7 +331,7 @@ function CalendarTimeline({
                      style={{ top: getTop(a.startTime), height: getHeight(a.startTime, a.endTime) }}
                      onClick={(e) => { e.stopPropagation(); onAppointmentClick(a); }}>
                   <div className={cn("font-bold truncate leading-tight mb-0.5", a.status === "no-show" ? "text-muted-foreground" : "text-primary")}>{a.startTime} · {a.customerName}</div>
-                  <div className={cn("truncate leading-tight font-medium", a.status === "no-show" ? "text-muted-foreground/80" : "text-primary/80")}>{a.serviceName}</div>
+                  <div className={cn("truncate leading-tight font-medium", a.status === "no-show" ? "text-muted-foreground/80" : "text-primary/80")}>{a.bookingGroupId ? "Grupa · " : ""}{a.serviceName}</div>
                 </div>
               ))}
 
@@ -439,6 +441,7 @@ export default function OwnerCalendar() {
   const previewSeries = usePreviewSalonAppointmentSeries();
   const previewSeriesMove = usePreviewSalonAppointmentSeriesMove();
   const cancelSeries = useCancelSalonAppointmentSeries();
+  const cancelGroup = useCancelBookingGroup();
   const moveSeries = useMoveSalonAppointmentSeries();
   const updateAppointment = useUpdateSalonAppointment();
   const updateCustomer = useUpdateSalonCustomer();
@@ -519,7 +522,7 @@ export default function OwnerCalendar() {
   const handlePlannerPackageChange = (id: string) => {
     applyPlannerPackage(customerPackages?.find(p => p.id === id));
   };
-  const [editing, setEditing] = useState<{ id: string; seriesId: string | null; status: "pending" | "confirmed" | "completed" | "cancelled" | "no-show"; employeeId: string; notes: string } | null>(null);
+  const [editing, setEditing] = useState<{ id: string; seriesId: string | null; bookingGroupId: string | null; status: "pending" | "confirmed" | "completed" | "cancelled" | "no-show"; employeeId: string; notes: string } | null>(null);
   const [seriesMove, setSeriesMove] = useState<{ seriesId: string; dayOffset: string; startTime: string } | null>(null);
   const [seriesMovePreviewKey, setSeriesMovePreviewKey] = useState<string | null>(null);
   const hasCurrentSeriesMovePreview = Boolean(seriesMove && seriesMovePreviewKey === seriesMoveFingerprint(seriesMove));
@@ -823,6 +826,8 @@ export default function OwnerCalendar() {
 
   const eligiblePackages = getEligiblePackageOptions(customerPackages ?? [], form.serviceId);
 
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
   return (
     <BusinessLayout>
       <div className="container mx-auto flex w-full max-w-[1600px] flex-col items-start gap-8 px-4 py-8 lg:px-6 xl:flex-row">
@@ -831,6 +836,15 @@ export default function OwnerCalendar() {
           <div className="flex flex-col justify-between gap-5 border-b pb-6 sm:flex-row sm:items-end">
             <div><p className="mb-2 text-sm font-semibold uppercase tracking-[0.16em] text-primary">Organizacija dana</p><h1 className="font-serif text-3xl font-bold tracking-tight sm:text-4xl">Kalendar termina</h1><p className="mt-2 max-w-2xl text-muted-foreground">Izaberite dan i pregledajte raspored, walk-in klijente i SMS obaveštenja na jednom mestu.</p></div>
             <div className="flex items-center gap-3">
+              <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+                <DialogTrigger asChild><Button variant="outline"><Settings className="mr-2 h-4 w-4" /> Podešavanja rezervacija</Button></DialogTrigger>
+                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>Podešavanja rezervacija</DialogTitle>
+                  </DialogHeader>
+                  <BookingSettingsForm onSaved={() => setSettingsOpen(false)} />
+                </DialogContent>
+              </Dialog>
               <Dialog open={blockOpen} onOpenChange={setBlockOpen}>
                 <DialogTrigger asChild><Button data-testid="calendar-new-block" variant="secondary" onClick={openNewTimeBlock}><Ban className="mr-2 h-4 w-4" /> Blokiraj vreme</Button></DialogTrigger>
                 <DialogContent>
@@ -1035,6 +1049,7 @@ export default function OwnerCalendar() {
                 <Button className="w-full" onClick={saveAppointmentUpdate} disabled={updateAppointment.isPending}>{updateAppointment.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Sačuvaj izmene</Button>
                  {editing.seriesId && <Button className="w-full" variant="outline" onClick={() => openSeriesMove(editing.seriesId!)}><Repeat2 className="mr-2 h-4 w-4" /> Pomeri preostale termine serije</Button>}
                 {editing.seriesId && <Button className="w-full" variant="destructive" disabled={cancelSeries.isPending} onClick={() => cancelSeries.mutate({ seriesId: editing.seriesId! }, { onSuccess: (result) => { toast.success(`Otkazano je ${result.cancelledAppointments} budućih termina iz serije.`); setEditing(null); refetchAppointments(); refetchUnfilteredAppointments(); refetchCustomers(); }, onError: (error) => toast.error("Serija nije otkazana", { description: error instanceof Error ? error.message : "Pokušajte ponovo." }) })}>{cancelSeries.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Otkaži sve buduće termine serije</Button>}
+                {editing.bookingGroupId && <Button className="w-full" variant="destructive" disabled={cancelGroup.isPending} onClick={() => cancelGroup.mutate({ bookingGroupId: editing.bookingGroupId!, data: { reason: "Salon je otkazao celu grupnu rezervaciju" } }, { onSuccess: () => { toast.success("Cela grupna rezervacija je otkazana."); setEditing(null); refetchAppointments(); refetchUnfilteredAppointments(); refetchCustomers(); }, onError: (error) => toast.error("Grupa nije otkazana", { description: error instanceof Error ? error.message : "Pokušajte ponovo." }) })}>{cancelGroup.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Otkaži celu grupnu rezervaciju</Button>}
               </div>}
             </DialogContent>
           </Dialog>
@@ -1239,7 +1254,7 @@ export default function OwnerCalendar() {
                         timeBlocks={timeBlocks ?? []}
                         employees={timelineEmployees}
                         onSlotClick={(empId, time) => openNewAppointment({ employeeId: empId, startTime: time, date: selectedDate })}
-                        onAppointmentClick={(a) => setEditing({ id: a.id, seriesId: a.seriesId ?? null, status: a.status, employeeId: a.employeeId ?? "", notes: a.notes ?? "" })}
+                        onAppointmentClick={(a) => setEditing({ id: a.id, seriesId: a.seriesId ?? null, bookingGroupId: a.bookingGroupId ?? null, status: a.status, employeeId: a.employeeId ?? "", notes: a.notes ?? "" })}
                         onBlockClick={(b) => handleDeleteBlock(b.id)}
                       />
                     ) : sortedList.length > 0 ? (
@@ -1266,8 +1281,9 @@ export default function OwnerCalendar() {
                               <div className="flex flex-1 flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
                                 <div className="flex items-center gap-3 font-semibold text-primary"><Clock3 className="h-5 w-5 text-muted-foreground" />{appointment.startTime}</div>
                                 <div className="flex-1 space-y-1">
-                                  <div className="flex items-center gap-2"><p className="font-semibold text-foreground">{appointment.customerName}</p>{appointment.seriesId && <Badge variant="secondary" className="h-5 rounded-md px-1.5"><Repeat2 className="mr-1 h-3 w-3" /> Serija</Badge>}</div>
+                                  <div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-foreground">{appointment.customerName}</p>{appointment.seriesId && <Badge variant="secondary" className="h-5 rounded-md px-1.5"><Repeat2 className="mr-1 h-3 w-3" /> Serija</Badge>}{appointment.bookingGroupId && <Badge variant="outline" className="h-5 rounded-md px-1.5">Grupna rezervacija</Badge>}</div>
                                   <p className="font-medium text-primary">{appointment.serviceName}</p>
+                                  {appointment.bookingGroupId && <p className="text-xs text-muted-foreground">Tretmani: {(appointments ?? []).filter((member) => member.bookingGroupId === appointment.bookingGroupId).map((member) => member.serviceName).join(" · ")}</p>}
                                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"><span>Zaposleni: {appointment.employeeName}</span><span>{appointment.durationMinutes} min</span><span>{appointment.price.toLocaleString("sr-RS")} RSD</span>{appointment.treatmentLocation === "home" && <span className="flex items-center text-emerald-700"><MapPin className="mr-1 h-3 w-3" /> Na adresi (+{appointment.travelFee} RSD)</span>}</div>
                                   {appointment.rescheduledConfirmation && <Badge variant={appointment.rescheduledConfirmation?.sms?.status === "queued" || appointment.rescheduledConfirmation?.email?.status === "processing" ? "outline" : appointment.rescheduledConfirmation?.sms?.status === "failed" || appointment.rescheduledConfirmation?.email?.status === "failed" ? "destructive" : "secondary"} className="mt-2">{rescheduledConfirmationLabel(appointment.rescheduledConfirmation)}</Badge>}
                                   {appointment.notes && <p className="mt-2 rounded-md bg-muted/50 px-2 py-1 text-xs text-muted-foreground">{appointment.notes}</p>}
@@ -1275,7 +1291,7 @@ export default function OwnerCalendar() {
                               </div>
                               <div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end">
                                 <Badge variant="outline" className={cn("rounded-full px-3 py-1 text-xs font-semibold", statusClasses[appointment.status as keyof typeof statusClasses])}>{statusLabels[appointment.status as keyof typeof statusLabels]}</Badge>
-                                <Button size="sm" variant="outline" className="gap-1.5 opacity-90 transition-opacity hover:opacity-100" aria-label={`Izmeni termin za ${appointment.customerName}`} onClick={() => setEditing({ id: appointment.id, seriesId: appointment.seriesId ?? null, status: appointment.status, employeeId: appointment.employeeId ?? "", notes: appointment.notes ?? "" })}><Pencil className="h-3.5 w-3.5" /> Izmeni</Button>
+                                <Button size="sm" variant="outline" className="gap-1.5 opacity-90 transition-opacity hover:opacity-100" aria-label={`Izmeni termin za ${appointment.customerName}`} onClick={() => setEditing({ id: appointment.id, seriesId: appointment.seriesId ?? null, bookingGroupId: appointment.bookingGroupId ?? null, status: appointment.status, employeeId: appointment.employeeId ?? "", notes: appointment.notes ?? "" })}><Pencil className="h-3.5 w-3.5" /> Izmeni</Button>
                               </div>
                             </div>
                           );

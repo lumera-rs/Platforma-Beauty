@@ -370,6 +370,7 @@ function Router() {
         <Route path="/vlasnik/kontrolna-tabla"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerDashboard /></RoleGuard></Route>
         <Route path="/vlasnik"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerDashboard /></RoleGuard></Route>
         <Route path="/vlasnik/kalendar"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerCalendar /></RoleGuard></Route>
+        <Route path="/vlasnik/termini"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerCalendar /></RoleGuard></Route>
         <Route path="/vlasnik/resursi"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerResources /></RoleGuard></Route>
         <Route path="/vlasnik/usluge"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerServices /></RoleGuard></Route>
         <Route path="/vlasnik/profil"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerSalonProfile /></RoleGuard></Route>

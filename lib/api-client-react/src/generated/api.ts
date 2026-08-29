@@ -99,6 +99,7 @@ import type {
   Appointment,
   AppointmentConflictError,
   AppointmentInput,
+  AppointmentLifecycleInput,
   AppointmentSalonContact,
   AppointmentSeriesCancellation,
   AppointmentSeriesMoveInput,
@@ -165,6 +166,11 @@ import type {
   BeautyJobSweepResult,
   BeautyJobUpdateInput,
   BestsellerRanking,
+  BookingGroup,
+  BookingGroupCancelInput,
+  BookingGroupInput,
+  BookingGroupOperationResult,
+  BookingGroupRescheduleInput,
   BulkMatrixAddResponse,
   BulkMatrixResponse,
   BulkSaleCampaign,
@@ -203,6 +209,8 @@ import type {
   CustomerDashboard,
   CustomerListAftercareRecommendationsParams,
   CustomerListPublicPackagesParams,
+  CustomerNotification,
+  CustomerNotificationPage,
   CustomerRetentionDetail,
   CustomerRetentionItem,
   CustomerReview,
@@ -286,6 +294,8 @@ import type {
   GetShopApprovalRequestParams,
   GetShopCheckoutPreviewParams,
   GetWidgetAvailabilityParams,
+  GroupedAvailabilityInput,
+  GroupedAvailabilityResponse,
   GrowthAdminSummary,
   GrowthAiAnswer,
   GrowthAiQuestionBody,
@@ -303,6 +313,7 @@ import type {
   ListBeautyJobsParams,
   ListCommerceBestsellersParams,
   ListCoursesParams,
+  ListCustomerNotificationsParams,
   ListEnrollmentsParams,
   ListMyAppointmentsParams,
   ListMyBeautyJobsParams,
@@ -415,6 +426,8 @@ import type {
   SalonAppointmentSeriesInput,
   SalonAppointmentUpdate,
   SalonAvailabilitySearchSlot,
+  SalonBookingSettings,
+  SalonBookingSettingsInput,
   SalonCalendarDayEmployee,
   SalonCard,
   SalonClockEmployeeSummary,
@@ -484,6 +497,7 @@ import type {
   UpsellProductList,
   WidgetAppointmentCreate,
   WidgetAppointmentCreated,
+  WidgetBookingGroupCreate,
   WidgetSalon,
   WidgetSlot
 } from './api.schemas';
@@ -2259,6 +2273,293 @@ export function useGetSalonFirstAvailable<TData = Awaited<ReturnType<typeof getS
 
 
 
+export const getGetGroupedBookingAvailabilityUrl = (salonId: string,) => {
+
+
+
+
+  return `/api/salons/${salonId}/grouped-availability`
+}
+
+/**
+ * @summary Find contiguous or bounded-gap availability for an ordered treatment group
+ */
+export const getGroupedBookingAvailability = async (salonId: string,
+    groupedAvailabilityInput: GroupedAvailabilityInput, options?: Parameters<typeof customFetch>[1]): Promise<GroupedAvailabilityResponse> => {
+
+  return customFetch<GroupedAvailabilityResponse>(getGetGroupedBookingAvailabilityUrl(salonId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(groupedAvailabilityInput)
+  }
+);}
+
+
+
+
+
+export const getGetGroupedBookingAvailabilityMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getGroupedBookingAvailability>>, TError,{salonId: string;data: BodyType<GroupedAvailabilityInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof getGroupedBookingAvailability>>, TError,{salonId: string;data: BodyType<GroupedAvailabilityInput>}, TContext> => {
+
+const mutationKey = ['getGroupedBookingAvailability'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof getGroupedBookingAvailability>>, {salonId: string;data: BodyType<GroupedAvailabilityInput>}> = (props) => {
+          const {salonId,data} = props ?? {};
+
+          return  getGroupedBookingAvailability(salonId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GetGroupedBookingAvailabilityMutationResult = NonNullable<Awaited<ReturnType<typeof getGroupedBookingAvailability>>>
+    export type GetGroupedBookingAvailabilityMutationBody = BodyType<GroupedAvailabilityInput>
+    export type GetGroupedBookingAvailabilityMutationError = ErrorType<void>
+
+    /**
+ * @summary Find contiguous or bounded-gap availability for an ordered treatment group
+ */
+export const useGetGroupedBookingAvailability = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getGroupedBookingAvailability>>, TError,{salonId: string;data: BodyType<GroupedAvailabilityInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof getGroupedBookingAvailability>>,
+        TError,
+        {salonId: string;data: BodyType<GroupedAvailabilityInput>},
+        TContext
+      > => {
+      return useMutation(getGetGroupedBookingAvailabilityMutationOptions(options));
+    }
+
+export const getCreateBookingGroupUrl = () => {
+
+
+
+
+  return `/api/booking-groups`
+}
+
+/**
+ * @summary Atomically book an ordered group of treatments
+ */
+export const createBookingGroup = async (bookingGroupInput: BookingGroupInput, options?: Parameters<typeof customFetch>[1]): Promise<BookingGroup> => {
+
+  return customFetch<BookingGroup>(getCreateBookingGroupUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(bookingGroupInput)
+  }
+);}
+
+
+
+
+
+export const getCreateBookingGroupMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createBookingGroup>>, TError,{data: BodyType<BookingGroupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createBookingGroup>>, TError,{data: BodyType<BookingGroupInput>}, TContext> => {
+
+const mutationKey = ['createBookingGroup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createBookingGroup>>, {data: BodyType<BookingGroupInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createBookingGroup(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateBookingGroupMutationResult = NonNullable<Awaited<ReturnType<typeof createBookingGroup>>>
+    export type CreateBookingGroupMutationBody = BodyType<BookingGroupInput>
+    export type CreateBookingGroupMutationError = ErrorType<void>
+
+    /**
+ * @summary Atomically book an ordered group of treatments
+ */
+export const useCreateBookingGroup = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createBookingGroup>>, TError,{data: BodyType<BookingGroupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createBookingGroup>>,
+        TError,
+        {data: BodyType<BookingGroupInput>},
+        TContext
+      > => {
+      return useMutation(getCreateBookingGroupMutationOptions(options));
+    }
+
+export const getRescheduleBookingGroupUrl = (bookingGroupId: string,) => {
+
+
+
+
+  return `/api/booking-groups/${bookingGroupId}/reschedule`
+}
+
+/**
+ * @summary Atomically reschedule selected active members, or the complete active booking group
+ */
+export const rescheduleBookingGroup = async (bookingGroupId: string,
+    bookingGroupRescheduleInput: BookingGroupRescheduleInput, options?: Parameters<typeof customFetch>[1]): Promise<BookingGroupOperationResult> => {
+
+  return customFetch<BookingGroupOperationResult>(getRescheduleBookingGroupUrl(bookingGroupId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(bookingGroupRescheduleInput)
+  }
+);}
+
+
+
+
+
+export const getRescheduleBookingGroupMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rescheduleBookingGroup>>, TError,{bookingGroupId: string;data: BodyType<BookingGroupRescheduleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof rescheduleBookingGroup>>, TError,{bookingGroupId: string;data: BodyType<BookingGroupRescheduleInput>}, TContext> => {
+
+const mutationKey = ['rescheduleBookingGroup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rescheduleBookingGroup>>, {bookingGroupId: string;data: BodyType<BookingGroupRescheduleInput>}> = (props) => {
+          const {bookingGroupId,data} = props ?? {};
+
+          return  rescheduleBookingGroup(bookingGroupId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RescheduleBookingGroupMutationResult = NonNullable<Awaited<ReturnType<typeof rescheduleBookingGroup>>>
+    export type RescheduleBookingGroupMutationBody = BodyType<BookingGroupRescheduleInput>
+    export type RescheduleBookingGroupMutationError = ErrorType<void>
+
+    /**
+ * @summary Atomically reschedule selected active members, or the complete active booking group
+ */
+export const useRescheduleBookingGroup = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rescheduleBookingGroup>>, TError,{bookingGroupId: string;data: BodyType<BookingGroupRescheduleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof rescheduleBookingGroup>>,
+        TError,
+        {bookingGroupId: string;data: BodyType<BookingGroupRescheduleInput>},
+        TContext
+      > => {
+      return useMutation(getRescheduleBookingGroupMutationOptions(options));
+    }
+
+export const getCancelBookingGroupUrl = (bookingGroupId: string,) => {
+
+
+
+
+  return `/api/booking-groups/${bookingGroupId}/cancel`
+}
+
+/**
+ * @summary Atomically cancel selected active members, or all active members of a booking group
+ */
+export const cancelBookingGroup = async (bookingGroupId: string,
+    bookingGroupCancelInput?: BookingGroupCancelInput, options?: Parameters<typeof customFetch>[1]): Promise<BookingGroupOperationResult> => {
+
+  return customFetch<BookingGroupOperationResult>(getCancelBookingGroupUrl(bookingGroupId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(bookingGroupCancelInput)
+  }
+);}
+
+
+
+
+
+export const getCancelBookingGroupMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelBookingGroup>>, TError,{bookingGroupId: string;data?: BodyType<BookingGroupCancelInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelBookingGroup>>, TError,{bookingGroupId: string;data?: BodyType<BookingGroupCancelInput>}, TContext> => {
+
+const mutationKey = ['cancelBookingGroup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelBookingGroup>>, {bookingGroupId: string;data?: BodyType<BookingGroupCancelInput>}> = (props) => {
+          const {bookingGroupId,data} = props ?? {};
+
+          return  cancelBookingGroup(bookingGroupId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CancelBookingGroupMutationResult = NonNullable<Awaited<ReturnType<typeof cancelBookingGroup>>>
+    export type CancelBookingGroupMutationBody = BodyType<BookingGroupCancelInput> | undefined
+    export type CancelBookingGroupMutationError = ErrorType<void>
+
+    /**
+ * @summary Atomically cancel selected active members, or all active members of a booking group
+ */
+export const useCancelBookingGroup = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelBookingGroup>>, TError,{bookingGroupId: string;data?: BodyType<BookingGroupCancelInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cancelBookingGroup>>,
+        TError,
+        {bookingGroupId: string;data?: BodyType<BookingGroupCancelInput>},
+        TContext
+      > => {
+      return useMutation(getCancelBookingGroupMutationOptions(options));
+    }
+
 export const getListMyAppointmentsUrl = (params?: ListMyAppointmentsParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -2633,6 +2934,304 @@ export const useCancelAppointment = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCancelAppointmentMutationOptions(options));
+    }
+
+export const getTransitionAppointmentLifecycleUrl = (appointmentId: string,) => {
+
+
+
+
+  return `/api/appointments/${appointmentId}/lifecycle`
+}
+
+/**
+ * @summary Record an audited appointment lifecycle transition
+ */
+export const transitionAppointmentLifecycle = async (appointmentId: string,
+    appointmentLifecycleInput: AppointmentLifecycleInput, options?: Parameters<typeof customFetch>[1]): Promise<Appointment> => {
+
+  return customFetch<Appointment>(getTransitionAppointmentLifecycleUrl(appointmentId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(appointmentLifecycleInput)
+  }
+);}
+
+
+
+
+
+export const getTransitionAppointmentLifecycleMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof transitionAppointmentLifecycle>>, TError,{appointmentId: string;data: BodyType<AppointmentLifecycleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof transitionAppointmentLifecycle>>, TError,{appointmentId: string;data: BodyType<AppointmentLifecycleInput>}, TContext> => {
+
+const mutationKey = ['transitionAppointmentLifecycle'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof transitionAppointmentLifecycle>>, {appointmentId: string;data: BodyType<AppointmentLifecycleInput>}> = (props) => {
+          const {appointmentId,data} = props ?? {};
+
+          return  transitionAppointmentLifecycle(appointmentId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type TransitionAppointmentLifecycleMutationResult = NonNullable<Awaited<ReturnType<typeof transitionAppointmentLifecycle>>>
+    export type TransitionAppointmentLifecycleMutationBody = BodyType<AppointmentLifecycleInput>
+    export type TransitionAppointmentLifecycleMutationError = ErrorType<void>
+
+    /**
+ * @summary Record an audited appointment lifecycle transition
+ */
+export const useTransitionAppointmentLifecycle = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof transitionAppointmentLifecycle>>, TError,{appointmentId: string;data: BodyType<AppointmentLifecycleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof transitionAppointmentLifecycle>>,
+        TError,
+        {appointmentId: string;data: BodyType<AppointmentLifecycleInput>},
+        TContext
+      > => {
+      return useMutation(getTransitionAppointmentLifecycleMutationOptions(options));
+    }
+
+export const getListCustomerNotificationsUrl = (params?: ListCustomerNotificationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/customer/notifications?${stringifiedParams}` : `/api/customer/notifications`
+}
+
+/**
+ * @summary List the signed-in customer's durable notification inbox
+ */
+export const listCustomerNotifications = async (params?: ListCustomerNotificationsParams, options?: Parameters<typeof customFetch>[1]): Promise<CustomerNotificationPage> => {
+
+  return customFetch<CustomerNotificationPage>(getListCustomerNotificationsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCustomerNotificationsQueryKey = (params?: ListCustomerNotificationsParams,) => {
+    return [
+    `/api/customer/notifications`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListCustomerNotificationsQueryOptions = <TData = Awaited<ReturnType<typeof listCustomerNotifications>>, TError = ErrorType<unknown>>(params?: ListCustomerNotificationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCustomerNotifications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCustomerNotificationsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCustomerNotifications>>> = ({ signal }) => listCustomerNotifications(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCustomerNotifications>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCustomerNotificationsQueryResult = NonNullable<Awaited<ReturnType<typeof listCustomerNotifications>>>
+export type ListCustomerNotificationsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List the signed-in customer's durable notification inbox
+ */
+
+export function useListCustomerNotifications<TData = Awaited<ReturnType<typeof listCustomerNotifications>>, TError = ErrorType<unknown>>(
+ params?: ListCustomerNotificationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCustomerNotifications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCustomerNotificationsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getMarkCustomerNotificationReadUrl = (notificationId: string,) => {
+
+
+
+
+  return `/api/customer/notifications/${notificationId}/read`
+}
+
+/**
+ * @summary Idempotently mark a customer notification read
+ */
+export const markCustomerNotificationRead = async (notificationId: string, options?: Parameters<typeof customFetch>[1]): Promise<CustomerNotification> => {
+
+  return customFetch<CustomerNotification>(getMarkCustomerNotificationReadUrl(notificationId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getMarkCustomerNotificationReadMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markCustomerNotificationRead>>, TError,{notificationId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof markCustomerNotificationRead>>, TError,{notificationId: string}, TContext> => {
+
+const mutationKey = ['markCustomerNotificationRead'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof markCustomerNotificationRead>>, {notificationId: string}> = (props) => {
+          const {notificationId} = props ?? {};
+
+          return  markCustomerNotificationRead(notificationId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MarkCustomerNotificationReadMutationResult = NonNullable<Awaited<ReturnType<typeof markCustomerNotificationRead>>>
+
+    export type MarkCustomerNotificationReadMutationError = ErrorType<void>
+
+    /**
+ * @summary Idempotently mark a customer notification read
+ */
+export const useMarkCustomerNotificationRead = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markCustomerNotificationRead>>, TError,{notificationId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof markCustomerNotificationRead>>,
+        TError,
+        {notificationId: string},
+        TContext
+      > => {
+      return useMutation(getMarkCustomerNotificationReadMutationOptions(options));
+    }
+
+export const getMarkAllCustomerNotificationsReadUrl = () => {
+
+
+
+
+  return `/api/customer/notifications/read-all`
+}
+
+/**
+ * @summary Mark every current customer notification read
+ */
+export const markAllCustomerNotificationsRead = async ( options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getMarkAllCustomerNotificationsReadUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getMarkAllCustomerNotificationsReadMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markAllCustomerNotificationsRead>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof markAllCustomerNotificationsRead>>, TError,void, TContext> => {
+
+const mutationKey = ['markAllCustomerNotificationsRead'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof markAllCustomerNotificationsRead>>, void> = () => {
+
+
+          return  markAllCustomerNotificationsRead(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MarkAllCustomerNotificationsReadMutationResult = NonNullable<Awaited<ReturnType<typeof markAllCustomerNotificationsRead>>>
+
+    export type MarkAllCustomerNotificationsReadMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Mark every current customer notification read
+ */
+export const useMarkAllCustomerNotificationsRead = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markAllCustomerNotificationsRead>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof markAllCustomerNotificationsRead>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getMarkAllCustomerNotificationsReadMutationOptions(options));
     }
 
 export const getGetCustomerDashboardUrl = () => {
@@ -3683,6 +4282,154 @@ export const useUpdateManagedSalonProfile = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getUpdateManagedSalonProfileMutationOptions(options));
+    }
+
+export const getGetSalonBookingSettingsUrl = () => {
+
+
+
+
+  return `/api/salon/booking-settings`
+}
+
+/**
+ * @summary Get active location booking policy, date overrides, and resource downtime
+ */
+export const getSalonBookingSettings = async ( options?: Parameters<typeof customFetch>[1]): Promise<SalonBookingSettings> => {
+
+  return customFetch<SalonBookingSettings>(getGetSalonBookingSettingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSalonBookingSettingsQueryKey = () => {
+    return [
+    `/api/salon/booking-settings`
+    ] as const;
+    }
+
+
+export const getGetSalonBookingSettingsQueryOptions = <TData = Awaited<ReturnType<typeof getSalonBookingSettings>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSalonBookingSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSalonBookingSettingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSalonBookingSettings>>> = ({ signal }) => getSalonBookingSettings({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSalonBookingSettings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSalonBookingSettingsQueryResult = NonNullable<Awaited<ReturnType<typeof getSalonBookingSettings>>>
+export type GetSalonBookingSettingsQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get active location booking policy, date overrides, and resource downtime
+ */
+
+export function useGetSalonBookingSettings<TData = Awaited<ReturnType<typeof getSalonBookingSettings>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSalonBookingSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSalonBookingSettingsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getReplaceSalonBookingSettingsUrl = () => {
+
+
+
+
+  return `/api/salon/booking-settings`
+}
+
+/**
+ * @summary Replace active location booking policy and calendar exceptions
+ */
+export const replaceSalonBookingSettings = async (salonBookingSettingsInput: SalonBookingSettingsInput, options?: Parameters<typeof customFetch>[1]): Promise<SalonBookingSettings> => {
+
+  return customFetch<SalonBookingSettings>(getReplaceSalonBookingSettingsUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(salonBookingSettingsInput)
+  }
+);}
+
+
+
+
+
+export const getReplaceSalonBookingSettingsMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceSalonBookingSettings>>, TError,{data: BodyType<SalonBookingSettingsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof replaceSalonBookingSettings>>, TError,{data: BodyType<SalonBookingSettingsInput>}, TContext> => {
+
+const mutationKey = ['replaceSalonBookingSettings'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof replaceSalonBookingSettings>>, {data: BodyType<SalonBookingSettingsInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  replaceSalonBookingSettings(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReplaceSalonBookingSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof replaceSalonBookingSettings>>>
+    export type ReplaceSalonBookingSettingsMutationBody = BodyType<SalonBookingSettingsInput>
+    export type ReplaceSalonBookingSettingsMutationError = ErrorType<void>
+
+    /**
+ * @summary Replace active location booking policy and calendar exceptions
+ */
+export const useReplaceSalonBookingSettings = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceSalonBookingSettings>>, TError,{data: BodyType<SalonBookingSettingsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof replaceSalonBookingSettings>>,
+        TError,
+        {data: BodyType<SalonBookingSettingsInput>},
+        TContext
+      > => {
+      return useMutation(getReplaceSalonBookingSettingsMutationOptions(options));
     }
 
 export const getRequestMediaUploadUrl = () => {
@@ -26654,6 +27401,78 @@ export const useCreateWidgetAppointment = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getCreateWidgetAppointmentMutationOptions(options));
+    }
+
+export const getCreateWidgetBookingGroupUrl = (slug: string,) => {
+
+
+
+
+  return `/api/widget/salons/${slug}/booking-groups`
+}
+
+/**
+ * @summary Public rate-limited grouped booking for an anonymous salon customer
+ */
+export const createWidgetBookingGroup = async (slug: string,
+    widgetBookingGroupCreate: WidgetBookingGroupCreate, options?: Parameters<typeof customFetch>[1]): Promise<BookingGroup> => {
+
+  return customFetch<BookingGroup>(getCreateWidgetBookingGroupUrl(slug),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(widgetBookingGroupCreate)
+  }
+);}
+
+
+
+
+
+export const getCreateWidgetBookingGroupMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWidgetBookingGroup>>, TError,{slug: string;data: BodyType<WidgetBookingGroupCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createWidgetBookingGroup>>, TError,{slug: string;data: BodyType<WidgetBookingGroupCreate>}, TContext> => {
+
+const mutationKey = ['createWidgetBookingGroup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createWidgetBookingGroup>>, {slug: string;data: BodyType<WidgetBookingGroupCreate>}> = (props) => {
+          const {slug,data} = props ?? {};
+
+          return  createWidgetBookingGroup(slug,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateWidgetBookingGroupMutationResult = NonNullable<Awaited<ReturnType<typeof createWidgetBookingGroup>>>
+    export type CreateWidgetBookingGroupMutationBody = BodyType<WidgetBookingGroupCreate>
+    export type CreateWidgetBookingGroupMutationError = ErrorType<void>
+
+    /**
+ * @summary Public rate-limited grouped booking for an anonymous salon customer
+ */
+export const useCreateWidgetBookingGroup = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWidgetBookingGroup>>, TError,{slug: string;data: BodyType<WidgetBookingGroupCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createWidgetBookingGroup>>,
+        TError,
+        {slug: string;data: BodyType<WidgetBookingGroupCreate>},
+        TContext
+      > => {
+      return useMutation(getCreateWidgetBookingGroupMutationOptions(options));
     }
 
 export const getListProductWishlistUrl = () => {

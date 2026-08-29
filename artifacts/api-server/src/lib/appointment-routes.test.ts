@@ -9,6 +9,7 @@ import {
   appointmentsTable,
   customerPackagePurchasesTable,
   db,
+  employeeLocationAssignmentsTable,
   employeeServicesTable,
   employeeTimeOffTable,
   employeesTable,
@@ -301,6 +302,20 @@ async function run(): Promise<void> {
         avatarUrl: "",
       },
     ]).returning();
+    await db.insert(employeeLocationAssignmentsTable).values([
+      {
+        employeeId: employee!.id,
+        salonId: salon!.id,
+        active: true,
+        isDefault: true,
+      },
+      {
+        employeeId: foreignEmployee!.id,
+        salonId: foreignSalon!.id,
+        active: true,
+        isDefault: true,
+      },
+    ]);
     await db.insert(employeeServicesTable).values({ employeeId: employee!.id, serviceId: service!.id });
 
     const [contact] = await db.insert(salonCustomersTable).values({

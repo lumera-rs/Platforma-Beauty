@@ -6,6 +6,7 @@ import {
 } from "@workspace/db";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { publishSalonNotificationUpdate } from "./salon-notification-events";
+import { notifyCustomer } from "./customer-notifications";
 
 /**
  * Delivers rows created by the database's 0 -> positive-stock trigger.
@@ -55,6 +56,15 @@ export async function runProductWaitlistNotificationWorker(batchSize = 100) {
         message: "Proizvod za koji ste tražili obaveštenje ponovo je na stanju.",
         href,
       }).onConflictDoNothing();
+       await notifyCustomer(tx, {
+         userId: row.user_id,
+         eventKey: `product-waitlist:${row.waitlist_id}:back-in-stock`,
+         category: "commerce",
+         title: "Proizvod je ponovo dostupan",
+         body: "Proizvod za koji ste tražili obaveštenje ponovo je na stanju.",
+         deepLink: href,
+         metadata: { productId: row.product_id, waitlistId: row.waitlist_id },
+       });
       await tx.update(productWaitlistNotificationOutboxTable).set({ processedAt: new Date() })
         .where(and(eq(productWaitlistNotificationOutboxTable.id, row.id), isNull(productWaitlistNotificationOutboxTable.processedAt)));
       return { id: "", salonId: null };

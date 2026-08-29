@@ -1284,6 +1284,8 @@ export interface Service {
   name: string;
   description: string;
   durationMinutes: number;
+  /** @minimum 0 */
+  bufferMinutes?: number;
   price: number;
   /** @nullable */
   promoPrice?: number | null;
@@ -1567,6 +1569,8 @@ export interface SalonManagedService {
   name: string;
   description: string;
   durationMinutes: number;
+  /** @minimum 0 */
+  bufferMinutes?: number;
   price: number;
   /** @nullable */
   promoPrice?: number | null;
@@ -1753,34 +1757,169 @@ export interface CustomerSalonReviewContext {
   eligibleServices: string[];
 }
 
-export interface TimeSlot {
-  start: string;
-  end: string;
+export type BookingReminderChannel = typeof BookingReminderChannel[keyof typeof BookingReminderChannel];
+
+
+export const BookingReminderChannel = {
+  email: 'email',
+  sms: 'sms',
+  push: 'push',
+} as const;
+
+export interface SalonDateHours {
+  id?: string;
+  date: string;
+  closed: boolean;
+  /**
+     * @nullable
+     * @pattern ^(?:[01][0-9]|2[0-3]):[0-5][0-9]$
+     */
+  openTime: string | null;
+  /**
+     * @nullable
+     * @pattern ^(?:[01][0-9]|2[0-3]):[0-5][0-9]$
+     */
+  closeTime: string | null;
   /** @nullable */
-  employeeId?: string | null;
-  /** @nullable */
-  employeeName?: string | null;
+  reason: string | null;
 }
 
-export interface FirstAvailableServiceSlot {
+export interface ResourceDowntime {
+  id?: string;
+  resourceId: string;
+  startsAt: string;
+  endsAt: string;
+  /** @nullable */
+  reason: string | null;
+}
+
+export type SalonBookingSettingsInputSlotGranularityMinutes = typeof SalonBookingSettingsInputSlotGranularityMinutes[keyof typeof SalonBookingSettingsInputSlotGranularityMinutes];
+
+
+export const SalonBookingSettingsInputSlotGranularityMinutes = {
+  NUMBER_5: 5,
+  NUMBER_10: 10,
+  NUMBER_15: 15,
+  NUMBER_30: 30,
+} as const;
+
+export interface SalonBookingSettingsInput {
+  slotGranularityMinutes: SalonBookingSettingsInputSlotGranularityMinutes;
+  /** @minimum 0 */
+  minimumLeadTimeMinutes: number;
+  /** @minimum 0 */
+  cancellationDeadlineMinutes: number;
+  /** @items.minimum 0 */
+  reminderOffsetsMinutes: number[];
+  reminderChannels: BookingReminderChannel[];
+  /** @minimum 0 */
+  maxVisitGapMinutes: number;
+  /** @minimum 0 */
+  minimumUsefulLateTreatmentMinutes: number;
+  dateHours: SalonDateHours[];
+  resourceDowntime: ResourceDowntime[];
+}
+
+export type SalonBookingSettings = SalonBookingSettingsInput & {
+  salonId: string;
+  updatedAt: string;
+};
+
+export interface GroupedTreatmentRequest {
   serviceId: string;
   /** @nullable */
-  date: string | null;
-  /** @nullable */
-  startTime: string | null;
-  /** @nullable */
-  endTime: string | null;
-  /** @nullable */
-  employeeId: string | null;
-  /** @nullable */
-  employeeName: string | null;
+  employeeId?: string | null;
 }
 
-export interface SalonFirstAvailable {
+export interface GroupedAvailabilityInput {
+  /**
+     * @minItems 1
+     * @maxItems 5
+     */
+  treatments: GroupedTreatmentRequest[];
+  fromDate: string;
+  toDate: string;
+  /** False keeps every treatment on one calendar day; true permits later treatments on later days. */
+  allowMultipleDays?: boolean;
+}
+
+export interface GroupedTreatmentSlot {
+  /** @minimum 0 */
+  position: number;
+  serviceId: string;
+  date: string;
+  /** @nullable */
+  employeeId: string | null;
+  startTime: string;
+  endTime: string;
+  /** @minimum 0 */
+  bufferMinutes: number;
+}
+
+export interface GroupedAvailabilityCandidate {
+  date: string;
+  startTime: string;
+  endTime: string;
+  treatments: GroupedTreatmentSlot[];
+}
+
+export interface GroupedAvailabilityResponse {
+  salonId: string;
   generatedAt: string;
-  /** @minimum 1 */
-  horizonDays: number;
-  services: FirstAvailableServiceSlot[];
+  /** @maxItems 5 */
+  candidates: GroupedAvailabilityCandidate[];
+}
+
+export interface BookingGroupTreatmentInput {
+  serviceId: string;
+  date?: string;
+  /** @nullable */
+  employeeId?: string | null;
+  startTime: string;
+}
+
+export interface BookingGroupInput {
+  salonId: string;
+  date: string;
+  /**
+     * @minItems 1
+     * @maxItems 5
+     */
+  treatments: BookingGroupTreatmentInput[];
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  notes?: string | null;
+}
+
+export interface BookingGroupRescheduleTreatmentInput {
+  appointmentId: string;
+  date: string;
+  startTime: string;
+  /** @nullable */
+  employeeId?: string | null;
+}
+
+export interface BookingGroupRescheduleInput {
+  /**
+     * @minItems 1
+     * @maxItems 5
+     */
+  treatments: BookingGroupRescheduleTreatmentInput[];
+}
+
+export interface BookingGroupCancelInput {
+  /**
+     * @minItems 1
+     * @maxItems 5
+     */
+  appointmentIds?: string[];
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  reason?: string | null;
 }
 
 export type AppointmentTreatmentLocation = typeof AppointmentTreatmentLocation[keyof typeof AppointmentTreatmentLocation];
@@ -1790,18 +1929,6 @@ export const AppointmentTreatmentLocation = {
   salon: 'salon',
   home: 'home',
 } as const;
-
-/**
- * @nullable
- */
-export type AppointmentTreatmentAddress = {
-  line1: string;
-  city: string;
-  /** @nullable */
-  postalCode: string | null;
-  /** @nullable */
-  details: string | null;
-} | null;
 
 export type AppointmentStatus = typeof AppointmentStatus[keyof typeof AppointmentStatus];
 
@@ -1825,15 +1952,6 @@ export const AppointmentRescheduledConfirmationSmsStatus = {
   skipped: 'skipped',
 } as const;
 
-/**
- * @nullable
- */
-export type AppointmentRescheduledConfirmationSms = {
-  status: AppointmentRescheduledConfirmationSmsStatus;
-  /** @nullable */
-  nextRetryAt?: string | null;
-} | null;
-
 export type AppointmentRescheduledConfirmationEmailStatus = typeof AppointmentRescheduledConfirmationEmailStatus[keyof typeof AppointmentRescheduledConfirmationEmailStatus];
 
 
@@ -1844,6 +1962,27 @@ export const AppointmentRescheduledConfirmationEmailStatus = {
   failed: 'failed',
   skipped: 'skipped',
 } as const;
+
+/**
+ * @nullable
+ */
+export type AppointmentTreatmentAddress = {
+  line1: string;
+  city: string;
+  /** @nullable */
+  postalCode: string | null;
+  /** @nullable */
+  details: string | null;
+} | null;
+
+/**
+ * @nullable
+ */
+export type AppointmentRescheduledConfirmationSms = {
+  status: AppointmentRescheduledConfirmationSmsStatus;
+  /** @nullable */
+  nextRetryAt?: string | null;
+} | null;
 
 /**
  * @nullable
@@ -1894,6 +2033,126 @@ export interface Appointment {
   /** @nullable */
   rescheduledConfirmation?: AppointmentRescheduledConfirmation;
   allocatedResources: AllocatedResource[];
+  /** @nullable */
+  bookingGroupId?: string | null;
+  treatments?: GroupedTreatmentSlot[];
+  /** @nullable */
+  plannedDate?: string | null;
+  /** @nullable */
+  plannedStartTime?: string | null;
+  /** @nullable */
+  plannedEndTime?: string | null;
+  /** @nullable */
+  actualStartedAt?: string | null;
+  /** @nullable */
+  actualCompletedAt?: string | null;
+  /** @nullable */
+  confirmedAt?: string | null;
+  /** @nullable */
+  cancelledAt?: string | null;
+  /** @nullable */
+  completedAt?: string | null;
+  /** @nullable */
+  noShowAt?: string | null;
+}
+
+export interface BookingGroup {
+  id: string;
+  salonId: string;
+  appointments: Appointment[];
+  createdAt: string;
+}
+
+export interface BookingGroupOperationResult {
+  group: BookingGroup;
+  /** @nullable */
+  gapWarning: string | null;
+}
+
+export type AppointmentLifecycleInputAction = typeof AppointmentLifecycleInputAction[keyof typeof AppointmentLifecycleInputAction];
+
+
+export const AppointmentLifecycleInputAction = {
+  confirm: 'confirm',
+  start: 'start',
+  complete: 'complete',
+  cancel: 'cancel',
+  'no-show': 'no-show',
+} as const;
+
+export interface AppointmentLifecycleInput {
+  action: AppointmentLifecycleInputAction;
+  occurredAt?: string;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  reason?: string | null;
+}
+
+export type CustomerNotificationCategory = typeof CustomerNotificationCategory[keyof typeof CustomerNotificationCategory];
+
+
+export const CustomerNotificationCategory = {
+  booking: 'booking',
+  reminder: 'reminder',
+  cancellation: 'cancellation',
+  review: 'review',
+  loyalty: 'loyalty',
+  commerce: 'commerce',
+  education: 'education',
+  system: 'system',
+} as const;
+
+export interface CustomerNotification {
+  id: string;
+  eventKey: string;
+  category: CustomerNotificationCategory;
+  title: string;
+  body: string;
+  /** @nullable */
+  deepLink: string | null;
+  /** @nullable */
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface CustomerNotificationPage {
+  items: CustomerNotification[];
+  /** @nullable */
+  nextCursor: string | null;
+  /** @minimum 0 */
+  unreadCount: number;
+}
+
+export interface TimeSlot {
+  start: string;
+  end: string;
+  /** @nullable */
+  employeeId?: string | null;
+  /** @nullable */
+  employeeName?: string | null;
+}
+
+export interface FirstAvailableServiceSlot {
+  serviceId: string;
+  /** @nullable */
+  date: string | null;
+  /** @nullable */
+  startTime: string | null;
+  /** @nullable */
+  endTime: string | null;
+  /** @nullable */
+  employeeId: string | null;
+  /** @nullable */
+  employeeName: string | null;
+}
+
+export interface SalonFirstAvailable {
+  generatedAt: string;
+  /** @minimum 1 */
+  horizonDays: number;
+  services: FirstAvailableServiceSlot[];
 }
 
 export interface AppointmentSalonContact {
@@ -2406,6 +2665,8 @@ export interface ServiceInput {
   description: string;
   /** @minimum 5 */
   durationMinutes: number;
+  /** @minimum 0 */
+  bufferMinutes?: number;
   /** @minimum 0 */
   price: number;
   /** @nullable */
@@ -8655,6 +8916,47 @@ export interface WidgetAppointmentCreated {
   salonName: string;
 }
 
+export type WidgetBookingGroupCreateTreatmentsItem = {
+  serviceId: string;
+  /** @nullable */
+  employeeId?: string | null;
+  date: string;
+  startTime: string;
+};
+
+export interface WidgetBookingGroupCreate {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  firstName: string;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  lastName: string;
+  /**
+     * @minLength 5
+     * @maxLength 30
+     */
+  phone: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  email?: string | null;
+  /**
+     * @maxLength 500
+     * @nullable
+     */
+  note?: string | null;
+  /**
+     * @minItems 1
+     * @maxItems 5
+     */
+  treatments: WidgetBookingGroupCreateTreatmentsItem[];
+}
+
 export type BeautyJobListingType = typeof BeautyJobListingType[keyof typeof BeautyJobListingType];
 
 
@@ -10433,6 +10735,16 @@ export const ListMyAppointmentsScope = {
   past: 'past',
   all: 'all',
 } as const;
+
+export type ListCustomerNotificationsParams = {
+unreadOnly?: boolean;
+cursor?: string;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+};
 
 export type GetSalonDashboardParams = {
 scope?: GetSalonDashboardScope;

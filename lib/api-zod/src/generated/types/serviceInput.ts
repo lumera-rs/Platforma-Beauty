@@ -18,6 +18,8 @@ export interface ServiceInput {
   /** @minimum 5 */
   durationMinutes: number;
   /** @minimum 0 */
+  bufferMinutes?: number;
+  /** @minimum 0 */
   price: number;
   /** @nullable */
   promoPrice?: number | null;
