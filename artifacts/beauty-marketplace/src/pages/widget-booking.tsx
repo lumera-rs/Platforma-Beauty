@@ -20,6 +20,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDateOnly, formatLocalDateOnly, parseLocalDateOnly } from "@/lib/date-only";
+import { trackEvent } from "@/lib/analytics";
 
 // Step Enum
 type Step = "CART" | "EMPLOYEE" | "DATETIME" | "CONTACT" | "SUCCESS";
@@ -64,10 +65,18 @@ export default function WidgetBooking() {
     note: ""
   });
 
+  const analyticsDimensions = () => ({
+    treatment_count: cart.length,
+    customer_type: "guest",
+    day_choice: allowMultipleDays ? "multi_day" : "same_day",
+    booking_surface: "booking_widget",
+  });
+
   const createMutation = useCreateWidgetBookingGroup({
     mutation: {
       onSuccess: () => {
         setStep("SUCCESS");
+        trackEvent("grouped_booking_completed", analyticsDimensions());
       },
       onError: (err: unknown) => {
         const { message } = getApiErrorDetails(err);
@@ -107,7 +116,13 @@ export default function WidgetBooking() {
         allowMultipleDays,
       }
     }, {
-      onSuccess: (data) => setAvailabilityResponse(data),
+      onSuccess: (data) => {
+        setAvailabilityResponse(data);
+        trackEvent("booking_availability_result", {
+          ...analyticsDimensions(),
+          result: data.candidates.length > 0 ? "success" : "empty",
+        });
+      },
       onError: () => setAvailabilityResponse({ candidates: [] }),
     });
   };
@@ -194,6 +209,16 @@ export default function WidgetBooking() {
     setCart(cart.filter((_, i) => i !== index));
   };
 
+  const continueFromCart = () => {
+    trackEvent("treatment_cart_continued", analyticsDimensions());
+    nextStep("EMPLOYEE");
+  };
+
+  const selectCandidate = (candidate: GroupedAvailabilityCandidate) => {
+    setSelectedCandidate(candidate);
+    trackEvent("booking_candidate_selected", analyticsDimensions());
+  };
+
   return (
     <div className="flex h-screen w-full flex-col bg-background text-foreground" style={styleVars}>
       {/* Header */}
@@ -257,7 +282,7 @@ export default function WidgetBooking() {
                         }, 0)} RSD
                       </span>
                     </div>
-                    <Button className="w-full h-12 text-base font-bold rounded-xl" onClick={() => nextStep("EMPLOYEE")}>
+                    <Button className="w-full h-12 text-base font-bold rounded-xl" onClick={continueFromCart}>
                       Nastavi ({cart.length}) <ChevronRight className="w-5 h-5 ml-1" />
                     </Button>
                   </div>
@@ -397,7 +422,7 @@ export default function WidgetBooking() {
                     <Card
                       key={i}
                       className={`overflow-hidden cursor-pointer transition-all border-2 ${selectedCandidate === c ? 'border-primary bg-primary/5 ring-4 ring-primary/10' : 'border-border hover:border-primary/40 shadow-sm'}`}
-                      onClick={() => setSelectedCandidate(c)}
+                      onClick={() => selectCandidate(c)}
                     >
                       <CardContent className="p-4">
                         <div className="flex justify-between items-center mb-2">

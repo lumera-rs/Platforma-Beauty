@@ -22,6 +22,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { formatDateOnly, formatLocalDateOnly, parseLocalDateOnly } from "@/lib/date-only";
+import { trackEvent } from "@/lib/analytics";
 
 export interface BookingWidgetProps {
   salon: SalonProfile;
@@ -48,6 +49,12 @@ export function BookingWidget(props: BookingWidgetProps) {
   const [dateError, setDateError] = useState<string | null>(null);
   const [allowMultipleDays, setAllowMultipleDays] = useState(false);
   const [selectedCandidate, setSelectedCandidate] = useState<GroupedAvailabilityCandidate | null>(null);
+  const analyticsDimensions = () => ({
+    treatment_count: cart.length,
+    customer_type: props.user ? "authenticated" : "guest",
+    day_choice: allowMultipleDays ? "multi_day" : "same_day",
+    booking_surface: "salon_profile",
+  });
 
   const { toast } = useToast();
 
@@ -92,7 +99,13 @@ export function BookingWidget(props: BookingWidgetProps) {
         allowMultipleDays,
       }
     }, {
-      onSuccess: (data) => setAvailabilityResponse(data),
+      onSuccess: (data) => {
+        setAvailabilityResponse(data);
+        trackEvent("booking_availability_result", {
+          ...analyticsDimensions(),
+          result: data.candidates.length > 0 ? "success" : "empty",
+        });
+      },
       onError: () => setAvailabilityResponse({ candidates: [] }),
     });
   };
@@ -106,6 +119,7 @@ export function BookingWidget(props: BookingWidgetProps) {
         void queryClient.invalidateQueries({ queryKey: getListMyAppointmentsQueryKey() });
         void queryClient.invalidateQueries({ queryKey: getGetCustomerDashboardQueryKey() });
         setStep("SUCCESS");
+        trackEvent("grouped_booking_completed", analyticsDimensions());
       },
       onError: (err: any) => {
         toast.error("Greška pri zakazivanju", { description: "Pokušajte ponovo." });
@@ -145,6 +159,16 @@ export function BookingWidget(props: BookingWidgetProps) {
 
   const removeFromCart = (index: number) => {
     setCart(cart.filter((_, i) => i !== index));
+  };
+
+  const continueFromCart = () => {
+    trackEvent("treatment_cart_continued", analyticsDimensions());
+    setStep("EMPLOYEE");
+  };
+
+  const selectCandidate = (candidate: GroupedAvailabilityCandidate) => {
+    setSelectedCandidate(candidate);
+    trackEvent("booking_candidate_selected", analyticsDimensions());
   };
 
   return (
@@ -188,7 +212,7 @@ export function BookingWidget(props: BookingWidgetProps) {
                   }, 0)} RSD
                 </span>
               </div>
-              <Button className="w-full font-bold" size="lg" disabled={cart.length === 0} onClick={() => setStep("EMPLOYEE")}>
+              <Button className="w-full font-bold" size="lg" disabled={cart.length === 0} onClick={continueFromCart}>
                 Nastavi <ChevronRight className="w-4 h-4 ml-1" />
               </Button>
             </div>
@@ -297,7 +321,7 @@ export function BookingWidget(props: BookingWidgetProps) {
                   <div
                     key={i}
                     className={`p-3 rounded-lg cursor-pointer transition-all border-2 ${selectedCandidate === c ? 'border-primary bg-primary/5 ring-4 ring-primary/10' : 'border-border hover:border-primary/40'}`}
-                    onClick={() => setSelectedCandidate(c)}
+                    onClick={() => selectCandidate(c)}
                   >
                     <div className="flex justify-between items-center mb-1">
                       <span className="font-bold text-sm">{formatDateOnly(c.date, "dd. MM.")}</span>
