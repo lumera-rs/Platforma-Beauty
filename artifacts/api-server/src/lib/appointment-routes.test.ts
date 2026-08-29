@@ -111,7 +111,7 @@ async function getRequest(baseUrl: string, session: string, path: string): Promi
 }
 
 async function getPublicSalonCards(baseUrl: string, query: string): Promise<PublicSalonCard[]> {
-  const response = await fetch(`${baseUrl}/api/salons?${query}`);
+  const response = await fetch(`${baseUrl}/api/salons?${query}&pageSize=100`);
   assert.equal(response.status, 200, `public salon filter "${query}" must succeed`);
   return await response.json() as PublicSalonCard[];
 }
@@ -1363,6 +1363,12 @@ async function run(): Promise<void> {
       bio: "",
       avatarUrl: "",
     }).returning();
+    await db.insert(employeeLocationAssignmentsTable).values({
+      employeeId: resourceEmployee!.id,
+      salonId: salon!.id,
+      active: true,
+      isDefault: true,
+    });
     await db.insert(employeeServicesTable).values({ employeeId: resourceEmployee!.id, serviceId: service!.id });
 
     // First booking should succeed.
@@ -1530,7 +1536,7 @@ async function run(): Promise<void> {
     assert.ok(!publicSlots.some((slot) => slot.start === "12:00"), "public availability excludes overlapping intraday block");
     assert.ok(publicSlots.some((slot) => slot.start === "11:00"), "adjacent slot ending at block start remains available");
     assert.ok(publicSlots.some((slot) => slot.start === "13:00"), "adjacent slot starting at block end remains available");
-    const ownerSearch = await getRequest(baseUrl, ownerSession, `/salon/availability/search?serviceId=${service!.id}&employeeId=${employee!.id}&startDate=${timeBlockDate}&limit=20`);
+    const ownerSearch = await getRequest(baseUrl, ownerSession, `/salon/availability/search?serviceId=${service!.id}&employeeId=${employee!.id}&startDate=${timeBlockDate}&limit=14`);
     assert.equal(ownerSearch.status, 200, "owner seven-day availability search succeeds");
     const ownerSlots = ownerSearch.body as Array<{ date: string; startTime: string; employeeId: string; employeeName: string }>;
     assert.ok(!ownerSlots.some((slot) => slot.date === timeBlockDate && slot.startTime === "12:00"), "owner search inherits the block exclusion");

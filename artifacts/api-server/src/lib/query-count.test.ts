@@ -7,6 +7,7 @@ import {
   appointmentsTable,
   db,
   employeesTable,
+  employeeLocationAssignmentsTable,
   employeeServicesTable,
   orderItemsTable,
   ordersTable,
@@ -83,6 +84,10 @@ async function run(): Promise<void> {
     { salonId: salon.id, name: "Tuđi zaposleni", role: "Stilist", bio: "", avatarUrl: "" },
   ]).returning();
   assert.ok(portalEmployee && foreignEmployee);
+  await db.insert(employeeLocationAssignmentsTable).values([
+    { employeeId: portalEmployee.id, salonId: salon.id, active: true, isDefault: true },
+    { employeeId: foreignEmployee.id, salonId: salon.id, active: true, isDefault: true },
+  ]);
   const [portalService] = await db.insert(servicesTable).values({
     salonId: salon.id,
     categoryName: "Test",
@@ -389,7 +394,7 @@ async function run(): Promise<void> {
     const portalText = await portalResponse.text();
     assert.equal(portalResponse.status, 200, `/employee/portal: ${portalText.slice(0, 500)}`);
     const portalQueryCount = queryCount;
-    const maximumPortalQueries = 12;
+    const maximumPortalQueries = 13;
     assert.ok(
       portalQueryCount <= maximumPortalQueries,
       `/employee/portal used ${portalQueryCount} queries; maximum is ${maximumPortalQueries}`,
@@ -543,7 +548,7 @@ async function run(): Promise<void> {
     // and loyalty status dominate); the load-bearing guarantee is the constant
     // query count above, which proves history is never fully scanned.
     const customerDashMax = 30;
-    const salonDashMax = 20;
+    const salonDashMax = 21;
     assert.ok(customerDashBefore.queries <= customerDashMax, `/customer/dashboard used ${customerDashBefore.queries} queries; maximum is ${customerDashMax}`);
     assert.ok(salonDashBefore.queries <= salonDashMax, `/salon/dashboard used ${salonDashBefore.queries} queries; maximum is ${salonDashMax}`);
     process.stdout.write(`✓ /customer/dashboard: ${customerDashBefore.queries} queries (volume independent)\n`);

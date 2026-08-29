@@ -117,3 +117,4 @@
 - [Aftercare attribution evidence](aftercare-attribution-evidence.md) — conversion needs immutable order-item evidence; zero-discount premade offers remain attributable.
 - [Per-table immutable triggers](per-table-immutable-triggers.md) — different table shapes need separate trigger functions; recorded bad rollouts need a new repair version.
 - [Employee location context](employee-location-context.md) — every employee portal and commerce flow resolves location from the same active assignment, never the legacy profile salon.
+- [Paginated fixture assertions](paginated-fixture-assertions.md) — membership checks on public lists must isolate fixtures or request a page guaranteed to contain them.

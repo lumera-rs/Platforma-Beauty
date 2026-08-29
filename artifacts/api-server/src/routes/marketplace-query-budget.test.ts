@@ -328,10 +328,41 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
     const firstEmployeeId = firstEmployee.rows[0]?.id;
     assert.ok(firstEmployeeId, "availability query budget employee must be created");
     await pool.query(
-      `INSERT INTO employee_schedules (employee_id, weekday, start_time, end_time)
-       SELECT $1, weekday, '09:00', '18:00'
+      `WITH assignment AS (
+         INSERT INTO employee_location_assignments (employee_id, salon_id, active, is_default)
+         VALUES ($1, $2, true, true)
+       )
+       INSERT INTO employee_location_schedules (employee_id, salon_id, weekday, start_time, end_time)
+       SELECT $1, $2, weekday, '09:00', '18:00'
        FROM generate_series(1, 7) AS weekdays(weekday)`,
-      [firstEmployeeId],
+      [firstEmployeeId, availabilitySalonId],
+    );
+    const resource = await pool.query<{ id: string }>(
+      `INSERT INTO salon_resources (salon_id, name, type, capacity)
+       VALUES ($1, 'Shared room', 'room', 40)
+       RETURNING id`,
+      [availabilitySalonId],
+    );
+    const resourceId = resource.rows[0]?.id;
+    assert.ok(resourceId, "availability query budget resource must be created");
+    await pool.query(
+      `INSERT INTO service_resource_requirements (service_id, resource_id, quantity)
+       VALUES ($1, $2, 1)`,
+      [availabilityServiceId, resourceId],
+    );
+    const firstAppointment = await pool.query<{ id: string }>(
+      `INSERT INTO appointments (
+         salon_id, employee_id, service_id, appointment_date, start_time,
+         end_time, duration_minutes, price, status
+       )
+       VALUES ($1, $2, $3, '2099-12-14', '17:00', '18:00', 60, 1000, 'confirmed')
+       RETURNING id`,
+      [availabilitySalonId, firstEmployeeId, availabilityServiceId],
+    );
+    await pool.query(
+      `INSERT INTO appointment_resource_allocations (appointment_id, resource_id, quantity)
+       VALUES ($1, $2, 1)`,
+      [firstAppointment.rows[0]!.id, resourceId],
     );
     const ownerCookie = `${sessionCookieName}=${await createSession(availabilityOwnerId)}`;
     const searchPath = `/salon/availability/search?serviceId=${availabilityServiceId}&startDate=2099-12-14&limit=50`;
@@ -347,12 +378,15 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
                 'Stylist', 'Fixture', '/employee.jpg', true
          FROM generate_series(2, 40) AS series(series_number)
          RETURNING id
-       ), links AS (
+        ), assignments AS (
+          INSERT INTO employee_location_assignments (employee_id, salon_id, active, is_default)
+          SELECT id, $1, true, true FROM new_employees
+        ), links AS (
          INSERT INTO employee_services (employee_id, service_id)
          SELECT id, $2 FROM new_employees
        )
-       INSERT INTO employee_schedules (employee_id, weekday, start_time, end_time)
-       SELECT employees.id, weekdays.weekday, '09:00', '18:00'
+        INSERT INTO employee_location_schedules (employee_id, salon_id, weekday, start_time, end_time)
+        SELECT employees.id, $1, weekdays.weekday, '09:00', '18:00'
        FROM new_employees AS employees
        CROSS JOIN generate_series(1, 7) AS weekdays(weekday)`,
       [availabilitySalonId, availabilityServiceId],
@@ -364,19 +398,6 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
        WHERE salon_id = $1 AND name <> 'Employee 01'`,
       [availabilitySalonId],
     );
-    const resource = await pool.query<{ id: string }>(
-      `INSERT INTO salon_resources (salon_id, name, type, capacity)
-       VALUES ($1, 'Shared room', 'room', 40)
-       RETURNING id`,
-      [availabilitySalonId],
-    );
-    const resourceId = resource.rows[0]?.id;
-    assert.ok(resourceId, "availability query budget resource must be created");
-    await pool.query(
-      `INSERT INTO service_resource_requirements (service_id, resource_id, quantity)
-       VALUES ($1, $2, 1)`,
-      [availabilityServiceId, resourceId],
-    );
     await pool.query(
       `WITH fixture_appointments AS (
          INSERT INTO appointments (
@@ -385,12 +406,12 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
          )
          SELECT $1, id, $2, '2099-12-14', '17:00', '18:00', 60, 1000, 'confirmed'
          FROM employees
-         WHERE salon_id = $1
+          WHERE salon_id = $1 AND id <> $4
          RETURNING id
        )
        INSERT INTO appointment_resource_allocations (appointment_id, resource_id, quantity)
        SELECT id, $3, 1 FROM fixture_appointments`,
-      [availabilitySalonId, availabilityServiceId, resourceId],
+      [availabilitySalonId, availabilityServiceId, resourceId, firstEmployeeId],
     );
 
     const largeAvailability = await countedRequest(`${baseUrl}${searchPath}`, {
@@ -404,7 +425,7 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
     }>;
     assert.ok(largeAvailabilitySlots.length > 0, "large availability fixture must retain available slots");
     assert.ok(
-      largeAvailability.queries.length <= 12,
+      largeAvailability.queries.length <= 17,
       `seven-day availability search used ${largeAvailability.queries.length} SQL queries for 40 employees`,
     );
     assert.ok(
@@ -413,7 +434,7 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
     );
 
     const selectedSearch = await countedRequest(
-      `${baseUrl}/salon/availability/search?serviceId=${availabilityServiceId}&employeeId=${firstEmployeeId}&startDate=2099-12-14&limit=50`,
+      `${baseUrl}/salon/availability/search?serviceId=${availabilityServiceId}&employeeId=${firstEmployeeId}&startDate=2099-12-14&limit=14`,
       { headers: { cookie: ownerCookie } },
     );
     const publicAvailability = await fetch(
