@@ -14,7 +14,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { SearchableCombobox, type SearchableComboboxOption } from "@/components/ui/searchable-combobox";
 import { BookingSettingsForm } from "@/components/owner/booking-settings-form";
 import { QuickPackageDialog } from "@/components/owner/quick-package-dialog";
-import { AppointmentLifecyclePanel } from "@/components/appointment-lifecycle-panel";
+import { AppointmentGeneralNote, AppointmentLifecyclePanel, AppointmentTimingNotice, NoShowNotice } from "@/components/appointment-lifecycle-panel";
 import { InternalStaffAvailabilityPicker } from "@/components/booking/internal-staff-availability-picker";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -329,11 +329,13 @@ function CalendarTimeline({
               {appointments.filter(a => (a.employeeId === emp.employeeId) || (a.employeeId === null && employees.length === 1)).filter(a => a.status !== "cancelled").map(a => (
                 <div key={a.id}
                      data-testid={`timeline-appointment-${a.id}`}
-                     className={cn("absolute inset-x-1.5 rounded-lg border p-2 text-xs overflow-hidden cursor-pointer shadow-sm hover:shadow-md transition-all z-10 flex flex-col", a.status === "no-show" ? "bg-muted/50 border-muted-foreground/30 grayscale hover:grayscale-0" : "bg-primary/10 border-primary/20 hover:ring-1 ring-primary/40")}
+                     className={cn("absolute inset-x-1.5 rounded-lg border p-2 text-xs overflow-hidden cursor-pointer shadow-sm hover:shadow-md transition-all z-10 flex flex-col", a.status === "no-show" ? "border-red-300 bg-red-50 text-red-900 hover:ring-1 ring-red-300" : "bg-primary/10 border-primary/20 hover:ring-1 ring-primary/40")}
                      style={{ top: getTop(a.startTime), height: getHeight(a.startTime, a.endTime) }}
                      onClick={(e) => { e.stopPropagation(); onAppointmentClick(a); }}>
-                  <div className={cn("font-bold truncate leading-tight mb-0.5", a.status === "no-show" ? "text-muted-foreground" : "text-primary")}>{a.startTime} · {a.customerName}</div>
-                  <div className={cn("truncate leading-tight font-medium", a.status === "no-show" ? "text-muted-foreground/80" : "text-primary/80")}>{a.bookingGroupId ? "Grupa · " : ""}{a.serviceName}</div>
+                  <div className={cn("font-bold truncate leading-tight mb-0.5", a.status !== "no-show" && "text-primary")}>{a.startTime} · {a.customerName}</div>
+                  <div className={cn("truncate leading-tight font-medium", a.status !== "no-show" && "text-primary/80")}>{a.bookingGroupId ? "Grupa · " : ""}{a.serviceName}</div>
+                  {a.status === "no-show" && <div className="mt-1 truncate font-semibold">Nije došao</div>}
+                  <AppointmentTimingNotice appointment={a} compact />
                 </div>
               ))}
 
@@ -1067,7 +1069,7 @@ export default function OwnerCalendar() {
               <DialogHeader><DialogTitle>Izmeni termin</DialogTitle></DialogHeader>
               {editing && <div className="space-y-4">
                 <AppointmentLifecyclePanel appointment={editing} onUpdated={async (updated) => { setEditing(updated); await Promise.all([refetchAppointments(), refetchUnfilteredAppointments(), refetchMonthAppointments()]); }} />
-                <div className="space-y-2"><Label>Napomena</Label><Textarea value={editing.notes ?? ""} onChange={(event) => setEditing({ ...editing, notes: event.target.value })} /></div>
+                <div className="space-y-2"><Label>Napomena termina</Label><Textarea value={editing.notes ?? ""} onChange={(event) => setEditing({ ...editing, notes: event.target.value })} /></div>
                 <Button className="w-full" onClick={saveAppointmentUpdate} disabled={updateAppointment.isPending}>{updateAppointment.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Sačuvaj izmene</Button>
                  {editing.seriesId && <Button className="w-full" variant="outline" onClick={() => openSeriesMove(editing.seriesId!)}><Repeat2 className="mr-2 h-4 w-4" /> Pomeri preostale termine serije</Button>}
                 {editing.seriesId && <Button className="w-full" variant="destructive" disabled={cancelSeries.isPending} onClick={() => cancelSeries.mutate({ seriesId: editing.seriesId! }, { onSuccess: (result) => { toast.success(`Otkazano je ${result.cancelledAppointments} budućih termina iz serije.`); setEditing(null); refetchAppointments(); refetchUnfilteredAppointments(); refetchCustomers(); }, onError: (error) => toast.error("Serija nije otkazana", { description: error instanceof Error ? error.message : "Pokušajte ponovo." }) })}>{cancelSeries.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Otkaži sve buduće termine serije</Button>}
@@ -1299,7 +1301,7 @@ export default function OwnerCalendar() {
 
                           const appointment = item;
                           return (
-                            <div key={`app-${appointment.id}`} data-testid={`list-appointment-${appointment.id}`} className={cn("flex flex-col gap-4 rounded-xl border bg-background p-4 transition-all hover:border-primary/20 hover:shadow-md sm:flex-row sm:items-center", appointment.status === "cancelled" || appointment.status === "no-show" ? "opacity-60 grayscale hover:opacity-100 hover:grayscale-0" : "")}>
+                            <div key={`app-${appointment.id}`} data-testid={`list-appointment-${appointment.id}`} className={cn("flex flex-col gap-4 rounded-xl border bg-background p-4 transition-all hover:border-primary/20 hover:shadow-md sm:flex-row sm:items-center", appointment.status === "cancelled" && "opacity-60 grayscale hover:opacity-100 hover:grayscale-0", appointment.status === "no-show" && "border-red-200 bg-red-50/30")}>
                               <div className="flex flex-1 flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
                                 <div className="flex items-center gap-3 font-semibold text-primary"><Clock3 className="h-5 w-5 text-muted-foreground" />{appointment.startTime}</div>
                                 <div className="flex-1 space-y-1">
@@ -1308,7 +1310,9 @@ export default function OwnerCalendar() {
                                   {appointment.bookingGroupId && <p className="text-xs text-muted-foreground">Tretmani: {(appointments ?? []).filter((member) => member.bookingGroupId === appointment.bookingGroupId).map((member) => member.serviceName).join(" · ")}</p>}
                                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"><span>Zaposleni: {appointment.employeeName}</span><span>{appointment.durationMinutes} min</span><span>{appointment.price.toLocaleString("sr-RS")} RSD</span>{appointment.treatmentLocation === "home" && <span className="flex items-center text-emerald-700"><MapPin className="mr-1 h-3 w-3" /> Na adresi (+{appointment.travelFee} RSD)</span>}</div>
                                   {appointment.rescheduledConfirmation && <Badge variant={appointment.rescheduledConfirmation?.sms?.status === "queued" || appointment.rescheduledConfirmation?.email?.status === "processing" ? "outline" : appointment.rescheduledConfirmation?.sms?.status === "failed" || appointment.rescheduledConfirmation?.email?.status === "failed" ? "destructive" : "secondary"} className="mt-2">{rescheduledConfirmationLabel(appointment.rescheduledConfirmation)}</Badge>}
-                                  {appointment.notes && <p className="mt-2 rounded-md bg-muted/50 px-2 py-1 text-xs text-muted-foreground">{appointment.notes}</p>}
+                                  <AppointmentTimingNotice appointment={appointment} compact />
+                                  {appointment.status === "no-show" && <NoShowNotice appointmentId={appointment.id} />}
+                                  {appointment.notes && <AppointmentGeneralNote>{appointment.notes}</AppointmentGeneralNote>}
                                 </div>
                               </div>
                               <div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end">

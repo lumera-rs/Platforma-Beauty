@@ -1,5 +1,6 @@
 import { Layout } from "@/components/layout";
 import { OptimizedImage } from "@/components/optimized-image";
+import { AppointmentGeneralNote, AppointmentTimingNotice, NoShowNotice } from "@/components/appointment-lifecycle-panel";
 import {
   getGetAuthSignInMethodsQueryKey,
   getGetAppointmentSalonContactQueryKey,
@@ -372,6 +373,7 @@ export default function CustomerDashboard() {
       case 'pending': return <Badge variant="secondary" className="text-orange-600 bg-orange-100">Na čekanju</Badge>;
       case 'completed': return <Badge variant="outline">Završeno</Badge>;
       case 'cancelled': return <Badge variant="destructive">Otkazano</Badge>;
+      case 'no-show': return <Badge variant="outline" className="border-red-200 bg-red-50 text-red-800">Nije došao</Badge>;
       default: return <Badge>{status}</Badge>;
     }
   };
@@ -529,7 +531,7 @@ export default function CustomerDashboard() {
             ) : (
               <div className="space-y-4">
                 {appointments?.map(appt => (
-                  <Card key={appt.id} className="overflow-hidden">
+                  <Card key={appt.id} className={`overflow-hidden ${appt.status === "no-show" ? "border-red-200 bg-red-50/20" : ""}`}>
                     <div className="flex flex-col sm:flex-row">
                       <div className="bg-muted p-4 sm:w-48 flex flex-col items-center justify-center text-center border-b sm:border-b-0 sm:border-r">
                         <span className="text-sm font-semibold uppercase text-muted-foreground">
@@ -562,6 +564,9 @@ export default function CustomerDashboard() {
                             <span>{appt.durationMinutes} min</span>
                             <span className="font-semibold text-foreground">{appt.price} RSD</span>
                           </div>
+                          <AppointmentTimingNotice appointment={appt} compact />
+                          {appt.status === "no-show" && <NoShowNotice appointmentId={appt.id} />}
+                          {appt.notes && <AppointmentGeneralNote>{appt.notes}</AppointmentGeneralNote>}
                           {contactAppointmentId === appt.id && appointmentStatusesWithSalonContact.has(appt.status) && (
                             <div className="mt-4 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-foreground">
                               {isSalonContactLoading ? (

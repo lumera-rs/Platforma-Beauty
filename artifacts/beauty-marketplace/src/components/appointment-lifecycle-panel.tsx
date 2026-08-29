@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   type Appointment,
@@ -17,6 +17,11 @@ import { useToast } from "@/hooks/use-toast";
 type LifecycleAppointment = Pick<
   Appointment,
   "id" | "date" | "startTime" | "endTime" | "status" | "plannedEndTime" | "arrivedAt" | "confirmedAt" | "actualStartedAt" | "actualCompletedAt" | "completedAt" | "cancelledAt" | "noShowAt"
+>;
+
+type TimingAppointment = Pick<
+  LifecycleAppointment,
+  "id" | "date" | "startTime" | "endTime" | "status" | "plannedEndTime" | "actualStartedAt"
 >;
 
 const actionSuccess: Record<AppointmentLifecycleInputAction, string> = {
@@ -41,6 +46,77 @@ function auditTime(value: string | null | undefined) {
   return new Date(value).toLocaleString("sr-RS", { dateStyle: "short", timeStyle: "short" });
 }
 
+function useCurrentMinute() {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  return now;
+}
+
+function appointmentTiming(appointment: TimingAppointment, now: Date) {
+  const scheduledStart = new Date(`${appointment.date}T${appointment.startTime}:00`);
+  const plannedEnd = new Date(`${appointment.date}T${appointment.plannedEndTime ?? appointment.endTime}:00`);
+  const actualStart = appointment.actualStartedAt ? new Date(appointment.actualStartedAt) : null;
+  const delayReference = actualStart ?? now;
+  return {
+    lateMinutes: Math.max(0, Math.floor((delayReference.getTime() - scheduledStart.getTime()) / 60_000)),
+    remainingMinutes: Math.max(0, Math.ceil((plannedEnd.getTime() - now.getTime()) / 60_000)),
+  };
+}
+
+export function AppointmentTimingNotice({
+  appointment,
+  compact = false,
+}: {
+  appointment: TimingAppointment;
+  compact?: boolean;
+}) {
+  const now = useCurrentMinute();
+  const timing = useMemo(() => appointmentTiming(appointment, now), [appointment, now]);
+  const terminal = ["completed", "cancelled", "no-show"].includes(appointment.status);
+  const started = Boolean(appointment.actualStartedAt);
+
+  if (terminal || timing.lateMinutes <= 0) return null;
+
+  return (
+    <div
+      className={compact
+        ? "mt-2 flex w-fit items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-900"
+        : "flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"}
+      role="status"
+      data-testid={`late-policy-${appointment.id}`}
+    >
+      <AlertTriangle className={compact ? "h-3.5 w-3.5 shrink-0" : "mt-0.5 h-4 w-4 shrink-0"} />
+      <p>
+        Kašnjenje: {timing.lateMinutes} min. Preostalo do fiksnog kraja: {timing.remainingMinutes} min.
+        {!compact && !started && " Pri pokretanju se proverava minimalno korisno vreme iz pravila salona; ako ga nema dovoljno, početak neće biti dozvoljen."}
+      </p>
+    </div>
+  );
+}
+
+export function NoShowNotice({ appointmentId }: { appointmentId: string }) {
+  return (
+    <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900" data-testid={`no-show-note-${appointmentId}`}>
+      <p className="font-semibold">Napomena o nedolasku</p>
+      <p className="mt-0.5">Klijent se nije pojavio na zakazanom terminu.</p>
+    </div>
+  );
+}
+
+export function AppointmentGeneralNote({ children }: { children: string }) {
+  return (
+    <div className="mt-2 rounded-md bg-muted/50 px-2 py-1.5 text-xs text-muted-foreground">
+      <p className="font-semibold text-foreground/80">Napomena termina</p>
+      <p className="mt-0.5">{children}</p>
+    </div>
+  );
+}
+
 export function AppointmentLifecyclePanel({
   appointment,
   onUpdated,
@@ -52,15 +128,6 @@ export function AppointmentLifecyclePanel({
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [reason, setReason] = useState("");
-
-  const timing = useMemo(() => {
-    const start = new Date(`${appointment.date}T${appointment.startTime}:00`);
-    const end = new Date(`${appointment.date}T${appointment.plannedEndTime ?? appointment.endTime}:00`);
-    const now = new Date();
-    const lateMinutes = Math.max(0, Math.floor((now.getTime() - start.getTime()) / 60000));
-    const remainingMinutes = Math.floor((end.getTime() - now.getTime()) / 60000);
-    return { lateMinutes, remainingMinutes };
-  }, [appointment.date, appointment.endTime, appointment.plannedEndTime, appointment.startTime]);
 
   const terminal = ["completed", "cancelled", "no-show"].includes(appointment.status);
   const arrived = Boolean(appointment.arrivedAt);
@@ -101,15 +168,8 @@ export function AppointmentLifecyclePanel({
         <p className="mt-1 text-xs text-muted-foreground">Svaka radnja se beleži u istoriji termina sa korisnikom i vremenom promene.</p>
       </div>
 
-      {!terminal && !started && timing.lateMinutes > 0 && (
-        <div className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" role="status" data-testid={`late-policy-${appointment.id}`}>
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <p>
-            Termin kasni {timing.lateMinutes} min. Preostalo je približno {Math.max(0, timing.remainingMinutes)} min do planiranog kraja.
-            Pri pokretanju se proverava minimalno korisno vreme iz pravila salona; ako ga nema dovoljno, početak neće biti dozvoljen.
-          </p>
-        </div>
-      )}
+      <AppointmentTimingNotice appointment={appointment} />
+      {appointment.status === "no-show" && <NoShowNotice appointmentId={appointment.id} />}
 
       {!terminal && (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

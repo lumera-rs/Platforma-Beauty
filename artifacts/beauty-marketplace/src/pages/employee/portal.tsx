@@ -55,7 +55,7 @@ import {
   type SearchEmployeeAvailabilityParams,
 } from "@workspace/api-client-react";
 import { AvatarImage } from "@/components/optimized-image";
-import { AppointmentLifecyclePanel } from "@/components/appointment-lifecycle-panel";
+import { AppointmentGeneralNote, AppointmentLifecyclePanel, AppointmentTimingNotice, NoShowNotice } from "@/components/appointment-lifecycle-panel";
 import { InternalStaffAvailabilityPicker } from "@/components/booking/internal-staff-availability-picker";
 import {
   createEmployeeLeaveDraft,
@@ -108,7 +108,7 @@ const statusLabel: Record<Appointment["status"], string> = {
   confirmed: "Potvrđen",
   completed: "Završen",
   cancelled: "Otkazan",
-  "no-show": "No-show",
+  "no-show": "Nije došao",
 };
 const statusClasses: Record<Appointment["status"], string> = {
   pending: "border-amber-200 bg-amber-50 text-amber-800",
@@ -855,7 +855,7 @@ export default function EmployeePortal() {
               {appointments.length ? (
                 <div className="space-y-3 bg-muted/[0.18] p-4 sm:p-5">
                   {appointments.map((appointment) => (
-                    <div className="group flex flex-col gap-4 rounded-2xl border bg-card p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md sm:flex-row sm:items-center sm:justify-between sm:p-5" key={appointment.id}>
+                     <div className={cn("group flex flex-col gap-4 rounded-2xl border bg-card p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md sm:flex-row sm:items-center sm:justify-between sm:p-5", appointment.status === "no-show" && "border-red-200 bg-red-50/30")} key={appointment.id}>
                       <div className="flex min-w-0 items-start gap-4">
                         <div className="flex h-[60px] w-[78px] shrink-0 flex-col items-center justify-center rounded-xl bg-primary/10 text-primary">
                           <span className="text-xl font-bold tracking-tight">{appointment.startTime}</span>
@@ -866,7 +866,9 @@ export default function EmployeePortal() {
                           <p className="mt-1 truncate text-sm font-medium text-foreground/80">{appointment.serviceName}</p>
                           <p className="mt-1 text-sm text-muted-foreground">{appointment.customerPhone ?? "Telefon nije dostupan"}</p>
                           {appointment.seriesId && <Badge variant="secondary" className="mt-2 gap-1"><Repeat2 className="h-3 w-3" />Serija</Badge>}
-                          {appointment.notes && <p className="mt-2 rounded-md bg-muted/50 px-2 py-1 text-xs text-muted-foreground">{appointment.notes}</p>}
+                          <AppointmentTimingNotice appointment={appointment} compact />
+                          {appointment.status === "no-show" && <NoShowNotice appointmentId={appointment.id} />}
+                          {appointment.notes && <AppointmentGeneralNote>{appointment.notes}</AppointmentGeneralNote>}
                           {appointment.allocatedResources && appointment.allocatedResources.length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-2">
                               {appointment.allocatedResources.map((alloc, i) => (

@@ -17,6 +17,7 @@
     "test:monitoring": "tsx ../artifacts/api-server/src/lib/monitoring.test.ts",
     "test:auth-registration": "playwright test browser/auth-registration.spec.ts",
     "test:booking-journey": "playwright test browser/booking-journey.spec.ts",
+    "test:appointment-status-consistency": "playwright test browser/appointment-status-consistency.spec.ts",
     "test:browser": "playwright test",
     "test:browser-fixtures": "tsx --test ./src/api-fixtures.test.ts",
     "test:carousel": "playwright test browser/carousel-regression.spec.ts",
