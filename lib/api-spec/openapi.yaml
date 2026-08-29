@@ -256,7 +256,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [sms, brevo, google_oauth, facebook_oauth]
+            enum: [sms, brevo, google_oauth, facebook_oauth, cloudflare, web_push]
       requestBody:
         required: true
         content:
@@ -797,6 +797,63 @@ paths:
       summary: Mark every current customer notification read
       responses:
         "204": { description: All notifications marked read }
+  /push/config:
+    get:
+      operationId: getWebPushConfig
+      tags: [customer]
+      summary: Get the public Web Push configuration
+      responses:
+        "200":
+          description: Public VAPID key availability; the private key is never returned
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebPushConfig" }
+  /customer/push-subscriptions:
+    get:
+      operationId: listPushSubscriptions
+      tags: [customer]
+      summary: List Web Push devices owned by the current user
+      responses:
+        "200":
+          description: Current user's device subscriptions
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PushSubscription" }
+        "401": { description: Authentication required }
+    post:
+      operationId: upsertPushSubscription
+      tags: [customer]
+      summary: Register or refresh the current browser's Web Push subscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PushSubscriptionInput" }
+      responses:
+        "200":
+          description: Registered device subscription
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PushSubscription" }
+        "400": { description: Invalid subscription }
+        "401": { description: Authentication required }
+        "503": { description: Web Push is not configured }
+  /customer/push-subscriptions/{subscriptionId}:
+    delete:
+      operationId: deletePushSubscription
+      tags: [customer]
+      summary: Disable and remove a Web Push device owned by the current user
+      parameters:
+        - name: subscriptionId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Device subscription removed }
+        "401": { description: Authentication required }
+        "404": { description: Subscription not found or not owned by the current user }
   /customer/dashboard:
     get:
       operationId: getCustomerDashboard
@@ -8265,7 +8322,8 @@ components:
             google_oauth: { $ref: "#/components/schemas/AdminIntegrationCard" }
             facebook_oauth: { $ref: "#/components/schemas/AdminIntegrationCard" }
             cloudflare: { $ref: "#/components/schemas/AdminIntegrationCard" }
-          required: [sms, brevo, google_oauth, facebook_oauth, cloudflare]
+            web_push: { $ref: "#/components/schemas/AdminIntegrationCard" }
+          required: [sms, brevo, google_oauth, facebook_oauth, cloudflare, web_push]
         deliveryReports: { $ref: "#/components/schemas/AdminDeliveryReports" }
         smsFallback: { $ref: "#/components/schemas/AdminSmsFallback" }
         smsWebhookRegistration: { $ref: "#/components/schemas/AdminSmsWebhookRegistration" }
@@ -9041,6 +9099,33 @@ components:
         nextCursor: { type: ["string", "null"] }
         unreadCount: { type: integer, minimum: 0 }
       required: [items, nextCursor, unreadCount]
+    WebPushConfig:
+      type: object
+      properties:
+        configured: { type: boolean }
+        publicKey: { type: ["string", "null"] }
+      required: [configured, publicKey]
+    PushSubscriptionKeysInput:
+      type: object
+      properties:
+        p256dh: { type: string, minLength: 1, maxLength: 1024 }
+        auth: { type: string, minLength: 1, maxLength: 512 }
+      required: [p256dh, auth]
+    PushSubscriptionInput:
+      type: object
+      properties:
+        endpoint: { type: string, format: uri, maxLength: 4096 }
+        keys: { $ref: "#/components/schemas/PushSubscriptionKeysInput" }
+      required: [endpoint, keys]
+    PushSubscription:
+      type: object
+      properties:
+        id: { type: string }
+        endpoint: { type: string, format: uri }
+        enabled: { type: boolean }
+        lastSeenAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+      required: [id, endpoint, enabled, lastSeenAt, createdAt]
     TimeSlot:
       type: object
       properties:

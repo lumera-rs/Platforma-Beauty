@@ -32,6 +32,8 @@ import { reconcileKnownTestListings } from "./lib/test-listing-reconciliation";
 import { seedProductionMarketplaceDemoContent } from "./lib/production-marketplace-demo-seed";
 import { runReferralMaintenance } from "./lib/referral-service";
 import { ensureReferralSchema } from "./lib/referral-schema";
+import { ensureWebPushSchema } from "./lib/web-push-schema";
+import { runSystemPushWorker } from "./lib/web-push";
 import { runProductWaitlistNotificationWorker } from "./lib/product-waitlist-worker";
 import { runRetailSubscriptionWorker } from "./lib/retail-subscription-worker";
 import { runRetailCartReminderSweep } from "./lib/retail-cart-reminders";
@@ -64,6 +66,7 @@ await ensureMediaSchema();
 await ensureShippingConfigSchema();
 await ensureMarketplacePerformanceIndexes();
 await ensureReferralSchema();
+await ensureWebPushSchema();
 await reconcileKnownTestListings();
 if (process.env.NODE_ENV === "production") {
   await seedProductionMarketplaceDemoContent();
@@ -173,6 +176,10 @@ const appointmentReviewInvitations = createResilientScheduledJob({
   job: "appointment-review-invitations",
   run: runAppointmentReviewInvitationSweep,
 });
+const systemPushDeliveries = createResilientScheduledJob({
+  job: "system-push-deliveries",
+  run: runSystemPushWorker,
+});
 const scheduledJobs = [
   rescheduledConfirmationRetries,
   educationSessionMaintenance,
@@ -195,6 +202,7 @@ const scheduledJobs = [
   aftercareWorker,
   appointmentReminders,
   appointmentReviewInvitations,
+  systemPushDeliveries,
 ];
 
 const retryInterval = setInterval(() => {
@@ -254,6 +262,11 @@ const appointmentCustomerEventsInterval = setInterval(() => {
 appointmentCustomerEventsInterval.unref();
 void appointmentReminders.run();
 void appointmentReviewInvitations.run();
+const systemPushDeliveriesInterval = setInterval(() => {
+  void systemPushDeliveries.run();
+}, 30_000);
+systemPushDeliveriesInterval.unref();
+void systemPushDeliveries.run();
 
 const educationGalleryCleanupInterval = setInterval(() => {
   void educationGalleryCleanup.run();
@@ -336,6 +349,7 @@ function clearScheduledTasks(): void {
   clearInterval(retailCartReminderSweepInterval);
   clearInterval(retailReviewInvitationSweepInterval);
   clearInterval(appointmentCustomerEventsInterval);
+  clearInterval(systemPushDeliveriesInterval);
   clearInterval(educationMaintenanceInterval);
   clearInterval(beautyJobsExpiryInterval);
   clearInterval(referralMaintenanceInterval);

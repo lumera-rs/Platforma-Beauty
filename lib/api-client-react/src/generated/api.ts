@@ -390,6 +390,8 @@ import type {
   PublicRetailProductReview,
   PublicRetailProductReviewList,
   PurchasePackageBody,
+  PushSubscription,
+  PushSubscriptionInput,
   QuickPackagePurchaseInput,
   QuickPackagePurchaseResult,
   RedeemSessionBody,
@@ -502,6 +504,7 @@ import type {
   UpdateTreatmentPackageBody,
   UpsellProductInput,
   UpsellProductList,
+  WebPushConfig,
   WidgetAppointmentCreate,
   WidgetAppointmentCreated,
   WidgetBookingGroupCreate,
@@ -1643,7 +1646,7 @@ export function useAdminGetWebhookFreshness<TData = Awaited<ReturnType<typeof ad
 
 
 
-export const getAdminSaveIntegrationUrl = (integration: 'sms' | 'brevo' | 'google_oauth' | 'facebook_oauth',) => {
+export const getAdminSaveIntegrationUrl = (integration: 'sms' | 'brevo' | 'google_oauth' | 'facebook_oauth' | 'cloudflare' | 'web_push',) => {
 
 
 
@@ -1654,7 +1657,7 @@ export const getAdminSaveIntegrationUrl = (integration: 'sms' | 'brevo' | 'googl
 /**
  * @summary Save administrator integration settings
  */
-export const adminSaveIntegration = async (integration: 'sms' | 'brevo' | 'google_oauth' | 'facebook_oauth',
+export const adminSaveIntegration = async (integration: 'sms' | 'brevo' | 'google_oauth' | 'facebook_oauth' | 'cloudflare' | 'web_push',
     adminSaveIntegrationInput: AdminSaveIntegrationInput, options?: Parameters<typeof customFetch>[1]): Promise<AdminIntegrationCard> => {
 
   return customFetch<AdminIntegrationCard>(getAdminSaveIntegrationUrl(integration),
@@ -1671,8 +1674,8 @@ export const adminSaveIntegration = async (integration: 'sms' | 'brevo' | 'googl
 
 
 export const getAdminSaveIntegrationMutationOptions = <TError = ErrorType<void | IntegrationSettingsVersionConflict>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminSaveIntegration>>, TError,{integration: 'sms' | 'brevo' | 'google_oauth' | 'facebook_oauth';data: BodyType<AdminSaveIntegrationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof adminSaveIntegration>>, TError,{integration: 'sms' | 'brevo' | 'google_oauth' | 'facebook_oauth';data: BodyType<AdminSaveIntegrationInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminSaveIntegration>>, TError,{integration: 'sms' | 'brevo' | 'google_oauth' | 'facebook_oauth' | 'cloudflare' | 'web_push';data: BodyType<AdminSaveIntegrationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminSaveIntegration>>, TError,{integration: 'sms' | 'brevo' | 'google_oauth' | 'facebook_oauth' | 'cloudflare' | 'web_push';data: BodyType<AdminSaveIntegrationInput>}, TContext> => {
 
 const mutationKey = ['adminSaveIntegration'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -1684,7 +1687,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminSaveIntegration>>, {integration: 'sms' | 'brevo' | 'google_oauth' | 'facebook_oauth';data: BodyType<AdminSaveIntegrationInput>}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminSaveIntegration>>, {integration: 'sms' | 'brevo' | 'google_oauth' | 'facebook_oauth' | 'cloudflare' | 'web_push';data: BodyType<AdminSaveIntegrationInput>}> = (props) => {
           const {integration,data} = props ?? {};
 
           return  adminSaveIntegration(integration,data,requestOptions)
@@ -1705,11 +1708,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Save administrator integration settings
  */
 export const useAdminSaveIntegration = <TError = ErrorType<void | IntegrationSettingsVersionConflict>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminSaveIntegration>>, TError,{integration: 'sms' | 'brevo' | 'google_oauth' | 'facebook_oauth';data: BodyType<AdminSaveIntegrationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminSaveIntegration>>, TError,{integration: 'sms' | 'brevo' | 'google_oauth' | 'facebook_oauth' | 'cloudflare' | 'web_push';data: BodyType<AdminSaveIntegrationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof adminSaveIntegration>>,
         TError,
-        {integration: 'sms' | 'brevo' | 'google_oauth' | 'facebook_oauth';data: BodyType<AdminSaveIntegrationInput>},
+        {integration: 'sms' | 'brevo' | 'google_oauth' | 'facebook_oauth' | 'cloudflare' | 'web_push';data: BodyType<AdminSaveIntegrationInput>},
         TContext
       > => {
       return useMutation(getAdminSaveIntegrationMutationOptions(options));
@@ -3529,6 +3532,302 @@ export const useMarkAllCustomerNotificationsRead = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getMarkAllCustomerNotificationsReadMutationOptions(options));
+    }
+
+export const getGetWebPushConfigUrl = () => {
+
+
+
+
+  return `/api/push/config`
+}
+
+/**
+ * @summary Get the public Web Push configuration
+ */
+export const getWebPushConfig = async ( options?: Parameters<typeof customFetch>[1]): Promise<WebPushConfig> => {
+
+  return customFetch<WebPushConfig>(getGetWebPushConfigUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWebPushConfigQueryKey = () => {
+    return [
+    `/api/push/config`
+    ] as const;
+    }
+
+
+export const getGetWebPushConfigQueryOptions = <TData = Awaited<ReturnType<typeof getWebPushConfig>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWebPushConfig>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWebPushConfigQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWebPushConfig>>> = ({ signal }) => getWebPushConfig({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWebPushConfig>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetWebPushConfigQueryResult = NonNullable<Awaited<ReturnType<typeof getWebPushConfig>>>
+export type GetWebPushConfigQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the public Web Push configuration
+ */
+
+export function useGetWebPushConfig<TData = Awaited<ReturnType<typeof getWebPushConfig>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWebPushConfig>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetWebPushConfigQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListPushSubscriptionsUrl = () => {
+
+
+
+
+  return `/api/customer/push-subscriptions`
+}
+
+/**
+ * @summary List Web Push devices owned by the current user
+ */
+export const listPushSubscriptions = async ( options?: Parameters<typeof customFetch>[1]): Promise<PushSubscription[]> => {
+
+  return customFetch<PushSubscription[]>(getListPushSubscriptionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPushSubscriptionsQueryKey = () => {
+    return [
+    `/api/customer/push-subscriptions`
+    ] as const;
+    }
+
+
+export const getListPushSubscriptionsQueryOptions = <TData = Awaited<ReturnType<typeof listPushSubscriptions>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPushSubscriptions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPushSubscriptionsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPushSubscriptions>>> = ({ signal }) => listPushSubscriptions({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPushSubscriptions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPushSubscriptionsQueryResult = NonNullable<Awaited<ReturnType<typeof listPushSubscriptions>>>
+export type ListPushSubscriptionsQueryError = ErrorType<void>
+
+
+/**
+ * @summary List Web Push devices owned by the current user
+ */
+
+export function useListPushSubscriptions<TData = Awaited<ReturnType<typeof listPushSubscriptions>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPushSubscriptions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPushSubscriptionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpsertPushSubscriptionUrl = () => {
+
+
+
+
+  return `/api/customer/push-subscriptions`
+}
+
+/**
+ * @summary Register or refresh the current browser's Web Push subscription
+ */
+export const upsertPushSubscription = async (pushSubscriptionInput: PushSubscriptionInput, options?: Parameters<typeof customFetch>[1]): Promise<PushSubscription> => {
+
+  return customFetch<PushSubscription>(getUpsertPushSubscriptionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(pushSubscriptionInput)
+  }
+);}
+
+
+
+
+
+export const getUpsertPushSubscriptionMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertPushSubscription>>, TError,{data: BodyType<PushSubscriptionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof upsertPushSubscription>>, TError,{data: BodyType<PushSubscriptionInput>}, TContext> => {
+
+const mutationKey = ['upsertPushSubscription'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof upsertPushSubscription>>, {data: BodyType<PushSubscriptionInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  upsertPushSubscription(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpsertPushSubscriptionMutationResult = NonNullable<Awaited<ReturnType<typeof upsertPushSubscription>>>
+    export type UpsertPushSubscriptionMutationBody = BodyType<PushSubscriptionInput>
+    export type UpsertPushSubscriptionMutationError = ErrorType<void>
+
+    /**
+ * @summary Register or refresh the current browser's Web Push subscription
+ */
+export const useUpsertPushSubscription = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertPushSubscription>>, TError,{data: BodyType<PushSubscriptionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof upsertPushSubscription>>,
+        TError,
+        {data: BodyType<PushSubscriptionInput>},
+        TContext
+      > => {
+      return useMutation(getUpsertPushSubscriptionMutationOptions(options));
+    }
+
+export const getDeletePushSubscriptionUrl = (subscriptionId: string,) => {
+
+
+
+
+  return `/api/customer/push-subscriptions/${subscriptionId}`
+}
+
+/**
+ * @summary Disable and remove a Web Push device owned by the current user
+ */
+export const deletePushSubscription = async (subscriptionId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeletePushSubscriptionUrl(subscriptionId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeletePushSubscriptionMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePushSubscription>>, TError,{subscriptionId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deletePushSubscription>>, TError,{subscriptionId: string}, TContext> => {
+
+const mutationKey = ['deletePushSubscription'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deletePushSubscription>>, {subscriptionId: string}> = (props) => {
+          const {subscriptionId} = props ?? {};
+
+          return  deletePushSubscription(subscriptionId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeletePushSubscriptionMutationResult = NonNullable<Awaited<ReturnType<typeof deletePushSubscription>>>
+
+    export type DeletePushSubscriptionMutationError = ErrorType<void>
+
+    /**
+ * @summary Disable and remove a Web Push device owned by the current user
+ */
+export const useDeletePushSubscription = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePushSubscription>>, TError,{subscriptionId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deletePushSubscription>>,
+        TError,
+        {subscriptionId: string},
+        TContext
+      > => {
+      return useMutation(getDeletePushSubscriptionMutationOptions(options));
     }
 
 export const getGetCustomerDashboardUrl = () => {

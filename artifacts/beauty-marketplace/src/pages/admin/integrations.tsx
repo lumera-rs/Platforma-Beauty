@@ -34,14 +34,19 @@ type DeliveryReportStatus = AdminDeliveryReportStatus;
 type SmsWebhookRegistrationState = AdminSmsWebhookRegistration["state"];
 type Data = AdminGetIntegrationsResponse;
 
-const fields: Record<Integration, Array<{ key: string; label: string; placeholder: string; secret?: boolean }>> = {
+const fields: Record<Integration, Array<{ key: string; label: string; placeholder: string; help?: string; secret?: boolean }>> = {
   sms: [{ key: "apiKey", label: "Infobip API ključ", placeholder: "Unesite novi API ključ", secret: true }, { key: "senderName", label: "Naziv pošiljaoca", placeholder: "LUMERA" }, { key: "baseUrl", label: "Base URL (opciono)", placeholder: "https://api.infobip.com" }, { key: "webhookSecret", label: "Webhook tajna (izveštaji o isporuci)", placeholder: "Unesite tajnu za webhook URL", secret: true }],
   brevo: [{ key: "apiKey", label: "Brevo API ključ", placeholder: "Unesite novi API ključ", secret: true }, { key: "senderEmail", label: "E-mail pošiljaoca", placeholder: "noreply@vasdomen.rs" }, { key: "senderName", label: "Ime pošiljaoca", placeholder: "LUMERA" }, { key: "webhookSecret", label: "Webhook tajna (isporuka/otvaranja)", placeholder: "Unesite tajnu za webhook URL", secret: true }],
   google_oauth: [{ key: "clientId", label: "Client ID", placeholder: "Google Client ID" }, { key: "clientSecret", label: "Client Secret", placeholder: "Unesite novi Client Secret", secret: true }],
   facebook_oauth: [{ key: "clientId", label: "App ID", placeholder: "Facebook App ID" }, { key: "clientSecret", label: "App Secret", placeholder: "Unesite novi App Secret", secret: true }],
   cloudflare: [{ key: "apiKey", label: "Cloudflare API ključ / API Token", placeholder: "Unesite Cloudflare API Token", secret: true }, { key: "zoneId", label: "Cloudflare Zone ID", placeholder: "32-karakterni Zone ID" }, { key: "domain", label: "Javni domen sajta", placeholder: "https://vas-domen.rs" }],
+  web_push: [
+    { key: "publicKey", label: "VAPID javni ključ", placeholder: "Unesite URL-safe Base64 javni ključ", help: "Javni ključ pregledač koristi za prijavu uređaja za sistemska obaveštenja." },
+    { key: "privateKey", label: "VAPID privatni ključ", placeholder: "Unesite novi privatni ključ", help: "Čuva se šifrovano i nakon čuvanja prikazuje samo maskirano. Ne delite ga niti unosite javni ključ u ovo polje.", secret: true },
+    { key: "subject", label: "VAPID subject / kontakt URI", placeholder: "mailto:podrska@vasdomen.rs", help: "Kontakt odgovornog operatera u formatu mailto:adresa@domen.rs ili punom HTTPS URL-u." },
+  ],
 };
-const titles: Record<Integration, string> = { sms: "SMS · Infobip", brevo: "E-mail · Brevo", google_oauth: "Google prijava", facebook_oauth: "Facebook prijava", cloudflare: "CDN keš · Cloudflare" };
+const titles: Record<Integration, string> = { sms: "SMS · Infobip", brevo: "E-mail · Brevo", google_oauth: "Google prijava", facebook_oauth: "Facebook prijava", cloudflare: "CDN keš · Cloudflare", web_push: "Sistemska obaveštenja · Web Push" };
 const WEBHOOK_FRESHNESS_POLL_INTERVAL_MS = 60_000;
 
 const integrationResponseError = (issues: Array<{ path: PropertyKey[]; message: string }>) => {
@@ -53,8 +58,8 @@ const integrationResponseError = (issues: Array<{ path: PropertyKey[]; message: 
 
 export default function AdminIntegrations() {
   const [data, setData] = useState<Data | null>(null);
-  const [form, setForm] = useState<Record<Integration, Record<string, string>>>({ sms: {}, brevo: {}, google_oauth: {}, facebook_oauth: {}, cloudflare: {} });
-  const [testRecipient, setTestRecipient] = useState<Record<Integration, string>>({ sms: "", brevo: "", google_oauth: "", facebook_oauth: "", cloudflare: "" });
+  const [form, setForm] = useState<Record<Integration, Record<string, string>>>({ sms: {}, brevo: {}, google_oauth: {}, facebook_oauth: {}, cloudflare: {}, web_push: {} });
+  const [testRecipient, setTestRecipient] = useState<Record<Integration, string>>({ sms: "", brevo: "", google_oauth: "", facebook_oauth: "", cloudflare: "", web_push: "" });
   const [savedEnabled, setSavedEnabled] = useState<Record<Integration, boolean> | null>(null);
   const actionGuard = useImmediateActionGuard();
   const [smsRegistrationRefreshFailed, setSmsRegistrationRefreshFailed] = useState(false);
@@ -79,7 +84,7 @@ export default function AdminIntegrations() {
     // page consumes the JSON wire format and its date strings directly.
     const payload = body as Data;
     setData(payload);
-    setSavedEnabled({ sms: payload.integrations.sms.enabled, brevo: payload.integrations.brevo.enabled, google_oauth: payload.integrations.google_oauth.enabled, facebook_oauth: payload.integrations.facebook_oauth.enabled, cloudflare: payload.integrations.cloudflare.enabled });
+    setSavedEnabled({ sms: payload.integrations.sms.enabled, brevo: payload.integrations.brevo.enabled, google_oauth: payload.integrations.google_oauth.enabled, facebook_oauth: payload.integrations.facebook_oauth.enabled, cloudflare: payload.integrations.cloudflare.enabled, web_push: payload.integrations.web_push.enabled });
   };
   const refreshWebhookFreshness = async () => {
     const sequence = ++freshnessRefreshSequence.current;
@@ -242,7 +247,7 @@ export default function AdminIntegrations() {
     const result = await fetchNativeJson<{ message: string }>(`/api/admin/integrations/${integration}/test`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ recipient }) }, { httpErrorMessage: "Test nije uspeo." });
     toast.success(result.message);
   };
-  const [verifyingWebhook, setVerifyingWebhook] = useState<Record<Integration, boolean>>({ sms: false, brevo: false, google_oauth: false, facebook_oauth: false, cloudflare: false });
+  const [verifyingWebhook, setVerifyingWebhook] = useState<Record<Integration, boolean>>({ sms: false, brevo: false, google_oauth: false, facebook_oauth: false, cloudflare: false, web_push: false });
   const verifyWebhook = async (integration: Integration) => {
     // A manual verification is authoritative for the confirmation metadata it
     // returns. Invalidate both an already-running poll and any poll started
@@ -261,7 +266,7 @@ export default function AdminIntegrations() {
       setVerifyingWebhook((previous) => ({ ...previous, [integration]: false }));
     }
   };
-  const [copyingWebhookUrl, setCopyingWebhookUrl] = useState<Record<Integration, boolean>>({ sms: false, brevo: false, google_oauth: false, facebook_oauth: false, cloudflare: false });
+  const [copyingWebhookUrl, setCopyingWebhookUrl] = useState<Record<Integration, boolean>>({ sms: false, brevo: false, google_oauth: false, facebook_oauth: false, cloudflare: false, web_push: false });
   const copyWebhookUrl = async (integration: Integration) => {
     setCopyingWebhookUrl((previous) => ({ ...previous, [integration]: true }));
     try {
@@ -511,16 +516,23 @@ export default function AdminIntegrations() {
       </section>}
       <div className="grid gap-6 xl:grid-cols-2">{(Object.keys(fields) as Integration[]).map((integration) => {
         const card = data.integrations[integration] as Card; const [label, color] = status(card);
-        return <section key={integration} className="rounded-xl border bg-card p-6 shadow-sm space-y-4">
-          <div className="flex items-start justify-between gap-3"><div><h2 className="text-xl font-semibold">{titles[integration]}</h2><p className="text-sm text-muted-foreground">{card.configuredInDatabase ? "Baza je izvor konfiguracije." : "Koristi environment fallback dok ne sačuvate vrednosti."}</p></div><span className={`rounded-full px-3 py-1 text-xs font-semibold ${color}`}>{label}</span></div>
+        return <section key={integration} className="rounded-xl border bg-card p-4 shadow-sm space-y-4 sm:p-6" data-testid={`integration-card-${integration}`}>
+          <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h2 className="text-xl font-semibold">{titles[integration]}</h2><p className="text-sm text-muted-foreground">{card.configuredInDatabase ? "Baza je izvor konfiguracije." : "Koristi environment fallback dok ne sačuvate vrednosti."}</p></div><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${color}`} data-testid={`integration-status-${integration}`}>{label}</span></div>
           <label className="flex items-center justify-between rounded-lg bg-muted/50 p-3 text-sm font-medium">Omogući integraciju <input type="checkbox" data-testid={`toggle-enabled-${integration}`} checked={card.enabled} onChange={(event) => setData({ ...data, integrations: { ...data.integrations, [integration]: { ...card, enabled: event.target.checked } } })} /></label>
-          {fields[integration].map((field) => <div key={field.key} className="space-y-1.5"><Label>{field.label}</Label>{card.values[field.key] && <p className="text-xs text-muted-foreground">Sačuvano: {card.values[field.key]}</p>}{field.key === "webhookSecret" && (integration === "sms" || integration === "brevo") ? <>
+          {integration === "web_push" && <div className={`rounded-lg border p-3 ${!card.enabled ? "bg-muted/30" : card.complete ? "border-emerald-300 bg-emerald-50" : "border-amber-300 bg-amber-50"}`} role="status" data-testid="web-push-explanation">
+            <p className={`text-sm font-semibold ${card.enabled && card.complete ? "text-emerald-800" : card.enabled ? "text-amber-800" : "text-foreground"}`}>Obaveštenja i kada je LUMERA zatvorena</p>
+            <p className={`mt-1 text-xs ${card.enabled && card.complete ? "text-emerald-800" : card.enabled ? "text-amber-800" : "text-muted-foreground"}`}>Web Push omogućava da prijavljeni uređaji primaju sistemska obaveštenja, uključujući podsetnike, čak i kada LUMERA nije otvorena. Korisnik i dalje mora da dozvoli obaveštenja u svom pregledaču ili na uređaju.</p>
+            {!card.enabled && <p className="mt-2 text-xs font-medium text-muted-foreground" data-testid="web-push-disabled-message">Integracija je isključena — sistemska Web Push obaveštenja se ne šalju.</p>}
+            {card.enabled && !card.complete && <p className="mt-2 text-xs font-semibold text-amber-800" data-testid="web-push-incomplete-message"><AlertTriangle className="mr-1 inline h-3.5 w-3.5" />Integracija je uključena, ali nepotpuna. Obaveštenja se neće slati dok javni ključ, privatni ključ i kontakt URI ne budu ispravno sačuvani.</p>}
+            {card.enabled && card.complete && <p className="mt-2 text-xs font-semibold text-emerald-800" data-testid="web-push-ready-message"><CheckCircle2 className="mr-1 inline h-3.5 w-3.5" />Integracija je spremna za slanje sistemskih obaveštenja pretplaćenim uređajima.</p>}
+          </div>}
+          {fields[integration].map((field) => <div key={field.key} className="space-y-1.5"><Label htmlFor={`integration-${integration}-${field.key}`}>{field.label}</Label>{card.values[field.key] && <p className="break-all text-xs text-muted-foreground" data-testid={`saved-value-${integration}-${field.key}`}>Sačuvano: {card.values[field.key]}</p>}{field.key === "webhookSecret" && (integration === "sms" || integration === "brevo") ? <>
             <div className="flex gap-2">
-              <div className="flex-1"><PasswordInput data-testid={`input-webhook-secret-${integration}`} value={form[integration][field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => setForm({ ...form, [integration]: { ...form[integration], [field.key]: event.target.value } })} /></div>
+              <div className="flex-1"><PasswordInput id={`integration-${integration}-${field.key}`} data-testid={`input-webhook-secret-${integration}`} value={form[integration][field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => setForm({ ...form, [integration]: { ...form[integration], [field.key]: event.target.value } })} /></div>
               <Button type="button" variant="outline" data-testid={`generate-webhook-secret-${integration}`} onClick={() => generateWebhookSecret(integration)}><KeyRound className="mr-2 h-4 w-4" />Generiši tajnu</Button>
             </div>
             <p className="text-xs text-muted-foreground">Generisana tajna počinje da važi tek kada kliknete „Sačuvaj“.</p>
-          </> : field.secret ? <PasswordInput value={form[integration][field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => setForm({ ...form, [integration]: { ...form[integration], [field.key]: event.target.value } })} /> : <Input type="text" value={form[integration][field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => setForm({ ...form, [integration]: { ...form[integration], [field.key]: event.target.value } })} />}</div>)}
+          </> : field.secret ? <PasswordInput id={`integration-${integration}-${field.key}`} data-testid={`input-${integration}-${field.key}`} value={form[integration][field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => setForm({ ...form, [integration]: { ...form[integration], [field.key]: event.target.value } })} /> : <Input id={`integration-${integration}-${field.key}`} data-testid={`input-${integration}-${field.key}`} type="text" value={form[integration][field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => setForm({ ...form, [integration]: { ...form[integration], [field.key]: event.target.value } })} />}{field.help && <p className="text-xs text-muted-foreground" data-testid={`help-${integration}-${field.key}`}>{field.help}</p>}</div>)}
           {(integration === "google_oauth" || integration === "facebook_oauth") && <div className="rounded-lg border bg-muted/30 p-3"><Label>Redirect URI</Label>{data.redirectUriWarning && <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800" role="alert" data-testid="oauth-redirect-origin-warning"><p className="font-semibold"><AlertTriangle className="mr-1 inline h-3.5 w-3.5" />Upozorenje za domen</p><p className="mt-1 font-medium">{data.redirectUriWarning}</p></div>}<div className="mt-2 flex gap-2"><Input readOnly value={redirectUri(integration)} /><Button variant="outline" size="icon" onClick={() => navigator.clipboard.writeText(redirectUri(integration) ?? "").then(() => toast.success("Redirect URI je kopiran."))}><Copy className="h-4 w-4" /></Button></div></div>}
           {integration === "cloudflare" && <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground"><p className="font-semibold text-foreground">Za brisanje keša fotografija</p><p className="mt-1">Kreirajte Cloudflare API Token sa dozvolom <span className="font-mono">Zone → Cache Purge → Purge</span> za zonu javnog domena. Unesite domen u formatu <span className="font-mono">https://vas-domen.rs</span>, bez putanje.</p><p className="mt-1">Pri deaktivaciji salona sistem briše CDN keš za njegove naslovne i galerijske fotografije.</p><p className="mt-1">Token je šifrovan na serveru i nakon čuvanja se prikazuje samo maskirano.</p></div>}
           {(integration === "sms" || integration === "brevo") && <div className="rounded-lg border bg-muted/30 p-3">

@@ -25,3 +25,15 @@ createRoot(document.getElementById('root')!, {
 // React's root. Once the SPA is mounted we hide it, avoiding hydration
 // mismatches while keeping the existing client-side route architecture intact.
 document.documentElement.dataset.appReady = 'true';
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker
+      .register(`${import.meta.env.BASE_URL}service-worker.js`, {
+        scope: import.meta.env.BASE_URL,
+      })
+      .catch((error: unknown) => {
+        console.error('LUMERA service worker registration failed.', error);
+      });
+  });
+}

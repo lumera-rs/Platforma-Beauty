@@ -15,4 +15,5 @@ export type AdminGetIntegrationsResponseIntegrations = {
   google_oauth: AdminIntegrationCard;
   facebook_oauth: AdminIntegrationCard;
   cloudflare: AdminIntegrationCard;
+  web_push: AdminIntegrationCard;
 };

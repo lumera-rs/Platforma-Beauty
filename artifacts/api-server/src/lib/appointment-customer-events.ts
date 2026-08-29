@@ -24,6 +24,7 @@ import {
 } from "@workspace/db";
 import { lumeraEmailHtml, sendTransactionalEmail } from "./brevo";
 import { notifyCustomer } from "./customer-notifications";
+import { enqueueSystemPushDeliveries } from "./web-push";
 import { sendSms } from "./sms";
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -239,10 +240,34 @@ export async function runAppointmentReminderSweep(now = new Date()) {
       const body = `${groupRows.length > 1 ? `${groupRows.length} tretmana` : services[0]?.name ?? "Tretman"} u salonu ${salon.name} počinje ${first.date} u ${first.startTime}.`;
       const email = user?.email ?? contact?.email;
       const attempted = await deliverSelectedReminderChannels(channels, {
-        push: async () => Boolean(await notifyCustomer(db, {
-          userId, eventKey: eventBase, category: "reminder", title: "Podsetnik za termin",
-          body, deepLink: "/moji-termini", metadata: { bookingGroupId: first.bookingGroupId, appointmentIds: groupRows.map((row) => row.appointment.id), offsetMinutes: offset },
-        })),
+        push: async () => db.transaction(async (tx) => {
+          const notification = await notifyCustomer(tx, {
+            userId, eventKey: eventBase, category: "reminder", title: "Podsetnik za termin",
+            body, deepLink: "/moji-termini", metadata: { bookingGroupId: first.bookingGroupId, appointmentIds: groupRows.map((row) => row.appointment.id), offsetMinutes: offset },
+          });
+          const queued = userId ? await enqueueSystemPushDeliveries(tx, {
+            userId,
+            eventKey: `${eventBase}:system-push`,
+            expiresAt: start,
+            payload: {
+              title: "Podsetnik za termin",
+              body,
+              deepLink: "/moji-termini",
+              tag: eventBase,
+              data: {
+                bookingGroupId: first.bookingGroupId,
+                appointmentIds: groupRows.map((row) => row.appointment.id),
+                appointmentSchedules: groupRows.map((row) => ({
+                  id: row.appointment.id,
+                  date: row.appointment.date,
+                  startTime: row.appointment.startTime,
+                })),
+                offsetMinutes: offset,
+              },
+            },
+          }) : 0;
+          return Boolean(notification) || queued > 0;
+        }),
         ...(email ? {
           email: async () => {
             const emailEventKey = `${eventBase}:email`;

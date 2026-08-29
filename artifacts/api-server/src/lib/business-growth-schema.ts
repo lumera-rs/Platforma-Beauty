@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 80;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 81;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -41,7 +41,7 @@ export const BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY = 0x42470000 + 65;
  */
 const ENUM_LABELS: Record<string, string[]> = {
   appointment_status: ["pending", "confirmed", "completed", "cancelled", "no-show"],
-  integration_key: ["sms", "brevo", "google_oauth", "facebook_oauth", "cloudflare"],
+  integration_key: ["sms", "brevo", "google_oauth", "facebook_oauth", "cloudflare", "web_push"],
   order_status: ["pending", "confirmed", "paid", "processing", "shipped", "delivered", "cancelled"],
   fulfillment_status: ["RECEIVED", "PREPARING", "PACKING", "SHIPPED", "COMPLETED", "CANCELLED"],
   payment_method: ["CARD", "BANK_TRANSFER", "CASH_AT_SALON", "CASH_ON_DELIVERY", "FREE"],

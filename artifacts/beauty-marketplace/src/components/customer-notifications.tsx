@@ -5,6 +5,7 @@ import { Bell, Check, ExternalLink, Loader2, Circle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
+import { CustomerPushPreferences } from "@/components/customer-push-preferences";
 
 export function CustomerNotifications() {
   const { data: notifications, isLoading, refetch, isFetching } = useListCustomerNotifications(
@@ -46,10 +47,11 @@ export function CustomerNotifications() {
 
   return (
     <div className="space-y-4">
+      <CustomerPushPreferences />
       <div className="flex justify-between items-center bg-card p-4 rounded-xl border">
         <div>
-          <h2 className="text-lg font-bold">Obaveštenja</h2>
-          <p className="text-sm text-muted-foreground">Ostanite u toku sa Vašim terminima</p>
+          <h2 className="text-lg font-bold">LUMERA obaveštenje (u aplikaciji)</h2>
+          <p className="text-sm text-muted-foreground">Ova obaveštenja i status pročitanosti ostaju u vašem LUMERA nalogu.</p>
         </div>
         {items.some(n => !n.readAt) && (
           <Button variant="outline" size="sm" onClick={handleMarkAllRead} disabled={markAllRead.isPending}>

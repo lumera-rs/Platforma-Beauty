@@ -1086,6 +1086,7 @@ export type AdminGetIntegrationsResponseIntegrations = {
   google_oauth: AdminIntegrationCard;
   facebook_oauth: AdminIntegrationCard;
   cloudflare: AdminIntegrationCard;
+  web_push: AdminIntegrationCard;
 };
 
 export type AdminGetIntegrationsResponseRedirectUris = {
@@ -1957,6 +1958,30 @@ export type ManualBookingGroupInputGuest = {
   /** @maxLength 320 */
   email?: string;
 };
+
+export interface ManualBookingGroupTreatmentInput {
+  serviceId: string;
+  date: string;
+  /** @nullable */
+  employeeId?: string | null;
+  startTime: string;
+}
+
+export interface ManualBookingGroupInput {
+  salonCustomerId?: string;
+  guest?: ManualBookingGroupInputGuest;
+  /**
+     * @minItems 1
+     * @maxItems 5
+     */
+  treatments: ManualBookingGroupTreatmentInput[];
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  notes?: string | null;
+}
+
 export interface BookingGroupRescheduleTreatmentInput {
   appointmentId: string;
   date: string;
@@ -2151,6 +2176,18 @@ export interface BookingGroupOperationResult {
  * Present when the canonical active booking-group layout invariant failed.
  */
 export type BookingGroupConflictCode = typeof BookingGroupConflictCode[keyof typeof BookingGroupConflictCode];
+
+
+export const BookingGroupConflictCode = {
+  BOOKING_GROUP_LAYOUT_CONFLICT: 'BOOKING_GROUP_LAYOUT_CONFLICT',
+} as const;
+
+export interface BookingGroupConflict {
+  /** Present when the canonical active booking-group layout invariant failed. */
+  code?: BookingGroupConflictCode;
+  error: string;
+}
+
 export type AppointmentLifecycleInputAction = typeof AppointmentLifecycleInputAction[keyof typeof AppointmentLifecycleInputAction];
 
 
@@ -2241,6 +2278,39 @@ export interface CustomerNotificationPage {
   nextCursor: string | null;
   /** @minimum 0 */
   unreadCount: number;
+}
+
+export interface WebPushConfig {
+  configured: boolean;
+  /** @nullable */
+  publicKey: string | null;
+}
+
+export interface PushSubscriptionKeysInput {
+  /**
+     * @minLength 1
+     * @maxLength 1024
+     */
+  p256dh: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  auth: string;
+}
+
+export interface PushSubscriptionInput {
+  /** @maxLength 4096 */
+  endpoint: string;
+  keys: PushSubscriptionKeysInput;
+}
+
+export interface PushSubscription {
+  id: string;
+  endpoint: string;
+  enabled: boolean;
+  lastSeenAt: string;
+  createdAt: string;
 }
 
 export interface TimeSlot {
@@ -12493,36 +12563,3 @@ export type AdminDeleteAutomaticXyPromotionParams = {
  */
 version: number;
 };
-
-export const BookingGroupConflictCode = {
-  BOOKING_GROUP_LAYOUT_CONFLICT: 'BOOKING_GROUP_LAYOUT_CONFLICT',
-} as const;
-
-export interface BookingGroupConflict {
-  /** Present when the canonical active booking-group layout invariant failed. */
-  code?: BookingGroupConflictCode;
-  error: string;
-}
-
-export interface ManualBookingGroupInput {
-  salonCustomerId?: string;
-  guest?: ManualBookingGroupInputGuest;
-  /**
-     * @minItems 1
-     * @maxItems 5
-     */
-  treatments: ManualBookingGroupTreatmentInput[];
-  /**
-     * @maxLength 1000
-     * @nullable
-     */
-  notes?: string | null;
-}
-
-export interface ManualBookingGroupTreatmentInput {
-  serviceId: string;
-  date: string;
-  /** @nullable */
-  employeeId?: string | null;
-  startTime: string;
-}

@@ -181,6 +181,7 @@ import
   salonBrandsTable,
   sessionsTable,
    customerNotificationsTable,
+   pushSubscriptionsTable,
   shippingRulesTable,
   shopSettingsTable,
   shoppingCartItemsTable,
@@ -346,6 +347,12 @@ import
    MarkCustomerNotificationReadParams,
    MarkCustomerNotificationReadResponse,
    MarkAllCustomerNotificationsReadResponse,
+    GetWebPushConfigResponse,
+    ListPushSubscriptionsResponse,
+    UpsertPushSubscriptionBody,
+    UpsertPushSubscriptionResponse,
+    DeletePushSubscriptionParams,
+    DeletePushSubscriptionResponse,
    GetSalonBookingSettingsResponse,
    ReplaceSalonBookingSettingsBody,
    ReplaceSalonBookingSettingsResponse,
@@ -684,6 +691,12 @@ import
 ;
 import { canonicalAvailability, preloadCanonicalAvailability } from "../lib/availability-store";
 import { notifyCustomer } from "../lib/customer-notifications";
+import {
+  publicWebPushConfiguration,
+  parseWebPushConfiguration,
+  validatePushSubscription,
+  webPushConfiguration,
+} from "../lib/web-push";
 import {
   createAppointmentReviewInvitationInTx,
   sendBookingGroupConfirmation,
@@ -4233,6 +4246,7 @@ const integrationDefinitions: Record<IntegrationName, { keys: string[]; required
   google_oauth: { keys: ["clientId", "clientSecret"], required: ["clientId", "clientSecret"] },
   facebook_oauth: { keys: ["clientId", "clientSecret"], required: ["clientId", "clientSecret"] },
   cloudflare: { keys: ["apiKey", "zoneId", "domain"], required: ["apiKey", "zoneId", "domain"] },
+  web_push: { keys: ["publicKey", "privateKey", "subject"], required: ["publicKey", "privateKey", "subject"] },
 };
 
 function integrationName(value: string): value is IntegrationName {
@@ -4358,6 +4372,26 @@ router.put("/admin/integrations/:integration", async (req, res): Promise<void> =
   if (req.params.integration === "sms" && values.baseUrl) {
     try { infobipBaseUrl(values.baseUrl); } catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : "SMS base URL nije ispravan." }); return; }
   }
+  if (req.params.integration === "web_push") {
+    const currentSettings = await integrationSettings("web_push");
+    const nonBlankValues = Object.fromEntries(
+      Object.entries(values).filter(([, value]) => value.trim().length > 0),
+    );
+    const effectiveValues = {
+      ...(currentSettings.configuredInDatabase ? {} : {
+        publicKey: process.env["VAPID_PUBLIC_KEY"],
+        privateKey: process.env["VAPID_PRIVATE_KEY"],
+        subject: process.env["VAPID_SUBJECT"],
+      }),
+      ...currentSettings.values,
+      ...nonBlankValues,
+    };
+    const configuration = parseWebPushConfiguration(effectiveValues);
+    if (body.enabled && !configuration.configured) {
+      res.status(400).json({ error: `Web Push konfiguracija nije ispravna: ${configuration.reason}.` });
+      return;
+    }
+  }
   // A saved webhookSecret that differs from the EFFECTIVE secret (database or
   // env fallback) invalidates the URL registered at the provider. Persist that
   // moment so the re-registration reminder survives reloads; re-saving an
@@ -4412,6 +4446,11 @@ router.post("/admin/integrations/:integration/test", async (req, res): Promise<v
       });
       if ("failed" in result || "skipped" in result) throw new Error("Brevo nije poslao test e-mail. Proverite podešavanja.");
       res.json({ message: "Test e-mail je poslat." }); return;
+    }
+    if (req.params.integration === "web_push") {
+      const configuration = await webPushConfiguration();
+      if (!configuration.configured) throw new Error(`Web Push konfiguracija nije spremna: ${configuration.reason}.`);
+      res.json({ message: "Web Push konfiguracija je potpuna i aktivna." }); return;
     }
     if (req.params.integration === "cloudflare") {
       const [apiKey, zoneId, domain] = await Promise.all([
@@ -6178,6 +6217,99 @@ router.post("/customer/notifications/read-all", async (req, res): Promise<void> 
     eq(customerNotificationsTable.userId, user.id), isNull(customerNotificationsTable.readAt),
   ));
   MarkAllCustomerNotificationsReadResponse.parse(undefined);
+  res.status(204).send();
+});
+
+function pushSubscriptionView(subscription: typeof pushSubscriptionsTable.$inferSelect) {
+  return {
+    id: subscription.id,
+    endpoint: subscription.endpoint,
+    enabled: subscription.enabled,
+    lastSeenAt: subscription.lastSeenAt,
+    createdAt: subscription.createdAt,
+  };
+}
+
+router.get("/push/config", async (_req, res): Promise<void> => {
+  res.set("Cache-Control", "public, max-age=300");
+  res.json(GetWebPushConfigResponse.parse(publicWebPushConfiguration(await webPushConfiguration())));
+});
+
+router.get("/customer/push-subscriptions", async (req, res): Promise<void> => {
+  const user = await current(req, res); if (!user) return;
+  const subscriptions = await db.select().from(pushSubscriptionsTable)
+    .where(eq(pushSubscriptionsTable.userId, user.id))
+    .orderBy(desc(pushSubscriptionsTable.lastSeenAt));
+  res.json(ListPushSubscriptionsResponse.parse(subscriptions.map(pushSubscriptionView)));
+});
+
+router.post("/customer/push-subscriptions", async (req, res): Promise<void> => {
+  const user = await current(req, res); if (!user) return;
+  if (!(await webPushConfiguration()).configured) {
+    res.status(503).json({ error: "Web Push nije konfigurisan." });
+    return;
+  }
+  const parsed = UpsertPushSubscriptionBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  try {
+    validatePushSubscription(parsed.data);
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Neispravna Push pretplata." });
+    return;
+  }
+  const now = new Date();
+  const subscription = await db.transaction(async (tx) => {
+    const [created] = await tx.insert(pushSubscriptionsTable).values({
+      userId: user.id,
+      endpoint: parsed.data.endpoint,
+      p256dh: parsed.data.keys.p256dh,
+      auth: parsed.data.keys.auth,
+      userAgent: req.get("user-agent")?.slice(0, 1000) ?? null,
+      enabled: true,
+      lastSeenAt: now,
+      disabledAt: null,
+      disabledReason: null,
+      updatedAt: now,
+    }).onConflictDoNothing().returning();
+    if (created) return created;
+
+    const [owned] = await tx.update(pushSubscriptionsTable).set({
+      p256dh: parsed.data.keys.p256dh,
+      auth: parsed.data.keys.auth,
+      userAgent: req.get("user-agent")?.slice(0, 1000) ?? null,
+      enabled: true,
+      lastSeenAt: now,
+      disabledAt: null,
+      disabledReason: null,
+      updatedAt: now,
+    }).where(and(
+      eq(pushSubscriptionsTable.endpoint, parsed.data.endpoint),
+      eq(pushSubscriptionsTable.userId, user.id),
+    )).returning();
+    return owned;
+  });
+  if (!subscription) {
+    res.status(409).json({ error: "Ova push pretplata je već povezana sa drugim nalogom." });
+    return;
+  }
+  res.json(UpsertPushSubscriptionResponse.parse(pushSubscriptionView(subscription)));
+});
+
+router.delete("/customer/push-subscriptions/:subscriptionId", async (req, res): Promise<void> => {
+  const user = await current(req, res); if (!user) return;
+  const params = DeletePushSubscriptionParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const [subscription] = await db.update(pushSubscriptionsTable).set({
+    enabled: false,
+    disabledAt: new Date(),
+    disabledReason: "user_disabled",
+    updatedAt: new Date(),
+  }).where(and(
+    eq(pushSubscriptionsTable.id, params.data.subscriptionId),
+    eq(pushSubscriptionsTable.userId, user.id),
+  )).returning({ id: pushSubscriptionsTable.id });
+  if (!subscription) { res.status(404).json({ error: "Push uređaj nije pronađen." }); return; }
+  DeletePushSubscriptionResponse.parse(undefined);
   res.status(204).send();
 });
 
