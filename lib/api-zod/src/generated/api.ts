@@ -1066,11 +1066,13 @@ export const GetGroupedBookingAvailabilityParams = zod.object({
   "salonId": zod.coerce.string().regex(getGroupedBookingAvailabilityPathSalonIdRegExp)
 })
 
+export const getGroupedBookingAvailabilityBodyResultModeDefault = `list`;
 export const getGroupedBookingAvailabilityBodyTreatmentsMax = 5;
 
 export const getGroupedBookingAvailabilityBodyAllowMultipleDaysDefault = false;
 
 export const GetGroupedBookingAvailabilityBody = zod.object({
+  "resultMode": zod.enum(['list', 'calendar']).default(getGroupedBookingAvailabilityBodyResultModeDefault).describe('List preserves the legacy cross-range maximum of five candidates. Calendar returns a day entry for every requested date and supports ranges of up to 14 days.'),
   "treatments": zod.array(zod.object({
   "serviceId": zod.string(),
   "employeeId": zod.string().nullish()
@@ -1085,6 +1087,14 @@ export const getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemPo
 export const getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemBufferMinutesMin = 0;
 
 export const getGroupedBookingAvailabilityResponseCandidatesMax = 5;
+
+export const getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemPositionMin = 0;
+
+export const getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemBufferMinutesMin = 0;
+
+export const getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesMax = 20;
+
+export const getGroupedBookingAvailabilityResponseCalendarDaysMax = 14;
 
 
 
@@ -1104,7 +1114,25 @@ export const GetGroupedBookingAvailabilityResponse = zod.object({
   "endTime": zod.string(),
   "bufferMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemBufferMinutesMin)
 }))
-})).max(getGroupedBookingAvailabilityResponseCandidatesMax)
+})).max(getGroupedBookingAvailabilityResponseCandidatesMax).describe('Legacy list-mode candidates. Empty when resultMode is calendar.'),
+  "calendarDays": zod.array(zod.object({
+  "date": zod.coerce.date(),
+  "candidates": zod.array(zod.object({
+  "date": zod.coerce.date(),
+  "startTime": zod.string(),
+  "endTime": zod.string(),
+  "treatments": zod.array(zod.object({
+  "position": zod.number().int().min(getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemPositionMin),
+  "serviceId": zod.string(),
+  "date": zod.coerce.date(),
+  "employeeId": zod.string().nullable(),
+  "startTime": zod.string(),
+  "endTime": zod.string(),
+  "bufferMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemBufferMinutesMin)
+}))
+})).max(getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesMax).describe('Complete valid treatment-group combinations that start on this date.'),
+  "truncated": zod.boolean().describe('True when more than the safe per-day maximum of 20 valid combinations exist or the bounded candidate-search budget was reached.')
+})).max(getGroupedBookingAvailabilityResponseCalendarDaysMax).optional().describe('Present in calendar mode and includes every requested date, including dates with no candidates.')
 })
 
 

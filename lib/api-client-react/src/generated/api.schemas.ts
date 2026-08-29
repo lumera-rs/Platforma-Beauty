@@ -1831,7 +1831,20 @@ export interface GroupedTreatmentRequest {
   employeeId?: string | null;
 }
 
+/**
+ * List preserves the legacy cross-range maximum of five candidates. Calendar returns a day entry for every requested date and supports ranges of up to 14 days.
+ */
+export type GroupedAvailabilityInputResultMode = typeof GroupedAvailabilityInputResultMode[keyof typeof GroupedAvailabilityInputResultMode];
+
+
+export const GroupedAvailabilityInputResultMode = {
+  list: 'list',
+  calendar: 'calendar',
+} as const;
+
 export interface GroupedAvailabilityInput {
+  /** List preserves the legacy cross-range maximum of five candidates. Calendar returns a day entry for every requested date and supports ranges of up to 14 days. */
+  resultMode?: GroupedAvailabilityInputResultMode;
   /**
      * @minItems 1
      * @maxItems 5
@@ -1863,11 +1876,30 @@ export interface GroupedAvailabilityCandidate {
   treatments: GroupedTreatmentSlot[];
 }
 
+export interface GroupedAvailabilityCalendarDay {
+  date: string;
+  /**
+     * Complete valid treatment-group combinations that start on this date.
+     * @maxItems 20
+     */
+  candidates: GroupedAvailabilityCandidate[];
+  /** True when more than the safe per-day maximum of 20 valid combinations exist or the bounded candidate-search budget was reached. */
+  truncated: boolean;
+}
+
 export interface GroupedAvailabilityResponse {
   salonId: string;
   generatedAt: string;
-  /** @maxItems 5 */
+  /**
+     * Legacy list-mode candidates. Empty when resultMode is calendar.
+     * @maxItems 5
+     */
   candidates: GroupedAvailabilityCandidate[];
+  /**
+     * Present in calendar mode and includes every requested date, including dates with no candidates.
+     * @maxItems 14
+     */
+  calendarDays?: GroupedAvailabilityCalendarDay[];
 }
 
 export interface BookingGroupTreatmentInput {

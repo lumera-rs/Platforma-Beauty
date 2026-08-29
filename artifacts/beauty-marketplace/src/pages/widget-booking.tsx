@@ -21,6 +21,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDateOnly, formatLocalDateOnly, parseLocalDateOnly } from "@/lib/date-only";
 import { trackEvent } from "@/lib/analytics";
+import { useAvailabilityViewMode } from "@/hooks/use-availability-view-mode";
+import { GroupedAvailabilityView } from "@/components/booking/grouped-availability-view";
 
 // Step Enum
 type Step = "CART" | "EMPLOYEE" | "DATETIME" | "CONTACT" | "SUCCESS";
@@ -53,6 +55,7 @@ export default function WidgetBooking() {
   const [toDate, setToDate] = useState(todayDate);
   const [dateError, setDateError] = useState<string | null>(null);
   const [allowMultipleDays, setAllowMultipleDays] = useState(false);
+  const [viewMode, setViewMode] = useAvailabilityViewMode();
 
   const [selectedCandidate, setSelectedCandidate] = useState<GroupedAvailabilityCandidate | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -89,11 +92,13 @@ export default function WidgetBooking() {
 
   const [availabilityResponse, setAvailabilityResponse] = useState<any>(null);
 
-  const refetchAvailability = () => {
+  const latestRequestRef = useRef(0);
+
+  const refetchAvailability = (mode = viewMode) => {
     const parsedFrom = parseLocalDateOnly(fromDate);
     const parsedTo = parseLocalDateOnly(toDate);
     const today = formatLocalDateOnly(startOfToday())!;
-    const maximumTo = parsedFrom ? formatLocalDateOnly(addDays(parsedFrom, 14)) : null;
+    const maximumTo = parsedFrom ? formatLocalDateOnly(addDays(parsedFrom, 13)) : null;
     if (!parsedFrom || !parsedTo) {
       setDateError("Unesite ispravne datume.");
       setAvailabilityResponse({ candidates: [] });
@@ -107,6 +112,7 @@ export default function WidgetBooking() {
       return;
     }
     setDateError(null);
+    const currentId = ++latestRequestRef.current;
     availabilityMutation.mutate({
       salonId: salon?.id ?? "",
       data: {
@@ -114,17 +120,34 @@ export default function WidgetBooking() {
         fromDate,
         toDate,
         allowMultipleDays,
+        resultMode: mode,
       }
     }, {
       onSuccess: (data) => {
+        if (latestRequestRef.current !== currentId) return;
         setAvailabilityResponse(data);
+        const hasCandidates = mode === "calendar"
+          ? (data.calendarDays ?? []).some((d: any) => d.candidates.length > 0)
+          : (data.candidates ?? []).length > 0;
         trackEvent("booking_availability_result", {
           ...analyticsDimensions(),
-          result: data.candidates.length > 0 ? "success" : "empty",
+          result: hasCandidates ? "success" : "empty",
         });
       },
-      onError: () => setAvailabilityResponse({ candidates: [] }),
+      onError: () => {
+        if (latestRequestRef.current !== currentId) return;
+        setAvailabilityResponse({ candidates: [] });
+      },
     });
+  };
+
+  const handleViewModeChange = (mode: "list" | "calendar") => {
+    if (mode === viewMode) return;
+    setViewMode(mode);
+    if (availabilityResponse) {
+      setSelectedCandidate(null);
+      refetchAvailability(mode);
+    }
   };
 
   const isLoadingAvailability = availabilityMutation.isPending;
@@ -404,56 +427,17 @@ export default function WidgetBooking() {
                 </Button>
               </div>
 
-              {isLoadingAvailability || isFetchingAvailability ? (
-                <div className="space-y-3">
-                  <Skeleton className="h-20 w-full rounded-xl" />
-                  <Skeleton className="h-20 w-full rounded-xl" />
-                  <Skeleton className="h-20 w-full rounded-xl" />
-                </div>
-              ) : availabilityResponse?.candidates?.some((candidate: any) =>
-                formatDateOnly(candidate.date, "yyyy-MM-dd")
-                && candidate.treatments?.every((treatment: any) => formatDateOnly(treatment.date, "yyyy-MM-dd"))
-              ) ? (
-                <div className="space-y-3 mb-20">
-                  {availabilityResponse.candidates.filter((candidate: any) =>
-                    formatDateOnly(candidate.date, "yyyy-MM-dd")
-                    && candidate.treatments?.every((treatment: any) => formatDateOnly(treatment.date, "yyyy-MM-dd"))
-                  ).map((c: any, i: number) => (
-                    <Card
-                      key={i}
-                      className={`overflow-hidden cursor-pointer transition-all border-2 ${selectedCandidate === c ? 'border-primary bg-primary/5 ring-4 ring-primary/10' : 'border-border hover:border-primary/40 shadow-sm'}`}
-                      onClick={() => selectCandidate(c)}
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="font-bold text-base text-foreground">{formatDateOnly(c.date, "dd. MM. yyyy.")}</span>
-                          <span className="font-bold text-primary text-lg flex items-center bg-primary/10 px-2.5 py-0.5 rounded-md"><Clock className="w-4 h-4 mr-1.5" /> {c.startTime}</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground font-medium flex items-center mb-3">Završava u {c.endTime}</p>
-
-                        <div className="space-y-1.5 border-t pt-3">
-                          {c.treatments.map((t: any, tidx: number) => {
-                            const svc = salon.services.find(s => s.id === t.serviceId);
-                            const emp = salon.employees.find(e => e.id === t.employeeId);
-                            return (
-                              <div key={tidx} className="flex justify-between items-center text-xs">
-                                <span className="font-medium truncate pr-2">{svc?.name}</span>
-                                <span className="text-muted-foreground whitespace-nowrap">{t.date !== c.date ? `${formatDateOnly(t.date, "dd.MM.")} · ` : ""}{t.startTime} • {emp?.name || "Bilo ko"}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              ) : availabilityResponse ? (
-                <div className="text-center p-8 bg-muted/20 rounded-xl border border-dashed">
-                  <Clock className="w-10 h-10 mx-auto text-muted-foreground/40 mb-3" />
-                  <p className="text-muted-foreground font-medium text-sm">Nema slobodnih termina za izabrani period i kombinaciju usluga.</p>
-                  <p className="text-xs text-muted-foreground mt-2">Pokušajte sa širim rasponom datuma ili uklonite neke usluge.</p>
-                </div>
-              ) : null}
+              <div className="mt-6 mb-20">
+                <GroupedAvailabilityView
+                  isLoading={isLoadingAvailability || isFetchingAvailability}
+                  viewMode={viewMode}
+                  onViewModeChange={handleViewModeChange}
+                  availabilityResponse={availabilityResponse}
+                  salon={salon}
+                  selectedCandidate={selectedCandidate}
+                  onSelectCandidate={selectCandidate}
+                />
+              </div>
 
               {selectedCandidate && (
                 <div className="fixed bottom-0 left-0 right-0 p-4 bg-background border-t shadow-[0_-10px_20px_rgba(0,0,0,0.05)] z-20">

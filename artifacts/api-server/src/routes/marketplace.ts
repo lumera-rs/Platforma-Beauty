@@ -676,7 +676,7 @@ import
 }
  from "../lib/appointment-locks"
 ;
-import { canonicalAvailability } from "../lib/availability-store";
+import { canonicalAvailability, preloadCanonicalAvailability } from "../lib/availability-store";
 import { notifyCustomer } from "../lib/customer-notifications";
 import {
   createAppointmentReviewInvitationInTx,
@@ -6202,12 +6202,19 @@ router.get("/appointments/:appointmentId/salon-contact", async (req, res): Promi
   }));
 });
 
+const GROUPED_AVAILABILITY_CALENDAR_DAY_LIMIT = 20;
+const GROUPED_AVAILABILITY_CALENDAR_BRANCH_LIMIT = 100;
+
 router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<void> => {
   const params = GetGroupedBookingAvailabilityParams.safeParse(req.params);
   const body = GetGroupedBookingAvailabilityBody.safeParse(req.body);
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci za grupnu dostupnost nisu ispravni." }); return; }
   const fromDate = calendarDate(body.data.fromDate); const toDate = calendarDate(body.data.toDate);
   if (!isValidCalendarDate(fromDate) || !isValidCalendarDate(toDate) || fromDate > toDate) { res.status(400).json({ error: "Opseg datuma nije ispravan." }); return; }
+  const requestedDayCount = Math.floor((Date.parse(`${toDate}T00:00:00Z`) - Date.parse(`${fromDate}T00:00:00Z`)) / 86_400_000) + 1;
+  if (body.data.resultMode === "calendar" && requestedDayCount > 14) {
+    res.status(400).json({ error: "Kalendarski prikaz podržava opseg od najviše 14 dana." }); return;
+  }
   const [salon] = await db.select().from(salonsTable).where(and(eq(salonsTable.id, params.data.salonId), eq(salonsTable.active, true))).limit(1);
   if (!salon) { res.status(404).json({ error: "Salon nije pronađen." }); return; }
   const services = await db.select().from(servicesTable).where(and(eq(servicesTable.salonId, salon.id), eq(servicesTable.active, true), inArray(servicesTable.id, body.data.treatments.map((x) => x.serviceId))));
@@ -6216,12 +6223,133 @@ router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<v
   const dates: string[] = [];
   for (let d = new Date(`${fromDate}T12:00:00Z`); d <= new Date(`${toDate}T12:00:00Z`) && dates.length < 31; d.setUTCDate(d.getUTCDate() + 1)) dates.push(d.toISOString().slice(0, 10));
   const serviceById = new Map(services.map((service) => [service.id, service]));
+  const distinctServiceIds = [...new Set(body.data.treatments.map((item) => item.serviceId))];
+  // Persisted facts (including each distinct service's resource requirements)
+  // are loaded once; candidate branches only rerun the canonical pure engine.
+  const availabilityContext = await preloadCanonicalAvailability({
+    salonId: salon.id, dates, serviceIds: distinctServiceIds,
+  });
+  const requirementsByServiceId = availabilityContext.requirementsByServiceId;
   const candidates: Array<{ date: Date; startTime: string; endTime: string; treatments: Array<{ position: number; serviceId: string; date: Date; employeeId: string | null; startTime: string; endTime: string; bufferMinutes: number }> }> = [];
   const first = body.data.treatments[0]!;
-  const firstSlots = await canonicalAvailability({ salonId: salon.id, service: serviceById.get(first.serviceId)!, dates, employeeId: first.employeeId ?? null, granularityMinutes: settings.slotGranularityMinutes });
+  const initialService = serviceById.get(first.serviceId)!;
+
+  if (body.data.resultMode === "calendar") {
+    const calendarDays = [];
+    for (const startingDate of dates) {
+      const dayCandidates: typeof candidates = [];
+      let truncated = false;
+      let evaluatedBranches = 1;
+      let branchBudgetExhausted = false;
+      const firstSlots = await canonicalAvailability({
+        salonId: salon.id, service: initialService, dates: [startingDate],
+        employeeId: first.employeeId ?? null, granularityMinutes: settings.slotGranularityMinutes,
+        resourceRequirements: requirementsByServiceId.get(first.serviceId),
+        context: availabilityContext,
+      });
+
+      const extendCandidate = async (
+        treatmentIndex: number,
+        planned: (typeof candidates)[number]["treatments"],
+        reservedAppointments: Array<{ employeeId: string; date: string; startTime: string; endTime: string; bufferMinutes: number; resourceIds: string[] }>,
+        resourceReservations: Array<{ resourceId: string; quantity: number; date: string; startTime: string; endTime: string; bufferMinutes: number }>,
+        cursorDate: string,
+        cursor: string,
+      ): Promise<void> => {
+        if (dayCandidates.length > GROUPED_AVAILABILITY_CALENDAR_DAY_LIMIT || branchBudgetExhausted) return;
+        if (treatmentIndex === body.data.treatments.length) {
+          dayCandidates.push({
+            date: new Date(`${startingDate}T00:00:00Z`),
+            startTime: planned[0]!.startTime,
+            endTime: cursor,
+            treatments: planned,
+          });
+          if (dayCandidates.length > GROUPED_AVAILABILITY_CALENDAR_DAY_LIMIT) truncated = true;
+          return;
+        }
+
+        const treatment = body.data.treatments[treatmentIndex]!;
+        const service = serviceById.get(treatment.serviceId)!;
+        const candidateDates = body.data.allowMultipleDays
+          ? dates.filter((date) => date >= cursorDate)
+          : [startingDate];
+        if (evaluatedBranches >= GROUPED_AVAILABILITY_CALENDAR_BRANCH_LIMIT) {
+          branchBudgetExhausted = true;
+          truncated = true;
+          return;
+        }
+        evaluatedBranches += 1;
+        const slots = await canonicalAvailability({
+          salonId: salon.id, service, dates: candidateDates, employeeId: treatment.employeeId ?? null,
+          granularityMinutes: settings.slotGranularityMinutes, reservedAppointments, resourceReservations,
+          resourceRequirements: requirementsByServiceId.get(treatment.serviceId),
+          context: availabilityContext,
+        });
+        const gapEnd = appointmentEndTime(cursor, settings.maxVisitGapMinutes) ?? cursor;
+        for (const slot of slots) {
+          if (dayCandidates.length > GROUPED_AVAILABILITY_CALENDAR_DAY_LIMIT || branchBudgetExhausted) return;
+          if (slot.date < cursorDate) continue;
+          if (slot.date === cursorDate && (slot.startTime < cursor || slot.startTime > gapEnd)) continue;
+          if (!body.data.allowMultipleDays && slot.date !== startingDate) continue;
+          if (planned.some((entry) => entry.date.toISOString().slice(0, 10) === slot.date
+            && entry.employeeId === slot.employeeId && entry.startTime < slot.endTime && entry.endTime > slot.startTime)) continue;
+          const requirements = requirementsByServiceId.get(treatment.serviceId) ?? [];
+          await extendCandidate(
+            treatmentIndex + 1,
+            [...planned, {
+              position: treatmentIndex, serviceId: treatment.serviceId, date: new Date(`${slot.date}T00:00:00Z`),
+              employeeId: slot.employeeId, startTime: slot.startTime, endTime: slot.endTime, bufferMinutes: service.bufferMinutes,
+            }],
+            [...reservedAppointments, {
+              employeeId: slot.employeeId, date: slot.date, startTime: slot.startTime, endTime: slot.endTime,
+              bufferMinutes: service.bufferMinutes, resourceIds: requirements.map((item) => item.resourceId),
+            }],
+            [...resourceReservations, ...requirements.map((item) => ({
+              resourceId: item.resourceId, quantity: item.quantity, date: slot.date, startTime: slot.startTime,
+              endTime: appointmentEndTime(slot.endTime, service.bufferMinutes)!, bufferMinutes: 0,
+            }))],
+            slot.date,
+            slot.endTime,
+          );
+        }
+      };
+
+      const firstRequirements = requirementsByServiceId.get(first.serviceId) ?? [];
+      for (const initial of firstSlots) {
+        if (dayCandidates.length > GROUPED_AVAILABILITY_CALENDAR_DAY_LIMIT || branchBudgetExhausted) break;
+        const planned = [{
+          position: 0, serviceId: first.serviceId, date: new Date(`${initial.date}T00:00:00Z`),
+          employeeId: initial.employeeId, startTime: initial.startTime, endTime: initial.endTime,
+          bufferMinutes: initialService.bufferMinutes,
+        }];
+        await extendCandidate(1, planned, [{
+          employeeId: initial.employeeId, date: initial.date, startTime: initial.startTime, endTime: initial.endTime,
+          bufferMinutes: initialService.bufferMinutes, resourceIds: firstRequirements.map((item) => item.resourceId),
+        }], firstRequirements.map((item) => ({
+          resourceId: item.resourceId, quantity: item.quantity, date: initial.date, startTime: initial.startTime,
+          endTime: appointmentEndTime(initial.endTime, initialService.bufferMinutes)!, bufferMinutes: 0,
+        })), initial.date, initial.endTime);
+      }
+      calendarDays.push({
+        date: new Date(`${startingDate}T00:00:00Z`),
+        candidates: dayCandidates.slice(0, GROUPED_AVAILABILITY_CALENDAR_DAY_LIMIT),
+        truncated,
+      });
+    }
+    res.json(GetGroupedBookingAvailabilityResponse.parse({
+      salonId: salon.id, generatedAt: new Date(), candidates: [], calendarDays,
+    }));
+    return;
+  }
+
+  const firstSlots = await canonicalAvailability({
+    salonId: salon.id, service: initialService, dates, employeeId: first.employeeId ?? null,
+    granularityMinutes: settings.slotGranularityMinutes,
+    resourceRequirements: requirementsByServiceId.get(first.serviceId),
+    context: availabilityContext,
+  });
   for (const initial of firstSlots) {
-    const initialService = serviceById.get(first.serviceId)!;
-    const initialRequirements = await fetchServiceResourceRequirements(db, initialService.id);
+    const initialRequirements = requirementsByServiceId.get(initialService.id) ?? [];
     const planned = [{ position: 0, serviceId: first.serviceId, date: new Date(`${initial.date}T00:00:00Z`), employeeId: initial.employeeId, startTime: initial.startTime, endTime: initial.endTime, bufferMinutes: initialService.bufferMinutes }];
     const reservedAppointments = [{
       employeeId: initial.employeeId, date: initial.date, startTime: initial.startTime, endTime: initial.endTime,
@@ -6241,6 +6369,8 @@ router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<v
       const slots = await canonicalAvailability({
         salonId: salon.id, service, dates: candidateDates, employeeId: treatment.employeeId ?? null,
         granularityMinutes: settings.slotGranularityMinutes, reservedAppointments, resourceReservations,
+        resourceRequirements: requirementsByServiceId.get(treatment.serviceId),
+        context: availabilityContext,
       });
       const gapEnd = appointmentEndTime(cursor, settings.maxVisitGapMinutes) ?? cursor;
       const next = slots.find((slot) => {
@@ -6252,7 +6382,7 @@ router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<v
       });
       if (!next) { valid = false; break; }
       planned.push({ position: index, serviceId: treatment.serviceId, date: new Date(`${next.date}T00:00:00Z`), employeeId: next.employeeId, startTime: next.startTime, endTime: next.endTime, bufferMinutes: serviceById.get(treatment.serviceId)!.bufferMinutes });
-      const requirements = await fetchServiceResourceRequirements(db, service.id);
+      const requirements = requirementsByServiceId.get(service.id) ?? [];
       reservedAppointments.push({
         employeeId: next.employeeId, date: next.date, startTime: next.startTime, endTime: next.endTime,
         bufferMinutes: service.bufferMinutes, resourceIds: requirements.map((item) => item.resourceId),

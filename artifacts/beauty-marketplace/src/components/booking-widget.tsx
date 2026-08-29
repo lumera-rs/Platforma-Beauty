@@ -1,5 +1,5 @@
 
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useState, useRef, type RefObject } from "react";
 import { addDays, startOfToday } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,6 +23,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { formatDateOnly, formatLocalDateOnly, parseLocalDateOnly } from "@/lib/date-only";
 import { trackEvent } from "@/lib/analytics";
+import { useAvailabilityViewMode } from "@/hooks/use-availability-view-mode";
+import { GroupedAvailabilityView } from "@/components/booking/grouped-availability-view";
 
 export interface BookingWidgetProps {
   salon: SalonProfile;
@@ -73,10 +75,14 @@ export function BookingWidget(props: BookingWidgetProps) {
 
   const [availabilityResponse, setAvailabilityResponse] = useState<any>(null);
 
-  const refetchAvailability = () => {
+  const [viewMode, setViewMode] = useAvailabilityViewMode();
+
+  const latestRequestRef = useRef(0);
+
+  const refetchAvailability = (mode = viewMode) => {
     const parsedFrom = parseLocalDateOnly(fromDate);
     const parsedTo = parseLocalDateOnly(toDate);
-    const maximumTo = parsedFrom ? formatLocalDateOnly(addDays(parsedFrom, 14)) : null;
+    const maximumTo = parsedFrom ? formatLocalDateOnly(addDays(parsedFrom, 13)) : null;
     if (!parsedFrom || !parsedTo) {
       setDateError("Unesite ispravne datume.");
       setAvailabilityResponse({ candidates: [] });
@@ -90,6 +96,7 @@ export function BookingWidget(props: BookingWidgetProps) {
       return;
     }
     setDateError(null);
+    const currentId = ++latestRequestRef.current;
     availabilityMutation.mutate({
       salonId: props.salon.id,
       data: {
@@ -97,17 +104,34 @@ export function BookingWidget(props: BookingWidgetProps) {
         fromDate,
         toDate,
         allowMultipleDays,
+        resultMode: mode,
       }
     }, {
       onSuccess: (data) => {
+        if (latestRequestRef.current !== currentId) return;
         setAvailabilityResponse(data);
+        const hasCandidates = mode === "calendar"
+          ? (data.calendarDays ?? []).some((d: any) => d.candidates.length > 0)
+          : (data.candidates ?? []).length > 0;
         trackEvent("booking_availability_result", {
           ...analyticsDimensions(),
-          result: data.candidates.length > 0 ? "success" : "empty",
+          result: hasCandidates ? "success" : "empty",
         });
       },
-      onError: () => setAvailabilityResponse({ candidates: [] }),
+      onError: () => {
+        if (latestRequestRef.current !== currentId) return;
+        setAvailabilityResponse({ candidates: [] });
+      },
     });
+  };
+
+  const handleViewModeChange = (mode: "list" | "calendar") => {
+    if (mode === viewMode) return;
+    setViewMode(mode);
+    if (availabilityResponse) {
+      setSelectedCandidate(null);
+      refetchAvailability(mode);
+    }
   };
 
   const isLoadingAvailability = availabilityMutation.isPending;
@@ -307,46 +331,17 @@ export function BookingWidget(props: BookingWidgetProps) {
               </Button>
             </div>
 
-            {isLoadingAvailability || isFetchingAvailability ? (
-              <div className="space-y-2"><div className="h-16 bg-muted animate-pulse rounded-lg"/><div className="h-16 bg-muted animate-pulse rounded-lg"/></div>
-            ) : availabilityResponse?.candidates?.some((candidate: any) =>
-              formatDateOnly(candidate.date, "yyyy-MM-dd")
-              && candidate.treatments?.every((treatment: any) => formatDateOnly(treatment.date, "yyyy-MM-dd"))
-            ) ? (
-              <div className="space-y-2 mb-4">
-                {availabilityResponse.candidates.filter((candidate: any) =>
-                  formatDateOnly(candidate.date, "yyyy-MM-dd")
-                  && candidate.treatments?.every((treatment: any) => formatDateOnly(treatment.date, "yyyy-MM-dd"))
-                ).map((c: any, i: number) => (
-                  <div
-                    key={i}
-                    className={`p-3 rounded-lg cursor-pointer transition-all border-2 ${selectedCandidate === c ? 'border-primary bg-primary/5 ring-4 ring-primary/10' : 'border-border hover:border-primary/40'}`}
-                    onClick={() => selectCandidate(c)}
-                  >
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="font-bold text-sm">{formatDateOnly(c.date, "dd. MM.")}</span>
-                      <span className="font-bold text-primary bg-primary/10 px-2 py-0.5 rounded text-sm"><Clock className="w-3.5 h-3.5 inline mr-1" />{c.startTime}</span>
-                    </div>
-                    <div className="space-y-1 mt-2">
-                      {c.treatments.map((t: any, tidx: number) => {
-                        const svc = props.salon.services.find(s => s.id === t.serviceId);
-                        const emp = props.salon.staff.find(e => e.id === t.employeeId);
-                        return (
-                          <div key={tidx} className="flex justify-between items-center text-xs">
-                            <span className="font-medium truncate pr-2 text-muted-foreground">{svc?.name}</span>
-                            <span className="text-muted-foreground whitespace-nowrap">{t.date !== c.date ? `${formatDateOnly(t.date, "dd.MM.")} · ` : ""}{t.startTime} • {emp?.name || "Bilo ko"}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : availabilityResponse ? (
-              <div className="text-center p-6 bg-muted/20 rounded-xl border border-dashed mb-4">
-                <p className="text-sm text-muted-foreground">Nema slobodnih termina za ovaj period.</p>
-              </div>
-            ) : null}
+            <div className="mt-6">
+              <GroupedAvailabilityView
+                isLoading={isLoadingAvailability || isFetchingAvailability}
+                viewMode={viewMode}
+                onViewModeChange={handleViewModeChange}
+                availabilityResponse={availabilityResponse}
+                salon={props.salon}
+                selectedCandidate={selectedCandidate}
+                onSelectCandidate={selectCandidate}
+              />
+            </div>
 
             <div className="flex gap-2 mt-4 pt-4 border-t">
               <Button variant="outline" className="w-1/3" onClick={() => setStep("EMPLOYEE")}>Nazad</Button>

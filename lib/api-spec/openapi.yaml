@@ -8714,6 +8714,11 @@ components:
     GroupedAvailabilityInput:
       type: object
       properties:
+        resultMode:
+          type: string
+          enum: [list, calendar]
+          default: list
+          description: List preserves the legacy cross-range maximum of five candidates. Calendar returns a day entry for every requested date and supports ranges of up to 14 days.
         treatments:
           type: array
           minItems: 1
@@ -8747,6 +8752,19 @@ components:
           type: array
           items: { $ref: "#/components/schemas/GroupedTreatmentSlot" }
       required: [date, startTime, endTime, treatments]
+    GroupedAvailabilityCalendarDay:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        candidates:
+          type: array
+          maxItems: 20
+          description: Complete valid treatment-group combinations that start on this date.
+          items: { $ref: "#/components/schemas/GroupedAvailabilityCandidate" }
+        truncated:
+          type: boolean
+          description: True when more than the safe per-day maximum of 20 valid combinations exist or the bounded candidate-search budget was reached.
+      required: [date, candidates, truncated]
     GroupedAvailabilityResponse:
       type: object
       properties:
@@ -8755,7 +8773,13 @@ components:
         candidates:
           type: array
           maxItems: 5
+          description: Legacy list-mode candidates. Empty when resultMode is calendar.
           items: { $ref: "#/components/schemas/GroupedAvailabilityCandidate" }
+        calendarDays:
+          type: array
+          maxItems: 14
+          description: Present in calendar mode and includes every requested date, including dates with no candidates.
+          items: { $ref: "#/components/schemas/GroupedAvailabilityCalendarDay" }
       required: [salonId, generatedAt, candidates]
     BookingGroupTreatmentInput:
       type: object

@@ -121,3 +121,4 @@
 - [Paginated fixture assertions](paginated-fixture-assertions.md) — membership checks on public lists must isolate fixtures or request a page guaranteed to contain them.
 - [Checkout fixture entitlements](checkout-fixture-entitlements.md) — base-price and shipping assertions must neutralize seeded benefits and restore them afterward.
 - [Relational fixture cleanup](relational-fixture-cleanup.md) — marker-owned parent rows may acquire dependents while an integration test is running; clean the dependency chain first.
+- [Availability branch preloading](availability-branch-preloading.md) — combinatorial previews reuse one request-scoped data snapshot while rerunning the canonical engine per branch.

@@ -5,9 +5,12 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { GroupedAvailabilityInputResultMode } from './groupedAvailabilityInputResultMode';
 import type { GroupedTreatmentRequest } from './groupedTreatmentRequest';
 
 export interface GroupedAvailabilityInput {
+  /** List preserves the legacy cross-range maximum of five candidates. Calendar returns a day entry for every requested date and supports ranges of up to 14 days. */
+  resultMode?: GroupedAvailabilityInputResultMode;
   /**
      * @minItems 1
      * @maxItems 5

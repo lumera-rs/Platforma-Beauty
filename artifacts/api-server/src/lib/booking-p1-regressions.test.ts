@@ -14,6 +14,7 @@ import {
   pool,
   salonBookingSettingsTable,
   salonCustomersTable,
+  salonDateHoursTable,
   salonResourcesTable,
   salonsTable,
   serviceResourceRequirementsTable,
@@ -109,8 +110,16 @@ async function run(): Promise<void> {
   });
   await db.insert(salonBookingSettingsTable).values({
     salonId: salon!.id,
-    slotGranularityMinutes: 30,
+    slotGranularityMinutes: 15,
     maxVisitGapMinutes: 0,
+  });
+  await db.insert(salonDateHoursTable).values({
+    salonId: salon!.id,
+    date: "2099-12-03",
+    closed: true,
+    openTime: null,
+    closeTime: null,
+    reason: "Calendar availability regression",
   });
   const [contact] = await db.insert(salonCustomersTable).values({
     salonId: salon!.id,
@@ -158,9 +167,56 @@ async function run(): Promise<void> {
   await once(server, "listening");
   const address = server.address() as AddressInfo;
   const baseUrl = `http://127.0.0.1:${address.port}`;
+  const originalQuery = pool.query.bind(pool);
+  let requestQueryCount = 0;
+  pool.query = ((...args: Parameters<typeof pool.query>) => {
+    requestQueryCount += 1;
+    return originalQuery(...args);
+  }) as typeof pool.query;
 
   try {
+    const legacyList = await post(baseUrl, `/salons/${salon!.id}/grouped-availability`, ownerSession, {
+      treatments: [{ serviceId: service!.id, employeeId: employee!.id }],
+      fromDate: "2099-12-02",
+      toDate: "2099-12-02",
+      allowMultipleDays: false,
+    });
+    assert.equal(legacyList.status, 200);
+    assert.equal((legacyList.body.candidates as unknown[]).length, 5, "legacy grouped availability list must remain capped at five candidates");
+
+    const calendarAvailability = await post(baseUrl, `/salons/${salon!.id}/grouped-availability`, ownerSession, {
+      resultMode: "calendar",
+      treatments: [{ serviceId: service!.id, employeeId: employee!.id }],
+      fromDate: "2099-12-02",
+      toDate: "2099-12-03",
+      allowMultipleDays: false,
+    });
+    assert.equal(calendarAvailability.status, 200);
+    const calendarDays = calendarAvailability.body.calendarDays as Array<{ date: string; candidates: unknown[]; truncated: boolean }>;
+    assert.equal(calendarDays.length, 2, "calendar mode must return every requested date");
+    assert.equal(calendarDays[0]!.candidates.length, 20, "an open day must respect the explicit safe per-day candidate cap");
+    assert.equal(calendarDays[1]!.candidates.length, 0, "a closed day must not expose an incomplete candidate");
+    assert.equal(calendarDays[0]!.truncated, true, "a capped calendar day must report truncation");
+
+    requestQueryCount = 0;
+    const boundedCalendar = await post(baseUrl, `/salons/${salon!.id}/grouped-availability`, ownerSession, {
+      resultMode: "calendar",
+      treatments: [
+        { serviceId: service!.id, employeeId: employee!.id },
+        { serviceId: service!.id, employeeId: otherEmployee!.id },
+      ],
+      fromDate: "2099-12-02",
+      toDate: "2099-12-15",
+      allowMultipleDays: false,
+    });
+    assert.equal(boundedCalendar.status, 200);
+    assert.ok(
+      requestQueryCount <= 16,
+      `14-day calendar availability used ${requestQueryCount} queries; invariant availability facts must be loaded once per request`,
+    );
+
     const groupedAvailability = await post(baseUrl, `/salons/${salon!.id}/grouped-availability`, ownerSession, {
+      resultMode: "calendar",
       treatments: [
         { serviceId: service!.id, employeeId: employee!.id },
         { serviceId: service!.id, employeeId: otherEmployee!.id },
@@ -171,15 +227,24 @@ async function run(): Promise<void> {
     });
     assert.equal(groupedAvailability.status, 200);
     assert.equal(
-      (groupedAvailability.body.candidates as unknown[]).length,
+      ((groupedAvailability.body.calendarDays as Array<{ candidates: unknown[] }>)[0]?.candidates.length),
       0,
-      "grouped availability must reject adjacent capacity-one treatments when the first treatment's resource buffer overlaps",
+      "calendar candidates must reject adjacent capacity-one treatments when the first treatment's resource buffer overlaps",
     );
+
+    const oversizedCalendarRange = await post(baseUrl, `/salons/${salon!.id}/grouped-availability`, ownerSession, {
+      resultMode: "calendar",
+      treatments: [{ serviceId: service!.id }],
+      fromDate: "2099-12-01",
+      toDate: "2099-12-15",
+      allowMultipleDays: false,
+    });
+    assert.equal(oversizedCalendarRange.status, 400, "calendar mode must reject ranges over 14 days");
 
     const offGridPreview = await post(baseUrl, "/employee/appointment-series/preview", employeeSession, {
       serviceId: service!.id,
       employeeId: employee!.id,
-      slots: [{ date: "2099-12-02", startTime: "10:15" }],
+      slots: [{ date: "2099-12-02", startTime: "10:07" }],
     });
     assert.equal(offGridPreview.status, 200);
     assert.equal(
@@ -245,6 +310,7 @@ async function run(): Promise<void> {
     const [cancelled] = await db.select().from(appointmentsTable).where(eq(appointmentsTable.id, appointment!.id));
     assert.equal(cancelled!.status, "cancelled");
   } finally {
+    pool.query = originalQuery;
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     await db.delete(salonsTable).where(eq(salonsTable.id, salon!.id));
     await db.delete(usersTable).where(eq(usersTable.id, owner!.id));

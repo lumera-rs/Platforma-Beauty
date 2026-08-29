@@ -5,11 +5,20 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { GroupedAvailabilityCalendarDay } from './groupedAvailabilityCalendarDay';
 import type { GroupedAvailabilityCandidate } from './groupedAvailabilityCandidate';
 
 export interface GroupedAvailabilityResponse {
   salonId: string;
   generatedAt: Date;
-  /** @maxItems 5 */
+  /**
+     * Legacy list-mode candidates. Empty when resultMode is calendar.
+     * @maxItems 5
+     */
   candidates: GroupedAvailabilityCandidate[];
+  /**
+     * Present in calendar mode and includes every requested date, including dates with no candidates.
+     * @maxItems 14
+     */
+  calendarDays?: GroupedAvailabilityCalendarDay[];
 }
