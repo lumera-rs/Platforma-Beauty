@@ -2043,9 +2043,23 @@ export interface Appointment {
   /** @nullable */
   plannedEndTime?: string | null;
   /** @nullable */
+  arrivedAt?: string | null;
+  /** @nullable */
+  arrivedByUserId?: string | null;
+  /** @nullable */
   actualStartedAt?: string | null;
   /** @nullable */
+  startedByUserId?: string | null;
+  /** @nullable */
   actualCompletedAt?: string | null;
+  /** @nullable */
+  updatedByUserId?: string | null;
+  /** @nullable */
+  cancelledByUserId?: string | null;
+  /** @nullable */
+  completedByUserId?: string | null;
+  /** @nullable */
+  noShowByUserId?: string | null;
   /** @nullable */
   confirmedAt?: string | null;
   /** @nullable */
@@ -2074,6 +2088,7 @@ export type AppointmentLifecycleInputAction = typeof AppointmentLifecycleInputAc
 
 export const AppointmentLifecycleInputAction = {
   confirm: 'confirm',
+  arrive: 'arrive',
   start: 'start',
   complete: 'complete',
   cancel: 'cancel',
@@ -2088,6 +2103,41 @@ export interface AppointmentLifecycleInput {
      * @nullable
      */
   reason?: string | null;
+}
+
+export interface EmployeeAssignedLocation {
+  salonId: string;
+  name: string;
+  isDefault: boolean;
+}
+
+export interface EmployeeAssignedLocations {
+  activeSalonId: string;
+  locations: EmployeeAssignedLocation[];
+}
+
+export interface EmployeeActiveLocationInput {
+  salonId: string;
+}
+
+export interface EmployeeActiveLocation {
+  activeSalonId: string;
+}
+
+export type AppointmentLifecycleConflictCode = typeof AppointmentLifecycleConflictCode[keyof typeof AppointmentLifecycleConflictCode];
+
+
+export const AppointmentLifecycleConflictCode = {
+  INVALID_TRANSITION: 'INVALID_TRANSITION',
+  INSUFFICIENT_USEFUL_TIME: 'INSUFFICIENT_USEFUL_TIME',
+} as const;
+
+export interface AppointmentLifecycleConflict {
+  error: string;
+  code: AppointmentLifecycleConflictCode;
+  remainingMinutes?: number;
+  minimumUsefulMinutes?: number;
+  plannedEndAt?: string;
 }
 
 export type CustomerNotificationCategory = typeof CustomerNotificationCategory[keyof typeof CustomerNotificationCategory];

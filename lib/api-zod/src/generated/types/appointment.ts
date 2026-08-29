@@ -52,9 +52,23 @@ export interface Appointment {
   /** @nullable */
   plannedEndTime?: string | null;
   /** @nullable */
+  arrivedAt?: Date | null;
+  /** @nullable */
+  arrivedByUserId?: string | null;
+  /** @nullable */
   actualStartedAt?: Date | null;
   /** @nullable */
+  startedByUserId?: string | null;
+  /** @nullable */
   actualCompletedAt?: Date | null;
+  /** @nullable */
+  updatedByUserId?: string | null;
+  /** @nullable */
+  cancelledByUserId?: string | null;
+  /** @nullable */
+  completedByUserId?: string | null;
+  /** @nullable */
+  noShowByUserId?: string | null;
   /** @nullable */
   confirmedAt?: Date | null;
   /** @nullable */

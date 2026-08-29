@@ -11,6 +11,7 @@ export type AppointmentLifecycleInputAction = typeof AppointmentLifecycleInputAc
 
 export const AppointmentLifecycleInputAction = {
   confirm: 'confirm',
+  arrive: 'arrive',
   start: 'start',
   complete: 'complete',
   cancel: 'cancel',

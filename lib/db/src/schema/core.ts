@@ -712,7 +712,10 @@ export const appointmentsTable = pgTable("appointments", {
   plannedDate: date("planned_date", { mode: "string" }),
   plannedStartTime: text("planned_start_time"),
   plannedEndTime: text("planned_end_time"),
+  arrivedAt: timestamp("arrived_at", { withTimezone: true }),
+  arrivedByUserId: uuid("arrived_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   actualStartedAt: timestamp("actual_started_at", { withTimezone: true }),
+  startedByUserId: uuid("started_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   actualCompletedAt: timestamp("actual_completed_at", { withTimezone: true }),
   createdByUserId: uuid("created_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   updatedByUserId: uuid("updated_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
@@ -745,6 +748,8 @@ export const appointmentsTable = pgTable("appointments", {
   index("appointments_booking_group_idx").on(table.bookingGroupId),
   index("appointments_created_by_idx").on(table.createdByUserId),
   index("appointments_updated_by_idx").on(table.updatedByUserId),
+  index("appointments_arrived_by_idx").on(table.arrivedByUserId),
+  index("appointments_started_by_idx").on(table.startedByUserId),
   index("appointments_cancelled_by_idx").on(table.cancelledByUserId),
   index("appointments_completed_by_idx").on(table.completedByUserId),
   index("appointments_no_show_by_idx").on(table.noShowByUserId),
@@ -831,7 +836,10 @@ export const appointmentStatusHistoryTable = pgTable("appointment_status_history
   id: uuid("id").defaultRandom().primaryKey(),
   appointmentId: uuid("appointment_id").notNull().references(() => appointmentsTable.id, { onDelete: "cascade" }),
   status: appointmentStatusEnum("status").notNull(),
+  /** Lifecycle action is nullable for legacy status-only history entries. */
+  action: text("action"),
   changedByUserId: uuid("changed_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   // Leading FK coverage for appointmentId (also ordered for timeline display).

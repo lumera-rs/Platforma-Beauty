@@ -699,9 +699,9 @@ async function run(): Promise<void> {
       const blockedMutation = await mutate(
         base,
         sesOwnerA,
-        `/salon/appointments/${apptA!.id}`,
-        "PATCH",
-        { status: "completed" },
+        `/appointments/${apptA!.id}/lifecycle`,
+        "POST",
+        { action: "arrive" },
       );
       assertRejected(blockedMutation, "A.9 owner A cannot mutate salon A appointment while A2 is active");
       const [unchanged] = await db.select({ status: appointmentsTable.status })
@@ -719,7 +719,7 @@ async function run(): Promise<void> {
 
     // B.1 PATCH appointment B as owner A → 403/404
     {
-      const r = await mutate(base, sesOwnerA, `/salon/appointments/${apptB!.id}`, "PATCH", { status: "confirmed" });
+      const r = await mutate(base, sesOwnerA, `/appointments/${apptB!.id}/lifecycle`, "POST", { action: "arrive" });
       assertRejected(r, "B.1 owner A PATCH appt B");
       // Verify B state unchanged
       const [row] = await db.select({ status: appointmentsTable.status })
@@ -875,7 +875,7 @@ async function run(): Promise<void> {
 
     // C.2 Employee A cannot patch appointment B
     {
-      const r = await mutate(base, sesEmpA, `/employee/appointments/${apptB!.id}`, "PATCH", { status: "completed" });
+      const r = await mutate(base, sesEmpA, `/appointments/${apptB!.id}/lifecycle`, "POST", { action: "arrive" });
       assertRejected(r, "C.2 employee A PATCH appt B");
       const [row] = await db.select({ status: appointmentsTable.status })
         .from(appointmentsTable).where(eq(appointmentsTable.id, apptB!.id)).limit(1);
@@ -885,7 +885,7 @@ async function run(): Promise<void> {
 
     // C.3 Employee A cannot patch another employee's appointment in salon A
     {
-      const r = await mutate(base, sesEmpA, `/employee/appointments/${apptAOther!.id}`, "PATCH", { status: "completed" });
+      const r = await mutate(base, sesEmpA, `/appointments/${apptAOther!.id}/lifecycle`, "POST", { action: "arrive" });
       assertRejected(r, "C.3 employee A PATCH another salon A employee appointment");
       const [row] = await db.select({ status: appointmentsTable.status })
         .from(appointmentsTable).where(eq(appointmentsTable.id, apptAOther!.id)).limit(1);

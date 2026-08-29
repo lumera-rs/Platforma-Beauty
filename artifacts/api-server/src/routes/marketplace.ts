@@ -682,6 +682,11 @@ import {
   createAppointmentReviewInvitationInTx,
   sendBookingGroupConfirmation,
 } from "../lib/appointment-customer-events";
+import {
+  canTransitionAppointmentLifecycle,
+  isAllowedLifecycleOccurredAt,
+  zonedAppointmentInstant,
+} from "../lib/appointment-lifecycle";
 
 import 
 {
@@ -1743,9 +1748,28 @@ class PackageRedemptionError extends Error {
   }
 }
 
+async function insertInitializedAppointmentInTx(
+  tx: any,
+  values: any,
+  status: "pending" | "confirmed",
+  actorId: string | null,
+) {
+  const initializedAt = new Date();
+  const [appointment] = await tx.insert(appointmentsTable).values({
+    ...values, status, createdByUserId: actorId, updatedByUserId: actorId,
+    confirmedAt: status === "confirmed" ? initializedAt : null,
+  }).returning();
+  if (status === "confirmed") await tx.insert(appointmentStatusHistoryTable).values({
+    appointmentId: appointment!.id, status: "confirmed", action: "confirm",
+    changedByUserId: actorId, occurredAt: initializedAt,
+  });
+  return appointment!;
+}
+
 export async function createAllocatedAppointment(input: {
   salonId: string; customerId: string | null; salonCustomerId?: string | null; serviceId: string; date: string; startTime: string;
   endTime: string; durationMinutes: number; price: number; status: "pending" | "confirmed"; notes?: string | null; preferredEmployeeId?: string | null;
+  createdByUserId?: string | null;
   treatmentLocation?: "salon" | "home"; travelFee?: number; treatmentAddress?: { line1: string; city: string; postalCode?: string; details?: string } | null;
   /** When set, redeem this package purchase against the created appointment in the SAME transaction. */
   packagePurchaseId?: string | null;
@@ -1785,16 +1809,16 @@ export async function createAllocatedAppointment(input: {
     if (!revalidated.some((slot) => slot.startTime === input.startTime && slot.endTime === input.endTime)) {
       return { employee: null, appointment: null };
     }
-    const [appointment] = await tx.insert(appointmentsTable).values({
+    const appointment = await insertInitializedAppointmentInTx(tx, {
       salonId: input.salonId, customerId: input.customerId, salonCustomerId: input.salonCustomerId ?? null, employeeId: employee.id, serviceId: input.serviceId,
-      date: input.date, startTime: input.startTime, endTime: input.endTime, durationMinutes: input.durationMinutes, price: input.price, status: input.status, notes: input.notes ?? null,
+      date: input.date, startTime: input.startTime, endTime: input.endTime, durationMinutes: input.durationMinutes, price: input.price, notes: input.notes ?? null,
       treatmentLocation: input.treatmentLocation ?? "salon", travelFee: input.travelFee ?? 0,
       treatmentAddressLine1: input.treatmentAddress?.line1 ?? null, treatmentAddressCity: input.treatmentAddress?.city ?? null,
       treatmentAddressPostalCode: input.treatmentAddress?.postalCode ?? null, treatmentAddressDetails: input.treatmentAddress?.details ?? null,
-    }).returning();
+    }, input.status, input.createdByUserId ?? null);
     // allocateResourcesInTx throws ResourceCapacityError → transaction rolls back.
     await allocateResourcesInTx(
-      tx, input.salonId, requirements, appointment!.id, input.date, input.startTime,
+      tx, input.salonId, requirements, appointment.id, input.date, input.startTime,
       requirements.length ? bufferedEnd : input.endTime,
     );
     // Atomic package redemption — any failure throws → whole booking rolls back.
@@ -1949,7 +1973,7 @@ async function createAppointmentSeries(input: {
       if (!revalidated.some((candidate) => candidate.startTime === slot.startTime && candidate.endTime === slot.endTime)) {
         throw new AppointmentSeriesError(`Termin ${slot.date} u ${slot.startTime} više nije slobodan.`);
       }
-      const [appointment] = await tx.insert(appointmentsTable).values({
+      const appointment = await insertInitializedAppointmentInTx(tx, {
         salonId: input.salonId,
         customerId: input.customerId,
         salonCustomerId: input.salonCustomerId,
@@ -1961,9 +1985,8 @@ async function createAppointmentSeries(input: {
         endTime: slot.endTime,
         durationMinutes: input.service.durationMinutes,
         price: input.service.promoPrice ?? input.service.price,
-        status: "confirmed",
         notes: input.notes ?? null,
-      }).returning();
+      }, "confirmed", input.createdByUserId);
       // allocateResourcesInTx throws ResourceCapacityError → rolls back.
       const bufferedEnd = appointmentEndTime(slot.endTime, input.service.bufferMinutes);
       if (!bufferedEnd) throw new AppointmentSeriesError(`Bafer termina ${slot.date} u ${slot.startTime} izlazi van dana.`);
@@ -3211,7 +3234,18 @@ export type SalonEmployeeAccess = {
  * employee_location_assignments is the sole authorization source for a
  * multi-location employee.
  */
-async function resolveActiveEmployeeSalon(employeeId: string) {
+async function resolveActiveEmployeeSalon(employeeId: string, selectedSalonId: string | null) {
+  if (selectedSalonId) {
+    const [selected] = await db.select().from(employeeLocationAssignmentsTable).where(and(
+      eq(employeeLocationAssignmentsTable.employeeId, employeeId),
+      eq(employeeLocationAssignmentsTable.salonId, selectedSalonId),
+      eq(employeeLocationAssignmentsTable.active, true),
+    )).limit(1);
+    if (selected) {
+      const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, selected.salonId)).limit(1);
+      if (salon) return salon;
+    }
+  }
   const [assignment] = await db.select().from(employeeLocationAssignmentsTable)
     .where(and(
       eq(employeeLocationAssignmentsTable.employeeId, employeeId),
@@ -3250,13 +3284,40 @@ export async function requireSalonEmployee(req: Request, res: Response): Promise
   }
   // Employees never inherit an owner's activeSalonId. Their portal is pinned to
   // their active default assignment (with a deterministic assigned fallback).
-  const salon = await resolveActiveEmployeeSalon(employee.id);
+  const salon = await resolveActiveEmployeeSalon(employee.id, user.activeSalonId);
   if (!salon) {
     res.status(403).json({ error: "Profil zaposlenog nije povezan sa salonom." });
     return null;
   }
   return { user, employee, salon };
 }
+
+router.get("/employee/locations", async (req, res): Promise<void> => {
+  const access = await requireSalonEmployee(req, res); if (!access) return;
+  const rows = await db.select({
+    salonId: salonsTable.id, name: salonsTable.name, active: employeeLocationAssignmentsTable.active,
+    isDefault: employeeLocationAssignmentsTable.isDefault,
+  }).from(employeeLocationAssignmentsTable)
+    .innerJoin(salonsTable, eq(salonsTable.id, employeeLocationAssignmentsTable.salonId))
+    .where(and(eq(employeeLocationAssignmentsTable.employeeId, access.employee.id), eq(employeeLocationAssignmentsTable.active, true)))
+    .orderBy(desc(employeeLocationAssignmentsTable.isDefault), asc(salonsTable.name));
+  res.json({ activeSalonId: access.salon.id, locations: rows.map((row) => ({ salonId: row.salonId, name: row.name, isDefault: row.isDefault })) });
+});
+
+router.patch("/employee/active-location", async (req, res): Promise<void> => {
+  const access = await requireSalonEmployee(req, res); if (!access) return;
+  const salonId = req.body?.salonId;
+  if (typeof salonId !== "string") { res.status(400).json({ error: "salonId je obavezan." }); return; }
+  const [assignment] = await db.select({ salonId: employeeLocationAssignmentsTable.salonId })
+    .from(employeeLocationAssignmentsTable).where(and(
+      eq(employeeLocationAssignmentsTable.employeeId, access.employee.id),
+      eq(employeeLocationAssignmentsTable.salonId, salonId),
+      eq(employeeLocationAssignmentsTable.active, true),
+    )).limit(1);
+  if (!assignment) { res.status(403).json({ error: "Zaposleni nije aktivno raspoređen na ovu lokaciju." }); return; }
+  await db.update(usersTable).set({ activeSalonId: salonId, updatedAt: new Date() }).where(eq(usersTable.id, access.user.id));
+  res.json({ activeSalonId: salonId });
+});
 
 type ShopAccess = {
   user: typeof usersTable.$inferSelect;
@@ -3292,7 +3353,7 @@ async function requireShopAccess(req: Request, res: Response): Promise<ShopAcces
   // Keep shop operations in precisely the same assignment-scoped location as
   // the employee portal; employees.salonId is a legacy/historic location and
   // must never authorize a fallback here.
-  const salon = await resolveActiveEmployeeSalon(employee.id);
+  const salon = await resolveActiveEmployeeSalon(employee.id, user.activeSalonId);
   if (!salon) {
     res.status(403).json({ error: "Profil zaposlenog nije povezan sa salonom." });
     return null;
@@ -3477,6 +3538,22 @@ function appointmentView(
     bookingGroupId: appointment.bookingGroupId,
     status: appointment.status,
     notes: appointment.notes,
+    plannedDate: appointment.plannedDate,
+    plannedStartTime: appointment.plannedStartTime,
+    plannedEndTime: appointment.plannedEndTime,
+    arrivedAt: appointment.arrivedAt,
+    arrivedByUserId: appointment.arrivedByUserId,
+    actualStartedAt: appointment.actualStartedAt,
+    startedByUserId: appointment.startedByUserId,
+    actualCompletedAt: appointment.actualCompletedAt,
+    confirmedAt: appointment.confirmedAt,
+    cancelledAt: appointment.cancelledAt,
+    completedAt: appointment.completedAt,
+    noShowAt: appointment.noShowAt,
+    updatedByUserId: appointment.updatedByUserId,
+    cancelledByUserId: appointment.cancelledByUserId,
+    completedByUserId: appointment.completedByUserId,
+    noShowByUserId: appointment.noShowByUserId,
     rescheduledConfirmation,
     allocatedResources,
   };
@@ -6277,11 +6354,11 @@ router.post("/booking-groups", async (req, res): Promise<void> => {
       const appointments: Array<{ appointment: typeof appointmentsTable.$inferSelect; employee: typeof employeesTable.$inferSelect; service: typeof servicesTable.$inferSelect }> = [];
       for (let position = 0; position < planned.length; position++) {
         const { item, service, date: itemDate, endTime, employeeId } = planned[position]!;
-        const [appointment] = await tx.insert(appointmentsTable).values({
+        const appointment = await insertInitializedAppointmentInTx(tx, {
           salonId: salon.id, customerId: user.id, salonCustomerId: crm.id, employeeId, serviceId: service.id, bookingGroupId: group!.id,
           date: itemDate, startTime: item.startTime, endTime, durationMinutes: service.durationMinutes, price: service.promoPrice ?? service.price,
-          status: salon.instantBooking ? "confirmed" : "pending", notes: parsed.data.notes ?? null, plannedDate: itemDate, plannedStartTime: item.startTime, plannedEndTime: endTime,
-        }).returning();
+          notes: parsed.data.notes ?? null, plannedDate: itemDate, plannedStartTime: item.startTime, plannedEndTime: endTime,
+        }, salon.instantBooking ? "confirmed" : "pending", user.id);
         await tx.insert(appointmentTreatmentsTable).values({ appointmentId: appointment!.id, serviceId: service.id, employeeId, position, durationMinutes: service.durationMinutes, bufferMinutes: service.bufferMinutes, price: service.promoPrice ?? service.price, plannedStartTime: item.startTime, plannedEndTime: endTime });
         const bufferedEnd = appointmentEndTime(endTime, service.bufferMinutes);
         if (!bufferedEnd) throw new AppointmentSeriesError("Bafer tretmana izlazi van dana.", 409);
@@ -6522,17 +6599,17 @@ router.post("/booking-groups/:bookingGroupId/cancel", async (req, res): Promise<
       if (access.employee && affected.some((item) => item.employeeId !== access.employee!.id)) {
         throw new AppointmentSeriesError("Zaposleni može otkazati samo svoje tretmane.", 403);
       }
+      if (affected.some((item) => item.arrivedAt || item.actualStartedAt)) {
+        throw new AppointmentSeriesError("Pristigli ili započeti tretman ne može biti otkazan.", 409);
+      }
       await lockAppointmentResources(tx, access.salon.id, affected.map((item) => ({ date: item.date, employeeId: item.employeeId })));
       const cancelledAt = new Date();
       for (const appointment of affected) {
-        await tx.update(appointmentsTable).set({
-          status: "cancelled", cancellationReason: body.data.reason ?? "Otkazan tretman iz grupne rezervacije",
-          cancelledAt, cancelledByUserId: access.user.id, updatedByUserId: access.user.id, updatedAt: cancelledAt,
-        }).where(and(eq(appointmentsTable.id, appointment.id), inArray(appointmentsTable.status, ["pending", "confirmed"])));
-        await tx.insert(appointmentStatusHistoryTable).values({
-          appointmentId: appointment.id, status: "cancelled", changedByUserId: access.user.id,
+        const cancelled = await cancelAppointmentInTx(tx, {
+          appointmentId: appointment.id, actorId: access.user.id, occurredAt: cancelledAt,
+          reason: body.data.reason ?? "Otkazan tretman iz grupne rezervacije",
         });
-        await handleAppointmentCancellationReversalsInTx(tx, appointment.id, appointment.salonId, cancelledAt);
+        if (!("appointment" in cancelled)) throw new AppointmentSeriesError("Termin je u međuvremenu promenjen.", 409);
       }
       if (access.group.customerId) {
         await notifyCustomer(tx, {
@@ -6594,6 +6671,7 @@ router.post("/appointments", async (req, res): Promise<void> => {
       date: appointmentDate, startTime: parsed.data.startTime, endTime, durationMinutes: service.durationMinutes,
       price: basePrice + (treatmentLocation === "home" ? service.homeServiceFee : 0),
       status: treatmentLocation === "home" ? "pending" : salon.instantBooking ? "confirmed" : "pending", notes: parsed.data.notes ?? null,
+      createdByUserId: user.id,
       preferredEmployeeId: parsed.data.employeeId,
       treatmentLocation, travelFee: treatmentLocation === "home" ? service.homeServiceFee : 0,
       treatmentAddress: treatmentLocation === "home" ? parsed.data.treatmentAddress : null,
@@ -6736,6 +6814,70 @@ router.patch("/appointments/:appointmentId", async (req, res): Promise<void> => 
   res.json(response);
 });
 
+type MarketplaceTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Every completed appointment gets these durable, idempotent effects together. */
+async function applyAppointmentCompletionEffectsInTx(
+  tx: MarketplaceTransaction,
+  appointment: typeof appointmentsTable.$inferSelect,
+  occurredAt: Date,
+) {
+  await enqueueAftercareCompletion(tx, {
+    appointmentId: appointment.id,
+    transitionKey: "appointment-status:completed:v1",
+  });
+  const warnings = await consumeInventoryForAppointmentInTx(tx, {
+    id: appointment.id, salonId: appointment.salonId, serviceId: appointment.serviceId,
+  });
+  if (appointment.customerId) await recordAppointmentReferralTransitionInTx(tx, {
+    appointmentId: appointment.id, customerId: appointment.customerId, salonId: appointment.salonId,
+    occurredAt, valid: true,
+  });
+  return { lowStockWarned: warnings.length > 0 };
+}
+
+/** Canonical cancellation; callers perform their own tenant/actor authorization. */
+async function cancelAppointmentInTx(
+  tx: MarketplaceTransaction,
+  input: { appointmentId: string; actorId: string; occurredAt: Date; reason: string | null },
+) {
+  const [initial] = await tx.select().from(appointmentsTable)
+    .where(eq(appointmentsTable.id, input.appointmentId)).limit(1);
+  if (!initial) return { error: "not-found" as const };
+  await lockAppointmentResources(tx, initial.salonId, [{ date: initial.date, employeeId: initial.employeeId }]);
+  const [appointment] = await tx.select().from(appointmentsTable)
+    .where(eq(appointmentsTable.id, initial.id)).for("update").limit(1);
+  if (!appointment) return { error: "not-found" as const };
+  if (!canTransitionAppointmentLifecycle(appointment, "cancel", input.occurredAt)) {
+    return { error: "invalid-transition" as const };
+  }
+  const [cancelled] = await tx.update(appointmentsTable).set({
+    status: "cancelled", cancellationReason: input.reason,
+    cancelledAt: input.occurredAt, cancelledByUserId: input.actorId,
+    updatedByUserId: input.actorId, updatedAt: input.occurredAt,
+  }).where(and(eq(appointmentsTable.id, appointment.id), inArray(appointmentsTable.status, ["pending", "confirmed"]))).returning();
+  if (!cancelled) return { error: "changed" as const };
+  await tx.insert(appointmentStatusHistoryTable).values({
+    appointmentId: cancelled.id, status: "cancelled", action: "cancel",
+    changedByUserId: input.actorId, occurredAt: input.occurredAt,
+  });
+  await handleAppointmentCancellationReversalsInTx(tx, cancelled.id, cancelled.salonId, input.occurredAt);
+  if (cancelled.customerId) {
+    await recordAppointmentReferralTransitionInTx(tx, {
+      appointmentId: cancelled.id, customerId: cancelled.customerId, salonId: cancelled.salonId,
+      occurredAt: input.occurredAt, valid: false, reason: "appointment_cancelled",
+    });
+    await notifyCustomer(tx, {
+      userId: cancelled.customerId,
+      eventKey: `appointment:${cancelled.id}:lifecycle:cancel:${input.occurredAt.toISOString()}`,
+      category: "cancellation", title: "Termin je otkazan",
+      body: "Termin je otkazan.", deepLink: "/moji-termini",
+      metadata: { appointmentId: cancelled.id, bookingGroupId: cancelled.bookingGroupId, action: "cancel", occurredAt: input.occurredAt.toISOString() },
+    });
+  }
+  return { appointment: cancelled };
+}
+
 router.post("/appointments/:appointmentId/lifecycle", async (req, res): Promise<void> => {
   const actor = await current(req, res); if (!actor) return;
   const [params, body] = [TransitionAppointmentLifecycleParams.safeParse(req.params), TransitionAppointmentLifecycleBody.safeParse(req.body)];
@@ -6747,44 +6889,86 @@ router.post("/appointments/:appointmentId/lifecycle", async (req, res): Promise<
     allowedSalonId = access.salon.id; employeeId = access.employee.id;
   } else { res.status(403).json({ error: "Niste ovlašćeni da menjate status termina." }); return; }
   if (!allowedSalonId) { res.status(403).json({ error: "Nalog nije povezan sa salonom." }); return; }
+  const serverNow = new Date();
+  // `occurredAt` supports a small clock-correction only; it is never a way to
+  // backdate a start around the useful-treatment policy.
+  if (body.data.occurredAt && !isAllowedLifecycleOccurredAt(body.data.occurredAt, serverNow)) {
+    res.status(400).json({ error: "Vreme događaja može odstupati najviše pet minuta od vremena servera.", code: "OCCURRED_AT_OUT_OF_RANGE" });
+    return;
+  }
   const result = await db.transaction(async (tx) => {
     const [initial] = await tx.select().from(appointmentsTable).where(and(eq(appointmentsTable.id, params.data.appointmentId), eq(appointmentsTable.salonId, allowedSalonId!))).limit(1);
     if (!initial || (employeeId && initial.employeeId !== employeeId)) return null;
     await lockAppointmentResources(tx, initial.salonId, [{ date: initial.date, employeeId: initial.employeeId }]);
     const [appointment] = await tx.select().from(appointmentsTable).where(eq(appointmentsTable.id, initial.id)).for("update").limit(1);
     if (!appointment) return null;
-    const occurredAt = body.data.occurredAt ?? new Date();
+    const occurredAt = body.data.occurredAt ?? serverNow;
     const action = body.data.action;
+    if (action === "cancel") {
+      const cancelled = await cancelAppointmentInTx(tx, {
+        appointmentId: appointment.id, actorId: actor.id, occurredAt, reason: body.data.reason ?? null,
+      });
+      return "appointment" in cancelled
+        ? { changed: "ok" as const, appointment: cancelled.appointment, lowStockWarned: false }
+        : { changed: "invalid" as const };
+    }
+    if (!canTransitionAppointmentLifecycle(appointment, action, occurredAt)) return { changed: "invalid" as const };
     const fields: Partial<typeof appointmentsTable.$inferInsert> = { updatedByUserId: actor.id, updatedAt: new Date() };
     if (action === "confirm" && appointment.status === "pending") { fields.status = "confirmed"; fields.confirmedAt = occurredAt; }
-    else if (action === "start" && appointment.status === "confirmed") {
+    else if (action === "arrive" && appointment.status === "confirmed" && !appointment.arrivedAt && !appointment.actualStartedAt) {
+      fields.arrivedAt = occurredAt; fields.arrivedByUserId = actor.id;
+    } else if (action === "start" && appointment.status === "confirmed" && appointment.arrivedAt && !appointment.actualStartedAt) {
       const plannedEnd = appointment.plannedEndTime ?? appointment.endTime;
-      const remaining = (Number(plannedEnd.slice(0, 2)) * 60 + Number(plannedEnd.slice(3))) - (occurredAt.getHours() * 60 + occurredAt.getMinutes());
+      const plannedEndAt = zonedAppointmentInstant(appointment.plannedDate ?? appointment.date, plannedEnd);
+      const remaining = Math.floor((plannedEndAt.getTime() - occurredAt.getTime()) / 60_000);
       const [settings] = await tx.select().from(salonBookingSettingsTable).where(eq(salonBookingSettingsTable.salonId, appointment.salonId)).limit(1);
-      if (remaining < (settings?.minimumUsefulLateTreatmentMinutes ?? 0)) return { changed: "late" as const };
-      fields.actualStartedAt = occurredAt;
+      const minimumUsefulMinutes = settings?.minimumUsefulLateTreatmentMinutes ?? 0;
+      if (remaining < minimumUsefulMinutes) return { changed: "late" as const, remainingMinutes: remaining, minimumUsefulMinutes, plannedEndAt };
+      fields.actualStartedAt = occurredAt; fields.startedByUserId = actor.id;
     } else if (action === "complete" && appointment.status === "confirmed" && appointment.actualStartedAt) {
       fields.status = "completed"; fields.actualCompletedAt = occurredAt; fields.completedAt = occurredAt; fields.completedByUserId = actor.id;
-    } else if (action === "cancel" && ["pending", "confirmed"].includes(appointment.status)) {
-      fields.status = "cancelled"; fields.cancelledAt = occurredAt; fields.cancelledByUserId = actor.id; fields.cancellationReason = body.data.reason ?? null;
-    } else if (action === "no-show" && ["pending", "confirmed"].includes(appointment.status)) {
+    } else if (action === "no-show" && ["pending", "confirmed"].includes(appointment.status) && !appointment.arrivedAt && !appointment.actualStartedAt) {
       fields.status = "no-show"; fields.noShowAt = occurredAt; fields.noShowByUserId = actor.id;
     } else return { changed: "invalid" as const };
     const [updated] = await tx.update(appointmentsTable).set(fields).where(eq(appointmentsTable.id, appointment.id)).returning();
-    await tx.insert(appointmentStatusHistoryTable).values({ appointmentId: appointment.id, status: updated!.status, changedByUserId: actor.id });
-    if (updated!.customerId) await notifyCustomer(tx, { userId: updated!.customerId, eventKey: `appointment:${updated!.id}:lifecycle:${action}`, category: action === "cancel" ? "cancellation" : "booking", title: "Status termina je promenjen", body: `Termin je označen kao ${action}.`, deepLink: "/moji-termini" });
+    await tx.insert(appointmentStatusHistoryTable).values({
+      appointmentId: appointment.id, status: updated!.status, action,
+      changedByUserId: actor.id, occurredAt,
+    });
+    if (action === "no-show" && updated!.customerId) await recordAppointmentReferralTransitionInTx(tx, {
+      appointmentId: updated!.id, customerId: updated!.customerId, salonId: updated!.salonId,
+      occurredAt, valid: false, reason: "salon_marked_no_show",
+    });
+    const completionEffects = action === "complete"
+      ? await applyAppointmentCompletionEffectsInTx(tx, updated!, occurredAt)
+      : { lowStockWarned: false };
+    if (updated!.customerId) await notifyCustomer(tx, {
+      userId: updated!.customerId,
+      eventKey: `appointment:${updated!.id}:lifecycle:${action}:${occurredAt.toISOString()}`,
+      category: "booking",
+      title: "Status termina je promenjen", body: `Termin je označen kao ${action}.`,
+      deepLink: "/moji-termini",
+      metadata: { appointmentId: updated!.id, bookingGroupId: updated!.bookingGroupId, action, occurredAt: occurredAt.toISOString() },
+    });
     if (action === "complete") await createAppointmentReviewInvitationInTx(tx, updated!);
-    return { changed: "ok" as const, appointment: updated! };
+    return { changed: "ok" as const, appointment: updated!, ...completionEffects };
   });
   if (!result) { res.status(404).json({ error: "Termin nije pronađen." }); return; }
-  if (result.changed !== "ok") { res.status(409).json({ error: result.changed === "late" ? "Preostalo vreme nije dovoljno za tretman." : "Ova promena statusa nije dozvoljena." }); return; }
+  if (result.changed !== "ok") {
+    res.status(409).json(result.changed === "late"
+      ? { error: "Preostalo vreme nije dovoljno za tretman.", code: "INSUFFICIENT_USEFUL_TIME", remainingMinutes: result.remainingMinutes, minimumUsefulMinutes: result.minimumUsefulMinutes, plannedEndAt: result.plannedEndAt }
+      : { error: "Ova promena statusa nije dozvoljena.", code: "INVALID_TRANSITION" });
+    return;
+  }
+  const lifecycleAppointment = result.appointment!;
   const [salon, service, employee, allocations] = await Promise.all([
-    db.select().from(salonsTable).where(eq(salonsTable.id, result.appointment.salonId)).limit(1),
-    db.select().from(servicesTable).where(eq(servicesTable.id, result.appointment.serviceId)).limit(1),
-    result.appointment.employeeId ? db.select().from(employeesTable).where(eq(employeesTable.id, result.appointment.employeeId)).limit(1) : Promise.resolve([]),
-    getAllocationsForAppointment(db, result.appointment.id),
+    db.select().from(salonsTable).where(eq(salonsTable.id, lifecycleAppointment.salonId)).limit(1),
+    db.select().from(servicesTable).where(eq(servicesTable.id, lifecycleAppointment.serviceId)).limit(1),
+    lifecycleAppointment.employeeId ? db.select().from(employeesTable).where(eq(employeesTable.id, lifecycleAppointment.employeeId)).limit(1) : Promise.resolve([]),
+    getAllocationsForAppointment(db, lifecycleAppointment.id),
   ]);
-  res.json(TransitionAppointmentLifecycleResponse.parse(appointmentView(result.appointment, salon[0]!, service[0]!, actor, employee[0], true, null, allocations)));
+  if (result.lowStockWarned) await publishSalonNotificationUpdate(lifecycleAppointment.salonId);
+  res.json(TransitionAppointmentLifecycleResponse.parse(appointmentView(lifecycleAppointment, salon[0]!, service[0]!, actor, employee[0], true, null, allocations)));
 });
 
 router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<void> => {
@@ -6805,22 +6989,11 @@ router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<voi
     const deadline = settings?.cancellationDeadlineMinutes ?? 0;
     const lateCancellation = deadline > 0
       && cancelledAt.getTime() > startsAt.getTime() - deadline * 60_000;
-    const [appointment] = await tx.update(appointmentsTable).set({
-      status: "cancelled",
-      cancellationReason: body.data.reason ?? null,
-      cancelledAt,
-      cancelledByUserId: user.id,
-    }).where(and(
-      eq(appointmentsTable.id, initial.id),
-      eq(appointmentsTable.customerId, user.id),
-      inArray(appointmentsTable.status, ["pending", "confirmed"]),
-    )).returning();
-    if (!appointment) return { error: "changed" as const };
-    await tx.insert(appointmentStatusHistoryTable).values({
-      appointmentId: appointment.id,
-      status: "cancelled",
-      changedByUserId: user.id,
+    const cancelled = await cancelAppointmentInTx(tx, {
+      appointmentId: initial.id, actorId: user.id, occurredAt: cancelledAt, reason: body.data.reason ?? null,
     });
+    if (!("appointment" in cancelled)) return { error: "changed" as const };
+    const appointment = cancelled.appointment!;
     if (lateCancellation) {
       await tx.insert(salonNotificationsTable).values({
         salonId: appointment.salonId,
@@ -6829,12 +7002,6 @@ router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<voi
         href: "/vlasnik/termini",
       });
     }
-    // Reverse any active package redemptions atomically with the cancellation.
-    await handleAppointmentCancellationReversalsInTx(tx, appointment.id, appointment.salonId);
-    if (appointment.customerId) await recordAppointmentReferralTransitionInTx(tx, {
-      appointmentId: appointment.id, customerId: appointment.customerId, salonId: appointment.salonId,
-      occurredAt: new Date(), valid: false, reason: "customer_cancelled",
-    });
     return { appointment, lateCancellation };
   });
   if ("error" in result) {
@@ -6843,7 +7010,8 @@ router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<voi
     });
     return;
   }
-  const { appointment, lateCancellation } = result;
+  const appointment = result.appointment!;
+  const { lateCancellation } = result;
   const [salon, service, employee, allocatedResources] = await Promise.all([
     db.select().from(salonsTable).where(eq(salonsTable.id, appointment.salonId)).limit(1),
     db.select().from(servicesTable).where(eq(servicesTable.id, appointment.serviceId)).limit(1),
@@ -6851,7 +7019,6 @@ router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<voi
     getAllocationsForAppointment(db, appointment.id),
   ]);
   await sendAppointmentEmails({ event: "cancelled", appointment, customer: user, salon: salon[0]!, service: service[0]! });
-  await notifyCustomer(db, { userId: user.id, eventKey: `appointment:${appointment.id}:cancelled`, category: "cancellation", title: "Termin je otkazan", body: `Termin u salonu ${salon[0]!.name} je otkazan.`, deepLink: "/moji-termini" });
   if (lateCancellation) await publishSalonNotificationUpdate(appointment.salonId);
   const response = appointmentView(appointment, salon[0]!, service[0]!, user, employee[0], true, null, allocatedResources);
   CancelAppointmentResponse.parse(response);
@@ -7820,6 +7987,7 @@ router.post("/salon/appointments", async (req, res): Promise<void> => {
       durationMinutes: service.durationMinutes,
       price: service.promoPrice ?? service.price,
       status: "confirmed",
+      createdByUserId: access.user.id,
       notes: parsed.data.notes ?? null,
       preferredEmployeeId: parsed.data.employeeId,
       packagePurchaseId: parsed.data.packagePurchaseId,
@@ -8118,34 +8286,28 @@ router.delete("/salon/appointment-series/:seriesId", async (req, res): Promise<v
     )).limit(1);
     if (!series) return { error: "not-found" as const };
     const today = new Date().toISOString().slice(0, 10);
-    const upcoming = await tx.select({
-      date: appointmentsTable.date,
-      employeeId: appointmentsTable.employeeId,
-    }).from(appointmentsTable).where(and(
+    const upcoming = await tx.select().from(appointmentsTable).where(and(
       eq(appointmentsTable.seriesId, series.id),
       sql`${appointmentsTable.date} >= ${today}`,
       inArray(appointmentsTable.status, ["pending", "confirmed"]),
-    ));
+    )).for("update");
+    if (upcoming.some((appointment) => appointment.arrivedAt || appointment.actualStartedAt)) {
+      return { error: "invalid-transition" as const };
+    }
     await lockAppointmentResources(tx, access.salon.id, upcoming);
-    const cancelled = await tx.update(appointmentsTable).set({
-      status: "cancelled",
-      cancellationReason: "Otkazana preostala serija termina.",
-    }).where(and(
-      eq(appointmentsTable.seriesId, series.id),
-      sql`${appointmentsTable.date} >= ${today}`,
-      inArray(appointmentsTable.status, ["pending", "confirmed"]),
-    )).returning({ id: appointmentsTable.id, customerId: appointmentsTable.customerId, salonId: appointmentsTable.salonId });
-    // Reverse active package redemptions for every cancelled appointment, atomically.
-    for (const appt of cancelled) {
-      await handleAppointmentCancellationReversalsInTx(tx, appt.id, access.salon.id);
-      if (appt.customerId) await recordAppointmentReferralTransitionInTx(tx, {
-        appointmentId: appt.id, customerId: appt.customerId, salonId: appt.salonId,
-        occurredAt: new Date(), valid: false, reason: "series_cancelled",
+    const cancelled = [];
+    const occurredAt = new Date();
+    for (const appointment of upcoming) {
+      const result = await cancelAppointmentInTx(tx, {
+        appointmentId: appointment.id, actorId: access.user.id, occurredAt,
+        reason: "Otkazana preostala serija termina.",
       });
+      if (!("appointment" in result)) return { error: "invalid-transition" as const };
+      cancelled.push(result.appointment);
     }
     return { series, cancelled };
   });
-  if ("error" in result) { res.status(404).json({ error: "Serija termina nije pronađena." }); return; }
+  if ("error" in result) { res.status(result.error === "not-found" ? 404 : 409).json({ error: result.error === "not-found" ? "Serija termina nije pronađena." : "Pristigli ili započeti termin ne može biti otkazan." }); return; }
   const { series, cancelled } = result;
   res.json(CancelSalonAppointmentSeriesResponse.parse({ id: series.id, cancelledAppointments: cancelled.length }));
 });
@@ -8224,6 +8386,10 @@ router.patch("/salon/appointments/:appointmentId", async (req, res): Promise<voi
   const { salon } = access;
   const [params, body] = [UpdateSalonAppointmentParams.safeParse(req.params), UpdateSalonAppointmentBody.safeParse(req.body)];
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci za izmenu nisu ispravni." }); return; }
+  if (body.data.status !== undefined) {
+    res.status(400).json({ error: "Status termina menjajte isključivo preko lifecycle endpointa." });
+    return;
+  }
   const result = await db.transaction(async (tx) => {
     await lockAppointmentResources(tx, salon.id);
     if (body.data.employeeId) {
@@ -8283,9 +8449,10 @@ router.patch("/salon/appointments/:appointmentId", async (req, res): Promise<voi
       );
     }
     const [updated] = await tx.update(appointmentsTable).set({
-      status: body.data.status,
       employeeId: body.data.employeeId,
       notes: body.data.notes === "" ? null : body.data.notes,
+      updatedByUserId: access.user.id,
+      updatedAt: new Date(),
     }).where(and(
       eq(appointmentsTable.id, target.id),
       eq(appointmentsTable.salonId, salon.id),
@@ -9589,6 +9756,14 @@ router.get("/employee/portal", async (req, res): Promise<void> => {
     return {
       id: appointment.id, date: appointment.date, startTime: appointment.startTime, endTime: appointment.endTime, status: appointment.status,
       seriesId: appointment.seriesId,
+      plannedEndTime: appointment.plannedEndTime,
+      confirmedAt: appointment.confirmedAt,
+      arrivedAt: appointment.arrivedAt,
+      actualStartedAt: appointment.actualStartedAt,
+      actualCompletedAt: appointment.actualCompletedAt,
+      cancelledAt: appointment.cancelledAt,
+      completedAt: appointment.completedAt,
+      noShowAt: appointment.noShowAt,
       notes: appointment.notes, serviceName: serviceById.get(appointment.serviceId)?.name ?? "Usluga nije dostupna",
       customerName: person ? `${person.firstName} ${person.lastName}`.trim() : "Gost",
       customerPhone: person?.phone ?? null,
@@ -9626,8 +9801,9 @@ router.patch("/employee/appointments/:appointmentId", async (req, res): Promise<
   const access = await requireSalonEmployee(req, res); if (!access) return;
   const status = req.body?.status;
   const notes = req.body?.notes;
-  if (status !== "completed" && status !== "no-show") { res.status(400).json({ error: "Možete označiti samo završen ili no-show termin." }); return; }
+  if (status !== undefined) { res.status(400).json({ error: "Status termina menjajte isključivo preko lifecycle endpointa." }); return; }
   if (notes !== undefined && typeof notes !== "string") { res.status(400).json({ error: "Napomena mora biti tekst." }); return; }
+  if (notes === undefined) { res.status(400).json({ error: "Nema podataka za izmenu." }); return; }
   const result = await db.transaction(async (tx) => {
     await lockAppointmentResources(tx, access.salon.id);
     const [initial] = await tx.select().from(appointmentsTable).where(and(
@@ -9638,34 +9814,16 @@ router.patch("/employee/appointments/:appointmentId", async (req, res): Promise<
     if (!initial) return { error: "not-found" as const };
     await lockAppointmentResources(tx, access.salon.id, [{ date: initial.date, employeeId: initial.employeeId }]);
     const [appointment] = await tx.update(appointmentsTable).set({
-      status,
-      notes: typeof notes === "string" ? notes.trim() || null : undefined,
+      notes: notes.trim() || null,
+      updatedByUserId: access.user.id,
+      updatedAt: new Date(),
     }).where(and(
       eq(appointmentsTable.id, initial.id),
       eq(appointmentsTable.employeeId, access.employee.id),
       eq(appointmentsTable.salonId, access.salon.id),
-      inArray(appointmentsTable.status, ["pending", "confirmed"]),
     )).returning();
     if (!appointment) return { error: "changed" as const };
-    // Completed treatment → auto-decrement mapped salon inventory (idempotent).
-    let lowStockWarned = false;
-    if (appointment.status === "completed") {
-      await enqueueAftercareCompletion(tx, {
-        appointmentId: appointment.id,
-        transitionKey: "appointment-status:completed:v1",
-      });
-      const warnings = await consumeInventoryForAppointmentInTx(tx, { id: appointment.id, salonId: access.salon.id, serviceId: appointment.serviceId });
-      if (appointment.customerId) await recordAppointmentReferralTransitionInTx(tx, {
-        appointmentId: appointment.id, customerId: appointment.customerId, salonId: appointment.salonId, occurredAt: new Date(), valid: true,
-      });
-      lowStockWarned = warnings.length > 0;
-    } else if (appointment.customerId) {
-      await recordAppointmentReferralTransitionInTx(tx, {
-        appointmentId: appointment.id, customerId: appointment.customerId, salonId: appointment.salonId,
-        occurredAt: new Date(), valid: false, reason: "employee_marked_no_show",
-      });
-    }
-    return { appointment, lowStockWarned };
+    return { appointment };
   });
   if ("error" in result) {
     res.status(result.error === "not-found" ? 404 : 409).json({
@@ -9674,7 +9832,6 @@ router.patch("/employee/appointments/:appointmentId", async (req, res): Promise<
     return;
   }
   const { appointment } = result;
-  if (result.lowStockWarned) await publishSalonNotificationUpdate(access.salon.id);
   res.json({ id: appointment.id, status: appointment.status, notes: appointment.notes });
 });
 
@@ -9912,11 +10069,11 @@ router.post("/employee/appointments", async (req, res): Promise<void> => {
       if (!available.some((candidate) => candidate.startTime === slot.startTime && candidate.endTime === slot.endTime)) {
         throw new EmployeeBookingError(`Termin ${slot.date} u ${slot.startTime} nije slobodan ili je van vašeg radnog vremena.`);
       }
-      const [appointment] = await tx.insert(appointmentsTable).values({
+      const appointment = await insertInitializedAppointmentInTx(tx, {
         salonId: access.salon.id, customerId: contact.userId, salonCustomerId: contact.id, employeeId: access.employee.id, serviceId,
         date: slot.date, startTime: slot.startTime, endTime: slot.endTime, durationMinutes: service[0].durationMinutes,
-        price: service[0].promoPrice ?? service[0].price, status: "confirmed",
-      }).returning();
+        price: service[0].promoPrice ?? service[0].price,
+      }, "confirmed", access.user.id);
       // allocateResourcesInTx throws ResourceCapacityError → rolls back.
       const bufferedEnd = appointmentEndTime(slot.endTime, service[0].bufferMinutes);
       if (!bufferedEnd) throw new EmployeeBookingError(`Bafer termina ${slot.date} u ${slot.startTime} izlazi van dana.`);

@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 79;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 80;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -40,6 +40,7 @@ export const BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY = 0x42470000 + 65;
  * applied older one. Order matters only for readability; ADD VALUE appends.
  */
 const ENUM_LABELS: Record<string, string[]> = {
+  appointment_status: ["pending", "confirmed", "completed", "cancelled", "no-show"],
   integration_key: ["sms", "brevo", "google_oauth", "facebook_oauth", "cloudflare"],
   order_status: ["pending", "confirmed", "paid", "processing", "shipped", "delivered", "cancelled"],
   fulfillment_status: ["RECEIVED", "PREPARING", "PACKING", "SHIPPED", "COMPLETED", "CANCELLED"],
@@ -3535,7 +3536,12 @@ function tableStatements(s: string): string[] {
     `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS planned_date date`,
     `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS planned_start_time text`,
     `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS planned_end_time text`,
+    // v80 — complete arrival/start lifecycle audit. These remain nullable for
+    // legacy appointments that predate explicit staff lifecycle actions.
+    `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS arrived_at timestamptz`,
+    `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS arrived_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL`,
     `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS actual_started_at timestamptz`,
+    `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS started_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL`,
     `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS actual_completed_at timestamptz`,
     `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS created_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL`,
     `ALTER TABLE ${s}.appointments ADD COLUMN IF NOT EXISTS updated_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL`,
@@ -3550,6 +3556,8 @@ function tableStatements(s: string): string[] {
     // v79 — leading indexes for the user-audit foreign keys introduced by v78.
     `CREATE INDEX IF NOT EXISTS appointments_created_by_idx ON ${s}.appointments (created_by_user_id)`,
     `CREATE INDEX IF NOT EXISTS appointments_updated_by_idx ON ${s}.appointments (updated_by_user_id)`,
+    `CREATE INDEX IF NOT EXISTS appointments_arrived_by_idx ON ${s}.appointments (arrived_by_user_id)`,
+    `CREATE INDEX IF NOT EXISTS appointments_started_by_idx ON ${s}.appointments (started_by_user_id)`,
     `CREATE INDEX IF NOT EXISTS appointments_cancelled_by_idx ON ${s}.appointments (cancelled_by_user_id)`,
     `CREATE INDEX IF NOT EXISTS appointments_completed_by_idx ON ${s}.appointments (completed_by_user_id)`,
     `CREATE INDEX IF NOT EXISTS appointments_no_show_by_idx ON ${s}.appointments (no_show_by_user_id)`,
@@ -3562,6 +3570,26 @@ function tableStatements(s: string): string[] {
         OR (planned_start_time IS NULL AND start_time IS NOT NULL)
         OR (planned_end_time IS NULL AND end_time IS NOT NULL)`,
     `CREATE INDEX IF NOT EXISTS appointments_booking_group_idx ON ${s}.appointments (booking_group_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.appointment_status_history (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       appointment_id uuid NOT NULL REFERENCES ${s}.appointments(id) ON DELETE CASCADE,
+       status ${s}.appointment_status NOT NULL,
+       action text,
+       changed_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+       occurred_at timestamptz NOT NULL DEFAULT now(),
+       created_at timestamptz NOT NULL DEFAULT now()
+     )`,
+    `ALTER TABLE ${s}.appointment_status_history ADD COLUMN IF NOT EXISTS action text`,
+    `ALTER TABLE ${s}.appointment_status_history ADD COLUMN IF NOT EXISTS occurred_at timestamptz`,
+    `UPDATE ${s}.appointment_status_history
+       SET occurred_at = COALESCE(occurred_at, created_at)
+       WHERE occurred_at IS NULL`,
+    `ALTER TABLE ${s}.appointment_status_history ALTER COLUMN occurred_at SET DEFAULT now()`,
+    `ALTER TABLE ${s}.appointment_status_history ALTER COLUMN occurred_at SET NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS appointment_status_history_appt_created_idx
+       ON ${s}.appointment_status_history (appointment_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS appointment_status_history_changed_by_idx
+       ON ${s}.appointment_status_history (changed_by_user_id)`,
     `CREATE TABLE IF NOT EXISTS ${s}.appointment_treatments (
        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
        appointment_id uuid NOT NULL REFERENCES ${s}.appointments(id) ON DELETE CASCADE,

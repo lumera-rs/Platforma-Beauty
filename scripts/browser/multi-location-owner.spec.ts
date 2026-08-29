@@ -91,7 +91,7 @@ test("owner can use the all-locations dashboard and switch location on desktop a
     await expect(page.getByRole("main").getByRole("paragraph").filter({ hasText: fixture.firstSalonName })).toBeVisible();
     await expect(page.getByRole("main").getByRole("paragraph").filter({ hasText: fixture.secondSalonName })).toBeVisible();
 
-    const desktopSalonSelect = page.getByLabel("Aktivni salon", { exact: true });
+    const desktopSalonSelect = page.getByRole("navigation").getByLabel("Aktivna lokacija");
     await expect(desktopSalonSelect).toBeVisible();
     let switchResponse = page.waitForResponse((response) =>
       response.request().method() === "PUT"
@@ -105,7 +105,7 @@ test("owner can use the all-locations dashboard and switch location on desktop a
       response.request().method() === "PUT"
       && new URL(response.url()).pathname === "/api/salon/active-salon",
     );
-    await page.getByLabel("Aktivni salon", { exact: true }).selectOption(fixture.firstSalonId);
+    await page.getByRole("navigation").getByLabel("Aktivna lokacija").selectOption(fixture.firstSalonId);
     expect((await switchResponse).status()).toBe(200);
     await expect(page.getByText(`${fixture.firstSalonName} - Pregled poslovanja`)).toBeVisible();
 

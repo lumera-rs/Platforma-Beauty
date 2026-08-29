@@ -99,6 +99,7 @@ import type {
   Appointment,
   AppointmentConflictError,
   AppointmentInput,
+  AppointmentLifecycleConflict,
   AppointmentLifecycleInput,
   AppointmentSalonContact,
   AppointmentSeriesCancellation,
@@ -261,7 +262,10 @@ import type {
   EmailPreferences,
   EmailPreferencesInput,
   Employee,
+  EmployeeActiveLocation,
+  EmployeeActiveLocationInput,
   EmployeeAppointmentSeriesInput,
+  EmployeeAssignedLocations,
   EmployeeClockEntry,
   EmployeeClockStatus,
   EmployeeCommissionSettings,
@@ -2715,6 +2719,154 @@ export const useCreateAppointment = <TError = ErrorType<AppointmentConflictError
       return useMutation(getCreateAppointmentMutationOptions(options));
     }
 
+export const getListEmployeeAssignedLocationsUrl = () => {
+
+
+
+
+  return `/api/employee/locations`
+}
+
+/**
+ * @summary List the signed-in employee's active location assignments
+ */
+export const listEmployeeAssignedLocations = async ( options?: Parameters<typeof customFetch>[1]): Promise<EmployeeAssignedLocations> => {
+
+  return customFetch<EmployeeAssignedLocations>(getListEmployeeAssignedLocationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListEmployeeAssignedLocationsQueryKey = () => {
+    return [
+    `/api/employee/locations`
+    ] as const;
+    }
+
+
+export const getListEmployeeAssignedLocationsQueryOptions = <TData = Awaited<ReturnType<typeof listEmployeeAssignedLocations>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEmployeeAssignedLocations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListEmployeeAssignedLocationsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listEmployeeAssignedLocations>>> = ({ signal }) => listEmployeeAssignedLocations({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEmployeeAssignedLocations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListEmployeeAssignedLocationsQueryResult = NonNullable<Awaited<ReturnType<typeof listEmployeeAssignedLocations>>>
+export type ListEmployeeAssignedLocationsQueryError = ErrorType<void>
+
+
+/**
+ * @summary List the signed-in employee's active location assignments
+ */
+
+export function useListEmployeeAssignedLocations<TData = Awaited<ReturnType<typeof listEmployeeAssignedLocations>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEmployeeAssignedLocations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListEmployeeAssignedLocationsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSelectEmployeeActiveLocationUrl = () => {
+
+
+
+
+  return `/api/employee/active-location`
+}
+
+/**
+ * @summary Select an actively assigned employee location
+ */
+export const selectEmployeeActiveLocation = async (employeeActiveLocationInput: EmployeeActiveLocationInput, options?: Parameters<typeof customFetch>[1]): Promise<EmployeeActiveLocation> => {
+
+  return customFetch<EmployeeActiveLocation>(getSelectEmployeeActiveLocationUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(employeeActiveLocationInput)
+  }
+);}
+
+
+
+
+
+export const getSelectEmployeeActiveLocationMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof selectEmployeeActiveLocation>>, TError,{data: BodyType<EmployeeActiveLocationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof selectEmployeeActiveLocation>>, TError,{data: BodyType<EmployeeActiveLocationInput>}, TContext> => {
+
+const mutationKey = ['selectEmployeeActiveLocation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof selectEmployeeActiveLocation>>, {data: BodyType<EmployeeActiveLocationInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  selectEmployeeActiveLocation(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SelectEmployeeActiveLocationMutationResult = NonNullable<Awaited<ReturnType<typeof selectEmployeeActiveLocation>>>
+    export type SelectEmployeeActiveLocationMutationBody = BodyType<EmployeeActiveLocationInput>
+    export type SelectEmployeeActiveLocationMutationError = ErrorType<void>
+
+    /**
+ * @summary Select an actively assigned employee location
+ */
+export const useSelectEmployeeActiveLocation = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof selectEmployeeActiveLocation>>, TError,{data: BodyType<EmployeeActiveLocationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof selectEmployeeActiveLocation>>,
+        TError,
+        {data: BodyType<EmployeeActiveLocationInput>},
+        TContext
+      > => {
+      return useMutation(getSelectEmployeeActiveLocationMutationOptions(options));
+    }
+
 export const getUpdateAppointmentUrl = (appointmentId: string,) => {
 
 
@@ -2963,7 +3115,7 @@ export const transitionAppointmentLifecycle = async (appointmentId: string,
 
 
 
-export const getTransitionAppointmentLifecycleMutationOptions = <TError = ErrorType<void>,
+export const getTransitionAppointmentLifecycleMutationOptions = <TError = ErrorType<AppointmentLifecycleConflict>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof transitionAppointmentLifecycle>>, TError,{appointmentId: string;data: BodyType<AppointmentLifecycleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof transitionAppointmentLifecycle>>, TError,{appointmentId: string;data: BodyType<AppointmentLifecycleInput>}, TContext> => {
 
@@ -2992,12 +3144,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type TransitionAppointmentLifecycleMutationResult = NonNullable<Awaited<ReturnType<typeof transitionAppointmentLifecycle>>>
     export type TransitionAppointmentLifecycleMutationBody = BodyType<AppointmentLifecycleInput>
-    export type TransitionAppointmentLifecycleMutationError = ErrorType<void>
+    export type TransitionAppointmentLifecycleMutationError = ErrorType<AppointmentLifecycleConflict>
 
     /**
  * @summary Record an audited appointment lifecycle transition
  */
-export const useTransitionAppointmentLifecycle = <TError = ErrorType<void>,
+export const useTransitionAppointmentLifecycle = <TError = ErrorType<AppointmentLifecycleConflict>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof transitionAppointmentLifecycle>>, TError,{appointmentId: string;data: BodyType<AppointmentLifecycleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof transitionAppointmentLifecycle>>,

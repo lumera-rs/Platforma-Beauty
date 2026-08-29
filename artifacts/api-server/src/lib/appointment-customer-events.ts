@@ -1,6 +1,8 @@
 import {
   and,
+  asc,
   eq,
+  gt,
   gte,
   inArray,
   isNotNull,
@@ -141,6 +143,19 @@ export async function createAppointmentReviewInvitationInTx(
   return invitation ?? null;
 }
 
+type ReminderAppointmentIdentity = Pick<
+  typeof appointmentsTable.$inferSelect,
+  "id" | "bookingGroupId" | "date"
+>;
+
+/**
+ * A booking group can span several dates. Reminders belong to the visit on a
+ * particular date, rather than to the first treatment in the whole checkout.
+ */
+export function appointmentReminderGroupingKey(appointment: ReminderAppointmentIdentity) {
+  return `${appointment.bookingGroupId ?? appointment.id}:date:${appointment.date}`;
+}
+
 /**
  * Restart-safe reminder sweep. Each configured salon offset is an independent
  * durable window. Late scheduler runs catch up until the appointment starts.
@@ -158,7 +173,7 @@ export async function runAppointmentReminderSweep(now = new Date()) {
     ));
   const groups = new Map<string, typeof rows>();
   for (const row of rows) {
-    const key = row.appointment.bookingGroupId ?? row.appointment.id;
+    const key = appointmentReminderGroupingKey(row.appointment);
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
   let emitted = 0;
@@ -203,14 +218,45 @@ export async function runAppointmentReminderSweep(now = new Date()) {
 }
 
 /** Catch-up for appointments completed through legacy/admin paths. */
-export async function runAppointmentReviewInvitationSweep() {
-  const candidates = await db.select().from(appointmentsTable)
-    .where(and(eq(appointmentsTable.status, "completed"), isNotNull(appointmentsTable.customerId)))
-    .limit(100);
+export function reviewInvitationSweepBounds(options: {
+  batchSize?: number;
+  maxPages?: number;
+} = {}) {
+  const batchSize = Math.max(1, Math.min(250, Math.floor(options.batchSize ?? 100)));
+  const maxPages = Math.max(1, Math.min(20, Math.floor(options.maxPages ?? 5)));
+  return { batchSize, maxPages };
+}
+
+export async function runAppointmentReviewInvitationSweep(options: {
+  batchSize?: number;
+  maxPages?: number;
+} = {}) {
+  const { batchSize, maxPages } = reviewInvitationSweepBounds(options);
   let created = 0;
-  for (const appointment of candidates) {
-    const invitation = await db.transaction((tx) => createAppointmentReviewInvitationInTx(tx, appointment));
-    if (invitation) created++;
+  let considered = 0;
+  let pages = 0;
+  let cursor: string | undefined;
+  while (pages < maxPages) {
+    const candidates = await db.select({ appointment: appointmentsTable })
+      .from(appointmentsTable)
+      .leftJoin(reviewInvitationsTable, eq(reviewInvitationsTable.appointmentId, appointmentsTable.id))
+      .where(and(
+        eq(appointmentsTable.status, "completed"),
+        isNotNull(appointmentsTable.customerId),
+        isNull(reviewInvitationsTable.id),
+        cursor ? gt(appointmentsTable.id, cursor) : undefined,
+      ))
+      .orderBy(asc(appointmentsTable.id))
+      .limit(batchSize);
+    if (!candidates.length) break;
+    pages++;
+    considered += candidates.length;
+    for (const { appointment } of candidates) {
+      const invitation = await db.transaction((tx) => createAppointmentReviewInvitationInTx(tx, appointment));
+      if (invitation) created++;
+    }
+    cursor = candidates.at(-1)!.appointment.id;
+    if (candidates.length < batchSize) break;
   }
-  return { considered: candidates.length, created };
+  return { considered, created, pages };
 }

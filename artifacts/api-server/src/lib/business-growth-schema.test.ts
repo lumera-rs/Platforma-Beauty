@@ -335,13 +335,36 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
-    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 79, "v79 is the current production schema rollout");
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 80, "v80 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
 
     // ── Run the rollout, then exercise its legacy conversion on rerun ──────
     const client = await pool.connect();
     try {
       await runBusinessGrowthSchemaDdl(client, s);
+      const lifecycleColumns = await q<{ column_name: string; is_nullable: string }>(
+        `SELECT column_name, is_nullable
+           FROM information_schema.columns
+          WHERE table_schema = $1
+            AND (
+              (table_name = 'appointments' AND column_name IN
+                ('arrived_at', 'arrived_by_user_id', 'started_by_user_id'))
+              OR
+              (table_name = 'appointment_status_history' AND column_name IN
+                ('action', 'occurred_at'))
+            )`,
+        [s],
+      );
+      assert.deepEqual(
+        new Set(lifecycleColumns.rows.map((row) => row.column_name)),
+        new Set(["arrived_at", "arrived_by_user_id", "started_by_user_id", "action", "occurred_at"]),
+        "v80 publishes every appointment lifecycle audit column",
+      );
+      assert.equal(
+        lifecycleColumns.rows.find((row) => row.column_name === "occurred_at")?.is_nullable,
+        "NO",
+        "lifecycle history occurrence time is required after the legacy backfill",
+      );
       const rolloutSingletonConstraint = (await q<{ definition: string }>(
         `SELECT pg_get_constraintdef(oid) AS definition
          FROM pg_constraint

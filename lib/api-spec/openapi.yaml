@@ -583,6 +583,35 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AppointmentConflictError"
+  /employee/locations:
+    get:
+      operationId: listEmployeeAssignedLocations
+      tags: [salon-management]
+      summary: List the signed-in employee's active location assignments
+      responses:
+        "200":
+          description: Active assignments and selected location
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmployeeAssignedLocations" }
+        "403": { description: Active employee access required }
+  /employee/active-location:
+    patch:
+      operationId: selectEmployeeActiveLocation
+      tags: [salon-management]
+      summary: Select an actively assigned employee location
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmployeeActiveLocationInput" }
+      responses:
+        "200":
+          description: Selected active location
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmployeeActiveLocation" }
+        "403": { description: Employee is not actively assigned to location }
   /appointments/{appointmentId}:
     patch:
       operationId: updateAppointment
@@ -657,7 +686,11 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Appointment" }
-        "409": { description: Transition is invalid for the current lifecycle state }
+        "409":
+          description: Transition is invalid for the current lifecycle state, or the useful late-treatment window has elapsed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppointmentLifecycleConflict" }
   /customer/notifications:
     get:
       operationId: listCustomerNotifications
@@ -8792,10 +8825,46 @@ components:
       properties:
         action:
           type: string
-          enum: [confirm, start, complete, cancel, no-show]
+          enum: [confirm, arrive, start, complete, cancel, no-show]
         occurredAt: { type: string, format: date-time }
         reason: { type: ["string", "null"], maxLength: 1000 }
       required: [action]
+    EmployeeAssignedLocation:
+      type: object
+      properties:
+        salonId: { type: string }
+        name: { type: string }
+        isDefault: { type: boolean }
+      required: [salonId, name, isDefault]
+    EmployeeAssignedLocations:
+      type: object
+      properties:
+        activeSalonId: { type: string }
+        locations:
+          type: array
+          items: { $ref: "#/components/schemas/EmployeeAssignedLocation" }
+      required: [activeSalonId, locations]
+    EmployeeActiveLocationInput:
+      type: object
+      properties:
+        salonId: { type: string }
+      required: [salonId]
+    EmployeeActiveLocation:
+      type: object
+      properties:
+        activeSalonId: { type: string }
+      required: [activeSalonId]
+    AppointmentLifecycleConflict:
+      type: object
+      properties:
+        error: { type: string }
+        code:
+          type: string
+          enum: [INVALID_TRANSITION, INSUFFICIENT_USEFUL_TIME]
+        remainingMinutes: { type: integer }
+        minimumUsefulMinutes: { type: integer }
+        plannedEndAt: { type: string, format: date-time }
+      required: [error, code]
     CustomerNotification:
       type: object
       properties:
@@ -8904,8 +8973,15 @@ components:
         plannedDate: { type: ["string", "null"], format: date }
         plannedStartTime: { type: ["string", "null"] }
         plannedEndTime: { type: ["string", "null"] }
+        arrivedAt: { type: ["string", "null"], format: date-time }
+        arrivedByUserId: { type: ["string", "null"] }
         actualStartedAt: { type: ["string", "null"], format: date-time }
+        startedByUserId: { type: ["string", "null"] }
         actualCompletedAt: { type: ["string", "null"], format: date-time }
+        updatedByUserId: { type: ["string", "null"] }
+        cancelledByUserId: { type: ["string", "null"] }
+        completedByUserId: { type: ["string", "null"] }
+        noShowByUserId: { type: ["string", "null"] }
         confirmedAt: { type: ["string", "null"], format: date-time }
         cancelledAt: { type: ["string", "null"], format: date-time }
         completedAt: { type: ["string", "null"], format: date-time }

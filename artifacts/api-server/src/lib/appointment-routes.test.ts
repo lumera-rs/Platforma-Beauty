@@ -6,7 +6,10 @@ import { and, eq, inArray } from "drizzle-orm";
 import {
   appointmentResourceAllocationsTable,
   appointmentSeriesTable,
+  appointmentStatusHistoryTable,
   appointmentsTable,
+  bookingGroupsTable,
+  customerNotificationsTable,
   customerPackagePurchasesTable,
   db,
   employeeLocationAssignmentsTable,
@@ -108,6 +111,21 @@ async function getRequest(baseUrl: string, session: string, path: string): Promi
     status: response.status,
     body: await response.json(),
   };
+}
+
+async function assertConfirmedCreationAudit(appointmentId: string, actorId: string) {
+  const [appointment] = await db.select().from(appointmentsTable).where(eq(appointmentsTable.id, appointmentId));
+  assert.ok(appointment?.confirmedAt, "confirmed creation records confirmedAt");
+  assert.equal(appointment!.createdByUserId, actorId);
+  assert.equal(appointment!.updatedByUserId, actorId);
+  const history = await db.select().from(appointmentStatusHistoryTable).where(and(
+    eq(appointmentStatusHistoryTable.appointmentId, appointmentId),
+    eq(appointmentStatusHistoryTable.status, "confirmed"),
+    eq(appointmentStatusHistoryTable.action, "confirm"),
+  ));
+  assert.equal(history.length, 1, "confirmed creation writes exactly one confirm history row");
+  assert.equal(history[0]!.changedByUserId, actorId);
+  assert.ok(Math.abs(history[0]!.occurredAt.getTime() - appointment!.confirmedAt!.getTime()) < 1_000);
 }
 
 async function getPublicSalonCards(baseUrl: string, query: string): Promise<PublicSalonCard[]> {
@@ -315,6 +333,12 @@ async function run(): Promise<void> {
         active: true,
         isDefault: true,
       },
+      {
+        employeeId: employee!.id,
+        salonId: foreignSalon!.id,
+        active: true,
+        isDefault: false,
+      },
     ]);
     await db.insert(employeeServicesTable).values({ employeeId: employee!.id, serviceId: service!.id });
 
@@ -418,6 +442,19 @@ async function run(): Promise<void> {
     await once(server, "listening");
     const address = server.address() as AddressInfo;
     const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const assignedLocations = await getRequest(baseUrl, employeeSession, "/employee/locations");
+    assert.equal(assignedLocations.status, 200);
+    const assignedBody = assignedLocations.body as { activeSalonId: string; locations: Array<{ salonId: string }> };
+    assert.equal(assignedBody.activeSalonId, salon!.id);
+    assert.deepEqual(new Set(assignedBody.locations.map((item) => item.salonId)), new Set([salon!.id, foreignSalon!.id]));
+    const selectSecondary = await request(baseUrl, employeeSession, "/employee/active-location", "PATCH", { salonId: foreignSalon!.id });
+    assert.equal(selectSecondary.status, 200, "employee can select a non-default active assignment");
+    assert.equal((await db.select({ activeSalonId: usersTable.activeSalonId }).from(usersTable).where(eq(usersTable.id, employeeUser!.id)))[0]!.activeSalonId, foreignSalon!.id);
+    const rejectUnassigned = await request(baseUrl, employeeSession, "/employee/active-location", "PATCH", { salonId: randomUUID() });
+    assert.equal(rejectUnassigned.status, 403, "employee cannot select an unassigned salon");
+    assert.equal((await db.select({ activeSalonId: usersTable.activeSalonId }).from(usersTable).where(eq(usersTable.id, employeeUser!.id)))[0]!.activeSalonId, foreignSalon!.id);
+    assert.equal((await request(baseUrl, employeeSession, "/employee/active-location", "PATCH", { salonId: salon!.id })).status, 200);
 
     const publicProfileResponse = await fetch(`${baseUrl}/api/salons/${salon!.slug}`);
     assert.equal(publicProfileResponse.status, 200, "a public salon profile must remain discoverable");
@@ -787,6 +824,25 @@ async function run(): Promise<void> {
       .where(eq(appointmentsTable.id, createdCustomerAppointment.id));
     assert.equal(persistedCustomerAppointment!.customerId, customer!.id, "customer booking must persist its customer ownership");
     assert.equal(persistedCustomerAppointment!.status, "confirmed", "instantBooking=true must persist a confirmed appointment");
+    assert.ok(persistedCustomerAppointment!.confirmedAt, "instant booking persists confirmation time");
+    const [customerConfirmHistory] = await db.select().from(appointmentStatusHistoryTable).where(and(
+      eq(appointmentStatusHistoryTable.appointmentId, createdCustomerAppointment.id),
+      eq(appointmentStatusHistoryTable.action, "confirm"),
+    ));
+    assert.equal(customerConfirmHistory!.changedByUserId, customer!.id);
+    assert.ok(Math.abs(customerConfirmHistory!.occurredAt.getTime() - persistedCustomerAppointment!.confirmedAt!.getTime()) < 1_000);
+    const prematureArrival = await request(baseUrl, ownerSession, `/appointments/${createdCustomerAppointment.id}/lifecycle`, "POST", {
+      action: "arrive", occurredAt: new Date(persistedCustomerAppointment!.confirmedAt!.getTime() - 1).toISOString(),
+    });
+    assert.equal(prematureArrival.status, 409, "arrival cannot predate confirmation even inside correction window");
+    assert.equal((await db.select().from(appointmentsTable).where(eq(appointmentsTable.id, createdCustomerAppointment.id)))[0]!.arrivedAt, null);
+    const instantGroupBooking = await request(baseUrl, customerSession, "/booking-groups", "POST", {
+      salonId: salon!.id, date: customerBookingDate,
+      treatments: [{ serviceId: service!.id, employeeId: employee!.id, startTime: "13:00" }],
+    });
+    assert.equal(instantGroupBooking.status, 201, "instant-booking salon confirms a customer booking group");
+    const instantGroup = instantGroupBooking.body as { appointments: Array<{ id: string }> };
+    await assertConfirmedCreationAudit(instantGroup.appointments[0]!.id, customer!.id);
 
     const concurrentBookingPayload = {
       salonId: salon!.id,
@@ -1021,6 +1077,81 @@ async function run(): Promise<void> {
       reason: "HTTP provera formata datuma",
     });
     assert.equal(customerCancellation.status, 200, "a customer must be able to cancel their rescheduled appointment");
+    const [cancelledAudit] = await db.select().from(appointmentsTable).where(eq(appointmentsTable.id, createdCustomerAppointment.id));
+    assert.ok(cancelledAudit!.cancelledAt, "successful cancellation records cancelledAt");
+    assert.equal(cancelledAudit!.cancelledByUserId, customer!.id, "successful cancellation records the customer actor");
+    const [cancelHistory] = await db.select().from(appointmentStatusHistoryTable)
+      .where(and(eq(appointmentStatusHistoryTable.appointmentId, createdCustomerAppointment.id), eq(appointmentStatusHistoryTable.action, "cancel")));
+    assert.ok(cancelHistory?.occurredAt, "successful cancellation writes explicit canonical history");
+    const cancellationNotifications = await db.select().from(customerNotificationsTable)
+      .where(eq(customerNotificationsTable.userId, customer!.id));
+    assert.ok(cancellationNotifications.some((item) => item.eventKey.includes(`appointment:${createdCustomerAppointment.id}:lifecycle:cancel:`)),
+      "successful cancellation enqueues its durable customer notification");
+    const [arrivedCustomerAppointment] = await db.insert(appointmentsTable).values({
+      salonId: salon!.id, customerId: customer!.id, salonCustomerId: contact!.id,
+      employeeId: employee!.id, serviceId: service!.id, date: "2099-12-01",
+      startTime: "12:00", endTime: "13:00", durationMinutes: 60, price: 1000,
+      status: "confirmed", arrivedAt: new Date(), arrivedByUserId: owner!.id,
+    }).returning();
+    const arrivedCancellation = await request(baseUrl, customerSession, `/appointments/${arrivedCustomerAppointment!.id}/cancel`, "POST", {});
+    assert.equal(arrivedCancellation.status, 409, "customer cannot cancel an arrived appointment");
+    const [preservedArrived] = await db.select().from(appointmentsTable).where(eq(appointmentsTable.id, arrivedCustomerAppointment!.id));
+    assert.equal(preservedArrived!.status, "confirmed");
+    assert.equal(preservedArrived!.cancelledAt, null);
+
+    const [blockedGroup, successfulGroup] = await db.insert(bookingGroupsTable).values([
+      { salonId: salon!.id, customerId: customer!.id, salonCustomerId: contact!.id, createdByUserId: owner!.id },
+      { salonId: salon!.id, customerId: customer!.id, salonCustomerId: contact!.id, createdByUserId: owner!.id },
+    ]).returning();
+    const groupAppointmentValues = (bookingGroupId: string, date: string, arrived: boolean) => ({
+      salonId: salon!.id, customerId: customer!.id, salonCustomerId: contact!.id,
+      employeeId: employee!.id, serviceId: service!.id, bookingGroupId,
+      date, startTime: "14:00", endTime: "15:00", durationMinutes: 60, price: 1000,
+      status: "confirmed" as const,
+      arrivedAt: arrived ? new Date() : null,
+      arrivedByUserId: arrived ? owner!.id : null,
+    });
+    const blockedGroupMembers = await db.insert(appointmentsTable).values([
+      groupAppointmentValues(blockedGroup!.id, "2099-12-02", true),
+      groupAppointmentValues(blockedGroup!.id, "2099-12-03", false),
+    ]).returning();
+    const blockedGroupCancel = await request(baseUrl, ownerSession, `/booking-groups/${blockedGroup!.id}/cancel`, "POST", {});
+    assert.equal(blockedGroupCancel.status, 409, "group cancellation rejects atomically when one member arrived");
+    const blockedGroupAfter = await db.select().from(appointmentsTable)
+      .where(inArray(appointmentsTable.id, blockedGroupMembers.map((item) => item.id)));
+    assert.ok(blockedGroupAfter.every((item) => item.status === "confirmed" && item.cancelledAt === null && item.cancelledByUserId === null));
+    assert.equal((await db.select().from(appointmentStatusHistoryTable)
+      .where(and(inArray(appointmentStatusHistoryTable.appointmentId, blockedGroupMembers.map((item) => item.id)), eq(appointmentStatusHistoryTable.action, "cancel")))).length, 0);
+
+    const successfulGroupMembers = await db.insert(appointmentsTable).values([
+      groupAppointmentValues(successfulGroup!.id, "2099-12-04", false),
+      groupAppointmentValues(successfulGroup!.id, "2099-12-05", false),
+    ]).returning();
+    const successfulGroupCancel = await request(baseUrl, ownerSession, `/booking-groups/${successfulGroup!.id}/cancel`, "POST", {});
+    assert.equal(successfulGroupCancel.status, 200, "all cancellable group members cancel together");
+    const successfulGroupAfter = await db.select().from(appointmentsTable)
+      .where(inArray(appointmentsTable.id, successfulGroupMembers.map((item) => item.id)));
+    assert.ok(successfulGroupAfter.every((item) => item.status === "cancelled" && item.cancelledAt && item.cancelledByUserId === owner!.id));
+    const successfulGroupHistory = await db.select().from(appointmentStatusHistoryTable)
+      .where(and(inArray(appointmentStatusHistoryTable.appointmentId, successfulGroupMembers.map((item) => item.id)), eq(appointmentStatusHistoryTable.action, "cancel")));
+    assert.equal(successfulGroupHistory.length, 2);
+    assert.ok(successfulGroupHistory.every((item) => item.occurredAt instanceof Date));
+
+    const [blockedSeries] = await db.insert(appointmentSeriesTable).values({
+      salonId: salon!.id, salonCustomerId: contact!.id, serviceId: service!.id,
+      employeeId: employee!.id, totalAppointments: 2, createdByUserId: owner!.id,
+    }).returning();
+    const blockedSeriesMembers = await db.insert(appointmentsTable).values([
+      { ...groupAppointmentValues(blockedGroup!.id, "2099-12-06", true), bookingGroupId: null, seriesId: blockedSeries!.id },
+      { ...groupAppointmentValues(blockedGroup!.id, "2099-12-07", false), bookingGroupId: null, seriesId: blockedSeries!.id },
+    ]).returning();
+    const blockedSeriesCancel = await request(baseUrl, ownerSession, `/salon/appointment-series/${blockedSeries!.id}`, "DELETE", {});
+    assert.equal(blockedSeriesCancel.status, 409, "series cancellation rejects atomically when one future member arrived");
+    const blockedSeriesAfter = await db.select().from(appointmentsTable)
+      .where(inArray(appointmentsTable.id, blockedSeriesMembers.map((item) => item.id)));
+    assert.ok(blockedSeriesAfter.every((item) => item.status === "confirmed" && item.cancelledAt === null && item.cancelledByUserId === null));
+    assert.equal((await db.select().from(appointmentStatusHistoryTable)
+      .where(and(inArray(appointmentStatusHistoryTable.appointmentId, blockedSeriesMembers.map((item) => item.id)), eq(appointmentStatusHistoryTable.action, "cancel")))).length, 0);
     assertCalendarDate(
       (customerCancellation.body as { date: string }).date,
       updatedCustomerBookingDate,
@@ -1036,14 +1167,26 @@ async function run(): Promise<void> {
     });
     assert.equal(salonBooking.status, 201, "a salon owner must be able to create an appointment");
     const createdSalonAppointment = salonBooking.body as { id: string; date: string };
+    const [ownerCreatedAppointment] = await db.select().from(appointmentsTable).where(eq(appointmentsTable.id, createdSalonAppointment.id));
+    assert.equal(ownerCreatedAppointment!.status, "confirmed", "salon-created booking is confirmed");
+    assert.ok(ownerCreatedAppointment!.confirmedAt, "salon-created confirmation has timestamp");
+    const [ownerConfirmHistory] = await db.select().from(appointmentStatusHistoryTable).where(and(
+      eq(appointmentStatusHistoryTable.appointmentId, createdSalonAppointment.id),
+      eq(appointmentStatusHistoryTable.action, "confirm"),
+    ));
+    assert.equal(ownerConfirmHistory!.changedByUserId, owner!.id, "owner creation is the confirmation actor");
+    assert.ok(Math.abs(ownerConfirmHistory!.occurredAt.getTime() - ownerCreatedAppointment!.confirmedAt!.getTime()) < 1_000);
     assertCalendarDate(
       createdSalonAppointment.date,
       salonBookingDate,
       "the salon appointment creation response date",
     );
 
-    const salonUpdate = await request(baseUrl, ownerSession, `/salon/appointments/${createdSalonAppointment.id}`, "PATCH", {
+    const rejectedSalonStatus = await request(baseUrl, ownerSession, `/salon/appointments/${createdSalonAppointment.id}`, "PATCH", {
       status: "confirmed",
+    });
+    assert.equal(rejectedSalonStatus.status, 400, "owner status writes must use the lifecycle endpoint");
+    const salonUpdate = await request(baseUrl, ownerSession, `/salon/appointments/${createdSalonAppointment.id}`, "PATCH", {
       notes: "HTTP provera formata datuma",
     });
     assert.equal(salonUpdate.status, 200, "a salon owner must be able to update an appointment");
@@ -1077,8 +1220,9 @@ async function run(): Promise<void> {
     assert.equal(salonSeriesBooking.status, 201, "a salon owner must be able to create an appointment series");
     const createdSalonSeries = salonSeriesBooking.body as {
       id: string;
-      appointments: Array<{ date: string }>;
+      appointments: Array<{ id: string; date: string }>;
     };
+    await assertConfirmedCreationAudit(createdSalonSeries.appointments[0]!.id, owner!.id);
     for (const appointment of createdSalonSeries.appointments) {
       assertCalendarDate(
         appointment.date,
@@ -1135,8 +1279,9 @@ async function run(): Promise<void> {
     });
     assert.equal(employeeSeriesBooking.status, 201, "an employee must be able to create an appointment series");
     const createdEmployeeSeries = employeeSeriesBooking.body as {
-      appointments: Array<{ date: string }>;
+      appointments: Array<{ id: string; date: string }>;
     };
+    await assertConfirmedCreationAudit(createdEmployeeSeries.appointments[0]!.id, employeeUser!.id);
     for (const appointment of createdEmployeeSeries.appointments) {
       assertCalendarDate(
         appointment.date,
@@ -1180,6 +1325,7 @@ async function run(): Promise<void> {
       inArray(appointmentsTable.status, ["pending", "confirmed"]),
     ));
     assert.equal(overlappingBookings.length, 1, "one employee must have only one active appointment in the same slot");
+    await assertConfirmedCreationAudit(overlappingBookings[0]!.id, employeeUser!.id);
 
     const [moveSeries, cancelSeriesAppointment] = await Promise.all([
       request(baseUrl, ownerSession, `/salon/appointment-series/${series!.id}/move`, "POST", { dayOffset: 1 }),
@@ -1199,17 +1345,11 @@ async function run(): Promise<void> {
       request(baseUrl, employeeSession, `/employee/appointments/${completionRaceAppointment!.id}`, "PATCH", { status: "completed" }),
       request(baseUrl, customerSession, `/appointments/${completionRaceAppointment!.id}/cancel`, "POST", { reason: "HTTP konkurentno otkazivanje" }),
     ]);
-    assert.deepEqual(
-      [completeAppointment.status, cancelCompletedAppointment.status].sort((left, right) => left - right),
-      [200, 409],
-      "completion and cancellation must allow exactly one status transition",
-    );
+    assert.equal(completeAppointment.status, 400, "employee status writes must use the lifecycle endpoint");
+    assert.equal(cancelCompletedAppointment.status, 200, "customer cancellation remains the sole terminal transition");
     const [completedOrCancelled] = await db.select().from(appointmentsTable)
       .where(eq(appointmentsTable.id, completionRaceAppointment!.id));
-    assert.ok(
-      completedOrCancelled!.status === "completed" || completedOrCancelled!.status === "cancelled",
-      "the final status must be the single winning terminal transition",
-    );
+    assert.equal(completedOrCancelled!.status, "cancelled", "rejected employee bypass cannot compete with cancellation");
 
     const crossSalonAssignment = await request(
       baseUrl,
@@ -1432,9 +1572,9 @@ async function run(): Promise<void> {
     const ownerCancelBooking = await request(
       baseUrl,
       ownerSession,
-      `/salon/appointments/${firstBookingBody.id}`,
-      "PATCH",
-      { status: "cancelled" },
+      `/appointments/${firstBookingBody.id}/lifecycle`,
+      "POST",
+      { action: "cancel", reason: "Resource capacity regression cleanup" },
     );
     assert.equal(ownerCancelBooking.status, 200, "owner cancellation must succeed");
 
@@ -1455,7 +1595,7 @@ async function run(): Promise<void> {
       "PATCH",
       { status: "confirmed" },
     );
-    assert.equal(conflictingReactivation.status, 409, "a cancelled booking must not reactivate over exhausted resource capacity");
+    assert.equal(conflictingReactivation.status, 400, "legacy owner status writes must not reactivate a cancelled booking");
     const [stillCancelledResourceBooking] = await db.select({ status: appointmentsTable.status })
       .from(appointmentsTable)
       .where(eq(appointmentsTable.id, firstBookingBody.id));

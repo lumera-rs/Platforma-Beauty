@@ -47,8 +47,12 @@ import {
   useListEmployeeAppointmentTreatmentPhotos,
   useListEmployeeShiftSwaps,
   useRespondEmployeeShiftSwap,
+  useListEmployeeAssignedLocations,
+  useSelectEmployeeActiveLocation,
+  getListEmployeeAssignedLocationsQueryKey,
 } from "@workspace/api-client-react";
 import { AvatarImage } from "@/components/optimized-image";
+import { AppointmentLifecyclePanel } from "@/components/appointment-lifecycle-panel";
 import {
   createEmployeeLeaveDraft,
   formatEmployeeLeaveRequestSummary,
@@ -69,6 +73,14 @@ type Appointment = {
   customerName: string;
   customerPhone: string | null;
   allocatedResources?: { resourceId: string; resourceName: string; quantity: number }[];
+  plannedEndTime?: string | null;
+  arrivedAt?: string | null;
+  actualStartedAt?: string | null;
+  actualCompletedAt?: string | null;
+  confirmedAt?: string | null;
+  cancelledAt?: string | null;
+  completedAt?: string | null;
+  noShowAt?: string | null;
 };
 
 type Portal = {
@@ -490,6 +502,7 @@ function CompletedAppointmentPhotos({ appointmentId }: { appointmentId: string }
 }
 
 export default function EmployeePortal() {
+  const queryClient = useQueryClient();
   const [portal, setPortal] = useState<Portal | null>(null);
   const [loading, setLoading] = useState(true);
   const [date, setDate] = useState(today());
@@ -517,9 +530,31 @@ export default function EmployeePortal() {
   const [profile, setProfile] = useState({ bio: "", avatarUrl: "", phone: "" });
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [leave, setLeave] = useState(() => createEmployeeLeaveDraft(today()));
+  const locationsQuery = useListEmployeeAssignedLocations({
+    query: { queryKey: getListEmployeeAssignedLocationsQueryKey() },
+  });
+  const selectLocationMutation = useSelectEmployeeActiveLocation();
 
-  const load = async () => {
-    setLoading(true);
+  const handleLocationChange = (salonId: string) => {
+    if (!salonId || salonId === locationsQuery.data?.activeSalonId) return;
+
+    selectLocationMutation.mutate(
+      { data: { salonId } },
+      {
+        onSuccess: () => {
+          toast.success("Lokacija je uspešno promenjena.");
+          queryClient.invalidateQueries();
+          void load(false);
+        },
+        onError: (err) => {
+          toast.error(err instanceof Error ? err.message : "Greška pri promeni lokacije.");
+        }
+      }
+    );
+  };
+
+  const load = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     try {
       const data = await api<Portal>("/api/employee/portal");
       setPortal(data);
@@ -528,12 +563,12 @@ export default function EmployeePortal() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Portal nije učitan.");
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   };
 
   useEffect(() => {
-    void load();
+    void load(true);
   }, []);
 
   const appointments = useMemo(
@@ -559,21 +594,6 @@ export default function EmployeePortal() {
     setDate(value);
     const selected = dateAtUtcNoon(value);
     setVisibleMonth(new Date(selected.getUTCFullYear(), selected.getUTCMonth(), 1));
-  };
-
-  const saveAppointment = async () => {
-    if (!editing) return;
-    try {
-      await api(`/api/employee/appointments/${editing.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: editing.status, notes: editing.notes ?? "" }),
-      });
-      toast.success("Termin je ažuriran.");
-      setEditing(null);
-      await load();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Izmena nije uspela.");
-    }
   };
 
   const saveProfile = async () => {
@@ -674,12 +694,44 @@ export default function EmployeePortal() {
     return <BusinessLayout><div className="flex justify-center p-20"><Loader2 className="h-8 w-8 animate-spin" /></div></BusinessLayout>;
   }
 
+  const locations = locationsQuery.data?.locations ?? [];
+  const activeSalonId = locationsQuery.data?.activeSalonId ?? "";
+  const isMultiLocation = locations.length > 1;
+
   return (
     <BusinessLayout>
       <div className="container mx-auto space-y-6 px-4 py-8">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <p className="text-sm font-medium text-primary">{portal.salon.name}</p>
+            {isMultiLocation ? (
+              <div className="mb-1 flex items-center gap-2">
+                <Label htmlFor="location-switcher" className="sr-only">Izaberite lokaciju</Label>
+                <div className="relative w-full sm:w-auto min-w-[240px]">
+                  <select
+                    id="location-switcher"
+                    className="h-8 w-full appearance-none rounded-md border border-primary/20 bg-primary/5 py-1 pl-3 pr-8 text-sm font-medium text-primary ring-offset-background transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    value={activeSalonId}
+                    onChange={(e) => handleLocationChange(e.target.value)}
+                    disabled={selectLocationMutation.isPending}
+                  >
+                    {locations.map((loc) => (
+                      <option key={loc.salonId} value={loc.salonId}>
+                        {loc.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+                    {selectLocationMutation.isPending ? (
+                      <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                    ) : (
+                      <svg className="h-4 w-4 text-primary opacity-70" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="mb-1 text-sm font-medium text-primary">{portal.salon.name}</p>
+            )}
             <h1 className="font-serif text-3xl font-bold">Portal zaposlenog</h1>
             <p className="text-muted-foreground">Dobro došli, {portal.employee.name}.</p>
           </div>
@@ -793,7 +845,7 @@ export default function EmployeePortal() {
                         <Badge variant="outline" className={cn("rounded-full px-3 py-1 text-xs font-semibold", statusClasses[appointment.status])}>{statusLabel[appointment.status]}</Badge>
                         {!["completed", "no-show", "cancelled"].includes(appointment.status) && (
                           <Button size="sm" variant="outline" className="gap-1.5 opacity-90 transition-opacity group-hover:opacity-100" onClick={() => setEditing({ ...appointment })}>
-                            <Pencil className="h-3.5 w-3.5" />Završi / no-show
+                            <Pencil className="h-3.5 w-3.5" />Upravljaj tokom
                           </Button>
                         )}
                       </div>
@@ -851,19 +903,21 @@ export default function EmployeePortal() {
         </div>
 
         <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Ažuriraj termin</DialogTitle></DialogHeader>
+          <DialogContent className="max-h-[90dvh] w-[calc(100vw-1rem)] max-w-lg overflow-y-auto">
+            <DialogHeader><DialogTitle>Tok termina</DialogTitle></DialogHeader>
             {editing && <div className="space-y-4">
               <p className="text-sm text-muted-foreground">{editing.customerName} · {editing.serviceName}</p>
-              <div>
-                <Label>Status</Label>
-                <select className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm" value={editing.status} onChange={(event) => setEditing({ ...editing, status: event.target.value as Appointment["status"] })}>
-                  <option value="completed">Završen</option>
-                  <option value="no-show">No-show</option>
-                </select>
-              </div>
-              <div><Label>Interna napomena</Label><Textarea className="mt-1" value={editing.notes ?? ""} onChange={(event) => setEditing({ ...editing, notes: event.target.value })} /></div>
-              <Button className="w-full" onClick={saveAppointment}>Sačuvaj</Button>
+              <AppointmentLifecyclePanel
+                appointment={editing}
+                onUpdated={async (updated) => {
+                  setEditing((current) => current ? { ...current, ...updated, customerPhone: current.customerPhone } : null);
+                  setPortal((current) => current ? {
+                    ...current,
+                    appointments: current.appointments.map((item) => item.id === updated.id ? { ...item, ...updated, customerPhone: item.customerPhone } : item),
+                  } : null);
+                  await load(false);
+                }}
+              />
             </div>}
           </DialogContent>
         </Dialog>

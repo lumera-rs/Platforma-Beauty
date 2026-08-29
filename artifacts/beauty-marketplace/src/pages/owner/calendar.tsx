@@ -14,6 +14,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { SearchableCombobox, type SearchableComboboxOption } from "@/components/ui/searchable-combobox";
 import { BookingSettingsForm } from "@/components/owner/booking-settings-form";
 import { QuickPackageDialog } from "@/components/owner/quick-package-dialog";
+import { AppointmentLifecyclePanel } from "@/components/appointment-lifecycle-panel";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
@@ -522,7 +523,7 @@ export default function OwnerCalendar() {
   const handlePlannerPackageChange = (id: string) => {
     applyPlannerPackage(customerPackages?.find(p => p.id === id));
   };
-  const [editing, setEditing] = useState<{ id: string; seriesId: string | null; bookingGroupId: string | null; status: "pending" | "confirmed" | "completed" | "cancelled" | "no-show"; employeeId: string; notes: string } | null>(null);
+  const [editing, setEditing] = useState<Appointment | null>(null);
   const [seriesMove, setSeriesMove] = useState<{ seriesId: string; dayOffset: string; startTime: string } | null>(null);
   const [seriesMovePreviewKey, setSeriesMovePreviewKey] = useState<string | null>(null);
   const hasCurrentSeriesMovePreview = Boolean(seriesMove && seriesMovePreviewKey === seriesMoveFingerprint(seriesMove));
@@ -731,7 +732,7 @@ export default function OwnerCalendar() {
 
   const saveAppointmentUpdate = () => {
     if (!editing) return;
-    updateAppointment.mutate({ appointmentId: editing.id, data: { status: editing.status, ...(editing.employeeId ? { employeeId: editing.employeeId } : {}), notes: editing.notes } }, {
+    updateAppointment.mutate({ appointmentId: editing.id, data: { ...(editing.employeeId ? { employeeId: editing.employeeId } : {}), notes: editing.notes ?? "" } }, {
       onSuccess: () => { toast.success("Termin je izmenjen"); setEditing(null); refetchAppointments(); refetchUnfilteredAppointments(); },
       onError: (error) => toast.error("Termin nije izmenjen", { description: error instanceof Error ? error.message : "Pokušajte ponovo." }),
     });
@@ -1041,11 +1042,11 @@ export default function OwnerCalendar() {
             </div>
           </div>
           <Dialog open={!!editing} onOpenChange={(isOpen) => !isOpen && setEditing(null)}>
-            <DialogContent>
+            <DialogContent className="max-h-[90dvh] w-[calc(100vw-1rem)] max-w-lg overflow-y-auto">
               <DialogHeader><DialogTitle>Izmeni termin</DialogTitle></DialogHeader>
               {editing && <div className="space-y-4">
-                <div className="space-y-2"><Label>Status</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={editing.status} onChange={(event) => setEditing({ ...editing, status: event.target.value as typeof editing.status })}><option value="pending">Na čekanju</option><option value="confirmed">Potvrđen</option><option value="completed">Završen</option><option value="cancelled">Otkazan</option><option value="no-show">Nije došao</option></select></div>
-                <div className="space-y-2"><Label>Napomena</Label><Textarea value={editing.notes} onChange={(event) => setEditing({ ...editing, notes: event.target.value })} /></div>
+                <AppointmentLifecyclePanel appointment={editing} onUpdated={async (updated) => { setEditing(updated); await Promise.all([refetchAppointments(), refetchUnfilteredAppointments(), refetchMonthAppointments()]); }} />
+                <div className="space-y-2"><Label>Napomena</Label><Textarea value={editing.notes ?? ""} onChange={(event) => setEditing({ ...editing, notes: event.target.value })} /></div>
                 <Button className="w-full" onClick={saveAppointmentUpdate} disabled={updateAppointment.isPending}>{updateAppointment.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Sačuvaj izmene</Button>
                  {editing.seriesId && <Button className="w-full" variant="outline" onClick={() => openSeriesMove(editing.seriesId!)}><Repeat2 className="mr-2 h-4 w-4" /> Pomeri preostale termine serije</Button>}
                 {editing.seriesId && <Button className="w-full" variant="destructive" disabled={cancelSeries.isPending} onClick={() => cancelSeries.mutate({ seriesId: editing.seriesId! }, { onSuccess: (result) => { toast.success(`Otkazano je ${result.cancelledAppointments} budućih termina iz serije.`); setEditing(null); refetchAppointments(); refetchUnfilteredAppointments(); refetchCustomers(); }, onError: (error) => toast.error("Serija nije otkazana", { description: error instanceof Error ? error.message : "Pokušajte ponovo." }) })}>{cancelSeries.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Otkaži sve buduće termine serije</Button>}
@@ -1254,7 +1255,7 @@ export default function OwnerCalendar() {
                         timeBlocks={timeBlocks ?? []}
                         employees={timelineEmployees}
                         onSlotClick={(empId, time) => openNewAppointment({ employeeId: empId, startTime: time, date: selectedDate })}
-                        onAppointmentClick={(a) => setEditing({ id: a.id, seriesId: a.seriesId ?? null, bookingGroupId: a.bookingGroupId ?? null, status: a.status, employeeId: a.employeeId ?? "", notes: a.notes ?? "" })}
+                        onAppointmentClick={setEditing}
                         onBlockClick={(b) => handleDeleteBlock(b.id)}
                       />
                     ) : sortedList.length > 0 ? (
@@ -1291,7 +1292,7 @@ export default function OwnerCalendar() {
                               </div>
                               <div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end">
                                 <Badge variant="outline" className={cn("rounded-full px-3 py-1 text-xs font-semibold", statusClasses[appointment.status as keyof typeof statusClasses])}>{statusLabels[appointment.status as keyof typeof statusLabels]}</Badge>
-                                <Button size="sm" variant="outline" className="gap-1.5 opacity-90 transition-opacity hover:opacity-100" aria-label={`Izmeni termin za ${appointment.customerName}`} onClick={() => setEditing({ id: appointment.id, seriesId: appointment.seriesId ?? null, bookingGroupId: appointment.bookingGroupId ?? null, status: appointment.status, employeeId: appointment.employeeId ?? "", notes: appointment.notes ?? "" })}><Pencil className="h-3.5 w-3.5" /> Izmeni</Button>
+                                 <Button size="sm" variant="outline" className="gap-1.5 opacity-90 transition-opacity hover:opacity-100" aria-label={`Izmeni termin za ${appointment.customerName}`} onClick={() => setEditing(appointment)}><Pencil className="h-3.5 w-3.5" /> Izmeni</Button>
                               </div>
                             </div>
                           );
