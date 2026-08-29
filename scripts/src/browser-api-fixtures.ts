@@ -73,6 +73,7 @@ export type AdminIntegrationsFixtureOverrides = {
   google_oauth?: Partial<AdminIntegrationCardFixture>;
   facebook_oauth?: Partial<AdminIntegrationCardFixture>;
   cloudflare?: Partial<AdminIntegrationCardFixture>;
+  web_push?: Partial<AdminIntegrationCardFixture>;
   redirectUris?: {
     google: string;
     facebook: string;
@@ -146,6 +147,7 @@ export function adminIntegrationsFixture(
         google_oauth: { ...card, ...overrides.google_oauth },
         facebook_oauth: { ...card, ...overrides.facebook_oauth },
         cloudflare: { ...card, ...overrides.cloudflare },
+        web_push: { ...card, ...overrides.web_push },
       },
       deliveryReports: {
         providers: {

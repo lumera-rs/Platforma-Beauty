@@ -151,3 +151,60 @@ test("keeps integration cards intact when a successful webhook freshness respons
   await expect(brevoConfirmation).toContainText("08:45:00");
   await expect(brevoConfirmation).toContainText("sveža potvrda");
 });
+
+test("keeps the newest Web Push period when an older response arrives last", async ({ page }) => {
+  const validPayload = adminIntegrationsFixture(apiSchemas.AdminGetIntegrationsResponse);
+  const responses = {
+    1: {
+      periodDays: 1,
+      periodStartedAt: "2026-08-28T12:00:00.000Z",
+      deliveries: { sent: 101, acknowledged: 100, failed: 1, retried: 1, pending: 0, expiredOrChanged: 0, providerErrors: 1 },
+      devices: { active: 11, automaticallyDeactivated: 1 },
+    },
+    7: {
+      periodDays: 7,
+      periodStartedAt: "2026-08-22T12:00:00.000Z",
+      deliveries: { sent: 707, acknowledged: 700, failed: 7, retried: 7, pending: 0, expiredOrChanged: 2, providerErrors: 5 },
+      devices: { active: 17, automaticallyDeactivated: 7 },
+    },
+    30: {
+      periodDays: 30,
+      periodStartedAt: "2026-07-30T12:00:00.000Z",
+      deliveries: { sent: 3030, acknowledged: 3000, failed: 30, retried: 30, pending: 0, expiredOrChanged: 10, providerErrors: 20 },
+      devices: { active: 30, automaticallyDeactivated: 30 },
+    },
+  } as const;
+  let resolveSevenDayResponse: (() => void) | undefined;
+  const sevenDayMayFinish = new Promise<void>((resolve) => {
+    resolveSevenDayResponse = resolve;
+  });
+
+  await page.route("**/api/admin/integrations", async (route) => {
+    await route.fulfill({ status: 200, json: validPayload });
+  });
+  await page.route("**/api/admin/integrations/web-push-delivery-metrics?periodDays=*", async (route) => {
+    const periodDays = Number(new URL(route.request().url()).searchParams.get("periodDays")) as keyof typeof responses;
+    if (periodDays === 7) await sevenDayMayFinish;
+    await route.fulfill({ status: 200, json: responses[periodDays] });
+  });
+
+  const login = await page.request.post("/api/auth/login", {
+    data: { email: adminEmail, password },
+  });
+  expect(login).toBeOK();
+
+  await page.goto("/admin/integracije");
+  await expect(page.getByRole("heading", { name: "Integracije i konektori" })).toBeVisible();
+  const period = page.getByTestId("web-push-period");
+  await period.selectOption("1");
+  await expect(page.getByTestId("web-push-delivery-metrics")).toContainText("101");
+  await period.selectOption("30");
+  await expect(page.getByTestId("web-push-delivery-metrics")).toContainText("3030");
+
+  resolveSevenDayResponse?.();
+  await page.waitForResponse((response) => new URL(response.url()).searchParams.get("periodDays") === "7");
+
+  await expect(period).toHaveValue("30");
+  await expect(page.getByTestId("web-push-delivery-metrics")).toContainText("3030");
+  await expect(page.getByTestId("web-push-delivery-metrics")).not.toContainText("707");
+});

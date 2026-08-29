@@ -82,6 +82,7 @@
     "test:beauty-jobs-browser": "pnpm --filter @workspace/scripts run test:beauty-jobs-browser",
     "test:business-guide-pdf": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/lib/business-guide-pdf.test.ts",
     "test:business-guide-links": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/lib/business-guide-links.test.ts",
+    "test:web-push-metrics": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/lib/web-push.test.ts",
     "test:retention-settings": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/retention-settings.test.ts",
     "test:retention-preview": "pnpm --filter @workspace/scripts run test:retention-preview",
     "test:webhook-repair-selection": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/webhook-repair-selection.test.ts",
