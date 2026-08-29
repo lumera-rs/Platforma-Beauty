@@ -119,3 +119,4 @@
 - [Employee location context](employee-location-context.md) — every employee portal and commerce flow resolves location from the same active assignment, never the legacy profile salon.
 - [Paginated fixture assertions](paginated-fixture-assertions.md) — membership checks on public lists must isolate fixtures or request a page guaranteed to contain them.
 - [Checkout fixture entitlements](checkout-fixture-entitlements.md) — base-price and shipping assertions must neutralize seeded benefits and restore them afterward.
+- [Relational fixture cleanup](relational-fixture-cleanup.md) — marker-owned parent rows may acquire dependents while an integration test is running; clean the dependency chain first.
