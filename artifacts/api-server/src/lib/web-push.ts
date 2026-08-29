@@ -1,4 +1,4 @@
-import { createECDH, randomUUID } from "node:crypto";
+import { createECDH, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import webPush from "web-push";
 import {
   db,
@@ -7,7 +7,7 @@ import {
   systemPushDeliveriesTable,
   type SystemPushPayload,
 } from "@workspace/db";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { integrationSettings } from "./integrations";
 
@@ -229,6 +229,101 @@ export function systemPushRetry(attemptCount: number, status: number | null) {
   return { willRetry, backoffMs };
 }
 
+export function systemPushAcknowledgementToken(deliveryId: string, secret = process.env["SESSION_SECRET"]) {
+  if (!secret) throw new Error("SESSION_SECRET is required for Web Push delivery acknowledgements.");
+  return createHmac("sha256", secret)
+    .update(`system-push-delivery-ack:v1:${deliveryId}`)
+    .digest("base64url");
+}
+
+export async function acknowledgeSystemPushDelivery(deliveryId: string, token: string) {
+  const expected = Buffer.from(systemPushAcknowledgementToken(deliveryId));
+  const supplied = Buffer.from(token);
+  if (expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) return false;
+  const [acknowledged] = await db.update(systemPushDeliveriesTable).set({
+    acknowledgedAt: sql`now()`,
+    updatedAt: sql`greatest(${systemPushDeliveriesTable.updatedAt}, now())`,
+  }).where(and(
+    eq(systemPushDeliveriesTable.id, deliveryId),
+    isNull(systemPushDeliveriesTable.acknowledgedAt),
+  )).returning({ id: systemPushDeliveriesTable.id });
+  return Boolean(acknowledged);
+}
+
+export async function webPushDeliveryMetrics(periodDays: 1 | 7 | 30 | 90, now = new Date()) {
+  const periodStartedAt = new Date(now.getTime() - periodDays * 24 * 60 * 60_000);
+  const result = await db.execute<{
+    sent: number;
+    acknowledged: number;
+    failed: number;
+    retried: number;
+    pending: number;
+    expired_or_changed: number;
+    provider_errors: number;
+    active_devices: number;
+    automatically_deactivated: number;
+  }>(sql`
+    WITH delivery_metrics AS (
+      SELECT
+        count(*) FILTER (WHERE status = 'sent')::int AS sent,
+        count(*) FILTER (WHERE acknowledged_at IS NOT NULL)::int AS acknowledged,
+        count(*) FILTER (WHERE status = 'failed')::int AS failed,
+        coalesce(sum(greatest(attempt_count - 1, 0)), 0)::int AS retried,
+        count(*) FILTER (WHERE status IN ('queued', 'processing'))::int AS pending,
+        count(*) FILTER (
+          WHERE status = 'failed'
+            AND last_error IN (
+              'Reminder expired before delivery.',
+              'Reminder source changed before delivery.'
+            )
+        )::int AS expired_or_changed,
+        count(*) FILTER (
+          WHERE status = 'failed'
+            AND (
+              last_error IS NULL
+              OR last_error NOT IN (
+                'Reminder expired before delivery.',
+                'Reminder source changed before delivery.'
+              )
+            )
+        )::int AS provider_errors
+      FROM system_push_deliveries
+      WHERE created_at >= ${periodStartedAt}
+    ),
+    device_metrics AS (
+      SELECT
+        count(*) FILTER (WHERE enabled = true)::int AS active_devices,
+        count(*) FILTER (
+          WHERE enabled = false
+            AND disabled_at >= ${periodStartedAt}
+            AND disabled_reason IN ('provider_404', 'provider_410')
+        )::int AS automatically_deactivated
+      FROM push_subscriptions
+    )
+    SELECT delivery_metrics.*, device_metrics.*
+    FROM delivery_metrics
+    CROSS JOIN device_metrics
+  `);
+  const row = result.rows[0]!;
+  return {
+    periodDays,
+    periodStartedAt,
+    deliveries: {
+      sent: row.sent,
+      acknowledged: row.acknowledged,
+      failed: row.failed,
+      retried: row.retried,
+      pending: row.pending,
+      expiredOrChanged: row.expired_or_changed,
+      providerErrors: row.provider_errors,
+    },
+    devices: {
+      active: row.active_devices,
+      automaticallyDeactivated: row.automatically_deactivated,
+    },
+  };
+}
+
 let configurationWarningWritten = false;
 
 export async function runSystemPushWorker(options: { batchSize?: number; now?: Date } = {}) {
@@ -268,7 +363,13 @@ export async function runSystemPushWorker(options: { batchSize?: number; now?: D
       const response = await webPush.sendNotification({
         endpoint: delivery.endpoint,
         keys: { p256dh: delivery.p256dh, auth: delivery.auth },
-      }, JSON.stringify(delivery.payload), { TTL: 60 * 60, urgency: "high" });
+      }, JSON.stringify({
+        ...delivery.payload,
+        deliveryReceipt: {
+          deliveryId: delivery.id,
+          token: systemPushAcknowledgementToken(delivery.id),
+        },
+      }), { TTL: 60 * 60, urgency: "high" });
       await db.update(systemPushDeliveriesTable).set({
         status: "sent", attemptCount: delivery.attempt_count + 1, lastAttemptAt: now,
         lastHttpStatus: response.statusCode, lastError: null, sentAt: now,

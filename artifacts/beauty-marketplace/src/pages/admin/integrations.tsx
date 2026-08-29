@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/password-input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { AlertTriangle, CheckCircle2, Copy, KeyRound, Loader2, PlugZap, RefreshCw, Send, ShieldCheck, UsersRound, Webhook } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, KeyRound, Loader2, PlugZap, RefreshCw, Send, ShieldCheck, Smartphone, UsersRound, Webhook } from "lucide-react";
 import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
 import type {
   AdminBrevoWebhookIntegrationCard,
@@ -16,11 +16,13 @@ import type {
   AdminGetWebhookFreshnessResponse,
   AdminIntegrationCard,
   AdminSmsWebhookRegistration,
+  AdminWebPushDeliveryMetrics,
   AdminWebhookIntegrationCard,
 } from "@workspace/api-client-react";
 import {
   AdminGetIntegrationsResponse as AdminGetIntegrationsResponseSchema,
   AdminGetWebhookFreshnessResponse as AdminGetWebhookFreshnessResponseSchema,
+  AdminGetWebPushDeliveryMetricsResponse as AdminWebPushDeliveryMetricsSchema,
 } from "@workspace/api-zod";
 import {
   assertNativeFetchSuccess,
@@ -66,6 +68,11 @@ export default function AdminIntegrations() {
   const [retryingSmsRegistrationRefresh, setRetryingSmsRegistrationRefresh] = useState(false);
   const [webhookFreshnessRefreshFailed, setWebhookFreshnessRefreshFailed] = useState(false);
   const [retryingWebhookFreshness, setRetryingWebhookFreshness] = useState(false);
+  const [webPushMetrics, setWebPushMetrics] = useState<AdminWebPushDeliveryMetrics | null>(null);
+  const [webPushPeriodDays, setWebPushPeriodDays] = useState<1 | 7 | 30 | 90>(7);
+  const [webPushMetricsLoading, setWebPushMetricsLoading] = useState(false);
+  const [webPushMetricsError, setWebPushMetricsError] = useState(false);
+  const webPushMetricsSequence = useRef(0);
   const freshnessRefreshController = useRef<AbortController | null>(null);
   const freshnessRefreshSequence = useRef(0);
   const invalidateWebhookFreshness = () => {
@@ -134,6 +141,26 @@ export default function AdminIntegrations() {
       await refreshWebhookFreshness();
     } finally {
       setRetryingWebhookFreshness(false);
+    }
+  };
+  const loadWebPushMetrics = async (periodDays: 1 | 7 | 30 | 90) => {
+    const sequence = ++webPushMetricsSequence.current;
+    setWebPushMetricsLoading(true);
+    setWebPushMetricsError(false);
+    try {
+      const body = await fetchNativeJson<unknown>(`/api/admin/integrations/web-push-delivery-metrics?periodDays=${periodDays}`, { credentials: "include" }, {
+        httpErrorMessage: "Pregled Web Push isporuka nije učitan.",
+        invalidResponseMessage: "Odgovor servera za Web Push isporuke nije validan JSON.",
+      });
+      const parsed = AdminWebPushDeliveryMetricsSchema.safeParse(body);
+      if (!parsed.success) throw new Error(integrationResponseError(parsed.error.issues));
+      if (sequence !== webPushMetricsSequence.current) return;
+      setWebPushMetrics(body as AdminWebPushDeliveryMetrics);
+    } catch {
+      if (sequence !== webPushMetricsSequence.current) return;
+      setWebPushMetricsError(true);
+    } finally {
+      if (sequence === webPushMetricsSequence.current) setWebPushMetricsLoading(false);
     }
   };
   const status = (card: Card) => !card.enabled ? ["Neaktivno", "bg-slate-100 text-slate-600"] : card.complete ? ["Aktivno", "bg-emerald-100 text-emerald-700"] : ["Nepotpuno", "bg-amber-100 text-amber-700"];
@@ -368,7 +395,10 @@ export default function AdminIntegrations() {
   };
   useEffect(() => {
     load()
-      .then(() => refreshStaleBrevoWebhooks({ notify: false }))
+      .then(() => Promise.all([
+        refreshStaleBrevoWebhooks({ notify: false }),
+        loadWebPushMetrics(webPushPeriodDays),
+      ]))
       .catch((error) => toast.error(error instanceof Error ? error.message : "Podešavanja integracija nisu učitana."));
   }, []);
   useEffect(() => {
@@ -526,6 +556,59 @@ export default function AdminIntegrations() {
             {card.enabled && !card.complete && <p className="mt-2 text-xs font-semibold text-amber-800" data-testid="web-push-incomplete-message"><AlertTriangle className="mr-1 inline h-3.5 w-3.5" />Integracija je uključena, ali nepotpuna. Obaveštenja se neće slati dok javni ključ, privatni ključ i kontakt URI ne budu ispravno sačuvani.</p>}
             {card.enabled && card.complete && <p className="mt-2 text-xs font-semibold text-emerald-800" data-testid="web-push-ready-message"><CheckCircle2 className="mr-1 inline h-3.5 w-3.5" />Integracija je spremna za slanje sistemskih obaveštenja pretplaćenim uređajima.</p>}
           </div>}
+          {integration === "web_push" && <section className="rounded-lg border bg-muted/20 p-3" data-testid="web-push-delivery-metrics">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="flex items-center gap-2 text-sm font-semibold"><Smartphone className="h-4 w-4 text-primary" />Status Web Push isporuka</p>
+                <p className="mt-1 text-xs text-muted-foreground">Prikaz sadrži samo zbirne brojeve — bez endpointa, ključeva i identiteta uređaja.</p>
+              </div>
+              <label className="flex items-center gap-2 text-xs font-medium">
+                Period
+                <select
+                  value={webPushPeriodDays}
+                  data-testid="web-push-period"
+                  className="h-9 rounded-md border bg-background px-2 text-sm"
+                  onChange={(event) => {
+                    const period = Number(event.target.value) as 1 | 7 | 30 | 90;
+                    setWebPushPeriodDays(period);
+                    void loadWebPushMetrics(period);
+                  }}
+                >
+                  <option value={1}>24 sata</option>
+                  <option value={7}>7 dana</option>
+                  <option value={30}>30 dana</option>
+                  <option value={90}>90 dana</option>
+                </select>
+              </label>
+            </div>
+            {webPushMetricsLoading && !webPushMetrics && <p className="mt-3 text-xs text-muted-foreground"><Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" />Učitavanje pregleda…</p>}
+            {webPushMetricsError && <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3" role="alert" data-testid="web-push-metrics-error">
+              <p className="text-xs font-medium text-amber-800">Pregled isporuka trenutno nije dostupan.</p>
+              <Button variant="outline" size="sm" className="mt-2" disabled={webPushMetricsLoading} onClick={() => loadWebPushMetrics(webPushPeriodDays)}>
+                <RefreshCw className={`mr-2 h-3.5 w-3.5 ${webPushMetricsLoading ? "animate-spin" : ""}`} />Pokušaj ponovo
+              </Button>
+            </div>}
+            {webPushMetrics && <div className={`mt-3 space-y-3 ${webPushMetricsLoading ? "opacity-60" : ""}`} aria-busy={webPushMetricsLoading}>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {[
+                  ["Provajder prihvatio", webPushMetrics.deliveries.sent, "text-sky-700"],
+                  ["Potvrđeno na uređaju", webPushMetrics.deliveries.acknowledged, "text-emerald-700"],
+                  ["Neuspelo", webPushMetrics.deliveries.failed, "text-red-700"],
+                  ["Ponovljeno", webPushMetrics.deliveries.retried, "text-amber-700"],
+                ].map(([label, value, color]) => <div key={String(label)} className="rounded-md border bg-background p-2 text-center">
+                  <p className={`text-xl font-bold ${color}`}>{value}</p><p className="text-[11px] text-muted-foreground">{label}</p>
+                </div>)}
+              </div>
+              <div className="grid gap-2 text-xs sm:grid-cols-2">
+                <div className="rounded-md border bg-background p-2"><span className="font-semibold">{webPushMetrics.deliveries.expiredOrChanged}</span> isteklih ili promenjenih termina</div>
+                <div className="rounded-md border bg-background p-2"><span className="font-semibold">{webPushMetrics.deliveries.providerErrors}</span> provider grešaka</div>
+                <div className="rounded-md border bg-background p-2"><span className="font-semibold">{webPushMetrics.deliveries.pending}</span> isporuka čeka ili se ponavlja</div>
+                <div className="rounded-md border bg-background p-2"><span className="font-semibold">{webPushMetrics.devices.active}</span> aktivnih uređaja sada</div>
+                <div className="rounded-md border bg-background p-2"><span className="font-semibold">{webPushMetrics.devices.automaticallyDeactivated}</span> automatski deaktiviranih uređaja u periodu</div>
+              </div>
+              <p className="text-[11px] text-muted-foreground">„Provajder prihvatio“ znači da je push servis prihvatio poruku. „Potvrđeno na uređaju“ znači da je service worker uspešno prikazao obaveštenje i poslao potvrdu serveru. Isporuke su grupisane prema vremenu kreiranja u izabranom periodu; „Ponovljeno“ predstavlja dodatne pokušaje nakon prvog.</p>
+            </div>}
+          </section>}
           {fields[integration].map((field) => <div key={field.key} className="space-y-1.5"><Label htmlFor={`integration-${integration}-${field.key}`}>{field.label}</Label>{card.values[field.key] && <p className="break-all text-xs text-muted-foreground" data-testid={`saved-value-${integration}-${field.key}`}>Sačuvano: {card.values[field.key]}</p>}{field.key === "webhookSecret" && (integration === "sms" || integration === "brevo") ? <>
             <div className="flex gap-2">
               <div className="flex-1"><PasswordInput id={`integration-${integration}-${field.key}`} data-testid={`input-webhook-secret-${integration}`} value={form[integration][field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => setForm({ ...form, [integration]: { ...form[integration], [field.key]: event.target.value } })} /></div>

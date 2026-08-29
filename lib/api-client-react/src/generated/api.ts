@@ -43,6 +43,7 @@ import type {
   AdminGetAftercareStatisticsParams,
   AdminGetCommerceProfitabilityParams,
   AdminGetIntegrationsResponse,
+  AdminGetWebPushDeliveryMetricsParams,
   AdminGetWebhookFreshnessResponse,
   AdminIntegrationCard,
   AdminListAftercareTreatmentsParams,
@@ -91,6 +92,7 @@ import type {
   AdminUpdateRmaStatusBody,
   AdminUser,
   AdminUserUpdate,
+  AdminWebPushDeliveryMetrics,
   AftercareSettings,
   AftercareSettingsUpdate,
   AftercareStatistics,
@@ -493,6 +495,7 @@ import type {
   SupplierCategoryNode,
   SupplierInput,
   SupplierUpdate,
+  SystemPushDeliveryAcknowledgement,
   TimeSlot,
   TrackRetailOrderParams,
   TreatmentPackage,
@@ -1634,6 +1637,90 @@ export function useAdminGetWebhookFreshness<TData = Awaited<ReturnType<typeof ad
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getAdminGetWebhookFreshnessQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminGetWebPushDeliveryMetricsUrl = (params: AdminGetWebPushDeliveryMetricsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/integrations/web-push-delivery-metrics?${stringifiedParams}` : `/api/admin/integrations/web-push-delivery-metrics`
+}
+
+/**
+ * @summary Get privacy-safe aggregate Web Push delivery metrics
+ */
+export const adminGetWebPushDeliveryMetrics = async (params: AdminGetWebPushDeliveryMetricsParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminWebPushDeliveryMetrics> => {
+
+  return customFetch<AdminWebPushDeliveryMetrics>(getAdminGetWebPushDeliveryMetricsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGetWebPushDeliveryMetricsQueryKey = (params?: AdminGetWebPushDeliveryMetricsParams,) => {
+    return [
+    `/api/admin/integrations/web-push-delivery-metrics`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminGetWebPushDeliveryMetricsQueryOptions = <TData = Awaited<ReturnType<typeof adminGetWebPushDeliveryMetrics>>, TError = ErrorType<unknown>>(params: AdminGetWebPushDeliveryMetricsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetWebPushDeliveryMetrics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetWebPushDeliveryMetricsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetWebPushDeliveryMetrics>>> = ({ signal }) => adminGetWebPushDeliveryMetrics(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetWebPushDeliveryMetrics>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminGetWebPushDeliveryMetricsQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetWebPushDeliveryMetrics>>>
+export type AdminGetWebPushDeliveryMetricsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get privacy-safe aggregate Web Push delivery metrics
+ */
+
+export function useAdminGetWebPushDeliveryMetrics<TData = Awaited<ReturnType<typeof adminGetWebPushDeliveryMetrics>>, TError = ErrorType<unknown>>(
+ params: AdminGetWebPushDeliveryMetricsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetWebPushDeliveryMetrics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminGetWebPushDeliveryMetricsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -3610,6 +3697,77 @@ export function useGetWebPushConfig<TData = Awaited<ReturnType<typeof getWebPush
 
 
 
+
+export const getAcknowledgeSystemPushDeliveryUrl = () => {
+
+
+
+
+  return `/api/push/deliveries/acknowledge`
+}
+
+/**
+ * @summary Confirm that a service worker displayed a Web Push notification
+ */
+export const acknowledgeSystemPushDelivery = async (systemPushDeliveryAcknowledgement: SystemPushDeliveryAcknowledgement, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getAcknowledgeSystemPushDeliveryUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(systemPushDeliveryAcknowledgement)
+  }
+);}
+
+
+
+
+
+export const getAcknowledgeSystemPushDeliveryMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acknowledgeSystemPushDelivery>>, TError,{data: BodyType<SystemPushDeliveryAcknowledgement>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof acknowledgeSystemPushDelivery>>, TError,{data: BodyType<SystemPushDeliveryAcknowledgement>}, TContext> => {
+
+const mutationKey = ['acknowledgeSystemPushDelivery'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof acknowledgeSystemPushDelivery>>, {data: BodyType<SystemPushDeliveryAcknowledgement>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  acknowledgeSystemPushDelivery(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AcknowledgeSystemPushDeliveryMutationResult = NonNullable<Awaited<ReturnType<typeof acknowledgeSystemPushDelivery>>>
+    export type AcknowledgeSystemPushDeliveryMutationBody = BodyType<SystemPushDeliveryAcknowledgement>
+    export type AcknowledgeSystemPushDeliveryMutationError = ErrorType<void>
+
+    /**
+ * @summary Confirm that a service worker displayed a Web Push notification
+ */
+export const useAcknowledgeSystemPushDelivery = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acknowledgeSystemPushDelivery>>, TError,{data: BodyType<SystemPushDeliveryAcknowledgement>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof acknowledgeSystemPushDelivery>>,
+        TError,
+        {data: BodyType<SystemPushDeliveryAcknowledgement>},
+        TContext
+      > => {
+      return useMutation(getAcknowledgeSystemPushDeliveryMutationOptions(options));
+    }
 
 export const getListPushSubscriptionsUrl = () => {
 

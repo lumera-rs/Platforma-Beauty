@@ -561,6 +561,10 @@ import
   UpdateSalonCustomerParams,
   UpdateSalonCustomerResponse,
   AdminListSmsDeliveriesResponse,
+  AdminGetWebPushDeliveryMetricsQueryParams,
+  AdminGetWebPushDeliveryMetricsResponse,
+  AcknowledgeSystemPushDeliveryBody,
+  AcknowledgeSystemPushDeliveryResponse,
   UpdateShopCartItemBody,
   UpdateShopCartItemParams,
   UpdateShopCartItemResponse,
@@ -693,8 +697,10 @@ import { canonicalAvailability, preloadCanonicalAvailability } from "../lib/avai
 import { notifyCustomer } from "../lib/customer-notifications";
 import {
   publicWebPushConfiguration,
+  acknowledgeSystemPushDelivery,
   parseWebPushConfiguration,
   validatePushSubscription,
+  webPushDeliveryMetrics,
   webPushConfiguration,
 } from "../lib/web-push";
 import {
@@ -4352,6 +4358,22 @@ router.get("/admin/integrations/webhook-freshness", async (req, res): Promise<vo
   });
 });
 
+router.get("/admin/integrations/web-push-delivery-metrics", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const query = AdminGetWebPushDeliveryMetricsQueryParams.safeParse({
+    ...req.query,
+    periodDays: typeof req.query.periodDays === "string"
+      ? Number(req.query.periodDays)
+      : req.query.periodDays,
+  });
+  if (!query.success) {
+    res.status(400).json({ error: "Izaberite podržani period: 1, 7, 30 ili 90 dana." });
+    return;
+  }
+  const metrics = await webPushDeliveryMetrics(query.data.periodDays);
+  res.json(AdminGetWebPushDeliveryMetricsResponse.parse(metrics));
+});
+
 router.put("/admin/integrations/:integration", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
   if (!integrationName(req.params.integration)) { res.status(404).json({ error: "Nepoznata integracija." }); return; }
@@ -6233,6 +6255,16 @@ function pushSubscriptionView(subscription: typeof pushSubscriptionsTable.$infer
 router.get("/push/config", async (_req, res): Promise<void> => {
   res.set("Cache-Control", "public, max-age=300");
   res.json(GetWebPushConfigResponse.parse(publicWebPushConfiguration(await webPushConfiguration())));
+});
+
+router.post("/push/deliveries/acknowledge", async (req, res): Promise<void> => {
+  const parsed = AcknowledgeSystemPushDeliveryBody.safeParse(req.body);
+  if (!parsed.success || !(await acknowledgeSystemPushDelivery(parsed.data.deliveryId, parsed.data.token))) {
+    res.status(400).json({ error: "Potvrda Web Push isporuke nije validna." });
+    return;
+  }
+  AcknowledgeSystemPushDeliveryResponse.parse(undefined);
+  res.status(204).send();
 });
 
 router.get("/customer/push-subscriptions", async (req, res): Promise<void> => {

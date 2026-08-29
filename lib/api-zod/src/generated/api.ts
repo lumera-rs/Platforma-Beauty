@@ -609,6 +609,61 @@ export const AdminGetWebhookFreshnessResponse = zod.object({
 
 
 /**
+ * @summary Get privacy-safe aggregate Web Push delivery metrics
+ */
+export const AdminGetWebPushDeliveryMetricsQueryParams = zod.object({
+  "periodDays": zod.union([zod.literal(1),zod.literal(7),zod.literal(30),zod.literal(90)])
+})
+
+export const adminGetWebPushDeliveryMetricsResponseDeliveriesSentMin = 0;
+export const adminGetWebPushDeliveryMetricsResponseDeliveriesSentMultipleOf = 1;
+
+export const adminGetWebPushDeliveryMetricsResponseDeliveriesAcknowledgedMin = 0;
+export const adminGetWebPushDeliveryMetricsResponseDeliveriesAcknowledgedMultipleOf = 1;
+
+export const adminGetWebPushDeliveryMetricsResponseDeliveriesFailedMin = 0;
+export const adminGetWebPushDeliveryMetricsResponseDeliveriesFailedMultipleOf = 1;
+
+export const adminGetWebPushDeliveryMetricsResponseDeliveriesRetriedMin = 0;
+export const adminGetWebPushDeliveryMetricsResponseDeliveriesRetriedMultipleOf = 1;
+
+export const adminGetWebPushDeliveryMetricsResponseDeliveriesPendingMin = 0;
+export const adminGetWebPushDeliveryMetricsResponseDeliveriesPendingMultipleOf = 1;
+
+export const adminGetWebPushDeliveryMetricsResponseDeliveriesExpiredOrChangedMin = 0;
+export const adminGetWebPushDeliveryMetricsResponseDeliveriesExpiredOrChangedMultipleOf = 1;
+
+export const adminGetWebPushDeliveryMetricsResponseDeliveriesProviderErrorsMin = 0;
+export const adminGetWebPushDeliveryMetricsResponseDeliveriesProviderErrorsMultipleOf = 1;
+
+export const adminGetWebPushDeliveryMetricsResponseDevicesActiveMin = 0;
+export const adminGetWebPushDeliveryMetricsResponseDevicesActiveMultipleOf = 1;
+
+export const adminGetWebPushDeliveryMetricsResponseDevicesAutomaticallyDeactivatedMin = 0;
+export const adminGetWebPushDeliveryMetricsResponseDevicesAutomaticallyDeactivatedMultipleOf = 1;
+
+
+
+export const AdminGetWebPushDeliveryMetricsResponse = zod.object({
+  "periodDays": zod.union([zod.literal(1),zod.literal(7),zod.literal(30),zod.literal(90)]),
+  "periodStartedAt": zod.coerce.date(),
+  "deliveries": zod.object({
+  "sent": zod.number().min(adminGetWebPushDeliveryMetricsResponseDeliveriesSentMin).multipleOf(adminGetWebPushDeliveryMetricsResponseDeliveriesSentMultipleOf),
+  "acknowledged": zod.number().min(adminGetWebPushDeliveryMetricsResponseDeliveriesAcknowledgedMin).multipleOf(adminGetWebPushDeliveryMetricsResponseDeliveriesAcknowledgedMultipleOf),
+  "failed": zod.number().min(adminGetWebPushDeliveryMetricsResponseDeliveriesFailedMin).multipleOf(adminGetWebPushDeliveryMetricsResponseDeliveriesFailedMultipleOf),
+  "retried": zod.number().min(adminGetWebPushDeliveryMetricsResponseDeliveriesRetriedMin).multipleOf(adminGetWebPushDeliveryMetricsResponseDeliveriesRetriedMultipleOf),
+  "pending": zod.number().min(adminGetWebPushDeliveryMetricsResponseDeliveriesPendingMin).multipleOf(adminGetWebPushDeliveryMetricsResponseDeliveriesPendingMultipleOf),
+  "expiredOrChanged": zod.number().min(adminGetWebPushDeliveryMetricsResponseDeliveriesExpiredOrChangedMin).multipleOf(adminGetWebPushDeliveryMetricsResponseDeliveriesExpiredOrChangedMultipleOf),
+  "providerErrors": zod.number().min(adminGetWebPushDeliveryMetricsResponseDeliveriesProviderErrorsMin).multipleOf(adminGetWebPushDeliveryMetricsResponseDeliveriesProviderErrorsMultipleOf)
+}),
+  "devices": zod.object({
+  "active": zod.number().min(adminGetWebPushDeliveryMetricsResponseDevicesActiveMin).multipleOf(adminGetWebPushDeliveryMetricsResponseDevicesActiveMultipleOf),
+  "automaticallyDeactivated": zod.number().min(adminGetWebPushDeliveryMetricsResponseDevicesAutomaticallyDeactivatedMin).multipleOf(adminGetWebPushDeliveryMetricsResponseDevicesAutomaticallyDeactivatedMultipleOf)
+})
+})
+
+
+/**
  * @summary Save administrator integration settings
  */
 export const AdminSaveIntegrationParams = zod.object({
@@ -2315,6 +2370,23 @@ export const GetWebPushConfigResponse = zod.object({
   "configured": zod.boolean(),
   "publicKey": zod.string().nullable()
 })
+
+
+/**
+ * @summary Confirm that a service worker displayed a Web Push notification
+ */
+export const acknowledgeSystemPushDeliveryBodyDeliveryIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const acknowledgeSystemPushDeliveryBodyTokenMin = 43;
+export const acknowledgeSystemPushDeliveryBodyTokenMax = 43;
+
+
+
+export const AcknowledgeSystemPushDeliveryBody = zod.object({
+  "deliveryId": zod.string().regex(acknowledgeSystemPushDeliveryBodyDeliveryIdRegExp),
+  "token": zod.string().min(acknowledgeSystemPushDeliveryBodyTokenMin).max(acknowledgeSystemPushDeliveryBodyTokenMax)
+})
+
+export const AcknowledgeSystemPushDeliveryResponse = zod.void()
 
 
 /**

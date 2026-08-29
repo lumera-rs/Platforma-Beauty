@@ -245,6 +245,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminGetWebhookFreshnessResponse"
+  /admin/integrations/web-push-delivery-metrics:
+    get:
+      operationId: adminGetWebPushDeliveryMetrics
+      tags: [admin]
+      summary: Get privacy-safe aggregate Web Push delivery metrics
+      parameters:
+        - name: periodDays
+          in: query
+          required: true
+          schema:
+            type: integer
+            enum: [1, 7, 30, 90]
+      responses:
+        "200":
+          description: Aggregate delivery and subscription health for the selected period
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminWebPushDeliveryMetrics"
   /admin/integrations/{integration}:
     put:
       operationId: adminSaveIntegration
@@ -808,6 +827,19 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/WebPushConfig" }
+  /push/deliveries/acknowledge:
+    post:
+      operationId: acknowledgeSystemPushDelivery
+      tags: [customer]
+      summary: Confirm that a service worker displayed a Web Push notification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SystemPushDeliveryAcknowledgement" }
+      responses:
+        "204": { description: Delivery acknowledgement accepted }
+        "400": { description: Invalid acknowledgement }
   /customer/push-subscriptions:
     get:
       operationId: listPushSubscriptions
@@ -8354,6 +8386,29 @@ components:
           required: [sms, brevo]
         deliveryReports: { $ref: "#/components/schemas/AdminDeliveryReports" }
       required: [integrations, deliveryReports]
+    AdminWebPushDeliveryMetrics:
+      type: object
+      properties:
+        periodDays: { type: number, enum: [1, 7, 30, 90] }
+        periodStartedAt: { type: string, format: date-time }
+        deliveries:
+          type: object
+          properties:
+            sent: { type: number, minimum: 0, multipleOf: 1 }
+            acknowledged: { type: number, minimum: 0, multipleOf: 1 }
+            failed: { type: number, minimum: 0, multipleOf: 1 }
+            retried: { type: number, minimum: 0, multipleOf: 1 }
+            pending: { type: number, minimum: 0, multipleOf: 1 }
+            expiredOrChanged: { type: number, minimum: 0, multipleOf: 1 }
+            providerErrors: { type: number, minimum: 0, multipleOf: 1 }
+          required: [sent, acknowledged, failed, retried, pending, expiredOrChanged, providerErrors]
+        devices:
+          type: object
+          properties:
+            active: { type: number, minimum: 0, multipleOf: 1 }
+            automaticallyDeactivated: { type: number, minimum: 0, multipleOf: 1 }
+          required: [active, automaticallyDeactivated]
+      required: [periodDays, periodStartedAt, deliveries, devices]
     AdminCreateEmailCampaignInput:
       type: object
       properties:
@@ -9105,6 +9160,14 @@ components:
         configured: { type: boolean }
         publicKey: { type: ["string", "null"] }
       required: [configured, publicKey]
+    SystemPushDeliveryAcknowledgement:
+      type: object
+      properties:
+        deliveryId:
+          type: string
+          pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+        token: { type: string, minLength: 43, maxLength: 43 }
+      required: [deliveryId, token]
     PushSubscriptionKeysInput:
       type: object
       properties:

@@ -6,6 +6,7 @@ import {
   parseWebPushConfiguration,
   resolveWebPushConfiguration,
   systemPushRetry,
+  systemPushAcknowledgementToken,
   validatePushSubscription,
 } from "./web-push";
 
@@ -134,4 +135,14 @@ test("Push retries are bounded and distinguish permanent provider failures", () 
   assert.equal(systemPushRetry(1, 400).willRetry, false);
   assert.equal(systemPushRetry(8, 503).willRetry, false);
   assert.ok(systemPushRetry(7, null).backoffMs <= 6 * 60 * 60_000);
+});
+
+test("Web Push acknowledgement tokens are delivery-bound and deterministic", () => {
+  const secret = "test-session-secret";
+  const first = systemPushAcknowledgementToken("11111111-1111-4111-8111-111111111111", secret);
+  const repeated = systemPushAcknowledgementToken("11111111-1111-4111-8111-111111111111", secret);
+  const other = systemPushAcknowledgementToken("22222222-2222-4222-8222-222222222222", secret);
+  assert.equal(first.length, 43);
+  assert.equal(first, repeated);
+  assert.notEqual(first, other);
 });

@@ -27,16 +27,29 @@ self.addEventListener("push", (event) => {
     // Keep the safe scope URL for malformed or non-URL payload values.
   }
 
-  event.waitUntil(self.registration.showNotification(
-    typeof payload.title === "string" && payload.title.trim() ? payload.title : FALLBACK_TITLE,
-    {
-      body: typeof payload.body === "string" ? payload.body : "",
-      icon: new URL("favicon.svg", scopeUrl).href,
-      badge: new URL("favicon.svg", scopeUrl).href,
-      tag: typeof payload.tag === "string" ? payload.tag : undefined,
-      data: { url: safeUrl },
-    },
-  ));
+  event.waitUntil((async () => {
+    await self.registration.showNotification(
+      typeof payload.title === "string" && payload.title.trim() ? payload.title : FALLBACK_TITLE,
+      {
+        body: typeof payload.body === "string" ? payload.body : "",
+        icon: new URL("favicon.svg", scopeUrl).href,
+        badge: new URL("favicon.svg", scopeUrl).href,
+        tag: typeof payload.tag === "string" ? payload.tag : undefined,
+        data: { url: safeUrl },
+      },
+    );
+    const receipt = payload.deliveryReceipt;
+    if (!receipt || typeof receipt.deliveryId !== "string" || typeof receipt.token !== "string") return;
+    try {
+      await fetch(new URL("/api/push/deliveries/acknowledge", scopeUrl.origin), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(receipt),
+      });
+    } catch {
+      // A failed acknowledgement must never suppress a displayed notification.
+    }
+  })());
 });
 
 self.addEventListener("notificationclick", (event) => {

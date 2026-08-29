@@ -1122,6 +1122,47 @@ export interface AdminGetWebhookFreshnessResponse {
   deliveryReports: AdminDeliveryReports;
 }
 
+export type AdminWebPushDeliveryMetricsPeriodDays = typeof AdminWebPushDeliveryMetricsPeriodDays[keyof typeof AdminWebPushDeliveryMetricsPeriodDays];
+
+
+export const AdminWebPushDeliveryMetricsPeriodDays = {
+  NUMBER_1: 1,
+  NUMBER_7: 7,
+  NUMBER_30: 30,
+  NUMBER_90: 90,
+} as const;
+
+export type AdminWebPushDeliveryMetricsDeliveries = {
+  /** @minimum 0 */
+  sent: number;
+  /** @minimum 0 */
+  acknowledged: number;
+  /** @minimum 0 */
+  failed: number;
+  /** @minimum 0 */
+  retried: number;
+  /** @minimum 0 */
+  pending: number;
+  /** @minimum 0 */
+  expiredOrChanged: number;
+  /** @minimum 0 */
+  providerErrors: number;
+};
+
+export type AdminWebPushDeliveryMetricsDevices = {
+  /** @minimum 0 */
+  active: number;
+  /** @minimum 0 */
+  automaticallyDeactivated: number;
+};
+
+export interface AdminWebPushDeliveryMetrics {
+  periodDays: AdminWebPushDeliveryMetricsPeriodDays;
+  periodStartedAt: string;
+  deliveries: AdminWebPushDeliveryMetricsDeliveries;
+  devices: AdminWebPushDeliveryMetricsDevices;
+}
+
 export type AdminCreateEmailCampaignInputAudience = typeof AdminCreateEmailCampaignInputAudience[keyof typeof AdminCreateEmailCampaignInputAudience];
 
 
@@ -2284,6 +2325,16 @@ export interface WebPushConfig {
   configured: boolean;
   /** @nullable */
   publicKey: string | null;
+}
+
+export interface SystemPushDeliveryAcknowledgement {
+  /** @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ */
+  deliveryId: string;
+  /**
+     * @minLength 43
+     * @maxLength 43
+     */
+  token: string;
 }
 
 export interface PushSubscriptionKeysInput {
@@ -10821,6 +10872,20 @@ export const SortQueryParameter = {
   'most-popular': 'most-popular',
   'most-booked-recently': 'most-booked-recently',
   newest: 'newest',
+} as const;
+
+export type AdminGetWebPushDeliveryMetricsParams = {
+periodDays: AdminGetWebPushDeliveryMetricsPeriodDays;
+};
+
+export type AdminGetWebPushDeliveryMetricsPeriodDays = typeof AdminGetWebPushDeliveryMetricsPeriodDays[keyof typeof AdminGetWebPushDeliveryMetricsPeriodDays];
+
+
+export const AdminGetWebPushDeliveryMetricsPeriodDays = {
+  NUMBER_1: 1,
+  NUMBER_7: 7,
+  NUMBER_30: 30,
+  NUMBER_90: 90,
 } as const;
 
 export type ListSalonsParams = {

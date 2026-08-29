@@ -62,6 +62,7 @@ export const systemPushDeliveriesTable = pgTable("system_push_deliveries", {
   lastHttpStatus: integer("last_http_status"),
   lastError: text("last_error"),
   sentAt: timestamp("sent_at", { withTimezone: true }),
+  acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [

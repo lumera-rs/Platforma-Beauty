@@ -72,11 +72,13 @@ export async function runWebPushSchemaDdl(client: PoolClient, schemaName: string
       last_http_status integer,
       last_error text,
       sent_at timestamptz,
+      acknowledged_at timestamptz,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     )
   `);
   await client.query(`ALTER TABLE ${schema}.system_push_deliveries ADD COLUMN IF NOT EXISTS expires_at timestamptz`);
+  await client.query(`ALTER TABLE ${schema}.system_push_deliveries ADD COLUMN IF NOT EXISTS acknowledged_at timestamptz`);
   await client.query(`UPDATE ${schema}.system_push_deliveries SET expires_at = created_at + interval '24 hours' WHERE expires_at IS NULL`);
   await client.query(`ALTER TABLE ${schema}.system_push_deliveries ALTER COLUMN expires_at SET NOT NULL`);
   await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS system_push_deliveries_event_subscription_unique ON ${schema}.system_push_deliveries(event_key, subscription_id)`);
