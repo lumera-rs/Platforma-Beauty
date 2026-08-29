@@ -82,6 +82,7 @@ export async function runWebPushSchemaDdl(client: PoolClient, schemaName: string
   await client.query(`UPDATE ${schema}.system_push_deliveries SET expires_at = created_at + interval '24 hours' WHERE expires_at IS NULL`);
   await client.query(`ALTER TABLE ${schema}.system_push_deliveries ALTER COLUMN expires_at SET NOT NULL`);
   await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS system_push_deliveries_event_subscription_unique ON ${schema}.system_push_deliveries(event_key, subscription_id)`);
+  await client.query(`CREATE INDEX IF NOT EXISTS system_push_deliveries_subscription_idx ON ${schema}.system_push_deliveries(subscription_id)`);
   await client.query(`CREATE INDEX IF NOT EXISTS system_push_deliveries_ready_idx ON ${schema}.system_push_deliveries(status, next_attempt_at)`);
   await client.query(`CREATE INDEX IF NOT EXISTS system_push_deliveries_claim_expiry_idx ON ${schema}.system_push_deliveries(claim_expires_at)`);
   await client.query(`CREATE INDEX IF NOT EXISTS system_push_deliveries_user_idx ON ${schema}.system_push_deliveries(user_id)`);

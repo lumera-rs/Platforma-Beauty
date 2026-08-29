@@ -67,6 +67,7 @@ export const systemPushDeliveriesTable = pgTable("system_push_deliveries", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("system_push_deliveries_event_subscription_unique").on(table.eventKey, table.subscriptionId),
+  index("system_push_deliveries_subscription_idx").on(table.subscriptionId),
   index("system_push_deliveries_ready_idx").on(table.status, table.nextAttemptAt),
   index("system_push_deliveries_claim_expiry_idx").on(table.claimExpiresAt),
   index("system_push_deliveries_user_idx").on(table.userId),
