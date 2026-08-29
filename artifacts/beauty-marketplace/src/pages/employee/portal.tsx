@@ -34,6 +34,7 @@ import { toast } from "sonner";
 import {
   getGetCurrentUserQueryKey,
   getGetEmployeeClockQueryKey,
+  getApiErrorDetails,
   getApiErrorMessage,
   getListEmployeeAppointmentTreatmentPhotosQueryKey,
   getListEmployeeShiftSwapsQueryKey,
@@ -791,8 +792,7 @@ export default function EmployeePortal() {
       }));
       await load();
     } catch (error) {
-      const isLayoutConflict = error && typeof error === "object" && "status" in error
-        && (error as { status?: number }).status === 409;
+      const isLayoutConflict = getApiErrorDetails(error).status === 409;
       toast.error(isLayoutConflict
         ? "Raspored ove grupne rezervacije više nije slobodan. Proverite datume i vremena tretmana, pa pokušajte ponovo."
         : error instanceof Error ? error.message : "Zakazivanje nije uspelo.");

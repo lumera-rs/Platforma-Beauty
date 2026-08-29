@@ -141,7 +141,7 @@ async function readManifest(manifestDirectory: string): Promise<{
   while (Date.now() < deadline) {
     const entries = await readdir(manifestDirectory).catch((error: unknown) => {
       if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-        return [];
+        return [] as string[];
       }
       throw error;
     });
