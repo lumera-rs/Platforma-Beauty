@@ -14,3 +14,9 @@ Operational lifecycle timestamps use server time. A caller-provided timestamp ma
 **Why:** Arbitrary backdating can make a late treatment appear to have enough useful time remaining.
 
 **How to apply:** Reject lifecycle timestamps outside the explicit correction window; reserve historical corrections for a separate privileged workflow.
+
+Customer cancellation deadlines must use the salon calendar timezone and apply through every customer cancellation surface, including partial or complete booking-group cancellation.
+
+**Why:** Treating local appointment time as UTC shifts the deadline across standard/DST time, while an uncovered group endpoint lets the same customer bypass the configured policy.
+
+**How to apply:** Convert date-only plus local start time to the canonical salon instant before comparing the deadline; reuse the same policy helper and truthful messaging in individual and grouped customer flows.

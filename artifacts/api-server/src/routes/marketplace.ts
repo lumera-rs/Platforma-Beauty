@@ -688,6 +688,7 @@ import {
   canTransitionAppointmentLifecycle,
   isAllowedLifecycleOccurredAt,
   zonedAppointmentInstant,
+  isLateCancellation,
 } from "../lib/appointment-lifecycle";
 
 import 
@@ -6733,6 +6734,12 @@ router.post("/booking-groups/:bookingGroupId/cancel", async (req, res): Promise<
       }
       await lockAppointmentResources(tx, access.salon.id, affected.map((item) => ({ date: item.date, employeeId: item.employeeId })));
       const cancelledAt = new Date();
+      const [settings] = await tx.select().from(salonBookingSettingsTable)
+        .where(eq(salonBookingSettingsTable.salonId, access.salon.id)).limit(1);
+      const deadline = supportedCancellationDeadline(settings?.cancellationDeadlineMinutes);
+      const lateAppointments = access.user.role === "CUSTOMER"
+        ? affected.filter((item) => isLateCancellation(item.date, item.startTime, deadline, cancelledAt))
+        : [];
       for (const appointment of affected) {
         const cancelled = await cancelAppointmentInTx(tx, {
           appointmentId: appointment.id, actorId: access.user.id, occurredAt: cancelledAt,
@@ -6744,13 +6751,18 @@ router.post("/booking-groups/:bookingGroupId/cancel", async (req, res): Promise<
         await notifyCustomer(tx, {
           userId: access.group.customerId, eventKey: `booking-group:${access.group.id}:cancelled:${cancelledAt.toISOString()}`,
           category: "cancellation", title: "Grupna rezervacija je otkazana",
-          body: `Otkazano je ${affected.length} tretmana u salonu ${access.salon.name}. Otkazivanje se ne naplaćuje.`,
+          body: lateAppointments.length
+            ? `Otkazano je ${affected.length} tretmana u salonu ${access.salon.name}. Za ${lateAppointments.length} ${lateAppointments.length === 1 ? "tretman je" : "tretmana je"} prekoračen rok za besplatno otkazivanje.`
+            : `Otkazano je ${affected.length} tretmana u salonu ${access.salon.name}.`,
           deepLink: "/moji-termini",
         });
       }
       await tx.insert(salonNotificationsTable).values({
         salonId: access.salon.id, title: "Otkazana grupna rezervacija",
-        message: `Otkazano je ${affected.length} tretmana iz grupne rezervacije.`, href: "/vlasnik/termini",
+        message: lateAppointments.length
+          ? `Otkazano je ${affected.length} tretmana iz grupne rezervacije; ${lateAppointments.length} nakon roka za besplatno otkazivanje.`
+          : `Otkazano je ${affected.length} tretmana iz grupne rezervacije.`,
+        href: "/vlasnik/termini",
       });
     });
     const group = await bookingGroupView(access.group.id);
@@ -7114,10 +7126,8 @@ router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<voi
     const [settings] = await tx.select().from(salonBookingSettingsTable)
       .where(eq(salonBookingSettingsTable.salonId, initial.salonId)).limit(1);
     const cancelledAt = new Date();
-    const startsAt = new Date(`${initial.date}T${initial.startTime}:00.000Z`);
-    const deadline = settings?.cancellationDeadlineMinutes ?? 0;
-    const lateCancellation = deadline > 0
-      && cancelledAt.getTime() > startsAt.getTime() - deadline * 60_000;
+    const deadline = supportedCancellationDeadline(settings?.cancellationDeadlineMinutes);
+    const lateCancellation = isLateCancellation(initial.date, initial.startTime, deadline, cancelledAt);
     const cancelled = await cancelAppointmentInTx(tx, {
       appointmentId: initial.id, actorId: user.id, occurredAt: cancelledAt, reason: body.data.reason ?? null,
     });
@@ -7679,6 +7689,17 @@ router.put("/salon/active-salon", async (req, res): Promise<void> => {
   res.json({ activeSalonId: salon.id });
 });
 
+const BOOKING_CANCELLATION_DEADLINES = new Set([720, 1440, 2880]);
+const BOOKING_REMINDER_OFFSETS = new Set([120, 720, 1440]);
+
+function supportedCancellationDeadline(value: number | null | undefined) {
+  return value != null && BOOKING_CANCELLATION_DEADLINES.has(value) ? value : 1440;
+}
+
+function supportedReminderOffsets(values: number[] | null | undefined) {
+  return [...new Set((values ?? []).filter((value) => BOOKING_REMINDER_OFFSETS.has(value)))];
+}
+
 async function bookingSettingsView(salonId: string) {
   const [settings, dateHours, downtime] = await Promise.all([
     db.select().from(salonBookingSettingsTable).where(eq(salonBookingSettingsTable.salonId, salonId)).limit(1),
@@ -7692,8 +7713,8 @@ async function bookingSettingsView(salonId: string) {
     salonId, updatedAt: row?.updatedAt ?? new Date(),
     slotGranularityMinutes: row?.slotGranularityMinutes ?? 15,
     minimumLeadTimeMinutes: row?.minimumLeadTimeMinutes ?? 0,
-    cancellationDeadlineMinutes: row?.cancellationDeadlineMinutes ?? 0,
-    reminderOffsetsMinutes: row?.reminderOffsetsMinutes ?? [],
+    cancellationDeadlineMinutes: supportedCancellationDeadline(row?.cancellationDeadlineMinutes),
+    reminderOffsetsMinutes: supportedReminderOffsets(row?.reminderOffsetsMinutes),
     reminderChannels: row?.reminderChannels ?? [],
     maxVisitGapMinutes: row?.maxVisitGapMinutes ?? 0,
     minimumUsefulLateTreatmentMinutes: row?.minimumUsefulLateTreatmentMinutes ?? 0,

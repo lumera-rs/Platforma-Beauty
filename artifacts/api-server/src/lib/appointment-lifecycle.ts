@@ -62,3 +62,14 @@ export function zonedAppointmentInstant(date: string, time: string): Date {
   }
   return new Date(result);
 }
+
+export function isLateCancellation(
+  date: string,
+  startTime: string,
+  deadlineMinutes: number,
+  cancelledAt: Date,
+): boolean {
+  if (deadlineMinutes <= 0) return false;
+  return cancelledAt.getTime()
+    > zonedAppointmentInstant(date, startTime).getTime() - deadlineMinutes * 60_000;
+}

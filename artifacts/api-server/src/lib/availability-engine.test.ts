@@ -38,6 +38,17 @@ assert.equal(generateAvailability({
 
 assert.deepEqual(generateAvailability({
   ...base,
+  dateOverrides: [{
+    date: "2099-05-04",
+    startTime: "10:00",
+    endTime: "11:00",
+    closed: false,
+  }],
+}).map((slot) => slot.startTime), ["10:00", "10:15"],
+  "custom date hours must replace, rather than augment, the weekly hours");
+
+assert.deepEqual(generateAvailability({
+  ...base,
   granularityMinutes: 30,
 }).map((slot) => slot.startTime), ["09:30", "10:00", "10:30", "11:00"],
   "configured granularity must determine the generated cadence");

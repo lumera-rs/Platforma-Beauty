@@ -1803,14 +1803,30 @@ export const SalonBookingSettingsInputSlotGranularityMinutes = {
   NUMBER_30: 30,
 } as const;
 
+export type SalonBookingSettingsInputCancellationDeadlineMinutes = typeof SalonBookingSettingsInputCancellationDeadlineMinutes[keyof typeof SalonBookingSettingsInputCancellationDeadlineMinutes];
+
+
+export const SalonBookingSettingsInputCancellationDeadlineMinutes = {
+  NUMBER_720: 720,
+  NUMBER_1440: 1440,
+  NUMBER_2880: 2880,
+} as const;
+
+export type SalonBookingSettingsInputReminderOffsetsMinutesItem = typeof SalonBookingSettingsInputReminderOffsetsMinutesItem[keyof typeof SalonBookingSettingsInputReminderOffsetsMinutesItem];
+
+
+export const SalonBookingSettingsInputReminderOffsetsMinutesItem = {
+  NUMBER_120: 120,
+  NUMBER_720: 720,
+  NUMBER_1440: 1440,
+} as const;
+
 export interface SalonBookingSettingsInput {
   slotGranularityMinutes: SalonBookingSettingsInputSlotGranularityMinutes;
   /** @minimum 0 */
   minimumLeadTimeMinutes: number;
-  /** @minimum 0 */
-  cancellationDeadlineMinutes: number;
-  /** @items.minimum 0 */
-  reminderOffsetsMinutes: number[];
+  cancellationDeadlineMinutes: SalonBookingSettingsInputCancellationDeadlineMinutes;
+  reminderOffsetsMinutes: SalonBookingSettingsInputReminderOffsetsMinutesItem[];
   reminderChannels: BookingReminderChannel[];
   /** @minimum 0 */
   maxVisitGapMinutes: number;

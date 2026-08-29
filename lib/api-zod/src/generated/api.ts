@@ -2666,10 +2666,6 @@ export const UpdateManagedSalonProfileResponse = zod.object({
 export const getSalonBookingSettingsResponseOneSlotGranularityMinutesDefault = 15;
 export const getSalonBookingSettingsResponseOneMinimumLeadTimeMinutesMin = 0;
 
-export const getSalonBookingSettingsResponseOneCancellationDeadlineMinutesMin = 0;
-
-export const getSalonBookingSettingsResponseOneReminderOffsetsMinutesItemMin = 0;
-
 export const getSalonBookingSettingsResponseOneMaxVisitGapMinutesDefault = 0;
 export const getSalonBookingSettingsResponseOneMaxVisitGapMinutesMin = 0;
 
@@ -2682,8 +2678,8 @@ export const getSalonBookingSettingsResponseOneDateHoursItemCloseTimeRegExp = ne
 export const GetSalonBookingSettingsResponse = zod.object({
   "slotGranularityMinutes": zod.union([zod.literal(5),zod.literal(10),zod.literal(15),zod.literal(30)]).default(getSalonBookingSettingsResponseOneSlotGranularityMinutesDefault),
   "minimumLeadTimeMinutes": zod.number().int().min(getSalonBookingSettingsResponseOneMinimumLeadTimeMinutesMin),
-  "cancellationDeadlineMinutes": zod.number().int().min(getSalonBookingSettingsResponseOneCancellationDeadlineMinutesMin),
-  "reminderOffsetsMinutes": zod.array(zod.number().int().min(getSalonBookingSettingsResponseOneReminderOffsetsMinutesItemMin)),
+  "cancellationDeadlineMinutes": zod.union([zod.literal(720),zod.literal(1440),zod.literal(2880)]),
+  "reminderOffsetsMinutes": zod.array(zod.union([zod.literal(120),zod.literal(720),zod.literal(1440)])),
   "reminderChannels": zod.array(zod.enum(['email', 'sms', 'push'])),
   "maxVisitGapMinutes": zod.number().int().min(getSalonBookingSettingsResponseOneMaxVisitGapMinutesMin).default(getSalonBookingSettingsResponseOneMaxVisitGapMinutesDefault),
   "minimumUsefulLateTreatmentMinutes": zod.number().int().min(getSalonBookingSettingsResponseOneMinimumUsefulLateTreatmentMinutesMin),
@@ -2714,10 +2710,6 @@ export const GetSalonBookingSettingsResponse = zod.object({
 export const replaceSalonBookingSettingsBodySlotGranularityMinutesDefault = 15;
 export const replaceSalonBookingSettingsBodyMinimumLeadTimeMinutesMin = 0;
 
-export const replaceSalonBookingSettingsBodyCancellationDeadlineMinutesMin = 0;
-
-export const replaceSalonBookingSettingsBodyReminderOffsetsMinutesItemMin = 0;
-
 export const replaceSalonBookingSettingsBodyMaxVisitGapMinutesDefault = 0;
 export const replaceSalonBookingSettingsBodyMaxVisitGapMinutesMin = 0;
 
@@ -2730,8 +2722,8 @@ export const replaceSalonBookingSettingsBodyDateHoursItemCloseTimeRegExp = new R
 export const ReplaceSalonBookingSettingsBody = zod.object({
   "slotGranularityMinutes": zod.union([zod.literal(5),zod.literal(10),zod.literal(15),zod.literal(30)]).default(replaceSalonBookingSettingsBodySlotGranularityMinutesDefault),
   "minimumLeadTimeMinutes": zod.number().int().min(replaceSalonBookingSettingsBodyMinimumLeadTimeMinutesMin),
-  "cancellationDeadlineMinutes": zod.number().int().min(replaceSalonBookingSettingsBodyCancellationDeadlineMinutesMin),
-  "reminderOffsetsMinutes": zod.array(zod.number().int().min(replaceSalonBookingSettingsBodyReminderOffsetsMinutesItemMin)),
+  "cancellationDeadlineMinutes": zod.union([zod.literal(720),zod.literal(1440),zod.literal(2880)]),
+  "reminderOffsetsMinutes": zod.array(zod.union([zod.literal(120),zod.literal(720),zod.literal(1440)])),
   "reminderChannels": zod.array(zod.enum(['email', 'sms', 'push'])),
   "maxVisitGapMinutes": zod.number().int().min(replaceSalonBookingSettingsBodyMaxVisitGapMinutesMin).default(replaceSalonBookingSettingsBodyMaxVisitGapMinutesDefault),
   "minimumUsefulLateTreatmentMinutes": zod.number().int().min(replaceSalonBookingSettingsBodyMinimumUsefulLateTreatmentMinutesMin),
@@ -2755,10 +2747,6 @@ export const ReplaceSalonBookingSettingsBody = zod.object({
 export const replaceSalonBookingSettingsResponseOneSlotGranularityMinutesDefault = 15;
 export const replaceSalonBookingSettingsResponseOneMinimumLeadTimeMinutesMin = 0;
 
-export const replaceSalonBookingSettingsResponseOneCancellationDeadlineMinutesMin = 0;
-
-export const replaceSalonBookingSettingsResponseOneReminderOffsetsMinutesItemMin = 0;
-
 export const replaceSalonBookingSettingsResponseOneMaxVisitGapMinutesDefault = 0;
 export const replaceSalonBookingSettingsResponseOneMaxVisitGapMinutesMin = 0;
 
@@ -2771,8 +2759,8 @@ export const replaceSalonBookingSettingsResponseOneDateHoursItemCloseTimeRegExp 
 export const ReplaceSalonBookingSettingsResponse = zod.object({
   "slotGranularityMinutes": zod.union([zod.literal(5),zod.literal(10),zod.literal(15),zod.literal(30)]).default(replaceSalonBookingSettingsResponseOneSlotGranularityMinutesDefault),
   "minimumLeadTimeMinutes": zod.number().int().min(replaceSalonBookingSettingsResponseOneMinimumLeadTimeMinutesMin),
-  "cancellationDeadlineMinutes": zod.number().int().min(replaceSalonBookingSettingsResponseOneCancellationDeadlineMinutesMin),
-  "reminderOffsetsMinutes": zod.array(zod.number().int().min(replaceSalonBookingSettingsResponseOneReminderOffsetsMinutesItemMin)),
+  "cancellationDeadlineMinutes": zod.union([zod.literal(720),zod.literal(1440),zod.literal(2880)]),
+  "reminderOffsetsMinutes": zod.array(zod.union([zod.literal(120),zod.literal(720),zod.literal(1440)])),
   "reminderChannels": zod.array(zod.enum(['email', 'sms', 'push'])),
   "maxVisitGapMinutes": zod.number().int().min(replaceSalonBookingSettingsResponseOneMaxVisitGapMinutesMin).default(replaceSalonBookingSettingsResponseOneMaxVisitGapMinutesDefault),
   "minimumUsefulLateTreatmentMinutes": zod.number().int().min(replaceSalonBookingSettingsResponseOneMinimumUsefulLateTreatmentMinutesMin),

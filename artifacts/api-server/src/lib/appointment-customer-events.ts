@@ -12,6 +12,7 @@ import {
 import {
   appointmentsTable,
   db,
+  emailDeliveriesTable,
   phoneVerificationProofsTable,
   reviewInvitationsTable,
   salonBookingSettingsTable,
@@ -156,6 +157,27 @@ export function appointmentReminderGroupingKey(appointment: ReminderAppointmentI
   return `${appointment.bookingGroupId ?? appointment.id}:date:${appointment.date}`;
 }
 
+type ReminderChannel = "push" | "email" | "sms";
+const SUPPORTED_REMINDER_OFFSETS = new Set([120, 720, 1440]);
+
+/**
+ * Runs only configured reminder channels. A channel callback reports whether
+ * this sweep made a new or meaningful delivery attempt for the window.
+ */
+export async function deliverSelectedReminderChannels(
+  channels: Iterable<ReminderChannel>,
+  deliveries: Partial<Record<ReminderChannel, () => Promise<boolean>>>,
+) {
+  const selected = new Set(channels);
+  let attempted = false;
+  for (const channel of ["push", "email", "sms"] as const) {
+    const deliver = deliveries[channel];
+    if (!selected.has(channel) || !deliver) continue;
+    if (await deliver()) attempted = true;
+  }
+  return attempted;
+}
+
 /**
  * Restart-safe reminder sweep. Each configured salon offset is an independent
  * durable window. Late scheduler runs catch up until the appointment starts.
@@ -189,29 +211,40 @@ export async function runAppointmentReminderSweep(now = new Date()) {
     const services = await db.select({ name: servicesTable.name }).from(servicesTable).where(inArray(servicesTable.id, serviceIds));
     if (!salon) continue;
     for (const offset of [...new Set(groupRows[0]!.settings.reminderOffsetsMinutes)]) {
-      if (!Number.isInteger(offset) || offset < 0 || now < new Date(start.getTime() - offset * 60_000)) continue;
+      if (!SUPPORTED_REMINDER_OFFSETS.has(offset) || now < new Date(start.getTime() - offset * 60_000)) continue;
       const eventBase = `appointment-reminder:${groupKey}:offset:${offset}`;
       const body = `${groupRows.length > 1 ? `${groupRows.length} tretmana` : services[0]?.name ?? "Tretman"} u salonu ${salon.name} počinje ${first.date} u ${first.startTime}.`;
-      const inserted = await notifyCustomer(db, {
-        userId, eventKey: eventBase, category: "reminder", title: "Podsetnik za termin",
-        body, deepLink: "/moji-termini", metadata: { bookingGroupId: first.bookingGroupId, appointmentIds: groupRows.map((row) => row.appointment.id), offsetMinutes: offset },
+      const email = user?.email ?? contact?.email;
+      const attempted = await deliverSelectedReminderChannels(channels, {
+        push: async () => Boolean(await notifyCustomer(db, {
+          userId, eventKey: eventBase, category: "reminder", title: "Podsetnik za termin",
+          body, deepLink: "/moji-termini", metadata: { bookingGroupId: first.bookingGroupId, appointmentIds: groupRows.map((row) => row.appointment.id), offsetMinutes: offset },
+        })),
+        ...(email ? {
+          email: async () => {
+            const emailEventKey = `${eventBase}:email`;
+            const [existing] = await db.select({ id: emailDeliveriesTable.id }).from(emailDeliveriesTable)
+              .where(eq(emailDeliveriesTable.eventKey, emailEventKey)).limit(1);
+            const result = await sendTransactionalEmail({
+              eventKey: emailEventKey, emailType: "appointment_reminder", salonId: salon.id,
+              appointmentId: first.id, to: { email, name: user?.firstName ?? contact?.firstName },
+              subject: "LUMERA — podsetnik za termin", htmlContent: lumeraEmailHtml("Podsetnik za termin", `<p>${escapeHtml(body)}</p>`),
+              metadata: { bookingGroupId: first.bookingGroupId, offsetMinutes: offset },
+            });
+            return !existing && !("deduplicated" in result);
+          },
+        } : {}),
+        sms: async () => {
+          const phone = await verifiedPhone(user);
+          if (!phone) return false;
+          const result = await sendSms({
+            eventKey: `${eventBase}:sms`, salonId: salon.id, appointmentId: first.id,
+            type: "appointment_reminder", phone, smsOptOut: contact?.smsOptOut, text: `LUMERA podsetnik: ${body}`,
+          });
+          return !("deduplicated" in result) && !("inProgress" in result);
+        },
       });
-      if (channels.has("email") && (user?.email ?? contact?.email)) {
-        await sendTransactionalEmail({
-          eventKey: `${eventBase}:email`, emailType: "appointment_reminder", salonId: salon.id,
-          appointmentId: first.id, to: { email: (user?.email ?? contact!.email)!, name: user?.firstName ?? contact?.firstName },
-          subject: "LUMERA — podsetnik za termin", htmlContent: lumeraEmailHtml("Podsetnik za termin", `<p>${escapeHtml(body)}</p>`),
-          metadata: { bookingGroupId: first.bookingGroupId, offsetMinutes: offset },
-        });
-      }
-      if (channels.has("sms")) {
-        const phone = await verifiedPhone(user);
-        if (phone) await sendSms({
-          eventKey: `${eventBase}:sms`, salonId: salon.id, appointmentId: first.id,
-          type: "appointment_reminder", phone, smsOptOut: contact?.smsOptOut, text: `LUMERA podsetnik: ${body}`,
-        });
-      }
-      if (inserted) emitted++;
+      if (attempted) emitted++;
     }
   }
   return { considered: groups.size, emitted };

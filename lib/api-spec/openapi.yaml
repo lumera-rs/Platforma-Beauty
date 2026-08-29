@@ -8711,11 +8711,15 @@ components:
       properties:
         slotGranularityMinutes: { type: integer, enum: [5, 10, 15, 30], default: 15 }
         minimumLeadTimeMinutes: { type: integer, minimum: 0 }
-        cancellationDeadlineMinutes: { type: integer, minimum: 0 }
+        cancellationDeadlineMinutes:
+          type: integer
+          enum: [720, 1440, 2880]
         reminderOffsetsMinutes:
           type: array
           uniqueItems: true
-          items: { type: integer, minimum: 0 }
+          items:
+            type: integer
+            enum: [120, 720, 1440]
         reminderChannels:
           type: array
           uniqueItems: true

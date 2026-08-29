@@ -7,6 +7,8 @@
  */
 import type { BookingReminderChannel } from './bookingReminderChannel';
 import type { ResourceDowntime } from './resourceDowntime';
+import type { SalonBookingSettingsInputCancellationDeadlineMinutes } from './salonBookingSettingsInputCancellationDeadlineMinutes';
+import type { SalonBookingSettingsInputReminderOffsetsMinutesItem } from './salonBookingSettingsInputReminderOffsetsMinutesItem';
 import type { SalonBookingSettingsInputSlotGranularityMinutes } from './salonBookingSettingsInputSlotGranularityMinutes';
 import type { SalonDateHours } from './salonDateHours';
 
@@ -14,10 +16,8 @@ export interface SalonBookingSettingsInput {
   slotGranularityMinutes: SalonBookingSettingsInputSlotGranularityMinutes;
   /** @minimum 0 */
   minimumLeadTimeMinutes: number;
-  /** @minimum 0 */
-  cancellationDeadlineMinutes: number;
-  /** @items.minimum 0 */
-  reminderOffsetsMinutes: number[];
+  cancellationDeadlineMinutes: SalonBookingSettingsInputCancellationDeadlineMinutes;
+  reminderOffsetsMinutes: SalonBookingSettingsInputReminderOffsetsMinutesItem[];
   reminderChannels: BookingReminderChannel[];
   /** @minimum 0 */
   maxVisitGapMinutes: number;

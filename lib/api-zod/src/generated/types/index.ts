@@ -863,6 +863,8 @@ export * from './salonAppointmentUpdate';
 export * from './salonAppointmentUpdateStatus';
 export * from './salonBookingSettings';
 export * from './salonBookingSettingsInput';
+export * from './salonBookingSettingsInputCancellationDeadlineMinutes';
+export * from './salonBookingSettingsInputReminderOffsetsMinutesItem';
 export * from './salonBookingSettingsInputSlotGranularityMinutes';
 export * from './salonCalendarDayEmployee';
 export * from './salonCalendarScheduleWindow';

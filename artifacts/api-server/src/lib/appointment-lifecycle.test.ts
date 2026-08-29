@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   canTransitionAppointmentLifecycle,
   isAllowedLifecycleOccurredAt,
+  isLateCancellation,
   zonedAppointmentInstant,
 } from "./appointment-lifecycle";
 
@@ -31,6 +32,10 @@ test("appointment lifecycle enforces the canonical transition matrix", () => {
 test("late-policy end instants use the salon timezone across DST", () => {
   assert.equal(zonedAppointmentInstant("2026-01-10", "12:00").toISOString(), "2026-01-10T11:00:00.000Z");
   assert.equal(zonedAppointmentInstant("2026-07-10", "12:00").toISOString(), "2026-07-10T10:00:00.000Z");
+  assert.equal(isLateCancellation("2026-01-10", "12:00", 720, new Date("2026-01-09T22:59:59.999Z")), false);
+  assert.equal(isLateCancellation("2026-01-10", "12:00", 720, new Date("2026-01-09T23:00:00.001Z")), true);
+  assert.equal(isLateCancellation("2026-07-10", "12:00", 720, new Date("2026-07-09T21:59:59.999Z")), false);
+  assert.equal(isLateCancellation("2026-07-10", "12:00", 720, new Date("2026-07-09T22:00:00.001Z")), true);
 });
 
 test("caller timestamps are restricted to a narrow server-time correction window", () => {
