@@ -123,6 +123,7 @@ import type {
   AutomationStats,
   AutomationStatsOverviewItem,
   AutomationTestRunResult,
+  AvailabilitySearchResponse,
   B2bOrderImportApplyInput,
   B2bOrderImportPreviewInput,
   B2bOrderImportResult,
@@ -429,7 +430,6 @@ import type {
   SalonAppointmentCreate,
   SalonAppointmentSeriesInput,
   SalonAppointmentUpdate,
-  SalonAvailabilitySearchSlot,
   SalonBookingSettings,
   SalonBookingSettingsInput,
   SalonCalendarDayEmployee,
@@ -455,6 +455,7 @@ import type {
   SalonResourceInput,
   SalonResourceUpdate,
   SalonShiftSwapRequest,
+  SearchEmployeeAvailabilityParams,
   SearchProductSuggestion,
   SearchSalonAvailabilityParams,
   Service,
@@ -5425,11 +5426,11 @@ export const getSearchSalonAvailabilityUrl = (params: SearchSalonAvailabilityPar
 }
 
 /**
- * @summary Search available owner booking slots over seven calendar days
+ * @summary Search server-confirmed owner booking availability over seven calendar days
  */
-export const searchSalonAvailability = async (params: SearchSalonAvailabilityParams, options?: Parameters<typeof customFetch>[1]): Promise<SalonAvailabilitySearchSlot[]> => {
+export const searchSalonAvailability = async (params: SearchSalonAvailabilityParams, options?: Parameters<typeof customFetch>[1]): Promise<AvailabilitySearchResponse> => {
 
-  return customFetch<SalonAvailabilitySearchSlot[]>(getSearchSalonAvailabilityUrl(params),
+  return customFetch<AvailabilitySearchResponse>(getSearchSalonAvailabilityUrl(params),
   {
     ...options,
     method: 'GET'
@@ -5472,7 +5473,7 @@ export type SearchSalonAvailabilityQueryError = ErrorType<void>
 
 
 /**
- * @summary Search available owner booking slots over seven calendar days
+ * @summary Search server-confirmed owner booking availability over seven calendar days
  */
 
 export function useSearchSalonAvailability<TData = Awaited<ReturnType<typeof searchSalonAvailability>>, TError = ErrorType<void>>(
@@ -5935,6 +5936,90 @@ export function useListSalonCustomers<TData = Awaited<ReturnType<typeof listSalo
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListSalonCustomersQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSearchEmployeeAvailabilityUrl = (params: SearchEmployeeAvailabilityParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/employee/availability/search?${stringifiedParams}` : `/api/employee/availability/search`
+}
+
+/**
+ * @summary Search the signed-in employee's server-confirmed availability at their active location
+ */
+export const searchEmployeeAvailability = async (params: SearchEmployeeAvailabilityParams, options?: Parameters<typeof customFetch>[1]): Promise<AvailabilitySearchResponse> => {
+
+  return customFetch<AvailabilitySearchResponse>(getSearchEmployeeAvailabilityUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getSearchEmployeeAvailabilityQueryKey = (params?: SearchEmployeeAvailabilityParams,) => {
+    return [
+    `/api/employee/availability/search`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getSearchEmployeeAvailabilityQueryOptions = <TData = Awaited<ReturnType<typeof searchEmployeeAvailability>>, TError = ErrorType<void>>(params: SearchEmployeeAvailabilityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchEmployeeAvailability>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getSearchEmployeeAvailabilityQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof searchEmployeeAvailability>>> = ({ signal }) => searchEmployeeAvailability(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof searchEmployeeAvailability>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type SearchEmployeeAvailabilityQueryResult = NonNullable<Awaited<ReturnType<typeof searchEmployeeAvailability>>>
+export type SearchEmployeeAvailabilityQueryError = ErrorType<void>
+
+
+/**
+ * @summary Search the signed-in employee's server-confirmed availability at their active location
+ */
+
+export function useSearchEmployeeAvailability<TData = Awaited<ReturnType<typeof searchEmployeeAvailability>>, TError = ErrorType<void>>(
+ params: SearchEmployeeAvailabilityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchEmployeeAvailability>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getSearchEmployeeAvailabilityQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

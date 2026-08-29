@@ -451,6 +451,12 @@ async function run(): Promise<void> {
     const selectSecondary = await request(baseUrl, employeeSession, "/employee/active-location", "PATCH", { salonId: foreignSalon!.id });
     assert.equal(selectSecondary.status, 200, "employee can select a non-default active assignment");
     assert.equal((await db.select({ activeSalonId: usersTable.activeSalonId }).from(usersTable).where(eq(usersTable.id, employeeUser!.id)))[0]!.activeSalonId, foreignSalon!.id);
+    const wrongLocationAvailability = await getRequest(
+      baseUrl,
+      employeeSession,
+      `/employee/availability/search?serviceId=${service!.id}&startDate=2099-12-10`,
+    );
+    assert.equal(wrongLocationAvailability.status, 404, "employee availability derives its salon from the active assignment");
     const rejectUnassigned = await request(baseUrl, employeeSession, "/employee/active-location", "PATCH", { salonId: randomUUID() });
     assert.equal(rejectUnassigned.status, 403, "employee cannot select an unassigned salon");
     assert.equal((await db.select({ activeSalonId: usersTable.activeSalonId }).from(usersTable).where(eq(usersTable.id, employeeUser!.id)))[0]!.activeSalonId, foreignSalon!.id);
@@ -1679,12 +1685,30 @@ async function run(): Promise<void> {
     const ownerSearch = await getRequest(baseUrl, ownerSession, `/salon/availability/search?serviceId=${service!.id}&employeeId=${employee!.id}&startDate=${timeBlockDate}&limit=14`);
     assert.equal(ownerSearch.status, 200, "owner seven-day availability search succeeds");
     const ownerSlots = ownerSearch.body as Array<{ date: string; startTime: string; employeeId: string; employeeName: string }>;
+    assert.ok(Array.isArray(ownerSearch.body), "owner availability response preserves the reusable chronological slot-array contract");
+    assert.ok(ownerSlots.every((slot) => slot.date >= timeBlockDate && slot.date <= "2099-12-16"), "owner response is bounded to exactly the requested seven-day window");
+    assert.ok(ownerSlots.length <= 14, "owner response preserves the requested cross-window limit");
     assert.ok(!ownerSlots.some((slot) => slot.date === timeBlockDate && slot.startTime === "12:00"), "owner search inherits the block exclusion");
     assert.ok(ownerSlots.every((slot) => slot.employeeId === employee!.id && slot.employeeName === employee!.name), "owner search returns selected employee identity");
     assert.deepEqual(
       ownerSlots.filter((slot) => slot.date === timeBlockDate).map((slot) => slot.startTime),
       publicSlots.map((slot) => slot.start),
       "batched owner search must preserve exact public canonical slot results for the selected employee",
+    );
+    const employeeSearch = await getRequest(
+      baseUrl,
+      employeeSession,
+      `/employee/availability/search?serviceId=${service!.id}&startDate=${timeBlockDate}&granularityMinutes=30`,
+    );
+    assert.equal(employeeSearch.status, 200, "employee seven-day availability search succeeds for an assigned service");
+    const employeeSlots = employeeSearch.body as Array<{ date: string; startTime: string; endTime: string; employeeId: string; employeeName: string }>;
+    assert.ok(employeeSlots.length > 0, "employee canonical search retains available slots");
+    assert.ok(employeeSlots.every((slot) => slot.employeeId === employee!.id && slot.employeeName === employee!.name), "employee search is pinned to the authenticated employee");
+    assert.ok(!employeeSlots.some((slot) => slot.date === timeBlockDate && slot.startTime === "12:00"), "employee search applies canonical intraday time-off conflicts");
+    assert.ok(employeeSlots.some((slot) => slot.date === timeBlockDate && slot.startTime === "11:00"), "employee canonical search retains an adjacent available slot");
+    assert.ok(
+      employeeSlots.filter((slot) => slot.date === timeBlockDate).every((slot) => slot.startTime >= "09:00" && slot.endTime <= "18:00"),
+      "employee canonical search excludes off-hours slots",
     );
     const deletedBlock = await request(baseUrl, ownerSession, `/salon/time-blocks/${block.id}`, "DELETE", {});
     assert.equal(deletedBlock.status, 204, "owner can delete an intraday block");

@@ -223,6 +223,10 @@ async function run(): Promise<void> {
       salonId: salonB!.id, categoryName: "TI", name: "TI Service B",
       description: "desc", durationMinutes: 60, price: 1000, imageUrl: "/ti.jpg",
     }).returning();
+    const [serviceAUnassigned] = await db.insert(servicesTable).values({
+      salonId: salonA!.id, categoryName: "TI", name: "TI Service A Unassigned",
+      description: "desc", durationMinutes: 60, price: 1000, imageUrl: "/ti.jpg",
+    }).returning();
 
     // Employees
     const [empA, empAOther, empB] = await db.insert(employeesTable).values([
@@ -952,6 +956,21 @@ async function run(): Promise<void> {
         .where(eq(appointmentSeriesTable.employeeId, empAOther!.id));
       assert.deepEqual(after, before, "C.7 another employee's series state must remain unchanged");
       console.log("✓ C.7 employee A cannot create another employee's series");
+    }
+
+    // C.8 Employee availability is pinned to its active location and own services
+    {
+      const own = await get(base, sesEmpA, `/employee/availability/search?serviceId=${serviceA!.id}&startDate=2099-12-20`);
+      assert.equal(own.status, 200, "C.8 employee A can search its assigned active-salon service");
+      assert.ok(
+        (own.body as Array<{ employeeId: string }>).every((slot) => slot.employeeId === empA!.id),
+        "C.8 employee availability must contain only the authenticated employee",
+      );
+      const unassigned = await get(base, sesEmpA, `/employee/availability/search?serviceId=${serviceAUnassigned!.id}&startDate=2099-12-20`);
+      assert.equal(unassigned.status, 403, "C.8 employee A cannot search an unassigned same-salon service");
+      const foreign = await get(base, sesEmpA, `/employee/availability/search?serviceId=${serviceB!.id}&startDate=2099-12-20`);
+      assert.equal(foreign.status, 404, "C.8 an adversarial employee-service link cannot cross the active salon boundary");
+      console.log("✓ C.8 employee availability enforces active-location and own-service isolation");
     }
 
     // =========================================================================

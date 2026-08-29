@@ -1014,10 +1014,16 @@ export const GetSalonAvailabilityParams = zod.object({
   "salonId": zod.coerce.string().regex(getSalonAvailabilityPathSalonIdRegExp)
 })
 
+export const getSalonAvailabilityQueryGranularityMinutesMin = 5;
+export const getSalonAvailabilityQueryGranularityMinutesMax = 180;
+
+
+
 export const GetSalonAvailabilityQueryParams = zod.object({
   "serviceId": zod.coerce.string(),
   "employeeId": zod.coerce.string().optional(),
-  "date": zod.coerce.string()
+  "date": zod.coerce.string(),
+  "granularityMinutes": zod.coerce.number().int().min(getSalonAvailabilityQueryGranularityMinutesMin).max(getSalonAvailabilityQueryGranularityMinutesMax).optional().describe('Optional requested cadence. The salon booking policy remains authoritative.')
 })
 
 export const GetSalonAvailabilityResponseItem = zod.object({
@@ -3321,11 +3327,13 @@ export const DeleteSalonTimeBlockResponse = zod.void()
 
 
 /**
- * @summary Search available owner booking slots over seven calendar days
+ * @summary Search server-confirmed owner booking availability over seven calendar days
  */
 export const searchSalonAvailabilityQueryStartDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
-export const searchSalonAvailabilityQueryLimitDefault = 50;
 export const searchSalonAvailabilityQueryLimitMax = 100;
+
+export const searchSalonAvailabilityQueryGranularityMinutesMin = 5;
+export const searchSalonAvailabilityQueryGranularityMinutesMax = 180;
 
 
 
@@ -3333,7 +3341,8 @@ export const SearchSalonAvailabilityQueryParams = zod.object({
   "serviceId": zod.coerce.string(),
   "startDate": zod.coerce.string().regex(searchSalonAvailabilityQueryStartDateRegExp),
   "employeeId": zod.coerce.string().optional(),
-  "limit": zod.coerce.number().int().min(1).max(searchSalonAvailabilityQueryLimitMax).default(searchSalonAvailabilityQueryLimitDefault)
+  "limit": zod.coerce.number().int().min(1).max(searchSalonAvailabilityQueryLimitMax).optional(),
+  "granularityMinutes": zod.coerce.number().int().min(searchSalonAvailabilityQueryGranularityMinutesMin).max(searchSalonAvailabilityQueryGranularityMinutesMax).optional().describe('Optional requested cadence. The salon booking policy remains authoritative.')
 })
 
 export const searchSalonAvailabilityResponseDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
@@ -3695,6 +3704,36 @@ export const ListSalonCustomersResponseItem = zod.object({
 })).optional()
 })
 export const ListSalonCustomersResponse = zod.array(ListSalonCustomersResponseItem)
+
+
+/**
+ * @summary Search the signed-in employee's server-confirmed availability at their active location
+ */
+export const searchEmployeeAvailabilityQueryStartDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const searchEmployeeAvailabilityQueryGranularityMinutesMin = 5;
+export const searchEmployeeAvailabilityQueryGranularityMinutesMax = 180;
+
+
+
+export const SearchEmployeeAvailabilityQueryParams = zod.object({
+  "serviceId": zod.coerce.string(),
+  "startDate": zod.coerce.string().regex(searchEmployeeAvailabilityQueryStartDateRegExp),
+  "granularityMinutes": zod.coerce.number().int().min(searchEmployeeAvailabilityQueryGranularityMinutesMin).max(searchEmployeeAvailabilityQueryGranularityMinutesMax).optional().describe('Optional requested cadence. The active salon booking policy remains authoritative.')
+})
+
+export const searchEmployeeAvailabilityResponseDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const searchEmployeeAvailabilityResponseStartTimeRegExp = new RegExp('^\\d{2}:\\d{2}$');
+export const searchEmployeeAvailabilityResponseEndTimeRegExp = new RegExp('^\\d{2}:\\d{2}$');
+
+
+export const SearchEmployeeAvailabilityResponseItem = zod.object({
+  "date": zod.string().regex(searchEmployeeAvailabilityResponseDateRegExp),
+  "startTime": zod.string().regex(searchEmployeeAvailabilityResponseStartTimeRegExp),
+  "endTime": zod.string().regex(searchEmployeeAvailabilityResponseEndTimeRegExp),
+  "employeeId": zod.string(),
+  "employeeName": zod.string()
+})
+export const SearchEmployeeAvailabilityResponse = zod.array(SearchEmployeeAvailabilityResponseItem)
 
 
 /**

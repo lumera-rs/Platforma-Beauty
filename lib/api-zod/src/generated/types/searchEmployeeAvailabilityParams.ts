@@ -6,20 +6,14 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type SearchSalonAvailabilityParams = {
+export type SearchEmployeeAvailabilityParams = {
 serviceId: string;
 /**
  * @pattern ^\d{4}-\d{2}-\d{2}$
  */
 startDate: string;
-employeeId?: string;
 /**
- * @minimum 1
- * @maximum 100
- */
-limit?: number;
-/**
- * Optional requested cadence. The salon booking policy remains authoritative.
+ * Optional requested cadence. The active salon booking policy remains authoritative.
  * @minimum 5
  * @maximum 180
  */

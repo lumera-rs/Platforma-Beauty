@@ -370,6 +370,14 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
       headers: { cookie: ownerCookie },
     });
     assert.equal(smallAvailability.response.status, 200);
+    const completeAvailability = await countedRequest(
+      `${baseUrl}/salon/availability/search?serviceId=${availabilityServiceId}&startDate=2099-12-14`,
+      { headers: { cookie: ownerCookie } },
+    );
+    assert.equal(completeAvailability.response.status, 200);
+    const completeSlots = JSON.parse(completeAvailability.body) as Array<{ date: string }>;
+    assert.ok(completeSlots.length > 50, "an omitted owner-search limit must not truncate later days");
+    assert.ok(completeSlots.some((slot) => slot.date === "2099-12-20"), "an omitted owner-search limit retains the seventh calendar day");
 
     await pool.query(
       `WITH new_employees AS (

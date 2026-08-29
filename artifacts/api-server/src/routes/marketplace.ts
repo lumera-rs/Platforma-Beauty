@@ -564,6 +564,8 @@ import
   ListSalonTimeBlocksResponse,
   SearchSalonAvailabilityQueryParams,
   SearchSalonAvailabilityResponse,
+  SearchEmployeeAvailabilityQueryParams,
+  SearchEmployeeAvailabilityResponse,
   PreviewB2bOrderImportBody,
   ApplyB2bOrderImportBody,
   AddProductWishlistItemBody,
@@ -6079,10 +6081,7 @@ router.get("/salons/:salonId/availability", async (req, res): Promise<void> => {
   const [service] = await db.select().from(servicesTable).where(and(eq(servicesTable.id, query.data.serviceId), eq(servicesTable.salonId, params.data.salonId))).limit(1);
   if (!service) { res.status(404).json({ error: "Usluga nije pronađena." }); return; }
   const date = calendarDate(query.data.date);
-  const granularity = Number(req.query.granularityMinutes ?? 30);
-  if (!Number.isInteger(granularity) || granularity < 5 || granularity > 180) {
-    res.status(400).json({ error: "Granularnost termina nije ispravna." }); return;
-  }
+  const granularity = query.data.granularityMinutes ?? 30;
   const slots = await canonicalAvailability({
     salonId: params.data.salonId, service, dates: [date],
     employeeId: query.data.employeeId, granularityMinutes: granularity, limit: 14,
@@ -7877,18 +7876,48 @@ router.get("/salon/availability/search", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Zaposleni nije pronađen u ovom salonu." }); return;
   }
 
-  const cap = parsed.data.limit ?? 50;
   const dates = Array.from({ length: 7 }, (_, offset) =>
     dateAtOffset(new Date(`${parsed.data.startDate}T12:00:00.000Z`), offset));
-  const granularity = Number(req.query.granularityMinutes ?? 30);
-  if (!Number.isInteger(granularity) || granularity < 5 || granularity > 180) {
-    res.status(400).json({ error: "Granularnost termina nije ispravna." }); return;
-  }
+  const granularity = parsed.data.granularityMinutes ?? 30;
   const slots = await canonicalAvailability({
     salonId: access.salon.id, service, dates, employeeId: parsed.data.employeeId,
-    granularityMinutes: granularity, limit: cap,
+    granularityMinutes: granularity, limit: parsed.data.limit,
   });
   res.json(SearchSalonAvailabilityResponse.parse(slots));
+});
+
+router.get("/employee/availability/search", async (req, res): Promise<void> => {
+  const access = await requireSalonEmployee(req, res); if (!access) return;
+  const parsed = SearchEmployeeAvailabilityQueryParams.safeParse(req.query);
+  if (!parsed.success || !isValidCalendarDate(parsed.data.startDate)) {
+    res.status(400).json({ error: parsed.success ? "Početni datum nije ispravan." : parsed.error.message }); return;
+  }
+  const [service] = await db.select().from(servicesTable).where(and(
+    eq(servicesTable.id, parsed.data.serviceId),
+    eq(servicesTable.salonId, access.salon.id),
+    eq(servicesTable.active, true),
+  )).limit(1);
+  if (!service) {
+    res.status(404).json({ error: "Aktivna usluga nije pronađena u vašem aktivnom salonu." }); return;
+  }
+  const [assigned] = await db.select({ employeeId: employeeServicesTable.employeeId })
+    .from(employeeServicesTable).where(and(
+      eq(employeeServicesTable.employeeId, access.employee.id),
+      eq(employeeServicesTable.serviceId, service.id),
+    )).limit(1);
+  if (!assigned) {
+    res.status(403).json({ error: "Možete proveravati samo svoje dodeljene usluge." }); return;
+  }
+  const dates = Array.from({ length: 7 }, (_, offset) =>
+    dateAtOffset(new Date(`${parsed.data.startDate}T12:00:00.000Z`), offset));
+  const slots = await canonicalAvailability({
+    salonId: access.salon.id,
+    service,
+    dates,
+    employeeId: access.employee.id,
+    granularityMinutes: parsed.data.granularityMinutes,
+  });
+  res.json(SearchEmployeeAvailabilityResponse.parse(slots));
 });
 
 router.get("/salon/calendar-day", async (req, res): Promise<void> => {

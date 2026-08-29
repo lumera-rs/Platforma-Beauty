@@ -122,3 +122,4 @@
 - [Checkout fixture entitlements](checkout-fixture-entitlements.md) — base-price and shipping assertions must neutralize seeded benefits and restore them afterward.
 - [Relational fixture cleanup](relational-fixture-cleanup.md) — marker-owned parent rows may acquire dependents while an integration test is running; clean the dependency chain first.
 - [Availability branch preloading](availability-branch-preloading.md) — combinatorial previews reuse one request-scoped data snapshot while rerunning the canonical engine per branch.
+- [Availability window completeness](availability-window-completeness.md) — an empty calendar day is authoritative only when the server response cannot truncate earlier in the window.

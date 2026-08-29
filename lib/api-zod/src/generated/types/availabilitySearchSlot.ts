@@ -6,7 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface SalonAvailabilitySearchSlot {
+export interface AvailabilitySearchSlot {
   /** @pattern ^\d{4}-\d{2}-\d{2}$ */
   date: string;
   /** @pattern ^\d{2}:\d{2}$ */

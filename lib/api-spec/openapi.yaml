@@ -423,6 +423,10 @@ paths:
           in: query
           required: true
           schema: { type: string }
+        - name: granularityMinutes
+          in: query
+          description: Optional requested cadence. The salon booking policy remains authoritative.
+          schema: { type: integer, minimum: 5, maximum: 180 }
       responses:
         "200":
           description: Available slots
@@ -1178,7 +1182,7 @@ paths:
     get:
       operationId: searchSalonAvailability
       tags: [salon-management]
-      summary: Search available owner booking slots over seven calendar days
+      summary: Search server-confirmed owner booking availability over seven calendar days
       parameters:
         - name: serviceId
           in: query
@@ -1193,15 +1197,17 @@ paths:
           schema: { type: string }
         - name: limit
           in: query
-          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+          schema: { type: integer, minimum: 1, maximum: 100 }
+        - name: granularityMinutes
+          in: query
+          description: Optional requested cadence. The salon booking policy remains authoritative.
+          schema: { type: integer, minimum: 5, maximum: 180 }
       responses:
         "200":
-          description: Chronological available slots
+          description: Chronological server-confirmed slots in the bounded seven-day window; calendar clients treat dates without slots as unavailable
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/SalonAvailabilitySearchSlot" }
+              schema: { $ref: "#/components/schemas/AvailabilitySearchResponse" }
         "404": { description: Service or employee not found in the active salon }
   /salon/calendar-day:
     get:
@@ -1315,6 +1321,32 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/SalonCustomer" }
+  /employee/availability/search:
+    get:
+      operationId: searchEmployeeAvailability
+      tags: [salon-management]
+      summary: Search the signed-in employee's server-confirmed availability at their active location
+      parameters:
+        - name: serviceId
+          in: query
+          required: true
+          schema: { type: string }
+        - name: startDate
+          in: query
+          required: true
+          schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        - name: granularityMinutes
+          in: query
+          description: Optional requested cadence. The active salon booking policy remains authoritative.
+          schema: { type: integer, minimum: 5, maximum: 180 }
+      responses:
+        "200":
+          description: Chronological server-confirmed slots in the bounded seven-day window for the signed-in employee; calendar clients treat dates without slots as unavailable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AvailabilitySearchResponse" }
+        "403": { description: Service is not assigned to the signed-in employee at their active salon }
+        "404": { description: Active service not found at the employee's active salon }
   /employee/appointment-series/preview:
     post:
       operationId: previewEmployeeAppointmentSeries
@@ -13376,7 +13408,7 @@ components:
         endTime: { type: string, pattern: '^\d{2}:\d{2}$' }
         reason: { type: string, minLength: 1, maxLength: 500 }
       required: [employeeId, date, startTime, endTime, reason]
-    SalonAvailabilitySearchSlot:
+    AvailabilitySearchSlot:
       type: object
       properties:
         date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
@@ -13385,6 +13417,10 @@ components:
         employeeId: { type: string }
         employeeName: { type: string }
       required: [date, startTime, endTime, employeeId, employeeName]
+    AvailabilitySearchResponse:
+      type: array
+      description: Server-confirmed canonical slots for exactly seven calendar days beginning at the requested startDate. The fixed window lets calendar clients represent every date and disable dates absent from this list.
+      items: { $ref: "#/components/schemas/AvailabilitySearchSlot" }
     SalonCalendarScheduleWindow:
       type: object
       properties:

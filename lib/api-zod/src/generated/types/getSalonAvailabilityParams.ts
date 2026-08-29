@@ -10,4 +10,10 @@ export type GetSalonAvailabilityParams = {
 serviceId: string;
 employeeId?: string;
 date: string;
+/**
+ * Optional requested cadence. The salon booking policy remains authoritative.
+ * @minimum 5
+ * @maximum 180
+ */
+granularityMinutes?: number;
 };

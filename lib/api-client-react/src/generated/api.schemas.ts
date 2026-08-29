@@ -8797,7 +8797,7 @@ export interface EmployeeTimeBlockInput {
   reason: string;
 }
 
-export interface SalonAvailabilitySearchSlot {
+export interface AvailabilitySearchSlot {
   /** @pattern ^\d{4}-\d{2}-\d{2}$ */
   date: string;
   /** @pattern ^\d{2}:\d{2}$ */
@@ -8807,6 +8807,11 @@ export interface SalonAvailabilitySearchSlot {
   employeeId: string;
   employeeName: string;
 }
+
+/**
+ * Server-confirmed canonical slots for exactly seven calendar days beginning at the requested startDate. The fixed window lets calendar clients represent every date and disable dates absent from this list.
+ */
+export type AvailabilitySearchResponse = AvailabilitySearchSlot[];
 
 export interface SalonCalendarScheduleWindow {
   /** @pattern ^\d{2}:\d{2}$ */
@@ -10780,6 +10785,12 @@ export type GetSalonAvailabilityParams = {
 serviceId: string;
 employeeId?: string;
 date: string;
+/**
+ * Optional requested cadence. The salon booking policy remains authoritative.
+ * @minimum 5
+ * @maximum 180
+ */
+granularityMinutes?: number;
 };
 
 export type ListMyAppointmentsParams = {
@@ -10905,6 +10916,12 @@ employeeId?: string;
  * @maximum 100
  */
 limit?: number;
+/**
+ * Optional requested cadence. The salon booking policy remains authoritative.
+ * @minimum 5
+ * @maximum 180
+ */
+granularityMinutes?: number;
 };
 
 export type GetSalonCalendarDayParams = {
@@ -10926,6 +10943,20 @@ page?: number;
  * @maximum 100
  */
 pageSize?: number;
+};
+
+export type SearchEmployeeAvailabilityParams = {
+serviceId: string;
+/**
+ * @pattern ^\d{4}-\d{2}-\d{2}$
+ */
+startDate: string;
+/**
+ * Optional requested cadence. The active salon booking policy remains authoritative.
+ * @minimum 5
+ * @maximum 180
+ */
+granularityMinutes?: number;
 };
 
 export type DeleteSalonResource409 = {

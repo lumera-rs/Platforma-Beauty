@@ -50,9 +50,13 @@ import {
   useListEmployeeAssignedLocations,
   useSelectEmployeeActiveLocation,
   getListEmployeeAssignedLocationsQueryKey,
+  useSearchEmployeeAvailability,
+  getSearchEmployeeAvailabilityQueryKey,
+  type SearchEmployeeAvailabilityParams,
 } from "@workspace/api-client-react";
 import { AvatarImage } from "@/components/optimized-image";
 import { AppointmentLifecyclePanel } from "@/components/appointment-lifecycle-panel";
+import { InternalStaffAvailabilityPicker } from "@/components/booking/internal-staff-availability-picker";
 import {
   createEmployeeLeaveDraft,
   formatEmployeeLeaveRequestSummary,
@@ -521,6 +525,7 @@ export default function EmployeePortal() {
     slots: [{ date: today(), startTime: "10:00" }] as Slot[],
   });
   const [seriesMode, setSeriesMode] = useState(false);
+  const [employeeAvailabilityStart, setEmployeeAvailabilityStart] = useState(today());
   const [seriesRule, setSeriesRule] = useState("weekly");
   const [seriesCount, setSeriesCount] = useState("5");
   const [seriesPreview, setSeriesPreview] = useState<{
@@ -534,9 +539,22 @@ export default function EmployeePortal() {
     query: { queryKey: getListEmployeeAssignedLocationsQueryKey() },
   });
   const selectLocationMutation = useSelectEmployeeActiveLocation();
+  const employeeAvailabilityParams = useMemo<SearchEmployeeAvailabilityParams>(() => ({
+    serviceId: booking.serviceId,
+    startDate: employeeAvailabilityStart,
+  }), [booking.serviceId, employeeAvailabilityStart]);
+  const { data: employeeAvailabilitySlots, isFetching: employeeAvailabilityFetching, error: employeeAvailabilityError, refetch: refetchEmployeeAvailability } = useSearchEmployeeAvailability(
+    employeeAvailabilityParams,
+    { query: { enabled: bookingOpen && !seriesMode && !!booking.serviceId, queryKey: getSearchEmployeeAvailabilityQueryKey(employeeAvailabilityParams) } },
+  );
 
   const handleLocationChange = (salonId: string) => {
     if (!salonId || salonId === locationsQuery.data?.activeSalonId) return;
+    setBookingOpen(false);
+    setSeriesMode(false);
+    setSeriesPreview(null);
+    setEmployeeAvailabilityStart(today());
+    setBooking((current) => ({ ...current, serviceId: "", salonCustomerId: "", firstName: "", lastName: "", phone: "", email: "", slots: [{ date: today(), startTime: "" }] }));
 
     selectLocationMutation.mutate(
       { data: { salonId } },
@@ -559,7 +577,10 @@ export default function EmployeePortal() {
       const data = await api<Portal>("/api/employee/portal");
       setPortal(data);
       setProfile({ bio: data.employee.bio, avatarUrl: data.employee.avatarUrl, phone: data.employee.phone ?? "" });
-      setBooking((current) => ({ ...current, serviceId: current.serviceId || data.services[0]?.id || "" }));
+      setBooking((current) => ({
+        ...current,
+        serviceId: data.services.some((service) => service.id === current.serviceId) ? current.serviceId : data.services[0]?.id || "",
+      }));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Portal nije učitan.");
     } finally {
@@ -570,6 +591,16 @@ export default function EmployeePortal() {
   useEffect(() => {
     void load(true);
   }, []);
+  useEffect(() => {
+    if (!bookingOpen || seriesMode || booking.slots.length !== 1 || !booking.slots[0]?.startTime) return;
+    const selected = booking.slots[0];
+    if (!employeeAvailabilitySlots?.some((slot) => slot.date === selected.date && slot.startTime === selected.startTime)) {
+      setBooking((current) => ({ ...current, slots: [{ date: employeeAvailabilityStart, startTime: "" }] }));
+    }
+  }, [booking.slots, bookingOpen, employeeAvailabilitySlots, employeeAvailabilityStart, seriesMode]);
+  useEffect(() => {
+    if (bookingOpen && !seriesMode && booking.serviceId) void refetchEmployeeAvailability();
+  }, [booking.serviceId, bookingOpen, employeeAvailabilityStart, refetchEmployeeAvailability, seriesMode]);
 
   const appointments = useMemo(
     () => (portal?.appointments ?? [])
@@ -640,6 +671,10 @@ export default function EmployeePortal() {
         toast.error("Prvo proverite da su svi termini iz serije slobodni.");
         return;
       }
+      if (!seriesMode && (employeeAvailabilityFetching || employeeAvailabilityError || booking.slots.length !== 1 || !employeeAvailabilitySlots?.some((slot) => slot.date === booking.slots[0]?.date && slot.startTime === booking.slots[0]?.startTime))) {
+        toast.error("Izaberite slobodan termin iz rasporeda.");
+        return;
+      }
       await api(seriesMode ? "/api/employee/appointment-series" : "/api/employee/appointments", {
         method: "POST",
         body: JSON.stringify({
@@ -654,6 +689,7 @@ export default function EmployeePortal() {
           slots: booking.slots,
         }),
       });
+      queryClient.invalidateQueries({ queryKey: getSearchEmployeeAvailabilityQueryKey(employeeAvailabilityParams) });
       toast.success(booking.slots.length > 1 ? "Termini su zakazani i potvrde poslate." : "Termin je zakazan i potvrda poslata.");
       setBookingOpen(false);
       setSeriesMode(false);
@@ -923,12 +959,12 @@ export default function EmployeePortal() {
         </Dialog>
 
         <Dialog open={bookingOpen} onOpenChange={setBookingOpen}>
-          <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
+          <DialogContent className="max-h-[90dvh] w-[calc(100vw-1rem)] min-w-0 max-w-xl overflow-x-hidden overflow-y-auto">
             <DialogHeader><DialogTitle>Zakaži termin za svog klijenta</DialogTitle></DialogHeader>
             <div className="space-y-4">
               <div>
                 <Label>Usluga</Label>
-                <select className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm" value={booking.serviceId} onChange={(event) => setBooking({ ...booking, serviceId: event.target.value })}>
+                <select className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm" value={booking.serviceId} onChange={(event) => setBooking({ ...booking, serviceId: event.target.value, slots: [{ date: employeeAvailabilityStart, startTime: "" }] })}>
                   {portal.services.map((service) => <option key={service.id} value={service.id}>{service.name} · {service.durationMinutes} min</option>)}
                 </select>
               </div>
@@ -946,7 +982,7 @@ export default function EmployeePortal() {
                 <div><Label>Email (opciono)</Label><Input className="mt-1" type="email" value={booking.email} onChange={(event) => setBooking({ ...booking, email: event.target.value })} /></div>
               </div>}
               <div className="rounded-lg border bg-muted/20 p-3">
-                <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={seriesMode} onChange={(event) => { setSeriesMode(event.target.checked); setSeriesPreview(null); }} /><Repeat2 className="h-4 w-4 text-primary" />Zakaži seriju termina</label>
+                <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={seriesMode} onChange={(event) => { const nextSeriesMode = event.target.checked; setSeriesMode(nextSeriesMode); setSeriesPreview(null); if (!nextSeriesMode) setBooking((current) => ({ ...current, slots: [{ date: employeeAvailabilityStart, startTime: "" }] })); }} /><Repeat2 className="h-4 w-4 text-primary" />Zakaži seriju termina</label>
                 {seriesMode && <div className="mt-3 flex flex-wrap gap-2">
                   <select className="h-9 rounded-md border bg-background px-2 text-sm" value={seriesRule} onChange={(event) => setSeriesRule(event.target.value)}>
                     <option value="daily">Svaki dan</option>
@@ -961,7 +997,12 @@ export default function EmployeePortal() {
                   <Button type="button" size="sm" variant="outline" onClick={previewEmployeeSeries}>Proveri</Button>
                 </div>}
               </div>
-              <div className="space-y-2">
+              {!seriesMode && <div className="space-y-2">
+                <Label>Početak perioda</Label>
+                <Input type="date" min={today()} value={employeeAvailabilityStart} data-testid="employee-availability-start-date" onChange={(event) => { setEmployeeAvailabilityStart(event.target.value); setBooking((current) => ({ ...current, slots: [{ date: event.target.value, startTime: "" }] })); }} />
+                <InternalStaffAvailabilityPicker startDate={employeeAvailabilityStart} slots={employeeAvailabilitySlots} isLoading={employeeAvailabilityFetching} error={employeeAvailabilityError} selectedSlot={booking.slots[0]?.startTime ? { date: booking.slots[0].date, startTime: booking.slots[0].startTime, employeeId: employeeAvailabilitySlots?.find((slot) => slot.date === booking.slots[0]?.date && slot.startTime === booking.slots[0]?.startTime)?.employeeId ?? "" } : null} onSelectSlot={(slot) => setBooking((current) => ({ ...current, slots: [{ date: slot.date, startTime: slot.startTime }] }))} testId="employee-appointment-availability" />
+              </div>}
+              {seriesMode && <div className="space-y-2">
                 <Label>Termini</Label>
                 {booking.slots.map((slot, index) => {
                   const state = seriesPreview?.slots.find((item) => item.date.slice(0, 10) === slot.date && item.startTime === slot.startTime);
@@ -973,8 +1014,8 @@ export default function EmployeePortal() {
                   </div>;
                 })}
                 <Button type="button" size="sm" variant="outline" onClick={() => { setBooking({ ...booking, slots: [...booking.slots, { date: booking.slots.at(-1)?.date ?? today(), startTime: "10:00" }] }); setSeriesPreview(null); }}><Plus className="mr-1 h-3.5 w-3.5" />Zakaži još jedan termin</Button>
-              </div>
-              <Button className="w-full" onClick={book}>Zakaži {seriesMode ? "seriju" : booking.slots.length > 1 ? "termine" : "termin"}</Button>
+              </div>}
+              <Button className="w-full" onClick={book} disabled={!seriesMode && (employeeAvailabilityFetching || !!employeeAvailabilityError || booking.slots.length !== 1 || !employeeAvailabilitySlots?.some((slot) => slot.date === booking.slots[0]?.date && slot.startTime === booking.slots[0]?.startTime))}>Zakaži {seriesMode ? "seriju" : "termin"}</Button>
             </div>
           </DialogContent>
         </Dialog>
