@@ -29,6 +29,9 @@ TARGET_ID=""
 ORIGINAL_ROLE=""
 ORIGINAL_ACTIVE=""
 ORIGINAL_SHIPPING=""
+ORIGINAL_SHOP_SETTINGS_ROW=""
+SHOP_SETTINGS_CREATED_ID=""
+ORIGINAL_SALON_LOYALTY_STATUS=""
 PARENT_CATEGORY_ID=""
 CHILD_CATEGORY_ID=""
 PRODUCT_A_ID=""
@@ -38,12 +41,13 @@ UNUSED_BRAND_ID=""
 SUPER_BRAND_ID=""
 SUPER_CATEGORY_ID=""
 SUPER_PRODUCT_ID=""
-ROOT_CATEGORY_ID=""
-ROOT_CATEGORY_NAME=""
 THRESHOLD_ORDER_ID=""
 WEIGHTED_ORDER_ID=""
 TEST_COURIER_ID=""
 BEX_COURIER_ID=""
+SUPPLIER_ID=""
+SUPPLIER_NAME="B2B Regression Supplier ${RUN_ID}"
+SUPPLIER_SLUG="b2b-regression-supplier-${RUN_ID}"
 TEST_SHIPPING_NAME="B2B Regression ${RUN_ID}"
 ORIGINAL_CART_JSON="[]"
 CLEANUP_COMPLETED=false
@@ -105,6 +109,41 @@ restore_shared_state() {
     jq -e --arg id "$TARGET_ID" --arg role "$ORIGINAL_ROLE" --argjson active "$ORIGINAL_ACTIVE" \
       '(if type == "array" then . else .items end)[] | select(.id == $id and .role == $role and .active == $active)' "$BODY" >/dev/null || return 1
   fi
+
+  if [[ -n "$SHOP_SETTINGS_CREATED_ID" ]]; then
+    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v settings_id="$SHOP_SETTINGS_CREATED_ID" >/dev/null <<'SQL' || return 1
+DELETE FROM shop_settings WHERE id = :'settings_id'::uuid;
+SQL
+  elif [[ -n "$ORIGINAL_SHOP_SETTINGS_ROW" ]]; then
+    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v snapshot="$ORIGINAL_SHOP_SETTINGS_ROW" >/dev/null <<'SQL' || return 1
+UPDATE shop_settings AS current
+SET seller_company_name = original.seller_company_name,
+    seller_tax_id = original.seller_tax_id,
+    seller_registration_number = original.seller_registration_number,
+    seller_address = original.seller_address,
+    seller_city = original.seller_city,
+    seller_postal_code = original.seller_postal_code,
+    seller_bank_account = original.seller_bank_account,
+    seller_contact_email = original.seller_contact_email,
+    seller_contact_phone = original.seller_contact_phone,
+    version = original.version,
+    updated_at = original.updated_at
+FROM json_populate_record(NULL::shop_settings, :'snapshot'::json) AS original
+WHERE current.id = original.id;
+SQL
+  fi
+
+  if [[ -n "$ORIGINAL_SALON_LOYALTY_STATUS" ]]; then
+    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v snapshot="$ORIGINAL_SALON_LOYALTY_STATUS" >/dev/null <<'SQL' || return 1
+INSERT INTO salon_loyalty_statuses
+SELECT original.*
+FROM json_populate_record(NULL::salon_loyalty_statuses, :'snapshot'::json) AS original
+ON CONFLICT (salon_id) DO UPDATE
+SET tier_id = EXCLUDED.tier_id,
+    current_period_spend = EXCLUDED.current_period_spend,
+    updated_at = EXCLUDED.updated_at;
+SQL
+  fi
 }
 
 verify_test_data_removed() {
@@ -114,8 +153,9 @@ verify_test_data_removed() {
     select count(*) from products where sku like 'LUMERA-REG-${RUN_ID}%';
     select count(*) from product_brands where name like 'B2B Test Brand%${RUN_ID}%' or name like 'B2B Unused Brand%${RUN_ID}%' or name like 'B2B Super Brand%${RUN_ID}%';
     select count(*) from orders where shipping_name = '${TEST_SHIPPING_NAME}';
+    select count(*) from suppliers where slug = '${SUPPLIER_SLUG}';
   ")" || return 1
-  [[ "$counts" == $'0\n0\n0\n0' ]]
+  [[ "$counts" == $'0\n0\n0\n0\n0' ]]
 }
 
 restore_original_cart() {
@@ -154,10 +194,10 @@ cleanup() {
   restore_original_cart || cleanup_failed=true
 
   # Best-effort endpoint cleanup is followed by SQL/API state verification below.
-  if [[ -n "$PRODUCT_B_ID" && -n "$ROOT_CATEGORY_ID" ]]; then
+  if [[ -n "$PRODUCT_B_ID" && -n "$PARENT_CATEGORY_ID" ]]; then
     curl -sS -o /dev/null -b "$SUPER_COOKIE" -X PATCH \
       -H "Content-Type: application/json" \
-      --data "{\"categoryId\":\"$ROOT_CATEGORY_ID\"}" \
+      --data "{\"categoryId\":\"$PARENT_CATEGORY_ID\"}" \
       "$BASE_URL/admin/products/$PRODUCT_B_ID" || true
   fi
   if [[ -n "$PRODUCT_A_ID" ]]; then
@@ -186,6 +226,11 @@ cleanup() {
   fi
   if [[ -n "$SUPER_CATEGORY_ID" ]]; then
     curl -sS -o /dev/null -b "$SUPER_COOKIE" -X DELETE "$BASE_URL/admin/product-categories/$SUPER_CATEGORY_ID" || true
+  fi
+  if [[ -n "$SUPPLIER_ID" ]]; then
+    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v supplier_id="$SUPPLIER_ID" >/dev/null <<'SQL' || cleanup_failed=true
+DELETE FROM suppliers WHERE id = :'supplier_id'::uuid;
+SQL
   fi
   if [[ -n "$TEST_COURIER_ID" ]]; then
     curl -sS -o /dev/null -b "$SUPER_COOKIE" -X DELETE "$BASE_URL/admin/courier-services/$TEST_COURIER_ID" || true
@@ -381,21 +426,20 @@ for subject in anonymous CUSTOMER ADMIN; do
   expect_status "$expected" "$status" "$subject denied order creation"
 done
 
-status="$(request -b "$SUPER_COOKIE" "$BASE_URL/admin/product-categories")"
-expect_status 200 "$status" "read root category for isolated cleanup"
-ROOT_CATEGORY_ID="$(jq -r '[.[] | select(.parentId == null) | .id][0] // empty' "$BODY")"
-ROOT_CATEGORY_NAME="$(jq -r '[.[] | select(.parentId == null) | .name][0] // empty' "$BODY")"
-if [[ -z "$ROOT_CATEGORY_ID" || -z "$ROOT_CATEGORY_NAME" ]]; then
-  echo "FAIL: no existing root product category is available for cleanup." >&2
-  exit 1
-fi
+status="$(request -b "$ADMIN_COOKIE" -X POST \
+  -H "Content-Type: application/json" \
+  --data "{\"name\":\"$SUPPLIER_NAME\",\"slug\":\"$SUPPLIER_SLUG\",\"scope\":\"B2B\",\"active\":true}" \
+  "$BASE_URL/admin/suppliers")"
+expect_status 201 "$status" "ADMIN creates isolated B2B supplier"
+SUPPLIER_ID="$(json_field '.id')"
+expect_json ".slug == \"$SUPPLIER_SLUG\" and .scope == \"B2B\" and .active == true" "isolated supplier is configured for B2B"
 
 # Product categories: create, validate uniqueness, update and later delete.
 PARENT_NAME="B2B Regression ${RUN_ID}"
 CHILD_NAME="B2B Regression Child ${RUN_ID}"
 status="$(request -b "$ADMIN_COOKIE" -X POST \
   -H "Content-Type: application/json" \
-  --data "{\"name\":\"$PARENT_NAME\",\"sortOrder\":90,\"active\":true}" \
+  --data "{\"name\":\"$PARENT_NAME\",\"supplierId\":\"$SUPPLIER_ID\",\"sortOrder\":90,\"active\":true}" \
   "$BASE_URL/admin/product-categories")"
 expect_status 201 "$status" "ADMIN creates product category"
 PARENT_CATEGORY_ID="$(json_field '.id')"
@@ -407,11 +451,52 @@ if ! psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc \
 fi
 echo "PASS: API target and DATABASE_URL share the isolated test database"
 
+ORIGINAL_SALON_LOYALTY_STATUS="$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "
+  select row_to_json(status)::text
+  from salon_loyalty_statuses status
+  join salons on salons.id = status.salon_id
+  join users on users.id = salons.owner_id
+  where users.email = 'salon@lumera.local'
+  limit 1
+")"
+if [[ -n "$ORIGINAL_SALON_LOYALTY_STATUS" ]]; then
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
+DELETE FROM salon_loyalty_statuses
+USING salons, users
+WHERE salon_loyalty_statuses.salon_id = salons.id
+  AND salons.owner_id = users.id
+  AND users.email = 'salon@lumera.local';
+SQL
+fi
+
 # Save shipping configuration only after confirming the API and teardown
 # database are the same environment.
 status="$(request -b "$SUPER_COOKIE" "$BASE_URL/admin/shipping")"
 expect_status 200 "$status" "read shipping configuration for isolation"
 ORIGINAL_SHIPPING="$(jq -c '{freeShippingThreshold,tiers,personalDeliveryEnabled,personalDeliveryName,personalDeliveryPrice,personalDeliveryDescription}' "$BODY")"
+
+ORIGINAL_SHOP_SETTINGS_ROW="$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc \
+  "select row_to_json(shop_settings)::text from shop_settings limit 1")"
+if [[ -z "$ORIGINAL_SHOP_SETTINGS_ROW" ]]; then
+  SHOP_SETTINGS_CREATED_ID="$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qAtc \
+    "insert into shop_settings default values returning id")"
+  ORIGINAL_SHOP_SETTINGS_ROW="$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc \
+    "select row_to_json(shop_settings)::text from shop_settings where id = '$SHOP_SETTINGS_CREATED_ID'::uuid")"
+fi
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
+UPDATE shop_settings
+SET seller_company_name = 'B2B Regression Seller',
+    seller_tax_id = '101234567',
+    seller_registration_number = '20123456',
+    seller_address = 'Test address 1',
+    seller_city = 'Beograd',
+    seller_postal_code = '11000',
+    seller_bank_account = '100-123456789-10',
+    seller_contact_email = 'b2b-regression@example.test',
+    seller_contact_phone = '+381601234567',
+    version = version + 1,
+    updated_at = now();
+SQL
 
 status="$(request -b "$SUPER_COOKIE" -X PUT \
   -H "Content-Type: application/json" \
@@ -428,13 +513,13 @@ expect_status 400 "$status" "duplicate shipping weight rejected"
 
 status="$(request -b "$ADMIN_COOKIE" -X POST \
   -H "Content-Type: application/json" \
-  --data "{\"name\":\"$PARENT_NAME\",\"sortOrder\":90}" \
+  --data "{\"name\":\"$PARENT_NAME\",\"supplierId\":\"$SUPPLIER_ID\",\"sortOrder\":90}" \
   "$BASE_URL/admin/product-categories")"
 expect_status 409 "$status" "duplicate category rejected"
 
 status="$(request -b "$ADMIN_COOKIE" -X POST \
   -H "Content-Type: application/json" \
-  --data "{\"name\":\"$CHILD_NAME\",\"parentId\":\"$PARENT_CATEGORY_ID\",\"sortOrder\":1}" \
+  --data "{\"name\":\"$CHILD_NAME\",\"supplierId\":\"$SUPPLIER_ID\",\"parentId\":\"$PARENT_CATEGORY_ID\",\"sortOrder\":1}" \
   "$BASE_URL/admin/product-categories")"
 expect_status 201 "$status" "ADMIN creates product subcategory"
 CHILD_CATEGORY_ID="$(json_field '.id')"
@@ -442,7 +527,7 @@ CHILD_CATEGORY_ID="$(json_field '.id')"
 SUPER_CATEGORY_NAME="B2B Super Category ${RUN_ID}"
 status="$(request -b "$SUPER_COOKIE" -X POST \
   -H "Content-Type: application/json" \
-  --data "{\"name\":\"$SUPER_CATEGORY_NAME\",\"sortOrder\":91}" \
+  --data "{\"name\":\"$SUPER_CATEGORY_NAME\",\"supplierId\":\"$SUPPLIER_ID\",\"sortOrder\":91}" \
   "$BASE_URL/admin/product-categories")"
 expect_status 201 "$status" "SUPER_ADMIN creates product category"
 SUPER_CATEGORY_ID="$(json_field '.id')"
@@ -516,7 +601,7 @@ SUPER_BRAND_ID=""
 
 # Product validation and CRUD. The second product is also used for the order
 # total assertion below, so its price/discount/weight remain deterministic.
-common_product_fields="\"categoryId\":\"$CHILD_CATEGORY_ID\",\"categoryName\":\"ignored\",\"brand\":\"$RENAMED_BRAND_NAME\",\"description\":\"Regression product\",\"shortDescription\":\"B2B test\",\"imageUrl\":\"/test/b2b-regression.jpg\",\"images\":[],\"unit\":\"kom\",\"isNew\":false,\"isBestseller\":false,\"active\":true"
+common_product_fields="\"supplierId\":\"$SUPPLIER_ID\",\"categoryId\":\"$CHILD_CATEGORY_ID\",\"categoryName\":\"ignored\",\"brand\":\"$RENAMED_BRAND_NAME\",\"description\":\"Regression product\",\"shortDescription\":\"B2B test\",\"imageUrl\":\"/test/b2b-regression.jpg\",\"images\":[],\"unit\":\"kom\",\"isNew\":false,\"isBestseller\":false,\"active\":true"
 
 status="$(request -b "$ADMIN_COOKIE" -X POST \
   -H "Content-Type: application/json" \
@@ -531,7 +616,7 @@ status="$(request -b "$ADMIN_COOKIE" -X POST \
 expect_status 400 "$status" "partial variant inventory rejected"
 
 upload_product_media "$ADMIN_COOKIE" "ADMIN product A"
-common_product_fields="\"categoryId\":\"$CHILD_CATEGORY_ID\",\"categoryName\":\"ignored\",\"brand\":\"$RENAMED_BRAND_NAME\",\"description\":\"Regression product\",\"shortDescription\":\"B2B test\",\"imageUrl\":\"$MEDIA_IMAGE_URL\",\"images\":[],\"unit\":\"kom\",\"isNew\":false,\"isBestseller\":false,\"active\":true"
+common_product_fields="\"supplierId\":\"$SUPPLIER_ID\",\"categoryId\":\"$CHILD_CATEGORY_ID\",\"categoryName\":\"ignored\",\"brand\":\"$RENAMED_BRAND_NAME\",\"description\":\"Regression product\",\"shortDescription\":\"B2B test\",\"imageUrl\":\"$MEDIA_IMAGE_URL\",\"images\":[],\"unit\":\"kom\",\"isNew\":false,\"isBestseller\":false,\"active\":true"
 status="$(request -b "$ADMIN_COOKIE" -X POST \
   -H "Content-Type: application/json" \
   --data "{\"name\":\"Product A $RUN_ID\",$common_product_fields,\"price\":1200,\"discountPrice\":900,\"stock\":5,\"sku\":\"LUMERA-REG-${RUN_ID}-A\",\"weightGrams\":500}" \
@@ -541,7 +626,7 @@ PRODUCT_A_ID="$(json_field '.id')"
 expect_json ".sku == \"LUMERA-REG-${RUN_ID}-A\" and .categoryId == \"$CHILD_CATEGORY_ID\" and .subcategoryName == \"${CHILD_NAME} Renamed\"" "product category denormalization is correct"
 
 upload_product_media "$ADMIN_COOKIE" "ADMIN product B"
-common_product_fields="\"categoryId\":\"$CHILD_CATEGORY_ID\",\"categoryName\":\"ignored\",\"brand\":\"$RENAMED_BRAND_NAME\",\"description\":\"Regression product\",\"shortDescription\":\"B2B test\",\"imageUrl\":\"$MEDIA_IMAGE_URL\",\"images\":[],\"unit\":\"kom\",\"isNew\":false,\"isBestseller\":false,\"active\":true"
+common_product_fields="\"supplierId\":\"$SUPPLIER_ID\",\"categoryId\":\"$CHILD_CATEGORY_ID\",\"categoryName\":\"ignored\",\"brand\":\"$RENAMED_BRAND_NAME\",\"description\":\"Regression product\",\"shortDescription\":\"B2B test\",\"imageUrl\":\"$MEDIA_IMAGE_URL\",\"images\":[],\"unit\":\"kom\",\"isNew\":false,\"isBestseller\":false,\"active\":true"
 status="$(request -b "$ADMIN_COOKIE" -X PATCH \
   -H "Content-Type: application/json" \
   --data "{\"imageUrl\":\"$MEDIA_IMAGE_URL\",\"categoryId\":\"00000000-0000-4000-8000-000000000000\"}" \
@@ -556,7 +641,7 @@ PRODUCT_B_ID="$(json_field '.id')"
 expect_json ".stock == 10 and ([.variants[].stock] | add) == 10" "variant inventory sum is accepted"
 
 upload_product_media "$SUPER_COOKIE" "SUPER_ADMIN product"
-common_product_fields="\"categoryId\":\"$CHILD_CATEGORY_ID\",\"categoryName\":\"ignored\",\"brand\":\"$RENAMED_BRAND_NAME\",\"description\":\"Regression product\",\"shortDescription\":\"B2B test\",\"imageUrl\":\"$MEDIA_IMAGE_URL\",\"images\":[],\"unit\":\"kom\",\"isNew\":false,\"isBestseller\":false,\"active\":true"
+common_product_fields="\"supplierId\":\"$SUPPLIER_ID\",\"categoryId\":\"$CHILD_CATEGORY_ID\",\"categoryName\":\"ignored\",\"brand\":\"$RENAMED_BRAND_NAME\",\"description\":\"Regression product\",\"shortDescription\":\"B2B test\",\"imageUrl\":\"$MEDIA_IMAGE_URL\",\"images\":[],\"unit\":\"kom\",\"isNew\":false,\"isBestseller\":false,\"active\":true"
 status="$(request -b "$SUPER_COOKIE" -X POST \
   -H "Content-Type: application/json" \
   --data "{\"name\":\"Super Product $RUN_ID\",$common_product_fields,\"price\":1000,\"stock\":1,\"sku\":\"LUMERA-REG-${RUN_ID}-SUPER\",\"weightGrams\":100}" \
@@ -711,10 +796,10 @@ expect_json '.courierService == "Bex Express" and .courierServiceId != null and 
 # that the in-order product is deactivated rather than physically deleted.
 status="$(request -b "$ADMIN_COOKIE" -X PATCH \
   -H "Content-Type: application/json" \
-  --data "{\"categoryId\":\"$ROOT_CATEGORY_ID\"}" \
+  --data "{\"categoryId\":\"$PARENT_CATEGORY_ID\"}" \
   "$BASE_URL/admin/products/$PRODUCT_B_ID")"
 expect_status 200 "$status" "ADMIN moves ordered product before cleanup"
-expect_json ".categoryId == \"$ROOT_CATEGORY_ID\" and .categoryName == \"$ROOT_CATEGORY_NAME\" and .subcategoryName == null" "moving product to root clears subcategory"
+expect_json ".categoryId == \"$PARENT_CATEGORY_ID\" and .categoryName == \"$PARENT_NAME\" and .subcategoryName == null" "moving product to supplier root clears subcategory"
 status="$(request -b "$ADMIN_COOKIE" -X DELETE "$BASE_URL/admin/products/$PRODUCT_B_ID")"
 expect_status 200 "$status" "ADMIN deactivates ordered product on delete"
 expect_json '.active == false' "ordered product is protected from hard deletion"
@@ -737,6 +822,11 @@ status="$(request -b "$ADMIN_COOKIE" -X DELETE "$BASE_URL/admin/brands/$BRAND_ID
 expect_status 200 "$status" "ADMIN deactivates brand still referenced by an order fixture"
 expect_json '.active == false' "in-use brand is deactivated instead of removed"
 BRAND_ID=""
+
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v supplier_id="$SUPPLIER_ID" >/dev/null <<'SQL'
+DELETE FROM suppliers WHERE id = :'supplier_id'::uuid;
+SQL
+SUPPLIER_ID=""
 
 restore_shared_state
 verify_test_data_removed
