@@ -27,7 +27,8 @@ import {
   getListJobseekerSalonInterestsQueryKey,
   getApiErrorDetails,
   getApiErrorMessage,
-  type FirstAvailableServiceSlot
+  type FirstAvailableServiceSlot,
+  type GroupedTreatmentRequest
 } from "@workspace/api-client-react";
 import { useParams, useLocation, useSearch, Link } from "wouter";
 import { MapPin, Star, Clock, CalendarDays, Loader2, Heart, ShieldCheck, Flame, House, Smartphone, BriefcaseBusiness } from "lucide-react";
@@ -100,6 +101,7 @@ export default function SalonProfile() {
   const salonData = salon;
 
   const [cart, setCart] = useState<{serviceId: string, employeeId?: string | null}[]>([]);
+  const [bookingCart, setBookingCart] = useState<GroupedTreatmentRequest[]>([]);
   const [selectedService, setSelectedService] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [selectedEmployee, setSelectedEmployee] = useState<string | null>(null);
@@ -319,6 +321,7 @@ export default function SalonProfile() {
         ? "any"
         : null;
     setSelectedService(serviceId);
+    setBookingCart(current => current.length < 5 ? [...current, { serviceId }] : current);
     setSelectedEmployee(validEmployeeId);
     setEmployeeSelection(restoredEmployeeSelection);
     setSelectedDate(isValid(dateValue) ? dateValue : new Date());
@@ -507,6 +510,7 @@ export default function SalonProfile() {
 
   const handleSelectService = (serviceId: string) => {
     setSelectedService(serviceId);
+    setBookingCart(current => current.length < 5 ? [...current, { serviceId }] : current);
     setSelectedSlot(null);
     setBookingStep(2);
     if (window.innerWidth < 1024) {
@@ -522,6 +526,7 @@ export default function SalonProfile() {
     if (!slot.date || !slot.startTime) return;
     const targetDate = parseISO(slot.date);
     setSelectedService(serviceId);
+    setBookingCart(current => current.length < 5 ? [...current, { serviceId }] : current);
     selectEmployee(slot.employeeId);
     setSelectedDate(isValid(targetDate) ? targetDate : new Date());
     setQuickBookTarget({
@@ -1182,27 +1187,27 @@ export default function SalonProfile() {
         <div className={user?.role === "JOBSEEKER" ? "hidden" : "hidden lg:block w-[400px] shrink-0"}>
           <div className="sticky top-24 pt-4" id="booking-widget">
             <BookingWidget
- salon={salonData}
- user={user}
- selectedService={selectedService}
- setSelectedService={setSelectedService}
- onViewAppointments={() => setLocation("/moj-nalog")}
- />
+              salon={salonData}
+              user={user}
+              cart={bookingCart}
+              setCart={setBookingCart}
+              onViewAppointments={() => setLocation("/moj-nalog")}
+            />
           </div>
         </div>
       </div>
 
       {/* Mobile Booking Elements */}
       <div className={user?.role === "JOBSEEKER" ? "hidden" : "lg:hidden"}>
-      <MobileBookingTrigger salon={salonData} cartCount={0} onOpen={() => setIsMobileDrawerOpen(true)} />
+      <MobileBookingTrigger salon={salonData} cartCount={bookingCart.length} onOpen={() => setIsMobileDrawerOpen(true)} />
       <MobileBookingDrawer isOpen={isMobileDrawerOpen} onClose={() => setIsMobileDrawerOpen(false)} scrollContainerRef={mobileBookingScrollRef}>
            <BookingWidget
- salon={salonData}
- user={user}
- selectedService={selectedService}
- setSelectedService={setSelectedService}
- onViewAppointments={() => setLocation("/moj-nalog")}
- />
+             salon={salonData}
+             user={user}
+             cart={bookingCart}
+             setCart={setBookingCart}
+             onViewAppointments={() => setLocation("/moj-nalog")}
+           />
       </MobileBookingDrawer>
       <Dialog open={locationDialogOpen} onOpenChange={setLocationDialogOpen}>
         <DialogContent className="max-w-lg">

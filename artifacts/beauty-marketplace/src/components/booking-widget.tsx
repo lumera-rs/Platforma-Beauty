@@ -1,5 +1,5 @@
 
-import { useEffect, useState, useRef, type RefObject } from "react";
+import { useState, useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { addDays, startOfToday } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -30,10 +30,8 @@ import { GroupedAvailabilityView } from "@/components/booking/grouped-availabili
 export interface BookingWidgetProps {
   salon: SalonProfile;
   user: CurrentUserResponse['user'] | undefined | null;
-
-  // Prop to receive quick-add service from SalonProfile
-  selectedService: string | null;
-  setSelectedService: (id: string | null) => void;
+  cart: GroupedTreatmentRequest[];
+  setCart: Dispatch<SetStateAction<GroupedTreatmentRequest[]>>;
 
   onViewAppointments: () => void;
 
@@ -45,7 +43,7 @@ export interface BookingWidgetProps {
 export function BookingWidget(props: BookingWidgetProps) {
   const queryClient = useQueryClient();
   const [step, setStep] = useState<"CART" | "EMPLOYEE" | "DATETIME" | "SUCCESS">("CART");
-  const [cart, setCart] = useState<GroupedTreatmentRequest[]>([]);
+  const { cart, setCart } = props;
   const todayDate = formatLocalDateOnly(startOfToday())!;
   const [fromDate, setFromDate] = useState(todayDate);
   const [toDate, setToDate] = useState(todayDate);
@@ -61,17 +59,6 @@ export function BookingWidget(props: BookingWidgetProps) {
   });
 
   const { toast } = useToast();
-
-  // Handle external service selection
-  useEffect(() => {
-    if (props.selectedService) {
-      if (cart.length < 5) {
-        setCart(prev => [...prev, { serviceId: props.selectedService! }]);
-      }
-      props.setSelectedService(null);
-      setStep("CART");
-    }
-  }, [props.selectedService]);
 
   const availabilityMutation = useGetGroupedBookingAvailability();
 
@@ -392,7 +379,7 @@ export function MobileBookingTrigger({ salon, cartCount, onOpen }: { salon: Salo
          </p>
        </div>
         <div className="text-right shrink-0">
-          <Button type="button" onClick={onOpen} className="rounded-xl shadow-md h-9 px-4 font-bold">
+          <Button type="button" onClick={onOpen} disabled={cartCount === 0} className="rounded-xl shadow-md h-9 px-4 font-bold">
             Zakaži
           </Button>
         </div>
