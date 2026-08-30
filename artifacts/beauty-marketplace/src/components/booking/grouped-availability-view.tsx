@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { type GroupedAvailabilityCandidate, type GroupedAvailabilityResponse } from "@workspace/api-client-react";
 import { Clock, Calendar as CalendarIcon, List as ListIcon, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
-import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, isBefore, isToday, addMonths, subMonths, startOfDay } from "date-fns";
+import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, isBefore, addMonths, subMonths, startOfDay } from "date-fns";
 import { srLatn } from "date-fns/locale";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { parseLocalDateOnly } from "@/lib/date-only";
 
 export interface GroupedAvailabilityViewProps {
   isLoading: boolean;
@@ -18,6 +19,7 @@ export interface GroupedAvailabilityViewProps {
   fromDate?: string;
   toDate?: string;
   onDateSelect?: (dateStr: string) => void;
+  todayDate?: string;
 }
 
 export function GroupedAvailabilityView({
@@ -31,6 +33,7 @@ export function GroupedAvailabilityView({
   currentMonth,
   onMonthChange,
   onDateSelect,
+  todayDate,
 }: GroupedAvailabilityViewProps) {
   const [internalMonth, setInternalMonth] = useState(() => startOfMonth(new Date()));
   const displayMonth = currentMonth || internalMonth;
@@ -105,7 +108,7 @@ export function GroupedAvailabilityView({
   const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
   const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
   const calendarGrid = eachDayOfInterval({ start: startDate, end: endDate });
-  const today = startOfDay(new Date());
+  const today = parseLocalDateOnly(todayDate ?? "") ?? startOfDay(new Date());
 
   const handlePrevMonth = () => setDisplayMonth(subMonths(displayMonth, 1));
   const handleNextMonth = () => setDisplayMonth(addMonths(displayMonth, 1));
@@ -178,7 +181,7 @@ export function GroupedAvailabilityView({
                 const dateStr = format(day, 'yyyy-MM-dd');
                 const isPast = isBefore(day, today);
                 const isCurrentMonth = isSameMonth(day, displayMonth);
-                const isDayToday = isToday(day);
+                const isDayToday = dateStr === todayDate;
 
                 const fetchedDay = calendarDays.find((d:any) => d.date === dateStr);
                 const isFetched = !!fetchedDay;

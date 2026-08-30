@@ -1,16 +1,18 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useSearch } from "wouter";
 import {
   useGetWidgetSalon,
   useCreateWidgetBookingGroup,
   useGetGroupedBookingAvailability,
+  useGetSalonFirstAvailable,
+  getGetSalonFirstAvailableQueryKey,
   getGetWidgetSalonQueryKey,
   getApiErrorDetails,
   type GroupedTreatmentRequest,
   type GroupedAvailabilityCandidate,
   type Appointment
 } from "@workspace/api-client-react";
-import { addDays, startOfToday } from "date-fns";
+import { addDays } from "date-fns";
 import { Loader2, Calendar, Clock, ChevronRight, ChevronLeft, CheckCircle2, AlertCircle, Plus, Trash2, Scissors } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -20,7 +22,7 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatDateOnly, formatLocalDateOnly, parseLocalDateOnly } from "@/lib/date-only";
+import { formatDateOnly, formatDateOnlyInTimeZone, formatLocalDateOnly, parseLocalDateOnly } from "@/lib/date-only";
 import { trackEvent } from "@/lib/analytics";
 import { useAvailabilityViewMode } from "@/hooks/use-availability-view-mode";
 import { GroupedAvailabilityView } from "@/components/booking/grouped-availability-view";
@@ -50,10 +52,16 @@ export default function WidgetBooking() {
   const [step, setStep] = useState<Step>("CART");
   const [cart, setCart] = useState<GroupedTreatmentRequest[]>([]);
 
-  // We use a date range now
-  const todayDate = formatLocalDateOnly(startOfToday())!;
-  const [fromDate, setFromDate] = useState(todayDate);
-  const [toDate, setToDate] = useState(todayDate);
+  const { data: serverAvailabilityClock } = useGetSalonFirstAvailable(salon?.id ?? "", {
+    query: {
+      enabled: !!salon?.id,
+      staleTime: 30000,
+      queryKey: getGetSalonFirstAvailableQueryKey(salon?.id ?? ""),
+    },
+  });
+  const todayDate = formatDateOnlyInTimeZone(serverAvailabilityClock?.generatedAt);
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [dateError, setDateError] = useState<string | null>(null);
   const [allowMultipleDays, setAllowMultipleDays] = useState(false);
   const [viewMode, setViewMode] = useAvailabilityViewMode();
@@ -97,10 +105,23 @@ export default function WidgetBooking() {
 
   const latestRequestRef = useRef(0);
 
+  useEffect(() => {
+    if (!todayDate) return;
+    setFromDate((current) => current || todayDate);
+    setToDate((current) => current || todayDate);
+  }, [todayDate]);
+
+  const mergeCalendarDay = (current: any, next: any) => {
+    const days = new Map<string, any>();
+    for (const day of current?.calendarDays ?? []) days.set(day.date, day);
+    for (const day of next?.calendarDays ?? []) days.set(day.date, day);
+    return { ...next, candidates: [], calendarDays: [...days.values()].sort((a, b) => a.date.localeCompare(b.date)) };
+  };
+
   const refetchAvailability = (mode = viewMode) => {
+    if (!todayDate) return;
     const parsedFrom = parseLocalDateOnly(fromDate);
     const parsedTo = parseLocalDateOnly(toDate);
-    const today = formatLocalDateOnly(startOfToday())!;
     const maximumTo = parsedFrom ? formatLocalDateOnly(addDays(parsedFrom, 13)) : null;
     if (!parsedFrom || !parsedTo) {
       setDateError("Unesite ispravne datume.");
@@ -108,27 +129,29 @@ export default function WidgetBooking() {
       setSelectedCandidate(null);
       return;
     }
-    if (fromDate < today || toDate < fromDate || (maximumTo && toDate > maximumTo)) {
+    if (fromDate < todayDate || toDate < fromDate || (maximumTo && toDate > maximumTo)) {
       setDateError("Izaberite period od danas, najduže 14 dana, bez obrnutog raspona.");
       setAvailabilityResponse({ candidates: [] });
       setSelectedCandidate(null);
       return;
     }
     setDateError(null);
+    const requestedToDate = mode === "calendar" && !allowMultipleDays ? fromDate : toDate;
     const currentId = ++latestRequestRef.current;
     availabilityMutation.mutate({
       salonId: salon?.id ?? "",
       data: {
         treatments: cart,
         fromDate,
-        toDate,
+        toDate: requestedToDate,
         allowMultipleDays,
         resultMode: mode,
       }
     }, {
       onSuccess: (data) => {
         if (latestRequestRef.current !== currentId) return;
-        setAvailabilityResponse(data);
+        setAvailabilityResponse((current: any) =>
+          mode === "calendar" && !allowMultipleDays ? mergeCalendarDay(current, data) : data);
         const hasCandidates = mode === "calendar"
           ? (data.calendarDays ?? []).some((d: any) => d.candidates.length > 0)
           : (data.candidates ?? []).length > 0;
@@ -166,8 +189,8 @@ export default function WidgetBooking() {
     setCart([]);
     setSelectedCandidate(null);
     setCompletedAppointments([]);
-    setFromDate(todayDate);
-    setToDate(todayDate);
+    setFromDate(todayDate ?? "");
+    setToDate(todayDate ?? "");
     setDateError(null);
     setContact({ firstName: "", lastName: "", phone: "", email: "", note: "" });
   };
@@ -385,7 +408,7 @@ export default function WidgetBooking() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Od</Label>
-                    <Input type="date" min={todayDate} value={fromDate} onChange={e => {
+                    <Input type="date" min={todayDate ?? undefined} value={fromDate} onChange={e => {
                       const value = e.target.value;
                       setFromDate(value);
                       setSelectedCandidate(null);
@@ -402,7 +425,7 @@ export default function WidgetBooking() {
                     <Label className="text-xs text-muted-foreground">Do</Label>
                     <Input
                       type="date"
-                      min={parseLocalDateOnly(fromDate) ? fromDate : todayDate}
+                      min={parseLocalDateOnly(fromDate) ? fromDate : todayDate ?? undefined}
                       max={parseLocalDateOnly(fromDate) ? formatLocalDateOnly(addDays(parseLocalDateOnly(fromDate)!, 14)) ?? undefined : undefined}
                       value={toDate}
                       onChange={e => {
@@ -425,7 +448,7 @@ export default function WidgetBooking() {
                   Dozvoli da tretmani budu raspoređeni na više dana
                 </label>
 
-                <Button className="w-full" variant="outline" onClick={() => refetchAvailability()} disabled={isFetchingAvailability}>
+                <Button className="w-full" variant="outline" onClick={() => refetchAvailability()} disabled={!todayDate || isFetchingAvailability}>
                   {isFetchingAvailability ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Calendar className="w-4 h-4 mr-2" />}
                   Proveri dostupnost
                 </Button>
@@ -440,6 +463,32 @@ export default function WidgetBooking() {
                   salon={salon}
                   selectedCandidate={selectedCandidate}
                   onSelectCandidate={selectCandidate}
+                  todayDate={todayDate ?? undefined}
+                  onDateSelect={(dateStr) => {
+                    const parsed = parseLocalDateOnly(dateStr);
+                    if (!parsed) return;
+                    const nextToDate = allowMultipleDays ? formatLocalDateOnly(addDays(parsed, 13))! : dateStr;
+                    setFromDate(dateStr);
+                    setToDate(nextToDate);
+                    setSelectedCandidate(null);
+                    const currentId = ++latestRequestRef.current;
+                    availabilityMutation.mutate({
+                      salonId: salon?.id ?? "",
+                      data: {
+                        treatments: cart,
+                        fromDate: dateStr,
+                        toDate: nextToDate,
+                        allowMultipleDays,
+                        resultMode: "calendar",
+                      },
+                    }, {
+                      onSuccess: (data) => {
+                        if (latestRequestRef.current !== currentId) return;
+                        setAvailabilityResponse((current: any) =>
+                          allowMultipleDays ? data : mergeCalendarDay(current, data));
+                      },
+                    });
+                  }}
                 />
               </div>
 

@@ -52,6 +52,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { DiscoveryCarousel } from "@/components/discovery-carousel";
 import { fetchNativeJson } from "@/lib/native-fetch";
 import { loginPathWithReturnTo } from "@/lib/auth-return";
+import { formatDateOnlyInTimeZone, parseLocalDateOnly } from "@/lib/date-only";
 
 const profileSections = [
   { id: "popular-services", label: "Popularno" },
@@ -302,18 +303,21 @@ export default function SalonProfile() {
     if (matchingDraft && selectedService === matchingDraft.serviceId) return;
 
     const requestedDateValue = requestedDate ? parseISO(requestedDate) : null;
+    const salonTodayDate = formatDateOnlyInTimeZone(firstAvailableResponse?.generatedAt);
+    const salonToday = salonTodayDate ? parseLocalDateOnly(salonTodayDate) : null;
     const hasValidRequestedSlot = !!requestedDate
       && !!requestedStartTime
       && /^\d{2}:\d{2}$/.test(requestedStartTime)
       && !!requestedDateValue
       && isValid(requestedDateValue)
       && format(requestedDateValue, "yyyy-MM-dd") === requestedDate
-      && requestedDate >= format(new Date(), "yyyy-MM-dd");
+      && !!salonTodayDate
+      && requestedDate >= salonTodayDate;
     const dateValue = hasValidRequestedSlot && requestedDateValue
       ? requestedDateValue
       : matchingDraft
         ? parseISO(matchingDraft.date)
-        : new Date();
+        : salonToday ?? new Date();
     const selectedServiceEmployees = salonData.staff.filter((employee) => employee.serviceIds.includes(serviceId));
     const validEmployeeId = employeeId && selectedServiceEmployees.some((employee) => employee.id === employeeId)
       ? employeeId
@@ -342,7 +346,7 @@ export default function SalonProfile() {
       : current.length < 5 ? [...current, { serviceId }] : current);
     setSelectedEmployee(validEmployeeId);
     setEmployeeSelection(restoredEmployeeSelection);
-    setSelectedDate(isValid(dateValue) ? dateValue : new Date());
+    setSelectedDate(isValid(dateValue) ? dateValue : salonToday ?? new Date());
     setSelectedSlot(null);
     setBookingStep(3);
     setHasInteractedWithEmployee(restoredEmployeeSelection === "any" || !!validEmployeeId);
@@ -354,7 +358,7 @@ export default function SalonProfile() {
         window.setTimeout(() => document.getElementById("booking-widget")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
       }
     }
-  }, [draft, isLoadingUser, salonData, search, selectedService, user?.role]);
+  }, [draft, firstAvailableResponse?.generatedAt, isLoadingUser, salonData, search, selectedService, user?.role]);
 
   useEffect(() => {
     if (!salonData || user?.role !== "CUSTOMER" || !selectedService || isSuccess) return;
@@ -1237,6 +1241,7 @@ export default function SalonProfile() {
               cart={bookingCart}
               setCart={setBookingCart}
               surface="desktop"
+              serverGeneratedAt={firstAvailableResponse?.generatedAt}
               quickBookCandidate={pendingQuickBook}
               onQuickBookConsumed={() => setPendingQuickBook(null)}
               onRequireSignIn={(candidate) => {
@@ -1258,6 +1263,7 @@ export default function SalonProfile() {
              cart={bookingCart}
              setCart={setBookingCart}
               surface="mobile"
+               serverGeneratedAt={firstAvailableResponse?.generatedAt}
               quickBookCandidate={pendingQuickBook}
               onQuickBookConsumed={() => setPendingQuickBook(null)}
               onRequireSignIn={(candidate) => {

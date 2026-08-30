@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type Dispatch, type RefObject, type SetStateAction } from "react";
-import { addDays, startOfToday, format, startOfMonth, parseISO } from "date-fns";
+import { addDays, format, startOfMonth, parseISO } from "date-fns";
 import { srLatn } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -24,7 +24,7 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { formatLocalDateOnly, parseLocalDateOnly } from "@/lib/date-only";
+import { formatDateOnlyInTimeZone, formatLocalDateOnly, parseLocalDateOnly } from "@/lib/date-only";
 import { trackEvent } from "@/lib/analytics";
 import { useAvailabilityViewMode } from "@/hooks/use-availability-view-mode";
 import { GroupedAvailabilityView } from "@/components/booking/grouped-availability-view";
@@ -41,6 +41,7 @@ export interface BookingWidgetProps {
   onCloseMobile?: () => void;
   scrollContainerRef?: RefObject<HTMLDivElement | null>;
   surface: "desktop" | "mobile";
+  serverGeneratedAt?: string;
   quickBookCandidate?: {
     serviceId: string;
     employeeId: string;
@@ -73,12 +74,28 @@ export function BookingWidget(props: BookingWidgetProps) {
     props.setCart(next);
   };
 
-  const todayDate = formatLocalDateOnly(startOfToday())!;
-  const defaultToDate = formatLocalDateOnly(addDays(startOfToday(), 13))!;
+  const todayDate = formatDateOnlyInTimeZone(props.serverGeneratedAt);
+  const initialToday = todayDate ? parseLocalDateOnly(todayDate) : null;
+  const defaultToDate = initialToday ? formatLocalDateOnly(addDays(initialToday, 13))! : "";
 
-  const [fromDate, setFromDate] = useState(todayDate);
+  const [fromDate, setFromDate] = useState(todayDate ?? "");
   const [toDate, setToDate] = useState(defaultToDate);
-  const [currentMonth, setCurrentMonth] = useState<Date>(startOfMonth(startOfToday()));
+  const [currentMonth, setCurrentMonth] = useState<Date>(() =>
+    startOfMonth(initialToday ?? new Date()));
+  const initializedTodayRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!todayDate || initializedTodayRef.current === todayDate) return;
+    const previousToday = initializedTodayRef.current;
+    const parsedToday = parseLocalDateOnly(todayDate);
+    if (!parsedToday) return;
+    setFromDate((current) => !current || current === previousToday ? todayDate : current);
+    setToDate((current) => !current || (previousToday && current === formatLocalDateOnly(addDays(parseLocalDateOnly(previousToday)!, 13)))
+      ? formatLocalDateOnly(addDays(parsedToday, 13))!
+      : current);
+    setCurrentMonth((current) => previousToday ? current : startOfMonth(parsedToday));
+    initializedTodayRef.current = todayDate;
+  }, [todayDate]);
 
   const [allowMultipleDays, setAllowMultipleDays] = useState(false);
   const [selectedCandidate, setSelectedCandidate] = useState<GroupedAvailabilityCandidate | null>(null);
@@ -167,6 +184,7 @@ export function BookingWidget(props: BookingWidgetProps) {
   };
 
   const refetchAvailability = (mode = viewMode, multipleDays = allowMultipleDays) => {
+    if (!todayDate) return;
     const parsedFrom = parseLocalDateOnly(fromDate);
     const parsedTo = parseLocalDateOnly(toDate);
     if (!parsedFrom || !parsedTo) {
@@ -216,11 +234,11 @@ export function BookingWidget(props: BookingWidgetProps) {
   };
 
   useEffect(() => {
-    if (step === "DATETIME" && !availabilityResponse && !availabilityMutation.isPending) {
+    if (step === "DATETIME" && todayDate && !availabilityResponse && !availabilityMutation.isPending) {
       refetchAvailability();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step]);
+  }, [step, todayDate]);
 
   const isLoadingAvailability = availabilityMutation.isPending;
   const isFetchingAvailability = availabilityMutation.isPending;
@@ -640,6 +658,7 @@ export function BookingWidget(props: BookingWidgetProps) {
                 onSelectCandidate={selectCandidate}
                 currentMonth={currentMonth}
                 onMonthChange={setCurrentMonth}
+                todayDate={todayDate ?? undefined}
                 fromDate={fromDate}
                 toDate={toDate}
                 onDateSelect={(dateStr) => {
