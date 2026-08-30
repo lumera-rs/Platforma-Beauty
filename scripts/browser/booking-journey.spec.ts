@@ -699,6 +699,76 @@ test("quick booking sends a guest to sign in only after confirmation", async ({ 
   }
 });
 
+test("quick booking resumes after sign in and requires a second confirmation", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const fixture = await createBookingFixture();
+  let availabilityCalls = 0;
+  let bookingCalls = 0;
+  try {
+    await page.route(`**/api/salons/${fixture.salonId}/first-available`, (route) => mockFirstAvailable(route, fixture));
+    await page.route(`**/api/salons/${fixture.salonId}/grouped-availability`, async (route) => {
+      availabilityCalls += 1;
+      await mockQuickAvailability(route, fixture);
+    });
+    await page.route("**/api/booking-groups", async (route) => {
+      bookingCalls += 1;
+      const body = route.request().postDataJSON();
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: randomUUID(),
+          salonId: fixture.salonId,
+          createdAt: new Date().toISOString(),
+          appointments: [{
+            id: randomUUID(),
+            bookingGroupId: randomUUID(),
+            salonId: fixture.salonId,
+            serviceId: fixture.serviceIds[0],
+            serviceName: fixture.serviceNames[0],
+            employeeId: fixture.employeeIds[0],
+            employeeName: fixture.employeeNames[0],
+            date: futureDate(2),
+            startTime: "09:00",
+            endTime: "09:30",
+            status: "confirmed",
+            price: 1200,
+          }],
+          request: body,
+        }),
+      });
+    });
+
+    await page.goto(fixture.salonPath);
+    await page.getByTestId(`salon-service-${fixture.serviceIds[0]}`).getByRole("button", { name: "Brzo zakaži" }).click();
+    const widget = page.locator("#booking-widget");
+    const firstConfirmation = widget.getByTestId("quick-book-confirmation");
+    await expect(firstConfirmation).toBeVisible();
+    await firstConfirmation.getByRole("button", { name: "Prijavite se za potvrdu" }).click();
+    await expect(page).toHaveURL(/\/prijava\?returnTo=/);
+    expect(bookingCalls).toBe(0);
+    const callsBeforeSignIn = availabilityCalls;
+
+    await page.getByLabel("Email").fill(fixture.customerEmail);
+    await page.getByLabel("Lozinka").fill(fixture.customerPassword);
+    await page.getByRole("button", { name: "Prijavi se", exact: true }).click();
+
+    await expect(page).toHaveURL(new RegExp(`${fixture.salonPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\?`));
+    await expect.poll(() => availabilityCalls).toBeGreaterThan(callsBeforeSignIn);
+    const resumedConfirmation = widget.getByTestId("quick-book-confirmation");
+    await expect(resumedConfirmation).toBeVisible();
+    await expect(resumedConfirmation).toContainText(fixture.serviceNames[0]);
+    await expect(resumedConfirmation).toContainText(fixture.employeeNames[0]);
+    expect(bookingCalls).toBe(0);
+
+    await resumedConfirmation.getByRole("button", { name: "Potvrdi zakazivanje" }).click();
+    await expect.poll(() => bookingCalls).toBe(1);
+    await expect(widget.getByRole("heading", { name: "Termin potvrđen" })).toBeVisible();
+  } finally {
+    await cleanUpFixture(fixture);
+  }
+});
+
 test("390x844 quick booking confirmation has no horizontal overflow and can return to full scheduling", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const fixture = await createBookingFixture();
