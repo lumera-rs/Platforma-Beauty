@@ -20,6 +20,7 @@ import {
   useGetGroupedBookingAvailability,
   useCreateBookingGroup,
   getApiErrorDetails,
+  getApiErrorMessage,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -226,6 +227,22 @@ export function BookingWidget(props: BookingWidgetProps) {
       },
       onError: (err: any) => {
         const { status } = getApiErrorDetails(err);
+        const message = getApiErrorMessage(err, "Zakazivanje trenutno nije moguće.");
+        if (status === 401) {
+          const treatment = selectedCandidate?.treatments[0];
+          toast.error("Prijava je istekla", {
+            description: "Prijavite se ponovo da biste nastavili zakazivanje.",
+          });
+          if (treatment?.employeeId) {
+            props.onRequireSignIn?.({
+              serviceId: treatment.serviceId,
+              employeeId: treatment.employeeId,
+              date: treatment.date,
+              startTime: treatment.startTime,
+            });
+          }
+          return;
+        }
         if (status === 409) {
           const conflictedTreatment = selectedCandidate?.treatments[0];
           if (step === "QUICK_CONFIRM" && conflictedTreatment) {
@@ -250,14 +267,22 @@ export function BookingWidget(props: BookingWidgetProps) {
           });
           return;
         }
-        toast.error("Greška pri zakazivanju", { description: "Pokušajte ponovo." });
+        if (status === 400 || status === 422) {
+          toast.error("Podaci za zakazivanje nisu ispravni", { description: message });
+          return;
+        }
+        if (status === 403) {
+          toast.error("Zakazivanje nije dostupno", { description: message });
+          return;
+        }
+        toast.error("Zakazivanje nije uspelo", { description: message });
       }
     }
   });
 
   const handleBook = () => {
     if (!selectedCandidate) return;
-    if (!props.user && step === "QUICK_CONFIRM") {
+    if (!props.user) {
       const treatment = selectedCandidate.treatments[0];
       if (treatment?.employeeId) {
         props.onRequireSignIn?.({
@@ -267,6 +292,12 @@ export function BookingWidget(props: BookingWidgetProps) {
           startTime: treatment.startTime,
         });
       }
+      return;
+    }
+    if (props.user.role !== "CUSTOMER") {
+      toast.error("Zakazivanje nije dostupno", {
+        description: "Za zakazivanje termina koristite klijentski nalog.",
+      });
       return;
     }
     createMutation.mutate({

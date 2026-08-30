@@ -51,6 +51,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { DiscoveryCarousel } from "@/components/discovery-carousel";
 import { fetchNativeJson } from "@/lib/native-fetch";
+import { loginPathWithReturnTo } from "@/lib/auth-return";
 
 const profileSections = [
   { id: "popular-services", label: "Popularno" },
@@ -86,7 +87,7 @@ export default function SalonProfile() {
       retry: false,
     },
   });
-  const { data: userResp } = useGetCurrentUser();
+  const { data: userResp, isLoading: isLoadingUser } = useGetCurrentUser();
   const user = userResp?.user;
   const { data: jobseekerSalonInterests = [] } = useListJobseekerSalonInterests({
     query: {
@@ -286,7 +287,7 @@ export default function SalonProfile() {
   }, [selectedService]);
 
   useEffect(() => {
-    if (!salonData) return;
+    if (!salonData || isLoadingUser || user?.role !== "CUSTOMER") return;
     const params = new URLSearchParams(search);
     const requestedServiceId = params.get("serviceId");
     const requestedEmployeeId = params.get("employeeId");
@@ -346,9 +347,13 @@ export default function SalonProfile() {
     setHasInteractedWithEmployee(restoredEmployeeSelection === "any" || !!validEmployeeId);
     restoredSelection.current = key;
     if (requestedServiceId) {
-      window.setTimeout(() => document.getElementById("booking-widget")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+      if (window.innerWidth < 1024) {
+        setIsMobileDrawerOpen(true);
+      } else {
+        window.setTimeout(() => document.getElementById("booking-widget")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+      }
     }
-  }, [draft, salonData, search, selectedService, user?.role]);
+  }, [draft, isLoadingUser, salonData, search, selectedService, user?.role]);
 
   useEffect(() => {
     if (!salonData || user?.role !== "CUSTOMER" || !selectedService || isSuccess) return;
@@ -372,6 +377,31 @@ export default function SalonProfile() {
     setHasInteractedWithEmployee(true);
   };
 
+  const bookingReturnPath = (
+    serviceId: string,
+    candidate?: Pick<FirstAvailableServiceSlot, "date" | "startTime" | "employeeId">,
+  ) => {
+    const params = new URLSearchParams(search);
+    params.set("serviceId", serviceId);
+    params.delete("employeeId");
+    params.delete("date");
+    params.delete("startTime");
+    if (candidate?.employeeId && candidate.date && candidate.startTime) {
+      params.set("employeeId", candidate.employeeId);
+      params.set("date", candidate.date);
+      params.set("startTime", candidate.startTime);
+    }
+    const query = params.toString();
+    return `${location}${query ? `?${query}` : ""}`;
+  };
+
+  const requireBookingSignIn = (
+    serviceId: string,
+    candidate?: Pick<FirstAvailableServiceSlot, "date" | "startTime" | "employeeId">,
+  ) => {
+    setLocation(loginPathWithReturnTo("/prijava", bookingReturnPath(serviceId, candidate)));
+  };
+
   const setFavorite = async (employeeId: string) => {
     if (!user) { setLocation("/prijava"); return; }
     try {
@@ -392,7 +422,7 @@ export default function SalonProfile() {
   const submitBooking = (locationType: "salon" | "home", packagePurchaseId?: string) => {
     if (!user) {
       toast.error("Prijava obavezna", { description: "Morate biti prijavljeni da biste zakazali termin." });
-      setLocation("/prijava");
+      if (selectedService) requireBookingSignIn(selectedService);
       return;
     }
     if (user.role !== "CUSTOMER") {
@@ -461,7 +491,10 @@ export default function SalonProfile() {
   };
 
   const handleBook = (packagePurchaseId?: string) => {
-    if (!user) { setLocation("/prijava"); return; }
+    if (!user) {
+      if (selectedService) requireBookingSignIn(selectedService);
+      return;
+    }
     const service = salonData?.services.find((item) => item.id === selectedService);
     if (service?.homeServiceAvailable) {
       setTreatmentLocation("salon");
@@ -501,6 +534,11 @@ export default function SalonProfile() {
   };
 
   const handleSelectService = (serviceId: string) => {
+    if (!user) {
+      requireBookingSignIn(serviceId);
+      return;
+    }
+    if (user.role !== "CUSTOMER") return;
     setSelectedService(serviceId);
     setBookingCart(current => current.length < 5 ? [...current, { serviceId }] : current);
     setSelectedSlot(null);
@@ -516,6 +554,11 @@ export default function SalonProfile() {
 
   const handleQuickBook = (serviceId: string, slot: FirstAvailableServiceSlot) => {
     if (!slot.date || !slot.startTime || !slot.employeeId) return;
+    if (!user) {
+      requireBookingSignIn(serviceId, slot);
+      return;
+    }
+    if (user.role !== "CUSTOMER") return;
     const surface = window.innerWidth < 1024 ? "mobile" : "desktop";
     setPendingQuickBook({
       serviceId,
@@ -654,6 +697,8 @@ export default function SalonProfile() {
   }
 
   const isInterestedInSalon = jobseekerSalonInterests.includes(salonData.id);
+  const canUseBookingActions = !isLoadingUser && (!user || user.role === "CUSTOMER");
+  const isCustomer = user?.role === "CUSTOMER";
   const toggleJobseekerSalonInterest = () => {
     const salonIds = isInterestedInSalon
       ? jobseekerSalonInterests.filter((salonId) => salonId !== salonData.id)
@@ -693,14 +738,20 @@ export default function SalonProfile() {
             </div>
           )}
         </CardContent>
-        {user?.role !== "JOBSEEKER" && <CardFooter className="p-6 pt-0 bg-card">
+        {canUseBookingActions && <CardFooter className={`grid grid-cols-1 gap-2 p-6 pt-0 bg-card ${quickBookSlot?.date && quickBookSlot.startTime && quickBookSlot.employeeId ? "sm:grid-cols-2" : ""}`}>
           <Button
-            variant={quickBookSlot ? "default" : "outline"}
-            className={`w-full font-bold text-base h-12 rounded-xl transition-all ${!quickBookSlot ? 'group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary' : 'shadow-md'}`}
-            onClick={() => quickBookSlot ? handleQuickBook(service.id, quickBookSlot) : handleSelectService(service.id)}
+            variant="outline"
+            className="w-full font-bold text-base h-12 rounded-xl transition-all group-hover:border-primary"
+            onClick={() => handleSelectService(service.id)}
           >
-            {quickBookSlot ? "Brzo zakazivanje" : "Izaberi termin"}
+            Zakaži
           </Button>
+          {quickBookSlot?.date && quickBookSlot.startTime && quickBookSlot.employeeId && <Button
+            className="w-full font-bold text-base h-12 rounded-xl shadow-md"
+            onClick={() => handleQuickBook(service.id, quickBookSlot)}
+          >
+            Brzo zakaži
+          </Button>}
         </CardFooter>}
       </Card>
     );
@@ -908,19 +959,7 @@ export default function SalonProfile() {
                         <div
                           key={service.id}
                           data-testid={`salon-service-${service.id}`}
-                          aria-label={`Dodaj uslugu ${service.name} u korpu`}
-                          role={user?.role === "JOBSEEKER" ? undefined : "button"}
-                          tabIndex={user?.role === "JOBSEEKER" ? undefined : 0}
-                          aria-pressed={user?.role === "JOBSEEKER" ? undefined : selectedService === service.id}
-                          className={`w-full px-1 py-5 text-left transition-colors sm:px-2 ${user?.role === "JOBSEEKER" ? "" : selectedService === service.id ? "bg-primary/5" : "hover:bg-muted/45"}`}
-                          onClick={user?.role === "JOBSEEKER" ? undefined : () => handleSelectService(service.id)}
-                          onKeyDown={(event) => {
-                            if (user?.role === "JOBSEEKER") return;
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              handleSelectService(service.id);
-                            }
-                          }}
+                          className={`w-full px-1 py-5 text-left transition-colors sm:px-2 ${selectedService === service.id ? "bg-primary/5" : ""}`}
                         >
                           <div className="flex items-start justify-between gap-5">
                             <div className="min-w-0 flex-1">
@@ -953,23 +992,29 @@ export default function SalonProfile() {
                               <p className={`text-lg font-bold leading-tight ${hasPromotion ? "text-primary" : "text-foreground"}`}>{hasPromotion && promotionalPrice !== null ? promotionalPrice : service.price} RSD</p>
                             </div>
                           </div>
-                          {user?.role !== "JOBSEEKER" && quickBookSlot && quickBookSlot.date && quickBookSlot.startTime && (
-                            <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 text-xs">
-                              <span className="text-muted-foreground">Prvi slobodan: <span className="font-semibold text-foreground">{format(parseISO(quickBookSlot.date), 'dd.MM.')} u {quickBookSlot.startTime}</span></span>
-                              <button
-                                type="button"
-                                className="font-semibold text-primary underline-offset-4 hover:underline"
-                                onClick={(event) => { event.stopPropagation(); handleQuickBook(service.id, quickBookSlot); }}
-                                onKeyDown={(event) => {
-                                  if (event.key === "Enter" || event.key === " ") {
-                                    event.preventDefault();
-                                    event.stopPropagation();
-                                    handleQuickBook(service.id, quickBookSlot);
-                                  }
-                                }}
-                              >
-                                Brzo zakaži
-                              </button>
+                          {canUseBookingActions && (
+                            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+                              {quickBookSlot?.date && quickBookSlot.startTime
+                                ? <span className="text-muted-foreground">Prvi slobodan: <span className="font-semibold text-foreground">{format(parseISO(quickBookSlot.date), 'dd.MM.')} u {quickBookSlot.startTime}</span></span>
+                                : <span className="text-muted-foreground">Proverite dostupne termine.</span>}
+                              <div className="flex items-center gap-3">
+                                <button
+                                  type="button"
+                                  data-testid={`salon-service-book-${service.id}`}
+                                  className="font-semibold text-primary underline-offset-4 hover:underline"
+                                  onClick={() => handleSelectService(service.id)}
+                                >
+                                  Zakaži
+                                </button>
+                                {quickBookSlot?.date && quickBookSlot.startTime && quickBookSlot.employeeId && <button
+                                  type="button"
+                                  data-testid={`salon-service-quick-book-${service.id}`}
+                                  className="font-semibold text-primary underline-offset-4 hover:underline"
+                                  onClick={() => handleQuickBook(service.id, quickBookSlot)}
+                                >
+                                  Brzo zakaži
+                                </button>}
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1174,7 +1219,7 @@ export default function SalonProfile() {
         </div>
 
         {/* Right Column: Booking Widget */}
-        <div className={user?.role === "JOBSEEKER" ? "hidden" : "hidden lg:block w-[400px] shrink-0"}>
+        <div className={isCustomer ? "hidden lg:block w-[400px] shrink-0" : "hidden"}>
           <div className="sticky top-24 pt-4" id="booking-widget">
             <BookingWidget
               salon={salonData}
@@ -1185,8 +1230,7 @@ export default function SalonProfile() {
               quickBookCandidate={pendingQuickBook}
               onQuickBookConsumed={() => setPendingQuickBook(null)}
               onRequireSignIn={(candidate) => {
-                const params = new URLSearchParams(candidate);
-                setLocation(`/prijava?returnTo=${encodeURIComponent(`${location}?${params.toString()}`)}`);
+                requireBookingSignIn(candidate.serviceId, candidate);
               }}
               onViewAppointments={() => setLocation("/moj-nalog")}
             />
@@ -1195,7 +1239,7 @@ export default function SalonProfile() {
       </div>
 
       {/* Mobile Booking Elements */}
-      <div className={user?.role === "JOBSEEKER" ? "hidden" : "lg:hidden"}>
+      <div className={isCustomer ? "lg:hidden" : "hidden"}>
       <MobileBookingTrigger salon={salonData} cartCount={bookingCart.length} onOpen={() => setIsMobileDrawerOpen(true)} />
       <MobileBookingDrawer isOpen={isMobileDrawerOpen} onClose={() => setIsMobileDrawerOpen(false)} scrollContainerRef={mobileBookingScrollRef}>
            <BookingWidget
@@ -1207,8 +1251,7 @@ export default function SalonProfile() {
               quickBookCandidate={pendingQuickBook}
               onQuickBookConsumed={() => setPendingQuickBook(null)}
               onRequireSignIn={(candidate) => {
-                const params = new URLSearchParams(candidate);
-                setLocation(`/prijava?returnTo=${encodeURIComponent(`${location}?${params.toString()}`)}`);
+                 requireBookingSignIn(candidate.serviceId, candidate);
               }}
              onViewAppointments={() => setLocation("/moj-nalog")}
            />
