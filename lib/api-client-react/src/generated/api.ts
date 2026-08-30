@@ -32,6 +32,9 @@ import type {
   AdminBundle,
   AdminBundleInput,
   AdminBusinessAccountConversionInput,
+  AdminBusinessRoleTransitionInput,
+  AdminBusinessRoleTransitionResult,
+  AdminBusinessRoleTransitionState,
   AdminCreateAccountSetupInput,
   AdminCreateCustomerSetupInput,
   AdminCreateCustomerSetupResponse,
@@ -18037,6 +18040,155 @@ export const useAdminConvertUserToBusinessAccount = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getAdminConvertUserToBusinessAccountMutationOptions(options));
+    }
+
+export const getAdminGetBusinessRoleTransitionUrl = (userId: string,) => {
+
+
+
+
+  return `/api/admin/users/${userId}/business-role-transition`
+}
+
+/**
+ * @summary Inspect all business relations and safe decisions before changing a business role
+ */
+export const adminGetBusinessRoleTransition = async (userId: string, options?: Parameters<typeof customFetch>[1]): Promise<AdminBusinessRoleTransitionState> => {
+
+  return customFetch<AdminBusinessRoleTransitionState>(getAdminGetBusinessRoleTransitionUrl(userId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGetBusinessRoleTransitionQueryKey = (userId: string,) => {
+    return [
+    `/api/admin/users/${userId}/business-role-transition`
+    ] as const;
+    }
+
+
+export const getAdminGetBusinessRoleTransitionQueryOptions = <TData = Awaited<ReturnType<typeof adminGetBusinessRoleTransition>>, TError = ErrorType<void>>(userId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetBusinessRoleTransition>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetBusinessRoleTransitionQueryKey(userId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetBusinessRoleTransition>>> = ({ signal }) => adminGetBusinessRoleTransition(userId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: userId !== null && userId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetBusinessRoleTransition>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminGetBusinessRoleTransitionQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetBusinessRoleTransition>>>
+export type AdminGetBusinessRoleTransitionQueryError = ErrorType<void>
+
+
+/**
+ * @summary Inspect all business relations and safe decisions before changing a business role
+ */
+
+export function useAdminGetBusinessRoleTransition<TData = Awaited<ReturnType<typeof adminGetBusinessRoleTransition>>, TError = ErrorType<void>>(
+ userId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetBusinessRoleTransition>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminGetBusinessRoleTransitionQueryOptions(userId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminTransitionBusinessRoleUrl = (userId: string,) => {
+
+
+
+
+  return `/api/admin/users/${userId}/business-role-transition`
+}
+
+/**
+ * @summary Atomically exit or change a business role while preserving all historical relation rows
+ */
+export const adminTransitionBusinessRole = async (userId: string,
+    adminBusinessRoleTransitionInput: AdminBusinessRoleTransitionInput, options?: Parameters<typeof customFetch>[1]): Promise<AdminBusinessRoleTransitionResult> => {
+
+  return customFetch<AdminBusinessRoleTransitionResult>(getAdminTransitionBusinessRoleUrl(userId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminBusinessRoleTransitionInput)
+  }
+);}
+
+
+
+
+
+export const getAdminTransitionBusinessRoleMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminTransitionBusinessRole>>, TError,{userId: string;data: BodyType<AdminBusinessRoleTransitionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminTransitionBusinessRole>>, TError,{userId: string;data: BodyType<AdminBusinessRoleTransitionInput>}, TContext> => {
+
+const mutationKey = ['adminTransitionBusinessRole'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminTransitionBusinessRole>>, {userId: string;data: BodyType<AdminBusinessRoleTransitionInput>}> = (props) => {
+          const {userId,data} = props ?? {};
+
+          return  adminTransitionBusinessRole(userId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminTransitionBusinessRoleMutationResult = NonNullable<Awaited<ReturnType<typeof adminTransitionBusinessRole>>>
+    export type AdminTransitionBusinessRoleMutationBody = BodyType<AdminBusinessRoleTransitionInput>
+    export type AdminTransitionBusinessRoleMutationError = ErrorType<void>
+
+    /**
+ * @summary Atomically exit or change a business role while preserving all historical relation rows
+ */
+export const useAdminTransitionBusinessRole = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminTransitionBusinessRole>>, TError,{userId: string;data: BodyType<AdminBusinessRoleTransitionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminTransitionBusinessRole>>,
+        TError,
+        {userId: string;data: BodyType<AdminBusinessRoleTransitionInput>},
+        TContext
+      > => {
+      return useMutation(getAdminTransitionBusinessRoleMutationOptions(options));
     }
 
 export const getAdminListLoyaltyTiersUrl = () => {

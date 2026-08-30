@@ -4159,6 +4159,49 @@ paths:
         "404": { description: Target user or selected active salon or education center does not exist }
         "409": { description: "Companion record, slug, user link, or legal-entity ownership conflicts with existing data" }
         "422": { description: "Target is not a standalone account, already has business relations, or role-specific data is missing or mismatched" }
+  /admin/users/{userId}/business-role-transition:
+    get:
+      operationId: adminGetBusinessRoleTransition
+      tags: [admin]
+      summary: Inspect all business relations and safe decisions before changing a business role
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+      responses:
+        "200":
+          description: Current account and every relation that must be decided explicitly
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminBusinessRoleTransitionState" }
+        "403": { description: SUPER_ADMIN access required }
+        "404": { description: Target user not found }
+    post:
+      operationId: adminTransitionBusinessRole
+      tags: [admin]
+      summary: Atomically exit or change a business role while preserving all historical relation rows
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminBusinessRoleTransitionInput" }
+      responses:
+        "200":
+          description: Role, active salon, and all relation decisions were committed atomically
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminBusinessRoleTransitionResult" }
+        "400": { description: Invalid request }
+        "403": { description: SUPER_ADMIN access required }
+        "404": { description: Target user or transfer target not found }
+        "409": { description: "Concurrent state changed, a transfer target is ineligible, or the transition would orphan a relation" }
+        "422": { description: "Missing, duplicate, foreign, or unsafe relation decision" }
   /admin/loyalty-tiers:
     get:
       operationId: adminListLoyaltyTiers
@@ -12222,6 +12265,82 @@ components:
           type: string
           enum: [SUPER_ADMIN, ADMIN, SALON_OWNER, SALON_EMPLOYEE, EDUKATIVNI_CENTAR, INSTRUCTOR, CUSTOMER, JOBSEEKER, STUDENT]
         active: { type: boolean }
+    AdminBusinessRelation:
+      type: object
+      additionalProperties: false
+      required: [id, name, active, allowedActions]
+      properties:
+        id: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        name: { type: string }
+        active: { type: boolean }
+        allowedActions:
+          type: array
+          items: { type: string, enum: [transfer, deactivate, retain, unlink] }
+    AdminBusinessRoleTransitionState:
+      type: object
+      additionalProperties: false
+      required: [user, salonOwnerships, employments, educationCenterOwnerships, instructorRelations]
+      properties:
+        user: { $ref: "#/components/schemas/AdminUser" }
+        salonOwnerships:
+          type: array
+          items: { $ref: "#/components/schemas/AdminBusinessRelation" }
+        employments:
+          type: array
+          items: { $ref: "#/components/schemas/AdminBusinessRelation" }
+        educationCenterOwnerships:
+          type: array
+          items: { $ref: "#/components/schemas/AdminBusinessRelation" }
+        instructorRelations:
+          type: array
+          items: { $ref: "#/components/schemas/AdminBusinessRelation" }
+    AdminOwnershipTransitionDecision:
+      type: object
+      additionalProperties: false
+      required: [relationId, action]
+      properties:
+        relationId: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        action: { type: string, enum: [transfer, deactivate, retain] }
+        targetUserId: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+    AdminLinkedRelationTransitionDecision:
+      type: object
+      additionalProperties: false
+      required: [relationId, action]
+      properties:
+        relationId: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        action: { type: string, enum: [deactivate, retain, unlink] }
+    AdminInstructorTransitionDecision:
+      type: object
+      additionalProperties: false
+      required: [relationId, action]
+      properties:
+        relationId: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        action: { type: string, enum: [retain, unlink] }
+    AdminBusinessRoleTransitionInput:
+      type: object
+      additionalProperties: false
+      required: [role, active, activeSalonId, salonOwnerships, employments, educationCenterOwnerships, instructorRelations]
+      properties:
+        role:
+          type: string
+          enum: [ADMIN, SALON_OWNER, SALON_EMPLOYEE, EDUKATIVNI_CENTAR, INSTRUCTOR, CUSTOMER, JOBSEEKER, STUDENT]
+        active: { type: boolean }
+        activeSalonId: { type: [string, "null"], pattern: '^[0-9a-fA-F-]{36}$' }
+        salonOwnerships:
+          type: array
+          items: { $ref: "#/components/schemas/AdminOwnershipTransitionDecision" }
+        employments:
+          type: array
+          items: { $ref: "#/components/schemas/AdminLinkedRelationTransitionDecision" }
+        educationCenterOwnerships:
+          type: array
+          items: { $ref: "#/components/schemas/AdminOwnershipTransitionDecision" }
+        instructorRelations:
+          type: array
+          items: { $ref: "#/components/schemas/AdminInstructorTransitionDecision" }
+    AdminBusinessRoleTransitionResult:
+      allOf:
+        - $ref: "#/components/schemas/AdminBusinessRoleTransitionState"
     AdminCreateCustomerSetupInput:
       type: object
       additionalProperties: false

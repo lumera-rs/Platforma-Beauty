@@ -6593,6 +6593,108 @@ export interface AdminUserUpdate {
   active?: boolean;
 }
 
+export type AdminBusinessRelationAllowedActionsItem = typeof AdminBusinessRelationAllowedActionsItem[keyof typeof AdminBusinessRelationAllowedActionsItem];
+
+
+export const AdminBusinessRelationAllowedActionsItem = {
+  transfer: 'transfer',
+  deactivate: 'deactivate',
+  retain: 'retain',
+  unlink: 'unlink',
+} as const;
+
+export interface AdminBusinessRelation {
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  id: string;
+  name: string;
+  active: boolean;
+  allowedActions: AdminBusinessRelationAllowedActionsItem[];
+}
+
+export interface AdminBusinessRoleTransitionState {
+  user: AdminUser;
+  salonOwnerships: AdminBusinessRelation[];
+  employments: AdminBusinessRelation[];
+  educationCenterOwnerships: AdminBusinessRelation[];
+  instructorRelations: AdminBusinessRelation[];
+}
+
+export type AdminOwnershipTransitionDecisionAction = typeof AdminOwnershipTransitionDecisionAction[keyof typeof AdminOwnershipTransitionDecisionAction];
+
+
+export const AdminOwnershipTransitionDecisionAction = {
+  transfer: 'transfer',
+  deactivate: 'deactivate',
+  retain: 'retain',
+} as const;
+
+export interface AdminOwnershipTransitionDecision {
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  relationId: string;
+  action: AdminOwnershipTransitionDecisionAction;
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  targetUserId?: string;
+}
+
+export type AdminLinkedRelationTransitionDecisionAction = typeof AdminLinkedRelationTransitionDecisionAction[keyof typeof AdminLinkedRelationTransitionDecisionAction];
+
+
+export const AdminLinkedRelationTransitionDecisionAction = {
+  deactivate: 'deactivate',
+  retain: 'retain',
+  unlink: 'unlink',
+} as const;
+
+export interface AdminLinkedRelationTransitionDecision {
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  relationId: string;
+  action: AdminLinkedRelationTransitionDecisionAction;
+}
+
+export type AdminInstructorTransitionDecisionAction = typeof AdminInstructorTransitionDecisionAction[keyof typeof AdminInstructorTransitionDecisionAction];
+
+
+export const AdminInstructorTransitionDecisionAction = {
+  retain: 'retain',
+  unlink: 'unlink',
+} as const;
+
+export interface AdminInstructorTransitionDecision {
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  relationId: string;
+  action: AdminInstructorTransitionDecisionAction;
+}
+
+export type AdminBusinessRoleTransitionInputRole = typeof AdminBusinessRoleTransitionInputRole[keyof typeof AdminBusinessRoleTransitionInputRole];
+
+
+export const AdminBusinessRoleTransitionInputRole = {
+  ADMIN: 'ADMIN',
+  SALON_OWNER: 'SALON_OWNER',
+  SALON_EMPLOYEE: 'SALON_EMPLOYEE',
+  EDUKATIVNI_CENTAR: 'EDUKATIVNI_CENTAR',
+  INSTRUCTOR: 'INSTRUCTOR',
+  CUSTOMER: 'CUSTOMER',
+  JOBSEEKER: 'JOBSEEKER',
+  STUDENT: 'STUDENT',
+} as const;
+
+export interface AdminBusinessRoleTransitionInput {
+  role: AdminBusinessRoleTransitionInputRole;
+  active: boolean;
+  /**
+     * @nullable
+     * @pattern ^[0-9a-fA-F-]{36}$
+     */
+  activeSalonId: string | null;
+  salonOwnerships: AdminOwnershipTransitionDecision[];
+  employments: AdminLinkedRelationTransitionDecision[];
+  educationCenterOwnerships: AdminOwnershipTransitionDecision[];
+  instructorRelations: AdminInstructorTransitionDecision[];
+}
+
+export type AdminBusinessRoleTransitionResult = AdminBusinessRoleTransitionState;
+
 export interface AdminCreateCustomerSetupInput {
   /**
      * @minLength 1

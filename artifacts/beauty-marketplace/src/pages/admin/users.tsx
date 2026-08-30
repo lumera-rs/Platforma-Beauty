@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { AdminLayout } from "./layout";
-import { useAdminCreateAccountSetup, useAdminReissueAccountSetup, useAdminListUsers, useAdminUpdateUser, getAdminListUsersQueryKey, useGetCurrentUser, useAdminListSalons, getAdminListSalonsQueryKey, useListAdminEducationCenters, getListAdminEducationCentersQueryKey, useAdminConvertUserToBusinessAccount } from "@workspace/api-client-react";
-import type { AdminCreateAccountSetupInput, AdminUserUpdateRole, AdminListUsersRole, AdminUser, AdminBusinessAccountConversionInput } from "@workspace/api-client-react";
+import { useAdminCreateAccountSetup, useAdminReissueAccountSetup, useAdminListUsers, useAdminUpdateUser, getAdminListUsersQueryKey, useGetCurrentUser, useAdminListSalons, getAdminListSalonsQueryKey, useListAdminEducationCenters, getListAdminEducationCentersQueryKey, useAdminConvertUserToBusinessAccount, useAdminGetBusinessRoleTransition, useAdminTransitionBusinessRole, getAdminGetBusinessRoleTransitionQueryKey } from "@workspace/api-client-react";
+import type { AdminCreateAccountSetupInput, AdminUserUpdateRole, AdminListUsersRole, AdminUser, AdminBusinessAccountConversionInput, AdminBusinessRoleTransitionInput, AdminBusinessRoleTransitionState, AdminBusinessRelation, AdminBusinessRelationAllowedActionsItem } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Loader2, Search, Users as UsersIcon, Mail, FilterX, UserPlus, Copy, Check, Briefcase } from "lucide-react";
+import { Loader2, Search, Users as UsersIcon, Mail, FilterX, UserPlus, Copy, Check, Briefcase, LogOut, ShieldAlert } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useDebouncedSearch } from "@/hooks/use-debounce";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -89,6 +89,107 @@ const roleNames: Record<string, string> = {
   EDUKATIVNI_CENTAR: "edukativnog centra",
   INSTRUCTOR: "instruktora",
 };
+
+type BusinessExitDecisionOption = {
+  value: string;
+  label: string;
+  description?: string;
+};
+
+type BusinessExitRelation = {
+  id: string;
+  type: keyof Pick<AdminBusinessRoleTransitionInput, "salonOwnerships" | "employments" | "educationCenterOwnerships" | "instructorRelations">;
+  label: string;
+  active: boolean;
+  description?: string;
+  decisions: BusinessExitDecisionOption[];
+};
+
+const businessExitTargetRoles = ["CUSTOMER", "JOBSEEKER", "STUDENT", "ADMIN"] as const satisfies readonly AdminBusinessRoleTransitionInput["role"][];
+type BusinessExitTargetRole = typeof businessExitTargetRoles[number];
+
+const businessExitRelationGroups: Array<{
+  type: BusinessExitRelation["type"];
+  label: string;
+}> = [
+  { type: "salonOwnerships", label: "Salon u vlasništvu" },
+  { type: "employments", label: "Radni odnos u salonu" },
+  { type: "educationCenterOwnerships", label: "Edukativni centar u vlasništvu" },
+  { type: "instructorRelations", label: "Angažman instruktora" },
+];
+
+const decisionLabels: Record<AdminBusinessRelationAllowedActionsItem, string> = {
+  transfer: "Prenesi na drugog korisnika",
+  deactivate: "Deaktiviraj za buduću upotrebu",
+  retain: "Zadrži postojeću vezu",
+  unlink: "Prekini aktivnu povezanost",
+};
+
+function toBusinessExitRelations(state: AdminBusinessRoleTransitionState): BusinessExitRelation[] {
+  return businessExitRelationGroups.flatMap(({ type, label }) =>
+    state[type].map((relation: AdminBusinessRelation) => ({
+      id: relation.id,
+      type,
+      label: relation.name,
+      active: relation.active,
+      description: label,
+      decisions: relation.allowedActions.map((action) => ({ value: action, label: decisionLabels[action] })),
+    })),
+  );
+}
+
+function buildBusinessExitInput(
+  role: AdminBusinessRoleTransitionInput["role"],
+  active: boolean,
+  relations: BusinessExitRelation[],
+  decisions: Record<string, string>,
+  transferTargets: Record<string, string>,
+): AdminBusinessRoleTransitionInput {
+  const input: AdminBusinessRoleTransitionInput = {
+    role,
+    active,
+    activeSalonId: null,
+    salonOwnerships: [],
+    employments: [],
+    educationCenterOwnerships: [],
+    instructorRelations: [],
+  };
+
+  relations.forEach((relation) => {
+    const action = decisions[relation.id]!;
+    if (relation.type === "salonOwnerships" || relation.type === "educationCenterOwnerships") {
+      input[relation.type].push({
+        relationId: relation.id,
+        action: action as AdminBusinessRoleTransitionInput["salonOwnerships"][number]["action"],
+        ...(action === "transfer" ? { targetUserId: transferTargets[relation.id]!.trim() } : {}),
+      });
+    } else if (relation.type === "employments") {
+      input.employments.push({
+        relationId: relation.id,
+        action: action as AdminBusinessRoleTransitionInput["employments"][number]["action"],
+      });
+    } else {
+      input.instructorRelations.push({
+        relationId: relation.id,
+        action: action as AdminBusinessRoleTransitionInput["instructorRelations"][number]["action"],
+      });
+    }
+  });
+
+  return input;
+}
+
+function getApiError(error: unknown) {
+  const apiError = typeof error === "object" && error !== null
+    ? error as { status?: number; message?: string; response?: { status?: number; data?: { message?: string } }; data?: { message?: string } }
+    : {};
+  const status = apiError.status ?? apiError.response?.status;
+  const message = apiError.response?.data?.message ?? apiError.data?.message ?? apiError.message;
+  if (status === 409) {
+    return "Podaci su u međuvremenu promenjeni. Ponovo učitajte pregled i donesite odluke za aktuelne veze.";
+  }
+  return message || "Izlazak iz poslovne uloge nije uspeo. Pokušajte ponovo.";
+}
 
 function BusinessFields({
   form,
@@ -252,6 +353,12 @@ export default function AdminUsers() {
   const [createOpen, setCreateOpen] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
   const [userToConvert, setUserToConvert] = useState<AdminUser | null>(null);
+  const [exitOpen, setExitOpen] = useState(false);
+  const [userToExit, setUserToExit] = useState<AdminUser | null>(null);
+  const [exitTargetRole, setExitTargetRole] = useState("");
+  const [exitDecisions, setExitDecisions] = useState<Record<string, string>>({});
+  const [exitTransferTargets, setExitTransferTargets] = useState<Record<string, string>>({});
+  const [exitValidationError, setExitValidationError] = useState("");
   const [customerForm, setCustomerForm] = useState<AccountForm>(emptyAccountForm());
   const [convertForm, setConvertForm] = useState<AccountForm>(emptyAccountForm());
   const [salonSearch, setSalonSearch] = useState("");
@@ -267,6 +374,15 @@ export default function AdminUsers() {
   const { data: availableCenters, isLoading: centersLoading, error: centersError } = useListAdminEducationCenters({
     query: { enabled: needsCenterList, queryKey: getListAdminEducationCentersQueryKey() },
   });
+  const exitTransition = useAdminGetBusinessRoleTransition(userToExit?.id ?? "", {
+    query: {
+      enabled: exitOpen && Boolean(userToExit),
+      queryKey: getAdminGetBusinessRoleTransitionQueryKey(userToExit?.id ?? ""),
+      retry: false,
+    },
+  });
+  const exitBusinessRole = useAdminTransitionBusinessRole();
+  const exitRelations = exitTransition.data ? toBusinessExitRelations(exitTransition.data) : [];
   
   const mutateFnRef = useRef(updateUser.mutate);
   mutateFnRef.current = updateUser.mutate;
@@ -301,6 +417,85 @@ export default function AdminUsers() {
         toast.error("Greška", { description: "Nije moguće promeniti ulogu." });
       }
     });
+  };
+
+  const openBusinessExitDialog = (user: AdminUser) => {
+    setUserToExit(user);
+    setExitTargetRole("");
+    setExitDecisions({});
+    setExitTransferTargets({});
+    setExitValidationError("");
+    exitBusinessRole.reset();
+    setExitOpen(true);
+  };
+
+  const closeBusinessExitDialog = (force = false) => {
+    if (exitBusinessRole.isPending && !force) return;
+    setExitOpen(false);
+    setUserToExit(null);
+    setExitTargetRole("");
+    setExitDecisions({});
+    setExitTransferTargets({});
+    setExitValidationError("");
+    exitBusinessRole.reset();
+  };
+
+  const handleBusinessExit = () => {
+    if (!userToExit || !exitTransition.data) return;
+    if (!businessExitTargetRoles.includes(exitTargetRole as BusinessExitTargetRole)) {
+      setExitValidationError("Izaberite jednu od dozvoljenih ciljnih uloga.");
+      return;
+    }
+    const undecided = exitRelations.filter((relation) => {
+      const decision = exitDecisions[relation.id];
+      return !decision || !relation.decisions.some((option) => option.value === decision);
+    });
+    if (undecided.length) {
+      setExitValidationError(`Donesite odluku za svaku poslovnu vezu (${undecided.length} preostalo).`);
+      return;
+    }
+    const invalidTransfers = exitRelations.filter((relation) =>
+      exitDecisions[relation.id] === "transfer"
+      && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(exitTransferTargets[relation.id]?.trim() ?? ""),
+    );
+    if (invalidTransfers.length) {
+      setExitValidationError("Za svaki prenos unesite ispravan ID korisnika koji preuzima poslovnu vezu.");
+      return;
+    }
+
+    setExitValidationError("");
+    exitBusinessRole.mutate({
+      userId: userToExit.id,
+      data: buildBusinessExitInput(
+        exitTargetRole as AdminBusinessRoleTransitionInput["role"],
+        exitTransition.data.user.active,
+        exitRelations,
+        exitDecisions,
+        exitTransferTargets,
+      ),
+    }, {
+      onSuccess: () => {
+        toast.success("Poslovna uloga je završena", {
+          description: "Nova uloga je aktivna, a istorijski podaci su sačuvani.",
+        });
+        queryClient.invalidateQueries({ queryKey: getAdminListUsersQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getAdminGetBusinessRoleTransitionQueryKey(userToExit.id) });
+        closeBusinessExitDialog(true);
+      },
+      onError: (businessExitError) => {
+        setExitValidationError(getApiError(businessExitError));
+      },
+    });
+  };
+
+  const reloadBusinessExitPlan = () => {
+    setExitDecisions({});
+    setExitTransferTargets({});
+    setExitValidationError("");
+    exitBusinessRole.reset();
+    queryClient.invalidateQueries({ queryKey: getAdminListUsersQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getAdminGetBusinessRoleTransitionQueryKey(userToExit?.id ?? "") });
+    exitTransition.refetch();
   };
 
   const handleResetFilters = () => {
@@ -662,8 +857,8 @@ export default function AdminUsers() {
                           className="bg-transparent border border-border rounded-md px-2 py-1 text-xs font-medium focus:ring-1 focus:ring-primary outline-none cursor-pointer"
                           value={user.role}
                           onChange={(e) => handleChangeRole(user.id, e.target.value as AdminUserUpdateRole)}
-                          disabled={!canManageUsers || updateUser.isPending}
-                          aria-label={canManageUsers ? "Promeni ulogu korisnika" : "Samo super administrator može promeniti ulogu"}
+                           disabled={!canManageUsers || updateUser.isPending || ["SALON_OWNER", "SALON_EMPLOYEE", "EDUKATIVNI_CENTAR", "INSTRUCTOR"].includes(user.role)}
+                           aria-label={canManageUsers ? "Promeni ulogu korisnika" : "Samo super administrator može promeniti ulogu"}
                           data-testid={`select-role-${user.id}`}
                         >
                           <option value="CUSTOMER">Klijent</option>
@@ -690,6 +885,11 @@ export default function AdminUsers() {
                       </td>
                        <td className="px-6 py-4 text-right">
                          <div className="flex justify-end items-center gap-2">
+                           {canManageUsers && ["SALON_OWNER", "SALON_EMPLOYEE", "EDUKATIVNI_CENTAR", "INSTRUCTOR"].includes(user.role) && (
+                             <Button variant="outline" size="sm" onClick={() => openBusinessExitDialog(user)} aria-label="Završi poslovnu ulogu" data-testid={`button-business-exit-${user.id}`}>
+                               <LogOut className="mr-1.5 h-4 w-4" /> Izlazak
+                             </Button>
+                           )}
                            {canManageUsers && user.active && ["CUSTOMER", "JOBSEEKER", "STUDENT", "ADMIN"].includes(user.role) && (
                              <Button variant="outline" size="sm" onClick={() => openConvertDialog(user)} aria-label="Konvertuj u poslovni nalog" data-testid={`btn-convert-${user.id}`}>
                                <Briefcase className="w-4 h-4 mr-1.5" /> Konverzija
@@ -802,6 +1002,155 @@ export default function AdminUsers() {
               </form>
             )}
             {setupResult && <DialogFooter><Button onClick={closeCreateDialog}>Završi</Button></DialogFooter>}
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={exitOpen} onOpenChange={(open) => { if (!open) closeBusinessExitDialog(); }}>
+          <DialogContent className="flex max-h-[92dvh] w-[calc(100%_-_1.5rem)] max-w-3xl flex-col overflow-hidden rounded-xl p-4 sm:p-6">
+            <DialogHeader>
+              <DialogTitle>Bezbedan izlazak iz poslovne uloge</DialogTitle>
+              <DialogDescription>
+                {userToExit?.firstName} {userToExit?.lastName} ({userToExit?.email})
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+              {exitTransition.isLoading ? (
+                <div className="flex min-h-48 flex-col items-center justify-center gap-3 text-sm text-muted-foreground" data-testid="status-business-exit-loading">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  Učitavanje svih postojećih poslovnih veza…
+                </div>
+              ) : exitTransition.error ? (
+                <div className="space-y-4 rounded-lg border border-destructive/30 bg-destructive/5 p-4" role="alert" data-testid="error-business-exit-plan">
+                  <div className="flex items-start gap-3">
+                    <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+                    <div>
+                      <p className="font-medium text-destructive">Pregled nije moguće učitati</p>
+                      <p className="mt-1 text-sm text-muted-foreground">{getApiError(exitTransition.error)}</p>
+                    </div>
+                  </div>
+                  <Button type="button" variant="outline" size="sm" onClick={reloadBusinessExitPlan} data-testid="button-retry-business-exit-plan">
+                    Pokušaj ponovo
+                  </Button>
+                </div>
+              ) : exitTransition.data ? (
+                <form id="business-exit-form" className="space-y-5" onSubmit={(event) => { event.preventDefault(); handleBusinessExit(); }}>
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100" data-testid="notice-business-exit-history">
+                    <p className="font-semibold">Istorijski podaci se ne brišu</p>
+                    <p className="mt-1">
+                      Završene rezervacije, transakcije, evidencije i izveštaji ostaju sačuvani.
+                      Odluke ispod određuju samo budući status svake aktivne poslovne veze.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="business-exit-target-role">Nova uloga</Label>
+                    <Select value={exitTargetRole} onValueChange={(role) => {
+                      setExitTargetRole(role);
+                      setExitValidationError("");
+                    }}>
+                      <SelectTrigger id="business-exit-target-role" data-testid="select-business-exit-target-role">
+                        <SelectValue placeholder="Izaberite dozvoljenu ciljnu ulogu" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {businessExitTargetRoles.map((role) => (
+                          <SelectItem key={role} value={role}>{roleNames[role] ?? role}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <fieldset className="space-y-3">
+                    <legend className="text-sm font-semibold">
+                      Poslovne veze ({exitRelations.length})
+                    </legend>
+                    {exitRelations.length === 0 ? (
+                      <p className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground" data-testid="status-business-exit-no-relations">
+                        Nema aktivnih poslovnih veza koje zahtevaju odluku.
+                      </p>
+                    ) : (
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {exitRelations.map((relation) => (
+                          <div key={relation.id} className="space-y-3 rounded-lg border p-4" data-testid={`card-business-relation-${relation.id}`}>
+                            <div>
+                              <p className="font-medium" data-testid={`text-business-relation-${relation.id}`}>{relation.label}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {relation.description ?? relation.type} · {relation.active ? "aktivna" : "neaktivna"}
+                              </p>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor={`business-relation-${relation.id}`}>Obavezna odluka</Label>
+                              <Select value={exitDecisions[relation.id] ?? ""} onValueChange={(decision) => {
+                                setExitDecisions((current) => ({ ...current, [relation.id]: decision }));
+                                setExitValidationError("");
+                              }}>
+                                <SelectTrigger id={`business-relation-${relation.id}`} data-testid={`select-business-relation-decision-${relation.id}`}>
+                                  <SelectValue placeholder="Izaberite odluku" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {relation.decisions.map((decision) => (
+                                    <SelectItem key={decision.value} value={decision.value}>
+                                      {decision.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              {exitDecisions[relation.id] && (
+                                <p className="text-xs text-muted-foreground">
+                                  {relation.decisions.find((option) => option.value === exitDecisions[relation.id])?.description}
+                                </p>
+                              )}
+                              {exitDecisions[relation.id] === "transfer" && (
+                                <div className="space-y-2 pt-1">
+                                  <Label htmlFor={`business-relation-target-${relation.id}`}>ID korisnika koji preuzima vezu</Label>
+                                  <Input
+                                    id={`business-relation-target-${relation.id}`}
+                                    required
+                                    value={exitTransferTargets[relation.id] ?? ""}
+                                    onChange={(event) => {
+                                      setExitTransferTargets((current) => ({ ...current, [relation.id]: event.target.value }));
+                                      setExitValidationError("");
+                                    }}
+                                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                                    data-testid={`input-business-relation-target-${relation.id}`}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </fieldset>
+
+                  {exitValidationError && (
+                    <div className="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive" role="alert" data-testid="error-business-exit-submit">
+                      <p>{exitValidationError}</p>
+                      {exitBusinessRole.isError && (
+                        <Button type="button" variant="outline" size="sm" onClick={reloadBusinessExitPlan} data-testid="button-reload-business-exit-conflict">
+                          Ponovo učitaj veze
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </form>
+              ) : null}
+            </div>
+
+            <DialogFooter className="gap-2 border-t pt-4 sm:gap-0">
+              <Button type="button" variant="outline" onClick={() => closeBusinessExitDialog()} disabled={exitBusinessRole.isPending} data-testid="button-cancel-business-exit">
+                Otkaži
+              </Button>
+              <Button
+                type="submit"
+                form="business-exit-form"
+                disabled={!exitTransition.data || exitBusinessRole.isPending || exitTransition.isFetching}
+                data-testid="button-submit-business-exit"
+              >
+                {exitBusinessRole.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Potvrdi izlazak
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
 

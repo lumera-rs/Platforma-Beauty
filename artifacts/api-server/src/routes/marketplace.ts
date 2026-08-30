@@ -125,6 +125,8 @@ import
   lessonProgressTable,
   loyaltyTiersTable,
    loyaltyPointLedgerTable,
+   legalEntityBusinessesTable,
+   legalEntitiesTable,
    b2bInvoiceSequencesTable,
    couponsTable,
    couponRedemptionsTable,
@@ -327,6 +329,11 @@ import
   AdminConvertUserToBusinessAccountBody,
   AdminConvertUserToBusinessAccountParams,
   AdminConvertUserToBusinessAccountResponse,
+  AdminGetBusinessRoleTransitionParams,
+  AdminGetBusinessRoleTransitionResponse,
+  AdminTransitionBusinessRoleBody,
+  AdminTransitionBusinessRoleParams,
+  AdminTransitionBusinessRoleResponse,
   AdminCreateCustomerSetupBody,
   AdminCreateAccountSetupBody,
   AdminReissueCustomerSetupParams,
@@ -5509,6 +5516,10 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
     res.cookie(sessionCookieName, token, cookieOptions());
     res.status(201).json(RegisterResponse.parse({ user: publicUser(user), message: "Poslovni nalog je kreiran." }));
   } catch (error) {
+    if (["40001", "40P01"].includes((error as { code?: string }).code ?? "")) {
+      res.status(409).json({ error: "Istovremena poslovna promena je u toku. Osvežite podatke i pokušajte ponovo." });
+      return;
+    }
     if (error instanceof LegalEntityOwnerConflictError) {
       res.status(409).json({
         error: error.message, code: error.code, normalizedPib: error.normalizedPib,
@@ -21553,6 +21564,35 @@ const adminAccountRoleObject: Partial<Record<AdminBusinessAccountSetupInput["rol
 const uuidInputPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const emailInputPattern = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
+type BusinessMutationResource = { kind: "salon" | "education-center"; id: string };
+
+/**
+ * Global lock protocol for account/business graph mutations. Every caller
+ * locks resources first and users second, each lexically, before taking row
+ * locks. Resource owners may be discovered after resource advisory locks but
+ * before the user phase, which prevents transfer-vs-conversion lock inversion.
+ */
+async function lockBusinessMutationParticipants(
+  tx: MarketplaceTransaction,
+  input: {
+    userIds: string[];
+    resources?: BusinessMutationResource[];
+    discoverUserIds?: () => Promise<string[]>;
+  },
+) {
+  const resourceKeys = [...new Set((input.resources ?? []).map((resource) =>
+    `business-resource:${resource.kind}:${resource.id}`))].sort();
+  for (const key of resourceKeys) {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${key}))`);
+  }
+  const discovered = input.discoverUserIds ? await input.discoverUserIds() : [];
+  const userIds = [...new Set([...input.userIds, ...discovered])].sort();
+  for (const id of userIds) {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`business-conversion:${id}`}))`);
+  }
+  return userIds;
+}
+
 function isRecordInput(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -21699,8 +21739,34 @@ router.post("/admin/accounts/setup", async (req, res): Promise<void> => {
       const [existing] = await tx.select({ id: usersTable.id }).from(usersTable)
         .where(sql`lower(${usersTable.email}) = ${email}`).limit(1);
       if (existing) return null;
+      const createdUserId = randomUUID();
+      const resources: BusinessMutationResource[] = parsed.role === "SALON_EMPLOYEE"
+        ? [{ kind: "salon", id: parsed.employee!.salonId }]
+        : parsed.role === "INSTRUCTOR"
+          ? [{ kind: "education-center", id: parsed.instructor!.centerId }]
+          : [];
+      // Resource advisory locks always precede owner/new-account locks. This
+      // shares the transition/conversion protocol and prevents setup from
+      // holding a new user row while waiting on a transferred resource.
+      await lockBusinessMutationParticipants(tx, {
+        userIds: [createdUserId],
+        resources,
+        discoverUserIds: async () => {
+          if (parsed.role === "SALON_EMPLOYEE") {
+            const [resource] = await tx.select({ ownerId: salonsTable.ownerId }).from(salonsTable)
+              .where(eq(salonsTable.id, parsed.employee!.salonId)).limit(1);
+            return resource ? [resource.ownerId] : [];
+          }
+          if (parsed.role === "INSTRUCTOR") {
+            const [resource] = await tx.select({ ownerId: educationCentersTable.ownerId }).from(educationCentersTable)
+              .where(eq(educationCentersTable.id, parsed.instructor!.centerId)).limit(1);
+            return resource ? [resource.ownerId] : [];
+          }
+          return [];
+        },
+      });
       const [created] = await tx.insert(usersTable).values({
-        firstName, lastName, email, passwordHash, passwordSetAt: null,
+        id: createdUserId, firstName, lastName, email, passwordHash, passwordSetAt: null,
         role: parsed.role, active: true, mustChangePassword: false,
       }).returning();
       if (!created) throw new Error("Account insert returned no row.");
@@ -21794,6 +21860,10 @@ router.post("/admin/accounts/setup", async (req, res): Promise<void> => {
       setupUrl: `${setupBaseUrl}/postavi-lozinku#token=${encodeURIComponent(rawToken)}`, expiresAt: expiresAt.toISOString(),
     });
   } catch (error) {
+    if (["40001", "40P01"].includes((error as { code?: string }).code ?? "")) {
+      res.status(409).json({ error: "Istovremeno kreiranje poslovnog naloga je u toku. Osvežite podatke i pokušajte ponovo." });
+      return;
+    }
     if (error instanceof LegalEntityOwnerConflictError) {
       res.status(409).json({ error: error.message, code: error.code, normalizedPib: error.normalizedPib, outcome: "cross_account_conflict" });
       return;
@@ -21870,7 +21940,28 @@ router.post("/admin/users/:userId/business-conversion", async (req, res): Promis
   try {
     const result = await db.transaction(async (tx) => {
       const userId = parsedParams.data.userId;
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`business-conversion:${userId}`}))`);
+      const resources: BusinessMutationResource[] = parsed.role === "SALON_EMPLOYEE"
+        ? [{ kind: "salon", id: parsed.employee!.salonId }]
+        : parsed.role === "INSTRUCTOR"
+          ? [{ kind: "education-center", id: parsed.instructor!.centerId }]
+          : [];
+      await lockBusinessMutationParticipants(tx, {
+        userIds: [userId],
+        resources,
+        discoverUserIds: async () => {
+          if (parsed.role === "SALON_EMPLOYEE") {
+            const [resource] = await tx.select({ ownerId: salonsTable.ownerId }).from(salonsTable)
+              .where(eq(salonsTable.id, parsed.employee!.salonId)).limit(1);
+            return resource ? [resource.ownerId] : [];
+          }
+          if (parsed.role === "INSTRUCTOR") {
+            const [resource] = await tx.select({ ownerId: educationCentersTable.ownerId }).from(educationCentersTable)
+              .where(eq(educationCentersTable.id, parsed.instructor!.centerId)).limit(1);
+            return resource ? [resource.ownerId] : [];
+          }
+          return [];
+        },
+      });
       const [target] = await tx.select().from(usersTable)
         .where(eq(usersTable.id, userId)).for("update").limit(1);
       if (!target) return { status: "not-found" as const };
@@ -22019,6 +22110,337 @@ router.post("/admin/users/:userId/business-conversion", async (req, res): Promis
   }
 });
 
+type BusinessTransitionRows = {
+  salons: Array<{ id: string; name: string; active: boolean }>;
+  employees: Array<{ id: string; name: string; active: boolean }>;
+  centers: Array<{ id: string; name: string; verificationStatus: string }>;
+  instructors: Array<{ id: string; fullName: string }>;
+};
+
+function adminBusinessTransitionView(
+  user: typeof usersTable.$inferSelect,
+  rows: BusinessTransitionRows,
+) {
+  return {
+    user: {
+      id: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email,
+      phone: user.phone, role: user.role, active: user.active,
+      passwordSetAt: user.passwordSetAt?.toISOString() ?? null,
+      createdAt: user.createdAt.toISOString(),
+    },
+    salonOwnerships: rows.salons.map((row) => ({
+      id: row.id, name: row.name, active: row.active,
+      allowedActions: ["transfer", "deactivate", "retain"] as const,
+    })),
+    employments: rows.employees.map((row) => ({
+      id: row.id, name: row.name, active: row.active,
+      allowedActions: ["deactivate", "retain", "unlink"] as const,
+    })),
+    educationCenterOwnerships: rows.centers.map((row) => ({
+      id: row.id, name: row.name,
+      active: !["rejected", "suspended"].includes(row.verificationStatus),
+      allowedActions: ["transfer", "deactivate", "retain"] as const,
+    })),
+    instructorRelations: rows.instructors.map((row) => ({
+      id: row.id, name: row.fullName, active: true,
+      allowedActions: ["retain", "unlink"] as const,
+    })),
+  };
+}
+
+router.get("/admin/users/:userId/business-role-transition", async (req, res): Promise<void> => {
+  const admin = await requireSuperAdmin(req, res); if (!admin) return;
+  const parsedParams = AdminGetBusinessRoleTransitionParams.safeParse(req.params);
+  if (!parsedParams.success) { res.status(400).json({ error: parsedParams.error.message }); return; }
+  const state = await db.transaction(async (tx) => {
+    const userId = parsedParams.data.userId;
+    // Inspection is a repeatable-read snapshot, not a planning lock. Holding
+    // no account/business row locks prevents an inspector from inverting the
+    // resource-first mutation protocol while still returning one coherent view.
+    await tx.execute(sql`set transaction isolation level repeatable read`);
+    const [target] = await tx.select().from(usersTable)
+      .where(eq(usersTable.id, userId)).limit(1);
+    if (!target) return null;
+    const salons = await tx.select({ id: salonsTable.id, name: salonsTable.name, active: salonsTable.active })
+        .from(salonsTable).where(eq(salonsTable.ownerId, userId))
+        .orderBy(asc(salonsTable.id));
+    const employees = await tx.select({ id: employeesTable.id, name: employeesTable.name, active: employeesTable.active })
+        .from(employeesTable).where(eq(employeesTable.userId, userId))
+        .orderBy(asc(employeesTable.id));
+    const centers = await tx.select({
+        id: educationCentersTable.id, name: educationCentersTable.name,
+        verificationStatus: educationCentersTable.verificationStatus,
+      }).from(educationCentersTable).where(eq(educationCentersTable.ownerId, userId))
+        .orderBy(asc(educationCentersTable.id));
+    const instructors = await tx.select({
+        id: educationInstructorsTable.id, fullName: educationInstructorsTable.fullName,
+      }).from(educationInstructorsTable).where(eq(educationInstructorsTable.userId, userId))
+        .orderBy(asc(educationInstructorsTable.id));
+    return adminBusinessTransitionView(target, { salons, employees, centers, instructors });
+  });
+  if (!state) { res.status(404).json({ error: "Korisnik nije pronađen." }); return; }
+  res.json(AdminGetBusinessRoleTransitionResponse.parse(state));
+});
+
+router.post("/admin/users/:userId/business-role-transition", async (req, res): Promise<void> => {
+  const admin = await requireSuperAdmin(req, res); if (!admin) return;
+  const parsedParams = AdminTransitionBusinessRoleParams.safeParse(req.params);
+  if (!parsedParams.success) { res.status(400).json({ error: parsedParams.error.message }); return; }
+  const parsedBody = AdminTransitionBusinessRoleBody.safeParse(req.body);
+  if (!parsedBody.success) { res.status(400).json({ error: parsedBody.error.message }); return; }
+  const body = parsedBody.data;
+  const userId = parsedParams.data.userId;
+
+  const decisionLists = [
+    body.salonOwnerships, body.employments, body.educationCenterOwnerships, body.instructorRelations,
+  ];
+  if (decisionLists.some((list) => new Set(list.map((item) => item.relationId)).size !== list.length)
+    || body.salonOwnerships.some((item) => (item.action === "transfer") !== Boolean(item.targetUserId))
+    || body.educationCenterOwnerships.some((item) => (item.action === "transfer") !== Boolean(item.targetUserId))) {
+    res.status(422).json({ error: "Svaka poslovna veza mora imati tačno jednu potpunu odluku." });
+    return;
+  }
+
+  try {
+    const result = await db.transaction(async (tx) => {
+      const transferIds = [
+        ...body.salonOwnerships.map((item) => item.targetUserId),
+        ...body.educationCenterOwnerships.map((item) => item.targetUserId),
+      ].filter((id): id is string => Boolean(id));
+      const salonResourceIds = [...new Set([
+        ...body.salonOwnerships.map((item) => item.relationId),
+        ...(body.activeSalonId ? [body.activeSalonId] : []),
+      ])];
+      const centerResourceIds = [...new Set(body.educationCenterOwnerships.map((item) => item.relationId))];
+      const lockUserIds = await lockBusinessMutationParticipants(tx, {
+        userIds: [userId, ...transferIds],
+        resources: [
+          ...salonResourceIds.map((id) => ({ kind: "salon" as const, id })),
+          ...centerResourceIds.map((id) => ({ kind: "education-center" as const, id })),
+        ],
+      });
+
+      // Discover the legal-entity closure without row locks only after every
+      // selected business resource is advisory-locked. Then lock entities and
+      // every binding in deterministic order before any account/business row.
+      const selectedBindings = salonResourceIds.length || centerResourceIds.length
+        ? await tx.select({ legalEntityId: legalEntityBusinessesTable.legalEntityId })
+          .from(legalEntityBusinessesTable).where(or(
+            salonResourceIds.length ? inArray(legalEntityBusinessesTable.salonId, salonResourceIds) : undefined,
+            centerResourceIds.length ? inArray(legalEntityBusinessesTable.educationCenterId, centerResourceIds) : undefined,
+          ))
+        : [];
+      const legalEntityIds = [...new Set(selectedBindings.map((row) => row.legalEntityId))].sort();
+      for (const id of legalEntityIds) {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`business-legal-entity:${id}`}))`);
+      }
+      if (legalEntityIds.length) {
+        await tx.select({ id: legalEntitiesTable.id }).from(legalEntitiesTable)
+          .where(inArray(legalEntitiesTable.id, legalEntityIds)).orderBy(asc(legalEntitiesTable.id)).for("update");
+      }
+      const lockedLegalBindings = legalEntityIds.length
+        ? await tx.select().from(legalEntityBusinessesTable)
+          .where(inArray(legalEntityBusinessesTable.legalEntityId, legalEntityIds))
+          .orderBy(asc(legalEntityBusinessesTable.legalEntityId), asc(legalEntityBusinessesTable.id)).for("update")
+        : [];
+      const lockedUsers = await tx.select().from(usersTable)
+        .where(inArray(usersTable.id, lockUserIds)).orderBy(asc(usersTable.id)).for("update");
+      const target = lockedUsers.find((row) => row.id === userId);
+      if (!target) return { status: "not-found" as const };
+      if (target.role === "SUPER_ADMIN") return { status: "unsafe" as const, message: "SUPER_ADMIN nalog se ne menja ovim tokom." };
+
+      const salons = await tx.select({ id: salonsTable.id, name: salonsTable.name, active: salonsTable.active })
+          .from(salonsTable).where(eq(salonsTable.ownerId, userId))
+          .orderBy(asc(salonsTable.id)).for("update");
+      const employees = await tx.select({ id: employeesTable.id, name: employeesTable.name, active: employeesTable.active })
+          .from(employeesTable).where(eq(employeesTable.userId, userId))
+          .orderBy(asc(employeesTable.id)).for("update");
+      const centers = await tx.select({
+          id: educationCentersTable.id, name: educationCentersTable.name,
+          verificationStatus: educationCentersTable.verificationStatus,
+        }).from(educationCentersTable).where(eq(educationCentersTable.ownerId, userId))
+          .orderBy(asc(educationCentersTable.id)).for("update");
+      const instructors = await tx.select({ id: educationInstructorsTable.id, fullName: educationInstructorsTable.fullName })
+          .from(educationInstructorsTable).where(eq(educationInstructorsTable.userId, userId))
+          .orderBy(asc(educationInstructorsTable.id)).for("update");
+      const sameIds = (rows: Array<{ id: string }>, decisions: Array<{ relationId: string }>) =>
+        rows.length === decisions.length
+        && rows.every((row, index) => row.id === [...decisions].sort((a, b) => a.relationId.localeCompare(b.relationId))[index]?.relationId);
+      if (!sameIds(salons, body.salonOwnerships)
+        || !sameIds(employees, body.employments)
+        || !sameIds(centers, body.educationCenterOwnerships)
+        || !sameIds(instructors, body.instructorRelations)) {
+        return { status: "unsafe" as const, message: "Spisak poslovnih veza je promenjen ili sadrži vezu drugog korisnika." };
+      }
+      const salonTransfers = new Map(body.salonOwnerships
+        .filter((item) => item.action === "transfer")
+        .map((item) => [item.relationId, item.targetUserId!]));
+      const centerTransfers = new Map(body.educationCenterOwnerships
+        .filter((item) => item.action === "transfer")
+        .map((item) => [item.relationId, item.targetUserId!]));
+      for (const legalEntityId of legalEntityIds) {
+        const closure = lockedLegalBindings.filter((binding) => binding.legalEntityId === legalEntityId);
+        const resultingOwners = new Set(closure.map((binding) =>
+          (binding.salonId ? salonTransfers.get(binding.salonId) : undefined)
+          ?? (binding.educationCenterId ? centerTransfers.get(binding.educationCenterId) : undefined)
+          ?? binding.ownerUserId));
+        if (resultingOwners.size !== 1) {
+          return {
+            status: "conflict" as const,
+            message: "Svi saloni i edukativni centri istog pravnog lica moraju biti preneti istom vlasniku u jednoj transakciji.",
+          };
+        }
+      }
+
+      const usersById = new Map(lockedUsers.map((row) => [row.id, row]));
+      for (const decision of body.salonOwnerships) {
+        if (decision.action === "transfer") {
+          const recipient = usersById.get(decision.targetUserId!);
+          if (!recipient || recipient.id === userId || !recipient.active || recipient.role !== "SALON_OWNER") {
+            return { status: "conflict" as const, message: "Primalac salona mora biti drugi aktivan vlasnik salona." };
+          }
+        } else if (decision.action === "retain" && body.role !== "SALON_OWNER") {
+          return { status: "unsafe" as const, message: "Aktivno vlasništvo salona zahteva ulogu vlasnika salona." };
+        }
+      }
+      for (const decision of body.educationCenterOwnerships) {
+        if (decision.action === "transfer") {
+          const recipient = usersById.get(decision.targetUserId!);
+          if (!recipient || recipient.id === userId || !recipient.active || recipient.role !== "EDUKATIVNI_CENTAR") {
+            return { status: "conflict" as const, message: "Primalac centra mora biti drugi aktivan vlasnik edukativnog centra." };
+          }
+        } else if (decision.action === "retain" && body.role !== "EDUKATIVNI_CENTAR") {
+          return { status: "unsafe" as const, message: "Aktivno vlasništvo centra zahteva ulogu vlasnika centra." };
+        }
+      }
+      if (body.employments.some((item) => item.action === "retain") && body.role !== "SALON_EMPLOYEE") {
+        return { status: "unsafe" as const, message: "Aktivno zaposlenje zahteva ulogu zaposlenog." };
+      }
+      if (body.instructorRelations.some((item) => item.action === "retain") && body.role !== "INSTRUCTOR") {
+        return { status: "unsafe" as const, message: "Aktivna instruktorska veza zahteva ulogu instruktora." };
+      }
+
+      const retainedSalonIds = new Set(body.salonOwnerships.filter((item) => item.action === "retain").map((item) => item.relationId));
+      const retainedEmployeeIds = new Set(body.employments.filter((item) => item.action === "retain").map((item) => item.relationId));
+      const retainedCenterIds = new Set(body.educationCenterOwnerships.filter((item) => item.action === "retain").map((item) => item.relationId));
+      const retainedInstructorIds = new Set(body.instructorRelations.filter((item) => item.action === "retain").map((item) => item.relationId));
+      if ((body.role === "SALON_OWNER" && !salons.some((row) => row.active && retainedSalonIds.has(row.id)))
+        || (body.role === "SALON_EMPLOYEE" && !employees.some((row) => row.active && retainedEmployeeIds.has(row.id)))
+        || (body.role === "EDUKATIVNI_CENTAR" && !centers.some((row) => !["rejected", "suspended"].includes(row.verificationStatus) && retainedCenterIds.has(row.id)))
+        || (body.role === "INSTRUCTOR" && retainedInstructorIds.size === 0)) {
+        return { status: "unsafe" as const, message: "Izabrana poslovna uloga ne sme ostati bez aktivne odgovarajuće veze." };
+      }
+      if (body.activeSalonId) {
+        const owned = salons.some((row) => row.id === body.activeSalonId && row.active && retainedSalonIds.has(row.id));
+        const retainedEmployees = employees.filter((row) => retainedEmployeeIds.has(row.id) && row.active);
+        let employed = false;
+        if (retainedEmployees.length) {
+          const [assignment] = await tx.select({ id: employeeLocationAssignmentsTable.id })
+            .from(employeeLocationAssignmentsTable).where(and(
+              inArray(employeeLocationAssignmentsTable.employeeId, retainedEmployees.map((row) => row.id)),
+              eq(employeeLocationAssignmentsTable.salonId, body.activeSalonId),
+              eq(employeeLocationAssignmentsTable.active, true),
+            )).for("update").limit(1);
+          employed = Boolean(assignment);
+        }
+        if (!owned && !employed) {
+          return { status: "unsafe" as const, message: "Aktivni salon mora pripadati zadržanoj aktivnoj poslovnoj vezi korisnika." };
+        }
+      }
+
+      for (const decision of body.salonOwnerships) {
+        if (decision.action === "transfer") {
+          await tx.update(salonsTable).set({ ownerId: decision.targetUserId! }).where(and(
+            eq(salonsTable.id, decision.relationId), eq(salonsTable.ownerId, userId),
+          ));
+          await tx.update(legalEntityBusinessesTable).set({ ownerUserId: decision.targetUserId! })
+            .where(eq(legalEntityBusinessesTable.salonId, decision.relationId));
+          const recipient = usersById.get(decision.targetUserId!)!;
+          if (!recipient.activeSalonId) {
+            await tx.update(usersTable).set({ activeSalonId: decision.relationId, updatedAt: new Date() })
+              .where(eq(usersTable.id, recipient.id));
+          }
+        } else if (decision.action === "deactivate") {
+          await tx.update(salonsTable).set({ active: false }).where(and(
+            eq(salonsTable.id, decision.relationId), eq(salonsTable.ownerId, userId),
+          ));
+        }
+      }
+      for (const decision of body.employments) {
+        if (decision.action === "deactivate") {
+          await tx.update(employeesTable).set({ active: false }).where(and(
+            eq(employeesTable.id, decision.relationId), eq(employeesTable.userId, userId),
+          ));
+          await tx.update(employeeLocationAssignmentsTable).set({ active: false, isDefault: false, updatedAt: new Date() })
+            .where(eq(employeeLocationAssignmentsTable.employeeId, decision.relationId));
+        } else if (decision.action === "unlink") {
+          await tx.update(employeesTable).set({ userId: null }).where(and(
+            eq(employeesTable.id, decision.relationId), eq(employeesTable.userId, userId),
+          ));
+        }
+      }
+      for (const decision of body.educationCenterOwnerships) {
+        if (decision.action === "transfer") {
+          await tx.update(educationCentersTable).set({
+            ownerId: decision.targetUserId!, updatedAt: new Date(),
+          }).where(and(eq(educationCentersTable.id, decision.relationId), eq(educationCentersTable.ownerId, userId)));
+          await tx.update(legalEntityBusinessesTable).set({ ownerUserId: decision.targetUserId! })
+            .where(eq(legalEntityBusinessesTable.educationCenterId, decision.relationId));
+        } else if (decision.action === "deactivate") {
+          await tx.update(educationCentersTable).set({
+            verificationStatus: "suspended", verificationNote: "Deaktivirano tokom bezbedne promene poslovne uloge.",
+            updatedAt: new Date(),
+          }).where(and(eq(educationCentersTable.id, decision.relationId), eq(educationCentersTable.ownerId, userId)));
+        }
+      }
+      for (const decision of body.instructorRelations) {
+        if (decision.action === "unlink") {
+          await tx.update(educationInstructorsTable).set({ userId: null, updatedAt: new Date() }).where(and(
+            eq(educationInstructorsTable.id, decision.relationId), eq(educationInstructorsTable.userId, userId),
+          ));
+          // Course and profile history remain; only live account authorization
+          // is severed so an old course cannot continue granting instructor access.
+          await tx.update(coursesTable).set({ instructorId: null, updatedAt: new Date() })
+            .where(eq(coursesTable.instructorProfileId, decision.relationId));
+        }
+      }
+
+      const [updated] = await tx.update(usersTable).set({
+        role: body.role, active: body.active, activeSalonId: body.activeSalonId, updatedAt: new Date(),
+      }).where(eq(usersTable.id, userId)).returning();
+      if (!updated) throw new Error("Transition target disappeared.");
+      const nextSalons = await tx.select({ id: salonsTable.id, name: salonsTable.name, active: salonsTable.active }).from(salonsTable)
+        .where(eq(salonsTable.ownerId, userId)).orderBy(asc(salonsTable.id));
+      const nextEmployees = await tx.select({ id: employeesTable.id, name: employeesTable.name, active: employeesTable.active }).from(employeesTable)
+        .where(eq(employeesTable.userId, userId)).orderBy(asc(employeesTable.id));
+      const nextCenters = await tx.select({ id: educationCentersTable.id, name: educationCentersTable.name, verificationStatus: educationCentersTable.verificationStatus })
+        .from(educationCentersTable).where(eq(educationCentersTable.ownerId, userId)).orderBy(asc(educationCentersTable.id));
+      const nextInstructors = await tx.select({ id: educationInstructorsTable.id, fullName: educationInstructorsTable.fullName })
+        .from(educationInstructorsTable).where(eq(educationInstructorsTable.userId, userId)).orderBy(asc(educationInstructorsTable.id));
+      return {
+        status: "updated" as const,
+        state: adminBusinessTransitionView(updated, {
+          salons: nextSalons, employees: nextEmployees, centers: nextCenters, instructors: nextInstructors,
+        }),
+      };
+    });
+    if (result.status === "not-found") { res.status(404).json({ error: "Korisnik nije pronađen." }); return; }
+    if (result.status === "conflict") { res.status(409).json({ error: result.message }); return; }
+    if (result.status === "unsafe") { res.status(422).json({ error: result.message }); return; }
+    res.json(AdminTransitionBusinessRoleResponse.parse(result.state));
+  } catch (error) {
+    if (["40001", "40P01"].includes((error as { code?: string }).code ?? "")) {
+      res.status(409).json({ error: "Istovremena poslovna promena je u toku. Osvežite podatke i pokušajte ponovo." });
+      return;
+    }
+    if ((error as { code?: string }).code === "23503") {
+      res.status(409).json({ error: "Poslovna veza je promenjena tokom obrade. Osvežite podatke i pokušajte ponovo." });
+      return;
+    }
+    throw error;
+  }
+});
+
 router.patch("/admin/users/:userId", async (req, res): Promise<void> => {
   const admin = await requireSuperAdmin(req, res); if (!admin) return;
   const parsedParams = AdminUpdateUserParams.safeParse(req.params);
@@ -22033,7 +22455,7 @@ router.patch("/admin/users/:userId", async (req, res): Promise<void> => {
     // business-conversion flow uses this same per-user lock, so a generic role
     // PATCH cannot observe a standalone account while a companion is being
     // created (or vice versa).
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`business-conversion:${userId}`}))`);
+    await lockBusinessMutationParticipants(tx, { userIds: [userId] });
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext('lumera_active_super_admin_guard'))`);
     const [target] = await tx.select().from(usersTable).where(eq(usersTable.id, userId)).for("update").limit(1);
     if (!target) return { status: "not-found" as const };

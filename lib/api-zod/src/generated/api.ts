@@ -13431,6 +13431,149 @@ export const AdminConvertUserToBusinessAccountResponse = zod.object({
 
 
 /**
+ * @summary Inspect all business relations and safe decisions before changing a business role
+ */
+export const adminGetBusinessRoleTransitionPathUserIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const AdminGetBusinessRoleTransitionParams = zod.object({
+  "userId": zod.coerce.string().regex(adminGetBusinessRoleTransitionPathUserIdRegExp)
+})
+
+export const adminGetBusinessRoleTransitionResponseSalonOwnershipsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const adminGetBusinessRoleTransitionResponseEmploymentsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const adminGetBusinessRoleTransitionResponseEducationCenterOwnershipsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const adminGetBusinessRoleTransitionResponseInstructorRelationsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
+export const AdminGetBusinessRoleTransitionResponse = zod.object({
+  "user": zod.object({
+  "id": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "email": zod.string(),
+  "phone": zod.string().nullish(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
+  "active": zod.boolean(),
+  "passwordSetAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+}),
+  "salonOwnerships": zod.array(zod.object({
+  "id": zod.string().regex(adminGetBusinessRoleTransitionResponseSalonOwnershipsItemIdRegExp),
+  "name": zod.string(),
+  "active": zod.boolean(),
+  "allowedActions": zod.array(zod.enum(['transfer', 'deactivate', 'retain', 'unlink']))
+})),
+  "employments": zod.array(zod.object({
+  "id": zod.string().regex(adminGetBusinessRoleTransitionResponseEmploymentsItemIdRegExp),
+  "name": zod.string(),
+  "active": zod.boolean(),
+  "allowedActions": zod.array(zod.enum(['transfer', 'deactivate', 'retain', 'unlink']))
+})),
+  "educationCenterOwnerships": zod.array(zod.object({
+  "id": zod.string().regex(adminGetBusinessRoleTransitionResponseEducationCenterOwnershipsItemIdRegExp),
+  "name": zod.string(),
+  "active": zod.boolean(),
+  "allowedActions": zod.array(zod.enum(['transfer', 'deactivate', 'retain', 'unlink']))
+})),
+  "instructorRelations": zod.array(zod.object({
+  "id": zod.string().regex(adminGetBusinessRoleTransitionResponseInstructorRelationsItemIdRegExp),
+  "name": zod.string(),
+  "active": zod.boolean(),
+  "allowedActions": zod.array(zod.enum(['transfer', 'deactivate', 'retain', 'unlink']))
+}))
+})
+
+
+/**
+ * @summary Atomically exit or change a business role while preserving all historical relation rows
+ */
+export const adminTransitionBusinessRolePathUserIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const AdminTransitionBusinessRoleParams = zod.object({
+  "userId": zod.coerce.string().regex(adminTransitionBusinessRolePathUserIdRegExp)
+})
+
+export const adminTransitionBusinessRoleBodyActiveSalonIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const adminTransitionBusinessRoleBodySalonOwnershipsItemRelationIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const adminTransitionBusinessRoleBodySalonOwnershipsItemTargetUserIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const adminTransitionBusinessRoleBodyEmploymentsItemRelationIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const adminTransitionBusinessRoleBodyEducationCenterOwnershipsItemRelationIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const adminTransitionBusinessRoleBodyEducationCenterOwnershipsItemTargetUserIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const adminTransitionBusinessRoleBodyInstructorRelationsItemRelationIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
+export const AdminTransitionBusinessRoleBody = zod.object({
+  "role": zod.enum(['ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
+  "active": zod.boolean(),
+  "activeSalonId": zod.string().regex(adminTransitionBusinessRoleBodyActiveSalonIdRegExp).nullable(),
+  "salonOwnerships": zod.array(zod.object({
+  "relationId": zod.string().regex(adminTransitionBusinessRoleBodySalonOwnershipsItemRelationIdRegExp),
+  "action": zod.enum(['transfer', 'deactivate', 'retain']),
+  "targetUserId": zod.string().regex(adminTransitionBusinessRoleBodySalonOwnershipsItemTargetUserIdRegExp).optional()
+})),
+  "employments": zod.array(zod.object({
+  "relationId": zod.string().regex(adminTransitionBusinessRoleBodyEmploymentsItemRelationIdRegExp),
+  "action": zod.enum(['deactivate', 'retain', 'unlink'])
+})),
+  "educationCenterOwnerships": zod.array(zod.object({
+  "relationId": zod.string().regex(adminTransitionBusinessRoleBodyEducationCenterOwnershipsItemRelationIdRegExp),
+  "action": zod.enum(['transfer', 'deactivate', 'retain']),
+  "targetUserId": zod.string().regex(adminTransitionBusinessRoleBodyEducationCenterOwnershipsItemTargetUserIdRegExp).optional()
+})),
+  "instructorRelations": zod.array(zod.object({
+  "relationId": zod.string().regex(adminTransitionBusinessRoleBodyInstructorRelationsItemRelationIdRegExp),
+  "action": zod.enum(['retain', 'unlink'])
+}))
+}).strict()
+
+export const adminTransitionBusinessRoleResponseOneSalonOwnershipsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const adminTransitionBusinessRoleResponseOneEmploymentsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const adminTransitionBusinessRoleResponseOneEducationCenterOwnershipsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const adminTransitionBusinessRoleResponseOneInstructorRelationsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
+export const AdminTransitionBusinessRoleResponse = zod.object({
+  "user": zod.object({
+  "id": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "email": zod.string(),
+  "phone": zod.string().nullish(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
+  "active": zod.boolean(),
+  "passwordSetAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+}),
+  "salonOwnerships": zod.array(zod.object({
+  "id": zod.string().regex(adminTransitionBusinessRoleResponseOneSalonOwnershipsItemIdRegExp),
+  "name": zod.string(),
+  "active": zod.boolean(),
+  "allowedActions": zod.array(zod.enum(['transfer', 'deactivate', 'retain', 'unlink']))
+})),
+  "employments": zod.array(zod.object({
+  "id": zod.string().regex(adminTransitionBusinessRoleResponseOneEmploymentsItemIdRegExp),
+  "name": zod.string(),
+  "active": zod.boolean(),
+  "allowedActions": zod.array(zod.enum(['transfer', 'deactivate', 'retain', 'unlink']))
+})),
+  "educationCenterOwnerships": zod.array(zod.object({
+  "id": zod.string().regex(adminTransitionBusinessRoleResponseOneEducationCenterOwnershipsItemIdRegExp),
+  "name": zod.string(),
+  "active": zod.boolean(),
+  "allowedActions": zod.array(zod.enum(['transfer', 'deactivate', 'retain', 'unlink']))
+})),
+  "instructorRelations": zod.array(zod.object({
+  "id": zod.string().regex(adminTransitionBusinessRoleResponseOneInstructorRelationsItemIdRegExp),
+  "name": zod.string(),
+  "active": zod.boolean(),
+  "allowedActions": zod.array(zod.enum(['transfer', 'deactivate', 'retain', 'unlink']))
+}))
+})
+
+
+/**
  * @summary List all loyalty tiers
  */
 export const AdminListLoyaltyTiersResponseItem = zod.object({

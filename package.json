@@ -47,6 +47,7 @@
     "test:calendar-timezone-boundaries": "pnpm --filter @workspace/scripts run test:calendar-timezone-boundaries",
     "test:multi-location": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/multi-location.test.ts && pnpm --filter @workspace/scripts run test:multi-location",
     "test:tenant-isolation": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/tenant-isolation.test.ts",
+    "test:business-role-transition": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/business-role-transition.test.ts",
     "test:rescheduled-confirmations": "pnpm --filter @workspace/scripts run test:rescheduled-confirmations",
     "cleanup:rescheduled-confirmations": "pnpm --filter @workspace/scripts run cleanup:rescheduled-confirmations",
     "test:bundle-budget": "pnpm --filter @workspace/scripts run test:bundle-budget",
