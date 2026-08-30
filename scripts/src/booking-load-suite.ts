@@ -8,10 +8,12 @@ import {
   appointmentsTable, bookingGroupsTable, db, employeeLocationAssignmentsTable, employeeServicesTable, employeesTable,
   salonDateHoursTable, salonsTable, servicesTable, sessionsTable, usersTable,
 } from "@workspace/db";
-import { classifyLoadSamples, latencySummary, type LoadSample } from "./booking-load-metrics";
+import { classifyLoadSamples, evaluateLoadTargets, latencySummary, roundRobinServerIndex, type LoadSample, type LoadTargets } from "./booking-load-metrics";
 
 const urls = (process.env.LUMERA_BOOKING_LOAD_URLS ?? "").split(",").filter((url) => /^http:\/\/127\.0\.0\.1:\d+$/.test(url));
-if (process.env.NODE_ENV !== "test" || process.env.LUMERA_BOOKING_LOAD !== "1" || urls.length !== 2) throw new Error("Booking load suite requires two loopback test APIs.");
+const apiProcesses = Number(process.env.LUMERA_BOOKING_LOAD_API_PROCESSES ?? 2);
+const expectedDeploymentProcesses = Number(process.env.LUMERA_BOOKING_LOAD_EXPECTED_DEPLOYMENT_PROCESSES ?? apiProcesses);
+if (process.env.NODE_ENV !== "test" || process.env.LUMERA_BOOKING_LOAD !== "1" || urls.length !== apiProcesses || urls.length < 1) throw new Error("Booking load suite requires the configured loopback test API process count.");
 const marker = `booking-load-${process.pid}`;
 const sessionCookieName = "lumera_session";
 const reportPath = path.resolve(import.meta.dirname, "..", "..", "reports", "booking-load");
@@ -19,6 +21,22 @@ const requestTimeoutMs = 30_000;
 const reportName = process.env.LUMERA_BOOKING_LOAD_REPORT_NAME ?? "latest";
 if (!/^[a-z0-9-]+$/.test(reportName)) throw new Error("Invalid booking load report name.");
 const dbConnectionTimeoutMs = Number(process.env.DB_CONN_TIMEOUT_MS ?? 15_000);
+const poolMaxPerProcess = Number(process.env.LUMERA_BOOKING_LOAD_API_POOL_MAX ?? 10);
+const harnessPoolMax = Number(process.env.LUMERA_BOOKING_LOAD_HARNESS_POOL_MAX ?? 10);
+const connectionReserve = Number(process.env.LUMERA_BOOKING_LOAD_CONNECTION_RESERVE ?? 5);
+const databaseConnectionBudget = Number(process.env.LUMERA_BOOKING_LOAD_DB_CONNECTION_BUDGET ?? 35);
+const targets: Record<string, LoadTargets> = {
+  "same-slot": { p95Ms: 5_000, p99Ms: 5_000, maxUnexpectedErrorRate: 0 },
+  "1000-distinct": { p95Ms: 16_000, p99Ms: 17_000, maxUnexpectedErrorRate: 0.001 },
+  "250-groups": { p95Ms: 5_000, p99Ms: 5_000, maxUnexpectedErrorRate: 0 },
+  "mixed-1000": { p95Ms: 10_000, p99Ms: 10_000, maxUnexpectedErrorRate: 0.001 },
+};
+const operationalTargets: Record<string, { minimumThroughputPerSecond: number; maximumPeakWaitingPerProcess: number; maximumPeakLocks: number }> = {
+  "same-slot": { minimumThroughputPerSecond: 50, maximumPeakWaitingPerProcess: 150, maximumPeakLocks: 500 },
+  "1000-distinct": { minimumThroughputPerSecond: 60, maximumPeakWaitingPerProcess: 1_000, maximumPeakLocks: 1_000 },
+  "250-groups": { minimumThroughputPerSecond: 50, maximumPeakWaitingPerProcess: 250, maximumPeakLocks: 1_200 },
+  "mixed-1000": { minimumThroughputPerSecond: 100, maximumPeakWaitingPerProcess: 1_200, maximumPeakLocks: 1_000 },
+};
 type Fixture = { salons: { id: string; employeeIds: string[]; serviceA: string; serviceB: string }[]; sessions: string[] };
 type Request = { method: "POST"; path: string; cookie: string; body: unknown };
 type ActivitySample = {
@@ -68,16 +86,17 @@ type HttpLoadSample = LoadSample & { body?: unknown; error?: string; server: num
 async function hit(request: Request, index: number): Promise<HttpLoadSample> {
   const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
   const started = performance.now();
+  const server = roundRobinServerIndex(index, urls.length);
   try {
-    const response = await fetch(`${urls[index % 2]}${request.path}`, { method: request.method, headers: { "content-type": "application/json", cookie: `${sessionCookieName}=${request.cookie}`, connection: "keep-alive" }, body: JSON.stringify(request.body), signal: controller.signal });
+    const response = await fetch(`${urls[server]}${request.path}`, { method: request.method, headers: { "content-type": "application/json", cookie: `${sessionCookieName}=${request.cookie}`, connection: "keep-alive" }, body: JSON.stringify(request.body), signal: controller.signal });
     const body = await response.json().catch(() => undefined);
-    return { status: response.status, code: (body as { code?: string } | undefined)?.code, body, milliseconds: performance.now() - started, server: index % 2 };
+    return { status: response.status, code: (body as { code?: string } | undefined)?.code, body, milliseconds: performance.now() - started, server };
   } catch (error) {
     return {
       timeout: error instanceof DOMException && error.name === "AbortError",
       code: "NETWORK",
       milliseconds: performance.now() - started,
-      server: index % 2,
+      server,
       error: error instanceof Error ? error.message : String(error),
     };
   } finally { clearTimeout(timeout); }
@@ -100,7 +119,7 @@ async function scenario(name: string, requests: Request[]) {
   try { samples.push(await activity()); } catch { samplingErrors++; }
   const elapsed = performance.now() - started; const classified = classifyLoadSamples(results);
   const unexpected = results.filter((result) => !result.status || result.status >= 500);
-  return {
+  const result = {
     name,
     count: results.length,
     throughputPerSecond: results.length / (elapsed / 1_000),
@@ -110,6 +129,24 @@ async function scenario(name: string, requests: Request[]) {
     latency: latencySummary(results),
     dbActivity: summarizeActivity(samples, samplingErrors),
     results,
+  };
+  const target = operationalTargets[name]!;
+  const peakWaitingPerProcess = result.dbActivity.apiPools.map((pool) => pool.peakWaiting);
+  const peakLocks = Object.values(result.dbActivity.pg.lockPeaks).reduce((sum, count) => sum + count, 0);
+  const operationalChecks = {
+    throughput: result.throughputPerSecond >= target.minimumThroughputPerSecond,
+    poolWaiting: peakWaitingPerProcess.every((waiting) => waiting <= target.maximumPeakWaitingPerProcess),
+    locks: peakLocks <= target.maximumPeakLocks,
+  };
+  return {
+    ...result,
+    objective: evaluateLoadTargets(result, targets[name]!),
+    operationalObjective: {
+      targets: target,
+      observed: { throughputPerSecond: result.throughputPerSecond, peakWaitingPerProcess, peakLocks },
+      checks: operationalChecks,
+      passed: Object.values(operationalChecks).every(Boolean),
+    },
   };
 }
 async function activity() {
@@ -135,10 +172,32 @@ function group(f: Fixture["salons"][number], day: string, slot: number, cookie: 
 }
 async function main() {
   const baseline = reportName === "latest" ? await readBaselineReport() : null;
+  const maxConnectionsResult = await db.execute(sql`show max_connections`);
+  const databaseMaxConnections = Number(maxConnectionsResult.rows[0]?.max_connections);
+  assert.ok(Number.isInteger(databaseMaxConnections) && databaseMaxConnections > 0, "staging database must report max_connections");
+  assert.ok(databaseConnectionBudget <= databaseMaxConnections, `documented connection budget ${databaseConnectionBudget} exceeds database max_connections ${databaseMaxConnections}`);
   const report: any = {
-    environment: "Development/test-only measurement on one disposable database and two loopback API processes; fixture/bootstrap time is excluded and results are not production capacity planning.",
+    environment: "Isolated staging capacity measurement on one disposable database and the configured deployment-like API process topology; fixture/bootstrap time is excluded. Never point this destructive harness at live customer data.",
     requestTimeoutMs,
-    configuration: { apiProcesses: 2, poolMaxPerProcess: 10, dbConnectionTimeoutMs },
+    configuration: {
+      profile: process.env.LUMERA_BOOKING_LOAD_PROFILE ?? "development",
+      serverMode: "isolated Express app without unrelated schedulers/workers",
+      apiProcesses,
+      expectedDeploymentProcesses,
+      topologyMatched: apiProcesses === expectedDeploymentProcesses,
+      poolMaxPerProcess,
+      harnessPoolMax,
+      connectionReserve,
+      databaseConnectionBudget,
+      databaseMaxConnections,
+      plannedConnections: apiProcesses * poolMaxPerProcess + harnessPoolMax + connectionReserve,
+      dbConnectionTimeoutMs,
+    },
+    objectives: {
+      rationale: "Peak-spike objectives cap p95 at 16 seconds and p99 at 17 seconds for 1,000 simultaneous distinct bookings, below the outer 30-second request deadline and with explicit variance headroom. Expected business conflicts (409) are not errors; network failures and 5xx responses are.",
+      scenarios: targets,
+      operationalScenarios: operationalTargets,
+    },
     marker,
     scenarios: [],
     integrity: {},
@@ -207,6 +266,14 @@ async function main() {
     const plans = await db.execute(sql`explain (analyze, buffers, format json) select * from appointments where salon_id=${first.id} and appointment_date=${date(2)} and employee_id=${first.employeeIds[0]} and status in ('pending','confirmed') and start_time < '10:00' and end_time > '09:00'`);
     const availabilityPlan = await db.execute(sql`explain (analyze, buffers, format json) select employee_id, start_time, end_time from appointments where salon_id=${first.id} and appointment_date between ${date(2)} and ${date(5)} and status in ('pending','confirmed') order by employee_id, appointment_date`);
     report.plans.push(planSummary("appointment overlap", plans.rows[0]), planSummary("availability loaded appointments", availabilityPlan.rows[0]));
+    report.planAssessment = {
+      target: "Both booking overlap and availability reads use an index-backed plan with execution time <= 50 ms.",
+      passed: report.plans.every((plan: any) => plan.summary.executionMs <= 50 && plan.summary.indexes.length > 0 && !plan.summary.nodes.includes("Seq Scan")),
+    };
+    const missedCustomerObjectives = report.scenarios.filter((item: any) => !item.objective.passed).map((item: any) => item.name);
+    const missedOperationalObjectives = report.scenarios.filter((item: any) => !item.operationalObjective.passed).map((item: any) => item.name);
+    const missedScenarios = report.scenarios.filter((item: any) => !item.objective.passed || !item.operationalObjective.passed);
+    report.bottleneckAssessments = missedScenarios.map((item: any) => bottleneckAssessment(item, report.planAssessment.passed));
     report.integrity = {
       sameSlotActive: collisionRows.length,
       distinctAppointments: Number(distinctAudit.rows[0]?.total),
@@ -234,17 +301,25 @@ async function main() {
       };
       report.optimizationDecision = "Applied only the measured pool-acquisition timeout fix. The complete 30-second run then passed without timeout, 5xx, duplicate active slots, partial groups, or cross-customer leakage. Pool size remains unchanged because increasing database connections without a connection budget would be unsafe.";
     } else {
-      report.optimizationDecision = "This standalone configuration run completed without an optimization comparison.";
+      const missed = missedScenarios.map((item: any) => item.name);
+      report.optimizationDecision = missed.length
+        ? `Targets missed for ${missed.join(", ")}. ${report.bottleneckAssessments.map((item: any) => item.verdict).join(" ")}`
+        : "All latency and error objectives passed. Query plans were index-backed, so no query reduction, bounded admission control, or database connection increase is justified by this run.";
     }
+    assert.deepEqual(missedCustomerObjectives, [], `customer latency/error objectives missed: ${missedCustomerObjectives.join(", ")}`);
+    assert.deepEqual(missedOperationalObjectives, [], `throughput/pool/lock objectives missed: ${missedOperationalObjectives.join(", ")}`);
+    assert.equal(report.planAssessment.passed, true, "booking and availability query plans must remain index-backed and within budget");
   } catch (error) {
     failure = error;
     report.failure = error instanceof Error ? error.message : String(error);
-    report.optimizationDecision = "No production optimization applied because the baseline did not complete; correctness assertions were not weakened.";
+    report.optimizationDecision = report.scenarios.some((item: any) => item.objective && !item.objective.passed)
+      ? "A customer objective was missed. No production change is allowed until controlled query-reduction and bounded-admission variants identify the bottleneck without violating the error target."
+      : "No production optimization applied because the baseline did not complete; correctness assertions were not weakened.";
   }
   finally {
     await mkdir(reportPath, { recursive: true });
     await writeFile(path.join(reportPath, `${reportName}.json`), JSON.stringify(report, null, 2) + "\n");
-    await writeFile(path.join(reportPath, `${reportName}.md`), `# Booking load report\n\n${report.environment}\n\nConfiguration: \`${JSON.stringify(report.configuration)}\`; request timeout: ${report.requestTimeoutMs} ms.\n\n${report.scenarios.map((s: any) => `## ${s.name}\n\n- Requests: ${s.count}; throughput: ${s.throughputPerSecond.toFixed(1)} req/s\n- Statuses: \`${JSON.stringify(s.statuses)}\`; codes: \`${JSON.stringify(s.codes)}\`\n- Expected 409: ${s.statuses["409"] ?? 0}; unexpected errors: ${s.unexpectedErrors}; timeouts: ${s.timeouts}\n- Latency ms: avg ${s.latency.average.toFixed(2)}, p50 ${s.latency.p50.toFixed(2)}, p95 ${s.latency.p95.toFixed(2)}, p99 ${s.latency.p99.toFixed(2)}, max ${s.latency.max.toFixed(2)}\n- DB activity peaks: \`${JSON.stringify(s.dbActivity.pg)}\`\n- API pool peaks: \`${JSON.stringify(s.dbActivity.apiPools)}\` (${s.dbActivity.sampleCount} samples; ${s.dbActivity.samplingErrors} discarded)`).join("\n\n")}\n\n## Integrity\n\n\`${JSON.stringify(report.integrity)}\`\n\n## Query plans\n\n${report.plans.map((p: any) => `- ${p.query}: \`${JSON.stringify(p.summary)}\``).join("\n")}\n\n## Optimization\n\n${report.optimization ? `- Change: ${report.optimization.change}\n- Before: \`${JSON.stringify(report.optimization.evidenceBefore)}\`\n${report.optimization.evidenceAfter ? `- After: \`${JSON.stringify(report.optimization.evidenceAfter)}\`\n` : ""}` : ""}\n${report.optimizationDecision}\n${report.failure ? `\n## Failure\n\n${report.failure}\n` : ""}`);
+    await writeFile(path.join(reportPath, `${reportName}.md`), `# Booking load report\n\n${report.environment}\n\nConfiguration and connection budget: \`${JSON.stringify(report.configuration)}\`; request timeout: ${report.requestTimeoutMs} ms.\n\n## Objectives\n\n${report.objectives.rationale}\n\nCustomer objectives: \`${JSON.stringify(report.objectives.scenarios)}\`\n\nOperational objectives: \`${JSON.stringify(report.objectives.operationalScenarios)}\`\n\n${report.scenarios.map((s: any) => `## ${s.name}\n\n- Requests: ${s.count}; throughput: ${s.throughputPerSecond.toFixed(1)} req/s\n- Statuses: \`${JSON.stringify(s.statuses)}\`; codes: \`${JSON.stringify(s.codes)}\`\n- Expected 409: ${s.statuses["409"] ?? 0}; unexpected errors: ${s.unexpectedErrors}; timeouts: ${s.timeouts}\n- Latency ms: avg ${s.latency.average.toFixed(2)}, p50 ${s.latency.p50.toFixed(2)}, p95 ${s.latency.p95.toFixed(2)}, p99 ${s.latency.p99.toFixed(2)}, max ${s.latency.max.toFixed(2)}\n- Customer objective: **${s.objective.passed ? "PASS" : "FAIL"}** \`${JSON.stringify(s.objective)}\`\n- Operational objective: **${s.operationalObjective.passed ? "PASS" : "FAIL"}** \`${JSON.stringify(s.operationalObjective)}\`\n- DB activity peaks: \`${JSON.stringify(s.dbActivity.pg)}\`\n- API pool peaks: \`${JSON.stringify(s.dbActivity.apiPools)}\` (${s.dbActivity.sampleCount} samples; ${s.dbActivity.samplingErrors} discarded)`).join("\n\n")}\n\n## Integrity\n\n\`${JSON.stringify(report.integrity)}\`\n\n## Query plans\n\n${report.plans.map((p: any) => `- ${p.query}: \`${JSON.stringify(p.summary)}\``).join("\n")}\n\nPlan assessment: **${report.planAssessment?.passed ? "PASS" : "FAIL"}** — ${report.planAssessment?.target ?? "not completed"}\n\n## Bottleneck assessments\n\n\`${JSON.stringify(report.bottleneckAssessments)}\`\n\n## Optimization decision\n\n${report.optimization ? `- Change: ${report.optimization.change}\n- Before: \`${JSON.stringify(report.optimization.evidenceBefore)}\`\n${report.optimization.evidenceAfter ? `- After: \`${JSON.stringify(report.optimization.evidenceAfter)}\`\n` : ""}` : ""}\n${report.optimizationDecision}\n${report.failure ? `\n## Failure\n\n${report.failure}\n` : ""}`);
   }
   if (failure) throw failure;
 }
@@ -333,6 +408,50 @@ async function readBaselineReport() {
 }
 function planSummary(query: string, row: any) {
   const plan = Object.values(row)[0] as any; const root = Array.isArray(plan) ? plan[0] : plan;
-  const node = root?.Plan ?? {}; return { query, summary: { planningMs: root?.["Planning Time"], executionMs: root?.["Execution Time"], node: node["Node Type"], index: node["Index Name"] ?? null, actualRows: node["Actual Rows"], sharedHitBlocks: node["Shared Hit Blocks"] ?? 0, sharedReadBlocks: node["Shared Read Blocks"] ?? 0 }, raw: row };
+  const node = root?.Plan ?? {};
+  const nodes: string[] = [];
+  const indexes: string[] = [];
+  const visit = (item: any) => {
+    if (!item || typeof item !== "object") return;
+    if (typeof item["Node Type"] === "string") nodes.push(item["Node Type"]);
+    if (typeof item["Index Name"] === "string") indexes.push(item["Index Name"]);
+    for (const child of item.Plans ?? []) visit(child);
+  };
+  visit(node);
+  return { query, summary: { planningMs: root?.["Planning Time"], executionMs: root?.["Execution Time"], node: node["Node Type"], index: node["Index Name"] ?? null, nodes, indexes, actualRows: node["Actual Rows"], sharedHitBlocks: node["Shared Hit Blocks"] ?? 0, sharedReadBlocks: node["Shared Read Blocks"] ?? 0 }, raw: row };
+}
+
+function bottleneckAssessment(result: any, plansPassed: boolean) {
+  const objective = targets[result.name]!;
+  const requiredP95Throughput = result.count * 0.95 / (objective.p95Ms / 1_000);
+  const requiredP99Throughput = result.count * 0.99 / (objective.p99Ms / 1_000);
+  const requiredThroughput = Math.max(requiredP95Throughput, requiredP99Throughput);
+  const maximumAllowedRejectedRequests = Math.floor(result.count * objective.maxUnexpectedErrorRate);
+  const minimumRejectedToReachP95AtObservedThroughput = Math.max(0, Math.ceil(result.count * 0.95 - result.throughputPerSecond * (objective.p95Ms / 1_000)));
+  const poolsSaturated = result.dbActivity.apiPools.every((pool: any) => pool.minimumIdle === 0 && pool.peakWaiting > 0);
+  const admissionCanMeetErrorTarget = minimumRejectedToReachP95AtObservedThroughput <= maximumAllowedRejectedRequests;
+  const queryReductionUpliftPercent = Math.max(0, (requiredThroughput / result.throughputPerSecond - 1) * 100);
+  return {
+    scenario: result.name,
+    evidence: {
+      observedThroughputPerSecond: result.throughputPerSecond,
+      requiredP95ThroughputPerSecond: requiredP95Throughput,
+      requiredP99ThroughputPerSecond: requiredP99Throughput,
+      queryReductionUpliftPercent,
+      poolsSaturated,
+      plansIndexBackedAndFast: plansPassed,
+      maximumAllowedRejectedRequests,
+      minimumRejectedToReachP95AtObservedThroughput,
+    },
+    boundedAdmission: admissionCanMeetErrorTarget
+      ? "could meet the latency objective within the error budget"
+      : "cannot meet the latency objective by rejecting excess work without violating the error budget; queueing alone cannot increase throughput",
+    queryReduction: poolsSaturated && plansPassed && result.throughputPerSecond < requiredThroughput
+      ? "is the first bottleneck fix to test because service throughput must rise while indexed plans are individually fast and both pools are saturated"
+      : "is not proven as the first bottleneck fix by this run",
+    verdict: !admissionCanMeetErrorTarget && poolsSaturated && plansPassed && result.throughputPerSecond < requiredThroughput
+      ? `Bounded admission is not a valid fix within the error target. Test query-count/round-trip reduction first; it needs at least ${queryReductionUpliftPercent.toFixed(1)}% throughput uplift before any production query change.`
+      : "No bottleneck fix is proven; collect another controlled comparison before changing production behavior.",
+  };
 }
 void main();

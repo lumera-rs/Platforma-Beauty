@@ -1,5 +1,11 @@
 export type LoadSample = { status?: number; code?: string; milliseconds: number; timeout?: boolean };
 
+export type LoadTargets = {
+  p95Ms: number;
+  p99Ms: number;
+  maxUnexpectedErrorRate: number;
+};
+
 export function classifyLoadSamples(samples: readonly LoadSample[]) {
   const statuses: Record<string, number> = {};
   const codes: Record<string, number> = {};
@@ -17,4 +23,32 @@ export function latencySummary(samples: readonly LoadSample[]) {
     average: values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0,
     p50: percentile(.50), p95: percentile(.95), p99: percentile(.99), max: values.at(-1) ?? 0,
   };
+}
+
+export function evaluateLoadTargets(
+  result: { count: number; unexpectedErrors: number; latency: { p95: number; p99: number } },
+  targets: LoadTargets,
+) {
+  const unexpectedErrorRate = result.count === 0 ? 0 : result.unexpectedErrors / result.count;
+  const checks = {
+    p95: result.latency.p95 <= targets.p95Ms,
+    p99: result.latency.p99 <= targets.p99Ms,
+    unexpectedErrorRate: unexpectedErrorRate <= targets.maxUnexpectedErrorRate,
+  };
+  return {
+    targets,
+    observed: {
+      p95Ms: result.latency.p95,
+      p99Ms: result.latency.p99,
+      unexpectedErrorRate,
+    },
+    checks,
+    passed: Object.values(checks).every(Boolean),
+  };
+}
+
+export function roundRobinServerIndex(requestIndex: number, serverCount: number): number {
+  if (!Number.isSafeInteger(requestIndex) || requestIndex < 0) throw new Error("requestIndex must be a non-negative integer");
+  if (!Number.isSafeInteger(serverCount) || serverCount < 1) throw new Error("serverCount must be a positive integer");
+  return requestIndex % serverCount;
 }

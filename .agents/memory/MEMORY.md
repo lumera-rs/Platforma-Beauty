@@ -128,3 +128,4 @@
 - [Web Push trust boundaries](web-push-trust-boundaries.md) — validate provider endpoints, VAPID key pairs, source freshness, and scope-relative links before offline delivery.
 - [pg-pool acquisition deadlines](pg-pool-acquisition-deadlines.md) — connectionTimeoutMillis also limits queued checkout of existing clients, not just new connections.
 - [Deployment runtime detection](deployment-runtime-detection.md) — destructive harnesses need layered deployment guards; REPLIT_ENVIRONMENT alone is not authoritative.
+- [Capacity harness serving boundary](capacity-harness-serving-boundary.md) — measure real request routes without unrelated production schedulers or startup seeders.

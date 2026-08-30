@@ -10,6 +10,13 @@ const state = path.join(root, ".lumera-test-state", "booking-load-databases");
 const reportDirectory = path.join(root, "reports", "booking-load");
 const prefix = "lumera_booking_load_";
 const namePattern = /^lumera_booking_load_\d+_[a-f0-9]{32}$/;
+const parseInteger = (key: string, fallback: number, minimum: number, maximum: number) => {
+  const raw = process.env[key] ?? String(fallback);
+  if (!/^\d+$/.test(raw) || Number(raw) < minimum || Number(raw) > maximum) {
+    throw new Error(`${key} must be an integer from ${minimum} to ${maximum}.`);
+  }
+  return Number(raw);
+};
 const target = () => {
   const raw = process.env.DATABASE_URL;
   if (!raw || process.env.LUMERA_BOOKING_LOAD !== "1") throw new Error("Booking load requires LUMERA_BOOKING_LOAD=1 and a named development DATABASE_URL.");
@@ -31,6 +38,7 @@ function isolatedEnvironment(databaseUrl: string): NodeJS.ProcessEnv {
     throw new Error("LUMERA_BOOKING_LOAD_DB_CONN_TIMEOUT_MS must be an integer from 500 to 60000.");
   }
   environment.DB_CONN_TIMEOUT_MS = loadConnectionTimeout;
+  environment.DB_POOL_MAX = String(parseInteger("LUMERA_BOOKING_LOAD_POOL_MAX", 10, 4, 50));
   // Test traffic must not inherit any delivery connector, sender, webhook, or
   // provider configuration from the developer shell.
   for (const key of Object.keys(environment)) if (/(BREVO|SMS|TWILIO|SENDGRID|RESEND|MAILGUN|SMTP|EMAIL.*(?:KEY|URL|SENDER)|WEBHOOK)/i.test(key)) delete environment[key];
@@ -83,19 +91,33 @@ async function main() {
   const base = target();
   if (process.argv.includes("--recover-interrupted-databases")) return recover(base);
   await recover(base);
+  const apiProcesses = parseInteger("LUMERA_BOOKING_LOAD_API_PROCESSES", 2, 1, 16);
+  const expectedDeploymentProcesses = parseInteger("LUMERA_BOOKING_LOAD_EXPECTED_DEPLOYMENT_PROCESSES", apiProcesses, 1, 16);
+  if (apiProcesses !== expectedDeploymentProcesses) {
+    throw new Error(`Configured ${apiProcesses} load-test API processes do not match the documented deployment topology of ${expectedDeploymentProcesses}.`);
+  }
+  const poolMax = parseInteger("LUMERA_BOOKING_LOAD_POOL_MAX", 10, 4, 50);
+  const harnessPoolMax = parseInteger("LUMERA_BOOKING_LOAD_HARNESS_POOL_MAX", 10, 4, 20);
+  const connectionReserve = parseInteger("LUMERA_BOOKING_LOAD_CONNECTION_RESERVE", 5, 1, 100);
+  const connectionBudget = parseInteger("LUMERA_BOOKING_LOAD_DB_CONNECTION_BUDGET", 35, 10, 1_000);
+  const requiredConnections = apiProcesses * poolMax + harnessPoolMax + connectionReserve;
+  if (requiredConnections > connectionBudget) {
+    throw new Error(`Booking load requires ${requiredConnections} database connections (${apiProcesses}x${poolMax} API + ${harnessPoolMax} harness + ${connectionReserve} reserve), above the documented budget of ${connectionBudget}.`);
+  }
   const databaseName = `${prefix}${process.pid}_${randomUUID().replaceAll("-", "")}`;
   const ownerIdentity = await processIdentity(process.pid);
   if (!ownerIdentity) throw new Error("Could not identify booking-load harness process.");
   const manifest = path.join(state, `${databaseName}.json`); await mkdir(state, { recursive: true });
   await writeFile(`${manifest}.tmp`, JSON.stringify({ version: 1, databaseName, target: targetIdentity(base), ownerPid: process.pid, ownerIdentity }) + "\n", { flag: "wx" }); await rename(`${manifest}.tmp`, manifest);
-  const databaseUrl = testUrl(base, databaseName); let apiA: ChildProcess | undefined; let apiB: ChildProcess | undefined; let suite: ChildProcess | undefined; let interrupted = false;
-  const terminate = () => { interrupted = true; void Promise.all([stop(suite), stop(apiA), stop(apiB)]); };
+  const databaseUrl = testUrl(base, databaseName);
+  let apiChildren: ChildProcess[] = []; let suite: ChildProcess | undefined; let interrupted = false;
+  const terminate = () => { interrupted = true; void Promise.all([stop(suite), ...apiChildren.map((child) => stop(child))]); };
   process.once("SIGINT", terminate); process.once("SIGTERM", terminate);
   try {
     await run("createdb", ["--maintenance-db", base, databaseName], process.env);
     const environment = isolatedEnvironment(databaseUrl);
     await run("pnpm", ["--filter", "@workspace/db", "run", "push-force"], environment);
-    const [a, b] = await Promise.all([port(), port()]);
+    const ports = await Promise.all(Array.from({ length: apiProcesses }, () => port()));
     const start = (p: number, seed: boolean) => {
       const apiEnvironment: NodeJS.ProcessEnv = { ...environment, PORT: String(p), LOG_LEVEL: "error" };
       if (seed) apiEnvironment.LUMERA_TEST_SEED = "1";
@@ -105,12 +127,30 @@ async function main() {
     // Seed once before the second process starts. ensureDemoData caches only
     // in-process, so first-request seeding in both APIs would race on unique
     // demo catalog rows and turn half the booking traffic into unrelated 500s.
-    apiA = start(a, true);
-    await ready(`http://127.0.0.1:${a}`);
-    apiB = start(b, false);
-    await ready(`http://127.0.0.1:${b}`);
+    apiChildren.push(start(ports[0]!, true));
+    await ready(`http://127.0.0.1:${ports[0]}`);
+    for (const apiPort of ports.slice(1)) {
+      const child = start(apiPort, false);
+      apiChildren.push(child);
+      await ready(`http://127.0.0.1:${apiPort}`);
+    }
     if (interrupted) throw new Error("Booking load interrupted.");
-    suite = spawn(path.join(root, "scripts/node_modules/.bin/tsx"), [path.join(root, "scripts/src/booking-load-suite.ts")], { cwd: root, env: { ...environment, LUMERA_BOOKING_LOAD_URLS: `http://127.0.0.1:${a},http://127.0.0.1:${b}` }, detached: process.platform !== "win32", stdio: "inherit" });
+    suite = spawn(path.join(root, "scripts/node_modules/.bin/tsx"), [path.join(root, "scripts/src/booking-load-suite.ts")], {
+      cwd: root,
+      env: {
+        ...environment,
+        DB_POOL_MAX: String(harnessPoolMax),
+        LUMERA_BOOKING_LOAD_URLS: ports.map((apiPort) => `http://127.0.0.1:${apiPort}`).join(","),
+        LUMERA_BOOKING_LOAD_API_PROCESSES: String(apiProcesses),
+        LUMERA_BOOKING_LOAD_EXPECTED_DEPLOYMENT_PROCESSES: String(expectedDeploymentProcesses),
+        LUMERA_BOOKING_LOAD_API_POOL_MAX: String(poolMax),
+        LUMERA_BOOKING_LOAD_HARNESS_POOL_MAX: String(harnessPoolMax),
+        LUMERA_BOOKING_LOAD_CONNECTION_RESERVE: String(connectionReserve),
+        LUMERA_BOOKING_LOAD_DB_CONNECTION_BUDGET: String(connectionBudget),
+      },
+      detached: process.platform !== "win32",
+      stdio: "inherit",
+    });
     const suiteExitCode = await new Promise<number | null>((resolve) => suite!.once("exit", resolve));
     const expectFailure = process.env.LUMERA_BOOKING_LOAD_EXPECT_FAILURE === "1";
     if (expectFailure) {
@@ -136,7 +176,7 @@ async function main() {
       throw new Error("Booking load suite failed");
     }
   } finally {
-    await Promise.all([stop(suite), stop(apiA), stop(apiB)]);
+    await Promise.all([stop(suite), ...apiChildren.map((child) => stop(child))]);
     await run("dropdb", ["--force", "--if-exists", "--maintenance-db", base, databaseName], process.env);
     await unlink(manifest).catch(() => undefined);
     process.removeListener("SIGINT", terminate); process.removeListener("SIGTERM", terminate);
