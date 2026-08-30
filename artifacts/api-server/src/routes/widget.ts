@@ -38,7 +38,12 @@ import {
 import { getCurrentUser } from "../lib/auth";
 import { lockAppointmentResources } from "../lib/appointment-locks";
 import { enqueueBookingGroupConfirmationInTx } from "../lib/appointment-customer-events";
-import { bookingIdempotencyKey, executeBookingCommand, sendBookingCommandResult } from "../lib/booking-command";
+import {
+  bookingIdempotencyKey,
+  executeBookingCommand,
+  replayBookingCommand,
+  sendBookingCommandResult,
+} from "../lib/booking-command";
 
 const router: IRouter = Router();
 
@@ -104,6 +109,32 @@ function guardRate(req: Request, res: Response, slug: string, max: number): bool
   return false;
 }
 
+async function replayWidgetBookingCommand(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+  commandType: string,
+): Promise<void> {
+  const signedInUser = await getCurrentUser(req);
+  if (signedInUser?.role === "JOBSEEKER") {
+    res.status(403).json({ error: "JOBSEEKER nalozi ne mogu zakazivati termine." });
+    return;
+  }
+  const idempotencyKey = bookingIdempotencyKey(req, res); if (!idempotencyKey) return;
+  const phoneNormalized = typeof req.body?.phone === "string" ? normalizedPhone(req.body.phone) : null;
+  if (!phoneNormalized) { next(); return; }
+  const [salon] = await db.select({ id: salonsTable.id }).from(salonsTable)
+    .where(eq(salonsTable.slug, String(req.params.slug))).limit(1);
+  if (!salon) { next(); return; }
+  const actorId = createHash("sha256").update(phoneNormalized).digest("hex");
+  const replay = await replayBookingCommand({
+    salonId: salon.id, actorType: "widget", actorId, idempotencyKey,
+    commandType, payload: req.body,
+  });
+  if (replay) { sendBookingCommandResult(res, replay); return; }
+  next();
+}
+
 /** Widget-bookable salon: must exist, be active and verified. */
 async function widgetSalon(slug: string) {
   const [salon] = await db.select().from(salonsTable).where(and(
@@ -121,9 +152,9 @@ router.get("/widget/salons/:slug", async (req, res): Promise<void> => {
   const salon = await widgetSalon(slug);
   if (!salon) { res.status(404).json({ error: "Salon nije dostupan za online zakazivanje." }); return; }
   const services = await db.select().from(servicesTable).where(and(
-    eq(servicesTable.salonId, salon.id),
-    eq(servicesTable.active, true),
-  )).orderBy(asc(servicesTable.categoryName), asc(servicesTable.name));
+    eq(servicesTable.salonId, salon.id), eq(servicesTable.active, true),
+    inArray(servicesTable.id, treatments.map((item) => item.serviceId)),
+  ));
   const employees = await db.select({ employee: employeesTable }).from(employeeLocationAssignmentsTable)
     .innerJoin(employeesTable, eq(employeesTable.id, employeeLocationAssignmentsTable.employeeId))
     .where(and(
@@ -160,7 +191,7 @@ router.get("/widget/salons/:slug", async (req, res): Promise<void> => {
 router.get("/widget/salons/:slug/availability", async (req, res): Promise<void> => {
   const slug = String(req.params.slug);
   if (guardRate(req, res, slug, RATE_MAX_READS)) return;
-  const parsed = GetWidgetAvailabilityQueryParams.safeParse(req.query);
+  const parsed = CreateWidgetBookingGroupBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const { serviceId, date, employeeId } = parsed.data;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) !== date) {
@@ -188,7 +219,9 @@ router.get("/widget/salons/:slug/availability", async (req, res): Promise<void> 
   })));
 });
 
-router.post("/widget/salons/:slug/appointments", admitBookingRequest, async (req, res): Promise<void> => {
+router.post("/widget/salons/:slug/appointments", (req, res, next) =>
+  replayWidgetBookingCommand(req, res, next, "widget.appointment.create"),
+admitBookingRequest, async (req, res): Promise<void> => {
   const slug = String(req.params.slug);
   if (guardRate(req, res, slug, RATE_MAX_BOOKINGS)) return;
   const signedInUser = await getCurrentUser(req);
@@ -196,7 +229,7 @@ router.post("/widget/salons/:slug/appointments", admitBookingRequest, async (req
     res.status(403).json({ error: "JOBSEEKER nalozi ne mogu zakazivati termine." });
     return;
   }
-  const parsed = CreateWidgetAppointmentBody.safeParse(req.body);
+  const parsed = CreateWidgetBookingGroupBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const idempotencyKey = bookingIdempotencyKey(req, res); if (!idempotencyKey) return;
   const { serviceId, date, startTime } = parsed.data;
@@ -219,12 +252,8 @@ router.post("/widget/salons/:slug/appointments", admitBookingRequest, async (req
 
   const phoneNormalized = normalizedPhone(parsed.data.phone);
   if (!phoneNormalized) { res.status(400).json({ error: "Unesite važeći broj telefona." }); return; }
-
-  // Find-or-create the CRM contact by normalized phone (guest booking:
-  // appointments.customerId stays null, the salon_customers row carries identity).
   let [contact] = await db.select().from(salonCustomersTable).where(and(
-    eq(salonCustomersTable.salonId, salon.id),
-    eq(salonCustomersTable.phoneNormalized, phoneNormalized),
+    eq(salonCustomersTable.salonId, salon.id), eq(salonCustomersTable.phoneNormalized, phoneNormalized),
   )).limit(1);
   if (!contact) {
     const [registeredUser] = await db.select({ id: usersTable.id }).from(usersTable)
@@ -246,51 +275,124 @@ router.post("/widget/salons/:slug/appointments", admitBookingRequest, async (req
   if (!contact) { res.status(500).json({ error: "Kreiranje klijenta nije uspelo — pokušajte ponovo." }); return; }
 
   const price = service.promoPrice ?? service.price;
-  const actorId = createHash("sha256").update(phoneNormalized).digest("hex");
-  const command = await executeBookingCommand({
-    salonId: salon.id, actorType: "widget_guest", actorId, idempotencyKey,
-    commandType: "widget.appointment.create", payload: req.body,
-  }, async (tx) => {
-    const result = await createAllocatedAppointment({
-      salonId: salon.id,
-      customerId: null,
-      salonCustomerId: contact!.id,
-      serviceId: service.id,
-      date,
-      startTime,
-      endTime,
-      durationMinutes: service.durationMinutes,
-      price,
-      status: "pending",
-      notes: parsed.data.note?.trim() || null,
-      preferredEmployeeId: parsed.data.employeeId ?? null,
-      tx,
+    const actorId = createHash("sha256").update(phoneNormalized).digest("hex");
+    const command = await executeBookingCommand({
+      salonId: salon.id, actorType: "widget_guest", actorId, idempotencyKey,
+      commandType: "widget.booking-group.create", payload: req.body,
+    }, async (tx) => {
+      await lockAppointmentResources(tx, salon.id, treatments.map((item) => ({ date: item.date })));
+      const requirements: Array<Awaited<ReturnType<typeof fetchServiceResourceRequirements>>> = [];
+      const planned: Array<{ item: (typeof treatments)[number]; service: typeof servicesTable.$inferSelect; employeeId: string; endTime: string }> = [];
+      const reservedAppointments: Array<{ employeeId: string; date: string; startTime: string; endTime: string; bufferMinutes: number; resourceIds: string[] }> = [];
+      const resourceReservations: Array<{ resourceId: string; quantity: number; date: string; startTime: string; endTime: string; bufferMinutes: number }> = [];
+      for (const item of treatments) {
+        const service = byId.get(item.serviceId)!;
+        const endTime = appointmentEndTime(item.startTime, service.durationMinutes);
+        if (!endTime) throw new Error("INVALID_TIME");
+        const serviceRequirements = await fetchServiceResourceRequirements(tx, service.id);
+        requirements.push(serviceRequirements);
+        const slots = await canonicalAvailability({
+          salonId: salon.id, service, dates: [item.date], employeeId: item.employeeId ?? null, store: tx,
+          reservedAppointments, resourceReservations,
+        });
+        const slot = slots.find((candidate) => candidate.startTime === item.startTime && candidate.endTime === endTime);
+        if (!slot || planned.some((entry) => entry.item.date === item.date && entry.employeeId === slot.employeeId
+          && entry.item.startTime < endTime && entry.endTime > item.startTime)) throw new Error("STALE_SLOT");
+        planned.push({ item, service, employeeId: slot.employeeId, endTime });
+        reservedAppointments.push({
+          employeeId: slot.employeeId, date: item.date, startTime: item.startTime, endTime,
+          bufferMinutes: service.bufferMinutes, resourceIds: serviceRequirements.map((entry) => entry.resourceId),
+        });
+        resourceReservations.push(...serviceRequirements.map((entry) => ({
+          resourceId: entry.resourceId, quantity: entry.quantity, date: item.date, startTime: item.startTime,
+          endTime: appointmentEndTime(endTime, service.bufferMinutes)!, bufferMinutes: 0,
+        })));
+      }
+      const [settings] = await tx.select().from(salonBookingSettingsTable)
+        .where(eq(salonBookingSettingsTable.salonId, salon.id)).for("share").limit(1);
+      if (!bookingGroupLayoutValid(planned.map((entry, position) => ({
+        date: entry.item.date, startTime: entry.item.startTime, endTime: entry.endTime,
+        position,
+      })), settings?.maxVisitGapMinutes ?? 0)) throw new Error("INVALID_LAYOUT");
+      await lockAppointmentResources(tx, salon.id, planned.flatMap((entry, index) => [
+        { date: entry.item.date, employeeId: entry.employeeId },
+        ...requirements[index]!.map((requirement) => ({ date: entry.item.date, resourceId: requirement.resourceId })),
+      ]));
+      const revalidationAppointments: typeof reservedAppointments = [];
+      const revalidationResources: typeof resourceReservations = [];
+      for (let index = 0; index < planned.length; index += 1) {
+        const entry = planned[index]!;
+        const slots = await canonicalAvailability({
+          salonId: salon.id, service: entry.service, dates: [entry.item.date],
+          employeeId: entry.employeeId, store: tx,
+          reservedAppointments: revalidationAppointments, resourceReservations: revalidationResources,
+        });
+        if (!slots.some((slot) => slot.startTime === entry.item.startTime && slot.endTime === entry.endTime
+          && slot.employeeId === entry.employeeId)) throw new Error("STALE_SLOT");
+        revalidationAppointments.push({
+          employeeId: entry.employeeId, date: entry.item.date, startTime: entry.item.startTime, endTime: entry.endTime,
+          bufferMinutes: entry.service.bufferMinutes, resourceIds: requirements[index]!.map((item) => item.resourceId),
+        });
+        revalidationResources.push(...requirements[index]!.map((item) => ({
+          resourceId: item.resourceId, quantity: item.quantity, date: entry.item.date, startTime: entry.item.startTime,
+          endTime: appointmentEndTime(entry.endTime, entry.service.bufferMinutes)!, bufferMinutes: 0,
+        })));
+      }
+      const [group] = await tx.insert(bookingGroupsTable).values({
+        salonId: salon.id, customerId: null, salonCustomerId: contact!.id, createdByUserId: null,
+        notes: parsed.data.note?.trim() || null,
+      }).returning();
+      const appointments = [];
+      for (let position = 0; position < planned.length; position++) {
+        const entry = planned[position]!;
+        const [appointment] = await tx.insert(appointmentsTable).values({
+          salonId: salon.id, customerId: null, salonCustomerId: contact!.id, employeeId: entry.employeeId,
+          serviceId: entry.service.id, bookingGroupId: group!.id, date: entry.item.date,
+          startTime: entry.item.startTime, endTime: entry.endTime, durationMinutes: entry.service.durationMinutes,
+          price: entry.service.promoPrice ?? entry.service.price, status: "pending",
+          notes: parsed.data.note?.trim() || null, plannedDate: entry.item.date,
+          plannedStartTime: entry.item.startTime, plannedEndTime: entry.endTime,
+        }).returning();
+        await tx.insert(appointmentTreatmentsTable).values({
+          appointmentId: appointment!.id, serviceId: entry.service.id, employeeId: entry.employeeId,
+          position, durationMinutes: entry.service.durationMinutes, bufferMinutes: entry.service.bufferMinutes,
+          price: entry.service.promoPrice ?? entry.service.price,
+          plannedStartTime: entry.item.startTime, plannedEndTime: entry.endTime,
+        });
+        const bufferedEnd = appointmentEndTime(entry.endTime, entry.service.bufferMinutes);
+        if (!bufferedEnd) throw new Error("STALE_SLOT");
+        await allocateResourcesInTx(tx, salon.id, requirements[position]!, appointment!.id, entry.item.date,
+          entry.item.startTime, requirements[position]!.length ? bufferedEnd : entry.endTime);
+        const [employee] = await tx.select().from(employeesTable).where(eq(employeesTable.id, entry.employeeId)).limit(1);
+        appointments.push({ appointment: appointment!, employee: employee!, service: entry.service });
+      }
+      await tx.insert(salonNotificationsTable).values({
+        salonId: salon.id, title: "Nova grupna rezervacija sa sajta",
+        message: `${contact!.firstName} ${contact!.lastName} je preko widgeta zatražio/la ${appointments.length} tretmana.`,
+        href: "/vlasnik/termini",
+      });
+      const response = CreateWidgetBookingGroupResponse.parse({
+        id: group!.id, salonId: salon.id, createdAt: group!.createdAt,
+        appointments: appointments.map(({ appointment, employee, service }) => ({
+          id: appointment.id, salonId: salon.id, salonSlug: salon.slug, salonName: salon.name,
+          serviceId: service.id, customerName: `${contact!.firstName} ${contact!.lastName}`,
+          serviceName: service.name, employeeId: employee.id, employeeName: employee.name,
+          date: appointment.date, startTime: appointment.startTime, endTime: appointment.endTime,
+          durationMinutes: appointment.durationMinutes, price: appointment.price, treatmentLocation: "salon",
+          travelFee: 0, treatmentAddress: null, seriesId: null, bookingGroupId: group!.id,
+          status: appointment.status, notes: appointment.notes, allocatedResources: [],
+        })),
+      });
+       await enqueueBookingGroupConfirmationInTx(tx, group!.id);
+      return { status: 201, body: response };
     });
-    if (!result.appointment || !result.employee) {
-      return { status: 409, body: { error: "Izabrani termin više nije dostupan — izaberite drugi." } };
-    }
-    await tx.insert(salonNotificationsTable).values({
-      salonId: salon.id,
-      title: "Novi zahtev sa sajta",
-      message: `${contact!.firstName} ${contact!.lastName} je preko widgeta zatražio/la ${service.name} za ${date} u ${startTime}.`,
-      href: "/vlasnik/termini",
-    });
-    return { status: 201, body: {
-      appointmentId: result.appointment.id,
-      status: result.appointment.status,
-      date: result.appointment.date,
-      startTime: result.appointment.startTime,
-      endTime: result.appointment.endTime,
-      employeeName: result.employee.name,
-      serviceName: service.name,
-      salonName: salon.name,
-    } };
-  });
   if (!command.replayed && command.status === 201) await publishSalonNotificationUpdate(salon.id);
   sendBookingCommandResult(res, command);
 });
 
-router.post("/widget/salons/:slug/booking-groups", admitBookingRequest, async (req, res): Promise<void> => {
+router.post("/widget/salons/:slug/booking-groups", (req, res, next) =>
+  replayWidgetBookingCommand(req, res, next, "widget.booking-group.create"),
+admitBookingRequest, async (req, res): Promise<void> => {
   const slug = String(req.params.slug);
   if (guardRate(req, res, slug, RATE_MAX_BOOKINGS)) return;
   const signedInUser = await getCurrentUser(req);

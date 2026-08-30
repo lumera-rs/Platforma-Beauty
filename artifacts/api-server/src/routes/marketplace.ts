@@ -1,6 +1,6 @@
 import 
 {
- Router, type IRouter, type Request, type Response
+ Router, type IRouter, type NextFunction, type Request, type Response
 }
  from "express"
 ;
@@ -715,6 +715,7 @@ import {
   bookingIdempotencyKey,
   executeBookingCommand,
   findAuthenticatedBookingCommand,
+  replayBookingCommand,
   sendBookingCommandResult,
 } from "../lib/booking-command";
 import {
@@ -6679,6 +6680,56 @@ type StaffBookingGroupAccess = {
   employee: typeof employeesTable.$inferSelect | null;
 };
 
+async function replayCustomerBookingCommand(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+  commandType: string,
+): Promise<void> {
+  const user = await requireCustomer(req, res); if (!user) return;
+  const idempotencyKey = bookingIdempotencyKey(req, res); if (!idempotencyKey) return;
+  const salonId = typeof req.body?.salonId === "string" ? req.body.salonId : null;
+  if (!salonId) { next(); return; }
+  const replay = await replayBookingCommand({
+    salonId, actorType: "user", actorId: user.id, idempotencyKey,
+    commandType, payload: req.body,
+  });
+  if (replay) { sendBookingCommandResult(res, replay); return; }
+  next();
+}
+
+async function replayOwnerBookingCommand(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+  commandType: string,
+): Promise<void> {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const idempotencyKey = bookingIdempotencyKey(req, res); if (!idempotencyKey) return;
+  const replay = await replayBookingCommand({
+    salonId: access.salon.id, actorType: "user", actorId: access.user.id, idempotencyKey,
+    commandType, payload: req.body,
+  });
+  if (replay) { sendBookingCommandResult(res, replay); return; }
+  next();
+}
+
+async function replayEmployeeBookingCommand(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+  commandType: string,
+): Promise<void> {
+  const access = await requireSalonEmployee(req, res); if (!access) return;
+  const idempotencyKey = bookingIdempotencyKey(req, res); if (!idempotencyKey) return;
+  const replay = await replayBookingCommand({
+    salonId: access.salon.id, actorType: "user", actorId: access.user.id, idempotencyKey,
+    commandType, payload: req.body,
+  });
+  if (replay) { sendBookingCommandResult(res, replay); return; }
+  next();
+}
+
 async function createStaffBookingGroup(
   req: Request,
   res: Response,
@@ -6902,17 +6953,23 @@ async function createStaffBookingGroup(
   }
 }
 
-router.post("/salon/booking-groups", admitBookingRequest, async (req, res): Promise<void> => {
+router.post("/salon/booking-groups", (req, res, next) =>
+  replayOwnerBookingCommand(req, res, next, "salon.booking-group.create"),
+admitBookingRequest, async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   await createStaffBookingGroup(req, res, { ...access, employee: null });
 });
 
-router.post("/employee/booking-groups", admitBookingRequest, async (req, res): Promise<void> => {
+router.post("/employee/booking-groups", (req, res, next) =>
+  replayEmployeeBookingCommand(req, res, next, "employee.booking-group.create"),
+admitBookingRequest, async (req, res): Promise<void> => {
   const access = await requireSalonEmployee(req, res); if (!access) return;
   await createStaffBookingGroup(req, res, access);
 });
 
-router.post("/booking-groups", admitBookingRequest, async (req, res): Promise<void> => {
+router.post("/booking-groups", (req, res, next) =>
+  replayCustomerBookingCommand(req, res, next, "customer.booking-group.create"),
+admitBookingRequest, async (req, res): Promise<void> => {
   const user = await requireCustomer(req, res); if (!user) return;
   const idempotencyKey = bookingIdempotencyKey(req, res); if (!idempotencyKey) return;
   const parsed = CreateBookingGroupBody.safeParse(req.body);
@@ -7054,6 +7111,24 @@ router.get("/booking-commands/:idempotencyKey", async (req, res): Promise<void> 
   }
   const receipt = await findAuthenticatedBookingCommand({ actorId: user.id, salonId, idempotencyKey });
   if (!receipt) {
+    res.status(404).json({ error: "Ishod komande zakazivanja nije pronađen." });
+    return;
+  }
+  if (receipt.commandType.startsWith("customer.")) {
+    if (!await requireCustomer(req, res)) return;
+  } else if (receipt.commandType.startsWith("salon.")) {
+    const access = await requireSalonOwner(req, res); if (!access) return;
+    if (access.salon.id !== salonId) {
+      res.status(403).json({ error: "Nemate pristup ishodu ove komande." });
+      return;
+    }
+  } else if (receipt.commandType.startsWith("employee.")) {
+    const access = await requireSalonEmployee(req, res); if (!access) return;
+    if (access.salon.id !== salonId) {
+      res.status(403).json({ error: "Nemate pristup ishodu ove komande." });
+      return;
+    }
+  } else {
     res.status(404).json({ error: "Ishod komande zakazivanja nije pronađen." });
     return;
   }
@@ -7357,7 +7432,9 @@ router.post("/booking-groups/:bookingGroupId/cancel", async (req, res): Promise<
   }
 });
 
-router.post("/appointments", admitBookingRequest, async (req, res): Promise<void> => {
+router.post("/appointments", (req, res, next) =>
+  replayCustomerBookingCommand(req, res, next, "customer.appointment.create"),
+admitBookingRequest, async (req, res): Promise<void> => {
   const user = await requireCustomer(req, res); if (!user) return;
   const idempotencyKey = bookingIdempotencyKey(req, res); if (!idempotencyKey) return;
   const parsed = CreateAppointmentBody.safeParse(req.body);
@@ -8758,7 +8835,9 @@ router.patch("/salon/customers/:customerId", async (req, res): Promise<void> => 
   res.json(payload);
 });
 
-router.post("/salon/appointments", admitBookingRequest, async (req, res): Promise<void> => {
+router.post("/salon/appointments", (req, res, next) =>
+  replayOwnerBookingCommand(req, res, next, "salon.appointment.create"),
+admitBookingRequest, async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const idempotencyKey = bookingIdempotencyKey(req, res); if (!idempotencyKey) return;
   const parsed = CreateSalonAppointmentBody.safeParse(req.body);
@@ -8987,7 +9066,9 @@ router.post("/salon/package-appointments/preview", async (req, res): Promise<voi
   }
 });
 
-router.post("/salon/package-appointments", admitBookingRequest, async (req, res): Promise<void> => {
+router.post("/salon/package-appointments", (req, res, next) =>
+  replayOwnerBookingCommand(req, res, next, "salon.package-appointments.create"),
+admitBookingRequest, async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const idempotencyKey = bookingIdempotencyKey(req, res); if (!idempotencyKey) return;
   const parsed = CreateSalonPackageAppointmentsBody.safeParse(req.body);
@@ -9065,7 +9146,9 @@ router.post("/salon/package-appointments", admitBookingRequest, async (req, res)
   }
 });
 
-router.post("/salon/appointment-series", admitBookingRequest, async (req, res): Promise<void> => {
+router.post("/salon/appointment-series", (req, res, next) =>
+  replayOwnerBookingCommand(req, res, next, "salon.appointment-series.create"),
+admitBookingRequest, async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const idempotencyKey = bookingIdempotencyKey(req, res); if (!idempotencyKey) return;
   const parsed = CreateSalonAppointmentSeriesBody.safeParse(req.body);
@@ -10805,7 +10888,9 @@ router.post("/employee/appointment-series/preview", async (req, res): Promise<vo
   }
 });
 
-router.post("/employee/appointment-series", admitBookingRequest, async (req, res): Promise<void> => {
+router.post("/employee/appointment-series", (req, res, next) =>
+  replayEmployeeBookingCommand(req, res, next, "employee.appointment-series.create"),
+admitBookingRequest, async (req, res): Promise<void> => {
   const access = await requireSalonEmployee(req, res); if (!access) return;
   const idempotencyKey = bookingIdempotencyKey(req, res); if (!idempotencyKey) return;
   const parsed = CreateEmployeeAppointmentSeriesBody.safeParse(req.body);
@@ -10874,7 +10959,9 @@ router.post("/employee/appointment-series", admitBookingRequest, async (req, res
   }
 });
 
-router.post("/employee/appointments", admitBookingRequest, async (req, res): Promise<void> => {
+router.post("/employee/appointments", (req, res, next) =>
+  replayEmployeeBookingCommand(req, res, next, "employee.appointments.create"),
+admitBookingRequest, async (req, res): Promise<void> => {
   const access = await requireSalonEmployee(req, res); if (!access) return;
   const idempotencyKey = bookingIdempotencyKey(req, res); if (!idempotencyKey) return;
   const serviceId = typeof req.body?.serviceId === "string" ? req.body.serviceId : "";

@@ -106,3 +106,56 @@ test("isNetworkError identifies transport failures across module boundaries", ()
   }), true);
   assert.equal(isNetworkError(new Error("server error")), false);
 });
+
+test("employee booking commands retain one idempotency key through transport retry", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalSessionStorage = globalThis.sessionStorage;
+  const values = new Map<string, string>();
+  Object.defineProperty(globalThis, "sessionStorage", {
+    configurable: true,
+    value: {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); },
+      removeItem: (key: string) => { values.delete(key); },
+    },
+  });
+
+  try {
+    for (const path of ["/api/employee/appointments", "/api/employee/appointment-series"]) {
+      values.clear();
+      const seenKeys: string[] = [];
+      let attempt = 0;
+      globalThis.fetch = async (_input, init) => {
+        seenKeys.push(new Headers(init?.headers).get("idempotency-key") ?? "");
+        attempt += 1;
+        if (attempt === 1) throw new TypeError("connection reset after send");
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        });
+      };
+      const body = JSON.stringify({
+        serviceId: "service-1",
+        salonCustomerId: "customer-1",
+        slots: [{ date: "2099-12-20", startTime: "10:00" }],
+      });
+      await assert.rejects(() => customFetch(path, {
+        method: "POST", body, responseType: "json",
+      }), NetworkError);
+      await customFetch(path, { method: "POST", body, responseType: "json" });
+      assert.ok(seenKeys[0]);
+      assert.deepEqual(seenKeys, [seenKeys[0], seenKeys[0]]);
+      assert.equal(values.size, 0, "a successful replay retires the persisted command key");
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalSessionStorage === undefined) {
+      delete (globalThis as { sessionStorage?: Storage }).sessionStorage;
+    } else {
+      Object.defineProperty(globalThis, "sessionStorage", {
+        configurable: true,
+        value: originalSessionStorage,
+      });
+    }
+  }
+});

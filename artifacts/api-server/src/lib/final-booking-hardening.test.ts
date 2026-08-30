@@ -25,8 +25,9 @@ import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { lockAppointmentResources } from "./appointment-locks";
 import { ensureBookingCommandSchema } from "./booking-command-schema";
+import { bookingPayloadFingerprint } from "./booking-command";
 
-type HttpResult = { status: number; body: unknown };
+type HttpResult = { status: number; body: unknown; replayed: boolean };
 
 async function request(
   baseUrl: string,
@@ -55,7 +56,11 @@ async function request(
       responseBody = text;
     }
   }
-  return { status: response.status, body: responseBody };
+  return {
+    status: response.status,
+    body: responseBody,
+    replayed: response.headers.get("idempotency-replayed") === "true",
+  };
 }
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
@@ -90,6 +95,7 @@ async function run(): Promise<void> {
   ]).returning();
   await db.update(usersTable).set({ activeSalonId: salonA!.id }).where(eq(usersTable.id, ownerA!.id));
   await db.update(usersTable).set({ activeSalonId: salonB!.id }).where(eq(usersTable.id, ownerB!.id));
+  await db.update(salonsTable).set({ isVerified: true }).where(eq(salonsTable.id, salonA!.id));
   const [serviceA, serviceB] = await db.insert(servicesTable).values([
     { salonId: salonA!.id, categoryName: "QA", name: "Final service A", description: "QA", durationMinutes: 30, price: 1100, imageUrl: "/test.jpg" },
     { salonId: salonB!.id, categoryName: "QA", name: "Final service B", description: "QA", durationMinutes: 30, price: 2200, imageUrl: "/test.jpg" },
@@ -215,6 +221,31 @@ async function run(): Promise<void> {
     }, duplicateKey);
     assert.equal(reorderedReplay.status, 201, "recursive canonical object ordering must replay");
     assert.deepEqual(reorderedReplay.body, duplicateResults[0]!.body);
+    const pastPayload = customerBody("2020-01-02", "10:00");
+    const pastReceiptKey = `past-replay-${suffix}`;
+    await db.insert(bookingCommandReceiptsTable).values({
+      salonId: salonA!.id,
+      actorType: "user",
+      actorId: customerA!.id,
+      idempotencyKey: pastReceiptKey,
+      commandType: "customer.appointment.create",
+      payloadFingerprint: bookingPayloadFingerprint(pastPayload),
+      responseStatus: 201,
+      responseBody: duplicateResults[0]!.body,
+    });
+    const replayAfterDateRollover = await request(
+      baseUrl, customerASession, "/appointments", "POST", pastPayload, pastReceiptKey,
+    );
+    assert.equal(replayAfterDateRollover.status, 201,
+      "a receipt must replay after its original appointment date becomes past");
+    assert.equal(replayAfterDateRollover.replayed, true);
+    assert.deepEqual(replayAfterDateRollover.body, duplicateResults[0]!.body);
+    await db.update(usersTable).set({ role: "JOBSEEKER" }).where(eq(usersTable.id, customerA!.id));
+    assert.equal((await request(
+      baseUrl, customerASession, "/appointments", "POST",
+      customerBody("2099-12-07", "10:00"), duplicateKey,
+    )).status, 403, "role revocation must still deny a matching customer receipt");
+    await db.update(usersTable).set({ role: "CUSTOMER" }).where(eq(usersTable.id, customerA!.id));
     const changedPayload = await request(baseUrl, customerASession, "/appointments", "POST", {
       ...customerBody("2099-12-07", "10:30"),
     }, duplicateKey);
@@ -238,6 +269,38 @@ async function run(): Promise<void> {
       salonId: salonB!.id, serviceId: serviceB!.id, employeeId: employeeB!.id,
       date: "2099-12-07", startTime: "10:00",
     }, duplicateKey)).status, 201, "the same key must be independent for a different actor and tenant");
+
+    const widgetKey = `widget-replay-${suffix}`;
+    const widgetBody = {
+      firstName: "Widget", lastName: "Replay", phone: "+381611119955",
+      serviceId: serviceA!.id, employeeId: employeeA!.id,
+      date: "2099-12-21", startTime: "12:00",
+    };
+    const widgetCreated = await request(
+      baseUrl, "", `/widget/salons/${salonA!.slug}/appointments`,
+      "POST", widgetBody, widgetKey,
+    );
+    assert.equal(widgetCreated.status, 201);
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await request(
+        baseUrl, "", `/widget/salons/${salonA!.slug}/appointments`,
+        "POST", { phone: "+381611119955" }, `widget-rate-${attempt}-${suffix}`,
+      );
+    }
+    const widgetReplayUnderRateLimit = await request(
+      baseUrl, "", `/widget/salons/${salonA!.slug}/appointments`,
+      "POST", widgetBody, widgetKey,
+    );
+    assert.equal(widgetReplayUnderRateLimit.status, 201,
+      "a known widget replay must bypass saturated booking rate limits");
+    assert.equal(widgetReplayUnderRateLimit.replayed, true);
+    assert.deepEqual(widgetReplayUnderRateLimit.body, widgetCreated.body);
+    await db.update(usersTable).set({ role: "JOBSEEKER" }).where(eq(usersTable.id, customerA!.id));
+    assert.equal((await request(
+      baseUrl, customerASession, `/widget/salons/${salonA!.slug}/appointments`,
+      "POST", widgetBody, widgetKey,
+    )).status, 403, "JOBSEEKER role must deny a matching widget receipt");
+    await db.update(usersTable).set({ role: "CUSTOMER" }).where(eq(usersTable.id, customerA!.id));
 
     const groupBody = {
       salonId: salonA!.id,
@@ -302,6 +365,24 @@ async function run(): Promise<void> {
       request(baseUrl, customerASession, "/appointments", "POST", customerBody("2099-12-09", "11:00")),
     ]);
     assert.deepEqual(manualRace.map((item) => item.status).sort(), [201, 409]);
+    const ownerReplayKey = `owner-access-replay-${suffix}`;
+    const ownerReplayBody = {
+      serviceId: serviceA!.id, employeeId: employeeA!.id, salonCustomerId: contactA!.id,
+      date: "2099-12-19", startTime: "11:00",
+    };
+    const ownerCreated = await request(
+      baseUrl, ownerASession, "/salon/appointments", "POST", ownerReplayBody, ownerReplayKey,
+    );
+    assert.equal(ownerCreated.status, 201);
+    await db.update(salonsTable).set({ ownerId: ownerB!.id }).where(eq(salonsTable.id, salonA!.id));
+    assert.equal((await request(
+      baseUrl, ownerASession, "/salon/appointments", "POST", ownerReplayBody, ownerReplayKey,
+    )).status, 403, "ownership removal must deny a matching owner receipt");
+    assert.equal((await request(
+      baseUrl, ownerASession,
+      `/booking-commands/${encodeURIComponent(ownerReplayKey)}?salonId=${salonA!.id}`, "GET",
+    )).status, 403, "ownership removal must deny receipt reconciliation");
+    await db.update(salonsTable).set({ ownerId: ownerA!.id }).where(eq(salonsTable.id, salonA!.id));
 
     // IDs are always re-derived under the authenticated salon/customer tenant;
     // deliberately mixed valid IDs must not be accepted.

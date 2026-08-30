@@ -36,6 +36,7 @@ import {
   getGetEmployeeClockQueryKey,
   getApiErrorDetails,
   getApiErrorMessage,
+  customFetch,
   getListEmployeeAppointmentTreatmentPhotosQueryKey,
   getListEmployeeShiftSwapsQueryKey,
   useCancelEmployeeShiftSwap,
@@ -192,14 +193,19 @@ function AppointmentDayButton({ day, modifiers, className, ...props }: Component
 }
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
-    credentials: "include",
-    ...init,
-    headers: { "content-type": "application/json", ...init?.headers },
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error ?? "Radnja nije uspela.");
-  return body as T;
+  try {
+    return await customFetch<T>(url, {
+      credentials: "include",
+      responseType: "json",
+      ...init,
+      headers: { "content-type": "application/json", ...init?.headers },
+    });
+  } catch (error) {
+    throw new Error(getApiErrorMessage(
+      error,
+      error instanceof Error ? error.message : "Radnja nije uspela.",
+    ));
+  }
 }
 
 export function EmployeePasswordChange() {

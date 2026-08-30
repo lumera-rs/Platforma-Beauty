@@ -61,6 +61,29 @@ export type BookingCommandResult<T = unknown> = {
   replayed: boolean;
 };
 
+export async function replayBookingCommand(
+  scope: BookingCommandScope,
+): Promise<BookingCommandResult | null> {
+  const [existing] = await db.select().from(bookingCommandReceiptsTable).where(and(
+    eq(bookingCommandReceiptsTable.salonId, scope.salonId),
+    eq(bookingCommandReceiptsTable.actorType, scope.actorType),
+    eq(bookingCommandReceiptsTable.actorId, scope.actorId),
+    eq(bookingCommandReceiptsTable.idempotencyKey, scope.idempotencyKey),
+  )).limit(1);
+  if (!existing) return null;
+  if (
+    existing.payloadFingerprint !== bookingPayloadFingerprint(scope.payload)
+    || existing.commandType !== scope.commandType
+  ) {
+    return { status: 409, body: IDEMPOTENCY_MISMATCH_BODY, replayed: false };
+  }
+  return {
+    status: existing.responseStatus,
+    body: existing.responseBody,
+    replayed: true,
+  };
+}
+
 /**
  * Serializes one scoped key, replays a terminal receipt, or runs mutation and
  * receipt insertion in the same database transaction.
