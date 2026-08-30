@@ -217,6 +217,59 @@ async function mockAvailability(route: Route, fixture: BookingFixture) {
   });
 }
 
+async function mockFirstAvailable(route: Route, fixture: BookingFixture) {
+  await route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      salonId: fixture.salonId,
+      generatedAt: new Date().toISOString(),
+      services: [{
+        serviceId: fixture.serviceIds[0],
+        date: futureDate(2),
+        startTime: "09:00",
+        employeeId: fixture.employeeIds[0],
+        employeeName: fixture.employeeNames[0],
+      }],
+    }),
+  });
+}
+
+async function mockQuickAvailability(route: Route, fixture: BookingFixture, candidates?: Candidate[]) {
+  const body = route.request().postDataJSON() as {
+    treatments: Array<{ serviceId: string; employeeId?: string | null }>;
+    fromDate: string;
+    toDate: string;
+  };
+  if (body.fromDate !== body.toDate) {
+    await mockAvailability(route, fixture);
+    return;
+  }
+  expect(body).toMatchObject({
+    treatments: [{ serviceId: fixture.serviceIds[0], employeeId: fixture.employeeIds[0] }],
+    fromDate: futureDate(2),
+    toDate: futureDate(2),
+  });
+  await route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      candidates: candidates ?? [{
+        date: futureDate(2),
+        startTime: "09:00",
+        treatments: [{
+          serviceId: fixture.serviceIds[0],
+          employeeId: fixture.employeeIds[0],
+          date: futureDate(2),
+          startTime: "09:00",
+          endTime: "09:30",
+        }],
+      }],
+      calendarDays: [],
+    }),
+  });
+}
+
 async function addServices(page: Page, fixture: BookingFixture, count = 2) {
   for (const serviceId of fixture.serviceIds.slice(0, count)) {
     await page.getByTestId(`salon-service-${serviceId}`).click();
@@ -518,6 +571,205 @@ test("booking conflict refreshes grouped availability and requires a new candida
     await expect.poll(() => availabilityCalls).toBeGreaterThan(1);
     await expect(widget.getByRole("button", { name: "Zakaži" })).toBeDisabled();
     await expect(candidate).toHaveAttribute("aria-pressed", "false");
+  } finally {
+    await cleanUpFixture(fixture);
+  }
+});
+
+test("quick booking revalidates the displayed slot and waits for explicit confirmation", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const fixture = await createBookingFixture();
+  let bookingCalls = 0;
+  try {
+    await signIn(page, fixture);
+    await page.route(`**/api/salons/${fixture.salonId}/first-available`, (route) => mockFirstAvailable(route, fixture));
+    await page.route(`**/api/salons/${fixture.salonId}/grouped-availability`, (route) => mockQuickAvailability(route, fixture));
+    await page.route("**/api/booking-groups", async (route) => {
+      bookingCalls += 1;
+      const body = route.request().postDataJSON();
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: randomUUID(),
+          salonId: fixture.salonId,
+          createdAt: new Date().toISOString(),
+          appointments: [{
+            id: randomUUID(),
+            bookingGroupId: randomUUID(),
+            salonId: fixture.salonId,
+            serviceId: fixture.serviceIds[0],
+            serviceName: fixture.serviceNames[0],
+            employeeId: fixture.employeeIds[0],
+            employeeName: fixture.employeeNames[0],
+            date: futureDate(2),
+            startTime: "09:00",
+            endTime: "09:30",
+            status: "confirmed",
+            price: 1200,
+          }],
+          request: body,
+        }),
+      });
+    });
+    await page.goto(fixture.salonPath);
+    await page.getByTestId(`salon-service-${fixture.serviceIds[0]}`).getByRole("button", { name: "Brzo zakaži" }).click();
+
+    const confirmation = page.locator("#booking-widget").getByTestId("quick-book-confirmation");
+    await expect(confirmation).toBeVisible();
+    await expect(confirmation).toContainText(fixture.serviceNames[0]);
+    await expect(confirmation).toContainText(fixture.employeeNames[0]);
+    await expect(page.locator("#booking-widget").getByLabel(/Korak 2: ZAPOSLENI/)).toHaveCount(0);
+    expect(bookingCalls).toBe(0);
+
+    await confirmation.getByRole("button", { name: "Potvrdi zakazivanje" }).click();
+    await expect.poll(() => bookingCalls).toBe(1);
+    await expect(page.locator("#booking-widget").getByRole("heading", { name: "Termin potvrđen" })).toBeVisible();
+  } finally {
+    await cleanUpFixture(fixture);
+  }
+});
+
+test("quick booking missing slot opens the standard datetime step", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const fixture = await createBookingFixture();
+  try {
+    await signIn(page, fixture);
+    await page.route(`**/api/salons/${fixture.salonId}/first-available`, (route) => mockFirstAvailable(route, fixture));
+    await page.route(`**/api/salons/${fixture.salonId}/grouped-availability`, (route) => mockQuickAvailability(route, fixture, []));
+    await page.goto(fixture.salonPath);
+    await page.getByTestId(`salon-service-${fixture.serviceIds[0]}`).getByRole("button", { name: "Brzo zakaži" }).click();
+    const widget = page.locator("#booking-widget");
+    await expect(widget.getByLabel("Korak 3: TERMIN")).toHaveAttribute("aria-current", "step");
+    await expect(widget.getByRole("heading", { name: "Datum i vreme" })).toBeVisible();
+  } finally {
+    await cleanUpFixture(fixture);
+  }
+});
+
+test("quick booking 409 refreshes availability and falls back to datetime selection", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const fixture = await createBookingFixture();
+  let availabilityCalls = 0;
+  try {
+    await signIn(page, fixture);
+    await page.route(`**/api/salons/${fixture.salonId}/first-available`, (route) => mockFirstAvailable(route, fixture));
+    await page.route(`**/api/salons/${fixture.salonId}/grouped-availability`, async (route) => {
+      availabilityCalls += 1;
+      await mockQuickAvailability(route, fixture);
+    });
+    await page.route("**/api/booking-groups", (route) => route.fulfill({
+      status: 409,
+      contentType: "application/json",
+      body: JSON.stringify({ code: "BOOKING_GROUP_CONFLICT", error: "Termin više nije slobodan." }),
+    }));
+    await page.goto(fixture.salonPath);
+    await page.getByTestId(`salon-service-${fixture.serviceIds[0]}`).getByRole("button", { name: "Brzo zakaži" }).click();
+    const widget = page.locator("#booking-widget");
+    await widget.getByRole("button", { name: "Potvrdi zakazivanje" }).click();
+    await expect(widget.getByLabel("Korak 3: TERMIN")).toHaveAttribute("aria-current", "step");
+    await expect(page.getByText("Osvežili smo dostupne rasporede. Izaberite drugi.")).toBeVisible();
+    await expect.poll(() => availabilityCalls).toBeGreaterThan(1);
+  } finally {
+    await cleanUpFixture(fixture);
+  }
+});
+
+test("quick booking sends a guest to sign in only after confirmation", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const fixture = await createBookingFixture();
+  let bookingCalls = 0;
+  try {
+    await page.route(`**/api/salons/${fixture.salonId}/first-available`, (route) => mockFirstAvailable(route, fixture));
+    await page.route(`**/api/salons/${fixture.salonId}/grouped-availability`, (route) => mockQuickAvailability(route, fixture));
+    await page.route("**/api/booking-groups", (route) => {
+      bookingCalls += 1;
+      return route.abort();
+    });
+    await page.goto(fixture.salonPath);
+    await page.getByTestId(`salon-service-${fixture.serviceIds[0]}`).getByRole("button", { name: "Brzo zakaži" }).click();
+    const confirmation = page.locator("#booking-widget").getByTestId("quick-book-confirmation");
+    await expect(confirmation).toBeVisible();
+    expect(bookingCalls).toBe(0);
+    await confirmation.getByRole("button", { name: "Prijavite se za potvrdu" }).click();
+    await expect(page).toHaveURL(/\/prijava\?returnTo=/);
+    expect(bookingCalls).toBe(0);
+  } finally {
+    await cleanUpFixture(fixture);
+  }
+});
+
+test("390x844 quick booking confirmation has no horizontal overflow and can return to full scheduling", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const fixture = await createBookingFixture();
+  try {
+    await signIn(page, fixture);
+    await page.route(`**/api/salons/${fixture.salonId}/first-available`, (route) => mockFirstAvailable(route, fixture));
+    await page.route(`**/api/salons/${fixture.salonId}/grouped-availability`, (route) => mockQuickAvailability(route, fixture));
+    await page.goto(fixture.salonPath);
+    await page.getByTestId(`salon-service-${fixture.serviceIds[0]}`).getByRole("button", { name: "Brzo zakaži" }).click();
+    const drawer = page.getByRole("dialog", { name: "Zakažite termin" });
+    const confirmation = drawer.getByTestId("quick-book-confirmation");
+    await expect(confirmation).toBeVisible();
+    expect(await drawer.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await confirmation.getByRole("button", { name: "Izaberi drugi termin" }).click();
+    await expect(drawer.getByLabel("Korak 3: TERMIN")).toHaveAttribute("aria-current", "step");
+  } finally {
+    await cleanUpFixture(fixture);
+  }
+});
+
+test("quick booking keeps an existing grouped cart intact through fallback", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const fixture = await createBookingFixture();
+  try {
+    await signIn(page, fixture);
+    await page.route(`**/api/salons/${fixture.salonId}/first-available`, (route) => mockFirstAvailable(route, fixture));
+    await page.route(`**/api/salons/${fixture.salonId}/grouped-availability`, (route) => mockQuickAvailability(route, fixture));
+    await page.goto(fixture.salonPath);
+    await addServices(page, fixture);
+    const widget = page.locator("#booking-widget");
+    await expect(widget.locator('[data-testid^="booking-cart-item-"]')).toHaveCount(2);
+
+    await page.getByTestId(`salon-service-${fixture.serviceIds[0]}`).getByRole("button", { name: "Brzo zakaži" }).click();
+    const confirmation = widget.getByTestId("quick-book-confirmation");
+    await expect(confirmation).toBeVisible();
+    await confirmation.getByRole("button", { name: "Izaberi drugi termin" }).click();
+    await expect(widget.getByLabel("Korak 3: TERMIN")).toHaveAttribute("aria-current", "step");
+    await widget.getByRole("button", { name: "Moja korpa" }).click();
+
+    await expect(widget.getByRole("heading", { name: "Vaša korpa" })).toBeVisible();
+    await expect(widget.locator('[data-testid^="booking-cart-item-"]')).toHaveCount(2);
+    await expect(widget.getByTestId("booking-cart-item-0")).toContainText(fixture.serviceNames[0]);
+    await expect(widget.getByTestId("booking-cart-item-1")).toContainText(fixture.serviceNames[1]);
+  } finally {
+    await cleanUpFixture(fixture);
+  }
+});
+
+test("guest standard wizard never collapses a grouped booking into quick sign-in state", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const fixture = await createBookingFixture();
+  let bookingTreatments: Array<{ serviceId: string }> = [];
+  try {
+    await page.route(`**/api/salons/${fixture.salonId}/grouped-availability`, (route) => mockAvailability(route, fixture));
+    await page.route("**/api/booking-groups", async (route) => {
+      bookingTreatments = route.request().postDataJSON().treatments;
+      await route.fulfill({
+        status: 401,
+        contentType: "application/json",
+        body: JSON.stringify({ code: "UNAUTHORIZED", error: "Prijava je obavezna." }),
+      });
+    });
+    const widget = await openDesktopBooking(page, fixture);
+    await reachAvailability(widget, fixture);
+    await widget.getByTestId("booking-view-list").click();
+    await widget.getByLabel(`Izaberi raspored ${candidatesFor(fixture)[0]!.date} u 09:00`).click();
+    await widget.getByRole("button", { name: "Zakaži" }).click();
+
+    await expect.poll(() => bookingTreatments.map((item) => item.serviceId)).toEqual(fixture.serviceIds);
+    await expect(page).toHaveURL(fixture.salonPath);
+    await expect(widget.getByTestId("quick-book-confirmation")).toHaveCount(0);
   } finally {
     await cleanUpFixture(fixture);
   }

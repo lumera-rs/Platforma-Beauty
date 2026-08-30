@@ -39,12 +39,38 @@ export interface BookingWidgetProps {
   className?: string;
   onCloseMobile?: () => void;
   scrollContainerRef?: RefObject<HTMLDivElement | null>;
+  surface: "desktop" | "mobile";
+  quickBookCandidate?: {
+    serviceId: string;
+    employeeId: string;
+    date: string;
+    startTime: string;
+    surface: "desktop" | "mobile";
+  } | null;
+  onQuickBookConsumed?: () => void;
+  onRequireSignIn?: (candidate: {
+    serviceId: string;
+    employeeId: string;
+    date: string;
+    startTime: string;
+  }) => void;
 }
 
 export function BookingWidget(props: BookingWidgetProps) {
   const queryClient = useQueryClient();
-  const [step, setStep] = useState<"CART" | "EMPLOYEE" | "DATETIME" | "SUCCESS">("CART");
-  const { cart, setCart } = props;
+  const [step, setStep] = useState<"CART" | "EMPLOYEE" | "DATETIME" | "QUICK_CONFIRM" | "SUCCESS">("CART");
+  const [quickFlowCart, setQuickFlowCart] = useState<GroupedTreatmentRequest[] | null>(null);
+  const cart = quickFlowCart ?? props.cart;
+  const setCart: Dispatch<SetStateAction<GroupedTreatmentRequest[]>> = (next) => {
+    if (quickFlowCart !== null) {
+      setQuickFlowCart((current) => {
+        const active = current ?? [];
+        return typeof next === "function" ? next(active) : next;
+      });
+      return;
+    }
+    props.setCart(next);
+  };
 
   const todayDate = formatLocalDateOnly(startOfToday())!;
   const defaultToDate = formatLocalDateOnly(addDays(startOfToday(), 13))!;
@@ -69,6 +95,68 @@ export function BookingWidget(props: BookingWidgetProps) {
   const [availabilityResponse, setAvailabilityResponse] = useState<any>(null);
   const [viewMode, setViewMode] = useAvailabilityViewMode();
   const latestRequestRef = useRef(0);
+
+  useEffect(() => {
+    const quick = props.quickBookCandidate;
+    if (!quick || quick.surface !== props.surface) return;
+
+    const currentId = ++latestRequestRef.current;
+    availabilityMutation.mutate({
+      salonId: props.salon.id,
+      data: {
+        treatments: [{ serviceId: quick.serviceId, employeeId: quick.employeeId }],
+        fromDate: quick.date,
+        toDate: quick.date,
+        allowMultipleDays: false,
+        resultMode: "list",
+      },
+    }, {
+      onSuccess: (data) => {
+        if (latestRequestRef.current !== currentId) return;
+        const candidate = (data.candidates ?? []).find((item) =>
+          item.date === quick.date
+          && item.startTime === quick.startTime
+          && item.treatments.length === 1
+          && item.treatments[0]?.serviceId === quick.serviceId
+          && item.treatments[0]?.employeeId === quick.employeeId
+          && item.treatments[0]?.date === quick.date
+          && item.treatments[0]?.startTime === quick.startTime
+        );
+        props.onQuickBookConsumed?.();
+        if (candidate) {
+          setQuickFlowCart([{ serviceId: quick.serviceId, employeeId: quick.employeeId }]);
+          setSelectedCandidate(candidate);
+          setStep("QUICK_CONFIRM");
+          return;
+        }
+
+        setQuickFlowCart([{ serviceId: quick.serviceId, employeeId: quick.employeeId }]);
+        setFromDate(quick.date);
+        setToDate(formatLocalDateOnly(addDays(parseLocalDateOnly(quick.date)!, 13))!);
+        setAvailabilityResponse(null);
+        setSelectedCandidate(null);
+        setStep("DATETIME");
+        toast.error("Termin više nije dostupan", {
+          description: "Prikazaćemo vam nove slobodne termine za istu uslugu.",
+        });
+      },
+      onError: () => {
+        if (latestRequestRef.current !== currentId) return;
+        props.onQuickBookConsumed?.();
+        setQuickFlowCart([{ serviceId: quick.serviceId, employeeId: quick.employeeId }]);
+        setFromDate(quick.date);
+        setToDate(formatLocalDateOnly(addDays(parseLocalDateOnly(quick.date)!, 13))!);
+        setAvailabilityResponse(null);
+        setSelectedCandidate(null);
+        setStep("DATETIME");
+        toast.error("Termin nije moguće proveriti", {
+          description: "Izaberite jedan od trenutno dostupnih termina.",
+        });
+      },
+    });
+  // Candidate identity is intentionally the trigger; callbacks are owned by the page.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.quickBookCandidate]);
 
   const refetchAvailability = (mode = viewMode, multipleDays = allowMultipleDays) => {
     const parsedFrom = parseLocalDateOnly(fromDate);
@@ -139,6 +227,22 @@ export function BookingWidget(props: BookingWidgetProps) {
       onError: (err: any) => {
         const { status } = getApiErrorDetails(err);
         if (status === 409) {
+          const conflictedTreatment = selectedCandidate?.treatments[0];
+          if (step === "QUICK_CONFIRM" && conflictedTreatment) {
+            setQuickFlowCart([{
+              serviceId: conflictedTreatment.serviceId,
+              employeeId: conflictedTreatment.employeeId,
+            }]);
+            setFromDate(conflictedTreatment.date);
+            setToDate(formatLocalDateOnly(addDays(parseLocalDateOnly(conflictedTreatment.date)!, 13))!);
+            setAvailabilityResponse(null);
+            setSelectedCandidate(null);
+            setStep("DATETIME");
+            toast.error("Termin više nije slobodan", {
+              description: "Osvežili smo dostupne rasporede. Izaberite drugi.",
+            });
+            return;
+          }
           setSelectedCandidate(null);
           refetchAvailability();
           toast.error("Termin više nije slobodan", {
@@ -153,6 +257,18 @@ export function BookingWidget(props: BookingWidgetProps) {
 
   const handleBook = () => {
     if (!selectedCandidate) return;
+    if (!props.user && step === "QUICK_CONFIRM") {
+      const treatment = selectedCandidate.treatments[0];
+      if (treatment?.employeeId) {
+        props.onRequireSignIn?.({
+          serviceId: treatment.serviceId,
+          employeeId: treatment.employeeId,
+          date: treatment.date,
+          startTime: treatment.startTime,
+        });
+      }
+      return;
+    }
     createMutation.mutate({
       data: {
         salonId: props.salon.id,
@@ -168,7 +284,11 @@ export function BookingWidget(props: BookingWidgetProps) {
   };
 
   const resetFlow = () => {
-    setCart([]);
+    if (quickFlowCart !== null) {
+      setQuickFlowCart(null);
+    } else {
+      props.setCart([]);
+    }
     setSelectedCandidate(null);
     setCompletedAppointments([]);
     setStep("CART");
@@ -268,7 +388,70 @@ export function BookingWidget(props: BookingWidgetProps) {
     <Card className={`flex flex-col h-full bg-card border-none sm:border-solid sm:rounded-3xl shadow-none sm:shadow-xl ${props.className || ''}`}>
       <div className="flex-1 overflow-y-auto custom-scrollbar relative">
         <div className="p-4 sm:p-6 pb-24 min-h-full flex flex-col">
-          <ProgressIndicator />
+          {step !== "QUICK_CONFIRM" && <ProgressIndicator />}
+
+          {step === "QUICK_CONFIRM" && selectedCandidate && (() => {
+            const treatment = selectedCandidate.treatments[0]!;
+            const service = props.salon.services.find((item) => item.id === treatment.serviceId);
+            const employee = props.salon.staff.find((item) => item.id === treatment.employeeId);
+            return (
+              <div data-testid="quick-book-confirmation" className="flex min-w-0 flex-1 flex-col animate-in fade-in zoom-in-95 duration-300">
+                <div className="mb-6">
+                  <Badge className="mb-3">Brzo zakazivanje</Badge>
+                  <h2 className="text-2xl font-serif font-bold text-foreground">Potvrdite termin</h2>
+                  <p className="mt-2 text-sm text-muted-foreground">Proverili smo da je prikazani termin još uvek slobodan.</p>
+                </div>
+                <div className="min-w-0 space-y-4 rounded-2xl border bg-secondary/20 p-4 sm:p-5">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Usluga</p>
+                    <p className="mt-1 break-words font-serif text-lg font-bold">{service?.name}</p>
+                  </div>
+                  <div className="grid min-w-0 grid-cols-1 gap-4 border-t pt-4 sm:grid-cols-2">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Zaposleni</p>
+                      <p className="mt-1 break-words font-semibold">{employee?.name}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Termin</p>
+                      <p className="mt-1 font-semibold">{format(parseISO(treatment.date), "dd. MMMM yyyy.", { locale: srLatn })}</p>
+                      <p className="text-primary font-bold">{treatment.startTime}–{treatment.endTime}</p>
+                    </div>
+                  </div>
+                  <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-t pt-4">
+                    <span className="text-sm text-muted-foreground"><Clock className="mr-1 inline h-4 w-4" />{service?.durationMinutes} min</span>
+                    <span className="text-xl font-bold text-primary">{service?.promoPrice ?? service?.price} RSD</span>
+                  </div>
+                </div>
+                <div className="mt-auto flex min-w-0 flex-col-reverse gap-3 pt-8 sm:flex-row">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="sm:w-1/3"
+                    onClick={() => {
+                      setQuickFlowCart([{ serviceId: treatment.serviceId, employeeId: treatment.employeeId }]);
+                      setFromDate(treatment.date);
+                      setToDate(formatLocalDateOnly(addDays(parseLocalDateOnly(treatment.date)!, 13))!);
+                      setAvailabilityResponse(null);
+                      setSelectedCandidate(null);
+                      setStep("DATETIME");
+                    }}
+                  >
+                    Izaberi drugi termin
+                  </Button>
+                  <Button
+                    type="button"
+                    data-testid="quick-book-submit"
+                    className="min-w-0 flex-1 font-bold shadow-md"
+                    disabled={createMutation.isPending}
+                    onClick={handleBook}
+                  >
+                    {createMutation.isPending && <Loader2 className="mr-2 h-5 w-5 animate-spin" />}
+                    {props.user ? "Potvrdi zakazivanje" : "Prijavite se za potvrdu"}
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
 
           {step === "CART" && (
             <div className="animate-in fade-in slide-in-from-right-4 duration-400">
@@ -452,7 +635,22 @@ export function BookingWidget(props: BookingWidgetProps) {
               />
 
               <div className="flex gap-3 mt-8 pt-6 border-t bg-card sticky bottom-0 z-10 pb-4">
-                <Button variant="secondary" className="w-1/3 font-medium" onClick={() => setStep("EMPLOYEE")}>Nazad</Button>
+                <Button
+                  variant="secondary"
+                  className="w-1/3 font-medium"
+                  onClick={() => {
+                    if (quickFlowCart !== null) {
+                      setQuickFlowCart(null);
+                      setAvailabilityResponse(null);
+                      setSelectedCandidate(null);
+                      setStep("CART");
+                      return;
+                    }
+                    setStep("EMPLOYEE");
+                  }}
+                >
+                  {quickFlowCart !== null ? "Moja korpa" : "Nazad"}
+                </Button>
                 <Button className="flex-1 font-bold shadow-md" disabled={!selectedCandidate || createMutation.isPending} onClick={handleBook}>
                   {createMutation.isPending ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : "Zakaži"}
                 </Button>

@@ -131,11 +131,12 @@ export default function SalonProfile() {
   const [activeSection, setActiveSection] = useState("services");
   const [expandedServiceId, setExpandedServiceId] = useState<string | null>(null);
 
-  const [quickBookTarget, setQuickBookTarget] = useState<{
+  const [pendingQuickBook, setPendingQuickBook] = useState<{
     serviceId: string;
     date: string;
     startTime: string;
-    employeeId: string | null;
+    employeeId: string;
+    surface: "desktop" | "mobile";
   } | null>(null);
 
   const dateStr = format(selectedDate, 'yyyy-MM-dd');
@@ -320,6 +321,19 @@ export default function SalonProfile() {
       : matchingDraft?.employeeSelection === "any"
         ? "any"
         : null;
+    if (hasValidRequestedSlot && requestedStartTime && validEmployeeId) {
+      const surface = window.innerWidth < 1024 ? "mobile" : "desktop";
+      setPendingQuickBook({
+        serviceId,
+        date: requestedDate!,
+        startTime: requestedStartTime,
+        employeeId: validEmployeeId,
+        surface,
+      });
+      if (surface === "mobile") setIsMobileDrawerOpen(true);
+      restoredSelection.current = key;
+      return;
+    }
     setSelectedService(serviceId);
     setBookingCart(current => matchingDraft && current.some((item) => item.serviceId === serviceId)
       ? current
@@ -330,9 +344,6 @@ export default function SalonProfile() {
     setSelectedSlot(null);
     setBookingStep(3);
     setHasInteractedWithEmployee(restoredEmployeeSelection === "any" || !!validEmployeeId);
-    if (hasValidRequestedSlot && requestedStartTime && validEmployeeId) {
-      setQuickBookTarget({ serviceId, date: requestedDate!, startTime: requestedStartTime, employeeId: validEmployeeId });
-    }
     restoredSelection.current = key;
     if (requestedServiceId) {
       window.setTimeout(() => document.getElementById("booking-widget")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
@@ -354,27 +365,6 @@ export default function SalonProfile() {
   useEffect(() => {
     if (selectedEmployee) setHasInteractedWithEmployee(true);
   }, [selectedEmployee]);
-
-  // Handle Quick Book resolution
-  useEffect(() => {
-    if (quickBookTarget && !isLoadingAvailability && salonData) {
-      if (selectedService === quickBookTarget.serviceId && dateStr === quickBookTarget.date) {
-        const matchingSlot = availability?.find(s =>
-          s.start === quickBookTarget.startTime &&
-          (!quickBookTarget.employeeId || s.employeeId === quickBookTarget.employeeId)
-        );
-        if (matchingSlot) {
-          setSelectedSlot(matchingSlot);
-          setBookingStep(4);
-        } else {
-          toast.error("Termin više nije dostupan", { description: "Neko drugi je upravo rezervisao ovaj termin. Molimo izaberite drugi." });
-          setSelectedSlot(null);
-          setBookingStep(3);
-        }
-        setQuickBookTarget(null);
-      }
-    }
-  }, [availability, isLoadingAvailability, quickBookTarget, selectedService, dateStr, toast, salonData]);
 
   const selectEmployee = (employeeId: string | null) => {
     setSelectedEmployee(employeeId);
@@ -525,20 +515,16 @@ export default function SalonProfile() {
   };
 
   const handleQuickBook = (serviceId: string, slot: FirstAvailableServiceSlot) => {
-    if (!slot.date || !slot.startTime) return;
-    const targetDate = parseISO(slot.date);
-    setSelectedService(serviceId);
-    setBookingCart(current => current.length < 5 ? [...current, { serviceId }] : current);
-    selectEmployee(slot.employeeId);
-    setSelectedDate(isValid(targetDate) ? targetDate : new Date());
-    setQuickBookTarget({
+    if (!slot.date || !slot.startTime || !slot.employeeId) return;
+    const surface = window.innerWidth < 1024 ? "mobile" : "desktop";
+    setPendingQuickBook({
       serviceId,
       date: slot.date,
       startTime: slot.startTime,
-      employeeId: slot.employeeId
+      employeeId: slot.employeeId,
+      surface,
     });
-    setBookingStep(3); // Wait for availability before moving to 4
-    if (window.innerWidth < 1024) {
+    if (surface === "mobile") {
       setIsMobileDrawerOpen(true);
     } else {
       setTimeout(() => {
@@ -1195,6 +1181,13 @@ export default function SalonProfile() {
               user={user}
               cart={bookingCart}
               setCart={setBookingCart}
+              surface="desktop"
+              quickBookCandidate={pendingQuickBook}
+              onQuickBookConsumed={() => setPendingQuickBook(null)}
+              onRequireSignIn={(candidate) => {
+                const params = new URLSearchParams(candidate);
+                setLocation(`/prijava?returnTo=${encodeURIComponent(`${location}?${params.toString()}`)}`);
+              }}
               onViewAppointments={() => setLocation("/moj-nalog")}
             />
           </div>
@@ -1210,6 +1203,13 @@ export default function SalonProfile() {
              user={user}
              cart={bookingCart}
              setCart={setBookingCart}
+              surface="mobile"
+              quickBookCandidate={pendingQuickBook}
+              onQuickBookConsumed={() => setPendingQuickBook(null)}
+              onRequireSignIn={(candidate) => {
+                const params = new URLSearchParams(candidate);
+                setLocation(`/prijava?returnTo=${encodeURIComponent(`${location}?${params.toString()}`)}`);
+              }}
              onViewAppointments={() => setLocation("/moj-nalog")}
            />
       </MobileBookingDrawer>
