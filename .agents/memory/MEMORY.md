@@ -129,3 +129,5 @@
 - [pg-pool acquisition deadlines](pg-pool-acquisition-deadlines.md) — connectionTimeoutMillis also limits queued checkout of existing clients, not just new connections.
 - [Deployment runtime detection](deployment-runtime-detection.md) — destructive harnesses need layered deployment guards; REPLIT_ENVIRONMENT alone is not authoritative.
 - [Capacity harness serving boundary](capacity-harness-serving-boundary.md) — measure real request routes without unrelated production schedulers or startup seeders.
+- [Booking overload admission](booking-overload-admission.md) — bound every booking creator as one workload; capacity 429s belong in the full-arrival latency objective.
+- [Booking response outbox](booking-response-outbox.md) — persist required communication rows in the booking transaction, then deliver asynchronously off the response path.

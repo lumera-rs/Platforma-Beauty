@@ -39,6 +39,17 @@ export type TransactionalEmailInput = {
 
 const RESCHEDULED_EMAIL_TYPE = "appointment_rescheduled";
 const AUTOMATION_EMAIL_TYPE = "automation";
+const APPOINTMENT_EMAIL_TYPES = [
+  "appointment_confirmed",
+  "appointment_created",
+  "appointment_updated",
+  "appointment_cancelled",
+  "appointment_reminder",
+  "salon_appointment_confirmed",
+  "salon_appointment_created",
+  "salon_appointment_updated",
+  "salon_appointment_cancelled",
+] as const;
 export const RETAIL_CART_REMINDER_EMAIL_TYPE = "retail_cart_reminder";
 export const REFERRAL_EMAIL_TYPES = [
   "referral_signup_attributed",
@@ -57,7 +68,14 @@ export const BEAUTY_JOB_EMAIL_TYPES = [
 // backoff retries, temporary-vs-permanent classification, and idempotent
 // provider dedup (via the stable delivery id). Any other emailType is a
 // single-shot send with no retry.
-const RETRYABLE_EMAIL_TYPES = [RESCHEDULED_EMAIL_TYPE, AUTOMATION_EMAIL_TYPE, RETAIL_CART_REMINDER_EMAIL_TYPE, ...BEAUTY_JOB_EMAIL_TYPES, ...REFERRAL_EMAIL_TYPES] as const;
+const RETRYABLE_EMAIL_TYPES = [
+  RESCHEDULED_EMAIL_TYPE,
+  AUTOMATION_EMAIL_TYPE,
+  RETAIL_CART_REMINDER_EMAIL_TYPE,
+  ...APPOINTMENT_EMAIL_TYPES,
+  ...BEAUTY_JOB_EMAIL_TYPES,
+  ...REFERRAL_EMAIL_TYPES,
+] as const;
 const BREVO_WEBHOOK_COVERAGE_ALERT_EMAIL_TYPE = "brevo_webhook_coverage_alert";
 export const BEAUTY_JOB_DELIVERY_ALERT_EMAIL_TYPE = "beauty_job_delivery_alert";
 const RETRYABLE_EMAIL_TYPES_WITH_MONITORING = [
@@ -163,6 +181,30 @@ export async function enqueueTransactionalEmail(
     },
   }).onConflictDoNothing().returning();
   return delivery ?? null;
+}
+
+export async function enqueueTransactionalEmails(
+  writer: EmailDeliveryWriter,
+  inputs: TransactionalEmailInput[],
+  now = new Date(),
+) {
+  if (!inputs.length) return [];
+  return writer.insert(emailDeliveriesTable).values(inputs.map((input) => ({
+    eventKey: input.eventKey,
+    emailType: input.emailType,
+    salonId: input.salonId ?? null,
+    appointmentId: input.appointmentId ?? null,
+    recipientEmail: input.to.email.toLowerCase(),
+    recipientName: input.to.name ?? null,
+    subject: input.subject,
+    htmlContent: input.htmlContent,
+    scheduledAt: input.scheduledAt ?? null,
+    nextRetryAt: retryableEmailType(input.emailType) ? now : null,
+    metadata: {
+      ...(input.metadata ?? {}),
+      ...(input.brevoTemplateId ? { brevoTemplateId: input.brevoTemplateId } : {}),
+    },
+  }))).onConflictDoNothing().returning();
 }
 
 export async function deliverQueuedTransactionalEmail(

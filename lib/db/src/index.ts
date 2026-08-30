@@ -61,6 +61,7 @@ export function databasePoolStats() {
     idle: pool.idleCount,
     waiting: pool.waitingCount,
     max: poolMax,
+    statements: databaseStatementCount,
   };
 }
 
@@ -72,6 +73,7 @@ export type DatabaseQueryObservation = {
 };
 
 let databaseQueryObserver: ((query: DatabaseQueryObservation) => void) | undefined;
+let databaseStatementCount = 0;
 
 export function observeDatabaseQueries(observer: (query: DatabaseQueryObservation) => void) {
   if (databaseQueryObserver) throw new Error("A database query observer is already active.");
@@ -85,6 +87,7 @@ export const db = drizzle(pool, {
   schema,
   logger: {
     logQuery(query, params) {
+      databaseStatementCount += 1;
       databaseQueryObserver?.({ sql: query, params });
     },
   },
@@ -101,6 +104,7 @@ export function getPoolStatus(): {
   idle: number;
   waiting: number;
   max: number;
+  statements: number;
 } {
   return databasePoolStats();
 }

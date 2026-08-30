@@ -22,6 +22,7 @@ import {
   GetWidgetAvailabilityQueryParams,
 } from "@workspace/api-zod";
 import { ensureDemoData } from "../lib/seed";
+import { admitBookingRequest } from "../lib/booking-admission";
 import { publishSalonNotificationUpdate } from "../lib/salon-notification-events";
 import { canonicalAvailability } from "../lib/availability-store";
 import {
@@ -184,7 +185,7 @@ router.get("/widget/salons/:slug/availability", async (req, res): Promise<void> 
   })));
 });
 
-router.post("/widget/salons/:slug/appointments", async (req, res): Promise<void> => {
+router.post("/widget/salons/:slug/appointments", admitBookingRequest, async (req, res): Promise<void> => {
   const slug = String(req.params.slug);
   if (guardRate(req, res, slug, RATE_MAX_BOOKINGS)) return;
   const signedInUser = await getCurrentUser(req);
@@ -278,7 +279,7 @@ router.post("/widget/salons/:slug/appointments", async (req, res): Promise<void>
   });
 });
 
-router.post("/widget/salons/:slug/booking-groups", async (req, res): Promise<void> => {
+router.post("/widget/salons/:slug/booking-groups", admitBookingRequest, async (req, res): Promise<void> => {
   const slug = String(req.params.slug);
   if (guardRate(req, res, slug, RATE_MAX_BOOKINGS)) return;
   const signedInUser = await getCurrentUser(req);

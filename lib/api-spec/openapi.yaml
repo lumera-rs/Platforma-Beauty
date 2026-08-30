@@ -509,6 +509,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/BookingGroupConflict" }
+        "429": { $ref: "#/components/responses/BookingCapacityReached" }
   /salon/booking-groups:
     post:
       operationId: createSalonBookingGroup
@@ -531,6 +532,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/BookingGroupConflict" }
+        "429": { $ref: "#/components/responses/BookingCapacityReached" }
   /employee/booking-groups:
     post:
       operationId: createEmployeeBookingGroup
@@ -553,6 +555,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/BookingGroupConflict" }
+        "429": { $ref: "#/components/responses/BookingCapacityReached" }
   /booking-groups/{bookingGroupId}/reschedule:
     patch:
       operationId: rescheduleBookingGroup
@@ -581,6 +584,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/BookingGroupConflict" }
+        "429": { $ref: "#/components/responses/BookingCapacityReached" }
   /booking-groups/{bookingGroupId}/cancel:
     post:
       operationId: cancelBookingGroup
@@ -663,6 +667,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AppointmentConflictError"
+        "429": { $ref: "#/components/responses/BookingCapacityReached" }
   /employee/locations:
     get:
       operationId: listEmployeeAssignedLocations
@@ -712,6 +717,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Appointment"
+        "429": { $ref: "#/components/responses/BookingCapacityReached" }
   /appointments/{appointmentId}/salon-contact:
     get:
       operationId: getAppointmentSalonContact
@@ -1228,6 +1234,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Appointment" }
+        "429": { $ref: "#/components/responses/BookingCapacityReached" }
   /salon/appointment-series/preview:
     post:
       operationId: previewSalonAppointmentSeries
@@ -1276,6 +1283,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SalonPackageAppointmentsResult" }
+        "429": { $ref: "#/components/responses/BookingCapacityReached" }
   /salon/time-blocks:
     get:
       operationId: listSalonTimeBlocks
@@ -1387,6 +1395,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AppointmentSeriesResult" }
+        "429": { $ref: "#/components/responses/BookingCapacityReached" }
   /salon/appointment-series/{seriesId}:
     delete:
       operationId: cancelSalonAppointmentSeries
@@ -1445,6 +1454,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AppointmentSeriesMoveResult" }
+        "429": { $ref: "#/components/responses/BookingCapacityReached" }
   /salon/customers:
     get:
       operationId: listSalonCustomers
@@ -1525,6 +1535,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AppointmentSeriesResult" }
+        "429": { $ref: "#/components/responses/BookingCapacityReached" }
   /salon/customers/{customerId}:
     patch:
       operationId: updateSalonCustomer
@@ -1566,6 +1577,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Appointment"
+        "429": { $ref: "#/components/responses/BookingCapacityReached" }
   /salon/resources:
     get:
       operationId: listSalonResources
@@ -6270,7 +6282,20 @@ paths:
         "400": { description: Invalid booking data }
         "404": { description: Salon or service not found }
         "409": { description: Slot no longer available }
-        "429": { description: Too many requests }
+        "429":
+          description: Widget rate limit or booking admission capacity reached. Capacity responses use code BOOKING_CAPACITY and include Retry-After.
+          headers:
+            Retry-After:
+              schema: { type: integer, minimum: 1 }
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/BookingCapacityError"
+                  - type: object
+                    properties:
+                      error: { type: string }
+                    required: [error]
   /widget/salons/{slug}/booking-groups:
     post:
       operationId: createWidgetBookingGroup
@@ -6292,7 +6317,20 @@ paths:
         "400": { description: Invalid booking data }
         "404": { description: Salon or service not found }
         "409": { description: One or more slots are no longer available }
-        "429": { description: Too many requests }
+        "429":
+          description: Widget rate limit or booking admission capacity reached. Capacity responses use code BOOKING_CAPACITY and include Retry-After.
+          headers:
+            Retry-After:
+              schema: { type: integer, minimum: 1 }
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/BookingCapacityError"
+                  - type: object
+                    properties:
+                      error: { type: string }
+                    required: [error]
 
   /retail/wishlist:
     get:
@@ -7622,6 +7660,16 @@ paths:
       parameters: [{ name: productId, in: path, required: true, schema: { type: string } }]
       responses: { "200": { description: Active product promotion descriptors, content: { application/json: { schema: { $ref: "#/components/schemas/AutomaticXyPromotionList" } } } }, "400": { description: Invalid product }, "404": { description: Product not found } }
 components:
+  responses:
+    BookingCapacityReached:
+      description: Booking admission capacity is full; retry after the indicated delay.
+      headers:
+        Retry-After:
+          description: Suggested delay in seconds before retrying the booking.
+          schema: { type: integer, minimum: 1 }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/BookingCapacityError" }
   parameters:
     CityQuery:
       name: city
@@ -9499,6 +9547,15 @@ components:
           enum: [not_found, wrong_salon, wrong_customer, already_redeemed, no_sessions_left, expired, not_active, service_not_covered, appointment_not_eligible]
           description: "Specific package redemption failure reason (present only when code=PACKAGE_ERROR)"
       required: [error]
+    BookingCapacityError:
+      type: object
+      properties:
+        code:
+          type: string
+          enum: [BOOKING_CAPACITY]
+          description: Stable discriminator for retryable booking admission overload.
+        error: { type: string, description: "Localized human-readable message" }
+      required: [code, error]
     EmployeeLeaveRequest:
       type: object
       description: A single employee leave request row.

@@ -1,7 +1,7 @@
 import app from "./app";
 import { closePool, databasePoolStats } from "@workspace/db";
 import { logger } from "./lib/logger";
-import { runRescheduledConfirmationRetries } from "./lib/rescheduled-confirmation-retries";
+import { retryFailedRetryableEmails } from "./lib/brevo";
 import { processUpcomingEducationSessions } from "./lib/education-sessions";
 import {
   startSalonNotificationEventListener,
@@ -34,6 +34,7 @@ import { runReferralMaintenance } from "./lib/referral-service";
 import { ensureReferralSchema } from "./lib/referral-schema";
 import { ensureWebPushSchema } from "./lib/web-push-schema";
 import { runSystemPushWorker } from "./lib/web-push";
+import { drainSmsOutbox } from "./lib/sms";
 import { runProductWaitlistNotificationWorker } from "./lib/product-waitlist-worker";
 import { runRetailSubscriptionWorker } from "./lib/retail-subscription-worker";
 import { runRetailCartReminderSweep } from "./lib/retail-cart-reminders";
@@ -91,9 +92,9 @@ const server = app.listen(port, "0.0.0.0", (err) => {
 // Scheduled tasks
 // ---------------------------------------------------------------------------
 
-const rescheduledConfirmationRetries = createResilientScheduledJob({
-  job: "rescheduled-confirmation-retries",
-  run: runRescheduledConfirmationRetries,
+const transactionalEmailOutbox = createResilientScheduledJob({
+  job: "transactional-email-outbox",
+  run: retryFailedRetryableEmails,
 });
 const educationSessionMaintenance = createResilientScheduledJob({
   job: "education-session-maintenance",
@@ -180,8 +181,12 @@ const systemPushDeliveries = createResilientScheduledJob({
   job: "system-push-deliveries",
   run: runSystemPushWorker,
 });
+const smsOutboxDeliveries = createResilientScheduledJob({
+  job: "sms-outbox-deliveries",
+  run: drainSmsOutbox,
+});
 const scheduledJobs = [
-  rescheduledConfirmationRetries,
+  transactionalEmailOutbox,
   educationSessionMaintenance,
   educationGalleryCleanup,
   mediaUploadCleanup,
@@ -203,13 +208,19 @@ const scheduledJobs = [
   appointmentReminders,
   appointmentReviewInvitations,
   systemPushDeliveries,
+  smsOutboxDeliveries,
 ];
 
 const retryInterval = setInterval(() => {
-  void rescheduledConfirmationRetries.run();
+  void transactionalEmailOutbox.run();
 }, 60_000);
 retryInterval.unref();
-void rescheduledConfirmationRetries.run();
+void transactionalEmailOutbox.run();
+const smsOutboxInterval = setInterval(() => {
+  void smsOutboxDeliveries.run();
+}, 60_000);
+smsOutboxInterval.unref();
+void smsOutboxDeliveries.run();
 
 // Education session lifecycle: drain expired waitlist offers and auto-cancel
 // under-enrolled sessions. Runs every 5 minutes on a self-unreferencing timer

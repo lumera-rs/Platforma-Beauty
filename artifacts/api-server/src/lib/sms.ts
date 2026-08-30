@@ -22,6 +22,30 @@ const SMS_LEASE_MS = 5 * 60 * 1000;
  */
 export type SmsDeliveryStatus = "queued" | "processing" | "sent" | "failed" | "skipped";
 type SmsTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type SmsWriter = { insert: typeof db.insert };
+
+export async function enqueueSms(writer: SmsWriter, input: {
+  eventKey: string;
+  salonId: string | null;
+  appointmentId: string | null;
+  type: SmsMessageType;
+  phone: string | null | undefined;
+  smsOptOut?: boolean;
+  text: string;
+}) {
+  if (!input.phone) return null;
+  const [inserted] = await writer.insert(smsDeliveriesTable).values({
+    eventKey: input.eventKey,
+    salonId: input.salonId,
+    appointmentId: input.appointmentId,
+    messageType: input.type,
+    recipientPhone: input.phone,
+    body: input.text,
+    status: input.smsOptOut ? "skipped" : "queued",
+    errorMessage: input.smsOptOut ? "SMS obaveštenja su isključena za ovaj CRM kontakt." : null,
+  }).onConflictDoNothing().returning();
+  return inserted ?? null;
+}
 
 /**
  * Writes a referral SMS to the durable outbox without contacting the provider.
@@ -457,6 +481,39 @@ export async function drainReferralSmsOutbox(limit = 25) {
       salonId: candidate.salonId,
       appointmentId: candidate.appointmentId,
       type: "referral",
+      phone: candidate.recipientPhone,
+      text: candidate.body,
+    }));
+  }
+  return { attempted: candidates.length, results };
+}
+
+export async function drainSmsOutbox(limit = 100) {
+  const boundedLimit = Math.max(1, Math.min(500, Math.trunc(limit)));
+  const now = new Date();
+  const candidates = await db.select({
+    eventKey: smsDeliveriesTable.eventKey,
+    salonId: smsDeliveriesTable.salonId,
+    appointmentId: smsDeliveriesTable.appointmentId,
+    messageType: smsDeliveriesTable.messageType,
+    recipientPhone: smsDeliveriesTable.recipientPhone,
+    body: smsDeliveriesTable.body,
+  }).from(smsDeliveriesTable).where(or(
+    eq(smsDeliveriesTable.status, "queued"),
+    eq(smsDeliveriesTable.status, "failed"),
+    and(
+      eq(smsDeliveriesTable.status, "processing"),
+      lte(smsDeliveriesTable.claimExpiresAt, now),
+    ),
+  )).orderBy(asc(smsDeliveriesTable.createdAt)).limit(boundedLimit);
+
+  const results = [];
+  for (const candidate of candidates) {
+    results.push(await sendSms({
+      eventKey: candidate.eventKey,
+      salonId: candidate.salonId,
+      appointmentId: candidate.appointmentId,
+      type: candidate.messageType as SmsMessageType,
       phone: candidate.recipientPhone,
       text: candidate.body,
     }));

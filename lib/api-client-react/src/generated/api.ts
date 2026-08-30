@@ -170,6 +170,7 @@ import type {
   BeautyJobSweepResult,
   BeautyJobUpdateInput,
   BestsellerRanking,
+  BookingCapacityReachedResponse,
   BookingGroup,
   BookingGroupCancelInput,
   BookingGroupConflict,
@@ -209,6 +210,8 @@ import type {
   CreateSalonLocationResult,
   CreateShopQuoteBody,
   CreateTreatmentPackageBody,
+  CreateWidgetAppointment429,
+  CreateWidgetBookingGroup429,
   CurrentUserResponse,
   CustomerAftercareRecommendation,
   CustomerDashboard,
@@ -2468,7 +2471,7 @@ export const createBookingGroup = async (bookingGroupInput: BookingGroupInput, o
 
 
 
-export const getCreateBookingGroupMutationOptions = <TError = ErrorType<BookingGroupConflict>,
+export const getCreateBookingGroupMutationOptions = <TError = ErrorType<BookingGroupConflict | BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createBookingGroup>>, TError,{data: BodyType<BookingGroupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createBookingGroup>>, TError,{data: BodyType<BookingGroupInput>}, TContext> => {
 
@@ -2497,12 +2500,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateBookingGroupMutationResult = NonNullable<Awaited<ReturnType<typeof createBookingGroup>>>
     export type CreateBookingGroupMutationBody = BodyType<BookingGroupInput>
-    export type CreateBookingGroupMutationError = ErrorType<BookingGroupConflict>
+    export type CreateBookingGroupMutationError = ErrorType<BookingGroupConflict | BookingCapacityReachedResponse>
 
     /**
  * @summary Atomically book an ordered group of treatments
  */
-export const useCreateBookingGroup = <TError = ErrorType<BookingGroupConflict>,
+export const useCreateBookingGroup = <TError = ErrorType<BookingGroupConflict | BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createBookingGroup>>, TError,{data: BodyType<BookingGroupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createBookingGroup>>,
@@ -2539,7 +2542,7 @@ export const createSalonBookingGroup = async (manualBookingGroupInput: ManualBoo
 
 
 
-export const getCreateSalonBookingGroupMutationOptions = <TError = ErrorType<void | BookingGroupConflict>,
+export const getCreateSalonBookingGroupMutationOptions = <TError = ErrorType<void | BookingGroupConflict | BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonBookingGroup>>, TError,{data: BodyType<ManualBookingGroupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createSalonBookingGroup>>, TError,{data: BodyType<ManualBookingGroupInput>}, TContext> => {
 
@@ -2568,12 +2571,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateSalonBookingGroupMutationResult = NonNullable<Awaited<ReturnType<typeof createSalonBookingGroup>>>
     export type CreateSalonBookingGroupMutationBody = BodyType<ManualBookingGroupInput>
-    export type CreateSalonBookingGroupMutationError = ErrorType<void | BookingGroupConflict>
+    export type CreateSalonBookingGroupMutationError = ErrorType<void | BookingGroupConflict | BookingCapacityReachedResponse>
 
     /**
  * @summary Atomically create a manual grouped booking for a CRM customer or guest
  */
-export const useCreateSalonBookingGroup = <TError = ErrorType<void | BookingGroupConflict>,
+export const useCreateSalonBookingGroup = <TError = ErrorType<void | BookingGroupConflict | BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonBookingGroup>>, TError,{data: BodyType<ManualBookingGroupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createSalonBookingGroup>>,
@@ -2610,7 +2613,7 @@ export const createEmployeeBookingGroup = async (manualBookingGroupInput: Manual
 
 
 
-export const getCreateEmployeeBookingGroupMutationOptions = <TError = ErrorType<void | BookingGroupConflict>,
+export const getCreateEmployeeBookingGroupMutationOptions = <TError = ErrorType<void | BookingGroupConflict | BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeBookingGroup>>, TError,{data: BodyType<ManualBookingGroupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createEmployeeBookingGroup>>, TError,{data: BodyType<ManualBookingGroupInput>}, TContext> => {
 
@@ -2639,12 +2642,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateEmployeeBookingGroupMutationResult = NonNullable<Awaited<ReturnType<typeof createEmployeeBookingGroup>>>
     export type CreateEmployeeBookingGroupMutationBody = BodyType<ManualBookingGroupInput>
-    export type CreateEmployeeBookingGroupMutationError = ErrorType<void | BookingGroupConflict>
+    export type CreateEmployeeBookingGroupMutationError = ErrorType<void | BookingGroupConflict | BookingCapacityReachedResponse>
 
     /**
  * @summary Atomically create a manual grouped booking assigned to the signed-in employee
  */
-export const useCreateEmployeeBookingGroup = <TError = ErrorType<void | BookingGroupConflict>,
+export const useCreateEmployeeBookingGroup = <TError = ErrorType<void | BookingGroupConflict | BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeBookingGroup>>, TError,{data: BodyType<ManualBookingGroupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createEmployeeBookingGroup>>,
@@ -2682,7 +2685,7 @@ export const rescheduleBookingGroup = async (bookingGroupId: string,
 
 
 
-export const getRescheduleBookingGroupMutationOptions = <TError = ErrorType<void | BookingGroupConflict>,
+export const getRescheduleBookingGroupMutationOptions = <TError = ErrorType<void | BookingGroupConflict | BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rescheduleBookingGroup>>, TError,{bookingGroupId: string;data: BodyType<BookingGroupRescheduleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof rescheduleBookingGroup>>, TError,{bookingGroupId: string;data: BodyType<BookingGroupRescheduleInput>}, TContext> => {
 
@@ -2711,12 +2714,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type RescheduleBookingGroupMutationResult = NonNullable<Awaited<ReturnType<typeof rescheduleBookingGroup>>>
     export type RescheduleBookingGroupMutationBody = BodyType<BookingGroupRescheduleInput>
-    export type RescheduleBookingGroupMutationError = ErrorType<void | BookingGroupConflict>
+    export type RescheduleBookingGroupMutationError = ErrorType<void | BookingGroupConflict | BookingCapacityReachedResponse>
 
     /**
  * @summary Atomically reschedule selected active members, or the complete active booking group
  */
-export const useRescheduleBookingGroup = <TError = ErrorType<void | BookingGroupConflict>,
+export const useRescheduleBookingGroup = <TError = ErrorType<void | BookingGroupConflict | BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rescheduleBookingGroup>>, TError,{bookingGroupId: string;data: BodyType<BookingGroupRescheduleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof rescheduleBookingGroup>>,
@@ -2909,7 +2912,7 @@ export const createAppointment = async (appointmentInput: AppointmentInput, opti
 
 
 
-export const getCreateAppointmentMutationOptions = <TError = ErrorType<AppointmentConflictError>,
+export const getCreateAppointmentMutationOptions = <TError = ErrorType<AppointmentConflictError | BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAppointment>>, TError,{data: BodyType<AppointmentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createAppointment>>, TError,{data: BodyType<AppointmentInput>}, TContext> => {
 
@@ -2938,12 +2941,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateAppointmentMutationResult = NonNullable<Awaited<ReturnType<typeof createAppointment>>>
     export type CreateAppointmentMutationBody = BodyType<AppointmentInput>
-    export type CreateAppointmentMutationError = ErrorType<AppointmentConflictError>
+    export type CreateAppointmentMutationError = ErrorType<AppointmentConflictError | BookingCapacityReachedResponse>
 
     /**
  * @summary Create a booking
  */
-export const useCreateAppointment = <TError = ErrorType<AppointmentConflictError>,
+export const useCreateAppointment = <TError = ErrorType<AppointmentConflictError | BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAppointment>>, TError,{data: BodyType<AppointmentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createAppointment>>,
@@ -3129,7 +3132,7 @@ export const updateAppointment = async (appointmentId: string,
 
 
 
-export const getUpdateAppointmentMutationOptions = <TError = ErrorType<unknown>,
+export const getUpdateAppointmentMutationOptions = <TError = ErrorType<BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAppointment>>, TError,{appointmentId: string;data: BodyType<AppointmentUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateAppointment>>, TError,{appointmentId: string;data: BodyType<AppointmentUpdate>}, TContext> => {
 
@@ -3158,12 +3161,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type UpdateAppointmentMutationResult = NonNullable<Awaited<ReturnType<typeof updateAppointment>>>
     export type UpdateAppointmentMutationBody = BodyType<AppointmentUpdate>
-    export type UpdateAppointmentMutationError = ErrorType<unknown>
+    export type UpdateAppointmentMutationError = ErrorType<BookingCapacityReachedResponse>
 
     /**
  * @summary Reschedule or update appointment
  */
-export const useUpdateAppointment = <TError = ErrorType<unknown>,
+export const useUpdateAppointment = <TError = ErrorType<BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAppointment>>, TError,{appointmentId: string;data: BodyType<AppointmentUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof updateAppointment>>,
@@ -5527,7 +5530,7 @@ export const createSalonAppointment = async (salonAppointmentCreate: SalonAppoin
 
 
 
-export const getCreateSalonAppointmentMutationOptions = <TError = ErrorType<unknown>,
+export const getCreateSalonAppointmentMutationOptions = <TError = ErrorType<BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonAppointment>>, TError,{data: BodyType<SalonAppointmentCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createSalonAppointment>>, TError,{data: BodyType<SalonAppointmentCreate>}, TContext> => {
 
@@ -5556,12 +5559,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateSalonAppointmentMutationResult = NonNullable<Awaited<ReturnType<typeof createSalonAppointment>>>
     export type CreateSalonAppointmentMutationBody = BodyType<SalonAppointmentCreate>
-    export type CreateSalonAppointmentMutationError = ErrorType<unknown>
+    export type CreateSalonAppointmentMutationError = ErrorType<BookingCapacityReachedResponse>
 
     /**
  * @summary Create a salon appointment for a CRM customer or walk-in guest
  */
-export const useCreateSalonAppointment = <TError = ErrorType<unknown>,
+export const useCreateSalonAppointment = <TError = ErrorType<BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonAppointment>>, TError,{data: BodyType<SalonAppointmentCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createSalonAppointment>>,
@@ -5740,7 +5743,7 @@ export const createSalonPackageAppointments = async (salonPackageAppointmentsInp
 
 
 
-export const getCreateSalonPackageAppointmentsMutationOptions = <TError = ErrorType<unknown>,
+export const getCreateSalonPackageAppointmentsMutationOptions = <TError = ErrorType<BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonPackageAppointments>>, TError,{data: BodyType<SalonPackageAppointmentsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createSalonPackageAppointments>>, TError,{data: BodyType<SalonPackageAppointmentsInput>}, TContext> => {
 
@@ -5769,12 +5772,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateSalonPackageAppointmentsMutationResult = NonNullable<Awaited<ReturnType<typeof createSalonPackageAppointments>>>
     export type CreateSalonPackageAppointmentsMutationBody = BodyType<SalonPackageAppointmentsInput>
-    export type CreateSalonPackageAppointmentsMutationError = ErrorType<unknown>
+    export type CreateSalonPackageAppointmentsMutationError = ErrorType<BookingCapacityReachedResponse>
 
     /**
  * @summary Atomically book every remaining session in a purchased package
  */
-export const useCreateSalonPackageAppointments = <TError = ErrorType<unknown>,
+export const useCreateSalonPackageAppointments = <TError = ErrorType<BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonPackageAppointments>>, TError,{data: BodyType<SalonPackageAppointmentsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createSalonPackageAppointments>>,
@@ -6205,7 +6208,7 @@ export const createSalonAppointmentSeries = async (salonAppointmentSeriesInput: 
 
 
 
-export const getCreateSalonAppointmentSeriesMutationOptions = <TError = ErrorType<unknown>,
+export const getCreateSalonAppointmentSeriesMutationOptions = <TError = ErrorType<BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonAppointmentSeries>>, TError,{data: BodyType<SalonAppointmentSeriesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createSalonAppointmentSeries>>, TError,{data: BodyType<SalonAppointmentSeriesInput>}, TContext> => {
 
@@ -6234,12 +6237,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateSalonAppointmentSeriesMutationResult = NonNullable<Awaited<ReturnType<typeof createSalonAppointmentSeries>>>
     export type CreateSalonAppointmentSeriesMutationBody = BodyType<SalonAppointmentSeriesInput>
-    export type CreateSalonAppointmentSeriesMutationError = ErrorType<unknown>
+    export type CreateSalonAppointmentSeriesMutationError = ErrorType<BookingCapacityReachedResponse>
 
     /**
  * @summary Create an atomic salon appointment series
  */
-export const useCreateSalonAppointmentSeries = <TError = ErrorType<unknown>,
+export const useCreateSalonAppointmentSeries = <TError = ErrorType<BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonAppointmentSeries>>, TError,{data: BodyType<SalonAppointmentSeriesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createSalonAppointmentSeries>>,
@@ -6420,7 +6423,7 @@ export const moveSalonAppointmentSeries = async (seriesId: string,
 
 
 
-export const getMoveSalonAppointmentSeriesMutationOptions = <TError = ErrorType<unknown>,
+export const getMoveSalonAppointmentSeriesMutationOptions = <TError = ErrorType<BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof moveSalonAppointmentSeries>>, TError,{seriesId: string;data: BodyType<AppointmentSeriesMoveInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof moveSalonAppointmentSeries>>, TError,{seriesId: string;data: BodyType<AppointmentSeriesMoveInput>}, TContext> => {
 
@@ -6449,12 +6452,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type MoveSalonAppointmentSeriesMutationResult = NonNullable<Awaited<ReturnType<typeof moveSalonAppointmentSeries>>>
     export type MoveSalonAppointmentSeriesMutationBody = BodyType<AppointmentSeriesMoveInput>
-    export type MoveSalonAppointmentSeriesMutationError = ErrorType<unknown>
+    export type MoveSalonAppointmentSeriesMutationError = ErrorType<BookingCapacityReachedResponse>
 
     /**
  * @summary Atomically move all future unfinished appointments in a series
  */
-export const useMoveSalonAppointmentSeries = <TError = ErrorType<unknown>,
+export const useMoveSalonAppointmentSeries = <TError = ErrorType<BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof moveSalonAppointmentSeries>>, TError,{seriesId: string;data: BodyType<AppointmentSeriesMoveInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof moveSalonAppointmentSeries>>,
@@ -6730,7 +6733,7 @@ export const createEmployeeAppointmentSeries = async (employeeAppointmentSeriesI
 
 
 
-export const getCreateEmployeeAppointmentSeriesMutationOptions = <TError = ErrorType<unknown>,
+export const getCreateEmployeeAppointmentSeriesMutationOptions = <TError = ErrorType<BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeAppointmentSeries>>, TError,{data: BodyType<EmployeeAppointmentSeriesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createEmployeeAppointmentSeries>>, TError,{data: BodyType<EmployeeAppointmentSeriesInput>}, TContext> => {
 
@@ -6759,12 +6762,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateEmployeeAppointmentSeriesMutationResult = NonNullable<Awaited<ReturnType<typeof createEmployeeAppointmentSeries>>>
     export type CreateEmployeeAppointmentSeriesMutationBody = BodyType<EmployeeAppointmentSeriesInput>
-    export type CreateEmployeeAppointmentSeriesMutationError = ErrorType<unknown>
+    export type CreateEmployeeAppointmentSeriesMutationError = ErrorType<BookingCapacityReachedResponse>
 
     /**
  * @summary Create an atomic employee appointment series
  */
-export const useCreateEmployeeAppointmentSeries = <TError = ErrorType<unknown>,
+export const useCreateEmployeeAppointmentSeries = <TError = ErrorType<BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeAppointmentSeries>>, TError,{data: BodyType<EmployeeAppointmentSeriesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createEmployeeAppointmentSeries>>,
@@ -6874,7 +6877,7 @@ export const updateSalonAppointment = async (appointmentId: string,
 
 
 
-export const getUpdateSalonAppointmentMutationOptions = <TError = ErrorType<unknown>,
+export const getUpdateSalonAppointmentMutationOptions = <TError = ErrorType<BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSalonAppointment>>, TError,{appointmentId: string;data: BodyType<SalonAppointmentUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateSalonAppointment>>, TError,{appointmentId: string;data: BodyType<SalonAppointmentUpdate>}, TContext> => {
 
@@ -6903,12 +6906,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type UpdateSalonAppointmentMutationResult = NonNullable<Awaited<ReturnType<typeof updateSalonAppointment>>>
     export type UpdateSalonAppointmentMutationBody = BodyType<SalonAppointmentUpdate>
-    export type UpdateSalonAppointmentMutationError = ErrorType<unknown>
+    export type UpdateSalonAppointmentMutationError = ErrorType<BookingCapacityReachedResponse>
 
     /**
  * @summary Update appointment status or assignment
  */
-export const useUpdateSalonAppointment = <TError = ErrorType<unknown>,
+export const useUpdateSalonAppointment = <TError = ErrorType<BookingCapacityReachedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSalonAppointment>>, TError,{appointmentId: string;data: BodyType<SalonAppointmentUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof updateSalonAppointment>>,
@@ -28196,7 +28199,7 @@ export const createWidgetAppointment = async (slug: string,
 
 
 
-export const getCreateWidgetAppointmentMutationOptions = <TError = ErrorType<void>,
+export const getCreateWidgetAppointmentMutationOptions = <TError = ErrorType<void | CreateWidgetAppointment429>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWidgetAppointment>>, TError,{slug: string;data: BodyType<WidgetAppointmentCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createWidgetAppointment>>, TError,{slug: string;data: BodyType<WidgetAppointmentCreate>}, TContext> => {
 
@@ -28225,12 +28228,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateWidgetAppointmentMutationResult = NonNullable<Awaited<ReturnType<typeof createWidgetAppointment>>>
     export type CreateWidgetAppointmentMutationBody = BodyType<WidgetAppointmentCreate>
-    export type CreateWidgetAppointmentMutationError = ErrorType<void>
+    export type CreateWidgetAppointmentMutationError = ErrorType<void | CreateWidgetAppointment429>
 
     /**
  * @summary Public widget booking — creates a pending appointment for the salon
  */
-export const useCreateWidgetAppointment = <TError = ErrorType<void>,
+export const useCreateWidgetAppointment = <TError = ErrorType<void | CreateWidgetAppointment429>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWidgetAppointment>>, TError,{slug: string;data: BodyType<WidgetAppointmentCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createWidgetAppointment>>,
@@ -28268,7 +28271,7 @@ export const createWidgetBookingGroup = async (slug: string,
 
 
 
-export const getCreateWidgetBookingGroupMutationOptions = <TError = ErrorType<void>,
+export const getCreateWidgetBookingGroupMutationOptions = <TError = ErrorType<void | CreateWidgetBookingGroup429>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWidgetBookingGroup>>, TError,{slug: string;data: BodyType<WidgetBookingGroupCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createWidgetBookingGroup>>, TError,{slug: string;data: BodyType<WidgetBookingGroupCreate>}, TContext> => {
 
@@ -28297,12 +28300,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateWidgetBookingGroupMutationResult = NonNullable<Awaited<ReturnType<typeof createWidgetBookingGroup>>>
     export type CreateWidgetBookingGroupMutationBody = BodyType<WidgetBookingGroupCreate>
-    export type CreateWidgetBookingGroupMutationError = ErrorType<void>
+    export type CreateWidgetBookingGroupMutationError = ErrorType<void | CreateWidgetBookingGroup429>
 
     /**
  * @summary Public rate-limited grouped booking for an anonymous salon customer
  */
-export const useCreateWidgetBookingGroup = <TError = ErrorType<void>,
+export const useCreateWidgetBookingGroup = <TError = ErrorType<void | CreateWidgetBookingGroup429>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWidgetBookingGroup>>, TError,{slug: string;data: BodyType<WidgetBookingGroupCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createWidgetBookingGroup>>,

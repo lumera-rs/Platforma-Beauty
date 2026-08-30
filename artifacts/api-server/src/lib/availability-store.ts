@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, isNull, lte, ne, notInArray, or } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte, ne, notInArray, or, sql } from "drizzle-orm";
 import {
   appointmentResourceAllocationsTable,
   appointmentsTable,
@@ -11,6 +11,7 @@ import {
   salonHoursTable,
   salonBookingSettingsTable,
   salonDateHoursTable,
+  salonsTable,
   salonResourcesTable,
   salonResourceDowntimeTable,
   serviceResourceRequirementsTable,
@@ -186,55 +187,88 @@ export async function canonicalAvailability(input: {
   }
   const startDate = [...input.dates].sort()[0]!;
   const endDate = [...input.dates].sort().at(-1)!;
-  const settingsRows = (await store.select().from(salonBookingSettingsTable)
-    .where(eq(salonBookingSettingsTable.salonId, input.salonId)).limit(1)
-  ) as (typeof salonBookingSettingsTable.$inferSelect)[];
-  const [settings] = settingsRows;
+  const [policy] = await store.select({
+    slotGranularityMinutes: sql<number | null>`(select ${salonBookingSettingsTable.slotGranularityMinutes} from ${salonBookingSettingsTable} where ${salonBookingSettingsTable.salonId} = ${input.salonId} limit 1)`,
+    minimumLeadTimeMinutes: sql<number | null>`(select ${salonBookingSettingsTable.minimumLeadTimeMinutes} from ${salonBookingSettingsTable} where ${salonBookingSettingsTable.salonId} = ${input.salonId} limit 1)`,
+    dateHours: sql<Array<{ date: string; openTime: string; closeTime: string; closed: boolean }>>`coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'date', ${salonDateHoursTable.date},
+        'openTime', ${salonDateHoursTable.openTime},
+        'closeTime', ${salonDateHoursTable.closeTime},
+        'closed', ${salonDateHoursTable.closed}
+      ))
+      from ${salonDateHoursTable}
+      where ${salonDateHoursTable.salonId} = ${input.salonId}
+        and ${salonDateHoursTable.date} >= ${startDate}
+        and ${salonDateHoursTable.date} <= ${endDate}
+    ), '[]'::jsonb)`,
+    salonHours: sql<Array<{ weekday: number; openTime: string; closeTime: string; closed: boolean }>>`coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'weekday', ${salonHoursTable.weekday},
+        'openTime', ${salonHoursTable.openTime},
+        'closeTime', ${salonHoursTable.closeTime},
+        'closed', ${salonHoursTable.closed}
+      ))
+      from ${salonHoursTable}
+      where ${salonHoursTable.salonId} = ${input.salonId}
+    ), '[]'::jsonb)`,
+  }).from(salonsTable).where(eq(salonsTable.id, input.salonId)).limit(1);
   // A pre-policy salon has the same effective defaults exposed by the settings
   // endpoint. Do not let a public query select an unconfigured cadence.
-  const granularity = settings?.slotGranularityMinutes ?? 15;
-  const minimumLeadTimeMinutes = settings?.minimumLeadTimeMinutes ?? 0;
+  const granularity = policy?.slotGranularityMinutes ?? 15;
+  const minimumLeadTimeMinutes = policy?.minimumLeadTimeMinutes ?? 0;
   const systemNow = new Date();
   const effectiveNow = input.now ?? {
     date: systemNow.toISOString().slice(0, 10),
     time: systemNow.toISOString().slice(11, 16),
   };
-  const dateHours = await store.select().from(salonDateHoursTable).where(and(
-    eq(salonDateHoursTable.salonId, input.salonId),
-    gte(salonDateHoursTable.date, startDate),
-    lte(salonDateHoursTable.date, endDate),
-  )) as (typeof salonDateHoursTable.$inferSelect)[];
+  const dateHours = policy?.dateHours ?? [];
   const employeeRows = await store.select({ employee: employeesTable }).from(employeesTable)
     .innerJoin(employeeLocationAssignmentsTable, and(
       eq(employeeLocationAssignmentsTable.employeeId, employeesTable.id),
       eq(employeeLocationAssignmentsTable.salonId, input.salonId),
       eq(employeeLocationAssignmentsTable.active, true),
     ))
-    .where(eq(employeesTable.active, true)) as Array<{ employee: typeof employeesTable.$inferSelect }>;
+    .innerJoin(employeeServicesTable, and(
+      eq(employeeServicesTable.employeeId, employeesTable.id),
+      eq(employeeServicesTable.serviceId, input.service.id),
+    ))
+    .where(and(
+      eq(employeesTable.active, true),
+      input.employeeId ? eq(employeesTable.id, input.employeeId) : undefined,
+    )) as Array<{ employee: typeof employeesTable.$inferSelect }>;
   const allEmployees = employeeRows.map((row) => row.employee);
   const employeeIds = allEmployees.map((employee) => employee.id);
   if (!employeeIds.length) return [];
-  const links = await store.select().from(employeeServicesTable).where(and(
-    inArray(employeeServicesTable.employeeId, employeeIds),
-    eq(employeeServicesTable.serviceId, input.service.id),
-  )) as (typeof employeeServicesTable.$inferSelect)[];
-  const linked = new Set(links.map((link) => link.employeeId));
-  const candidates = allEmployees.filter((employee) => linked.has(employee.id)
-    && (!input.employeeId || employee.id === input.employeeId));
+  const candidates = allEmployees.filter((employee) => !input.employeeId || employee.id === input.employeeId);
   if (!candidates.length) return [];
   const candidateIds = candidates.map((employee) => employee.id);
 
+  const requirements = input.resourceRequirements ?? await store.select({
+    resourceId: serviceResourceRequirementsTable.resourceId,
+    quantity: serviceResourceRequirementsTable.quantity,
+    capacity: salonResourcesTable.capacity,
+    active: salonResourcesTable.active,
+  }).from(serviceResourceRequirementsTable)
+    .innerJoin(salonResourcesTable, eq(salonResourcesTable.id, serviceResourceRequirementsTable.resourceId))
+    .where(eq(serviceResourceRequirementsTable.serviceId, input.service.id)) as Array<{
+      resourceId: string; quantity: number; capacity: number; active: boolean;
+    }>;
+  const requirementIds = requirements.map((item) => item.resourceId);
+
   // Sequential reads also make this adapter safe to use with a transaction's
   // single pg client during final booking revalidation.
-  const appointmentIds = await store.select({ id: appointmentsTable.id })
-    .from(appointmentsTable).where(and(
-      inArray(appointmentsTable.employeeId, candidateIds),
-      gte(appointmentsTable.date, startDate),
-      lte(appointmentsTable.date, endDate),
-      ne(appointmentsTable.status, "cancelled"),
-      input.excludeAppointmentIds?.length ? notInArray(appointmentsTable.id, input.excludeAppointmentIds) : undefined,
-    )) as Array<{ id: string }>;
-  const allocationLinks = appointmentIds.length
+  const appointmentIds = requirements.length
+    ? await store.select({ id: appointmentsTable.id })
+      .from(appointmentsTable).where(and(
+        inArray(appointmentsTable.employeeId, candidateIds),
+        gte(appointmentsTable.date, startDate),
+        lte(appointmentsTable.date, endDate),
+        ne(appointmentsTable.status, "cancelled"),
+        input.excludeAppointmentIds?.length ? notInArray(appointmentsTable.id, input.excludeAppointmentIds) : undefined,
+      )) as Array<{ id: string }>
+    : [];
+  const allocationLinks = requirements.length && appointmentIds.length
     ? await store.select().from(appointmentResourceAllocationsTable)
       .where(inArray(appointmentResourceAllocationsTable.appointmentId, appointmentIds.map((item) => item.id)))
     : [] as (typeof appointmentResourceAllocationsTable.$inferSelect)[];
@@ -276,25 +310,15 @@ export async function canonicalAvailability(input: {
     gte(employeeTimeOffTable.endDate, startDate),
     or(isNull(employeeTimeOffTable.salonId), eq(employeeTimeOffTable.salonId, input.salonId)),
   )) as (typeof employeeTimeOffTable.$inferSelect)[];
-  const salonHours = await store.select().from(salonHoursTable)
-    .where(eq(salonHoursTable.salonId, input.salonId)) as (typeof salonHoursTable.$inferSelect)[];
-  const requirements = input.resourceRequirements ?? await store.select({
-    resourceId: serviceResourceRequirementsTable.resourceId,
-    quantity: serviceResourceRequirementsTable.quantity,
-    capacity: salonResourcesTable.capacity,
-    active: salonResourcesTable.active,
-  }).from(serviceResourceRequirementsTable)
-    .innerJoin(salonResourcesTable, eq(salonResourcesTable.id, serviceResourceRequirementsTable.resourceId))
-    .where(eq(serviceResourceRequirementsTable.serviceId, input.service.id)) as Array<{
-      resourceId: string; quantity: number; capacity: number; active: boolean;
-    }>;
-  const requirementIds = requirements.map((item) => item.resourceId);
-  const downtimeRows = await store.select({ downtime: salonResourceDowntimeTable })
-    .from(salonResourceDowntimeTable)
-    .innerJoin(salonResourcesTable, eq(salonResourcesTable.id, salonResourceDowntimeTable.resourceId))
-    .where(eq(salonResourcesTable.salonId, input.salonId)) as Array<{
-      downtime: typeof salonResourceDowntimeTable.$inferSelect;
-    }>;
+  const salonHours = policy?.salonHours ?? [];
+  const downtimeRows = requirements.length
+    ? await store.select({ downtime: salonResourceDowntimeTable })
+      .from(salonResourceDowntimeTable)
+      .innerJoin(salonResourcesTable, eq(salonResourcesTable.id, salonResourceDowntimeTable.resourceId))
+      .where(eq(salonResourcesTable.salonId, input.salonId)) as Array<{
+        downtime: typeof salonResourceDowntimeTable.$inferSelect;
+      }>
+    : [];
   const resourceDowntime = downtimeRows.flatMap(({ downtime }) => input.dates.flatMap((date) => {
     const dayStart = new Date(`${date}T00:00:00.000Z`);
     const dayEnd = new Date(`${date}T24:00:00.000Z`);
@@ -338,13 +362,13 @@ export async function canonicalAvailability(input: {
     bufferMinutes: optionalNumber((input.service as unknown as { bufferMinutes?: unknown }).bufferMinutes, 0),
     granularityMinutes: granularity,
     employees: candidates,
-    salonHours: salonHours.map((hours) => ({
+    salonHours: salonHours.map((hours: { weekday: number; openTime: string; closeTime: string; closed: boolean }) => ({
       weekday: hours.weekday,
       startTime: hours.openTime,
       endTime: hours.closeTime,
       closed: hours.closed,
     })),
-    dateOverrides: dateHours.map((hours) => ({
+    dateOverrides: dateHours.map((hours: { date: string; openTime: string; closeTime: string; closed: boolean }) => ({
       date: hours.date,
       startTime: hours.openTime,
       endTime: hours.closeTime,

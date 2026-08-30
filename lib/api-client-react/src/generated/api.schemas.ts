@@ -2657,6 +2657,23 @@ export interface AppointmentConflictError {
   reason?: AppointmentConflictErrorReason;
 }
 
+/**
+ * Stable discriminator for retryable booking admission overload.
+ */
+export type BookingCapacityErrorCode = typeof BookingCapacityErrorCode[keyof typeof BookingCapacityErrorCode];
+
+
+export const BookingCapacityErrorCode = {
+  BOOKING_CAPACITY: 'BOOKING_CAPACITY',
+} as const;
+
+export interface BookingCapacityError {
+  /** Stable discriminator for retryable booking admission overload. */
+  code: BookingCapacityErrorCode;
+  /** Localized human-readable message */
+  error: string;
+}
+
 export type EmployeeLeaveRequestStatus = typeof EmployeeLeaveRequestStatus[keyof typeof EmployeeLeaveRequestStatus];
 
 
@@ -10853,6 +10870,11 @@ export interface AutomaticXyPromotionList {
   items: AutomaticXyPromotionListItemsItem[];
 }
 
+/**
+ * Booking admission capacity is full; retry after the indicated delay.
+ */
+export type BookingCapacityReachedResponse = BookingCapacityError;
+
 export type CityQueryParameter = string;
 
 export type CategoryQueryParameter = string;
@@ -11944,6 +11966,14 @@ export type GetWidgetAvailabilityParams = {
 serviceId: string;
 date: string;
 employeeId?: string;
+};
+
+export type CreateWidgetAppointment429 = BookingCapacityError | {
+  error: string;
+};
+
+export type CreateWidgetBookingGroup429 = BookingCapacityError | {
+  error: string;
 };
 
 export type RemoveProductWishlistItemParams = {

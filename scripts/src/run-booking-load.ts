@@ -100,6 +100,7 @@ async function main() {
   const harnessPoolMax = parseInteger("LUMERA_BOOKING_LOAD_HARNESS_POOL_MAX", 10, 4, 20);
   const connectionReserve = parseInteger("LUMERA_BOOKING_LOAD_CONNECTION_RESERVE", 5, 1, 100);
   const connectionBudget = parseInteger("LUMERA_BOOKING_LOAD_DB_CONNECTION_BUDGET", 35, 10, 1_000);
+  const bookingAdmissionPerProcess = parseInteger("LUMERA_BOOKING_LOAD_ADMISSION_PER_PROCESS", 10_000, 1, 10_000);
   const requiredConnections = apiProcesses * poolMax + harnessPoolMax + connectionReserve;
   if (requiredConnections > connectionBudget) {
     throw new Error(`Booking load requires ${requiredConnections} database connections (${apiProcesses}x${poolMax} API + ${harnessPoolMax} harness + ${connectionReserve} reserve), above the documented budget of ${connectionBudget}.`);
@@ -119,7 +120,12 @@ async function main() {
     await run("pnpm", ["--filter", "@workspace/db", "run", "push-force"], environment);
     const ports = await Promise.all(Array.from({ length: apiProcesses }, () => port()));
     const start = (p: number, seed: boolean) => {
-      const apiEnvironment: NodeJS.ProcessEnv = { ...environment, PORT: String(p), LOG_LEVEL: "error" };
+      const apiEnvironment: NodeJS.ProcessEnv = {
+        ...environment,
+        PORT: String(p),
+        LOG_LEVEL: "error",
+        BOOKING_MAX_IN_FLIGHT_PER_PROCESS: String(bookingAdmissionPerProcess),
+      };
       if (seed) apiEnvironment.LUMERA_TEST_SEED = "1";
       return spawn(path.join(root, "scripts/node_modules/.bin/tsx"), [path.join(root, "artifacts/api-server/src/test-server.ts")], { cwd: root, env: apiEnvironment, detached: process.platform !== "win32", stdio: "inherit" });
     };
@@ -147,6 +153,7 @@ async function main() {
         LUMERA_BOOKING_LOAD_HARNESS_POOL_MAX: String(harnessPoolMax),
         LUMERA_BOOKING_LOAD_CONNECTION_RESERVE: String(connectionReserve),
         LUMERA_BOOKING_LOAD_DB_CONNECTION_BUDGET: String(connectionBudget),
+        LUMERA_BOOKING_LOAD_ADMISSION_PER_PROCESS: String(bookingAdmissionPerProcess),
       },
       detached: process.platform !== "win32",
       stdio: "inherit",

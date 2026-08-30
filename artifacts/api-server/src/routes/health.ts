@@ -6,9 +6,13 @@ import { schedulerHealthSnapshot } from "../lib/scheduler-resilience";
 const router: IRouter = Router();
 
 router.get("/healthz", (_req, res) => {
+  const databasePool = getPoolStatus();
+  if (process.env.LUMERA_BOOKING_LOAD === "1") {
+    res.setHeader("x-lumera-database-statements", String(databasePool.statements));
+  }
   const data = HealthCheckResponse.parse({
     status: "ok",
-    databasePool: getPoolStatus(),
+    databasePool,
     schedulerJobs: schedulerHealthSnapshot(),
   });
   res.json(data);
