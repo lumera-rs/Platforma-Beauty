@@ -32,6 +32,7 @@ _Populate as you build — short repo map plus pointers to the source-of-truth f
 
 ## Architecture decisions
 
+- The entire platform uses one business timezone: `Europe/Belgrade`. Server-side date, availability, booking, calendar, deadline, and scheduler logic must use server time interpreted in this timezone; never derive business dates from a browser/device timezone. There is no salon-specific timezone setting.
 - `ADMIN` can read the full admin workspace and perform day-to-day salon/review moderation. Only `SUPER_ADMIN` can change user roles/statuses, loyalty rules, or subscription-plan definitions.
 - Every new foreign key needs an index whose leading columns cover that key. Frequently used filter, join, ordering, and retention combinations need a deliberate composite or partial index; avoid speculative indexes that only increase write cost.
 - List handlers must filter, sort, aggregate, and paginate in PostgreSQL. Do not issue database reads inside item loops or load an unbounded table merely to filter or slice it in application memory. Add or extend a fixed SQL query-budget regression for critical list paths.
