@@ -5,23 +5,13 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
-import type { AdminCreateAccountSetupInputRole } from './adminCreateAccountSetupInputRole';
+import type { AdminEducationCenterAccountSetupInput } from './adminEducationCenterAccountSetupInput';
+import type { AdminInstructorAccountSetupInput } from './adminInstructorAccountSetupInput';
+import type { AdminSalonEmployeeAccountSetupInput } from './adminSalonEmployeeAccountSetupInput';
+import type { AdminSalonOwnerAccountSetupInput } from './adminSalonOwnerAccountSetupInput';
+import type { AdminStandaloneAdminAccountSetupInput } from './adminStandaloneAdminAccountSetupInput';
+import type { AdminStandaloneCustomerAccountSetupInput } from './adminStandaloneCustomerAccountSetupInput';
+import type { AdminStandaloneJobseekerAccountSetupInput } from './adminStandaloneJobseekerAccountSetupInput';
+import type { AdminStandaloneStudentAccountSetupInput } from './adminStandaloneStudentAccountSetupInput';
 
-export interface AdminCreateAccountSetupInput {
-  /**
-     * @minLength 1
-     * @maxLength 100
-     */
-  firstName: string;
-  /**
-     * @minLength 1
-     * @maxLength 100
-     */
-  lastName: string;
-  /**
-     * @maxLength 320
-     * @pattern ^[^@\s]+@[^@\s]+\.[^@\s]+$
-     */
-  email: string;
-  role: AdminCreateAccountSetupInputRole;
-}
+export type AdminCreateAccountSetupInput = AdminSalonOwnerAccountSetupInput | AdminSalonEmployeeAccountSetupInput | AdminEducationCenterAccountSetupInput | AdminInstructorAccountSetupInput | AdminStandaloneAdminAccountSetupInput | AdminStandaloneCustomerAccountSetupInput | AdminStandaloneStudentAccountSetupInput | AdminStandaloneJobseekerAccountSetupInput;

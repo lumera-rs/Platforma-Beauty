@@ -6611,21 +6611,92 @@ export interface AdminCreateCustomerSetupInput {
   email: string;
 }
 
-export type AdminCreateAccountSetupInputRole = typeof AdminCreateAccountSetupInputRole[keyof typeof AdminCreateAccountSetupInputRole];
+export type AdminSalonOwnerAccountSetupInputRole = typeof AdminSalonOwnerAccountSetupInputRole[keyof typeof AdminSalonOwnerAccountSetupInputRole];
 
 
-export const AdminCreateAccountSetupInputRole = {
-  ADMIN: 'ADMIN',
+export const AdminSalonOwnerAccountSetupInputRole = {
   SALON_OWNER: 'SALON_OWNER',
-  SALON_EMPLOYEE: 'SALON_EMPLOYEE',
-  EDUKATIVNI_CENTAR: 'EDUKATIVNI_CENTAR',
-  INSTRUCTOR: 'INSTRUCTOR',
-  CUSTOMER: 'CUSTOMER',
-  STUDENT: 'STUDENT',
-  JOBSEEKER: 'JOBSEEKER',
 } as const;
 
-export interface AdminCreateAccountSetupInput {
+export interface AdminSalonOwnerSetup {
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  name: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  slug: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  city: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  municipality: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  address: string;
+  /** @maxLength 50 */
+  postalCode?: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  phone: string;
+  /**
+     * @maxLength 320
+     * @pattern ^[^@\s]+@[^@\s]+\.[^@\s]+$
+     */
+  email: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  companyName: string;
+  /**
+     * @minLength 8
+     * @maxLength 50
+     * @pattern ^(?:\D*\d){8,14}\D*$
+     */
+  companyTaxId: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  companyRegistrationNumber: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  companyAddress: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  companyCity: string;
+  /** @maxLength 50 */
+  companyPostalCode?: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  shortDescription: string;
+  /**
+     * @minLength 1
+     * @maxLength 4000
+     */
+  description: string;
+}
+
+export interface AdminSalonOwnerAccountSetupInput {
   /**
      * @minLength 1
      * @maxLength 100
@@ -6641,8 +6712,268 @@ export interface AdminCreateAccountSetupInput {
      * @pattern ^[^@\s]+@[^@\s]+\.[^@\s]+$
      */
   email: string;
-  role: AdminCreateAccountSetupInputRole;
+  role: AdminSalonOwnerAccountSetupInputRole;
+  salon: AdminSalonOwnerSetup;
 }
+
+export type AdminSalonEmployeeAccountSetupInputRole = typeof AdminSalonEmployeeAccountSetupInputRole[keyof typeof AdminSalonEmployeeAccountSetupInputRole];
+
+
+export const AdminSalonEmployeeAccountSetupInputRole = {
+  SALON_EMPLOYEE: 'SALON_EMPLOYEE',
+} as const;
+
+export interface AdminEmployeeSetup {
+  /** @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ */
+  salonId: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  jobTitle: string;
+  /** @maxLength 4000 */
+  bio?: string;
+}
+
+export interface AdminSalonEmployeeAccountSetupInput {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  firstName: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  lastName: string;
+  /**
+     * @maxLength 320
+     * @pattern ^[^@\s]+@[^@\s]+\.[^@\s]+$
+     */
+  email: string;
+  role: AdminSalonEmployeeAccountSetupInputRole;
+  employee: AdminEmployeeSetup;
+}
+
+export type AdminEducationCenterAccountSetupInputRole = typeof AdminEducationCenterAccountSetupInputRole[keyof typeof AdminEducationCenterAccountSetupInputRole];
+
+
+export const AdminEducationCenterAccountSetupInputRole = {
+  EDUKATIVNI_CENTAR: 'EDUKATIVNI_CENTAR',
+} as const;
+
+export interface AdminEducationCenterSetup {
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  name: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  city: string;
+  /**
+     * @minLength 1
+     * @maxLength 4000
+     */
+  description: string;
+  /**
+     * @maxLength 320
+     * @pattern ^[^@\s]+@[^@\s]+\.[^@\s]+$
+     */
+  contactEmail: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  contactPhone: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  contactAddress: string;
+  /**
+     * @minLength 8
+     * @maxLength 50
+     * @pattern ^(?:\D*\d){8,14}\D*$
+     */
+  pib: string;
+}
+
+export interface AdminEducationCenterAccountSetupInput {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  firstName: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  lastName: string;
+  /**
+     * @maxLength 320
+     * @pattern ^[^@\s]+@[^@\s]+\.[^@\s]+$
+     */
+  email: string;
+  role: AdminEducationCenterAccountSetupInputRole;
+  educationCenter: AdminEducationCenterSetup;
+}
+
+export type AdminInstructorAccountSetupInputRole = typeof AdminInstructorAccountSetupInputRole[keyof typeof AdminInstructorAccountSetupInputRole];
+
+
+export const AdminInstructorAccountSetupInputRole = {
+  INSTRUCTOR: 'INSTRUCTOR',
+} as const;
+
+export interface AdminInstructorSetup {
+  /** @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ */
+  centerId: string;
+  /** @maxLength 4000 */
+  biography?: string;
+  /** @minimum 0 */
+  industryYears?: number;
+  /** @minimum 0 */
+  experienceYears?: number;
+  /**
+     * @items.minLength 1
+     * @items.maxLength 200
+     */
+  specializations?: string[];
+  /**
+     * @items.minLength 1
+     * @items.maxLength 200
+     */
+  qualifications?: string[];
+}
+
+export interface AdminInstructorAccountSetupInput {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  firstName: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  lastName: string;
+  /**
+     * @maxLength 320
+     * @pattern ^[^@\s]+@[^@\s]+\.[^@\s]+$
+     */
+  email: string;
+  role: AdminInstructorAccountSetupInputRole;
+  instructor: AdminInstructorSetup;
+}
+
+export type AdminStandaloneAdminAccountSetupInputRole = typeof AdminStandaloneAdminAccountSetupInputRole[keyof typeof AdminStandaloneAdminAccountSetupInputRole];
+
+
+export const AdminStandaloneAdminAccountSetupInputRole = {
+  ADMIN: 'ADMIN',
+} as const;
+
+export interface AdminStandaloneAdminAccountSetupInput {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  firstName: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  lastName: string;
+  /**
+     * @maxLength 320
+     * @pattern ^[^@\s]+@[^@\s]+\.[^@\s]+$
+     */
+  email: string;
+  role: AdminStandaloneAdminAccountSetupInputRole;
+}
+
+export type AdminStandaloneCustomerAccountSetupInputRole = typeof AdminStandaloneCustomerAccountSetupInputRole[keyof typeof AdminStandaloneCustomerAccountSetupInputRole];
+
+
+export const AdminStandaloneCustomerAccountSetupInputRole = {
+  CUSTOMER: 'CUSTOMER',
+} as const;
+
+export interface AdminStandaloneCustomerAccountSetupInput {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  firstName: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  lastName: string;
+  /**
+     * @maxLength 320
+     * @pattern ^[^@\s]+@[^@\s]+\.[^@\s]+$
+     */
+  email: string;
+  role: AdminStandaloneCustomerAccountSetupInputRole;
+}
+
+export type AdminStandaloneStudentAccountSetupInputRole = typeof AdminStandaloneStudentAccountSetupInputRole[keyof typeof AdminStandaloneStudentAccountSetupInputRole];
+
+
+export const AdminStandaloneStudentAccountSetupInputRole = {
+  STUDENT: 'STUDENT',
+} as const;
+
+export interface AdminStandaloneStudentAccountSetupInput {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  firstName: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  lastName: string;
+  /**
+     * @maxLength 320
+     * @pattern ^[^@\s]+@[^@\s]+\.[^@\s]+$
+     */
+  email: string;
+  role: AdminStandaloneStudentAccountSetupInputRole;
+}
+
+export type AdminStandaloneJobseekerAccountSetupInputRole = typeof AdminStandaloneJobseekerAccountSetupInputRole[keyof typeof AdminStandaloneJobseekerAccountSetupInputRole];
+
+
+export const AdminStandaloneJobseekerAccountSetupInputRole = {
+  JOBSEEKER: 'JOBSEEKER',
+} as const;
+
+export interface AdminStandaloneJobseekerAccountSetupInput {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  firstName: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  lastName: string;
+  /**
+     * @maxLength 320
+     * @pattern ^[^@\s]+@[^@\s]+\.[^@\s]+$
+     */
+  email: string;
+  role: AdminStandaloneJobseekerAccountSetupInputRole;
+}
+
+export type AdminCreateAccountSetupInput = AdminSalonOwnerAccountSetupInput | AdminSalonEmployeeAccountSetupInput | AdminEducationCenterAccountSetupInput | AdminInstructorAccountSetupInput | AdminStandaloneAdminAccountSetupInput | AdminStandaloneCustomerAccountSetupInput | AdminStandaloneStudentAccountSetupInput | AdminStandaloneJobseekerAccountSetupInput;
 
 export interface AdminCreateCustomerSetupResponse {
   user: AdminUser;

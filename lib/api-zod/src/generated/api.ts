@@ -12983,24 +12983,227 @@ export const AdminReissueCustomerSetupResponse = zod.object({
 
 
 /**
- * @summary Create a non-SUPER_ADMIN standalone account and return a one-time password setup URL
+ * @summary Transactionally create a non-SUPER_ADMIN account with its required business relation and a one-time password setup URL
  */
-export const adminCreateAccountSetupBodyFirstNameMax = 100;
+export const adminCreateAccountSetupBodyOneFirstNameMax = 100;
 
-export const adminCreateAccountSetupBodyLastNameMax = 100;
+export const adminCreateAccountSetupBodyOneLastNameMax = 100;
 
-export const adminCreateAccountSetupBodyEmailMax = 320;
-
-
-export const adminCreateAccountSetupBodyEmailRegExp = new RegExp('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+export const adminCreateAccountSetupBodyOneEmailMax = 320;
 
 
-export const AdminCreateAccountSetupBody = zod.object({
-  "firstName": zod.string().min(1).max(adminCreateAccountSetupBodyFirstNameMax),
-  "lastName": zod.string().min(1).max(adminCreateAccountSetupBodyLastNameMax),
-  "email": zod.string().max(adminCreateAccountSetupBodyEmailMax).regex(adminCreateAccountSetupBodyEmailRegExp),
-  "role": zod.enum(['ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT', 'JOBSEEKER'])
-}).strict()
+export const adminCreateAccountSetupBodyOneEmailRegExp = new RegExp('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+export const adminCreateAccountSetupBodyOneSalonNameMax = 500;
+
+export const adminCreateAccountSetupBodyOneSalonSlugMax = 500;
+
+export const adminCreateAccountSetupBodyOneSalonCityMax = 500;
+
+export const adminCreateAccountSetupBodyOneSalonMunicipalityMax = 500;
+
+export const adminCreateAccountSetupBodyOneSalonAddressMax = 500;
+
+export const adminCreateAccountSetupBodyOneSalonPostalCodeMax = 50;
+
+export const adminCreateAccountSetupBodyOneSalonPhoneMax = 500;
+
+export const adminCreateAccountSetupBodyOneSalonEmailMax = 320;
+
+
+export const adminCreateAccountSetupBodyOneSalonEmailRegExp = new RegExp('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+export const adminCreateAccountSetupBodyOneSalonCompanyNameMax = 500;
+
+export const adminCreateAccountSetupBodyOneSalonCompanyTaxIdMin = 8;
+export const adminCreateAccountSetupBodyOneSalonCompanyTaxIdMax = 50;
+
+
+export const adminCreateAccountSetupBodyOneSalonCompanyTaxIdRegExp = new RegExp('^(?:\\D*\\d){8,14}\\D*$');
+export const adminCreateAccountSetupBodyOneSalonCompanyRegistrationNumberMax = 500;
+
+export const adminCreateAccountSetupBodyOneSalonCompanyAddressMax = 500;
+
+export const adminCreateAccountSetupBodyOneSalonCompanyCityMax = 500;
+
+export const adminCreateAccountSetupBodyOneSalonCompanyPostalCodeMax = 50;
+
+export const adminCreateAccountSetupBodyOneSalonShortDescriptionMax = 500;
+
+export const adminCreateAccountSetupBodyOneSalonDescriptionMax = 4000;
+
+export const adminCreateAccountSetupBodyTwoFirstNameMax = 100;
+
+export const adminCreateAccountSetupBodyTwoLastNameMax = 100;
+
+export const adminCreateAccountSetupBodyTwoEmailMax = 320;
+
+
+export const adminCreateAccountSetupBodyTwoEmailRegExp = new RegExp('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+export const adminCreateAccountSetupBodyTwoEmployeeSalonIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const adminCreateAccountSetupBodyTwoEmployeeJobTitleMax = 200;
+
+export const adminCreateAccountSetupBodyTwoEmployeeBioMax = 4000;
+
+export const adminCreateAccountSetupBodyThreeFirstNameMax = 100;
+
+export const adminCreateAccountSetupBodyThreeLastNameMax = 100;
+
+export const adminCreateAccountSetupBodyThreeEmailMax = 320;
+
+
+export const adminCreateAccountSetupBodyThreeEmailRegExp = new RegExp('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+export const adminCreateAccountSetupBodyThreeEducationCenterNameMax = 500;
+
+export const adminCreateAccountSetupBodyThreeEducationCenterCityMax = 500;
+
+export const adminCreateAccountSetupBodyThreeEducationCenterDescriptionMax = 4000;
+
+export const adminCreateAccountSetupBodyThreeEducationCenterContactEmailMax = 320;
+
+
+export const adminCreateAccountSetupBodyThreeEducationCenterContactEmailRegExp = new RegExp('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+export const adminCreateAccountSetupBodyThreeEducationCenterContactPhoneMax = 500;
+
+export const adminCreateAccountSetupBodyThreeEducationCenterContactAddressMax = 500;
+
+export const adminCreateAccountSetupBodyThreeEducationCenterPibMin = 8;
+export const adminCreateAccountSetupBodyThreeEducationCenterPibMax = 50;
+
+
+export const adminCreateAccountSetupBodyThreeEducationCenterPibRegExp = new RegExp('^(?:\\D*\\d){8,14}\\D*$');
+export const adminCreateAccountSetupBodyFourFirstNameMax = 100;
+
+export const adminCreateAccountSetupBodyFourLastNameMax = 100;
+
+export const adminCreateAccountSetupBodyFourEmailMax = 320;
+
+
+export const adminCreateAccountSetupBodyFourEmailRegExp = new RegExp('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+export const adminCreateAccountSetupBodyFourInstructorCenterIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const adminCreateAccountSetupBodyFourInstructorBiographyMax = 4000;
+
+export const adminCreateAccountSetupBodyFourInstructorIndustryYearsMin = 0;
+
+export const adminCreateAccountSetupBodyFourInstructorExperienceYearsMin = 0;
+
+export const adminCreateAccountSetupBodyFourInstructorSpecializationsItemMax = 200;
+
+export const adminCreateAccountSetupBodyFourInstructorQualificationsItemMax = 200;
+
+export const adminCreateAccountSetupBodyFiveFirstNameMax = 100;
+
+export const adminCreateAccountSetupBodyFiveLastNameMax = 100;
+
+export const adminCreateAccountSetupBodyFiveEmailMax = 320;
+
+
+export const adminCreateAccountSetupBodyFiveEmailRegExp = new RegExp('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+export const adminCreateAccountSetupBodySixFirstNameMax = 100;
+
+export const adminCreateAccountSetupBodySixLastNameMax = 100;
+
+export const adminCreateAccountSetupBodySixEmailMax = 320;
+
+
+export const adminCreateAccountSetupBodySixEmailRegExp = new RegExp('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+export const adminCreateAccountSetupBodySevenFirstNameMax = 100;
+
+export const adminCreateAccountSetupBodySevenLastNameMax = 100;
+
+export const adminCreateAccountSetupBodySevenEmailMax = 320;
+
+
+export const adminCreateAccountSetupBodySevenEmailRegExp = new RegExp('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+export const adminCreateAccountSetupBodyEightFirstNameMax = 100;
+
+export const adminCreateAccountSetupBodyEightLastNameMax = 100;
+
+export const adminCreateAccountSetupBodyEightEmailMax = 320;
+
+
+export const adminCreateAccountSetupBodyEightEmailRegExp = new RegExp('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+
+
+export const AdminCreateAccountSetupBody = zod.union([zod.object({
+  "firstName": zod.string().min(1).max(adminCreateAccountSetupBodyOneFirstNameMax),
+  "lastName": zod.string().min(1).max(adminCreateAccountSetupBodyOneLastNameMax),
+  "email": zod.string().max(adminCreateAccountSetupBodyOneEmailMax).regex(adminCreateAccountSetupBodyOneEmailRegExp),
+  "role": zod.enum(['SALON_OWNER']),
+  "salon": zod.object({
+  "name": zod.string().min(1).max(adminCreateAccountSetupBodyOneSalonNameMax),
+  "slug": zod.string().min(1).max(adminCreateAccountSetupBodyOneSalonSlugMax),
+  "city": zod.string().min(1).max(adminCreateAccountSetupBodyOneSalonCityMax),
+  "municipality": zod.string().min(1).max(adminCreateAccountSetupBodyOneSalonMunicipalityMax),
+  "address": zod.string().min(1).max(adminCreateAccountSetupBodyOneSalonAddressMax),
+  "postalCode": zod.string().max(adminCreateAccountSetupBodyOneSalonPostalCodeMax).optional(),
+  "phone": zod.string().min(1).max(adminCreateAccountSetupBodyOneSalonPhoneMax),
+  "email": zod.string().max(adminCreateAccountSetupBodyOneSalonEmailMax).regex(adminCreateAccountSetupBodyOneSalonEmailRegExp),
+  "companyName": zod.string().min(1).max(adminCreateAccountSetupBodyOneSalonCompanyNameMax),
+  "companyTaxId": zod.string().min(adminCreateAccountSetupBodyOneSalonCompanyTaxIdMin).max(adminCreateAccountSetupBodyOneSalonCompanyTaxIdMax).regex(adminCreateAccountSetupBodyOneSalonCompanyTaxIdRegExp),
+  "companyRegistrationNumber": zod.string().min(1).max(adminCreateAccountSetupBodyOneSalonCompanyRegistrationNumberMax),
+  "companyAddress": zod.string().min(1).max(adminCreateAccountSetupBodyOneSalonCompanyAddressMax),
+  "companyCity": zod.string().min(1).max(adminCreateAccountSetupBodyOneSalonCompanyCityMax),
+  "companyPostalCode": zod.string().max(adminCreateAccountSetupBodyOneSalonCompanyPostalCodeMax).optional(),
+  "shortDescription": zod.string().min(1).max(adminCreateAccountSetupBodyOneSalonShortDescriptionMax),
+  "description": zod.string().min(1).max(adminCreateAccountSetupBodyOneSalonDescriptionMax)
+})
+}),zod.object({
+  "firstName": zod.string().min(1).max(adminCreateAccountSetupBodyTwoFirstNameMax),
+  "lastName": zod.string().min(1).max(adminCreateAccountSetupBodyTwoLastNameMax),
+  "email": zod.string().max(adminCreateAccountSetupBodyTwoEmailMax).regex(adminCreateAccountSetupBodyTwoEmailRegExp),
+  "role": zod.enum(['SALON_EMPLOYEE']),
+  "employee": zod.object({
+  "salonId": zod.string().regex(adminCreateAccountSetupBodyTwoEmployeeSalonIdRegExp),
+  "jobTitle": zod.string().min(1).max(adminCreateAccountSetupBodyTwoEmployeeJobTitleMax),
+  "bio": zod.string().max(adminCreateAccountSetupBodyTwoEmployeeBioMax).optional()
+})
+}),zod.object({
+  "firstName": zod.string().min(1).max(adminCreateAccountSetupBodyThreeFirstNameMax),
+  "lastName": zod.string().min(1).max(adminCreateAccountSetupBodyThreeLastNameMax),
+  "email": zod.string().max(adminCreateAccountSetupBodyThreeEmailMax).regex(adminCreateAccountSetupBodyThreeEmailRegExp),
+  "role": zod.enum(['EDUKATIVNI_CENTAR']),
+  "educationCenter": zod.object({
+  "name": zod.string().min(1).max(adminCreateAccountSetupBodyThreeEducationCenterNameMax),
+  "city": zod.string().min(1).max(adminCreateAccountSetupBodyThreeEducationCenterCityMax),
+  "description": zod.string().min(1).max(adminCreateAccountSetupBodyThreeEducationCenterDescriptionMax),
+  "contactEmail": zod.string().max(adminCreateAccountSetupBodyThreeEducationCenterContactEmailMax).regex(adminCreateAccountSetupBodyThreeEducationCenterContactEmailRegExp),
+  "contactPhone": zod.string().min(1).max(adminCreateAccountSetupBodyThreeEducationCenterContactPhoneMax),
+  "contactAddress": zod.string().min(1).max(adminCreateAccountSetupBodyThreeEducationCenterContactAddressMax),
+  "pib": zod.string().min(adminCreateAccountSetupBodyThreeEducationCenterPibMin).max(adminCreateAccountSetupBodyThreeEducationCenterPibMax).regex(adminCreateAccountSetupBodyThreeEducationCenterPibRegExp)
+})
+}),zod.object({
+  "firstName": zod.string().min(1).max(adminCreateAccountSetupBodyFourFirstNameMax),
+  "lastName": zod.string().min(1).max(adminCreateAccountSetupBodyFourLastNameMax),
+  "email": zod.string().max(adminCreateAccountSetupBodyFourEmailMax).regex(adminCreateAccountSetupBodyFourEmailRegExp),
+  "role": zod.enum(['INSTRUCTOR']),
+  "instructor": zod.object({
+  "centerId": zod.string().regex(adminCreateAccountSetupBodyFourInstructorCenterIdRegExp),
+  "biography": zod.string().max(adminCreateAccountSetupBodyFourInstructorBiographyMax).optional(),
+  "industryYears": zod.number().int().min(adminCreateAccountSetupBodyFourInstructorIndustryYearsMin).optional(),
+  "experienceYears": zod.number().int().min(adminCreateAccountSetupBodyFourInstructorExperienceYearsMin).optional(),
+  "specializations": zod.array(zod.string().min(1).max(adminCreateAccountSetupBodyFourInstructorSpecializationsItemMax)).optional(),
+  "qualifications": zod.array(zod.string().min(1).max(adminCreateAccountSetupBodyFourInstructorQualificationsItemMax)).optional()
+})
+}),zod.object({
+  "firstName": zod.string().min(1).max(adminCreateAccountSetupBodyFiveFirstNameMax),
+  "lastName": zod.string().min(1).max(adminCreateAccountSetupBodyFiveLastNameMax),
+  "email": zod.string().max(adminCreateAccountSetupBodyFiveEmailMax).regex(adminCreateAccountSetupBodyFiveEmailRegExp),
+  "role": zod.enum(['ADMIN'])
+}),zod.object({
+  "firstName": zod.string().min(1).max(adminCreateAccountSetupBodySixFirstNameMax),
+  "lastName": zod.string().min(1).max(adminCreateAccountSetupBodySixLastNameMax),
+  "email": zod.string().max(adminCreateAccountSetupBodySixEmailMax).regex(adminCreateAccountSetupBodySixEmailRegExp),
+  "role": zod.enum(['CUSTOMER'])
+}),zod.object({
+  "firstName": zod.string().min(1).max(adminCreateAccountSetupBodySevenFirstNameMax),
+  "lastName": zod.string().min(1).max(adminCreateAccountSetupBodySevenLastNameMax),
+  "email": zod.string().max(adminCreateAccountSetupBodySevenEmailMax).regex(adminCreateAccountSetupBodySevenEmailRegExp),
+  "role": zod.enum(['STUDENT'])
+}),zod.object({
+  "firstName": zod.string().min(1).max(adminCreateAccountSetupBodyEightFirstNameMax),
+  "lastName": zod.string().min(1).max(adminCreateAccountSetupBodyEightLastNameMax),
+  "email": zod.string().max(adminCreateAccountSetupBodyEightEmailMax).regex(adminCreateAccountSetupBodyEightEmailRegExp),
+  "role": zod.enum(['JOBSEEKER'])
+})])
 
 
 

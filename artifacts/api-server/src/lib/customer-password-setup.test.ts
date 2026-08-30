@@ -8,6 +8,12 @@ import {
   customerPasswordSetupRateLimitsTable,
   customerPasswordSetupTokensTable,
   db,
+  educationCentersTable,
+  educationInstructorsTable,
+  employeeLocationAssignmentsTable,
+  employeesTable,
+  legalEntitiesTable,
+  salonsTable,
   sessionsTable,
   usersTable,
 } from "@workspace/db";
@@ -27,6 +33,9 @@ async function run(): Promise<void> {
   const suffix = randomUUID();
   const administratorPassword = randomBytes(24).toString("base64url");
   const customerPassword = randomBytes(24).toString("base64url");
+  const salonPib = `1${randomBytes(4).readUInt32BE(0).toString().padStart(10, "0").slice(0, 8)}`;
+  const centerPib = `2${randomBytes(4).readUInt32BE(0).toString().padStart(10, "0").slice(0, 8)}`;
+  const rollbackPib = `3${randomBytes(4).readUInt32BE(0).toString().padStart(10, "0").slice(0, 8)}`;
   const createdUserIds: string[] = [];
   const actors = await db.insert(usersTable).values([
     {
@@ -96,6 +105,12 @@ async function run(): Promise<void> {
       method: "POST", headers: { cookie: cookies.superAdmin, "content-type": "application/json" },
       body: JSON.stringify(body),
     });
+    const unauthorizedGenericCreate = (cookie?: string) => fetch(`${baseUrl}/admin/accounts/setup`, {
+      method: "POST", headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}) },
+      body: JSON.stringify({ ...createBody, role: "ADMIN" }),
+    });
+    assert.equal((await unauthorizedGenericCreate()).status, 401);
+    assert.equal((await unauthorizedGenericCreate(cookies.admin)).status, 403);
     const standaloneResponse = await genericCreate({
       ...createBody, email: `setup-standalone-admin-${suffix}@example.test`, role: "ADMIN",
     });
@@ -103,10 +118,120 @@ async function run(): Promise<void> {
     const standalone = await standaloneResponse.json() as CreatedSetup;
     createdUserIds.push(standalone.user.id);
     assert.equal(standalone.user.role, "ADMIN");
+    const incompleteRoleTransition = await fetch(`${baseUrl}/admin/users/${standalone.user.id}`, {
+      method: "PATCH",
+      headers: { cookie: cookies.superAdmin, "content-type": "application/json" },
+      body: JSON.stringify({ role: "SALON_OWNER" }),
+    });
+    assert.equal(incompleteRoleTransition.status, 422);
+    assert.equal((await db.select({ role: usersTable.role }).from(usersTable)
+      .where(eq(usersTable.id, standalone.user.id)))[0]?.role, "ADMIN");
     const incompleteBusinessResponse = await genericCreate({
       ...createBody, email: `setup-incomplete-owner-${suffix}@example.test`, role: "SALON_OWNER",
     });
     assert.equal(incompleteBusinessResponse.status, 422);
+
+    const ownerEmail = `setup-business-owner-${suffix}@example.test`;
+    const ownerSetupResponse = await genericCreate({
+      firstName: "Business", lastName: "Owner", email: ownerEmail, role: "SALON_OWNER",
+      salon: {
+        name: "Transactional salon", slug: `transactional-salon-${suffix}`, city: "Beograd",
+        municipality: "Vračar", address: "Njegoševa 1", postalCode: "11000",
+        phone: "+38160111222", email: ownerEmail, companyName: "Transactional Salon DOO",
+        companyTaxId: salonPib, companyRegistrationNumber: `MB-${suffix}`,
+        companyAddress: "Njegoševa 1", companyCity: "Beograd", companyPostalCode: "11000",
+        shortDescription: "Salon created in one transaction.", description: "Complete salon business profile.",
+      },
+    });
+    assert.equal(ownerSetupResponse.status, 201);
+    const ownerSetup = await ownerSetupResponse.json() as CreatedSetup;
+    createdUserIds.push(ownerSetup.user.id);
+    const [createdSalon] = await db.select().from(salonsTable).where(eq(salonsTable.ownerId, ownerSetup.user.id));
+    assert.ok(createdSalon);
+    assert.equal((await db.select({ activeSalonId: usersTable.activeSalonId }).from(usersTable)
+      .where(eq(usersTable.id, ownerSetup.user.id)))[0]?.activeSalonId, createdSalon.id);
+
+    const employeeEmail = `setup-business-employee-${suffix}@example.test`;
+    const employeeSetupResponse = await genericCreate({
+      firstName: "Business", lastName: "Employee", email: employeeEmail, role: "SALON_EMPLOYEE",
+      employee: { salonId: createdSalon.id, jobTitle: "Kozmetičar", bio: "Iskusan član tima." },
+    });
+    assert.equal(employeeSetupResponse.status, 201);
+    const employeeSetup = await employeeSetupResponse.json() as CreatedSetup;
+    createdUserIds.push(employeeSetup.user.id);
+    const [createdEmployee] = await db.select().from(employeesTable).where(eq(employeesTable.userId, employeeSetup.user.id));
+    assert.ok(createdEmployee);
+    const [assignment] = await db.select().from(employeeLocationAssignmentsTable)
+      .where(eq(employeeLocationAssignmentsTable.employeeId, createdEmployee.id));
+    assert.equal(assignment?.salonId, createdSalon.id);
+    assert.equal(assignment?.active, true);
+    assert.equal(assignment?.isDefault, true);
+
+    const centerEmail = `setup-business-center-${suffix}@example.test`;
+    const centerSetupResponse = await genericCreate({
+      firstName: "Education", lastName: "Owner", email: centerEmail, role: "EDUKATIVNI_CENTAR",
+      educationCenter: {
+        name: "Transactional academy", city: "Novi Sad", description: "Potpun opis edukativnih programa.",
+        contactEmail: centerEmail, contactPhone: "+38161111222", contactAddress: "Bulevar 1",
+        pib: centerPib,
+      },
+    });
+    assert.equal(centerSetupResponse.status, 201);
+    const centerSetup = await centerSetupResponse.json() as CreatedSetup;
+    createdUserIds.push(centerSetup.user.id);
+    const [createdCenter] = await db.select().from(educationCentersTable)
+      .where(eq(educationCentersTable.ownerId, centerSetup.user.id));
+    assert.ok(createdCenter);
+    const [centerWorkspace] = await db.select().from(salonsTable).where(eq(salonsTable.ownerId, centerSetup.user.id));
+    assert.ok(centerWorkspace, "education-center setup creates its compatible salon workspace");
+    assert.equal((await db.select({ activeSalonId: usersTable.activeSalonId }).from(usersTable)
+      .where(eq(usersTable.id, centerSetup.user.id)))[0]?.activeSalonId, centerWorkspace.id);
+
+    const instructorEmail = `setup-business-instructor-${suffix}@example.test`;
+    const instructorSetupResponse = await genericCreate({
+      firstName: "Course", lastName: "Instructor", email: instructorEmail, role: "INSTRUCTOR",
+      instructor: {
+        centerId: createdCenter.id, biography: "Predavač sa iskustvom.", industryYears: 9,
+        experienceYears: 4, specializations: ["Nega kože"], qualifications: ["Sertifikat"],
+      },
+    });
+    assert.equal(instructorSetupResponse.status, 201);
+    const instructorSetup = await instructorSetupResponse.json() as CreatedSetup;
+    createdUserIds.push(instructorSetup.user.id);
+    const [createdInstructor] = await db.select().from(educationInstructorsTable)
+      .where(eq(educationInstructorsTable.userId, instructorSetup.user.id));
+    assert.equal(createdInstructor?.centerId, createdCenter.id);
+
+    const mismatchedEmail = `setup-mismatched-${suffix}@example.test`;
+    assert.equal((await genericCreate({
+      firstName: "Wrong", lastName: "Tenant", email: mismatchedEmail, role: "INSTRUCTOR",
+      employee: { salonId: createdSalon.id, jobTitle: "Wrong" },
+    })).status, 422);
+    assert.equal((await db.select().from(usersTable).where(eq(usersTable.email, mismatchedEmail))).length, 0);
+
+    const rollbackEmail = `setup-rollback-${suffix}@example.test`;
+    const rollbackResponse = await genericCreate({
+      firstName: "Rollback", lastName: "Owner", email: rollbackEmail, role: "SALON_OWNER",
+      salon: {
+        name: "Duplicate slug", slug: createdSalon.slug, city: "Beograd", municipality: "Vračar",
+        address: "Test 2", phone: "+38160111333", email: rollbackEmail, companyName: "Rollback DOO",
+        companyTaxId: rollbackPib, companyRegistrationNumber: `ROLLBACK-MB-${suffix}`,
+        companyAddress: "Test 2", companyCity: "Beograd", shortDescription: "Rollback test.",
+        description: "This relation must force the entire transaction to roll back.",
+      },
+    });
+    assert.equal(rollbackResponse.status, 409);
+    assert.equal((await db.select().from(usersTable).where(eq(usersTable.email, rollbackEmail))).length, 0,
+      "failed companion insert rolls back the user, setup token, and audit");
+
+    await db.update(salonsTable).set({ active: false }).where(eq(salonsTable.id, createdSalon.id));
+    const isolatedEmail = `setup-inactive-tenant-${suffix}@example.test`;
+    assert.equal((await genericCreate({
+      firstName: "Inactive", lastName: "Tenant", email: isolatedEmail, role: "SALON_EMPLOYEE",
+      employee: { salonId: createdSalon.id, jobTitle: "Kozmetičar" },
+    })).status, 404);
+    assert.equal((await db.select().from(usersTable).where(eq(usersTable.email, isolatedEmail))).length, 0);
+    await db.delete(customerPasswordSetupRateLimitsTable);
 
     const createdResponse = await create(cookies.superAdmin);
     assert.equal(createdResponse.status, 201);
@@ -249,6 +374,19 @@ async function run(): Promise<void> {
         .where(inArray(customerPasswordSetupAuditsTable.targetUserId, createdUserIds));
       await db.delete(customerPasswordSetupTokensTable)
         .where(inArray(customerPasswordSetupTokensTable.userId, createdUserIds));
+      const createdEmployees = await db.select({ id: employeesTable.id }).from(employeesTable)
+        .where(inArray(employeesTable.userId, createdUserIds));
+      if (createdEmployees.length) {
+        await db.delete(employeeLocationAssignmentsTable)
+          .where(inArray(employeeLocationAssignmentsTable.employeeId, createdEmployees.map((row) => row.id)));
+      }
+      await db.delete(employeesTable).where(inArray(employeesTable.userId, createdUserIds));
+      await db.delete(educationInstructorsTable).where(inArray(educationInstructorsTable.userId, createdUserIds));
+      await db.delete(educationCentersTable).where(inArray(educationCentersTable.ownerId, createdUserIds));
+      await db.delete(salonsTable).where(inArray(salonsTable.ownerId, createdUserIds));
+      await db.delete(legalEntitiesTable).where(inArray(legalEntitiesTable.normalizedPib, [
+        salonPib, centerPib,
+      ]));
       await db.delete(usersTable).where(inArray(usersTable.id, createdUserIds));
     }
     await db.delete(customerPasswordSetupRateLimitsTable);

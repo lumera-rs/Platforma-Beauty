@@ -21469,21 +21469,164 @@ router.post("/admin/customers/setup", async (req, res): Promise<void> => {
   }
 });
 
+type AdminBusinessAccountSetupInput = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: "ADMIN" | "SALON_OWNER" | "SALON_EMPLOYEE" | "EDUKATIVNI_CENTAR" | "INSTRUCTOR" | "CUSTOMER" | "STUDENT" | "JOBSEEKER";
+  salon?: {
+    name: string; slug: string; city: string; municipality: string; address: string;
+    postalCode?: string; phone: string; email: string; companyName: string;
+    companyTaxId: string; companyRegistrationNumber: string; companyAddress: string;
+    companyCity: string; companyPostalCode?: string; shortDescription: string; description: string;
+  };
+  employee?: { salonId: string; jobTitle: string; bio?: string };
+  educationCenter?: {
+    name: string; city: string; description: string; contactEmail: string;
+    contactPhone: string; contactAddress: string; pib: string;
+  };
+  instructor?: {
+    centerId: string; biography?: string; industryYears?: number; experienceYears?: number;
+    specializations?: string[]; qualifications?: string[];
+  };
+};
+
+const adminAccountRoleObjects = ["salon", "employee", "educationCenter", "instructor"] as const;
+const adminAccountRoles = new Set<AdminBusinessAccountSetupInput["role"]>([
+  "ADMIN", "SALON_OWNER", "SALON_EMPLOYEE", "EDUKATIVNI_CENTAR", "INSTRUCTOR", "CUSTOMER", "STUDENT", "JOBSEEKER",
+]);
+const adminAccountRoleObject: Partial<Record<AdminBusinessAccountSetupInput["role"], typeof adminAccountRoleObjects[number]>> = {
+  SALON_OWNER: "salon",
+  SALON_EMPLOYEE: "employee",
+  EDUKATIVNI_CENTAR: "educationCenter",
+  INSTRUCTOR: "instructor",
+};
+const uuidInputPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const emailInputPattern = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+function isRecordInput(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
+  return Object.keys(value).every((key) => allowed.includes(key));
+}
+
+function nonBlankInput(value: unknown, maxLength = 2000): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= maxLength;
+}
+
+function optionalTextInput(value: unknown, maxLength = 2000): value is string | undefined {
+  return value === undefined || (typeof value === "string" && value.length <= maxLength);
+}
+
+function validPibInput(value: unknown): value is string {
+  if (!nonBlankInput(value, 50)) return false;
+  const digits = value.replace(/\D/g, "");
+  return digits.length >= 8 && digits.length <= 14;
+}
+
+function parseAdminAccountSetupInput(value: unknown): AdminBusinessAccountSetupInput | null {
+  if (!isRecordInput(value) || !hasOnlyKeys(value, [
+    "firstName", "lastName", "email", "role", ...adminAccountRoleObjects,
+  ])) return null;
+  if (!nonBlankInput(value.firstName, 100) || !nonBlankInput(value.lastName, 100)
+    || !nonBlankInput(value.email, 320) || !emailInputPattern.test(value.email)
+    || typeof value.role !== "string" || !adminAccountRoles.has(value.role as AdminBusinessAccountSetupInput["role"])) return null;
+  const role = value.role as AdminBusinessAccountSetupInput["role"];
+  const expectedObject = adminAccountRoleObject[role];
+  const presentObjects = adminAccountRoleObjects.filter((key) => Object.prototype.hasOwnProperty.call(value, key));
+  if ((expectedObject && (presentObjects.length !== 1 || presentObjects[0] !== expectedObject))
+    || (!expectedObject && presentObjects.length !== 0)) return null;
+
+  const common = {
+    firstName: value.firstName.trim(), lastName: value.lastName.trim(),
+    email: value.email.trim().toLowerCase(), role,
+  };
+  if (role === "SALON_OWNER") {
+    const salon = value.salon;
+    const required = [
+      "name", "slug", "city", "municipality", "address", "phone", "email", "companyName",
+      "companyTaxId", "companyRegistrationNumber", "companyAddress", "companyCity",
+      "shortDescription", "description",
+    ] as const;
+    if (!isRecordInput(salon) || !hasOnlyKeys(salon, [...required, "postalCode", "companyPostalCode"])
+      || required.some((key) => !nonBlankInput(salon[key], key === "description" ? 4000 : 500))
+      || !validPibInput(salon.companyTaxId)
+      || !emailInputPattern.test(salon.email as string)
+      || !optionalTextInput(salon.postalCode, 50) || !optionalTextInput(salon.companyPostalCode, 50)) return null;
+    return { ...common, role, salon: {
+      name: (salon.name as string).trim(), slug: (salon.slug as string).trim(),
+      city: (salon.city as string).trim(), municipality: (salon.municipality as string).trim(),
+      address: (salon.address as string).trim(), postalCode: (salon.postalCode as string | undefined)?.trim(),
+      phone: (salon.phone as string).trim(), email: (salon.email as string).trim().toLowerCase(),
+      companyName: (salon.companyName as string).trim(), companyTaxId: (salon.companyTaxId as string).trim(),
+      companyRegistrationNumber: (salon.companyRegistrationNumber as string).trim(),
+      companyAddress: (salon.companyAddress as string).trim(), companyCity: (salon.companyCity as string).trim(),
+      companyPostalCode: (salon.companyPostalCode as string | undefined)?.trim(),
+      shortDescription: (salon.shortDescription as string).trim(), description: (salon.description as string).trim(),
+    } };
+  }
+  if (role === "SALON_EMPLOYEE") {
+    const employee = value.employee;
+    if (!isRecordInput(employee) || !hasOnlyKeys(employee, ["salonId", "jobTitle", "bio"])
+      || typeof employee.salonId !== "string" || !uuidInputPattern.test(employee.salonId)
+      || !nonBlankInput(employee.jobTitle, 200) || !optionalTextInput(employee.bio, 4000)) return null;
+    return { ...common, role, employee: {
+      salonId: employee.salonId, jobTitle: employee.jobTitle.trim(),
+      bio: (employee.bio as string | undefined)?.trim(),
+    } };
+  }
+  if (role === "EDUKATIVNI_CENTAR") {
+    const center = value.educationCenter;
+    const required = ["name", "city", "description", "contactEmail", "contactPhone", "contactAddress", "pib"] as const;
+    if (!isRecordInput(center) || !hasOnlyKeys(center, required)
+      || required.some((key) => !nonBlankInput(center[key], key === "description" ? 4000 : 500))
+      || !validPibInput(center.pib)
+      || !emailInputPattern.test(center.contactEmail as string)) return null;
+    return { ...common, role, educationCenter: {
+      name: (center.name as string).trim(), city: (center.city as string).trim(),
+      description: (center.description as string).trim(), contactEmail: (center.contactEmail as string).trim().toLowerCase(),
+      contactPhone: (center.contactPhone as string).trim(), contactAddress: (center.contactAddress as string).trim(),
+      pib: (center.pib as string).trim(),
+    } };
+  }
+  if (role === "INSTRUCTOR") {
+    const instructor = value.instructor;
+    if (!isRecordInput(instructor) || !hasOnlyKeys(instructor, [
+      "centerId", "biography", "industryYears", "experienceYears", "specializations", "qualifications",
+    ]) || typeof instructor.centerId !== "string" || !uuidInputPattern.test(instructor.centerId)
+      || !optionalTextInput(instructor.biography, 4000)
+      || (instructor.industryYears !== undefined && (!Number.isInteger(instructor.industryYears) || (instructor.industryYears as number) < 0))
+      || (instructor.experienceYears !== undefined && (!Number.isInteger(instructor.experienceYears) || (instructor.experienceYears as number) < 0))
+      || !["specializations", "qualifications"].every((key) => instructor[key] === undefined
+        || (Array.isArray(instructor[key]) && (instructor[key] as unknown[]).every((item) => nonBlankInput(item, 200))))) return null;
+    return { ...common, role, instructor: {
+      centerId: instructor.centerId, biography: (instructor.biography as string | undefined)?.trim(),
+      industryYears: instructor.industryYears as number | undefined,
+      experienceYears: instructor.experienceYears as number | undefined,
+      specializations: (instructor.specializations as string[] | undefined)?.map((item) => item.trim()),
+      qualifications: (instructor.qualifications as string[] | undefined)?.map((item) => item.trim()),
+    } };
+  }
+  return common;
+}
+
 router.post("/admin/accounts/setup", async (req, res): Promise<void> => {
   const admin = await requireSuperAdmin(req, res); if (!admin) return;
-  const parsed = AdminCreateAccountSetupBody.safeParse(req.body);
-  if (!parsed.success) { res.status(400).json({ error: "Unesite ispravne podatke naloga." }); return; }
-  const companionRoles = new Set(["SALON_OWNER", "SALON_EMPLOYEE", "EDUKATIVNI_CENTAR", "INSTRUCTOR"]);
-  if (companionRoles.has(parsed.data.role)) {
-    res.status(422).json({ error: "Ova uloga zahteva povezani poslovni profil, salon ili zaposlenje i ne može biti kreirana bez tih podataka." });
+  if (!isRecordInput(req.body)
+    || !nonBlankInput(req.body.firstName, 100) || !nonBlankInput(req.body.lastName, 100)
+    || !nonBlankInput(req.body.email, 320) || !emailInputPattern.test(req.body.email)
+    || typeof req.body.role !== "string"
+    || !adminAccountRoles.has(req.body.role as AdminBusinessAccountSetupInput["role"])) {
+    res.status(400).json({ error: "Unesite ispravne osnovne podatke naloga." });
     return;
   }
+  const parsed = parseAdminAccountSetupInput(req.body);
+  if (!parsed) { res.status(422).json({ error: "Unesite tačno one poslovne podatke koji odgovaraju izabranoj ulozi." }); return; }
   const admitted = await admitCustomerSetupRequest("issue", admin.id, 10, 60 * 60 * 1000);
   if (!admitted) { res.setHeader("Retry-After", "3600"); res.status(429).json({ error: "Previše zahteva. Pokušajte ponovo kasnije." }); return; }
-  const email = parsed.data.email.trim().toLowerCase();
-  const firstName = parsed.data.firstName.trim();
-  const lastName = parsed.data.lastName.trim();
-  if (!firstName || !lastName) { res.status(400).json({ error: "Ime i prezime su obavezni." }); return; }
+  const { email, firstName, lastName } = parsed;
   const rawToken = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + CUSTOMER_SETUP_TTL_MS);
   const setupBaseUrl = customerSetupBaseUrl(req);
@@ -21496,9 +21639,84 @@ router.post("/admin/accounts/setup", async (req, res): Promise<void> => {
       if (existing) return null;
       const [created] = await tx.insert(usersTable).values({
         firstName, lastName, email, passwordHash, passwordSetAt: null,
-        role: parsed.data.role, active: true, mustChangePassword: false,
+        role: parsed.role, active: true, mustChangePassword: false,
       }).returning();
       if (!created) throw new Error("Account insert returned no row.");
+      if (parsed.role === "SALON_OWNER") {
+        const input = parsed.salon!;
+        const [salon] = await tx.insert(salonsTable).values({
+          ownerId: created.id, name: input.name, slug: input.slug, city: input.city,
+          municipality: input.municipality, address: input.address, postalCode: input.postalCode,
+          phone: input.phone, email: input.email, companyName: input.companyName,
+          companyTaxId: input.companyTaxId, companyRegistrationNumber: input.companyRegistrationNumber,
+          companyAddress: input.companyAddress, companyCity: input.companyCity,
+          companyPostalCode: input.companyPostalCode, shortDescription: input.shortDescription,
+          description: input.description,
+          imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=1200&auto=format&fit=crop",
+          active: true,
+        }).returning({ id: salonsTable.id });
+        const binding = await bindLegalEntityBusinessInTx(tx, {
+          pib: input.companyTaxId, legalName: input.companyName, ownerUserId: created.id, salonId: salon!.id,
+        });
+        await tx.update(salonsTable).set({ companyTaxId: binding.normalizedPib }).where(eq(salonsTable.id, salon!.id));
+        await tx.update(usersTable).set({ activeSalonId: salon!.id, updatedAt: new Date() }).where(eq(usersTable.id, created.id));
+      } else if (parsed.role === "SALON_EMPLOYEE") {
+        const input = parsed.employee!;
+        const [salon] = await tx.select({ id: salonsTable.id, ownerId: salonsTable.ownerId })
+          .from(salonsTable).where(and(eq(salonsTable.id, input.salonId), eq(salonsTable.active, true)))
+          .for("update").limit(1);
+        if (!salon) throw new Error("SETUP_TARGET_SALON_NOT_FOUND");
+        const [owner] = await tx.select({ active: usersTable.active }).from(usersTable)
+          .where(eq(usersTable.id, salon.ownerId)).for("update").limit(1);
+        if (!owner?.active) throw new Error("SETUP_TARGET_SALON_NOT_FOUND");
+        const [employee] = await tx.insert(employeesTable).values({
+          salonId: salon.id, userId: created.id, name: `${firstName} ${lastName}`,
+          role: input.jobTitle, bio: input.bio ?? "", email,
+          avatarUrl: "/lumera-media/therapist-1.jpg", active: true,
+        }).returning({ id: employeesTable.id });
+        await tx.insert(employeeLocationAssignmentsTable).values({
+          employeeId: employee!.id, salonId: salon.id, active: true, isDefault: true,
+        });
+        await tx.update(usersTable).set({ activeSalonId: salon.id, updatedAt: new Date() }).where(eq(usersTable.id, created.id));
+      } else if (parsed.role === "EDUKATIVNI_CENTAR") {
+        const input = parsed.educationCenter!;
+        const [workspace] = await tx.insert(salonsTable).values({
+          ownerId: created.id, name: input.name, slug: businessSlug(input.name, created.id),
+          city: input.city, municipality: input.city, address: input.contactAddress,
+          phone: input.contactPhone, email: input.contactEmail, companyName: input.name,
+          companyTaxId: input.pib, shortDescription: `${input.name} je novi LUMERA partner.`,
+          description: `Poslovni profil za ${input.name}. Dopunite ponudu, tim i radno vreme iz poslovnog portala.`,
+          imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=1200&auto=format&fit=crop",
+          active: false,
+        }).returning({ id: salonsTable.id });
+        const [center] = await tx.insert(educationCentersTable).values({
+          ownerId: created.id, name: input.name, city: input.city, description: input.description,
+          imageUrl: "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?q=80&w=1200&auto=format&fit=crop",
+          contactEmail: input.contactEmail, contactPhone: input.contactPhone,
+          contactAddress: input.contactAddress, pib: input.pib,
+        }).returning({ id: educationCentersTable.id });
+        const binding = await bindLegalEntityBusinessInTx(tx, {
+          pib: input.pib, legalName: input.name, ownerUserId: created.id, educationCenterId: center!.id,
+        });
+        await tx.update(educationCentersTable).set({ pib: binding.normalizedPib }).where(eq(educationCentersTable.id, center!.id));
+        await tx.update(usersTable).set({ activeSalonId: workspace!.id, updatedAt: new Date() }).where(eq(usersTable.id, created.id));
+      } else if (parsed.role === "INSTRUCTOR") {
+        const input = parsed.instructor!;
+        const [center] = await tx.select({ id: educationCentersTable.id, ownerId: educationCentersTable.ownerId })
+          .from(educationCentersTable)
+          .where(and(eq(educationCentersTable.id, input.centerId), notInArray(educationCentersTable.verificationStatus, ["rejected", "suspended"])))
+          .for("update").limit(1);
+        if (!center) throw new Error("SETUP_TARGET_CENTER_NOT_FOUND");
+        const [owner] = await tx.select({ active: usersTable.active }).from(usersTable)
+          .where(eq(usersTable.id, center.ownerId)).for("update").limit(1);
+        if (!owner?.active) throw new Error("SETUP_TARGET_CENTER_NOT_FOUND");
+        await tx.insert(educationInstructorsTable).values({
+          centerId: center.id, userId: created.id, fullName: `${firstName} ${lastName}`,
+          photoUrl: "/lumera-media/therapist-1.jpg", biography: input.biography ?? "",
+          industryYears: input.industryYears ?? 0, experienceYears: input.experienceYears ?? 0,
+          specializations: input.specializations ?? [], qualifications: input.qualifications ?? [],
+        });
+      }
       await tx.insert(customerPasswordSetupTokensTable).values({
         userId: created.id, issuedByUserId: admin.id, tokenHash: customerSetupDigest(rawToken),
         expiresAt, maxAttempts: CUSTOMER_SETUP_MAX_ATTEMPTS,
@@ -21514,7 +21732,21 @@ router.post("/admin/accounts/setup", async (req, res): Promise<void> => {
       setupUrl: `${setupBaseUrl}/postavi-lozinku#token=${encodeURIComponent(rawToken)}`, expiresAt: expiresAt.toISOString(),
     });
   } catch (error) {
-    if ((error as { code?: string }).code === "23505") { res.status(409).json({ error: "Korisnik sa ovom e-mail adresom već postoji." }); return; }
+    if (error instanceof LegalEntityOwnerConflictError) {
+      res.status(409).json({ error: error.message, code: error.code, normalizedPib: error.normalizedPib, outcome: "cross_account_conflict" });
+      return;
+    }
+    if (error instanceof Error && error.message === "SETUP_TARGET_SALON_NOT_FOUND") {
+      res.status(404).json({ error: "Aktivni salon nije pronađen." }); return;
+    }
+    if (error instanceof Error && error.message === "SETUP_TARGET_CENTER_NOT_FOUND") {
+      res.status(404).json({ error: "Aktivni edukativni centar nije pronađen." }); return;
+    }
+    if ((error as { code?: string }).code === "23505"
+      || (error as { cause?: { code?: string } })?.cause?.code === "23505") {
+      res.status(409).json({ error: "Nalog ili povezani poslovni podaci već postoje." });
+      return;
+    }
     throw error;
   }
 });
@@ -21568,6 +21800,12 @@ router.patch("/admin/users/:userId", async (req, res): Promise<void> => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext('lumera_active_super_admin_guard'))`);
     const [target] = await tx.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
     if (!target) return { status: "not-found" as const };
+    const targetHasBusinessCompanion = adminAccountRoleObject[target.role as AdminBusinessAccountSetupInput["role"]] !== undefined;
+    const nextNeedsBusinessCompanion = role !== undefined
+      && adminAccountRoleObject[role as AdminBusinessAccountSetupInput["role"]] !== undefined;
+    if (role !== undefined && role !== target.role && (targetHasBusinessCompanion || nextNeedsBusinessCompanion)) {
+      return { status: "business-role-transition" as const };
+    }
 
     const willRemoveActiveSuperAdmin =
       target.role === "SUPER_ADMIN" &&
@@ -21588,6 +21826,10 @@ router.patch("/admin/users/:userId", async (req, res): Promise<void> => {
   });
 
   if (result.status === "not-found") { res.status(404).json({ error: "Korisnik nije pronađen." }); return; }
+  if (result.status === "business-role-transition") {
+    res.status(422).json({ error: "Poslovne uloge se kreiraju i menjaju samo kroz tok koji istovremeno upravlja povezanim poslovnim profilom." });
+    return;
+  }
   if (result.status === "protected") {
     res.status(409).json({ error: "Nije moguće ukloniti ili deaktivirati poslednjeg aktivnog super administratora." });
     return;

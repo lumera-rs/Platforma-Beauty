@@ -17761,7 +17761,7 @@ export const getAdminCreateAccountSetupUrl = () => {
 }
 
 /**
- * @summary Create a non-SUPER_ADMIN standalone account and return a one-time password setup URL
+ * @summary Transactionally create a non-SUPER_ADMIN account with its required business relation and a one-time password setup URL
  */
 export const adminCreateAccountSetup = async (adminCreateAccountSetupInput: AdminCreateAccountSetupInput, options?: Parameters<typeof customFetch>[1]): Promise<AdminCreateCustomerSetupResponse> => {
 
@@ -17810,7 +17810,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type AdminCreateAccountSetupMutationError = ErrorType<void>
 
     /**
- * @summary Create a non-SUPER_ADMIN standalone account and return a one-time password setup URL
+ * @summary Transactionally create a non-SUPER_ADMIN account with its required business relation and a one-time password setup URL
  */
 export const useAdminCreateAccountSetup = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminCreateAccountSetup>>, TError,{data: BodyType<AdminCreateAccountSetupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -17921,7 +17921,7 @@ export const adminUpdateUser = async (userId: string,
 
 
 
-export const getAdminUpdateUserMutationOptions = <TError = ErrorType<unknown>,
+export const getAdminUpdateUserMutationOptions = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateUser>>, TError,{userId: string;data: BodyType<AdminUserUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateUser>>, TError,{userId: string;data: BodyType<AdminUserUpdate>}, TContext> => {
 
@@ -17950,12 +17950,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type AdminUpdateUserMutationResult = NonNullable<Awaited<ReturnType<typeof adminUpdateUser>>>
     export type AdminUpdateUserMutationBody = BodyType<AdminUserUpdate>
-    export type AdminUpdateUserMutationError = ErrorType<unknown>
+    export type AdminUpdateUserMutationError = ErrorType<void>
 
     /**
  * @summary Update user role or active status (protects last active SUPER_ADMIN)
  */
-export const useAdminUpdateUser = <TError = ErrorType<unknown>,
+export const useAdminUpdateUser = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateUser>>, TError,{userId: string;data: BodyType<AdminUserUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof adminUpdateUser>>,

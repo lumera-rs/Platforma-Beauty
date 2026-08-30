@@ -4071,7 +4071,7 @@ paths:
     post:
       operationId: adminCreateAccountSetup
       tags: [admin]
-      summary: Create a non-SUPER_ADMIN standalone account and return a one-time password setup URL
+      summary: Transactionally create a non-SUPER_ADMIN account with its required business relation and a one-time password setup URL
       requestBody:
         required: true
         content:
@@ -4079,13 +4079,17 @@ paths:
             schema: { $ref: "#/components/schemas/AdminCreateAccountSetupInput" }
       responses:
         "201":
-          description: Account and one-time setup URL created
+          description: Account, matching business relation, and one-time setup URL created
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AdminCreateCustomerSetupResponse" }
+        "400": { description: Invalid common account details }
+        "401": { description: Authentication required }
         "403": { description: SUPER_ADMIN access required }
-        "409": { description: Email is already registered }
-        "422": { description: Role requires companion domain data and cannot be created incomplete }
+        "404": { description: Selected active salon or education center does not exist }
+        "409": { description: "Email, slug, user link, or legal-entity ownership conflicts with existing data" }
+        "422": { description: "Missing, mismatched, blank, or invalid role-specific data" }
+        "429": { description: Too many account creation attempts }
   /admin/accounts/{userId}/setup:
     post:
       operationId: adminReissueAccountSetup
@@ -4127,6 +4131,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminUser"
+        "422": { description: Requested business-role transition is forbidden because the required business relation is absent or incompatible }
   /admin/loyalty-tiers:
     get:
       operationId: adminListLoyaltyTiers
@@ -12202,6 +12207,67 @@ components:
           maxLength: 320
           pattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$'
     AdminCreateAccountSetupInput:
+      oneOf:
+        - $ref: "#/components/schemas/AdminSalonOwnerAccountSetupInput"
+        - $ref: "#/components/schemas/AdminSalonEmployeeAccountSetupInput"
+        - $ref: "#/components/schemas/AdminEducationCenterAccountSetupInput"
+        - $ref: "#/components/schemas/AdminInstructorAccountSetupInput"
+        - $ref: "#/components/schemas/AdminStandaloneAdminAccountSetupInput"
+        - $ref: "#/components/schemas/AdminStandaloneCustomerAccountSetupInput"
+        - $ref: "#/components/schemas/AdminStandaloneStudentAccountSetupInput"
+        - $ref: "#/components/schemas/AdminStandaloneJobseekerAccountSetupInput"
+      discriminator:
+        propertyName: role
+        mapping:
+          SALON_OWNER: "#/components/schemas/AdminSalonOwnerAccountSetupInput"
+          SALON_EMPLOYEE: "#/components/schemas/AdminSalonEmployeeAccountSetupInput"
+          EDUKATIVNI_CENTAR: "#/components/schemas/AdminEducationCenterAccountSetupInput"
+          INSTRUCTOR: "#/components/schemas/AdminInstructorAccountSetupInput"
+          ADMIN: "#/components/schemas/AdminStandaloneAdminAccountSetupInput"
+          CUSTOMER: "#/components/schemas/AdminStandaloneCustomerAccountSetupInput"
+          STUDENT: "#/components/schemas/AdminStandaloneStudentAccountSetupInput"
+          JOBSEEKER: "#/components/schemas/AdminStandaloneJobseekerAccountSetupInput"
+    AdminSalonOwnerAccountSetupInput:
+      type: object
+      additionalProperties: false
+      required: [firstName, lastName, email, role, salon]
+      properties:
+        firstName: { type: string, minLength: 1, maxLength: 100 }
+        lastName: { type: string, minLength: 1, maxLength: 100 }
+        email: { type: string, maxLength: 320, pattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$' }
+        role: { type: string, enum: [SALON_OWNER] }
+        salon: { $ref: "#/components/schemas/AdminSalonOwnerSetup" }
+    AdminSalonEmployeeAccountSetupInput:
+      type: object
+      additionalProperties: false
+      required: [firstName, lastName, email, role, employee]
+      properties:
+        firstName: { type: string, minLength: 1, maxLength: 100 }
+        lastName: { type: string, minLength: 1, maxLength: 100 }
+        email: { type: string, maxLength: 320, pattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$' }
+        role: { type: string, enum: [SALON_EMPLOYEE] }
+        employee: { $ref: "#/components/schemas/AdminEmployeeSetup" }
+    AdminEducationCenterAccountSetupInput:
+      type: object
+      additionalProperties: false
+      required: [firstName, lastName, email, role, educationCenter]
+      properties:
+        firstName: { type: string, minLength: 1, maxLength: 100 }
+        lastName: { type: string, minLength: 1, maxLength: 100 }
+        email: { type: string, maxLength: 320, pattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$' }
+        role: { type: string, enum: [EDUKATIVNI_CENTAR] }
+        educationCenter: { $ref: "#/components/schemas/AdminEducationCenterSetup" }
+    AdminInstructorAccountSetupInput:
+      type: object
+      additionalProperties: false
+      required: [firstName, lastName, email, role, instructor]
+      properties:
+        firstName: { type: string, minLength: 1, maxLength: 100 }
+        lastName: { type: string, minLength: 1, maxLength: 100 }
+        email: { type: string, maxLength: 320, pattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$' }
+        role: { type: string, enum: [INSTRUCTOR] }
+        instructor: { $ref: "#/components/schemas/AdminInstructorSetup" }
+    AdminStandaloneAdminAccountSetupInput:
       type: object
       additionalProperties: false
       required: [firstName, lastName, email, role]
@@ -12209,9 +12275,92 @@ components:
         firstName: { type: string, minLength: 1, maxLength: 100 }
         lastName: { type: string, minLength: 1, maxLength: 100 }
         email: { type: string, maxLength: 320, pattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$' }
-        role:
-          type: string
-          enum: [ADMIN, SALON_OWNER, SALON_EMPLOYEE, EDUKATIVNI_CENTAR, INSTRUCTOR, CUSTOMER, STUDENT, JOBSEEKER]
+        role: { type: string, enum: [ADMIN] }
+    AdminStandaloneCustomerAccountSetupInput:
+      type: object
+      additionalProperties: false
+      required: [firstName, lastName, email, role]
+      properties:
+        firstName: { type: string, minLength: 1, maxLength: 100 }
+        lastName: { type: string, minLength: 1, maxLength: 100 }
+        email: { type: string, maxLength: 320, pattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$' }
+        role: { type: string, enum: [CUSTOMER] }
+    AdminStandaloneStudentAccountSetupInput:
+      type: object
+      additionalProperties: false
+      required: [firstName, lastName, email, role]
+      properties:
+        firstName: { type: string, minLength: 1, maxLength: 100 }
+        lastName: { type: string, minLength: 1, maxLength: 100 }
+        email: { type: string, maxLength: 320, pattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$' }
+        role: { type: string, enum: [STUDENT] }
+    AdminStandaloneJobseekerAccountSetupInput:
+      type: object
+      additionalProperties: false
+      required: [firstName, lastName, email, role]
+      properties:
+        firstName: { type: string, minLength: 1, maxLength: 100 }
+        lastName: { type: string, minLength: 1, maxLength: 100 }
+        email: { type: string, maxLength: 320, pattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$' }
+        role: { type: string, enum: [JOBSEEKER] }
+    AdminSalonOwnerSetup:
+      type: object
+      additionalProperties: false
+      required:
+        [name, slug, city, municipality, address, phone, email, companyName, companyTaxId,
+         companyRegistrationNumber, companyAddress, companyCity, shortDescription, description]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 500 }
+        slug: { type: string, minLength: 1, maxLength: 500 }
+        city: { type: string, minLength: 1, maxLength: 500 }
+        municipality: { type: string, minLength: 1, maxLength: 500 }
+        address: { type: string, minLength: 1, maxLength: 500 }
+        postalCode: { type: string, maxLength: 50 }
+        phone: { type: string, minLength: 1, maxLength: 500 }
+        email: { type: string, maxLength: 320, pattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$' }
+        companyName: { type: string, minLength: 1, maxLength: 500 }
+        companyTaxId: { type: string, minLength: 8, maxLength: 50, pattern: '^(?:\D*\d){8,14}\D*$' }
+        companyRegistrationNumber: { type: string, minLength: 1, maxLength: 500 }
+        companyAddress: { type: string, minLength: 1, maxLength: 500 }
+        companyCity: { type: string, minLength: 1, maxLength: 500 }
+        companyPostalCode: { type: string, maxLength: 50 }
+        shortDescription: { type: string, minLength: 1, maxLength: 500 }
+        description: { type: string, minLength: 1, maxLength: 4000 }
+    AdminEmployeeSetup:
+      type: object
+      additionalProperties: false
+      required: [salonId, jobTitle]
+      properties:
+        salonId: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+        jobTitle: { type: string, minLength: 1, maxLength: 200 }
+        bio: { type: string, maxLength: 4000 }
+    AdminEducationCenterSetup:
+      type: object
+      additionalProperties: false
+      required: [name, city, description, contactEmail, contactPhone, contactAddress, pib]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 500 }
+        city: { type: string, minLength: 1, maxLength: 500 }
+        description: { type: string, minLength: 1, maxLength: 4000 }
+        contactEmail: { type: string, maxLength: 320, pattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$' }
+        contactPhone: { type: string, minLength: 1, maxLength: 500 }
+        contactAddress: { type: string, minLength: 1, maxLength: 500 }
+        pib: { type: string, minLength: 8, maxLength: 50, pattern: '^(?:\D*\d){8,14}\D*$' }
+    AdminInstructorSetup:
+      type: object
+      additionalProperties: false
+      required: [centerId]
+      properties:
+        centerId: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+        biography: { type: string, maxLength: 4000 }
+        industryYears: { type: integer, minimum: 0 }
+        experienceYears: { type: integer, minimum: 0 }
+        specializations:
+          type: array
+          items: { type: string, minLength: 1, maxLength: 200 }
+        qualifications:
+          type: array
+          items: { type: string, minLength: 1, maxLength: 200 }
     AdminCreateCustomerSetupResponse:
       type: object
       additionalProperties: false
