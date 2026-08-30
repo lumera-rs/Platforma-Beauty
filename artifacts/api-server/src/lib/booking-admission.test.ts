@@ -86,14 +86,20 @@ test("every allocation-capable HTTP route uses the shared admission boundary", a
     'post("/employee/appointments"',
   ];
   for (const route of marketplaceRoutes) {
-    const declaration = `router.${route}, admitBookingRequest,`;
-    assert.ok(marketplace.includes(declaration), `${declaration} must use shared booking admission`);
+    const routeStart = `router.${route}`;
+    const declaration = new RegExp(
+      `${routeStart.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[\\s\\S]{0,240}?admitBookingRequest\\s*,`,
+    );
+    assert.match(marketplace, declaration, `${routeStart} must use shared booking admission`);
   }
   for (const route of [
     'post("/widget/salons/:slug/appointments"',
     'post("/widget/salons/:slug/booking-groups"',
   ]) {
-    const declaration = `router.${route}, admitBookingRequest,`;
-    assert.ok(widget.includes(declaration), `${declaration} must use shared booking admission`);
+    const routeStart = `router.${route}`;
+    const declaration = new RegExp(
+      `${routeStart.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[\\s\\S]{0,240}?admitBookingRequest\\s*,`,
+    );
+    assert.match(widget, declaration, `${routeStart} must use shared booking admission`);
   }
 });
