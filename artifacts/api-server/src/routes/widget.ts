@@ -1,4 +1,5 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
+import { createHash } from "node:crypto";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   appointmentTreatmentsTable,
@@ -37,6 +38,7 @@ import {
 import { getCurrentUser } from "../lib/auth";
 import { lockAppointmentResources } from "../lib/appointment-locks";
 import { sendBookingGroupConfirmation } from "../lib/appointment-customer-events";
+import { bookingIdempotencyKey, executeBookingCommand, sendBookingCommandResult } from "../lib/booking-command";
 
 const router: IRouter = Router();
 
@@ -48,7 +50,7 @@ const router: IRouter = Router();
 router.use("/widget", (req: Request, res: Response, next: NextFunction) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Idempotency-Key");
   res.setHeader("Access-Control-Max-Age", "86400");
   if (req.method === "OPTIONS") { res.status(204).end(); return; }
   next();
@@ -196,6 +198,7 @@ router.post("/widget/salons/:slug/appointments", admitBookingRequest, async (req
   }
   const parsed = CreateWidgetAppointmentBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const idempotencyKey = bookingIdempotencyKey(req, res); if (!idempotencyKey) return;
   const { serviceId, date, startTime } = parsed.data;
   const today = new Date().toISOString().slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) !== date || date < today) {
@@ -243,41 +246,48 @@ router.post("/widget/salons/:slug/appointments", admitBookingRequest, async (req
   if (!contact) { res.status(500).json({ error: "Kreiranje klijenta nije uspelo — pokušajte ponovo." }); return; }
 
   const price = service.promoPrice ?? service.price;
-  const result = await createAllocatedAppointment({
-    salonId: salon.id,
-    customerId: null,
-    salonCustomerId: contact.id,
-    serviceId: service.id,
-    date,
-    startTime,
-    endTime,
-    durationMinutes: service.durationMinutes,
-    price,
-    status: "pending",
-    notes: parsed.data.note?.trim() || null,
-    preferredEmployeeId: parsed.data.employeeId ?? null,
+  const actorId = createHash("sha256").update(phoneNormalized).digest("hex");
+  const command = await executeBookingCommand({
+    salonId: salon.id, actorType: "widget_guest", actorId, idempotencyKey,
+    commandType: "widget.appointment.create", payload: req.body,
+  }, async (tx) => {
+    const result = await createAllocatedAppointment({
+      salonId: salon.id,
+      customerId: null,
+      salonCustomerId: contact!.id,
+      serviceId: service.id,
+      date,
+      startTime,
+      endTime,
+      durationMinutes: service.durationMinutes,
+      price,
+      status: "pending",
+      notes: parsed.data.note?.trim() || null,
+      preferredEmployeeId: parsed.data.employeeId ?? null,
+      tx,
+    });
+    if (!result.appointment || !result.employee) {
+      return { status: 409, body: { error: "Izabrani termin više nije dostupan — izaberite drugi." } };
+    }
+    await tx.insert(salonNotificationsTable).values({
+      salonId: salon.id,
+      title: "Novi zahtev sa sajta",
+      message: `${contact!.firstName} ${contact!.lastName} je preko widgeta zatražio/la ${service.name} za ${date} u ${startTime}.`,
+      href: "/vlasnik/termini",
+    });
+    return { status: 201, body: {
+      appointmentId: result.appointment.id,
+      status: result.appointment.status,
+      date: result.appointment.date,
+      startTime: result.appointment.startTime,
+      endTime: result.appointment.endTime,
+      employeeName: result.employee.name,
+      serviceName: service.name,
+      salonName: salon.name,
+    } };
   });
-  if (!result.appointment || !result.employee) {
-    res.status(409).json({ error: "Izabrani termin više nije dostupan — izaberite drugi." });
-    return;
-  }
-  await db.insert(salonNotificationsTable).values({
-    salonId: salon.id,
-    title: "Novi zahtev sa sajta",
-    message: `${contact.firstName} ${contact.lastName} je preko widgeta zatražio/la ${service.name} za ${date} u ${startTime}.`,
-    href: "/vlasnik/termini",
-  });
-  await publishSalonNotificationUpdate(salon.id);
-  res.status(201).json({
-    appointmentId: result.appointment.id,
-    status: result.appointment.status,
-    date: result.appointment.date,
-    startTime: result.appointment.startTime,
-    endTime: result.appointment.endTime,
-    employeeName: result.employee.name,
-    serviceName: service.name,
-    salonName: salon.name,
-  });
+  if (!command.replayed && command.status === 201) await publishSalonNotificationUpdate(salon.id);
+  sendBookingCommandResult(res, command);
 });
 
 router.post("/widget/salons/:slug/booking-groups", admitBookingRequest, async (req, res): Promise<void> => {
@@ -290,6 +300,7 @@ router.post("/widget/salons/:slug/booking-groups", admitBookingRequest, async (r
   }
   const parsed = CreateWidgetBookingGroupBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const idempotencyKey = bookingIdempotencyKey(req, res); if (!idempotencyKey) return;
   const today = new Date().toISOString().slice(0, 10);
   const rawDates = rawTreatmentDateInputs(req.body);
   if (!rawDates) {
@@ -333,7 +344,11 @@ router.post("/widget/salons/:slug/booking-groups", admitBookingRequest, async (r
   if (!contact) { res.status(500).json({ error: "Kreiranje klijenta nije uspelo — pokušajte ponovo." }); return; }
   const byId = new Map(services.map((service) => [service.id, service]));
   try {
-    const created = await db.transaction(async (tx) => {
+    const actorId = createHash("sha256").update(phoneNormalized).digest("hex");
+    const command = await executeBookingCommand({
+      salonId: salon.id, actorType: "widget_guest", actorId, idempotencyKey,
+      commandType: "widget.booking-group.create", payload: req.body,
+    }, async (tx) => {
       await lockAppointmentResources(tx, salon.id, treatments.map((item) => ({ date: item.date })));
       const requirements: Array<Awaited<ReturnType<typeof fetchServiceResourceRequirements>>> = [];
       const planned: Array<{ item: (typeof treatments)[number]; service: typeof servicesTable.$inferSelect; employeeId: string; endTime: string }> = [];
@@ -425,22 +440,25 @@ router.post("/widget/salons/:slug/booking-groups", admitBookingRequest, async (r
         message: `${contact!.firstName} ${contact!.lastName} je preko widgeta zatražio/la ${appointments.length} tretmana.`,
         href: "/vlasnik/termini",
       });
-      return { group: group!, appointments };
+      const response = CreateWidgetBookingGroupResponse.parse({
+        id: group!.id, salonId: salon.id, createdAt: group!.createdAt,
+        appointments: appointments.map(({ appointment, employee, service }) => ({
+          id: appointment.id, salonId: salon.id, salonSlug: salon.slug, salonName: salon.name,
+          serviceId: service.id, customerName: `${contact!.firstName} ${contact!.lastName}`,
+          serviceName: service.name, employeeId: employee.id, employeeName: employee.name,
+          date: appointment.date, startTime: appointment.startTime, endTime: appointment.endTime,
+          durationMinutes: appointment.durationMinutes, price: appointment.price, treatmentLocation: "salon",
+          travelFee: 0, treatmentAddress: null, seriesId: null, bookingGroupId: group!.id,
+          status: appointment.status, notes: appointment.notes, allocatedResources: [],
+        })),
+      });
+      return { status: 201, body: response };
     });
-    await publishSalonNotificationUpdate(salon.id);
-    await sendBookingGroupConfirmation(created.group.id);
-    res.status(201).json(CreateWidgetBookingGroupResponse.parse({
-      id: created.group.id, salonId: salon.id, createdAt: created.group.createdAt,
-      appointments: created.appointments.map(({ appointment, employee, service }) => ({
-        id: appointment.id, salonId: salon.id, salonSlug: salon.slug, salonName: salon.name,
-        serviceId: service.id, customerName: `${contact!.firstName} ${contact!.lastName}`,
-        serviceName: service.name, employeeId: employee.id, employeeName: employee.name,
-        date: appointment.date, startTime: appointment.startTime, endTime: appointment.endTime,
-        durationMinutes: appointment.durationMinutes, price: appointment.price, treatmentLocation: "salon",
-        travelFee: 0, treatmentAddress: null, seriesId: null, bookingGroupId: created.group.id,
-        status: appointment.status, notes: appointment.notes, allocatedResources: [],
-      })),
-    }));
+    if (!command.replayed && command.status === 201) {
+      await publishSalonNotificationUpdate(salon.id);
+      await sendBookingGroupConfirmation((command.body as { id: string }).id);
+    }
+    sendBookingCommandResult(res, command);
   } catch (error) {
     if (error instanceof Error && (error.message === "STALE_SLOT" || error.message === "INVALID_TIME" || error.message === "INVALID_LAYOUT")) {
       res.status(error.message === "INVALID_TIME" ? 400 : 409).json({

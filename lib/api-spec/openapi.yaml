@@ -493,6 +493,8 @@ paths:
       operationId: createBookingGroup
       tags: [appointments]
       summary: Atomically book an ordered group of treatments
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -515,6 +517,8 @@ paths:
       operationId: createSalonBookingGroup
       tags: [salon-management]
       summary: Atomically create a manual grouped booking for a CRM customer or guest
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -538,6 +542,8 @@ paths:
       operationId: createEmployeeBookingGroup
       tags: [employee-portal]
       summary: Atomically create a manual grouped booking assigned to the signed-in employee
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -556,6 +562,28 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/BookingGroupConflict" }
         "429": { $ref: "#/components/responses/BookingCapacityReached" }
+  /booking-commands/{idempotencyKey}:
+    get:
+      operationId: getBookingCommandReceipt
+      tags: [appointments]
+      summary: Recover the durable outcome of an authenticated booking command
+      parameters:
+        - name: idempotencyKey
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 200 }
+        - name: salonId
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Original successful booking response
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BookingCommandReceipt" }
+        "401": { description: Authentication required }
+        "404": { description: No receipt exists in this actor and salon scope }
   /booking-groups/{bookingGroupId}/reschedule:
     patch:
       operationId: rescheduleBookingGroup
@@ -645,6 +673,8 @@ paths:
       operationId: createAppointment
       tags: [appointments]
       summary: Create a booking
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1223,6 +1253,8 @@ paths:
       operationId: createSalonAppointment
       tags: [salon-management]
       summary: Create a salon appointment for a CRM customer or walk-in guest
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1272,6 +1304,8 @@ paths:
       operationId: createSalonPackageAppointments
       tags: [salon-management]
       summary: Atomically book every remaining session in a purchased package
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1384,6 +1418,8 @@ paths:
       operationId: createSalonAppointmentSeries
       tags: [salon-management]
       summary: Create an atomic salon appointment series
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1524,6 +1560,8 @@ paths:
       operationId: createEmployeeAppointmentSeries
       tags: [employee-portal]
       summary: Create an atomic employee appointment series
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -6268,6 +6306,7 @@ paths:
       summary: Public widget booking — creates a pending appointment for the salon
       parameters:
         - { name: slug, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -6303,6 +6342,7 @@ paths:
       summary: Public rate-limited grouped booking for an anonymous salon customer
       parameters:
         - { name: slug, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -7671,6 +7711,12 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/BookingCapacityError" }
   parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Client-generated command identifier; reuse it only to retry the identical booking payload.
+      schema: { type: string, minLength: 1, maxLength: 200 }
     CityQuery:
       name: city
       in: query
@@ -9124,6 +9170,15 @@ components:
           description: Present when the canonical active booking-group layout invariant failed.
         error: { type: string }
       required: [error]
+    BookingCommandReceipt:
+      type: object
+      required: [idempotencyKey, commandType, responseStatus, responseBody, createdAt]
+      properties:
+        idempotencyKey: { type: string }
+        commandType: { type: string }
+        responseStatus: { type: integer }
+        responseBody: {}
+        createdAt: { type: string, format: date-time }
     BookingGroup:
       type: object
       properties:

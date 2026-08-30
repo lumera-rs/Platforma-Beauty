@@ -2229,6 +2229,14 @@ export interface BookingGroupConflict {
   error: string;
 }
 
+export interface BookingCommandReceipt {
+  idempotencyKey: string;
+  commandType: string;
+  responseStatus: number;
+  responseBody: unknown;
+  createdAt: string;
+}
+
 export type AppointmentLifecycleInputAction = typeof AppointmentLifecycleInputAction[keyof typeof AppointmentLifecycleInputAction];
 
 
@@ -10875,6 +10883,11 @@ export interface AutomaticXyPromotionList {
  */
 export type BookingCapacityReachedResponse = BookingCapacityError;
 
+/**
+ * Client-generated command identifier; reuse it only to retry the identical booking payload.
+ */
+export type IdempotencyKeyParameter = string;
+
 export type CityQueryParameter = string;
 
 export type CategoryQueryParameter = string;
@@ -10984,6 +10997,10 @@ date: string;
  * @maximum 180
  */
 granularityMinutes?: number;
+};
+
+export type GetBookingCommandReceiptParams = {
+salonId: string;
 };
 
 export type ListMyAppointmentsParams = {

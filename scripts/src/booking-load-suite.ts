@@ -9,6 +9,7 @@ import {
   salonDateHoursTable, salonsTable, servicesTable, sessionsTable, usersTable,
 } from "@workspace/db";
 import { classifyLoadSamples, evaluateLoadTargets, latencySummary, roundRobinServerIndex, type LoadSample, type LoadTargets } from "./booking-load-metrics";
+import { classifySamplingFailure, summarizeActivity, type ActivitySample, type SamplingFailure } from "./booking-load-telemetry";
 
 const urls = (process.env.LUMERA_BOOKING_LOAD_URLS ?? "").split(",").filter((url) => /^http:\/\/127\.0\.0\.1:\d+$/.test(url));
 const apiProcesses = Number(process.env.LUMERA_BOOKING_LOAD_API_PROCESSES ?? 2);
@@ -42,11 +43,6 @@ const operationalTargets: Record<string, { minimumThroughputPerSecond: number; m
 };
 type Fixture = { salons: { id: string; employeeIds: string[]; serviceA: string; serviceB: string }[]; sessions: string[] };
 type Request = { method: "POST"; path: string; cookie: string; body: unknown };
-type ActivitySample = {
-  states: Array<{ state: string; count: number }>;
-  locks: Array<{ mode: string; count: number }>;
-  apiPools: Array<{ total: number; idle: number; waiting: number; max: number } | null>;
-};
 const date = (day: number) => `2099-06-${String(day).padStart(2, "0")}`;
 const time = (index: number) => `${String(8 + Math.floor(index / 4)).padStart(2, "0")}:${String((index % 4) * 15).padStart(2, "0")}`;
 const hourly = (index: number) => `${String(8 + index).padStart(2, "0")}:00`;
@@ -107,11 +103,11 @@ async function hit(request: Request, index: number): Promise<HttpLoadSample> {
 async function scenario(name: string, requests: Request[]) {
   const statementsBefore = await databaseStatementTotals();
   const samples: ActivitySample[] = [];
-  let samplingErrors = 0;
+  const samplingFailures: SamplingFailure[] = [];
   let sampling = true;
   const sampler = (async () => {
     while (sampling) {
-      try { samples.push(await activity()); } catch { samplingErrors++; }
+      try { samples.push(await activity()); } catch (error) { samplingFailures.push(classifySamplingFailure(error)); }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   })();
@@ -120,7 +116,7 @@ async function scenario(name: string, requests: Request[]) {
   const started = performance.now(); release(); const results = await Promise.all(workers);
   sampling = false;
   await sampler;
-  try { samples.push(await activity()); } catch { samplingErrors++; }
+  try { samples.push(await activity()); } catch (error) { samplingFailures.push(classifySamplingFailure(error)); }
   const elapsed = performance.now() - started; const classified = classifyLoadSamples(results);
   const statementsAfter = await databaseStatementTotals();
   const statementDeltas = statementsAfter.map((total, index) => total - statementsBefore[index]!);
@@ -142,7 +138,7 @@ async function scenario(name: string, requests: Request[]) {
     unexpectedSamples: unexpected.slice(0, 10).map(({ status, code, body, error, server }) => ({ status, code, body, error, server })),
     latency: latencySummary(results),
     databaseStatements,
-    dbActivity: summarizeActivity(samples, samplingErrors),
+    dbActivity: summarizeActivity(samples, samplingFailures, urls.length),
     results,
   };
   const target = operationalTargets[name]!;
@@ -174,8 +170,8 @@ async function databaseStatementTotals() {
 }
 async function activity() {
   const [states, locks, apiPools] = await Promise.all([
-    db.execute(sql`select state, count(*)::int as count from pg_stat_activity where datname = current_database() group by state`),
-    db.execute(sql`select mode, count(*)::int as count from pg_locks where pid in (select pid from pg_stat_activity where datname = current_database()) group by mode`),
+    telemetryQuery("pg_stat_activity", db.execute(sql`select state, count(*)::int as count from pg_stat_activity where datname = current_database() group by state`)),
+    telemetryQuery("pg_locks", db.execute(sql`select mode, count(*)::int as count from pg_locks where pid in (select pid from pg_stat_activity where datname = current_database()) group by mode`)),
     Promise.all(urls.map(async (url) => {
       try {
         const response = await fetch(`${url}/api/healthz`, { signal: AbortSignal.timeout(1_000) });
@@ -189,6 +185,17 @@ async function activity() {
     locks: locks.rows.map((row) => ({ mode: String(row.mode), count: Number(row.count) })),
     apiPools,
   };
+}
+async function telemetryQuery<T>(source: "pg_stat_activity" | "pg_locks", query: Promise<T>): Promise<T> {
+  try {
+    return await query;
+  } catch (error) {
+    if (error && typeof error === "object") {
+      Object.assign(error, { telemetrySource: source });
+      throw error;
+    }
+    throw Object.assign(new Error(String(error)), { telemetrySource: source });
+  }
 }
 function group(f: Fixture["salons"][number], day: string, slot: number, cookie: string, employeeId = f.employeeIds[0]!): Request {
   return { method: "POST", path: "/api/booking-groups", cookie, body: { salonId: f.id, date: day, treatments: [{ serviceId: f.serviceA, employeeId, startTime: time(slot) }, { serviceId: f.serviceB, employeeId, startTime: time(slot + 4) }], notes: marker } };
@@ -218,6 +225,7 @@ async function main() {
       dbConnectionTimeoutMs,
       bookingAdmissionPerProcess,
       productionAdmissionDefaultPerProcess: 0,
+      activityStateTelemetrySetup: process.env.LUMERA_BOOKING_LOAD_ACTIVITY_SETUP ?? "not reported",
     },
     objectives: {
       rationale: "Peak-spike objectives cap both p95 and p99 at 10 seconds across 1,000 simultaneous distinct booking arrivals, with no approved capacity-rejection budget. BOOKING_CAPACITY responses count against the error objective. Production admission remains disabled by default.",
@@ -411,34 +419,6 @@ async function activeMarkerOverlapCount() {
       and b.status in ('pending', 'confirmed')
   `);
   return Number(result.rows[0]?.total ?? 0);
-}
-function summarizeActivity(samples: ActivitySample[], samplingErrors: number) {
-  const statePeaks: Record<string, number> = {};
-  const lockPeaks: Record<string, number> = {};
-  for (const sample of samples) {
-    for (const state of sample.states) statePeaks[state.state] = Math.max(statePeaks[state.state] ?? 0, state.count);
-    for (const lock of sample.locks) lockPeaks[lock.mode] = Math.max(lockPeaks[lock.mode] ?? 0, lock.count);
-  }
-  return {
-    sampleCount: samples.length,
-    samplingErrors,
-    pg: {
-      scope: "All connections and locks for the disposable database, including the harness sampler.",
-      activityStateTelemetry: Object.keys(statePeaks).every((state) => state === "disabled") ? "unavailable: managed PostgreSQL reported state tracking as disabled" : "available",
-      statePeaks,
-      lockPeaks,
-    },
-    apiPools: urls.map((_, index) => {
-      const values = samples.map((sample) => sample.apiPools[index]).filter((value): value is NonNullable<typeof value> => value !== null);
-      return {
-        observedSamples: values.length,
-        configuredMax: Math.max(0, ...values.map((value) => value.max)),
-        peakTotal: Math.max(0, ...values.map((value) => value.total)),
-        peakWaiting: Math.max(0, ...values.map((value) => value.waiting)),
-        minimumIdle: values.length ? Math.min(...values.map((value) => value.idle)) : null,
-      };
-    }),
-  };
 }
 async function readBaselineReport() {
   try {

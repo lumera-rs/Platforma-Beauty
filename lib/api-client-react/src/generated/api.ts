@@ -171,6 +171,7 @@ import type {
   BeautyJobUpdateInput,
   BestsellerRanking,
   BookingCapacityReachedResponse,
+  BookingCommandReceipt,
   BookingGroup,
   BookingGroupCancelInput,
   BookingGroupConflict,
@@ -293,6 +294,7 @@ import type {
   FavoriteInput,
   FavoriteResult,
   GetBeautyJobModerationQueueParams,
+  GetBookingCommandReceiptParams,
   GetCatalogFeed200,
   GetCommerceSearchSuggestionsParams,
   GetCustomerCartThresholdRewardsParams,
@@ -2657,6 +2659,95 @@ export const useCreateEmployeeBookingGroup = <TError = ErrorType<void | BookingG
       > => {
       return useMutation(getCreateEmployeeBookingGroupMutationOptions(options));
     }
+
+export const getGetBookingCommandReceiptUrl = (idempotencyKey: string,
+    params: GetBookingCommandReceiptParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/booking-commands/${idempotencyKey}?${stringifiedParams}` : `/api/booking-commands/${idempotencyKey}`
+}
+
+/**
+ * @summary Recover the durable outcome of an authenticated booking command
+ */
+export const getBookingCommandReceipt = async (idempotencyKey: string,
+    params: GetBookingCommandReceiptParams, options?: Parameters<typeof customFetch>[1]): Promise<BookingCommandReceipt> => {
+
+  return customFetch<BookingCommandReceipt>(getGetBookingCommandReceiptUrl(idempotencyKey,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBookingCommandReceiptQueryKey = (idempotencyKey: string,
+    params?: GetBookingCommandReceiptParams,) => {
+    return [
+    `/api/booking-commands/${idempotencyKey}`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetBookingCommandReceiptQueryOptions = <TData = Awaited<ReturnType<typeof getBookingCommandReceipt>>, TError = ErrorType<void>>(idempotencyKey: string,
+    params: GetBookingCommandReceiptParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBookingCommandReceipt>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBookingCommandReceiptQueryKey(idempotencyKey,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBookingCommandReceipt>>> = ({ signal }) => getBookingCommandReceipt(idempotencyKey,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: idempotencyKey !== null && idempotencyKey !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBookingCommandReceipt>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBookingCommandReceiptQueryResult = NonNullable<Awaited<ReturnType<typeof getBookingCommandReceipt>>>
+export type GetBookingCommandReceiptQueryError = ErrorType<void>
+
+
+/**
+ * @summary Recover the durable outcome of an authenticated booking command
+ */
+
+export function useGetBookingCommandReceipt<TData = Awaited<ReturnType<typeof getBookingCommandReceipt>>, TError = ErrorType<void>>(
+ idempotencyKey: string,
+    params: GetBookingCommandReceiptParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBookingCommandReceipt>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBookingCommandReceiptQueryOptions(idempotencyKey,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getRescheduleBookingGroupUrl = (bookingGroupId: string,) => {
 

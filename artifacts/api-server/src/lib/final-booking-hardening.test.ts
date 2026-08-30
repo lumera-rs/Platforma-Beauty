@@ -21,6 +21,7 @@ import {
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { lockAppointmentResources } from "./appointment-locks";
+import { ensureBookingCommandSchema } from "./booking-command-schema";
 
 type HttpResult = { status: number; body: unknown };
 
@@ -32,11 +33,12 @@ async function request(
   body?: Record<string, unknown>,
   idempotencyKey?: string,
 ): Promise<HttpResult> {
+  const commandKey = idempotencyKey ?? (method === "POST" ? randomUUID() : undefined);
   const response = await fetch(`${baseUrl}/api${path}`, {
     method,
     headers: {
       ...(body ? { "content-type": "application/json" } : {}),
-      ...(idempotencyKey ? { "idempotency-key": idempotencyKey } : {}),
+      ...(commandKey ? { "idempotency-key": commandKey } : {}),
       cookie: `${sessionCookieName}=${session}`,
     },
     body: body ? JSON.stringify(body) : undefined,
@@ -60,6 +62,7 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 }
 
 async function run(): Promise<void> {
+  await ensureBookingCommandSchema();
   const suffix = randomUUID();
   const passwordHash = await hashPassword("final-booking-hardening");
   const [ownerA, ownerB, customerA, customerB] = await db.insert(usersTable).values([
@@ -190,7 +193,9 @@ async function run(): Promise<void> {
       request(baseUrl, customerASession, "/appointments", "POST", customerBody("2099-12-07", "10:00"), duplicateKey),
       request(baseUrl, customerASession, "/appointments", "POST", customerBody("2099-12-07", "10:00"), duplicateKey),
     ]);
-    assert.deepEqual(duplicateResults.map((item) => item.status).sort(), [201, 409]);
+    assert.deepEqual(duplicateResults.map((item) => item.status).sort(), [201, 201]);
+    assert.deepEqual(duplicateResults[0]!.body, duplicateResults[1]!.body,
+      "concurrent exact retries must replay the byte-equivalent JSON outcome");
     const [duplicateCount] = await db.select({ value: count() }).from(appointmentsTable).where(and(
       eq(appointmentsTable.salonId, salonA!.id),
       eq(appointmentsTable.customerId, customerA!.id),
@@ -198,6 +203,38 @@ async function run(): Promise<void> {
       eq(appointmentsTable.startTime, "10:00"),
     ));
     assert.equal(duplicateCount!.value, 1, "an exact customer retry must produce only one durable appointment");
+    const reorderedReplay = await request(baseUrl, customerASession, "/appointments", "POST", {
+      startTime: "10:00",
+      date: "2099-12-07",
+      employeeId: employeeA!.id,
+      serviceId: serviceA!.id,
+      salonId: salonA!.id,
+    }, duplicateKey);
+    assert.equal(reorderedReplay.status, 201, "recursive canonical object ordering must replay");
+    assert.deepEqual(reorderedReplay.body, duplicateResults[0]!.body);
+    const changedPayload = await request(baseUrl, customerASession, "/appointments", "POST", {
+      ...customerBody("2099-12-07", "10:30"),
+    }, duplicateKey);
+    assert.equal(changedPayload.status, 409);
+    assert.deepEqual(changedPayload.body, {
+      code: "IDEMPOTENCY_KEY_REUSED",
+      error: "Idempotency-Key je već upotrebljen za drugačiji zahtev.",
+    });
+    const recovered = await request(
+      baseUrl, customerASession,
+      `/booking-commands/${encodeURIComponent(duplicateKey)}?salonId=${salonA!.id}`, "GET",
+    );
+    assert.equal(recovered.status, 200, "a durable receipt must be recoverable independently of API memory");
+    assert.equal((recovered.body as { responseStatus: number }).responseStatus, 201);
+    assert.deepEqual((recovered.body as { responseBody: unknown }).responseBody, duplicateResults[0]!.body);
+    assert.equal((await request(
+      baseUrl, customerBSession,
+      `/booking-commands/${encodeURIComponent(duplicateKey)}?salonId=${salonA!.id}`, "GET",
+    )).status, 404, "receipt lookup must be actor scoped");
+    assert.equal((await request(baseUrl, customerBSession, "/appointments", "POST", {
+      salonId: salonB!.id, serviceId: serviceB!.id, employeeId: employeeB!.id,
+      date: "2099-12-07", startTime: "10:00",
+    }, duplicateKey)).status, 201, "the same key must be independent for a different actor and tenant");
 
     const groupBody = {
       salonId: salonA!.id,
@@ -212,7 +249,8 @@ async function run(): Promise<void> {
       request(baseUrl, customerASession, "/booking-groups", "POST", groupBody, `group-retry-${suffix}`),
       request(baseUrl, customerASession, "/booking-groups", "POST", groupBody, `group-retry-${suffix}`),
     ]);
-    assert.deepEqual(groupResults.map((item) => item.status).sort(), [201, 409]);
+    assert.deepEqual(groupResults.map((item) => item.status).sort(), [201, 201]);
+    assert.deepEqual(groupResults[0]!.body, groupResults[1]!.body);
     const [groupAppointmentCount] = await db.select({ value: count() }).from(appointmentsTable).where(and(
       eq(appointmentsTable.salonId, salonA!.id), eq(appointmentsTable.date, "2099-12-08"),
     ));

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { hasRealActivityStateEvidence } from "./booking-load-telemetry";
 
 type Status = "PASS" | "FAIL" | "NOT TESTED" | "NOT APPLICABLE";
 type Severity = "critical" | "high" | "medium" | "low";
@@ -76,13 +77,13 @@ const commands: Record<CommandKey, string> = {
 
 const definitions: ScenarioDefinition[] = [
   { id: "concurrency.slot-locking", area: "1. Concurrency and idempotency", title: "Concurrent requests cannot double-book one slot or leave a partial group", critical: true, command: "finalBooking", failureSeverity: "critical", risk: "Two customers may receive the same resource/time or a partial group may persist." },
-  { id: "concurrency.idempotency-key-replay", area: "1. Concurrency and idempotency", title: "Idempotency-Key replays the original successful booking outcome", critical: true, establishedFailure: { problem: "Duplicate-safe 201+409 conflict handling is not an idempotent replay contract.", severity: "critical", reproduction: "Send the same POST /api/appointments or POST /api/booking-groups request twice with the same Idempotency-Key after the first 201 response.", affectedSystem: "Public booking API (/api/appointments, /api/booking-groups)", risk: "Clients retrying after a transport failure receive 409 instead of a stable replayable result and cannot safely distinguish a completed booking from a conflict.", cause: "Code review established that booking endpoints ignore Idempotency-Key; duplicate prevention relies on slot-conflict handling, producing 201 then 409 rather than idempotent replay.", solution: "Add a tenant- and customer-scoped durable idempotency record keyed by endpoint, Idempotency-Key and canonical request hash; atomically store and replay the original completed response, rejecting key reuse with a different payload.", proposedSolution: "Add the idempotency record inside the booking transaction, retain it through the retry window, and add isolated replay/concurrency tests before enabling it.", }, },
+  { id: "concurrency.idempotency-key-replay", area: "1. Concurrency and idempotency", title: "Idempotency-Key replays the original successful booking outcome", critical: true, command: "finalBooking", failureSeverity: "critical", risk: "Clients retrying after a transport failure may duplicate a booking or lose its original outcome." },
   { id: "calendar.availability-rules", area: "2. Calendar and timezone", title: "Calendar availability enforces hours, services, employees and locations", critical: true, command: "calendar", failureSeverity: "critical", risk: "Invalid or unavailable slots may be shown or booked." },
   { id: "calendar.timezone-boundaries", area: "2. Calendar and timezone", title: "Timezone, DST and date-boundary booking behavior", critical: true, command: "calendarTimezone", failureSeverity: "critical", risk: "A customer can book the wrong local day or time around timezone boundaries." },
   { id: "permissions.tenant-isolation", area: "3. Permissions, multi-tenant, and API ID tampering", title: "Foreign appointment data and mutations are rejected", critical: true, command: "tenant", failureSeverity: "critical", risk: "One salon or customer may read or alter another tenant's bookings." },
   { id: "permissions.mixed-ids", area: "3. Permissions, multi-tenant, and API ID tampering", title: "Mixed valid salon/service/employee/customer IDs are re-derived and rejected", critical: true, command: "finalBooking", failureSeverity: "critical", risk: "Tampered IDs may cross tenant or salon boundaries." },
   { id: "recovery.transaction-rollback", area: "4. Failure recovery and deterministic outcome", title: "Database failure rolls back grouped booking atomically", critical: true, command: "finalBooking", failureSeverity: "critical", risk: "A database interruption can leave partial durable booking state." },
-  { id: "recovery.lost-response-reconciliation", area: "4. Failure recovery and deterministic outcome", title: "Lost response/process restart can reconcile a booking command to its durable outcome", critical: true, establishedFailure: { problem: "A booking command has no durable client-reconcilable terminal outcome after response loss or process restart.", severity: "critical", reproduction: "Submit a booking, drop the client response or restart the API after commit, then retry or query using the original command identifier.", affectedSystem: "Public booking API command handling and durable booking storage", risk: "A client cannot deterministically recover whether an accepted booking committed; retries can surface a conflict without the original appointment outcome.", cause: "Code review established there is no durable command/outcome record or reconciliation endpoint for booking requests after a lost response or process restart.", solution: "Persist a command ID, canonical request hash and terminal appointment/group outcome in the same transaction; expose authenticated reconciliation and replay by command ID.", proposedSolution: "Implement an append-only booking-command/outcome table with a unique tenant/customer/command constraint and test post-commit response loss plus restart recovery.", }, },
+  { id: "recovery.lost-response-reconciliation", area: "4. Failure recovery and deterministic outcome", title: "Lost response/process restart can reconcile a booking command to its durable outcome", critical: true, command: "finalBooking", failureSeverity: "critical", risk: "A client may be unable to determine whether an accepted booking committed." },
   { id: "notifications.retry-dedup", area: "5. Notifications retry and deduplication", title: "Rescheduled confirmations retry durably without duplicate sends", critical: false, command: "notifications", failureSeverity: "high", risk: "Customers may miss changed appointment details or receive duplicate notifications." },
   { id: "notifications.cross-process", area: "5. Notifications retry and deduplication", title: "Owner alerts are tenant-isolated and recover across API processes", critical: false, command: "notifications", failureSeverity: "high", risk: "An owner may miss alerts or receive another salon's alert." },
   { id: "integrity.lifecycle-history", area: "6. Data integrity, status, and history", title: "Lifecycle races preserve one terminal status and status history", critical: true, command: "finalBooking", failureSeverity: "critical", risk: "Appointment state and audit history may disagree." },
@@ -209,15 +210,15 @@ function loadScenario(definition: ScenarioDefinition, load: Awaited<ReturnType<t
   };
   if (!load) return commandScenario(definition, new Map());
   if (definition.id === "observability.database-state") {
-    const unavailable = load.report.scenarios?.some((scenario: any) =>
-      String(scenario.dbActivity?.pg?.activityStateTelemetry ?? "").toLowerCase().includes("unavailable")
-      || Object.hasOwn(scenario.dbActivity?.pg?.statePeaks ?? {}, "disabled"));
+    const expectedNames = Object.values(loadNames);
+    const observed = expectedNames.map((name) => load.report.scenarios?.find((scenario: any) => scenario.name === name));
+    const unavailable = observed.some((scenario) => !scenario || !hasRealActivityStateEvidence(scenario));
     return {
       ...definition,
       status: unavailable ? "NOT TESTED" : "PASS",
       evidence: unavailable
-        ? "TELEMETRY UNAVAILABLE: managed PostgreSQL activity-state tracking was disabled in the load evidence."
-        : "Activity-state telemetry was available in every load scenario.",
+        ? "TELEMETRY UNAVAILABLE: every selected load scenario must contain observed PostgreSQL activity states."
+        : "Real PostgreSQL activity-state evidence was observed in every load scenario.",
       source: load.path,
       ...(unavailable ? { telemetry: "TELEMETRY UNAVAILABLE" as const } : {}),
     };
@@ -225,8 +226,10 @@ function loadScenario(definition: ScenarioDefinition, load: Awaited<ReturnType<t
   const scenarioName = loadNames[definition.id];
   const result = load.report.scenarios?.find((scenario: any) => scenario.name === scenarioName);
   if (!result) return commandScenario(definition, new Map());
+  const activityStateEvidence = hasRealActivityStateEvidence(result);
   const passed = result.objective?.passed === true
     && result.operationalObjective?.passed === true
+    && activityStateEvidence
     && !load.report.failure;
   if (passed) {
     return {
@@ -239,7 +242,7 @@ function loadScenario(definition: ScenarioDefinition, load: Awaited<ReturnType<t
   return {
     ...definition,
     status: "FAIL",
-    evidence: `${scenarioName}: customerObjective=${String(result.objective?.passed)}, operationalObjective=${String(result.operationalObjective?.passed)}, reportFailure=${load.report.failure ?? "none"}.`,
+    evidence: `${scenarioName}: customerObjective=${String(result.objective?.passed)}, operationalObjective=${String(result.operationalObjective?.passed)}, activityStateEvidence=${String(activityStateEvidence)}, reportFailure=${load.report.failure ?? "none"}.`,
     source: load.path,
     failure: {
       problem: "The disposable staging load objective did not pass.",
@@ -247,7 +250,10 @@ function loadScenario(definition: ScenarioDefinition, load: Awaited<ReturnType<t
       reproduction: "pnpm run test:booking-load:staging",
       affectedSystem: definition.area,
       risk: definition.risk ?? "Capacity or data-integrity objectives are not assured.",
-      cause: load.report.failure ?? "One or more measured customer or operational load objectives failed.",
+      cause: load.report.failure
+        ?? (!activityStateEvidence
+          ? "The scenario lacks real pg_stat_activity state evidence; disabled, restricted, empty, or failed telemetry cannot satisfy readiness."
+          : "One or more measured customer or operational load objectives failed."),
       solution: load.report.optimizationDecision ?? "Diagnose the failed objective, apply a measured fix, and rerun the staging load profile.",
       proposedSolution: "Reproduce only in the disposable staging profile, preserve the connection budget, and rerun the complete objective set after the targeted fix.",
       applied: false,
@@ -273,8 +279,9 @@ function markdown(report: any): string {
     "",
     `**Production readiness: ${report.productionReadiness.ready ? "READY" : "NOT READY"}** — ${report.productionReadiness.reason}`,
     "",
-    "**TELEMETRY UNAVAILABLE:** Managed PostgreSQL activity-state telemetry was unavailable in the selected load evidence. Pool, lock, latency, throughput and HTTP result measurements remain present.",
-    "",
+    ...(report.telemetry.status === "TELEMETRY UNAVAILABLE"
+      ? ["**TELEMETRY UNAVAILABLE:** Real PostgreSQL activity-state evidence was missing from at least one selected load scenario. Pool, lock, latency, throughput and HTTP result measurements remain present.", ""]
+      : []),
     "## Global totals",
     "",
     "| PASS | FAIL | NOT TESTED | NOT APPLICABLE | Critical | High | Medium | Low |",

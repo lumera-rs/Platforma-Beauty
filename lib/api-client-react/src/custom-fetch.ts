@@ -444,6 +444,7 @@ export async function customFetch<T = unknown>(
   }
 
   const headers = mergeHeaders(isRequest(input) ? input.headers : undefined, headersInit);
+  const bookingCommandStorageKey = attachBookingCommandKey(method, resolveUrl(input), init.body, headers);
 
   if (
     typeof init.body === "string" &&
@@ -480,5 +481,73 @@ export async function customFetch<T = unknown>(
     throw new ApiError(response, errorData, requestInfo);
   }
 
-  return (await parseSuccessBody(response, responseType, requestInfo)) as T;
+  const result = (await parseSuccessBody(response, responseType, requestInfo)) as T;
+  if (bookingCommandStorageKey && typeof sessionStorage !== "undefined") {
+    sessionStorage.removeItem(bookingCommandStorageKey);
+  }
+  return result;
+}
+
+const BOOKING_CREATION_PATHS = [
+  /^\/api\/appointments$/,
+  /^\/api\/booking-groups$/,
+  /^\/api\/salon\/appointments$/,
+  /^\/api\/salon\/booking-groups$/,
+  /^\/api\/salon\/appointment-series$/,
+  /^\/api\/salon\/package-appointments$/,
+  /^\/api\/employee\/appointments$/,
+  /^\/api\/employee\/booking-groups$/,
+  /^\/api\/employee\/appointment-series$/,
+  /^\/api\/widget\/salons\/[^/]+\/appointments$/,
+  /^\/api\/widget\/salons\/[^/]+\/booking-groups$/,
+];
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value as Record<string, unknown>).sort().map((key) =>
+      `${JSON.stringify(key)}:${stableJson((value as Record<string, unknown>)[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function shortHash(value: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+/**
+ * Keeps one command key for an in-flight JSON booking payload. Network errors
+ * and page refreshes retain it; a parsed successful response retires it.
+ */
+function attachBookingCommandKey(
+  method: string,
+  url: string,
+  body: BodyInit | null | undefined,
+  headers: Headers,
+): string | null {
+  if (method !== "POST" || headers.has("idempotency-key") || typeof body !== "string") return null;
+  const pathname = new URL(url, typeof window === "undefined" ? "http://localhost" : window.location.origin).pathname;
+  if (!BOOKING_CREATION_PATHS.some((pattern) => pattern.test(pathname))) return null;
+  let canonicalBody: string;
+  try {
+    canonicalBody = stableJson(JSON.parse(body));
+  } catch {
+    return null;
+  }
+  const storageKey = `lumera:booking-command:${shortHash(`${pathname}\n${canonicalBody}`)}`;
+  let key: string | null = null;
+  if (typeof sessionStorage !== "undefined") {
+    key = sessionStorage.getItem(storageKey);
+  }
+  key ??= typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  if (typeof sessionStorage !== "undefined") sessionStorage.setItem(storageKey, key);
+  headers.set("Idempotency-Key", key);
+  return storageKey;
 }

@@ -50,6 +50,30 @@ const run = (command: string, args: string[], env: NodeJS.ProcessEnv) => new Pro
   child.once("error", () => reject(new Error(`${command} could not start`)));
   child.once("exit", (code) => code === 0 ? resolve() : reject(new Error(`${command} failed`)));
 });
+const capture = (command: string, args: string[], env: NodeJS.ProcessEnv) => new Promise<{ code: number | null; output: string }>((resolve, reject) => {
+  const child = spawn(command, args, { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
+  let output = "";
+  child.stdout.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+  child.stderr.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+  child.once("error", () => reject(new Error(`${command} could not start`)));
+  child.once("exit", (code) => resolve({ code, output }));
+});
+async function enableActivityTracking(databaseUrl: string, environment: NodeJS.ProcessEnv) {
+  const pgOptions = `${environment.PGOPTIONS ?? ""} -c track_activities=on`.trim();
+  const result = await capture("psql", [databaseUrl, "-X", "-v", "ON_ERROR_STOP=1", "-Atc", "show track_activities"], {
+    ...environment,
+    PGOPTIONS: pgOptions,
+  });
+  if (result.code === 0 && result.output.trim() === "on") {
+    environment.PGOPTIONS = pgOptions;
+    environment.LUMERA_BOOKING_LOAD_ACTIVITY_SETUP = "enabled";
+    return;
+  }
+  const permissionDenied = /permission denied|must be superuser/i.test(result.output);
+  environment.LUMERA_BOOKING_LOAD_ACTIVITY_SETUP = permissionDenied
+    ? "unavailable: permission denied while enabling track_activities"
+    : `unavailable: track_activities preflight failed with exit ${result.code ?? "signal"}`;
+}
 const port = async () => {
   const server = createServer().listen(0, "127.0.0.1"); await once(server, "listening");
   const address = server.address(); await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
@@ -117,6 +141,7 @@ async function main() {
   try {
     await run("createdb", ["--maintenance-db", base, databaseName], process.env);
     const environment = isolatedEnvironment(databaseUrl);
+    await enableActivityTracking(databaseUrl, environment);
     await run("pnpm", ["--filter", "@workspace/db", "run", "push-force"], environment);
     const ports = await Promise.all(Array.from({ length: apiProcesses }, () => port()));
     const start = (p: number, seed: boolean) => {

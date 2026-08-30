@@ -1207,6 +1207,14 @@ export const GetGroupedBookingAvailabilityResponse = zod.object({
 /**
  * @summary Atomically book an ordered group of treatments
  */
+export const createBookingGroupHeaderIdempotencyKeyMax = 200;
+
+
+
+export const CreateBookingGroupHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(createBookingGroupHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+})
+
 export const createBookingGroupBodyTreatmentsMax = 5;
 
 export const createBookingGroupBodyNotesMax = 1000;
@@ -1313,6 +1321,14 @@ export const CreateBookingGroupResponse = zod.object({
 /**
  * @summary Atomically create a manual grouped booking for a CRM customer or guest
  */
+export const createSalonBookingGroupHeaderIdempotencyKeyMax = 200;
+
+
+
+export const CreateSalonBookingGroupHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(createSalonBookingGroupHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+})
+
 export const createSalonBookingGroupBodyGuestFirstNameMax = 100;
 
 export const createSalonBookingGroupBodyGuestLastNameMax = 100;
@@ -1433,6 +1449,14 @@ export const CreateSalonBookingGroupResponse = zod.object({
 /**
  * @summary Atomically create a manual grouped booking assigned to the signed-in employee
  */
+export const createEmployeeBookingGroupHeaderIdempotencyKeyMax = 200;
+
+
+
+export const CreateEmployeeBookingGroupHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(createEmployeeBookingGroupHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+})
+
 export const createEmployeeBookingGroupBodyGuestFirstNameMax = 100;
 
 export const createEmployeeBookingGroupBodyGuestLastNameMax = 100;
@@ -1546,6 +1570,30 @@ export const CreateEmployeeBookingGroupResponse = zod.object({
   "completedAt": zod.coerce.date().nullish(),
   "noShowAt": zod.coerce.date().nullish()
 })),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Recover the durable outcome of an authenticated booking command
+ */
+export const getBookingCommandReceiptPathIdempotencyKeyMax = 200;
+
+
+
+export const GetBookingCommandReceiptParams = zod.object({
+  "idempotencyKey": zod.coerce.string().min(1).max(getBookingCommandReceiptPathIdempotencyKeyMax)
+})
+
+export const GetBookingCommandReceiptQueryParams = zod.object({
+  "salonId": zod.coerce.string()
+})
+
+export const GetBookingCommandReceiptResponse = zod.object({
+  "idempotencyKey": zod.string(),
+  "commandType": zod.string(),
+  "responseStatus": zod.number().int(),
+  "responseBody": zod.unknown(),
   "createdAt": zod.coerce.date()
 })
 
@@ -1866,6 +1914,14 @@ export const ListMyAppointmentsResponse = zod.array(ListMyAppointmentsResponseIt
 /**
  * @summary Create a booking
  */
+export const createAppointmentHeaderIdempotencyKeyMax = 200;
+
+
+
+export const CreateAppointmentHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(createAppointmentHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+})
+
 export const createAppointmentBodyStartTimeRegExp = new RegExp('^(?:[01][0-9]|2[0-3]):[0-5][0-9]$');
 export const createAppointmentBodyTreatmentAddressLine1Min = 3;
 export const createAppointmentBodyTreatmentAddressLine1Max = 200;
@@ -3340,6 +3396,14 @@ export const ListSalonAppointmentsResponse = zod.array(ListSalonAppointmentsResp
 /**
  * @summary Create a salon appointment for a CRM customer or walk-in guest
  */
+export const createSalonAppointmentHeaderIdempotencyKeyMax = 200;
+
+
+
+export const CreateSalonAppointmentHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(createSalonAppointmentHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+})
+
 export const createSalonAppointmentBodyStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
 
 
@@ -3520,6 +3584,14 @@ export const PreviewSalonPackageAppointmentsResponse = zod.object({
 /**
  * @summary Atomically book every remaining session in a purchased package
  */
+export const createSalonPackageAppointmentsHeaderIdempotencyKeyMax = 200;
+
+
+
+export const CreateSalonPackageAppointmentsHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(createSalonPackageAppointmentsHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+})
+
 export const createSalonPackageAppointmentsBodySlotsItemStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
 export const createSalonPackageAppointmentsBodySlotsMax = 100;
 
@@ -3763,6 +3835,14 @@ export const GetSalonCalendarDayResponse = zod.array(GetSalonCalendarDayResponse
 /**
  * @summary Create an atomic salon appointment series
  */
+export const createSalonAppointmentSeriesHeaderIdempotencyKeyMax = 200;
+
+
+
+export const CreateSalonAppointmentSeriesHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(createSalonAppointmentSeriesHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+})
+
 export const createSalonAppointmentSeriesBodyOneSlotsItemStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
 export const createSalonAppointmentSeriesBodyOneSlotsMax = 24;
 
@@ -4142,6 +4222,14 @@ export const PreviewEmployeeAppointmentSeriesResponse = zod.object({
 /**
  * @summary Create an atomic employee appointment series
  */
+export const createEmployeeAppointmentSeriesHeaderIdempotencyKeyMax = 200;
+
+
+
+export const CreateEmployeeAppointmentSeriesHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(createEmployeeAppointmentSeriesHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+})
+
 export const createEmployeeAppointmentSeriesBodyOneSlotsItemStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
 export const createEmployeeAppointmentSeriesBodyOneSlotsMax = 24;
 
@@ -18997,6 +19085,14 @@ export const CreateWidgetAppointmentParams = zod.object({
   "slug": zod.coerce.string()
 })
 
+export const createWidgetAppointmentHeaderIdempotencyKeyMax = 200;
+
+
+
+export const CreateWidgetAppointmentHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(createWidgetAppointmentHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+})
+
 export const createWidgetAppointmentBodyFirstNameMax = 80;
 
 export const createWidgetAppointmentBodyLastNameMax = 80;
@@ -19039,6 +19135,14 @@ export const CreateWidgetAppointmentResponse = zod.object({
  */
 export const CreateWidgetBookingGroupParams = zod.object({
   "slug": zod.coerce.string()
+})
+
+export const createWidgetBookingGroupHeaderIdempotencyKeyMax = 200;
+
+
+
+export const CreateWidgetBookingGroupHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(createWidgetBookingGroupHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const createWidgetBookingGroupBodyFirstNameMax = 80;

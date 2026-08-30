@@ -77,7 +77,7 @@
     "test:booking-load:staging": "LUMERA_BOOKING_LOAD=1 LUMERA_BOOKING_LOAD_PROFILE=staging LUMERA_BOOKING_LOAD_API_PROCESSES=2 LUMERA_BOOKING_LOAD_EXPECTED_DEPLOYMENT_PROCESSES=2 LUMERA_BOOKING_LOAD_POOL_MAX=10 LUMERA_BOOKING_LOAD_HARNESS_POOL_MAX=10 LUMERA_BOOKING_LOAD_CONNECTION_RESERVE=5 LUMERA_BOOKING_LOAD_DB_CONNECTION_BUDGET=35 LUMERA_BOOKING_LOAD_REPORT_NAME=staging-capacity tsx ./src/run-booking-load.ts",
     "test:booking-load:baseline": "LUMERA_BOOKING_LOAD=1 LUMERA_BOOKING_LOAD_DB_CONN_TIMEOUT_MS=5000 LUMERA_BOOKING_LOAD_REPORT_NAME=baseline-pool-timeout LUMERA_BOOKING_LOAD_EXPECT_FAILURE=1 tsx ./src/run-booking-load.ts",
     "cleanup:booking-load": "LUMERA_BOOKING_LOAD=1 tsx ./src/run-booking-load.ts --recover-interrupted-databases",
-    "test:booking-load-metrics": "tsx --test ./src/booking-load-metrics.test.ts",
+    "test:booking-load-metrics": "tsx --test ./src/booking-load-metrics.test.ts ./src/booking-load-telemetry.test.ts",
     "booking-qa": "tsx ./src/run-booking-qa.ts"
   },
   "devDependencies": {
