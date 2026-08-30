@@ -48,6 +48,34 @@ export type GenerateAvailabilityInput = {
   minimumLeadTimeMinutes?: number;
 };
 
+export const DEFAULT_SALON_TIME_ZONE = "Europe/Belgrade";
+
+export function wallClockNowInTimeZone(
+  instant: Date,
+  timeZone = DEFAULT_SALON_TIME_ZONE,
+): { date: string; time: string } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(instant);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value;
+  const year = value("year");
+  const month = value("month");
+  const day = value("day");
+  const hour = value("hour");
+  const minute = value("minute");
+  if (!year || !month || !day || !hour || !minute) {
+    throw new Error(`Cannot resolve wall-clock time for ${timeZone}.`);
+  }
+  return { date: `${year}-${month}-${day}`, time: `${hour}:${minute}` };
+}
+
 export function addMinutes(time: string, minutes: number): string | null {
   const match = /^(\d{2}):(\d{2})$/.exec(time);
   if (!match) return null;

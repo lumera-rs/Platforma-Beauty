@@ -30,8 +30,6 @@ export function GroupedAvailabilityView({
   onSelectCandidate,
   currentMonth,
   onMonthChange,
-  fromDate,
-  toDate,
   onDateSelect,
 }: GroupedAvailabilityViewProps) {
   const [internalMonth, setInternalMonth] = useState(() => startOfMonth(new Date()));
@@ -183,7 +181,7 @@ export function GroupedAvailabilityView({
                 const isDayToday = isToday(day);
 
                 const fetchedDay = calendarDays.find((d:any) => d.date === dateStr);
-                const isFetched = !!fetchedDay || (fromDate && toDate && dateStr >= fromDate && dateStr <= toDate);
+                const isFetched = !!fetchedDay;
                 const isAvailable = fetchedDay ? fetchedDay.candidates.length > 0 : false;
                 
                 const isSelected = selectedCalendarDate === dateStr;

@@ -18,11 +18,13 @@ import {
   servicesTable,
 } from "@workspace/db";
 import {
+  DEFAULT_SALON_TIME_ZONE,
   generateAvailability,
   type AvailabilitySlot,
   type BusyAppointment,
   type GenerateAvailabilityInput,
   type ResourceAllocation,
+  wallClockNowInTimeZone,
 } from "./availability-engine";
 
 function optionalNumber(value: unknown, fallback: number) {
@@ -144,8 +146,7 @@ export async function canonicalAvailability(input: {
     }
     const granularity = context.settings?.slotGranularityMinutes ?? 15;
     const minimumLeadTimeMinutes = context.settings?.minimumLeadTimeMinutes ?? 0;
-    const systemNow = new Date();
-    const effectiveNow = input.now ?? { date: systemNow.toISOString().slice(0, 10), time: systemNow.toISOString().slice(11, 16) };
+    const effectiveNow = input.now ?? wallClockNowInTimeZone(new Date(), DEFAULT_SALON_TIME_ZONE);
     const linked = new Set(context.employeeServiceLinks.filter((link) => link.serviceId === input.service.id).map((link) => link.employeeId));
     const candidates = context.employees.filter((employee) => linked.has(employee.id) && (!input.employeeId || employee.id === input.employeeId));
     if (!candidates.length) return [];
@@ -217,11 +218,7 @@ export async function canonicalAvailability(input: {
   // endpoint. Do not let a public query select an unconfigured cadence.
   const granularity = policy?.slotGranularityMinutes ?? 15;
   const minimumLeadTimeMinutes = policy?.minimumLeadTimeMinutes ?? 0;
-  const systemNow = new Date();
-  const effectiveNow = input.now ?? {
-    date: systemNow.toISOString().slice(0, 10),
-    time: systemNow.toISOString().slice(11, 16),
-  };
+  const effectiveNow = input.now ?? wallClockNowInTimeZone(new Date(), DEFAULT_SALON_TIME_ZONE);
   const dateHours = policy?.dateHours ?? [];
   const employeeRows = await store.select({ employee: employeesTable }).from(employeesTable)
     .innerJoin(employeeLocationAssignmentsTable, and(

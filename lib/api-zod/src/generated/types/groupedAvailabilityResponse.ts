@@ -13,7 +13,7 @@ export interface GroupedAvailabilityResponse {
   generatedAt: Date;
   /**
      * Legacy list-mode candidates. Empty when resultMode is calendar.
-     * @maxItems 5
+     * @maxItems 20
      */
   candidates: GroupedAvailabilityCandidate[];
   /**

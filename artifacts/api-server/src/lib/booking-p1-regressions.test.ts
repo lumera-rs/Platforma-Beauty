@@ -316,7 +316,12 @@ async function run(): Promise<void> {
       allowMultipleDays: false,
     });
     assert.equal(legacyList.status, 200);
-    assert.equal((legacyList.body.candidates as unknown[]).length, 5, "legacy grouped availability list must remain capped at five candidates");
+    assert.equal((legacyList.body.candidates as unknown[]).length, 20, "list availability must use the same safe per-day cap as calendar mode");
+    assert.match(
+      String((legacyList.body.candidates as Array<{ date: string }>)[0]?.date),
+      /^\d{4}-\d{2}-\d{2}$/,
+      "list candidates must preserve the date-only booking contract",
+    );
 
     const calendarAvailability = await post(baseUrl, `/salons/${salon!.id}/grouped-availability`, ownerSession, {
       resultMode: "calendar",
@@ -328,6 +333,7 @@ async function run(): Promise<void> {
     assert.equal(calendarAvailability.status, 200);
     const calendarDays = calendarAvailability.body.calendarDays as Array<{ date: string; candidates: unknown[]; truncated: boolean }>;
     assert.equal(calendarDays.length, 2, "calendar mode must return every requested date");
+    assert.equal(calendarDays[0]!.date, "2099-12-02", "calendar days must preserve the date-only booking contract");
     assert.equal(calendarDays[0]!.candidates.length, 20, "an open day must respect the explicit safe per-day candidate cap");
     assert.equal(calendarDays[1]!.candidates.length, 0, "a closed day must not expose an incomplete candidate");
     assert.equal(calendarDays[0]!.truncated, true, "a capped calendar day must report truncation");

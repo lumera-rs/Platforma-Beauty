@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { CreateAppointmentBody } from "@workspace/api-zod";
 import { calendarDate, isValidCalendarDate } from "../routes/marketplace";
-import { generateAvailability } from "./availability-engine";
+import { generateAvailability, wallClockNowInTimeZone } from "./availability-engine";
 
 test("booking API date guards reject impossible ISO dates while accepting leap day", () => {
   for (const impossible of ["2025-02-29", "2025-02-30", "2024-04-31", "2024-13-01", "2024-00-01"]) {
@@ -46,4 +46,16 @@ test("availability suppresses past slots across midnight and year rollover", () 
     "2025-01-01 00:30",
     "2025-01-01 00:45",
   ]);
+});
+
+test("server cutoff uses the salon wall clock instead of UTC or browser time", () => {
+  assert.deepEqual(
+    wallClockNowInTimeZone(new Date("2026-08-30T16:34:00.000Z"), "Europe/Belgrade"),
+    { date: "2026-08-30", time: "18:34" },
+  );
+  assert.deepEqual(
+    wallClockNowInTimeZone(new Date("2026-08-30T22:00:00.000Z"), "Europe/Belgrade"),
+    { date: "2026-08-31", time: "00:00" },
+    "the salon date must advance at local midnight even while UTC is on the prior day",
+  );
 });

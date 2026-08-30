@@ -9247,7 +9247,7 @@ components:
         generatedAt: { type: string, format: date-time }
         candidates:
           type: array
-          maxItems: 5
+          maxItems: 20
           description: Legacy list-mode candidates. Empty when resultMode is calendar.
           items: { $ref: "#/components/schemas/GroupedAvailabilityCandidate" }
         calendarDays:

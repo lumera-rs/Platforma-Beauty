@@ -1198,7 +1198,7 @@ export const getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemPo
 
 export const getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemBufferMinutesMin = 0;
 
-export const getGroupedBookingAvailabilityResponseCandidatesMax = 5;
+export const getGroupedBookingAvailabilityResponseCandidatesMax = 20;
 
 export const getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemPositionMin = 0;
 

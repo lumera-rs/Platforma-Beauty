@@ -159,6 +159,13 @@ export function BookingWidget(props: BookingWidgetProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.quickBookCandidate]);
 
+  const mergeCalendarDay = (current: any, next: any) => {
+    const days = new Map<string, any>();
+    for (const day of current?.calendarDays ?? []) days.set(day.date, day);
+    for (const day of next?.calendarDays ?? []) days.set(day.date, day);
+    return { ...next, candidates: [], calendarDays: [...days.values()].sort((a, b) => a.date.localeCompare(b.date)) };
+  };
+
   const refetchAvailability = (mode = viewMode, multipleDays = allowMultipleDays) => {
     const parsedFrom = parseLocalDateOnly(fromDate);
     const parsedTo = parseLocalDateOnly(toDate);
@@ -168,20 +175,22 @@ export function BookingWidget(props: BookingWidgetProps) {
       return;
     }
 
+    const requestedToDate = mode === "calendar" && !multipleDays ? fromDate : toDate;
     const currentId = ++latestRequestRef.current;
     availabilityMutation.mutate({
       salonId: props.salon.id,
       data: {
         treatments: cart,
         fromDate,
-        toDate,
+        toDate: requestedToDate,
         allowMultipleDays: multipleDays,
         resultMode: mode,
       }
     }, {
       onSuccess: (data) => {
         if (latestRequestRef.current !== currentId) return;
-        setAvailabilityResponse(data);
+        setAvailabilityResponse((current: any) =>
+          mode === "calendar" && !multipleDays ? mergeCalendarDay(current, data) : data);
         const hasCandidates = mode === "calendar"
           ? (data.calendarDays ?? []).some((d: any) => d.candidates.length > 0)
           : (data.candidates ?? []).length > 0;
@@ -637,6 +646,7 @@ export function BookingWidget(props: BookingWidgetProps) {
                   const parsed = parseLocalDateOnly(dateStr);
                   if (!parsed) return;
                   const newToDate = formatLocalDateOnly(addDays(parsed, 13))!;
+                  const requestToDate = viewMode === "calendar" && !allowMultipleDays ? dateStr : newToDate;
                   setFromDate(dateStr);
                   setToDate(newToDate);
                   setSelectedCandidate(null);
@@ -648,14 +658,15 @@ export function BookingWidget(props: BookingWidgetProps) {
                     data: {
                       treatments: cart,
                       fromDate: dateStr,
-                      toDate: newToDate,
+                      toDate: requestToDate,
                       allowMultipleDays,
                       resultMode: viewMode,
                     }
                   }, {
                     onSuccess: (data) => {
                       if (latestRequestRef.current !== currentId) return;
-                      setAvailabilityResponse(data);
+                      setAvailabilityResponse((current: any) =>
+                        viewMode === "calendar" && !allowMultipleDays ? mergeCalendarDay(current, data) : data);
                     },
                     onError: () => {
                       if (latestRequestRef.current !== currentId) return;
