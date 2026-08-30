@@ -1,0 +1,486 @@
+{
+  "environment": "Development/test-only measurement on one disposable database and two loopback API processes; fixture/bootstrap time is excluded and results are not production capacity planning.",
+  "requestTimeoutMs": 30000,
+  "configuration": {
+    "apiProcesses": 2,
+    "poolMaxPerProcess": 10,
+    "dbConnectionTimeoutMs": 15000
+  },
+  "marker": "booking-load-16264",
+  "scenarios": [
+    {
+      "name": "same-slot",
+      "count": 200,
+      "throughputPerSecond": 61.74202726305591,
+      "statuses": {
+        "201": 1,
+        "409": 199
+      },
+      "codes": {},
+      "timeouts": 0,
+      "unexpectedErrors": 0,
+      "unexpectedSamples": [],
+      "latency": {
+        "average": 2131.7194570900006,
+        "p50": 2277.415167,
+        "p95": 3063.655826,
+        "p99": 3123.229688,
+        "max": 3140.813258
+      },
+      "dbActivity": {
+        "sampleCount": 29,
+        "samplingErrors": 0,
+        "pg": {
+          "scope": "All connections and locks for the disposable database, including the harness sampler.",
+          "activityStateTelemetry": "unavailable: managed PostgreSQL reported state tracking as disabled",
+          "statePeaks": {
+            "disabled": 30
+          },
+          "lockPeaks": {
+            "AccessShareLock": 163,
+            "ExclusiveLock": 23,
+            "RowExclusiveLock": 18,
+            "RowShareLock": 117,
+            "ShareLock": 1
+          }
+        },
+        "apiPools": [
+          {
+            "observedSamples": 29,
+            "configuredMax": 10,
+            "peakTotal": 10,
+            "peakWaiting": 92,
+            "minimumIdle": 0
+          },
+          {
+            "observedSamples": 29,
+            "configuredMax": 10,
+            "peakTotal": 10,
+            "peakWaiting": 91,
+            "minimumIdle": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "1000-distinct",
+      "count": 1000,
+      "throughputPerSecond": 72.46357705889483,
+      "statuses": {
+        "201": 1000
+      },
+      "codes": {},
+      "timeouts": 0,
+      "unexpectedErrors": 0,
+      "unexpectedSamples": [],
+      "latency": {
+        "average": 13210.57942567502,
+        "p50": 13294.251396,
+        "p95": 13635.603317000001,
+        "p99": 13639.883973999998,
+        "max": 13644.013362000002
+      },
+      "dbActivity": {
+        "sampleCount": 131,
+        "samplingErrors": 0,
+        "pg": {
+          "scope": "All connections and locks for the disposable database, including the harness sampler.",
+          "activityStateTelemetry": "unavailable: managed PostgreSQL reported state tracking as disabled",
+          "statePeaks": {
+            "disabled": 30
+          },
+          "lockPeaks": {
+            "AccessShareLock": 376,
+            "ExclusiveLock": 52,
+            "RowExclusiveLock": 180,
+            "RowShareLock": 216
+          }
+        },
+        "apiPools": [
+          {
+            "observedSamples": 131,
+            "configuredMax": 10,
+            "peakTotal": 10,
+            "peakWaiting": 814,
+            "minimumIdle": 0
+          },
+          {
+            "observedSamples": 131,
+            "configuredMax": 10,
+            "peakTotal": 10,
+            "peakWaiting": 874,
+            "minimumIdle": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "250-groups",
+      "count": 250,
+      "throughputPerSecond": 68.64917199030492,
+      "statuses": {
+        "201": 125,
+        "409": 125
+      },
+      "codes": {},
+      "timeouts": 0,
+      "unexpectedErrors": 0,
+      "unexpectedSamples": [],
+      "latency": {
+        "average": 3160.712062412001,
+        "p50": 3124.9149880000004,
+        "p95": 3560.5218669999995,
+        "p99": 3568.9147489999996,
+        "max": 3569.665073
+      },
+      "dbActivity": {
+        "sampleCount": 35,
+        "samplingErrors": 0,
+        "pg": {
+          "scope": "All connections and locks for the disposable database, including the harness sampler.",
+          "activityStateTelemetry": "unavailable: managed PostgreSQL reported state tracking as disabled",
+          "statePeaks": {
+            "disabled": 22
+          },
+          "lockPeaks": {
+            "AccessShareLock": 482,
+            "ExclusiveLock": 53,
+            "RowExclusiveLock": 171,
+            "RowShareLock": 275
+          }
+        },
+        "apiPools": [
+          {
+            "observedSamples": 35,
+            "configuredMax": 10,
+            "peakTotal": 10,
+            "peakWaiting": 157,
+            "minimumIdle": 0
+          },
+          {
+            "observedSamples": 35,
+            "configuredMax": 10,
+            "peakTotal": 10,
+            "peakWaiting": 157,
+            "minimumIdle": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "mixed-1000",
+      "count": 1000,
+      "throughputPerSecond": 119.93953502133955,
+      "statuses": {
+        "200": 500,
+        "201": 255,
+        "409": 245
+      },
+      "codes": {},
+      "timeouts": 0,
+      "unexpectedErrors": 0,
+      "unexpectedSamples": [],
+      "latency": {
+        "average": 5058.438720085,
+        "p50": 4691.77838,
+        "p95": 8233.932405,
+        "p99": 8236.562059,
+        "max": 8237.444553999998
+      },
+      "dbActivity": {
+        "sampleCount": 79,
+        "samplingErrors": 0,
+        "pg": {
+          "scope": "All connections and locks for the disposable database, including the harness sampler.",
+          "activityStateTelemetry": "unavailable: managed PostgreSQL reported state tracking as disabled",
+          "statePeaks": {
+            "disabled": 22
+          },
+          "lockPeaks": {
+            "AccessShareLock": 522,
+            "ExclusiveLock": 51,
+            "RowExclusiveLock": 100,
+            "RowShareLock": 190
+          }
+        },
+        "apiPools": [
+          {
+            "observedSamples": 79,
+            "configuredMax": 10,
+            "peakTotal": 10,
+            "peakWaiting": 1040,
+            "minimumIdle": 0
+          },
+          {
+            "observedSamples": 79,
+            "configuredMax": 10,
+            "peakTotal": 10,
+            "peakWaiting": 1036,
+            "minimumIdle": 0
+          }
+        ]
+      }
+    }
+  ],
+  "integrity": {
+    "sameSlotActive": 1,
+    "distinctAppointments": 1000,
+    "distinctCustomers": 1000,
+    "cancelledAppointments": 250,
+    "mixedSingleAppointments": 250,
+    "successfulBookingGroups": 131,
+    "partialGroups": 0,
+    "crossCustomerRows": 0,
+    "activeOverlaps": 0,
+    "markerOwned": true
+  },
+  "plans": [
+    {
+      "query": "appointment overlap",
+      "summary": {
+        "planningMs": 0.085,
+        "executionMs": 0.022,
+        "node": "Index Scan",
+        "index": "appointments_employee_date_status_idx",
+        "actualRows": 0,
+        "sharedHitBlocks": 11,
+        "sharedReadBlocks": 0
+      },
+      "raw": {
+        "QUERY PLAN": [
+          {
+            "Plan": {
+              "Node Type": "Index Scan",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Scan Direction": "Forward",
+              "Index Name": "appointments_employee_date_status_idx",
+              "Relation Name": "appointments",
+              "Alias": "appointments",
+              "Startup Cost": 0.28,
+              "Total Cost": 2.51,
+              "Plan Rows": 1,
+              "Plan Width": 688,
+              "Actual Startup Time": 0.013,
+              "Actual Total Time": 0.013,
+              "Actual Rows": 0,
+              "Actual Loops": 1,
+              "Index Cond": "((employee_id = '3078b9c0-b43e-497c-b8f9-bffb1f638b5a'::uuid) AND (appointment_date = '2099-06-02'::date))",
+              "Rows Removed by Index Recheck": 0,
+              "Filter": "((status = ANY ('{pending,confirmed}'::appointment_status[])) AND (start_time < '10:00'::text) AND (end_time > '09:00'::text) AND (salon_id = '2c0e1b2c-0344-4ef5-aa05-bd9d945f24bb'::uuid))",
+              "Rows Removed by Filter": 12,
+              "Shared Hit Blocks": 11,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning": {
+              "Shared Hit Blocks": 1,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning Time": 0.085,
+            "Triggers": [],
+            "Execution Time": 0.022
+          }
+        ]
+      }
+    },
+    {
+      "query": "availability loaded appointments",
+      "summary": {
+        "planningMs": 0.132,
+        "executionMs": 0.141,
+        "node": "Sort",
+        "index": null,
+        "actualRows": 110,
+        "sharedHitBlocks": 192,
+        "sharedReadBlocks": 0
+      },
+      "raw": {
+        "QUERY PLAN": [
+          {
+            "Plan": {
+              "Node Type": "Sort",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Startup Cost": 2.52,
+              "Total Cost": 2.52,
+              "Plan Rows": 1,
+              "Plan Width": 84,
+              "Actual Startup Time": 0.121,
+              "Actual Total Time": 0.125,
+              "Actual Rows": 110,
+              "Actual Loops": 1,
+              "Sort Key": [
+                "employee_id",
+                "appointment_date"
+              ],
+              "Sort Method": "quicksort",
+              "Sort Space Used": 31,
+              "Sort Space Type": "Memory",
+              "Shared Hit Blocks": 192,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Plans": [
+                {
+                  "Node Type": "Index Scan",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Scan Direction": "Forward",
+                  "Index Name": "appointments_schedule_lookup_index",
+                  "Relation Name": "appointments",
+                  "Alias": "appointments",
+                  "Startup Cost": 0.28,
+                  "Total Cost": 2.51,
+                  "Plan Rows": 1,
+                  "Plan Width": 84,
+                  "Actual Startup Time": 0.033,
+                  "Actual Total Time": 0.085,
+                  "Actual Rows": 110,
+                  "Actual Loops": 1,
+                  "Index Cond": "((salon_id = '2c0e1b2c-0344-4ef5-aa05-bd9d945f24bb'::uuid) AND (appointment_date >= '2099-06-02'::date) AND (appointment_date <= '2099-06-05'::date))",
+                  "Rows Removed by Index Recheck": 0,
+                  "Filter": "(status = ANY ('{pending,confirmed}'::appointment_status[]))",
+                  "Rows Removed by Filter": 50,
+                  "Shared Hit Blocks": 189,
+                  "Shared Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Local Dirtied Blocks": 0,
+                  "Local Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                }
+              ]
+            },
+            "Planning": {
+              "Shared Hit Blocks": 12,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning Time": 0.132,
+            "Triggers": [],
+            "Execution Time": 0.141
+          }
+        ]
+      }
+    }
+  ],
+  "optimization": {
+    "change": "Raised the default pg-pool connection/acquisition timeout from 5,000 ms to 15,000 ms without increasing either API process's 10-connection pool.",
+    "evidenceBefore": {
+      "report": "baseline-pool-timeout.json",
+      "marker": "booking-load-16079",
+      "configuration": {
+        "apiProcesses": 2,
+        "poolMaxPerProcess": 10,
+        "dbConnectionTimeoutMs": 5000
+      },
+      "scenario": "1000-distinct",
+      "statuses": {
+        "201": 968,
+        "500": 32
+      },
+      "codes": {
+        "INTERNAL_ERROR": 32
+      },
+      "timeouts": 0,
+      "unexpectedErrors": 32,
+      "latency": {
+        "average": 12465.691398919009,
+        "p50": 12447.890666000001,
+        "p95": 13160.626509000002,
+        "p99": 13163.431152999998,
+        "max": 13164.276280000002
+      },
+      "poolPeaks": [
+        {
+          "observedSamples": 126,
+          "configuredMax": 10,
+          "peakTotal": 10,
+          "peakWaiting": 900,
+          "minimumIdle": 0
+        },
+        {
+          "observedSamples": 126,
+          "configuredMax": 10,
+          "peakTotal": 10,
+          "peakWaiting": 815,
+          "minimumIdle": 0
+        }
+      ]
+    },
+    "motivation": "The captured 5,000 ms baseline produced INTERNAL_ERROR responses while both pool acquisition queues were saturated; API stderr identified `timeout exceeded when trying to connect`.",
+    "evidenceAfter": {
+      "report": "latest.json",
+      "marker": "booking-load-16264",
+      "configuration": {
+        "apiProcesses": 2,
+        "poolMaxPerProcess": 10,
+        "dbConnectionTimeoutMs": 15000
+      },
+      "scenario": "1000-distinct",
+      "statuses": {
+        "201": 1000
+      },
+      "codes": {},
+      "timeouts": 0,
+      "unexpectedErrors": 0,
+      "latency": {
+        "average": 13210.57942567502,
+        "p50": 13294.251396,
+        "p95": 13635.603317000001,
+        "p99": 13639.883973999998,
+        "max": 13644.013362000002
+      },
+      "poolPeaks": [
+        {
+          "observedSamples": 131,
+          "configuredMax": 10,
+          "peakTotal": 10,
+          "peakWaiting": 814,
+          "minimumIdle": 0
+        },
+        {
+          "observedSamples": 131,
+          "configuredMax": 10,
+          "peakTotal": 10,
+          "peakWaiting": 874,
+          "minimumIdle": 0
+        }
+      ]
+    }
+  },
+  "optimizationDecision": "Applied only the measured pool-acquisition timeout fix. The complete 30-second run then passed without timeout, 5xx, duplicate active slots, partial groups, or cross-customer leakage. Pool size remains unchanged because increasing database connections without a connection budget would be unsafe."
+}

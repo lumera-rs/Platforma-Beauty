@@ -37,7 +37,10 @@ export const pool = new Pool({
   max: poolMax,
   min: poolMin,
   idleTimeoutMillis: parseEnvInt("DB_IDLE_TIMEOUT_MS", 10_000, 1_000, 300_000),
-  connectionTimeoutMillis: parseEnvInt("DB_CONN_TIMEOUT_MS", 5_000, 500, 60_000),
+  // pg-pool applies this timeout while requests wait for an already-open
+  // client too. Five seconds caused avoidable 500s under a 1,000-request
+  // booking burst while the fixed-size pools had long acquisition queues.
+  connectionTimeoutMillis: parseEnvInt("DB_CONN_TIMEOUT_MS", 15_000, 500, 60_000),
   query_timeout: parseEnvInt("DB_QUERY_TIMEOUT_MS", 30_000, 1_000, 300_000),
   statement_timeout: parseEnvInt("DB_STMT_TIMEOUT_MS", 30_000, 1_000, 300_000),
   keepAlive: true,
