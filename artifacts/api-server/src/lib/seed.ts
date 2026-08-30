@@ -1058,34 +1058,36 @@ async function synchronizeInferredServesMen(): Promise<void> {
   }
 }
 
-async function seedEducationContent(): Promise<void> {
-  const [course] = await db.select().from(coursesTable).limit(1);
+export async function seedEducationContent(
+  database: Pick<typeof db, "select" | "insert" | "update"> = db,
+): Promise<void> {
+  const [course] = await database.select().from(coursesTable).limit(1);
   if (!course) return;
-  const [existingDay] = await db.select({ id: courseDaysTable.id }).from(courseDaysTable).where(eq(courseDaysTable.courseId, course.id)).limit(1);
+  const [existingDay] = await database.select({ id: courseDaysTable.id }).from(courseDaysTable).where(eq(courseDaysTable.courseId, course.id)).limit(1);
   if (!existingDay) {
-    await db.insert(courseDaysTable).values([
+    await database.insert(courseDaysTable).values([
       { courseId: course.id, dayNumber: 1, title: "Osnove i priprema", description: "Uvod u materijal, bezbedan rad i priprema za praktičnu vežbu.", durationMinutes: 180, sortOrder: 1 },
       { courseId: course.id, dayNumber: 2, title: "Praktična tehnika", description: "Vođena demonstracija i samostalni rad uz povratnu informaciju instruktora.", durationMinutes: 240, sortOrder: 2 },
       { courseId: course.id, dayNumber: 3, title: "Završna praksa", description: "Primena kompletnog protokola i plan narednih koraka.", durationMinutes: 180, sortOrder: 3 },
     ]);
   }
-  let [module] = await db.select().from(courseModulesTable).where(eq(courseModulesTable.courseId, course.id)).limit(1);
+  let [module] = await database.select().from(courseModulesTable).where(eq(courseModulesTable.courseId, course.id)).limit(1);
   if (!module) {
-    [module] = await db.insert(courseModulesTable).values({
+    [module] = await database.insert(courseModulesTable).values({
       courseId: course.id,
       title: "Uvod u program",
       description: "Osnovne smernice i priprema za prvi praktični rad.",
       sortOrder: 1,
     }).returning();
-    await db.insert(courseLessonsTable).values([
+    await database.insert(courseLessonsTable).values([
       { moduleId: module!.id, title: "Dobrodošli", description: "Pregled ciljeva i sadržaja.", content: "Upoznajte strukturu programa i plan napretka.", durationMinutes: 15, sortOrder: 1 },
       { moduleId: module!.id, title: "Prvi koraci", description: "Priprema pre praktične vežbe.", content: "Pripremite prostor, alat i listu provere.", durationMinutes: 30, sortOrder: 2 },
     ]);
   }
-  const lessons = await db.select().from(courseLessonsTable).where(eq(courseLessonsTable.moduleId, module!.id)).orderBy(asc(courseLessonsTable.sortOrder));
-  const [existingSession] = await db.select({ id: courseSessionsTable.id }).from(courseSessionsTable).where(eq(courseSessionsTable.courseId, course.id)).limit(1);
+  const lessons = await database.select().from(courseLessonsTable).where(eq(courseLessonsTable.moduleId, module!.id)).orderBy(asc(courseLessonsTable.sortOrder));
+  const [existingSession] = await database.select({ id: courseSessionsTable.id }).from(courseSessionsTable).where(eq(courseSessionsTable.courseId, course.id)).limit(1);
   if (course.format !== "online" && !existingSession) {
-    await db.insert(courseSessionsTable).values({
+    await database.insert(courseSessionsTable).values({
       courseId: course.id,
       startsAt: new Date("2026-09-24T09:00:00.000Z"),
       endsAt: new Date("2026-09-24T15:00:00.000Z"),
@@ -1093,52 +1095,82 @@ async function seedEducationContent(): Promise<void> {
       capacity: 15,
     });
   }
-  const [owner] = await db.select().from(usersTable).where(eq(usersTable.role, "SALON_OWNER")).limit(1);
+  const [owner] = await database.select().from(usersTable).where(eq(usersTable.role, "SALON_OWNER")).limit(1);
   if (!owner) return;
-  const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.ownerId, owner.id)).limit(1);
+  const [salon] = await database.select().from(salonsTable).where(eq(salonsTable.ownerId, owner.id)).limit(1);
   if (!salon) return;
-  let [employee] = await db.select().from(employeesTable).where(eq(employeesTable.salonId, salon.id)).limit(1);
-  if (employee && !employee.userId) {
-    let [learner] = await db.select().from(usersTable).where(eq(usersTable.email, "zaposleni@lumera.local")).limit(1);
-    if (!learner) {
-      [learner] = await db.insert(usersTable).values({
-        firstName: employee.name.split(" ")[0] ?? "Zaposleni",
-        lastName: employee.name.split(" ").slice(1).join(" ") || "salona",
-        email: "zaposleni@lumera.local",
-        passwordHash: await hashPassword("LumeraDemo2026!"),
-        passwordSetAt: new Date(),
-        role: "SALON_EMPLOYEE",
-      }).returning();
-    }
-    [employee] = await db.update(employeesTable).set({ userId: learner!.id }).where(eq(employeesTable.id, employee.id)).returning();
+  let [learner] = await database.select().from(usersTable).where(eq(usersTable.email, "zaposleni@lumera.local")).limit(1);
+  if (!learner) {
+    [learner] = await database.insert(usersTable).values({
+      firstName: "Zaposleni",
+      lastName: "salona",
+      email: "zaposleni@lumera.local",
+      passwordHash: await hashPassword("LumeraDemo2026!"),
+      passwordSetAt: new Date(),
+      role: "SALON_EMPLOYEE",
+    }).returning();
   }
-  const [existingEnrollment] = await db.select({
+  let [employee] = await database.select().from(employeesTable).where(eq(employeesTable.userId, learner!.id)).limit(1);
+  if (!employee) {
+    [employee] = await database.select().from(employeesTable)
+      .where(and(eq(employeesTable.salonId, salon.id), sql`${employeesTable.userId} is null`))
+      .limit(1);
+    if (employee) {
+      [employee] = await database.update(employeesTable)
+        .set({ userId: learner!.id })
+        .where(eq(employeesTable.id, employee.id))
+        .returning();
+    }
+  }
+  if (!employee) return;
+  const [existingEnrollment] = await database.select({
     id: courseEnrollmentsTable.id,
     nextLesson: courseEnrollmentsTable.nextLesson,
-  }).from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.courseId, course.id)).limit(1);
+    status: courseEnrollmentsTable.status,
+    paymentStatus: courseEnrollmentsTable.paymentStatus,
+    accessGrantedAt: courseEnrollmentsTable.accessGrantedAt,
+  }).from(courseEnrollmentsTable).where(and(
+    eq(courseEnrollmentsTable.courseId, course.id),
+    eq(courseEnrollmentsTable.purchaserId, owner.id),
+    eq(courseEnrollmentsTable.employeeId, employee.id),
+    sql`${courseEnrollmentsTable.status} <> 'cancelled'`,
+  )).limit(1);
   if (existingEnrollment) {
     const normalizedNextLesson = existingEnrollment.nextLesson
       ? lessons.find((lesson) => lesson.id === existingEnrollment.nextLesson || lesson.title === existingEnrollment.nextLesson)?.id ?? null
       : null;
-    if (normalizedNextLesson !== existingEnrollment.nextLesson) {
-      await db.update(courseEnrollmentsTable).set({ nextLesson: normalizedNextLesson, updatedAt: new Date() }).where(eq(courseEnrollmentsTable.id, existingEnrollment.id));
+    const enrollmentRepair = {
+      ...(normalizedNextLesson !== existingEnrollment.nextLesson ? { nextLesson: normalizedNextLesson } : {}),
+      ...(existingEnrollment.status === "pending" ? { status: "active" as const } : {}),
+      ...(existingEnrollment.status !== "completed" && existingEnrollment.paymentStatus !== "paid"
+        ? { paymentStatus: "paid" as const }
+        : {}),
+      ...(existingEnrollment.status !== "completed" && !existingEnrollment.accessGrantedAt
+        ? { accessGrantedAt: new Date() }
+        : {}),
+    };
+    if (Object.keys(enrollmentRepair).length) {
+      await database.update(courseEnrollmentsTable)
+        .set({ ...enrollmentRepair, updatedAt: new Date() })
+        .where(eq(courseEnrollmentsTable.id, existingEnrollment.id));
     }
     return;
   }
-  const [enrollment] = await db.insert(courseEnrollmentsTable).values({
+  const [enrollment] = await database.insert(courseEnrollmentsTable).values({
     courseId: course.id,
     userId: owner.id,
     salonId: salon.id,
-    employeeId: employee?.id ?? null,
+    employeeId: employee.id,
     purchaserId: owner.id,
     status: "active",
     paymentStatus: "paid",
     progress: lessons.length > 1 ? 50 : 0,
     nextLesson: lessons[1]?.id ?? lessons[0]?.id ?? null,
+    accessGrantedAt: new Date(),
     auditData: { source: "incremental-demo-seed" },
   }).returning();
   if (lessons[0]) {
-    await db.insert(lessonProgressTable).values({ enrollmentId: enrollment!.id, lessonId: lessons[0].id, completedByUserId: owner.id });
+    await database.insert(lessonProgressTable).values({ enrollmentId: enrollment!.id, lessonId: lessons[0].id, completedByUserId: owner.id });
   }
 }
 

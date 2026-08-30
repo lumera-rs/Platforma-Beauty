@@ -1,17 +1,20 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   appointmentsTable,
+  courseEnrollmentsTable,
+  coursesTable,
   db,
   educationCentersTable,
+  employeesTable,
   pool,
   salonCustomersTable,
   salonsTable,
   servicesTable,
   usersTable,
 } from "@workspace/db";
-import { backfillSalonCustomers, ensureDemoData, restoreDemoEducationOwnerRole } from "./seed";
+import { backfillSalonCustomers, ensureDemoData, restoreDemoEducationOwnerRole, seedEducationContent } from "./seed";
 import { repairProductionMarketplaceDemoIdentity } from "./production-marketplace-demo-seed";
 
 const suffix = randomUUID();
@@ -35,6 +38,64 @@ async function run(): Promise<void> {
       .where(eq(educationCentersTable.ownerId, educationOwner.id))
     : [];
   assert.ok(ownedCenters.length > 0, "education demo remains linked to an education center");
+  let educationEnrollmentRepairVerified = false;
+  try {
+    await db.transaction(async (tx) => {
+      const [course] = await tx.select({ id: coursesTable.id }).from(coursesTable).limit(1);
+      const [owner] = await tx.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.role, "SALON_OWNER")).limit(1);
+      const [learner] = await tx.select({ id: usersTable.id }).from(usersTable)
+        .where(eq(usersTable.email, "zaposleni@lumera.local"))
+        .limit(1);
+      const [employee] = learner
+        ? await tx.select({ id: employeesTable.id }).from(employeesTable)
+          .where(eq(employeesTable.userId, learner.id))
+          .limit(1)
+        : [];
+      if (!course || !owner || !employee) throw new Error("education enrollment seed test requires the demo learner fixture");
+      const [enrollment] = await tx.select().from(courseEnrollmentsTable).where(and(
+        eq(courseEnrollmentsTable.courseId, course.id),
+        eq(courseEnrollmentsTable.purchaserId, owner.id),
+        eq(courseEnrollmentsTable.employeeId, employee.id),
+        sql`${courseEnrollmentsTable.status} <> 'cancelled'`,
+      )).limit(1);
+      if (!enrollment) throw new Error("education enrollment seed test requires the demo enrollment");
+
+      const completedAt = new Date("2026-08-30T10:00:00.000Z");
+      const certificateIssuedAt = new Date("2026-08-30T10:01:00.000Z");
+      await tx.update(courseEnrollmentsTable).set({
+        status: "completed",
+        paymentStatus: "paid",
+        progress: 100,
+        completedAt,
+        certificateIssuedAt,
+        certificateNumber: `seed-test-${suffix}`,
+      }).where(eq(courseEnrollmentsTable.id, enrollment.id));
+      await seedEducationContent(tx);
+      const [preserved] = await tx.select().from(courseEnrollmentsTable)
+        .where(eq(courseEnrollmentsTable.id, enrollment.id));
+      assert.equal(preserved!.status, "completed", "incremental seed must not reopen a completed employee enrollment");
+      assert.equal(preserved!.progress, 100, "incremental seed must preserve completed enrollment progress");
+      assert.deepEqual(preserved!.completedAt, completedAt, "incremental seed must preserve completion time");
+      assert.deepEqual(preserved!.certificateIssuedAt, certificateIssuedAt, "incremental seed must preserve certificate time");
+      assert.equal(preserved!.certificateNumber, `seed-test-${suffix}`, "incremental seed must preserve certificate data");
+
+      await tx.update(courseEnrollmentsTable).set({
+        status: "pending",
+        paymentStatus: "pending",
+        accessGrantedAt: null,
+      }).where(eq(courseEnrollmentsTable.id, enrollment.id));
+      await seedEducationContent(tx);
+      const [repaired] = await tx.select().from(courseEnrollmentsTable)
+        .where(eq(courseEnrollmentsTable.id, enrollment.id));
+      assert.equal(repaired!.status, "active", "incremental seed should activate the pending demo employee enrollment");
+      assert.equal(repaired!.paymentStatus, "paid", "incremental seed should make the pending demo employee enrollment accessible");
+      assert.ok(repaired!.accessGrantedAt, "incremental seed should record when access was granted");
+      educationEnrollmentRepairVerified = true;
+      tx.rollback();
+    });
+  } catch (error) {
+    if (!educationEnrollmentRepairVerified) throw error;
+  }
   let repairVerified = false;
   try {
     await db.transaction(async (tx) => {
