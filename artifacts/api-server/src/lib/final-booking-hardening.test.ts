@@ -28,7 +28,7 @@ async function request(
   baseUrl: string,
   session: string,
   path: string,
-  method: "GET" | "PATCH" | "POST",
+  method: "GET" | "PATCH" | "POST" | "PUT",
   body?: Record<string, unknown>,
   idempotencyKey?: string,
 ): Promise<HttpResult> {
@@ -117,6 +117,72 @@ async function run(): Promise<void> {
       salonId: salonA!.id, serviceId: serviceA!.id, employeeId: employeeA!.id, date, startTime,
     });
 
+    const impossibleFutureDate = "2099-02-30";
+    assert.equal((await request(baseUrl, "", `/salons/${salonA!.id}/grouped-availability`, "POST", {
+      fromDate: impossibleFutureDate,
+      toDate: "2099-03-02",
+      treatments: [{ serviceId: serviceA!.id, employeeId: employeeA!.id }],
+    })).status, 400, "grouped availability must reject an impossible raw date before coercion");
+    assert.equal((await request(baseUrl, customerASession, "/booking-groups", "POST", {
+      salonId: salonA!.id,
+      date: impossibleFutureDate,
+      treatments: [{ serviceId: serviceA!.id, employeeId: employeeA!.id, startTime: "09:00" }],
+    })).status, 400, "customer grouped booking must reject an impossible top-level raw date");
+    assert.equal((await request(baseUrl, customerASession, "/booking-groups", "POST", {
+      salonId: salonA!.id,
+      date: "2099-03-01",
+      treatments: [{
+        serviceId: serviceA!.id,
+        employeeId: employeeA!.id,
+        date: impossibleFutureDate,
+        startTime: "09:00",
+      }],
+    })).status, 400, "customer grouped booking must reject an impossible treatment raw date");
+    assert.equal((await request(baseUrl, ownerASession, "/salon/booking-groups", "POST", {
+      salonCustomerId: contactA!.id,
+      treatments: [{
+        serviceId: serviceA!.id,
+        employeeId: employeeA!.id,
+        date: impossibleFutureDate,
+        startTime: "09:00",
+      }],
+    })).status, 400, "staff grouped booking must reject an impossible treatment raw date");
+    assert.equal((await request(baseUrl, ownerASession, "/salon/appointments", "POST", {
+      salonCustomerId: contactA!.id,
+      serviceId: serviceA!.id,
+      employeeId: employeeA!.id,
+      date: impossibleFutureDate,
+      startTime: "09:00",
+    })).status, 400, "manual booking must reject an impossible raw date");
+    assert.equal((await request(baseUrl, ownerASession, "/salon/booking-settings", "PUT", {
+      slotGranularityMinutes: 15,
+      minimumLeadTimeMinutes: 0,
+      cancellationDeadlineMinutes: 1440,
+      reminderOffsetsMinutes: [],
+      reminderChannels: [],
+      maxVisitGapMinutes: 0,
+      minimumUsefulLateTreatmentMinutes: 0,
+      dateHours: [{
+        date: impossibleFutureDate,
+        closed: true,
+        openTime: null,
+        closeTime: null,
+        reason: "Impossible date",
+      }],
+      resourceDowntime: [],
+    })).status, 400, "booking settings must reject an impossible date-hours raw date");
+    assert.equal((await request(baseUrl, "", `/widget/salons/${salonA!.slug}/booking-groups`, "POST", {
+      firstName: "Calendar",
+      lastName: "Boundary",
+      phone: "+381611110099",
+      treatments: [{
+        serviceId: serviceA!.id,
+        employeeId: employeeA!.id,
+        date: impossibleFutureDate,
+        startTime: "09:00",
+      }],
+    })).status, 400, "widget grouped booking must reject an impossible treatment raw date");
+
     // Exact retries are not allowed to duplicate the durable booking, even when
     // both requests arrive before either response is available.
     const duplicateKey = `customer-retry-${suffix}`;
@@ -153,6 +219,21 @@ async function run(): Promise<void> {
     assert.equal(groupAppointmentCount!.value, 2, "an exact group retry must leave one complete group, not duplicate or partial members");
     const [groupCount] = await db.select({ value: count() }).from(bookingGroupsTable).where(eq(bookingGroupsTable.salonId, salonA!.id));
     assert.equal(groupCount!.value, 1, "an exact group retry must persist one group");
+    const createdGroup = groupResults.find((item) => item.status === 201)!.body as {
+      id: string;
+      appointments: Array<{ id: string }>;
+    };
+    assert.equal((await request(baseUrl, customerASession, `/booking-groups/${createdGroup.id}/reschedule`, "PATCH", {
+      treatments: [{
+        appointmentId: createdGroup.appointments[0]!.id,
+        date: impossibleFutureDate,
+        startTime: "10:00",
+      }],
+    })).status, 400, "group reschedule must reject an impossible treatment raw date");
+    assert.equal((await db.select({ value: count() }).from(appointmentsTable).where(and(
+      eq(appointmentsTable.salonId, salonA!.id),
+      eq(appointmentsTable.date, "2099-03-02"),
+    )))[0]!.value, 0, "impossible input must never be normalized into a durable March booking");
 
     // Manual salon creation and customer creation use the same server-side
     // authority and lock namespace.

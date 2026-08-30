@@ -1175,6 +1175,33 @@ export function isValidCalendarDate(value: string) {
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
+export function rawDateOnlyInput(value: unknown): string | null {
+  return typeof value === "string" && isValidCalendarDate(value) ? value : null;
+}
+
+export function rawTreatmentDateInputs(
+  value: unknown,
+  allowMissing = false,
+): Array<string | null> | null {
+  if (!value || typeof value !== "object" || !("treatments" in value) || !Array.isArray(value.treatments)) {
+    return null;
+  }
+  const dates: Array<string | null> = [];
+  for (const treatment of value.treatments) {
+    if (!treatment || typeof treatment !== "object" || !("date" in treatment)) {
+      if (allowMissing) {
+        dates.push(null);
+        continue;
+      }
+      return null;
+    }
+    const date = rawDateOnlyInput(treatment.date);
+    if (!date) return null;
+    dates.push(date);
+  }
+  return dates;
+}
+
 function overlapsAppointment(startTime: string, endTime: string, appointment: typeof appointmentsTable.$inferSelect) {
   return appointment.status !== "cancelled" && appointment.startTime < endTime && appointment.endTime > startTime;
 }
@@ -6467,9 +6494,11 @@ const GROUPED_AVAILABILITY_CALENDAR_BRANCH_LIMIT = 100;
 router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<void> => {
   const params = GetGroupedBookingAvailabilityParams.safeParse(req.params);
   const body = GetGroupedBookingAvailabilityBody.safeParse(req.body);
-  if (!params.success || !body.success) { res.status(400).json({ error: "Podaci za grupnu dostupnost nisu ispravni." }); return; }
-  const fromDate = calendarDate(body.data.fromDate); const toDate = calendarDate(body.data.toDate);
-  if (!isValidCalendarDate(fromDate) || !isValidCalendarDate(toDate) || fromDate > toDate) { res.status(400).json({ error: "Opseg datuma nije ispravan." }); return; }
+  const rawBody = req.body && typeof req.body === "object" ? req.body as Record<string, unknown> : null;
+  const fromDate = rawDateOnlyInput(rawBody?.fromDate);
+  const toDate = rawDateOnlyInput(rawBody?.toDate);
+  if (!params.success || !body.success || !fromDate || !toDate) { res.status(400).json({ error: "Podaci za grupnu dostupnost nisu ispravni." }); return; }
+  if (fromDate > toDate) { res.status(400).json({ error: "Opseg datuma nije ispravan." }); return; }
   const requestedDayCount = Math.floor((Date.parse(`${toDate}T00:00:00Z`) - Date.parse(`${fromDate}T00:00:00Z`)) / 86_400_000) + 1;
   if (body.data.resultMode === "calendar" && requestedDayCount > 14) {
     res.status(400).json({ error: "Kalendarski prikaz podržava opseg od najviše 14 dana." }); return;
@@ -6676,8 +6705,12 @@ async function createStaffBookingGroup(
     res.status(400).json({ error: "Izaberite CRM klijenta ili unesite podatke novog gosta." }); return;
   }
   const today = new Date().toISOString().slice(0, 10);
-  const treatments = parsed.data.treatments.map((item) => ({ ...item, date: calendarDate(item.date) }));
-  if (treatments.some((item) => !isValidCalendarDate(item.date) || item.date < today)) {
+  const rawDates = rawTreatmentDateInputs(req.body);
+  if (!rawDates) {
+    res.status(400).json({ error: "Datum tretmana nije ispravan." }); return;
+  }
+  const treatments = parsed.data.treatments.map((item, index) => ({ ...item, date: rawDates[index]! }));
+  if (treatments.some((item) => item.date < today)) {
     res.status(400).json({ error: "Datum tretmana nije ispravan." }); return;
   }
   const serviceIds = [...new Set(treatments.map((item) => item.serviceId))];
@@ -6888,9 +6921,12 @@ router.post("/booking-groups", admitBookingRequest, async (req, res): Promise<vo
   const user = await requireCustomer(req, res); if (!user) return;
   const parsed = CreateBookingGroupBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const date = calendarDate(parsed.data.date);
-  const treatmentDates = parsed.data.treatments.map((item) => calendarDate(item.date ?? date));
-  if (!isValidCalendarDate(date) || treatmentDates.some((item) => !isValidCalendarDate(item) || item < new Date().toISOString().slice(0, 10))) { res.status(400).json({ error: "Datum termina nije ispravan." }); return; }
+  const rawBody = req.body && typeof req.body === "object" ? req.body as Record<string, unknown> : null;
+  const date = rawDateOnlyInput(rawBody?.date);
+  const rawTreatmentDates = rawTreatmentDateInputs(req.body, true);
+  if (!date || !rawTreatmentDates) { res.status(400).json({ error: "Datum termina nije ispravan." }); return; }
+  const treatmentDates = rawTreatmentDates.map((item) => item ?? date);
+  if (treatmentDates.some((item) => item < new Date().toISOString().slice(0, 10))) { res.status(400).json({ error: "Datum termina nije ispravan." }); return; }
   const [salon] = await db.select().from(salonsTable).where(and(eq(salonsTable.id, parsed.data.salonId), eq(salonsTable.active, true))).limit(1);
   if (!salon) { res.status(404).json({ error: "Salon nije pronađen." }); return; }
   const services = await db.select().from(servicesTable).where(and(eq(servicesTable.salonId, salon.id), eq(servicesTable.active, true), inArray(servicesTable.id, parsed.data.treatments.map((x) => x.serviceId))));
@@ -7085,9 +7121,11 @@ router.patch("/booking-groups/:bookingGroupId/reschedule", admitBookingRequest, 
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci za pomeranje nisu ispravni." }); return; }
   const access = await bookingGroupAccess(req, res, params.data.bookingGroupId); if (!access) return;
   const today = new Date().toISOString().slice(0, 10);
-  if (body.data.treatments.some((item) => !isValidCalendarDate(calendarDate(item.date)) || calendarDate(item.date) < today)) {
+  const rawDates = rawTreatmentDateInputs(req.body);
+  if (!rawDates || rawDates.some((item) => item! < today)) {
     res.status(400).json({ error: "Novi datum termina nije ispravan." }); return;
   }
+  const treatmentDatesById = new Map(body.data.treatments.map((item, index) => [item.appointmentId, rawDates[index]!]));
   try {
     const warning = await db.transaction(async (tx) => {
       await lockAppointmentResources(tx, access.salon.id);
@@ -7110,7 +7148,7 @@ router.patch("/booking-groups/:bookingGroupId/reschedule", admitBookingRequest, 
       const requirements = new Map<string, Awaited<ReturnType<typeof fetchServiceResourceRequirements>>>();
       for (const item of affected) requirements.set(item.id, await fetchServiceResourceRequirements(tx, item.serviceId));
       await lockAppointmentResources(tx, access.salon.id, affected.flatMap((item) => {
-        const move = moveById.get(item.id)!; const date = calendarDate(move.date);
+        const move = moveById.get(item.id)!; const date = treatmentDatesById.get(item.id)!;
         return [
           { date: item.date, employeeId: item.employeeId },
           { date, employeeId: move.employeeId ?? item.employeeId },
@@ -7123,7 +7161,7 @@ router.patch("/booking-groups/:bookingGroupId/reschedule", admitBookingRequest, 
       for (const appointment of affected) {
         const move = moveById.get(appointment.id)!;
         const service = serviceById.get(appointment.serviceId)!;
-        const date = calendarDate(move.date);
+        const date = treatmentDatesById.get(appointment.id)!;
         const endTime = appointmentEndTime(move.startTime, service.durationMinutes);
         if (!endTime) throw new AppointmentSeriesError("Novo vreme tretmana nije ispravno.", 400);
         const slots = await canonicalAvailability({
@@ -8293,8 +8331,11 @@ router.put("/salon/booking-settings", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const parsed = ReplaceSalonBookingSettingsBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const invalidHours = parsed.data.dateHours.some((item) => !isValidCalendarDate(calendarDate(item.date))
-    || (item.closed ? item.openTime !== null || item.closeTime !== null : !item.openTime || !item.closeTime || item.openTime >= item.closeTime));
+  const rawDateHours = rawTreatmentDateInputs({ treatments: req.body?.dateHours });
+  if (!rawDateHours) { res.status(400).json({ error: "Izuzeci radnog vremena nisu ispravni." }); return; }
+  const dateHours = parsed.data.dateHours.map((item, index) => ({ ...item, date: rawDateHours[index]! }));
+  const invalidHours = dateHours.some((item) =>
+    item.closed ? item.openTime !== null || item.closeTime !== null : !item.openTime || !item.closeTime || item.openTime >= item.closeTime);
   if (invalidHours) { res.status(400).json({ error: "Izuzeci radnog vremena nisu ispravni." }); return; }
   const resourceIds = [...new Set(parsed.data.resourceDowntime.map((item) => item.resourceId))];
   if (resourceIds.length) {
@@ -8306,8 +8347,8 @@ router.put("/salon/booking-settings", async (req, res): Promise<void> => {
     await tx.insert(salonBookingSettingsTable).values({ salonId: access.salon.id, ...parsed.data, updatedByUserId: access.user.id, updatedAt: new Date() })
       .onConflictDoUpdate({ target: salonBookingSettingsTable.salonId, set: { ...parsed.data, updatedByUserId: access.user.id, updatedAt: new Date() } });
     await tx.delete(salonDateHoursTable).where(eq(salonDateHoursTable.salonId, access.salon.id));
-    if (parsed.data.dateHours.length) await tx.insert(salonDateHoursTable).values(parsed.data.dateHours.map((item) => ({
-      salonId: access.salon.id, date: calendarDate(item.date), closed: item.closed, openTime: item.openTime, closeTime: item.closeTime, reason: item.reason,
+    if (dateHours.length) await tx.insert(salonDateHoursTable).values(dateHours.map((item) => ({
+      salonId: access.salon.id, date: item.date, closed: item.closed, openTime: item.openTime, closeTime: item.closeTime, reason: item.reason,
     })));
     const allResourceIds = (await tx.select({ id: salonResourcesTable.id }).from(salonResourcesTable)
       .where(eq(salonResourcesTable.salonId, access.salon.id))).map((resource) => resource.id);
@@ -8683,7 +8724,10 @@ router.patch("/salon/customers/:customerId", async (req, res): Promise<void> => 
 router.post("/salon/appointments", admitBookingRequest, async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const parsed = CreateSalonAppointmentBody.safeParse(req.body);
-  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const rawDate = rawDateOnlyInput(req.body?.date);
+  if (!parsed.success || !rawDate) {
+    res.status(400).json({ error: parsed.success ? "Datum termina nije ispravan." : parsed.error.message }); return;
+  }
   const { salon } = access;
   if (Boolean(parsed.data.salonCustomerId) === Boolean(parsed.data.guest)) {
     res.status(400).json({ error: "Izaberite CRM klijenta ili unesite podatke novog gosta." }); return;
@@ -8693,7 +8737,7 @@ router.post("/salon/appointments", admitBookingRequest, async (req, res): Promis
   }
   const [service] = await db.select().from(servicesTable).where(and(eq(servicesTable.id, parsed.data.serviceId), eq(servicesTable.salonId, salon.id), eq(servicesTable.active, true))).limit(1);
   if (!service) { res.status(404).json({ error: "Usluga nije pronađena u ovom salonu." }); return; }
-  const date = calendarDate(parsed.data.date);
+  const date = rawDate;
   const endTime = appointmentEndTime(parsed.data.startTime, service.durationMinutes);
   if (!endTime) { res.status(400).json({ error: "Trajanje termina izlazi van radnog dana." }); return; }
   let contact: typeof salonCustomersTable.$inferSelect | undefined;

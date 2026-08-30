@@ -31,6 +31,7 @@ import {
   bookingGroupLayoutValid,
   createAllocatedAppointment,
   fetchServiceResourceRequirements,
+  rawTreatmentDateInputs,
   normalizedPhone,
 } from "./marketplace";
 import { getCurrentUser } from "../lib/auth";
@@ -290,9 +291,14 @@ router.post("/widget/salons/:slug/booking-groups", admitBookingRequest, async (r
   const parsed = CreateWidgetBookingGroupBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const today = new Date().toISOString().slice(0, 10);
-  const treatments = parsed.data.treatments.map((item) => ({
+  const rawDates = rawTreatmentDateInputs(req.body);
+  if (!rawDates) {
+    res.status(400).json({ error: "Izaberite važeći današnji ili budući termin." });
+    return;
+  }
+  const treatments = parsed.data.treatments.map((item, index) => ({
     ...item,
-    date: item.date.toISOString().slice(0, 10),
+    date: rawDates[index]!,
   }));
   if (treatments.some((item) => item.date < today || !/^\d{2}:\d{2}$/.test(item.startTime))) {
     res.status(400).json({ error: "Izaberite važeći današnji ili budući termin." });

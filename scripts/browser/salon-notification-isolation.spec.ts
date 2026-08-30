@@ -12,8 +12,10 @@ import {
   ordersTable,
   productCategoriesTable,
   productsTable,
+  referralCodesTable,
   salonNotificationsTable,
   salonsTable,
+  shopSettingsTable,
   shoppingCartItemsTable,
   shoppingCartsTable,
   usersTable,
@@ -35,6 +37,11 @@ type NotificationFixture = {
 
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const notificationRequestPattern = /\/api\/shop\/notifications(?:\/events)?(?:\?.*)?$/;
+
+test.skip(
+  process.env.LUMERA_ISOLATED_SALON_NOTIFICATION_BROWSER_TEST !== "1",
+  "Salon notification tests require their disposable database runner.",
+);
 
 type SecondaryApiProcess = {
   child: ChildProcess;
@@ -286,8 +293,11 @@ async function orderThroughApiProcess(baseUrl: string, page: Page, productId: st
       termsAccepted: true,
     }),
   });
-  expect(checkout.status, "The secondary API process must create the order.").toBe(201);
   const order: unknown = await checkout.json();
+  expect(
+    checkout.status,
+    `The secondary API process must create the order. Response: ${JSON.stringify(order)}`,
+  ).toBe(201);
   if (!order || typeof order !== "object" || !("id" in order) || typeof order.id !== "string") {
     throw new Error("The secondary API checkout response did not include an order ID.");
   }
@@ -307,6 +317,24 @@ async function createNotificationFixture(): Promise<NotificationFixture> {
   let productId: string | undefined;
 
   try {
+    const [shopSettings] = await db.select({ id: shopSettingsTable.id }).from(shopSettingsTable).limit(1);
+    const sellerSettings = {
+      sellerCompanyName: "LUMERA test prodavac",
+      sellerTaxId: "100000001",
+      sellerRegistrationNumber: "20000001",
+      sellerAddress: "Test prodajna 1",
+      sellerCity: "Beograd",
+      sellerPostalCode: "11000",
+      sellerBankAccount: "160000000000000001",
+      sellerContactEmail: "seller@example.test",
+      sellerContactPhone: "+381110000001",
+    };
+    if (shopSettings) {
+      await db.update(shopSettingsTable).set(sellerSettings).where(eq(shopSettingsTable.id, shopSettings.id));
+    } else {
+      await db.insert(shopSettingsTable).values(sellerSettings);
+    }
+
     const [ownerA] = await db.insert(usersTable).values({
       firstName: "Prvi",
       lastName: "Vlasnik",
@@ -418,6 +446,9 @@ async function createNotificationFixture(): Promise<NotificationFixture> {
 }
 
 async function cleanUpNotificationFixture(fixture: NotificationFixture): Promise<void> {
+  if (process.env.LUMERA_ISOLATED_SALON_NOTIFICATION_BROWSER_TEST === "1") {
+    return;
+  }
   const orderIds = fixture.orderIds
     ?? (await db.select({ id: ordersTable.id })
       .from(ordersTable)
@@ -433,6 +464,7 @@ async function cleanUpNotificationFixture(fixture: NotificationFixture): Promise
   await db.delete(salonsTable).where(inArray(salonsTable.id, [fixture.salonAId, fixture.salonBId]));
   await db.delete(productsTable).where(eq(productsTable.id, fixture.productId));
   await db.delete(productCategoriesTable).where(eq(productCategoriesTable.id, fixture.categoryId));
+  await db.delete(referralCodesTable).where(inArray(referralCodesTable.referrerUserId, [fixture.ownerA.id, fixture.ownerB.id]));
   await db.delete(usersTable).where(inArray(usersTable.id, [fixture.ownerA.id, fixture.ownerB.id]));
 }
 
@@ -508,7 +540,11 @@ test("salon owners only see and update their own notifications", async ({ page }
     await expect(confirmButton).toHaveAttribute("type", "button");
     await expect(confirmButton).toHaveAttribute("aria-controls", "checkout-form");
     await confirmButton.click();
-    expect((await checkoutResponse).status(), "The checkout must create a new order and notification.").toBe(201);
+    const checkoutResult = await checkoutResponse;
+    expect(
+      checkoutResult.status(),
+      `The checkout must create a new order and notification. Response: ${await checkoutResult.text()}`,
+    ).toBe(201);
     expect(checkoutRequestCount, "One confirmation click must create exactly one checkout request.").toBe(1);
 
     await expect(page).toHaveURL(/\/vlasnik\/prodavnica\/porudzbina\/.+\/potvrda$/);
