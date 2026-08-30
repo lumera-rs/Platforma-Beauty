@@ -140,6 +140,7 @@ async function run(): Promise<void> {
     throw new Error(`Unexpected OAuth request: ${url}`);
   }) as typeof fetch;
 
+  app.set("trust proxy", 1);
   const server = app.listen(0, "127.0.0.1");
   try {
     await once(server, "listening");

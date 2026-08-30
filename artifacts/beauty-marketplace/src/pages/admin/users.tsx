@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { AdminLayout } from "./layout";
-import { useAdminCreateAccountSetup, useAdminReissueAccountSetup, useAdminListUsers, useAdminUpdateUser, getAdminListUsersQueryKey, useGetCurrentUser, useAdminListSalons, getAdminListSalonsQueryKey, useListAdminEducationCenters, getListAdminEducationCentersQueryKey, useAdminConvertUserToBusinessAccount, useAdminGetBusinessRoleTransition, useAdminTransitionBusinessRole, getAdminGetBusinessRoleTransitionQueryKey } from "@workspace/api-client-react";
+import { useAdminCreateAccountSetup, useAdminReissueAccountSetup, useAdminListUsers, useAdminUpdateUser, getAdminListUsersQueryKey, useGetCurrentUser, useAdminListSalons, getAdminListSalonsQueryKey, useListAdminEducationCenters, getListAdminEducationCentersQueryKey, useAdminConvertUserToBusinessAccount, useAdminGetBusinessRoleTransition, useAdminTransitionBusinessRole, getAdminGetBusinessRoleTransitionQueryKey, getApiErrorDetails } from "@workspace/api-client-react";
 import type { AdminCreateAccountSetupInput, AdminUserUpdateRole, AdminListUsersRole, AdminUser, AdminBusinessAccountConversionInput, AdminBusinessRoleTransitionInput, AdminBusinessRoleTransitionState, AdminBusinessRelation, AdminBusinessRelationAllowedActionsItem } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
@@ -180,11 +180,7 @@ function buildBusinessExitInput(
 }
 
 function getApiError(error: unknown) {
-  const apiError = typeof error === "object" && error !== null
-    ? error as { status?: number; message?: string; response?: { status?: number; data?: { message?: string } }; data?: { message?: string } }
-    : {};
-  const status = apiError.status ?? apiError.response?.status;
-  const message = apiError.response?.data?.message ?? apiError.data?.message ?? apiError.message;
+  const { status, message } = getApiErrorDetails(error);
   if (status === 409) {
     return "Podaci su u međuvremenu promenjeni. Ponovo učitajte pregled i donesite odluke za aktuelne veze.";
   }

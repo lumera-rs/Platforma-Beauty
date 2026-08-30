@@ -21,6 +21,7 @@ import {
   educationCenterSubscriptionsTable,
   educationEscrowsTable,
   educationLedgerEntriesTable,
+  employeeLocationAssignmentsTable,
   employeesTable,
   lessonProgressTable,
   courseModulesTable,
@@ -192,6 +193,10 @@ async function run(): Promise<void> {
     ]).returning();
     assert.ok(emp1);
     assert.ok(emp2);
+    await db.insert(employeeLocationAssignmentsTable).values([
+      { salonId: salon.id, employeeId: emp1.id, active: true, isDefault: true },
+      { salonId: salon.id, employeeId: emp2.id, active: true, isDefault: true },
+    ]);
 
     // ── Courses ──────────────────────────────────────────────────────────────
 

@@ -1,6 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 import * as apiSchemas from "../../lib/api-zod/src/generated/api";
-import { adminSummaryFixture, adminWebhookFreshnessFixture, checkedApiFixture } from "../src/browser-api-fixtures";
+import {
+  adminIntegrationsFixture,
+  adminSummaryFixture,
+  adminWebhookFreshnessFixture,
+  checkedApiFixture,
+} from "../src/browser-api-fixtures";
 
 /**
  * Task 131 — admin form resilience regression gate.
@@ -37,12 +42,14 @@ const productId = "00000000-0000-4000-8000-000000000093";
 const tierId = "00000000-0000-4000-8000-000000000094";
 const planId = "00000000-0000-4000-8000-000000000095";
 const templateId = "00000000-0000-4000-8000-000000000096";
+const supplierId = "00000000-0000-4000-8000-000000000097";
 
 function productCategory() {
   return {
     id: categoryId,
     name: "Kosa",
     slug: "kosa",
+    supplierId,
     parentId: null,
     sortOrder: 1,
     icon: null,
@@ -59,18 +66,24 @@ function adminProduct() {
     categoryId,
     categoryName: "Kosa",
     subcategoryName: null,
+    supplierId,
     brand: null,
     description: "Opis proizvoda za regresiju.",
     shortDescription: null,
     imageUrl: "/test.jpg",
     images: ["/test.jpg"],
     price: 1000,
+    costPriceRsd: null,
+    averageDurationDays: null,
+    treatmentTaxonomyIds: [],
     discountPrice: null,
+    discountPriceEndsAt: null,
     retailEnabled: false,
     professionalEnabled: true,
     publicDescription: null,
     publicPrice: null,
     publicDiscountPrice: null,
+    publicDiscountPriceEndsAt: null,
     stock: 5,
     catalogReference: "CAT-REG-001",
     sku: "REG-001",
@@ -80,6 +93,20 @@ function adminProduct() {
     isBestseller: false,
     variantType: null,
     variants: null,
+    similarProductsMode: "AUTO_CATEGORY",
+    similarProductIds: [],
+    crossSellProductIds: [],
+    quantityPricingTiers: [],
+    minimumOrderQuantity: 1,
+    deliveryBusinessDaysOverride: null,
+    subscriptionAllowed: false,
+    subscriptionDiscountPercent: null,
+    loyaltyPricingExcluded: false,
+    productTypeId: null,
+    ingredients: null,
+    usageInstructions: null,
+    characteristics: [],
+    searchSynonyms: [],
     active: true,
     discountPercent: null,
     createdAt: "2026-08-21T09:00:00.000Z",
@@ -202,6 +229,21 @@ async function mockAdminApi(page: Page): Promise<void> {
         });
         return;
       }
+      if (path === `/api/admin/suppliers/${supplierId}` && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/suppliers/:supplierId", apiSchemas.AdminGetSupplierResponse, {
+            id: supplierId,
+            name: "Regresioni dobavljač",
+            slug: "regresioni-dobavljac",
+            scope: "BOTH",
+            logoUrl: null,
+            active: true,
+            createdAt: "2026-08-21T09:00:00.000Z",
+            updatedAt: "2026-08-21T09:00:00.000Z",
+          }),
+        });
+        return;
+      }
       if (path === "/api/admin/product-categories" && method === "GET") {
         await route.fulfill({
           json: checkedApiFixture("/api/admin/product-categories", apiSchemas.AdminListProductCategoriesResponse, [productCategory()]),
@@ -303,21 +345,9 @@ async function mockAdminApi(page: Page): Promise<void> {
           ? { ...webhookCard, webhookVerifiedAt: "2026-08-24T11:00:00.000Z", webhookVerificationStale: true, webhookConfirmationMaxAgeDays: 3, brevoRegistrationMissingEvents: [] }
           : { ...webhookCard, brevoRegistrationMissingEvents: [] };
         await route.fulfill({
-          json: checkedApiFixture("/api/admin/integrations", apiSchemas.AdminGetIntegrationsResponse, {
-            integrations: { sms: smsWebhookCard, brevo: brevoWebhookCard, google_oauth: card, facebook_oauth: card, cloudflare: card },
-            deliveryReports: {
-              providers: {
-                brevo: { lastEventAt: null, rejectedPayloadCount: 0, lastRejectedAt: null, malformedWebhookState: "normal", lastAutomationSentAt: null, recentSendCount: 0, warning: false },
-                infobip: { lastEventAt: null, rejectedPayloadCount: 0, lastRejectedAt: null, malformedWebhookState: "normal", lastAutomationSentAt: null, recentSendCount: 0, warning: false },
-              },
-              windowHours: 24,
-              graceMinutes: 30,
-              rejectionAlertThreshold: 3,
-            },
-            smsFallback: { reachableAdminCount: 0, reachableAdmins: [] },
-            smsWebhookRegistration: { state: "unconfirmed", secretSavedAt: null, lastReportAt: null },
-            redirectUris: { google: "https://example.test/google", facebook: "https://example.test/facebook" },
-            smsReminder: { command: "pnpm run sms-reminders", active: false, instructions: [] },
+          json: adminIntegrationsFixture(apiSchemas.AdminGetIntegrationsResponse, {
+            sms: smsWebhookCard,
+            brevo: brevoWebhookCard,
           }),
         });
         return;
@@ -394,20 +424,20 @@ async function expectNoServerErrors(): Promise<void> {
 // ─── Categories ──────────────────────────────────────────────────────────────
 
 test("category form rejects empty, whitespace, text, and negative sort order", async ({ page }) => {
-  await openAdmin(page, "/admin/kategorije");
-  await page.getByTestId("btn-new-category").click();
-  await expect(page.getByTestId("input-category-name")).toBeVisible();
+  await openAdmin(page, `/admin/dobavljaci/${supplierId}`);
+  await page.getByRole("button", { name: "Glavna kategorija" }).click();
 
   const dialog = page.getByRole("dialog");
-  const name = page.getByTestId("input-category-name");
+  const name = dialog.getByPlaceholder("npr. Nega kose");
   const sort = dialog.locator('input[type="number"]').first();
-  const save = page.getByTestId("btn-save-category");
+  const save = dialog.getByRole("button", { name: "Sačuvaj" });
+  await expect(name).toBeVisible();
 
   // Empty name.
   await name.fill("");
   await save.click();
   await expect(errorToast(page, "Naziv je obavezan.").first()).toBeVisible();
-  await expect(page.getByTestId("input-category-name")).toBeVisible();
+  await expect(name).toBeVisible();
 
   // Whitespace-only name.
   await name.fill("   ");
@@ -428,7 +458,7 @@ test("category form rejects empty, whitespace, text, and negative sort order", a
   await expect(errorToast(page, "negativan").first()).toBeVisible();
 
   // Dialog is still usable after all rejected submits.
-  await expect(page.getByTestId("btn-save-category")).toBeEnabled();
+  await expect(save).toBeEnabled();
   await expectNoServerErrors();
 });
 

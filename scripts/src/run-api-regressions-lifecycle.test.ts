@@ -67,6 +67,7 @@ const releaseGateCommands = [
   "test:catalog-cache",
   "test:communication-archive",
   "test:admin-validation",
+  "test:customer-password-setup",
   "test:admin-order-search",
   "test:admin-list-pagination",
   "test:admin-summary",
@@ -83,6 +84,7 @@ const releaseGateCommands = [
   "test:retention-settings",
   "test:webhook-repair-selection",
   "test:sms-fallback-phone-notice",
+  "test:booking-settings",
   "test:seo",
 ] as const;
 
@@ -1190,7 +1192,7 @@ async function runInterruptedBrowserScenario(
   const browserRunnerScriptPath = path.join(temporaryRoot, "run-browser-suite.ts");
   const manifestDirectoryName = `browser-suite-lifecycle-${process.pid}-${randomUUID()}`;
   const manifestDirectory = path.join(workspaceRoot, ".lumera-test-state", manifestDirectoryName);
-  const databasePrefix = `lumera_blifecycle_${process.pid}_${randomUUID()}_`;
+  const databasePrefix = `lumera_blc_${randomUUID().replaceAll("-", "").slice(0, 8)}_`;
   let child: ChildProcess | undefined;
   let unrelatedProcess: ChildProcess | undefined;
   let manifestPath: string | undefined;

@@ -132,6 +132,7 @@ async function run(): Promise<void> {
     throw new Error(`Unexpected outbound request in OAuth return-target test: ${url}`);
   }) as typeof fetch;
 
+  app.set("trust proxy", 1);
   const server = app.listen(0, "127.0.0.1");
   try {
     await once(server, "listening");
@@ -167,8 +168,8 @@ async function run(): Promise<void> {
         code: `${provider}-deep-link-code`,
       });
       assert.equal(response.status, 302);
-      assert.equal(response.location, target,
-        `${provider} must return to the exact Beauty Poslovi listing/contact target`);
+      assert.equal(response.location, `/prijava?oauth_created=1&returnTo=${encodeURIComponent(target)}`,
+        `${provider} must preserve the exact Beauty Poslovi target through the new-account confirmation flow`);
 
       for (const invalidReturnTo of [
         `https://evil.example/${provider}`,
@@ -179,7 +180,7 @@ async function run(): Promise<void> {
           code: `${provider}-unsafe-return-code`,
         });
         assert.equal(unsafeResponse.status, 302);
-        assert.equal(unsafeResponse.location, "/moj-nalog",
+        assert.equal(unsafeResponse.location, "/prijava?oauth_created=1",
           `${provider} must reject external and protocol-relative returnTo values`);
       }
     }
@@ -209,10 +210,10 @@ async function run(): Promise<void> {
       "a stale parallel callback must never inherit the newer attempt's target");
 
     const secondResponse = await callback("facebook", second.state, second.cookie, { code: "facebook-parallel-code" });
-    assert.equal(secondResponse.location, secondTarget,
+    assert.equal(secondResponse.location, `/prijava?oauth_created=1&returnTo=${encodeURIComponent(secondTarget)}`,
       "the active parallel attempt must retain its own listing/contact target");
     const firstResponse = await callback("google", first.state, first.cookie, { code: "google-parallel-code" });
-    assert.equal(firstResponse.location, firstTarget,
+    assert.equal(firstResponse.location, `/prijava?oauth_created=1&returnTo=${encodeURIComponent(firstTarget)}`,
       "the original attempt remains bound to its own browser cookie and target");
 
     const createdUsers = await db.select({ email: usersTable.email }).from(usersTable)

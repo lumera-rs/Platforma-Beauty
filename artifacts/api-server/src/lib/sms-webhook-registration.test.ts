@@ -93,6 +93,8 @@ async function setInfobipReceipt(lastEventAt: Date | null) {
 }
 
 async function run() {
+  const priorTrustProxy = app.get("trust proxy");
+  app.set("trust proxy", 1);
   // ── 1. Pure classifier: every branch and precedence ──────────────────────
   {
     const now = new Date();
@@ -475,6 +477,7 @@ async function run() {
     if (cleanup.salonIds.length) await db.delete(salonsTable).where(eq(salonsTable.id, cleanup.salonIds[0]!));
     for (const userId of cleanup.userIds) await db.delete(usersTable).where(eq(usersTable.id, userId));
     server.close();
+    app.set("trust proxy", priorTrustProxy);
     await pool.end();
   }
 }

@@ -74,6 +74,7 @@ async function run() {
   // this focused harness imports the Express app directly. Keep its endpoint
   // reads aligned with the runtime entrypoint after schema additions.
   await ensureBusinessGrowthSchema();
+  app.set("trust proxy", 1);
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   const port = (server.address() as AddressInfo).port;

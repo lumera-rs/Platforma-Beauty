@@ -157,6 +157,7 @@ async function run(): Promise<void> {
     return realFetch(input, init);
   }) as typeof fetch;
 
+  app.set("trust proxy", 1);
   const server = app.listen(0, "127.0.0.1");
   try {
     await once(server, "listening");
@@ -221,7 +222,8 @@ async function run(): Promise<void> {
         { host: new URL(publishedOrigin).host, cookie: oauthStateCookie(start.setCookie) },
       );
       assert.equal(callback.status, 302, `${provider} callback must complete after the domain change`);
-      assert.equal(callback.location, "/moj-nalog", `${provider} callback must return the customer to LUMERA`);
+      assert.equal(callback.location, "/prijava?oauth_created=1",
+        `${provider} callback must return a newly created customer to the safe post-OAuth confirmation flow`);
       assert.equal(tokenRedirectUris.get(provider), expectedRedirectUri,
         `${provider} token exchange must use the same published callback URL as start`);
     }
