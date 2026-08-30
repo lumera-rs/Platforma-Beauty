@@ -104,6 +104,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthSession"
+  /auth/customer-password-setup/validate:
+    post:
+      operationId: validateCustomerPasswordSetup
+      tags: [auth]
+      summary: Validate a short-lived customer password setup token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CustomerPasswordSetupTokenInput" }
+      responses:
+        "200":
+          description: Token is currently valid
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerPasswordSetupValidation" }
+        "400": { description: Setup link is invalid or no longer usable }
+        "429": { description: Too many setup attempts }
+  /auth/customer-password-setup/complete:
+    post:
+      operationId: completeCustomerPasswordSetup
+      tags: [auth]
+      summary: Consume a one-time setup token and set the customer password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CustomerPasswordSetupCompletionInput" }
+      responses:
+        "200":
+          description: Password was set and the one-time token consumed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerPasswordSetupCompletion" }
+        "400": { description: Setup link is invalid or no longer usable }
+        "429": { description: Too many setup attempts }
   /auth/logout:
     post:
       operationId: logout
@@ -3990,6 +4026,47 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/AdminUser" }
+  /admin/customers/setup:
+    post:
+      operationId: adminCreateCustomerSetup
+      tags: [admin]
+      summary: Create a CUSTOMER account and return its one-time password setup URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminCreateCustomerSetupInput" }
+      responses:
+        "201":
+          description: Customer and one-time setup URL created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminCreateCustomerSetupResponse" }
+        "400": { description: Invalid customer details }
+        "401": { description: Authentication required }
+        "403": { description: SUPER_ADMIN access required }
+        "409": { description: Email is already registered }
+        "429": { description: Too many account creation attempts }
+  /admin/customers/{userId}/setup:
+    post:
+      operationId: adminReissueCustomerSetup
+      tags: [admin]
+      summary: Replace an uncompleted CUSTOMER account's password setup URL
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+      responses:
+        "201":
+          description: Replacement one-time setup URL created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminCreateCustomerSetupResponse" }
+        "401": { description: Authentication required }
+        "403": { description: SUPER_ADMIN access required }
+        "404": { description: Eligible uncompleted CUSTOMER account not found }
+        "429": { description: Too many account setup requests }
   /admin/users/{userId}:
     patch:
       operationId: adminUpdateUser
@@ -12075,6 +12152,53 @@ components:
           type: string
           enum: [SUPER_ADMIN, ADMIN, SALON_OWNER, SALON_EMPLOYEE, EDUKATIVNI_CENTAR, INSTRUCTOR, CUSTOMER, STUDENT]
         active: { type: boolean }
+    AdminCreateCustomerSetupInput:
+      type: object
+      additionalProperties: false
+      required: [firstName, lastName, email]
+      properties:
+        firstName: { type: string, minLength: 1, maxLength: 100 }
+        lastName: { type: string, minLength: 1, maxLength: 100 }
+        email:
+          type: string
+          maxLength: 320
+          pattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$'
+    AdminCreateCustomerSetupResponse:
+      type: object
+      additionalProperties: false
+      required: [user, setupUrl, expiresAt]
+      properties:
+        user: { $ref: "#/components/schemas/AdminUser" }
+        setupUrl: { type: string, minLength: 1 }
+        expiresAt: { type: string, format: date-time }
+    CustomerPasswordSetupTokenInput:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token: { type: string, minLength: 32, maxLength: 256 }
+    CustomerPasswordSetupValidation:
+      type: object
+      additionalProperties: false
+      required: [valid, expiresAt]
+      properties:
+        valid: { type: boolean, const: true }
+        expiresAt: { type: string, format: date-time }
+    CustomerPasswordSetupCompletionInput:
+      type: object
+      additionalProperties: false
+      required: [token, password, passwordConfirmation]
+      properties:
+        token: { type: string, minLength: 32, maxLength: 256 }
+        password: { type: string, minLength: 8, maxLength: 200 }
+        passwordConfirmation: { type: string, minLength: 8, maxLength: 200 }
+    CustomerPasswordSetupCompletion:
+      type: object
+      additionalProperties: false
+      required: [success, loginPath]
+      properties:
+        success: { type: boolean, const: true }
+        loginPath: { type: string, const: /prijava }
     LoyaltyTier:
       type: object
       properties:

@@ -17,3 +17,4 @@ export * from "./commerce-deo-g2";
 export * from "./aftercare";
 export * from "./web-push";
 export * from "./booking-commands";
+export * from "./customer-password-setup";

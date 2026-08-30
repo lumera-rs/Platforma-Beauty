@@ -6589,6 +6589,68 @@ export interface AdminUserUpdate {
   active?: boolean;
 }
 
+export interface AdminCreateCustomerSetupInput {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  firstName: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  lastName: string;
+  /**
+     * @maxLength 320
+     * @pattern ^[^@\s]+@[^@\s]+\.[^@\s]+$
+     */
+  email: string;
+}
+
+export interface AdminCreateCustomerSetupResponse {
+  user: AdminUser;
+  /** @minLength 1 */
+  setupUrl: string;
+  expiresAt: string;
+}
+
+export interface CustomerPasswordSetupTokenInput {
+  /**
+     * @minLength 32
+     * @maxLength 256
+     */
+  token: string;
+}
+
+export interface CustomerPasswordSetupValidation {
+  valid: true;
+  expiresAt: string;
+}
+
+export interface CustomerPasswordSetupCompletionInput {
+  /**
+     * @minLength 32
+     * @maxLength 256
+     */
+  token: string;
+  /**
+     * @minLength 8
+     * @maxLength 200
+     */
+  password: string;
+  /**
+     * @minLength 8
+     * @maxLength 200
+     */
+  passwordConfirmation: string;
+}
+
+export const CustomerPasswordSetupCompletionValue = {
+  success: true,
+  loginPath: '/prijava',
+} as const;
+export type CustomerPasswordSetupCompletion = typeof CustomerPasswordSetupCompletionValue;
+
 export interface LoyaltyTier {
   id: string;
   name: string;

@@ -1,15 +1,16 @@
 import { useState, useEffect, useRef } from "react";
 import { AdminLayout } from "./layout";
-import { useAdminListUsers, useAdminUpdateUser, getAdminListUsersQueryKey, useGetCurrentUser } from "@workspace/api-client-react";
+import { useAdminCreateCustomerSetup, useAdminReissueCustomerSetup, useAdminListUsers, useAdminUpdateUser, getAdminListUsersQueryKey, useGetCurrentUser } from "@workspace/api-client-react";
 import type { AdminUserUpdateRole, AdminListUsersRole } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Loader2, Search, Users as UsersIcon, Mail, FilterX } from "lucide-react";
+import { Loader2, Search, Users as UsersIcon, Mail, FilterX, UserPlus, Copy, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useDebouncedSearch } from "@/hooks/use-debounce";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export default function AdminUsers() {
   const [search, setSearch] = useState("");
@@ -36,9 +37,15 @@ export default function AdminUsers() {
   const hasNextPage = (users?.length ?? 0) === pageSize;
   const { data: currentUserResponse } = useGetCurrentUser();
   const updateUser = useAdminUpdateUser();
+  const createCustomer = useAdminCreateCustomerSetup();
+  const reissueCustomerSetup = useAdminReissueCustomerSetup();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const canManageUsers = currentUserResponse?.user?.role === "SUPER_ADMIN";
+  const [createOpen, setCreateOpen] = useState(false);
+  const [customerForm, setCustomerForm] = useState({ firstName: "", lastName: "", email: "" });
+  const [setupResult, setSetupResult] = useState<{ setupUrl: string; expiresAt: string } | null>(null);
+  const [copied, setCopied] = useState(false);
   
   const mutateFnRef = useRef(updateUser.mutate);
   mutateFnRef.current = updateUser.mutate;
@@ -81,6 +88,52 @@ export default function AdminUsers() {
     setActiveFilter("all");
   };
 
+  const closeCreateDialog = () => {
+    setCreateOpen(false);
+    setSetupResult(null);
+    setCopied(false);
+    setCustomerForm({ firstName: "", lastName: "", email: "" });
+    createCustomer.reset();
+    reissueCustomerSetup.reset();
+  };
+
+  const handleCreateCustomer = () => {
+    if (!window.confirm("Kreirati CUSTOMER nalog i izdati jednokratni link koji važi 15 minuta?")) return;
+    createCustomer.mutate({ data: customerForm }, {
+      onSuccess: (result) => {
+        setSetupResult({ setupUrl: result.setupUrl, expiresAt: result.expiresAt });
+        queryClient.invalidateQueries({ queryKey: getAdminListUsersQueryKey() });
+        toast.success("CUSTOMER nalog je kreiran", { description: "Kopirajte setup link pre zatvaranja prozora." });
+      },
+      onError: () => {
+        toast.error("Kreiranje nije uspelo", { description: "Proverite podatke ili da li e-mail već postoji." });
+      },
+    });
+  };
+
+  const copySetupUrl = async () => {
+    if (!setupResult) return;
+    try {
+      await navigator.clipboard.writeText(setupResult.setupUrl);
+      setCopied(true);
+      toast.success("Setup link je kopiran.");
+    } catch {
+      toast.error("Kopiranje nije uspelo", { description: "Označite link i kopirajte ga ručno." });
+    }
+  };
+
+  const handleReissueSetup = (userId: string) => {
+    if (!window.confirm("Izdati novi jednokratni link? Prethodni link će odmah biti poništen.")) return;
+    reissueCustomerSetup.mutate({ userId }, {
+      onSuccess: (result) => {
+        setSetupResult({ setupUrl: result.setupUrl, expiresAt: result.expiresAt });
+        setCreateOpen(true);
+        toast.success("Novi setup link je izdat", { description: "Kopirajte ga pre zatvaranja prozora." });
+      },
+      onError: () => toast.error("Nije moguće izdati novi link", { description: "Dostupno je samo za aktivan CUSTOMER nalog bez postavljene lozinke." }),
+    });
+  };
+
   return (
     <AdminLayout>
       <div className="space-y-6">
@@ -94,6 +147,12 @@ export default function AdminUsers() {
                   : "Pregled korisničkih naloga. Promene uloga i statusa dostupne su samo super administratorima."}
               </p>
             </div>
+            {canManageUsers && (
+              <Button onClick={() => setCreateOpen(true)} data-testid="btn-create-customer">
+                <UserPlus className="mr-2 h-4 w-4" />
+                Kreiraj CUSTOMER nalog
+              </Button>
+            )}
           </div>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 p-4 bg-card rounded-xl border shadow-sm">
@@ -160,6 +219,7 @@ export default function AdminUsers() {
                     <th className="px-6 py-4">Kontakt</th>
                     <th className="px-6 py-4">Uloga</th>
                     <th className="px-6 py-4 text-center">Aktivno</th>
+                     <th className="px-6 py-4 text-right">Setup</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
@@ -211,6 +271,13 @@ export default function AdminUsers() {
                           />
                         </div>
                       </td>
+                       <td className="px-6 py-4 text-right">
+                         {canManageUsers && user.role === "CUSTOMER" && user.active && (
+                           <Button variant="outline" size="sm" disabled={reissueCustomerSetup.isPending} onClick={() => handleReissueSetup(user.id)}>
+                             Novi link
+                           </Button>
+                         )}
+                       </td>
                     </tr>
                   ))}
                 </tbody>
@@ -226,6 +293,50 @@ export default function AdminUsers() {
             <Button variant="outline" size="sm" disabled={!hasNextPage} onClick={() => setPage(p => p + 1)} data-testid="btn-next-page">Sledeća</Button>
           </div>
         )}
+
+        <Dialog open={createOpen} onOpenChange={(open) => { if (!open) closeCreateDialog(); }}>
+          <DialogContent className="w-[calc(100%_-_2rem)] max-w-lg rounded-xl">
+            <DialogHeader>
+              <DialogTitle>{setupResult ? "Jednokratni setup link" : "Kreiraj CUSTOMER nalog"}</DialogTitle>
+              <DialogDescription>
+                {setupResult
+                  ? "Ovaj link se prikazuje samo sada. Bezbedno ga prosledite korisniku i zatim zatvorite prozor."
+                  : "Korisnik neće dobiti SMS ili e-mail. Lozinku će sam postaviti preko jednokratnog linka."}
+              </DialogDescription>
+            </DialogHeader>
+            {setupResult ? (
+              <div className="space-y-4">
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" role="status">
+                  Link važi do {new Date(setupResult.expiresAt).toLocaleTimeString("sr-RS", { hour: "2-digit", minute: "2-digit" })}.
+                  Posle zatvaranja ga nije moguće ponovo prikazati.
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input readOnly value={setupResult.setupUrl} onFocus={(event) => event.currentTarget.select()} aria-label="Jednokratni setup link" />
+                  <Button type="button" variant="outline" onClick={copySetupUrl} className="shrink-0">
+                    {copied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
+                    {copied ? "Kopirano" : "Kopiraj"}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); handleCreateCustomer(); }}>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Input required maxLength={100} placeholder="Ime" value={customerForm.firstName} onChange={(event) => setCustomerForm((value) => ({ ...value, firstName: event.target.value }))} aria-label="Ime" />
+                  <Input required maxLength={100} placeholder="Prezime" value={customerForm.lastName} onChange={(event) => setCustomerForm((value) => ({ ...value, lastName: event.target.value }))} aria-label="Prezime" />
+                </div>
+                <Input required type="email" maxLength={320} placeholder="E-mail adresa" value={customerForm.email} onChange={(event) => setCustomerForm((value) => ({ ...value, email: event.target.value }))} aria-label="E-mail adresa" />
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={closeCreateDialog}>Otkaži</Button>
+                  <Button type="submit" disabled={createCustomer.isPending}>
+                    {createCustomer.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Kreiraj i izdaj link
+                  </Button>
+                </DialogFooter>
+              </form>
+            )}
+            {setupResult && <DialogFooter><Button onClick={closeCreateDialog}>Završi</Button></DialogFooter>}
+          </DialogContent>
+        </Dialog>
       </div>
     </AdminLayout>
   );

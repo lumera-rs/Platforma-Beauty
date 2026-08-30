@@ -335,7 +335,7 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
-    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 81, "v81 is the current production schema rollout");
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 82, "v82 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
 
     // ── Run the rollout, then exercise its legacy conversion on rerun ──────
@@ -1599,6 +1599,31 @@ async function run() {
       "retail aftercare evidence references are protected by its separate trigger",
     );
 
+    // ── v82 customer password setup capability rollout ─────────────────────
+    assert.ok(await columnExists("users", "password_set_at"), "v82 users.password_set_at added to legacy users");
+    for (const table of [
+      "customer_password_setup_tokens",
+      "customer_password_setup_audits",
+      "customer_password_setup_rate_limits",
+    ]) assert.ok(await objectExists(`SELECT to_regclass($1) IS NOT NULL AS exists`, [`${s}.${table}`]), `v82 ${table} exists`);
+    const setupIndexes = (await q<{ indexname: string }>(
+      `SELECT indexname FROM pg_indexes WHERE schemaname=$1 AND tablename='customer_password_setup_tokens'`,
+      [s],
+    )).rows.map((row) => row.indexname);
+    assert.ok(setupIndexes.includes("customer_password_setup_tokens_hash_unique"), "v82 token digest uniqueness index exists");
+    assert.ok(setupIndexes.includes("customer_password_setup_tokens_one_active_user"), "v82 one-active-token partial index exists");
+    const [setupTarget] = (await q<{ id: string }>(`INSERT INTO "${s}".users (email) VALUES ('v82-setup-target@example.test') RETURNING id`)).rows;
+    const [setupAdmin] = (await q<{ id: string }>(`INSERT INTO "${s}".users (email) VALUES ('v82-setup-admin@example.test') RETURNING id`)).rows;
+    await q(`INSERT INTO "${s}".customer_password_setup_tokens
+      (user_id, issued_by_user_id, token_hash, expires_at) VALUES ($1, $2, repeat('a', 64), now() + interval '15 minutes')`,
+      [setupTarget.id, setupAdmin.id]);
+    await assert.rejects(
+      q(`INSERT INTO "${s}".customer_password_setup_tokens
+        (user_id, issued_by_user_id, token_hash, expires_at) VALUES ($1, $2, repeat('b', 64), now() + interval '15 minutes')`,
+        [setupTarget.id, setupAdmin.id]),
+      /duplicate key/i,
+      "v82 permits only one active setup token per account",
+    );
     console.log("Business Growth schema rollout legacy-upgrade test passed.");
   } finally {
     await q(`SET search_path TO "$user", public`).catch(() => {});

@@ -252,6 +252,50 @@ export const LoginResponse = zod.object({
 
 
 /**
+ * @summary Validate a short-lived customer password setup token
+ */
+export const validateCustomerPasswordSetupBodyTokenMin = 32;
+export const validateCustomerPasswordSetupBodyTokenMax = 256;
+
+
+
+export const ValidateCustomerPasswordSetupBody = zod.object({
+  "token": zod.string().min(validateCustomerPasswordSetupBodyTokenMin).max(validateCustomerPasswordSetupBodyTokenMax)
+})
+
+export const ValidateCustomerPasswordSetupResponse = zod.object({
+  "valid": zod.literal(true),
+  "expiresAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Consume a one-time setup token and set the customer password
+ */
+export const completeCustomerPasswordSetupBodyTokenMin = 32;
+export const completeCustomerPasswordSetupBodyTokenMax = 256;
+
+export const completeCustomerPasswordSetupBodyPasswordMin = 8;
+export const completeCustomerPasswordSetupBodyPasswordMax = 200;
+
+export const completeCustomerPasswordSetupBodyPasswordConfirmationMin = 8;
+export const completeCustomerPasswordSetupBodyPasswordConfirmationMax = 200;
+
+
+
+export const CompleteCustomerPasswordSetupBody = zod.object({
+  "token": zod.string().min(completeCustomerPasswordSetupBodyTokenMin).max(completeCustomerPasswordSetupBodyTokenMax),
+  "password": zod.string().min(completeCustomerPasswordSetupBodyPasswordMin).max(completeCustomerPasswordSetupBodyPasswordMax),
+  "passwordConfirmation": zod.string().min(completeCustomerPasswordSetupBodyPasswordConfirmationMin).max(completeCustomerPasswordSetupBodyPasswordConfirmationMax)
+})
+
+export const CompleteCustomerPasswordSetupResponse = zod.object({
+  "success": zod.literal(true),
+  "loginPath": zod.literal("/prijava")
+})
+
+
+/**
  * @summary Log out
  */
 export const LogoutResponse = zod.void()
@@ -12866,6 +12910,73 @@ export const AdminListUsersResponseItem = zod.object({
   "createdAt": zod.coerce.date()
 })
 export const AdminListUsersResponse = zod.array(AdminListUsersResponseItem)
+
+
+/**
+ * @summary Create a CUSTOMER account and return its one-time password setup URL
+ */
+export const adminCreateCustomerSetupBodyFirstNameMax = 100;
+
+export const adminCreateCustomerSetupBodyLastNameMax = 100;
+
+export const adminCreateCustomerSetupBodyEmailMax = 320;
+
+
+export const adminCreateCustomerSetupBodyEmailRegExp = new RegExp('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+
+
+export const AdminCreateCustomerSetupBody = zod.object({
+  "firstName": zod.string().min(1).max(adminCreateCustomerSetupBodyFirstNameMax),
+  "lastName": zod.string().min(1).max(adminCreateCustomerSetupBodyLastNameMax),
+  "email": zod.string().max(adminCreateCustomerSetupBodyEmailMax).regex(adminCreateCustomerSetupBodyEmailRegExp)
+}).strict()
+
+
+
+
+export const AdminCreateCustomerSetupResponse = zod.object({
+  "user": zod.object({
+  "id": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "email": zod.string(),
+  "phone": zod.string().nullish(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date()
+}),
+  "setupUrl": zod.string().min(1),
+  "expiresAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Replace an uncompleted CUSTOMER account's password setup URL
+ */
+export const adminReissueCustomerSetupPathUserIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
+export const AdminReissueCustomerSetupParams = zod.object({
+  "userId": zod.coerce.string().regex(adminReissueCustomerSetupPathUserIdRegExp)
+})
+
+
+
+
+export const AdminReissueCustomerSetupResponse = zod.object({
+  "user": zod.object({
+  "id": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "email": zod.string(),
+  "phone": zod.string().nullish(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date()
+}),
+  "setupUrl": zod.string().min(1),
+  "expiresAt": zod.coerce.date()
+})
 
 
 /**

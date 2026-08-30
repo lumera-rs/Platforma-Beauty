@@ -181,6 +181,9 @@ import
   salonBrandsTable,
   sessionsTable,
    customerNotificationsTable,
+   customerPasswordSetupAuditsTable,
+   customerPasswordSetupRateLimitsTable,
+   customerPasswordSetupTokensTable,
    pushSubscriptionsTable,
   shippingRulesTable,
   shopSettingsTable,
@@ -321,6 +324,10 @@ import
   AdminUpdateSubscriptionPlanParams,
   AdminUpdateUserBody,
   AdminUpdateUserParams,
+  AdminCreateCustomerSetupBody,
+  AdminReissueCustomerSetupParams,
+  CompleteCustomerPasswordSetupBody,
+  ValidateCustomerPasswordSetupBody,
   CancelAppointmentBody,
   CancelAppointmentParams,
   CancelAppointmentResponse,
@@ -773,6 +780,9 @@ import
 const router: IRouter = Router();
 
 const OAUTH_STATE_COOKIE = "lumera_oauth_state";
+const CUSTOMER_SETUP_TTL_MS = 15 * 60 * 1000;
+const CUSTOMER_SETUP_MAX_ATTEMPTS = 5;
+const CUSTOMER_SETUP_INVALID_MESSAGE = "Link za postavljanje lozinke nije važeći ili više nije dostupan.";
 
 let adminSummaryAfterFirstReadForTest: (() => Promise<void>) | undefined;
 
@@ -821,6 +831,99 @@ function oauthRedirect(req: Request, provider: OAuthProvider) {
   if (process.env.NODE_ENV === "production" && (!configured || !configured.startsWith("https://"))) return null;
   const base = configured ?? `${req.protocol}://${req.get("host")}`;
   return `${base}/api/auth/oauth/${provider}/callback`;
+}
+
+function customerSetupBaseUrl(req: Request) {
+  const configured = process.env["APP_BASE_URL"]?.replace(/\/$/, "");
+  if (process.env.NODE_ENV === "production") {
+    if (!configured || !configured.startsWith("https://")) {
+      throw new Error("APP_BASE_URL must be an HTTPS URL to issue customer setup links.");
+    }
+    return configured;
+  }
+  return configured ?? `${req.protocol}://${req.get("host")}`;
+}
+
+function customerSetupDigest(value: string) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+async function admitCustomerSetupRequest(
+  action: "issue" | "validate" | "complete",
+  identity: string,
+  limit: number,
+  windowMs: number,
+) {
+  const keyHash = customerSetupDigest(`${action}:${identity}`);
+  const now = new Date();
+  const windowStart = new Date(now.getTime() - windowMs);
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${keyHash}))`);
+    const [existing] = await tx.select()
+      .from(customerPasswordSetupRateLimitsTable)
+      .where(and(
+        eq(customerPasswordSetupRateLimitsTable.keyHash, keyHash),
+        eq(customerPasswordSetupRateLimitsTable.action, action),
+      ))
+      .limit(1);
+    if (!existing) {
+      await tx.insert(customerPasswordSetupRateLimitsTable).values({
+        keyHash,
+        action,
+        windowStartedAt: now,
+        requestCount: 1,
+        updatedAt: now,
+      });
+      return true;
+    }
+    if (existing.windowStartedAt <= windowStart) {
+      await tx.update(customerPasswordSetupRateLimitsTable)
+        .set({ windowStartedAt: now, requestCount: 1, updatedAt: now })
+        .where(and(
+          eq(customerPasswordSetupRateLimitsTable.keyHash, keyHash),
+          eq(customerPasswordSetupRateLimitsTable.action, action),
+        ));
+      return true;
+    }
+    if (existing.requestCount >= limit) return false;
+    await tx.update(customerPasswordSetupRateLimitsTable)
+      .set({ requestCount: existing.requestCount + 1, updatedAt: now })
+      .where(and(
+        eq(customerPasswordSetupRateLimitsTable.keyHash, keyHash),
+        eq(customerPasswordSetupRateLimitsTable.action, action),
+      ));
+    return true;
+  });
+}
+
+function customerSetupRequestIdentity(req: Request) {
+  return req.ip || req.socket.remoteAddress || "unknown";
+}
+
+function activeCustomerSetupToken(setup: typeof customerPasswordSetupTokensTable.$inferSelect, now: Date) {
+  return !setup.consumedAt && !setup.invalidatedAt && setup.expiresAt > now && setup.failedAttempts < setup.maxAttempts;
+}
+
+async function recordActiveCustomerSetupFailure(
+  tx: Pick<typeof db, "update">,
+  setup: typeof customerPasswordSetupTokensTable.$inferSelect,
+  now: Date,
+) {
+  if (!activeCustomerSetupToken(setup, now)) return;
+  const failedAttempts = setup.failedAttempts + 1;
+  await tx.update(customerPasswordSetupTokensTable).set({
+    failedAttempts,
+    invalidatedAt: failedAttempts >= setup.maxAttempts ? now : null,
+  }).where(eq(customerPasswordSetupTokensTable.id, setup.id));
+}
+
+async function failActiveCustomerSetupToken(tokenHash: string) {
+  const now = new Date();
+  await db.transaction(async (tx) => {
+    const [setup] = await tx.select().from(customerPasswordSetupTokensTable)
+      .where(eq(customerPasswordSetupTokensTable.tokenHash, tokenHash)).for("update").limit(1);
+    if (setup) await recordActiveCustomerSetupFailure(tx, setup, now);
+  });
 }
 
 function oauthFailurePath(flow: string, reason: string) {
@@ -5435,6 +5538,112 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   res.cookie(sessionCookieName, token, cookieOptions());
   if (isRetailAccount(user)) await claimRecentlyViewedForUser(req, res, user.id);
   res.json(LoginResponse.parse({ user: publicUser(user), message: "Uspešno ste prijavljeni." }));
+});
+
+router.post("/auth/customer-password-setup/validate", async (req, res): Promise<void> => {
+  const admitted = await admitCustomerSetupRequest(
+    "validate",
+    customerSetupRequestIdentity(req),
+    30,
+    CUSTOMER_SETUP_TTL_MS,
+  );
+  if (!admitted) {
+    res.setHeader("Retry-After", "900");
+    res.status(429).json({ error: CUSTOMER_SETUP_INVALID_MESSAGE });
+    return;
+  }
+  const parsed = ValidateCustomerPasswordSetupBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: CUSTOMER_SETUP_INVALID_MESSAGE });
+    return;
+  }
+  const tokenHash = customerSetupDigest(parsed.data.token);
+  const now = new Date();
+  const result = await db.transaction(async (tx) => {
+    const [setup] = await tx.select()
+      .from(customerPasswordSetupTokensTable)
+      .where(eq(customerPasswordSetupTokensTable.tokenHash, tokenHash))
+      .for("update")
+      .limit(1);
+    const valid = setup && activeCustomerSetupToken(setup, now);
+    if (valid) return { valid: true as const, expiresAt: setup.expiresAt };
+    return { valid: false as const };
+  });
+  if (!result.valid) {
+    res.status(400).json({ error: CUSTOMER_SETUP_INVALID_MESSAGE });
+    return;
+  }
+  res.json({ valid: true, expiresAt: result.expiresAt.toISOString() });
+});
+
+router.post("/auth/customer-password-setup/complete", async (req, res): Promise<void> => {
+  const admitted = await admitCustomerSetupRequest(
+    "complete",
+    customerSetupRequestIdentity(req),
+    10,
+    CUSTOMER_SETUP_TTL_MS,
+  );
+  if (!admitted) {
+    res.setHeader("Retry-After", "900");
+    res.status(429).json({ error: CUSTOMER_SETUP_INVALID_MESSAGE });
+    return;
+  }
+  const tokenInput = ValidateCustomerPasswordSetupBody.safeParse(req.body);
+  if (!tokenInput.success) {
+    res.status(400).json({ error: CUSTOMER_SETUP_INVALID_MESSAGE });
+    return;
+  }
+  const tokenHash = customerSetupDigest(tokenInput.data.token);
+  const parsed = CompleteCustomerPasswordSetupBody.safeParse(req.body);
+  if (!parsed.success || parsed.data.password !== parsed.data.passwordConfirmation) {
+    await failActiveCustomerSetupToken(tokenHash);
+    res.status(400).json({ error: parsed.success ? "Lozinke se ne podudaraju." : "Lozinka ne ispunjava uslove." });
+    return;
+  }
+  const passwordHash = await hashPassword(parsed.data.password);
+  const now = new Date();
+  const completed = await db.transaction(async (tx) => {
+    const [setup] = await tx.select()
+      .from(customerPasswordSetupTokensTable)
+      .where(eq(customerPasswordSetupTokensTable.tokenHash, tokenHash))
+      .for("update")
+      .limit(1);
+    if (!setup || !activeCustomerSetupToken(setup, now)) return false;
+    const [target] = await tx.select({
+      id: usersTable.id,
+      role: usersTable.role,
+      active: usersTable.active,
+      passwordSetAt: usersTable.passwordSetAt,
+    })
+      .from(usersTable)
+      .where(eq(usersTable.id, setup.userId))
+      .for("update")
+      .limit(1);
+    if (!target || target.role !== "CUSTOMER" || !target.active || target.passwordSetAt) {
+      await recordActiveCustomerSetupFailure(tx, setup, now);
+      return false;
+    }
+
+    await tx.update(customerPasswordSetupTokensTable)
+      .set({ consumedAt: now })
+      .where(eq(customerPasswordSetupTokensTable.id, setup.id));
+    await tx.update(usersTable)
+      .set({ passwordHash, passwordSetAt: now, mustChangePassword: false, updatedAt: now })
+      .where(eq(usersTable.id, setup.userId));
+    await tx.delete(sessionsTable).where(eq(sessionsTable.userId, setup.userId));
+    await tx.insert(customerPasswordSetupAuditsTable).values({
+      administratorUserId: setup.issuedByUserId,
+      targetUserId: setup.userId,
+      action: "PASSWORD_SET",
+      createdAt: now,
+    });
+    return true;
+  });
+  if (!completed) {
+    res.status(400).json({ error: CUSTOMER_SETUP_INVALID_MESSAGE });
+    return;
+  }
+  res.json({ success: true, loginPath: "/prijava" });
 });
 
 router.post("/auth/logout", async (req, res): Promise<void> => {
@@ -21159,6 +21368,135 @@ router.get("/admin/users", async (req, res): Promise<void> => {
     active: u.active,
     createdAt: u.createdAt.toISOString(),
   })));
+});
+
+router.post("/admin/customers/setup", async (req, res): Promise<void> => {
+  const admin = await requireSuperAdmin(req, res); if (!admin) return;
+  const admitted = await admitCustomerSetupRequest("issue", admin.id, 10, 60 * 60 * 1000);
+  if (!admitted) {
+    res.setHeader("Retry-After", "3600");
+    res.status(429).json({ error: "Previše zahteva. Pokušajte ponovo kasnije." });
+    return;
+  }
+  const parsed = AdminCreateCustomerSetupBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Unesite ispravno ime, prezime i e-mail adresu." });
+    return;
+  }
+  const email = parsed.data.email.trim().toLowerCase();
+  const firstName = parsed.data.firstName.trim();
+  const lastName = parsed.data.lastName.trim();
+  if (!firstName || !lastName) {
+    res.status(400).json({ error: "Ime i prezime su obavezni." });
+    return;
+  }
+
+  const rawToken = randomBytes(32).toString("base64url");
+  const tokenHash = customerSetupDigest(rawToken);
+  const passwordHash = await hashPassword(randomBytes(32).toString("base64url"));
+  const expiresAt = new Date(Date.now() + CUSTOMER_SETUP_TTL_MS);
+  const setupBaseUrl = customerSetupBaseUrl(req);
+  try {
+    const customer = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${email}))`);
+      const [existing] = await tx.select({ id: usersTable.id })
+        .from(usersTable)
+        .where(sql`lower(${usersTable.email}) = ${email}`)
+        .limit(1);
+      if (existing) return null;
+      const [created] = await tx.insert(usersTable).values({
+        firstName,
+        lastName,
+        email,
+        passwordHash,
+        passwordSetAt: null,
+        role: "CUSTOMER",
+        active: true,
+        mustChangePassword: false,
+      }).returning();
+      if (!created) throw new Error("Customer account insert returned no row.");
+
+      await tx.update(customerPasswordSetupTokensTable)
+        .set({ invalidatedAt: new Date() })
+        .where(and(
+          eq(customerPasswordSetupTokensTable.userId, created.id),
+          isNull(customerPasswordSetupTokensTable.consumedAt),
+          isNull(customerPasswordSetupTokensTable.invalidatedAt),
+        ));
+      await tx.insert(customerPasswordSetupTokensTable).values({
+        userId: created.id,
+        issuedByUserId: admin.id,
+        tokenHash,
+        expiresAt,
+        maxAttempts: CUSTOMER_SETUP_MAX_ATTEMPTS,
+      });
+      await tx.insert(customerPasswordSetupAuditsTable).values({
+        administratorUserId: admin.id,
+        targetUserId: created.id,
+        action: "CUSTOMER_CREATED",
+      });
+      return created;
+    });
+    if (!customer) {
+      res.status(409).json({ error: "Korisnik sa ovom e-mail adresom već postoji." });
+      return;
+    }
+    const setupUrl = `${setupBaseUrl}/postavi-lozinku#token=${encodeURIComponent(rawToken)}`;
+    res.status(201).json({
+      user: {
+        id: customer.id,
+        firstName: customer.firstName,
+        lastName: customer.lastName,
+        email: customer.email,
+        phone: customer.phone,
+        role: customer.role,
+        active: customer.active,
+        createdAt: customer.createdAt.toISOString(),
+      },
+      setupUrl,
+      expiresAt: expiresAt.toISOString(),
+    });
+  } catch (error) {
+    if ((error as { code?: string }).code === "23505") {
+      res.status(409).json({ error: "Korisnik sa ovom e-mail adresom već postoji." });
+      return;
+    }
+    throw error;
+  }
+});
+
+router.post("/admin/customers/:userId/setup", async (req, res): Promise<void> => {
+  const admin = await requireSuperAdmin(req, res); if (!admin) return;
+  const parsedParams = AdminReissueCustomerSetupParams.safeParse(req.params);
+  if (!parsedParams.success) { res.status(404).json({ error: "Korisnik nije pronađen." }); return; }
+  const admitted = await admitCustomerSetupRequest("issue", admin.id, 10, 60 * 60 * 1000);
+  if (!admitted) { res.setHeader("Retry-After", "3600"); res.status(429).json({ error: "Previše zahteva. Pokušajte ponovo kasnije." }); return; }
+  const rawToken = randomBytes(32).toString("base64url");
+  const tokenHash = customerSetupDigest(rawToken);
+  const expiresAt = new Date(Date.now() + CUSTOMER_SETUP_TTL_MS);
+  const setupBaseUrl = customerSetupBaseUrl(req);
+  const customer = await db.transaction(async (tx) => {
+    const userId = parsedParams.data.userId;
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`customer-setup:${userId}`}))`);
+    const [target] = await tx.select().from(usersTable).where(eq(usersTable.id, userId)).for("update").limit(1);
+    if (!target || target.role !== "CUSTOMER" || !target.active || target.passwordSetAt) return null;
+    await tx.update(customerPasswordSetupTokensTable)
+      .set({ invalidatedAt: new Date() })
+      .where(and(eq(customerPasswordSetupTokensTable.userId, target.id), isNull(customerPasswordSetupTokensTable.consumedAt), isNull(customerPasswordSetupTokensTable.invalidatedAt)));
+    await tx.insert(customerPasswordSetupTokensTable).values({
+      userId: target.id, issuedByUserId: admin.id, tokenHash, expiresAt, maxAttempts: CUSTOMER_SETUP_MAX_ATTEMPTS,
+    });
+    await tx.insert(customerPasswordSetupAuditsTable).values({
+      administratorUserId: admin.id, targetUserId: target.id, action: "CUSTOMER_CREATED",
+    });
+    return target;
+  });
+  if (!customer) { res.status(404).json({ error: "Korisnik nije pronađen." }); return; }
+  res.status(201).json({
+    user: { id: customer.id, firstName: customer.firstName, lastName: customer.lastName, email: customer.email, phone: customer.phone, role: customer.role, active: customer.active, createdAt: customer.createdAt.toISOString() },
+    setupUrl: `${setupBaseUrl}/postavi-lozinku#token=${encodeURIComponent(rawToken)}`,
+    expiresAt: expiresAt.toISOString(),
+  });
 });
 
 router.patch("/admin/users/:userId", async (req, res): Promise<void> => {

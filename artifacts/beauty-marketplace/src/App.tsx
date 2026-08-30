@@ -24,6 +24,7 @@ const Toaster = lazy(() => import('./components/ui/toaster').then((module) => ({
 const TooltipProvider = lazy(() => import('./components/ui/tooltip').then((module) => ({ default: module.TooltipProvider })));
 const Layout = lazy(() => import('./components/layout').then((module) => ({ default: module.Layout })));
 const Auth = lazy(() => import('./pages/auth'));
+const CustomerPasswordSetupPage = lazy(() => import('./pages/customer-password-setup'));
 const BusinessAuth = lazy(() => import('./pages/business-auth'));
 const BusinessLanding = lazy(() => import('./pages/business-landing'));
 const BusinessLandingSalons = lazy(() => import('./pages/business-landing-salons'));
@@ -282,6 +283,7 @@ function Router() {
         <Switch>
         <Route path="/" component={Home} />
         <Route path="/prijava" component={Auth} />
+        <Route path="/postavi-lozinku" component={CustomerPasswordSetupPage} />
         <Route path="/student/prijava" component={Auth} />
         <Route path="/za-biznise" component={BusinessLanding} />
         <Route path="/za-biznise/saloni" component={BusinessLandingSalons} />

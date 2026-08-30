@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 81;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 82;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -1459,6 +1459,57 @@ function tableStatements(s: string): string[] {
     // accounts remain opted in so this additive rollout never changes consent
     // without an explicit user action.
     `ALTER TABLE ${s}.users ADD COLUMN IF NOT EXISTS marketing_emails_enabled boolean NOT NULL DEFAULT true`,
+    // v82 — SUPER_ADMIN-created CUSTOMER accounts use a short-lived,
+    // one-time password setup capability. Only token digests and privacy-safe
+    // rate-limit keys are persisted.
+    `ALTER TABLE ${s}.users ADD COLUMN IF NOT EXISTS password_set_at timestamptz`,
+    `CREATE TABLE IF NOT EXISTS ${s}.customer_password_setup_tokens (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE,
+       issued_by_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE RESTRICT,
+       token_hash text NOT NULL,
+       expires_at timestamptz NOT NULL,
+       consumed_at timestamptz,
+       invalidated_at timestamptz,
+       failed_attempts integer NOT NULL DEFAULT 0,
+       max_attempts integer NOT NULL DEFAULT 5,
+       created_at timestamptz NOT NULL DEFAULT now(),
+       CONSTRAINT customer_password_setup_tokens_attempts_check
+         CHECK (failed_attempts >= 0 AND max_attempts BETWEEN 1 AND 10)
+     )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS customer_password_setup_tokens_hash_unique
+       ON ${s}.customer_password_setup_tokens (token_hash)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS customer_password_setup_tokens_one_active_user
+       ON ${s}.customer_password_setup_tokens (user_id)
+       WHERE consumed_at IS NULL AND invalidated_at IS NULL`,
+    `CREATE INDEX IF NOT EXISTS customer_password_setup_tokens_user_created_idx
+       ON ${s}.customer_password_setup_tokens (user_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS customer_password_setup_tokens_expiry_idx
+       ON ${s}.customer_password_setup_tokens (expires_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.customer_password_setup_audits (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       administrator_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE RESTRICT,
+       target_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE RESTRICT,
+       action text NOT NULL,
+       created_at timestamptz NOT NULL DEFAULT now(),
+       CONSTRAINT customer_password_setup_audits_action_check
+         CHECK (action IN ('CUSTOMER_CREATED', 'PASSWORD_SET'))
+     )`,
+    `CREATE INDEX IF NOT EXISTS customer_password_setup_audits_target_created_idx
+       ON ${s}.customer_password_setup_audits (target_user_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS customer_password_setup_audits_admin_created_idx
+       ON ${s}.customer_password_setup_audits (administrator_user_id, created_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.customer_password_setup_rate_limits (
+       key_hash text NOT NULL,
+       action text NOT NULL,
+       window_started_at timestamptz NOT NULL,
+       request_count integer NOT NULL DEFAULT 1,
+       updated_at timestamptz NOT NULL DEFAULT now(),
+       CONSTRAINT customer_password_setup_rate_limits_count_check CHECK (request_count > 0),
+       UNIQUE (key_hash, action)
+     )`,
+    `CREATE INDEX IF NOT EXISTS customer_password_setup_rate_limits_updated_idx
+       ON ${s}.customer_password_setup_rate_limits (updated_at)`,
     // v31 — Serbian business role terminology. PostgreSQL enum values are
     // stored by internal OID, so RENAME VALUE preserves all rows and every FK.
     // A previous interrupted/manual deployment can contain both labels; in that

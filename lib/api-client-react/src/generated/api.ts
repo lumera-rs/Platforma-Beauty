@@ -31,6 +31,8 @@ import type {
   AdminBulkResult,
   AdminBundle,
   AdminBundleInput,
+  AdminCreateCustomerSetupInput,
+  AdminCreateCustomerSetupResponse,
   AdminCreateEmailCampaignInput,
   AdminDeleteAutomaticXyPromotionParams,
   AdminDeleteB2cBannerParams,
@@ -220,6 +222,10 @@ import type {
   CustomerListPublicPackagesParams,
   CustomerNotification,
   CustomerNotificationPage,
+  CustomerPasswordSetupCompletion,
+  CustomerPasswordSetupCompletionInput,
+  CustomerPasswordSetupTokenInput,
+  CustomerPasswordSetupValidation,
   CustomerRetentionDetail,
   CustomerRetentionItem,
   CustomerReview,
@@ -909,6 +915,148 @@ export const useLogin = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getLoginMutationOptions(options));
+    }
+
+export const getValidateCustomerPasswordSetupUrl = () => {
+
+
+
+
+  return `/api/auth/customer-password-setup/validate`
+}
+
+/**
+ * @summary Validate a short-lived customer password setup token
+ */
+export const validateCustomerPasswordSetup = async (customerPasswordSetupTokenInput: CustomerPasswordSetupTokenInput, options?: Parameters<typeof customFetch>[1]): Promise<CustomerPasswordSetupValidation> => {
+
+  return customFetch<CustomerPasswordSetupValidation>(getValidateCustomerPasswordSetupUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(customerPasswordSetupTokenInput)
+  }
+);}
+
+
+
+
+
+export const getValidateCustomerPasswordSetupMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof validateCustomerPasswordSetup>>, TError,{data: BodyType<CustomerPasswordSetupTokenInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof validateCustomerPasswordSetup>>, TError,{data: BodyType<CustomerPasswordSetupTokenInput>}, TContext> => {
+
+const mutationKey = ['validateCustomerPasswordSetup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof validateCustomerPasswordSetup>>, {data: BodyType<CustomerPasswordSetupTokenInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  validateCustomerPasswordSetup(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ValidateCustomerPasswordSetupMutationResult = NonNullable<Awaited<ReturnType<typeof validateCustomerPasswordSetup>>>
+    export type ValidateCustomerPasswordSetupMutationBody = BodyType<CustomerPasswordSetupTokenInput>
+    export type ValidateCustomerPasswordSetupMutationError = ErrorType<void>
+
+    /**
+ * @summary Validate a short-lived customer password setup token
+ */
+export const useValidateCustomerPasswordSetup = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof validateCustomerPasswordSetup>>, TError,{data: BodyType<CustomerPasswordSetupTokenInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof validateCustomerPasswordSetup>>,
+        TError,
+        {data: BodyType<CustomerPasswordSetupTokenInput>},
+        TContext
+      > => {
+      return useMutation(getValidateCustomerPasswordSetupMutationOptions(options));
+    }
+
+export const getCompleteCustomerPasswordSetupUrl = () => {
+
+
+
+
+  return `/api/auth/customer-password-setup/complete`
+}
+
+/**
+ * @summary Consume a one-time setup token and set the customer password
+ */
+export const completeCustomerPasswordSetup = async (customerPasswordSetupCompletionInput: CustomerPasswordSetupCompletionInput, options?: Parameters<typeof customFetch>[1]): Promise<CustomerPasswordSetupCompletion> => {
+
+  return customFetch<CustomerPasswordSetupCompletion>(getCompleteCustomerPasswordSetupUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(customerPasswordSetupCompletionInput)
+  }
+);}
+
+
+
+
+
+export const getCompleteCustomerPasswordSetupMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeCustomerPasswordSetup>>, TError,{data: BodyType<CustomerPasswordSetupCompletionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof completeCustomerPasswordSetup>>, TError,{data: BodyType<CustomerPasswordSetupCompletionInput>}, TContext> => {
+
+const mutationKey = ['completeCustomerPasswordSetup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof completeCustomerPasswordSetup>>, {data: BodyType<CustomerPasswordSetupCompletionInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  completeCustomerPasswordSetup(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CompleteCustomerPasswordSetupMutationResult = NonNullable<Awaited<ReturnType<typeof completeCustomerPasswordSetup>>>
+    export type CompleteCustomerPasswordSetupMutationBody = BodyType<CustomerPasswordSetupCompletionInput>
+    export type CompleteCustomerPasswordSetupMutationError = ErrorType<void>
+
+    /**
+ * @summary Consume a one-time setup token and set the customer password
+ */
+export const useCompleteCustomerPasswordSetup = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeCustomerPasswordSetup>>, TError,{data: BodyType<CustomerPasswordSetupCompletionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof completeCustomerPasswordSetup>>,
+        TError,
+        {data: BodyType<CustomerPasswordSetupCompletionInput>},
+        TContext
+      > => {
+      return useMutation(getCompleteCustomerPasswordSetupMutationOptions(options));
     }
 
 export const getLogoutUrl = () => {
@@ -17460,6 +17608,148 @@ export function useAdminListUsers<TData = Awaited<ReturnType<typeof adminListUse
 
 
 
+
+export const getAdminCreateCustomerSetupUrl = () => {
+
+
+
+
+  return `/api/admin/customers/setup`
+}
+
+/**
+ * @summary Create a CUSTOMER account and return its one-time password setup URL
+ */
+export const adminCreateCustomerSetup = async (adminCreateCustomerSetupInput: AdminCreateCustomerSetupInput, options?: Parameters<typeof customFetch>[1]): Promise<AdminCreateCustomerSetupResponse> => {
+
+  return customFetch<AdminCreateCustomerSetupResponse>(getAdminCreateCustomerSetupUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminCreateCustomerSetupInput)
+  }
+);}
+
+
+
+
+
+export const getAdminCreateCustomerSetupMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminCreateCustomerSetup>>, TError,{data: BodyType<AdminCreateCustomerSetupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminCreateCustomerSetup>>, TError,{data: BodyType<AdminCreateCustomerSetupInput>}, TContext> => {
+
+const mutationKey = ['adminCreateCustomerSetup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminCreateCustomerSetup>>, {data: BodyType<AdminCreateCustomerSetupInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  adminCreateCustomerSetup(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminCreateCustomerSetupMutationResult = NonNullable<Awaited<ReturnType<typeof adminCreateCustomerSetup>>>
+    export type AdminCreateCustomerSetupMutationBody = BodyType<AdminCreateCustomerSetupInput>
+    export type AdminCreateCustomerSetupMutationError = ErrorType<void>
+
+    /**
+ * @summary Create a CUSTOMER account and return its one-time password setup URL
+ */
+export const useAdminCreateCustomerSetup = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminCreateCustomerSetup>>, TError,{data: BodyType<AdminCreateCustomerSetupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminCreateCustomerSetup>>,
+        TError,
+        {data: BodyType<AdminCreateCustomerSetupInput>},
+        TContext
+      > => {
+      return useMutation(getAdminCreateCustomerSetupMutationOptions(options));
+    }
+
+export const getAdminReissueCustomerSetupUrl = (userId: string,) => {
+
+
+
+
+  return `/api/admin/customers/${userId}/setup`
+}
+
+/**
+ * @summary Replace an uncompleted CUSTOMER account's password setup URL
+ */
+export const adminReissueCustomerSetup = async (userId: string, options?: Parameters<typeof customFetch>[1]): Promise<AdminCreateCustomerSetupResponse> => {
+
+  return customFetch<AdminCreateCustomerSetupResponse>(getAdminReissueCustomerSetupUrl(userId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminReissueCustomerSetupMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminReissueCustomerSetup>>, TError,{userId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminReissueCustomerSetup>>, TError,{userId: string}, TContext> => {
+
+const mutationKey = ['adminReissueCustomerSetup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminReissueCustomerSetup>>, {userId: string}> = (props) => {
+          const {userId} = props ?? {};
+
+          return  adminReissueCustomerSetup(userId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminReissueCustomerSetupMutationResult = NonNullable<Awaited<ReturnType<typeof adminReissueCustomerSetup>>>
+
+    export type AdminReissueCustomerSetupMutationError = ErrorType<void>
+
+    /**
+ * @summary Replace an uncompleted CUSTOMER account's password setup URL
+ */
+export const useAdminReissueCustomerSetup = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminReissueCustomerSetup>>, TError,{userId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminReissueCustomerSetup>>,
+        TError,
+        {userId: string},
+        TContext
+      > => {
+      return useMutation(getAdminReissueCustomerSetupMutationOptions(options));
+    }
 
 export const getAdminUpdateUserUrl = (userId: string,) => {
 
