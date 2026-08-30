@@ -26,6 +26,7 @@
     "test:api-regressions": "pnpm --filter @workspace/scripts run test:api-regressions",
     "test:api-regressions-lifecycle": "pnpm --filter @workspace/scripts run test:api-regressions-lifecycle",
     "test:education-authz": "bash scripts/test-education-authorization.sh",
+    "test:education-role-routing": "pnpm --filter @workspace/scripts exec tsx ../artifacts/beauty-marketplace/src/lib/role-routing.test.ts",
     "test:education-finance": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-financial.test.ts",
     "test:education-sessions": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-sessions.test.ts",
     "test:retail-checkout-api": "pnpm --filter @workspace/scripts run test:retail-checkout-api",

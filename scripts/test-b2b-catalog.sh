@@ -2,6 +2,7 @@
 set -euo pipefail
 
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/src/api-preflight.sh"
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/src/isolated-admin-fixture.sh"
 resolve_api_base_url
 check_api_server
 
@@ -13,6 +14,7 @@ if ! command -v psql >/dev/null; then
   echo "psql is required so the isolated order fixtures can be removed after the test." >&2
   exit 1
 fi
+require_isolated_admin_fixture_dependencies
 
 DEMO_PASSWORD="${LUMERA_DEMO_PASSWORD:-LumeraDemo2026!}"
 RUN_ID="${LUMERA_B2B_TEST_ID:-$(date +%s%N)}"
@@ -25,9 +27,8 @@ MEDIA_FIXTURE="$(cd "$(dirname "$0")/.." && pwd)/artifacts/beauty-marketplace/pu
 MEDIA_IMAGE_URL=""
 MEDIA_ASSET_IDS=()
 
-TARGET_ID=""
-ORIGINAL_ROLE=""
-ORIGINAL_ACTIVE=""
+ISOLATED_ADMIN_EMAIL=""
+ISOLATED_ADMIN_ID=""
 ORIGINAL_SHIPPING=""
 ORIGINAL_SHOP_SETTINGS_ROW=""
 SHOP_SETTINGS_CREATED_ID=""
@@ -96,18 +97,6 @@ restore_shared_state() {
     [[ "$status" == "200" ]] || return 1
     jq -e --argjson original "$ORIGINAL_SHIPPING" \
       '{freeShippingThreshold,tiers,personalDeliveryEnabled,personalDeliveryName,personalDeliveryPrice,personalDeliveryDescription} == $original' "$BODY" >/dev/null || return 1
-  fi
-
-  if [[ -n "$TARGET_ID" && -n "$ORIGINAL_ROLE" && -n "$ORIGINAL_ACTIVE" ]]; then
-    status="$(request -b "$SUPER_COOKIE" -X PATCH \
-      -H "Content-Type: application/json" \
-      --data "{\"role\":\"$ORIGINAL_ROLE\",\"active\":$ORIGINAL_ACTIVE}" \
-      "$BASE_URL/admin/users/$TARGET_ID")"
-    [[ "$status" == "200" ]] || return 1
-    status="$(request -b "$SUPER_COOKIE" "$BASE_URL/admin/users?search=edukacija%40lumera.local&page=1&pageSize=100")"
-    [[ "$status" == "200" ]] || return 1
-    jq -e --arg id "$TARGET_ID" --arg role "$ORIGINAL_ROLE" --argjson active "$ORIGINAL_ACTIVE" \
-      '(if type == "array" then . else .items end)[] | select(.id == $id and .role == $role and .active == $active)' "$BODY" >/dev/null || return 1
   fi
 
   if [[ -n "$SHOP_SETTINGS_CREATED_ID" ]]; then
@@ -239,6 +228,8 @@ SQL
   cleanup_media_fixtures || cleanup_failed=true
 
   restore_shared_state || cleanup_failed=true
+  remove_isolated_admin_fixture || cleanup_failed=true
+  verify_isolated_admin_fixture_removed || cleanup_failed=true
   verify_test_data_removed || cleanup_failed=true
   rm -f "$SUPER_COOKIE" "$ADMIN_COOKIE" "$CUSTOMER_COOKIE" "$SALON_COOKIE" "$BODY"
   if [[ "$cleanup_failed" == true ]]; then
@@ -248,6 +239,7 @@ SQL
   exit "$([[ "$original_status" == 0 || "$cleanup_failed" == true ]] && echo 1 || echo "$original_status")"
 }
 trap cleanup EXIT
+trap 'exit 130' INT TERM
 
 expect_status() {
   local expected="$1"
@@ -324,25 +316,10 @@ login() {
 
 echo "Running B2B catalog regression checks against $BASE_URL"
 
-# Establish SUPER_ADMIN access and remember the existing role of the temporary
-# ADMIN fixture so the script is safe to rerun against a seeded environment.
+# Establish SUPER_ADMIN access and create a marker-owned ADMIN identity.
 login "$SUPER_COOKIE" "admin@lumera.local"
-status="$(request -b "$SUPER_COOKIE" "$BASE_URL/admin/users?search=edukacija%40lumera.local&page=1&pageSize=100")"
-expect_status 200 "$status" "SUPER_ADMIN user list"
-TARGET_ID="$(jq -r '(if type == "array" then . else .items end)[] | select(.email == "edukacija@lumera.local") | .id' "$BODY")"
-ORIGINAL_ROLE="$(jq -r '(if type == "array" then . else .items end)[] | select(.email == "edukacija@lumera.local") | .role' "$BODY")"
-ORIGINAL_ACTIVE="$(jq -r '(if type == "array" then . else .items end)[] | select(.email == "edukacija@lumera.local") | .active' "$BODY")"
-if [[ -z "$TARGET_ID" || "$TARGET_ID" == "null" ]]; then
-  echo "FAIL: seeded ADMIN fixture edukacija@lumera.local was not found." >&2
-  exit 1
-fi
-
-status="$(request -b "$SUPER_COOKIE" -X PATCH \
-  -H "Content-Type: application/json" \
-  --data '{"role":"ADMIN","active":true}' \
-  "$BASE_URL/admin/users/$TARGET_ID")"
-expect_status 200 "$status" "SUPER_ADMIN grants temporary ADMIN fixture"
-login "$ADMIN_COOKIE" "edukacija@lumera.local"
+create_isolated_admin_fixture "$RUN_ID"
+login "$ADMIN_COOKIE" "$ISOLATED_ADMIN_EMAIL"
 login "$CUSTOMER_COOKIE" "kupac@lumera.local"
 login "$SALON_COOKIE" "salon@lumera.local"
 status="$(request -b "$ADMIN_COOKIE" "$BASE_URL/admin/courier-services")"
@@ -830,5 +807,9 @@ SUPPLIER_ID=""
 
 restore_shared_state
 verify_test_data_removed
+remove_isolated_admin_fixture
+verify_isolated_admin_fixture_removed
+verify_education_demo_invariant
+ISOLATED_ADMIN_EMAIL=""
 CLEANUP_COMPLETED=true
 echo "B2B catalog regression checks passed."

@@ -4,13 +4,15 @@ import { and, eq, inArray } from "drizzle-orm";
 import {
   appointmentsTable,
   db,
+  educationCentersTable,
   pool,
   salonCustomersTable,
   salonsTable,
   servicesTable,
   usersTable,
 } from "@workspace/db";
-import { backfillSalonCustomers, ensureDemoData } from "./seed";
+import { backfillSalonCustomers, ensureDemoData, restoreDemoEducationOwnerRole } from "./seed";
+import { repairProductionMarketplaceDemoIdentity } from "./production-marketplace-demo-seed";
 
 const suffix = randomUUID();
 const fixtureUserIds: string[] = [];
@@ -20,6 +22,41 @@ const fixtureAppointmentIds: string[] = [];
 
 async function run(): Promise<void> {
   await ensureDemoData();
+
+  const [educationOwner] = await db.select({
+    id: usersTable.id,
+    role: usersTable.role,
+    active: usersTable.active,
+  }).from(usersTable).where(eq(usersTable.email, "edukacija@lumera.local")).limit(1);
+  assert.equal(educationOwner?.role, "EDUKATIVNI_CENTAR", "education demo keeps the canonical owner role");
+  assert.equal(educationOwner?.active, true, "education demo remains active");
+  const ownedCenters = educationOwner
+    ? await db.select({ id: educationCentersTable.id }).from(educationCentersTable)
+      .where(eq(educationCentersTable.ownerId, educationOwner.id))
+    : [];
+  assert.ok(ownedCenters.length > 0, "education demo remains linked to an education center");
+  let repairVerified = false;
+  try {
+    await db.transaction(async (tx) => {
+      await tx.update(usersTable).set({ role: "ADMIN", active: false })
+        .where(eq(usersTable.id, educationOwner!.id));
+      await repairProductionMarketplaceDemoIdentity(tx);
+      const [repaired] = await tx.select({
+        id: usersTable.id,
+        role: usersTable.role,
+        active: usersTable.active,
+      }).from(usersTable).where(eq(usersTable.email, "edukacija@lumera.local")).limit(1);
+      const repairedCenters = await tx.select({ id: educationCentersTable.id })
+        .from(educationCentersTable)
+        .where(eq(educationCentersTable.ownerId, educationOwner!.id));
+      assert.deepEqual(repaired, educationOwner, "production bootstrap repair preserves identity while restoring role and active state");
+      assert.deepEqual(repairedCenters, ownedCenters, "production bootstrap repair preserves education-center ownership");
+      repairVerified = true;
+      tx.rollback();
+    });
+  } catch (error) {
+    if (!repairVerified) throw error;
+  }
 
   const [owner] = await db.select({ id: usersTable.id }).from(usersTable).limit(1);
   if (!owner) throw new Error("CRM backfill test requires at least one seeded user.");

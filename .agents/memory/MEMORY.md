@@ -131,3 +131,4 @@
 - [Capacity harness serving boundary](capacity-harness-serving-boundary.md) — measure real request routes without unrelated production schedulers or startup seeders.
 - [Booking overload admission](booking-overload-admission.md) — bound every booking creator as one workload; capacity 429s belong in the full-arrival latency objective.
 - [Booking response outbox](booking-response-outbox.md) — persist required communication rows in the booking transaction, then deliver asynchronously off the response path.
+- [Product demo identity isolation](product-demo-identity-isolation.md) — authorization regressions use exact-ID marker fixtures and never borrow product-facing demo accounts.

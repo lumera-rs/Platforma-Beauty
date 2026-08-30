@@ -2,31 +2,25 @@
 set -euo pipefail
 
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/src/api-preflight.sh"
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/src/isolated-admin-fixture.sh"
 resolve_api_base_url
 check_api_server
+require_isolated_admin_fixture_dependencies
 
 DEMO_PASSWORD="${LUMERA_DEMO_PASSWORD:-LumeraDemo2026!}"
 SUPER_COOKIE="$(mktemp)"
 LIMITED_COOKIE="$(mktemp)"
 BODY="$(mktemp)"
-TARGET_ID=""
-ORIGINAL_ROLE=""
-ORIGINAL_ACTIVE=""
-
-restore_target() {
-  if [[ -n "$TARGET_ID" && -n "$ORIGINAL_ROLE" && -n "$ORIGINAL_ACTIVE" ]]; then
-    curl -sS -o /dev/null -b "$SUPER_COOKIE" -X PATCH \
-      -H "Content-Type: application/json" \
-      --data "{\"role\":\"$ORIGINAL_ROLE\",\"active\":$ORIGINAL_ACTIVE}" \
-      "$BASE_URL/admin/users/$TARGET_ID" || true
-  fi
-}
+RUN_ID="${LUMERA_ADMIN_AUTHZ_TEST_ID:-$(date +%s%N)}"
+ISOLATED_ADMIN_EMAIL=""
+ISOLATED_ADMIN_ID=""
 
 cleanup() {
-  restore_target
+  remove_isolated_admin_fixture || true
   rm -f "$SUPER_COOKIE" "$LIMITED_COOKIE" "$BODY"
 }
 trap cleanup EXIT
+trap 'exit 130' INT TERM
 
 expect_status() {
   local expected="$1"
@@ -45,22 +39,11 @@ status="$(curl -sS -o "$BODY" -w "%{http_code}" -c "$SUPER_COOKIE" \
   "$BASE_URL/auth/login")"
 expect_status 200 "$status" "SUPER_ADMIN login"
 
-status="$(curl -sS -o "$BODY" -w "%{http_code}" -b "$SUPER_COOKIE" "$BASE_URL/admin/users?search=edukacija%40lumera.local&page=1&pageSize=100")"
-expect_status 200 "$status" "SUPER_ADMIN user list"
-
-TARGET_ID="$(node -e 'const body=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); const users=Array.isArray(body)?body:body.items; const user=users.find((item)=>item.email==="edukacija@lumera.local"); if(!user) process.exit(1); process.stdout.write(user.id)' "$BODY")"
-ORIGINAL_ROLE="$(node -e 'const body=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); const users=Array.isArray(body)?body:body.items; process.stdout.write(users.find((item)=>item.email==="edukacija@lumera.local").role)' "$BODY")"
-ORIGINAL_ACTIVE="$(node -e 'const body=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); const users=Array.isArray(body)?body:body.items; process.stdout.write(String(users.find((item)=>item.email==="edukacija@lumera.local").active))' "$BODY")"
-
-status="$(curl -sS -o "$BODY" -w "%{http_code}" -b "$SUPER_COOKIE" -X PATCH \
-  -H "Content-Type: application/json" \
-  --data '{"role":"ADMIN","active":true}' \
-  "$BASE_URL/admin/users/$TARGET_ID")"
-expect_status 200 "$status" "SUPER_ADMIN assigns ADMIN role"
+create_isolated_admin_fixture "$RUN_ID"
 
 status="$(curl -sS -o "$BODY" -w "%{http_code}" -c "$LIMITED_COOKIE" \
   -H "Content-Type: application/json" \
-  --data "{\"email\":\"edukacija@lumera.local\",\"password\":\"$DEMO_PASSWORD\"}" \
+  --data "{\"email\":\"$ISOLATED_ADMIN_EMAIL\",\"password\":\"$DEMO_PASSWORD\"}" \
   "$BASE_URL/auth/login")"
 expect_status 200 "$status" "ADMIN login"
 
@@ -70,13 +53,13 @@ expect_status 200 "$status" "ADMIN read access"
 status="$(curl -sS -o "$BODY" -w "%{http_code}" -b "$LIMITED_COOKIE" -X PATCH \
   -H "Content-Type: application/json" \
   --data '{"role":"SUPER_ADMIN"}' \
-  "$BASE_URL/admin/users/$TARGET_ID")"
+  "$BASE_URL/admin/users/$ISOLATED_ADMIN_ID")"
 expect_status 403 "$status" "ADMIN self-promotion blocked"
 
 status="$(curl -sS -o "$BODY" -w "%{http_code}" -b "$LIMITED_COOKIE" -X PATCH \
   -H "Content-Type: application/json" \
   --data '{"active":false}' \
-  "$BASE_URL/admin/users/$TARGET_ID")"
+  "$BASE_URL/admin/users/$ISOLATED_ADMIN_ID")"
 expect_status 403 "$status" "ADMIN account-status mutation blocked"
 
 status="$(curl -sS -o "$BODY" -w "%{http_code}" -b "$LIMITED_COOKIE" -X POST \
@@ -111,18 +94,20 @@ status="$(curl -sS -o "$BODY" -w "%{http_code}" -b "$LIMITED_COOKIE" -X DELETE \
   "$BASE_URL/admin/subscription-plans/not-a-uuid")"
 expect_status 403 "$status" "ADMIN subscription deletion blocked"
 
-restore_target
-
 status="$(curl -sS -o "$BODY" -w "%{http_code}" -b "$SUPER_COOKIE" -X PATCH \
   -H "Content-Type: application/json" \
   --data '{"active":false}' \
-  "$BASE_URL/admin/users/$TARGET_ID")"
+  "$BASE_URL/admin/users/$ISOLATED_ADMIN_ID")"
 expect_status 200 "$status" "SUPER_ADMIN deactivates account"
 
 status="$(curl -sS -o "$BODY" -w "%{http_code}" \
   -H "Content-Type: application/json" \
-  --data "{\"email\":\"edukacija@lumera.local\",\"password\":\"$DEMO_PASSWORD\"}" \
+  --data "{\"email\":\"$ISOLATED_ADMIN_EMAIL\",\"password\":\"$DEMO_PASSWORD\"}" \
   "$BASE_URL/auth/login")"
 expect_status 401 "$status" "inactive account login blocked"
 
+remove_isolated_admin_fixture
+verify_isolated_admin_fixture_removed
+verify_education_demo_invariant
+ISOLATED_ADMIN_EMAIL=""
 echo "Admin authorization checks passed."

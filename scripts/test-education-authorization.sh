@@ -32,12 +32,16 @@ expect_status 200 "$status" "salon owner login"
 
 status="$(curl -sS -o "$BODY" -w "%{http_code}" -c "$CENTER_COOKIE" -H "Content-Type: application/json" --data "{\"email\":\"edukacija@lumera.local\",\"password\":\"$DEMO_PASSWORD\"}" "$BASE_URL/auth/login")"
 expect_status 200 "$status" "education-center owner login"
+node -e 'const body=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(body.user?.role!=="EDUKATIVNI_CENTAR") process.exit(1)' "$BODY"
+echo "PASS: education demo login keeps canonical active role"
 
 status="$(curl -sS -o "$BODY" -w "%{http_code}" -c "$EMPLOYEE_COOKIE" -H "Content-Type: application/json" --data "{\"email\":\"zaposleni@lumera.local\",\"password\":\"$DEMO_PASSWORD\"}" "$BASE_URL/auth/login")"
 expect_status 200 "$status" "enrolled salon employee login"
 
 status="$(curl -sS -o "$BODY" -w "%{http_code}" -b "$CENTER_COOKIE" "$BASE_URL/education/courses?mine=true")"
 expect_status 200 "$status" "publisher course list"
+node -e 'const items=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(!items.length || !items.every((course)=>course.centerId)) process.exit(1)' "$BODY"
+echo "PASS: education demo remains linked to owned center courses"
 EXTERNAL_COURSE_ID="$(node -e 'const items=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(!items[0]) process.exit(1); process.stdout.write(items[0].id)' "$BODY")"
 
 status="$(curl -sS -o "$BODY" -w "%{http_code}" -b "$SALON_COOKIE" "$BASE_URL/education/courses/$EXTERNAL_COURSE_ID")"

@@ -52,6 +52,17 @@ import { getOrCreateShippingConfig } from "./shipping-config";
 
 let seedPromise: Promise<void> | undefined;
 const LEGACY_CATALOG_SUPPLIER_ID = "9b5970ea-0a8c-5e60-9d32-2a09f0890560";
+const DEMO_EDUCATION_OWNER_EMAIL = "edukacija@lumera.local";
+
+export async function restoreDemoEducationOwnerRole(
+  database: Pick<typeof db, "update"> = db,
+): Promise<void> {
+  await database.update(usersTable).set({
+    role: "EDUKATIVNI_CENTAR",
+    active: true,
+    updatedAt: new Date(),
+  }).where(eq(usersTable.email, DEMO_EDUCATION_OWNER_EMAIL));
+}
 
 async function ensureLegacyCatalogSupplier(): Promise<string> {
   const [existing] = await db.select({ id: suppliersTable.id })
@@ -272,6 +283,7 @@ async function seed(): Promise<void> {
     for (const [city, postalCode] of Object.entries(postalCodesByCity)) {
       await db.update(salonsTable).set({ postalCode }).where(sql`${salonsTable.postalCode} is null and ${salonsTable.city} = ${city}`);
     }
+    await restoreDemoEducationOwnerRole();
     await seedEducationContent();
     await seedEducationMonetization();
     await seedMarketplaceTaxonomy();

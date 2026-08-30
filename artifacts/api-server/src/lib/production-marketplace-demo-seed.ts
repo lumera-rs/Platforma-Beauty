@@ -13,6 +13,7 @@ import {
 } from "@workspace/db/schema";
 import { count, eq, inArray, like, sql } from "drizzle-orm";
 import { logger } from "./logger";
+import { restoreDemoEducationOwnerRole } from "./seed";
 
 const MARKER = "[LUMERA_DEMO_MARKETPLACE_2026_08_25]";
 const DEMO_USER_EMAIL = "kupac24@lumera.local";
@@ -22,6 +23,12 @@ const DEMO_JOB_COUNT = 102;
 const DEMO_COURSE_COUNT = 6;
 const DEMO_CENTER_COUNT = 3;
 const DEMO_INSTRUCTOR_COUNT = 3;
+
+export async function repairProductionMarketplaceDemoIdentity(
+  database: Pick<typeof db, "update"> = db,
+): Promise<void> {
+  await restoreDemoEducationOwnerRole(database);
+}
 
 const categorySlugs = [
   "barberi", "estetika-masaza", "estetika-anti-aging", "freelance-angazmani",
@@ -110,6 +117,7 @@ function createDemoJobs(
 export async function seedProductionMarketplaceDemoContent(): Promise<void> {
   const result = await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext('lumera-production-marketplace-demo-seed-v1'))`);
+    await repairProductionMarketplaceDemoIdentity(tx);
 
     const [jobCount, courseCount, centerCount, instructorCount] = await Promise.all([
       tx.select({ total: count() }).from(beautyJobListingsTable)
