@@ -86,11 +86,14 @@ async function request(
   path: string,
   method: "DELETE" | "PATCH" | "POST",
   body: Record<string, unknown>,
+  idempotencyKey?: string,
 ): Promise<HttpResult> {
+  const commandKey = idempotencyKey ?? (method === "POST" ? randomUUID() : undefined);
   const response = await fetch(`${baseUrl}/api${path}`, {
     method,
     headers: {
       "content-type": "application/json",
+      ...(commandKey ? { "idempotency-key": commandKey } : {}),
       cookie: `${sessionCookieName}=${session}`,
     },
     body: JSON.stringify(body),
@@ -1332,6 +1335,31 @@ async function run(): Promise<void> {
     ));
     assert.equal(overlappingBookings.length, 1, "one employee must have only one active appointment in the same slot");
     await assertConfirmedCreationAudit(overlappingBookings[0]!.id, employeeUser!.id);
+
+    const employeeReplayKey = `employee-appointments-replay-${suffix}`;
+    const replayPayload = {
+      serviceId: service!.id,
+      salonCustomerId: contact!.id,
+      slots: [{ date: employeeBookingDate, startTime: "11:00" }],
+    };
+    const employeeCreated = await request(
+      baseUrl, employeeSession, "/employee/appointments", "POST", replayPayload, employeeReplayKey,
+    );
+    const employeeReplayed = await request(
+      baseUrl, employeeSession, "/employee/appointments", "POST", replayPayload, employeeReplayKey,
+    );
+    assert.equal(employeeCreated.status, 201, "employee batch booking must accept a new command key");
+    assert.equal(employeeReplayed.status, 201, "an exact employee batch retry must replay");
+    assert.deepEqual(employeeReplayed.body, employeeCreated.body, "employee batch replay must return its original response");
+    const employeeMismatch = await request(baseUrl, employeeSession, "/employee/appointments", "POST", {
+      ...replayPayload,
+      slots: [{ date: employeeBookingDate, startTime: "11:30" }],
+    }, employeeReplayKey);
+    assert.equal(employeeMismatch.status, 409, "employee batch key reuse with a changed payload must be rejected");
+    assert.deepEqual(employeeMismatch.body, {
+      code: "IDEMPOTENCY_KEY_REUSED",
+      error: "Idempotency-Key je već upotrebljen za drugačiji zahtev.",
+    });
 
     const [moveSeries, cancelSeriesAppointment] = await Promise.all([
       request(baseUrl, ownerSession, `/salon/appointment-series/${series!.id}/move`, "POST", { dayOffset: 1 }),

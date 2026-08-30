@@ -273,6 +273,8 @@ import type {
   EmployeeActiveLocation,
   EmployeeActiveLocationInput,
   EmployeeAppointmentSeriesInput,
+  EmployeeAppointmentsInput,
+  EmployeeAppointmentsResult,
   EmployeeAssignedLocations,
   EmployeeClockEntry,
   EmployeeClockStatus,
@@ -314,6 +316,7 @@ import type {
   GrowthAiQuestionBody,
   HeaderBarConfig,
   HealthStatus,
+  IdempotencyMismatchError,
   IntegrationSettingsVersionConflict,
   JobseekerDashboard,
   JobseekerProfile,
@@ -6867,6 +6870,77 @@ export const useCreateEmployeeAppointmentSeries = <TError = ErrorType<BookingCap
         TContext
       > => {
       return useMutation(getCreateEmployeeAppointmentSeriesMutationOptions(options));
+    }
+
+export const getCreateEmployeeAppointmentsUrl = () => {
+
+
+
+
+  return `/api/employee/appointments`
+}
+
+/**
+ * @summary Atomically create one or more appointments assigned to the signed-in employee
+ */
+export const createEmployeeAppointments = async (employeeAppointmentsInput: EmployeeAppointmentsInput, options?: Parameters<typeof customFetch>[1]): Promise<EmployeeAppointmentsResult> => {
+
+  return customFetch<EmployeeAppointmentsResult>(getCreateEmployeeAppointmentsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(employeeAppointmentsInput)
+  }
+);}
+
+
+
+
+
+export const getCreateEmployeeAppointmentsMutationOptions = <TError = ErrorType<void | AppointmentConflictError | IdempotencyMismatchError | BookingCapacityReachedResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeAppointments>>, TError,{data: BodyType<EmployeeAppointmentsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createEmployeeAppointments>>, TError,{data: BodyType<EmployeeAppointmentsInput>}, TContext> => {
+
+const mutationKey = ['createEmployeeAppointments'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createEmployeeAppointments>>, {data: BodyType<EmployeeAppointmentsInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createEmployeeAppointments(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateEmployeeAppointmentsMutationResult = NonNullable<Awaited<ReturnType<typeof createEmployeeAppointments>>>
+    export type CreateEmployeeAppointmentsMutationBody = BodyType<EmployeeAppointmentsInput>
+    export type CreateEmployeeAppointmentsMutationError = ErrorType<void | AppointmentConflictError | IdempotencyMismatchError | BookingCapacityReachedResponse>
+
+    /**
+ * @summary Atomically create one or more appointments assigned to the signed-in employee
+ */
+export const useCreateEmployeeAppointments = <TError = ErrorType<void | AppointmentConflictError | IdempotencyMismatchError | BookingCapacityReachedResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeAppointments>>, TError,{data: BodyType<EmployeeAppointmentsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createEmployeeAppointments>>,
+        TError,
+        {data: BodyType<EmployeeAppointmentsInput>},
+        TContext
+      > => {
+      return useMutation(getCreateEmployeeAppointmentsMutationOptions(options));
     }
 
 export const getUpdateSalonCustomerUrl = (customerId: string,) => {

@@ -708,7 +708,8 @@ import {
 } from "../lib/web-push";
 import {
   createAppointmentReviewInvitationInTx,
-  sendBookingGroupConfirmation,
+  enqueueBookingGroupConfirmationInTx,
+  enqueueSeriesConfirmationsInTx,
 } from "../lib/appointment-customer-events";
 import {
   bookingIdempotencyKey,
@@ -2392,29 +2393,6 @@ export async function moveAppointmentSeries(input: {
     }
     return moved;
   });
-}
-
-async function sendSeriesConfirmations(input: {
-  appointments: (typeof appointmentsTable.$inferSelect)[];
-  contact: typeof salonCustomersTable.$inferSelect;
-  salon: typeof salonsTable.$inferSelect;
-}) {
-  for (const appointment of input.appointments) {
-    await sendSms({
-      eventKey: `appointment-confirmation:${appointment.id}`, salonId: input.salon.id, appointmentId: appointment.id,
-      type: "appointment_confirmation", phone: input.contact.phone, smsOptOut: input.contact.smsOptOut,
-      text: `LUMERA: termin u salonu ${input.salon.name} je zakazan za ${appointment.date} u ${appointment.startTime}.`,
-    });
-    if (input.contact.email) {
-      await sendTransactionalEmail({
-        eventKey: `appointment-confirmation:${appointment.id}:email`,
-        emailType: "appointment_confirmation",
-        to: { email: input.contact.email, name: `${input.contact.firstName} ${input.contact.lastName}`.trim() || "LUMERA klijent" },
-        subject: "LUMERA — potvrda termina",
-        htmlContent: lumeraEmailHtml("Termin je zakazan", `<p>Vaš termin u salonu <b>${emailSafe(input.salon.name)}</b> je zakazan za <b>${appointment.date} u ${appointment.startTime}</b>.</p>`),
-      });
-    }
-  }
 }
 
 async function sendSeriesUpdates(input: {
@@ -6906,10 +6884,10 @@ async function createStaffBookingGroup(
         id: group!.id, salonId: access.salon.id, appointments: views, createdAt: group!.createdAt,
       };
       (access.employee ? CreateEmployeeBookingGroupResponse : CreateSalonBookingGroupResponse).parse(response);
+      await enqueueBookingGroupConfirmationInTx(tx, group!.id);
       return { status: 201, body: response };
     });
     if (!command.replayed && command.status === 201) {
-      await sendBookingGroupConfirmation((command.body as { id: string }).id);
       await publishSalonNotificationUpdate(access.salon.id);
     }
     sendBookingCommandResult(res, command);
@@ -7050,11 +7028,11 @@ router.post("/booking-groups", admitBookingRequest, async (req, res): Promise<vo
       const response = CreateBookingGroupResponse.parse({
         id: group!.id, salonId: salon.id, appointments: views, createdAt: group!.createdAt,
       });
+      await enqueueBookingGroupConfirmationInTx(tx, group!.id);
       return { status: 201, body: response };
     });
     if (!command.replayed && command.status === 201) {
       await publishSalonNotificationUpdate(salon.id);
-      await sendBookingGroupConfirmation((command.body as { id: string }).id);
     }
     sendBookingCommandResult(res, command);
   } catch (error) {
@@ -9053,6 +9031,11 @@ router.post("/salon/package-appointments", admitBookingRequest, async (req, res)
           tx,
         }));
       }
+      for (const item of result) {
+        await enqueueSeriesConfirmationsInTx(tx, {
+          appointments: item.appointments, contact: prepared.contact, salon: access.salon,
+        });
+      }
       const [updated] = await tx.select().from(customerPackagePurchasesTable).where(eq(customerPackagePurchasesTable.id, prepared.purchase.id));
       const series = [];
       for (const item of result) {
@@ -9076,22 +9059,6 @@ router.post("/salon/package-appointments", admitBookingRequest, async (req, res)
       };
     });
     sendBookingCommandResult(res, command);
-    if (!command.replayed) for (const item of (command.body as {
-      series: Array<{ id: string }>;
-    }).series) {
-      try {
-        const appointments = await db.select().from(appointmentsTable)
-          .where(eq(appointmentsTable.seriesId, item.id));
-        await sendSeriesConfirmations({
-          appointments, contact: prepared.contact, salon: access.salon,
-        });
-      } catch (notificationError) {
-        logger.error(
-          { err: notificationError, seriesId: item.id },
-          "Package appointment confirmations failed after commit",
-        );
-      }
-    }
   } catch (error) {
     const reason = error instanceof PackageRedemptionError ? error.reason : null;
     res.status(error instanceof AppointmentSeriesError ? error.status : 409).json({ error: error instanceof Error ? error.message : "Paket nije sačuvan.", ...(reason ? { code: "PACKAGE_ERROR", reason } : {}) });
@@ -9154,16 +9121,11 @@ router.post("/salon/appointment-series", admitBookingRequest, async (req, res): 
         id: created.series.id, totalAppointments: created.appointments.length, appointments: views,
       };
       CreateSalonAppointmentSeriesResponse.parse(response);
+      await enqueueSeriesConfirmationsInTx(tx, {
+        appointments: created.appointments, contact: contact!, salon: access.salon,
+      });
       return { status: 201, body: response };
     });
-    if (!command.replayed) {
-      const appointments = await db.select().from(appointmentsTable).where(eq(
-        appointmentsTable.seriesId, (command.body as { id: string }).id,
-      ));
-      await sendSeriesConfirmations({
-        appointments, contact: contact!, salon: access.salon,
-      });
-    }
     sendBookingCommandResult(res, command);
   } catch (error) {
     const message = error instanceof PackageRedemptionError ? error.message
@@ -10898,16 +10860,11 @@ router.post("/employee/appointment-series", admitBookingRequest, async (req, res
         id: created.series.id, totalAppointments: created.appointments.length, appointments: views,
       };
       CreateEmployeeAppointmentSeriesResponse.parse(response);
+      await enqueueSeriesConfirmationsInTx(tx, {
+        appointments: created.appointments, contact: contact!, salon: access.salon,
+      });
       return { status: 201, body: response };
     });
-    if (!command.replayed) {
-      const appointments = await db.select().from(appointmentsTable).where(eq(
-        appointmentsTable.seriesId, (command.body as { id: string }).id,
-      ));
-      await sendSeriesConfirmations({
-        appointments, contact: contact!, salon: access.salon,
-      });
-    }
     sendBookingCommandResult(res, command);
   } catch (error) {
     const message = error instanceof ResourceCapacityError ? error.message
@@ -11007,6 +10964,9 @@ router.post("/employee/appointments", admitBookingRequest, async (req, res): Pro
         id: item.id, date: item.date, startTime: item.startTime, status: item.status,
         allocatedResources: await getAllocationsForAppointment(tx, item.id),
       })));
+       await enqueueSeriesConfirmationsInTx(tx, {
+         appointments: created, contact, salon: access.salon,
+       });
       return { status: 201, body: { appointments } };
     });
   } catch (error) {
@@ -11015,29 +10975,6 @@ router.post("/employee/appointments", admitBookingRequest, async (req, res): Pro
       return;
     }
     throw error;
-  }
-  if (!command.replayed) {
-    const ids = (command.body as { appointments: Array<{ id: string }> }).appointments.map((item) => item.id);
-    const created = await db.select().from(appointmentsTable).where(inArray(appointmentsTable.id, ids));
-    const [contact] = created[0]?.salonCustomerId
-      ? await db.select().from(salonCustomersTable).where(eq(salonCustomersTable.id, created[0].salonCustomerId)).limit(1)
-      : [];
-    if (contact) for (const appointment of created) {
-      await sendSms({
-        eventKey: `appointment-confirmation:${appointment.id}`, salonId: access.salon.id, appointmentId: appointment.id,
-        type: "appointment_confirmation", phone: contact.phone, smsOptOut: contact.smsOptOut,
-        text: `LUMERA: termin u salonu ${access.salon.name} je zakazan za ${appointment.date} u ${appointment.startTime}.`,
-      });
-      if (contact.email) {
-        await sendTransactionalEmail({
-          eventKey: `appointment-confirmation:${appointment.id}:email`,
-          emailType: "appointment_confirmation",
-          to: { email: contact.email, name: `${contact.firstName} ${contact.lastName}`.trim() || "LUMERA klijent" },
-          subject: "LUMERA — potvrda termina",
-          htmlContent: lumeraEmailHtml("Termin je zakazan", `<p>Vaš termin u salonu <b>${emailSafe(access.salon.name)}</b> je zakazan za <b>${appointment.date} u ${appointment.startTime}</b>.</p>`),
-        });
-      }
-    }
   }
   sendBookingCommandResult(res, command);
 });

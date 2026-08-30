@@ -37,7 +37,7 @@ import {
 } from "./marketplace";
 import { getCurrentUser } from "../lib/auth";
 import { lockAppointmentResources } from "../lib/appointment-locks";
-import { sendBookingGroupConfirmation } from "../lib/appointment-customer-events";
+import { enqueueBookingGroupConfirmationInTx } from "../lib/appointment-customer-events";
 import { bookingIdempotencyKey, executeBookingCommand, sendBookingCommandResult } from "../lib/booking-command";
 
 const router: IRouter = Router();
@@ -452,11 +452,11 @@ router.post("/widget/salons/:slug/booking-groups", admitBookingRequest, async (r
           status: appointment.status, notes: appointment.notes, allocatedResources: [],
         })),
       });
+       await enqueueBookingGroupConfirmationInTx(tx, group!.id);
       return { status: 201, body: response };
     });
     if (!command.replayed && command.status === 201) {
       await publishSalonNotificationUpdate(salon.id);
-      await sendBookingGroupConfirmation((command.body as { id: string }).id);
     }
     sendBookingCommandResult(res, command);
   } catch (error) {

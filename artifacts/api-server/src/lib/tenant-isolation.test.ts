@@ -87,6 +87,7 @@ async function mutate(
     method,
     headers: {
       "content-type": "application/json",
+      "idempotency-key": randomUUID(),
       cookie: `${sessionCookieName}=${session}`,
     },
     body: JSON.stringify(body),

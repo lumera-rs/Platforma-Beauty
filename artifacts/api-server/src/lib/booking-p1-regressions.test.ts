@@ -23,12 +23,14 @@ import {
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
+import { ensureBookingCommandSchema } from "./booking-command-schema";
 
 async function post(baseUrl: string, path: string, session: string, body: unknown) {
   const response = await fetch(`${baseUrl}/api${path}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
+      "idempotency-key": randomUUID(),
       cookie: `${sessionCookieName}=${session}`,
     },
     body: JSON.stringify(body),
@@ -49,6 +51,7 @@ async function patch(baseUrl: string, path: string, session: string, body: unkno
 }
 
 async function run(): Promise<void> {
+  await ensureBookingCommandSchema();
   const suffix = randomUUID();
   const passwordHash = await hashPassword("test-password");
   const [owner, employeeUser, customerUser] = await db.insert(usersTable).values([

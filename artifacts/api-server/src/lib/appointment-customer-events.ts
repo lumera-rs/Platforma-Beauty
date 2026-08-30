@@ -22,10 +22,10 @@ import {
   servicesTable,
   usersTable,
 } from "@workspace/db";
-import { lumeraEmailHtml, sendTransactionalEmail } from "./brevo";
+import { enqueueTransactionalEmail, lumeraEmailHtml, sendTransactionalEmail } from "./brevo";
 import { notifyCustomer } from "./customer-notifications";
 import { enqueueSystemPushDeliveries } from "./web-push";
-import { sendSms } from "./sms";
+import { enqueueSms, sendSms } from "./sms";
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 export type BookingGroupScheduleItem = {
@@ -138,6 +138,88 @@ export async function sendBookingGroupConfirmation(bookingGroupId: string) {
     });
   }
   return { email: Boolean(email), sms: Boolean(phone && !contact?.smsOptOut) };
+}
+
+/**
+ * Persists the complete group-confirmation outbox in the booking transaction.
+ * Delivery remains the responsibility of the email/SMS workers after commit.
+ */
+export async function enqueueBookingGroupConfirmationInTx(tx: Transaction, bookingGroupId: string) {
+  const rows = await tx.select({
+    appointment: appointmentsTable,
+    serviceName: servicesTable.name,
+    employeeName: employeesTable.name,
+  }).from(appointmentsTable)
+    .innerJoin(servicesTable, eq(servicesTable.id, appointmentsTable.serviceId))
+    .innerJoin(employeesTable, eq(employeesTable.id, appointmentsTable.employeeId))
+    .where(eq(appointmentsTable.bookingGroupId, bookingGroupId))
+    .orderBy(asc(appointmentsTable.date), asc(appointmentsTable.startTime), asc(appointmentsTable.id));
+  if (!rows.length) return;
+  const items = rows.map((row) => row.appointment);
+  const schedule = bookingGroupScheduleDetails(rows.map((row) => ({
+    id: row.appointment.id, serviceName: row.serviceName, employeeName: row.employeeName,
+    date: row.appointment.date, startTime: row.appointment.startTime, endTime: row.appointment.endTime,
+  })));
+  const [salon] = await tx.select().from(salonsTable).where(eq(salonsTable.id, items[0]!.salonId)).limit(1);
+  if (!salon) return;
+  const first = items[0]!;
+  const [contact] = first.salonCustomerId
+    ? await tx.select().from(salonCustomersTable).where(eq(salonCustomersTable.id, first.salonCustomerId)).limit(1)
+    : [];
+  const userId = first.customerId ?? contact?.userId ?? null;
+  const [rawUser] = userId ? await tx.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1) : [];
+  const user = rawUser?.active ? rawUser : undefined;
+  await notifyCustomer(tx, {
+    userId: user?.id, eventKey: `booking-group:${bookingGroupId}:created`, category: "booking",
+    title: "Termini su zakazani",
+    body: `Zakazano je ${items.length} tretmana u salonu ${salon.name}:\n${schedule.textLines.join("\n")}`,
+    deepLink: "/moji-termini",
+    metadata: { bookingGroupId, appointmentIds: items.map((item) => item.id), schedule: schedule.ordered },
+  });
+  const email = user?.email ?? contact?.email ?? null;
+  if (email) await enqueueTransactionalEmail(tx, {
+    eventKey: `booking-group:${bookingGroupId}:confirmation:email`, emailType: "appointment_confirmation",
+    salonId: salon.id, appointmentId: first.id, to: { email, name: user?.firstName ?? contact?.firstName },
+    subject: "LUMERA — potvrda grupne rezervacije",
+    htmlContent: lumeraEmailHtml("Rezervacija je primljena", `<p>Rezervisali ste ${items.length} tretmana u salonu <strong>${escapeHtml(salon.name)}</strong>.</p>${schedule.htmlList}`),
+    metadata: { bookingGroupId, appointmentIds: items.map((item) => item.id), schedule: schedule.ordered },
+  });
+  const phone = user ? await verifiedPhoneInTx(tx, user) : null;
+  if (phone) await enqueueSms(tx, {
+    eventKey: `booking-group:${bookingGroupId}:confirmation:sms`, salonId: salon.id, appointmentId: first.id,
+    type: "appointment_confirmation", phone, smsOptOut: contact?.smsOptOut,
+    text: `LUMERA: primljena je rezervacija ${items.length} tretmana u salonu ${salon.name}. Prvi termin je ${first.date} u ${first.startTime}.`,
+  });
+}
+
+async function verifiedPhoneInTx(tx: Transaction, user: typeof usersTable.$inferSelect) {
+  if (!user.phoneNormalized) return null;
+  const [proof] = await tx.select({ id: phoneVerificationProofsTable.id }).from(phoneVerificationProofsTable)
+    .where(and(eq(phoneVerificationProofsTable.userId, user.id),
+      eq(phoneVerificationProofsTable.phoneNormalized, user.phoneNormalized),
+      isNull(phoneVerificationProofsTable.revokedAt))).limit(1);
+  return proof ? user.phoneNormalized : null;
+}
+
+export async function enqueueSeriesConfirmationsInTx(tx: Transaction, input: {
+  appointments: (typeof appointmentsTable.$inferSelect)[];
+  contact: typeof salonCustomersTable.$inferSelect;
+  salon: typeof salonsTable.$inferSelect;
+}) {
+  for (const appointment of input.appointments) {
+    await enqueueSms(tx, {
+      eventKey: `appointment-confirmation:${appointment.id}`, salonId: input.salon.id, appointmentId: appointment.id,
+      type: "appointment_confirmation", phone: input.contact.phone, smsOptOut: input.contact.smsOptOut,
+      text: `LUMERA: termin u salonu ${input.salon.name} je zakazan za ${appointment.date} u ${appointment.startTime}.`,
+    });
+    if (input.contact.email) await enqueueTransactionalEmail(tx, {
+      eventKey: `appointment-confirmation:${appointment.id}:email`, emailType: "appointment_confirmation",
+      salonId: input.salon.id, appointmentId: appointment.id,
+      to: { email: input.contact.email, name: `${input.contact.firstName} ${input.contact.lastName}`.trim() || "LUMERA klijent" },
+      subject: "LUMERA — potvrda termina",
+      htmlContent: lumeraEmailHtml("Termin je zakazan", `<p>Vaš termin u salonu <b>${escapeHtml(input.salon.name)}</b> je zakazan za <b>${appointment.date} u ${appointment.startTime}</b>.</p>`),
+    });
+  }
 }
 
 /** Creates the invitation atomically with appointment completion. */

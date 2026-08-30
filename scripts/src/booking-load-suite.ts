@@ -82,12 +82,25 @@ async function fixture(): Promise<Fixture> {
 }
 type HttpLoadSample = LoadSample & { body?: unknown; error?: string; server: number };
 
-async function hit(request: Request, index: number): Promise<HttpLoadSample> {
+async function hit(request: Request, index: number, scenarioName: string): Promise<HttpLoadSample> {
   const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
   const started = performance.now();
   const server = roundRobinServerIndex(index, urls.length);
+  const commandKey = createHash("sha256")
+    .update(`${marker}\0${scenarioName}\0${index}`)
+    .digest("hex");
   try {
-    const response = await fetch(`${urls[server]}${request.path}`, { method: request.method, headers: { "content-type": "application/json", cookie: `${sessionCookieName}=${request.cookie}`, connection: "keep-alive" }, body: JSON.stringify(request.body), signal: controller.signal });
+    const response = await fetch(`${urls[server]}${request.path}`, {
+      method: request.method,
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": commandKey,
+        cookie: `${sessionCookieName}=${request.cookie}`,
+        connection: "keep-alive",
+      },
+      body: JSON.stringify(request.body),
+      signal: controller.signal,
+    });
     const body = await response.json().catch(() => undefined);
     return { status: response.status, code: (body as { code?: string } | undefined)?.code, body, milliseconds: performance.now() - started, server };
   } catch (error) {
@@ -112,7 +125,7 @@ async function scenario(name: string, requests: Request[]) {
     }
   })();
   let release!: () => void; const gate = new Promise<void>((resolve) => { release = resolve; });
-  const workers = requests.map(async (request, index) => { await gate; return hit(request, index); });
+  const workers = requests.map(async (request, index) => { await gate; return hit(request, index, name); });
   const started = performance.now(); release(); const results = await Promise.all(workers);
   sampling = false;
   await sampler;

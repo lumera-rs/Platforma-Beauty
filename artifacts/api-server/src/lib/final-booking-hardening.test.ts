@@ -6,8 +6,11 @@ import { and, count, eq } from "drizzle-orm";
 import {
   appointmentStatusHistoryTable,
   appointmentsTable,
+  bookingCommandReceiptsTable,
   bookingGroupsTable,
+  customerNotificationsTable,
   db,
+  emailDeliveriesTable,
   employeeLocationAssignmentsTable,
   employeeServicesTable,
   employeesTable,
@@ -261,6 +264,22 @@ async function run(): Promise<void> {
       id: string;
       appointments: Array<{ id: string }>;
     };
+    const groupReplayKey = `group-retry-${suffix}`;
+    const [groupReceipt] = await db.select({ id: bookingCommandReceiptsTable.id }).from(bookingCommandReceiptsTable)
+      .where(and(eq(bookingCommandReceiptsTable.salonId, salonA!.id),
+        eq(bookingCommandReceiptsTable.actorId, customerA!.id),
+        eq(bookingCommandReceiptsTable.idempotencyKey, groupReplayKey))).limit(1);
+    const [groupConfirmation] = await db.select({ value: count() }).from(emailDeliveriesTable).where(eq(
+      emailDeliveriesTable.eventKey, `booking-group:${createdGroup.id}:confirmation:email`,
+    ));
+    const [groupNotification] = await db.select({ value: count() }).from(customerNotificationsTable).where(eq(
+      customerNotificationsTable.eventKey, `booking-group:${createdGroup.id}:created`,
+    ));
+    assert.ok(groupReceipt, "a committed grouped-booking receipt must exist");
+    assert.equal(groupConfirmation!.value, 1,
+      "a committed grouped-booking receipt must atomically include its deduplicated email outbox row");
+    assert.equal(groupNotification!.value, 1,
+      "a committed grouped-booking receipt must atomically include its customer notification row");
     assert.equal((await request(baseUrl, customerASession, `/booking-groups/${createdGroup.id}/reschedule`, "PATCH", {
       treatments: [{
         appointmentId: createdGroup.appointments[0]!.id,

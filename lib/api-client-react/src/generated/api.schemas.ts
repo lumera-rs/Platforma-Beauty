@@ -2581,6 +2581,67 @@ export type EmployeeAppointmentSeriesInput = AppointmentSeriesPreviewInput & {
   guest?: EmployeeAppointmentSeriesInputGuest;
 };
 
+export type EmployeeAppointmentsInputGuest = {
+  /** @minLength 1 */
+  firstName: string;
+  lastName?: string;
+  /** @minLength 5 */
+  phone: string;
+  email?: string;
+};
+
+/**
+ * Supply exactly one of salonCustomerId or guest.
+ */
+export interface EmployeeAppointmentsInput {
+  serviceId: string;
+  salonCustomerId?: string;
+  guest?: EmployeeAppointmentsInputGuest;
+  /**
+     * @minItems 1
+     * @maxItems 12
+     */
+  slots: AppointmentSlot[];
+}
+
+export type EmployeeAppointmentResultItemStatus = typeof EmployeeAppointmentResultItemStatus[keyof typeof EmployeeAppointmentResultItemStatus];
+
+
+export const EmployeeAppointmentResultItemStatus = {
+  pending: 'pending',
+  confirmed: 'confirmed',
+  completed: 'completed',
+  cancelled: 'cancelled',
+  'no-show': 'no-show',
+} as const;
+
+export type EmployeeAppointmentResultItemAllocatedResourcesItem = { [key: string]: unknown };
+
+export interface EmployeeAppointmentResultItem {
+  id: string;
+  date: string;
+  /** @pattern ^[0-2][0-9]:[0-5][0-9]$ */
+  startTime: string;
+  status: EmployeeAppointmentResultItemStatus;
+  allocatedResources: EmployeeAppointmentResultItemAllocatedResourcesItem[];
+}
+
+export interface EmployeeAppointmentsResult {
+  appointments: EmployeeAppointmentResultItem[];
+}
+
+export type IdempotencyMismatchErrorCode = typeof IdempotencyMismatchErrorCode[keyof typeof IdempotencyMismatchErrorCode];
+
+
+export const IdempotencyMismatchErrorCode = {
+  IDEMPOTENCY_KEY_REUSED: 'IDEMPOTENCY_KEY_REUSED',
+} as const;
+
+export interface IdempotencyMismatchError {
+  code: IdempotencyMismatchErrorCode;
+  error: string;
+}
+
 export interface AppointmentSeriesResult {
   id: string;
   totalAppointments: number;

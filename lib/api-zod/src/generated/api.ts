@@ -4343,6 +4343,54 @@ export const CreateEmployeeAppointmentSeriesResponse = zod.object({
 
 
 /**
+ * @summary Atomically create one or more appointments assigned to the signed-in employee
+ */
+export const createEmployeeAppointmentsHeaderIdempotencyKeyMax = 200;
+
+
+
+export const CreateEmployeeAppointmentsHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(createEmployeeAppointmentsHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+})
+
+
+export const createEmployeeAppointmentsBodyGuestPhoneMin = 5;
+
+export const createEmployeeAppointmentsBodySlotsItemStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
+export const createEmployeeAppointmentsBodySlotsMax = 12;
+
+
+
+export const CreateEmployeeAppointmentsBody = zod.object({
+  "serviceId": zod.string(),
+  "salonCustomerId": zod.string().optional(),
+  "guest": zod.object({
+  "firstName": zod.string().min(1),
+  "lastName": zod.string().optional(),
+  "phone": zod.string().min(createEmployeeAppointmentsBodyGuestPhoneMin),
+  "email": zod.string().optional()
+}).optional(),
+  "slots": zod.array(zod.object({
+  "date": zod.coerce.date(),
+  "startTime": zod.string().regex(createEmployeeAppointmentsBodySlotsItemStartTimeRegExp)
+})).min(1).max(createEmployeeAppointmentsBodySlotsMax)
+}).describe('Supply exactly one of salonCustomerId or guest.')
+
+export const createEmployeeAppointmentsResponseAppointmentsItemStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
+
+
+export const CreateEmployeeAppointmentsResponse = zod.object({
+  "appointments": zod.array(zod.object({
+  "id": zod.string(),
+  "date": zod.coerce.date(),
+  "startTime": zod.string().regex(createEmployeeAppointmentsResponseAppointmentsItemStartTimeRegExp),
+  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
+  "allocatedResources": zod.array(zod.record(zod.string(), zod.unknown()))
+}))
+})
+
+
+/**
  * @summary Update a salon CRM customer
  */
 export const UpdateSalonCustomerParams = zod.object({
