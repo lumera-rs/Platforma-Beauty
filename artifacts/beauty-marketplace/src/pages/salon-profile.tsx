@@ -321,7 +321,9 @@ export default function SalonProfile() {
         ? "any"
         : null;
     setSelectedService(serviceId);
-    setBookingCart(current => current.length < 5 ? [...current, { serviceId }] : current);
+    setBookingCart(current => matchingDraft && current.some((item) => item.serviceId === serviceId)
+      ? current
+      : current.length < 5 ? [...current, { serviceId }] : current);
     setSelectedEmployee(validEmployeeId);
     setEmployeeSelection(restoredEmployeeSelection);
     setSelectedDate(isValid(dateValue) ? dateValue : new Date());
@@ -919,6 +921,8 @@ export default function SalonProfile() {
                       return (
                         <div
                           key={service.id}
+                          data-testid={`salon-service-${service.id}`}
+                          aria-label={`Dodaj uslugu ${service.name} u korpu`}
                           role={user?.role === "JOBSEEKER" ? undefined : "button"}
                           tabIndex={user?.role === "JOBSEEKER" ? undefined : 0}
                           aria-pressed={user?.role === "JOBSEEKER" ? undefined : selectedService === service.id}

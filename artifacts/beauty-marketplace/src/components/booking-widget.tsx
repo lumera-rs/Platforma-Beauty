@@ -19,6 +19,7 @@ import {
   type Appointment,
   useGetGroupedBookingAvailability,
   useCreateBookingGroup,
+  getApiErrorDetails,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -136,6 +137,15 @@ export function BookingWidget(props: BookingWidgetProps) {
         trackEvent("grouped_booking_completed", analyticsDimensions());
       },
       onError: (err: any) => {
+        const { status } = getApiErrorDetails(err);
+        if (status === 409) {
+          setSelectedCandidate(null);
+          refetchAvailability();
+          toast.error("Termin više nije slobodan", {
+            description: "Osvežili smo dostupne rasporede. Izaberite drugi.",
+          });
+          return;
+        }
         toast.error("Greška pri zakazivanju", { description: "Pokušajte ponovo." });
       }
     }
@@ -187,7 +197,7 @@ export function BookingWidget(props: BookingWidgetProps) {
   const currentStepIndex = STEPS.findIndex(s => s.id === step);
 
   const ProgressIndicator = () => (
-    <div className="flex items-start justify-between mb-8">
+    <div className="flex items-start justify-between mb-8" data-testid="booking-progress">
       {STEPS.map((s, idx) => {
         const isCompleted = idx < currentStepIndex;
         const isCurrent = idx === currentStepIndex;
@@ -195,7 +205,7 @@ export function BookingWidget(props: BookingWidgetProps) {
         return (
           <div key={s.id} className={`flex ${isLast ? 'flex-none' : 'flex-1'} items-center`}>
             <div className="flex flex-col items-center gap-2 relative">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-300 z-10 ${
+              <div aria-current={isCurrent ? "step" : undefined} aria-label={`Korak ${s.num}: ${s.label}`} className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-300 z-10 ${
                 isCurrent ? "bg-primary text-primary-foreground shadow-md ring-4 ring-primary/10" :
                 isCompleted ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground border-2 border-transparent"
               }`}>
@@ -262,7 +272,7 @@ export function BookingWidget(props: BookingWidgetProps) {
 
           {step === "CART" && (
             <div className="animate-in fade-in slide-in-from-right-4 duration-400">
-              {cart.length > 0 && <ContextCard />}
+              {cart.length > 0 && ContextCard()}
               <h2 className="text-xl font-serif font-bold mb-4 text-foreground">Vaša korpa</h2>
               {cart.length === 0 ? (
                 <div className="text-center p-8 bg-muted/20 rounded-2xl border border-dashed my-6">
@@ -274,14 +284,14 @@ export function BookingWidget(props: BookingWidgetProps) {
                   {cart.map((item, index) => {
                     const s = props.salon.services.find(x => x.id === item.serviceId);
                     return (
-                      <div key={index} className="flex justify-between items-center p-4 rounded-2xl border bg-card shadow-sm hover:shadow-md transition-shadow">
+                      <div key={index} data-testid={`booking-cart-item-${index}`} className="flex justify-between items-center p-4 rounded-2xl border bg-card shadow-sm hover:shadow-md transition-shadow">
                         <div>
                           <p className="font-serif font-bold text-sm text-foreground">{s?.name}</p>
                           <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1"><Clock className="w-3 h-3"/> {s?.durationMinutes} min</p>
                         </div>
                         <div className="flex items-center gap-4">
                           <span className="font-bold text-sm text-primary">{s?.promoPrice ?? s?.price} RSD</span>
-                          <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive rounded-full" onClick={() => removeFromCart(index)}>
+                          <Button aria-label={`Ukloni ${s?.name ?? "uslugu"} iz korpe`} size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive rounded-full" onClick={() => removeFromCart(index)}>
                             <Trash2 className="w-4 h-4" />
                           </Button>
                         </div>
@@ -310,7 +320,7 @@ export function BookingWidget(props: BookingWidgetProps) {
 
           {step === "EMPLOYEE" && (
             <div className="animate-in fade-in slide-in-from-right-4 duration-400">
-              <ContextCard />
+              {ContextCard()}
               <h2 className="text-xl font-serif font-bold mb-4 text-foreground">Izaberite radnika</h2>
 
               <div className="space-y-6 mb-6">
@@ -322,6 +332,9 @@ export function BookingWidget(props: BookingWidgetProps) {
                       <h4 className="font-serif font-bold text-base mb-3 text-foreground">{s?.name}</h4>
                       <div className="flex overflow-x-auto pb-2 -mx-4 px-4 custom-scrollbar gap-3 snap-x">
                         <button
+                          data-testid={`booking-employee-any-${index}`}
+                          aria-label={`${s?.name}: bilo koji zaposleni`}
+                          aria-pressed={!item.employeeId}
                           onClick={() => {
                             setCart(cart.map((cartItem, cartIndex) => (
                               cartIndex === index ? { ...cartItem, employeeId: null } : cartItem
@@ -338,6 +351,9 @@ export function BookingWidget(props: BookingWidgetProps) {
                         {eligibleStaff.map(emp => (
                           <button
                             key={emp.id}
+                            data-testid={`booking-employee-${index}-${emp.id}`}
+                            aria-label={`${s?.name}: ${emp.name}`}
+                            aria-pressed={item.employeeId === emp.id}
                             onClick={() => {
                                 setCart(cart.map((cartItem, cartIndex) => (
                                   cartIndex === index ? { ...cartItem, employeeId: emp.id } : cartItem
@@ -368,7 +384,7 @@ export function BookingWidget(props: BookingWidgetProps) {
 
           {step === "DATETIME" && (
             <div className="animate-in fade-in slide-in-from-right-4 duration-400">
-              <ContextCard />
+              {ContextCard()}
 
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-serif font-bold text-foreground">Datum i vreme</h2>
@@ -380,6 +396,7 @@ export function BookingWidget(props: BookingWidgetProps) {
                   <p className="text-xs text-muted-foreground mt-0.5">Dozvoli usluge različitim danima</p>
                 </div>
                 <Switch
+                  data-testid="booking-multiday-toggle"
                   id="allow-multiday"
                   checked={allowMultipleDays}
                   onCheckedChange={(checked) => {
@@ -445,7 +462,7 @@ export function BookingWidget(props: BookingWidgetProps) {
 
           {step === "SUCCESS" && (
             <div className="flex flex-col items-center justify-center text-center animate-in zoom-in-95 duration-500 py-12 flex-1">
-              {cart.length > 0 && <ContextCard />}
+              {cart.length > 0 && ContextCard()}
               <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-full bg-primary/10 text-primary">
                 <CheckCircle2 className="h-12 w-12" />
               </div>

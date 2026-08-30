@@ -1,68 +1,52 @@
 import { randomBytes, randomUUID, scrypt as scryptCallback } from "node:crypto";
 import { promisify } from "node:util";
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
 import { eq } from "drizzle-orm";
-import { db, employeeServicesTable, employeesTable, salonsTable, servicesTable, usersTable } from "@workspace/db";
+import {
+  db,
+  employeeLocationAssignmentsTable,
+  employeeServicesTable,
+  employeesTable,
+  salonsTable,
+  servicesTable,
+  usersTable,
+} from "@workspace/db";
 
 const scrypt = promisify(scryptCallback);
+const fixtureImage = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Crect width='64' height='64' fill='%23f1e9df'/%3E%3C/svg%3E";
 
-const customer = {
-  email: process.env.LUMERA_BOOKING_TEST_EMAIL ?? "kupac@lumera.local",
-  password: process.env.LUMERA_BOOKING_TEST_PASSWORD ?? "LumeraDemo2026!",
-};
-const salonOwner = {
-  email: process.env.LUMERA_OWNER_TEST_EMAIL ?? "salon@lumera.local",
-  password: process.env.LUMERA_OWNER_TEST_PASSWORD ?? "LumeraDemo2026!",
-};
-const salonPath = process.env.LUMERA_BOOKING_TEST_SALON_PATH ?? "/saloni/lotos-rituals";
+function futureDate(days: number) {
+  const date = new Date();
+  date.setHours(12, 0, 0, 0);
+  date.setDate(date.getDate() + days);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
 
-type PendingBookingFixture = {
+type BookingFixture = {
   customerEmail: string;
   customerPassword: string;
   customerId: string;
-  ownerEmail: string;
-  ownerPassword: string;
   ownerId: string;
   salonId: string;
   salonPath: string;
   salonName: string;
+  serviceIds: [string, string];
+  serviceNames: [string, string];
+  employeeIds: [string, string];
+  employeeNames: [string, string];
 };
 
-type PendingBookingFixtureOptions = {
-  instantBooking?: boolean;
-  homeServiceAvailable?: boolean;
+type Candidate = {
+  date: string;
+  startTime: string;
+  treatments: Array<{
+    serviceId: string;
+    employeeId: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+  }>;
 };
-
-function longAvailabilitySlots() {
-  return Array.from({ length: 84 }, (_, index) => {
-    const startMinutes = 9 * 60 + index * 5;
-    const endMinutes = startMinutes + 5;
-    const toTime = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
-
-    return {
-      start: toTime(startMinutes),
-      end: toTime(endMinutes),
-      employeeId: "browser-scroll-fixture-employee",
-      employeeName: "Browser Terapeut",
-    };
-  });
-}
-
-async function wheelToLowerContent(page: Page, scrollArea: Locator, minimumScrollTop: number) {
-  let previousScrollTop = -1;
-  let scrollTop = 0;
-  for (let attempt = 0; attempt < 24; attempt += 1) {
-    await scrollArea.hover();
-    await page.mouse.wheel(0, 600);
-    await page.waitForTimeout(20);
-    scrollTop = await scrollArea.evaluate((node) => node.scrollTop);
-    if (scrollTop === previousScrollTop) break;
-    previousScrollTop = scrollTop;
-  }
-
-  expect(scrollTop).toBeGreaterThan(minimumScrollTop);
-  return scrollTop;
-}
 
 async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
@@ -70,17 +54,12 @@ async function hashPassword(password: string): Promise<string> {
   return `${salt}:${derived.toString("hex")}`;
 }
 
-async function createPendingBookingFixture({
-  instantBooking = false,
-  homeServiceAvailable = false,
-}: PendingBookingFixtureOptions = {}): Promise<PendingBookingFixture> {
+async function createBookingFixture(): Promise<BookingFixture> {
   const suffix = randomUUID();
-  const customerEmail = `browser-pending-booking-customer-${suffix}@example.test`;
-  const customerPassword = "browser-pending-booking-customer-password";
-  const ownerEmail = `browser-pending-booking-owner-${suffix}@example.test`;
-  const ownerPassword = "browser-pending-booking-owner-password";
-  const customerPhone = `+38161${suffix.replaceAll("-", "").slice(0, 8)}`;
-  const salonName = `Browser salon bez instant potvrde ${suffix}`;
+  const customerEmail = `browser-grouped-customer-${suffix}@example.test`;
+  const customerPassword = "browser-grouped-customer-password";
+  const ownerEmail = `browser-grouped-owner-${suffix}@example.test`;
+  const phone = `+38161${suffix.replaceAll("-", "").slice(0, 8)}`;
   let customerId: string | undefined;
   let ownerId: string | undefined;
   let salonId: string | undefined;
@@ -90,80 +69,93 @@ async function createPendingBookingFixture({
       firstName: "Browser",
       lastName: "Vlasnik",
       email: ownerEmail,
-      passwordHash: await hashPassword(ownerPassword),
+      passwordHash: await hashPassword("browser-grouped-owner-password"),
       passwordSetAt: new Date(),
       role: "SALON_OWNER",
     }).returning();
-    if (!owner) throw new Error("Pending-booking browser fixture could not create its salon owner.");
+    if (!owner) throw new Error("Could not create booking owner fixture.");
     ownerId = owner.id;
 
-    const [customerUser] = await db.insert(usersTable).values({
+    const [customer] = await db.insert(usersTable).values({
       firstName: "Browser",
       lastName: "Kupac",
       email: customerEmail,
-      phone: customerPhone,
-      phoneNormalized: customerPhone,
+      phone,
+      phoneNormalized: phone,
       passwordHash: await hashPassword(customerPassword),
       passwordSetAt: new Date(),
       role: "CUSTOMER",
     }).returning();
-    if (!customerUser) throw new Error("Pending-booking browser fixture could not create its customer.");
-    customerId = customerUser.id;
+    if (!customer) throw new Error("Could not create booking customer fixture.");
+    customerId = customer.id;
 
+    const salonName = `Browser grupni salon ${suffix}`;
     const [salon] = await db.insert(salonsTable).values({
       ownerId: owner.id,
       name: salonName,
-      slug: `browser-pending-booking-${suffix}`,
+      slug: `browser-grouped-booking-${suffix}`,
       city: "Beograd",
       municipality: "Vračar",
-      address: "Test 83",
-      phone: "+381110000083",
-      email: `browser-pending-booking-salon-${suffix}@example.test`,
-      shortDescription: "Izolovan salon za proveru zahteva za termin.",
-      description: "Salon je napravljen samo za browser regresioni test zahteva za termin.",
-      imageUrl: "/test-browser-pending-booking.jpg",
+      address: "Test 95",
+      phone: "+381110000095",
+      email: `browser-grouped-salon-${suffix}@example.test`,
+      shortDescription: "Izolovan salon za grupni booking browser test.",
+      description: "Salon napravljen samo za proveru javnog grupnog booking toka.",
+      imageUrl: fixtureImage,
       active: true,
       isVerified: true,
-      instantBooking,
-      homeService: homeServiceAvailable,
+      instantBooking: true,
     }).returning();
-    if (!salon) throw new Error("Pending-booking browser fixture could not create its salon.");
+    if (!salon) throw new Error("Could not create booking salon fixture.");
     salonId = salon.id;
 
-    const [employee] = await db.insert(employeesTable).values({
+    const insertedEmployeeNames = ["Browser Ana", "Browser Mila"] as const;
+    const employees = await db.insert(employeesTable).values(insertedEmployeeNames.map((name) => ({
       salonId: salon.id,
-      name: "Browser Terapeut",
+      name,
       role: "Terapeut",
-      bio: "Zaposleni za browser proveru rezervacije.",
-      avatarUrl: "/test-browser-pending-booking.jpg",
-    }).returning();
-    if (!employee) throw new Error("Pending-booking browser fixture could not create its employee.");
+      bio: "Zaposleni za browser proveru grupne rezervacije.",
+      avatarUrl: fixtureImage,
+    }))).returning();
+    if (employees.length !== 2) throw new Error("Could not create booking employee fixtures.");
+    await db.insert(employeeLocationAssignmentsTable).values(employees.map((employee, index) => ({
+      employeeId: employee.id,
+      salonId: salon.id,
+      active: true,
+      isDefault: index === 0,
+    })));
 
-    const [service] = await db.insert(servicesTable).values({
+    const insertedServiceNames = ["Browser masaža", "Browser nega lica"] as const;
+    const services = await db.insert(servicesTable).values(insertedServiceNames.map((name, index) => ({
       salonId: salon.id,
       categoryName: "Test",
-      name: "Browser tretman sa potvrdom",
-      description: "Usluga za browser proveru zahteva koji salon mora da potvrdi.",
-      durationMinutes: 60,
-      price: 1000,
-      imageUrl: "/test-browser-pending-booking.jpg",
-      homeServiceAvailable,
-      homeServiceFee: homeServiceAvailable ? 300 : 0,
-    }).returning();
-    if (!service) throw new Error("Pending-booking browser fixture could not create its service.");
+      name,
+      description: "Usluga za browser proveru grupne rezervacije.",
+      durationMinutes: index === 0 ? 30 : 45,
+      price: index === 0 ? 1200 : 1800,
+      imageUrl: fixtureImage,
+    }))).returning();
+    if (services.length !== 2) throw new Error("Could not create booking service fixtures.");
 
-    await db.insert(employeeServicesTable).values({ employeeId: employee.id, serviceId: service.id });
+    await db.insert(employeeServicesTable).values([
+      { employeeId: employees[0]!.id, serviceId: services[0]!.id },
+      { employeeId: employees[0]!.id, serviceId: services[1]!.id },
+      { employeeId: employees[1]!.id, serviceId: services[0]!.id },
+      { employeeId: employees[1]!.id, serviceId: services[1]!.id },
+    ]);
 
     return {
       customerEmail,
       customerPassword,
-      customerId: customerUser.id,
-      ownerEmail,
-      ownerPassword,
+      customerId: customer.id,
       ownerId: owner.id,
       salonId: salon.id,
       salonPath: `/saloni/${salon.slug}`,
       salonName,
+      serviceIds: [services[0]!.id, services[1]!.id],
+      serviceNames: [services[0]!.name, services[1]!.name],
+      employeeIds: [employees[0]!.id, employees[1]!.id],
+      employeeNames: [employees[0]!.name, employees[1]!.name],
     };
   } catch (error) {
     if (salonId) await db.delete(salonsTable).where(eq(salonsTable.id, salonId));
@@ -173,540 +165,375 @@ async function createPendingBookingFixture({
   }
 }
 
-async function cleanUpPendingBookingFixture(fixture: PendingBookingFixture) {
+async function cleanUpFixture(fixture: BookingFixture) {
   await db.delete(salonsTable).where(eq(salonsTable.id, fixture.salonId));
   await db.delete(usersTable).where(eq(usersTable.id, fixture.customerId));
   await db.delete(usersTable).where(eq(usersTable.id, fixture.ownerId));
 }
 
-async function signInAsCustomer(page: Page) {
-  const response = await page.request.post("/api/auth/login", { data: customer });
-  expect(response, "The browser test account must be able to sign in.").toBeOK();
-}
-
-async function signInAsFixtureCustomer(page: Page, fixture: PendingBookingFixture) {
+async function signIn(page: Page, fixture: BookingFixture) {
   const response = await page.request.post("/api/auth/login", {
     data: { email: fixture.customerEmail, password: fixture.customerPassword },
   });
-  expect(response, "The pending-booking fixture customer must be able to sign in.").toBeOK();
+  expect(response).toBeOK();
 }
 
-async function signInAsFixtureOwner(page: Page, fixture: PendingBookingFixture) {
-  const response = await page.request.post("/api/auth/login", {
-    data: { email: fixture.ownerEmail, password: fixture.ownerPassword },
+function candidatesFor(fixture: BookingFixture): Candidate[] {
+  const sameDay = futureDate(2);
+  const firstMultiDay = futureDate(3);
+  const secondMultiDay = futureDate(4);
+  return [
+    {
+      date: sameDay,
+      startTime: "09:00",
+      treatments: [
+        { serviceId: fixture.serviceIds[0], employeeId: fixture.employeeIds[0], date: sameDay, startTime: "09:00", endTime: "09:30" },
+        { serviceId: fixture.serviceIds[1], employeeId: fixture.employeeIds[1], date: sameDay, startTime: "09:30", endTime: "10:15" },
+      ],
+    },
+    {
+      date: firstMultiDay,
+      startTime: "14:00",
+      treatments: [
+        { serviceId: fixture.serviceIds[0], employeeId: fixture.employeeIds[0], date: firstMultiDay, startTime: "14:00", endTime: "14:30" },
+        { serviceId: fixture.serviceIds[1], employeeId: fixture.employeeIds[1], date: secondMultiDay, startTime: "10:00", endTime: "10:45" },
+      ],
+    },
+  ];
+}
+
+async function mockAvailability(route: Route, fixture: BookingFixture) {
+  const body = route.request().postDataJSON() as { resultMode: "list" | "calendar"; allowMultipleDays: boolean };
+  const candidates = candidatesFor(fixture).filter((_, index) => body.allowMultipleDays || index === 0);
+  await route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify(body.resultMode === "calendar"
+      ? {
+          candidates: [],
+          calendarDays: candidates.map((candidate) => ({ date: candidate.date, candidates: [candidate] })),
+        }
+      : { candidates, calendarDays: [] }),
   });
-  expect(response, "The pending-booking fixture owner must be able to sign in.").toBeOK();
 }
 
-async function signInAsSalonOwner(page: Page) {
-  const response = await page.request.post("/api/auth/login", { data: salonOwner });
-  expect(response, "The non-customer browser test account must be able to sign in.").toBeOK();
-}
-
-async function cleanUpAppointment(page: Page, appointmentId: string) {
-  const cancellation = await page.request.post(`/api/appointments/${appointmentId}/cancel`);
-  expect(cancellation, "The booking fixture must be cancellable during cleanup.").toBeOK();
-
-  const dashboard = await page.request.get("/api/customer/dashboard");
-  expect(dashboard, "The customer dashboard must be available after cleanup.").toBeOK();
-  const data = await dashboard.json() as { upcoming: Array<{ id: string }> };
-  expect(data.upcoming.some((appointment) => appointment.id === appointmentId)).toBeFalsy();
-}
-
-async function reachBookingConfirmation(page: Page, widget: Locator) {
-  const service = widget.locator('[role="button"]:has(h5)').first();
-  await expect(service).toBeVisible();
-  const anyEmployeeAvailabilityRequest = page.waitForRequest((request) => {
-    const url = new URL(request.url());
-    return request.method() === "GET"
-      && url.pathname.includes("/availability")
-      && !url.searchParams.has("employeeId");
-  });
-  const serviceName = (await service.locator("h5").innerText()).trim();
-  await service.click();
-
-  await expect(widget.getByRole("button", { name: "Korak 2: Zaposleni" })).toHaveAttribute("aria-current", "step");
-  await widget.getByRole("button", { name: /Bilo koji zaposleni/ }).click();
-  await anyEmployeeAvailabilityRequest;
-
-  await expect(widget.getByRole("button", { name: "Korak 3: Termin" })).toHaveAttribute("aria-current", "step");
-  const firstSlot = widget.getByRole("button", { name: /Izaberi termin u/ }).first();
-  await expect(firstSlot).toBeVisible();
-  await firstSlot.click();
-
-  await expect(widget.getByRole("button", { name: "Korak 4: Potvrda" })).toHaveAttribute("aria-current", "step");
-  await expect(widget.getByText("Pregled rezervacije")).toBeVisible();
-  await expect(widget.getByText("Bilo koji zaposleni", { exact: true }).first()).toBeVisible();
-  await expect(widget.getByText("Sistem bira slobodnog člana tima.")).toBeVisible();
-
-  return serviceName;
-}
-
-async function completeBooking(page: Page, widget: Locator, expectedStatus: "confirmed" | "pending" = "confirmed") {
-  const serviceName = await reachBookingConfirmation(page, widget);
-  const bookingRequestPromise = page.waitForRequest((request) =>
-    request.method() === "POST"
-    && new URL(request.url()).pathname === "/api/appointments",
-  );
-  const responsePromise = page.waitForResponse((response) =>
-    response.request().method() === "POST"
-    && new URL(response.url()).pathname === "/api/appointments",
-  );
-  await widget.getByRole("button", { name: "Potvrdi rezervaciju" }).click();
-  const bookingRequest = await bookingRequestPromise;
-  expect(bookingRequest.postDataJSON()).not.toHaveProperty("employeeId");
-  const response = await responsePromise;
-  expect(response.status(), "Booking confirmation must create an appointment.").toBe(201);
-  const appointment = await response.json() as { id: string; status: "confirmed" | "pending" };
-  expect(appointment.id).toBeTruthy();
-  expect(appointment.status, "The appointment status must match the salon's confirmation policy.").toBe(expectedStatus);
-
-  const successCopy = expectedStatus === "confirmed"
-    ? { heading: "Termin potvrđen", detail: "Vidimo se u salonu!" }
-    : { heading: "Zahtev za termin je poslat", detail: "Salon će uskoro potvrditi vaš termin." };
-  await expect(widget.getByRole("heading", { name: successCopy.heading })).toBeVisible();
-  await expect(widget.getByText(successCopy.detail)).toBeVisible();
-  if (expectedStatus === "pending") {
-    await expect(widget.getByText("Termin potvrđen", { exact: true })).toHaveCount(0);
+async function addServices(page: Page, fixture: BookingFixture, count = 2) {
+  for (const serviceId of fixture.serviceIds.slice(0, count)) {
+    await page.getByTestId(`salon-service-${serviceId}`).click();
   }
-  await expect(widget.getByText(serviceName, { exact: true })).toBeVisible();
-
-  return appointment.id;
 }
 
-async function completeHomeVisitBooking(page: Page, widget: Locator) {
-  const serviceName = await reachBookingConfirmation(page, widget);
-  await widget.getByRole("button", { name: "Potvrdi rezervaciju" }).click();
-
-  const locationDialog = page.getByRole("dialog", { name: "Gde želite tretman?" });
-  await expect(locationDialog).toBeVisible();
-  await locationDialog.getByRole("button", { name: "Na mojoj adresi" }).click();
-  await locationDialog.locator("#home-address").fill("Test adresa 84");
-  await locationDialog.locator("#home-city").fill("Beograd");
-
-  const bookingRequestPromise = page.waitForRequest((request) =>
-    request.method() === "POST"
-    && new URL(request.url()).pathname === "/api/appointments",
-  );
-  const responsePromise = page.waitForResponse((response) =>
-    response.request().method() === "POST"
-    && new URL(response.url()).pathname === "/api/appointments",
-  );
-  await locationDialog.getByRole("button", { name: "Pošalji zahtev za dolazak" }).click();
-
-  const bookingRequest = await bookingRequestPromise;
-  expect(bookingRequest.postDataJSON()).toMatchObject({
-    treatmentLocation: "home",
-    treatmentAddress: { line1: "Test adresa 84", city: "Beograd" },
-  });
-  expect(bookingRequest.postDataJSON()).not.toHaveProperty("employeeId");
-
-  const response = await responsePromise;
-  expect(response.status(), "A home-visit request must create an appointment.").toBe(201);
-  const appointment = await response.json() as { id: string; status: "confirmed" | "pending" };
-  expect(appointment.id).toBeTruthy();
-  expect(appointment.status, "Home-visit bookings must remain pending even for instant-booking salons.").toBe("pending");
-
-  await expect(widget.getByRole("heading", { name: "Zahtev za termin je poslat" })).toBeVisible();
-  await expect(widget.getByText("Salon će uskoro potvrditi vaš termin.")).toBeVisible();
-  await expect(widget.getByText("Termin potvrđen", { exact: true })).toHaveCount(0);
-  await expect(widget.getByText(serviceName, { exact: true })).toBeVisible();
-
-  return appointment.id;
+async function openDesktopBooking(page: Page, fixture: BookingFixture) {
+  await page.goto(fixture.salonPath);
+  await addServices(page, fixture);
+  const widget = page.locator("#booking-widget");
+  await expect(widget.getByRole("heading", { name: "Vaša korpa" })).toBeVisible();
+  return widget;
 }
 
-async function reachBookingConfirmationAsNonCustomer(page: Page, widget: Locator) {
-  const service = widget.locator('[role="button"]:has(h5)').first();
-  await expect(service).toBeVisible();
-  await service.click();
-
-  await expect(widget.getByRole("button", { name: "Korak 2: Zaposleni" })).toHaveAttribute("aria-current", "step");
-  await widget.getByRole("button", { name: /Bilo koji zaposleni/ }).click();
-
-  await expect(widget.getByRole("button", { name: "Korak 3: Termin" })).toHaveAttribute("aria-current", "step");
-  const firstSlot = widget.getByRole("button", { name: /Izaberi termin u/ }).first();
-  await expect(firstSlot).toBeVisible();
-  await firstSlot.click();
-
-  await expect(widget.getByRole("button", { name: "Korak 4: Potvrda" })).toHaveAttribute("aria-current", "step");
-  await expect(widget.getByText("Pregled rezervacije")).toBeVisible();
+async function reachAvailability(widget: Locator, fixture: BookingFixture) {
+  await expect(widget.getByTestId("booking-cart-item-0")).toContainText(fixture.serviceNames[0]);
+  await expect(widget.getByTestId("booking-cart-item-1")).toContainText(fixture.serviceNames[1]);
+  await widget.getByRole("button", { name: /Nastavi na izbor zaposlenog/ }).click();
+  await expect(widget.getByLabel(`${fixture.serviceNames[0]}: bilo koji zaposleni`)).toHaveAttribute("aria-pressed", "true");
+  await widget.getByLabel(`${fixture.serviceNames[1]}: ${fixture.employeeNames[1]}`).click();
+  await expect(widget.getByLabel(`${fixture.serviceNames[1]}: ${fixture.employeeNames[1]}`)).toHaveAttribute("aria-pressed", "true");
+  await widget.getByRole("button", { name: /Izaberi vreme/ }).click();
+  await expect(widget.getByLabel("Korak 3: TERMIN")).toHaveAttribute("aria-current", "step");
 }
 
-test("directory salon links open the selected public profile on desktop and mobile", async ({ page }) => {
-  const fixture = await createPendingBookingFixture({ instantBooking: true });
-
-  try {
-    for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
-      await page.setViewportSize(viewport);
-      await page.goto("/saloni?sort=newest");
-
-      const profileLink = page.locator(`a[href="${fixture.salonPath}"]`);
-      await expect(profileLink).toBeVisible();
-      await profileLink.click();
-
-      await expect(page).toHaveURL(fixture.salonPath);
-      await expect(page.locator("h1").filter({ hasText: fixture.salonName })).toBeVisible();
-      await expect(page.getByText("Salon nije pronađen.")).toHaveCount(0);
-    }
-  } finally {
-    await cleanUpPendingBookingFixture(fixture);
-  }
-});
-
-test("public salon profile distinguishes temporary API errors from a missing salon on desktop and mobile", async ({ page }) => {
-  const fixture = await createPendingBookingFixture({ instantBooking: true });
-  const salonSlug = fixture.salonPath.split("/").at(-1);
-  if (!salonSlug) throw new Error("The browser fixture did not create a salon slug.");
-  const salonApiPath = `/api/salons/${salonSlug}`;
-  let profileShouldFail = true;
-
-  try {
-    await page.route(`**${salonApiPath}`, async (route) => {
-      if (profileShouldFail) {
-        await route.fulfill({
-          status: 503,
-          contentType: "application/json",
-          body: JSON.stringify({ error: "Privremeni kvar API-ja." }),
-        });
-        return;
-      }
-      await route.continue();
-    });
-
-    for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
-      await page.setViewportSize(viewport);
-      profileShouldFail = true;
-      await page.goto(fixture.salonPath);
-
-      await expect(page.getByRole("heading", { name: "Profil salona trenutno nije dostupan" })).toBeVisible();
-      await expect(page.getByText("Salon nije pronađen.")).toHaveCount(0);
-
-      profileShouldFail = false;
-      await page.getByRole("button", { name: "Pokušaj ponovo" }).click();
-      await expect(page.locator("h1").filter({ hasText: fixture.salonName })).toBeVisible();
-    }
-
-    await page.unroute(`**${salonApiPath}`);
-    await page.route(`**${salonApiPath}`, async (route) => {
-      await route.fulfill({
-        status: 404,
-        contentType: "application/json",
-        body: JSON.stringify({ error: "Salon nije pronađen." }),
-      });
-    });
-
-    await page.goto(fixture.salonPath);
-    await expect(page.getByText("Salon nije pronađen.")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Profil salona trenutno nije dostupan" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Pokušaj ponovo" })).toHaveCount(0);
-  } finally {
-    await page.unroute(`**${salonApiPath}`);
-    await cleanUpPendingBookingFixture(fixture);
-  }
-});
-
-test("customer can book from the mobile sticky trigger and the drawer remains accessible", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  const fixture = await createPendingBookingFixture({ instantBooking: true });
-  let appointmentId: string | undefined;
-  try {
-    await signInAsFixtureCustomer(page, fixture);
-    await page.goto(fixture.salonPath);
-
-    const stickyTrigger = page.getByRole("button", { name: "Zakaži", exact: true });
-    await expect(stickyTrigger).toBeVisible();
-    await stickyTrigger.click();
-
-    const drawer = page.getByRole("dialog");
-    await expect(drawer).toHaveAccessibleName("Zakažite termin");
-    await expect(drawer).toHaveAccessibleDescription("Izaberite uslugu, zaposlenog i slobodan termin.");
-    await expect(drawer.getByRole("button", { name: "Korak 1: Usluga" })).toBeVisible();
-    await expect(drawer.getByRole("button", { name: "Korak 2: Zaposleni" })).toBeVisible();
-    await expect(drawer.getByRole("button", { name: "Korak 3: Termin" })).toBeVisible();
-    await expect(drawer.getByRole("button", { name: "Korak 4: Potvrda" })).toBeVisible();
-
-    appointmentId = await completeBooking(page, drawer);
-  } finally {
-    if (appointmentId) await cleanUpAppointment(page, appointmentId);
-    await cleanUpPendingBookingFixture(fixture);
-  }
-});
-
-test("mobile booking scrolls to a lower slot and resets after date and step changes", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  const fixture = await createPendingBookingFixture({ instantBooking: true });
-
-  try {
-    await page.route("**/api/**/availability**", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(longAvailabilitySlots()),
-      });
-    });
-    await signInAsFixtureCustomer(page, fixture);
-    await page.goto(fixture.salonPath);
-
-    await page.getByRole("button", { name: "Zakaži", exact: true }).click();
-    const drawer = page.getByRole("dialog", { name: "Zakažite termin" });
-    const service = drawer.locator('[role="button"]:has(h5)').first();
-    await service.click();
-    await drawer.getByRole("button", { name: /Bilo koji zaposleni/ }).click();
-    await expect(drawer.getByRole("button", { name: "Korak 3: Termin" })).toHaveAttribute("aria-current", "step");
-
-    const scrollArea = drawer.getByTestId("mobile-booking-scroll-area");
-    await expect.poll(() => scrollArea.evaluate((node) => node.scrollHeight > node.clientHeight)).toBeTruthy();
-    const deepScrollTop = await wheelToLowerContent(page, scrollArea, 500);
-
-    const calendar = drawer.getByTestId("booking-calendar");
-    const selectedDay = calendar.getByRole("gridcell", { selected: true });
-    const otherDay = selectedDay.locator("xpath=following::button[not(@disabled)][1]");
-    await otherDay.dispatchEvent("click");
-    await expect.poll(() => scrollArea.evaluate((node) => node.scrollTop)).toBeLessThan(deepScrollTop);
-
-    await wheelToLowerContent(page, scrollArea, 700);
-
-    const lowerSlot = drawer.getByRole("button", { name: "Izaberi termin u 15:30" });
-    await expect.poll(() => lowerSlot.evaluate((node) => {
-      const slot = node.getBoundingClientRect();
-      const container = document.querySelector<HTMLElement>('[data-testid="mobile-booking-scroll-area"]')?.getBoundingClientRect();
-      return Boolean(container && slot.top >= container.top && slot.bottom <= container.bottom);
-    })).toBeTruthy();
-    await lowerSlot.click();
-    await expect(drawer.getByRole("button", { name: "Korak 4: Potvrda" })).toHaveAttribute("aria-current", "step");
-
-    await drawer.getByRole("button", { name: "Nazad" }).click();
-    await expect(drawer.getByRole("button", { name: "Korak 3: Termin" })).toHaveAttribute("aria-current", "step");
-    await expect.poll(() => scrollArea.evaluate((node) => node.scrollTop)).toBeLessThan(2);
-  } finally {
-    await cleanUpPendingBookingFixture(fixture);
-  }
-});
-
-test("public booking widget scrolls to a lower slot before contact details", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  const fixture = await createPendingBookingFixture({ instantBooking: true });
-
-  try {
-    await page.route("**/api/**/availability**", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(longAvailabilitySlots()),
-      });
-    });
-    await page.goto(`/widget/${fixture.salonPath.split("/").at(-1)}`);
-
-    await page.locator('[data-testid^="service-select-"]').first().click();
-    await page.getByTestId("employee-select-any").click();
-    await expect(page.getByRole("heading", { name: "Kada želite termin?" })).toBeVisible();
-
-    const scrollArea = page.locator('[data-testid="widget-booking-scroll-area"] [data-radix-scroll-area-viewport]');
-    await expect.poll(() => scrollArea.evaluate((node) => node.scrollHeight > node.clientHeight)).toBeTruthy();
-    await wheelToLowerContent(page, scrollArea, 400);
-
-    await page.getByTestId("slot-15:30").click();
-    await expect(page.getByRole("heading", { name: "Vaši podaci" })).toBeVisible();
-
-    await page.getByRole("button", { name: "Nazad" }).click();
-    await expect(page.getByRole("heading", { name: "Kada želite termin?" })).toBeVisible();
-    await expect.poll(() => scrollArea.evaluate((node) => node.scrollTop)).toBeLessThan(2);
-  } finally {
-    await cleanUpPendingBookingFixture(fixture);
-  }
-});
-
-test("customer can complete the desktop salon booking journey", async ({ page }) => {
+test("desktop salon booking covers cart, employee choices, list, calendar, and multi-day candidates", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
-  const fixture = await createPendingBookingFixture({ instantBooking: true });
-  let appointmentId: string | undefined;
+  const fixture = await createBookingFixture();
   try {
-    await signInAsFixtureCustomer(page, fixture);
-    await page.goto(fixture.salonPath);
+    await signIn(page, fixture);
+    await page.route(`**/api/salons/${fixture.salonId}/grouped-availability`, (route) => mockAvailability(route, fixture));
+    const widget = await openDesktopBooking(page, fixture);
+    await reachAvailability(widget, fixture);
+    const [sameDay, multiDay] = candidatesFor(fixture);
 
-    const widget = page.locator("#booking-widget");
-    await expect(widget).toBeVisible();
-    appointmentId = await completeBooking(page, widget);
+    await widget.getByTestId("booking-view-list").click();
+    await expect(widget.getByLabel(`Izaberi raspored ${sameDay!.date} u 09:00`)).toBeVisible();
+
+    await widget.getByTestId("booking-view-calendar").click();
+    await expect(widget.getByTestId(`booking-calendar-day-${sameDay!.date}`)).toHaveAccessibleName(/ima slobodnih rasporeda/);
+    await widget.getByTestId(`booking-calendar-candidate-${sameDay!.date}-09:00-0`).click();
+    await expect(widget.getByRole("button", { name: "Zakaži" })).toBeEnabled();
+
+    await widget.getByTestId("booking-multiday-toggle").click();
+    await widget.getByTestId("booking-view-list").click();
+    const multiDayCandidate = widget.getByLabel(`Izaberi raspored ${multiDay!.date} u 14:00`);
+    await expect(multiDayCandidate).toContainText(candidatesFor(fixture)[1]!.treatments[1]!.date.slice(5).split("-").reverse().join(".") + ".");
+    await multiDayCandidate.click();
+    await expect(multiDayCandidate).toHaveAttribute("aria-pressed", "true");
   } finally {
-    if (appointmentId) await cleanUpAppointment(page, appointmentId);
-    await cleanUpPendingBookingFixture(fixture);
+    await cleanUpFixture(fixture);
   }
 });
 
-test("a booking conflict returns the customer to refreshed available slots", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  const fixture = await createPendingBookingFixture({ instantBooking: true });
-  try {
-    await signInAsFixtureCustomer(page, fixture);
-    await page.goto(fixture.salonPath);
-
-    const widget = page.locator("#booking-widget");
-    await expect(widget).toBeVisible();
-    await reachBookingConfirmation(page, widget);
-
-    await page.route("**/api/appointments", async (route) => {
-      if (route.request().method() !== "POST") {
-        await route.continue();
-        return;
-      }
-      await route.fulfill({
-        status: 409,
-        contentType: "application/json",
-        body: JSON.stringify({
-          error: "Termin više nije slobodan. Osvežite dostupnost i izaberite drugi termin.",
-        }),
-      });
-    });
-
-    const refreshedAvailability = page.waitForRequest((request) => {
-      const url = new URL(request.url());
-      return request.method() === "GET" && url.pathname.includes("/availability");
-    });
-    await widget.getByRole("button", { name: "Potvrdi rezervaciju" }).click();
-
-    await expect(page.getByText("Osvežili smo slobodne termine. Izaberite drugi termin.")).toBeVisible();
-    await expect(widget.getByRole("button", { name: "Korak 3: Termin" })).toHaveAttribute("aria-current", "step");
-    await expect(widget.getByText("Pregled rezervacije")).toHaveCount(0);
-    await expect(widget.getByRole("button", { name: "Dalje" })).toBeDisabled();
-    await refreshedAvailability;
-
-    const refreshedSlot = widget.getByRole("button", { name: /Izaberi termin u/ }).first();
-    await expect(refreshedSlot).toBeVisible();
-    await refreshedSlot.click();
-    await expect(widget.getByRole("button", { name: "Korak 4: Potvrda" })).toHaveAttribute("aria-current", "step");
-  } finally {
-    await cleanUpPendingBookingFixture(fixture);
-  }
-});
-
-test("customer sees a sent request when the salon must approve an in-salon booking", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  const fixture = await createPendingBookingFixture();
-  let appointmentId: string | undefined;
-
-  try {
-    await signInAsFixtureCustomer(page, fixture);
-    await page.goto(fixture.salonPath);
-
-    const widget = page.locator("#booking-widget");
-    await expect(widget).toBeVisible();
-    appointmentId = await completeBooking(page, widget, "pending");
-  } finally {
-    try {
-      if (appointmentId) await cleanUpAppointment(page, appointmentId);
-    } finally {
-      await cleanUpPendingBookingFixture(fixture);
-    }
-  }
-});
-
-test("customer sees a sent request for a home visit even when the salon instantly books in-salon appointments", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  const fixture = await createPendingBookingFixture({ instantBooking: true, homeServiceAvailable: true });
-  let appointmentId: string | undefined;
-
-  try {
-    await signInAsFixtureCustomer(page, fixture);
-    await page.goto(fixture.salonPath);
-
-    const widget = page.locator("#booking-widget");
-    await expect(widget).toBeVisible();
-    appointmentId = await completeHomeVisitBooking(page, widget);
-  } finally {
-    try {
-      if (appointmentId) await cleanUpAppointment(page, appointmentId);
-    } finally {
-      await cleanUpPendingBookingFixture(fixture);
-    }
-  }
-});
-
-test("customer sees a sent request for a home visit from the mobile booking drawer", async ({ page }) => {
+test("390x844 salon drawer keeps the grouped cart and supports candidate selection", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  const fixture = await createPendingBookingFixture({ instantBooking: true, homeServiceAvailable: true });
-  let appointmentId: string | undefined;
-
+  const fixture = await createBookingFixture();
   try {
-    await signInAsFixtureCustomer(page, fixture);
+    await signIn(page, fixture);
+    await page.route(`**/api/salons/${fixture.salonId}/grouped-availability`, (route) => mockAvailability(route, fixture));
     await page.goto(fixture.salonPath);
-
-    const stickyTrigger = page.getByRole("button", { name: "Zakaži", exact: true });
-    await expect(stickyTrigger).toBeVisible();
-    await stickyTrigger.click();
+    await page.getByTestId(`salon-service-${fixture.serviceIds[0]}`).click();
+    await page.getByTestId(`salon-service-${fixture.serviceIds[1]}`).dispatchEvent("click");
 
     const drawer = page.getByRole("dialog", { name: "Zakažite termin" });
     await expect(drawer).toBeVisible();
-    appointmentId = await completeHomeVisitBooking(page, drawer);
+    await expect(drawer).toHaveAccessibleDescription("Izaberite uslugu, zaposlenog i slobodan termin.");
+    await expect(drawer.getByTestId("booking-cart-item-0")).toBeVisible();
+    await expect(drawer.getByTestId("booking-cart-item-1")).toBeVisible();
+    await reachAvailability(drawer, fixture);
+    await drawer.getByTestId("booking-view-list").click();
+    await drawer.getByLabel(`Izaberi raspored ${candidatesFor(fixture)[0]!.date} u 09:00`).click();
+    await expect(drawer.getByRole("button", { name: "Zakaži" })).toBeEnabled();
   } finally {
-    try {
-      if (appointmentId) await cleanUpAppointment(page, appointmentId);
-    } finally {
-      await cleanUpPendingBookingFixture(fixture);
-    }
+    await cleanUpFixture(fixture);
   }
 });
 
-test("a non-customer is guided to use a client account before an appointment request", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  const fixture = await createPendingBookingFixture();
-
+test("the same service remains addable as independent treatments on desktop and mobile", async ({ page }) => {
+  const fixture = await createBookingFixture();
   try {
-    await signInAsFixtureOwner(page, fixture);
-    await page.goto(fixture.salonPath);
-
-    const widget = page.locator("#booking-widget");
-    await expect(widget).toBeVisible();
-    await reachBookingConfirmationAsNonCustomer(page, widget);
-
-    let appointmentPostCount = 0;
-    page.on("request", (request) => {
-      if (request.method() === "POST" && new URL(request.url()).pathname === "/api/appointments") {
-        appointmentPostCount += 1;
+    await signIn(page, fixture);
+    for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport);
+      await page.goto("/");
+      await page.evaluate(
+        (customerId) => localStorage.removeItem(`lumera:booking-draft:${customerId}`),
+        fixture.customerId,
+      );
+      await page.goto(fixture.salonPath);
+      const service = page.getByTestId(`salon-service-${fixture.serviceIds[0]}`);
+      await service.click();
+      const bookingSurface = viewport.width < 1024
+        ? page.getByRole("dialog", { name: "Zakažite termin" })
+        : page.locator("#booking-widget");
+      if (viewport.width < 1024) {
+        await service.dispatchEvent("click");
+      } else {
+        await service.click();
       }
-    });
+      await expect(bookingSurface.getByTestId("booking-cart-item-0")).toContainText(fixture.serviceNames[0]);
+      await expect(bookingSurface.getByTestId("booking-cart-item-1")).toContainText(fixture.serviceNames[0]);
 
-    await widget.getByRole("button", { name: "Potvrdi rezervaciju" }).click();
-    await expect(page.getByText("Za zakazivanje termina prijavite se klijentskim nalogom.")).toBeVisible();
-    await page.waitForTimeout(250);
-    expect(appointmentPostCount, "A non-customer must be stopped before the appointment API is called.").toBe(0);
+      await bookingSurface.getByRole("button", { name: /Nastavi na izbor zaposlenog/ }).click();
+      await expect(bookingSurface.getByTestId("booking-employee-any-0")).toHaveAttribute("aria-pressed", "true");
+      await bookingSurface.getByTestId(`booking-employee-1-${fixture.employeeIds[1]}`).click();
+      await expect(bookingSurface.getByTestId(`booking-employee-1-${fixture.employeeIds[1]}`)).toHaveAttribute("aria-pressed", "true");
+
+      let availabilityTreatments: Array<{ serviceId: string; employeeId?: string | null }> = [];
+      await page.route(`**/api/salons/${fixture.salonId}/grouped-availability`, async (route) => {
+        const body = route.request().postDataJSON() as {
+          treatments: Array<{ serviceId: string; employeeId?: string | null }>;
+        };
+        availabilityTreatments = body.treatments;
+        const date = futureDate(2);
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            candidates: [{
+              date,
+              startTime: "09:00",
+              treatments: body.treatments.map((treatment, index) => ({
+                serviceId: treatment.serviceId,
+                employeeId: treatment.employeeId ?? fixture.employeeIds[0],
+                date,
+                startTime: index === 0 ? "09:00" : "09:30",
+                endTime: index === 0 ? "09:30" : "10:00",
+              })),
+            }],
+            calendarDays: [],
+          }),
+        });
+      });
+      await bookingSurface.getByRole("button", { name: /Izaberi vreme/ }).click();
+      await expect.poll(() => availabilityTreatments.length).toBe(2);
+      expect(availabilityTreatments.map((treatment) => treatment.serviceId)).toEqual([
+        fixture.serviceIds[0],
+        fixture.serviceIds[0],
+      ]);
+      expect(availabilityTreatments[0]).not.toHaveProperty("employeeId");
+      expect(availabilityTreatments[1]).toMatchObject({
+        serviceId: fixture.serviceIds[0],
+        employeeId: fixture.employeeIds[1],
+      });
+      await bookingSurface.getByTestId("booking-view-list").click();
+      await bookingSurface.getByLabel(`Izaberi raspored ${futureDate(2)} u 09:00`).click();
+
+      let bookingTreatments: Array<{ serviceId: string; employeeId: string }> = [];
+      await page.route("**/api/booking-groups", async (route) => {
+        const body = route.request().postDataJSON() as {
+          treatments: Array<{ serviceId: string; employeeId: string; date: string; startTime: string }>;
+        };
+        bookingTreatments = body.treatments;
+        await route.fulfill({
+          status: 201,
+          contentType: "application/json",
+          body: JSON.stringify({
+            id: randomUUID(),
+            salonId: fixture.salonId,
+            createdAt: new Date().toISOString(),
+            appointments: body.treatments.map((treatment, index) => ({
+              id: randomUUID(),
+              bookingGroupId: randomUUID(),
+              salonId: fixture.salonId,
+              serviceId: treatment.serviceId,
+              serviceName: fixture.serviceNames[0],
+              employeeId: treatment.employeeId,
+              employeeName: fixture.employeeNames[index],
+              date: treatment.date,
+              startTime: treatment.startTime,
+              endTime: index === 0 ? "09:30" : "10:00",
+              status: "confirmed",
+              price: 1200,
+            })),
+          }),
+        });
+      });
+      await bookingSurface.getByRole("button", { name: "Zakaži" }).click();
+      await expect.poll(() => bookingTreatments.map((treatment) => treatment.serviceId)).toEqual([
+        fixture.serviceIds[0],
+        fixture.serviceIds[0],
+      ]);
+      await expect(bookingTreatments.map((treatment) => treatment.employeeId)).toEqual([
+        fixture.employeeIds[0],
+        fixture.employeeIds[1],
+      ]);
+      await expect(bookingSurface.getByRole("heading", { name: "Termin potvrđen" })).toBeVisible();
+    }
   } finally {
-    await cleanUpPendingBookingFixture(fixture);
+    await cleanUpFixture(fixture);
   }
 });
 
-test("returning to a booking draft preserves the any-employee choice", async ({ page }) => {
+test("customer draft reload restores one cart item without multiplying it", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
-  const fixture = await createPendingBookingFixture();
-
+  const fixture = await createBookingFixture();
   try {
-    await signInAsFixtureCustomer(page, fixture);
+    await signIn(page, fixture);
     await page.goto(fixture.salonPath);
+    await page.getByTestId(`salon-service-${fixture.serviceIds[0]}`).click();
+    await expect(page.locator("#booking-widget").getByTestId("booking-cart-item-0")).toBeVisible();
+    await expect.poll(() => page.evaluate(
+      (customerId) => localStorage.getItem(`lumera:booking-draft:${customerId}`),
+      fixture.customerId,
+    )).not.toBeNull();
 
-    const widget = page.locator("#booking-widget");
-    const service = widget.locator('[role="button"]:has(h5)').first();
-    const anyEmployeeAvailabilityRequest = page.waitForRequest((request) => {
-      const url = new URL(request.url());
-      return request.method() === "GET"
-        && url.pathname.includes("/availability")
-        && !url.searchParams.has("employeeId");
-    });
-    await service.click();
-    await expect(widget.getByRole("button", { name: "Korak 2: Zaposleni" })).toHaveAttribute("aria-current", "step");
-    await widget.getByRole("button", { name: /Bilo koji zaposleni/ }).click();
-    await anyEmployeeAvailabilityRequest;
-
-    const reentryAvailabilityRequest = page.waitForRequest((request) => {
-      const url = new URL(request.url());
-      return request.method() === "GET"
-        && url.pathname.includes("/availability")
-        && !url.searchParams.has("employeeId");
-    });
     await page.reload();
-    await reentryAvailabilityRequest;
-
-    await expect(widget.getByRole("button", { name: "Korak 3: Termin" })).toHaveAttribute("aria-current", "step");
-    await expect(widget.getByText("Bilo koji zaposleni", { exact: true }).first()).toBeVisible();
+    const restoredItems = page.locator("#booking-widget").locator('[data-testid^="booking-cart-item-"]');
+    await expect(restoredItems).toHaveCount(1);
+    await expect(restoredItems.first()).toContainText(fixture.serviceNames[0]);
+    await page.waitForTimeout(250);
+    await expect(restoredItems).toHaveCount(1);
   } finally {
-    await cleanUpPendingBookingFixture(fixture);
+    await cleanUpFixture(fixture);
+  }
+});
+
+test("successful salon booking posts a booking group and renders every appointment", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const fixture = await createBookingFixture();
+  try {
+    await signIn(page, fixture);
+    await page.route(`**/api/salons/${fixture.salonId}/grouped-availability`, (route) => mockAvailability(route, fixture));
+    const widget = await openDesktopBooking(page, fixture);
+    await reachAvailability(widget, fixture);
+    await widget.getByTestId("booking-view-list").click();
+    await widget.getByLabel(`Izaberi raspored ${candidatesFor(fixture)[0]!.date} u 09:00`).click();
+
+    const bookingRequest = page.waitForRequest((request) =>
+      request.method() === "POST" && new URL(request.url()).pathname === "/api/booking-groups");
+    await page.route("**/api/booking-groups", async (route) => {
+      const data = route.request().postDataJSON();
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: randomUUID(),
+          salonId: fixture.salonId,
+          createdAt: new Date().toISOString(),
+          appointments: candidatesFor(fixture)[0]!.treatments.map((treatment, index) => ({
+            id: randomUUID(),
+            bookingGroupId: randomUUID(),
+            salonId: fixture.salonId,
+            serviceId: treatment.serviceId,
+            serviceName: fixture.serviceNames[index],
+            employeeId: treatment.employeeId,
+            employeeName: fixture.employeeNames[index],
+            date: treatment.date,
+            startTime: treatment.startTime,
+            endTime: treatment.endTime,
+            status: "confirmed",
+            price: index === 0 ? 1200 : 1800,
+          })),
+        }),
+      });
+    });
+    await widget.getByRole("button", { name: "Zakaži" }).click();
+
+    const request = await bookingRequest;
+    expect(request.postDataJSON()).toMatchObject({
+      salonId: fixture.salonId,
+      treatments: [
+        { serviceId: fixture.serviceIds[0], employeeId: fixture.employeeIds[0], date: candidatesFor(fixture)[0]!.date, startTime: "09:00" },
+        { serviceId: fixture.serviceIds[1], employeeId: fixture.employeeIds[1], date: candidatesFor(fixture)[0]!.date, startTime: "09:30" },
+      ],
+    });
+    await expect(widget.getByRole("heading", { name: "Termin potvrđen" })).toBeVisible();
+    await expect(widget.getByText(fixture.serviceNames[0], { exact: true })).toBeVisible();
+    await expect(widget.getByText(fixture.serviceNames[1], { exact: true })).toBeVisible();
+  } finally {
+    await cleanUpFixture(fixture);
+  }
+});
+
+test("booking conflict refreshes grouped availability and requires a new candidate", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const fixture = await createBookingFixture();
+  let availabilityCalls = 0;
+  try {
+    await signIn(page, fixture);
+    await page.route(`**/api/salons/${fixture.salonId}/grouped-availability`, async (route) => {
+      availabilityCalls += 1;
+      await mockAvailability(route, fixture);
+    });
+    const widget = await openDesktopBooking(page, fixture);
+    await reachAvailability(widget, fixture);
+    await widget.getByTestId("booking-view-list").click();
+    const candidate = widget.getByLabel(`Izaberi raspored ${candidatesFor(fixture)[0]!.date} u 09:00`);
+    await candidate.click();
+    await page.route("**/api/booking-groups", (route) => route.fulfill({
+      status: 409,
+      contentType: "application/json",
+      body: JSON.stringify({ code: "BOOKING_GROUP_CONFLICT", error: "Jedan od termina više nije slobodan." }),
+    }));
+
+    await widget.getByRole("button", { name: "Zakaži" }).click();
+    await expect(page.getByText("Osvežili smo dostupne rasporede. Izaberite drugi.")).toBeVisible();
+    await expect.poll(() => availabilityCalls).toBeGreaterThan(1);
+    await expect(widget.getByRole("button", { name: "Zakaži" })).toBeDisabled();
+    await expect(candidate).toHaveAttribute("aria-pressed", "false");
+  } finally {
+    await cleanUpFixture(fixture);
+  }
+});
+
+test("standalone widget retains its supported guest grouped booking surface", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const fixture = await createBookingFixture();
+  try {
+    await page.goto(`/widget/${fixture.salonPath.split("/").at(-1)}`);
+    await page.getByText(fixture.serviceNames[0], { exact: true }).click();
+    await expect(page.getByText("Izabrano usluga: 1")).toBeVisible();
+    await page.getByRole("button", { name: "Nastavi (1)" }).click();
+    await expect(page.getByRole("heading", { name: "Željeni zaposleni" })).toBeVisible();
+    await expect(page.getByRole("option", { name: "Bilo ko (prvi dostupan)" })).toBeAttached();
+  } finally {
+    await cleanUpFixture(fixture);
   }
 });

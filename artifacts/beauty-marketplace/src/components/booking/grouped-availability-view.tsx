@@ -61,6 +61,8 @@ export function GroupedAvailabilityView({
     return (
       <div
         key={i}
+        data-testid={`booking-candidate-${c.date}-${c.startTime}-${i}`}
+        aria-label={`Izaberi raspored ${c.date} u ${c.startTime}`}
         className={`p-4 rounded-xl cursor-pointer transition-all border-2 ${selectedCandidate === c ? 'border-primary bg-primary/5 shadow-sm' : 'border-border hover:border-primary/30 bg-card'}`}
         onClick={() => onSelectCandidate(c)}
         role="button"
@@ -120,11 +122,11 @@ export function GroupedAvailabilityView({
     <div className="space-y-4">
       <Tabs value={viewMode} onValueChange={(v) => onViewModeChange(v as "list" | "calendar")} className="mb-4">
         <TabsList className="w-full grid grid-cols-2 bg-secondary/40 p-1.5 rounded-xl h-auto">
-          <TabsTrigger value="calendar" className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary py-2 text-sm font-bold">
+          <TabsTrigger value="calendar" data-testid="booking-view-calendar" className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary py-2 text-sm font-bold">
             <CalendarIcon className="w-4 h-4 mr-2" />
             Kalendar
           </TabsTrigger>
-          <TabsTrigger value="list" className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary py-2 text-sm font-bold">
+          <TabsTrigger value="list" data-testid="booking-view-list" className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary py-2 text-sm font-bold">
             <ListIcon className="w-4 h-4 mr-2" />
             Lista
           </TabsTrigger>
@@ -189,6 +191,8 @@ export function GroupedAvailabilityView({
                 return (
                   <button
                     key={dateStr}
+                    data-testid={`booking-calendar-day-${dateStr}`}
+                    aria-label={`${dateStr}${isAvailable ? ", ima slobodnih rasporeda" : ", nema slobodnih rasporeda"}`}
                     type="button"
                     disabled={isPast || isLoading}
                     onClick={() => {
@@ -273,6 +277,8 @@ export function GroupedAvailabilityView({
                                   return (
                                     <button
                                       key={`${candidate.date}-${candidate.startTime}-${index}`}
+                                      data-testid={`booking-calendar-candidate-${candidate.date}-${candidate.startTime}-${index}`}
+                                      aria-label={`Izaberi raspored ${candidate.date} u ${candidate.startTime}`}
                                       type="button"
                                       aria-pressed={isCandidateSelected}
                                       onClick={() => onSelectCandidate(candidate)}
