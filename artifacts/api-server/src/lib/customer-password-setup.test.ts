@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 import { eq, inArray } from "drizzle-orm";
 import {
   customerPasswordSetupAuditsTable,
+  customerPasswordSetupRateLimitsTable,
   customerPasswordSetupTokensTable,
   db,
   sessionsTable,
@@ -22,6 +23,7 @@ type CreatedSetup = {
 
 async function run(): Promise<void> {
   await ensureBusinessGrowthSchema();
+  await db.delete(customerPasswordSetupRateLimitsTable);
   const suffix = randomUUID();
   const administratorPassword = randomBytes(24).toString("base64url");
   const customerPassword = randomBytes(24).toString("base64url");
@@ -90,6 +92,21 @@ async function run(): Promise<void> {
     assert.equal((await create(cookies.customer)).status, 403);
     assert.equal((await create(cookies.admin)).status, 403);
     assert.equal((await create(cookies.owner)).status, 403);
+    const genericCreate = (body: Record<string, unknown>) => fetch(`${baseUrl}/admin/accounts/setup`, {
+      method: "POST", headers: { cookie: cookies.superAdmin, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const standaloneResponse = await genericCreate({
+      ...createBody, email: `setup-standalone-admin-${suffix}@example.test`, role: "ADMIN",
+    });
+    assert.equal(standaloneResponse.status, 201);
+    const standalone = await standaloneResponse.json() as CreatedSetup;
+    createdUserIds.push(standalone.user.id);
+    assert.equal(standalone.user.role, "ADMIN");
+    const incompleteBusinessResponse = await genericCreate({
+      ...createBody, email: `setup-incomplete-owner-${suffix}@example.test`, role: "SALON_OWNER",
+    });
+    assert.equal(incompleteBusinessResponse.status, 422);
 
     const createdResponse = await create(cookies.superAdmin);
     assert.equal(createdResponse.status, 201);
@@ -151,21 +168,15 @@ async function run(): Promise<void> {
     assert.equal(attemptedToken?.failedAttempts, 1, "policy failure consumes one active-token attempt");
 
     await createSession(created.user.id);
-    const completeResponse = await fetch(`${baseUrl}/auth/customer-password-setup/complete`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
+    const complete = () => fetch(`${baseUrl}/auth/customer-password-setup/complete`, {
+      method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ token: replacementToken, password: customerPassword, passwordConfirmation: customerPassword }),
     });
-    assert.equal(completeResponse.status, 200);
-    const replayResponse = await fetch(`${baseUrl}/auth/customer-password-setup/complete`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ token: replacementToken, password: customerPassword, passwordConfirmation: customerPassword }),
-    });
-    assert.equal(replayResponse.status, 400);
+    const concurrentCompletionStatuses = (await Promise.all([complete(), complete()])).map((response) => response.status).sort();
+    assert.deepEqual(concurrentCompletionStatuses, [200, 400], "only one concurrent completion consumes the token");
     const [completedToken] = await db.select()
       .from(customerPasswordSetupTokensTable)
-      .where(eq(customerPasswordSetupTokensTable.userId, created.user.id));
+      .where(eq(customerPasswordSetupTokensTable.tokenHash, createHash("sha256").update(replacementToken).digest("hex")));
     assert.ok(completedToken?.consumedAt);
     const [completedUser] = await db.select()
       .from(usersTable)
@@ -185,6 +196,27 @@ async function run(): Promise<void> {
     assert.equal(loginResponse.status, 200);
     const login = await loginResponse.json() as { user: { role: string } };
     assert.equal(login.user.role, "CUSTOMER");
+    assert.equal((await fetch(`${baseUrl}/admin/accounts/${created.user.id}/setup`, {
+      method: "POST", headers: { cookie: cookies.superAdmin },
+    })).status, 404, "configured accounts cannot receive replacement setup tokens");
+
+    const boundaryBody = { ...createBody, email: `setup-boundary-${suffix}@example.test` };
+    const boundaryCreateResponse = await create(cookies.superAdmin, boundaryBody);
+    assert.equal(boundaryCreateResponse.status, 201);
+    const boundary = await boundaryCreateResponse.json() as CreatedSetup;
+    createdUserIds.push(boundary.user.id);
+    const boundaryToken = new URL(boundary.setupUrl).hash.replace(/^#token=/, "");
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const response = await fetch(`${baseUrl}/auth/customer-password-setup/complete`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: boundaryToken, password: customerPassword, passwordConfirmation: `${customerPassword}-${attempt}` }),
+      });
+      assert.equal(response.status, 400);
+    }
+    const [boundedToken] = await db.select().from(customerPasswordSetupTokensTable)
+      .where(eq(customerPasswordSetupTokensTable.userId, boundary.user.id));
+    assert.equal(boundedToken?.failedAttempts, 5);
+    assert.ok(boundedToken?.invalidatedAt, "the max-attempt boundary invalidates the token atomically");
 
     const expiredBody = { ...createBody, email: `setup-expired-${suffix}@example.test` };
     const expiredCreateResponse = await create(cookies.superAdmin, expiredBody);
@@ -201,6 +233,15 @@ async function run(): Promise<void> {
       body: JSON.stringify({ token: expiredRawToken, password: customerPassword, passwordConfirmation: customerPassword }),
     });
     assert.equal(expiredResponse.status, 400);
+    await db.delete(customerPasswordSetupRateLimitsTable);
+    let malformedStatus = 0;
+    for (let attempt = 0; attempt < 11; attempt += 1) {
+      malformedStatus = (await fetch(`${baseUrl}/auth/customer-password-setup/complete`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: "short" }),
+      })).status;
+    }
+    assert.equal(malformedStatus, 429, "malformed unknown tokens are bounded by the IP rate limit");
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     if (createdUserIds.length) {
@@ -210,6 +251,7 @@ async function run(): Promise<void> {
         .where(inArray(customerPasswordSetupTokensTable.userId, createdUserIds));
       await db.delete(usersTable).where(inArray(usersTable.id, createdUserIds));
     }
+    await db.delete(customerPasswordSetupRateLimitsTable);
   }
 }
 

@@ -19,6 +19,7 @@ export const customerPasswordSetupTokensTable = pgTable("customer_password_setup
     .on(table.userId)
     .where(sql`${table.consumedAt} is null and ${table.invalidatedAt} is null`),
   index("customer_password_setup_tokens_user_created_idx").on(table.userId, table.createdAt),
+  index("customer_password_setup_tokens_issuer_created_idx").on(table.issuedByUserId, table.createdAt),
   index("customer_password_setup_tokens_expiry_idx").on(table.expiresAt),
   check("customer_password_setup_tokens_attempts_check", sql`${table.failedAttempts} >= 0 and ${table.maxAttempts} between 1 and 10`),
 ]);

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { AdminLayout } from "./layout";
-import { useAdminCreateCustomerSetup, useAdminReissueCustomerSetup, useAdminListUsers, useAdminUpdateUser, getAdminListUsersQueryKey, useGetCurrentUser } from "@workspace/api-client-react";
-import type { AdminUserUpdateRole, AdminListUsersRole } from "@workspace/api-client-react";
+import { useAdminCreateAccountSetup, useAdminReissueAccountSetup, useAdminListUsers, useAdminUpdateUser, getAdminListUsersQueryKey, useGetCurrentUser } from "@workspace/api-client-react";
+import type { AdminCreateAccountSetupInputRole, AdminUserUpdateRole, AdminListUsersRole } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -37,13 +37,13 @@ export default function AdminUsers() {
   const hasNextPage = (users?.length ?? 0) === pageSize;
   const { data: currentUserResponse } = useGetCurrentUser();
   const updateUser = useAdminUpdateUser();
-  const createCustomer = useAdminCreateCustomerSetup();
-  const reissueCustomerSetup = useAdminReissueCustomerSetup();
+  const createCustomer = useAdminCreateAccountSetup();
+  const reissueCustomerSetup = useAdminReissueAccountSetup();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const canManageUsers = currentUserResponse?.user?.role === "SUPER_ADMIN";
   const [createOpen, setCreateOpen] = useState(false);
-  const [customerForm, setCustomerForm] = useState({ firstName: "", lastName: "", email: "" });
+  const [customerForm, setCustomerForm] = useState<{ firstName: string; lastName: string; email: string; role: AdminCreateAccountSetupInputRole }>({ firstName: "", lastName: "", email: "", role: "CUSTOMER" });
   const [setupResult, setSetupResult] = useState<{ setupUrl: string; expiresAt: string } | null>(null);
   const [copied, setCopied] = useState(false);
   
@@ -92,7 +92,7 @@ export default function AdminUsers() {
     setCreateOpen(false);
     setSetupResult(null);
     setCopied(false);
-    setCustomerForm({ firstName: "", lastName: "", email: "" });
+    setCustomerForm({ firstName: "", lastName: "", email: "", role: "CUSTOMER" });
     createCustomer.reset();
     reissueCustomerSetup.reset();
   };
@@ -150,7 +150,7 @@ export default function AdminUsers() {
             {canManageUsers && (
               <Button onClick={() => setCreateOpen(true)} data-testid="btn-create-customer">
                 <UserPlus className="mr-2 h-4 w-4" />
-                Kreiraj CUSTOMER nalog
+                Kreiraj nalog
               </Button>
             )}
           </div>
@@ -272,7 +272,7 @@ export default function AdminUsers() {
                         </div>
                       </td>
                        <td className="px-6 py-4 text-right">
-                         {canManageUsers && user.role === "CUSTOMER" && user.active && (
+                         {canManageUsers && user.role !== "SUPER_ADMIN" && user.active && !user.passwordSetAt && (
                            <Button variant="outline" size="sm" disabled={reissueCustomerSetup.isPending} onClick={() => handleReissueSetup(user.id)}>
                              Novi link
                            </Button>
@@ -297,7 +297,7 @@ export default function AdminUsers() {
         <Dialog open={createOpen} onOpenChange={(open) => { if (!open) closeCreateDialog(); }}>
           <DialogContent className="w-[calc(100%_-_2rem)] max-w-lg rounded-xl">
             <DialogHeader>
-              <DialogTitle>{setupResult ? "Jednokratni setup link" : "Kreiraj CUSTOMER nalog"}</DialogTitle>
+              <DialogTitle>{setupResult ? "Jednokratni setup link" : "Kreiraj nalog"}</DialogTitle>
               <DialogDescription>
                 {setupResult
                   ? "Ovaj link se prikazuje samo sada. Bezbedno ga prosledite korisniku i zatim zatvorite prozor."
@@ -325,6 +325,20 @@ export default function AdminUsers() {
                   <Input required maxLength={100} placeholder="Prezime" value={customerForm.lastName} onChange={(event) => setCustomerForm((value) => ({ ...value, lastName: event.target.value }))} aria-label="Prezime" />
                 </div>
                 <Input required type="email" maxLength={320} placeholder="E-mail adresa" value={customerForm.email} onChange={(event) => setCustomerForm((value) => ({ ...value, email: event.target.value }))} aria-label="E-mail adresa" />
+                <Select value={customerForm.role} onValueChange={(role) => setCustomerForm((value) => ({ ...value, role: role as AdminCreateAccountSetupInputRole }))}>
+                  <SelectTrigger><SelectValue placeholder="Uloga" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="CUSTOMER">Klijent</SelectItem>
+                    <SelectItem value="JOBSEEKER">Tražilac posla</SelectItem>
+                    <SelectItem value="STUDENT">Student</SelectItem>
+                    <SelectItem value="ADMIN">Administrator</SelectItem>
+                    <SelectItem value="SALON_OWNER" disabled>Vlasnik salona — potreban salon i poslovni podaci</SelectItem>
+                    <SelectItem value="SALON_EMPLOYEE" disabled>Zaposleni — potreban salon i radni profil</SelectItem>
+                    <SelectItem value="EDUKATIVNI_CENTAR" disabled>Edukativni centar — potreban profil centra</SelectItem>
+                    <SelectItem value="INSTRUCTOR" disabled>Instruktor — potreban profil i centar</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Poslovne uloge zahtevaju povezane domenske podatke i zato se ne mogu kreirati kao nepotpuni nalozi.</p>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={closeCreateDialog}>Otkaži</Button>
                   <Button type="submit" disabled={createCustomer.isPending}>

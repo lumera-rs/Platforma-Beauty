@@ -4067,6 +4067,43 @@ paths:
         "403": { description: SUPER_ADMIN access required }
         "404": { description: Eligible uncompleted CUSTOMER account not found }
         "429": { description: Too many account setup requests }
+  /admin/accounts/setup:
+    post:
+      operationId: adminCreateAccountSetup
+      tags: [admin]
+      summary: Create a non-SUPER_ADMIN standalone account and return a one-time password setup URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminCreateAccountSetupInput" }
+      responses:
+        "201":
+          description: Account and one-time setup URL created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminCreateCustomerSetupResponse" }
+        "403": { description: SUPER_ADMIN access required }
+        "409": { description: Email is already registered }
+        "422": { description: Role requires companion domain data and cannot be created incomplete }
+  /admin/accounts/{userId}/setup:
+    post:
+      operationId: adminReissueAccountSetup
+      tags: [admin]
+      summary: Replace an active unconfigured non-SUPER_ADMIN account's setup URL
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+      responses:
+        "201":
+          description: Replacement one-time setup URL created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminCreateCustomerSetupResponse" }
+        "403": { description: SUPER_ADMIN access required }
+        "404": { description: Eligible unconfigured account not found }
   /admin/users/{userId}:
     patch:
       operationId: adminUpdateUser
@@ -12140,17 +12177,18 @@ components:
         phone: { type: ["string", "null"] }
         role:
           type: string
-          enum: [SUPER_ADMIN, ADMIN, SALON_OWNER, SALON_EMPLOYEE, EDUKATIVNI_CENTAR, INSTRUCTOR, CUSTOMER, STUDENT]
+          enum: [SUPER_ADMIN, ADMIN, SALON_OWNER, SALON_EMPLOYEE, EDUKATIVNI_CENTAR, INSTRUCTOR, CUSTOMER, JOBSEEKER, STUDENT]
         active: { type: boolean }
+        passwordSetAt: { type: ["string", "null"], format: date-time }
         createdAt: { type: string, format: date-time }
-      required: [id, firstName, lastName, email, role, active, createdAt]
+      required: [id, firstName, lastName, email, role, active, passwordSetAt, createdAt]
     AdminUserUpdate:
       type: object
       additionalProperties: false
       properties:
         role:
           type: string
-          enum: [SUPER_ADMIN, ADMIN, SALON_OWNER, SALON_EMPLOYEE, EDUKATIVNI_CENTAR, INSTRUCTOR, CUSTOMER, STUDENT]
+          enum: [SUPER_ADMIN, ADMIN, SALON_OWNER, SALON_EMPLOYEE, EDUKATIVNI_CENTAR, INSTRUCTOR, CUSTOMER, JOBSEEKER, STUDENT]
         active: { type: boolean }
     AdminCreateCustomerSetupInput:
       type: object
@@ -12163,6 +12201,17 @@ components:
           type: string
           maxLength: 320
           pattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$'
+    AdminCreateAccountSetupInput:
+      type: object
+      additionalProperties: false
+      required: [firstName, lastName, email, role]
+      properties:
+        firstName: { type: string, minLength: 1, maxLength: 100 }
+        lastName: { type: string, minLength: 1, maxLength: 100 }
+        email: { type: string, maxLength: 320, pattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$' }
+        role:
+          type: string
+          enum: [ADMIN, SALON_OWNER, SALON_EMPLOYEE, EDUKATIVNI_CENTAR, INSTRUCTOR, CUSTOMER, STUDENT, JOBSEEKER]
     AdminCreateCustomerSetupResponse:
       type: object
       additionalProperties: false

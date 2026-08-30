@@ -21,6 +21,8 @@ export * from './adminBundle';
 export * from './adminBundleInput';
 export * from './adminBundleInputMarket';
 export * from './adminBundleMarket';
+export * from './adminCreateAccountSetupInput';
+export * from './adminCreateAccountSetupInputRole';
 export * from './adminCreateCustomerSetupInput';
 export * from './adminCreateCustomerSetupResponse';
 export * from './adminCreateEmailCampaignInput';

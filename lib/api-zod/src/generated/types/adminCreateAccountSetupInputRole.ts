@@ -6,17 +6,16 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type AdminUserUpdateRole = typeof AdminUserUpdateRole[keyof typeof AdminUserUpdateRole];
+export type AdminCreateAccountSetupInputRole = typeof AdminCreateAccountSetupInputRole[keyof typeof AdminCreateAccountSetupInputRole];
 
 
-export const AdminUserUpdateRole = {
-  SUPER_ADMIN: 'SUPER_ADMIN',
+export const AdminCreateAccountSetupInputRole = {
   ADMIN: 'ADMIN',
   SALON_OWNER: 'SALON_OWNER',
   SALON_EMPLOYEE: 'SALON_EMPLOYEE',
   EDUKATIVNI_CENTAR: 'EDUKATIVNI_CENTAR',
   INSTRUCTOR: 'INSTRUCTOR',
   CUSTOMER: 'CUSTOMER',
-  JOBSEEKER: 'JOBSEEKER',
   STUDENT: 'STUDENT',
+  JOBSEEKER: 'JOBSEEKER',
 } as const;

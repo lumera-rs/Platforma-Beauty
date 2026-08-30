@@ -31,6 +31,7 @@ import type {
   AdminBulkResult,
   AdminBundle,
   AdminBundleInput,
+  AdminCreateAccountSetupInput,
   AdminCreateCustomerSetupInput,
   AdminCreateCustomerSetupResponse,
   AdminCreateEmailCampaignInput,
@@ -17749,6 +17750,148 @@ export const useAdminReissueCustomerSetup = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getAdminReissueCustomerSetupMutationOptions(options));
+    }
+
+export const getAdminCreateAccountSetupUrl = () => {
+
+
+
+
+  return `/api/admin/accounts/setup`
+}
+
+/**
+ * @summary Create a non-SUPER_ADMIN standalone account and return a one-time password setup URL
+ */
+export const adminCreateAccountSetup = async (adminCreateAccountSetupInput: AdminCreateAccountSetupInput, options?: Parameters<typeof customFetch>[1]): Promise<AdminCreateCustomerSetupResponse> => {
+
+  return customFetch<AdminCreateCustomerSetupResponse>(getAdminCreateAccountSetupUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminCreateAccountSetupInput)
+  }
+);}
+
+
+
+
+
+export const getAdminCreateAccountSetupMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminCreateAccountSetup>>, TError,{data: BodyType<AdminCreateAccountSetupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminCreateAccountSetup>>, TError,{data: BodyType<AdminCreateAccountSetupInput>}, TContext> => {
+
+const mutationKey = ['adminCreateAccountSetup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminCreateAccountSetup>>, {data: BodyType<AdminCreateAccountSetupInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  adminCreateAccountSetup(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminCreateAccountSetupMutationResult = NonNullable<Awaited<ReturnType<typeof adminCreateAccountSetup>>>
+    export type AdminCreateAccountSetupMutationBody = BodyType<AdminCreateAccountSetupInput>
+    export type AdminCreateAccountSetupMutationError = ErrorType<void>
+
+    /**
+ * @summary Create a non-SUPER_ADMIN standalone account and return a one-time password setup URL
+ */
+export const useAdminCreateAccountSetup = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminCreateAccountSetup>>, TError,{data: BodyType<AdminCreateAccountSetupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminCreateAccountSetup>>,
+        TError,
+        {data: BodyType<AdminCreateAccountSetupInput>},
+        TContext
+      > => {
+      return useMutation(getAdminCreateAccountSetupMutationOptions(options));
+    }
+
+export const getAdminReissueAccountSetupUrl = (userId: string,) => {
+
+
+
+
+  return `/api/admin/accounts/${userId}/setup`
+}
+
+/**
+ * @summary Replace an active unconfigured non-SUPER_ADMIN account's setup URL
+ */
+export const adminReissueAccountSetup = async (userId: string, options?: Parameters<typeof customFetch>[1]): Promise<AdminCreateCustomerSetupResponse> => {
+
+  return customFetch<AdminCreateCustomerSetupResponse>(getAdminReissueAccountSetupUrl(userId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminReissueAccountSetupMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminReissueAccountSetup>>, TError,{userId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminReissueAccountSetup>>, TError,{userId: string}, TContext> => {
+
+const mutationKey = ['adminReissueAccountSetup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminReissueAccountSetup>>, {userId: string}> = (props) => {
+          const {userId} = props ?? {};
+
+          return  adminReissueAccountSetup(userId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminReissueAccountSetupMutationResult = NonNullable<Awaited<ReturnType<typeof adminReissueAccountSetup>>>
+
+    export type AdminReissueAccountSetupMutationError = ErrorType<void>
+
+    /**
+ * @summary Replace an active unconfigured non-SUPER_ADMIN account's setup URL
+ */
+export const useAdminReissueAccountSetup = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminReissueAccountSetup>>, TError,{userId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminReissueAccountSetup>>,
+        TError,
+        {userId: string},
+        TContext
+      > => {
+      return useMutation(getAdminReissueAccountSetupMutationOptions(options));
     }
 
 export const getAdminUpdateUserUrl = (userId: string,) => {

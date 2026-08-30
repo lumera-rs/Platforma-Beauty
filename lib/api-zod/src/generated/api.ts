@@ -12905,8 +12905,9 @@ export const AdminListUsersResponseItem = zod.object({
   "lastName": zod.string(),
   "email": zod.string(),
   "phone": zod.string().nullish(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
   "active": zod.boolean(),
+  "passwordSetAt": zod.coerce.date().nullable(),
   "createdAt": zod.coerce.date()
 })
 export const AdminListUsersResponse = zod.array(AdminListUsersResponseItem)
@@ -12941,8 +12942,9 @@ export const AdminCreateCustomerSetupResponse = zod.object({
   "lastName": zod.string(),
   "email": zod.string(),
   "phone": zod.string().nullish(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
   "active": zod.boolean(),
+  "passwordSetAt": zod.coerce.date().nullable(),
   "createdAt": zod.coerce.date()
 }),
   "setupUrl": zod.string().min(1),
@@ -12970,8 +12972,79 @@ export const AdminReissueCustomerSetupResponse = zod.object({
   "lastName": zod.string(),
   "email": zod.string(),
   "phone": zod.string().nullish(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
   "active": zod.boolean(),
+  "passwordSetAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+}),
+  "setupUrl": zod.string().min(1),
+  "expiresAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Create a non-SUPER_ADMIN standalone account and return a one-time password setup URL
+ */
+export const adminCreateAccountSetupBodyFirstNameMax = 100;
+
+export const adminCreateAccountSetupBodyLastNameMax = 100;
+
+export const adminCreateAccountSetupBodyEmailMax = 320;
+
+
+export const adminCreateAccountSetupBodyEmailRegExp = new RegExp('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+
+
+export const AdminCreateAccountSetupBody = zod.object({
+  "firstName": zod.string().min(1).max(adminCreateAccountSetupBodyFirstNameMax),
+  "lastName": zod.string().min(1).max(adminCreateAccountSetupBodyLastNameMax),
+  "email": zod.string().max(adminCreateAccountSetupBodyEmailMax).regex(adminCreateAccountSetupBodyEmailRegExp),
+  "role": zod.enum(['ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT', 'JOBSEEKER'])
+}).strict()
+
+
+
+
+export const AdminCreateAccountSetupResponse = zod.object({
+  "user": zod.object({
+  "id": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "email": zod.string(),
+  "phone": zod.string().nullish(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
+  "active": zod.boolean(),
+  "passwordSetAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+}),
+  "setupUrl": zod.string().min(1),
+  "expiresAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Replace an active unconfigured non-SUPER_ADMIN account's setup URL
+ */
+export const adminReissueAccountSetupPathUserIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
+export const AdminReissueAccountSetupParams = zod.object({
+  "userId": zod.coerce.string().regex(adminReissueAccountSetupPathUserIdRegExp)
+})
+
+
+
+
+export const AdminReissueAccountSetupResponse = zod.object({
+  "user": zod.object({
+  "id": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "email": zod.string(),
+  "phone": zod.string().nullish(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
+  "active": zod.boolean(),
+  "passwordSetAt": zod.coerce.date().nullable(),
   "createdAt": zod.coerce.date()
 }),
   "setupUrl": zod.string().min(1),
@@ -12990,7 +13063,7 @@ export const AdminUpdateUserParams = zod.object({
 })
 
 export const AdminUpdateUserBody = zod.object({
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']).optional(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']).optional(),
   "active": zod.boolean().optional()
 }).strict()
 
@@ -13000,8 +13073,9 @@ export const AdminUpdateUserResponse = zod.object({
   "lastName": zod.string(),
   "email": zod.string(),
   "phone": zod.string().nullish(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
   "active": zod.boolean(),
+  "passwordSetAt": zod.coerce.date().nullable(),
   "createdAt": zod.coerce.date()
 })
 

@@ -325,7 +325,9 @@ import
   AdminUpdateUserBody,
   AdminUpdateUserParams,
   AdminCreateCustomerSetupBody,
+  AdminCreateAccountSetupBody,
   AdminReissueCustomerSetupParams,
+  AdminReissueAccountSetupParams,
   CompleteCustomerPasswordSetupBody,
   ValidateCustomerPasswordSetupBody,
   CancelAppointmentBody,
@@ -5619,7 +5621,7 @@ router.post("/auth/customer-password-setup/complete", async (req, res): Promise<
       .where(eq(usersTable.id, setup.userId))
       .for("update")
       .limit(1);
-    if (!target || target.role !== "CUSTOMER" || !target.active || target.passwordSetAt) {
+    if (!target || target.role === "SUPER_ADMIN" || !target.active || target.passwordSetAt) {
       await recordActiveCustomerSetupFailure(tx, setup, now);
       return false;
     }
@@ -21366,6 +21368,7 @@ router.get("/admin/users", async (req, res): Promise<void> => {
     phone: u.phone,
     role: u.role,
     active: u.active,
+    passwordSetAt: u.passwordSetAt?.toISOString() ?? null,
     createdAt: u.createdAt.toISOString(),
   })));
 });
@@ -21451,6 +21454,7 @@ router.post("/admin/customers/setup", async (req, res): Promise<void> => {
         phone: customer.phone,
         role: customer.role,
         active: customer.active,
+        passwordSetAt: customer.passwordSetAt?.toISOString() ?? null,
         createdAt: customer.createdAt.toISOString(),
       },
       setupUrl,
@@ -21465,9 +21469,61 @@ router.post("/admin/customers/setup", async (req, res): Promise<void> => {
   }
 });
 
-router.post("/admin/customers/:userId/setup", async (req, res): Promise<void> => {
+router.post("/admin/accounts/setup", async (req, res): Promise<void> => {
   const admin = await requireSuperAdmin(req, res); if (!admin) return;
-  const parsedParams = AdminReissueCustomerSetupParams.safeParse(req.params);
+  const parsed = AdminCreateAccountSetupBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Unesite ispravne podatke naloga." }); return; }
+  const companionRoles = new Set(["SALON_OWNER", "SALON_EMPLOYEE", "EDUKATIVNI_CENTAR", "INSTRUCTOR"]);
+  if (companionRoles.has(parsed.data.role)) {
+    res.status(422).json({ error: "Ova uloga zahteva povezani poslovni profil, salon ili zaposlenje i ne može biti kreirana bez tih podataka." });
+    return;
+  }
+  const admitted = await admitCustomerSetupRequest("issue", admin.id, 10, 60 * 60 * 1000);
+  if (!admitted) { res.setHeader("Retry-After", "3600"); res.status(429).json({ error: "Previše zahteva. Pokušajte ponovo kasnije." }); return; }
+  const email = parsed.data.email.trim().toLowerCase();
+  const firstName = parsed.data.firstName.trim();
+  const lastName = parsed.data.lastName.trim();
+  if (!firstName || !lastName) { res.status(400).json({ error: "Ime i prezime su obavezni." }); return; }
+  const rawToken = randomBytes(32).toString("base64url");
+  const expiresAt = new Date(Date.now() + CUSTOMER_SETUP_TTL_MS);
+  const setupBaseUrl = customerSetupBaseUrl(req);
+  const passwordHash = await hashPassword(randomBytes(32).toString("base64url"));
+  try {
+    const account = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`account-setup:${email}`}))`);
+      const [existing] = await tx.select({ id: usersTable.id }).from(usersTable)
+        .where(sql`lower(${usersTable.email}) = ${email}`).limit(1);
+      if (existing) return null;
+      const [created] = await tx.insert(usersTable).values({
+        firstName, lastName, email, passwordHash, passwordSetAt: null,
+        role: parsed.data.role, active: true, mustChangePassword: false,
+      }).returning();
+      if (!created) throw new Error("Account insert returned no row.");
+      await tx.insert(customerPasswordSetupTokensTable).values({
+        userId: created.id, issuedByUserId: admin.id, tokenHash: customerSetupDigest(rawToken),
+        expiresAt, maxAttempts: CUSTOMER_SETUP_MAX_ATTEMPTS,
+      });
+      await tx.insert(customerPasswordSetupAuditsTable).values({
+        administratorUserId: admin.id, targetUserId: created.id, action: "CUSTOMER_CREATED",
+      });
+      return created;
+    });
+    if (!account) { res.status(409).json({ error: "Korisnik sa ovom e-mail adresom već postoji." }); return; }
+    res.status(201).json({
+      user: { id: account.id, firstName: account.firstName, lastName: account.lastName, email: account.email, phone: account.phone, role: account.role, active: account.active, passwordSetAt: account.passwordSetAt?.toISOString() ?? null, createdAt: account.createdAt.toISOString() },
+      setupUrl: `${setupBaseUrl}/postavi-lozinku#token=${encodeURIComponent(rawToken)}`, expiresAt: expiresAt.toISOString(),
+    });
+  } catch (error) {
+    if ((error as { code?: string }).code === "23505") { res.status(409).json({ error: "Korisnik sa ovom e-mail adresom već postoji." }); return; }
+    throw error;
+  }
+});
+
+router.post(["/admin/customers/:userId/setup", "/admin/accounts/:userId/setup"], async (req, res): Promise<void> => {
+  const admin = await requireSuperAdmin(req, res); if (!admin) return;
+  const parsedParams = (req.path.startsWith("/admin/accounts/")
+    ? AdminReissueAccountSetupParams
+    : AdminReissueCustomerSetupParams).safeParse(req.params);
   if (!parsedParams.success) { res.status(404).json({ error: "Korisnik nije pronađen." }); return; }
   const admitted = await admitCustomerSetupRequest("issue", admin.id, 10, 60 * 60 * 1000);
   if (!admitted) { res.setHeader("Retry-After", "3600"); res.status(429).json({ error: "Previše zahteva. Pokušajte ponovo kasnije." }); return; }
@@ -21479,7 +21535,7 @@ router.post("/admin/customers/:userId/setup", async (req, res): Promise<void> =>
     const userId = parsedParams.data.userId;
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`customer-setup:${userId}`}))`);
     const [target] = await tx.select().from(usersTable).where(eq(usersTable.id, userId)).for("update").limit(1);
-    if (!target || target.role !== "CUSTOMER" || !target.active || target.passwordSetAt) return null;
+    if (!target || target.role === "SUPER_ADMIN" || !target.active || target.passwordSetAt) return null;
     await tx.update(customerPasswordSetupTokensTable)
       .set({ invalidatedAt: new Date() })
       .where(and(eq(customerPasswordSetupTokensTable.userId, target.id), isNull(customerPasswordSetupTokensTable.consumedAt), isNull(customerPasswordSetupTokensTable.invalidatedAt)));
@@ -21493,7 +21549,7 @@ router.post("/admin/customers/:userId/setup", async (req, res): Promise<void> =>
   });
   if (!customer) { res.status(404).json({ error: "Korisnik nije pronađen." }); return; }
   res.status(201).json({
-    user: { id: customer.id, firstName: customer.firstName, lastName: customer.lastName, email: customer.email, phone: customer.phone, role: customer.role, active: customer.active, createdAt: customer.createdAt.toISOString() },
+    user: { id: customer.id, firstName: customer.firstName, lastName: customer.lastName, email: customer.email, phone: customer.phone, role: customer.role, active: customer.active, passwordSetAt: customer.passwordSetAt?.toISOString() ?? null, createdAt: customer.createdAt.toISOString() },
     setupUrl: `${setupBaseUrl}/postavi-lozinku#token=${encodeURIComponent(rawToken)}`,
     expiresAt: expiresAt.toISOString(),
   });
@@ -21546,6 +21602,7 @@ router.patch("/admin/users/:userId", async (req, res): Promise<void> => {
     phone: updated!.phone,
     role: updated!.role,
     active: updated!.active,
+    passwordSetAt: updated!.passwordSetAt?.toISOString() ?? null,
     createdAt: updated!.createdAt.toISOString(),
   });
 });

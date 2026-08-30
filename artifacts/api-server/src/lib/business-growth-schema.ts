@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 82;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 83;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -1484,6 +1484,8 @@ function tableStatements(s: string): string[] {
        WHERE consumed_at IS NULL AND invalidated_at IS NULL`,
     `CREATE INDEX IF NOT EXISTS customer_password_setup_tokens_user_created_idx
        ON ${s}.customer_password_setup_tokens (user_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS customer_password_setup_tokens_issuer_created_idx
+       ON ${s}.customer_password_setup_tokens (issued_by_user_id, created_at)`,
     `CREATE INDEX IF NOT EXISTS customer_password_setup_tokens_expiry_idx
        ON ${s}.customer_password_setup_tokens (expires_at)`,
     `CREATE TABLE IF NOT EXISTS ${s}.customer_password_setup_audits (

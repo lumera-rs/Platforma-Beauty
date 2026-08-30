@@ -16,5 +16,7 @@ export interface AdminUser {
   phone?: string | null;
   role: AdminUserRole;
   active: boolean;
+  /** @nullable */
+  passwordSetAt: Date | null;
   createdAt: Date;
 }

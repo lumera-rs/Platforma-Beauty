@@ -6555,6 +6555,7 @@ export const AdminUserRole = {
   EDUKATIVNI_CENTAR: 'EDUKATIVNI_CENTAR',
   INSTRUCTOR: 'INSTRUCTOR',
   CUSTOMER: 'CUSTOMER',
+  JOBSEEKER: 'JOBSEEKER',
   STUDENT: 'STUDENT',
 } as const;
 
@@ -6567,6 +6568,8 @@ export interface AdminUser {
   phone?: string | null;
   role: AdminUserRole;
   active: boolean;
+  /** @nullable */
+  passwordSetAt: string | null;
   createdAt: string;
 }
 
@@ -6581,6 +6584,7 @@ export const AdminUserUpdateRole = {
   EDUKATIVNI_CENTAR: 'EDUKATIVNI_CENTAR',
   INSTRUCTOR: 'INSTRUCTOR',
   CUSTOMER: 'CUSTOMER',
+  JOBSEEKER: 'JOBSEEKER',
   STUDENT: 'STUDENT',
 } as const;
 
@@ -6605,6 +6609,39 @@ export interface AdminCreateCustomerSetupInput {
      * @pattern ^[^@\s]+@[^@\s]+\.[^@\s]+$
      */
   email: string;
+}
+
+export type AdminCreateAccountSetupInputRole = typeof AdminCreateAccountSetupInputRole[keyof typeof AdminCreateAccountSetupInputRole];
+
+
+export const AdminCreateAccountSetupInputRole = {
+  ADMIN: 'ADMIN',
+  SALON_OWNER: 'SALON_OWNER',
+  SALON_EMPLOYEE: 'SALON_EMPLOYEE',
+  EDUKATIVNI_CENTAR: 'EDUKATIVNI_CENTAR',
+  INSTRUCTOR: 'INSTRUCTOR',
+  CUSTOMER: 'CUSTOMER',
+  STUDENT: 'STUDENT',
+  JOBSEEKER: 'JOBSEEKER',
+} as const;
+
+export interface AdminCreateAccountSetupInput {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  firstName: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  lastName: string;
+  /**
+     * @maxLength 320
+     * @pattern ^[^@\s]+@[^@\s]+\.[^@\s]+$
+     */
+  email: string;
+  role: AdminCreateAccountSetupInputRole;
 }
 
 export interface AdminCreateCustomerSetupResponse {
