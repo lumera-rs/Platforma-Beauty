@@ -301,7 +301,7 @@ export default function WidgetBooking() {
                 <div className="fixed bottom-0 left-0 right-0 p-4 bg-background border-t shadow-[0_-10px_20px_rgba(0,0,0,0.05)] z-20">
                   <div className="max-w-md mx-auto">
                     <div className="flex items-center justify-between mb-3 text-sm">
-                      <span className="font-medium text-muted-foreground">Izabrano usluga: {cart.length}</span>
+                      <span className="font-medium text-muted-foreground">Izabrani tretmani: {cart.length}</span>
                       <span className="font-bold text-lg text-primary">
                         {cart.reduce((sum, item) => {
                           const s = salon.services.find(x => x.id === item.serviceId);
@@ -323,19 +323,19 @@ export default function WidgetBooking() {
               <h2 className="mb-4 text-xl font-serif font-bold text-foreground">Željeni zaposleni</h2>
               <p className="text-sm text-muted-foreground mb-4">Ukoliko želite, možete izabrati specifičnog zaposlenog za svaku uslugu.</p>
 
-              <div className="space-y-4 mb-6">
+              <div className="space-y-4 mb-6" role="list" aria-label="Izabrani tretmani">
                 {cart.map((item, index) => {
                   const s = salon.services.find(x => x.id === item.serviceId);
                   const eligibleStaff = salon.employees.filter(e => e.serviceIds.includes(item.serviceId));
                   return (
-                    <Card key={index} className="overflow-hidden border shadow-sm">
+                    <Card key={index} role="listitem" className="overflow-hidden border shadow-sm">
                       <CardContent className="p-3">
                         <div className="flex justify-between items-start mb-3">
                           <div>
                             <p className="font-semibold text-sm">{s?.name}</p>
                             <p className="text-xs text-muted-foreground">{s?.durationMinutes} min</p>
                           </div>
-                          <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:bg-destructive/10 -mt-1 -mr-1" onClick={() => removeFromCart(index)}><Trash2 className="w-4 h-4" /></Button>
+                          <Button aria-label={`Ukloni ${s?.name ?? "uslugu"} iz izabranih tretmana`} size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:bg-destructive/10 -mt-1 -mr-1" onClick={() => removeFromCart(index)}><Trash2 className="w-4 h-4" /></Button>
                         </div>
 
                         <Label className="text-xs mb-1.5 block text-muted-foreground">Izaberite radnika</Label>

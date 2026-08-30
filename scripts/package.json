@@ -18,6 +18,9 @@
     "test:auth-registration": "playwright test browser/auth-registration.spec.ts",
     "test:booking-journey": "playwright test browser/booking-journey.spec.ts",
     "test:appointment-status-consistency": "playwright test browser/appointment-status-consistency.spec.ts",
+    "test:calendar-timezone-boundaries": "TZ=Pacific/Auckland NODE_ENV=test tsx --test ../artifacts/api-server/src/lib/calendar-timezone-boundaries.test.ts",
+    "test:rescheduled-confirmations": "tsx ./src/run-rescheduled-confirmation-qa.ts",
+    "cleanup:rescheduled-confirmations": "tsx ./src/run-rescheduled-confirmation-qa.ts --recover-interrupted-databases",
     "test:browser": "playwright test",
     "test:browser-fixtures": "tsx --test ./src/api-fixtures.test.ts",
     "test:carousel": "playwright test browser/carousel-regression.spec.ts",
@@ -62,6 +65,8 @@
     "test:education-gallery": "playwright test browser/education-gallery.spec.ts",
     "test:social-oauth-return-to": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/social-oauth-return-to.test.ts && playwright test browser/social-oauth-return-to.spec.ts",
     "test:retail-checkout-api": "tsx ./src/run-retail-checkout-api.ts",
+    "test:final-booking-qa": "tsx ./src/run-final-booking-qa.ts",
+    "cleanup:final-booking-qa": "tsx ./src/run-final-booking-qa.ts --recover-interrupted-databases",
     "test:supplier-catalog-api": "tsx ./src/run-supplier-catalog-api.ts",
     "test:api-regressions": "tsx ./src/run-api-regressions.ts",
     "test:api-regressions-lifecycle": "tsx --test ./src/run-api-regressions-lifecycle.test.ts",
@@ -72,7 +77,8 @@
     "test:booking-load:staging": "LUMERA_BOOKING_LOAD=1 LUMERA_BOOKING_LOAD_PROFILE=staging LUMERA_BOOKING_LOAD_API_PROCESSES=2 LUMERA_BOOKING_LOAD_EXPECTED_DEPLOYMENT_PROCESSES=2 LUMERA_BOOKING_LOAD_POOL_MAX=10 LUMERA_BOOKING_LOAD_HARNESS_POOL_MAX=10 LUMERA_BOOKING_LOAD_CONNECTION_RESERVE=5 LUMERA_BOOKING_LOAD_DB_CONNECTION_BUDGET=35 LUMERA_BOOKING_LOAD_REPORT_NAME=staging-capacity tsx ./src/run-booking-load.ts",
     "test:booking-load:baseline": "LUMERA_BOOKING_LOAD=1 LUMERA_BOOKING_LOAD_DB_CONN_TIMEOUT_MS=5000 LUMERA_BOOKING_LOAD_REPORT_NAME=baseline-pool-timeout LUMERA_BOOKING_LOAD_EXPECT_FAILURE=1 tsx ./src/run-booking-load.ts",
     "cleanup:booking-load": "LUMERA_BOOKING_LOAD=1 tsx ./src/run-booking-load.ts --recover-interrupted-databases",
-    "test:booking-load-metrics": "tsx --test ./src/booking-load-metrics.test.ts"
+    "test:booking-load-metrics": "tsx --test ./src/booking-load-metrics.test.ts",
+    "booking-qa": "tsx ./src/run-booking-qa.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

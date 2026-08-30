@@ -1170,7 +1170,7 @@ export function appointmentEndTime(startTime: string, durationMinutes: number) {
   return `${String(Math.floor(end / 60)).padStart(2, "0")}:${String(end % 60).padStart(2, "0")}`;
 }
 
-function isValidCalendarDate(value: string) {
+export function isValidCalendarDate(value: string) {
   const parsed = new Date(`${value}T12:00:00.000Z`);
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
@@ -6232,7 +6232,9 @@ router.get("/salons/:salonId/availability", async (req, res): Promise<void> => {
     res.status(400).json({ error: "serviceId je obavezan parametar." }); return;
   }
   const [params, query] = [GetSalonAvailabilityParams.safeParse(req.params), GetSalonAvailabilityQueryParams.safeParse(req.query)];
-  if (!params.success || !query.success) { res.status(400).json({ error: "Parametri za dostupnost nisu ispravni." }); return; }
+  if (!params.success || !query.success || !isValidCalendarDate(String(req.query.date ?? ""))) {
+    res.status(400).json({ error: "Parametri za dostupnost nisu ispravni." }); return;
+  }
   const [service] = await db.select().from(servicesTable).where(and(eq(servicesTable.id, query.data.serviceId), eq(servicesTable.salonId, params.data.salonId))).limit(1);
   if (!service) { res.status(404).json({ error: "Usluga nije pronađena." }); return; }
   const date = calendarDate(query.data.date);
@@ -7289,7 +7291,9 @@ router.post("/booking-groups/:bookingGroupId/cancel", async (req, res): Promise<
 router.post("/appointments", admitBookingRequest, async (req, res): Promise<void> => {
   const user = await requireCustomer(req, res); if (!user) return;
   const parsed = CreateAppointmentBody.safeParse(req.body);
-  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  if (!parsed.success || !isValidCalendarDate(String(req.body?.date ?? ""))) {
+    res.status(400).json({ error: parsed.success ? "Datum termina nije ispravan." : parsed.error.message }); return;
+  }
   const [bookingContext] = await db.select({
     service: servicesTable,
     salon: salonsTable,
@@ -7404,7 +7408,9 @@ router.post("/appointments", admitBookingRequest, async (req, res): Promise<void
 router.patch("/appointments/:appointmentId", admitBookingRequest, async (req, res): Promise<void> => {
   const user = await requireCustomer(req, res); if (!user) return;
   const [params, body] = [UpdateAppointmentParams.safeParse(req.params), UpdateAppointmentBody.safeParse(req.body)];
-  if (!params.success || !body.success) { res.status(400).json({ error: "Podaci za izmenu termina nisu ispravni." }); return; }
+  if (!params.success || !body.success || (req.body?.date !== undefined && !isValidCalendarDate(String(req.body.date)))) {
+    res.status(400).json({ error: "Podaci za izmenu termina nisu ispravni." }); return;
+  }
   let result: { appointment: typeof appointmentsTable.$inferSelect; service: typeof servicesTable.$inferSelect; employee: typeof employeesTable.$inferSelect } | { error: "not-found" | "changed" | "invalid-time" | "unavailable" | "booking-group" };
   try {
     result = await db.transaction(async (tx) => {

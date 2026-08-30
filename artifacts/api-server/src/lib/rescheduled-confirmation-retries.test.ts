@@ -6,6 +6,7 @@ import {
   appointmentsTable,
   db,
   emailDeliveriesTable,
+  employeeLocationAssignmentsTable,
   employeeServicesTable,
   employeesTable,
   pool,
@@ -180,6 +181,12 @@ async function createSeriesFixture() {
     avatarUrl: "",
   }).returning();
   fixtureEmployeeIds.push(employee!.id);
+  await db.insert(employeeLocationAssignmentsTable).values({
+    salonId: salon!.id,
+    employeeId: employee!.id,
+    active: true,
+    isDefault: true,
+  });
   await db.insert(employeeServicesTable).values({ employeeId: employee!.id, serviceId: service!.id });
 
   const [customer] = await db.insert(salonCustomersTable).values({

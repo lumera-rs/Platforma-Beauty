@@ -29,6 +29,8 @@
     "test:education-finance": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-financial.test.ts",
     "test:education-sessions": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-sessions.test.ts",
     "test:retail-checkout-api": "pnpm --filter @workspace/scripts run test:retail-checkout-api",
+    "test:final-booking-qa": "pnpm --filter @workspace/scripts run test:final-booking-qa",
+    "cleanup:final-booking-qa": "pnpm --filter @workspace/scripts run cleanup:final-booking-qa",
     "test:supplier-catalog-api": "pnpm --filter @workspace/scripts run test:supplier-catalog-api",
     "test:retail-checkout": "pnpm run test:retail-checkout-api && pnpm --filter @workspace/scripts run test:retail-checkout",
     "test:shipping-config": "pnpm --filter @workspace/scripts run test:shipping-config",
@@ -41,9 +43,11 @@
     "test:booking-load:baseline": "pnpm --filter @workspace/scripts run test:booking-load:baseline",
     "cleanup:booking-load": "pnpm --filter @workspace/scripts run cleanup:booking-load",
     "test:appointment-regressions": "export NODE_ENV=test && pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/lib/booking-admission.test.ts && pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/availability-engine.test.ts && pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/appointment-lifecycle.test.ts && pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/lib/appointment-customer-events.test.ts ../artifacts/api-server/src/lib/booking-settings-contract.test.ts && pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/booking-p1-regressions.test.ts && pnpm run test:appointment-concurrency && pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/widget-rate-limit.test.ts",
+    "test:calendar-timezone-boundaries": "TZ=Pacific/Auckland NODE_ENV=test pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/lib/calendar-timezone-boundaries.test.ts",
     "test:multi-location": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/multi-location.test.ts && pnpm --filter @workspace/scripts run test:multi-location",
     "test:tenant-isolation": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/tenant-isolation.test.ts",
-    "test:rescheduled-confirmations": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/rescheduled-confirmation-retries.test.ts",
+    "test:rescheduled-confirmations": "pnpm --filter @workspace/scripts run test:rescheduled-confirmations",
+    "cleanup:rescheduled-confirmations": "pnpm --filter @workspace/scripts run cleanup:rescheduled-confirmations",
     "test:bundle-budget": "pnpm --filter @workspace/scripts run test:bundle-budget",
     "test:beauty-marketplace-typecheck": "pnpm --filter @workspace/beauty-marketplace run typecheck",
     "test:frontend-standards": "pnpm --filter @workspace/scripts run test:frontend-standards",
@@ -106,7 +110,9 @@
     "test:social-oauth-return-to": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/social-oauth-return-to.test.ts",
     "test:social-oauth-referral-context": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/social-oauth-referral-context.test.ts",
     "test:employee-leave": "pnpm --filter @workspace/scripts exec tsx --test ../artifacts/beauty-marketplace/src/lib/employee-leave.test.ts",
-    "test:seo": "pnpm --filter @workspace/beauty-marketplace run test:seo"
+    "test:seo": "pnpm --filter @workspace/beauty-marketplace run test:seo",
+    "booking-qa": "pnpm --filter @workspace/scripts run booking-qa",
+    "booking-qa:report": "pnpm --filter @workspace/scripts run booking-qa -- --report-only"
   },
   "private": true,
   "dependencies": {

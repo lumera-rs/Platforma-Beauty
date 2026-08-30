@@ -131,6 +131,7 @@ export default function SalonProfile() {
   const restoredSelection = useRef<string | null>(null);
   const [activeSection, setActiveSection] = useState("services");
   const [expandedServiceId, setExpandedServiceId] = useState<string | null>(null);
+  const [bookingAuthReturnTo, setBookingAuthReturnTo] = useState<string | null>(null);
 
   const [pendingQuickBook, setPendingQuickBook] = useState<{
     serviceId: string;
@@ -396,6 +397,13 @@ export default function SalonProfile() {
   };
 
   const requireBookingSignIn = (
+    serviceId: string,
+    candidate?: Pick<FirstAvailableServiceSlot, "date" | "startTime" | "employeeId">,
+  ) => {
+    setBookingAuthReturnTo(bookingReturnPath(serviceId, candidate));
+  };
+
+  const redirectToBookingSignIn = (
     serviceId: string,
     candidate?: Pick<FirstAvailableServiceSlot, "date" | "startTime" | "employeeId">,
   ) => {
@@ -740,6 +748,7 @@ export default function SalonProfile() {
         </CardContent>
         {canUseBookingActions && <CardFooter className={`grid grid-cols-1 gap-2 p-6 pt-0 bg-card ${quickBookSlot?.date && quickBookSlot.startTime && quickBookSlot.employeeId ? "sm:grid-cols-2" : ""}`}>
           <Button
+            data-testid={`salon-popular-service-book-${service.id}`}
             variant="outline"
             className="w-full font-bold text-base h-12 rounded-xl transition-all group-hover:border-primary"
             onClick={() => handleSelectService(service.id)}
@@ -747,6 +756,7 @@ export default function SalonProfile() {
             Zakaži
           </Button>
           {quickBookSlot?.date && quickBookSlot.startTime && quickBookSlot.employeeId && <Button
+            data-testid={`salon-popular-service-quick-book-${service.id}`}
             className="w-full font-bold text-base h-12 rounded-xl shadow-md"
             onClick={() => handleQuickBook(service.id, quickBookSlot)}
           >
@@ -1230,7 +1240,7 @@ export default function SalonProfile() {
               quickBookCandidate={pendingQuickBook}
               onQuickBookConsumed={() => setPendingQuickBook(null)}
               onRequireSignIn={(candidate) => {
-                requireBookingSignIn(candidate.serviceId, candidate);
+                redirectToBookingSignIn(candidate.serviceId, candidate);
               }}
               onViewAppointments={() => setLocation("/moj-nalog")}
             />
@@ -1251,7 +1261,7 @@ export default function SalonProfile() {
               quickBookCandidate={pendingQuickBook}
               onQuickBookConsumed={() => setPendingQuickBook(null)}
               onRequireSignIn={(candidate) => {
-                 requireBookingSignIn(candidate.serviceId, candidate);
+                  redirectToBookingSignIn(candidate.serviceId, candidate);
               }}
              onViewAppointments={() => setLocation("/moj-nalog")}
            />
@@ -1294,6 +1304,35 @@ export default function SalonProfile() {
         </DialogContent>
       </Dialog>
       </div>
+
+      <Dialog open={bookingAuthReturnTo !== null} onOpenChange={(open) => { if (!open) setBookingAuthReturnTo(null); }}>
+        <DialogContent data-testid="booking-auth-dialog" className="w-[calc(100%_-_2rem)] max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Ulogujte se ili se registrujte da biste rezervisali termin</DialogTitle>
+            <DialogDescription>
+              Nakon prijave vratićemo vas na izabrani salon i tretman.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:space-x-0">
+            <Button asChild variant="outline" className="w-full">
+              <Link
+                data-testid="booking-auth-login"
+                href={loginPathWithReturnTo("/prijava", bookingAuthReturnTo ?? location)}
+              >
+                Prijava
+              </Link>
+            </Button>
+            <Button asChild className="w-full">
+              <Link
+                data-testid="booking-auth-register"
+                href={loginPathWithReturnTo("/prijava?tab=register", bookingAuthReturnTo ?? location)}
+              >
+                Registracija
+              </Link>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isReviewDialogOpen} onOpenChange={(open) => !open && setIsReviewDialogOpen(false)}>
         <DialogContent className="sm:max-w-[500px]">

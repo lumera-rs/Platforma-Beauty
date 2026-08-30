@@ -487,25 +487,25 @@ export function BookingWidget(props: BookingWidgetProps) {
           {step === "CART" && (
             <div className="animate-in fade-in slide-in-from-right-4 duration-400">
               {cart.length > 0 && ContextCard()}
-              <h2 className="text-xl font-serif font-bold mb-4 text-foreground">Vaša korpa</h2>
+              <h2 className="text-xl font-serif font-bold mb-4 text-foreground">Vaša rezervacija</h2>
               {cart.length === 0 ? (
                 <div className="text-center p-8 bg-muted/20 rounded-2xl border border-dashed my-6">
                   <p className="text-muted-foreground font-medium">Nemate izabranih usluga.</p>
                   <p className="text-xs mt-2 text-muted-foreground">Izaberite usluge iz cenovnika levo.</p>
                 </div>
               ) : (
-                <div className="space-y-3 mb-6">
+                <div className="space-y-3 mb-6" role="list" aria-label="Izabrani tretmani">
                   {cart.map((item, index) => {
                     const s = props.salon.services.find(x => x.id === item.serviceId);
                     return (
-                      <div key={index} data-testid={`booking-cart-item-${index}`} className="flex justify-between items-center p-4 rounded-2xl border bg-card shadow-sm hover:shadow-md transition-shadow">
+                      <div key={index} role="listitem" data-testid={`booking-cart-item-${index}`} className="flex justify-between items-center p-4 rounded-2xl border bg-card shadow-sm hover:shadow-md transition-shadow">
                         <div>
                           <p className="font-serif font-bold text-sm text-foreground">{s?.name}</p>
                           <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1"><Clock className="w-3 h-3"/> {s?.durationMinutes} min</p>
                         </div>
                         <div className="flex items-center gap-4">
                           <span className="font-bold text-sm text-primary">{s?.promoPrice ?? s?.price} RSD</span>
-                          <Button aria-label={`Ukloni ${s?.name ?? "uslugu"} iz korpe`} size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive rounded-full" onClick={() => removeFromCart(index)}>
+                          <Button aria-label={`Ukloni ${s?.name ?? "uslugu"} iz izabranih tretmana`} size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive rounded-full" onClick={() => removeFromCart(index)}>
                             <Trash2 className="w-4 h-4" />
                           </Button>
                         </div>
@@ -680,7 +680,7 @@ export function BookingWidget(props: BookingWidgetProps) {
                     setStep("EMPLOYEE");
                   }}
                 >
-                  {quickFlowCart !== null ? "Moja korpa" : "Nazad"}
+                  {quickFlowCart !== null ? "Izabrani tretmani" : "Nazad"}
                 </Button>
                 <Button className="flex-1 font-bold shadow-md" disabled={!selectedCandidate || createMutation.isPending} onClick={handleBook}>
                   {createMutation.isPending ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : "Zakaži"}
@@ -726,7 +726,7 @@ export function MobileBookingTrigger({ salon, cartCount, onOpen }: { salon: Salo
        <div className="flex-1 min-w-0 pr-4">
          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-0.5">Vaša rezervacija</p>
          <p className="font-bold text-sm truncate text-foreground">
-           {cartCount > 0 ? `Izabrano usluga: ${cartCount}` : "Izaberite uslugu i zakažite"}
+           {cartCount > 0 ? `Izabrani tretmani: ${cartCount}` : "Izaberite uslugu i zakažite"}
          </p>
        </div>
         <div className="text-right shrink-0">
