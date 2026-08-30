@@ -133,3 +133,4 @@
 - [Booking response outbox](booking-response-outbox.md) — persist required communication rows in the booking transaction, then deliver asynchronously off the response path.
 - [Durable booking command replay](durable-booking-command-replay.md) — receipt, booking, and required outbox share one transaction; load arrivals use unique keys unless testing replay.
 - [Product demo identity isolation](product-demo-identity-isolation.md) — authorization regressions use exact-ID marker fixtures and never borrow product-facing demo accounts.
+- [OpenAPI closed-object runtime](openapi-closed-object-runtime.md) — exact request shapes need raw-input checks when generated validators strip unknown keys.

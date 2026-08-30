@@ -324,6 +324,9 @@ import
   AdminUpdateSubscriptionPlanParams,
   AdminUpdateUserBody,
   AdminUpdateUserParams,
+  AdminConvertUserToBusinessAccountBody,
+  AdminConvertUserToBusinessAccountParams,
+  AdminConvertUserToBusinessAccountResponse,
   AdminCreateCustomerSetupBody,
   AdminCreateAccountSetupBody,
   AdminReissueCustomerSetupParams,
@@ -21612,6 +21615,19 @@ function parseAdminAccountSetupInput(value: unknown): AdminBusinessAccountSetupI
   return common;
 }
 
+function parseAdminBusinessConversionInput(value: unknown): AdminBusinessAccountSetupInput | null {
+  if (!isRecordInput(value)
+    || !hasOnlyKeys(value, ["role", ...adminAccountRoleObjects])
+    || typeof value.role !== "string"
+    || !adminAccountRoleObject[value.role as AdminBusinessAccountSetupInput["role"]]) return null;
+  return parseAdminAccountSetupInput({
+    firstName: "Existing",
+    lastName: "Account",
+    email: "existing-account@lumera.invalid",
+    ...value,
+  });
+}
+
 router.post("/admin/accounts/setup", async (req, res): Promise<void> => {
   const admin = await requireSuperAdmin(req, res); if (!admin) return;
   if (!isRecordInput(req.body)
@@ -21787,6 +21803,176 @@ router.post(["/admin/customers/:userId/setup", "/admin/accounts/:userId/setup"],
   });
 });
 
+router.post("/admin/users/:userId/business-conversion", async (req, res): Promise<void> => {
+  const admin = await requireSuperAdmin(req, res); if (!admin) return;
+  const parsedParams = AdminConvertUserToBusinessAccountParams.safeParse(req.params);
+  if (!parsedParams.success) { res.status(400).json({ error: parsedParams.error.message }); return; }
+  const contractBody = AdminConvertUserToBusinessAccountBody.safeParse(req.body);
+  if (!contractBody.success) {
+    res.status(422).json({ error: "Unesite tačno one poslovne podatke koji odgovaraju izabranoj ulozi." });
+    return;
+  }
+  // Zod normalizes valid objects by stripping unknown keys. The conversion
+  // contract intentionally has exact role-specific shapes, so validate the
+  // unmodified request as well before accepting normalized input.
+  const parsed = parseAdminBusinessConversionInput(req.body);
+  if (!parsed) {
+    res.status(422).json({ error: "Unesite tačno one poslovne podatke koji odgovaraju izabranoj ulozi." });
+    return;
+  }
+
+  try {
+    const result = await db.transaction(async (tx) => {
+      const userId = parsedParams.data.userId;
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`business-conversion:${userId}`}))`);
+      const [target] = await tx.select().from(usersTable)
+        .where(eq(usersTable.id, userId)).for("update").limit(1);
+      if (!target) return { status: "not-found" as const };
+
+      const standaloneRoles = new Set(["ADMIN", "CUSTOMER", "STUDENT", "JOBSEEKER"]);
+      if (!target.active || !standaloneRoles.has(target.role)) {
+        return { status: "unsupported-source" as const };
+      }
+
+      // Role alone is not sufficient evidence of a standalone account. Lock and
+      // reject every supported business companion before creating a new one.
+      const [ownedSalon] = await tx.select({ id: salonsTable.id }).from(salonsTable)
+        .where(eq(salonsTable.ownerId, target.id)).for("update").limit(1);
+      const [employeeProfile] = await tx.select({ id: employeesTable.id }).from(employeesTable)
+        .where(eq(employeesTable.userId, target.id)).for("update").limit(1);
+      const [ownedCenter] = await tx.select({ id: educationCentersTable.id }).from(educationCentersTable)
+        .where(eq(educationCentersTable.ownerId, target.id)).for("update").limit(1);
+      const [instructorProfile] = await tx.select({ id: educationInstructorsTable.id }).from(educationInstructorsTable)
+        .where(eq(educationInstructorsTable.userId, target.id)).for("update").limit(1);
+      if (ownedSalon || employeeProfile || ownedCenter || instructorProfile || target.activeSalonId) {
+        return { status: "unsupported-source" as const };
+      }
+
+      if (parsed.role === "SALON_OWNER") {
+        const input = parsed.salon!;
+        const [salon] = await tx.insert(salonsTable).values({
+          ownerId: target.id, name: input.name, slug: input.slug, city: input.city,
+          municipality: input.municipality, address: input.address, postalCode: input.postalCode,
+          phone: input.phone, email: input.email, companyName: input.companyName,
+          companyTaxId: input.companyTaxId, companyRegistrationNumber: input.companyRegistrationNumber,
+          companyAddress: input.companyAddress, companyCity: input.companyCity,
+          companyPostalCode: input.companyPostalCode, shortDescription: input.shortDescription,
+          description: input.description,
+          imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=1200&auto=format&fit=crop",
+          active: true,
+        }).returning({ id: salonsTable.id });
+        if (!salon) throw new Error("Business conversion salon insert returned no row.");
+        const binding = await bindLegalEntityBusinessInTx(tx, {
+          pib: input.companyTaxId, legalName: input.companyName, ownerUserId: target.id, salonId: salon.id,
+        });
+        await tx.update(salonsTable).set({ companyTaxId: binding.normalizedPib }).where(eq(salonsTable.id, salon.id));
+        await tx.update(usersTable).set({
+          role: parsed.role, activeSalonId: salon.id, updatedAt: new Date(),
+        }).where(eq(usersTable.id, target.id));
+      } else if (parsed.role === "SALON_EMPLOYEE") {
+        const input = parsed.employee!;
+        const [salon] = await tx.select({ id: salonsTable.id, ownerId: salonsTable.ownerId })
+          .from(salonsTable).where(and(eq(salonsTable.id, input.salonId), eq(salonsTable.active, true)))
+          .for("update").limit(1);
+        if (!salon) throw new Error("CONVERSION_TARGET_SALON_NOT_FOUND");
+        const [owner] = await tx.select({ active: usersTable.active }).from(usersTable)
+          .where(eq(usersTable.id, salon.ownerId)).for("update").limit(1);
+        if (!owner?.active) throw new Error("CONVERSION_TARGET_SALON_NOT_FOUND");
+        const [employee] = await tx.insert(employeesTable).values({
+          salonId: salon.id, userId: target.id, name: `${target.firstName} ${target.lastName}`,
+          role: input.jobTitle, bio: input.bio ?? "", email: target.email,
+          avatarUrl: "/lumera-media/therapist-1.jpg", active: true,
+        }).returning({ id: employeesTable.id });
+        if (!employee) throw new Error("Business conversion employee insert returned no row.");
+        await tx.insert(employeeLocationAssignmentsTable).values({
+          employeeId: employee.id, salonId: salon.id, active: true, isDefault: true,
+        });
+        await tx.update(usersTable).set({
+          role: parsed.role, activeSalonId: salon.id, updatedAt: new Date(),
+        }).where(eq(usersTable.id, target.id));
+      } else if (parsed.role === "EDUKATIVNI_CENTAR") {
+        const input = parsed.educationCenter!;
+        const [workspace] = await tx.insert(salonsTable).values({
+          ownerId: target.id, name: input.name, slug: businessSlug(input.name, target.id),
+          city: input.city, municipality: input.city, address: input.contactAddress,
+          phone: input.contactPhone, email: input.contactEmail, companyName: input.name,
+          companyTaxId: input.pib, shortDescription: `${input.name} je novi LUMERA partner.`,
+          description: `Poslovni profil za ${input.name}. Dopunite ponudu, tim i radno vreme iz poslovnog portala.`,
+          imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=1200&auto=format&fit=crop",
+          active: false,
+        }).returning({ id: salonsTable.id });
+        const [center] = await tx.insert(educationCentersTable).values({
+          ownerId: target.id, name: input.name, city: input.city, description: input.description,
+          imageUrl: "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?q=80&w=1200&auto=format&fit=crop",
+          contactEmail: input.contactEmail, contactPhone: input.contactPhone,
+          contactAddress: input.contactAddress, pib: input.pib,
+        }).returning({ id: educationCentersTable.id });
+        if (!workspace || !center) throw new Error("Business conversion education insert returned no row.");
+        const binding = await bindLegalEntityBusinessInTx(tx, {
+          pib: input.pib, legalName: input.name, ownerUserId: target.id, educationCenterId: center.id,
+        });
+        await tx.update(educationCentersTable).set({ pib: binding.normalizedPib }).where(eq(educationCentersTable.id, center.id));
+        await tx.update(usersTable).set({
+          role: parsed.role, activeSalonId: workspace.id, updatedAt: new Date(),
+        }).where(eq(usersTable.id, target.id));
+      } else {
+        const input = parsed.instructor!;
+        const [center] = await tx.select({ id: educationCentersTable.id, ownerId: educationCentersTable.ownerId })
+          .from(educationCentersTable)
+          .where(and(eq(educationCentersTable.id, input.centerId), notInArray(educationCentersTable.verificationStatus, ["rejected", "suspended"])))
+          .for("update").limit(1);
+        if (!center) throw new Error("CONVERSION_TARGET_CENTER_NOT_FOUND");
+        const [owner] = await tx.select({ active: usersTable.active }).from(usersTable)
+          .where(eq(usersTable.id, center.ownerId)).for("update").limit(1);
+        if (!owner?.active) throw new Error("CONVERSION_TARGET_CENTER_NOT_FOUND");
+        await tx.insert(educationInstructorsTable).values({
+          centerId: center.id, userId: target.id, fullName: `${target.firstName} ${target.lastName}`,
+          photoUrl: "/lumera-media/therapist-1.jpg", biography: input.biography ?? "",
+          industryYears: input.industryYears ?? 0, experienceYears: input.experienceYears ?? 0,
+          specializations: input.specializations ?? [], qualifications: input.qualifications ?? [],
+        });
+        await tx.update(usersTable).set({ role: parsed.role, updatedAt: new Date() })
+          .where(eq(usersTable.id, target.id));
+      }
+
+      const [updated] = await tx.select().from(usersTable)
+        .where(eq(usersTable.id, target.id)).limit(1);
+      if (!updated) throw new Error("Converted account disappeared.");
+      return { status: "converted" as const, user: updated };
+    });
+
+    if (result.status === "not-found") { res.status(404).json({ error: "Korisnik nije pronađen." }); return; }
+    if (result.status === "unsupported-source") {
+      res.status(422).json({ error: "Konverzija je dozvoljena samo za aktivan samostalni nalog bez poslovnih veza." });
+      return;
+    }
+    const updated = result.user;
+    res.json(AdminConvertUserToBusinessAccountResponse.parse({
+      id: updated.id, firstName: updated.firstName, lastName: updated.lastName,
+      email: updated.email, phone: updated.phone, role: updated.role, active: updated.active,
+      passwordSetAt: updated.passwordSetAt?.toISOString() ?? null,
+      createdAt: updated.createdAt.toISOString(),
+    }));
+  } catch (error) {
+    if (error instanceof LegalEntityOwnerConflictError) {
+      res.status(409).json({ error: error.message, code: error.code, normalizedPib: error.normalizedPib, outcome: "cross_account_conflict" });
+      return;
+    }
+    if (error instanceof Error && error.message === "CONVERSION_TARGET_SALON_NOT_FOUND") {
+      res.status(404).json({ error: "Aktivni salon nije pronađen." }); return;
+    }
+    if (error instanceof Error && error.message === "CONVERSION_TARGET_CENTER_NOT_FOUND") {
+      res.status(404).json({ error: "Aktivni edukativni centar nije pronađen." }); return;
+    }
+    if ((error as { code?: string }).code === "23505"
+      || (error as { cause?: { code?: string } })?.cause?.code === "23505") {
+      res.status(409).json({ error: "Nalog ili povezani poslovni podaci već postoje." });
+      return;
+    }
+    throw error;
+  }
+});
+
 router.patch("/admin/users/:userId", async (req, res): Promise<void> => {
   const admin = await requireSuperAdmin(req, res); if (!admin) return;
   const parsedParams = AdminUpdateUserParams.safeParse(req.params);
@@ -21797,8 +21983,13 @@ router.patch("/admin/users/:userId", async (req, res): Promise<void> => {
   const { role, active } = parsed.data;
 
   const result = await db.transaction(async (tx) => {
+    // This is deliberately acquired before the global super-admin guard. The
+    // business-conversion flow uses this same per-user lock, so a generic role
+    // PATCH cannot observe a standalone account while a companion is being
+    // created (or vice versa).
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`business-conversion:${userId}`}))`);
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext('lumera_active_super_admin_guard'))`);
-    const [target] = await tx.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    const [target] = await tx.select().from(usersTable).where(eq(usersTable.id, userId)).for("update").limit(1);
     if (!target) return { status: "not-found" as const };
     const targetHasBusinessCompanion = adminAccountRoleObject[target.role as AdminBusinessAccountSetupInput["role"]] !== undefined;
     const nextNeedsBusinessCompanion = role !== undefined

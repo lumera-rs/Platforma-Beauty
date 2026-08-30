@@ -6975,6 +6975,56 @@ export interface AdminStandaloneJobseekerAccountSetupInput {
 
 export type AdminCreateAccountSetupInput = AdminSalonOwnerAccountSetupInput | AdminSalonEmployeeAccountSetupInput | AdminEducationCenterAccountSetupInput | AdminInstructorAccountSetupInput | AdminStandaloneAdminAccountSetupInput | AdminStandaloneCustomerAccountSetupInput | AdminStandaloneStudentAccountSetupInput | AdminStandaloneJobseekerAccountSetupInput;
 
+export type AdminSalonOwnerConversionInputRole = typeof AdminSalonOwnerConversionInputRole[keyof typeof AdminSalonOwnerConversionInputRole];
+
+
+export const AdminSalonOwnerConversionInputRole = {
+  SALON_OWNER: 'SALON_OWNER',
+} as const;
+
+export interface AdminSalonOwnerConversionInput {
+  role: AdminSalonOwnerConversionInputRole;
+  salon: AdminSalonOwnerSetup;
+}
+
+export type AdminSalonEmployeeConversionInputRole = typeof AdminSalonEmployeeConversionInputRole[keyof typeof AdminSalonEmployeeConversionInputRole];
+
+
+export const AdminSalonEmployeeConversionInputRole = {
+  SALON_EMPLOYEE: 'SALON_EMPLOYEE',
+} as const;
+
+export interface AdminSalonEmployeeConversionInput {
+  role: AdminSalonEmployeeConversionInputRole;
+  employee: AdminEmployeeSetup;
+}
+
+export type AdminEducationCenterConversionInputRole = typeof AdminEducationCenterConversionInputRole[keyof typeof AdminEducationCenterConversionInputRole];
+
+
+export const AdminEducationCenterConversionInputRole = {
+  EDUKATIVNI_CENTAR: 'EDUKATIVNI_CENTAR',
+} as const;
+
+export interface AdminEducationCenterConversionInput {
+  role: AdminEducationCenterConversionInputRole;
+  educationCenter: AdminEducationCenterSetup;
+}
+
+export type AdminInstructorConversionInputRole = typeof AdminInstructorConversionInputRole[keyof typeof AdminInstructorConversionInputRole];
+
+
+export const AdminInstructorConversionInputRole = {
+  INSTRUCTOR: 'INSTRUCTOR',
+} as const;
+
+export interface AdminInstructorConversionInput {
+  role: AdminInstructorConversionInputRole;
+  instructor: AdminInstructorSetup;
+}
+
+export type AdminBusinessAccountConversionInput = AdminSalonOwnerConversionInput | AdminSalonEmployeeConversionInput | AdminEducationCenterConversionInput | AdminInstructorConversionInput;
+
 export interface AdminCreateCustomerSetupResponse {
   user: AdminUser;
   /** @minLength 1 */

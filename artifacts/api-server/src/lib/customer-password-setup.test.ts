@@ -36,6 +36,8 @@ async function run(): Promise<void> {
   const salonPib = `1${randomBytes(4).readUInt32BE(0).toString().padStart(10, "0").slice(0, 8)}`;
   const centerPib = `2${randomBytes(4).readUInt32BE(0).toString().padStart(10, "0").slice(0, 8)}`;
   const rollbackPib = `3${randomBytes(4).readUInt32BE(0).toString().padStart(10, "0").slice(0, 8)}`;
+  const conversionSalonPib = `4${randomBytes(4).readUInt32BE(0).toString().padStart(10, "0").slice(0, 8)}`;
+  const conversionCenterPib = `5${randomBytes(4).readUInt32BE(0).toString().padStart(10, "0").slice(0, 8)}`;
   const createdUserIds: string[] = [];
   const actors = await db.insert(usersTable).values([
     {
@@ -70,10 +72,55 @@ async function run(): Promise<void> {
       passwordSetAt: new Date(),
       role: "SALON_OWNER",
     },
+    {
+      firstName: "Convert", lastName: "Owner",
+      email: `convert-owner-${suffix}@example.test`, passwordHash: await hashPassword(customerPassword),
+      passwordSetAt: new Date(), role: "CUSTOMER",
+    },
+    {
+      firstName: "Convert", lastName: "Employee",
+      email: `convert-employee-${suffix}@example.test`, passwordHash: await hashPassword(customerPassword),
+      passwordSetAt: new Date(), role: "ADMIN",
+    },
+    {
+      firstName: "Convert", lastName: "Center",
+      email: `convert-center-${suffix}@example.test`, passwordHash: await hashPassword(customerPassword),
+      passwordSetAt: new Date(), role: "STUDENT",
+    },
+    {
+      firstName: "Convert", lastName: "Instructor",
+      email: `convert-instructor-${suffix}@example.test`, passwordHash: await hashPassword(customerPassword),
+      passwordSetAt: new Date(), role: "JOBSEEKER",
+    },
+    {
+      firstName: "Convert", lastName: "Rollback",
+      email: `convert-rollback-${suffix}@example.test`, passwordHash: await hashPassword(customerPassword),
+      passwordSetAt: new Date(), role: "CUSTOMER",
+    },
+    {
+      firstName: "Convert", lastName: "Inactive",
+      email: `convert-inactive-${suffix}@example.test`, passwordHash: await hashPassword(customerPassword),
+      passwordSetAt: new Date(), role: "CUSTOMER", active: false,
+    },
+    {
+      firstName: "Convert", lastName: "Concurrent",
+      email: `convert-concurrent-${suffix}@example.test`, passwordHash: await hashPassword(customerPassword),
+      passwordSetAt: new Date(), role: "CUSTOMER",
+    },
+    {
+      firstName: "Convert", lastName: "PatchRace",
+      email: `convert-patch-race-${suffix}@example.test`, passwordHash: await hashPassword(customerPassword),
+      passwordSetAt: new Date(), role: "CUSTOMER",
+    },
   ]).returning();
   createdUserIds.push(...actors.map((actor) => actor.id));
-  const [superAdmin, admin, existingCustomer, owner] = actors;
-  assert.ok(superAdmin && admin && existingCustomer && owner);
+  const [
+    superAdmin, admin, existingCustomer, owner, conversionOwner, conversionEmployee,
+    conversionCenter, conversionInstructor, conversionRollback, conversionInactive, conversionConcurrent, conversionPatchRace,
+  ] = actors;
+  assert.ok(superAdmin && admin && existingCustomer && owner && conversionOwner && conversionEmployee
+    && conversionCenter && conversionInstructor && conversionRollback && conversionInactive && conversionConcurrent
+    && conversionPatchRace);
   const cookies = {
     superAdmin: `${sessionCookieName}=${await createSession(superAdmin.id)}`,
     admin: `${sessionCookieName}=${await createSession(admin.id)}`,
@@ -111,6 +158,30 @@ async function run(): Promise<void> {
     });
     assert.equal((await unauthorizedGenericCreate()).status, 401);
     assert.equal((await unauthorizedGenericCreate(cookies.admin)).status, 403);
+    const convert = (userId: string, body: Record<string, unknown>, cookie?: string) =>
+      fetch(`${baseUrl}/admin/users/${userId}/business-conversion`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}) },
+        body: JSON.stringify(body),
+      });
+    assert.equal((await convert(conversionOwner.id, { role: "SALON_OWNER" })).status, 401);
+    assert.equal((await convert(conversionOwner.id, { role: "SALON_OWNER" }, cookies.admin)).status, 403);
+    assert.equal((await convert(conversionOwner.id, { role: "SALON_OWNER" }, cookies.customer)).status, 403);
+    assert.equal((await convert(conversionOwner.id, { role: "SALON_OWNER" }, cookies.owner)).status, 403);
+    assert.equal((await convert(randomUUID(), {
+      role: "INSTRUCTOR", instructor: { centerId: randomUUID() },
+    }, cookies.superAdmin)).status, 404);
+    assert.equal((await convert(conversionOwner.id, {
+      role: "SALON_OWNER", employee: { salonId: randomUUID(), jobTitle: "Pogrešno" },
+    }, cookies.superAdmin)).status, 422);
+    assert.equal((await db.select({ role: usersTable.role }).from(usersTable)
+      .where(eq(usersTable.id, conversionOwner.id)))[0]?.role, "CUSTOMER");
+    assert.equal((await convert(conversionInactive.id, {
+      role: "INSTRUCTOR", instructor: { centerId: randomUUID() },
+    }, cookies.superAdmin)).status, 422);
+    assert.equal((await convert(owner.id, {
+      role: "INSTRUCTOR", instructor: { centerId: randomUUID() },
+    }, cookies.superAdmin)).status, 422, "business-to-business conversion is explicitly rejected");
     const standaloneResponse = await genericCreate({
       ...createBody, email: `setup-standalone-admin-${suffix}@example.test`, role: "ADMIN",
     });
@@ -150,6 +221,12 @@ async function run(): Promise<void> {
     assert.ok(createdSalon);
     assert.equal((await db.select({ activeSalonId: usersTable.activeSalonId }).from(usersTable)
       .where(eq(usersTable.id, ownerSetup.user.id)))[0]?.activeSalonId, createdSalon.id);
+    assert.equal((await convert(ownerSetup.user.id, {
+      role: "INSTRUCTOR", instructor: { centerId: randomUUID() },
+    }, cookies.superAdmin)).status, 422);
+    assert.equal((await db.select().from(salonsTable)
+      .where(eq(salonsTable.id, createdSalon.id)))[0]?.ownerId, ownerSetup.user.id,
+    "rejected business-source conversion preserves the existing companion");
 
     const employeeEmail = `setup-business-employee-${suffix}@example.test`;
     const employeeSetupResponse = await genericCreate({
@@ -202,6 +279,155 @@ async function run(): Promise<void> {
       .where(eq(educationInstructorsTable.userId, instructorSetup.user.id));
     assert.equal(createdInstructor?.centerId, createdCenter.id);
 
+    const convertedOwnerResponse = await convert(conversionOwner.id, {
+      role: "SALON_OWNER",
+      salon: {
+        name: "Converted salon", slug: `converted-salon-${suffix}`, city: "Beograd",
+        municipality: "Vračar", address: "Konverzija 1", phone: "+38160111999",
+        email: conversionOwner.email, companyName: "Converted Salon DOO",
+        companyTaxId: conversionSalonPib, companyRegistrationNumber: `CONV-${suffix}`,
+        companyAddress: "Konverzija 1", companyCity: "Beograd",
+        shortDescription: "Konvertovani salon.", description: "Potpun konvertovani poslovni profil.",
+      },
+    }, cookies.superAdmin);
+    assert.equal(convertedOwnerResponse.status, 200);
+    const [convertedSalon] = await db.select().from(salonsTable)
+      .where(eq(salonsTable.ownerId, conversionOwner.id));
+    assert.ok(convertedSalon);
+    assert.equal((await db.select({ role: usersTable.role, activeSalonId: usersTable.activeSalonId })
+      .from(usersTable).where(eq(usersTable.id, conversionOwner.id)))[0]?.activeSalonId, convertedSalon.id);
+
+    assert.equal((await convert(conversionEmployee.id, {
+      role: "SALON_EMPLOYEE",
+      employee: { salonId: createdSalon.id, jobTitle: "Stilista", bio: "Konvertovani član tima." },
+    }, cookies.superAdmin)).status, 200);
+    const [convertedEmployee] = await db.select().from(employeesTable)
+      .where(eq(employeesTable.userId, conversionEmployee.id));
+    assert.ok(convertedEmployee);
+    assert.equal((await db.select().from(employeeLocationAssignmentsTable)
+      .where(eq(employeeLocationAssignmentsTable.employeeId, convertedEmployee.id)))[0]?.salonId, createdSalon.id);
+
+    assert.equal((await convert(conversionCenter.id, {
+      role: "EDUKATIVNI_CENTAR",
+      educationCenter: {
+        name: "Converted academy", city: "Niš", description: "Konvertovani edukativni centar.",
+        contactEmail: conversionCenter.email, contactPhone: "+38161111999",
+        contactAddress: "Akademija 1", pib: conversionCenterPib,
+      },
+    }, cookies.superAdmin)).status, 200);
+    const [convertedEducationCenter] = await db.select().from(educationCentersTable)
+      .where(eq(educationCentersTable.ownerId, conversionCenter.id));
+    assert.ok(convertedEducationCenter);
+    assert.ok((await db.select().from(salonsTable)
+      .where(eq(salonsTable.ownerId, conversionCenter.id)))[0], "center conversion creates its workspace");
+
+    assert.equal((await convert(conversionInstructor.id, {
+      role: "INSTRUCTOR",
+      instructor: {
+        centerId: createdCenter.id, biography: "Konvertovani predavač.", industryYears: 8,
+        experienceYears: 3, specializations: ["Nega"], qualifications: ["Sertifikat"],
+      },
+    }, cookies.superAdmin)).status, 200);
+    assert.equal((await db.select().from(educationInstructorsTable)
+      .where(eq(educationInstructorsTable.userId, conversionInstructor.id)))[0]?.centerId, createdCenter.id);
+
+    const forbiddenTopLevel = await convert(conversionRollback.id, {
+      role: "SALON_EMPLOYEE",
+      employee: { salonId: createdSalon.id, jobTitle: "Stilista" },
+      unexpected: true,
+    }, cookies.superAdmin);
+    assert.equal(forbiddenTopLevel.status, 422);
+    const forbiddenNested = await convert(conversionRollback.id, {
+      role: "SALON_EMPLOYEE",
+      employee: { salonId: createdSalon.id, jobTitle: "Stilista", unexpected: true },
+    }, cookies.superAdmin);
+    assert.equal(forbiddenNested.status, 422);
+    assert.equal((await db.select({ role: usersTable.role }).from(usersTable)
+      .where(eq(usersTable.id, conversionRollback.id)))[0]?.role, "CUSTOMER");
+    assert.equal((await db.select().from(employeesTable)
+      .where(eq(employeesTable.userId, conversionRollback.id))).length, 0,
+    "unknown conversion keys must not create a companion");
+
+    const conversionConflict = await convert(conversionRollback.id, {
+      role: "SALON_OWNER",
+      salon: {
+        name: "Rollback conversion", slug: createdSalon.slug, city: "Beograd",
+        municipality: "Vračar", address: "Rollback 1", phone: "+38160111888",
+        email: conversionRollback.email, companyName: "Rollback Conversion DOO",
+        companyTaxId: rollbackPib, companyRegistrationNumber: `CONV-ROLLBACK-${suffix}`,
+        companyAddress: "Rollback 1", companyCity: "Beograd",
+        shortDescription: "Rollback.", description: "Ovaj poslovni profil ne sme ostati u bazi.",
+      },
+    }, cookies.superAdmin);
+    assert.equal(conversionConflict.status, 409);
+    assert.equal((await db.select({ role: usersTable.role, activeSalonId: usersTable.activeSalonId })
+      .from(usersTable).where(eq(usersTable.id, conversionRollback.id)))[0]?.role, "CUSTOMER");
+    assert.equal((await db.select().from(salonsTable)
+      .where(eq(salonsTable.ownerId, conversionRollback.id))).length, 0,
+    "companion conflict rolls back both role and companion");
+
+    const concurrentBody = {
+      role: "SALON_EMPLOYEE",
+      employee: { salonId: createdSalon.id, jobTitle: "Istovremeni stilista" },
+    };
+    const concurrentStatuses = (await Promise.all([
+      convert(conversionConcurrent.id, concurrentBody, cookies.superAdmin),
+      convert(conversionConcurrent.id, concurrentBody, cookies.superAdmin),
+    ])).map((response) => response.status).sort();
+    assert.deepEqual(concurrentStatuses, [200, 422],
+      "same-user conversions serialize instead of producing competing companions");
+    const concurrentEmployees = await db.select().from(employeesTable)
+      .where(eq(employeesTable.userId, conversionConcurrent.id));
+    assert.equal(concurrentEmployees.length, 1);
+    assert.equal(concurrentEmployees[0]?.salonId, createdSalon.id);
+    const concurrentAssignments = await db.select().from(employeeLocationAssignmentsTable)
+      .where(eq(employeeLocationAssignmentsTable.employeeId, concurrentEmployees[0]!.id));
+    assert.equal(concurrentAssignments.length, 1);
+    assert.equal(concurrentAssignments[0]?.salonId, createdSalon.id);
+    assert.equal((await db.select().from(salonsTable)
+      .where(eq(salonsTable.ownerId, conversionConcurrent.id))).length, 0);
+    assert.equal((await db.select().from(educationCentersTable)
+      .where(eq(educationCentersTable.ownerId, conversionConcurrent.id))).length, 0);
+    assert.equal((await db.select().from(educationInstructorsTable)
+      .where(eq(educationInstructorsTable.userId, conversionConcurrent.id))).length, 0,
+    "the rejected concurrent request cannot leave mixed or orphan companions");
+
+    const patchRole = (userId: string, role: string) => fetch(`${baseUrl}/admin/users/${userId}`, {
+      method: "PATCH",
+      headers: { cookie: cookies.superAdmin, "content-type": "application/json" },
+      body: JSON.stringify({ role }),
+    });
+    const conversionPatchRaceStatuses = (await Promise.all([
+      convert(conversionPatchRace.id, {
+        role: "SALON_EMPLOYEE",
+        employee: { salonId: createdSalon.id, jobTitle: "Trka stilista" },
+      }, cookies.superAdmin),
+      patchRole(conversionPatchRace.id, "SUPER_ADMIN"),
+    ])).map((response) => response.status).sort();
+    assert.deepEqual(conversionPatchRaceStatuses, [200, 422],
+      "PATCH and conversion serialize on their shared per-user advisory lock");
+    const [patchRaceUser] = await db.select({ role: usersTable.role }).from(usersTable)
+      .where(eq(usersTable.id, conversionPatchRace.id));
+    const patchRaceEmployees = await db.select().from(employeesTable)
+      .where(eq(employeesTable.userId, conversionPatchRace.id));
+    const patchRaceCenters = await db.select().from(educationCentersTable)
+      .where(eq(educationCentersTable.ownerId, conversionPatchRace.id));
+    const patchRaceInstructors = await db.select().from(educationInstructorsTable)
+      .where(eq(educationInstructorsTable.userId, conversionPatchRace.id));
+    const patchRaceSalons = await db.select().from(salonsTable)
+      .where(eq(salonsTable.ownerId, conversionPatchRace.id));
+    if (patchRaceUser?.role === "SALON_EMPLOYEE") {
+      assert.equal(patchRaceEmployees.length, 1);
+      assert.equal(patchRaceEmployees[0]?.salonId, createdSalon.id);
+      assert.equal((await db.select().from(employeeLocationAssignmentsTable)
+        .where(eq(employeeLocationAssignmentsTable.employeeId, patchRaceEmployees[0]!.id))).length, 1);
+      assert.equal(patchRaceCenters.length + patchRaceInstructors.length + patchRaceSalons.length, 0);
+    } else {
+      assert.equal(patchRaceUser?.role, "SUPER_ADMIN");
+      assert.equal(patchRaceEmployees.length + patchRaceCenters.length + patchRaceInstructors.length + patchRaceSalons.length, 0,
+        "a non-business final role cannot retain a business companion");
+    }
+
     const mismatchedEmail = `setup-mismatched-${suffix}@example.test`;
     assert.equal((await genericCreate({
       firstName: "Wrong", lastName: "Tenant", email: mismatchedEmail, role: "INSTRUCTOR",
@@ -231,6 +457,13 @@ async function run(): Promise<void> {
       employee: { salonId: createdSalon.id, jobTitle: "Kozmetičar" },
     })).status, 404);
     assert.equal((await db.select().from(usersTable).where(eq(usersTable.email, isolatedEmail))).length, 0);
+    assert.equal((await convert(conversionRollback.id, {
+      role: "SALON_EMPLOYEE", employee: { salonId: createdSalon.id, jobTitle: "Stilista" },
+    }, cookies.superAdmin)).status, 404, "inactive foreign tenant cannot be linked");
+    assert.equal((await db.select({ role: usersTable.role }).from(usersTable)
+      .where(eq(usersTable.id, conversionRollback.id)))[0]?.role, "CUSTOMER");
+    assert.equal((await db.select().from(employeesTable)
+      .where(eq(employeesTable.userId, conversionRollback.id))).length, 0);
     await db.delete(customerPasswordSetupRateLimitsTable);
 
     const createdResponse = await create(cookies.superAdmin);
@@ -385,7 +618,7 @@ async function run(): Promise<void> {
       await db.delete(educationCentersTable).where(inArray(educationCentersTable.ownerId, createdUserIds));
       await db.delete(salonsTable).where(inArray(salonsTable.ownerId, createdUserIds));
       await db.delete(legalEntitiesTable).where(inArray(legalEntitiesTable.normalizedPib, [
-        salonPib, centerPib,
+        salonPib, centerPib, conversionSalonPib, conversionCenterPib, rollbackPib,
       ]));
       await db.delete(usersTable).where(inArray(usersTable.id, createdUserIds));
     }

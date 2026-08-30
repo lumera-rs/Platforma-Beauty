@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { AdminLayout } from "./layout";
-import { useAdminCreateAccountSetup, useAdminReissueAccountSetup, useAdminListUsers, useAdminUpdateUser, getAdminListUsersQueryKey, useGetCurrentUser, useAdminListSalons, getAdminListSalonsQueryKey, useListAdminEducationCenters, getListAdminEducationCentersQueryKey } from "@workspace/api-client-react";
-import type { AdminCreateAccountSetupInput, AdminUserUpdateRole, AdminListUsersRole } from "@workspace/api-client-react";
+import { useAdminCreateAccountSetup, useAdminReissueAccountSetup, useAdminListUsers, useAdminUpdateUser, getAdminListUsersQueryKey, useGetCurrentUser, useAdminListSalons, getAdminListSalonsQueryKey, useListAdminEducationCenters, getListAdminEducationCentersQueryKey, useAdminConvertUserToBusinessAccount } from "@workspace/api-client-react";
+import type { AdminCreateAccountSetupInput, AdminUserUpdateRole, AdminListUsersRole, AdminUser, AdminBusinessAccountConversionInput } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Loader2, Search, Users as UsersIcon, Mail, FilterX, UserPlus, Copy, Check } from "lucide-react";
+import { Loader2, Search, Users as UsersIcon, Mail, FilterX, UserPlus, Copy, Check, Briefcase } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useDebouncedSearch } from "@/hooks/use-debounce";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -90,6 +90,134 @@ const roleNames: Record<string, string> = {
   INSTRUCTOR: "instruktora",
 };
 
+function BusinessFields({
+  form,
+  setForm,
+  salonSearch,
+  setSalonSearch,
+  salonsLoading,
+  salonsError,
+  availableSalons,
+  centersLoading,
+  centersError,
+  availableCenters,
+}: {
+  form: AccountForm;
+  setForm: React.Dispatch<React.SetStateAction<AccountForm>>;
+  salonSearch: string;
+  setSalonSearch: React.Dispatch<React.SetStateAction<string>>;
+  salonsLoading: boolean;
+  salonsError: unknown;
+  availableSalons: any[] | undefined;
+  centersLoading: boolean;
+  centersError: unknown;
+  availableCenters: any[] | undefined;
+}) {
+  return (
+    <>
+      {form.role === "SALON_OWNER" && (
+        <fieldset className="grid gap-4 border-t pt-4 sm:grid-cols-2">
+          <legend className="px-1 text-sm font-semibold">Salon i poslovni podaci</legend>
+          {([
+            ["name", "Naziv salona"], ["slug", "URL oznaka (slug)"], ["city", "Grad"],
+            ["municipality", "Opština"], ["address", "Adresa"], ["postalCode", "Poštanski broj (opciono)"],
+            ["phone", "Telefon salona"], ["email", "E-mail salona"], ["companyName", "Naziv pravnog lica"],
+            ["companyTaxId", "PIB"], ["companyRegistrationNumber", "Matični broj"],
+            ["companyAddress", "Adresa pravnog lica"], ["companyCity", "Grad pravnog lica"],
+            ["companyPostalCode", "Poštanski broj pravnog lica (opciono)"], ["shortDescription", "Kratak opis"],
+          ] as const).map(([key, label]) => (
+            <div className="space-y-2" key={key}>
+              <Label htmlFor={`salon-${key}`}>{label}</Label>
+              <Input id={`salon-${key}`} required={!["postalCode", "companyPostalCode"].includes(key)} value={form.salon[key as keyof typeof form.salon]} onChange={(event) => setForm((value) => ({ ...value, salon: { ...value.salon, [key]: event.target.value } }))} data-testid={`input-salon-${key}`} />
+            </div>
+          ))}
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="salon-description">Opis salona</Label>
+            <Textarea id="salon-description" required value={form.salon.description} onChange={(event) => setForm((value) => ({ ...value, salon: { ...value.salon, description: event.target.value } }))} data-testid="textarea-salon-description" />
+          </div>
+        </fieldset>
+      )}
+
+      {form.role === "SALON_EMPLOYEE" && (
+        <fieldset className="space-y-4 border-t pt-4">
+          <legend className="px-1 text-sm font-semibold">Radni profil</legend>
+          <div className="space-y-2">
+            <Label htmlFor="employee-salon">Salon</Label>
+            <Input value={salonSearch} onChange={(event) => setSalonSearch(event.target.value)} placeholder="Pretraži aktivne salone" aria-label="Pretraži aktivne salone" data-testid="input-employee-salon-search" />
+            <Select value={form.employee.salonId} onValueChange={(salonId) => setForm((value) => ({ ...value, employee: { ...value.employee, salonId } }))}>
+              <SelectTrigger id="employee-salon" data-testid="select-employee-salon"><SelectValue placeholder={salonsLoading ? "Učitavanje salona..." : "Izaberite salon"} /></SelectTrigger>
+              <SelectContent>{availableSalons?.map((salon) => <SelectItem key={salon.id} value={salon.id}>{salon.name} — {salon.city}</SelectItem>)}</SelectContent>
+            </Select>
+            {!!salonsError && <p className="text-sm text-destructive" role="alert" data-testid="error-salon-list">Saloni nisu mogli biti učitani.</p>}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="employee-job-title">Pozicija</Label>
+            <Input id="employee-job-title" required value={form.employee.jobTitle} onChange={(event) => setForm((value) => ({ ...value, employee: { ...value.employee, jobTitle: event.target.value } }))} data-testid="input-employee-job-title" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="employee-bio">Biografija (opciono)</Label>
+            <Textarea id="employee-bio" value={form.employee.bio} onChange={(event) => setForm((value) => ({ ...value, employee: { ...value.employee, bio: event.target.value } }))} data-testid="textarea-employee-bio" />
+          </div>
+        </fieldset>
+      )}
+
+      {form.role === "EDUKATIVNI_CENTAR" && (
+        <fieldset className="grid gap-4 border-t pt-4 sm:grid-cols-2">
+          <legend className="px-1 text-sm font-semibold">Profil edukativnog centra</legend>
+          {([
+            ["name", "Naziv centra", "text"], ["city", "Grad", "text"],
+            ["contactEmail", "Kontakt e-mail", "email"], ["contactPhone", "Kontakt telefon", "tel"],
+            ["contactAddress", "Kontakt adresa", "text"], ["pib", "PIB", "text"],
+          ] as const).map(([key, label, type]) => (
+            <div className="space-y-2" key={key}>
+              <Label htmlFor={`center-${key}`}>{label}</Label>
+              <Input id={`center-${key}`} type={type} required value={form.educationCenter[key as keyof typeof form.educationCenter]} onChange={(event) => setForm((value) => ({ ...value, educationCenter: { ...value.educationCenter, [key]: event.target.value } }))} data-testid={`input-center-${key}`} />
+            </div>
+          ))}
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="center-description">Opis centra</Label>
+            <Textarea id="center-description" required value={form.educationCenter.description} onChange={(event) => setForm((value) => ({ ...value, educationCenter: { ...value.educationCenter, description: event.target.value } }))} data-testid="textarea-center-description" />
+          </div>
+        </fieldset>
+      )}
+
+      {form.role === "INSTRUCTOR" && (
+        <fieldset className="grid gap-4 border-t pt-4 sm:grid-cols-2">
+          <legend className="px-1 text-sm font-semibold">Profil instruktora</legend>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="instructor-center">Edukativni centar</Label>
+            <Select value={form.instructor.centerId} onValueChange={(centerId) => setForm((value) => ({ ...value, instructor: { ...value.instructor, centerId } }))}>
+              <SelectTrigger id="instructor-center" data-testid="select-instructor-center"><SelectValue placeholder={centersLoading ? "Učitavanje centara..." : "Izaberite centar"} /></SelectTrigger>
+              <SelectContent>{availableCenters?.filter((center: any) => !["rejected", "suspended"].includes(center.verificationStatus)).map((center: any) => <SelectItem key={center.id} value={center.id}>{center.name} — {center.city}</SelectItem>)}</SelectContent>
+            </Select>
+            {!!centersError && <p className="text-sm text-destructive" role="alert" data-testid="error-center-list">Centri nisu mogli biti učitani.</p>}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="instructor-industry-years">Godine u industriji (opciono)</Label>
+            <Input id="instructor-industry-years" type="number" min="0" step="1" value={form.instructor.industryYears} onChange={(event) => setForm((value) => ({ ...value, instructor: { ...value.instructor, industryYears: event.target.value } }))} data-testid="input-instructor-industry-years" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="instructor-experience-years">Godine predavačkog iskustva (opciono)</Label>
+            <Input id="instructor-experience-years" type="number" min="0" step="1" value={form.instructor.experienceYears} onChange={(event) => setForm((value) => ({ ...value, instructor: { ...value.instructor, experienceYears: event.target.value } }))} data-testid="input-instructor-experience-years" />
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="instructor-biography">Biografija (opciono)</Label>
+            <Textarea id="instructor-biography" value={form.instructor.biography} onChange={(event) => setForm((value) => ({ ...value, instructor: { ...value.instructor, biography: event.target.value } }))} data-testid="textarea-instructor-biography" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="instructor-specializations">Specijalizacije (odvojene zarezom)</Label>
+            <Input id="instructor-specializations" value={form.instructor.specializations} onChange={(event) => setForm((value) => ({ ...value, instructor: { ...value.instructor, specializations: event.target.value } }))} data-testid="input-instructor-specializations" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="instructor-qualifications">Kvalifikacije (odvojene zarezom)</Label>
+            <Input id="instructor-qualifications" value={form.instructor.qualifications} onChange={(event) => setForm((value) => ({ ...value, instructor: { ...value.instructor, qualifications: event.target.value } }))} data-testid="input-instructor-qualifications" />
+          </div>
+        </fieldset>
+      )}
+    </>
+  );
+}
+
 export default function AdminUsers() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedSearch(search);
@@ -120,14 +248,18 @@ export default function AdminUsers() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const canManageUsers = currentUserResponse?.user?.role === "SUPER_ADMIN";
+  const convertUser = useAdminConvertUserToBusinessAccount();
   const [createOpen, setCreateOpen] = useState(false);
-  const [customerForm, setCustomerForm] = useState<AccountForm>(emptyAccountForm);
+  const [convertOpen, setConvertOpen] = useState(false);
+  const [userToConvert, setUserToConvert] = useState<AdminUser | null>(null);
+  const [customerForm, setCustomerForm] = useState<AccountForm>(emptyAccountForm());
+  const [convertForm, setConvertForm] = useState<AccountForm>(emptyAccountForm());
   const [salonSearch, setSalonSearch] = useState("");
   const debouncedSalonSearch = useDebouncedSearch(salonSearch);
   const [setupResult, setSetupResult] = useState<{ setupUrl: string; expiresAt: string } | null>(null);
   const [copied, setCopied] = useState(false);
-  const needsSalonList = createOpen && !setupResult && customerForm.role === "SALON_EMPLOYEE";
-  const needsCenterList = createOpen && !setupResult && customerForm.role === "INSTRUCTOR";
+  const needsSalonList = (createOpen && !setupResult && customerForm.role === "SALON_EMPLOYEE") || (convertOpen && convertForm.role === "SALON_EMPLOYEE");
+  const needsCenterList = (createOpen && !setupResult && customerForm.role === "INSTRUCTOR") || (convertOpen && convertForm.role === "INSTRUCTOR");
   const salonListParams = { page: 1, pageSize: 100, active: true, search: debouncedSalonSearch || undefined };
   const { data: availableSalons, isLoading: salonsLoading, error: salonsError } = useAdminListSalons(salonListParams, {
     query: { enabled: needsSalonList, queryKey: getAdminListSalonsQueryKey(salonListParams) },
@@ -175,6 +307,117 @@ export default function AdminUsers() {
     setSearch("");
     setRoleFilter("all");
     setActiveFilter("all");
+  };
+
+  const openConvertDialog = (user: AdminUser) => {
+    setUserToConvert(user);
+    setConvertForm({
+      ...emptyAccountForm(),
+      role: "SALON_OWNER",
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+    });
+    setConvertOpen(true);
+  };
+
+  const closeConvertDialog = () => {
+    setConvertOpen(false);
+    setUserToConvert(null);
+    setConvertForm(emptyAccountForm());
+    setSalonSearch("");
+    convertUser.reset();
+  };
+
+  const handleConvertUser = () => {
+    if (!userToConvert) return;
+
+    if (convertForm.role === "SALON_EMPLOYEE" && !convertForm.employee.salonId) {
+      toast.error("Izaberite salon", { description: "Zaposleni mora biti povezan sa postojećim salonom." });
+      return;
+    }
+    if (convertForm.role === "INSTRUCTOR" && !convertForm.instructor.centerId) {
+      toast.error("Izaberite edukativni centar", { description: "Instruktor mora biti povezan sa postojećim centrom." });
+      return;
+    }
+
+    const roleName = roleNames[convertForm.role] ?? convertForm.role;
+    if (!window.confirm(`Konvertovati nalog korisnika ${userToConvert.firstName} ${userToConvert.lastName} u poslovni nalog: ${roleName}? Ova akcija se ne može poništiti.`)) return;
+
+    let data: AdminBusinessAccountConversionInput;
+    if (convertForm.role === "SALON_OWNER") {
+      data = {
+        role: "SALON_OWNER",
+        salon: {
+          name: convertForm.salon.name.trim(),
+          slug: convertForm.salon.slug.trim(),
+          city: convertForm.salon.city.trim(),
+          municipality: convertForm.salon.municipality.trim(),
+          address: convertForm.salon.address.trim(),
+          postalCode: convertForm.salon.postalCode.trim() || undefined,
+          phone: convertForm.salon.phone.trim(),
+          email: convertForm.salon.email.trim(),
+          companyName: convertForm.salon.companyName.trim(),
+          companyTaxId: convertForm.salon.companyTaxId.trim(),
+          companyRegistrationNumber: convertForm.salon.companyRegistrationNumber.trim(),
+          companyAddress: convertForm.salon.companyAddress.trim(),
+          companyCity: convertForm.salon.companyCity.trim(),
+          companyPostalCode: convertForm.salon.companyPostalCode.trim() || undefined,
+          shortDescription: convertForm.salon.shortDescription.trim(),
+          description: convertForm.salon.description.trim(),
+        },
+      };
+    } else if (convertForm.role === "SALON_EMPLOYEE") {
+      data = {
+        role: "SALON_EMPLOYEE",
+        employee: {
+          salonId: convertForm.employee.salonId,
+          jobTitle: convertForm.employee.jobTitle.trim(),
+          bio: convertForm.employee.bio.trim() || undefined,
+        },
+      };
+    } else if (convertForm.role === "EDUKATIVNI_CENTAR") {
+      data = {
+        role: "EDUKATIVNI_CENTAR",
+        educationCenter: {
+          name: convertForm.educationCenter.name.trim(),
+          city: convertForm.educationCenter.city.trim(),
+          description: convertForm.educationCenter.description.trim(),
+          contactEmail: convertForm.educationCenter.contactEmail.trim(),
+          contactPhone: convertForm.educationCenter.contactPhone.trim(),
+          contactAddress: convertForm.educationCenter.contactAddress.trim(),
+          pib: convertForm.educationCenter.pib.trim(),
+        },
+      };
+    } else if (convertForm.role === "INSTRUCTOR") {
+      const specializations = convertForm.instructor.specializations.split(",").map((value) => value.trim()).filter(Boolean);
+      const qualifications = convertForm.instructor.qualifications.split(",").map((value) => value.trim()).filter(Boolean);
+      data = {
+        role: "INSTRUCTOR",
+        instructor: {
+          centerId: convertForm.instructor.centerId,
+          biography: convertForm.instructor.biography.trim() || undefined,
+          industryYears: convertForm.instructor.industryYears === "" ? undefined : Number(convertForm.instructor.industryYears),
+          experienceYears: convertForm.instructor.experienceYears === "" ? undefined : Number(convertForm.instructor.experienceYears),
+          ...(specializations.length ? { specializations } : {}),
+          ...(qualifications.length ? { qualifications } : {}),
+        },
+      };
+    } else {
+      toast.error("Nepoznata uloga za konverziju");
+      return;
+    }
+
+    convertUser.mutate({ userId: userToConvert.id, data }, {
+      onSuccess: () => {
+        toast.success("Nalog uspešno konvertovan", { description: `Korisnik je sada ${roleName}.` });
+        queryClient.invalidateQueries({ queryKey: getAdminListUsersQueryKey() });
+        closeConvertDialog();
+      },
+      onError: (err: any) => {
+        toast.error("Greška pri konverziji", { description: err?.message || "Došlo je do neočekivane greške." });
+      }
+    });
   };
 
   const closeCreateDialog = () => {
@@ -391,7 +634,7 @@ export default function AdminUsers() {
                     <th className="px-6 py-4">Kontakt</th>
                     <th className="px-6 py-4">Uloga</th>
                     <th className="px-6 py-4 text-center">Aktivno</th>
-                     <th className="px-6 py-4 text-right">Setup</th>
+                     <th className="px-6 py-4 text-right">Akcije</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
@@ -428,6 +671,8 @@ export default function AdminUsers() {
                           <option value="SALON_EMPLOYEE" disabled={user.role !== "SALON_EMPLOYEE"}>Zaposleni (Salon)</option>
                           <option value="EDUKATIVNI_CENTAR" disabled={user.role !== "EDUKATIVNI_CENTAR"}>Edukativni centar</option>
                           <option value="INSTRUCTOR" disabled={user.role !== "INSTRUCTOR"}>Instruktor</option>
+                          <option value="JOBSEEKER" disabled={user.role !== "JOBSEEKER"}>Tražilac posla</option>
+                          <option value="STUDENT" disabled={user.role !== "STUDENT"}>Student</option>
                           <option value="ADMIN">Admin</option>
                           <option value="SUPER_ADMIN">Super Admin</option>
                         </select>
@@ -444,11 +689,18 @@ export default function AdminUsers() {
                         </div>
                       </td>
                        <td className="px-6 py-4 text-right">
-                         {canManageUsers && user.role !== "SUPER_ADMIN" && user.active && !user.passwordSetAt && (
-                           <Button variant="outline" size="sm" disabled={reissueCustomerSetup.isPending} onClick={() => handleReissueSetup(user.id)}>
-                             Novi link
-                           </Button>
-                         )}
+                         <div className="flex justify-end items-center gap-2">
+                           {canManageUsers && user.active && ["CUSTOMER", "JOBSEEKER", "STUDENT", "ADMIN"].includes(user.role) && (
+                             <Button variant="outline" size="sm" onClick={() => openConvertDialog(user)} aria-label="Konvertuj u poslovni nalog" data-testid={`btn-convert-${user.id}`}>
+                               <Briefcase className="w-4 h-4 mr-1.5" /> Konverzija
+                             </Button>
+                           )}
+                           {canManageUsers && user.role !== "SUPER_ADMIN" && user.active && !user.passwordSetAt && (
+                             <Button variant="outline" size="sm" disabled={reissueCustomerSetup.isPending} onClick={() => handleReissueSetup(user.id)}>
+                               Novi link
+                             </Button>
+                           )}
+                         </div>
                        </td>
                     </tr>
                   ))}
@@ -527,105 +779,18 @@ export default function AdminUsers() {
                     </div>
                   </fieldset>
 
-                  {customerForm.role === "SALON_OWNER" && (
-                    <fieldset className="grid gap-4 border-t pt-4 sm:grid-cols-2">
-                      <legend className="px-1 text-sm font-semibold">Salon i poslovni podaci</legend>
-                      {([
-                        ["name", "Naziv salona"], ["slug", "URL oznaka (slug)"], ["city", "Grad"],
-                        ["municipality", "Opština"], ["address", "Adresa"], ["postalCode", "Poštanski broj (opciono)"],
-                        ["phone", "Telefon salona"], ["email", "E-mail salona"], ["companyName", "Naziv pravnog lica"],
-                        ["companyTaxId", "PIB"], ["companyRegistrationNumber", "Matični broj"],
-                        ["companyAddress", "Adresa pravnog lica"], ["companyCity", "Grad pravnog lica"],
-                        ["companyPostalCode", "Poštanski broj pravnog lica (opciono)"], ["shortDescription", "Kratak opis"],
-                      ] as const).map(([key, label]) => (
-                        <div className="space-y-2" key={key}>
-                          <Label htmlFor={`salon-${key}`}>{label}</Label>
-                          <Input id={`salon-${key}`} required={!["postalCode", "companyPostalCode"].includes(key)} value={customerForm.salon[key]} onChange={(event) => setCustomerForm((value) => ({ ...value, salon: { ...value.salon, [key]: event.target.value } }))} data-testid={`input-salon-${key}`} />
-                        </div>
-                      ))}
-                      <div className="space-y-2 sm:col-span-2">
-                        <Label htmlFor="salon-description">Opis salona</Label>
-                        <Textarea id="salon-description" required value={customerForm.salon.description} onChange={(event) => setCustomerForm((value) => ({ ...value, salon: { ...value.salon, description: event.target.value } }))} data-testid="textarea-salon-description" />
-                      </div>
-                    </fieldset>
-                  )}
-
-                  {customerForm.role === "SALON_EMPLOYEE" && (
-                    <fieldset className="space-y-4 border-t pt-4">
-                      <legend className="px-1 text-sm font-semibold">Radni profil</legend>
-                      <div className="space-y-2">
-                        <Label htmlFor="employee-salon">Salon</Label>
-                        <Input value={salonSearch} onChange={(event) => setSalonSearch(event.target.value)} placeholder="Pretraži aktivne salone" aria-label="Pretraži aktivne salone" data-testid="input-employee-salon-search" />
-                        <Select value={customerForm.employee.salonId} onValueChange={(salonId) => setCustomerForm((value) => ({ ...value, employee: { ...value.employee, salonId } }))}>
-                          <SelectTrigger id="employee-salon" data-testid="select-employee-salon"><SelectValue placeholder={salonsLoading ? "Učitavanje salona..." : "Izaberite salon"} /></SelectTrigger>
-                          <SelectContent>{availableSalons?.map((salon) => <SelectItem key={salon.id} value={salon.id}>{salon.name} — {salon.city}</SelectItem>)}</SelectContent>
-                        </Select>
-                        {salonsError && <p className="text-sm text-destructive" role="alert" data-testid="error-salon-list">Saloni nisu mogli biti učitani.</p>}
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="employee-job-title">Pozicija</Label>
-                        <Input id="employee-job-title" required value={customerForm.employee.jobTitle} onChange={(event) => setCustomerForm((value) => ({ ...value, employee: { ...value.employee, jobTitle: event.target.value } }))} data-testid="input-employee-job-title" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="employee-bio">Biografija (opciono)</Label>
-                        <Textarea id="employee-bio" value={customerForm.employee.bio} onChange={(event) => setCustomerForm((value) => ({ ...value, employee: { ...value.employee, bio: event.target.value } }))} data-testid="textarea-employee-bio" />
-                      </div>
-                    </fieldset>
-                  )}
-
-                  {customerForm.role === "EDUKATIVNI_CENTAR" && (
-                    <fieldset className="grid gap-4 border-t pt-4 sm:grid-cols-2">
-                      <legend className="px-1 text-sm font-semibold">Profil edukativnog centra</legend>
-                      {([
-                        ["name", "Naziv centra", "text"], ["city", "Grad", "text"],
-                        ["contactEmail", "Kontakt e-mail", "email"], ["contactPhone", "Kontakt telefon", "tel"],
-                        ["contactAddress", "Kontakt adresa", "text"], ["pib", "PIB", "text"],
-                      ] as const).map(([key, label, type]) => (
-                        <div className="space-y-2" key={key}>
-                          <Label htmlFor={`center-${key}`}>{label}</Label>
-                          <Input id={`center-${key}`} type={type} required value={customerForm.educationCenter[key]} onChange={(event) => setCustomerForm((value) => ({ ...value, educationCenter: { ...value.educationCenter, [key]: event.target.value } }))} data-testid={`input-center-${key}`} />
-                        </div>
-                      ))}
-                      <div className="space-y-2 sm:col-span-2">
-                        <Label htmlFor="center-description">Opis centra</Label>
-                        <Textarea id="center-description" required value={customerForm.educationCenter.description} onChange={(event) => setCustomerForm((value) => ({ ...value, educationCenter: { ...value.educationCenter, description: event.target.value } }))} data-testid="textarea-center-description" />
-                      </div>
-                    </fieldset>
-                  )}
-
-                  {customerForm.role === "INSTRUCTOR" && (
-                    <fieldset className="grid gap-4 border-t pt-4 sm:grid-cols-2">
-                      <legend className="px-1 text-sm font-semibold">Profil instruktora</legend>
-                      <div className="space-y-2 sm:col-span-2">
-                        <Label htmlFor="instructor-center">Edukativni centar</Label>
-                        <Select value={customerForm.instructor.centerId} onValueChange={(centerId) => setCustomerForm((value) => ({ ...value, instructor: { ...value.instructor, centerId } }))}>
-                          <SelectTrigger id="instructor-center" data-testid="select-instructor-center"><SelectValue placeholder={centersLoading ? "Učitavanje centara..." : "Izaberite centar"} /></SelectTrigger>
-                          <SelectContent>{availableCenters?.filter((center) => !["rejected", "suspended"].includes(center.verificationStatus)).map((center) => <SelectItem key={center.id} value={center.id}>{center.name} — {center.city}</SelectItem>)}</SelectContent>
-                        </Select>
-                        {centersError && <p className="text-sm text-destructive" role="alert" data-testid="error-center-list">Centri nisu mogli biti učitani.</p>}
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="instructor-industry-years">Godine u industriji (opciono)</Label>
-                        <Input id="instructor-industry-years" type="number" min="0" step="1" value={customerForm.instructor.industryYears} onChange={(event) => setCustomerForm((value) => ({ ...value, instructor: { ...value.instructor, industryYears: event.target.value } }))} data-testid="input-instructor-industry-years" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="instructor-experience-years">Godine predavačkog iskustva (opciono)</Label>
-                        <Input id="instructor-experience-years" type="number" min="0" step="1" value={customerForm.instructor.experienceYears} onChange={(event) => setCustomerForm((value) => ({ ...value, instructor: { ...value.instructor, experienceYears: event.target.value } }))} data-testid="input-instructor-experience-years" />
-                      </div>
-                      <div className="space-y-2 sm:col-span-2">
-                        <Label htmlFor="instructor-biography">Biografija (opciono)</Label>
-                        <Textarea id="instructor-biography" value={customerForm.instructor.biography} onChange={(event) => setCustomerForm((value) => ({ ...value, instructor: { ...value.instructor, biography: event.target.value } }))} data-testid="textarea-instructor-biography" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="instructor-specializations">Specijalizacije (odvojene zarezom)</Label>
-                        <Input id="instructor-specializations" value={customerForm.instructor.specializations} onChange={(event) => setCustomerForm((value) => ({ ...value, instructor: { ...value.instructor, specializations: event.target.value } }))} data-testid="input-instructor-specializations" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="instructor-qualifications">Kvalifikacije (odvojene zarezom)</Label>
-                        <Input id="instructor-qualifications" value={customerForm.instructor.qualifications} onChange={(event) => setCustomerForm((value) => ({ ...value, instructor: { ...value.instructor, qualifications: event.target.value } }))} data-testid="input-instructor-qualifications" />
-                      </div>
-                    </fieldset>
-                  )}
+                  <BusinessFields
+                    form={customerForm}
+                    setForm={setCustomerForm}
+                    salonSearch={salonSearch}
+                    setSalonSearch={setSalonSearch}
+                    salonsLoading={salonsLoading}
+                    salonsError={salonsError}
+                    availableSalons={availableSalons}
+                    centersLoading={centersLoading}
+                    centersError={centersError}
+                    availableCenters={availableCenters}
+                  />
                 </div>
                 <DialogFooter className="border-t pt-4">
                   <Button type="button" variant="outline" onClick={closeCreateDialog}>Otkaži</Button>
@@ -637,6 +802,56 @@ export default function AdminUsers() {
               </form>
             )}
             {setupResult && <DialogFooter><Button onClick={closeCreateDialog}>Završi</Button></DialogFooter>}
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={convertOpen} onOpenChange={(open) => { if (!open) closeConvertDialog(); }}>
+          <DialogContent className="flex max-h-[90dvh] w-[calc(100%_-_2rem)] max-w-3xl flex-col overflow-hidden rounded-xl">
+            <DialogHeader>
+              <DialogTitle>Konverzija Naloga</DialogTitle>
+              <DialogDescription>
+                Konvertovanje postojećeg naloga ({userToConvert?.email}) u poslovni profil.
+                Ova akcija automatski kreira neophodne poslovne entitete i trajno menja ulogu korisnika.
+              </DialogDescription>
+            </DialogHeader>
+            <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => { event.preventDefault(); handleConvertUser(); }}>
+              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-1 pb-4">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="convert-role">Ciljna uloga</Label>
+                    <Select value={convertForm.role} onValueChange={(role) => setConvertForm((value) => ({ ...value, role: role as AccountForm["role"] }))}>
+                      <SelectTrigger id="convert-role" data-testid="select-convert-role"><SelectValue placeholder="Izaberite ulogu" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="SALON_OWNER">Vlasnik salona</SelectItem>
+                        <SelectItem value="SALON_EMPLOYEE">Zaposleni u salonu</SelectItem>
+                        <SelectItem value="EDUKATIVNI_CENTAR">Edukativni centar</SelectItem>
+                        <SelectItem value="INSTRUCTOR">Instruktor</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <BusinessFields
+                  form={convertForm}
+                  setForm={setConvertForm}
+                  salonSearch={salonSearch}
+                  setSalonSearch={setSalonSearch}
+                  salonsLoading={salonsLoading}
+                  salonsError={salonsError}
+                  availableSalons={availableSalons}
+                  centersLoading={centersLoading}
+                  centersError={centersError}
+                  availableCenters={availableCenters}
+                />
+              </div>
+              <DialogFooter className="border-t pt-4">
+                <Button type="button" variant="outline" onClick={closeConvertDialog}>Otkaži</Button>
+                <Button type="submit" disabled={convertUser.isPending || salonsLoading || centersLoading || Boolean(salonsError) || Boolean(centersError)} data-testid="button-convert-account">
+                  {convertUser.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Potvrdi Konverziju
+                </Button>
+              </DialogFooter>
+            </form>
           </DialogContent>
         </Dialog>
       </div>

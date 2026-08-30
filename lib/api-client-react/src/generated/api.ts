@@ -31,6 +31,7 @@ import type {
   AdminBulkResult,
   AdminBundle,
   AdminBundleInput,
+  AdminBusinessAccountConversionInput,
   AdminCreateAccountSetupInput,
   AdminCreateCustomerSetupInput,
   AdminCreateCustomerSetupResponse,
@@ -17964,6 +17965,78 @@ export const useAdminUpdateUser = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getAdminUpdateUserMutationOptions(options));
+    }
+
+export const getAdminConvertUserToBusinessAccountUrl = (userId: string,) => {
+
+
+
+
+  return `/api/admin/users/${userId}/business-conversion`
+}
+
+/**
+ * @summary Atomically convert a standalone account to a business account and create its required companion record
+ */
+export const adminConvertUserToBusinessAccount = async (userId: string,
+    adminBusinessAccountConversionInput: AdminBusinessAccountConversionInput, options?: Parameters<typeof customFetch>[1]): Promise<AdminUser> => {
+
+  return customFetch<AdminUser>(getAdminConvertUserToBusinessAccountUrl(userId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminBusinessAccountConversionInput)
+  }
+);}
+
+
+
+
+
+export const getAdminConvertUserToBusinessAccountMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminConvertUserToBusinessAccount>>, TError,{userId: string;data: BodyType<AdminBusinessAccountConversionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminConvertUserToBusinessAccount>>, TError,{userId: string;data: BodyType<AdminBusinessAccountConversionInput>}, TContext> => {
+
+const mutationKey = ['adminConvertUserToBusinessAccount'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminConvertUserToBusinessAccount>>, {userId: string;data: BodyType<AdminBusinessAccountConversionInput>}> = (props) => {
+          const {userId,data} = props ?? {};
+
+          return  adminConvertUserToBusinessAccount(userId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminConvertUserToBusinessAccountMutationResult = NonNullable<Awaited<ReturnType<typeof adminConvertUserToBusinessAccount>>>
+    export type AdminConvertUserToBusinessAccountMutationBody = BodyType<AdminBusinessAccountConversionInput>
+    export type AdminConvertUserToBusinessAccountMutationError = ErrorType<void>
+
+    /**
+ * @summary Atomically convert a standalone account to a business account and create its required companion record
+ */
+export const useAdminConvertUserToBusinessAccount = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminConvertUserToBusinessAccount>>, TError,{userId: string;data: BodyType<AdminBusinessAccountConversionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminConvertUserToBusinessAccount>>,
+        TError,
+        {userId: string;data: BodyType<AdminBusinessAccountConversionInput>},
+        TContext
+      > => {
+      return useMutation(getAdminConvertUserToBusinessAccountMutationOptions(options));
     }
 
 export const getAdminListLoyaltyTiersUrl = () => {

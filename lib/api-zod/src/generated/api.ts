@@ -13284,6 +13284,153 @@ export const AdminUpdateUserResponse = zod.object({
 
 
 /**
+ * @summary Atomically convert a standalone account to a business account and create its required companion record
+ */
+export const adminConvertUserToBusinessAccountPathUserIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const AdminConvertUserToBusinessAccountParams = zod.object({
+  "userId": zod.coerce.string().regex(adminConvertUserToBusinessAccountPathUserIdRegExp)
+})
+
+export const adminConvertUserToBusinessAccountBodyOneSalonNameMax = 500;
+
+export const adminConvertUserToBusinessAccountBodyOneSalonSlugMax = 500;
+
+export const adminConvertUserToBusinessAccountBodyOneSalonCityMax = 500;
+
+export const adminConvertUserToBusinessAccountBodyOneSalonMunicipalityMax = 500;
+
+export const adminConvertUserToBusinessAccountBodyOneSalonAddressMax = 500;
+
+export const adminConvertUserToBusinessAccountBodyOneSalonPostalCodeMax = 50;
+
+export const adminConvertUserToBusinessAccountBodyOneSalonPhoneMax = 500;
+
+export const adminConvertUserToBusinessAccountBodyOneSalonEmailMax = 320;
+
+
+export const adminConvertUserToBusinessAccountBodyOneSalonEmailRegExp = new RegExp('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+export const adminConvertUserToBusinessAccountBodyOneSalonCompanyNameMax = 500;
+
+export const adminConvertUserToBusinessAccountBodyOneSalonCompanyTaxIdMin = 8;
+export const adminConvertUserToBusinessAccountBodyOneSalonCompanyTaxIdMax = 50;
+
+
+export const adminConvertUserToBusinessAccountBodyOneSalonCompanyTaxIdRegExp = new RegExp('^(?:\\D*\\d){8,14}\\D*$');
+export const adminConvertUserToBusinessAccountBodyOneSalonCompanyRegistrationNumberMax = 500;
+
+export const adminConvertUserToBusinessAccountBodyOneSalonCompanyAddressMax = 500;
+
+export const adminConvertUserToBusinessAccountBodyOneSalonCompanyCityMax = 500;
+
+export const adminConvertUserToBusinessAccountBodyOneSalonCompanyPostalCodeMax = 50;
+
+export const adminConvertUserToBusinessAccountBodyOneSalonShortDescriptionMax = 500;
+
+export const adminConvertUserToBusinessAccountBodyOneSalonDescriptionMax = 4000;
+
+export const adminConvertUserToBusinessAccountBodyTwoEmployeeSalonIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const adminConvertUserToBusinessAccountBodyTwoEmployeeJobTitleMax = 200;
+
+export const adminConvertUserToBusinessAccountBodyTwoEmployeeBioMax = 4000;
+
+export const adminConvertUserToBusinessAccountBodyThreeEducationCenterNameMax = 500;
+
+export const adminConvertUserToBusinessAccountBodyThreeEducationCenterCityMax = 500;
+
+export const adminConvertUserToBusinessAccountBodyThreeEducationCenterDescriptionMax = 4000;
+
+export const adminConvertUserToBusinessAccountBodyThreeEducationCenterContactEmailMax = 320;
+
+
+export const adminConvertUserToBusinessAccountBodyThreeEducationCenterContactEmailRegExp = new RegExp('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+export const adminConvertUserToBusinessAccountBodyThreeEducationCenterContactPhoneMax = 500;
+
+export const adminConvertUserToBusinessAccountBodyThreeEducationCenterContactAddressMax = 500;
+
+export const adminConvertUserToBusinessAccountBodyThreeEducationCenterPibMin = 8;
+export const adminConvertUserToBusinessAccountBodyThreeEducationCenterPibMax = 50;
+
+
+export const adminConvertUserToBusinessAccountBodyThreeEducationCenterPibRegExp = new RegExp('^(?:\\D*\\d){8,14}\\D*$');
+export const adminConvertUserToBusinessAccountBodyFourInstructorCenterIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const adminConvertUserToBusinessAccountBodyFourInstructorBiographyMax = 4000;
+
+export const adminConvertUserToBusinessAccountBodyFourInstructorIndustryYearsMin = 0;
+
+export const adminConvertUserToBusinessAccountBodyFourInstructorExperienceYearsMin = 0;
+
+export const adminConvertUserToBusinessAccountBodyFourInstructorSpecializationsItemMax = 200;
+
+export const adminConvertUserToBusinessAccountBodyFourInstructorQualificationsItemMax = 200;
+
+
+
+export const AdminConvertUserToBusinessAccountBody = zod.union([zod.object({
+  "role": zod.enum(['SALON_OWNER']),
+  "salon": zod.object({
+  "name": zod.string().min(1).max(adminConvertUserToBusinessAccountBodyOneSalonNameMax),
+  "slug": zod.string().min(1).max(adminConvertUserToBusinessAccountBodyOneSalonSlugMax),
+  "city": zod.string().min(1).max(adminConvertUserToBusinessAccountBodyOneSalonCityMax),
+  "municipality": zod.string().min(1).max(adminConvertUserToBusinessAccountBodyOneSalonMunicipalityMax),
+  "address": zod.string().min(1).max(adminConvertUserToBusinessAccountBodyOneSalonAddressMax),
+  "postalCode": zod.string().max(adminConvertUserToBusinessAccountBodyOneSalonPostalCodeMax).optional(),
+  "phone": zod.string().min(1).max(adminConvertUserToBusinessAccountBodyOneSalonPhoneMax),
+  "email": zod.string().max(adminConvertUserToBusinessAccountBodyOneSalonEmailMax).regex(adminConvertUserToBusinessAccountBodyOneSalonEmailRegExp),
+  "companyName": zod.string().min(1).max(adminConvertUserToBusinessAccountBodyOneSalonCompanyNameMax),
+  "companyTaxId": zod.string().min(adminConvertUserToBusinessAccountBodyOneSalonCompanyTaxIdMin).max(adminConvertUserToBusinessAccountBodyOneSalonCompanyTaxIdMax).regex(adminConvertUserToBusinessAccountBodyOneSalonCompanyTaxIdRegExp),
+  "companyRegistrationNumber": zod.string().min(1).max(adminConvertUserToBusinessAccountBodyOneSalonCompanyRegistrationNumberMax),
+  "companyAddress": zod.string().min(1).max(adminConvertUserToBusinessAccountBodyOneSalonCompanyAddressMax),
+  "companyCity": zod.string().min(1).max(adminConvertUserToBusinessAccountBodyOneSalonCompanyCityMax),
+  "companyPostalCode": zod.string().max(adminConvertUserToBusinessAccountBodyOneSalonCompanyPostalCodeMax).optional(),
+  "shortDescription": zod.string().min(1).max(adminConvertUserToBusinessAccountBodyOneSalonShortDescriptionMax),
+  "description": zod.string().min(1).max(adminConvertUserToBusinessAccountBodyOneSalonDescriptionMax)
+})
+}),zod.object({
+  "role": zod.enum(['SALON_EMPLOYEE']),
+  "employee": zod.object({
+  "salonId": zod.string().regex(adminConvertUserToBusinessAccountBodyTwoEmployeeSalonIdRegExp),
+  "jobTitle": zod.string().min(1).max(adminConvertUserToBusinessAccountBodyTwoEmployeeJobTitleMax),
+  "bio": zod.string().max(adminConvertUserToBusinessAccountBodyTwoEmployeeBioMax).optional()
+})
+}),zod.object({
+  "role": zod.enum(['EDUKATIVNI_CENTAR']),
+  "educationCenter": zod.object({
+  "name": zod.string().min(1).max(adminConvertUserToBusinessAccountBodyThreeEducationCenterNameMax),
+  "city": zod.string().min(1).max(adminConvertUserToBusinessAccountBodyThreeEducationCenterCityMax),
+  "description": zod.string().min(1).max(adminConvertUserToBusinessAccountBodyThreeEducationCenterDescriptionMax),
+  "contactEmail": zod.string().max(adminConvertUserToBusinessAccountBodyThreeEducationCenterContactEmailMax).regex(adminConvertUserToBusinessAccountBodyThreeEducationCenterContactEmailRegExp),
+  "contactPhone": zod.string().min(1).max(adminConvertUserToBusinessAccountBodyThreeEducationCenterContactPhoneMax),
+  "contactAddress": zod.string().min(1).max(adminConvertUserToBusinessAccountBodyThreeEducationCenterContactAddressMax),
+  "pib": zod.string().min(adminConvertUserToBusinessAccountBodyThreeEducationCenterPibMin).max(adminConvertUserToBusinessAccountBodyThreeEducationCenterPibMax).regex(adminConvertUserToBusinessAccountBodyThreeEducationCenterPibRegExp)
+})
+}),zod.object({
+  "role": zod.enum(['INSTRUCTOR']),
+  "instructor": zod.object({
+  "centerId": zod.string().regex(adminConvertUserToBusinessAccountBodyFourInstructorCenterIdRegExp),
+  "biography": zod.string().max(adminConvertUserToBusinessAccountBodyFourInstructorBiographyMax).optional(),
+  "industryYears": zod.number().int().min(adminConvertUserToBusinessAccountBodyFourInstructorIndustryYearsMin).optional(),
+  "experienceYears": zod.number().int().min(adminConvertUserToBusinessAccountBodyFourInstructorExperienceYearsMin).optional(),
+  "specializations": zod.array(zod.string().min(1).max(adminConvertUserToBusinessAccountBodyFourInstructorSpecializationsItemMax)).optional(),
+  "qualifications": zod.array(zod.string().min(1).max(adminConvertUserToBusinessAccountBodyFourInstructorQualificationsItemMax)).optional()
+})
+})])
+
+export const AdminConvertUserToBusinessAccountResponse = zod.object({
+  "id": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "email": zod.string(),
+  "phone": zod.string().nullish(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
+  "active": zod.boolean(),
+  "passwordSetAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
  * @summary List all loyalty tiers
  */
 export const AdminListLoyaltyTiersResponseItem = zod.object({
