@@ -3972,6 +3972,25 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/EducationEducatorAbsenceInput" } } }
       responses:
         "201": { description: Absence created, content: { application/json: { schema: { $ref: "#/components/schemas/EducationEducatorAbsence" } } } }
+        "400": { description: Invalid absence range }
+        "401": { description: Authentication required }
+        "403": { description: Center access required }
+        "404": { description: Educator not in center }
+        "409": { description: Active assigned sessions must be replaced or cancelled first }
+  /education/operations/centers/{centerId}/educators/{staffId}/absences/preview:
+    post:
+      operationId: previewEducationEducatorAbsence
+      tags: [education]
+      parameters:
+        - $ref: "#/components/parameters/EducationCenterId"
+        - { name: staffId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EducationEducatorAbsenceInput" } } }
+      responses:
+        "200": { description: Existing session conflicts, content: { application/json: { schema: { $ref: "#/components/schemas/EducationEducatorAbsencePreview" } } } }
+        "400": { description: Invalid absence range }
+        "401": { description: Authentication required }
         "403": { description: Center access required }
         "404": { description: Educator not in center }
   /education/operations/centers/{centerId}/educators/{staffId}/absences/{absenceId}:
@@ -3987,8 +4006,11 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/EducationEducatorAbsenceInput" } } }
       responses:
         "200": { description: Absence updated, content: { application/json: { schema: { $ref: "#/components/schemas/EducationEducatorAbsence" } } } }
+        "400": { description: Invalid absence range }
+        "401": { description: Authentication required }
         "403": { description: "Only owner, administrator, or the educator may edit" }
         "404": { description: Absence not in educator scope }
+        "409": { description: Active assigned sessions must be replaced or cancelled first }
     delete:
       operationId: deleteEducationEducatorAbsence
       tags: [education]
@@ -17351,3 +17373,23 @@ components:
         startTime: { type: ["string", "null"], pattern: '^(?:[01]\d|2[0-3]):[0-5]\d$' }
         endTime: { type: ["string", "null"], pattern: '^(?:[01]\d|2[0-3]):[0-5]\d$' }
         reason: { type: ["string", "null"], maxLength: 1000 }
+    EducationEducatorAbsenceConflict:
+      type: object
+      additionalProperties: false
+      required: [sessionId, courseId, courseTitle, startsAt, endsAt, reservedSeats]
+      properties:
+        sessionId: { type: string }
+        courseId: { type: string }
+        courseTitle: { type: string }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        reservedSeats: { type: integer, minimum: 0 }
+    EducationEducatorAbsencePreview:
+      type: object
+      additionalProperties: false
+      required: [canCreate, conflicts]
+      properties:
+        canCreate: { type: boolean }
+        conflicts:
+          type: array
+          items: { $ref: "#/components/schemas/EducationEducatorAbsenceConflict" }

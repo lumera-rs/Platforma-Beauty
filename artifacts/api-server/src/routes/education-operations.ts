@@ -18,6 +18,7 @@ import {
   ListEducationCenterOperationalStaffResponse, UpdateEducationCenterOperationalStaffBody,
   UpdateEducationCenterOperationalStaffParams, UpdateEducationCenterOperationalStaffResponse,
   CreateEducationEducatorAbsenceBody, CreateEducationEducatorAbsenceParams, CreateEducationEducatorAbsenceResponse,
+  PreviewEducationEducatorAbsenceBody, PreviewEducationEducatorAbsenceParams, PreviewEducationEducatorAbsenceResponse,
   CreateEducationEducatorWeeklyAvailabilityBody, CreateEducationEducatorWeeklyAvailabilityParams, CreateEducationEducatorWeeklyAvailabilityResponse,
   DeleteEducationEducatorAbsenceParams, DeleteEducationEducatorWeeklyAvailabilityParams,
   ListEducationEducatorAbsencesParams, ListEducationEducatorAbsencesResponse,
@@ -41,7 +42,14 @@ import {
   ListAdminEducationInstallmentsQueryParams, ListAdminEducationInstallmentsResponse,
 } from "@workspace/api-zod";
 import { getCurrentUser, isAdmin } from "../lib/auth";
-import { assertBelgradeDate, educationCanonicalAvailability, educationLocalDatesTouched } from "../lib/education-availability-store";
+import {
+  assertBelgradeDate,
+  educationAbsenceConflicts,
+  educationBelgradeInstant,
+  educationCanonicalAvailability,
+  educationEducatorHasAbsenceOverlap,
+  educationLocalDatesTouched,
+} from "../lib/education-availability-store";
 import { lockEducationScheduleResources } from "../lib/education-locks";
 import { cancelEducationSession, releaseSeatAndPromoteWaiter } from "../lib/education-sessions";
 import { educationIpsQrPayload, educationOperationalPriceQuote } from "../lib/education-marketplace-domain";
@@ -183,21 +191,6 @@ function recurrenceDates(startDate: string, endDate: string, weekdays: number[])
   return dates;
 }
 
-function belgradeInstant(date: string, time: string) {
-  const [year, month, day] = date.split("-").map(Number); const [hour, minute] = time.split(":").map(Number);
-  const target = Date.UTC(year!, month! - 1, day!, hour!, minute!);
-  let candidate = target - 3 * 3_600_000;
-  const formatter = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Belgrade", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const parts = formatter.formatToParts(new Date(candidate));
-    const value = (kind: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === kind)?.value);
-    const observed = Date.UTC(value("year"), value("month") - 1, value("day"), value("hour"), value("minute"));
-    if (observed === target) return new Date(candidate);
-    candidate += target - observed;
-  }
-  throw new Error("Izabrano vreme ne postoji u vremenskoj zoni Europe/Belgrade.");
-}
-
 async function operationalEducator(req: Request, centerId: string, staffId: string, write: "view" | "create" | "mutate") {
   const access = await centerRole(req, centerId);
   if (!access.user || !access.role) return { access, staff: null, allowed: false };
@@ -251,7 +244,7 @@ router.get("/education/operations/centers/:centerId/calendar", async (req, res):
   const sessions = await db.select({ id: courseSessionsTable.id, courseId: courseSessionsTable.courseId, startsAt: courseSessionsTable.startsAt, endsAt: courseSessionsTable.endsAt, capacity: courseSessionsTable.capacity, reservedSeats: courseSessionsTable.reservedSeats, educatorStaffId: educationSessionEducatorsTable.staffId })
     .from(courseSessionsTable).innerJoin(coursesTable, eq(coursesTable.id, courseSessionsTable.courseId))
     .innerJoin(educationSessionEducatorsTable, eq(educationSessionEducatorsTable.sessionId, courseSessionsTable.id))
-    .where(and(eq(coursesTable.centerId, params.data.centerId), gte(courseSessionsTable.startsAt, belgradeInstant(query.data.startDate, "00:00")), lte(courseSessionsTable.startsAt, belgradeInstant(query.data.endDate, "23:59")), educatorStaffId ? eq(educationSessionEducatorsTable.staffId, educatorStaffId) : undefined));
+    .where(and(eq(coursesTable.centerId, params.data.centerId), gte(courseSessionsTable.startsAt, educationBelgradeInstant(query.data.startDate, "00:00")), lte(courseSessionsTable.startsAt, educationBelgradeInstant(query.data.endDate, "23:59")), educatorStaffId ? eq(educationSessionEducatorsTable.staffId, educatorStaffId) : undefined));
   // Participant identity is only materialized for the already role-scoped
   // sessions; no cross-center booking group can enter this query.
   const result = await Promise.all(sessions.map(async (session) => {
@@ -382,6 +375,25 @@ router.get("/education/operations/centers/:centerId/educators/:staffId/absences"
   res.json(ListEducationEducatorAbsencesResponse.parse(rows));
 });
 
+router.post("/education/operations/centers/:centerId/educators/:staffId/absences/preview", async (req, res): Promise<void> => {
+  const params = PreviewEducationEducatorAbsenceParams.safeParse(req.params);
+  const body = PreviewEducationEducatorAbsenceBody.safeParse(req.body);
+  if (!params.success || !body.success) { invalid(res, (!params.success ? params.error : body.error!).message); return; }
+  try { assertBelgradeDate(body.data.startDate); assertBelgradeDate(body.data.endDate); } catch (error) { invalid(res, error instanceof Error ? error.message : "Datum nije ispravan."); return; }
+  if (body.data.endDate < body.data.startDate || !validWallClockRange(body.data.startTime ?? null, body.data.endTime ?? null)) { invalid(res, "Opseg odsustva nije ispravan."); return; }
+  const target = await operationalEducator(req, params.data.centerId, params.data.staffId, "create");
+  if (!target.access.user) { res.status(401).json({ error: "Prijava je obavezna." }); return; }
+  if (!target.access.role || !target.allowed) { res.status(403).json({ error: "Nemate pravo da kreirate odsustvo ovog edukatora." }); return; }
+  if (!target.staff) { res.status(404).json({ error: "Edukator nije pronađen u ovom centru." }); return; }
+  const conflicts = await educationAbsenceConflicts({
+    centerId: params.data.centerId, educatorStaffId: target.staff.id, ...body.data,
+  });
+  res.json(PreviewEducationEducatorAbsenceResponse.parse({
+    canCreate: conflicts.length === 0,
+    conflicts: conflicts.map((row) => ({ ...row, startsAt: row.startsAt.toISOString(), endsAt: row.endsAt.toISOString() })),
+  }));
+});
+
 router.post("/education/operations/centers/:centerId/educators/:staffId/absences", async (req, res): Promise<void> => {
   const params = CreateEducationEducatorAbsenceParams.safeParse(req.params);
   const body = CreateEducationEducatorAbsenceBody.safeParse(req.body);
@@ -392,10 +404,24 @@ router.post("/education/operations/centers/:centerId/educators/:staffId/absences
   if (!target.access.user) { res.status(401).json({ error: "Prijava je obavezna." }); return; }
   if (!target.access.role || !target.allowed) { res.status(403).json({ error: "Nemate pravo da kreirate odsustvo ovog edukatora." }); return; }
   if (!target.staff) { res.status(404).json({ error: "Edukator nije pronađen u ovom centru." }); return; }
-  const [row] = await db.transaction(async (tx) => {
-    await lockEducationScheduleResources(tx, educatorCalendarMutationResources(params.data.centerId, target.staff!.id));
-    return tx.insert(educationEducatorAbsencesTable).values({ staffId: target.staff!.id, ...body.data }).returning();
-  });
+  let rows: Array<typeof educationEducatorAbsencesTable.$inferSelect>;
+  try {
+    rows = await db.transaction(async (tx) => {
+      await lockEducationScheduleResources(tx, educatorCalendarMutationResources(params.data.centerId, target.staff!.id));
+      const conflicts = await educationAbsenceConflicts({
+        centerId: params.data.centerId, educatorStaffId: target.staff!.id, ...body.data, store: tx,
+      });
+      if (conflicts.length) throw new Error("ABSENCE_SESSION_CONFLICT");
+      return tx.insert(educationEducatorAbsencesTable).values({ staffId: target.staff!.id, ...body.data }).returning();
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "ABSENCE_SESSION_CONFLICT") {
+      res.status(409).json({ error: "Odsustvo se ne može potvrditi dok edukator ima aktivne termine u izabranom periodu. Prvo zamenite edukatora ili otkažite termine." });
+      return;
+    }
+    throw error;
+  }
+  const [row] = rows;
   res.status(201).json(CreateEducationEducatorAbsenceResponse.parse(row));
 });
 
@@ -409,12 +435,26 @@ router.patch("/education/operations/centers/:centerId/educators/:staffId/absence
   if (!target.access.user) { res.status(401).json({ error: "Prijava je obavezna." }); return; }
   if (!target.access.role || !target.allowed) { res.status(403).json({ error: "Nemate pravo da menjate odsustvo ovog edukatora." }); return; }
   if (!target.staff) { res.status(404).json({ error: "Edukator nije pronađen u ovom centru." }); return; }
-  const [row] = await db.transaction(async (tx) => {
-    await lockEducationScheduleResources(tx, educatorCalendarMutationResources(params.data.centerId, target.staff!.id));
-    return tx.update(educationEducatorAbsencesTable).set(body.data).where(and(
-      eq(educationEducatorAbsencesTable.id, params.data.absenceId), eq(educationEducatorAbsencesTable.staffId, target.staff!.id),
-    )).returning();
-  });
+  let rows: Array<typeof educationEducatorAbsencesTable.$inferSelect>;
+  try {
+    rows = await db.transaction(async (tx) => {
+      await lockEducationScheduleResources(tx, educatorCalendarMutationResources(params.data.centerId, target.staff!.id));
+      const conflicts = await educationAbsenceConflicts({
+        centerId: params.data.centerId, educatorStaffId: target.staff!.id, ...body.data, store: tx,
+      });
+      if (conflicts.length) throw new Error("ABSENCE_SESSION_CONFLICT");
+      return tx.update(educationEducatorAbsencesTable).set(body.data).where(and(
+        eq(educationEducatorAbsencesTable.id, params.data.absenceId), eq(educationEducatorAbsencesTable.staffId, target.staff!.id),
+      )).returning();
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "ABSENCE_SESSION_CONFLICT") {
+      res.status(409).json({ error: "Odsustvo se ne može potvrditi dok edukator ima aktivne termine u izabranom periodu. Prvo zamenite edukatora ili otkažite termine." });
+      return;
+    }
+    throw error;
+  }
+  const [row] = rows;
   if (!row) { res.status(404).json({ error: "Odsustvo nije pronađeno." }); return; }
   res.json(UpdateEducationEducatorAbsenceResponse.parse(row));
 });
@@ -442,7 +482,7 @@ async function recurrencePreviewFacts(course: typeof coursesTable.$inferSelect, 
   const dates = recurrenceDates(input.startDate, input.endDate, input.weekdays);
   // Convert every requested boundary before querying availability: this rejects
   // non-existent Belgrade wall-clock times during the spring DST transition.
-  for (const date of dates) { belgradeInstant(date, input.startTime); belgradeInstant(date, input.endTime); }
+  for (const date of dates) { educationBelgradeInstant(date, input.startTime); educationBelgradeInstant(date, input.endTime); }
   const slots = await educationCanonicalAvailability({
     centerId: course.centerId, educatorStaffId: input.educatorStaffId, dates, durationMinutes: input.durationMinutes,
     granularityMinutes: input.granularityMinutes, store,
@@ -539,8 +579,8 @@ router.post("/education/operations/courses/:courseId/recurrence/commit", async (
       const facts = await recurrencePreviewFacts(course, body.data, tx);
       const created = [];
       for (const candidate of facts.candidates) {
-        const startsAt = belgradeInstant(candidate.date, candidate.startTime);
-        const endsAt = belgradeInstant(candidate.date, candidate.endTime);
+        const startsAt = educationBelgradeInstant(candidate.date, candidate.startTime);
+        const endsAt = educationBelgradeInstant(candidate.date, candidate.endTime);
         const [conflict] = await tx.select({ id: courseSessionsTable.id })
           .from(educationSessionEducatorsTable)
           .innerJoin(courseSessionsTable, eq(courseSessionsTable.id, educationSessionEducatorsTable.sessionId))
@@ -741,24 +781,33 @@ router.patch("/education/operations/centers/:centerId/sessions/:sessionId/educat
   if (!["owner_admin", "manager_reception"].includes(access.role)) { res.status(403).json({ error: "Samo vlasnik ili menadžer može zameniti edukatora." }); return; }
   try {
     const assignment = await db.transaction(async (tx) => {
+      const [sessionPreview] = await tx.select().from(courseSessionsTable).innerJoin(coursesTable, eq(coursesTable.id, courseSessionsTable.courseId)).where(and(eq(courseSessionsTable.id, params.data.sessionId), eq(coursesTable.centerId, params.data.centerId))).limit(1);
+      const [currentPreview] = await tx.select().from(educationSessionEducatorsTable).where(eq(educationSessionEducatorsTable.sessionId, params.data.sessionId)).limit(1);
+      if (!sessionPreview || !currentPreview) throw new Error("NOT_FOUND");
+      await lockEducationScheduleResources(tx, [
+        ...sessionLockResources(params.data.centerId, sessionPreview.course_sessions.startsAt, sessionPreview.course_sessions.endsAt, currentPreview.staffId),
+        ...sessionLockResources(params.data.centerId, sessionPreview.course_sessions.startsAt, sessionPreview.course_sessions.endsAt, body.data.educatorStaffId),
+      ]);
       const [session] = await tx.select().from(courseSessionsTable).innerJoin(coursesTable, eq(coursesTable.id, courseSessionsTable.courseId)).where(and(eq(courseSessionsTable.id, params.data.sessionId), eq(coursesTable.centerId, params.data.centerId))).for("update").limit(1);
       if (!session || session.course_sessions.cancelledAt) throw new Error("NOT_FOUND");
       const [current] = await tx.select().from(educationSessionEducatorsTable).where(eq(educationSessionEducatorsTable.sessionId, params.data.sessionId)).for("update").limit(1);
-      const [replacement] = await tx.select().from(educationCenterStaffTable).where(and(eq(educationCenterStaffTable.id, body.data.educatorStaffId), eq(educationCenterStaffTable.centerId, params.data.centerId), eq(educationCenterStaffTable.role, "educator"), eq(educationCenterStaffTable.active, true))).limit(1);
+      const [replacement] = await tx.select().from(educationCenterStaffTable).where(and(eq(educationCenterStaffTable.id, body.data.educatorStaffId), eq(educationCenterStaffTable.centerId, params.data.centerId), eq(educationCenterStaffTable.role, "educator"), eq(educationCenterStaffTable.active, true))).for("update").limit(1);
       if (!current || !replacement) throw new Error("NOT_FOUND");
-      await lockEducationScheduleResources(tx, [
-        ...sessionLockResources(params.data.centerId, session.course_sessions.startsAt, session.course_sessions.endsAt, current.staffId),
-        ...sessionLockResources(params.data.centerId, session.course_sessions.startsAt, session.course_sessions.endsAt, replacement.id),
-      ]);
       const conflicts = await tx.select({ id: courseSessionsTable.id }).from(educationSessionEducatorsTable).innerJoin(courseSessionsTable, eq(courseSessionsTable.id, educationSessionEducatorsTable.sessionId)).where(and(eq(educationSessionEducatorsTable.staffId, replacement.id), isNull(courseSessionsTable.cancelledAt), sql`${courseSessionsTable.id} <> ${params.data.sessionId}`, sql`${courseSessionsTable.startsAt} < ${session.course_sessions.endsAt} and ${courseSessionsTable.endsAt} > ${session.course_sessions.startsAt}`)).limit(1);
       if (conflicts.length) throw new Error("OVERLAP");
+      if (await educationEducatorHasAbsenceOverlap({
+        educatorStaffId: replacement.id,
+        startsAt: session.course_sessions.startsAt,
+        endsAt: session.course_sessions.endsAt,
+        store: tx,
+      })) throw new Error("ABSENCE");
       await tx.update(educationSessionEducatorsTable).set({ staffId: replacement.id, assignedByUserId: access.user!.id, assignedAt: new Date() }).where(eq(educationSessionEducatorsTable.sessionId, params.data.sessionId));
       const participants = await tx.select({ id: educationBookingParticipantsTable.id }).from(educationBookingParticipantsTable).innerJoin(educationBookingGroupsTable, eq(educationBookingGroupsTable.id, educationBookingParticipantsTable.bookingGroupId)).where(eq(educationBookingGroupsTable.sessionId, params.data.sessionId));
       for (const p of participants) await tx.insert(educationOutboxTable).values({ centerId: params.data.centerId, sessionId: params.data.sessionId, participantId: p.id, eventType: "session_educator_substituted", dedupeKey: `education-substitute:${params.data.sessionId}:${p.id}:${replacement.id}`, payload: { oldEducatorStaffId: current.staffId, newEducatorStaffId: replacement.id } }).onConflictDoNothing();
       return { sessionId: params.data.sessionId, educatorStaffId: replacement.id };
     });
     res.json(SubstituteEducationSessionEducatorResponse.parse(assignment));
-  } catch (error) { if (error instanceof Error && error.message === "NOT_FOUND") { res.status(404).json({ error: "Termin ili edukator nije pronađen." }); return; } if (error instanceof Error && error.message === "OVERLAP") { res.status(409).json({ error: "Edukator je zauzet u ovom terminu." }); return; } throw error; }
+  } catch (error) { if (error instanceof Error && error.message === "NOT_FOUND") { res.status(404).json({ error: "Termin ili edukator nije pronađen." }); return; } if (error instanceof Error && error.message === "OVERLAP") { res.status(409).json({ error: "Edukator je zauzet u ovom terminu." }); return; } if (error instanceof Error && error.message === "ABSENCE") { res.status(409).json({ error: "Edukator je odsutan u ovom terminu." }); return; } throw error; }
 });
 
 router.post("/education/operations/centers/:centerId/sessions/:sessionId/cancel", async (req, res): Promise<void> => {

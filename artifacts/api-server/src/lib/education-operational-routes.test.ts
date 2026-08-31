@@ -296,6 +296,159 @@ async function run() {
     }))).status, 204);
 
     const absencePath = `/education/operations/centers/${center!.id}/educators/${staff[2]!.id}/absences`;
+    const [replacementUser] = await db.insert(usersTable).values({
+      firstName: "Replacement", lastName: suffix.slice(0, 6),
+      email: `operational-replacement-${suffix}@example.test`,
+      passwordHash: "fixture", passwordSetAt: new Date(), role: "JOBSEEKER",
+    }).returning();
+    ids.push(replacementUser!.id);
+    const [replacementStaff] = await db.insert(educationCenterStaffTable).values({
+      centerId: center!.id, userId: replacementUser!.id, role: "educator",
+    }).returning();
+    const absenceConflictStartsAt = new Date("2027-03-10T09:00:00.000Z");
+    const [replacementConflictSession] = await db.insert(courseSessionsTable).values({
+      courseId: course!.id, startsAt: absenceConflictStartsAt, endsAt: new Date("2027-03-10T10:00:00.000Z"),
+      capacity: 8, reservedSeats: 1,
+    }).returning();
+    await db.insert(educationSessionEducatorsTable).values({
+      sessionId: replacementConflictSession!.id, staffId: staff[2]!.id, assignedByUserId: owner!.id,
+    });
+    const [absenceConflictBooking] = await db.insert(educationBookingGroupsTable).values({
+      centerId: center!.id, courseId: course!.id, sessionId: replacementConflictSession!.id,
+      purchaserId: purchaser!.id, createdByUserId: owner!.id,
+      idempotencyKey: `absence-conflict-${suffix}`, requestFingerprint: "a".repeat(64), status: "active",
+    }).returning();
+    await db.insert(educationBookingParticipantsTable).values({
+      bookingGroupId: absenceConflictBooking!.id, userId: participantA!.id,
+      fullName: "Booked absence conflict", email: `absence-conflict-${suffix}@example.test`,
+    });
+    const replacementAbsenceBody = { startDate: "2027-03-10", endDate: "2027-03-10", reason: "Replacement coverage" };
+    const conflictingPreviewResponse = await fetch(`${base}/api${absencePath}/preview`, {
+      method: "POST", headers: { cookie: cookies[0]!, "content-type": "application/json" },
+      body: JSON.stringify(replacementAbsenceBody),
+    });
+    assert.equal(conflictingPreviewResponse.status, 200);
+    const conflictingPreview = await conflictingPreviewResponse.json() as {
+      canCreate: boolean; conflicts: Array<{ sessionId: string; reservedSeats: number }>;
+    };
+    assert.equal(conflictingPreview.canCreate, false);
+    assert.deepEqual(conflictingPreview.conflicts.map((row) => row.sessionId), [replacementConflictSession!.id]);
+    assert.equal(conflictingPreview.conflicts[0]!.reservedSeats, 1);
+    assert.equal((await fetch(`${base}/api${absencePath}`, {
+      method: "POST", headers: { cookie: cookies[0]!, "content-type": "application/json" },
+      body: JSON.stringify(replacementAbsenceBody),
+    })).status, 409);
+    assert.equal((await fetch(`${base}/api/education/operations/centers/${center!.id}/sessions/${replacementConflictSession!.id}/educator`, {
+      method: "PATCH", headers: { cookie: cookies[0]!, "content-type": "application/json" },
+      body: JSON.stringify({ educatorStaffId: replacementStaff!.id }),
+    })).status, 200);
+    const resolvedByReplacementPreview = await fetch(`${base}/api${absencePath}/preview`, {
+      method: "POST", headers: { cookie: cookies[0]!, "content-type": "application/json" },
+      body: JSON.stringify(replacementAbsenceBody),
+    });
+    assert.equal((await resolvedByReplacementPreview.json() as { canCreate: boolean }).canCreate, true);
+    const replacementResolvedAbsenceResponse = await fetch(`${base}/api${absencePath}`, {
+      method: "POST", headers: { cookie: cookies[0]!, "content-type": "application/json" },
+      body: JSON.stringify(replacementAbsenceBody),
+    });
+    assert.equal(replacementResolvedAbsenceResponse.status, 201);
+    const replacementResolvedAbsence = await replacementResolvedAbsenceResponse.json() as { id: string };
+    assert.equal((await fetch(`${base}/api${absencePath}/${replacementResolvedAbsence.id}`, {
+      method: "DELETE", headers: { cookie: cookies[0]! },
+    })).status, 204);
+
+    const [cancelConflictSession] = await db.insert(courseSessionsTable).values({
+      courseId: course!.id, startsAt: new Date("2027-03-11T09:00:00.000Z"), endsAt: new Date("2027-03-11T10:00:00.000Z"),
+      capacity: 8, reservedSeats: 0,
+    }).returning();
+    await db.insert(educationSessionEducatorsTable).values({
+      sessionId: cancelConflictSession!.id, staffId: staff[2]!.id, assignedByUserId: owner!.id,
+    });
+    const cancellationAbsenceBody = { startDate: "2027-03-11", endDate: "2027-03-11", reason: "Cancellation coverage" };
+    assert.equal((await fetch(`${base}/api${absencePath}`, {
+      method: "POST", headers: { cookie: cookies[0]!, "content-type": "application/json" },
+      body: JSON.stringify(cancellationAbsenceBody),
+    })).status, 409);
+    assert.equal((await fetch(`${base}/api/education/operations/centers/${center!.id}/sessions/${cancelConflictSession!.id}/cancel`, {
+      method: "POST", headers: { cookie: cookies[0]!, "content-type": "application/json" },
+      body: JSON.stringify({ reason: "Resolve absence conflict" }),
+    })).status, 200);
+    const cancellationResolvedAbsenceResponse = await fetch(`${base}/api${absencePath}`, {
+      method: "POST", headers: { cookie: cookies[0]!, "content-type": "application/json" },
+      body: JSON.stringify(cancellationAbsenceBody),
+    });
+    assert.equal(cancellationResolvedAbsenceResponse.status, 201);
+    const cancellationResolvedAbsence = await cancellationResolvedAbsenceResponse.json() as { id: string };
+
+    const absentSessionBody = {
+      startsAt: "2027-03-11T10:00:00.000Z", endsAt: "2027-03-11T11:00:00.000Z",
+      capacity: 8, educatorStaffId: staff[2]!.id,
+    };
+    assert.equal((await fetch(`${base}/api/education/courses/${course!.id}/sessions`, {
+      method: "POST", headers: { cookie: cookies[0]!, "content-type": "application/json" },
+      body: JSON.stringify(absentSessionBody),
+    })).status, 409);
+    const replacementSessionResponse = await fetch(`${base}/api/education/courses/${course!.id}/sessions`, {
+      method: "POST", headers: { cookie: cookies[0]!, "content-type": "application/json" },
+      body: JSON.stringify({ ...absentSessionBody, educatorStaffId: replacementStaff!.id }),
+    });
+    assert.equal(replacementSessionResponse.status, 201);
+    const replacementSession = await replacementSessionResponse.json() as { id: string };
+    assert.equal((await fetch(`${base}/api/education/operations/centers/${center!.id}/sessions/${replacementSession.id}/educator`, {
+      method: "PATCH", headers: { cookie: cookies[0]!, "content-type": "application/json" },
+      body: JSON.stringify({ educatorStaffId: staff[2]!.id }),
+    })).status, 409);
+
+    assert.equal((await fetch(`${base}/api${absencePath}/${cancellationResolvedAbsence.id}`, {
+      method: "DELETE", headers: { cookie: cookies[0]! },
+    })).status, 204);
+
+    const [secondBoundarySession] = await db.insert(courseSessionsTable).values({
+      courseId: course!.id,
+      startsAt: new Date("2027-03-12T08:59:30.000Z"),
+      endsAt: new Date("2027-03-12T09:00:30.000Z"),
+      capacity: 1,
+    }).returning();
+    await db.insert(educationSessionEducatorsTable).values({
+      sessionId: secondBoundarySession!.id, staffId: staff[2]!.id, assignedByUserId: owner!.id,
+    });
+    const secondBoundaryPreview = await fetch(`${base}/api${absencePath}/preview`, {
+      method: "POST", headers: { cookie: cookies[0]!, "content-type": "application/json" },
+      body: JSON.stringify({
+        startDate: "2027-03-12", endDate: "2027-03-12",
+        startTime: "10:00", endTime: "11:00", reason: "Second precision",
+      }),
+    });
+    assert.equal(secondBoundaryPreview.status, 200);
+    assert.deepEqual(
+      (await secondBoundaryPreview.json() as { conflicts: Array<{ sessionId: string }> }).conflicts.map((row) => row.sessionId),
+      [secondBoundarySession!.id],
+    );
+
+    const [concurrentResolutionSession] = await db.insert(courseSessionsTable).values({
+      courseId: course!.id,
+      startsAt: new Date("2027-03-13T09:00:00.000Z"),
+      endsAt: new Date("2027-03-13T10:00:00.000Z"),
+      capacity: 2,
+    }).returning();
+    await db.insert(educationSessionEducatorsTable).values({
+      sessionId: concurrentResolutionSession!.id, staffId: staff[2]!.id, assignedByUserId: owner!.id,
+    });
+    const [concurrentSubstitution, concurrentCancellation] = await Promise.all([
+      fetch(`${base}/api/education/operations/centers/${center!.id}/sessions/${concurrentResolutionSession!.id}/educator`, {
+        method: "PATCH", headers: { cookie: cookies[0]!, "content-type": "application/json" },
+        body: JSON.stringify({ educatorStaffId: replacementStaff!.id }),
+      }),
+      fetch(`${base}/api/education/operations/centers/${center!.id}/sessions/${concurrentResolutionSession!.id}/cancel`, {
+        method: "POST", headers: { cookie: cookies[0]!, "content-type": "application/json" },
+        body: JSON.stringify({ reason: "Concurrent absence resolution" }),
+      }),
+    ]);
+    assert.deepEqual(
+      [concurrentSubstitution.status, concurrentCancellation.status].sort((left, right) => left - right),
+      concurrentSubstitution.status === 404 ? [200, 404] : [200, 200],
+    );
+
     const createdAbsenceResponse = await underCenterScheduleBarrier(() => fetch(`${base}/api${absencePath}`, {
       method: "POST", headers: { cookie: cookies[0]!, "content-type": "application/json" },
       body: JSON.stringify({ startDate: "2027-03-01", endDate: "2027-03-01", startTime: "13:00", endTime: "15:00", reason: "Test" }),

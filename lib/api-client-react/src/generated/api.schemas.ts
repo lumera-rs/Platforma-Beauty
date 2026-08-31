@@ -13104,6 +13104,21 @@ export interface EducationEducatorAbsenceInput {
   reason?: string | null;
 }
 
+export interface EducationEducatorAbsenceConflict {
+  sessionId: string;
+  courseId: string;
+  courseTitle: string;
+  startsAt: string;
+  endsAt: string;
+  /** @minimum 0 */
+  reservedSeats: number;
+}
+
+export interface EducationEducatorAbsencePreview {
+  canCreate: boolean;
+  conflicts: EducationEducatorAbsenceConflict[];
+}
+
 /**
  * Booking admission capacity is full; retry after the indicated delay.
  */

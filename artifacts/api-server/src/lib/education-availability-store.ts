@@ -1,6 +1,7 @@
 import { and, eq, gte, isNull, lte } from "drizzle-orm";
 import {
   courseSessionsTable,
+  coursesTable,
   db,
   educationCenterStaffTable,
   educationEducatorAbsencesTable,
@@ -25,6 +26,26 @@ export function assertBelgradeDate(value: string): string {
     throw new Error("Datum ne postoji u kalendaru Europe/Belgrade.");
   }
   return value;
+}
+
+export function educationBelgradeInstant(date: string, time: string): Date {
+  assertBelgradeDate(date);
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  const target = Date.UTC(year!, month! - 1, day!, hour!, minute!);
+  let candidate = target - 3 * 3_600_000;
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: EDUCATION_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  });
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const parts = formatter.formatToParts(new Date(candidate));
+    const value = (kind: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === kind)?.value);
+    const observed = Date.UTC(value("year"), value("month") - 1, value("day"), value("hour"), value("minute"));
+    if (observed === target) return new Date(candidate);
+    candidate += target - observed;
+  }
+  throw new Error("Izabrano vreme ne postoji u vremenskoj zoni Europe/Belgrade.");
 }
 
 function belgradeDateTime(value: Date) {
@@ -66,6 +87,86 @@ function splitBusySession(employeeId: string, startsAt: Date, endsAt: Date): Bus
     // emits it as a candidate wall-clock time.
     endTime: date === end.date ? end.time : "24:00",
   }));
+}
+
+export type EducationAbsenceConflict = {
+  sessionId: string;
+  courseId: string;
+  courseTitle: string;
+  startsAt: Date;
+  endsAt: Date;
+  reservedSeats: number;
+};
+
+function nextEducationDate(date: string): string {
+  return new Date(new Date(`${date}T12:00:00.000Z`).getTime() + 86_400_000).toISOString().slice(0, 10);
+}
+
+export function educationAbsenceOverlapsSession(
+  absence: { startDate: string; endDate: string; startTime?: string | null; endTime?: string | null },
+  startsAt: Date,
+  endsAt: Date,
+): boolean {
+  return educationLocalDatesTouched(startsAt, endsAt).some((date) => {
+    if (date < absence.startDate || date > absence.endDate) return false;
+    const absenceStartsAt = educationBelgradeInstant(date, absence.startTime ?? "00:00");
+    const absenceEndsAt = educationBelgradeInstant(
+      absence.endTime ? date : nextEducationDate(date),
+      absence.endTime ?? "00:00",
+    );
+    return startsAt < absenceEndsAt && endsAt > absenceStartsAt;
+  });
+}
+
+export async function educationEducatorHasAbsenceOverlap(input: {
+  educatorStaffId: string;
+  startsAt: Date;
+  endsAt: Date;
+  store?: any;
+}): Promise<boolean> {
+  const store = input.store ?? db;
+  const dates = educationLocalDatesTouched(input.startsAt, input.endsAt);
+  const absences = await store.select().from(educationEducatorAbsencesTable).where(and(
+    eq(educationEducatorAbsencesTable.staffId, input.educatorStaffId),
+    lte(educationEducatorAbsencesTable.startDate, dates.at(-1)!),
+    gte(educationEducatorAbsencesTable.endDate, dates[0]!),
+  ));
+  return (absences as Array<typeof educationEducatorAbsencesTable.$inferSelect>).some((absence) =>
+    educationAbsenceOverlapsSession(absence, input.startsAt, input.endsAt));
+}
+
+export async function educationAbsenceConflicts(input: {
+  centerId: string;
+  educatorStaffId: string;
+  startDate: string;
+  endDate: string;
+  startTime?: string | null;
+  endTime?: string | null;
+  store?: any;
+}): Promise<EducationAbsenceConflict[]> {
+  const store = input.store ?? db;
+  const startDate = assertBelgradeDate(input.startDate);
+  const endDate = assertBelgradeDate(input.endDate);
+  const rows = await store.select({
+    sessionId: courseSessionsTable.id,
+    courseId: courseSessionsTable.courseId,
+    courseTitle: coursesTable.title,
+    startsAt: courseSessionsTable.startsAt,
+    endsAt: courseSessionsTable.endsAt,
+    reservedSeats: courseSessionsTable.reservedSeats,
+  }).from(educationSessionEducatorsTable)
+    .innerJoin(courseSessionsTable, eq(courseSessionsTable.id, educationSessionEducatorsTable.sessionId))
+    .innerJoin(coursesTable, eq(coursesTable.id, courseSessionsTable.courseId))
+    .where(and(
+      eq(educationSessionEducatorsTable.staffId, input.educatorStaffId),
+      eq(coursesTable.centerId, input.centerId),
+      isNull(courseSessionsTable.cancelledAt),
+    ));
+  return (rows as EducationAbsenceConflict[])
+    .filter((session) => educationAbsenceOverlapsSession({
+      startDate, endDate, startTime: input.startTime, endTime: input.endTime,
+    }, session.startsAt, session.endsAt))
+    .sort((left, right) => left.startsAt.getTime() - right.startsAt.getTime());
 }
 
 /**

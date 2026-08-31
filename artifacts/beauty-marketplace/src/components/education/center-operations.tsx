@@ -15,6 +15,7 @@ import {
   useListEducationEducatorWeeklyAvailability,
   useUpdateEducationEducatorWeeklyAvailability,
   useListEducationEducatorAbsences,
+  usePreviewEducationEducatorAbsence,
   useCreateEducationEducatorAbsence,
   useUpdateEducationEducatorAbsence,
   useDeleteEducationEducatorAbsence,
@@ -587,17 +588,41 @@ function EducatorSchedule({ centerId, permissions }: { centerId: string, permiss
   });
 
   const createAbsenceMut = useCreateEducationEducatorAbsence();
+  const previewAbsenceMut = usePreviewEducationEducatorAbsence();
   const deleteAbsenceMut = useDeleteEducationEducatorAbsence();
+  const [absenceDialogOpen, setAbsenceDialogOpen] = useState(false);
+  const [absenceDraft, setAbsenceDraft] = useState({ startDate: "", endDate: "", reason: "" });
+
+  const handlePreviewAbsence = () => {
+    if (!activeStaffId) return;
+    if (!absenceDraft.startDate || !absenceDraft.endDate) {
+      toast.error("Unesite početak i kraj odsustva.");
+      return;
+    }
+    previewAbsenceMut.mutate({
+      centerId,
+      staffId: activeStaffId,
+      data: {
+        startDate: absenceDraft.startDate,
+        endDate: absenceDraft.endDate,
+        reason: absenceDraft.reason || null,
+      },
+    });
+  };
 
   const handleAddAbsence = () => {
-    if (!activeStaffId) return;
-    const startDate = window.prompt("Početak odsustva (YYYY-MM-DD):");
-    const endDate = window.prompt("Kraj odsustva (YYYY-MM-DD):");
-    if (!startDate || !endDate) return;
-    createAbsenceMut.mutate({ centerId, staffId: activeStaffId, data: { startDate, endDate } }, {
+    if (!activeStaffId || !previewAbsenceMut.data?.canCreate) return;
+    createAbsenceMut.mutate({ centerId, staffId: activeStaffId, data: {
+      startDate: absenceDraft.startDate,
+      endDate: absenceDraft.endDate,
+      reason: absenceDraft.reason || null,
+    } }, {
       onSuccess: () => {
         toast.success("Odsustvo dodato.");
         queryClient.invalidateQueries({ queryKey: getListEducationEducatorAbsencesQueryKey(centerId, activeStaffId) });
+        setAbsenceDialogOpen(false);
+        setAbsenceDraft({ startDate: "", endDate: "", reason: "" });
+        previewAbsenceMut.reset();
       },
       onError: (e: any) => toast.error("Greška", { description: e.message })
     });
@@ -619,7 +644,10 @@ function EducatorSchedule({ centerId, permissions }: { centerId: string, permiss
         <Card>
           <CardContent className="p-4 flex items-center gap-4">
             <Label className="whitespace-nowrap">Izaberite edukatora:</Label>
-            <Select value={selectedStaffId} onValueChange={setSelectedStaffId}>
+            <Select value={selectedStaffId} onValueChange={(staffId) => {
+              setSelectedStaffId(staffId);
+              previewAbsenceMut.reset();
+            }}>
               <SelectTrigger className="max-w-xs"><SelectValue placeholder="Izaberite edukatora..." /></SelectTrigger>
               <SelectContent>
                 {staff?.filter(s => s.role === "educator").map(s => (
@@ -663,7 +691,10 @@ function EducatorSchedule({ centerId, permissions }: { centerId: string, permiss
                 <CardTitle>Odsustva</CardTitle>
                 <CardDescription>Godišnji odmori i slobodni dani</CardDescription>
               </div>
-              <Button size="sm" onClick={handleAddAbsence} disabled={createAbsenceMut.isPending}>Dodaj</Button>
+              <Button size="sm" onClick={() => {
+                previewAbsenceMut.reset();
+                setAbsenceDialogOpen(true);
+              }}>Dodaj</Button>
             </CardHeader>
             <CardContent>
               {absencesLoading ? <div className="py-4 flex justify-center"><Loader2 className="w-5 h-5 animate-spin" /></div> : (
@@ -684,6 +715,92 @@ function EducatorSchedule({ centerId, permissions }: { centerId: string, permiss
           </Card>
         </div>
       )}
+      <Dialog open={absenceDialogOpen} onOpenChange={(open) => {
+        setAbsenceDialogOpen(open);
+        if (!open) previewAbsenceMut.reset();
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Dodaj odsustvo</DialogTitle>
+            <DialogDescription>
+              Odsustvo je moguće potvrditi tek kada su svi postojeći termini u tom periodu zamenjeni ili otkazani.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="absence-start-date">Početak</Label>
+              <Input
+                id="absence-start-date"
+                type="date"
+                value={absenceDraft.startDate}
+                onChange={(event) => {
+                  setAbsenceDraft((draft) => ({ ...draft, startDate: event.target.value }));
+                  previewAbsenceMut.reset();
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="absence-end-date">Kraj</Label>
+              <Input
+                id="absence-end-date"
+                type="date"
+                value={absenceDraft.endDate}
+                onChange={(event) => {
+                  setAbsenceDraft((draft) => ({ ...draft, endDate: event.target.value }));
+                  previewAbsenceMut.reset();
+                }}
+              />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="absence-reason">Razlog (opciono)</Label>
+              <Input
+                id="absence-reason"
+                value={absenceDraft.reason}
+                onChange={(event) => setAbsenceDraft((draft) => ({ ...draft, reason: event.target.value }))}
+                placeholder="Na primer: godišnji odmor"
+              />
+            </div>
+          </div>
+          {previewAbsenceMut.data && (
+            previewAbsenceMut.data.canCreate ? (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                Nema konflikata. Odsustvo može da se potvrdi.
+              </div>
+            ) : (
+              <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <p className="text-sm font-semibold text-amber-900">
+                  Pronađeno konflikata: {previewAbsenceMut.data.conflicts.length}
+                </p>
+                <p className="text-xs text-amber-800">
+                  Otvorite ove termine u kalendaru i zamenite edukatora ili otkažite termin, pa ponovite pregled.
+                </p>
+                <div className="max-h-52 space-y-2 overflow-y-auto">
+                  {previewAbsenceMut.data.conflicts.map((conflict) => (
+                    <div key={conflict.sessionId} className="rounded-md border border-amber-200 bg-background p-2 text-sm">
+                      <p className="font-medium">{conflict.courseTitle}</p>
+                      <p className="text-muted-foreground">
+                        {educationBelgradeDateLabel(new Date(conflict.startsAt), { day: "2-digit", month: "2-digit", year: "numeric" })},{" "}
+                        {educationBelgradeTime(new Date(conflict.startsAt))}–{educationBelgradeTime(new Date(conflict.endsAt))}
+                        {" · "}{conflict.reservedSeats} rezervisanih mesta
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          )}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={handlePreviewAbsence} disabled={previewAbsenceMut.isPending}>
+              {previewAbsenceMut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Proveri konflikte
+            </Button>
+            <Button onClick={handleAddAbsence} disabled={!previewAbsenceMut.data?.canCreate || createAbsenceMut.isPending}>
+              {createAbsenceMut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Potvrdi odsustvo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

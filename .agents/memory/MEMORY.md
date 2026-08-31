@@ -148,3 +148,4 @@
 - [Education minimum-enrollment scheduler](education-minimum-enrollment-scheduler.md) — recheck future-session eligibility under lock with the database clock before auto-cancellation.
 - [Featured placement payment](featured-placement-payment.md) — salon IPS QR was never historical; future paid placements share one pending-charge/manual-confirmation flow.
 - [Instructor public rating semantics](instructor-public-rating-semantics.md) — instructor ratings are weighted across published reviews of eligible public courses, never averaged course averages.
+- [Education absence assignment invariant](education-absence-assignment-invariant.md) — absences and educator assignments must reject each other under one schedule-lock protocol.

@@ -273,6 +273,7 @@ import type {
   EducationDisputeResolutionInput,
   EducationEducatorAbsence,
   EducationEducatorAbsenceInput,
+  EducationEducatorAbsencePreview,
   EducationEducatorWeeklyAvailability,
   EducationEducatorWeeklyAvailabilityInput,
   EducationEnrollment,
@@ -17842,6 +17843,74 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getCreateEducationEducatorAbsenceMutationOptions(options));
+    }
+
+export const getPreviewEducationEducatorAbsenceUrl = (centerId: string,
+    staffId: string,) => {
+
+
+
+
+  return `/api/education/operations/centers/${centerId}/educators/${staffId}/absences/preview`
+}
+
+export const previewEducationEducatorAbsence = async (centerId: string,
+    staffId: string,
+    educationEducatorAbsenceInput: EducationEducatorAbsenceInput, options?: Parameters<typeof customFetch>[1]): Promise<EducationEducatorAbsencePreview> => {
+
+  return customFetch<EducationEducatorAbsencePreview>(getPreviewEducationEducatorAbsenceUrl(centerId,staffId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(educationEducatorAbsenceInput)
+  }
+);}
+
+
+
+
+
+export const getPreviewEducationEducatorAbsenceMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewEducationEducatorAbsence>>, TError,{centerId: string;staffId: string;data: BodyType<EducationEducatorAbsenceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof previewEducationEducatorAbsence>>, TError,{centerId: string;staffId: string;data: BodyType<EducationEducatorAbsenceInput>}, TContext> => {
+
+const mutationKey = ['previewEducationEducatorAbsence'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof previewEducationEducatorAbsence>>, {centerId: string;staffId: string;data: BodyType<EducationEducatorAbsenceInput>}> = (props) => {
+          const {centerId,staffId,data} = props ?? {};
+
+          return  previewEducationEducatorAbsence(centerId,staffId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PreviewEducationEducatorAbsenceMutationResult = NonNullable<Awaited<ReturnType<typeof previewEducationEducatorAbsence>>>
+    export type PreviewEducationEducatorAbsenceMutationBody = BodyType<EducationEducatorAbsenceInput>
+    export type PreviewEducationEducatorAbsenceMutationError = ErrorType<void>
+
+    export const usePreviewEducationEducatorAbsence = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewEducationEducatorAbsence>>, TError,{centerId: string;staffId: string;data: BodyType<EducationEducatorAbsenceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof previewEducationEducatorAbsence>>,
+        TError,
+        {centerId: string;staffId: string;data: BodyType<EducationEducatorAbsenceInput>},
+        TContext
+      > => {
+      return useMutation(getPreviewEducationEducatorAbsenceMutationOptions(options));
     }
 
 export const getUpdateEducationEducatorAbsenceUrl = (centerId: string,

@@ -12919,6 +12919,44 @@ export const CreateEducationEducatorAbsenceResponse = zod.object({
 })
 
 
+export const PreviewEducationEducatorAbsenceParams = zod.object({
+  "centerId": zod.coerce.string(),
+  "staffId": zod.coerce.string()
+})
+
+export const previewEducationEducatorAbsenceBodyStartDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const previewEducationEducatorAbsenceBodyEndDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const previewEducationEducatorAbsenceBodyStartTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+export const previewEducationEducatorAbsenceBodyEndTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+export const previewEducationEducatorAbsenceBodyReasonMax = 1000;
+
+
+
+export const PreviewEducationEducatorAbsenceBody = zod.object({
+  "startDate": zod.string().regex(previewEducationEducatorAbsenceBodyStartDateRegExp),
+  "endDate": zod.string().regex(previewEducationEducatorAbsenceBodyEndDateRegExp),
+  "startTime": zod.string().regex(previewEducationEducatorAbsenceBodyStartTimeRegExp).nullish(),
+  "endTime": zod.string().regex(previewEducationEducatorAbsenceBodyEndTimeRegExp).nullish(),
+  "reason": zod.string().max(previewEducationEducatorAbsenceBodyReasonMax).nullish()
+})
+
+export const previewEducationEducatorAbsenceResponseConflictsItemReservedSeatsMin = 0;
+
+
+
+export const PreviewEducationEducatorAbsenceResponse = zod.object({
+  "canCreate": zod.boolean(),
+  "conflicts": zod.array(zod.object({
+  "sessionId": zod.string(),
+  "courseId": zod.string(),
+  "courseTitle": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "reservedSeats": zod.number().int().min(previewEducationEducatorAbsenceResponseConflictsItemReservedSeatsMin)
+}))
+})
+
+
 export const UpdateEducationEducatorAbsenceParams = zod.object({
   "centerId": zod.coerce.string(),
   "staffId": zod.coerce.string(),

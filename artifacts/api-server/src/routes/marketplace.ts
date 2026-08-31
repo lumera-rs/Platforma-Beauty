@@ -2844,7 +2844,7 @@ async function modulesForCourse(courseId: string, completedLessonIds = new Set<s
   }));
 }
 import { lockEducationScheduleResources } from "../lib/education-locks";
-import { educationLocalDatesTouched } from "../lib/education-availability-store";
+import { educationEducatorHasAbsenceOverlap, educationLocalDatesTouched } from "../lib/education-availability-store";
 
 async function sessionsForCourse(courseId: string, includeLocation = false) {
   const sessions = await db.select({ session: courseSessionsTable, educatorStaffId: educationSessionEducatorsTable.staffId })
@@ -18867,6 +18867,9 @@ router.post("/education/courses/:courseId/sessions", async (req, res): Promise<v
           .where(and(eq(educationSessionEducatorsTable.staffId, educatorStaffId), isNull(courseSessionsTable.cancelledAt),
             lt(courseSessionsTable.startsAt, endsAt), gt(courseSessionsTable.endsAt, startsAt))).limit(1);
         if (overlap) throw new Error("EDUCATOR_OVERLAP");
+        if (await educationEducatorHasAbsenceOverlap({
+          educatorStaffId, startsAt, endsAt, store: tx,
+        })) throw new Error("EDUCATOR_ABSENT");
       }
       const [created] = await tx.insert(courseSessionsTable).values({
         courseId: course.id, startsAt, endsAt, location: body.data.location ?? null,
@@ -18880,6 +18883,7 @@ router.post("/education/courses/:courseId/sessions", async (req, res): Promise<v
   } catch (error) {
     if (error instanceof Error && error.message === "EDUCATOR_INVALID") { res.status(400).json({ error: "Izabrani edukator nije aktivan član ovog centra." }); return; }
     if (error instanceof Error && error.message === "EDUCATOR_OVERLAP") { res.status(409).json({ error: "Edukator već ima termin koji se preklapa." }); return; }
+    if (error instanceof Error && error.message === "EDUCATOR_ABSENT") { res.status(409).json({ error: "Edukator je odsutan u izabranom terminu." }); return; }
     throw error;
   }
   res.status(201).json(CreateEducationSessionResponse.parse({ id: session!.id, startsAt: session!.startsAt.toISOString(), endsAt: session!.endsAt.toISOString(), location: session!.location, capacity: session!.capacity, reservedSeats: session!.reservedSeats, availableSeats: session!.capacity, minimumEnrollments: session!.minimumEnrollments, cancelledAt: session!.cancelledAt?.toISOString() ?? null, educatorStaffId }));
