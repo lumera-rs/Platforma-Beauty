@@ -30,7 +30,7 @@ export default function OwnerNotifications() {
   const notificationMutationPending = useMutationQueueBusy(ownerNotificationMutationQueue);
   const { data: userResponse, isLoading: isUserLoading } = useGetCurrentUser();
   const user = userResponse?.user;
-  const isSalonOperator = user?.role === "SALON_OWNER" || user?.role === "EDUKATIVNI_CENTAR";
+  const hasSalonNotificationContext = user?.role === "SALON_OWNER";
   const [page, setPage] = useState(1);
   const pageSize = 50;
   const listParams = useMemo(() => ({ page, pageSize }), [page]);
@@ -39,7 +39,7 @@ export default function OwnerNotifications() {
   // every page while keeping pages cached independently.
   const notificationsQueryKey = useMemo(() => [...salonNotificationsQueryKey(user?.id), page] as const, [user?.id, page]);
   const { data: notifications = [], isLoading, isError } = useListSalonNotifications(listParams, {
-    query: { enabled: isSalonOperator, queryKey: notificationsQueryKey },
+    query: { enabled: hasSalonNotificationContext, queryKey: notificationsQueryKey },
   });
   const hasNextPage = notifications.length === pageSize;
   const markAsRead = useMarkSalonNotificationRead({

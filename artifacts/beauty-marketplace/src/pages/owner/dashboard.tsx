@@ -9,12 +9,13 @@ import { Badge } from "@/components/ui/badge";
 import { SalonOwnerNavigation } from "@/components/salon-owner-navigation";
 
 export function OwnerSidebar({ current: _current }: { current: string }) {
+  const { data: userResp } = useGetCurrentUser();
   return (
     <aside
       className="sticky top-20 hidden h-[calc(100vh-6rem)] w-64 shrink-0 overflow-hidden rounded-xl border bg-background md:block"
       data-testid="owner-sidebar"
     >
-      <SalonOwnerNavigation />
+      <SalonOwnerNavigation showNotifications={userResp?.user?.role === "SALON_OWNER"} />
     </aside>
   );
 }

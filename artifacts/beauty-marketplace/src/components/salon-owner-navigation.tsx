@@ -18,6 +18,7 @@ type SalonOwnerNavigationProps = {
   isSwitchingSalon?: boolean;
   onSwitchSalon?: (salonId: string) => void;
   cartItemCount?: number;
+  showNotifications?: boolean;
 };
 
 function isLinkActive(location: string, link: SalonOwnerNavLink) {
@@ -34,6 +35,7 @@ export function SalonOwnerNavigation({
   isSwitchingSalon = false,
   onSwitchSalon,
   cartItemCount = 0,
+  showNotifications = true,
 }: SalonOwnerNavigationProps) {
   const [location, setLocation] = useLocation();
   const queryClient = useQueryClient();
@@ -63,6 +65,12 @@ export function SalonOwnerNavigation({
   }, [managedSalons.length, onSwitchSalon]);
 
   const locations = managedSalons.length ? managedSalons : loadedLocations;
+  const navigationSections = showNotifications
+    ? salonOwnerNavSections
+    : salonOwnerNavSections.map((section) => ({
+      ...section,
+      items: section.items.filter((item) => item.href !== "/vlasnik/obavestenja"),
+    }));
   const selectedLocationId = activeSalonId || loadedActiveLocationId;
   const isChangingLocation = isSwitchingSalon || switchingLocation;
   const switchLocation = async (salonId: string) => {
@@ -152,7 +160,7 @@ export function SalonOwnerNavigation({
         </div>
       )}
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-3 custom-scrollbar">
-        {salonOwnerNavSections.map((section) => {
+        {navigationSections.map((section) => {
           const sectionActive = section.items.some((link) => isLinkActive(location, link));
           return (
             <section key={section.label} className="mb-5 last:mb-1">

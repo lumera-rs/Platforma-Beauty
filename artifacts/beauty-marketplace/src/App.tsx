@@ -401,7 +401,7 @@ function Router() {
         <Route path="/vlasnik/porudzbine"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerOrders /></RoleGuard></Route>
         <Route path="/vlasnik/porudzbine-na-cekanju/:id"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerOrderApprovals /></RoleGuard></Route>
         <Route path="/vlasnik/porudzbine-na-cekanju"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerOrderApprovals /></RoleGuard></Route>
-        <Route path="/vlasnik/obavestenja"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerNotifications /></RoleGuard></Route>
+        <Route path="/vlasnik/obavestenja"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerNotifications /></RoleGuard></Route>
         <Route path="/vlasnik/loyalty"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerLoyalty /></RoleGuard></Route>
 
         <Route path="/edukacije/lista-zelja"><RoleGuard allowedRoles={['CUSTOMER', 'SALON_OWNER', 'EDUKATIVNI_CENTAR', 'JOBSEEKER', 'STUDENT', 'SALON_EMPLOYEE', 'ADMIN', 'SUPER_ADMIN', 'INSTRUCTOR']} loginPath="/prijava"><EducationWishlistPage /></RoleGuard></Route>

@@ -8,12 +8,17 @@ const cancellationSessionId = "00000000-0000-4000-8000-000000000630";
 
 async function mockAbsenceOperations(page: Page) {
   const unresolved = new Set([replacementSessionId, cancellationSessionId]);
+  const salonNotificationRequests: string[] = [];
 
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     const method = request.method();
 
+    if (path === "/api/shop/notifications" || path === "/api/shop/notifications/events") {
+      salonNotificationRequests.push(path);
+      return route.fulfill({ status: 403, json: { error: "Salon access required." } });
+    }
     if (path === "/api/auth/me") {
       return route.fulfill({ json: { user: { id: "owner-626", firstName: "Vlasnik", lastName: "Centra", email: "owner@example.test", role: "EDUKATIVNI_CENTAR" } } });
     }
@@ -53,10 +58,11 @@ async function mockAbsenceOperations(page: Page) {
       unresolved.delete(cancellationSessionId);
       return route.fulfill({ json: { id: cancellationSessionId, cancelledAt: new Date().toISOString() } });
     }
-    if (path === "/api/shop/notifications") return route.fulfill({ json: [] });
     if (path.includes("/operations/centers/") && path.includes("/calendar")) return route.fulfill({ json: [] });
     return route.fulfill({ json: {} });
   });
+
+  return salonNotificationRequests;
 }
 
 async function openConflictPreview(page: Page) {
@@ -88,14 +94,25 @@ async function resolveAllConflicts(page: Page) {
 }
 
 test("desktop owner resolves absence conflicts without leaving the dialog", async ({ page }) => {
-  await mockAbsenceOperations(page);
+  const salonNotificationRequests = await mockAbsenceOperations(page);
   await openConflictPreview(page);
   await resolveAllConflicts(page);
+  await expect.poll(() => salonNotificationRequests).toEqual([]);
 });
 
 test("mobile owner resolves absence conflicts without leaving the dialog", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await mockAbsenceOperations(page);
+  const salonNotificationRequests = await mockAbsenceOperations(page);
   await openConflictPreview(page);
   await resolveAllConflicts(page);
+  await expect.poll(() => salonNotificationRequests).toEqual([]);
+});
+
+test("education-center owner cannot open salon notifications or start notification requests", async ({ page }) => {
+  const salonNotificationRequests = await mockAbsenceOperations(page);
+
+  await page.goto("/vlasnik/obavestenja");
+
+  await expect(page).toHaveURL(/\/biznis$/);
+  await expect.poll(() => salonNotificationRequests).toEqual([]);
 });

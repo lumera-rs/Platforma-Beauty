@@ -30,12 +30,13 @@ export function BusinessNavbar() {
   const logout = useLogout();
   const user = userResp?.user;
   const isSalonOperator = user?.role === "SALON_OWNER" || user?.role === "EDUKATIVNI_CENTAR";
+  const hasSalonNotificationContext = user?.role === "SALON_OWNER";
   const canSwitchLocations = user?.role === "SALON_OWNER";
   const { data: cart } = useGetShopCart({ query: { enabled: isSalonOperator, queryKey: getGetShopCartQueryKey() } });
   const notificationsQueryKey = useMemo(() => salonNotificationsQueryKey(user?.id), [user?.id]);
   const { data: notifications = [] } = useListSalonNotifications({ page: 1, pageSize: 100 }, {
     query: {
-      enabled: isSalonOperator,
+      enabled: hasSalonNotificationContext,
       queryKey: notificationsQueryKey,
       refetchInterval: 5000,
       refetchOnWindowFocus: true,
@@ -108,7 +109,7 @@ export function BusinessNavbar() {
   }, [canSwitchLocations]);
 
   useEffect(() => {
-    if (!isSalonOperator) return;
+    if (!hasSalonNotificationContext) return;
 
     const refreshNotifications = () => {
       void queryClient.invalidateQueries({ queryKey: notificationsQueryKey });
@@ -143,7 +144,7 @@ export function BusinessNavbar() {
       if (reconnectTimeout !== undefined) window.clearTimeout(reconnectTimeout);
       eventSource?.close();
     };
-  }, [isSalonOperator, notificationsQueryKey, queryClient]);
+  }, [hasSalonNotificationContext, notificationsQueryKey, queryClient]);
 
   const switchSalon = async (salonId: string) => {
     if (!salonId || salonId === activeSalonId || isSwitchingSalon) return;
@@ -244,7 +245,7 @@ export function BusinessNavbar() {
               </select>
             )}
             {canSwitchLocations && <OwnerLocationWizard triggerLabel="Nova lokacija" triggerClassName="hidden lg:inline-flex border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white" />}
-            {isSalonOperator && (
+            {hasSalonNotificationContext && (
               <Button variant="ghost" size="icon" className="relative text-white hover:bg-white/10 hover:text-white" asChild>
                 <Link href="/vlasnik/obavestenja" aria-label={`Obaveštenja${unreadNotificationCount ? `, ${unreadNotificationCount} nepročitano` : ""}`} data-testid="link-notifications">
                   <Bell className="w-5 h-5" />
@@ -344,6 +345,7 @@ export function BusinessNavbar() {
             <SalonOwnerNavigation
               variant="dark"
               onNavigate={closeMobileMenu}
+              showNotifications={hasSalonNotificationContext}
               unreadNotificationCount={unreadNotificationCount}
               managedSalons={canSwitchLocations ? managedSalons : []}
               activeSalonId={activeSalonId}
