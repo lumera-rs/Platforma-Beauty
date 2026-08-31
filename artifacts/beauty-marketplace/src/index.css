@@ -68,8 +68,8 @@
   --elevate-1: rgba(0, 0, 0, 0.03);
   --elevate-2: rgba(0, 0, 0, 0.08);
 
-  /* Deep Cream / Bone background */
-  --background: 40 25% 97%;
+  /* Deep Sand/Oat background for a tactile, editorial feel */
+  --background: 40 25% 96%;
   /* Espresso black foreground */
   --foreground: 30 20% 12%;
 
@@ -77,26 +77,27 @@
   --input: 40 15% 85%;
   --ring: 230 45% 25%;
 
+  /* White cards for crisp contrast */
   --card: 0 0% 100%;
   --card-foreground: 30 20% 12%;
-  --card-border: 40 15% 90%;
+  --card-border: 40 15% 88%;
 
   --popover: 0 0% 100%;
   --popover-foreground: 30 20% 12%;
-  --popover-border: 40 15% 90%;
+  --popover-border: 40 15% 88%;
 
-  /* Deep Indigo / Midnight */
-  --primary: 230 45% 25%;
+  /* Deep Indigo / Midnight - Deliberate and strong */
+  --primary: 230 45% 22%;
   --primary-foreground: 0 0% 100%;
 
-  /* Soft warm ecru */
+  /* Soft warm ecru for secondary actions */
   --secondary: 35 25% 90%;
   --secondary-foreground: 230 45% 20%;
 
   --muted: 40 15% 92%;
-  --muted-foreground: 30 10% 45%;
+  --muted-foreground: 30 10% 40%;
 
-  /* Warm Terracotta / Burnt Orange */
+  /* Warm Terracotta / Burnt Orange - Energetic accent */
   --accent: 15 75% 55%;
   --accent-foreground: 0 0% 100%;
 
@@ -106,13 +107,13 @@
   --sidebar: 40 20% 95%;
   --sidebar-foreground: 30 20% 15%;
   --sidebar-border: 40 15% 85%;
-  --sidebar-primary: 230 45% 25%;
+  --sidebar-primary: 230 45% 22%;
   --sidebar-primary-foreground: 0 0% 100%;
   --sidebar-accent: 40 15% 88%;
   --sidebar-accent-foreground: 30 20% 15%;
-  --sidebar-ring: 230 45% 25%;
+  --sidebar-ring: 230 45% 22%;
 
-  --chart-1: 230 45% 25%;
+  --chart-1: 230 45% 22%;
   --chart-2: 15 75% 55%;
   --chart-3: 160 50% 25%;
   --chart-4: 40 80% 55%;
@@ -121,7 +122,7 @@
   --app-font-sans: 'Outfit', sans-serif;
   --app-font-serif: 'Fraunces', serif;
   --app-font-mono: Menlo, monospace;
-  --radius: 0.75rem;
+  --radius: 0.5rem;
   
   --shadow-2xs: 0px 2px 0px 0px rgba(0,0,0,0.02);
   --shadow-xs: 0px 2px 0px 0px rgba(0,0,0,0.04);

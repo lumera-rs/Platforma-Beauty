@@ -28,6 +28,11 @@ export const educationThreadStatusEnum = pgEnum("education_thread_status", ["ope
 export const educationWaitlistStatusEnum = pgEnum("education_waitlist_status", ["waiting", "offered", "expired", "enrolled", "cancelled"]);
 export const educationCourseLevelEnum = pgEnum("education_course_level", ["beginner", "intermediate", "advanced", "all-levels"]);
 export const educationReviewStatusEnum = pgEnum("education_review_status", ["pending", "published", "rejected"]);
+export const educationCourseTypeStatusEnum = pgEnum("education_course_type_status", ["approved", "pending", "rejected"]);
+export const educationPaymentModeEnum = pgEnum("education_payment_mode", ["online_full", "live_deposit", "live_off_platform"]);
+export const educationPlacementKindEnum = pgEnum("education_placement_kind", ["featured_center", "special_offer"]);
+export const educationPlacementScopeEnum = pgEnum("education_placement_scope", ["home", "category", "subcategory"]);
+export const educationPlacementStatusEnum = pgEnum("education_placement_status", ["pending_payment", "active", "expired", "cancelled", "rejected"]);
 
 export const educationCentersTable = pgTable("education_centers", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -71,12 +76,16 @@ export const educationCenterSubscriptionsTable = pgTable("education_center_subsc
   status: subscriptionStatusEnum("status").notNull().default("trial"),
   dueAmount: integer("due_amount").notNull().default(0),
   paymentMethod: paymentMethodEnum("payment_method").notNull().default("BANK_TRANSFER"),
+  billingCycle: text("billing_cycle").notNull().default("monthly"),
+  paymentReference: text("payment_reference").unique(),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   // Leading FK coverage for planId (all education centers on a plan).
   index("education_center_subscriptions_plan_idx").on(table.planId),
+  check("education_center_subscriptions_billing_cycle_check", sql`${table.billingCycle} in ('monthly', 'yearly')`),
 ]);
 
 export const educationPlatformSettingsTable = pgTable("education_platform_settings", {
@@ -94,11 +103,65 @@ export const educationPlatformSettingsTable = pgTable("education_platform_settin
   index("education_platform_settings_updated_by_idx").on(table.updatedByUserId),
 ]);
 
+export const educationSectionsTable = pgTable("education_sections", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("education_sections_active_sort_idx").on(table.active, table.sortOrder),
+]);
+
 export const courseCategoriesTable = pgTable("course_categories", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull().unique(),
   slug: text("slug").notNull().unique(),
-});
+  sectionId: uuid("section_id").references(() => educationSectionsTable.id, { onDelete: "set null" }),
+  sortOrder: integer("sort_order").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("course_categories_section_sort_idx").on(table.sectionId, table.sortOrder),
+]);
+
+export const educationSubcategoriesTable = pgTable("education_subcategories", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  categoryId: uuid("category_id").notNull().references(() => courseCategoriesTable.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  slug: text("slug").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("education_subcategories_category_slug_unique").on(table.categoryId, table.slug),
+  index("education_subcategories_category_active_sort_idx").on(table.categoryId, table.active, table.sortOrder),
+]);
+
+export const educationCourseTypesTable = pgTable("education_course_types", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  subcategoryId: uuid("subcategory_id").notNull().references(() => educationSubcategoriesTable.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  normalizedName: text("normalized_name").notNull(),
+  status: educationCourseTypeStatusEnum("status").notNull().default("pending"),
+  proposedByCenterId: uuid("proposed_by_center_id").references(() => educationCentersTable.id, { onDelete: "set null" }),
+  reviewedByUserId: uuid("reviewed_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  reviewNote: text("review_note"),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  sortOrder: integer("sort_order").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("education_course_types_subcategory_normalized_unique").on(table.subcategoryId, table.normalizedName),
+  index("education_course_types_status_idx").on(table.status, table.active, table.sortOrder),
+  index("education_course_types_proposed_by_idx").on(table.proposedByCenterId),
+  index("education_course_types_reviewed_by_idx").on(table.reviewedByUserId),
+]);
 
 export const coursesTable = pgTable("courses", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -107,6 +170,8 @@ export const coursesTable = pgTable("courses", {
   instructorId: uuid("instructor_id").references(() => usersTable.id, { onDelete: "set null" }),
   instructorProfileId: uuid("instructor_profile_id").references((): any => educationInstructorsTable.id, { onDelete: "set null" }),
   categoryId: uuid("category_id").references(() => courseCategoriesTable.id, { onDelete: "set null" }),
+  subcategoryId: uuid("subcategory_id").references(() => educationSubcategoriesTable.id, { onDelete: "set null" }),
+  courseTypeId: uuid("course_type_id").references(() => educationCourseTypesTable.id, { onDelete: "set null" }),
   title: text("title").notNull(),
   description: text("description").notNull().default(""),
   category: text("category").notNull(),
@@ -114,12 +179,22 @@ export const coursesTable = pgTable("courses", {
   city: text("city"),
   price: integer("price").notNull(),
   duration: text("duration").notNull(),
+  theoryHours: integer("theory_hours"),
+  practicalHours: integer("practical_hours"),
   level: educationCourseLevelEnum("level").notNull().default("all-levels"),
   learningOutcomes: jsonb("learning_outcomes").$type<string[]>().notNull().default([]),
   includedItems: jsonb("included_items").$type<string[]>().notNull().default([]),
   requirements: text("requirements").notNull().default(""),
   rating: integer("rating").notNull().default(0),
   certification: boolean("certification").notNull().default(false),
+  certificateName: text("certificate_name"),
+  accredited: boolean("accredited").notNull().default(false),
+  language: text("language").default("Srpski"),
+  trailerUrl: text("trailer_url"),
+  tags: jsonb("tags").$type<string[]>().notNull().default([]),
+  faq: jsonb("faq").$type<Array<{ question: string; answer: string }>>().notNull().default([]),
+  paymentMode: educationPaymentModeEnum("payment_mode").notNull().default("online_full"),
+  depositAmount: integer("deposit_amount"),
   imageUrl: text("image_url").notNull(),
   isTest: boolean("is_test").notNull().default(false),
   published: boolean("published").notNull().default(true),
@@ -139,6 +214,8 @@ export const coursesTable = pgTable("courses", {
   // Course catalog: published/active courses by center, category, format, city.
   index("courses_center_published_idx").on(table.centerId, table.published, table.archived),
   index("courses_category_published_idx").on(table.categoryId, table.published, table.archived),
+  index("courses_subcategory_published_idx").on(table.subcategoryId, table.published, table.archived),
+  index("courses_course_type_published_idx").on(table.courseTypeId, table.published, table.archived),
   index("courses_format_city_published_idx").on(table.format, table.city, table.published),
   index("courses_featured_until_idx").on(table.isFeatured, table.featuredUntil),
   // Directory ORDER BY created_at (published/active courses sorted by newest).
@@ -147,6 +224,98 @@ export const coursesTable = pgTable("courses", {
   index("courses_salon_idx").on(table.salonId),
   index("courses_instructor_idx").on(table.instructorId),
   index("courses_instructor_profile_idx").on(table.instructorProfileId),
+  check("courses_theory_hours_nonnegative_check", sql`${table.theoryHours} is null or ${table.theoryHours} >= 0`),
+  check("courses_practical_hours_nonnegative_check", sql`${table.practicalHours} is null or ${table.practicalHours} >= 0`),
+  check("courses_deposit_amount_nonnegative_check", sql`${table.depositAmount} is null or ${table.depositAmount} >= 0`),
+  check("courses_live_deposit_check", sql`${table.paymentMode} <> 'live_deposit' or (${table.format} in ('in-person', 'hybrid') and ${table.depositAmount} > 0)`),
+  check("courses_live_off_platform_check", sql`${table.paymentMode} <> 'live_off_platform' or ${table.format} in ('in-person', 'hybrid')`),
+  check("courses_non_deposit_amount_check", sql`${table.paymentMode} = 'live_deposit' or ${table.depositAmount} is null`),
+]);
+
+export const educationInquiriesTable = pgTable("education_inquiries", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  courseId: uuid("course_id").notNull().references(() => coursesTable.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("open"),
+  message: text("message"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("education_inquiries_course_created_idx").on(table.courseId, table.createdAt),
+  index("education_inquiries_center_status_created_idx").on(table.centerId, table.status, table.createdAt),
+  index("education_inquiries_user_created_idx").on(table.userId, table.createdAt),
+]);
+
+export const educationCourseMetricEventsTable = pgTable("education_course_metric_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  courseId: uuid("course_id").notNull().references(() => coursesTable.id, { onDelete: "cascade" }),
+  centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "cascade" }),
+  actorUserId: uuid("actor_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  eventType: text("event_type").notNull(),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+  dedupeKey: text("dedupe_key"),
+}, (table) => [
+  uniqueIndex("education_course_metric_events_dedupe_unique").on(table.dedupeKey).where(sql`${table.dedupeKey} is not null`),
+  index("education_course_metric_events_course_30d_idx").on(table.courseId, table.eventType, table.occurredAt),
+  index("education_course_metric_events_center_90d_idx").on(table.centerId, table.eventType, table.occurredAt),
+  index("education_course_metric_events_actor_idx").on(table.actorUserId),
+  check("education_course_metric_events_type_check", sql`${table.eventType} in ('view', 'inquiry')`),
+]);
+
+export const educationPlacementSettingsTable = pgTable("education_placement_settings", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  kind: educationPlacementKindEnum("kind").notNull(),
+  scope: educationPlacementScopeEnum("scope").notNull(),
+  price: integer("price").notNull(),
+  slotCount: integer("slot_count").notNull(),
+  durationDays: integer("duration_days").notNull(),
+  updatedByUserId: uuid("updated_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("education_placement_settings_kind_scope_unique").on(table.kind, table.scope),
+  index("education_placement_settings_updated_by_idx").on(table.updatedByUserId),
+  check("education_placement_settings_price_check", sql`${table.price} >= 0`),
+  check("education_placement_settings_slot_count_check", sql`${table.slotCount} > 0`),
+  check("education_placement_settings_duration_days_check", sql`${table.durationDays} > 0`),
+]);
+
+export const educationPlacementsTable = pgTable("education_placements", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  kind: educationPlacementKindEnum("kind").notNull(),
+  scope: educationPlacementScopeEnum("scope").notNull(),
+  scopeCategoryId: uuid("scope_category_id").references(() => courseCategoriesTable.id, { onDelete: "cascade" }),
+  scopeSubcategoryId: uuid("scope_subcategory_id").references(() => educationSubcategoriesTable.id, { onDelete: "cascade" }),
+  scopeKey: text("scope_key").generatedAlwaysAs(
+    sql`coalesce(scope_category_id::text, scope_subcategory_id::text, 'home')`,
+  ),
+  centerId: uuid("center_id").references(() => educationCentersTable.id, { onDelete: "cascade" }),
+  courseId: uuid("course_id").references(() => coursesTable.id, { onDelete: "cascade" }),
+  slotNumber: integer("slot_number").notNull(),
+  priceSnapshot: integer("price_snapshot").notNull(),
+  durationDaysSnapshot: integer("duration_days_snapshot").notNull(),
+  status: educationPlacementStatusEnum("status").notNull().default("pending_payment"),
+  paymentReference: text("payment_reference").unique(),
+  startsAt: timestamp("starts_at", { withTimezone: true }),
+  endsAt: timestamp("ends_at", { withTimezone: true }),
+  rotationSeed: integer("rotation_seed").notNull().default(0),
+  settledByUserId: uuid("settled_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("education_placements_scope_status_dates_idx").on(table.kind, table.scope, table.status, table.startsAt, table.endsAt),
+  index("education_placements_category_slot_idx").on(table.scopeCategoryId, table.slotNumber, table.status),
+  index("education_placements_subcategory_slot_idx").on(table.scopeSubcategoryId, table.slotNumber, table.status),
+  index("education_placements_center_idx").on(table.centerId),
+  index("education_placements_course_idx").on(table.courseId),
+  index("education_placements_settled_by_idx").on(table.settledByUserId),
+  check("education_placements_target_check", sql`(${table.kind} = 'featured_center' and ${table.centerId} is not null and ${table.courseId} is null) or (${table.kind} = 'special_offer' and ${table.courseId} is not null and ${table.centerId} is null)`),
+  check("education_placements_scope_check", sql`(${table.scope} = 'home' and ${table.scopeCategoryId} is null and ${table.scopeSubcategoryId} is null) or (${table.scope} = 'category' and ${table.scopeCategoryId} is not null and ${table.scopeSubcategoryId} is null) or (${table.scope} = 'subcategory' and ${table.scopeCategoryId} is null and ${table.scopeSubcategoryId} is not null)`),
+  check("education_placements_dates_check", sql`(${table.startsAt} is null and ${table.endsAt} is null) or (${table.startsAt} is not null and ${table.endsAt} is not null and ${table.endsAt} > ${table.startsAt})`),
+  check("education_placements_slot_check", sql`${table.slotNumber} > 0`),
+  check("education_placements_price_check", sql`${table.priceSnapshot} >= 0`),
+  check("education_placements_duration_days_check", sql`${table.durationDaysSnapshot} > 0`),
 ]);
 
 /**

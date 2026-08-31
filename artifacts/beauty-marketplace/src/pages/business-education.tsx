@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from "react";
 import { Link, useRoute, useLocation } from "wouter";
 import { z } from "zod";
@@ -5,14 +6,15 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { 
-  useGetCurrentUser, useListCourses, useGetEducationCourse, 
-  useListEnrollments, useGetEducationLms, 
+import {
+  useGetCurrentUser, useGetPublicEducationTaxonomy, getGetPublicEducationTaxonomyQueryKey, useListCourses, useGetEducationCourse,
+  useListEnrollments, useGetEducationLms,
   useListSalonEmployees,
-  useCreateEducationCourse, useUpdateEducationCourse, 
-  usePublishEducationCourse, useArchiveEducationCourse, 
-  useCreateEducationModule, useCreateEducationLesson, 
-  useCreateEducationSession, useEnrollInEducationCourse, 
+  useListMyEducationPlacements, getListMyEducationPlacementsQueryKey, usePurchaseEducationPlacement, useProposeEducationCourseType,
+  useCreateEducationCourse, useUpdateEducationCourse,
+  usePublishEducationCourse, useArchiveEducationCourse,
+  useCreateEducationModule, useCreateEducationLesson,
+  useCreateEducationSession, useEnrollInEducationCourse,
   useCompleteEducationLesson,
   useListEducationInstructors, useCreateEducationInstructor, useUpdateEducationInstructor, useDeleteEducationInstructor,
   useGetEducationCourseFeaturedStatus, useUpdateEducationCourseFeatured, useLinkEducationCourseInstructor,
@@ -21,7 +23,7 @@ import {
   useReorderEducationCourseGallery, useDeleteEducationCourseGalleryMedia,
   useGetPublicInstructorProfile,
   useListEducationNotifications, useAcceptEducationWaitlistOffer, useMarkEducationNotificationRead,
-  getListCoursesQueryKey, getGetEducationCourseQueryKey, 
+  getListCoursesQueryKey, getGetEducationCourseQueryKey,
   getListEnrollmentsQueryKey, getGetEducationLmsQueryKey, getListSalonEmployeesQueryKey,
   getListEducationInstructorsQueryKey, getGetEducationCourseFeaturedStatusQueryKey,
   getListEducationNotificationsQueryKey,
@@ -53,19 +55,24 @@ import { uploadOptimizedImage } from "@/lib/media-upload";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
-import { 
-  GraduationCap, Search, MapPin, Clock, Award, 
-  PlayCircle, Users, CheckCircle2, ArrowLeft, 
+import {
+  GraduationCap, Search, MapPin, Clock, Award,
+  PlayCircle, Users, CheckCircle2, ArrowLeft,
   ArrowRight, Plus, Filter, Monitor, Video, Calendar, Star, Loader2,
   Download, CalendarPlus, Info, ShieldCheck, UserCircle2, Zap, Trash2, Pencil, Link2, Bell, ImagePlus, ArrowUp, ArrowDown
 } from "lucide-react";
 
+const money = (value: number) => new Intl.NumberFormat("sr-RS", { style: "currency", currency: "RSD", maximumFractionDigits: 0 }).format(value);
 const DEFAULT_COURSE_IMAGE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='400' viewBox='0 0 800 400'%3E%3Crect width='800' height='400' fill='%23f3f4f6'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dominant-baseline='middle' font-family='sans-serif' font-size='24' fill='%239ca3af'%3EEdukacija%3C/text%3E%3C/svg%3E";
 
 const courseSchema = z.object({
   title: z.string().min(2, "Naslov mora imati bar 2 karaktera"),
   description: z.string().optional(),
-  category: z.string().min(2, "Kategorija je obavezna"),
+
+  category: z.string().min(2, "Kategorija je obavezna (nova ili legacy)"),
+  subcategoryId: z.string().optional().nullable(),
+  courseTypeId: z.string().optional().nullable(),
+
   format: z.enum(["online", "in-person", "hybrid"]),
   city: z.string().optional(),
   price: z.coerce.number().min(0, "Cena ne može biti negativna"),
@@ -74,15 +81,38 @@ const courseSchema = z.object({
   learningOutcomesText: z.string().optional(),
   includedItemsText: z.string().optional(),
   requirements: z.string().max(2000).optional(),
+
   certification: z.boolean().optional(),
+  certificateName: z.string().optional(),
+  accredited: z.boolean().optional(),
+
+  theoryHours: z.coerce.number().optional().nullable(),
+  practicalHours: z.coerce.number().optional().nullable(),
+  language: z.string().optional(),
+  trailerUrl: z.string().optional(),
+  tagsText: z.string().optional(),
+
   imageUrl: z.string().min(1, "Slika je obavezna"),
   startDate: z.string().optional(),
   refundPolicy: z.string().min(1, "Politika povraćaja je obavezna").max(2000),
+
+  paymentMode: z.enum(["online_full", "live_deposit", "live_off_platform"]),
+  depositAmount: z.coerce.number().optional().nullable(),
+
   groupDiscountMinimum: z.coerce.number().int().min(2).max(999).optional().nullable(),
   groupDiscountPercent: z.coerce.number().int().min(0).max(100).optional().nullable(),
 }).refine(
   (data) => (data.groupDiscountMinimum == null) === (data.groupDiscountPercent == null),
-  { message: "Unesite i minimalan broj polaznika i procenat popusta za grupni popust.", path: ["groupDiscountPercent"] },
+  { message: "Unesite i minimalan broj polaznika i procenat popusta za grupni popust.", path: ["groupDiscountPercent"] }
+).refine(
+  (data) => data.paymentMode !== "live_deposit" || (data.depositAmount && data.depositAmount > 0 && data.depositAmount <= data.price),
+  { message: "Depozit mora biti veći od nule i manji od ukupne cene.", path: ["depositAmount"] }
+).refine(
+  (data) => data.paymentMode !== "live_off_platform" || data.format !== "online",
+  { message: "Plaćanje uživo je dozvoljeno samo za kurseve koji se održavaju uživo ili hibridno.", path: ["paymentMode"] }
+).refine(
+  (data) => data.format !== "online" || data.paymentMode === "online_full",
+  { message: "Online kursevi zahtevaju potpuno online plaćanje.", path: ["paymentMode"] }
 );
 
 export default function BusinessEducation({ hideLayout = false }: { hideLayout?: boolean }) {
@@ -129,12 +159,205 @@ export default function BusinessEducation({ hideLayout = false }: { hideLayout?:
     return hideLayout ? learningView : <Layout>{learningView}</Layout>;
   }
 
+  const isCenter = userResponse?.user?.role === "SALON_OWNER" || userResponse?.user?.role === "EDUKATIVNI_CENTAR";
+
+  if (!isCenter) {
+    return (
+      <BusinessLayout>
+        <CatalogView />
+      </BusinessLayout>
+    );
+  }
+
   return (
     <BusinessLayout>
-      <CatalogView />
+      <div className="container mx-auto px-4 py-8">
+        <Tabs defaultValue="catalog" className="space-y-6">
+          <TabsList>
+            <TabsTrigger value="catalog">Katalog i edukacije</TabsTrigger>
+            <TabsTrigger value="placements">Sponzorisane pozicije</TabsTrigger>
+          </TabsList>
+          <TabsContent value="catalog" className="m-0">
+            <CatalogView />
+          </TabsContent>
+          <TabsContent value="placements" className="m-0">
+            <MyPlacementsView />
+          </TabsContent>
+        </Tabs>
+      </div>
     </BusinessLayout>
   );
 }
+
+function MyPlacementsView() {
+  const { data: placements, isLoading } = useListMyEducationPlacements({ query: { queryKey: getListMyEducationPlacementsQueryKey() } });
+  const { data: courses } = useListCourses(undefined, { query: { queryKey: getListCoursesQueryKey() } });
+  const { data: taxonomy } = useGetPublicEducationTaxonomy({ query: { queryKey: getGetPublicEducationTaxonomyQueryKey() } });
+  const purchaseMut = usePurchaseEducationPlacement();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [kind, setKind] = useState<"featured_center" | "special_offer">("special_offer");
+  const [scope, setScope] = useState<"home" | "category" | "subcategory">("category");
+  const [scopeId, setScopeId] = useState<string>("");
+  const [courseId, setCourseId] = useState<string>("");
+
+  const categories = useMemo(() => taxonomy ? taxonomy.flatMap(s => s.categories) : [], [taxonomy]);
+  const subcategories = useMemo(() => categories.flatMap(c => c.subcategories), [categories]);
+
+  const purchase = () => {
+    let finalScopeId: string | null = scopeId;
+    if (scope === "home") finalScopeId = null;
+
+    let finalCourseId: string | null = courseId;
+    if (kind === "featured_center") finalCourseId = null;
+
+    if (scope !== "home" && !finalScopeId) {
+      toast.error("Greška", { description: "Morate izabrati kategoriju ili potkategoriju." });
+      return;
+    }
+    if (kind === "special_offer" && !finalCourseId) {
+      toast.error("Greška", { description: "Morate izabrati kurs za specijalnu ponudu." });
+      return;
+    }
+
+    purchaseMut.mutate({
+      data: {
+        kind,
+        scope,
+        scopeId: finalScopeId,
+        courseId: finalCourseId
+      }
+    }, {
+      onSuccess: (res: any) => {
+        toast.success("Zahtev evidentiran", { description: `Referenca za uplatu: ${res.paymentReference}` });
+        queryClient.invalidateQueries({ queryKey: getListMyEducationPlacementsQueryKey() });
+        setPurchaseOpen(false);
+        setScopeId("");
+        setCourseId("");
+      },
+      onError: (e: any) => toast.error("Greška", { description: e.message || "Došlo je do greške." })
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-2xl font-serif font-bold">Sponzorisane pozicije</h2>
+          <p className="text-muted-foreground">Istaknite svoj centar ili kurseve.</p>
+        </div>
+        <Button data-testid="buy-placement-btn" onClick={() => setPurchaseOpen(true)}>Kupi poziciju</Button>
+      </div>
+
+      <Dialog open={purchaseOpen} onOpenChange={setPurchaseOpen}>
+        <DialogContent data-testid="buy-placement-dialog">
+          <DialogHeader><DialogTitle>Kupi poziciju</DialogTitle></DialogHeader>
+          <div className="space-y-4 pt-4">
+            <div className="space-y-2">
+              <Label>Tip pozicije</Label>
+              <Select value={kind} onValueChange={(val: any) => setKind(val)}>
+                <SelectTrigger data-testid="placement-kind-select"><SelectValue/></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="featured_center">Istaknuti centar</SelectItem>
+                  <SelectItem value="special_offer">Specijalna ponuda (Kurs)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {kind === "special_offer" && (
+              <div className="space-y-2">
+                <Label>Izaberite edukaciju</Label>
+                <Select value={courseId} onValueChange={setCourseId}>
+                  <SelectTrigger data-testid="placement-course-select"><SelectValue placeholder="Izaberite kurs..." /></SelectTrigger>
+                  <SelectContent>
+                    {courses?.map((c: any) => (
+                      <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Obim</Label>
+              <Select value={scope} onValueChange={(val: any) => { setScope(val); setScopeId(""); }}>
+                <SelectTrigger data-testid="placement-scope-select"><SelectValue/></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="home">Početna (Home)</SelectItem>
+                  <SelectItem value="category">Kategorija</SelectItem>
+                  <SelectItem value="subcategory">Potkategorija</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {scope === "category" && (
+              <div className="space-y-2">
+                <Label>Izaberite kategoriju</Label>
+                <Select value={scopeId} onValueChange={setScopeId}>
+                  <SelectTrigger data-testid="placement-category-select"><SelectValue placeholder="Izaberite kategoriju..." /></SelectTrigger>
+                  <SelectContent>
+                    {categories.map((c: any) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {scope === "subcategory" && (
+              <div className="space-y-2">
+                <Label>Izaberite potkategoriju</Label>
+                <Select value={scopeId} onValueChange={setScopeId}>
+                  <SelectTrigger data-testid="placement-subcategory-select"><SelectValue placeholder="Izaberite potkategoriju..." /></SelectTrigger>
+                  <SelectContent>
+                    {subcategories.map((c: any) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <Button data-testid="placement-submit-btn" onClick={purchase} disabled={purchaseMut.isPending} className="w-full">Potvrdi</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {placements?.map((p: any) => (
+          <Card key={p.id} data-testid="placement-card">
+            <CardContent className="p-4">
+              <div className="flex justify-between items-start">
+                <div>
+                  <Badge variant="outline" className="mb-2">{p.kind === "featured_center" ? "Centar" : "Kurs"}</Badge>
+                  <h3 className="font-semibold">{p.label}</h3>
+                  <p className="text-xs text-muted-foreground mt-1">Obim: {p.scope}</p>
+                </div>
+                <Badge variant={p.status === "active" ? "default" : "secondary"}>
+                  {p.status}
+                </Badge>
+              </div>
+              <div className="mt-4 pt-4 border-t text-sm space-y-1">
+                {p.courseId && <p className="text-muted-foreground truncate">Kurs ID: {p.courseId}</p>}
+                <p>Cena: {money(p.price)}</p>
+                <p>Ref: <span className="font-mono text-xs">{p.paymentReference}</span></p>
+                {p.startsAt && <p className="text-xs mt-2">Trajanje: {new Date(p.startsAt).toLocaleDateString("sr-RS")} - {p.endsAt ? new Date(p.endsAt).toLocaleDateString("sr-RS") : ""}</p>}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+        {placements?.length === 0 && (
+          <div className="col-span-full py-12 text-center text-muted-foreground border-2 border-dashed rounded-lg">
+            Trenutno nemate aktivnih ni istorijskih sponzorisanih pozicija.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 
 function OfferCountdown({ expiresAt }: { expiresAt: string | null }) {
   const [now, setNow] = useState(() => Date.now());
@@ -410,13 +633,13 @@ function CatalogView() {
             <div className="flex items-center gap-2 font-medium border-b pb-4">
               <Filter className="w-4 h-4" /> Filteri pretrage
             </div>
-            
+
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Kategorija</Label>
                 <Input placeholder="Npr. Manikir, Masaža..." value={filters.category || ""} onChange={e => handleFilterChange("category", e.target.value)} />
               </div>
-              
+
               <div className="space-y-2">
                 <Label>Format nastave</Label>
                 <Select value={filters.format || ""} onValueChange={v => handleFilterChange("format", v === "all" ? undefined : v)}>
@@ -429,12 +652,12 @@ function CatalogView() {
                   </SelectContent>
                 </Select>
               </div>
-              
+
               <div className="space-y-2">
                 <Label>Grad</Label>
                 <Input placeholder="Npr. Beograd" value={filters.city || ""} onChange={e => handleFilterChange("city", e.target.value)} />
               </div>
-              
+
               <div className="space-y-2">
                 <Label>Edukativni centar</Label>
                 <Input placeholder="Naziv organizatora" value={filters.center || ""} onChange={e => handleFilterChange("center", e.target.value)} />
@@ -466,7 +689,7 @@ function CatalogView() {
                   </SelectContent>
                 </Select>
               </div>
-              
+
               <div className="pt-2 border-t flex items-center justify-between">
                 <Label className="cursor-pointer" htmlFor="cert-switch">Zvanični sertifikat</Label>
                 <Switch id="cert-switch" checked={!!filters.certification} onCheckedChange={c => handleFilterChange("certification", c || undefined)} />
@@ -481,7 +704,7 @@ function CatalogView() {
             </div>
           </div>
         </aside>
-        
+
         <div className="flex-1 space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <h2 className="text-2xl font-serif font-bold text-foreground">
@@ -500,7 +723,7 @@ function CatalogView() {
               )}
             </div>
           </div>
-          
+
           {isLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
               {[1, 2, 3, 4, 5, 6].map(i => (
@@ -614,7 +837,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
 
   const { data: course, isLoading, isError } = useGetEducationCourse(courseId);
   const { data: myCourses } = useListCourses({ mine: true }, { query: { enabled: canCreate, queryKey: getListCoursesQueryKey({ mine: true }) } });
-  
+
   const isMyCourse = useMemo(() => {
     return myCourses?.some((c: any) => c.id === courseId) ?? false;
   }, [myCourses, courseId]);
@@ -773,7 +996,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                   <TabsTrigger value="sessions" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent px-2 md:px-6 py-3 font-medium">Termini uživo</TabsTrigger>
                 )}
               </TabsList>
-              
+
               <TabsContent value="overview" className="space-y-8 animate-in fade-in duration-500">
                 <div className="prose prose-slate dark:prose-invert max-w-none text-foreground/90 leading-relaxed">
                   {course.description ? (
@@ -798,14 +1021,14 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                 ) : null}
                 {isMyCourse && isEducationCenter ? <CourseGalleryEditor courseId={courseId} gallery={course.gallery ?? []} /> : null}
               </TabsContent>
-              
+
               <TabsContent value="curriculum" className="space-y-6 animate-in fade-in duration-500">
                 {isMyCourse && (
                   <Button onClick={() => setCreateModuleOpen(true)} variant="outline" className="mb-2 shadow-sm">
                     <Plus className="w-4 h-4 mr-2" /> Dodaj modul
                   </Button>
                 )}
-                
+
                 {course.modules?.length ? (
                   <div className="space-y-4">
                     {course.modules.map((mod: any, idx: number) => (
@@ -813,7 +1036,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                         <div className="bg-muted/30 p-4 sm:px-6 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                           <div>
                             <h3 className="font-bold text-lg text-foreground flex items-center">
-                              <span className="text-muted-foreground mr-3 font-normal text-sm">Modul {idx + 1}</span> 
+                              <span className="text-muted-foreground mr-3 font-normal text-sm">Modul {idx + 1}</span>
                               {mod.title}
                             </h3>
                             {mod.description && <p className="text-sm text-muted-foreground mt-1">{mod.description}</p>}
@@ -858,7 +1081,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                   </div>
                 )}
               </TabsContent>
-              
+
               {(course.format === 'in-person' || course.format === 'hybrid') && (
                 <TabsContent value="sessions" className="space-y-6 animate-in fade-in duration-500">
                   {isMyCourse && (
@@ -866,7 +1089,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                       <Plus className="w-4 h-4 mr-2" /> Zakaži termin
                     </Button>
                   )}
-                  
+
                   {course.sessions?.length ? (
                     <div className="grid gap-4 md:grid-cols-2">
                       {course.sessions.map((session: any) => (
@@ -883,7 +1106,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                                 </div>
                                 <div className="text-sm text-muted-foreground flex items-center">
                                   <Clock className="w-3.5 h-3.5 mr-1.5 opacity-70" />
-                                  {new Date(session.startsAt).toLocaleTimeString('sr-RS', { hour: '2-digit', minute: '2-digit' })} - 
+                                  {new Date(session.startsAt).toLocaleTimeString('sr-RS', { hour: '2-digit', minute: '2-digit' })} -
                                   {new Date(session.endsAt).toLocaleTimeString('sr-RS', { hour: '2-digit', minute: '2-digit' })}
                                 </div>
                               </div>
@@ -891,7 +1114,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                             <div className="p-4 space-y-3">
                               {session.location && (
                                 <div className="text-sm flex items-start text-foreground/80">
-                                  <MapPin className="w-4 h-4 mr-2.5 text-muted-foreground shrink-0 mt-0.5" /> 
+                                  <MapPin className="w-4 h-4 mr-2.5 text-muted-foreground shrink-0 mt-0.5" />
                                   <span>{session.location}</span>
                                 </div>
                               )}
@@ -927,7 +1150,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
               )}
             </Tabs>
           </div>
-          
+
           <div>
             <Card className="sticky top-24 border-primary/20 shadow-md">
               <CardContent className="p-6 md:p-8">
@@ -935,12 +1158,12 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                   {course.price === 0 ? 'Besplatno' : `${course.price.toLocaleString('sr-RS')} RSD`}
                 </div>
                 <div className="text-sm text-muted-foreground mb-6 pb-6 border-b border-border/60">Plaćanje jednokratno.</div>
-                
+
                 <div className="space-y-4 mb-8">
                   <div className="flex items-center text-sm"><Clock className="w-5 h-5 mr-3 text-primary/70"/> <span className="font-medium text-foreground mr-1">Trajanje:</span> {course.duration}</div>
                   {course.certification && <div className="flex items-center text-sm"><Award className="w-5 h-5 mr-3 text-primary/70"/> <span className="font-medium text-foreground mr-1">Zvanični sertifikat</span> po završetku</div>}
                   <div className="flex items-center text-sm">
-                    <Users className="w-5 h-5 mr-3 text-primary/70"/> 
+                    <Users className="w-5 h-5 mr-3 text-primary/70"/>
                     {course.availableSeats !== null && course.availableSeats !== undefined ? (
                       <span><span className="font-medium text-foreground mr-1">{course.availableSeats}</span> slobodnih mesta</span>
                     ) : (
@@ -966,7 +1189,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                     <p className="text-xs text-muted-foreground leading-relaxed">{course.refundPolicy}</p>
                   </div>
                 )}
-                
+
                 {isMyCourse ? (
                   <div className="space-y-3 bg-muted/30 p-4 rounded-lg border border-border/50">
                     <h4 className="font-medium text-xs text-muted-foreground uppercase tracking-wider mb-3">Upravljanje sadržajem</h4>
@@ -1366,9 +1589,9 @@ function LmsView({ enrollmentId }: { enrollmentId: string }) {
   const complete = useCompleteEducationLesson();
   const [certDownloading, setCertDownloading] = useState(false);
   const [icsDownloading, setIcsDownloading] = useState(false);
-  
+
   const [activeLessonId, setActiveLessonId] = useState<string | null>(null);
-  
+
   useEffect(() => {
     if (lms && !activeLessonId) {
       if (lms.enrollment.nextLesson) {
@@ -1378,7 +1601,7 @@ function LmsView({ enrollmentId }: { enrollmentId: string }) {
       }
     }
   }, [lms, activeLessonId]);
-  
+
   if (isLoading) return <div className="flex h-[80vh] items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
   if (!lms) return <div className="flex h-[80vh] items-center justify-center flex-col text-center">
     <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4 text-muted-foreground"><Monitor className="w-8 h-8" /></div>
@@ -1386,7 +1609,7 @@ function LmsView({ enrollmentId }: { enrollmentId: string }) {
     <p className="text-muted-foreground mb-6">Vaša rezervacija možda nije potvrđena ili edukacija ne sadrži online lekcije.</p>
     <Button asChild><Link href="/biznis/edukacije">Nazad na katalog</Link></Button>
   </div>;
-  
+
   const activeLesson = useMemo(() => {
     for (const mod of lms.course.modules) {
       const lesson = mod.lessons.find((l: any) => l.id === activeLessonId);
@@ -1394,7 +1617,7 @@ function LmsView({ enrollmentId }: { enrollmentId: string }) {
     }
     return null;
   }, [lms, activeLessonId]);
-  
+
   const handleComplete = () => {
     if (!activeLessonId) return;
     complete.mutate({ enrollmentId, lessonId: activeLessonId }, {
@@ -1502,12 +1725,12 @@ function LmsView({ enrollmentId }: { enrollmentId: string }) {
               <h3 className="font-medium text-sm text-sidebar-foreground/60 uppercase tracking-wider pl-2">{mod.title}</h3>
               <div className="space-y-1">
                 {mod.lessons.map((lesson: any) => (
-                  <button 
+                  <button
                     key={lesson.id}
                     onClick={() => setActiveLessonId(lesson.id)}
                     className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all flex items-start gap-3
-                      ${activeLessonId === lesson.id 
-                        ? 'bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-sm' 
+                      ${activeLessonId === lesson.id
+                        ? 'bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-sm'
                         : 'hover:bg-sidebar-accent text-sidebar-foreground/90'}
                     `}
                   >
@@ -1526,7 +1749,7 @@ function LmsView({ enrollmentId }: { enrollmentId: string }) {
           ))}
         </div>
       </div>
-      
+
       <div className="flex-1 bg-background flex flex-col md:h-[100dvh]">
         {activeLesson ? (
           <>
@@ -1570,246 +1793,379 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
+  const proposeMut = useProposeEducationCourseType();
+  const proposeType = () => {
+    if (!watchSubcategoryId) { toast.error("Izaberite potkategoriju prvo."); return; }
+    const name = window.prompt("Unesite naziv novog tipa obuke:");
+    if (!name) return;
+    proposeMut.mutate({ data: { subcategoryId: watchSubcategoryId, name } } as any, {
+      onSuccess: () => toast.success("Predlog je poslat na odobrenje."),
+      onError: (e: any) => { toast.error("Greška", { description: e.message }); }
+    });
+  };
   const create = useCreateEducationCourse();
   const update = useUpdateEducationCourse();
   const [uploadingCover, setUploadingCover] = useState(false);
-  
+
+  const { data: taxonomy } = useGetPublicEducationTaxonomy();
+
   const DEFAULT_REFUND_POLICY = "Povraćaj je moguć do isteka roka zaštite kupovine. Ako centar otkaže termin, kupovina se refundira u celosti.";
   const { register, handleSubmit, control, formState: { errors }, reset, setValue, watch } = useForm<any>({
     resolver: zodResolver(courseSchema) as any,
-    defaultValues: { format: 'online', level: 'all-levels', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE, refundPolicy: DEFAULT_REFUND_POLICY, groupDiscountMinimum: "", groupDiscountPercent: "", learningOutcomesText: "", includedItemsText: "", requirements: "" }
+    defaultValues: { format: 'online', level: 'all-levels', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE, refundPolicy: DEFAULT_REFUND_POLICY, paymentMode: 'online_full', subcategoryId: '', courseTypeId: '', groupDiscountMinimum: "", groupDiscountPercent: "", learningOutcomesText: "", includedItemsText: "", requirements: "" }
   });
   const coverImageUrl = watch("imageUrl");
+  const watchFormat = watch("format");
+  const watchPaymentMode = watch("paymentMode");
+  const watchSectionId = watch("sectionId");
+  const watchCategoryId = watch("categoryId");
+  const watchSubcategoryId = watch("subcategoryId");
+
+  // Options cascading
+  const sections = taxonomy || [];
+  const categories = useMemo(() => sections.find((s: any) => s.id === watchSectionId)?.categories || [], [sections, watchSectionId]);
+  const subcategories = useMemo(() => categories.find((c: any) => c.id === watchCategoryId)?.subcategories || [], [categories, watchCategoryId]);
+  const courseTypes = useMemo(() => subcategories.find((s: any) => s.id === watchSubcategoryId)?.courseTypes || [], [subcategories, watchSubcategoryId]);
 
   const uploadCover = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    event.target.value = "";
     if (!file) return;
     setUploadingCover(true);
     try {
       const asset = await uploadOptimizedImage(file, "education-cover", course?.id);
-      setValue("imageUrl", asset.imageUrl, { shouldDirty: true, shouldValidate: true });
+      setValue("imageUrl", asset.imageUrl, { shouldValidate: true, shouldDirty: true });
       toast.success("Naslovna fotografija je obrađena.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Upload naslovne fotografije nije uspeo.");
+      toast.error("Greška", { description: "Slanje slike nije uspelo." });
     } finally {
       setUploadingCover(false);
     }
   };
-  
-  useEffect(() => {
-    if (!open) return;
-    if (!course) {
-      reset({ format: 'online', level: 'all-levels', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE, refundPolicy: DEFAULT_REFUND_POLICY, groupDiscountMinimum: "", groupDiscountPercent: "", learningOutcomesText: "", includedItemsText: "", requirements: "" });
-      return;
-    }
-    reset({
-      title: course.title,
-      description: course.description ?? "",
-      category: course.category,
-      format: course.format,
-      city: course.city ?? "",
-      price: course.price,
-      duration: course.duration,
-      level: course.level ?? "all-levels",
-      learningOutcomesText: (course.learningOutcomes ?? []).join("\n"),
-      includedItemsText: (course.includedItems ?? []).join("\n"),
-      requirements: course.requirements ?? "",
-      certification: course.certification,
-      imageUrl: course.imageUrl,
-      startDate: course.startDate ? new Date(course.startDate).toISOString().slice(0, 10) : "",
-      refundPolicy: course.refundPolicy ?? DEFAULT_REFUND_POLICY,
-      groupDiscountMinimum: course.groupDiscountMinimum ?? "",
-      groupDiscountPercent: course.groupDiscountPercent ?? "",
-    });
-  }, [open, reset, course]);
 
-  const onSubmit = (raw: any) => {
-    // Normalize the optional group-discount pair: empty inputs become null so the
-    // server clears the configuration; both must be provided together (enforced by zod).
-    const data = {
-      ...raw,
-      level: raw.level ?? "all-levels",
-      learningOutcomes: String(raw.learningOutcomesText ?? "").split("\n").map((value) => value.trim()).filter(Boolean),
-      includedItems: String(raw.includedItemsText ?? "").split("\n").map((value) => value.trim()).filter(Boolean),
-      groupDiscountMinimum: raw.groupDiscountMinimum === "" || raw.groupDiscountMinimum == null ? null : Number(raw.groupDiscountMinimum),
-      groupDiscountPercent: raw.groupDiscountPercent === "" || raw.groupDiscountPercent == null ? null : Number(raw.groupDiscountPercent),
+  useEffect(() => {
+    if (open) {
+      if (course) {
+        // Hydrate taxonomy parents based on subcategoryId
+        let foundSectionId = "";
+        let foundCategoryId = "";
+        let foundSubcat = false;
+        for (const s of (taxonomy || [])) {
+          for (const c of s.categories) {
+            for (const sub of c.subcategories) {
+              if (sub.id === course.subcategoryId) {
+                foundSectionId = s.id;
+                foundCategoryId = c.id;
+                foundSubcat = true;
+                break;
+              }
+            }
+            if (foundSubcat) break;
+          }
+          if (foundSubcat) break;
+        }
+
+        reset({
+          title: course.title,
+          description: course.description,
+          sectionId: foundSectionId,
+          categoryId: foundCategoryId,
+          subcategoryId: course.subcategoryId,
+          courseTypeId: course.courseTypeId,
+          format: course.format,
+          city: course.city || "",
+          price: course.price,
+          duration: course.duration,
+          level: course.level || "all-levels",
+          learningOutcomesText: course.learningOutcomes?.join("\n") || "",
+          includedItemsText: course.includedItems?.join("\n") || "",
+          requirements: course.requirements || "",
+          certification: course.certification,
+          certificateName: course.certificateName || "",
+          accredited: course.accredited || false,
+          category: course.category || "",
+          faqText: course.faq?.map((f: any) => `P: ${f.question}\nO: ${f.answer}`).join("\n\n") || "",
+          theoryHours: course.theoryHours || "",
+          practicalHours: course.practicalHours || "",
+          language: course.language || "",
+          trailerUrl: course.trailerUrl || "",
+          tagsText: course.tags?.join(", ") || "",
+          imageUrl: course.imageUrl || DEFAULT_COURSE_IMAGE,
+          startDate: course.startDate ? new Date(course.startDate).toISOString().split('T')[0] : "",
+          refundPolicy: course.refundPolicy || DEFAULT_REFUND_POLICY,
+          paymentMode: course.paymentMode || "online_full",
+          depositAmount: course.depositAmount || "",
+          groupDiscountMinimum: course.groupDiscountMinimum || "",
+          groupDiscountPercent: course.groupDiscountPercent || "",
+        });
+      } else {
+        reset({ category: '', faqText: '', format: 'online', level: 'all-levels', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE, refundPolicy: DEFAULT_REFUND_POLICY, paymentMode: 'online_full', subcategoryId: '', courseTypeId: '', groupDiscountMinimum: "", groupDiscountPercent: "", learningOutcomesText: "", includedItemsText: "", requirements: "" });
+      }
+    }
+  }, [open, course, reset, taxonomy]);
+
+  const submit = (values: any) => {
+    const payload = {
+      title: values.title,
+      category: values.category || (categories.find((c:any) => c.id === values.categoryId)?.name || "Ostalo"),
+      faq: values.faqText ? values.faqText.split('\n\n').map((block: string) => {
+        const lines = block.split('\n');
+        if (lines.length >= 2) return { question: lines[0].replace(/^P:\s*/, ''), answer: lines.slice(1).join('\n').replace(/^O:\s*/, '') };
+        return null;
+      }).filter(Boolean) : [],
+      description: values.description || null,
+      categoryId: values.categoryId || course?.categoryId || null,
+      subcategoryId: values.subcategoryId || course?.subcategoryId || null,
+      courseTypeId: values.courseTypeId || course?.courseTypeId || null,
+      format: values.format,
+      city: values.format !== "online" ? values.city : null,
+      price: values.price,
+      duration: values.duration,
+      level: values.level || null,
+      learningOutcomes: values.learningOutcomesText ? values.learningOutcomesText.split("\n").map((s: string) => s.trim()).filter(Boolean) : [],
+      includedItems: values.includedItemsText ? values.includedItemsText.split("\n").map((s: string) => s.trim()).filter(Boolean) : [],
+      requirements: values.requirements || null,
+      certification: values.certification,
+      certificateName: values.certificateName || null,
+      accredited: values.accredited,
+      theoryHours: values.theoryHours ? Number(values.theoryHours) : null,
+      practicalHours: values.practicalHours ? Number(values.practicalHours) : null,
+      language: values.language || null,
+      trailerUrl: values.trailerUrl || null,
+      tags: values.tagsText ? values.tagsText.split(",").map((s: string) => s.trim()).filter(Boolean) : [],
+      imageUrl: values.imageUrl,
+      startDate: values.startDate || null,
+      refundPolicy: values.refundPolicy,
+      paymentMode: values.paymentMode,
+      depositAmount: values.paymentMode === "live_deposit" && values.depositAmount ? Number(values.depositAmount) : null,
+      groupDiscountMinimum: values.groupDiscountMinimum ? Number(values.groupDiscountMinimum) : null,
+      groupDiscountPercent: values.groupDiscountPercent ? Number(values.groupDiscountPercent) : null,
     };
-    const mutation = course
-      ? update.mutate({ courseId: course.id, data }, {
-          onSuccess: () => {
-            toast.success("Edukacija je ažurirana");
-            queryClient.invalidateQueries({ queryKey: getGetEducationCourseQueryKey(course.id) });
-            queryClient.invalidateQueries({ queryKey: getListCoursesQueryKey() });
-            onOpenChange(false);
-          },
-          onError: () => toast.error("Greška pri ažuriranju edukacije"),
-        })
-      : create.mutate({ data }, {
-      onSuccess: (newCourse: any) => {
-        toast.success("Edukacija uspešno kreirana");
-        queryClient.invalidateQueries({ queryKey: getListCoursesQueryKey() });
-        onOpenChange(false);
-        if (newCourse?.id) setLocation(`/biznis/edukacije/${newCourse.id}`);
-      },
-      onError: () => toast.error("Greška pri kreiranju edukacije")
-    });
-    return mutation;
+
+    if (course) {
+      update.mutate({ courseId: course.id, data: payload as any }, {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetEducationCourseQueryKey(course.id) });
+          queryClient.invalidateQueries({ queryKey: getListCoursesQueryKey() });
+          toast.success("Edukacija sačuvana");
+          onOpenChange(false);
+        },
+        onError: (e) => toast.error("Greška", { description: e.message })
+      });
+    } else {
+      create.mutate({ data: payload as any }, {
+        onSuccess: (res) => {
+          queryClient.invalidateQueries({ queryKey: getListCoursesQueryKey() });
+          toast.success("Edukacija kreirana");
+          onOpenChange(false);
+          setLocation(`/biznis/edukacije/${res.id}`);
+        },
+        onError: (e) => toast.error("Greška", { description: e.message })
+      });
+    }
   };
-  
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle className="text-xl font-serif">{course ? "Izmeni edukaciju" : "Nova edukacija"}</DialogTitle></DialogHeader>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 pt-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2 md:col-span-2">
-              <Label>Naziv edukacije *</Label>
-              <Input placeholder="Npr. Masterclass Manikir..." {...register("title")} />
-              {errors.title && <p className="text-sm text-destructive">{errors.title.message as string}</p>}
-            </div>
-            
-            <div className="space-y-2 md:col-span-2">
-              <Label>Opis</Label>
-              <Textarea placeholder="Kratak opis onoga što će polaznici naučiti..." rows={3} {...register("description")} />
-            </div>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{course ? "Izmeni edukaciju" : "Nova edukacija"}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit(submit)} className="space-y-6">
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Naziv edukacije</Label>
+                <Input {...register("title")} />
+                {errors.title && <p className="text-xs text-destructive">{errors.title.message as string}</p>}
+              </div>
 
-            <div className="space-y-2">
-              <Label>Kategorija *</Label>
-              <Input placeholder="Npr. Manikir, Kozmetika" {...register("category")} />
-              {errors.category && <p className="text-sm text-destructive">{errors.category.message as string}</p>}
-            </div>
-
-            <div className="space-y-2">
-              <Label>Format nastave *</Label>
-              <Controller
-                name="format"
-                control={control}
-                render={({ field }) => (
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger><SelectValue placeholder="Izaberite format" /></SelectTrigger>
+              <div className="space-y-2">
+                <Label>Oblast (Sekcija)</Label>
+                <Controller control={control} name="sectionId" render={({ field }) => (
+                  <Select value={field.value} onValueChange={(val) => { field.onChange(val); setValue("categoryId", ""); setValue("subcategoryId", ""); setValue("courseTypeId", ""); }}>
+                    <SelectTrigger><SelectValue placeholder="Izaberite sekciju" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="online">Online</SelectItem>
-                      <SelectItem value="in-person">Uživo</SelectItem>
-                      <SelectItem value="hybrid">Hibridno (Online + Uživo)</SelectItem>
+                      {sections.map((s: any) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
-                )}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Trajanje *</Label>
-              <Input placeholder="Npr. 3 nedelje, 40 časova" {...register("duration")} />
-              {errors.duration && <p className="text-sm text-destructive">{errors.duration.message as string}</p>}
-            </div>
-
-            <div className="space-y-2">
-              <Label>Nivo znanja</Label>
-              <Controller name="level" control={control} render={({ field }) => (
-                <Select value={field.value ?? "all-levels"} onValueChange={field.onChange}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all-levels">Svi nivoi</SelectItem>
-                    <SelectItem value="beginner">Početni nivo</SelectItem>
-                    <SelectItem value="intermediate">Srednji nivo</SelectItem>
-                    <SelectItem value="advanced">Napredni nivo</SelectItem>
-                  </SelectContent>
-                </Select>
-              )} />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Cena (RSD) *</Label>
-              <Input type="number" min="0" placeholder="0 za besplatno" {...register("price")} />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Grad (za uživo/hibridno)</Label>
-              <Input placeholder="Npr. Novi Sad" {...register("city")} />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Datum početka (opciono)</Label>
-              <Input type="date" {...register("startDate")} />
-            </div>
-
-            <div className="space-y-3 md:col-span-2">
-              <Label>Naslovna fotografija *</Label>
-              <input type="hidden" {...register("imageUrl")} />
-              <div className="flex flex-col gap-3 rounded-lg border border-dashed p-3 sm:flex-row sm:items-center">
-                {coverImageUrl ? <OptimizedImage src={coverImageUrl} alt="Pregled naslovne fotografije edukacije" width={480} height={270} preferredSize="medium" responsiveSizes="240px" className="aspect-video w-full rounded-md object-cover sm:w-60" /> : null}
-                <Button asChild type="button" variant="outline" disabled={uploadingCover}>
-                  <label className="cursor-pointer">
-                    {uploadingCover ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImagePlus className="mr-2 h-4 w-4" />}
-                    Izaberi fotografiju
-                    <input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/avif" disabled={uploadingCover} onChange={(event) => void uploadCover(event)} />
-                  </label>
-                </Button>
+                )} />
               </div>
-              {errors.imageUrl && <p className="text-sm text-destructive">{errors.imageUrl.message as string}</p>}
-            </div>
 
-            <div className="space-y-2 md:col-span-2">
-              <Label>Ishodi učenja</Label>
-              <Textarea rows={3} placeholder={"Jedan ishod po redu\nNpr. Samostalno izvodi protokol"} {...register("learningOutcomesText")} />
-            </div>
+              <div className="space-y-2">
+                <Label>Kategorija</Label>
+                <Controller control={control} name="categoryId" render={({ field }) => (
+                  <Select value={field.value} onValueChange={(val) => { field.onChange(val); setValue("subcategoryId", ""); setValue("courseTypeId", ""); }} disabled={!watchSectionId}>
+                    <SelectTrigger><SelectValue placeholder="Izaberite kategoriju" /></SelectTrigger>
+                    <SelectContent>
+                      {categories.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                )} />
+              </div>
 
-            <div className="space-y-2 md:col-span-2">
-              <Label>Uključeno u cenu</Label>
-              <Textarea rows={3} placeholder={"Jedna stavka po redu\nNpr. Materijal za praktičan rad"} {...register("includedItemsText")} />
-            </div>
+              <div className="space-y-2">
+                <Label>Potkategorija</Label>
+                <Controller control={control} name="subcategoryId" render={({ field }) => (
+                  <Select value={field.value} onValueChange={(val) => { field.onChange(val); setValue("courseTypeId", ""); }} disabled={!watchCategoryId}>
+                    <SelectTrigger><SelectValue placeholder="Izaberite potkategoriju" /></SelectTrigger>
+                    <SelectContent>
+                      {subcategories.map((s: any) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                )} />
+                {errors.subcategoryId && <p className="text-xs text-destructive">{errors.subcategoryId.message as string}</p>}
+              </div>
 
-            <div className="space-y-2 md:col-span-2">
-              <Label>Preduslovi (opciono)</Label>
-              <Textarea rows={2} placeholder="Potrebno prethodno znanje, materijal ili sertifikat..." {...register("requirements")} />
-            </div>
-          </div>
-          
-          <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg border">
-            <div>
-              <Label className="text-base">Zvanični sertifikat</Label>
-              <p className="text-sm text-muted-foreground">Polaznici dobijaju potvrdu o završenoj edukaciji</p>
-            </div>
-            <Controller
-              name="certification"
-              control={control}
-              render={({ field }) => (
-                <Switch checked={field.value} onCheckedChange={field.onChange} />
+              <div className="space-y-2">
+                <Label>Tip obuke</Label>
+                <Controller control={control} name="courseTypeId" render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange} disabled={!watchSubcategoryId}>
+                    <SelectTrigger><SelectValue placeholder="Izaberite tip" /></SelectTrigger>
+                    <SelectContent>
+                      {courseTypes.map((t: any) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                )} />
+                {errors.courseTypeId && <p className="text-xs text-destructive">{errors.courseTypeId.message as string}</p>}
+                <Button type="button" variant="link" size="sm" className="px-0 h-auto text-xs" onClick={proposeType} disabled={!watchSubcategoryId || proposeMut.isPending}>Nema vašeg tipa? Predložite novi</Button>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Legacy Kategorija (ili izaberite iznad)</Label>
+                <Input {...register("category")} placeholder="Ako ne izaberete potkategoriju, unesite ručno" />
+              </div>
+              <div className="space-y-2">
+                <Label>Opis</Label>
+                <Textarea {...register("description")} rows={4} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Cena (RSD)</Label>
+                  <Input type="number" {...register("price")} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Način plaćanja</Label>
+                  <Controller control={control} name="paymentMode" render={({ field }) => (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="online_full">Online (Ceklokupan iznos)</SelectItem>
+                        {watchFormat !== 'online' && <SelectItem value="live_deposit">Depozit + Uživo</SelectItem>}
+                        {watchFormat !== 'online' && <SelectItem value="live_off_platform">Plaćanje uživo (van platforme)</SelectItem>}
+                      </SelectContent>
+                    </Select>
+                  )} />
+                </div>
+              </div>
+
+              {watchPaymentMode === "live_deposit" && (
+                <div className="space-y-2">
+                  <Label>Iznos depozita (RSD)</Label>
+                  <Input type="number" {...register("depositAmount")} />
+                  {errors.depositAmount && <p className="text-xs text-destructive">{errors.depositAmount.message as string}</p>}
+                </div>
               )}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label>Politika povraćaja *</Label>
-            <Textarea rows={3} placeholder="Uslovi za povraćaj i otkazivanje..." {...register("refundPolicy")} />
-            <p className="text-xs text-muted-foreground">Prikazuje se polaznicima pre kupovine.</p>
-            {errors.refundPolicy && <p className="text-sm text-destructive">{errors.refundPolicy.message as string}</p>}
-          </div>
-
-          <div className="rounded-lg border p-4 space-y-3 bg-muted/20">
-            <div>
-              <Label className="text-base">Grupni popust (opciono)</Label>
-              <p className="text-sm text-muted-foreground">Automatski popust kada salon prijavi više polaznika odjednom. Ostavite prazno da isključite.</p>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-xs">Minimalan broj polaznika</Label>
-                <Input type="number" min="2" max="999" placeholder="Npr. 3" {...register("groupDiscountMinimum")} />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Procenat popusta (%)</Label>
-                <Input type="number" min="0" max="100" placeholder="Npr. 15" {...register("groupDiscountPercent")} />
-              </div>
-            </div>
-            {errors.groupDiscountPercent && <p className="text-sm text-destructive">{errors.groupDiscountPercent.message as string}</p>}
-          </div>
 
-          <DialogFooter className="pt-2">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Naslovna fotografija</Label>
+                <div className="border rounded-md overflow-hidden relative aspect-video bg-muted group">
+                  <img src={coverImageUrl} alt="Cover" className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <Button type="button" variant="secondary" onClick={() => document.getElementById("cover-upload")?.click()} disabled={uploadingCover}>
+                      {uploadingCover ? <Loader2 className="h-4 w-4 animate-spin" /> : "Promeni sliku"}
+                    </Button>
+                  </div>
+                  <input id="cover-upload" type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={uploadCover} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Format</Label>
+                  <Controller control={control} name="format" render={({ field }) => (
+                    <Select value={field.value} onValueChange={(v) => { field.onChange(v); if(v==='online') setValue('paymentMode', 'online_full'); }}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="online">Online</SelectItem>
+                        <SelectItem value="in-person">Uživo</SelectItem>
+                        <SelectItem value="hybrid">Hibridno</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )} />
+                </div>
+                {watchFormat !== 'online' && (
+                  <div className="space-y-2">
+                    <Label>Grad</Label>
+                    <Input {...register("city")} placeholder="Npr. Beograd" />
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label>Česta pitanja (FAQ)</Label>
+                <Textarea {...register("faqText")} placeholder="P: Pitanje\nO: Odgovor\n\n(odvojite praznim redom)" rows={4} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Trajanje</Label>
+                  <Input {...register("duration")} placeholder="Npr. 2 dana, 6 modula" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Nivo</Label>
+                  <Controller control={control} name="level" render={({ field }) => (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all-levels">Svi nivoi</SelectItem>
+                        <SelectItem value="beginner">Početni</SelectItem>
+                        <SelectItem value="intermediate">Srednji</SelectItem>
+                        <SelectItem value="advanced">Napredni</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Teorija (sati)</Label>
+                  <Input type="number" {...register("theoryHours")} placeholder="Opciono" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Praksa (sati)</Label>
+                  <Input type="number" {...register("practicalHours")} placeholder="Opciono" />
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2 pt-2">
+                <Controller control={control} name="certification" render={({ field: { value, onChange } }) => (
+                  <Checkbox id="cert-check" checked={value} onCheckedChange={onChange} />
+                )} />
+                <Label htmlFor="cert-check">Uključuje sertifikat</Label>
+              </div>
+
+              {watch("certification") && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Naziv sertifikata</Label>
+                    <Input {...register("certificateName")} placeholder="Npr. PMU Master" />
+                  </div>
+                  <div className="flex items-center space-x-2 pt-8">
+                    <Controller control={control} name="accredited" render={({ field: { value, onChange } }) => (
+                      <Checkbox id="accr-check" checked={value} onCheckedChange={onChange} />
+                    )} />
+                    <Label htmlFor="accr-check">Akreditovan program</Label>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Odustani</Button>
-            <Button type="submit" disabled={create.isPending || update.isPending}>
-              {create.isPending || update.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : course ? "Sačuvaj izmene" : "Kreiraj i dodaj module"}
-            </Button>
+            <Button type="submit" disabled={create.isPending || update.isPending}>{course ? "Sačuvaj izmene" : "Kreiraj edukaciju"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -1821,7 +2177,7 @@ function CreateModuleDialog({ courseId, open, onOpenChange }: { courseId: string
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const create = useCreateEducationModule();
-  
+
   const { register, handleSubmit, formState: { errors }, reset } = useForm<any>({
     resolver: zodResolver(z.object({
       title: z.string().min(1, "Naslov je obavezan"),
@@ -1829,7 +2185,7 @@ function CreateModuleDialog({ courseId, open, onOpenChange }: { courseId: string
       sortOrder: z.coerce.number().optional()
     })) as any
   });
-  
+
   useEffect(() => { if (open) reset(); }, [open, reset]);
 
   const onSubmit = (data: any) => {
@@ -1841,7 +2197,7 @@ function CreateModuleDialog({ courseId, open, onOpenChange }: { courseId: string
       }
     });
   };
-  
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -1870,7 +2226,7 @@ function CreateLessonDialog({ moduleId, courseId, open, onOpenChange }: { module
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const create = useCreateEducationLesson();
-  
+
   const { register, handleSubmit, formState: { errors }, reset } = useForm<any>({
     resolver: zodResolver(z.object({
       title: z.string().min(1, "Naslov je obavezan"),
@@ -1880,7 +2236,7 @@ function CreateLessonDialog({ moduleId, courseId, open, onOpenChange }: { module
     })) as any,
     defaultValues: { durationMinutes: 10 }
   });
-  
+
   useEffect(() => { if (open) reset(); }, [open, reset]);
 
   const onSubmit = (data: any) => {
@@ -1892,7 +2248,7 @@ function CreateLessonDialog({ moduleId, courseId, open, onOpenChange }: { module
       }
     });
   };
-  
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
@@ -1927,7 +2283,7 @@ function CreateSessionDialog({ courseId, open, onOpenChange }: { courseId: strin
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const create = useCreateEducationSession();
-  
+
   const { register, handleSubmit, formState: { errors }, reset } = useForm<any>({
     resolver: zodResolver(z.object({
       startsAt: z.string().min(1, "Početak je obavezan"),
@@ -1938,7 +2294,7 @@ function CreateSessionDialog({ courseId, open, onOpenChange }: { courseId: strin
     })) as any,
     defaultValues: { capacity: 10, minimumEnrollments: "" }
   });
-  
+
   useEffect(() => { if (open) reset(); }, [open, reset]);
 
   const onSubmit = (raw: any) => {
@@ -1957,7 +2313,7 @@ function CreateSessionDialog({ courseId, open, onOpenChange }: { courseId: strin
       onError: () => toast.error("Greška pri dodavanju termina")
     });
   };
-  
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>

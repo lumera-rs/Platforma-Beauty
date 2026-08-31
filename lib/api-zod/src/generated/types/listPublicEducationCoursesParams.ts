@@ -12,6 +12,16 @@ export type ListPublicEducationCoursesParams = {
 format?: ListPublicEducationCoursesFormat;
 city?: string;
 category?: string;
+/**
+ * @maxLength 160
+ */
+q?: string;
+sectionId?: string;
+categoryId?: string;
+subcategoryId?: string;
+courseTypeId?: string;
+language?: string;
+accredited?: boolean;
 level?: ListPublicEducationCoursesLevel;
 /**
  * @minimum 0

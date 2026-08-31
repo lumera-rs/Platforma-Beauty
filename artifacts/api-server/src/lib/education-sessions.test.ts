@@ -116,7 +116,7 @@ async function run(): Promise<void> {
         email: `sessions-waiter-${suffix}@example.test`,
         passwordHash,
         passwordSetAt: new Date(),
-        role: "CUSTOMER" as const,
+        role: "STUDENT" as const,
       },
     ]).returning();
     createdUserIds.push(...fixtureUsers.map((u) => u.id));

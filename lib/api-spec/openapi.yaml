@@ -3047,6 +3047,29 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/EducationEnrollment" }
         "409": { description: Enrollment is not pending or course can no longer be settled }
+  /admin/education/featured-charges/{chargeId}/settle:
+    post:
+      operationId: settleAdminEducationFeaturedCharge
+      tags: [admin, education]
+      summary: Mark a pending featured-course charge as manually settled
+      parameters:
+        - name: chargeId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationFeaturedChargeSettlementInput" }
+      responses:
+        "200":
+          description: Settled featured-course charge
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationFeaturedChargeSettlement" }
+        "404": { description: Featured-course charge not found }
+        "409": { description: Featured-course charge is no longer pending }
   /admin/education/payouts:
     post:
       operationId: createAdminEducationPayout
@@ -3078,6 +3101,135 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/EducationDispute" }
+  /admin/education/taxonomy/proposals:
+    get:
+      operationId: listAdminEducationTaxonomyProposals
+      tags: [admin, education]
+      summary: List education course-type proposals
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, approved, rejected] }
+      responses:
+        "200":
+          description: Taxonomy proposals
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EducationCourseType" }
+  /admin/education/taxonomy/proposals/{proposalId}/review:
+    post:
+      operationId: reviewAdminEducationTaxonomyProposal
+      tags: [admin, education]
+      summary: Approve or reject an education course-type proposal
+      parameters:
+        - name: proposalId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                decision: { type: string, enum: [approved, rejected] }
+                note: { type: ["string", "null"], maxLength: 1000 }
+              required: [decision]
+      responses:
+        "200":
+          description: Reviewed proposal
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationCourseType" }
+        "409": { description: Proposal was already reviewed or duplicates approved taxonomy }
+  /admin/education/taxonomy/{kind}/{taxonomyId}:
+    patch:
+      operationId: updateAdminEducationTaxonomy
+      tags: [admin, education]
+      summary: Update a taxonomy item's display fields
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema: { type: string, enum: [sections, categories, subcategories, course-types] }
+        - name: taxonomyId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationTaxonomyPatch" }
+      responses:
+        "200":
+          description: Updated taxonomy item
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationTaxonomyItem" }
+  /admin/education/placement-settings:
+    get:
+      operationId: getAdminEducationPlacementSettings
+      tags: [admin, education]
+      responses:
+        "200":
+          description: Placement products
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EducationPlacementSetting" }
+    patch:
+      operationId: updateAdminEducationPlacementSettings
+      tags: [admin, education]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/EducationPlacementSettingInput" }
+      responses:
+        "200":
+          description: Updated placement products
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EducationPlacementSetting" }
+  /admin/education/placements:
+    get:
+      operationId: listAdminEducationPlacements
+      tags: [admin, education]
+      responses:
+        "200":
+          description: Placements
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EducationPlacement" }
+  /admin/education/placements/{paymentReference}/settle:
+    post:
+      operationId: settleAdminEducationPlacement
+      tags: [admin, education]
+      summary: Manually settle one placement by its canonical payment reference
+      parameters:
+        - name: paymentReference
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 200 }
+      responses:
+        "200":
+          description: Active placement; repeated settlement is idempotent
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationPlacement" }
+        "409": { description: "Price, scope, availability, or placement state is invalid" }
   /education/courses:
     get:
       operationId: listCourses
@@ -3093,6 +3245,27 @@ paths:
         - name: category
           in: query
           schema: { type: string }
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 160 }
+        - name: sectionId
+          in: query
+          schema: { type: string }
+        - name: categoryId
+          in: query
+          schema: { type: string }
+        - name: subcategoryId
+          in: query
+          schema: { type: string }
+        - name: courseTypeId
+          in: query
+          schema: { type: string }
+        - name: language
+          in: query
+          schema: { type: string }
+        - name: accredited
+          in: query
+          schema: { type: boolean }
         - name: center
           in: query
           schema: { type: string }
@@ -3467,6 +3640,58 @@ paths:
               schema: { $ref: "#/components/schemas/EducationEnrollment" }
         "403": { description: Business access required }
         "409": { description: Course is full or already enrolled }
+  /education/course-types/proposals:
+    post:
+      operationId: proposeEducationCourseType
+      tags: [education]
+      summary: Propose a course type for administrator review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                subcategoryId: { type: string }
+                name: { type: string, minLength: 2, maxLength: 160 }
+              required: [subcategoryId, name]
+      responses:
+        "201":
+          description: Pending proposal
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationCourseType" }
+        "409": { description: An exact normalized type already exists }
+  /education/placements/mine:
+    get:
+      operationId: listMyEducationPlacements
+      tags: [education]
+      responses:
+        "200":
+          description: Placements owned by the current education center
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EducationPlacement" }
+  /education/placements/purchase:
+    post:
+      operationId: purchaseEducationPlacement
+      tags: [education]
+      summary: Reserve a placement pending manual payment settlement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationPlacementPurchaseInput" }
+      responses:
+        "201":
+          description: Placement awaiting payment
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationPlacement" }
+        "409": { description: "Placement product, scope, or availability is invalid" }
   /education/sessions/{sessionId}:
     patch:
       operationId: updateEducationSession
@@ -3807,6 +4032,27 @@ paths:
         - name: category
           in: query
           schema: { type: string }
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 160 }
+        - name: sectionId
+          in: query
+          schema: { type: string }
+        - name: categoryId
+          in: query
+          schema: { type: string }
+        - name: subcategoryId
+          in: query
+          schema: { type: string }
+        - name: courseTypeId
+          in: query
+          schema: { type: string }
+        - name: language
+          in: query
+          schema: { type: string }
+        - name: accredited
+          in: query
+          schema: { type: boolean }
         - name: level
           in: query
           schema: { type: string, enum: [beginner, intermediate, advanced, all-levels] }
@@ -3854,6 +4100,93 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/EducationCourseDetail" }
         "404": { description: Course not available }
+  /education/public/courses/{courseId}/inquiries:
+    post:
+      operationId: createPublicEducationCourseInquiry
+      tags: [education]
+      summary: Send an authenticated inquiry to a course center
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                message: { type: ["string", "null"], maxLength: 2000 }
+      responses:
+        "201":
+          description: Inquiry recorded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationInquiry" }
+        "409": { description: A recent duplicate inquiry already exists }
+  /education/public/taxonomy:
+    get:
+      operationId: getPublicEducationTaxonomy
+      tags: [education]
+      responses:
+        "200":
+          description: Ordered active taxonomy with public course counts
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EducationTaxonomySection" }
+  /education/public/search-suggestions:
+    get:
+      operationId: listPublicEducationSearchSuggestions
+      tags: [education]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 160 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 30, default: 10 }
+      responses:
+        "200":
+          description: Mixed taxonomy and course suggestions
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EducationSearchSuggestion" }
+  /education/public/rankings:
+    get:
+      operationId: getPublicEducationRankings
+      tags: [education]
+      responses:
+        "200":
+          description: Organic education marketplace rankings
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationRankings" }
+  /education/public/placements:
+    get:
+      operationId: listPublicEducationPlacements
+      tags: [education]
+      parameters:
+        - name: kind
+          in: query
+          schema: { type: string, enum: [featured_center, special_offer] }
+        - name: scope
+          in: query
+          schema: { type: string, enum: [home, category, subcategory] }
+        - name: scopeId
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Active in-window placements in deterministic fair rotation
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EducationPublicPlacement" }
   /education/public/categories:
     get:
       operationId: listPublicEducationCategories
@@ -11548,6 +11881,15 @@ components:
         publisher: { type: string }
         publisherType: { type: string, enum: [SALON, EDUCATION_CENTER] }
         category: { type: string }
+        sectionId: { type: ["string", "null"] }
+        sectionName: { type: ["string", "null"] }
+        categoryId: { type: ["string", "null"] }
+        categoryName: { type: ["string", "null"] }
+        subcategoryId: { type: ["string", "null"] }
+        subcategoryName: { type: ["string", "null"] }
+        courseTypeId: { type: ["string", "null"] }
+        courseTypeName: { type: ["string", "null"] }
+        taxonomyPath: { type: array, items: { type: string } }
         format: { type: string, enum: [online, in-person, hybrid] }
         city: { type: ["string", "null"] }
         price: { type: number }
@@ -11558,6 +11900,24 @@ components:
         requirements: { type: string }
         rating: { type: number }
         certification: { type: boolean }
+        theoryHours: { type: ["number", "null"], minimum: 0 }
+        practicalHours: { type: ["number", "null"], minimum: 0 }
+        certificateName: { type: ["string", "null"] }
+        accredited: { type: boolean }
+        language: { type: ["string", "null"] }
+        trailerUrl: { type: ["string", "null"] }
+        tags: { type: array, items: { type: string } }
+        faq:
+          type: array
+          items:
+            type: object
+            properties: { question: { type: string }, answer: { type: string } }
+            required: [question, answer]
+        paymentMode: { type: string, enum: [online_full, live_deposit, live_off_platform] }
+        depositAmount: { type: ["number", "null"], minimum: 0 }
+        studentCount: { type: number, multipleOf: 1, minimum: 0 }
+        inquiryCount30d: { type: number, multipleOf: 1, minimum: 0 }
+        viewCount30d: { type: number, multipleOf: 1, minimum: 0 }
         imageUrl: { type: string }
         startDate: { type: ["string", "null"], format: date }
         published: { type: boolean }
@@ -11571,13 +11931,16 @@ components:
         centerId: { type: ["string", "null"] }
         availableSeats: { type: ["number", "null"] }
         enrollmentStatus: { type: ["string", "null"], enum: [pending, active, completed, cancelled, null] }
-      required: [id, title, description, instructor, publisher, publisherType, category, format, price, duration, level, learningOutcomes, includedItems, requirements, rating, certification, imageUrl, published, archived]
+      required: [id, title, description, instructor, publisher, publisherType, category, taxonomyPath, format, price, duration, level, learningOutcomes, includedItems, requirements, rating, certification, accredited, tags, faq, paymentMode, studentCount, inquiryCount30d, viewCount30d, imageUrl, published, archived]
     EducationCourseInput:
       type: object
       properties:
         title: { type: string, minLength: 2 }
         description: { type: string }
         category: { type: string, minLength: 2 }
+        categoryId: { type: ["string", "null"] }
+        subcategoryId: { type: ["string", "null"] }
+        courseTypeId: { type: ["string", "null"] }
         format: { type: string, enum: [online, in-person, hybrid] }
         city: { type: ["string", "null"] }
         price: { type: number, minimum: 0 }
@@ -11587,6 +11950,24 @@ components:
         includedItems: { type: array, maxItems: 20, items: { type: string, minLength: 1, maxLength: 240 } }
         requirements: { type: string, maxLength: 2000 }
         certification: { type: boolean }
+        theoryHours: { type: ["number", "null"], minimum: 0, maximum: 100000 }
+        practicalHours: { type: ["number", "null"], minimum: 0, maximum: 100000 }
+        certificateName: { type: ["string", "null"], maxLength: 240 }
+        accredited: { type: boolean }
+        language: { type: ["string", "null"], maxLength: 80 }
+        trailerUrl: { type: ["string", "null"], maxLength: 2000 }
+        tags: { type: array, maxItems: 30, items: { type: string, minLength: 1, maxLength: 80 } }
+        faq:
+          type: array
+          maxItems: 30
+          items:
+            type: object
+            properties:
+              question: { type: string, minLength: 1, maxLength: 300 }
+              answer: { type: string, minLength: 1, maxLength: 2000 }
+            required: [question, answer]
+        paymentMode: { type: string, enum: [online_full, live_deposit, live_off_platform] }
+        depositAmount: { type: ["number", "null"], minimum: 0 }
         imageUrl: { type: string, minLength: 1 }
         startDate: { type: ["string", "null"], format: date }
         refundPolicy: { type: string, minLength: 1, maxLength: 2000 }
@@ -11599,6 +11980,9 @@ components:
         title: { type: string, minLength: 2 }
         description: { type: string }
         category: { type: string, minLength: 2 }
+        categoryId: { type: ["string", "null"] }
+        subcategoryId: { type: ["string", "null"] }
+        courseTypeId: { type: ["string", "null"] }
         format: { type: string, enum: [online, in-person, hybrid] }
         city: { type: ["string", "null"] }
         price: { type: number, minimum: 0 }
@@ -11608,6 +11992,24 @@ components:
         includedItems: { type: array, maxItems: 20, items: { type: string, minLength: 1, maxLength: 240 } }
         requirements: { type: string, maxLength: 2000 }
         certification: { type: boolean }
+        theoryHours: { type: ["number", "null"], minimum: 0, maximum: 100000 }
+        practicalHours: { type: ["number", "null"], minimum: 0, maximum: 100000 }
+        certificateName: { type: ["string", "null"], maxLength: 240 }
+        accredited: { type: boolean }
+        language: { type: ["string", "null"], maxLength: 80 }
+        trailerUrl: { type: ["string", "null"], maxLength: 2000 }
+        tags: { type: array, maxItems: 30, items: { type: string, minLength: 1, maxLength: 80 } }
+        faq:
+          type: array
+          maxItems: 30
+          items:
+            type: object
+            properties:
+              question: { type: string, minLength: 1, maxLength: 300 }
+              answer: { type: string, minLength: 1, maxLength: 2000 }
+            required: [question, answer]
+        paymentMode: { type: string, enum: [online_full, live_deposit, live_off_platform] }
+        depositAmount: { type: ["number", "null"], minimum: 0 }
         imageUrl: { type: string, minLength: 1 }
         startDate: { type: ["string", "null"], format: date }
         published: { type: boolean }
@@ -11809,6 +12211,172 @@ components:
       type: object
       properties:
         employeeId: { type: ["string", "null"] }
+        sessionId: { type: ["string", "null"] }
+        paymentMode: { type: string, enum: [online_full, live_deposit, live_off_platform] }
+    EducationTaxonomyItem:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        slug: { type: string }
+        sortOrder: { type: number, multipleOf: 1 }
+        active: { type: boolean }
+      required: [id, name, slug, sortOrder, active]
+    EducationTaxonomyPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 2, maxLength: 160 }
+        sortOrder: { type: number, multipleOf: 1, minimum: 0 }
+        active: { type: boolean }
+    EducationCourseType:
+      allOf:
+        - $ref: "#/components/schemas/EducationTaxonomyItem"
+        - type: object
+          properties:
+            subcategoryId: { type: string }
+            status: { type: string, enum: [pending, approved, rejected] }
+            proposedByCenterId: { type: ["string", "null"] }
+            reviewNote: { type: ["string", "null"] }
+          required: [subcategoryId, status]
+    EducationTaxonomySubcategory:
+      allOf:
+        - $ref: "#/components/schemas/EducationTaxonomyItem"
+        - type: object
+          properties:
+            courseCount: { type: number, multipleOf: 1, minimum: 0 }
+            courseTypes:
+              type: array
+              items: { $ref: "#/components/schemas/EducationCourseTypeCount" }
+          required: [courseCount, courseTypes]
+    EducationCourseTypeCount:
+      allOf:
+        - $ref: "#/components/schemas/EducationTaxonomyItem"
+        - type: object
+          properties:
+            courseCount: { type: number, multipleOf: 1, minimum: 0 }
+          required: [courseCount]
+    EducationTaxonomyCategory:
+      allOf:
+        - $ref: "#/components/schemas/EducationTaxonomyItem"
+        - type: object
+          properties:
+            courseCount: { type: number, multipleOf: 1, minimum: 0 }
+            subcategories:
+              type: array
+              items: { $ref: "#/components/schemas/EducationTaxonomySubcategory" }
+          required: [courseCount, subcategories]
+    EducationTaxonomySection:
+      allOf:
+        - $ref: "#/components/schemas/EducationTaxonomyItem"
+        - type: object
+          properties:
+            courseCount: { type: number, multipleOf: 1, minimum: 0 }
+            categories:
+              type: array
+              items: { $ref: "#/components/schemas/EducationTaxonomyCategory" }
+          required: [courseCount, categories]
+    EducationSearchSuggestion:
+      type: object
+      properties:
+        kind: { type: string, enum: [section, category, subcategory, courseType, course] }
+        id: { type: string }
+        label: { type: string }
+        path: { type: array, items: { type: string } }
+      required: [kind, id, label, path]
+    EducationInquiry:
+      type: object
+      properties:
+        id: { type: string }
+        courseId: { type: string }
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
+      required: [id, courseId, status, createdAt]
+    EducationRankedCategory:
+      type: object
+      properties:
+        categoryId: { type: string }
+        name: { type: string }
+        views30d: { type: number }
+        inquiries30d: { type: number }
+        score: { type: number }
+      required: [categoryId, name, views30d, inquiries30d, score]
+    EducationRankedCenter:
+      type: object
+      properties:
+        centerId: { type: string }
+        name: { type: string }
+        city: { type: string }
+        metric: { type: number }
+        createdAt: { type: string, format: date-time }
+      required: [centerId, name, city, metric, createdAt]
+    EducationRankings:
+      type: object
+      properties:
+        popularCategories30d: { type: array, items: { $ref: "#/components/schemas/EducationRankedCategory" } }
+        newCenters: { type: array, items: { $ref: "#/components/schemas/EducationRankedCenter" } }
+        mostRequestedCenters90d: { type: array, items: { $ref: "#/components/schemas/EducationRankedCenter" } }
+        topRatedCenters: { type: array, items: { $ref: "#/components/schemas/EducationRankedCenter" } }
+      required: [popularCategories30d, newCenters, mostRequestedCenters90d, topRatedCenters]
+    EducationPlacementSettingInput:
+      type: object
+      additionalProperties: false
+      properties:
+        kind: { type: string, enum: [featured_center, special_offer] }
+        scope: { type: string, enum: [home, category, subcategory] }
+        price: { type: number, minimum: 0, multipleOf: 1 }
+        durationDays: { type: number, minimum: 1, maximum: 365, multipleOf: 1 }
+        slotCount: { type: number, minimum: 1, maximum: 1000, multipleOf: 1 }
+      required: [kind, scope, price, durationDays, slotCount]
+    EducationPlacementSetting:
+      allOf:
+        - $ref: "#/components/schemas/EducationPlacementSettingInput"
+        - type: object
+          properties: { id: { type: string } }
+          required: [id]
+    EducationPlacementPurchaseInput:
+      type: object
+      additionalProperties: false
+      properties:
+        kind: { type: string, enum: [featured_center, special_offer] }
+        scope: { type: string, enum: [home, category, subcategory] }
+        scopeId: { type: ["string", "null"] }
+        courseId: { type: ["string", "null"] }
+      required: [kind, scope]
+    EducationPlacement:
+      type: object
+      properties:
+        id: { type: string }
+        centerId: { type: ["string", "null"] }
+        kind: { type: string, enum: [featured_center, special_offer] }
+        label: { type: string }
+        scope: { type: string, enum: [home, category, subcategory] }
+        scopeId: { type: ["string", "null"] }
+        courseId: { type: ["string", "null"] }
+        status: { type: string, enum: [pending_payment, active, expired, cancelled, rejected] }
+        price: { type: number }
+        paymentReference: { type: string }
+        startsAt: { type: ["string", "null"], format: date-time }
+        endsAt: { type: ["string", "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+      required: [id, centerId, kind, label, scope, courseId, status, price, paymentReference, createdAt]
+    EducationPublicPlacement:
+      type: object
+      properties:
+        id: { type: string }
+        centerId: { type: string }
+        centerName: { type: string }
+        centerImageUrl: { type: string }
+        kind: { type: string, enum: [featured_center, special_offer] }
+        label: { type: string }
+        scope: { type: string, enum: [home, category, subcategory] }
+        scopeId: { type: ["string", "null"] }
+        courseId: { type: ["string", "null"] }
+        courseTitle: { type: ["string", "null"] }
+        courseImageUrl: { type: ["string", "null"] }
+        coursePrice: { type: ["number", "null"] }
+      required: [id, centerId, centerName, centerImageUrl, kind, label, scope, courseId, courseTitle, courseImageUrl, coursePrice]
     EducationEnrollment:
       type: object
       properties:
@@ -11996,6 +12564,18 @@ components:
         activatedAt: { type: string, format: date-time }
         settledAt: { type: ["string", "null"], format: date-time }
       required: [id, amount, status, activatedAt]
+    EducationFeaturedChargeSettlementInput:
+      type: object
+      additionalProperties: false
+      properties:
+        paymentReference: { type: ["string", "null"], minLength: 1, maxLength: 200 }
+    EducationFeaturedChargeSettlement:
+      allOf:
+        - $ref: "#/components/schemas/EducationCourseFeaturedCharge"
+        - type: object
+          properties:
+            courseId: { type: string }
+          required: [courseId]
     EducationCourseFeaturedStatus:
       type: object
       properties:

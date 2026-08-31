@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 83;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 86;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -136,6 +136,11 @@ const ENUM_LABELS: Record<string, string[]> = {
   aftercare_delivery_kind: ["FIRST", "SECOND", "REPLENISHMENT"],
   aftercare_delivery_status: ["QUEUED", "PROCESSING", "SENT", "FAILED", "SKIPPED"],
   salon_resource_type: ["chair", "booth", "bed", "room", "equipment", "other"],
+  education_course_type_status: ["approved", "pending", "rejected"],
+  education_payment_mode: ["online_full", "live_deposit", "live_off_platform"],
+  education_placement_kind: ["featured_center", "special_offer"],
+  education_placement_scope: ["home", "category", "subcategory"],
+  education_placement_status: ["pending_payment", "active", "expired", "cancelled", "rejected"],
 };
 
 /**
@@ -3737,6 +3742,222 @@ function tableStatements(s: string): string[] {
        ON ${s}.review_invitations (customer_id, invited_at)`,
     `CREATE INDEX IF NOT EXISTS review_invitations_notification_idx
        ON ${s}.review_invitations (notification_id)`,
+    // v84 — additive Education taxonomy, discovery metrics and paid placements.
+    `CREATE TABLE IF NOT EXISTS ${s}.education_sections (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL, slug text NOT NULL UNIQUE,
+       sort_order integer NOT NULL DEFAULT 0, active boolean NOT NULL DEFAULT true,
+       created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+     )`,
+    `CREATE INDEX IF NOT EXISTS education_sections_active_sort_idx
+       ON ${s}.education_sections (active, sort_order)`,
+    `ALTER TABLE ${s}.course_categories ADD COLUMN IF NOT EXISTS section_id uuid
+       REFERENCES ${s}.education_sections(id) ON DELETE SET NULL`,
+    `ALTER TABLE ${s}.course_categories ADD COLUMN IF NOT EXISTS sort_order integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.course_categories ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true`,
+    `ALTER TABLE ${s}.course_categories ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now()`,
+    `ALTER TABLE ${s}.course_categories ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()`,
+    `CREATE INDEX IF NOT EXISTS course_categories_section_sort_idx
+       ON ${s}.course_categories (section_id, sort_order)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_subcategories (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       category_id uuid NOT NULL REFERENCES ${s}.course_categories(id) ON DELETE CASCADE,
+       name text NOT NULL, slug text NOT NULL, sort_order integer NOT NULL DEFAULT 0,
+       active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now(),
+       updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE (category_id, slug)
+     )`,
+    `CREATE INDEX IF NOT EXISTS education_subcategories_category_active_sort_idx
+       ON ${s}.education_subcategories (category_id, active, sort_order)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_course_types (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       subcategory_id uuid NOT NULL REFERENCES ${s}.education_subcategories(id) ON DELETE CASCADE,
+       name text NOT NULL, normalized_name text NOT NULL,
+       status ${s}.education_course_type_status NOT NULL DEFAULT 'pending',
+       proposed_by_center_id uuid REFERENCES ${s}.education_centers(id) ON DELETE SET NULL,
+       reviewed_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+       review_note text, reviewed_at timestamptz, sort_order integer NOT NULL DEFAULT 0,
+       active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now(),
+       updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE (subcategory_id, normalized_name)
+     )`,
+    `CREATE INDEX IF NOT EXISTS education_course_types_status_idx
+       ON ${s}.education_course_types (status, active, sort_order)`,
+    `CREATE INDEX IF NOT EXISTS education_course_types_proposed_by_idx
+       ON ${s}.education_course_types (proposed_by_center_id)`,
+    `CREATE INDEX IF NOT EXISTS education_course_types_reviewed_by_idx
+       ON ${s}.education_course_types (reviewed_by_user_id)`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS subcategory_id uuid
+       REFERENCES ${s}.education_subcategories(id) ON DELETE SET NULL`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS course_type_id uuid
+       REFERENCES ${s}.education_course_types(id) ON DELETE SET NULL`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS theory_hours integer`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS practical_hours integer`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS certificate_name text`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS accredited boolean NOT NULL DEFAULT false`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS language text DEFAULT 'Srpski'`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS trailer_url text`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS tags jsonb NOT NULL DEFAULT '[]'::jsonb`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS faq jsonb NOT NULL DEFAULT '[]'::jsonb`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS payment_mode ${s}.education_payment_mode NOT NULL DEFAULT 'online_full'`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS deposit_amount integer`,
+    `CREATE INDEX IF NOT EXISTS courses_subcategory_published_idx
+       ON ${s}.courses (subcategory_id, published, archived)`,
+    `CREATE INDEX IF NOT EXISTS courses_course_type_published_idx
+       ON ${s}.courses (course_type_id, published, archived)`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='${s}.courses'::regclass AND conname='courses_theory_hours_nonnegative_check') THEN
+         ALTER TABLE ${s}.courses ADD CONSTRAINT courses_theory_hours_nonnegative_check CHECK (theory_hours IS NULL OR theory_hours >= 0) NOT VALID;
+       END IF;
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='${s}.courses'::regclass AND conname='courses_practical_hours_nonnegative_check') THEN
+         ALTER TABLE ${s}.courses ADD CONSTRAINT courses_practical_hours_nonnegative_check CHECK (practical_hours IS NULL OR practical_hours >= 0) NOT VALID;
+       END IF;
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='${s}.courses'::regclass AND conname='courses_deposit_amount_nonnegative_check') THEN
+         ALTER TABLE ${s}.courses ADD CONSTRAINT courses_deposit_amount_nonnegative_check CHECK (deposit_amount IS NULL OR deposit_amount >= 0) NOT VALID;
+       END IF;
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='${s}.courses'::regclass AND conname='courses_live_deposit_check') THEN
+         ALTER TABLE ${s}.courses ADD CONSTRAINT courses_live_deposit_check CHECK (payment_mode <> 'live_deposit' OR (format IN ('in-person', 'hybrid') AND deposit_amount > 0)) NOT VALID;
+       END IF;
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='${s}.courses'::regclass AND conname='courses_live_off_platform_check') THEN
+         ALTER TABLE ${s}.courses ADD CONSTRAINT courses_live_off_platform_check CHECK (payment_mode <> 'live_off_platform' OR format IN ('in-person', 'hybrid')) NOT VALID;
+       END IF;
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='${s}.courses'::regclass AND conname='courses_non_deposit_amount_check') THEN
+         ALTER TABLE ${s}.courses ADD CONSTRAINT courses_non_deposit_amount_check CHECK (payment_mode = 'live_deposit' OR deposit_amount IS NULL) NOT VALID;
+       END IF;
+     END $$`,
+    `ALTER TABLE ${s}.courses VALIDATE CONSTRAINT courses_theory_hours_nonnegative_check`,
+    `ALTER TABLE ${s}.courses VALIDATE CONSTRAINT courses_practical_hours_nonnegative_check`,
+    `ALTER TABLE ${s}.courses VALIDATE CONSTRAINT courses_deposit_amount_nonnegative_check`,
+    `ALTER TABLE ${s}.courses VALIDATE CONSTRAINT courses_live_deposit_check`,
+    `ALTER TABLE ${s}.courses VALIDATE CONSTRAINT courses_live_off_platform_check`,
+    `ALTER TABLE ${s}.courses VALIDATE CONSTRAINT courses_non_deposit_amount_check`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_inquiries (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), course_id uuid NOT NULL REFERENCES ${s}.courses(id) ON DELETE CASCADE,
+       user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE,
+       center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE CASCADE,
+       status text NOT NULL DEFAULT 'open', message text,
+       created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+     )`,
+    `CREATE INDEX IF NOT EXISTS education_inquiries_course_created_idx ON ${s}.education_inquiries (course_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS education_inquiries_center_status_created_idx ON ${s}.education_inquiries (center_id, status, created_at)`,
+    `CREATE INDEX IF NOT EXISTS education_inquiries_user_created_idx ON ${s}.education_inquiries (user_id, created_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_course_metric_events (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), course_id uuid NOT NULL REFERENCES ${s}.courses(id) ON DELETE CASCADE,
+       center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE CASCADE,
+       actor_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+       event_type text NOT NULL CHECK (event_type IN ('view', 'inquiry')),
+       occurred_at timestamptz NOT NULL DEFAULT now(), dedupe_key text
+     )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS education_course_metric_events_dedupe_unique
+       ON ${s}.education_course_metric_events (dedupe_key) WHERE dedupe_key IS NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS education_course_metric_events_course_30d_idx
+       ON ${s}.education_course_metric_events (course_id, event_type, occurred_at)`,
+    `CREATE INDEX IF NOT EXISTS education_course_metric_events_center_90d_idx
+       ON ${s}.education_course_metric_events (center_id, event_type, occurred_at)`,
+    `CREATE INDEX IF NOT EXISTS education_course_metric_events_actor_idx
+       ON ${s}.education_course_metric_events (actor_user_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_placement_settings (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), kind ${s}.education_placement_kind NOT NULL,
+       scope ${s}.education_placement_scope NOT NULL, price integer NOT NULL CHECK (price >= 0),
+       slot_count integer NOT NULL CHECK (slot_count > 0), duration_days integer NOT NULL CHECK (duration_days > 0),
+       updated_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+       created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+       UNIQUE (kind, scope)
+     )`,
+    `CREATE INDEX IF NOT EXISTS education_placement_settings_updated_by_idx ON ${s}.education_placement_settings (updated_by_user_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_placements (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), kind ${s}.education_placement_kind NOT NULL,
+       scope ${s}.education_placement_scope NOT NULL,
+       scope_category_id uuid REFERENCES ${s}.course_categories(id) ON DELETE CASCADE,
+       scope_subcategory_id uuid REFERENCES ${s}.education_subcategories(id) ON DELETE CASCADE,
+        scope_key text GENERATED ALWAYS AS (coalesce(scope_category_id::text, scope_subcategory_id::text, 'home')) STORED,
+       center_id uuid REFERENCES ${s}.education_centers(id) ON DELETE CASCADE,
+       course_id uuid REFERENCES ${s}.courses(id) ON DELETE CASCADE,
+        slot_number integer NOT NULL CHECK (slot_number > 0), price_snapshot integer NOT NULL CHECK (price_snapshot >= 0),
+        duration_days_snapshot integer NOT NULL CHECK (duration_days_snapshot > 0),
+       status ${s}.education_placement_status NOT NULL DEFAULT 'pending_payment',
+       payment_reference text UNIQUE, starts_at timestamptz, ends_at timestamptz,
+       rotation_seed integer NOT NULL DEFAULT 0, settled_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+       created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+       CONSTRAINT education_placements_target_check CHECK (
+         (kind='featured_center' AND center_id IS NOT NULL AND course_id IS NULL)
+         OR (kind='special_offer' AND course_id IS NOT NULL AND center_id IS NULL)),
+       CONSTRAINT education_placements_scope_check CHECK (
+         (scope='home' AND scope_category_id IS NULL AND scope_subcategory_id IS NULL)
+         OR (scope='category' AND scope_category_id IS NOT NULL AND scope_subcategory_id IS NULL)
+         OR (scope='subcategory' AND scope_category_id IS NULL AND scope_subcategory_id IS NOT NULL)),
+       CONSTRAINT education_placements_dates_check CHECK (
+         (starts_at IS NULL AND ends_at IS NULL)
+         OR (starts_at IS NOT NULL AND ends_at IS NOT NULL AND ends_at > starts_at))
+     )`,
+    `CREATE INDEX IF NOT EXISTS education_placements_scope_status_dates_idx ON ${s}.education_placements (kind, scope, status, starts_at, ends_at)`,
+    `CREATE INDEX IF NOT EXISTS education_placements_category_slot_idx ON ${s}.education_placements (scope_category_id, slot_number, status)`,
+    `CREATE INDEX IF NOT EXISTS education_placements_subcategory_slot_idx ON ${s}.education_placements (scope_subcategory_id, slot_number, status)`,
+    `CREATE EXTENSION IF NOT EXISTS btree_gist`,
+    // Existing deployments may have overlapping active placements from before
+    // this invariant. Preserve the rows/audit trail and expire older conflicts
+    // before installing the exclusion constraint, making replay safe.
+    `WITH ranked AS (
+       SELECT id, row_number() OVER (
+         PARTITION BY kind, scope, coalesce(scope_category_id::text, scope_subcategory_id::text, 'home'), slot_number
+         ORDER BY starts_at DESC NULLS LAST, created_at DESC
+       ) AS rn
+       FROM ${s}.education_placements WHERE status = 'active'
+     ) UPDATE ${s}.education_placements p SET status = 'expired', updated_at = now()
+       FROM ranked r WHERE p.id = r.id AND r.rn > 1`,
+    `ALTER TABLE ${s}.education_placements ADD COLUMN IF NOT EXISTS scope_key text
+       GENERATED ALWAYS AS (coalesce(scope_category_id::text, scope_subcategory_id::text, 'home')) STORED`,
+    `ALTER TABLE ${s}.education_placements ADD COLUMN IF NOT EXISTS duration_days_snapshot integer`,
+    `UPDATE ${s}.education_placements p
+        SET duration_days_snapshot = coalesce((
+          SELECT ps.duration_days
+          FROM ${s}.education_placement_settings ps
+          WHERE ps.kind = p.kind AND ps.scope = p.scope
+          LIMIT 1
+        ), 30)
+      WHERE p.duration_days_snapshot IS NULL`,
+    `ALTER TABLE ${s}.education_placements ALTER COLUMN duration_days_snapshot SET NOT NULL`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (
+         SELECT 1 FROM pg_constraint
+         WHERE conrelid = '${s}.education_placements'::regclass
+           AND conname = 'education_placements_duration_days_check'
+       ) THEN
+         ALTER TABLE ${s}.education_placements
+           ADD CONSTRAINT education_placements_duration_days_check CHECK (duration_days_snapshot > 0);
+       END IF;
+     END $$`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (
+         SELECT 1 FROM pg_constraint
+         WHERE conrelid = '${s}.education_placements'::regclass
+           AND conname = 'education_placements_active_slot_no_overlap'
+       ) THEN
+         ALTER TABLE ${s}.education_placements
+           ADD CONSTRAINT education_placements_active_slot_no_overlap
+           EXCLUDE USING gist (
+             kind WITH =, scope WITH =, scope_key WITH =, slot_number WITH =,
+             tstzrange(starts_at, ends_at, '[)') WITH &&
+           ) WHERE (status = 'active');
+       END IF;
+     END $$`,
+    `CREATE INDEX IF NOT EXISTS education_placements_center_idx ON ${s}.education_placements (center_id)`,
+    `CREATE INDEX IF NOT EXISTS education_placements_course_idx ON ${s}.education_placements (course_id)`,
+    `CREATE INDEX IF NOT EXISTS education_placements_settled_by_idx ON ${s}.education_placements (settled_by_user_id)`,
+    `DO $$ BEGIN
+       IF to_regclass('${s}.education_center_subscriptions') IS NOT NULL THEN
+         ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS billing_cycle text NOT NULL DEFAULT 'monthly';
+         ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS payment_reference text;
+         ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS paid_at timestamptz;
+         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='${s}.education_center_subscriptions'::regclass AND conname='education_center_subscriptions_billing_cycle_check') THEN
+           ALTER TABLE ${s}.education_center_subscriptions ADD CONSTRAINT education_center_subscriptions_billing_cycle_check CHECK (billing_cycle IN ('monthly', 'yearly')) NOT VALID;
+         END IF;
+       END IF;
+     END $$`,
+    `DO $$ BEGIN
+       IF to_regclass('${s}.education_center_subscriptions') IS NOT NULL THEN
+         CREATE UNIQUE INDEX IF NOT EXISTS education_center_subscriptions_payment_reference_unique
+           ON ${s}.education_center_subscriptions (payment_reference);
+         ALTER TABLE ${s}.education_center_subscriptions VALIDATE CONSTRAINT education_center_subscriptions_billing_cycle_check;
+       END IF;
+     END $$`,
     // v74 — every aftercare FK gets a leading index so deletes/updates on its
     // parent cannot force scans as recommendation and delivery history grows.
   ];

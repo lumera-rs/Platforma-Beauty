@@ -5466,6 +5466,20 @@ export const CourseLevel = {
   'all-levels': 'all-levels',
 } as const;
 
+export type CourseFaqItem = {
+  question: string;
+  answer: string;
+};
+
+export type CoursePaymentMode = typeof CoursePaymentMode[keyof typeof CoursePaymentMode];
+
+
+export const CoursePaymentMode = {
+  online_full: 'online_full',
+  live_deposit: 'live_deposit',
+  live_off_platform: 'live_off_platform',
+} as const;
+
 /**
  * @nullable
  */
@@ -5489,6 +5503,23 @@ export interface Course {
   publisher: string;
   publisherType: CoursePublisherType;
   category: string;
+  /** @nullable */
+  sectionId?: string | null;
+  /** @nullable */
+  sectionName?: string | null;
+  /** @nullable */
+  categoryId?: string | null;
+  /** @nullable */
+  categoryName?: string | null;
+  /** @nullable */
+  subcategoryId?: string | null;
+  /** @nullable */
+  subcategoryName?: string | null;
+  /** @nullable */
+  courseTypeId?: string | null;
+  /** @nullable */
+  courseTypeName?: string | null;
+  taxonomyPath: string[];
   format: CourseFormat;
   /** @nullable */
   city?: string | null;
@@ -5500,6 +5531,37 @@ export interface Course {
   requirements: string;
   rating: number;
   certification: boolean;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  theoryHours?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  practicalHours?: number | null;
+  /** @nullable */
+  certificateName?: string | null;
+  accredited: boolean;
+  /** @nullable */
+  language?: string | null;
+  /** @nullable */
+  trailerUrl?: string | null;
+  tags: string[];
+  faq: CourseFaqItem[];
+  paymentMode: CoursePaymentMode;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  depositAmount?: number | null;
+  /** @minimum 0 */
+  studentCount: number;
+  /** @minimum 0 */
+  inquiryCount30d: number;
+  /** @minimum 0 */
+  viewCount30d: number;
   imageUrl: string;
   /** @nullable */
   startDate?: string | null;
@@ -5542,12 +5604,40 @@ export const EducationCourseInputLevel = {
   'all-levels': 'all-levels',
 } as const;
 
+export type EducationCourseInputFaqItem = {
+  /**
+     * @minLength 1
+     * @maxLength 300
+     */
+  question: string;
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  answer: string;
+};
+
+export type EducationCourseInputPaymentMode = typeof EducationCourseInputPaymentMode[keyof typeof EducationCourseInputPaymentMode];
+
+
+export const EducationCourseInputPaymentMode = {
+  online_full: 'online_full',
+  live_deposit: 'live_deposit',
+  live_off_platform: 'live_off_platform',
+} as const;
+
 export interface EducationCourseInput {
   /** @minLength 2 */
   title: string;
   description?: string;
   /** @minLength 2 */
   category: string;
+  /** @nullable */
+  categoryId?: string | null;
+  /** @nullable */
+  subcategoryId?: string | null;
+  /** @nullable */
+  courseTypeId?: string | null;
   format: EducationCourseInputFormat;
   /** @nullable */
   city?: string | null;
@@ -5571,6 +5661,48 @@ export interface EducationCourseInput {
   /** @maxLength 2000 */
   requirements?: string;
   certification?: boolean;
+  /**
+     * @minimum 0
+     * @maximum 100000
+     * @nullable
+     */
+  theoryHours?: number | null;
+  /**
+     * @minimum 0
+     * @maximum 100000
+     * @nullable
+     */
+  practicalHours?: number | null;
+  /**
+     * @maxLength 240
+     * @nullable
+     */
+  certificateName?: string | null;
+  accredited?: boolean;
+  /**
+     * @maxLength 80
+     * @nullable
+     */
+  language?: string | null;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  trailerUrl?: string | null;
+  /**
+     * @maxItems 30
+     * @items.minLength 1
+     * @items.maxLength 80
+     */
+  tags?: string[];
+  /** @maxItems 30 */
+  faq?: EducationCourseInputFaqItem[];
+  paymentMode?: EducationCourseInputPaymentMode;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  depositAmount?: number | null;
   /** @minLength 1 */
   imageUrl: string;
   /** @nullable */
@@ -5613,12 +5745,40 @@ export const EducationCourseUpdateLevel = {
   'all-levels': 'all-levels',
 } as const;
 
+export type EducationCourseUpdateFaqItem = {
+  /**
+     * @minLength 1
+     * @maxLength 300
+     */
+  question: string;
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  answer: string;
+};
+
+export type EducationCourseUpdatePaymentMode = typeof EducationCourseUpdatePaymentMode[keyof typeof EducationCourseUpdatePaymentMode];
+
+
+export const EducationCourseUpdatePaymentMode = {
+  online_full: 'online_full',
+  live_deposit: 'live_deposit',
+  live_off_platform: 'live_off_platform',
+} as const;
+
 export interface EducationCourseUpdate {
   /** @minLength 2 */
   title?: string;
   description?: string;
   /** @minLength 2 */
   category?: string;
+  /** @nullable */
+  categoryId?: string | null;
+  /** @nullable */
+  subcategoryId?: string | null;
+  /** @nullable */
+  courseTypeId?: string | null;
   format?: EducationCourseUpdateFormat;
   /** @nullable */
   city?: string | null;
@@ -5642,6 +5802,48 @@ export interface EducationCourseUpdate {
   /** @maxLength 2000 */
   requirements?: string;
   certification?: boolean;
+  /**
+     * @minimum 0
+     * @maximum 100000
+     * @nullable
+     */
+  theoryHours?: number | null;
+  /**
+     * @minimum 0
+     * @maximum 100000
+     * @nullable
+     */
+  practicalHours?: number | null;
+  /**
+     * @maxLength 240
+     * @nullable
+     */
+  certificateName?: string | null;
+  accredited?: boolean;
+  /**
+     * @maxLength 80
+     * @nullable
+     */
+  language?: string | null;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  trailerUrl?: string | null;
+  /**
+     * @maxItems 30
+     * @items.minLength 1
+     * @items.maxLength 80
+     */
+  tags?: string[];
+  /** @maxItems 30 */
+  faq?: EducationCourseUpdateFaqItem[];
+  paymentMode?: EducationCourseUpdatePaymentMode;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  depositAmount?: number | null;
   /** @minLength 1 */
   imageUrl?: string;
   /** @nullable */
@@ -5878,9 +6080,279 @@ export interface EducationCategory {
   courseCount: number;
 }
 
+export type EducationEnrollmentInputPaymentMode = typeof EducationEnrollmentInputPaymentMode[keyof typeof EducationEnrollmentInputPaymentMode];
+
+
+export const EducationEnrollmentInputPaymentMode = {
+  online_full: 'online_full',
+  live_deposit: 'live_deposit',
+  live_off_platform: 'live_off_platform',
+} as const;
+
 export interface EducationEnrollmentInput {
   /** @nullable */
   employeeId?: string | null;
+  /** @nullable */
+  sessionId?: string | null;
+  paymentMode?: EducationEnrollmentInputPaymentMode;
+}
+
+export interface EducationTaxonomyItem {
+  id: string;
+  name: string;
+  slug: string;
+  sortOrder: number;
+  active: boolean;
+}
+
+export interface EducationTaxonomyPatch {
+  /**
+     * @minLength 2
+     * @maxLength 160
+     */
+  name?: string;
+  /** @minimum 0 */
+  sortOrder?: number;
+  active?: boolean;
+}
+
+export type EducationCourseTypeStatus = typeof EducationCourseTypeStatus[keyof typeof EducationCourseTypeStatus];
+
+
+export const EducationCourseTypeStatus = {
+  pending: 'pending',
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export type EducationCourseType = EducationTaxonomyItem & ({
+  subcategoryId: string;
+  status: EducationCourseTypeStatus;
+  /** @nullable */
+  proposedByCenterId?: string | null;
+  /** @nullable */
+  reviewNote?: string | null;
+});
+
+export type EducationCourseTypeCount = EducationTaxonomyItem & {
+  /** @minimum 0 */
+  courseCount: number;
+};
+
+export type EducationTaxonomySubcategory = EducationTaxonomyItem & {
+  /** @minimum 0 */
+  courseCount: number;
+  courseTypes: EducationCourseTypeCount[];
+};
+
+export type EducationTaxonomyCategory = EducationTaxonomyItem & {
+  /** @minimum 0 */
+  courseCount: number;
+  subcategories: EducationTaxonomySubcategory[];
+};
+
+export type EducationTaxonomySection = EducationTaxonomyItem & {
+  /** @minimum 0 */
+  courseCount: number;
+  categories: EducationTaxonomyCategory[];
+};
+
+export type EducationSearchSuggestionKind = typeof EducationSearchSuggestionKind[keyof typeof EducationSearchSuggestionKind];
+
+
+export const EducationSearchSuggestionKind = {
+  section: 'section',
+  category: 'category',
+  subcategory: 'subcategory',
+  courseType: 'courseType',
+  course: 'course',
+} as const;
+
+export interface EducationSearchSuggestion {
+  kind: EducationSearchSuggestionKind;
+  id: string;
+  label: string;
+  path: string[];
+}
+
+export interface EducationInquiry {
+  id: string;
+  courseId: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface EducationRankedCategory {
+  categoryId: string;
+  name: string;
+  views30d: number;
+  inquiries30d: number;
+  score: number;
+}
+
+export interface EducationRankedCenter {
+  centerId: string;
+  name: string;
+  city: string;
+  metric: number;
+  createdAt: string;
+}
+
+export interface EducationRankings {
+  popularCategories30d: EducationRankedCategory[];
+  newCenters: EducationRankedCenter[];
+  mostRequestedCenters90d: EducationRankedCenter[];
+  topRatedCenters: EducationRankedCenter[];
+}
+
+export type EducationPlacementSettingInputKind = typeof EducationPlacementSettingInputKind[keyof typeof EducationPlacementSettingInputKind];
+
+
+export const EducationPlacementSettingInputKind = {
+  featured_center: 'featured_center',
+  special_offer: 'special_offer',
+} as const;
+
+export type EducationPlacementSettingInputScope = typeof EducationPlacementSettingInputScope[keyof typeof EducationPlacementSettingInputScope];
+
+
+export const EducationPlacementSettingInputScope = {
+  home: 'home',
+  category: 'category',
+  subcategory: 'subcategory',
+} as const;
+
+export interface EducationPlacementSettingInput {
+  kind: EducationPlacementSettingInputKind;
+  scope: EducationPlacementSettingInputScope;
+  /** @minimum 0 */
+  price: number;
+  /**
+     * @minimum 1
+     * @maximum 365
+     */
+  durationDays: number;
+  /**
+     * @minimum 1
+     * @maximum 1000
+     */
+  slotCount: number;
+}
+
+export type EducationPlacementSetting = EducationPlacementSettingInput & {
+  id: string;
+};
+
+export type EducationPlacementPurchaseInputKind = typeof EducationPlacementPurchaseInputKind[keyof typeof EducationPlacementPurchaseInputKind];
+
+
+export const EducationPlacementPurchaseInputKind = {
+  featured_center: 'featured_center',
+  special_offer: 'special_offer',
+} as const;
+
+export type EducationPlacementPurchaseInputScope = typeof EducationPlacementPurchaseInputScope[keyof typeof EducationPlacementPurchaseInputScope];
+
+
+export const EducationPlacementPurchaseInputScope = {
+  home: 'home',
+  category: 'category',
+  subcategory: 'subcategory',
+} as const;
+
+export interface EducationPlacementPurchaseInput {
+  kind: EducationPlacementPurchaseInputKind;
+  scope: EducationPlacementPurchaseInputScope;
+  /** @nullable */
+  scopeId?: string | null;
+  /** @nullable */
+  courseId?: string | null;
+}
+
+export type EducationPlacementKind = typeof EducationPlacementKind[keyof typeof EducationPlacementKind];
+
+
+export const EducationPlacementKind = {
+  featured_center: 'featured_center',
+  special_offer: 'special_offer',
+} as const;
+
+export type EducationPlacementScope = typeof EducationPlacementScope[keyof typeof EducationPlacementScope];
+
+
+export const EducationPlacementScope = {
+  home: 'home',
+  category: 'category',
+  subcategory: 'subcategory',
+} as const;
+
+export type EducationPlacementStatus = typeof EducationPlacementStatus[keyof typeof EducationPlacementStatus];
+
+
+export const EducationPlacementStatus = {
+  pending_payment: 'pending_payment',
+  active: 'active',
+  expired: 'expired',
+  cancelled: 'cancelled',
+  rejected: 'rejected',
+} as const;
+
+export interface EducationPlacement {
+  id: string;
+  /** @nullable */
+  centerId: string | null;
+  kind: EducationPlacementKind;
+  label: string;
+  scope: EducationPlacementScope;
+  /** @nullable */
+  scopeId?: string | null;
+  /** @nullable */
+  courseId: string | null;
+  status: EducationPlacementStatus;
+  price: number;
+  paymentReference: string;
+  /** @nullable */
+  startsAt?: string | null;
+  /** @nullable */
+  endsAt?: string | null;
+  createdAt: string;
+}
+
+export type EducationPublicPlacementKind = typeof EducationPublicPlacementKind[keyof typeof EducationPublicPlacementKind];
+
+
+export const EducationPublicPlacementKind = {
+  featured_center: 'featured_center',
+  special_offer: 'special_offer',
+} as const;
+
+export type EducationPublicPlacementScope = typeof EducationPublicPlacementScope[keyof typeof EducationPublicPlacementScope];
+
+
+export const EducationPublicPlacementScope = {
+  home: 'home',
+  category: 'category',
+  subcategory: 'subcategory',
+} as const;
+
+export interface EducationPublicPlacement {
+  id: string;
+  centerId: string;
+  centerName: string;
+  centerImageUrl: string;
+  kind: EducationPublicPlacementKind;
+  label: string;
+  scope: EducationPublicPlacementScope;
+  /** @nullable */
+  scopeId?: string | null;
+  /** @nullable */
+  courseId: string | null;
+  /** @nullable */
+  courseTitle: string | null;
+  /** @nullable */
+  courseImageUrl: string | null;
+  /** @nullable */
+  coursePrice: number | null;
 }
 
 export type EducationEnrollmentStatus = typeof EducationEnrollmentStatus[keyof typeof EducationEnrollmentStatus];
@@ -6198,6 +6670,19 @@ export interface EducationCourseFeaturedCharge {
   /** @nullable */
   settledAt?: string | null;
 }
+
+export interface EducationFeaturedChargeSettlementInput {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     * @nullable
+     */
+  paymentReference?: string | null;
+}
+
+export type EducationFeaturedChargeSettlement = EducationCourseFeaturedCharge & {
+  courseId: string;
+};
 
 export interface EducationCourseFeaturedStatus {
   courseId: string;
@@ -12023,10 +12508,50 @@ export type CreateEducationDisputeBody = {
   details: string;
 };
 
+export type ListAdminEducationTaxonomyProposalsParams = {
+status?: ListAdminEducationTaxonomyProposalsStatus;
+};
+
+export type ListAdminEducationTaxonomyProposalsStatus = typeof ListAdminEducationTaxonomyProposalsStatus[keyof typeof ListAdminEducationTaxonomyProposalsStatus];
+
+
+export const ListAdminEducationTaxonomyProposalsStatus = {
+  pending: 'pending',
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export type ReviewAdminEducationTaxonomyProposalBodyDecision = typeof ReviewAdminEducationTaxonomyProposalBodyDecision[keyof typeof ReviewAdminEducationTaxonomyProposalBodyDecision];
+
+
+export const ReviewAdminEducationTaxonomyProposalBodyDecision = {
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export type ReviewAdminEducationTaxonomyProposalBody = {
+  decision: ReviewAdminEducationTaxonomyProposalBodyDecision;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  note?: string | null;
+};
+
 export type ListCoursesParams = {
 format?: ListCoursesFormat;
 city?: string;
 category?: string;
+/**
+ * @maxLength 160
+ */
+q?: string;
+sectionId?: string;
+categoryId?: string;
+subcategoryId?: string;
+courseTypeId?: string;
+language?: string;
+accredited?: boolean;
 center?: string;
 certification?: boolean;
 /**
@@ -12069,6 +12594,15 @@ export const ListCoursesFormat = {
   hybrid: 'hybrid',
 } as const;
 
+export type ProposeEducationCourseTypeBody = {
+  subcategoryId: string;
+  /**
+     * @minLength 2
+     * @maxLength 160
+     */
+  name: string;
+};
+
 export type ListEnrollmentsParams = {
 /**
  * 1-based page number for stable pagination (purchasedAt desc, id desc).
@@ -12092,6 +12626,16 @@ export type ListPublicEducationCoursesParams = {
 format?: ListPublicEducationCoursesFormat;
 city?: string;
 category?: string;
+/**
+ * @maxLength 160
+ */
+q?: string;
+sectionId?: string;
+categoryId?: string;
+subcategoryId?: string;
+courseTypeId?: string;
+language?: string;
+accredited?: boolean;
 level?: ListPublicEducationCoursesLevel;
 /**
  * @minimum 0
@@ -12140,6 +12684,50 @@ export const ListPublicEducationCoursesLevel = {
   intermediate: 'intermediate',
   advanced: 'advanced',
   'all-levels': 'all-levels',
+} as const;
+
+export type CreatePublicEducationCourseInquiryBody = {
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  message?: string | null;
+};
+
+export type ListPublicEducationSearchSuggestionsParams = {
+/**
+ * @minLength 1
+ * @maxLength 160
+ */
+q: string;
+/**
+ * @minimum 1
+ * @maximum 30
+ */
+limit?: number;
+};
+
+export type ListPublicEducationPlacementsParams = {
+kind?: ListPublicEducationPlacementsKind;
+scope?: ListPublicEducationPlacementsScope;
+scopeId?: string;
+};
+
+export type ListPublicEducationPlacementsKind = typeof ListPublicEducationPlacementsKind[keyof typeof ListPublicEducationPlacementsKind];
+
+
+export const ListPublicEducationPlacementsKind = {
+  featured_center: 'featured_center',
+  special_offer: 'special_offer',
+} as const;
+
+export type ListPublicEducationPlacementsScope = typeof ListPublicEducationPlacementsScope[keyof typeof ListPublicEducationPlacementsScope];
+
+
+export const ListPublicEducationPlacementsScope = {
+  home: 'home',
+  category: 'category',
+  subcategory: 'subcategory',
 } as const;
 
 export type ListPopularEducationCoursesParams = {

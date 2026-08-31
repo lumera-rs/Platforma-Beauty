@@ -11,6 +11,16 @@ export type ListCoursesParams = {
 format?: ListCoursesFormat;
 city?: string;
 category?: string;
+/**
+ * @maxLength 160
+ */
+q?: string;
+sectionId?: string;
+categoryId?: string;
+subcategoryId?: string;
+courseTypeId?: string;
+language?: string;
+accredited?: boolean;
 center?: string;
 certification?: boolean;
 /**

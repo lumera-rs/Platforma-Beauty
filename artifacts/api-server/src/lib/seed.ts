@@ -13,10 +13,13 @@ import {
   db,
   educationCentersTable,
   educationCenterSubscriptionsTable,
+  educationCourseTypesTable,
   educationEscrowsTable,
   educationFinancialEventsTable,
   educationLedgerEntriesTable,
   educationPlatformSettingsTable,
+  educationSectionsTable,
+  educationSubcategoriesTable,
   educationThreadsTable,
   employeeServicesTable,
   employeesTable,
@@ -49,10 +52,99 @@ import {
   resolveEducationBillingSettings,
 } from "./education-billing";
 import { getOrCreateShippingConfig } from "./shipping-config";
+import { EDUCATION_TAXONOMY } from "./education-taxonomy";
 
 let seedPromise: Promise<void> | undefined;
 const LEGACY_CATALOG_SUPPLIER_ID = "9b5970ea-0a8c-5e60-9d32-2a09f0890560";
 const DEMO_EDUCATION_OWNER_EMAIL = "edukacija@lumera.local";
+function educationTaxonomyKey(value: string): string {
+  return value.normalize("NFD").replace(/\p{Diacritic}/gu, "")
+    .toLocaleLowerCase("sr-Latn").replace(/đ/g, "dj")
+    .replace(/&/g, " i ").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function splitTaxonomyItems(value: string): string[] {
+  const items: string[] = [];
+  let start = 0;
+  let depth = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] === "(") depth += 1;
+    if (value[index] === ")") depth = Math.max(0, depth - 1);
+    if (value[index] === "," && depth === 0) {
+      items.push(value.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  items.push(value.slice(start).trim());
+  return items.filter(Boolean);
+}
+
+export async function seedEducationTaxonomy(): Promise<void> {
+  const taxonomy = EDUCATION_TAXONOMY;
+  for (const [sectionIndex, sectionSeed] of taxonomy.entries()) {
+    const sectionSlug = educationTaxonomyKey(sectionSeed.name);
+    const [section] = await db.insert(educationSectionsTable).values({
+      name: sectionSeed.name,
+      slug: sectionSlug,
+      sortOrder: sectionIndex + 1,
+      active: true,
+    }).onConflictDoUpdate({
+      target: educationSectionsTable.slug,
+      set: { name: sectionSeed.name, sortOrder: sectionIndex + 1, active: true, updatedAt: new Date() },
+    }).returning({ id: educationSectionsTable.id });
+    if (!section) throw new Error(`Unable to seed education section: ${sectionSeed.name}`);
+
+    for (const [categoryIndex, categorySeed] of sectionSeed.categories.entries()) {
+      const categorySlug = educationTaxonomyKey(categorySeed.name);
+      const existingCategories = await db.select({
+        id: courseCategoriesTable.id,
+        name: courseCategoriesTable.name,
+        slug: courseCategoriesTable.slug,
+      }).from(courseCategoriesTable);
+      let category = existingCategories.find((row) =>
+        educationTaxonomyKey(row.name) === categorySlug || educationTaxonomyKey(row.slug) === categorySlug);
+      if (category) {
+        await db.update(courseCategoriesTable).set({
+          sectionId: section.id, sortOrder: categoryIndex + 1, active: true, updatedAt: new Date(),
+        }).where(eq(courseCategoriesTable.id, category.id));
+      } else {
+        [category] = await db.insert(courseCategoriesTable).values({
+          name: categorySeed.name, slug: categorySlug, sectionId: section.id,
+          sortOrder: categoryIndex + 1, active: true,
+        }).onConflictDoNothing().returning({
+          id: courseCategoriesTable.id, name: courseCategoriesTable.name, slug: courseCategoriesTable.slug,
+        });
+      }
+      if (!category) throw new Error(`Unable to seed education category: ${categorySeed.name}`);
+
+      for (const [groupIndex, group] of categorySeed.groups.entries()) {
+        const subcategorySlug = educationTaxonomyKey(group.name);
+        const [subcategory] = await db.insert(educationSubcategoriesTable).values({
+          categoryId: category.id, name: group.name, slug: subcategorySlug,
+          sortOrder: groupIndex + 1, active: true,
+        }).onConflictDoUpdate({
+          target: [educationSubcategoriesTable.categoryId, educationSubcategoriesTable.slug],
+          set: { name: group.name, sortOrder: groupIndex + 1, active: true, updatedAt: new Date() },
+        }).returning({ id: educationSubcategoriesTable.id });
+        if (!subcategory) throw new Error(`Unable to seed education subcategory: ${group.name}`);
+
+        for (const [typeIndex, name] of splitTaxonomyItems(group.items).entries()) {
+          await db.insert(educationCourseTypesTable).values({
+            subcategoryId: subcategory.id,
+            name,
+            normalizedName: educationTaxonomyKey(name),
+            status: "approved",
+            sortOrder: typeIndex + 1,
+            active: true,
+          }).onConflictDoUpdate({
+            target: [educationCourseTypesTable.subcategoryId, educationCourseTypesTable.normalizedName],
+            set: { name, status: "approved", sortOrder: typeIndex + 1, active: true, updatedAt: new Date() },
+          });
+        }
+      }
+    }
+  }
+}
 
 export async function restoreDemoEducationOwnerRole(
   database: Pick<typeof db, "update"> = db,
@@ -284,6 +376,7 @@ async function seed(): Promise<void> {
       await db.update(salonsTable).set({ postalCode }).where(sql`${salonsTable.postalCode} is null and ${salonsTable.city} = ${city}`);
     }
     await restoreDemoEducationOwnerRole();
+    await seedEducationTaxonomy();
     await seedEducationContent();
     await seedEducationMonetization();
     await seedMarketplaceTaxonomy();
@@ -486,6 +579,7 @@ async function seed(): Promise<void> {
     lineTotal: (product.discountPrice ?? product.price) * (index + 1),
   })));
 
+  await seedEducationTaxonomy();
   const [courseCategory] = await db.insert(courseCategoriesTable).values({ name: "Stručne tehnike", slug: "strucne-tehnike" }).returning();
   const centers = await db.insert(educationCentersTable).values([
     { ownerId: demoUsers[2]!.id, name: "Akademija Ritual", city: "Beograd", description: "Edukacije za savremene wellness profesionalce.", imageUrl: "/lumera-media/course-1.jpg", verificationStatus: "verified", verifiedAt: new Date(), verifiedByUserId: demoUsers[0]!.id },

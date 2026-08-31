@@ -94,6 +94,13 @@ import
   coursesTable,
   db,
   educationCentersTable,
+  educationSectionsTable,
+  educationSubcategoriesTable,
+  educationCourseTypesTable,
+  educationInquiriesTable,
+  educationCourseMetricEventsTable,
+  educationPlacementSettingsTable,
+  educationPlacementsTable,
   educationCenterSubscriptionsTable,
   educationDisputesTable,
   educationEscrowsTable,
@@ -230,6 +237,12 @@ import {
   resolveEducationBillingSettingsForChargeInTx,
   type EducationBillingKey,
 } from "../lib/education-billing";
+import {
+  addEducationBelgradeCalendarDays,
+  educationBelgradeDateKey,
+  educationPaymentModeError,
+  normalizedEducationTaxonomyName,
+} from "../lib/education-marketplace-domain";
 
 import 
 {
@@ -3199,6 +3212,88 @@ async function centerPublicView(
   };
 }
 
+async function educationCourseEnrichment(courseIds: string[]) {
+  if (!courseIds.length) return new Map<string, Record<string, unknown>>();
+  const courses = await db.select({
+    id: coursesTable.id,
+    legacyCategory: coursesTable.category,
+    categoryId: coursesTable.categoryId,
+    subcategoryId: coursesTable.subcategoryId,
+    courseTypeId: coursesTable.courseTypeId,
+  }).from(coursesTable).where(inArray(coursesTable.id, courseIds));
+  const categoryIds = [...new Set(courses.flatMap((row) => row.categoryId ? [row.categoryId] : []))];
+  const subcategoryIds = [...new Set(courses.flatMap((row) => row.subcategoryId ? [row.subcategoryId] : []))];
+  const courseTypeIds = [...new Set(courses.flatMap((row) => row.courseTypeId ? [row.courseTypeId] : []))];
+  const [categories, subcategories, courseTypes, enrollmentCounts, inquiryCounts, viewCounts] = await Promise.all([
+    categoryIds.length ? db.select().from(courseCategoriesTable).where(inArray(courseCategoriesTable.id, categoryIds)) : [],
+    subcategoryIds.length ? db.select().from(educationSubcategoriesTable).where(inArray(educationSubcategoriesTable.id, subcategoryIds)) : [],
+    courseTypeIds.length ? db.select().from(educationCourseTypesTable).where(inArray(educationCourseTypesTable.id, courseTypeIds)) : [],
+    db.select({ courseId: courseEnrollmentsTable.courseId, value: count() }).from(courseEnrollmentsTable)
+      .where(and(inArray(courseEnrollmentsTable.courseId, courseIds), inArray(courseEnrollmentsTable.status, ["active", "completed"])))
+      .groupBy(courseEnrollmentsTable.courseId),
+    db.select({ courseId: educationInquiriesTable.courseId, value: count() }).from(educationInquiriesTable)
+      .where(and(inArray(educationInquiriesTable.courseId, courseIds), gte(educationInquiriesTable.createdAt, new Date(Date.now() - 30 * 86400_000))))
+      .groupBy(educationInquiriesTable.courseId),
+    db.select({ courseId: educationCourseMetricEventsTable.courseId, value: count() }).from(educationCourseMetricEventsTable)
+      .where(and(inArray(educationCourseMetricEventsTable.courseId, courseIds), eq(educationCourseMetricEventsTable.eventType, "view"), gte(educationCourseMetricEventsTable.occurredAt, new Date(Date.now() - 30 * 86400_000))))
+      .groupBy(educationCourseMetricEventsTable.courseId),
+  ]);
+  const sectionIds = [...new Set(categories.flatMap((row) => row.sectionId ? [row.sectionId] : []))];
+  const sections = sectionIds.length ? await db.select().from(educationSectionsTable).where(inArray(educationSectionsTable.id, sectionIds)) : [];
+  const categoryById = new Map(categories.map((row) => [row.id, row]));
+  const subcategoryById = new Map(subcategories.map((row) => [row.id, row]));
+  const typeById = new Map(courseTypes.map((row) => [row.id, row]));
+  const sectionById = new Map(sections.map((row) => [row.id, row]));
+  const studentByCourse = new Map(enrollmentCounts.map((row) => [row.courseId, Number(row.value)]));
+  const inquiryByCourse = new Map(inquiryCounts.map((row) => [row.courseId, Number(row.value)]));
+  const viewByCourse = new Map(viewCounts.map((row) => [row.courseId, Number(row.value)]));
+  return new Map(courses.map((course) => {
+    const category = course.categoryId ? categoryById.get(course.categoryId) : undefined;
+    const subcategory = course.subcategoryId ? subcategoryById.get(course.subcategoryId) : undefined;
+    const courseType = course.courseTypeId ? typeById.get(course.courseTypeId) : undefined;
+    const section = category?.sectionId ? sectionById.get(category.sectionId) : undefined;
+    return [course.id, {
+      sectionId: section?.id ?? null,
+      sectionName: section?.name ?? null,
+      categoryId: category?.id ?? null,
+      categoryName: category?.name ?? course.legacyCategory,
+      subcategoryId: subcategory?.id ?? null,
+      subcategoryName: subcategory?.name ?? null,
+      courseTypeId: courseType?.id ?? null,
+      courseTypeName: courseType?.name ?? null,
+      taxonomyPath: [section?.name, category?.name ?? course.legacyCategory, subcategory?.name, courseType?.name].filter((value): value is string => Boolean(value)),
+      studentCount: studentByCourse.get(course.id) ?? 0,
+      inquiryCount30d: inquiryByCourse.get(course.id) ?? 0,
+      viewCount30d: viewByCourse.get(course.id) ?? 0,
+    }];
+  }));
+}
+
+async function validEducationTaxonomySelection(input: {
+  categoryId: string | null;
+  subcategoryId: string | null;
+  courseTypeId: string | null;
+}) {
+  if (!input.categoryId && !input.subcategoryId && !input.courseTypeId) return true;
+  if (!input.categoryId || (input.courseTypeId && !input.subcategoryId)) return false;
+  const [category, subcategory, courseType] = await Promise.all([
+    db.select().from(courseCategoriesTable).where(and(eq(courseCategoriesTable.id, input.categoryId), eq(courseCategoriesTable.active, true))).limit(1),
+    input.subcategoryId
+      ? db.select().from(educationSubcategoriesTable).where(and(eq(educationSubcategoriesTable.id, input.subcategoryId), eq(educationSubcategoriesTable.active, true))).limit(1)
+      : Promise.resolve([]),
+    input.courseTypeId
+      ? db.select().from(educationCourseTypesTable).where(and(
+          eq(educationCourseTypesTable.id, input.courseTypeId),
+          eq(educationCourseTypesTable.active, true),
+          eq(educationCourseTypesTable.status, "approved"),
+        )).limit(1)
+      : Promise.resolve([]),
+  ]);
+  return Boolean(category[0]
+    && (!input.subcategoryId || subcategory[0]?.categoryId === category[0].id)
+    && (!input.courseTypeId || courseType[0]?.subcategoryId === subcategory[0]?.id));
+}
+
 async function educationCourseView(
   course: typeof coursesTable.$inferSelect,
   access?: EducationAccess,
@@ -3211,7 +3306,7 @@ async function educationCourseView(
     : undefined;
   const mayReadLessonContent = includeLessonContent || Boolean(access && (access.admin || owned));
   const mayReadLogistics = Boolean(access && (access.admin || owned || enrollment?.paymentStatus === "paid"));
-  const [center, salon, sessions, modules, dayProgram, gallery, reviews] = await Promise.all([
+  const [center, salon, sessions, modules, dayProgram, gallery, reviews, enrichments] = await Promise.all([
     course.centerId ? db.select().from(educationCentersTable).where(eq(educationCentersTable.id, course.centerId)).limit(1) : Promise.resolve([]),
     course.salonId ? db.select().from(salonsTable).where(eq(salonsTable.id, course.salonId)).limit(1) : Promise.resolve([]),
     sessionsForCourse(course.id, mayReadLogistics),
@@ -3219,6 +3314,7 @@ async function educationCourseView(
     courseDayProgram(course.id),
     educationMediaViews({ courseId: course.id }),
     courseReviewViews(course.id),
+    educationCourseEnrichment([course.id]),
   ]);
   const publisher = salon[0] ?? center[0];
   // Resolve instructor display name from the linked instructor profile in this center.
@@ -3252,6 +3348,7 @@ async function educationCourseView(
     publisherType: course.salonId ? "SALON" as const : "EDUCATION_CENTER" as const,
     publisherVerified: center[0]?.verificationStatus === "verified",
     category: course.category,
+    ...enrichments.get(course.id),
     format: course.format,
     city: course.city,
     price: course.price,
@@ -3262,6 +3359,16 @@ async function educationCourseView(
     requirements: course.requirements,
     rating: course.rating / 10,
     certification: course.certification,
+    theoryHours: course.theoryHours,
+    practicalHours: course.practicalHours,
+    certificateName: course.certificateName,
+    accredited: course.accredited,
+    language: course.language,
+    trailerUrl: course.trailerUrl,
+    tags: course.tags,
+    faq: course.faq,
+    paymentMode: course.paymentMode,
+    depositAmount: course.depositAmount,
     featured: await isPubliclyFeaturedEducationCourse(course),
     featuredUntil: course.featuredUntil?.toISOString() ?? null,
     refundPolicy: course.refundPolicy,
@@ -17797,6 +17904,19 @@ router.get("/education/courses", async (req, res): Promise<void> => {
   if (query.format) scalarPredicates.push(eq(coursesTable.format, query.format));
   if (query.city) scalarPredicates.push(eq(sql`lower(${coursesTable.city})`, query.city.toLowerCase()));
   if (query.category) scalarPredicates.push(ilike(coursesTable.category, `%${query.category}%`));
+  if (query.q) scalarPredicates.push(or(
+    ilike(coursesTable.title, `%${query.q}%`),
+    ilike(coursesTable.description, `%${query.q}%`),
+    sql`${coursesTable.tags}::text ilike ${`%${query.q}%`}`,
+  ));
+  if (query.sectionId) scalarPredicates.push(sql`exists (
+    select 1 from ${courseCategoriesTable} cc where cc.id = ${coursesTable.categoryId} and cc.section_id = ${query.sectionId}
+  )`);
+  if (query.categoryId) scalarPredicates.push(eq(coursesTable.categoryId, query.categoryId));
+  if (query.subcategoryId) scalarPredicates.push(eq(coursesTable.subcategoryId, query.subcategoryId));
+  if (query.courseTypeId) scalarPredicates.push(eq(coursesTable.courseTypeId, query.courseTypeId));
+  if (query.language) scalarPredicates.push(eq(sql`lower(${coursesTable.language})`, query.language.toLowerCase()));
+  if (query.accredited !== undefined) scalarPredicates.push(eq(coursesTable.accredited, query.accredited));
   if (query.certification !== undefined) scalarPredicates.push(eq(coursesTable.certification, query.certification));
   if (query.minPrice !== undefined) scalarPredicates.push(gte(coursesTable.price, query.minPrice));
   if (query.maxPrice !== undefined) scalarPredicates.push(lte(coursesTable.price, query.maxPrice));
@@ -17845,6 +17965,13 @@ router.post("/education/courses", async (req, res): Promise<void> => {
     return;
   }
   const data = parsed.data;
+  const paymentMode = data.paymentMode ?? "online_full";
+  const depositAmount = data.depositAmount ?? null;
+  const paymentModeError = educationPaymentModeError({ format: data.format, paymentMode, depositAmount, price: data.price });
+  if (paymentModeError) { res.status(400).json({ error: paymentModeError }); return; }
+  if (!await validEducationTaxonomySelection({
+    categoryId: data.categoryId ?? null, subcategoryId: data.subcategoryId ?? null, courseTypeId: data.courseTypeId ?? null,
+  })) { res.status(400).json({ error: "Izabrana taksonomija kursa nije ispravna ili odobrena." }); return; }
   if (!await canClaimMediaReference({ userId: access.user.id, url: data.imageUrl, scope: "education-cover" })) {
     res.status(400).json({ error: "Naslovna fotografija edukacije nije otpremljena sa ovog naloga." }); return;
   }
@@ -17857,6 +17984,9 @@ router.post("/education/courses", async (req, res): Promise<void> => {
         title: data.title,
         description: data.description ?? "",
         category: data.category,
+        categoryId: data.categoryId ?? null,
+        subcategoryId: data.subcategoryId ?? null,
+        courseTypeId: data.courseTypeId ?? null,
         format: data.format,
         city: data.city ?? publisher.city,
         price: data.price,
@@ -17866,6 +17996,16 @@ router.post("/education/courses", async (req, res): Promise<void> => {
         includedItems: data.includedItems ?? [],
         requirements: data.requirements ?? "",
         certification: data.certification ?? false,
+        theoryHours: data.theoryHours ?? null,
+        practicalHours: data.practicalHours ?? null,
+        certificateName: data.certificateName ?? null,
+        accredited: data.accredited ?? false,
+        language: data.language ?? "Srpski",
+        trailerUrl: data.trailerUrl ?? null,
+        tags: data.tags ?? [],
+        faq: data.faq ?? [],
+        paymentMode,
+        depositAmount,
         imageUrl: data.imageUrl,
         startDate: data.startDate ? calendarDate(data.startDate) : null,
         ...(data.refundPolicy !== undefined ? { refundPolicy: data.refundPolicy } : {}),
@@ -17913,6 +18053,19 @@ router.patch("/education/courses/:courseId", async (req, res): Promise<void> => 
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci kursa nisu ispravni." }); return; }
   const course = await requireOwnedCourse(access, params.data.courseId, res); if (!course) return;
   const data = body.data;
+  const mergedPayment = {
+    format: data.format ?? course.format,
+    paymentMode: data.paymentMode ?? course.paymentMode,
+    depositAmount: data.depositAmount === undefined ? course.depositAmount : data.depositAmount,
+    price: data.price ?? course.price,
+  };
+  const paymentModeError = educationPaymentModeError(mergedPayment);
+  if (paymentModeError) { res.status(400).json({ error: paymentModeError }); return; }
+  if (!await validEducationTaxonomySelection({
+    categoryId: data.categoryId === undefined ? course.categoryId : data.categoryId,
+    subcategoryId: data.subcategoryId === undefined ? course.subcategoryId : data.subcategoryId,
+    courseTypeId: data.courseTypeId === undefined ? course.courseTypeId : data.courseTypeId,
+  })) { res.status(400).json({ error: "Izabrana taksonomija kursa nije ispravna ili odobrena." }); return; }
   const previousCoverAssetId = mediaAssetIdFromUrl(course.imageUrl);
   const nextCoverAssetId = data.imageUrl === undefined ? previousCoverAssetId : mediaAssetIdFromUrl(data.imageUrl);
   if (data.imageUrl !== undefined && !await canClaimMediaReference({
@@ -18563,8 +18716,17 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
   }
   const idempotencyKey = req.get("idempotency-key")?.trim() || null;
   if (idempotencyKey && idempotencyKey.length > 200) { res.status(400).json({ error: "Idempotency ključ je predugačak." }); return; }
-  const requestedSessionId = typeof req.body?.sessionId === "string" && /^[0-9a-f-]{36}$/i.test(req.body.sessionId) ? req.body.sessionId : null;
-  const idempotencyFingerprint = `${course.id}:${employee?.id ?? "purchaser"}:${access?.salon?.id ?? "direct"}:${requestedSessionId ?? "auto"}`;
+  const requestedSessionId = body.data.sessionId ?? null;
+  const selectedPaymentMode = body.data.paymentMode ?? course.paymentMode;
+  if (selectedPaymentMode !== course.paymentMode) {
+    res.status(409).json({ error: "Izabrani način plaćanja nije ponuđen za ovaj kurs." }); return;
+  }
+  const paymentModeError = educationPaymentModeError({
+    format: course.format, paymentMode: selectedPaymentMode, depositAmount: course.depositAmount, price: course.price,
+  });
+  if (paymentModeError) { res.status(409).json({ error: paymentModeError }); return; }
+  const chargedAmount = selectedPaymentMode === "live_deposit" ? course.depositAmount! : selectedPaymentMode === "live_off_platform" ? 0 : course.price;
+  const idempotencyFingerprint = `${course.id}:${employee?.id ?? "purchaser"}:${access?.salon?.id ?? "direct"}:${requestedSessionId ?? "auto"}:${selectedPaymentMode}`;
   if (idempotencyKey) {
     const [replayed] = await db.select().from(courseEnrollmentsTable)
       .where(and(eq(courseEnrollmentsTable.purchaserId, user.id), eq(courseEnrollmentsTable.idempotencyKey, idempotencyKey))).limit(1);
@@ -18680,9 +18842,9 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
         purchaserId: user.id,
         status: "pending",
         paymentStatus: "pending",
-        chargedAmount: course.price,
+        chargedAmount,
         sessionId: requestedSessionId,
-        auditData: { source: "education-marketplace", idempotencyKey, requestedSessionId },
+        auditData: { source: "education-marketplace", idempotencyKey, requestedSessionId, paymentMode: selectedPaymentMode },
         idempotencyKey,
         idempotencyFingerprint: idempotencyKey ? idempotencyFingerprint : null,
       }).returning();
@@ -18858,8 +19020,8 @@ router.post("/education/waitlist/:waitlistId/accept", async (req, res): Promise<
         sessionId: entry.sessionId,
         status: "pending",
         paymentStatus: "pending",
-        chargedAmount: course.price,
-        auditData: { source: "education-waitlist-accept", waitlistId: entry.id, sessionId: entry.sessionId, seatReserved: true },
+        chargedAmount: course.paymentMode === "live_deposit" ? course.depositAmount : course.paymentMode === "live_off_platform" ? 0 : course.price,
+        auditData: { source: "education-waitlist-accept", waitlistId: entry.id, sessionId: entry.sessionId, seatReserved: true, paymentMode: course.paymentMode },
       }).returning();
       await tx.update(educationWaitlistTable)
         .set({ status: "enrolled", updatedAt: new Date() })
@@ -19011,6 +19173,15 @@ router.post("/admin/education/enrollments/:enrollmentId/settle", async (req, res
       await recordEducationEnrollmentReferralTransitionInTx(tx, {
         enrollmentId: confirmed.id, studentUserId: confirmed.userId, centerId: course.centerId, occurredAt: new Date(), valid: true,
       });
+      if (course.paymentMode === "live_off_platform") {
+        // Explicit administrator confirmation is the canonical off-platform
+        // completion signal. No platform charge, commission, escrow or ledger
+        // entry is created for money collected directly by the center.
+        await tx.insert(educationThreadsTable).values({
+          enrollmentId: confirmed.id, purchaserId: confirmed.purchaserId, centerId: course.centerId,
+        });
+        return confirmed;
+      }
       const settings = await resolveEducationBillingSettingsForChargeInTx(course.centerId, tx, center);
       // Charge the amount captured at request time (group discount survives here);
       // fall back to the current course price for legacy rows without it.
@@ -19297,7 +19468,7 @@ export async function batchEducationCourseViews(
   const salonIds = [...new Set(courses.flatMap((c) => (c.salonId ? [c.salonId] : [])))];
 
   // One query per cross-cutting resource; all parallelised.
-  const [centers, salons, allSessions, allModules, allDayProgram, allGallery, allReviewRows, allInstructors, paidFeaturedCharges] = await Promise.all([
+  const [centers, salons, allSessions, allModules, allDayProgram, allGallery, allReviewRows, allInstructors, paidFeaturedCharges, enrichments] = await Promise.all([
     centerIds.length ? db.select().from(educationCentersTable).where(inArray(educationCentersTable.id, centerIds)) : Promise.resolve([] as (typeof educationCentersTable.$inferSelect)[]),
     salonIds.length ? db.select().from(salonsTable).where(inArray(salonsTable.id, salonIds)) : Promise.resolve([] as (typeof salonsTable.$inferSelect)[]),
     db.select().from(courseSessionsTable).where(inArray(courseSessionsTable.courseId, courseIds)).orderBy(asc(courseSessionsTable.startsAt)),
@@ -19313,6 +19484,7 @@ export async function batchEducationCourseViews(
         eq(educationFeaturedChargesTable.status, "paid"),
       ))
       .orderBy(desc(educationFeaturedChargesTable.createdAt)),
+    educationCourseEnrichment(courseIds),
   ]);
 
   // Batch-fetch lessons for the collected modules.
@@ -19484,6 +19656,7 @@ export async function batchEducationCourseViews(
       publisherType: course.salonId ? "SALON" as const : "EDUCATION_CENTER" as const,
       publisherVerified: center?.verificationStatus === "verified",
       category: course.category,
+      ...enrichments.get(course.id),
       format: course.format,
       city: course.city,
       price: course.price,
@@ -19494,6 +19667,16 @@ export async function batchEducationCourseViews(
       requirements: course.requirements,
       rating: course.rating / 10,
       certification: course.certification,
+      theoryHours: course.theoryHours,
+      practicalHours: course.practicalHours,
+      certificateName: course.certificateName,
+      accredited: course.accredited,
+      language: course.language,
+      trailerUrl: course.trailerUrl,
+      tags: course.tags,
+      faq: course.faq,
+      paymentMode: course.paymentMode,
+      depositAmount: course.depositAmount,
       featured,
       featuredUntil: course.featuredUntil?.toISOString() ?? null,
       refundPolicy: course.refundPolicy,
@@ -19521,7 +19704,331 @@ async function publicCourseCard(course: typeof coursesTable.$inferSelect) {
   return card;
 }
 
+function taxonomySlug(name: string) {
+  return name.normalize("NFKD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function normalizedTaxonomyName(name: string) {
+  return normalizedEducationTaxonomyName(name);
+}
+
+function educationCourseTypeView(row: typeof educationCourseTypesTable.$inferSelect) {
+  return {
+    id: row.id, subcategoryId: row.subcategoryId, name: row.name, slug: taxonomySlug(row.name),
+    normalizedName: row.normalizedName, status: row.status, proposedByCenterId: row.proposedByCenterId,
+    reviewNote: row.reviewNote, sortOrder: row.sortOrder, active: row.active,
+  };
+}
+
+function educationPlacementLabel(kind: "featured_center" | "special_offer") {
+  return kind === "featured_center" ? "Istaknuti edukativni centar" : "Specijalna ponuda";
+}
+
+const EDUCATION_PLACEMENT_PAYMENT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function educationPlacementView(row: typeof educationPlacementsTable.$inferSelect) {
+  return {
+    id: row.id, centerId: row.centerId, kind: row.kind, label: educationPlacementLabel(row.kind),
+    scope: row.scope, scopeId: row.scopeCategoryId ?? row.scopeSubcategoryId, courseId: row.courseId,
+    status: row.status, price: row.priceSnapshot, paymentReference: row.paymentReference ?? "",
+    startsAt: row.startsAt?.toISOString() ?? null, endsAt: row.endsAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+async function lockEducationPlacementResource(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  kind: "featured_center" | "special_offer",
+  scope: "home" | "category" | "subcategory",
+  scopeId: string | null,
+) {
+  // Serialize the canonical slot namespace independently of settings storage.
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`education-placement:${kind}:${scope}:${scopeId ?? "home"}`}))`);
+}
+
+router.post("/education/course-types/proposals", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const center = access.centers[0];
+  if (!center || access.admin) { res.status(403).json({ error: "Predlog može poslati samo edukativni centar." }); return; }
+  const subcategoryId = typeof req.body?.subcategoryId === "string" ? req.body.subcategoryId : "";
+  const name = typeof req.body?.name === "string" ? req.body.name.normalize("NFKC").trim().replace(/\s+/g, " ") : "";
+  if (!subcategoryId || name.length < 2 || name.length > 160) { res.status(400).json({ error: "Predlog nije ispravan." }); return; }
+  const normalizedName = normalizedTaxonomyName(name);
+  try {
+    const created = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`education-course-type:${subcategoryId}:${normalizedName}`}))`);
+      const [subcategory] = await tx.select().from(educationSubcategoriesTable).where(eq(educationSubcategoriesTable.id, subcategoryId)).limit(1);
+      if (!subcategory) throw new Error("Potkategorija nije pronađena.");
+      const [duplicate] = await tx.select().from(educationCourseTypesTable)
+        .where(and(eq(educationCourseTypesTable.subcategoryId, subcategoryId), eq(educationCourseTypesTable.normalizedName, normalizedName))).limit(1);
+      if (duplicate) throw new Error("Isti tip edukacije već postoji ili čeka pregled.");
+      const [row] = await tx.insert(educationCourseTypesTable).values({
+        subcategoryId, name, normalizedName, status: "pending", proposedByCenterId: center.id, active: true,
+      }).returning();
+      return row!;
+    });
+    res.status(201).json(educationCourseTypeView(created));
+  } catch (error) {
+    res.status(409).json({ error: error instanceof Error ? error.message : "Predlog nije sačuvan." });
+  }
+});
+
+router.get("/education/placements/mine", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const center = access.centers[0];
+  if (!center || access.admin) { res.status(403).json({ error: "Plasmani su dostupni edukativnom centru." }); return; }
+  const courseIds = (await db.select({ id: coursesTable.id }).from(coursesTable).where(eq(coursesTable.centerId, center.id))).map((row) => row.id);
+  const predicate = courseIds.length
+    ? or(eq(educationPlacementsTable.centerId, center.id), inArray(educationPlacementsTable.courseId, courseIds))
+    : eq(educationPlacementsTable.centerId, center.id);
+  const rows = await db.select().from(educationPlacementsTable).where(predicate).orderBy(desc(educationPlacementsTable.createdAt));
+  res.json(rows.map(educationPlacementView));
+});
+
+router.post("/education/placements/purchase", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const center = access.centers[0];
+  if (!center || access.admin) { res.status(403).json({ error: "Plasman može kupiti samo edukativni centar." }); return; }
+  const kind = req.body?.kind;
+  const scope = req.body?.scope;
+  const scopeId = typeof req.body?.scopeId === "string" ? req.body.scopeId : null;
+  const courseId = typeof req.body?.courseId === "string" ? req.body.courseId : null;
+  if (!["featured_center", "special_offer"].includes(kind) || !["home", "category", "subcategory"].includes(scope)) {
+    res.status(400).json({ error: "Vrsta ili opseg plasmana nije ispravan." }); return;
+  }
+  try {
+    const placement = await db.transaction(async (tx) => {
+      await lockEducationCenterFinancials(tx, center.id);
+      const [setting] = await tx.select().from(educationPlacementSettingsTable)
+        .where(and(eq(educationPlacementSettingsTable.kind, kind), eq(educationPlacementSettingsTable.scope, scope))).for("update").limit(1);
+      if (!setting) throw new Error("Ovaj plasman trenutno nije u ponudi.");
+      if ((scope === "home" && scopeId) || (scope !== "home" && !scopeId)) throw new Error("Opseg plasmana nije ispravan.");
+      await lockEducationPlacementResource(tx, kind, scope, scopeId);
+      if (scope === "category") {
+        const [category] = await tx.select({ id: courseCategoriesTable.id }).from(courseCategoriesTable)
+          .where(and(eq(courseCategoriesTable.id, scopeId!), eq(courseCategoriesTable.active, true))).limit(1);
+        if (!category) throw new Error("Kategorija plasmana nije aktivna.");
+      } else if (scope === "subcategory") {
+        const [subcategory] = await tx.select({ id: educationSubcategoriesTable.id }).from(educationSubcategoriesTable)
+          .where(and(eq(educationSubcategoriesTable.id, scopeId!), eq(educationSubcategoriesTable.active, true))).limit(1);
+        if (!subcategory) throw new Error("Potkategorija plasmana nije aktivna.");
+      }
+      if (kind === "special_offer") {
+        const [course] = courseId ? await tx.select().from(coursesTable).where(and(eq(coursesTable.id, courseId), eq(coursesTable.centerId, center.id))).limit(1) : [];
+        if (!course || !course.published || course.archived || !(await isPublicEducationCourse(course))) {
+          throw new Error("Specijalna ponuda mora upućivati na vaš javno dostupan kurs.");
+        }
+      }
+      const now = new Date();
+      const pendingCutoff = new Date(now.getTime() - EDUCATION_PLACEMENT_PAYMENT_WINDOW_MS);
+      await tx.update(educationPlacementsTable).set({ status: "expired", updatedAt: now }).where(and(
+        eq(educationPlacementsTable.kind, kind),
+        eq(educationPlacementsTable.scope, scope),
+        scope === "category" ? eq(educationPlacementsTable.scopeCategoryId, scopeId!) : scope === "subcategory" ? eq(educationPlacementsTable.scopeSubcategoryId, scopeId!) : undefined,
+        eq(educationPlacementsTable.status, "pending_payment"),
+        lte(educationPlacementsTable.createdAt, pendingCutoff),
+      ));
+      const occupied = await tx.select({ slotNumber: educationPlacementsTable.slotNumber }).from(educationPlacementsTable)
+        .where(and(
+          eq(educationPlacementsTable.kind, kind), eq(educationPlacementsTable.scope, scope),
+          scope === "category" ? eq(educationPlacementsTable.scopeCategoryId, scopeId!) : scope === "subcategory" ? eq(educationPlacementsTable.scopeSubcategoryId, scopeId!) : undefined,
+          inArray(educationPlacementsTable.status, ["pending_payment", "active"]),
+          or(isNull(educationPlacementsTable.endsAt), gt(educationPlacementsTable.endsAt, new Date())),
+        )).for("update");
+      const used = new Set(occupied.map((row) => row.slotNumber));
+      const slotNumber = Array.from({ length: setting.slotCount }, (_, index) => index + 1).find((slot) => !used.has(slot));
+      if (!slotNumber) throw new Error("Svi slotovi za izabrani opseg su zauzeti.");
+      const [created] = await tx.insert(educationPlacementsTable).values({
+        kind, scope,
+        scopeCategoryId: scope === "category" ? scopeId : null,
+        scopeSubcategoryId: scope === "subcategory" ? scopeId : null,
+        centerId: kind === "featured_center" ? center.id : null,
+        courseId: kind === "special_offer" ? courseId : null,
+        slotNumber, priceSnapshot: setting.price, durationDaysSnapshot: setting.durationDays, status: "pending_payment",
+        paymentReference: `EDU-PLACEMENT-${randomUUID()}`,
+        rotationSeed: slotNumber,
+      }).returning();
+      return created!;
+    });
+    res.status(201).json(educationPlacementView(placement));
+  } catch (error) {
+    res.status(409).json({ error: error instanceof Error ? error.message : "Plasman nije rezervisan." });
+  }
+});
+
+router.get("/education/public/taxonomy", async (_req, res): Promise<void> => {
+  const [sections, categories, subcategories, courseTypes, counts] = await Promise.all([
+    db.select().from(educationSectionsTable).where(eq(educationSectionsTable.active, true)).orderBy(asc(educationSectionsTable.sortOrder), asc(educationSectionsTable.name)),
+    db.select().from(courseCategoriesTable).where(eq(courseCategoriesTable.active, true)).orderBy(asc(courseCategoriesTable.sortOrder), asc(courseCategoriesTable.name)),
+    db.select().from(educationSubcategoriesTable).where(eq(educationSubcategoriesTable.active, true)).orderBy(asc(educationSubcategoriesTable.sortOrder), asc(educationSubcategoriesTable.name)),
+    db.select().from(educationCourseTypesTable).where(and(eq(educationCourseTypesTable.active, true), eq(educationCourseTypesTable.status, "approved"))).orderBy(asc(educationCourseTypesTable.sortOrder), asc(educationCourseTypesTable.name)),
+    db.select({
+      categoryId: coursesTable.categoryId,
+      subcategoryId: coursesTable.subcategoryId,
+      courseTypeId: coursesTable.courseTypeId,
+      value: count(),
+    }).from(coursesTable).where(publicEducationCoursePredicate())
+      .groupBy(coursesTable.categoryId, coursesTable.subcategoryId, coursesTable.courseTypeId),
+  ]);
+  const countFor = (predicate: (row: typeof counts[number]) => boolean) => counts.filter(predicate).reduce((sum, row) => sum + Number(row.value), 0);
+  const result = sections.map((section) => {
+    const sectionCategories = categories.filter((category) => category.sectionId === section.id);
+    return {
+      id: section.id, name: section.name, slug: section.slug, sortOrder: section.sortOrder, active: section.active,
+      courseCount: countFor((row) => sectionCategories.some((category) => category.id === row.categoryId)),
+      categories: sectionCategories.map((category) => ({
+        id: category.id, name: category.name, slug: category.slug, sortOrder: category.sortOrder, active: category.active,
+        courseCount: countFor((row) => row.categoryId === category.id),
+        subcategories: subcategories.filter((subcategory) => subcategory.categoryId === category.id).map((subcategory) => ({
+          id: subcategory.id, name: subcategory.name, slug: subcategory.slug, sortOrder: subcategory.sortOrder, active: subcategory.active,
+          courseCount: countFor((row) => row.subcategoryId === subcategory.id),
+          courseTypes: courseTypes.filter((courseType) => courseType.subcategoryId === subcategory.id).map((courseType) => ({
+            id: courseType.id, name: courseType.name, slug: taxonomySlug(courseType.name), sortOrder: courseType.sortOrder, active: courseType.active,
+            courseCount: countFor((row) => row.courseTypeId === courseType.id),
+          })),
+        })),
+      })),
+    };
+  });
+  res.json(result);
+});
+
+router.get("/education/public/search-suggestions", async (req, res): Promise<void> => {
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  const limit = Math.min(30, Math.max(1, Number(req.query.limit) || 10));
+  if (!q || q.length > 160) { res.status(400).json({ error: "Upit nije ispravan." }); return; }
+  const pattern = `%${q}%`;
+  const [sections, categories, subcategories, courseTypes, courses] = await Promise.all([
+    db.select().from(educationSectionsTable).where(and(eq(educationSectionsTable.active, true), ilike(educationSectionsTable.name, pattern))).limit(limit),
+    db.select().from(courseCategoriesTable).where(and(eq(courseCategoriesTable.active, true), ilike(courseCategoriesTable.name, pattern))).limit(limit),
+    db.select().from(educationSubcategoriesTable).where(and(eq(educationSubcategoriesTable.active, true), ilike(educationSubcategoriesTable.name, pattern))).limit(limit),
+    db.select().from(educationCourseTypesTable).where(and(eq(educationCourseTypesTable.active, true), eq(educationCourseTypesTable.status, "approved"), ilike(educationCourseTypesTable.name, pattern))).limit(limit),
+    publicEducationCourses([ilike(coursesTable.title, pattern)], { limit, offset: 0 }),
+  ]);
+  const taxonomy = await db.select({
+    sectionId: educationSectionsTable.id, sectionName: educationSectionsTable.name,
+    categoryId: courseCategoriesTable.id, categoryName: courseCategoriesTable.name,
+    subcategoryId: educationSubcategoriesTable.id, subcategoryName: educationSubcategoriesTable.name,
+  }).from(educationSubcategoriesTable)
+    .innerJoin(courseCategoriesTable, eq(educationSubcategoriesTable.categoryId, courseCategoriesTable.id))
+    .innerJoin(educationSectionsTable, eq(courseCategoriesTable.sectionId, educationSectionsTable.id));
+  const categoryPath = (categoryId: string) => {
+    const row = taxonomy.find((item) => item.categoryId === categoryId);
+    return [row?.sectionName, row?.categoryName].filter((value): value is string => Boolean(value));
+  };
+  const subcategoryPath = (subcategoryId: string) => {
+    const row = taxonomy.find((item) => item.subcategoryId === subcategoryId);
+    return [row?.sectionName, row?.categoryName, row?.subcategoryName].filter((value): value is string => Boolean(value));
+  };
+  const suggestions = [
+    ...sections.map((item) => ({ kind: "section", id: item.id, label: item.name, path: [item.name] })),
+    ...categories.map((item) => ({ kind: "category", id: item.id, label: item.name, path: categoryPath(item.id) })),
+    ...subcategories.map((item) => ({ kind: "subcategory", id: item.id, label: item.name, path: subcategoryPath(item.id) })),
+    ...courseTypes.map((item) => ({ kind: "courseType", id: item.id, label: item.name, path: [...subcategoryPath(item.subcategoryId), item.name] })),
+    ...courses.map((item) => ({ kind: "course", id: item.id, label: item.title, path: [item.category, item.title] })),
+  ].slice(0, limit);
+  res.json(suggestions);
+});
+
+router.get("/education/public/rankings", async (_req, res): Promise<void> => {
+  const now = new Date();
+  const thirtyDays = new Date(now.getTime() - 30 * 86400_000);
+  const ninetyDays = new Date(now.getTime() - 90 * 86400_000);
+  const [categoryMetrics, centers, inquiryMetrics, reviewMetrics] = await Promise.all([
+    db.select({
+      categoryId: courseCategoriesTable.id,
+      name: courseCategoriesTable.name,
+      views: sql<number>`count(*) filter (where ${educationCourseMetricEventsTable.eventType} = 'view')::int`,
+      inquiries: sql<number>`count(*) filter (where ${educationCourseMetricEventsTable.eventType} = 'inquiry')::int`,
+    }).from(educationCourseMetricEventsTable)
+      .innerJoin(coursesTable, eq(educationCourseMetricEventsTable.courseId, coursesTable.id))
+      .innerJoin(courseCategoriesTable, eq(coursesTable.categoryId, courseCategoriesTable.id))
+      .where(gte(educationCourseMetricEventsTable.occurredAt, thirtyDays))
+      .groupBy(courseCategoriesTable.id, courseCategoriesTable.name),
+    db.select().from(educationCentersTable).where(eq(educationCentersTable.verificationStatus, "verified")).orderBy(desc(educationCentersTable.createdAt)).limit(10),
+    db.select({ centerId: educationInquiriesTable.centerId, value: count() }).from(educationInquiriesTable)
+      .where(gte(educationInquiriesTable.createdAt, ninetyDays)).groupBy(educationInquiriesTable.centerId).having(gte(count(), 10)),
+    db.select({
+      centerId: coursesTable.centerId,
+      rating: sql<number>`round(avg(${courseReviewsTable.rating})::numeric, 1)`,
+      reviewCount: count(),
+    }).from(courseReviewsTable).innerJoin(coursesTable, eq(courseReviewsTable.courseId, coursesTable.id))
+      .where(and(eq(courseReviewsTable.status, "published"), isNotNull(coursesTable.centerId)))
+      .groupBy(coursesTable.centerId).having(gte(count(), 5)),
+  ]);
+  const centerById = new Map(centers.map((center) => [center.id, center]));
+  const extraCenterIds = [...new Set([...inquiryMetrics.map((row) => row.centerId), ...reviewMetrics.flatMap((row) => row.centerId ? [row.centerId] : [])])];
+  if (extraCenterIds.length) {
+    const extra = await db.select().from(educationCentersTable).where(and(inArray(educationCentersTable.id, extraCenterIds), eq(educationCentersTable.verificationStatus, "verified")));
+    for (const center of extra) centerById.set(center.id, center);
+  }
+  const rankedCenter = (centerId: string, metric: number) => {
+    const center = centerById.get(centerId);
+    return center ? { centerId, name: center.name, city: center.city, metric, createdAt: center.createdAt.toISOString() } : null;
+  };
+  res.json({
+    popularCategories30d: categoryMetrics.map((row) => ({
+      categoryId: row.categoryId, name: row.name, views30d: Number(row.views), inquiries30d: Number(row.inquiries),
+      score: Number(row.views) + Number(row.inquiries),
+    })).sort((a, b) => b.score - a.score),
+    newCenters: centers.map((center) => rankedCenter(center.id, 0)),
+    mostRequestedCenters90d: inquiryMetrics.map((row) => rankedCenter(row.centerId, Number(row.value))).filter(Boolean).sort((a, b) => b!.metric - a!.metric),
+    topRatedCenters: reviewMetrics.map((row) => row.centerId ? rankedCenter(row.centerId, Number(row.rating)) : null).filter(Boolean).sort((a, b) => b!.metric - a!.metric),
+  });
+});
+
+router.get("/education/public/placements", async (req, res): Promise<void> => {
+  const kind = typeof req.query.kind === "string" ? req.query.kind : null;
+  const scope = typeof req.query.scope === "string" ? req.query.scope : null;
+  const scopeId = typeof req.query.scopeId === "string" ? req.query.scopeId : null;
+  if ((kind && !["featured_center", "special_offer"].includes(kind)) || (scope && !["home", "category", "subcategory"].includes(scope))) {
+    res.status(400).json({ error: "Filter plasmana nije ispravan." }); return;
+  }
+  const predicates: Parameters<typeof and>[0][] = [
+    eq(educationPlacementsTable.status, "active"),
+    lte(educationPlacementsTable.startsAt, new Date()),
+    gt(educationPlacementsTable.endsAt, new Date()),
+  ];
+  if (kind) predicates.push(eq(educationPlacementsTable.kind, kind as "featured_center" | "special_offer"));
+  if (scope) predicates.push(eq(educationPlacementsTable.scope, scope as "home" | "category" | "subcategory"));
+  if (scope === "category" && scopeId) predicates.push(eq(educationPlacementsTable.scopeCategoryId, scopeId));
+  if (scope === "subcategory" && scopeId) predicates.push(eq(educationPlacementsTable.scopeSubcategoryId, scopeId));
+  const rows = await db.select().from(educationPlacementsTable).where(and(...predicates));
+  const courseIds = rows.flatMap((row) => row.courseId ? [row.courseId] : []);
+  const courses = courseIds.length ? await db.select().from(coursesTable).where(inArray(coursesTable.id, courseIds)) : [];
+  const courseById = new Map(courses.map((course) => [course.id, course]));
+  const centerIds = [...new Set(rows.flatMap((row) => {
+    const centerId = row.centerId ?? (row.courseId ? courseById.get(row.courseId)?.centerId : null);
+    return centerId ? [centerId] : [];
+  }))];
+  const [centers, eligibility] = await Promise.all([
+    centerIds.length ? db.select().from(educationCentersTable).where(inArray(educationCentersTable.id, centerIds)) : [],
+    batchCenterEligibility(centerIds),
+  ]);
+  const centerById = new Map(centers.map((center) => [center.id, center]));
+  const day = educationBelgradeDateKey(new Date());
+  const visible = rows.flatMap((row) => {
+    const centerId = row.centerId ?? (row.courseId ? courseById.get(row.courseId)?.centerId : null);
+    const center = centerId ? centerById.get(centerId) : undefined;
+    const course = row.courseId ? courseById.get(row.courseId) : null;
+    if (!center || !eligibility.get(center.id)
+      || (row.kind === "special_offer" && (!course || !course.published || course.archived || course.centerId !== center.id))) return [];
+    return [{
+      id: row.id, centerId: center.id, centerName: center.name, centerImageUrl: center.imageUrl,
+      kind: row.kind, label: educationPlacementLabel(row.kind), scope: row.scope,
+      scopeId: row.scopeCategoryId ?? row.scopeSubcategoryId,
+      courseId: row.courseId, courseTitle: course?.title ?? null, courseImageUrl: course?.imageUrl ?? null, coursePrice: course?.price ?? null,
+      rotationKey: createHash("sha256").update(`${day}:${row.scope}:${scopeId ?? ""}:${center.id}:${row.rotationSeed}`).digest("hex"),
+    }];
+  }).sort((a, b) => a.rotationKey.localeCompare(b.rotationKey))
+    .map(({ rotationKey: _rotationKey, ...row }) => row);
+  res.json(visible);
+});
+
 router.get("/education/public/courses", async (req, res): Promise<void> => {
+  if (typeof req.query.startDate === "string" && !isValidCalendarDate(req.query.startDate)) {
+    res.status(400).json({ error: "Filteri nisu ispravni." }); return;
+  }
   const queryInput = {
     ...req.query,
     startDate: typeof req.query.startDate === "string" ? new Date(`${req.query.startDate}T00:00:00.000Z`) : req.query.startDate,
@@ -19537,6 +20044,19 @@ router.get("/education/public/courses", async (req, res): Promise<void> => {
   if (query.format) sqlPredicates.push(eq(coursesTable.format, query.format));
   if (query.city) sqlPredicates.push(eq(sql`lower(${coursesTable.city})`, query.city.toLowerCase()));
   if (query.category) sqlPredicates.push(ilike(coursesTable.category, `%${query.category}%`));
+  if (query.q) sqlPredicates.push(or(
+    ilike(coursesTable.title, `%${query.q}%`),
+    ilike(coursesTable.description, `%${query.q}%`),
+    sql`${coursesTable.tags}::text ilike ${`%${query.q}%`}`,
+  ));
+  if (query.sectionId) sqlPredicates.push(sql`exists (
+    select 1 from ${courseCategoriesTable} cc where cc.id = ${coursesTable.categoryId} and cc.section_id = ${query.sectionId}
+  )`);
+  if (query.categoryId) sqlPredicates.push(eq(coursesTable.categoryId, query.categoryId));
+  if (query.subcategoryId) sqlPredicates.push(eq(coursesTable.subcategoryId, query.subcategoryId));
+  if (query.courseTypeId) sqlPredicates.push(eq(coursesTable.courseTypeId, query.courseTypeId));
+  if (query.language) sqlPredicates.push(eq(sql`lower(${coursesTable.language})`, query.language.toLowerCase()));
+  if (query.accredited !== undefined) sqlPredicates.push(eq(coursesTable.accredited, query.accredited));
   if (query.level) sqlPredicates.push(eq(coursesTable.level, query.level));
   if (query.minPrice !== undefined) sqlPredicates.push(gte(coursesTable.price, query.minPrice));
   if (query.maxPrice !== undefined) sqlPredicates.push(lte(coursesTable.price, query.maxPrice));
@@ -19567,8 +20087,63 @@ router.get("/education/public/courses/:courseId", async (req, res): Promise<void
   if (!course || !(await isPublicEducationCourse(course))) {
     res.status(404).json({ error: "Edukacija nije dostupna." }); return;
   }
+  if (course.centerId) {
+    const window = new Date().toISOString().slice(0, 13);
+    const viewer = await getCurrentUser(req);
+    // Do not use spoofable request headers as identity. The normalized transport
+    // peer address is only a bounded anonymous fallback; the digest, not it, is
+    // persisted. Authenticated users receive a stable account-level key.
+    const anonymousClient = String(req.ip ?? "").normalize("NFKC").trim().slice(0, 128);
+    const viewerDigest = createHash("sha256")
+      .update(viewer ? `user:${viewer.id}` : `anonymous:${anonymousClient}`)
+      .digest("hex");
+    await db.insert(educationCourseMetricEventsTable).values({
+      courseId: course.id,
+      centerId: course.centerId,
+      actorUserId: viewer?.id ?? null,
+      eventType: "view",
+      dedupeKey: `view:${course.id}:${window}:${viewerDigest}`,
+    }).onConflictDoNothing();
+  }
   // Single-course detail: use educationCourseView for full center/session/gallery depth.
   res.json(calendarDateCourseResponse(GetPublicEducationCourseResponse.parse(await educationCourseView(course))));
+});
+
+router.post("/education/public/courses/:courseId/inquiries", async (req, res): Promise<void> => {
+  const user = await current(req, res); if (!user) return;
+  if (!["SALON_OWNER", "EDUKATIVNI_CENTAR", "JOBSEEKER", "STUDENT"].includes(user.role)) {
+    res.status(403).json({ error: "Upit mogu poslati poslovni korisnici i polaznici." }); return;
+  }
+  const courseId = String(req.params.courseId ?? "");
+  const message = req.body?.message === null || req.body?.message === undefined ? null : String(req.body.message).trim();
+  if (message && message.length > 2000) { res.status(400).json({ error: "Poruka je predugačka." }); return; }
+  const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, courseId)).limit(1);
+  if (!course?.centerId || !(await isPublicEducationCourse(course))) {
+    res.status(404).json({ error: "Edukacija nije dostupna." }); return;
+  }
+  try {
+    const inquiry = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`education-inquiry:${course.id}:${user.id}`}))`);
+      const [duplicate] = await tx.select({ id: educationInquiriesTable.id }).from(educationInquiriesTable)
+        .where(and(
+          eq(educationInquiriesTable.courseId, course.id),
+          eq(educationInquiriesTable.userId, user.id),
+          gte(educationInquiriesTable.createdAt, new Date(Date.now() - 24 * 86400_000)),
+        )).limit(1);
+      if (duplicate) throw new Error("Već ste poslali upit za ovaj kurs u poslednja 24 sata.");
+      const [created] = await tx.insert(educationInquiriesTable).values({
+        courseId: course.id, centerId: course.centerId!, userId: user.id, message,
+      }).returning();
+      await tx.insert(educationCourseMetricEventsTable).values({
+        courseId: course.id, centerId: course.centerId!, actorUserId: user.id,
+        eventType: "inquiry", dedupeKey: `inquiry:${created!.id}`,
+      });
+      return created!;
+    });
+    res.status(201).json({ id: inquiry.id, courseId: inquiry.courseId, status: inquiry.status, createdAt: inquiry.createdAt.toISOString() });
+  } catch (error) {
+    res.status(409).json({ error: error instanceof Error ? error.message : "Upit nije sačuvan." });
+  }
 });
 
 router.get("/education/public/categories", async (_req, res): Promise<void> => {
@@ -20601,6 +21176,178 @@ function educationSettingsView(settings: typeof educationPlatformSettingsTable.$
     updatedAt: settings.updatedAt.toISOString(),
   };
 }
+
+router.get("/admin/education/taxonomy/proposals", async (req, res): Promise<void> => {
+  const admin = await requireAdmin(req, res); if (!admin) return;
+  const status = typeof req.query.status === "string" && ["pending", "approved", "rejected"].includes(req.query.status) ? req.query.status : null;
+  const rows = await db.select().from(educationCourseTypesTable)
+    .where(status ? eq(educationCourseTypesTable.status, status as "pending" | "approved" | "rejected") : undefined)
+    .orderBy(desc(educationCourseTypesTable.createdAt));
+  res.json(rows.map(educationCourseTypeView));
+});
+
+router.post("/admin/education/taxonomy/proposals/:proposalId/review", async (req, res): Promise<void> => {
+  const admin = await requireAdmin(req, res); if (!admin) return;
+  const decision = req.body?.decision;
+  const note = req.body?.note === null || req.body?.note === undefined ? null : String(req.body.note).trim();
+  if (!["approved", "rejected"].includes(decision) || (note && note.length > 1000)) {
+    res.status(400).json({ error: "Odluka nije ispravna." }); return;
+  }
+  try {
+    const reviewed = await db.transaction(async (tx) => {
+      const [proposal] = await tx.select().from(educationCourseTypesTable)
+        .where(eq(educationCourseTypesTable.id, String(req.params.proposalId))).for("update").limit(1);
+      if (!proposal) throw new Error("Predlog nije pronađen.");
+      if (proposal.status !== "pending") {
+        if (proposal.status === decision) return proposal;
+        throw new Error("Predlog je već pregledan.");
+      }
+      const [updated] = await tx.update(educationCourseTypesTable).set({
+        status: decision, reviewNote: note, reviewedByUserId: admin.id, reviewedAt: new Date(), updatedAt: new Date(),
+      }).where(and(eq(educationCourseTypesTable.id, proposal.id), eq(educationCourseTypesTable.status, "pending"))).returning();
+      return updated!;
+    });
+    res.json(educationCourseTypeView(reviewed));
+  } catch (error) {
+    res.status(409).json({ error: error instanceof Error ? error.message : "Pregled nije sačuvan." });
+  }
+});
+
+router.patch("/admin/education/taxonomy/:kind/:taxonomyId", async (req, res): Promise<void> => {
+  const admin = await requireAdmin(req, res); if (!admin) return;
+  const kind = String(req.params.kind);
+  const taxonomyId = String(req.params.taxonomyId);
+  const update: { name?: string; sortOrder?: number; active?: boolean; updatedAt: Date; normalizedName?: string } = { updatedAt: new Date() };
+  if (req.body?.name !== undefined) {
+    const name = String(req.body.name).normalize("NFKC").trim().replace(/\s+/g, " ");
+    if (name.length < 2 || name.length > 160) { res.status(400).json({ error: "Naziv nije ispravan." }); return; }
+    update.name = name;
+    if (kind === "course-types") update.normalizedName = normalizedTaxonomyName(name);
+  }
+  if (req.body?.sortOrder !== undefined) {
+    if (!Number.isInteger(req.body.sortOrder) || req.body.sortOrder < 0) { res.status(400).json({ error: "Redosled nije ispravan." }); return; }
+    update.sortOrder = req.body.sortOrder;
+  }
+  if (req.body?.active !== undefined) update.active = Boolean(req.body.active);
+  if (Object.keys(update).length === 1) { res.status(400).json({ error: "Nema izmena." }); return; }
+  let row: any;
+  if (kind === "sections") [row] = await db.update(educationSectionsTable).set(update).where(eq(educationSectionsTable.id, taxonomyId)).returning();
+  else if (kind === "categories") [row] = await db.update(courseCategoriesTable).set(update).where(eq(courseCategoriesTable.id, taxonomyId)).returning();
+  else if (kind === "subcategories") [row] = await db.update(educationSubcategoriesTable).set(update).where(eq(educationSubcategoriesTable.id, taxonomyId)).returning();
+  else if (kind === "course-types") [row] = await db.update(educationCourseTypesTable).set(update).where(eq(educationCourseTypesTable.id, taxonomyId)).returning();
+  else { res.status(400).json({ error: "Vrsta taksonomije nije podržana." }); return; }
+  if (!row) { res.status(404).json({ error: "Stavka nije pronađena." }); return; }
+  res.json({ id: row.id, name: row.name, slug: row.slug ?? taxonomySlug(row.name), sortOrder: row.sortOrder, active: row.active });
+});
+
+router.get("/admin/education/placement-settings", async (req, res): Promise<void> => {
+  const admin = await requireAdmin(req, res); if (!admin) return;
+  res.json(await db.select().from(educationPlacementSettingsTable).orderBy(asc(educationPlacementSettingsTable.kind), asc(educationPlacementSettingsTable.scope)));
+});
+
+router.patch("/admin/education/placement-settings", async (req, res): Promise<void> => {
+  const admin = await requireAdmin(req, res); if (!admin) return;
+  if (!Array.isArray(req.body) || !req.body.length) { res.status(400).json({ error: "Podešavanja nisu ispravna." }); return; }
+  try {
+    const rows = await db.transaction(async (tx) => {
+      const output = [];
+      for (const item of req.body) {
+        if (!["featured_center", "special_offer"].includes(item?.kind) || !["home", "category", "subcategory"].includes(item?.scope)
+          || !Number.isInteger(item?.price) || item.price < 0 || !Number.isInteger(item?.slotCount) || item.slotCount < 1
+          || !Number.isInteger(item?.durationDays) || item.durationDays < 1) throw new Error("Podešavanje plasmana nije ispravno.");
+        const [row] = await tx.insert(educationPlacementSettingsTable).values({
+          kind: item.kind, scope: item.scope, price: item.price, slotCount: item.slotCount,
+          durationDays: item.durationDays, updatedByUserId: admin.id, updatedAt: new Date(),
+        }).onConflictDoUpdate({
+          target: [educationPlacementSettingsTable.kind, educationPlacementSettingsTable.scope],
+          set: { price: item.price, slotCount: item.slotCount, durationDays: item.durationDays, updatedByUserId: admin.id, updatedAt: new Date() },
+        }).returning();
+        output.push(row!);
+      }
+      return output;
+    });
+    res.json(rows);
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Podešavanja nisu sačuvana." });
+  }
+});
+
+router.get("/admin/education/placements", async (req, res): Promise<void> => {
+  const admin = await requireAdmin(req, res); if (!admin) return;
+  const rows = await db.select().from(educationPlacementsTable).orderBy(desc(educationPlacementsTable.createdAt)).limit(500);
+  res.json(rows.map(educationPlacementView));
+});
+
+router.post("/admin/education/placements/:paymentReference/settle", async (req, res): Promise<void> => {
+  const admin = await requireAdmin(req, res); if (!admin) return;
+  const paymentReference = decodeURIComponent(String(req.params.paymentReference));
+  const [preview] = await db.select().from(educationPlacementsTable).where(eq(educationPlacementsTable.paymentReference, paymentReference)).limit(1);
+  if (!preview) { res.status(404).json({ error: "Plasman nije pronađen." }); return; }
+  const [previewCourse] = preview.courseId ? await db.select().from(coursesTable).where(eq(coursesTable.id, preview.courseId)).limit(1) : [];
+  const centerId = preview.centerId ?? previewCourse?.centerId;
+  if (!centerId) { res.status(409).json({ error: "Plasman nema važećeg vlasnika." }); return; }
+  try {
+    const settlement = await db.transaction(async (tx) => {
+      await lockEducationCenterFinancials(tx, centerId);
+      const [row] = await tx.select().from(educationPlacementsTable)
+        .where(eq(educationPlacementsTable.paymentReference, paymentReference)).for("update").limit(1);
+      if (!row) throw new Error("Plasman nije pronađen.");
+      if (row.status === "active") return { placement: row, expired: false };
+      if (row.status !== "pending_payment") throw new Error("Plasman nije u stanju za potvrdu uplate.");
+      const now = new Date();
+      if (row.createdAt.getTime() + EDUCATION_PLACEMENT_PAYMENT_WINDOW_MS <= now.getTime()) {
+        const [expired] = await tx.update(educationPlacementsTable).set({
+          status: "expired",
+          updatedAt: now,
+        }).where(and(
+          eq(educationPlacementsTable.id, row.id),
+          eq(educationPlacementsTable.status, "pending_payment"),
+        )).returning();
+        return { placement: expired!, expired: true };
+      }
+      await lockEducationPlacementResource(tx, row.kind, row.scope, row.scopeCategoryId ?? row.scopeSubcategoryId);
+      const scopeValid = row.scope === "home"
+        ? !row.scopeCategoryId && !row.scopeSubcategoryId
+        : row.scope === "category" ? Boolean(row.scopeCategoryId && !row.scopeSubcategoryId) : Boolean(row.scopeSubcategoryId && !row.scopeCategoryId);
+      if (!scopeValid) throw new Error("Opseg plasmana nije važeći.");
+      if (row.scope === "category") {
+        const [category] = await tx.select({ id: courseCategoriesTable.id }).from(courseCategoriesTable)
+          .where(and(eq(courseCategoriesTable.id, row.scopeCategoryId!), eq(courseCategoriesTable.active, true))).limit(1);
+        if (!category) throw new Error("Kategorija plasmana više nije aktivna.");
+      } else if (row.scope === "subcategory") {
+        const [subcategory] = await tx.select({ id: educationSubcategoriesTable.id }).from(educationSubcategoriesTable)
+          .where(and(eq(educationSubcategoriesTable.id, row.scopeSubcategoryId!), eq(educationSubcategoriesTable.active, true))).limit(1);
+        if (!subcategory) throw new Error("Potkategorija plasmana više nije aktivna.");
+      }
+      if (row.kind === "special_offer") {
+        const [targetCourse] = await tx.select().from(coursesTable).where(eq(coursesTable.id, row.courseId!)).limit(1);
+        if (!targetCourse || !targetCourse.published || targetCourse.archived || !(await isPublicEducationCourse(targetCourse))) {
+          throw new Error("Kurs specijalne ponude više nije javno dostupan.");
+        }
+      }
+      const [conflict] = await tx.select({ id: educationPlacementsTable.id }).from(educationPlacementsTable).where(and(
+        ne(educationPlacementsTable.id, row.id), eq(educationPlacementsTable.kind, row.kind), eq(educationPlacementsTable.scope, row.scope),
+        eq(educationPlacementsTable.slotNumber, row.slotNumber), eq(educationPlacementsTable.status, "active"),
+        row.scope === "category" ? eq(educationPlacementsTable.scopeCategoryId, row.scopeCategoryId!) : row.scope === "subcategory" ? eq(educationPlacementsTable.scopeSubcategoryId, row.scopeSubcategoryId!) : undefined,
+        gt(educationPlacementsTable.endsAt, new Date()),
+      )).limit(1);
+      if (conflict) throw new Error("Slot je u međuvremenu zauzet.");
+      const startsAt = now;
+      const endsAt = addEducationBelgradeCalendarDays(startsAt, row.durationDaysSnapshot);
+      const [updated] = await tx.update(educationPlacementsTable).set({
+        status: "active", startsAt, endsAt, settledByUserId: admin.id, updatedAt: startsAt,
+      }).where(and(eq(educationPlacementsTable.id, row.id), eq(educationPlacementsTable.status, "pending_payment"))).returning();
+      return { placement: updated!, expired: false };
+    });
+    if (settlement.expired) {
+      res.status(409).json({ error: "Rok za uplatu plasmana je istekao. Kreirajte novi zahtev." });
+      return;
+    }
+    res.json(educationPlacementView(settlement.placement));
+  } catch (error) {
+    res.status(409).json({ error: error instanceof Error ? error.message : "Potvrda uplate nije uspela." });
+  }
+});
 
 router.get("/admin/education/settings", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;

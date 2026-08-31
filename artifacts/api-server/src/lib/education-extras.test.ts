@@ -33,6 +33,7 @@ import {
 import app from "../app";
 import { batchEducationCourseViews, type EducationAccess } from "../routes/marketplace";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
+import { ensureBusinessGrowthSchema } from "./business-growth-schema";
 import { ensureDemoData } from "./seed";
 
 const suffix = randomUUID();
@@ -71,6 +72,7 @@ async function login(baseUrl: string, email: string): Promise<string> {
 }
 
 async function run(): Promise<void> {
+  await ensureBusinessGrowthSchema();
   await ensureDemoData();
 
   let server: ReturnType<typeof app.listen> | undefined;

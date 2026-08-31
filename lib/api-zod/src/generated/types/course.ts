@@ -6,8 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CourseEnrollmentStatus } from './courseEnrollmentStatus';
+import type { CourseFaqItem } from './courseFaqItem';
 import type { CourseFormat } from './courseFormat';
 import type { CourseLevel } from './courseLevel';
+import type { CoursePaymentMode } from './coursePaymentMode';
 import type { CoursePublisherType } from './coursePublisherType';
 
 export interface Course {
@@ -20,6 +22,23 @@ export interface Course {
   publisher: string;
   publisherType: CoursePublisherType;
   category: string;
+  /** @nullable */
+  sectionId?: string | null;
+  /** @nullable */
+  sectionName?: string | null;
+  /** @nullable */
+  categoryId?: string | null;
+  /** @nullable */
+  categoryName?: string | null;
+  /** @nullable */
+  subcategoryId?: string | null;
+  /** @nullable */
+  subcategoryName?: string | null;
+  /** @nullable */
+  courseTypeId?: string | null;
+  /** @nullable */
+  courseTypeName?: string | null;
+  taxonomyPath: string[];
   format: CourseFormat;
   /** @nullable */
   city?: string | null;
@@ -31,6 +50,37 @@ export interface Course {
   requirements: string;
   rating: number;
   certification: boolean;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  theoryHours?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  practicalHours?: number | null;
+  /** @nullable */
+  certificateName?: string | null;
+  accredited: boolean;
+  /** @nullable */
+  language?: string | null;
+  /** @nullable */
+  trailerUrl?: string | null;
+  tags: string[];
+  faq: CourseFaqItem[];
+  paymentMode: CoursePaymentMode;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  depositAmount?: number | null;
+  /** @minimum 0 */
+  studentCount: number;
+  /** @minimum 0 */
+  inquiryCount30d: number;
+  /** @minimum 0 */
+  viewCount30d: number;
   imageUrl: string;
   /** @nullable */
   startDate?: Date | null;

@@ -5,8 +5,10 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { EducationCourseUpdateFaqItem } from './educationCourseUpdateFaqItem';
 import type { EducationCourseUpdateFormat } from './educationCourseUpdateFormat';
 import type { EducationCourseUpdateLevel } from './educationCourseUpdateLevel';
+import type { EducationCourseUpdatePaymentMode } from './educationCourseUpdatePaymentMode';
 
 export interface EducationCourseUpdate {
   /** @minLength 2 */
@@ -14,6 +16,12 @@ export interface EducationCourseUpdate {
   description?: string;
   /** @minLength 2 */
   category?: string;
+  /** @nullable */
+  categoryId?: string | null;
+  /** @nullable */
+  subcategoryId?: string | null;
+  /** @nullable */
+  courseTypeId?: string | null;
   format?: EducationCourseUpdateFormat;
   /** @nullable */
   city?: string | null;
@@ -37,6 +45,48 @@ export interface EducationCourseUpdate {
   /** @maxLength 2000 */
   requirements?: string;
   certification?: boolean;
+  /**
+     * @minimum 0
+     * @maximum 100000
+     * @nullable
+     */
+  theoryHours?: number | null;
+  /**
+     * @minimum 0
+     * @maximum 100000
+     * @nullable
+     */
+  practicalHours?: number | null;
+  /**
+     * @maxLength 240
+     * @nullable
+     */
+  certificateName?: string | null;
+  accredited?: boolean;
+  /**
+     * @maxLength 80
+     * @nullable
+     */
+  language?: string | null;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  trailerUrl?: string | null;
+  /**
+     * @maxItems 30
+     * @items.minLength 1
+     * @items.maxLength 80
+     */
+  tags?: string[];
+  /** @maxItems 30 */
+  faq?: EducationCourseUpdateFaqItem[];
+  paymentMode?: EducationCourseUpdatePaymentMode;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  depositAmount?: number | null;
   /** @minLength 1 */
   imageUrl?: string;
   /** @nullable */

@@ -61,6 +61,21 @@ async function seedLegacySchema(schema: string) {
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
   )`);
+  await q(`CREATE TABLE "${schema}".course_categories (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    name text NOT NULL UNIQUE,
+    slug text NOT NULL UNIQUE
+  )`);
+  await q(`CREATE TABLE "${schema}".courses (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    center_id uuid REFERENCES "${schema}".education_centers(id) ON DELETE CASCADE,
+    category_id uuid REFERENCES "${schema}".course_categories(id) ON DELETE SET NULL,
+    title text NOT NULL,
+    category text NOT NULL,
+    format text NOT NULL,
+    published boolean NOT NULL DEFAULT true,
+    archived boolean NOT NULL DEFAULT false
+  )`);
   await q(`CREATE TABLE "${schema}".course_enrollments (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id uuid NOT NULL REFERENCES "${schema}".users(id) ON DELETE CASCADE,
@@ -335,13 +350,56 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
-    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 83, "v83 is the current production schema rollout");
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 86, "v86 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
 
     // ── Run the rollout, then exercise its legacy conversion on rerun ──────
     const client = await pool.connect();
     try {
       await runBusinessGrowthSchemaDdl(client, s);
+      const educationFoundationTables = [
+        "education_sections",
+        "education_subcategories",
+        "education_course_types",
+        "education_inquiries",
+        "education_course_metric_events",
+        "education_placement_settings",
+        "education_placements",
+      ];
+      for (const table of educationFoundationTables) {
+        assert.ok(await objectExists(
+          `SELECT to_regclass($1) IS NOT NULL AS exists`, [`${s}.${table}`],
+        ), `${table} is created by v84`);
+      }
+      const placementExclusion = (await q<{ definition: string }>(
+        `SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
+         WHERE conrelid=$1::regclass AND conname='education_placements_active_slot_no_overlap'`,
+        [`${s}.education_placements`],
+      )).rows[0];
+      assert.match(placementExclusion?.definition ?? "", /EXCLUDE USING gist/,
+        "v85 serializes active placement slots with a DB exclusion constraint");
+      // The database remains the final invariant under concurrent settlement
+      // workers: exactly one activation may claim a slot/time range.
+      const activateSamePlacementSlot = () => q(
+        `INSERT INTO "${s}".education_placements
+           (kind, scope, center_id, slot_number, price_snapshot, duration_days_snapshot, status, starts_at, ends_at)
+         VALUES ('featured_center', 'home', $1, 1, 1000, 1, 'active', now(), now() + interval '1 day')`,
+        [fixtures.legacyEducationCenter.id],
+      );
+      const concurrentActivations = await Promise.allSettled([
+        activateSamePlacementSlot(), activateSamePlacementSlot(),
+      ]);
+      assert.equal(concurrentActivations.filter((result) => result.status === "fulfilled").length, 1,
+        "concurrent activation attempts allocate one active placement slot");
+      const educationCourseColumns = await q<{ column_name: string }>(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_schema=$1 AND table_name='courses'
+           AND column_name IN ('subcategory_id', 'course_type_id', 'theory_hours', 'practical_hours',
+             'certificate_name', 'accredited', 'language', 'trailer_url', 'tags', 'faq',
+             'payment_mode', 'deposit_amount')`,
+        [s],
+      );
+      assert.equal(educationCourseColumns.rowCount, 12, "v84 adds every course foundation column");
       const lifecycleColumns = await q<{ column_name: string; is_nullable: string }>(
         `SELECT column_name, is_nullable
            FROM information_schema.columns
