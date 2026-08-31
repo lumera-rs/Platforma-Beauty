@@ -21132,15 +21132,28 @@ router.get("/education/instructors/:instructorId/public", async (req, res): Prom
   const publicCourses = courses.filter((course) =>
     course.published && !course.archived && course.centerId && eligibilityMap.get(course.centerId) === true,
   );
-  const enrollments = publicCourses.length
-    ? await db.select().from(courseEnrollmentsTable).where(and(inArray(courseEnrollmentsTable.courseId, publicCourses.map((course) => course.id)), eq(courseEnrollmentsTable.paymentStatus, "paid")))
-    : [];
-  const rating = publicCourses.length ? publicCourses.reduce((total, course) => total + course.rating, 0) / publicCourses.length / 10 : 0;
+  const publicCourseIds = publicCourses.map((course) => course.id);
+  const [enrollments, publicCourseViews] = await Promise.all([
+    publicCourseIds.length
+      ? db.select().from(courseEnrollmentsTable).where(and(inArray(courseEnrollmentsTable.courseId, publicCourseIds), eq(courseEnrollmentsTable.paymentStatus, "paid")))
+      : [],
+    batchEducationCourseViews(publicCourses).then((views) => views.map(publicEducationCourseView)),
+  ]);
+  const [publishedReviewAggregate] = publicCourseIds.length
+    ? await db.select({
+      reviewCount: count(),
+      rating: sql<string>`coalesce(avg(${courseReviewsTable.rating}), 0)`,
+    }).from(courseReviewsTable)
+      .where(and(inArray(courseReviewsTable.courseId, publicCourseIds), eq(courseReviewsTable.status, "published")))
+    : [{ reviewCount: 0, rating: "0" }];
+  const reviewCount = Number(publishedReviewAggregate?.reviewCount ?? 0);
+  const rating = Math.round(Number(publishedReviewAggregate?.rating ?? 0) * 10) / 10;
   res.json({
     id: instructor.id, name: instructor.fullName, photoUrl: instructor.photoUrl ?? null, biography: instructor.biography,
     industryYears: instructor.industryYears, experienceYears: instructor.experienceYears, specializations: instructor.specializations,
-    qualifications: instructor.qualifications, portfolioMedia: instructor.portfolioMedia, rating, participantCount: enrollments.length,
-    courses: (await batchEducationCourseViews(publicCourses)).map(publicEducationCourseView),
+    qualifications: instructor.qualifications, portfolioMedia: instructor.portfolioMedia,
+    rating, reviewCount, ratingSource: "published_course_reviews", participantCount: enrollments.length,
+    courses: publicCourseViews,
   });
 });
 

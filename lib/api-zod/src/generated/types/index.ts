@@ -612,6 +612,7 @@ export * from './educationInstallmentSettlementPaymentStatus';
 export * from './educationInstructorInput';
 export * from './educationInstructorProfile';
 export * from './educationInstructorPublicProfile';
+export * from './educationInstructorPublicProfileRatingSource';
 export * from './educationInstructorSummary';
 export * from './educationIpsQrPayment';
 export * from './educationLesson';

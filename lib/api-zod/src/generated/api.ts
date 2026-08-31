@@ -13857,6 +13857,8 @@ export const GetPublicInstructorProfileResponse = zod.object({
   "qualifications": zod.array(zod.string()),
   "portfolioMedia": zod.array(zod.string().url()),
   "rating": zod.number(),
+  "reviewCount": zod.number(),
+  "ratingSource": zod.enum(['published_course_reviews']),
   "participantCount": zod.number(),
   "courses": zod.array(zod.object({
   "id": zod.string(),

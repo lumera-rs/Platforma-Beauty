@@ -2764,7 +2764,7 @@ export function InstructorPublicProfilePage({ instructorId }: { instructorId: st
           <Link href="/edukacije" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground mb-6">
             <ArrowLeft className="w-4 h-4 mr-2" /> Nazad
           </Link>
-          <div className="flex items-start gap-6">
+          <div className="flex flex-col items-start gap-6 sm:flex-row">
             {profile.photoUrl ? (
               <OptimizedImage src={profile.photoUrl} alt={profile.name} width={192} height={192} preferredSize="thumbnail" responsiveSizes="96px" className="w-24 h-24 rounded-full object-cover border-2 border-border shadow-md shrink-0" />
             ) : (
@@ -2773,11 +2773,25 @@ export function InstructorPublicProfilePage({ instructorId }: { instructorId: st
             <div className="flex-1 min-w-0">
               <h1 className="font-serif text-3xl font-bold mb-2">{profile.name}</h1>
               <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-                <span className="flex items-center gap-1"><Star className="w-4 h-4 text-amber-500 fill-amber-500" /> {profile.rating.toFixed(1)} prosečna ocena</span>
+                <span className="flex items-center gap-1">
+                  <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
+                  {profile.reviewCount > 0
+                    ? `${profile.rating.toFixed(1)} (${profile.reviewCount} ${
+                      profile.reviewCount === 1
+                        ? "recenzija"
+                        : profile.reviewCount >= 2 && profile.reviewCount <= 4
+                          ? "recenzije"
+                          : "recenzija"
+                    })`
+                    : "Još nema recenzija"}
+                </span>
                 <span className="flex items-center gap-1"><Users className="w-4 h-4" /> {profile.participantCount} polaznika</span>
                 <span className="flex items-center gap-1"><Clock className="w-4 h-4" /> {profile.industryYears} god. u industriji</span>
                 <span className="flex items-center gap-1"><GraduationCap className="w-4 h-4" /> {profile.experienceYears} god. poučavanja</span>
               </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                Ocena je izračunata iz objavljenih recenzija javnih kurseva ovog instruktora.
+              </p>
             </div>
           </div>
         </div>
@@ -2807,6 +2821,35 @@ export function InstructorPublicProfilePage({ instructorId }: { instructorId: st
             <h2 className="font-serif text-xl font-semibold mb-3">Specijalizacije</h2>
             <div className="flex flex-wrap gap-2">
               {profile.specializations.map((s) => <Badge key={s} variant="outline">{s}</Badge>)}
+            </div>
+          </section>
+        )}
+
+        {profile.portfolioMedia.length > 0 && (
+          <section aria-labelledby="instructor-portfolio-heading">
+            <h2 id="instructor-portfolio-heading" className="font-serif text-xl font-semibold mb-4">Portfolio</h2>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {profile.portfolioMedia.map((mediaUrl, index) => (
+                <a
+                  key={mediaUrl}
+                  href={mediaUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group overflow-hidden rounded-xl border border-border/60 bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label={`Otvori portfolio rad ${index + 1}`}
+                >
+                  <div className="aspect-square overflow-hidden">
+                    <OptimizedImage
+                      src={mediaUrl}
+                      alt={`Portfolio rad ${index + 1} — ${profile.name}`}
+                      width={720}
+                      height={720}
+                      responsiveSizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 300px"
+                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    />
+                  </div>
+                </a>
+              ))}
             </div>
           </section>
         )}

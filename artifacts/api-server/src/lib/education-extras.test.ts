@@ -12,7 +12,11 @@ import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
-import { GetEducationCourseResponse, GetPublicEducationCourseResponse } from "@workspace/api-zod";
+import {
+  GetEducationCourseResponse,
+  GetPublicEducationCourseResponse,
+  GetPublicInstructorProfileResponse,
+} from "@workspace/api-zod";
 import {
   courseEnrollmentsTable,
   courseSessionsTable,
@@ -585,6 +589,81 @@ async function run(): Promise<void> {
           userId: certEnrollments[2]!.userId!, rating: 1, comment: "Čeka proveru", status: "pending",
         },
       ]);
+      await db.update(coursesTable)
+        .set({ instructorProfileId: instructor.id })
+        .where(eq(coursesTable.id, certCourse.id));
+      const [precisionCourse] = await db.insert(coursesTable).values({
+        centerId: center.id,
+        instructorProfileId: instructor.id,
+        title: `Precizan prosek instruktora ${suffix}`,
+        description: "Proverava da se prosek računa iz sirovih objavljenih recenzija.",
+        category: "Drugo",
+        format: "online",
+        city: "Novi Sad",
+        price: 1000,
+        duration: "1 sat",
+        imageUrl: "/instructor-rating-precision.jpg",
+        published: true,
+      }).returning();
+      assert.ok(precisionCourse);
+      courseIds.push(precisionCourse.id);
+      const precisionReviewers = [admin, centerOwner, salonOwner, empUser1];
+      const precisionEnrollments = await db.insert(courseEnrollmentsTable).values(
+        precisionReviewers.map((reviewer) => ({
+          courseId: precisionCourse.id,
+          userId: reviewer.id,
+          purchaserId: reviewer.id,
+          status: "completed" as const,
+          paymentStatus: "paid" as const,
+        })),
+      ).returning();
+      enrollmentIds.push(...precisionEnrollments.map((enrollment) => enrollment.id));
+      await db.insert(courseReviewsTable).values(
+        precisionEnrollments.map((enrollment, index) => ({
+          courseId: precisionCourse.id,
+          enrollmentId: enrollment.id,
+          userId: enrollment.userId!,
+          rating: [1, 1, 1, 2][index]!,
+          comment: `Preciznost ${index + 1}`,
+          status: "published" as const,
+        })),
+      );
+      const [hiddenInstructorCourse] = await db.insert(coursesTable).values({
+        centerId: center.id,
+        instructorProfileId: instructor.id,
+        title: `Skriven kurs instruktora ${suffix}`,
+        description: "Neobjavljen kurs ne pripada javnom profilu.",
+        category: "Drugo",
+        format: "online",
+        city: "Novi Sad",
+        price: 1000,
+        duration: "1 sat",
+        imageUrl: "/hidden-instructor-course.jpg",
+        published: false,
+      }).returning();
+      assert.ok(hiddenInstructorCourse);
+      courseIds.push(hiddenInstructorCourse.id);
+      const ratedPublicInstructorResponse = await request(baseUrl, `/education/instructors/${instructor.id}/public`);
+      assert.equal(ratedPublicInstructorResponse.status, 200, "Anonymous visitors can read the public instructor profile.");
+      const ratedPublicInstructor = await json<{
+        rating: number;
+        reviewCount: number;
+        ratingSource: string;
+        courses: Array<{ id: string }>;
+      }>(ratedPublicInstructorResponse);
+      GetPublicInstructorProfileResponse.parse(ratedPublicInstructor);
+      assert.equal(
+        ratedPublicInstructor.rating,
+        2.3,
+        "Instructor rating averages raw published reviews and rounds only the final aggregate.",
+      );
+      assert.equal(ratedPublicInstructor.reviewCount, 6);
+      assert.equal(ratedPublicInstructor.ratingSource, "published_course_reviews");
+      assert.deepEqual(
+        ratedPublicInstructor.courses.map((course) => course.id).sort(),
+        [certCourse.id, precisionCourse.id].sort(),
+        "Public instructor profiles include only published, non-archived courses from eligible centers.",
+      );
       const aggregateListResponse = await request(
         baseUrl,
         `/education/public/courses?q=${encodeURIComponent(certCourse.title)}&certification=true&minRating=4.5`,

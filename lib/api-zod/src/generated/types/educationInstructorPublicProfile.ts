@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Course } from './course';
+import type { EducationInstructorPublicProfileRatingSource } from './educationInstructorPublicProfileRatingSource';
 
 export interface EducationInstructorPublicProfile {
   id: string;
@@ -19,6 +20,8 @@ export interface EducationInstructorPublicProfile {
   qualifications: string[];
   portfolioMedia: string[];
   rating: number;
+  reviewCount: number;
+  ratingSource: EducationInstructorPublicProfileRatingSource;
   participantCount: number;
   courses: Course[];
 }

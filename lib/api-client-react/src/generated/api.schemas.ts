@@ -7080,6 +7080,13 @@ export interface EducationInstructorInput {
   userId?: string | null;
 }
 
+export type EducationInstructorPublicProfileRatingSource = typeof EducationInstructorPublicProfileRatingSource[keyof typeof EducationInstructorPublicProfileRatingSource];
+
+
+export const EducationInstructorPublicProfileRatingSource = {
+  published_course_reviews: 'published_course_reviews',
+} as const;
+
 export interface EducationInstructorPublicProfile {
   id: string;
   name: string;
@@ -7092,6 +7099,8 @@ export interface EducationInstructorPublicProfile {
   qualifications: string[];
   portfolioMedia: string[];
   rating: number;
+  reviewCount: number;
+  ratingSource: EducationInstructorPublicProfileRatingSource;
   participantCount: number;
   courses: Course[];
 }

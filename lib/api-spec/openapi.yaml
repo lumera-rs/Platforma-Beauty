@@ -13479,11 +13479,13 @@ components:
         qualifications: { type: array, items: { type: string } }
         portfolioMedia: { type: array, items: { type: string, format: uri } }
         rating: { type: number }
+        reviewCount: { type: number }
+        ratingSource: { type: string, enum: [published_course_reviews] }
         participantCount: { type: number }
         courses:
           type: array
           items: { $ref: "#/components/schemas/Course" }
-      required: [id, name, biography, industryYears, experienceYears, specializations, qualifications, portfolioMedia, rating, participantCount, courses]
+      required: [id, name, biography, industryYears, experienceYears, specializations, qualifications, portfolioMedia, rating, reviewCount, ratingSource, participantCount, courses]
     EducationCourseFeaturedInput:
       type: object
       properties:
