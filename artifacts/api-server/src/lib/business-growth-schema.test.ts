@@ -356,7 +356,7 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
-    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 95, "v95 is the current production schema rollout");
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 96, "v96 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
 
     // ── Run the rollout, then exercise its legacy conversion on rerun ──────
@@ -1237,9 +1237,25 @@ async function run() {
       ["b2b_quotes_source_cart_idx", "source_cart_id"],
       ["catalog_sync_runs_requested_by_idx", "requested_by_user_id"],
       ["commerce_experience_settings_updated_by_idx", "updated_by_user_id"],
+      ["course_enrollments_booking_group_idx", "booking_group_id"],
       ["customer_package_purchases_payment_confirmed_by_idx", "payment_confirmed_by_user_id"],
       ["customer_package_purchases_customer_idx", "salon_customer_id"],
       ["employee_commission_settings_updated_by_idx", "updated_by_user_id"],
+      ["education_attendance_session_idx", "session_id"],
+      ["education_attendance_recorded_by_idx", "recorded_by_user_id"],
+      ["education_booking_groups_course_idx", "course_id"],
+      ["education_booking_groups_session_idx", "session_id"],
+      ["education_gift_vouchers_course_idx", "course_id"],
+      ["education_gift_vouchers_settled_by_idx", "settled_by_user_id"],
+      ["education_gift_vouchers_redeemed_by_idx", "redeemed_by_user_id"],
+      ["education_gift_vouchers_refunded_by_idx", "refunded_by_user_id"],
+      ["education_gift_vouchers_dispute_idx", "dispute_id"],
+      ["education_installments_settled_by_idx", "settled_by_user_id"],
+      ["education_outbox_center_idx", "center_id"],
+      ["education_outbox_session_idx", "session_id"],
+      ["education_outbox_participant_idx", "participant_id"],
+      ["education_price_snapshots_course_idx", "course_id"],
+      ["education_session_educators_assigned_by_idx", "assigned_by_user_id"],
       ["package_purchase_service_links_service_idx", "service_id"],
       ["package_redemptions_reversed_by_idx", "reversed_by_user_id"],
       ["package_redemptions_customer_idx", "salon_customer_id"],

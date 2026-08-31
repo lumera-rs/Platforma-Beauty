@@ -619,6 +619,11 @@ export const educationGiftVouchersTable = pgTable("education_gift_vouchers", {
   index("education_gift_vouchers_purchaser_created_idx").on(table.purchaserId, table.createdAt, table.id),
   index("education_gift_vouchers_recipient_created_idx").on(table.recipientUserId, table.createdAt, table.id),
   index("education_gift_vouchers_center_status_idx").on(table.centerId, table.status, table.createdAt),
+  index("education_gift_vouchers_course_idx").on(table.courseId),
+  index("education_gift_vouchers_settled_by_idx").on(table.settledByUserId),
+  index("education_gift_vouchers_redeemed_by_idx").on(table.redeemedByUserId),
+  index("education_gift_vouchers_refunded_by_idx").on(table.refundedByUserId),
+  index("education_gift_vouchers_dispute_idx").on(table.disputeId),
   check("education_gift_vouchers_amount_check", sql`${table.amountSnapshot} >= 0`),
   check("education_gift_vouchers_recipient_check", sql`num_nonnulls(${table.recipientUserId}, ${table.recipientEmail}) >= 1`),
 ]);
@@ -727,7 +732,10 @@ export const educationSessionEducatorsTable = pgTable("education_session_educato
   staffId: uuid("staff_id").notNull().references(() => educationCenterStaffTable.id, { onDelete: "restrict" }),
   assignedByUserId: uuid("assigned_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   assignedAt: timestamp("assigned_at", { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [index("education_session_educators_staff_idx").on(table.staffId)]);
+}, (table) => [
+  index("education_session_educators_staff_idx").on(table.staffId),
+  index("education_session_educators_assigned_by_idx").on(table.assignedByUserId),
+]);
 
 /** Durable receipt for an atomic individual-calendar recurrence command. */
 export const educationRecurrenceCommandsTable = pgTable("education_recurrence_commands", {
@@ -760,6 +768,8 @@ export const educationBookingGroupsTable = pgTable("education_booking_groups", {
 }, (table) => [
   uniqueIndex("education_booking_groups_actor_idempotency_unique").on(table.createdByUserId, table.idempotencyKey),
   index("education_booking_groups_center_session_status_idx").on(table.centerId, table.sessionId, table.status),
+  index("education_booking_groups_course_idx").on(table.courseId),
+  index("education_booking_groups_session_idx").on(table.sessionId),
   index("education_booking_groups_purchaser_idx").on(table.purchaserId),
 ]);
 
@@ -786,7 +796,11 @@ export const educationAttendanceTable = pgTable("education_attendance", {
   status: educationAttendanceStatusEnum("status").notNull(),
   recordedByUserId: uuid("recorded_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [uniqueIndex("education_attendance_participant_session_unique").on(table.participantId, table.sessionId)]);
+}, (table) => [
+  uniqueIndex("education_attendance_participant_session_unique").on(table.participantId, table.sessionId),
+  index("education_attendance_session_idx").on(table.sessionId),
+  index("education_attendance_recorded_by_idx").on(table.recordedByUserId),
+]);
 
 export const educationPriceSnapshotsTable = pgTable("education_price_snapshots", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -806,6 +820,7 @@ export const educationPriceSnapshotsTable = pgTable("education_price_snapshots",
   cancellationDeadlineAt: timestamp("cancellation_deadline_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  index("education_price_snapshots_course_idx").on(table.courseId),
   check("education_price_snapshots_amounts_check", sql`${table.grossAmount} >= 0 and ${table.platformFee} >= 0 and ${table.reserveAmount} >= 0 and ${table.netAmount} >= 0 and ${table.grossAmount} = ${table.platformFee} + ${table.reserveAmount} + ${table.netAmount}`),
   check("education_price_snapshots_installments_check", sql`${table.installmentCount} in (1, 2, 3)`),
   check("education_price_snapshots_discount_reason_check", sql`${table.discountReason} in ('none', 'early_bird', 'group', 'early_bird_and_group')`),
@@ -825,6 +840,7 @@ export const educationInstallmentsTable = pgTable("education_installments", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("education_installments_snapshot_number_unique").on(table.priceSnapshotId, table.installmentNumber),
+  index("education_installments_settled_by_idx").on(table.settledByUserId),
   check("education_installments_amount_check", sql`${table.amount} > 0 and ${table.refundedAmount} >= 0 and ${table.refundedAmount} <= ${table.amount}`),
 ]);
 
@@ -859,7 +875,12 @@ export const educationOutboxTable = pgTable("education_outbox", {
   leasedAt: timestamp("leased_at", { withTimezone: true }),
   sentAt: timestamp("sent_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [index("education_outbox_delivery_idx").on(table.status, table.availableAt)]);
+}, (table) => [
+  index("education_outbox_delivery_idx").on(table.status, table.availableAt),
+  index("education_outbox_center_idx").on(table.centerId),
+  index("education_outbox_session_idx").on(table.sessionId),
+  index("education_outbox_participant_idx").on(table.participantId),
+]);
 
 export const educationNotificationsTable = pgTable("education_notifications", {
   id: uuid("id").defaultRandom().primaryKey(),

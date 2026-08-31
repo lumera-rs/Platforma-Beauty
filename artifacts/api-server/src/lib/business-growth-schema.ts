@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 95;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 96;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -4247,6 +4247,25 @@ function tableStatements(s: string): string[] {
       attempts integer NOT NULL DEFAULT 0, available_at timestamptz NOT NULL DEFAULT now(), leased_at timestamptz, sent_at timestamptz, created_at timestamptz NOT NULL DEFAULT now()
     )`,
     `CREATE INDEX IF NOT EXISTS education_outbox_delivery_idx ON ${s}.education_outbox(status, available_at)`,
+    // v96 — every Education operational FK gets a leading index. Besides
+    // improving parent update/delete behavior, this keeps post-merge database
+    // standards deterministic for legacy databases upgraded from v95.
+    `CREATE INDEX IF NOT EXISTS course_enrollments_booking_group_idx ON ${s}.course_enrollments(booking_group_id)`,
+    `CREATE INDEX IF NOT EXISTS education_attendance_session_idx ON ${s}.education_attendance(session_id)`,
+    `CREATE INDEX IF NOT EXISTS education_attendance_recorded_by_idx ON ${s}.education_attendance(recorded_by_user_id)`,
+    `CREATE INDEX IF NOT EXISTS education_booking_groups_course_idx ON ${s}.education_booking_groups(course_id)`,
+    `CREATE INDEX IF NOT EXISTS education_booking_groups_session_idx ON ${s}.education_booking_groups(session_id)`,
+    `CREATE INDEX IF NOT EXISTS education_gift_vouchers_course_idx ON ${s}.education_gift_vouchers(course_id)`,
+    `CREATE INDEX IF NOT EXISTS education_gift_vouchers_settled_by_idx ON ${s}.education_gift_vouchers(settled_by_user_id)`,
+    `CREATE INDEX IF NOT EXISTS education_gift_vouchers_redeemed_by_idx ON ${s}.education_gift_vouchers(redeemed_by_user_id)`,
+    `CREATE INDEX IF NOT EXISTS education_gift_vouchers_refunded_by_idx ON ${s}.education_gift_vouchers(refunded_by_user_id)`,
+    `CREATE INDEX IF NOT EXISTS education_gift_vouchers_dispute_idx ON ${s}.education_gift_vouchers(dispute_id)`,
+    `CREATE INDEX IF NOT EXISTS education_installments_settled_by_idx ON ${s}.education_installments(settled_by_user_id)`,
+    `CREATE INDEX IF NOT EXISTS education_outbox_center_idx ON ${s}.education_outbox(center_id)`,
+    `CREATE INDEX IF NOT EXISTS education_outbox_session_idx ON ${s}.education_outbox(session_id)`,
+    `CREATE INDEX IF NOT EXISTS education_outbox_participant_idx ON ${s}.education_outbox(participant_id)`,
+    `CREATE INDEX IF NOT EXISTS education_price_snapshots_course_idx ON ${s}.education_price_snapshots(course_id)`,
+    `CREATE INDEX IF NOT EXISTS education_session_educators_assigned_by_idx ON ${s}.education_session_educators(assigned_by_user_id)`,
     // v74 — every aftercare FK gets a leading index so deletes/updates on its
     // parent cannot force scans as recommendation and delivery history grows.
   ];
