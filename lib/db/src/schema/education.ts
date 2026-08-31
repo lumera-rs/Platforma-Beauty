@@ -34,6 +34,15 @@ export const educationPlacementKindEnum = pgEnum("education_placement_kind", ["f
 export const educationPlacementScopeEnum = pgEnum("education_placement_scope", ["home", "category", "subcategory"]);
 export const educationPlacementStatusEnum = pgEnum("education_placement_status", ["pending_payment", "active", "expired", "cancelled", "rejected"]);
 export const educationGiftVoucherStatusEnum = pgEnum("education_gift_voucher_status", ["pending_payment", "active", "redeemed", "refunded", "cancelled"]);
+/** Operational scheduling is intentionally separate from the legacy format. */
+export const educationSchedulingModeEnum = pgEnum("education_scheduling_mode", ["fixed_group", "individual_calendar"]);
+export const educationStaffRoleEnum = pgEnum("education_staff_role", ["owner_admin", "manager_reception", "educator"]);
+export const educationDepositDispositionEnum = pgEnum("education_deposit_disposition", ["refund", "forfeit", "transfer"]);
+export const educationBookingGroupStatusEnum = pgEnum("education_booking_group_status", ["pending", "active", "waitlisted", "cancelled"]);
+export const educationParticipantStatusEnum = pgEnum("education_participant_status", ["reserved", "waitlisted", "cancelled"]);
+export const educationAttendanceStatusEnum = pgEnum("education_attendance_status", ["present", "absent", "excused"]);
+export const educationInstallmentStatusEnum = pgEnum("education_installment_status", ["pending", "settled", "refunded", "cancelled"]);
+export const educationOutboxStatusEnum = pgEnum("education_outbox_status", ["pending", "processing", "sent", "failed"]);
 
 export const educationCentersTable = pgTable("education_centers", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -96,6 +105,10 @@ export const educationPlatformSettingsTable = pgTable("education_platform_settin
   onlineRefundDays: integer("online_refund_days").notNull().default(14),
   liveAppealDays: integer("live_appeal_days").notNull().default(7),
   featuredCoursePrice: integer("featured_course_price").notNull().default(0),
+  /** Public payment instructions, set by an administrator; never infer these. */
+  ipsRecipientName: text("ips_recipient_name"),
+  ipsRecipientAccount: text("ips_recipient_account"),
+  ipsPurpose: text("ips_purpose"),
   updatedByUserId: uuid("updated_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -209,6 +222,15 @@ export const coursesTable = pgTable("courses", {
   giftVoucherEligible: boolean("gift_voucher_eligible").notNull().default(false),
   groupDiscountMinimum: integer("group_discount_minimum"),
   groupDiscountPercent: integer("group_discount_percent"),
+  schedulingMode: educationSchedulingModeEnum("scheduling_mode").notNull().default("fixed_group"),
+  /** All operational date/time fields are canonical Europe/Belgrade wall clock. */
+  operationalTimeZone: text("operational_time_zone").notNull().default("Europe/Belgrade"),
+  cancellationDeadlineHours: integer("cancellation_deadline_hours").notNull().default(0),
+  depositDisposition: educationDepositDispositionEnum("deposit_disposition").notNull().default("refund"),
+  minimumEnrollmentRiskDeadline: timestamp("minimum_enrollment_risk_deadline", { withTimezone: true }),
+  earlyBirdPrice: integer("early_bird_price"),
+  earlyBirdCutoff: timestamp("early_bird_cutoff", { withTimezone: true }),
+  installmentCount: integer("installment_count").notNull().default(1),
   startDate: date("start_date", { mode: "string" }),
   endDate: date("end_date", { mode: "string" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -235,6 +257,10 @@ export const coursesTable = pgTable("courses", {
   check("courses_live_off_platform_check", sql`${table.paymentMode} <> 'live_off_platform' or ${table.format} in ('in-person', 'hybrid')`),
   check("courses_non_deposit_amount_check", sql`${table.paymentMode} = 'live_deposit' or ${table.depositAmount} is null`),
   check("courses_published_live_deposit_refund_policy_check", sql`not (${table.published} and ${table.paymentMode} = 'live_deposit') or length(btrim(${table.refundPolicy})) > 0`),
+  check("courses_operational_timezone_check", sql`${table.operationalTimeZone} = 'Europe/Belgrade'`),
+  check("courses_cancellation_deadline_check", sql`${table.cancellationDeadlineHours} >= 0 and ${table.cancellationDeadlineHours} <= 8760`),
+  check("courses_early_bird_check", sql`(${table.earlyBirdPrice} is null and ${table.earlyBirdCutoff} is null) or (${table.earlyBirdPrice} >= 0 and ${table.earlyBirdPrice} <= ${table.price} and ${table.earlyBirdCutoff} is not null)`),
+  check("courses_installment_count_check", sql`${table.installmentCount} in (1, 2, 3)`),
 ]);
 
 export const educationInquiriesTable = pgTable("education_inquiries", {
@@ -505,7 +531,9 @@ export const courseLessonsTable = pgTable("course_lessons", {
 export const courseEnrollmentsTable = pgTable("course_enrollments", {
   id: uuid("id").defaultRandom().primaryKey(),
   courseId: uuid("course_id").notNull().references(() => coursesTable.id, { onDelete: "cascade" }),
-  userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  // Guest operational attendees have no account; participantId is mandatory
+  // for those rows and preserves attendance/certificate identity.
+  userId: uuid("user_id").references(() => usersTable.id, { onDelete: "cascade" }),
   salonId: uuid("salon_id").references(() => salonsTable.id, { onDelete: "cascade" }),
   employeeId: uuid("employee_id").references(() => employeesTable.id, { onDelete: "set null" }),
   sessionId: uuid("session_id").references(() => courseSessionsTable.id, { onDelete: "set null" }),
@@ -527,6 +555,8 @@ export const courseEnrollmentsTable = pgTable("course_enrollments", {
   auditData: jsonb("audit_data").$type<Record<string, unknown>>().notNull().default({}),
   idempotencyKey: text("idempotency_key"),
   idempotencyFingerprint: text("idempotency_fingerprint"),
+  bookingGroupId: uuid("booking_group_id").references((): any => educationBookingGroupsTable.id, { onDelete: "set null" }),
+  participantId: uuid("participant_id").references((): any => educationBookingParticipantsTable.id, { onDelete: "set null" }),
   participantKey: text("participant_key").generatedAlwaysAs(
     sql`coalesce(employee_id::text, '00000000-0000-0000-0000-000000000000')`,
   ),
@@ -535,7 +565,7 @@ export const courseEnrollmentsTable = pgTable("course_enrollments", {
   // courseId is leading in the unique index — covers FK.
   uniqueIndex("course_enrollments_course_purchaser_participant_unique")
     .on(table.courseId, table.purchaserId, table.participantKey)
-    .where(sql`${table.status} <> 'cancelled'`),
+    .where(sql`${table.participantId} is null and ${table.status} <> 'cancelled'`),
   // purchaserId is leading in idempotency unique — covers purchaser FK.
   uniqueIndex("course_enrollments_purchaser_idempotency_unique")
     .on(table.purchaserId, table.idempotencyKey)
@@ -546,6 +576,9 @@ export const courseEnrollmentsTable = pgTable("course_enrollments", {
   index("course_enrollments_user_status_idx").on(table.userId, table.status),
   index("course_enrollments_salon_idx").on(table.salonId),
   index("course_enrollments_employee_idx").on(table.employeeId),
+  index("course_enrollments_booking_group_idx").on(table.bookingGroupId),
+  uniqueIndex("course_enrollments_participant_active_unique").on(table.participantId).where(sql`${table.participantId} is not null and ${table.status} <> 'cancelled'`),
+  check("course_enrollments_operational_user_check", sql`${table.userId} is not null or ${table.participantId} is not null`),
 ]);
 
 /**
@@ -635,6 +668,198 @@ export const educationInstructorsTable = pgTable("education_instructors", {
   index("education_instructors_center_idx").on(table.centerId),
   index("education_instructors_user_idx").on(table.userId),
 ]);
+
+/**
+ * Tenant authorization source for operational Education routes. A partial
+ * unique index is the database backstop for the single-active-center educator
+ * invariant; owner/manager memberships may legitimately span centers.
+ */
+export const educationCenterStaffTable = pgTable("education_center_staff", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  instructorProfileId: uuid("instructor_profile_id").references(() => educationInstructorsTable.id, { onDelete: "set null" }),
+  role: educationStaffRoleEnum("role").notNull(),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("education_center_staff_center_user_unique").on(table.centerId, table.userId),
+  uniqueIndex("education_center_staff_one_active_educator_center_unique")
+    .on(table.userId).where(sql`${table.role} = 'educator' and ${table.active}`),
+  index("education_center_staff_center_role_active_idx").on(table.centerId, table.role, table.active),
+  index("education_center_staff_instructor_profile_idx").on(table.instructorProfileId),
+]);
+
+export const educationEducatorWeeklyAvailabilityTable = pgTable("education_educator_weekly_availability", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  staffId: uuid("staff_id").notNull().references(() => educationCenterStaffTable.id, { onDelete: "cascade" }),
+  weekday: integer("weekday").notNull(),
+  startTime: text("start_time").notNull(),
+  endTime: text("end_time").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("education_educator_weekly_availability_unique").on(table.staffId, table.weekday, table.startTime, table.endTime),
+  check("education_educator_weekly_availability_weekday_check", sql`${table.weekday} between 1 and 7`),
+  check("education_educator_weekly_availability_interval_check", sql`${table.startTime} < ${table.endTime}`),
+]);
+
+export const educationEducatorAbsencesTable = pgTable("education_educator_absences", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  staffId: uuid("staff_id").notNull().references(() => educationCenterStaffTable.id, { onDelete: "cascade" }),
+  startDate: date("start_date", { mode: "string" }).notNull(),
+  endDate: date("end_date", { mode: "string" }).notNull(),
+  startTime: text("start_time"),
+  endTime: text("end_time"),
+  reason: text("reason"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("education_educator_absences_staff_dates_idx").on(table.staffId, table.startDate, table.endDate),
+  check("education_educator_absences_date_check", sql`${table.endDate} >= ${table.startDate}`),
+  check("education_educator_absences_time_check", sql`(${table.startTime} is null and ${table.endTime} is null) or (${table.startTime} is not null and ${table.endTime} is not null and ${table.startTime} < ${table.endTime})`),
+]);
+
+/** Assigns both fixed-group meetings and generated individual slots. */
+export const educationSessionEducatorsTable = pgTable("education_session_educators", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  sessionId: uuid("session_id").notNull().unique().references(() => courseSessionsTable.id, { onDelete: "cascade" }),
+  staffId: uuid("staff_id").notNull().references(() => educationCenterStaffTable.id, { onDelete: "restrict" }),
+  assignedByUserId: uuid("assigned_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  assignedAt: timestamp("assigned_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("education_session_educators_staff_idx").on(table.staffId)]);
+
+/** Durable receipt for an atomic individual-calendar recurrence command. */
+export const educationRecurrenceCommandsTable = pgTable("education_recurrence_commands", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "cascade" }),
+  actorUserId: uuid("actor_user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  idempotencyKey: text("idempotency_key").notNull(),
+  requestFingerprint: text("request_fingerprint").notNull(),
+  responseSnapshot: jsonb("response_snapshot").$type<{ sessionIds: string[]; replayed: boolean }>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("education_recurrence_commands_actor_key_unique").on(table.actorUserId, table.idempotencyKey),
+  index("education_recurrence_commands_center_created_idx").on(table.centerId, table.createdAt),
+  check("education_recurrence_commands_key_check", sql`length(btrim(${table.idempotencyKey})) > 0`),
+  check("education_recurrence_commands_fingerprint_check", sql`length(${table.requestFingerprint}) = 64`),
+]);
+
+export const educationBookingGroupsTable = pgTable("education_booking_groups", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "cascade" }),
+  courseId: uuid("course_id").notNull().references(() => coursesTable.id, { onDelete: "cascade" }),
+  sessionId: uuid("session_id").references(() => courseSessionsTable.id, { onDelete: "set null" }),
+  purchaserId: uuid("purchaser_id").references(() => usersTable.id, { onDelete: "set null" }),
+  createdByUserId: uuid("created_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  status: educationBookingGroupStatusEnum("status").notNull().default("pending"),
+  idempotencyKey: text("idempotency_key").notNull(),
+  requestFingerprint: text("request_fingerprint").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("education_booking_groups_actor_idempotency_unique").on(table.createdByUserId, table.idempotencyKey),
+  index("education_booking_groups_center_session_status_idx").on(table.centerId, table.sessionId, table.status),
+  index("education_booking_groups_purchaser_idx").on(table.purchaserId),
+]);
+
+export const educationBookingParticipantsTable = pgTable("education_booking_participants", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  bookingGroupId: uuid("booking_group_id").notNull().references(() => educationBookingGroupsTable.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  fullName: text("full_name").notNull(),
+  email: text("email"),
+  phone: text("phone"),
+  status: educationParticipantStatusEnum("status").notNull().default("reserved"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("education_booking_participants_group_status_idx").on(table.bookingGroupId, table.status),
+  index("education_booking_participants_user_idx").on(table.userId),
+  check("education_booking_participants_contact_check", sql`${table.userId} is not null or ${table.email} is not null or ${table.phone} is not null`),
+]);
+
+export const educationAttendanceTable = pgTable("education_attendance", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  participantId: uuid("participant_id").notNull().references(() => educationBookingParticipantsTable.id, { onDelete: "cascade" }),
+  sessionId: uuid("session_id").notNull().references(() => courseSessionsTable.id, { onDelete: "cascade" }),
+  status: educationAttendanceStatusEnum("status").notNull(),
+  recordedByUserId: uuid("recorded_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [uniqueIndex("education_attendance_participant_session_unique").on(table.participantId, table.sessionId)]);
+
+export const educationPriceSnapshotsTable = pgTable("education_price_snapshots", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  bookingGroupId: uuid("booking_group_id").notNull().unique().references(() => educationBookingGroupsTable.id, { onDelete: "restrict" }),
+  courseId: uuid("course_id").notNull().references(() => coursesTable.id, { onDelete: "restrict" }),
+  grossAmount: integer("gross_amount").notNull(),
+  platformFee: integer("platform_fee").notNull(),
+  reserveAmount: integer("reserve_amount").notNull(),
+  netAmount: integer("net_amount").notNull(),
+  earlyBirdApplied: boolean("early_bird_applied").notNull().default(false),
+  /** Immutable commercial basis; course edits must not reinterpret this quote. */
+  discountReason: text("discount_reason").notNull().default("none"),
+  earlyBirdCutoffSnapshot: timestamp("early_bird_cutoff_snapshot", { withTimezone: true }),
+  installmentCount: integer("installment_count").notNull(),
+  depositDisposition: educationDepositDispositionEnum("deposit_disposition").notNull(),
+  /** Immutable absolute cutoff derived from the selected session at booking. */
+  cancellationDeadlineAt: timestamp("cancellation_deadline_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  check("education_price_snapshots_amounts_check", sql`${table.grossAmount} >= 0 and ${table.platformFee} >= 0 and ${table.reserveAmount} >= 0 and ${table.netAmount} >= 0 and ${table.grossAmount} = ${table.platformFee} + ${table.reserveAmount} + ${table.netAmount}`),
+  check("education_price_snapshots_installments_check", sql`${table.installmentCount} in (1, 2, 3)`),
+  check("education_price_snapshots_discount_reason_check", sql`${table.discountReason} in ('none', 'early_bird', 'group', 'early_bird_and_group')`),
+]);
+
+export const educationInstallmentsTable = pgTable("education_installments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  priceSnapshotId: uuid("price_snapshot_id").notNull().references(() => educationPriceSnapshotsTable.id, { onDelete: "restrict" }),
+  installmentNumber: integer("installment_number").notNull(),
+  amount: integer("amount").notNull(),
+  status: educationInstallmentStatusEnum("status").notNull().default("pending"),
+  paymentReference: text("payment_reference").notNull().unique(),
+  dueAt: timestamp("due_at", { withTimezone: true }),
+  settledByUserId: uuid("settled_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  settledAt: timestamp("settled_at", { withTimezone: true }),
+  refundedAmount: integer("refunded_amount").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("education_installments_snapshot_number_unique").on(table.priceSnapshotId, table.installmentNumber),
+  check("education_installments_amount_check", sql`${table.amount} > 0 and ${table.refundedAmount} >= 0 and ${table.refundedAmount} <= ${table.amount}`),
+]);
+
+/** Durable receipt prevents a retry from creating a second captured slice. */
+export const educationInstallmentSettlementCommandsTable = pgTable("education_installment_settlement_commands", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  installmentId: uuid("installment_id").notNull().references(() => educationInstallmentsTable.id, { onDelete: "cascade" }),
+  actorUserId: uuid("actor_user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  idempotencyKey: text("idempotency_key").notNull(),
+  requestFingerprint: text("request_fingerprint").notNull(),
+  responseSnapshot: jsonb("response_snapshot").$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("education_installment_settlement_command_actor_key_unique").on(table.actorUserId, table.idempotencyKey),
+  index("education_installment_settlement_command_installment_idx").on(table.installmentId),
+  check("education_installment_settlement_command_key_check", sql`length(btrim(${table.idempotencyKey})) > 0`),
+  check("education_installment_settlement_command_fingerprint_check", sql`length(${table.requestFingerprint}) = 64`),
+]);
+
+/** Durable delivery work; workers lease and retry it outside request transactions. */
+export const educationOutboxTable = pgTable("education_outbox", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "cascade" }),
+  sessionId: uuid("session_id").references(() => courseSessionsTable.id, { onDelete: "cascade" }),
+  participantId: uuid("participant_id").references(() => educationBookingParticipantsTable.id, { onDelete: "cascade" }),
+  eventType: text("event_type").notNull(),
+  dedupeKey: text("dedupe_key").notNull().unique(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  status: educationOutboxStatusEnum("status").notNull().default("pending"),
+  attempts: integer("attempts").notNull().default(0),
+  availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
+  leasedAt: timestamp("leased_at", { withTimezone: true }),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("education_outbox_delivery_idx").on(table.status, table.availableAt)]);
 
 export const educationNotificationsTable = pgTable("education_notifications", {
   id: uuid("id").defaultRandom().primaryKey(),

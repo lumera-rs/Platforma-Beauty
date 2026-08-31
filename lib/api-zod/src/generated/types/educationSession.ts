@@ -19,4 +19,6 @@ export interface EducationSession {
   minimumEnrollments?: number | null;
   /** @nullable */
   cancelledAt?: Date | null;
+  /** @nullable */
+  educatorStaffId?: string | null;
 }

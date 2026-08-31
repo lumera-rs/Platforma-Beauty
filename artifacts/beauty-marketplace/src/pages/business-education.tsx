@@ -33,6 +33,7 @@ import {
 } from "@workspace/api-client-react";
 
 import { BusinessLayout } from "@/components/business-layout";
+import { CenterOperationsView } from "@/components/education/center-operations";
 import { Layout } from "@/components/layout";
 import { SalonGallery } from "@/components/salon-gallery";
 import { Button } from "@/components/ui/button";
@@ -104,6 +105,13 @@ const courseSchema = z.object({
   groupDiscountPercent: z.coerce.number().int().min(0).max(100).optional().nullable(),
   durationMinutes: z.coerce.number().int().min(1).max(5256000).optional().nullable(),
   giftVoucherEligible: z.boolean().optional(),
+  schedulingMode: z.enum(["fixed_group", "individual_calendar"]).optional(),
+  cancellationCutoffHours: z.coerce.number().int().min(0).max(8760).optional(),
+  depositDisposition: z.enum(["refund", "forfeit", "transfer"]).optional(),
+  minimumEnrollmentRiskDeadline: z.string().optional(),
+  earlyBirdPrice: z.preprocess((value) => value === "" ? null : value, z.coerce.number().min(0).nullable().optional()),
+  earlyBirdCutoff: z.string().optional(),
+  installmentCount: z.coerce.number().int().min(1).max(3).optional(),
 }).refine(
   (data) => (data.groupDiscountMinimum == null) === (data.groupDiscountPercent == null),
   { message: "Unesite i minimalan broj polaznika i procenat popusta za grupni popust.", path: ["groupDiscountPercent"] }
@@ -119,6 +127,12 @@ const courseSchema = z.object({
 ).refine(
   (data) => data.format !== "online" || data.paymentMode === "online_full",
   { message: "Online kursevi zahtevaju potpuno online plaćanje.", path: ["paymentMode"] }
+).refine(
+  (data) => Boolean(data.earlyBirdPrice == null) === !data.earlyBirdCutoff,
+  { message: "Early-bird cena i rok se unose zajedno.", path: ["earlyBirdCutoff"] }
+).refine(
+  (data) => data.earlyBirdPrice == null || data.earlyBirdPrice < data.price,
+  { message: "Early-bird cena mora biti manja od redovne cene.", path: ["earlyBirdPrice"] }
 );
 
 export default function BusinessEducation({ hideLayout = false }: { hideLayout?: boolean }) {
@@ -150,13 +164,6 @@ export default function BusinessEducation({ hideLayout = false }: { hideLayout?:
     );
   }
 
-  if (userResponse?.user?.role === "SALON_EMPLOYEE") {
-    return (
-      <BusinessLayout>
-        <EmployeeLearningView />
-      </BusinessLayout>
-    );
-  }
   if (userResponse?.user?.role === "STUDENT") {
     return <Layout hideCustomerNavigation><StudentLearningView /></Layout>;
   }
@@ -165,9 +172,16 @@ export default function BusinessEducation({ hideLayout = false }: { hideLayout?:
     return hideLayout ? learningView : <Layout>{learningView}</Layout>;
   }
 
-  const isCenter = userResponse?.user?.role === "SALON_OWNER" || userResponse?.user?.role === "EDUKATIVNI_CENTAR";
+  const mayHaveCenterMembership = Boolean(userResponse?.user);
+  const { data: statusList } = useGetEducationCenterStatus({ query: { enabled: mayHaveCenterMembership, retry: false, queryKey: [ "educationCenterStatus" ] } });
+  const isCenter = Boolean(statusList?.length);
+  const [selectedOperationsCenterId, setSelectedOperationsCenterId] = useState("");
+  const operationsCenterId = selectedOperationsCenterId || statusList?.[0]?.id || "";
 
   if (!isCenter) {
+    if (userResponse?.user?.role === "SALON_EMPLOYEE") {
+      return <BusinessLayout><EmployeeLearningView /></BusinessLayout>;
+    }
     return (
       <BusinessLayout>
         <CatalogView />
@@ -178,12 +192,25 @@ export default function BusinessEducation({ hideLayout = false }: { hideLayout?:
   return (
     <BusinessLayout>
       <div className="container mx-auto px-4 py-8">
+        {statusList && statusList.length > 1 ? (
+          <div className="mb-4 max-w-sm">
+            <Label>Centar za operacije</Label>
+            <Select value={operationsCenterId} onValueChange={setSelectedOperationsCenterId}>
+              <SelectTrigger data-testid="education-center-selector"><SelectValue /></SelectTrigger>
+              <SelectContent>{statusList.map((center) => <SelectItem key={center.id} value={center.id}>{center.name}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+        ) : null}
         <Tabs defaultValue="catalog" className="space-y-6">
           <TabsList>
+            <TabsTrigger value="operations">Operacije</TabsTrigger>
             <TabsTrigger value="catalog">Katalog i edukacije</TabsTrigger>
             <TabsTrigger value="placements">Sponzorisane pozicije</TabsTrigger>
             <TabsTrigger value="profile">Profil i status centra</TabsTrigger>
           </TabsList>
+          <TabsContent value="operations" className="m-0">
+            <CenterOperationsView centerId={operationsCenterId} />
+          </TabsContent>
           <TabsContent value="catalog" className="m-0">
             <CatalogView />
           </TabsContent>
@@ -1720,6 +1747,15 @@ function LmsView({ enrollmentId }: { enrollmentId: string }) {
     }
   }, [lms, activeLessonId]);
 
+  const activeLesson = useMemo(() => {
+    if (!lms) return null;
+    for (const mod of lms.course.modules) {
+      const lesson = mod.lessons.find((l: any) => l.id === activeLessonId);
+      if (lesson) return lesson;
+    }
+    return null;
+  }, [lms, activeLessonId]);
+
   if (isLoading) return <div className="flex h-[80vh] items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
   if (!lms) return <div className="flex h-[80vh] items-center justify-center flex-col text-center">
     <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4 text-muted-foreground"><Monitor className="w-8 h-8" /></div>
@@ -1727,14 +1763,6 @@ function LmsView({ enrollmentId }: { enrollmentId: string }) {
     <p className="text-muted-foreground mb-6">Vaša rezervacija možda nije potvrđena ili edukacija ne sadrži online lekcije.</p>
     <Button asChild><Link href="/biznis/edukacije">Nazad na katalog</Link></Button>
   </div>;
-
-  const activeLesson = useMemo(() => {
-    for (const mod of lms.course.modules) {
-      const lesson = mod.lessons.find((l: any) => l.id === activeLessonId);
-      if (lesson) return lesson;
-    }
-    return null;
-  }, [lms, activeLessonId]);
 
   const handleComplete = () => {
     if (!activeLessonId) return;
@@ -1930,7 +1958,7 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
   const DEFAULT_REFUND_POLICY = "Povraćaj je moguć do isteka roka zaštite kupovine. Ako centar otkaže termin, kupovina se refundira u celosti.";
   const { register, handleSubmit, control, formState: { errors }, reset, setValue, watch } = useForm<any>({
     resolver: zodResolver(courseSchema) as any,
-    defaultValues: { format: 'online', level: 'all-levels', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE, refundPolicy: DEFAULT_REFUND_POLICY, paymentMode: 'online_full', subcategoryId: '', courseTypeId: '', groupDiscountMinimum: "", groupDiscountPercent: "", learningOutcomesText: "", includedItemsText: "", requirements: "", durationMinutes: "", giftVoucherEligible: false }
+    defaultValues: { format: 'online', level: 'all-levels', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE, refundPolicy: DEFAULT_REFUND_POLICY, paymentMode: 'online_full', subcategoryId: '', courseTypeId: '', groupDiscountMinimum: "", groupDiscountPercent: "", learningOutcomesText: "", includedItemsText: "", requirements: "", durationMinutes: "", giftVoucherEligible: false, schedulingMode: "fixed_group", cancellationCutoffHours: 0, depositDisposition: "refund", installmentCount: 1, earlyBirdPrice: "", earlyBirdCutoff: "", minimumEnrollmentRiskDeadline: "" }
   });
   const coverImageUrl = watch("imageUrl");
   const watchFormat = watch("format");
@@ -2016,9 +2044,16 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
           groupDiscountPercent: course.groupDiscountPercent || "",
           durationMinutes: course.durationMinutes || "",
           giftVoucherEligible: course.giftVoucherEligible || false,
+           schedulingMode: course.schedulingMode || "fixed_group",
+           cancellationCutoffHours: course.cancellationCutoffHours ?? 0,
+           depositDisposition: course.depositDisposition || "refund",
+           minimumEnrollmentRiskDeadline: course.minimumEnrollmentRiskDeadline ? course.minimumEnrollmentRiskDeadline.slice(0, 16) : "",
+           earlyBirdPrice: course.earlyBirdPrice ?? "",
+           earlyBirdCutoff: course.earlyBirdCutoff ? course.earlyBirdCutoff.slice(0, 16) : "",
+           installmentCount: course.installmentCount ?? 1,
         });
       } else {
-        reset({ category: '', faqText: '', format: 'online', level: 'all-levels', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE, refundPolicy: DEFAULT_REFUND_POLICY, paymentMode: 'online_full', subcategoryId: '', courseTypeId: '', groupDiscountMinimum: "", groupDiscountPercent: "", learningOutcomesText: "", includedItemsText: "", requirements: "", durationMinutes: "", giftVoucherEligible: false });
+        reset({ category: '', faqText: '', format: 'online', level: 'all-levels', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE, refundPolicy: DEFAULT_REFUND_POLICY, paymentMode: 'online_full', subcategoryId: '', courseTypeId: '', groupDiscountMinimum: "", groupDiscountPercent: "", learningOutcomesText: "", includedItemsText: "", requirements: "", durationMinutes: "", giftVoucherEligible: false, schedulingMode: "fixed_group", cancellationCutoffHours: 0, depositDisposition: "refund", installmentCount: 1, earlyBirdPrice: "", earlyBirdCutoff: "", minimumEnrollmentRiskDeadline: "" });
       }
     }
   }, [open, course, reset, taxonomy]);
@@ -2061,6 +2096,13 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
       groupDiscountPercent: values.groupDiscountPercent ? Number(values.groupDiscountPercent) : null,
       durationMinutes: values.durationMinutes ? Number(values.durationMinutes) : null,
       giftVoucherEligible: !!values.giftVoucherEligible,
+      schedulingMode: values.schedulingMode,
+      cancellationCutoffHours: Number(values.cancellationCutoffHours || 0),
+      depositDisposition: values.depositDisposition,
+      minimumEnrollmentRiskDeadline: values.minimumEnrollmentRiskDeadline ? new Date(values.minimumEnrollmentRiskDeadline).toISOString() : null,
+      earlyBirdPrice: values.earlyBirdPrice === "" || values.earlyBirdPrice == null ? null : Number(values.earlyBirdPrice),
+      earlyBirdCutoff: values.earlyBirdCutoff ? new Date(values.earlyBirdCutoff).toISOString() : null,
+      installmentCount: Number(values.installmentCount || 1),
     };
 
     if (course) {
@@ -2304,6 +2346,42 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
               )}
             </div>
           </div>
+
+          <div className="border-t pt-4 mt-6">
+            <h3 className="text-lg font-serif font-bold mb-1">Termini i komercijalna politika</h3>
+            <p className="text-xs text-muted-foreground mb-4">Sva vremena su u vremenskoj zoni Europe/Belgrade.</p>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Režim zakazivanja</Label>
+                <Controller control={control} name="schedulingMode" render={({ field }) => <Select value={field.value} onValueChange={field.onChange}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="fixed_group">Fiksna grupna sesija</SelectItem><SelectItem value="individual_calendar">Individualni termini / kalendar</SelectItem></SelectContent></Select>} />
+              </div>
+              <div className="space-y-2">
+                <Label>Broj rata</Label>
+                <Controller control={control} name="installmentCount" render={({ field }) => <Select value={String(field.value)} onValueChange={(value) => field.onChange(Number(value))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="1">1 rata</SelectItem><SelectItem value="2">2 rate</SelectItem><SelectItem value="3">3 rate</SelectItem></SelectContent></Select>} />
+              </div>
+              <div className="space-y-2">
+                <Label>Rok za otkazivanje (sati)</Label>
+                <Input type="number" min="0" max="8760" {...register("cancellationCutoffHours")} />
+              </div>
+              <div className="space-y-2">
+                <Label>Postupanje sa depozitom</Label>
+                <Controller control={control} name="depositDisposition" render={({ field }) => <Select value={field.value} onValueChange={field.onChange}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="refund">Povraćaj</SelectItem><SelectItem value="forfeit">Zadržava se</SelectItem><SelectItem value="transfer">Prenos na drugi termin</SelectItem></SelectContent></Select>} />
+              </div>
+              <div className="space-y-2">
+                <Label>Early-bird cena (RSD)</Label>
+                <Input type="number" min="0" {...register("earlyBirdPrice")} placeholder="Npr. 15000" />
+              </div>
+              <div className="space-y-2">
+                <Label>Early-bird rok</Label>
+                <Input type="datetime-local" {...register("earlyBirdCutoff")} />
+              </div>
+              <div className="space-y-2">
+                <Label>Rok rizika minimalnog broja polaznika</Label>
+                <Input type="datetime-local" {...register("minimumEnrollmentRiskDeadline")} />
+              </div>
+            </div>
+          </div>
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Odustani</Button>
             <Button type="submit" disabled={create.isPending || update.isPending}>{course ? "Sačuvaj izmene" : "Kreiraj edukaciju"}</Button>

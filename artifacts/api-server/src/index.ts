@@ -45,6 +45,7 @@ import {
   runAppointmentReminderSweep,
   runAppointmentReviewInvitationSweep,
 } from "./lib/appointment-customer-events";
+import { enqueueEducationReminderSweep, processEducationOutbox } from "./lib/education-outbox";
 
 const rawPort = process.env["PORT"];
 
@@ -102,6 +103,8 @@ const educationSessionMaintenance = createResilientScheduledJob({
   job: "education-session-maintenance",
   run: processUpcomingEducationSessions,
 });
+const educationOutboxDeliveries = createResilientScheduledJob({ job: "education-outbox-deliveries", run: processEducationOutbox });
+const educationReminderSweep = createResilientScheduledJob({ job: "education-reminder-sweep", run: enqueueEducationReminderSweep });
 const educationGalleryCleanup = createResilientScheduledJob({
   job: "education-gallery-cleanup",
   run: runEducationGalleryCleanup,
@@ -190,6 +193,8 @@ const smsOutboxDeliveries = createResilientScheduledJob({
 const scheduledJobs = [
   transactionalEmailOutbox,
   educationSessionMaintenance,
+  educationOutboxDeliveries,
+  educationReminderSweep,
   educationGalleryCleanup,
   mediaUploadCleanup,
   compatibilityImageCleanup,
@@ -232,6 +237,13 @@ const educationMaintenanceInterval = setInterval(() => {
 }, 5 * 60_000);
 educationMaintenanceInterval.unref();
 void educationSessionMaintenance.run();
+const educationOutboxInterval = setInterval(() => {
+  void educationOutboxDeliveries.run();
+  void educationReminderSweep.run();
+}, 60_000);
+educationOutboxInterval.unref();
+void educationOutboxDeliveries.run();
+void educationReminderSweep.run();
 
 const beautyJobsExpiryInterval = setInterval(() => {
   void beautyJobsExpirySweep.run();
@@ -364,6 +376,7 @@ function clearScheduledTasks(): void {
   clearInterval(appointmentCustomerEventsInterval);
   clearInterval(systemPushDeliveriesInterval);
   clearInterval(educationMaintenanceInterval);
+  clearInterval(educationOutboxInterval);
   clearInterval(beautyJobsExpiryInterval);
   clearInterval(referralMaintenanceInterval);
   clearInterval(educationGalleryCleanupInterval);

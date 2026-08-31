@@ -90,6 +90,113 @@ export function educationPaymentModeError(input: EducationPaymentModeInput): str
   return null;
 }
 
+export type EducationOperationalPricePolicy = {
+  price: number;
+  earlyBirdPrice: number | null;
+  earlyBirdCutoff: Date | null;
+  groupDiscountMinimum: number | null;
+  groupDiscountPercent: number | null;
+  paymentMode: EducationPaymentModeInput["paymentMode"];
+  depositAmount: number | null;
+  installmentCount: number;
+};
+
+/**
+ * Commercial terms are calculated once, at the command instant, and copied to
+ * the immutable booking snapshot.  The cutoff is an instant (not a date), so
+ * the strict comparison remains correct on both Belgrade DST transition days.
+ */
+export function educationOperationalPriceQuote(
+  policy: EducationOperationalPricePolicy,
+  participantCount: number,
+  now: Date,
+) {
+  if (!Number.isInteger(participantCount) || participantCount < 1) throw new Error("Broj polaznika nije ispravan.");
+  if (!Number.isInteger(policy.installmentCount) || ![1, 2, 3].includes(policy.installmentCount)) throw new Error("Broj rata mora biti 1, 2 ili 3.");
+  if (policy.earlyBirdPrice !== null && (!policy.earlyBirdCutoff || policy.earlyBirdPrice < 0 || policy.earlyBirdPrice >= policy.price)) {
+    throw new Error("Early-bird cena mora biti manja od pune cene i imati važeći rok.");
+  }
+  const earlyBirdApplied = policy.earlyBirdPrice !== null
+    && policy.earlyBirdCutoff !== null
+    && now.getTime() < policy.earlyBirdCutoff.getTime();
+  const unitBase = earlyBirdApplied ? policy.earlyBirdPrice! : policy.price;
+  const groupDiscountApplied = policy.groupDiscountMinimum !== null
+    && policy.groupDiscountPercent !== null
+    && participantCount >= policy.groupDiscountMinimum
+    && policy.groupDiscountPercent > 0;
+  if (policy.groupDiscountPercent !== null && (!Number.isInteger(policy.groupDiscountPercent) || policy.groupDiscountPercent < 0 || policy.groupDiscountPercent > 100)) {
+    throw new Error("Grupni popust nije ispravan.");
+  }
+  // Discount is computed over the group subtotal once, avoiding per-seat
+  // rounding drift and making a snapshot independently auditable.
+  const discountedGross = groupDiscountApplied
+    ? unitBase * participantCount - Math.floor(unitBase * participantCount * policy.groupDiscountPercent! / 100)
+    : unitBase * participantCount;
+  const grossAmount = policy.paymentMode === "live_off_platform"
+    ? 0
+    : policy.paymentMode === "live_deposit"
+      ? policy.depositAmount! * participantCount
+      : discountedGross;
+  if (!Number.isInteger(grossAmount) || grossAmount < 0) throw new Error("Iznos uplate nije ispravan.");
+  if (grossAmount === 0 && policy.installmentCount !== 1) throw new Error("Nulta platformska obaveza ne može imati rate.");
+  const installments = grossAmount === 0 ? [] : splitEducationInstallments(grossAmount, policy.installmentCount);
+  return {
+    grossAmount,
+    earlyBirdApplied,
+    earlyBirdCutoffSnapshot: policy.earlyBirdCutoff,
+    discountReason: earlyBirdApplied ? (groupDiscountApplied ? "early_bird_and_group" : "early_bird") : (groupDiscountApplied ? "group" : "none"),
+    installments,
+  };
+}
+
+/** Deterministic front-loaded remainder allocation, always summing to gross. */
+export function splitEducationInstallments(grossAmount: number, installmentCount: number): number[] {
+  if (!Number.isInteger(grossAmount) || grossAmount <= 0) throw new Error("Iznos rate mora biti pozitivan ceo broj.");
+  if (!Number.isInteger(installmentCount) || ![1, 2, 3].includes(installmentCount) || grossAmount < installmentCount) {
+    throw new Error("Plan rata nije ispravan.");
+  }
+  const base = Math.floor(grossAmount / installmentCount);
+  const remainder = grossAmount % installmentCount;
+  return Array.from({ length: installmentCount }, (_, index) => base + (index < remainder ? 1 : 0));
+}
+
+export type EducationIpsPaymentInstructions = {
+  recipientName: string | null;
+  recipientAccount: string | null;
+  purpose: string | null;
+};
+
+/**
+ * NBS IPS "S" payload. This is deliberately only a deterministic rendering of
+ * an already due obligation: it performs no provider call and has no payment
+ * or entitlement side effects.
+ */
+export function educationIpsQrPayload(input: EducationIpsPaymentInstructions & {
+  amount: number;
+  reference: string;
+}) {
+  const recipient = input.recipientName?.trim();
+  const account = input.recipientAccount?.replace(/[\s-]/g, "");
+  const purpose = input.purpose?.trim();
+  if (!recipient || !account || !purpose) throw new Error("IPS_PAYMENT_ACCOUNT_NOT_CONFIGURED");
+  if (!/^\d{18}$/.test(account)) throw new Error("IPS_PAYMENT_ACCOUNT_INVALID");
+  if (!Number.isInteger(input.amount) || input.amount <= 0) throw new Error("IPS_PAYMENT_AMOUNT_INVALID");
+  if (!input.reference.trim() || input.reference.length > 35) throw new Error("IPS_PAYMENT_REFERENCE_INVALID");
+  const fields = [
+    "K:PR", "V:01", "C:1", `R:${account}`, `N:${recipient}`,
+    `I:RSD${input.amount.toFixed(2)}`, `P:${purpose}`, "SF:221", `S:${input.reference.trim()}`,
+  ];
+  return {
+    payload: fields.join("|"),
+    recipientName: recipient,
+    recipientAccount: account,
+    purpose,
+    amount: input.amount,
+    currency: "RSD" as const,
+    reference: input.reference.trim(),
+  };
+}
+
 export function normalizedEducationTaxonomyName(name: string) {
   return name.normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase("sr-Latn");
 }

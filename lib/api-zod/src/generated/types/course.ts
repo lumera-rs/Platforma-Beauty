@@ -5,12 +5,15 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { CourseDepositDisposition } from './courseDepositDisposition';
 import type { CourseEnrollmentStatus } from './courseEnrollmentStatus';
 import type { CourseFaqItem } from './courseFaqItem';
 import type { CourseFormat } from './courseFormat';
+import type { CourseInstallmentCount } from './courseInstallmentCount';
 import type { CourseLevel } from './courseLevel';
 import type { CoursePaymentMode } from './coursePaymentMode';
 import type { CoursePublisherType } from './coursePublisherType';
+import type { CourseSchedulingMode } from './courseSchedulingMode';
 import type { EducationInstructorSummary } from './educationInstructorSummary';
 
 export interface Course {
@@ -108,6 +111,23 @@ export interface Course {
   /** @nullable */
   groupDiscountPercent?: number | null;
   giftVoucherEligible?: boolean;
+  schedulingMode?: CourseSchedulingMode;
+  /**
+     * @minimum 0
+     * @maximum 8760
+     */
+  cancellationCutoffHours?: number;
+  depositDisposition?: CourseDepositDisposition;
+  /** @nullable */
+  minimumEnrollmentRiskDeadline?: Date | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  earlyBirdPrice?: number | null;
+  /** @nullable */
+  earlyBirdCutoff?: Date | null;
+  installmentCount?: CourseInstallmentCount;
   /** @nullable */
   centerId?: string | null;
   /** @nullable */

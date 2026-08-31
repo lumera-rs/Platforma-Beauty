@@ -36,6 +36,9 @@ import {
   useAdminListEducationGiftVouchers,
   useAdminSettleEducationGiftVoucher,
   useAdminRefundEducationGiftVoucher,
+  useListAdminEducationInstallments,
+  useSettleAdminEducationInstallment,
+  getListAdminEducationInstallmentsQueryKey,
   getAdminListEducationGiftVouchersQueryKey,
   getListEducationGiftVouchersQueryKey,
   getListEducationPurchasesQueryKey,
@@ -72,6 +75,9 @@ export default function AdminEducationMarketplace() {
   const actionGuard = useImmediateActionGuard();
   const queryClient = useQueryClient();
   const [voucherStatus, setVoucherStatus] = useState<AdminListEducationGiftVouchersStatus>("all");
+  const [installmentStatus, setInstallmentStatus] = useState<"pending" | "settled" | "cancelled" | "all">("all");
+  const { data: installmentsPage, isLoading: loadingInstallments } = useListAdminEducationInstallments({ status: installmentStatus === "all" ? undefined : installmentStatus }, { query: { queryKey: getListAdminEducationInstallmentsQueryKey({ status: installmentStatus === "all" ? undefined : installmentStatus }) } });
+  const settleInstallmentMut = useSettleAdminEducationInstallment({ request: { headers: { "Idempotency-Key": crypto.randomUUID() } } });
   const [voucherPage, setVoucherPage] = useState(1);
   const voucherParams = { status: voucherStatus, page: voucherPage, pageSize: VOUCHER_PAGE_SIZE };
 
@@ -316,6 +322,24 @@ export default function AdminEducationMarketplace() {
     }
   };
 
+  const settleInstallment = async (installment: any) => {
+    if (installment.status !== "pending") return;
+    if (!actionGuard.begin(`settle-installment:${installment.id}`)) return;
+    if (!window.confirm(`Potvrditi ručnu uplatu za ratu ${installment.paymentReference} (${money(installment.amount)})?\nIPS uplate se knjiže isključivo ručno.`)) return actionGuard.end(`settle-installment:${installment.id}`);
+    settleInstallmentMut.mutate({ installmentId: installment.id }, {
+      onSuccess: () => {
+        toast.success("Rata je evidentirana kao uplaćena.");
+        queryClient.invalidateQueries({ queryKey: getListAdminEducationInstallmentsQueryKey({ status: installmentStatus === "all" ? undefined : installmentStatus }) });
+        queryClient.invalidateQueries({ queryKey: getGetAdminEducationFinanceQueryKey() });
+      },
+      onError: (e: any) => {
+        if (e.status === 409) toast.error("Ova rata je već plaćena ili otkazana.");
+        else toast.error("Greška", { description: e.message });
+      },
+      onSettled: () => actionGuard.end(`settle-installment:${installment.id}`)
+    });
+  };
+
   const openSettleVoucher = (voucher: AdminEducationGiftVoucher) => {
     setSelectedVoucher(voucher);
     setSettleVoucherOpen(true);
@@ -365,7 +389,7 @@ export default function AdminEducationMarketplace() {
     });
   };
 
-  if (loadingSettings || loadingCenters || loadingFinance || loadingDisputes || loadingProposals || loadingPlacementSettings || loadingPlacements || loadingVouchers) {
+  if (loadingSettings || loadingCenters || loadingFinance || loadingDisputes || loadingProposals || loadingPlacementSettings || loadingPlacements || loadingVouchers || loadingInstallments) {
     return <AdminLayout><div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div></AdminLayout>;
   }
 
@@ -492,6 +516,49 @@ export default function AdminEducationMarketplace() {
                   {p.status === "pending_payment" && <Button size="sm" onClick={() => settlePlacement(p)} disabled={actionGuard.isActive(`placement-settle:${p.paymentReference}`)}>Aktiviraj / Potvrdi</Button>}
                 </div>
               )) : <p className="py-4 text-sm text-muted-foreground">Nema sponzorisanih pozicija.</p>}
+            </CardContent>
+          </Card>
+
+          {/* Installments */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex gap-2"><Banknote className="h-5 w-5 text-primary" />Rate i IPS uplate</CardTitle>
+              <CardDescription>Upravljanje ratama za kurseve (IPS skeniranje / nalog za uplatu). NAPOMENA: Sve IPS uplate se knjiže isključivo manuelno.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex flex-col gap-3 border-b pb-3 sm:flex-row sm:items-end sm:justify-between">
+                <div className="space-y-1">
+                  <Label htmlFor="installment-status">Status rate</Label>
+                  <select
+                    id="installment-status"
+                    value={installmentStatus}
+                    onChange={(e: any) => setInstallmentStatus(e.target.value)}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm sm:w-52"
+                  >
+                    <option value="all">Svi statusi</option>
+                    <option value="pending">Na čekanju (Dospeva)</option>
+                    <option value="settled">Plaćena</option>
+                    <option value="cancelled">Otkazana</option>
+                  </select>
+                </div>
+              </div>
+              {installmentsPage && installmentsPage.length > 0 ? installmentsPage.map((ins: any) => (
+                <div key={ins.id} className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold">{ins.courseTitle}</p>
+                      <Badge variant={ins.status === "settled" ? "default" : ins.status === "pending" ? "secondary" : "outline"}>{ins.status}</Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">Polaznik: {ins.customerName} · Poziv na broj: <span className="font-mono">{ins.paymentReference}</span></p>
+                    <p className="text-sm text-muted-foreground">Iznos: {money(ins.amount)} · Dospeće: {ins.dueAt ? new Date(ins.dueAt).toLocaleDateString("sr-RS") : "Nema roka"}</p>
+                  </div>
+                  {ins.status === "pending" && (
+                    <Button onClick={() => settleInstallment(ins)} disabled={actionGuard.isActive(`settle-installment:${ins.id}`)}>
+                      Potvrdi uplatu
+                    </Button>
+                  )}
+                </div>
+              )) : <p className="py-4 text-sm text-muted-foreground">Nema pronađenih rata za izabrani status.</p>}
             </CardContent>
           </Card>
 

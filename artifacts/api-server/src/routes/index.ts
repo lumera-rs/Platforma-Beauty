@@ -15,6 +15,7 @@ import b2cDiscoveryRouter from "./b2c-discovery";
 import commerceEfRouter from "./commerce-ef";
 import commerceGRouter from "./commerce-g";
 import deoG2Router from "./deo-g2";
+import educationOperationsRouter from "./education-operations";
 
 const router: IRouter = Router();
 
@@ -30,6 +31,7 @@ router.use(b2cDiscoveryRouter);
 router.use(commerceEfRouter);
 router.use(commerceGRouter);
 router.use(deoG2Router);
+router.use(educationOperationsRouter);
 router.use(marketplaceRouter);
 router.use(retailSubscriptionsRouter);
 router.use(growthRouter);

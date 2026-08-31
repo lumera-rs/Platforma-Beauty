@@ -19,4 +19,6 @@ export interface EducationSessionInput {
      * @nullable
      */
   minimumEnrollments?: number | null;
+  /** @nullable */
+  educatorStaffId?: string | null;
 }

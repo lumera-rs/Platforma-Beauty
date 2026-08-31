@@ -574,15 +574,15 @@ async function run(): Promise<void> {
       await db.insert(courseReviewsTable).values([
         {
           courseId: certCourse.id, enrollmentId: certEnrollments[0]!.id,
-          userId: certEnrollments[0]!.userId, rating: 5, comment: "Odličan", status: "published",
+          userId: certEnrollments[0]!.userId!, rating: 5, comment: "Odličan", status: "published",
         },
         {
           courseId: certCourse.id, enrollmentId: certEnrollments[1]!.id,
-          userId: certEnrollments[1]!.userId, rating: 4, comment: "Vrlo dobar", status: "published",
+          userId: certEnrollments[1]!.userId!, rating: 4, comment: "Vrlo dobar", status: "published",
         },
         {
           courseId: certCourse.id, enrollmentId: certEnrollments[2]!.id,
-          userId: certEnrollments[2]!.userId, rating: 1, comment: "Čeka proveru", status: "pending",
+          userId: certEnrollments[2]!.userId!, rating: 1, comment: "Čeka proveru", status: "pending",
         },
       ]);
       const aggregateListResponse = await request(

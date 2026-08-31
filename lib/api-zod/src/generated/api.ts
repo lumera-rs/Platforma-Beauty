@@ -9501,6 +9501,12 @@ export const getAdminEducationSettingsResponseOneFeaturedCoursePriceMin = 0;
 export const getAdminEducationSettingsResponseOneFeaturedCoursePriceMax = 100000000;
 export const getAdminEducationSettingsResponseOneFeaturedCoursePriceMultipleOf = 1;
 
+export const getAdminEducationSettingsResponseOneIpsRecipientNameMax = 140;
+
+export const getAdminEducationSettingsResponseOneIpsRecipientAccountMax = 40;
+
+export const getAdminEducationSettingsResponseOneIpsPurposeMax = 140;
+
 
 
 export const GetAdminEducationSettingsResponse = zod.object({
@@ -9508,7 +9514,10 @@ export const GetAdminEducationSettingsResponse = zod.object({
   "reservePercent": zod.number().min(getAdminEducationSettingsResponseOneReservePercentMin).max(getAdminEducationSettingsResponseOneReservePercentMax).multipleOf(getAdminEducationSettingsResponseOneReservePercentMultipleOf),
   "onlineRefundDays": zod.number().min(getAdminEducationSettingsResponseOneOnlineRefundDaysMin).max(getAdminEducationSettingsResponseOneOnlineRefundDaysMax).multipleOf(getAdminEducationSettingsResponseOneOnlineRefundDaysMultipleOf),
   "liveAppealDays": zod.number().min(getAdminEducationSettingsResponseOneLiveAppealDaysMin).max(getAdminEducationSettingsResponseOneLiveAppealDaysMax).multipleOf(getAdminEducationSettingsResponseOneLiveAppealDaysMultipleOf),
-  "featuredCoursePrice": zod.number().min(getAdminEducationSettingsResponseOneFeaturedCoursePriceMin).max(getAdminEducationSettingsResponseOneFeaturedCoursePriceMax).multipleOf(getAdminEducationSettingsResponseOneFeaturedCoursePriceMultipleOf)
+  "featuredCoursePrice": zod.number().min(getAdminEducationSettingsResponseOneFeaturedCoursePriceMin).max(getAdminEducationSettingsResponseOneFeaturedCoursePriceMax).multipleOf(getAdminEducationSettingsResponseOneFeaturedCoursePriceMultipleOf),
+  "ipsRecipientName": zod.string().max(getAdminEducationSettingsResponseOneIpsRecipientNameMax).nullish(),
+  "ipsRecipientAccount": zod.string().max(getAdminEducationSettingsResponseOneIpsRecipientAccountMax).nullish(),
+  "ipsPurpose": zod.string().max(getAdminEducationSettingsResponseOneIpsPurposeMax).nullish()
 }).and(zod.object({
   "id": zod.string(),
   "updatedAt": zod.coerce.date()
@@ -9535,6 +9544,12 @@ export const updateAdminEducationSettingsBodyFeaturedCoursePriceMin = 0;
 export const updateAdminEducationSettingsBodyFeaturedCoursePriceMax = 100000000;
 export const updateAdminEducationSettingsBodyFeaturedCoursePriceMultipleOf = 1;
 
+export const updateAdminEducationSettingsBodyIpsRecipientNameMax = 140;
+
+export const updateAdminEducationSettingsBodyIpsRecipientAccountMax = 40;
+
+export const updateAdminEducationSettingsBodyIpsPurposeMax = 140;
+
 
 
 export const UpdateAdminEducationSettingsBody = zod.object({
@@ -9542,7 +9557,10 @@ export const UpdateAdminEducationSettingsBody = zod.object({
   "reservePercent": zod.number().min(updateAdminEducationSettingsBodyReservePercentMin).max(updateAdminEducationSettingsBodyReservePercentMax).multipleOf(updateAdminEducationSettingsBodyReservePercentMultipleOf),
   "onlineRefundDays": zod.number().min(updateAdminEducationSettingsBodyOnlineRefundDaysMin).max(updateAdminEducationSettingsBodyOnlineRefundDaysMax).multipleOf(updateAdminEducationSettingsBodyOnlineRefundDaysMultipleOf),
   "liveAppealDays": zod.number().min(updateAdminEducationSettingsBodyLiveAppealDaysMin).max(updateAdminEducationSettingsBodyLiveAppealDaysMax).multipleOf(updateAdminEducationSettingsBodyLiveAppealDaysMultipleOf),
-  "featuredCoursePrice": zod.number().min(updateAdminEducationSettingsBodyFeaturedCoursePriceMin).max(updateAdminEducationSettingsBodyFeaturedCoursePriceMax).multipleOf(updateAdminEducationSettingsBodyFeaturedCoursePriceMultipleOf)
+  "featuredCoursePrice": zod.number().min(updateAdminEducationSettingsBodyFeaturedCoursePriceMin).max(updateAdminEducationSettingsBodyFeaturedCoursePriceMax).multipleOf(updateAdminEducationSettingsBodyFeaturedCoursePriceMultipleOf),
+  "ipsRecipientName": zod.string().max(updateAdminEducationSettingsBodyIpsRecipientNameMax).nullish(),
+  "ipsRecipientAccount": zod.string().max(updateAdminEducationSettingsBodyIpsRecipientAccountMax).nullish(),
+  "ipsPurpose": zod.string().max(updateAdminEducationSettingsBodyIpsPurposeMax).nullish()
 }).strict()
 
 export const updateAdminEducationSettingsResponseOneCommissionPercentMin = 0;
@@ -9565,6 +9583,12 @@ export const updateAdminEducationSettingsResponseOneFeaturedCoursePriceMin = 0;
 export const updateAdminEducationSettingsResponseOneFeaturedCoursePriceMax = 100000000;
 export const updateAdminEducationSettingsResponseOneFeaturedCoursePriceMultipleOf = 1;
 
+export const updateAdminEducationSettingsResponseOneIpsRecipientNameMax = 140;
+
+export const updateAdminEducationSettingsResponseOneIpsRecipientAccountMax = 40;
+
+export const updateAdminEducationSettingsResponseOneIpsPurposeMax = 140;
+
 
 
 export const UpdateAdminEducationSettingsResponse = zod.object({
@@ -9572,7 +9596,10 @@ export const UpdateAdminEducationSettingsResponse = zod.object({
   "reservePercent": zod.number().min(updateAdminEducationSettingsResponseOneReservePercentMin).max(updateAdminEducationSettingsResponseOneReservePercentMax).multipleOf(updateAdminEducationSettingsResponseOneReservePercentMultipleOf),
   "onlineRefundDays": zod.number().min(updateAdminEducationSettingsResponseOneOnlineRefundDaysMin).max(updateAdminEducationSettingsResponseOneOnlineRefundDaysMax).multipleOf(updateAdminEducationSettingsResponseOneOnlineRefundDaysMultipleOf),
   "liveAppealDays": zod.number().min(updateAdminEducationSettingsResponseOneLiveAppealDaysMin).max(updateAdminEducationSettingsResponseOneLiveAppealDaysMax).multipleOf(updateAdminEducationSettingsResponseOneLiveAppealDaysMultipleOf),
-  "featuredCoursePrice": zod.number().min(updateAdminEducationSettingsResponseOneFeaturedCoursePriceMin).max(updateAdminEducationSettingsResponseOneFeaturedCoursePriceMax).multipleOf(updateAdminEducationSettingsResponseOneFeaturedCoursePriceMultipleOf)
+  "featuredCoursePrice": zod.number().min(updateAdminEducationSettingsResponseOneFeaturedCoursePriceMin).max(updateAdminEducationSettingsResponseOneFeaturedCoursePriceMax).multipleOf(updateAdminEducationSettingsResponseOneFeaturedCoursePriceMultipleOf),
+  "ipsRecipientName": zod.string().max(updateAdminEducationSettingsResponseOneIpsRecipientNameMax).nullish(),
+  "ipsRecipientAccount": zod.string().max(updateAdminEducationSettingsResponseOneIpsRecipientAccountMax).nullish(),
+  "ipsPurpose": zod.string().max(updateAdminEducationSettingsResponseOneIpsPurposeMax).nullish()
 }).and(zod.object({
   "id": zod.string(),
   "updatedAt": zod.coerce.date()
@@ -10128,6 +10155,11 @@ export const listCoursesResponseInquiryCount30dMultipleOf = 1;
 export const listCoursesResponseViewCount30dMin = 0;
 export const listCoursesResponseViewCount30dMultipleOf = 1;
 
+export const listCoursesResponseCancellationCutoffHoursMin = 0;
+export const listCoursesResponseCancellationCutoffHoursMax = 8760;
+
+export const listCoursesResponseEarlyBirdPriceMin = 0;
+
 
 
 export const ListCoursesResponseItem = zod.object({
@@ -10199,6 +10231,13 @@ export const ListCoursesResponseItem = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(listCoursesResponseCancellationCutoffHoursMin).max(listCoursesResponseCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(listCoursesResponseEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -10262,6 +10301,11 @@ export const createEducationCourseBodyGroupDiscountMinimumMax = 999;
 export const createEducationCourseBodyGroupDiscountPercentMin = 0;
 export const createEducationCourseBodyGroupDiscountPercentMax = 100;
 
+export const createEducationCourseBodyCancellationCutoffHoursMin = 0;
+export const createEducationCourseBodyCancellationCutoffHoursMax = 8760;
+
+export const createEducationCourseBodyEarlyBirdPriceMin = 0;
+
 
 
 export const CreateEducationCourseBody = zod.object({
@@ -10299,7 +10343,14 @@ export const CreateEducationCourseBody = zod.object({
   "refundPolicy": zod.string().min(1).max(createEducationCourseBodyRefundPolicyMax).optional(),
   "giftVoucherEligible": zod.boolean().optional(),
   "groupDiscountMinimum": zod.number().min(createEducationCourseBodyGroupDiscountMinimumMin).max(createEducationCourseBodyGroupDiscountMinimumMax).nullish(),
-  "groupDiscountPercent": zod.number().min(createEducationCourseBodyGroupDiscountPercentMin).max(createEducationCourseBodyGroupDiscountPercentMax).nullish()
+  "groupDiscountPercent": zod.number().min(createEducationCourseBodyGroupDiscountPercentMin).max(createEducationCourseBodyGroupDiscountPercentMax).nullish(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(createEducationCourseBodyCancellationCutoffHoursMin).max(createEducationCourseBodyCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(createEducationCourseBodyEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional()
 })
 
 export const createEducationCourseResponseOneOneInstructorProfileTwoIndustryYearsMin = 0;
@@ -10327,6 +10378,11 @@ export const createEducationCourseResponseOneOneInquiryCount30dMultipleOf = 1;
 
 export const createEducationCourseResponseOneOneViewCount30dMin = 0;
 export const createEducationCourseResponseOneOneViewCount30dMultipleOf = 1;
+
+export const createEducationCourseResponseOneOneCancellationCutoffHoursMin = 0;
+export const createEducationCourseResponseOneOneCancellationCutoffHoursMax = 8760;
+
+export const createEducationCourseResponseOneOneEarlyBirdPriceMin = 0;
 
 export const createEducationCourseResponseOneTwoPublicModulesItemSortOrderMin = 0;
 
@@ -10372,6 +10428,11 @@ export const createEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount
 
 export const createEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const createEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+export const createEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
+export const createEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
+
+export const createEducationCourseResponseOneTwoCenterTwoCoursesItemEarlyBirdPriceMin = 0;
 
 export const createEducationCourseResponseOneTwoReviewsItemRatingMax = 5;
 
@@ -10446,6 +10507,13 @@ export const CreateEducationCourseResponse = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(createEducationCourseResponseOneOneCancellationCutoffHoursMin).max(createEducationCourseResponseOneOneCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(createEducationCourseResponseOneOneEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -10466,7 +10534,8 @@ export const CreateEducationCourseResponse = zod.object({
   "reservedSeats": zod.number(),
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
-  "cancelledAt": zod.coerce.date().nullish()
+  "cancelledAt": zod.coerce.date().nullish(),
+  "educatorStaffId": zod.string().nullish()
 })),
   "dayProgram": zod.array(zod.object({
   "id": zod.string(),
@@ -10568,6 +10637,13 @@ export const CreateEducationCourseResponse = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(createEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMin).max(createEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(createEducationCourseResponseOneTwoCenterTwoCoursesItemEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -10631,6 +10707,11 @@ export const getEducationCourseResponseOneOneInquiryCount30dMultipleOf = 1;
 export const getEducationCourseResponseOneOneViewCount30dMin = 0;
 export const getEducationCourseResponseOneOneViewCount30dMultipleOf = 1;
 
+export const getEducationCourseResponseOneOneCancellationCutoffHoursMin = 0;
+export const getEducationCourseResponseOneOneCancellationCutoffHoursMax = 8760;
+
+export const getEducationCourseResponseOneOneEarlyBirdPriceMin = 0;
+
 export const getEducationCourseResponseOneTwoPublicModulesItemSortOrderMin = 0;
 
 export const getEducationCourseResponseOneTwoPublicModulesItemLessonCountMin = 0;
@@ -10675,6 +10756,11 @@ export const getEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30d
 
 export const getEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const getEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+export const getEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
+export const getEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
+
+export const getEducationCourseResponseOneTwoCenterTwoCoursesItemEarlyBirdPriceMin = 0;
 
 export const getEducationCourseResponseOneTwoReviewsItemRatingMax = 5;
 
@@ -10749,6 +10835,13 @@ export const GetEducationCourseResponse = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(getEducationCourseResponseOneOneCancellationCutoffHoursMin).max(getEducationCourseResponseOneOneCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(getEducationCourseResponseOneOneEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -10769,7 +10862,8 @@ export const GetEducationCourseResponse = zod.object({
   "reservedSeats": zod.number(),
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
-  "cancelledAt": zod.coerce.date().nullish()
+  "cancelledAt": zod.coerce.date().nullish(),
+  "educatorStaffId": zod.string().nullish()
 })),
   "dayProgram": zod.array(zod.object({
   "id": zod.string(),
@@ -10871,6 +10965,13 @@ export const GetEducationCourseResponse = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(getEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMin).max(getEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(getEducationCourseResponseOneTwoCenterTwoCoursesItemEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -10961,6 +11062,11 @@ export const updateEducationCourseBodyGroupDiscountMinimumMax = 999;
 export const updateEducationCourseBodyGroupDiscountPercentMin = 0;
 export const updateEducationCourseBodyGroupDiscountPercentMax = 100;
 
+export const updateEducationCourseBodyCancellationCutoffHoursMin = 0;
+export const updateEducationCourseBodyCancellationCutoffHoursMax = 8760;
+
+export const updateEducationCourseBodyEarlyBirdPriceMin = 0;
+
 
 
 export const UpdateEducationCourseBody = zod.object({
@@ -10999,7 +11105,14 @@ export const UpdateEducationCourseBody = zod.object({
   "refundPolicy": zod.string().min(1).max(updateEducationCourseBodyRefundPolicyMax).optional(),
   "giftVoucherEligible": zod.boolean().optional(),
   "groupDiscountMinimum": zod.number().min(updateEducationCourseBodyGroupDiscountMinimumMin).max(updateEducationCourseBodyGroupDiscountMinimumMax).nullish(),
-  "groupDiscountPercent": zod.number().min(updateEducationCourseBodyGroupDiscountPercentMin).max(updateEducationCourseBodyGroupDiscountPercentMax).nullish()
+  "groupDiscountPercent": zod.number().min(updateEducationCourseBodyGroupDiscountPercentMin).max(updateEducationCourseBodyGroupDiscountPercentMax).nullish(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(updateEducationCourseBodyCancellationCutoffHoursMin).max(updateEducationCourseBodyCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(updateEducationCourseBodyEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional()
 })
 
 export const updateEducationCourseResponseOneOneInstructorProfileTwoIndustryYearsMin = 0;
@@ -11027,6 +11140,11 @@ export const updateEducationCourseResponseOneOneInquiryCount30dMultipleOf = 1;
 
 export const updateEducationCourseResponseOneOneViewCount30dMin = 0;
 export const updateEducationCourseResponseOneOneViewCount30dMultipleOf = 1;
+
+export const updateEducationCourseResponseOneOneCancellationCutoffHoursMin = 0;
+export const updateEducationCourseResponseOneOneCancellationCutoffHoursMax = 8760;
+
+export const updateEducationCourseResponseOneOneEarlyBirdPriceMin = 0;
 
 export const updateEducationCourseResponseOneTwoPublicModulesItemSortOrderMin = 0;
 
@@ -11072,6 +11190,11 @@ export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount
 
 export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
+export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
+
+export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemEarlyBirdPriceMin = 0;
 
 export const updateEducationCourseResponseOneTwoReviewsItemRatingMax = 5;
 
@@ -11146,6 +11269,13 @@ export const UpdateEducationCourseResponse = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(updateEducationCourseResponseOneOneCancellationCutoffHoursMin).max(updateEducationCourseResponseOneOneCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(updateEducationCourseResponseOneOneEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -11166,7 +11296,8 @@ export const UpdateEducationCourseResponse = zod.object({
   "reservedSeats": zod.number(),
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
-  "cancelledAt": zod.coerce.date().nullish()
+  "cancelledAt": zod.coerce.date().nullish(),
+  "educatorStaffId": zod.string().nullish()
 })),
   "dayProgram": zod.array(zod.object({
   "id": zod.string(),
@@ -11268,6 +11399,13 @@ export const UpdateEducationCourseResponse = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(updateEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMin).max(updateEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(updateEducationCourseResponseOneTwoCenterTwoCoursesItemEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -11341,6 +11479,11 @@ export const publishEducationCourseResponseOneOneInquiryCount30dMultipleOf = 1;
 export const publishEducationCourseResponseOneOneViewCount30dMin = 0;
 export const publishEducationCourseResponseOneOneViewCount30dMultipleOf = 1;
 
+export const publishEducationCourseResponseOneOneCancellationCutoffHoursMin = 0;
+export const publishEducationCourseResponseOneOneCancellationCutoffHoursMax = 8760;
+
+export const publishEducationCourseResponseOneOneEarlyBirdPriceMin = 0;
+
 export const publishEducationCourseResponseOneTwoPublicModulesItemSortOrderMin = 0;
 
 export const publishEducationCourseResponseOneTwoPublicModulesItemLessonCountMin = 0;
@@ -11385,6 +11528,11 @@ export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCoun
 
 export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
+export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
+
+export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemEarlyBirdPriceMin = 0;
 
 export const publishEducationCourseResponseOneTwoReviewsItemRatingMax = 5;
 
@@ -11459,6 +11607,13 @@ export const PublishEducationCourseResponse = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(publishEducationCourseResponseOneOneCancellationCutoffHoursMin).max(publishEducationCourseResponseOneOneCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(publishEducationCourseResponseOneOneEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -11479,7 +11634,8 @@ export const PublishEducationCourseResponse = zod.object({
   "reservedSeats": zod.number(),
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
-  "cancelledAt": zod.coerce.date().nullish()
+  "cancelledAt": zod.coerce.date().nullish(),
+  "educatorStaffId": zod.string().nullish()
 })),
   "dayProgram": zod.array(zod.object({
   "id": zod.string(),
@@ -11581,6 +11737,13 @@ export const PublishEducationCourseResponse = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(publishEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMin).max(publishEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(publishEducationCourseResponseOneTwoCenterTwoCoursesItemEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -11912,6 +12075,901 @@ export const DeleteEducationLessonResponse = zod.void()
 
 
 /**
+ * @summary Get canonical Europe/Belgrade individual-course availability and occupancy
+ */
+export const GetEducationCourseAvailabilityParams = zod.object({
+  "courseId": zod.coerce.string()
+})
+
+export const getEducationCourseAvailabilityQueryDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const GetEducationCourseAvailabilityQueryParams = zod.object({
+  "date": zod.coerce.string().regex(getEducationCourseAvailabilityQueryDateRegExp).optional(),
+  "educatorStaffId": zod.coerce.string().optional()
+})
+
+export const getEducationCourseAvailabilityResponseOccupancyMin = 0;
+
+export const getEducationCourseAvailabilityResponseCapacityMin = 0;
+
+export const getEducationCourseAvailabilityResponseFreeSeatsMin = 0;
+
+
+
+export const GetEducationCourseAvailabilityResponse = zod.object({
+  "timeZone": zod.literal("Europe/Belgrade"),
+  "occupancy": zod.number().int().min(getEducationCourseAvailabilityResponseOccupancyMin),
+  "capacity": zod.number().int().min(getEducationCourseAvailabilityResponseCapacityMin).nullish(),
+  "freeSeats": zod.number().int().min(getEducationCourseAvailabilityResponseFreeSeatsMin).nullish(),
+  "waitlistOpen": zod.boolean().optional(),
+  "lastSpots": zod.boolean().optional(),
+  "nextAvailable": zod.object({
+  "sessionId": zod.string().optional(),
+  "date": zod.string().optional(),
+  "startTime": zod.string().optional(),
+  "endTime": zod.string().optional(),
+  "educatorStaffId": zod.string().nullish()
+}).nullish(),
+  "slots": zod.array(zod.object({
+  "sessionId": zod.string(),
+  "date": zod.string(),
+  "startTime": zod.string(),
+  "endTime": zod.string(),
+  "educatorStaffId": zod.string().nullable()
+}))
+})
+
+
+/**
+ * @summary List operational education booking groups visible to the purchaser or a named participant
+ */
+export const ListMyEducationOperationalBookingsResponseItem = zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "courseId": zod.string(),
+  "courseTitle": zod.string(),
+  "sessionId": zod.string().nullable(),
+  "purchaserId": zod.string().nullable(),
+  "status": zod.enum(['pending', 'active', 'waitlisted', 'cancelled']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "session": zod.object({
+  "id": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "location": zod.string().nullable(),
+  "cancelledAt": zod.coerce.date().nullable()
+}).nullable(),
+  "participants": zod.array(zod.object({
+  "id": zod.string(),
+  "userId": zod.string().nullable(),
+  "enrollmentId": zod.string().nullable(),
+  "fullName": zod.string(),
+  "email": zod.string().nullable(),
+  "phone": zod.string().nullable(),
+  "status": zod.enum(['reserved', 'waitlisted', 'cancelled'])
+}))
+})
+export const ListMyEducationOperationalBookingsResponse = zod.array(ListMyEducationOperationalBookingsResponseItem)
+
+
+/**
+ * @summary Atomically create an online or center-created named-seat booking
+ */
+export const createEducationOperationalBookingHeaderIdempotencyKeyMax = 200;
+
+
+
+export const CreateEducationOperationalBookingHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(createEducationOperationalBookingHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+})
+
+export const createEducationOperationalBookingBodyInstallmentCountDefault = 1;
+export const createEducationOperationalBookingBodyParticipantsItemFullNameMax = 240;
+
+export const createEducationOperationalBookingBodyParticipantsItemEmailMax = 320;
+
+export const createEducationOperationalBookingBodyParticipantsItemPhoneMax = 64;
+
+export const createEducationOperationalBookingBodyParticipantsMax = 20;
+
+
+
+export const CreateEducationOperationalBookingBody = zod.object({
+  "courseId": zod.string(),
+  "sessionId": zod.string(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).default(createEducationOperationalBookingBodyInstallmentCountDefault),
+  "participants": zod.array(zod.object({
+  "fullName": zod.string().min(1).max(createEducationOperationalBookingBodyParticipantsItemFullNameMax),
+  "email": zod.string().max(createEducationOperationalBookingBodyParticipantsItemEmailMax).nullish(),
+  "phone": zod.string().max(createEducationOperationalBookingBodyParticipantsItemPhoneMax).nullish(),
+  "userId": zod.string().nullish()
+})).min(1).max(createEducationOperationalBookingBodyParticipantsMax)
+})
+
+
+export const createEducationOperationalBookingResponseGrossAmountMin = 0;
+
+
+
+
+
+export const CreateEducationOperationalBookingResponse = zod.object({
+  "id": zod.string(),
+  "courseId": zod.string(),
+  "sessionId": zod.string(),
+  "status": zod.enum(['pending', 'active', 'waitlisted', 'cancelled']),
+  "participantCount": zod.number().int().min(1),
+  "paymentStatus": zod.enum(['pending']),
+  "grossAmount": zod.number().int().min(createEducationOperationalBookingResponseGrossAmountMin),
+  "earlyBirdApplied": zod.boolean(),
+  "discountReason": zod.enum(['none', 'early_bird', 'group', 'early_bird_and_group']),
+  "installments": zod.array(zod.object({
+  "installmentNumber": zod.number().int().min(1),
+  "amount": zod.number().int().min(1),
+  "paymentReference": zod.string(),
+  "status": zod.enum(['pending', 'settled', 'refunded'])
+}))
+})
+
+
+/**
+ * @summary Get an operational booking group visible to the purchaser or a named participant
+ */
+export const GetMyEducationOperationalBookingParams = zod.object({
+  "bookingGroupId": zod.coerce.string()
+})
+
+export const GetMyEducationOperationalBookingResponse = zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "courseId": zod.string(),
+  "courseTitle": zod.string(),
+  "sessionId": zod.string().nullable(),
+  "purchaserId": zod.string().nullable(),
+  "status": zod.enum(['pending', 'active', 'waitlisted', 'cancelled']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "session": zod.object({
+  "id": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "location": zod.string().nullable(),
+  "cancelledAt": zod.coerce.date().nullable()
+}).nullable(),
+  "participants": zod.array(zod.object({
+  "id": zod.string(),
+  "userId": zod.string().nullable(),
+  "enrollmentId": zod.string().nullable(),
+  "fullName": zod.string(),
+  "email": zod.string().nullable(),
+  "phone": zod.string().nullable(),
+  "status": zod.enum(['reserved', 'waitlisted', 'cancelled'])
+}))
+})
+
+
+/**
+ * @summary Download an authorized operational booking calendar
+ */
+export const DownloadEducationOperationalBookingCalendarParams = zod.object({
+  "bookingGroupId": zod.coerce.string()
+})
+
+export const DownloadEducationOperationalBookingCalendarResponse = zod.unknown()
+
+
+/**
+ * @summary Get deterministic NBS IPS QR payment data for a due booking installment
+ */
+
+
+
+export const GetEducationOperationalInstallmentIpsQrParams = zod.object({
+  "bookingGroupId": zod.coerce.string(),
+  "installmentNumber": zod.coerce.number().int().min(1)
+})
+
+
+
+
+export const GetEducationOperationalInstallmentIpsQrResponse = zod.object({
+  "payload": zod.string(),
+  "recipientName": zod.string(),
+  "recipientAccount": zod.string(),
+  "purpose": zod.string(),
+  "amount": zod.number().int().min(1),
+  "currency": zod.literal("RSD"),
+  "reference": zod.string()
+})
+
+
+/**
+ * @summary Get purchaser-visible installment status for an operational booking
+ */
+export const GetEducationOperationalPaymentPlanParams = zod.object({
+  "bookingGroupId": zod.coerce.string()
+})
+
+export const getEducationOperationalPaymentPlanResponseGrossAmountMin = 0;
+
+export const getEducationOperationalPaymentPlanResponseCapturedAmountMin = 0;
+
+export const getEducationOperationalPaymentPlanResponseRefundedAmountMin = 0;
+
+export const getEducationOperationalPaymentPlanResponseNetPaidAmountMin = 0;
+
+export const getEducationOperationalPaymentPlanResponseOutstandingAmountMin = 0;
+
+
+
+
+
+export const GetEducationOperationalPaymentPlanResponse = zod.object({
+  "bookingGroupId": zod.string(),
+  "grossAmount": zod.number().int().min(getEducationOperationalPaymentPlanResponseGrossAmountMin),
+  "capturedAmount": zod.number().int().min(getEducationOperationalPaymentPlanResponseCapturedAmountMin),
+  "refundedAmount": zod.number().int().min(getEducationOperationalPaymentPlanResponseRefundedAmountMin),
+  "netPaidAmount": zod.number().int().min(getEducationOperationalPaymentPlanResponseNetPaidAmountMin),
+  "outstandingAmount": zod.number().int().min(getEducationOperationalPaymentPlanResponseOutstandingAmountMin),
+  "paymentStatus": zod.enum(['pending', 'partial', 'paid', 'refunded']),
+  "installments": zod.array(zod.object({
+  "installmentNumber": zod.number().int().min(1),
+  "amount": zod.number().int().min(1),
+  "paymentReference": zod.string(),
+  "status": zod.enum(['pending', 'settled', 'refunded'])
+}))
+})
+
+
+/**
+ * @summary Manually settle one pending operational installment
+ */
+export const SettleAdminEducationInstallmentParams = zod.object({
+  "installmentId": zod.coerce.string()
+})
+
+export const settleAdminEducationInstallmentHeaderIdempotencyKeyMax = 200;
+
+
+
+export const SettleAdminEducationInstallmentHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(settleAdminEducationInstallmentHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+})
+
+export const SettleAdminEducationInstallmentResponse = zod.object({
+  "installmentId": zod.string(),
+  "paymentReference": zod.string(),
+  "amount": zod.number().int(),
+  "capturedAmount": zod.number().int(),
+  "paymentStatus": zod.enum(['partial', 'paid']),
+  "replayed": zod.boolean()
+})
+
+
+/**
+ * @summary List due operational installments
+ */
+export const ListAdminEducationInstallmentsQueryParams = zod.object({
+  "status": zod.enum(['pending', 'settled', 'refunded', 'cancelled']).optional(),
+  "reference": zod.coerce.string().optional()
+})
+
+export const ListAdminEducationInstallmentsResponseItem = zod.object({
+  "id": zod.string(),
+  "bookingGroupId": zod.string(),
+  "centerId": zod.string(),
+  "courseTitle": zod.string(),
+  "customerName": zod.string(),
+  "installmentNumber": zod.number().int(),
+  "amount": zod.number().int(),
+  "status": zod.enum(['pending', 'settled', 'refunded', 'cancelled']),
+  "paymentReference": zod.string(),
+  "dueAt": zod.coerce.date().nullable(),
+  "settledAt": zod.coerce.date().nullable()
+})
+export const ListAdminEducationInstallmentsResponse = zod.array(ListAdminEducationInstallmentsResponseItem)
+
+
+/**
+ * @summary Cancel a whole operational booking group or selected named seats
+ */
+export const CancelEducationOperationalBookingParams = zod.object({
+  "bookingGroupId": zod.coerce.string()
+})
+
+export const cancelEducationOperationalBookingBodyParticipantIdsMax = 20;
+
+export const cancelEducationOperationalBookingBodyReasonMin = 3;
+export const cancelEducationOperationalBookingBodyReasonMax = 1000;
+
+
+
+export const CancelEducationOperationalBookingBody = zod.object({
+  "participantIds": zod.array(zod.string()).min(1).max(cancelEducationOperationalBookingBodyParticipantIdsMax).optional(),
+  "reason": zod.string().min(cancelEducationOperationalBookingBodyReasonMin).max(cancelEducationOperationalBookingBodyReasonMax)
+})
+
+export const cancelEducationOperationalBookingResponseCancelledSeatsMin = 0;
+
+export const cancelEducationOperationalBookingResponseMovedSeatsMin = 0;
+
+export const cancelEducationOperationalBookingResponseRefundAmountMin = 0;
+
+
+
+export const CancelEducationOperationalBookingResponse = zod.object({
+  "bookingGroupId": zod.string(),
+  "sessionId": zod.string().nullable(),
+  "status": zod.enum(['pending', 'active', 'waitlisted', 'cancelled']),
+  "affectedParticipantIds": zod.array(zod.string()),
+  "cancelledSeats": zod.number().int().min(cancelEducationOperationalBookingResponseCancelledSeatsMin),
+  "movedSeats": zod.number().int().min(cancelEducationOperationalBookingResponseMovedSeatsMin),
+  "refundAmount": zod.number().int().min(cancelEducationOperationalBookingResponseRefundAmountMin),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']),
+  "replayed": zod.boolean()
+})
+
+
+/**
+ * @summary Atomically move whole or selected operational booking seats to a compatible session
+ */
+export const RescheduleEducationOperationalBookingParams = zod.object({
+  "bookingGroupId": zod.coerce.string()
+})
+
+export const rescheduleEducationOperationalBookingHeaderIdempotencyKeyMax = 200;
+
+
+
+export const RescheduleEducationOperationalBookingHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(rescheduleEducationOperationalBookingHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+})
+
+export const rescheduleEducationOperationalBookingBodyParticipantIdsMax = 20;
+
+
+
+export const RescheduleEducationOperationalBookingBody = zod.object({
+  "targetSessionId": zod.string(),
+  "participantIds": zod.array(zod.string()).min(1).max(rescheduleEducationOperationalBookingBodyParticipantIdsMax).optional()
+})
+
+export const rescheduleEducationOperationalBookingResponseCancelledSeatsMin = 0;
+
+export const rescheduleEducationOperationalBookingResponseMovedSeatsMin = 0;
+
+export const rescheduleEducationOperationalBookingResponseRefundAmountMin = 0;
+
+
+
+export const RescheduleEducationOperationalBookingResponse = zod.object({
+  "bookingGroupId": zod.string(),
+  "sessionId": zod.string().nullable(),
+  "status": zod.enum(['pending', 'active', 'waitlisted', 'cancelled']),
+  "affectedParticipantIds": zod.array(zod.string()),
+  "cancelledSeats": zod.number().int().min(rescheduleEducationOperationalBookingResponseCancelledSeatsMin),
+  "movedSeats": zod.number().int().min(rescheduleEducationOperationalBookingResponseMovedSeatsMin),
+  "refundAmount": zod.number().int().min(rescheduleEducationOperationalBookingResponseRefundAmountMin),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']),
+  "replayed": zod.boolean()
+})
+
+
+/**
+ * @summary Get attendance for a named participant in a center session
+ */
+export const GetEducationOperationalAttendanceParams = zod.object({
+  "centerId": zod.coerce.string(),
+  "sessionId": zod.coerce.string(),
+  "participantId": zod.coerce.string()
+})
+
+export const GetEducationOperationalAttendanceResponse = zod.object({
+  "participantId": zod.string(),
+  "sessionId": zod.string(),
+  "status": zod.enum(['present', 'absent', 'excused']),
+  "recordedAt": zod.coerce.date(),
+  "recordedByUserId": zod.string().nullable()
+})
+
+
+/**
+ * @summary Record attendance for a named participant in a center session
+ */
+export const UpsertEducationOperationalAttendanceParams = zod.object({
+  "centerId": zod.coerce.string(),
+  "sessionId": zod.coerce.string(),
+  "participantId": zod.coerce.string()
+})
+
+export const UpsertEducationOperationalAttendanceBody = zod.object({
+  "status": zod.enum(['present', 'absent', 'excused']),
+  "occurredAt": zod.coerce.date().optional()
+})
+
+export const UpsertEducationOperationalAttendanceResponse = zod.object({
+  "participantId": zod.string(),
+  "sessionId": zod.string(),
+  "status": zod.enum(['present', 'absent', 'excused']),
+  "recordedAt": zod.coerce.date(),
+  "recordedByUserId": zod.string().nullable()
+})
+
+
+/**
+ * @summary Substitute the educator assigned to an operational session
+ */
+export const SubstituteEducationSessionEducatorParams = zod.object({
+  "centerId": zod.coerce.string(),
+  "sessionId": zod.coerce.string()
+})
+
+export const SubstituteEducationSessionEducatorBody = zod.object({
+  "educatorStaffId": zod.string()
+})
+
+export const SubstituteEducationSessionEducatorResponse = zod.object({
+  "sessionId": zod.string(),
+  "educatorStaffId": zod.string()
+})
+
+
+/**
+ * @summary Cancel an operational session and process center-caused refunds
+ */
+export const CancelEducationOperationalSessionParams = zod.object({
+  "centerId": zod.coerce.string(),
+  "sessionId": zod.coerce.string()
+})
+
+export const cancelEducationOperationalSessionBodyReasonMax = 1000;
+
+
+
+export const CancelEducationOperationalSessionBody = zod.object({
+  "reason": zod.string().max(cancelEducationOperationalSessionBodyReasonMax).optional()
+})
+
+export const cancelEducationOperationalSessionResponseCancelledParticipantsMin = 0;
+
+export const cancelEducationOperationalSessionResponseCancelledEnrollmentsMin = 0;
+
+export const cancelEducationOperationalSessionResponseRefundAmountMin = 0;
+
+
+
+export const CancelEducationOperationalSessionResponse = zod.object({
+  "sessionId": zod.string(),
+  "cancelledParticipants": zod.number().int().min(cancelEducationOperationalSessionResponseCancelledParticipantsMin),
+  "cancelledEnrollments": zod.number().int().min(cancelEducationOperationalSessionResponseCancelledEnrollmentsMin),
+  "refundAmount": zod.number().int().min(cancelEducationOperationalSessionResponseRefundAmountMin)
+})
+
+
+export const PreviewEducationCourseRecurrenceParams = zod.object({
+  "courseId": zod.coerce.string()
+})
+
+export const previewEducationCourseRecurrenceBodyWeekdaysItemMax = 7;
+
+export const previewEducationCourseRecurrenceBodyWeekdaysMax = 7;
+
+export const previewEducationCourseRecurrenceBodyStartTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+export const previewEducationCourseRecurrenceBodyEndTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+export const previewEducationCourseRecurrenceBodyDurationMinutesMin = 5;
+export const previewEducationCourseRecurrenceBodyDurationMinutesMax = 720;
+
+export const previewEducationCourseRecurrenceBodyGranularityMinutesMin = 5;
+export const previewEducationCourseRecurrenceBodyGranularityMinutesMax = 180;
+
+export const previewEducationCourseRecurrenceBodyStartDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const previewEducationCourseRecurrenceBodyEndDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const previewEducationCourseRecurrenceBodyCapacityMax = 1000;
+
+export const previewEducationCourseRecurrenceBodyMinimumEnrollmentsMin = 0;
+
+
+
+export const PreviewEducationCourseRecurrenceBody = zod.object({
+  "educatorStaffId": zod.string(),
+  "weekdays": zod.array(zod.number().int().min(1).max(previewEducationCourseRecurrenceBodyWeekdaysItemMax)).min(1).max(previewEducationCourseRecurrenceBodyWeekdaysMax),
+  "startTime": zod.string().regex(previewEducationCourseRecurrenceBodyStartTimeRegExp),
+  "endTime": zod.string().regex(previewEducationCourseRecurrenceBodyEndTimeRegExp),
+  "durationMinutes": zod.number().int().min(previewEducationCourseRecurrenceBodyDurationMinutesMin).max(previewEducationCourseRecurrenceBodyDurationMinutesMax),
+  "granularityMinutes": zod.number().int().min(previewEducationCourseRecurrenceBodyGranularityMinutesMin).max(previewEducationCourseRecurrenceBodyGranularityMinutesMax).optional(),
+  "startDate": zod.string().regex(previewEducationCourseRecurrenceBodyStartDateRegExp),
+  "endDate": zod.string().regex(previewEducationCourseRecurrenceBodyEndDateRegExp),
+  "capacity": zod.number().int().min(1).max(previewEducationCourseRecurrenceBodyCapacityMax).optional(),
+  "minimumEnrollments": zod.number().int().min(previewEducationCourseRecurrenceBodyMinimumEnrollmentsMin).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish()
+})
+
+export const previewEducationCourseRecurrenceResponseSkippedAbsenceCountMin = 0;
+
+export const previewEducationCourseRecurrenceResponseSkippedConflictCountMin = 0;
+
+
+
+export const PreviewEducationCourseRecurrenceResponse = zod.object({
+  "timeZone": zod.literal("Europe/Belgrade"),
+  "candidates": zod.array(zod.object({
+  "date": zod.string(),
+  "startTime": zod.string(),
+  "endTime": zod.string()
+})),
+  "skippedAbsenceCount": zod.number().int().min(previewEducationCourseRecurrenceResponseSkippedAbsenceCountMin),
+  "skippedConflictCount": zod.number().int().min(previewEducationCourseRecurrenceResponseSkippedConflictCountMin)
+})
+
+
+export const CommitEducationCourseRecurrenceParams = zod.object({
+  "courseId": zod.coerce.string()
+})
+
+export const commitEducationCourseRecurrenceHeaderIdempotencyKeyMax = 200;
+
+
+
+export const CommitEducationCourseRecurrenceHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(commitEducationCourseRecurrenceHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+})
+
+export const commitEducationCourseRecurrenceBodyWeekdaysItemMax = 7;
+
+export const commitEducationCourseRecurrenceBodyWeekdaysMax = 7;
+
+export const commitEducationCourseRecurrenceBodyStartTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+export const commitEducationCourseRecurrenceBodyEndTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+export const commitEducationCourseRecurrenceBodyDurationMinutesMin = 5;
+export const commitEducationCourseRecurrenceBodyDurationMinutesMax = 720;
+
+export const commitEducationCourseRecurrenceBodyGranularityMinutesMin = 5;
+export const commitEducationCourseRecurrenceBodyGranularityMinutesMax = 180;
+
+export const commitEducationCourseRecurrenceBodyStartDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const commitEducationCourseRecurrenceBodyEndDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const commitEducationCourseRecurrenceBodyCapacityMax = 1000;
+
+export const commitEducationCourseRecurrenceBodyMinimumEnrollmentsMin = 0;
+
+
+
+export const CommitEducationCourseRecurrenceBody = zod.object({
+  "educatorStaffId": zod.string(),
+  "weekdays": zod.array(zod.number().int().min(1).max(commitEducationCourseRecurrenceBodyWeekdaysItemMax)).min(1).max(commitEducationCourseRecurrenceBodyWeekdaysMax),
+  "startTime": zod.string().regex(commitEducationCourseRecurrenceBodyStartTimeRegExp),
+  "endTime": zod.string().regex(commitEducationCourseRecurrenceBodyEndTimeRegExp),
+  "durationMinutes": zod.number().int().min(commitEducationCourseRecurrenceBodyDurationMinutesMin).max(commitEducationCourseRecurrenceBodyDurationMinutesMax),
+  "granularityMinutes": zod.number().int().min(commitEducationCourseRecurrenceBodyGranularityMinutesMin).max(commitEducationCourseRecurrenceBodyGranularityMinutesMax).optional(),
+  "startDate": zod.string().regex(commitEducationCourseRecurrenceBodyStartDateRegExp),
+  "endDate": zod.string().regex(commitEducationCourseRecurrenceBodyEndDateRegExp),
+  "capacity": zod.number().int().min(1).max(commitEducationCourseRecurrenceBodyCapacityMax).optional(),
+  "minimumEnrollments": zod.number().int().min(commitEducationCourseRecurrenceBodyMinimumEnrollmentsMin).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish()
+})
+
+export const CommitEducationCourseRecurrenceResponse = zod.object({
+  "sessionIds": zod.array(zod.string()),
+  "replayed": zod.boolean()
+})
+
+
+export const GetEducationCenterOperationalPermissionsParams = zod.object({
+  "centerId": zod.coerce.string()
+})
+
+export const GetEducationCenterOperationalPermissionsResponse = zod.object({
+  "centerId": zod.string(),
+  "role": zod.enum(['owner_admin', 'manager_reception', 'educator']),
+  "educatorStaffId": zod.string().nullable(),
+  "canManageStaff": zod.boolean(),
+  "canManageCalendar": zod.boolean(),
+  "canTakeAttendance": zod.boolean()
+})
+
+
+export const GetEducationCenterOperationsCalendarParams = zod.object({
+  "centerId": zod.coerce.string()
+})
+
+export const getEducationCenterOperationsCalendarQueryStartDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const getEducationCenterOperationsCalendarQueryEndDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const GetEducationCenterOperationsCalendarQueryParams = zod.object({
+  "startDate": zod.coerce.string().regex(getEducationCenterOperationsCalendarQueryStartDateRegExp),
+  "endDate": zod.coerce.string().regex(getEducationCenterOperationsCalendarQueryEndDateRegExp),
+  "educatorStaffId": zod.coerce.string().optional()
+})
+
+export const GetEducationCenterOperationsCalendarResponseItem = zod.object({
+  "id": zod.string(),
+  "courseId": zod.string(),
+  "educatorStaffId": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "capacity": zod.number().int(),
+  "reservedSeats": zod.number().int(),
+  "participants": zod.array(zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "email": zod.string().nullable(),
+  "phone": zod.string().nullable(),
+  "status": zod.string()
+}))
+})
+export const GetEducationCenterOperationsCalendarResponse = zod.array(GetEducationCenterOperationsCalendarResponseItem)
+
+
+export const ListEducationCenterOperationalStaffParams = zod.object({
+  "centerId": zod.coerce.string()
+})
+
+export const ListEducationCenterOperationalStaffResponseItem = zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "userId": zod.string(),
+  "instructorProfileId": zod.string().nullable(),
+  "role": zod.enum(['owner_admin', 'manager_reception', 'educator']),
+  "active": zod.boolean()
+})
+export const ListEducationCenterOperationalStaffResponse = zod.array(ListEducationCenterOperationalStaffResponseItem)
+
+
+export const CreateEducationCenterOperationalStaffParams = zod.object({
+  "centerId": zod.coerce.string()
+})
+
+export const CreateEducationCenterOperationalStaffBody = zod.object({
+  "userId": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "role": zod.enum(['owner_admin', 'manager_reception', 'educator'])
+})
+
+export const CreateEducationCenterOperationalStaffResponse = zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "userId": zod.string(),
+  "instructorProfileId": zod.string().nullable(),
+  "role": zod.enum(['owner_admin', 'manager_reception', 'educator']),
+  "active": zod.boolean()
+})
+
+
+export const UpdateEducationCenterOperationalStaffParams = zod.object({
+  "centerId": zod.coerce.string(),
+  "staffId": zod.coerce.string()
+})
+
+export const UpdateEducationCenterOperationalStaffBody = zod.object({
+  "role": zod.enum(['owner_admin', 'manager_reception', 'educator']).optional(),
+  "active": zod.boolean().optional(),
+  "instructorProfileId": zod.string().nullish()
+})
+
+export const UpdateEducationCenterOperationalStaffResponse = zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "userId": zod.string(),
+  "instructorProfileId": zod.string().nullable(),
+  "role": zod.enum(['owner_admin', 'manager_reception', 'educator']),
+  "active": zod.boolean()
+})
+
+
+export const ListEducationEducatorWeeklyAvailabilityParams = zod.object({
+  "centerId": zod.coerce.string(),
+  "staffId": zod.coerce.string()
+})
+
+export const listEducationEducatorWeeklyAvailabilityResponseWeekdayMax = 7;
+
+export const listEducationEducatorWeeklyAvailabilityResponseStartTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+export const listEducationEducatorWeeklyAvailabilityResponseEndTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+
+
+export const ListEducationEducatorWeeklyAvailabilityResponseItem = zod.object({
+  "id": zod.string(),
+  "staffId": zod.string(),
+  "weekday": zod.number().int().min(1).max(listEducationEducatorWeeklyAvailabilityResponseWeekdayMax),
+  "startTime": zod.string().regex(listEducationEducatorWeeklyAvailabilityResponseStartTimeRegExp),
+  "endTime": zod.string().regex(listEducationEducatorWeeklyAvailabilityResponseEndTimeRegExp)
+})
+export const ListEducationEducatorWeeklyAvailabilityResponse = zod.array(ListEducationEducatorWeeklyAvailabilityResponseItem)
+
+
+export const CreateEducationEducatorWeeklyAvailabilityParams = zod.object({
+  "centerId": zod.coerce.string(),
+  "staffId": zod.coerce.string()
+})
+
+export const createEducationEducatorWeeklyAvailabilityBodyWeekdayMax = 7;
+
+export const createEducationEducatorWeeklyAvailabilityBodyStartTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+export const createEducationEducatorWeeklyAvailabilityBodyEndTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+
+
+export const CreateEducationEducatorWeeklyAvailabilityBody = zod.object({
+  "weekday": zod.number().int().min(1).max(createEducationEducatorWeeklyAvailabilityBodyWeekdayMax),
+  "startTime": zod.string().regex(createEducationEducatorWeeklyAvailabilityBodyStartTimeRegExp),
+  "endTime": zod.string().regex(createEducationEducatorWeeklyAvailabilityBodyEndTimeRegExp)
+})
+
+export const createEducationEducatorWeeklyAvailabilityResponseWeekdayMax = 7;
+
+export const createEducationEducatorWeeklyAvailabilityResponseStartTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+export const createEducationEducatorWeeklyAvailabilityResponseEndTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+
+
+export const CreateEducationEducatorWeeklyAvailabilityResponse = zod.object({
+  "id": zod.string(),
+  "staffId": zod.string(),
+  "weekday": zod.number().int().min(1).max(createEducationEducatorWeeklyAvailabilityResponseWeekdayMax),
+  "startTime": zod.string().regex(createEducationEducatorWeeklyAvailabilityResponseStartTimeRegExp),
+  "endTime": zod.string().regex(createEducationEducatorWeeklyAvailabilityResponseEndTimeRegExp)
+})
+
+
+export const UpdateEducationEducatorWeeklyAvailabilityParams = zod.object({
+  "centerId": zod.coerce.string(),
+  "staffId": zod.coerce.string(),
+  "availabilityId": zod.coerce.string()
+})
+
+export const updateEducationEducatorWeeklyAvailabilityBodyWeekdayMax = 7;
+
+export const updateEducationEducatorWeeklyAvailabilityBodyStartTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+export const updateEducationEducatorWeeklyAvailabilityBodyEndTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+
+
+export const UpdateEducationEducatorWeeklyAvailabilityBody = zod.object({
+  "weekday": zod.number().int().min(1).max(updateEducationEducatorWeeklyAvailabilityBodyWeekdayMax),
+  "startTime": zod.string().regex(updateEducationEducatorWeeklyAvailabilityBodyStartTimeRegExp),
+  "endTime": zod.string().regex(updateEducationEducatorWeeklyAvailabilityBodyEndTimeRegExp)
+})
+
+export const updateEducationEducatorWeeklyAvailabilityResponseWeekdayMax = 7;
+
+export const updateEducationEducatorWeeklyAvailabilityResponseStartTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+export const updateEducationEducatorWeeklyAvailabilityResponseEndTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+
+
+export const UpdateEducationEducatorWeeklyAvailabilityResponse = zod.object({
+  "id": zod.string(),
+  "staffId": zod.string(),
+  "weekday": zod.number().int().min(1).max(updateEducationEducatorWeeklyAvailabilityResponseWeekdayMax),
+  "startTime": zod.string().regex(updateEducationEducatorWeeklyAvailabilityResponseStartTimeRegExp),
+  "endTime": zod.string().regex(updateEducationEducatorWeeklyAvailabilityResponseEndTimeRegExp)
+})
+
+
+export const DeleteEducationEducatorWeeklyAvailabilityParams = zod.object({
+  "centerId": zod.coerce.string(),
+  "staffId": zod.coerce.string(),
+  "availabilityId": zod.coerce.string()
+})
+
+export const DeleteEducationEducatorWeeklyAvailabilityResponse = zod.void()
+
+
+export const ListEducationEducatorAbsencesParams = zod.object({
+  "centerId": zod.coerce.string(),
+  "staffId": zod.coerce.string()
+})
+
+export const listEducationEducatorAbsencesResponseStartDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const listEducationEducatorAbsencesResponseEndDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const listEducationEducatorAbsencesResponseStartTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+export const listEducationEducatorAbsencesResponseEndTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+export const listEducationEducatorAbsencesResponseReasonMax = 1000;
+
+
+
+export const ListEducationEducatorAbsencesResponseItem = zod.object({
+  "id": zod.string(),
+  "staffId": zod.string(),
+  "startDate": zod.string().regex(listEducationEducatorAbsencesResponseStartDateRegExp),
+  "endDate": zod.string().regex(listEducationEducatorAbsencesResponseEndDateRegExp),
+  "startTime": zod.string().regex(listEducationEducatorAbsencesResponseStartTimeRegExp).nullable(),
+  "endTime": zod.string().regex(listEducationEducatorAbsencesResponseEndTimeRegExp).nullable(),
+  "reason": zod.string().max(listEducationEducatorAbsencesResponseReasonMax).nullable()
+})
+export const ListEducationEducatorAbsencesResponse = zod.array(ListEducationEducatorAbsencesResponseItem)
+
+
+export const CreateEducationEducatorAbsenceParams = zod.object({
+  "centerId": zod.coerce.string(),
+  "staffId": zod.coerce.string()
+})
+
+export const createEducationEducatorAbsenceBodyStartDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const createEducationEducatorAbsenceBodyEndDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const createEducationEducatorAbsenceBodyStartTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+export const createEducationEducatorAbsenceBodyEndTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+export const createEducationEducatorAbsenceBodyReasonMax = 1000;
+
+
+
+export const CreateEducationEducatorAbsenceBody = zod.object({
+  "startDate": zod.string().regex(createEducationEducatorAbsenceBodyStartDateRegExp),
+  "endDate": zod.string().regex(createEducationEducatorAbsenceBodyEndDateRegExp),
+  "startTime": zod.string().regex(createEducationEducatorAbsenceBodyStartTimeRegExp).nullish(),
+  "endTime": zod.string().regex(createEducationEducatorAbsenceBodyEndTimeRegExp).nullish(),
+  "reason": zod.string().max(createEducationEducatorAbsenceBodyReasonMax).nullish()
+})
+
+export const createEducationEducatorAbsenceResponseStartDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const createEducationEducatorAbsenceResponseEndDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const createEducationEducatorAbsenceResponseStartTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+export const createEducationEducatorAbsenceResponseEndTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+export const createEducationEducatorAbsenceResponseReasonMax = 1000;
+
+
+
+export const CreateEducationEducatorAbsenceResponse = zod.object({
+  "id": zod.string(),
+  "staffId": zod.string(),
+  "startDate": zod.string().regex(createEducationEducatorAbsenceResponseStartDateRegExp),
+  "endDate": zod.string().regex(createEducationEducatorAbsenceResponseEndDateRegExp),
+  "startTime": zod.string().regex(createEducationEducatorAbsenceResponseStartTimeRegExp).nullable(),
+  "endTime": zod.string().regex(createEducationEducatorAbsenceResponseEndTimeRegExp).nullable(),
+  "reason": zod.string().max(createEducationEducatorAbsenceResponseReasonMax).nullable()
+})
+
+
+export const UpdateEducationEducatorAbsenceParams = zod.object({
+  "centerId": zod.coerce.string(),
+  "staffId": zod.coerce.string(),
+  "absenceId": zod.coerce.string()
+})
+
+export const updateEducationEducatorAbsenceBodyStartDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const updateEducationEducatorAbsenceBodyEndDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const updateEducationEducatorAbsenceBodyStartTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+export const updateEducationEducatorAbsenceBodyEndTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+export const updateEducationEducatorAbsenceBodyReasonMax = 1000;
+
+
+
+export const UpdateEducationEducatorAbsenceBody = zod.object({
+  "startDate": zod.string().regex(updateEducationEducatorAbsenceBodyStartDateRegExp),
+  "endDate": zod.string().regex(updateEducationEducatorAbsenceBodyEndDateRegExp),
+  "startTime": zod.string().regex(updateEducationEducatorAbsenceBodyStartTimeRegExp).nullish(),
+  "endTime": zod.string().regex(updateEducationEducatorAbsenceBodyEndTimeRegExp).nullish(),
+  "reason": zod.string().max(updateEducationEducatorAbsenceBodyReasonMax).nullish()
+})
+
+export const updateEducationEducatorAbsenceResponseStartDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const updateEducationEducatorAbsenceResponseEndDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const updateEducationEducatorAbsenceResponseStartTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+export const updateEducationEducatorAbsenceResponseEndTimeRegExp = new RegExp('^(?:[01]\\d|2[0-3]):[0-5]\\d$');
+export const updateEducationEducatorAbsenceResponseReasonMax = 1000;
+
+
+
+export const UpdateEducationEducatorAbsenceResponse = zod.object({
+  "id": zod.string(),
+  "staffId": zod.string(),
+  "startDate": zod.string().regex(updateEducationEducatorAbsenceResponseStartDateRegExp),
+  "endDate": zod.string().regex(updateEducationEducatorAbsenceResponseEndDateRegExp),
+  "startTime": zod.string().regex(updateEducationEducatorAbsenceResponseStartTimeRegExp).nullable(),
+  "endTime": zod.string().regex(updateEducationEducatorAbsenceResponseEndTimeRegExp).nullable(),
+  "reason": zod.string().max(updateEducationEducatorAbsenceResponseReasonMax).nullable()
+})
+
+
+export const DeleteEducationEducatorAbsenceParams = zod.object({
+  "centerId": zod.coerce.string(),
+  "staffId": zod.coerce.string(),
+  "absenceId": zod.coerce.string()
+})
+
+export const DeleteEducationEducatorAbsenceResponse = zod.void()
+
+
+/**
  * @summary List course sessions
  */
 export const ListEducationSessionsParams = zod.object({
@@ -11927,7 +12985,8 @@ export const ListEducationSessionsResponseItem = zod.object({
   "reservedSeats": zod.number(),
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
-  "cancelledAt": zod.coerce.date().nullish()
+  "cancelledAt": zod.coerce.date().nullish(),
+  "educatorStaffId": zod.string().nullish()
 })
 export const ListEducationSessionsResponse = zod.array(ListEducationSessionsResponseItem)
 
@@ -11950,7 +13009,8 @@ export const CreateEducationSessionBody = zod.object({
   "endsAt": zod.coerce.date(),
   "location": zod.string().nullish(),
   "capacity": zod.number().min(1),
-  "minimumEnrollments": zod.number().min(createEducationSessionBodyMinimumEnrollmentsMin).max(createEducationSessionBodyMinimumEnrollmentsMax).nullish()
+  "minimumEnrollments": zod.number().min(createEducationSessionBodyMinimumEnrollmentsMin).max(createEducationSessionBodyMinimumEnrollmentsMax).nullish(),
+  "educatorStaffId": zod.string().nullish()
 })
 
 export const CreateEducationSessionResponse = zod.object({
@@ -11962,7 +13022,8 @@ export const CreateEducationSessionResponse = zod.object({
   "reservedSeats": zod.number(),
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
-  "cancelledAt": zod.coerce.date().nullish()
+  "cancelledAt": zod.coerce.date().nullish(),
+  "educatorStaffId": zod.string().nullish()
 })
 
 
@@ -12089,7 +13150,8 @@ export const UpdateEducationSessionBody = zod.object({
   "endsAt": zod.coerce.date(),
   "location": zod.string().nullish(),
   "capacity": zod.number().min(1),
-  "minimumEnrollments": zod.number().min(updateEducationSessionBodyMinimumEnrollmentsMin).max(updateEducationSessionBodyMinimumEnrollmentsMax).nullish()
+  "minimumEnrollments": zod.number().min(updateEducationSessionBodyMinimumEnrollmentsMin).max(updateEducationSessionBodyMinimumEnrollmentsMax).nullish(),
+  "educatorStaffId": zod.string().nullish()
 })
 
 export const UpdateEducationSessionResponse = zod.object({
@@ -12101,7 +13163,8 @@ export const UpdateEducationSessionResponse = zod.object({
   "reservedSeats": zod.number(),
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
-  "cancelledAt": zod.coerce.date().nullish()
+  "cancelledAt": zod.coerce.date().nullish(),
+  "educatorStaffId": zod.string().nullish()
 })
 
 
@@ -12249,6 +13312,11 @@ export const getEducationLmsResponseCourseOneOneInquiryCount30dMultipleOf = 1;
 export const getEducationLmsResponseCourseOneOneViewCount30dMin = 0;
 export const getEducationLmsResponseCourseOneOneViewCount30dMultipleOf = 1;
 
+export const getEducationLmsResponseCourseOneOneCancellationCutoffHoursMin = 0;
+export const getEducationLmsResponseCourseOneOneCancellationCutoffHoursMax = 8760;
+
+export const getEducationLmsResponseCourseOneOneEarlyBirdPriceMin = 0;
+
 export const getEducationLmsResponseCourseOneTwoPublicModulesItemSortOrderMin = 0;
 
 export const getEducationLmsResponseCourseOneTwoPublicModulesItemLessonCountMin = 0;
@@ -12294,7 +13362,19 @@ export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemInquiryCount
 export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
 
+export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
+export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
+
+export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemEarlyBirdPriceMin = 0;
+
 export const getEducationLmsResponseCourseOneTwoReviewsItemRatingMax = 5;
+
+export const getEducationLmsResponseEligibilityTotalMin = 0;
+
+export const getEducationLmsResponseEligibilityCompletedMin = 0;
+
+export const getEducationLmsResponseEligibilityPercentMin = 0;
+export const getEducationLmsResponseEligibilityPercentMax = 100;
 
 
 
@@ -12382,6 +13462,13 @@ export const GetEducationLmsResponse = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(getEducationLmsResponseCourseOneOneCancellationCutoffHoursMin).max(getEducationLmsResponseCourseOneOneCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(getEducationLmsResponseCourseOneOneEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -12402,7 +13489,8 @@ export const GetEducationLmsResponse = zod.object({
   "reservedSeats": zod.number(),
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
-  "cancelledAt": zod.coerce.date().nullish()
+  "cancelledAt": zod.coerce.date().nullish(),
+  "educatorStaffId": zod.string().nullish()
 })),
   "dayProgram": zod.array(zod.object({
   "id": zod.string(),
@@ -12504,6 +13592,13 @@ export const GetEducationLmsResponse = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMin).max(getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -12531,7 +13626,14 @@ export const GetEducationLmsResponse = zod.object({
   "completed": zod.boolean()
 }))
 }))
-}))
+})),
+  "eligibility": zod.object({
+  "total": zod.number().int().min(getEducationLmsResponseEligibilityTotalMin),
+  "completed": zod.number().int().min(getEducationLmsResponseEligibilityCompletedMin),
+  "percent": zod.number().int().min(getEducationLmsResponseEligibilityPercentMin).max(getEducationLmsResponseEligibilityPercentMax),
+  "certificateEligible": zod.boolean(),
+  "reasons": zod.array(zod.string())
+})
 })
 
 
@@ -12737,6 +13839,11 @@ export const getPublicInstructorProfileResponseCoursesItemInquiryCount30dMultipl
 export const getPublicInstructorProfileResponseCoursesItemViewCount30dMin = 0;
 export const getPublicInstructorProfileResponseCoursesItemViewCount30dMultipleOf = 1;
 
+export const getPublicInstructorProfileResponseCoursesItemCancellationCutoffHoursMin = 0;
+export const getPublicInstructorProfileResponseCoursesItemCancellationCutoffHoursMax = 8760;
+
+export const getPublicInstructorProfileResponseCoursesItemEarlyBirdPriceMin = 0;
+
 
 
 export const GetPublicInstructorProfileResponse = zod.object({
@@ -12820,6 +13927,13 @@ export const GetPublicInstructorProfileResponse = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(getPublicInstructorProfileResponseCoursesItemCancellationCutoffHoursMin).max(getPublicInstructorProfileResponseCoursesItemCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(getPublicInstructorProfileResponseCoursesItemEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -12921,6 +14035,11 @@ export const linkEducationCourseInstructorResponseOneOneInquiryCount30dMultipleO
 export const linkEducationCourseInstructorResponseOneOneViewCount30dMin = 0;
 export const linkEducationCourseInstructorResponseOneOneViewCount30dMultipleOf = 1;
 
+export const linkEducationCourseInstructorResponseOneOneCancellationCutoffHoursMin = 0;
+export const linkEducationCourseInstructorResponseOneOneCancellationCutoffHoursMax = 8760;
+
+export const linkEducationCourseInstructorResponseOneOneEarlyBirdPriceMin = 0;
+
 export const linkEducationCourseInstructorResponseOneTwoPublicModulesItemSortOrderMin = 0;
 
 export const linkEducationCourseInstructorResponseOneTwoPublicModulesItemLessonCountMin = 0;
@@ -12965,6 +14084,11 @@ export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemInqu
 
 export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
+export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
+
+export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemEarlyBirdPriceMin = 0;
 
 export const linkEducationCourseInstructorResponseOneTwoReviewsItemRatingMax = 5;
 
@@ -13039,6 +14163,13 @@ export const LinkEducationCourseInstructorResponse = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(linkEducationCourseInstructorResponseOneOneCancellationCutoffHoursMin).max(linkEducationCourseInstructorResponseOneOneCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(linkEducationCourseInstructorResponseOneOneEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -13059,7 +14190,8 @@ export const LinkEducationCourseInstructorResponse = zod.object({
   "reservedSeats": zod.number(),
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
-  "cancelledAt": zod.coerce.date().nullish()
+  "cancelledAt": zod.coerce.date().nullish(),
+  "educatorStaffId": zod.string().nullish()
 })),
   "dayProgram": zod.array(zod.object({
   "id": zod.string(),
@@ -13161,6 +14293,13 @@ export const LinkEducationCourseInstructorResponse = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMin).max(linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -13249,6 +14388,11 @@ export const replaceEducationCourseDaysResponseOneOneInquiryCount30dMultipleOf =
 export const replaceEducationCourseDaysResponseOneOneViewCount30dMin = 0;
 export const replaceEducationCourseDaysResponseOneOneViewCount30dMultipleOf = 1;
 
+export const replaceEducationCourseDaysResponseOneOneCancellationCutoffHoursMin = 0;
+export const replaceEducationCourseDaysResponseOneOneCancellationCutoffHoursMax = 8760;
+
+export const replaceEducationCourseDaysResponseOneOneEarlyBirdPriceMin = 0;
+
 export const replaceEducationCourseDaysResponseOneTwoPublicModulesItemSortOrderMin = 0;
 
 export const replaceEducationCourseDaysResponseOneTwoPublicModulesItemLessonCountMin = 0;
@@ -13293,6 +14437,11 @@ export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemInquiry
 
 export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
+export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
+
+export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemEarlyBirdPriceMin = 0;
 
 export const replaceEducationCourseDaysResponseOneTwoReviewsItemRatingMax = 5;
 
@@ -13367,6 +14516,13 @@ export const ReplaceEducationCourseDaysResponse = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(replaceEducationCourseDaysResponseOneOneCancellationCutoffHoursMin).max(replaceEducationCourseDaysResponseOneOneCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(replaceEducationCourseDaysResponseOneOneEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -13387,7 +14543,8 @@ export const ReplaceEducationCourseDaysResponse = zod.object({
   "reservedSeats": zod.number(),
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
-  "cancelledAt": zod.coerce.date().nullish()
+  "cancelledAt": zod.coerce.date().nullish(),
+  "educatorStaffId": zod.string().nullish()
 })),
   "dayProgram": zod.array(zod.object({
   "id": zod.string(),
@@ -13489,6 +14646,13 @@ export const ReplaceEducationCourseDaysResponse = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMin).max(replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -13592,6 +14756,11 @@ export const listPublicEducationCoursesResponseOneInquiryCount30dMultipleOf = 1;
 export const listPublicEducationCoursesResponseOneViewCount30dMin = 0;
 export const listPublicEducationCoursesResponseOneViewCount30dMultipleOf = 1;
 
+export const listPublicEducationCoursesResponseOneCancellationCutoffHoursMin = 0;
+export const listPublicEducationCoursesResponseOneCancellationCutoffHoursMax = 8760;
+
+export const listPublicEducationCoursesResponseOneEarlyBirdPriceMin = 0;
+
 export const listPublicEducationCoursesResponseTwoPublicModulesItemSortOrderMin = 0;
 
 export const listPublicEducationCoursesResponseTwoPublicModulesItemLessonCountMin = 0;
@@ -13636,6 +14805,11 @@ export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCou
 
 export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
+export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
+
+export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemEarlyBirdPriceMin = 0;
 
 export const listPublicEducationCoursesResponseTwoReviewsItemRatingMax = 5;
 
@@ -13710,6 +14884,13 @@ export const ListPublicEducationCoursesResponseItem = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(listPublicEducationCoursesResponseOneCancellationCutoffHoursMin).max(listPublicEducationCoursesResponseOneCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(listPublicEducationCoursesResponseOneEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -13730,7 +14911,8 @@ export const ListPublicEducationCoursesResponseItem = zod.object({
   "reservedSeats": zod.number(),
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
-  "cancelledAt": zod.coerce.date().nullish()
+  "cancelledAt": zod.coerce.date().nullish(),
+  "educatorStaffId": zod.string().nullish()
 })),
   "dayProgram": zod.array(zod.object({
   "id": zod.string(),
@@ -13832,6 +15014,13 @@ export const ListPublicEducationCoursesResponseItem = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(listPublicEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMin).max(listPublicEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(listPublicEducationCoursesResponseTwoCenterTwoCoursesItemEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -13880,6 +15069,11 @@ export const getPublicEducationCourseResponseOneInquiryCount30dMultipleOf = 1;
 export const getPublicEducationCourseResponseOneViewCount30dMin = 0;
 export const getPublicEducationCourseResponseOneViewCount30dMultipleOf = 1;
 
+export const getPublicEducationCourseResponseOneCancellationCutoffHoursMin = 0;
+export const getPublicEducationCourseResponseOneCancellationCutoffHoursMax = 8760;
+
+export const getPublicEducationCourseResponseOneEarlyBirdPriceMin = 0;
+
 export const getPublicEducationCourseResponseTwoPublicModulesItemSortOrderMin = 0;
 
 export const getPublicEducationCourseResponseTwoPublicModulesItemLessonCountMin = 0;
@@ -13924,6 +15118,11 @@ export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount
 
 export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
+export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
+
+export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemEarlyBirdPriceMin = 0;
 
 export const getPublicEducationCourseResponseTwoReviewsItemRatingMax = 5;
 
@@ -13998,6 +15197,13 @@ export const GetPublicEducationCourseResponse = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(getPublicEducationCourseResponseOneCancellationCutoffHoursMin).max(getPublicEducationCourseResponseOneCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(getPublicEducationCourseResponseOneEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -14018,7 +15224,8 @@ export const GetPublicEducationCourseResponse = zod.object({
   "reservedSeats": zod.number(),
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
-  "cancelledAt": zod.coerce.date().nullish()
+  "cancelledAt": zod.coerce.date().nullish(),
+  "educatorStaffId": zod.string().nullish()
 })),
   "dayProgram": zod.array(zod.object({
   "id": zod.string(),
@@ -14120,6 +15327,13 @@ export const GetPublicEducationCourseResponse = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(getPublicEducationCourseResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMin).max(getPublicEducationCourseResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(getPublicEducationCourseResponseTwoCenterTwoCoursesItemEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -14176,6 +15390,11 @@ export const listRelatedEducationCoursesResponseOneInquiryCount30dMultipleOf = 1
 export const listRelatedEducationCoursesResponseOneViewCount30dMin = 0;
 export const listRelatedEducationCoursesResponseOneViewCount30dMultipleOf = 1;
 
+export const listRelatedEducationCoursesResponseOneCancellationCutoffHoursMin = 0;
+export const listRelatedEducationCoursesResponseOneCancellationCutoffHoursMax = 8760;
+
+export const listRelatedEducationCoursesResponseOneEarlyBirdPriceMin = 0;
+
 export const listRelatedEducationCoursesResponseTwoPublicModulesItemSortOrderMin = 0;
 
 export const listRelatedEducationCoursesResponseTwoPublicModulesItemLessonCountMin = 0;
@@ -14220,6 +15439,11 @@ export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCo
 
 export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
+export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
+
+export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemEarlyBirdPriceMin = 0;
 
 export const listRelatedEducationCoursesResponseTwoReviewsItemRatingMax = 5;
 
@@ -14294,6 +15518,13 @@ export const ListRelatedEducationCoursesResponseItem = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(listRelatedEducationCoursesResponseOneCancellationCutoffHoursMin).max(listRelatedEducationCoursesResponseOneCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(listRelatedEducationCoursesResponseOneEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -14314,7 +15545,8 @@ export const ListRelatedEducationCoursesResponseItem = zod.object({
   "reservedSeats": zod.number(),
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
-  "cancelledAt": zod.coerce.date().nullish()
+  "cancelledAt": zod.coerce.date().nullish(),
+  "educatorStaffId": zod.string().nullish()
 })),
   "dayProgram": zod.array(zod.object({
   "id": zod.string(),
@@ -14416,6 +15648,13 @@ export const ListRelatedEducationCoursesResponseItem = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMin).max(listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -14659,6 +15898,11 @@ export const listPopularEducationCoursesResponseOneInquiryCount30dMultipleOf = 1
 export const listPopularEducationCoursesResponseOneViewCount30dMin = 0;
 export const listPopularEducationCoursesResponseOneViewCount30dMultipleOf = 1;
 
+export const listPopularEducationCoursesResponseOneCancellationCutoffHoursMin = 0;
+export const listPopularEducationCoursesResponseOneCancellationCutoffHoursMax = 8760;
+
+export const listPopularEducationCoursesResponseOneEarlyBirdPriceMin = 0;
+
 export const listPopularEducationCoursesResponseTwoPublicModulesItemSortOrderMin = 0;
 
 export const listPopularEducationCoursesResponseTwoPublicModulesItemLessonCountMin = 0;
@@ -14703,6 +15947,11 @@ export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCo
 
 export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
+export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
+
+export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemEarlyBirdPriceMin = 0;
 
 export const listPopularEducationCoursesResponseTwoReviewsItemRatingMax = 5;
 
@@ -14777,6 +16026,13 @@ export const ListPopularEducationCoursesResponseItem = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(listPopularEducationCoursesResponseOneCancellationCutoffHoursMin).max(listPopularEducationCoursesResponseOneCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(listPopularEducationCoursesResponseOneEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -14797,7 +16053,8 @@ export const ListPopularEducationCoursesResponseItem = zod.object({
   "reservedSeats": zod.number(),
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
-  "cancelledAt": zod.coerce.date().nullish()
+  "cancelledAt": zod.coerce.date().nullish(),
+  "educatorStaffId": zod.string().nullish()
 })),
   "dayProgram": zod.array(zod.object({
   "id": zod.string(),
@@ -14899,6 +16156,13 @@ export const ListPopularEducationCoursesResponseItem = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(listPopularEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMin).max(listPopularEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(listPopularEducationCoursesResponseTwoCenterTwoCoursesItemEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -14954,6 +16218,11 @@ export const getPublicEducationCenterResponseCoursesItemInquiryCount30dMultipleO
 
 export const getPublicEducationCenterResponseCoursesItemViewCount30dMin = 0;
 export const getPublicEducationCenterResponseCoursesItemViewCount30dMultipleOf = 1;
+
+export const getPublicEducationCenterResponseCoursesItemCancellationCutoffHoursMin = 0;
+export const getPublicEducationCenterResponseCoursesItemCancellationCutoffHoursMax = 8760;
+
+export const getPublicEducationCenterResponseCoursesItemEarlyBirdPriceMin = 0;
 
 
 
@@ -15044,6 +16313,13 @@ export const GetPublicEducationCenterResponse = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(getPublicEducationCenterResponseCoursesItemCancellationCutoffHoursMin).max(getPublicEducationCenterResponseCoursesItemCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(getPublicEducationCenterResponseCoursesItemEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -15238,6 +16514,11 @@ export const listEducationWishlistResponseItemsItemCourseOneInquiryCount30dMulti
 export const listEducationWishlistResponseItemsItemCourseOneViewCount30dMin = 0;
 export const listEducationWishlistResponseItemsItemCourseOneViewCount30dMultipleOf = 1;
 
+export const listEducationWishlistResponseItemsItemCourseOneCancellationCutoffHoursMin = 0;
+export const listEducationWishlistResponseItemsItemCourseOneCancellationCutoffHoursMax = 8760;
+
+export const listEducationWishlistResponseItemsItemCourseOneEarlyBirdPriceMin = 0;
+
 export const listEducationWishlistResponseItemsItemCourseTwoPublicModulesItemSortOrderMin = 0;
 
 export const listEducationWishlistResponseItemsItemCourseTwoPublicModulesItemLessonCountMin = 0;
@@ -15282,6 +16563,11 @@ export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItem
 
 export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
+export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
+
+export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemEarlyBirdPriceMin = 0;
 
 export const listEducationWishlistResponseItemsItemCourseTwoReviewsItemRatingMax = 5;
 
@@ -15360,6 +16646,13 @@ export const ListEducationWishlistResponse = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(listEducationWishlistResponseItemsItemCourseOneCancellationCutoffHoursMin).max(listEducationWishlistResponseItemsItemCourseOneCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(listEducationWishlistResponseItemsItemCourseOneEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -15380,7 +16673,8 @@ export const ListEducationWishlistResponse = zod.object({
   "reservedSeats": zod.number(),
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
-  "cancelledAt": zod.coerce.date().nullish()
+  "cancelledAt": zod.coerce.date().nullish(),
+  "educatorStaffId": zod.string().nullish()
 })),
   "dayProgram": zod.array(zod.object({
   "id": zod.string(),
@@ -15482,6 +16776,13 @@ export const ListEducationWishlistResponse = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemCancellationCutoffHoursMin).max(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -15531,6 +16832,11 @@ export const addEducationWishlistItemResponseCourseOneInquiryCount30dMultipleOf 
 export const addEducationWishlistItemResponseCourseOneViewCount30dMin = 0;
 export const addEducationWishlistItemResponseCourseOneViewCount30dMultipleOf = 1;
 
+export const addEducationWishlistItemResponseCourseOneCancellationCutoffHoursMin = 0;
+export const addEducationWishlistItemResponseCourseOneCancellationCutoffHoursMax = 8760;
+
+export const addEducationWishlistItemResponseCourseOneEarlyBirdPriceMin = 0;
+
 export const addEducationWishlistItemResponseCourseTwoPublicModulesItemSortOrderMin = 0;
 
 export const addEducationWishlistItemResponseCourseTwoPublicModulesItemLessonCountMin = 0;
@@ -15575,6 +16881,11 @@ export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemInquir
 
 export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
+export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
+
+export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemEarlyBirdPriceMin = 0;
 
 export const addEducationWishlistItemResponseCourseTwoReviewsItemRatingMax = 5;
 
@@ -15652,6 +16963,13 @@ export const AddEducationWishlistItemResponse = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(addEducationWishlistItemResponseCourseOneCancellationCutoffHoursMin).max(addEducationWishlistItemResponseCourseOneCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(addEducationWishlistItemResponseCourseOneEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -15672,7 +16990,8 @@ export const AddEducationWishlistItemResponse = zod.object({
   "reservedSeats": zod.number(),
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
-  "cancelledAt": zod.coerce.date().nullish()
+  "cancelledAt": zod.coerce.date().nullish(),
+  "educatorStaffId": zod.string().nullish()
 })),
   "dayProgram": zod.array(zod.object({
   "id": zod.string(),
@@ -15774,6 +17093,13 @@ export const AddEducationWishlistItemResponse = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemCancellationCutoffHoursMin).max(addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -16082,6 +17408,11 @@ export const listFeaturedEducationCoursesResponseOneInquiryCount30dMultipleOf = 
 export const listFeaturedEducationCoursesResponseOneViewCount30dMin = 0;
 export const listFeaturedEducationCoursesResponseOneViewCount30dMultipleOf = 1;
 
+export const listFeaturedEducationCoursesResponseOneCancellationCutoffHoursMin = 0;
+export const listFeaturedEducationCoursesResponseOneCancellationCutoffHoursMax = 8760;
+
+export const listFeaturedEducationCoursesResponseOneEarlyBirdPriceMin = 0;
+
 export const listFeaturedEducationCoursesResponseTwoPublicModulesItemSortOrderMin = 0;
 
 export const listFeaturedEducationCoursesResponseTwoPublicModulesItemLessonCountMin = 0;
@@ -16126,6 +17457,11 @@ export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemInquiryC
 
 export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
+export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
+
+export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemEarlyBirdPriceMin = 0;
 
 export const listFeaturedEducationCoursesResponseTwoReviewsItemRatingMax = 5;
 
@@ -16200,6 +17536,13 @@ export const ListFeaturedEducationCoursesResponseItem = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(listFeaturedEducationCoursesResponseOneCancellationCutoffHoursMin).max(listFeaturedEducationCoursesResponseOneCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(listFeaturedEducationCoursesResponseOneEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -16220,7 +17563,8 @@ export const ListFeaturedEducationCoursesResponseItem = zod.object({
   "reservedSeats": zod.number(),
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
-  "cancelledAt": zod.coerce.date().nullish()
+  "cancelledAt": zod.coerce.date().nullish(),
+  "educatorStaffId": zod.string().nullish()
 })),
   "dayProgram": zod.array(zod.object({
   "id": zod.string(),
@@ -16322,6 +17666,13 @@ export const ListFeaturedEducationCoursesResponseItem = zod.object({
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
   "giftVoucherEligible": zod.boolean().optional(),
+  "schedulingMode": zod.enum(['fixed_group', 'individual_calendar']).optional(),
+  "cancellationCutoffHours": zod.number().int().min(listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMin).max(listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMax).optional(),
+  "depositDisposition": zod.enum(['refund', 'forfeit', 'transfer']).optional(),
+  "minimumEnrollmentRiskDeadline": zod.coerce.date().nullish(),
+  "earlyBirdPrice": zod.number().min(listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemEarlyBirdPriceMin).nullish(),
+  "earlyBirdCutoff": zod.coerce.date().nullish(),
+  "installmentCount": zod.union([zod.literal(1),zod.literal(2),zod.literal(3)]).optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()

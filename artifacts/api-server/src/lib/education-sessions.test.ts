@@ -15,6 +15,7 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { type AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   courseEnrollmentsTable,
@@ -23,11 +24,18 @@ import {
   db,
   educationCentersTable,
   educationCenterSubscriptionsTable,
+  educationCenterStaffTable,
   educationEscrowsTable,
+  educationBookingGroupsTable,
+  educationBookingParticipantsTable,
   educationFinancialEventsTable,
   educationGiftVouchersTable,
   educationLedgerEntriesTable,
   educationNotificationsTable,
+  educationOutboxTable,
+  educationPriceSnapshotsTable,
+  educationSessionEducatorsTable,
+  educationInstallmentsTable,
   educationPlatformSettingsTable,
   educationWaitlistTable,
   subscriptionPlansTable,
@@ -240,6 +248,31 @@ async function run(): Promise<void> {
       status: "held",
       paymentReference: `test:${suffix}`,
     }).returning();
+    const [operationalGroup] = await db.insert(educationBookingGroupsTable).values({
+      centerId: center!.id, courseId: course!.id, sessionId: session!.id, purchaserId: waiter.id,
+      createdByUserId: waiter.id, idempotencyKey: `retained-mixed-${suffix}`, requestFingerprint: "m".repeat(64), status: "active",
+    }).returning();
+    const [operationalParticipant] = await db.insert(educationBookingParticipantsTable).values({
+      bookingGroupId: operationalGroup!.id, userId: waiter.id, fullName: "Operational learner", email: waiter.email, status: "reserved",
+    }).returning();
+    const [operationalSnapshot] = await db.insert(educationPriceSnapshotsTable).values({
+      bookingGroupId: operationalGroup!.id, courseId: course!.id, grossAmount: 5_000, platformFee: 750,
+      reserveAmount: 500, netAmount: 3_750, installmentCount: 2, depositDisposition: "refund",
+    }).returning();
+    await db.insert(educationInstallmentsTable).values([
+      { priceSnapshotId: operationalSnapshot!.id, installmentNumber: 1, amount: 2_500, paymentReference: `MIX-A-${suffix}`, status: "settled", settledAt: new Date(), settledByUserId: adminUser.id },
+      { priceSnapshotId: operationalSnapshot!.id, installmentNumber: 2, amount: 2_500, paymentReference: `MIX-B-${suffix}`, status: "pending" },
+    ]);
+    const [operationalEnrollment] = await db.insert(courseEnrollmentsTable).values({
+      courseId: course!.id, userId: waiter.id, purchaserId: waiter.id, sessionId: session!.id,
+      bookingGroupId: operationalGroup!.id, participantId: operationalParticipant!.id,
+      status: "active", paymentStatus: "paid", chargedAmount: 2_500, accessGrantedAt: new Date(),
+    }).returning();
+    enrollmentIds.push(operationalEnrollment!.id);
+    const [operationalEscrow] = await db.insert(educationEscrowsTable).values({
+      enrollmentId: operationalEnrollment!.id, centerId: center!.id, grossAmount: 2_500,
+      platformFee: 375, reserveAmount: 250, netAmount: 1_875, releaseAt, status: "held", paymentReference: `MIX-A-${suffix}`,
+    }).returning();
 
     // ── Waitlist entry for waiter ────────────────────────────────────────────
     // Force the session to appear "full" so we can insert a waitlist entry.
@@ -256,9 +289,9 @@ async function run(): Promise<void> {
       status: "waiting",
     }).returning();
 
-    // Reset to 1 reserved seat (buyer).
+    // Both legacy and operational seats are reserved.
     await db.update(courseSessionsTable)
-      .set({ reservedSeats: 1 })
+      .set({ reservedSeats: 2 })
       .where(eq(courseSessionsTable.id, session!.id));
 
     // ── Start server ─────────────────────────────────────────────────────────
@@ -270,6 +303,109 @@ async function run(): Promise<void> {
     const adminCookie = await login(baseUrl, adminUser.email);
     const ownerCookie = await login(baseUrl, centerOwner.email);
     const buyerCookie = await login(baseUrl, buyer.email);
+    const fixedCompatibilityCookie = await login(baseUrl, waiter.email);
+
+    // Retained fixed-group creation must require an educator only when this
+    // center actually has an active staff membership with the educator role.
+    const fixedCompatibilityManagers = await db.insert(educationCenterStaffTable).values([
+      { centerId: center!.id, userId: centerOwner.id, role: "owner_admin", active: true },
+      { centerId: center!.id, userId: waiter.id, role: "manager_reception", active: true },
+    ]).returning();
+    const [inactiveEducator] = await db.insert(educationCenterStaffTable).values({
+      centerId: center!.id, userId: buyer.id, role: "educator", active: false,
+    }).returning();
+    const [fixedCompatibilityCourse] = await db.insert(coursesTable).values({
+      centerId: center!.id,
+      title: `Fixed compatibility ${suffix}`,
+      category: "Test",
+      format: "in-person",
+      price: 2_000,
+      duration: "1h",
+      imageUrl: "/fixed-compatibility.jpg",
+      schedulingMode: "fixed_group",
+      published: true,
+    }).returning();
+    courseIds.push(fixedCompatibilityCourse!.id);
+    const fixedStart = new Date(Date.now() + 40 * 24 * 60 * 60 * 1000);
+    const fixedCreateBody = {
+      startsAt: fixedStart.toISOString(),
+      endsAt: new Date(fixedStart.getTime() + 3_600_000).toISOString(),
+      capacity: 3,
+    };
+    const unassignedFixedResponse = await request(baseUrl, `/education/courses/${fixedCompatibilityCourse!.id}/sessions`, {
+      method: "POST", cookie: ownerCookie, body: fixedCreateBody,
+    });
+    assert.equal(unassignedFixedResponse.status, 201);
+    const unassignedFixed = await json<{ id: string; educatorStaffId: string | null }>(unassignedFixedResponse);
+    assert.equal(unassignedFixed.educatorStaffId, null);
+    const visibleFixedResponse = await request(baseUrl, `/education/courses/${fixedCompatibilityCourse!.id}/sessions`, {
+      cookie: ownerCookie,
+    });
+    assert.equal(visibleFixedResponse.status, 200);
+    assert.ok((await json<Array<{ id: string; educatorStaffId: string | null }>>(visibleFixedResponse))
+      .some((row) => row.id === unassignedFixed.id && row.educatorStaffId === null));
+    const legacyCompatibleBooking = await request(baseUrl, `/education/courses/${fixedCompatibilityCourse!.id}/enrollments`, {
+      method: "POST", cookie: fixedCompatibilityCookie, body: { sessionId: unassignedFixed.id },
+    });
+    assert.equal(legacyCompatibleBooking.status, 201);
+    enrollmentIds.push((await json<{ id: string }>(legacyCompatibleBooking)).id);
+
+    await db.update(educationCenterStaffTable).set({ active: true })
+      .where(eq(educationCenterStaffTable.id, inactiveEducator!.id));
+    const activeMissingEducatorStart = new Date(fixedStart.getTime() + 2 * 3_600_000);
+    const activeMissingEducatorBody = {
+      ...fixedCreateBody,
+      startsAt: activeMissingEducatorStart.toISOString(),
+      endsAt: new Date(activeMissingEducatorStart.getTime() + 3_600_000).toISOString(),
+    };
+    assert.equal((await request(baseUrl, `/education/courses/${fixedCompatibilityCourse!.id}/sessions`, {
+      method: "POST", cookie: ownerCookie, body: activeMissingEducatorBody,
+    })).status, 400);
+    const assignedFixedStart = new Date(fixedStart.getTime() + 4 * 3_600_000);
+    const assignedFixedResponse = await request(baseUrl, `/education/courses/${fixedCompatibilityCourse!.id}/sessions`, {
+      method: "POST",
+      cookie: ownerCookie,
+      body: {
+        ...fixedCreateBody,
+        startsAt: assignedFixedStart.toISOString(),
+        endsAt: new Date(assignedFixedStart.getTime() + 3_600_000).toISOString(),
+        educatorStaffId: inactiveEducator!.id,
+      },
+    });
+    assert.equal(assignedFixedResponse.status, 201);
+    const assignedFixed = await json<{ id: string; educatorStaffId: string | null }>(assignedFixedResponse);
+    assert.equal(assignedFixed.educatorStaffId, inactiveEducator!.id);
+    assert.equal((await db.select().from(educationSessionEducatorsTable)
+      .where(eq(educationSessionEducatorsTable.sessionId, assignedFixed.id))).length, 1);
+    // Restore the buyer's original lack of center permissions before the
+    // retained cancellation authorization controls below.
+    await db.update(educationCenterStaffTable).set({ active: false })
+      .where(eq(educationCenterStaffTable.id, inactiveEducator!.id));
+    await db.update(educationCenterStaffTable).set({ active: false })
+      .where(eq(educationCenterStaffTable.id, fixedCompatibilityManagers[1]!.id));
+
+    const retainedPatchBody = {
+      startsAt: new Date(futureStart.getTime() + 60_000).toISOString(),
+      endsAt: new Date(futureEnd.getTime() + 60_000).toISOString(),
+      capacity: 4,
+    };
+    const operationalBeforePatch = (await db.select().from(courseSessionsTable).where(eq(courseSessionsTable.id, session!.id)))[0]!;
+    const operationalPatch = await request(baseUrl, `/education/sessions/${session!.id}`, { method: "PATCH", cookie: ownerCookie, body: retainedPatchBody });
+    assert.equal(operationalPatch.status, 409);
+    assert.equal((await json<{ code: string }>(operationalPatch)).code, "OPERATIONAL_SESSION_REQUIRES_SCHEDULER");
+    const operationalAfterPatch = (await db.select().from(courseSessionsTable).where(eq(courseSessionsTable.id, session!.id)))[0]!;
+    assert.equal(operationalAfterPatch.startsAt.getTime(), operationalBeforePatch.startsAt.getTime());
+    assert.equal(operationalAfterPatch.endsAt.getTime(), operationalBeforePatch.endsAt.getTime());
+    assert.equal(operationalAfterPatch.capacity, operationalBeforePatch.capacity);
+    const [legacyDraftCourse] = await db.insert(coursesTable).values({
+      centerId: center!.id, title: `Draft legacy ${suffix}`, category: "Test", format: "in-person",
+      price: 1_000, duration: "1h", imageUrl: "/draft.jpg", published: false,
+    }).returning();
+    courseIds.push(legacyDraftCourse!.id);
+    const [legacyDraftSession] = await db.insert(courseSessionsTable).values({ courseId: legacyDraftCourse!.id, startsAt: futureStart, endsAt: futureEnd, capacity: 2 }).returning();
+    const legacyPatch = await request(baseUrl, `/education/sessions/${legacyDraftSession!.id}`, { method: "PATCH", cookie: ownerCookie, body: retainedPatchBody });
+    assert.equal(legacyPatch.status, 200);
+    assert.equal((await db.select().from(courseSessionsTable).where(eq(courseSessionsTable.id, legacyDraftSession!.id)))[0]!.capacity, 4);
 
     // ── 1. Owner cancel requires a reason ────────────────────────────────────
     const noReasonResponse = await request(baseUrl, `/education/sessions/${session!.id}/cancel`, {
@@ -303,7 +439,7 @@ async function run(): Promise<void> {
     }>(cancelResponse);
     assert.equal(cancelResult.ok, true);
     assert.equal(cancelResult.sessionId, session!.id);
-    assert.equal(cancelResult.refundedEnrollments, 1, "The paid enrollment's escrow must be refunded.");
+    assert.equal(cancelResult.refundedEnrollments, 2, "Both paid enrollment escrows must be refunded.");
     assert.equal(cancelResult.cancelledWaitlistEntries, 1, "The waiting waitlist entry must be cancelled.");
     assert.ok(cancelResult.notifiedUsers >= 2, "Both buyer and waiter must be notified.");
 
@@ -318,6 +454,21 @@ async function run(): Promise<void> {
     const [cancelledEnrollment] = await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, enrollment!.id)).limit(1);
     assert.equal(cancelledEnrollment?.status, "cancelled", "Enrollment must be cancelled.");
     assert.equal(cancelledEnrollment?.paymentStatus, "refunded", "Payment status must be refunded.");
+    assert.equal(cancelledEnrollment?.accessGrantedAt, null, "Cancellation must revoke legacy access.");
+    const [cancelledOperationalEnrollment] = await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, operationalEnrollment!.id)).limit(1);
+    assert.equal(cancelledOperationalEnrollment?.status, "cancelled");
+    assert.equal(cancelledOperationalEnrollment?.paymentStatus, "refunded");
+    assert.equal(cancelledOperationalEnrollment?.accessGrantedAt, null);
+    assert.equal((await db.select().from(educationBookingGroupsTable).where(eq(educationBookingGroupsTable.id, operationalGroup!.id)))[0]!.status, "cancelled");
+    assert.equal((await db.select().from(educationBookingParticipantsTable).where(eq(educationBookingParticipantsTable.id, operationalParticipant!.id)))[0]!.status, "cancelled");
+    assert.equal((await db.select().from(educationEscrowsTable).where(eq(educationEscrowsTable.id, operationalEscrow!.id)))[0]!.status, "refunded");
+    const mixedInstallments = await db.select().from(educationInstallmentsTable).where(eq(educationInstallmentsTable.priceSnapshotId, operationalSnapshot!.id));
+    assert.equal(mixedInstallments.find((row) => row.installmentNumber === 1)!.refundedAmount, 2_500);
+    assert.equal(mixedInstallments.find((row) => row.installmentNumber === 2)!.status, "cancelled");
+    const cancellationOutbox = await db.select().from(educationOutboxTable).where(eq(educationOutboxTable.sessionId, session!.id));
+    assert.equal(cancellationOutbox.filter((row) => row.participantId === operationalParticipant!.id && row.eventType === "session_cancelled").length, 1);
+    assert.equal(cancellationOutbox.filter((row) => row.dedupeKey.endsWith(`legacy-enrollment:${enrollment!.id}`)).length, 1);
+    assert.equal((cancellationOutbox.find((row) => row.dedupeKey.endsWith(`legacy-enrollment:${enrollment!.id}`))!.payload as any).legacyRecipient.userId, buyer.id);
 
     const [cancelledWaitlist] = await db.select().from(educationWaitlistTable).where(eq(educationWaitlistTable.id, waitlistEntry!.id)).limit(1);
     assert.equal(cancelledWaitlist?.status, "cancelled", "Waitlist entry must be cancelled.");
@@ -349,6 +500,8 @@ async function run(): Promise<void> {
       body: { reason: "Ponovni pokušaj." },
     });
     assert.equal(repeatCancelResponse.status, 409, "Cancelling an already-cancelled session must return 409.");
+    assert.equal((await db.select().from(educationLedgerEntriesTable).where(inArray(educationLedgerEntriesTable.escrowId, [escrow!.id, operationalEscrow!.id]))).length, 2);
+    assert.equal((await db.select().from(educationOutboxTable).where(eq(educationOutboxTable.sessionId, session!.id))).length, cancellationOutbox.length);
 
     // ── 6. Admin cancel route ────────────────────────────────────────────────
     // Create a fresh session + enrollment + escrow.
@@ -436,6 +589,132 @@ async function run(): Promise<void> {
       expiresAt: new Date(Date.now() - 1 * 60 * 60 * 1000),
     }).returning();
 
+    // ── Minimum-enrollment scheduler boundaries and warning dedupe ───────────
+    const schedulerNow = new Date();
+    const createSchedulerCourse = async (label: string, deadline: Date) => {
+      const [created] = await db.insert(coursesTable).values({
+        centerId: center!.id,
+        title: `Scheduler ${label} ${suffix}`,
+        category: "Test",
+        format: "in-person",
+        price: 4_000,
+        duration: "1h",
+        imageUrl: "/scheduler.jpg",
+        published: true,
+        minimumEnrollmentRiskDeadline: deadline,
+      }).returning();
+      courseIds.push(created!.id);
+      return created!;
+    };
+    const protectedCourse = await createSchedulerCourse("protected", new Date(schedulerNow.getTime() - 60_000));
+    const protectedSessions = await db.insert(courseSessionsTable).values([
+      {
+        courseId: protectedCourse.id,
+        startsAt: new Date(schedulerNow.getTime() - 30 * 60_000),
+        endsAt: new Date(schedulerNow.getTime() + 30 * 60_000),
+        capacity: 3, reservedSeats: 1, minimumEnrollments: 2,
+      },
+      {
+        courseId: protectedCourse.id,
+        startsAt: new Date(schedulerNow.getTime() - 2 * 60 * 60_000),
+        endsAt: new Date(schedulerNow.getTime() - 60 * 60_000),
+        capacity: 3, reservedSeats: 0, minimumEnrollments: 2,
+      },
+    ]).returning();
+    const [protectedEnrollment] = await db.insert(courseEnrollmentsTable).values({
+      courseId: protectedCourse.id,
+      userId: buyer.id,
+      purchaserId: buyer.id,
+      sessionId: protectedSessions[0]!.id,
+      status: "active",
+      paymentStatus: "paid",
+      chargedAmount: 4_000,
+      accessGrantedAt: new Date(),
+    }).returning();
+    enrollmentIds.push(protectedEnrollment!.id);
+    const [protectedEscrow] = await db.insert(educationEscrowsTable).values({
+      enrollmentId: protectedEnrollment!.id,
+      centerId: center!.id,
+      grossAmount: 4_000,
+      platformFee: 600,
+      reserveAmount: 400,
+      netAmount: 3_000,
+      releaseAt: new Date(schedulerNow.getTime() + 86_400_000),
+      status: "held",
+      paymentReference: `MIN-PROTECTED-${suffix}`,
+    }).returning();
+    const protectedBefore = {
+      enrollment: protectedEnrollment!,
+      escrow: protectedEscrow!,
+      ledgerCount: (await db.select().from(educationLedgerEntriesTable)
+        .where(eq(educationLedgerEntriesTable.enrollmentId, protectedEnrollment!.id))).length,
+      outboxCount: (await db.select().from(educationOutboxTable)
+        .where(eq(educationOutboxTable.sessionId, protectedSessions[0]!.id))).length,
+    };
+
+    const dueCourse = await createSchedulerCourse("due", new Date(schedulerNow.getTime() - 60_000));
+    const [dueSession] = await db.insert(courseSessionsTable).values({
+      courseId: dueCourse.id,
+      startsAt: new Date(schedulerNow.getTime() + 48 * 60 * 60_000),
+      endsAt: new Date(schedulerNow.getTime() + 49 * 60 * 60_000),
+      capacity: 3, reservedSeats: 1, minimumEnrollments: 2,
+    }).returning();
+    const [dueEnrollment] = await db.insert(courseEnrollmentsTable).values({
+      courseId: dueCourse.id,
+      userId: buyer.id,
+      purchaserId: buyer.id,
+      sessionId: dueSession!.id,
+      status: "active",
+      paymentStatus: "paid",
+      chargedAmount: 4_000,
+      accessGrantedAt: new Date(),
+    }).returning();
+    enrollmentIds.push(dueEnrollment!.id);
+    const [dueEscrow] = await db.insert(educationEscrowsTable).values({
+      enrollmentId: dueEnrollment!.id,
+      centerId: center!.id,
+      grossAmount: 4_000,
+      platformFee: 600,
+      reserveAmount: 400,
+      netAmount: 3_000,
+      releaseAt: new Date(schedulerNow.getTime() + 72 * 60 * 60_000),
+      status: "held",
+      paymentReference: `MIN-DUE-${suffix}`,
+    }).returning();
+    const dueNotificationsBefore = (await db.select().from(educationNotificationsTable)
+      .where(and(eq(educationNotificationsTable.userId, buyer.id), eq(educationNotificationsTable.type, "session_cancelled")))).length;
+
+    const warningCourse = await createSchedulerCourse("warning", new Date(schedulerNow.getTime() + 12 * 60 * 60_000));
+    const [warningSession] = await db.insert(courseSessionsTable).values({
+      courseId: warningCourse.id,
+      startsAt: new Date(schedulerNow.getTime() + 48 * 60 * 60_000),
+      endsAt: new Date(schedulerNow.getTime() + 49 * 60 * 60_000),
+      capacity: 3, reservedSeats: 1, minimumEnrollments: 2,
+    }).returning();
+    const [warningGroup] = await db.insert(educationBookingGroupsTable).values({
+      centerId: center!.id, courseId: warningCourse.id, sessionId: warningSession!.id,
+      purchaserId: buyer.id, createdByUserId: buyer.id, idempotencyKey: `risk-${suffix}`,
+      requestFingerprint: "r".repeat(64), status: "active",
+    }).returning();
+    const [warningParticipant] = await db.insert(educationBookingParticipantsTable).values({
+      bookingGroupId: warningGroup!.id, userId: buyer.id, fullName: "Risk Learner", status: "reserved",
+    }).returning();
+
+    const distantWarningCourse = await createSchedulerCourse("distant-warning", new Date(schedulerNow.getTime() + 48 * 60 * 60_000));
+    const [distantWarningSession] = await db.insert(courseSessionsTable).values({
+      courseId: distantWarningCourse.id,
+      startsAt: new Date(schedulerNow.getTime() + 72 * 60 * 60_000),
+      endsAt: new Date(schedulerNow.getTime() + 73 * 60 * 60_000),
+      capacity: 3, reservedSeats: 0, minimumEnrollments: 2,
+    }).returning();
+    const pastWarningCourse = await createSchedulerCourse("past-warning", new Date(schedulerNow.getTime() + 12 * 60 * 60_000));
+    const [pastWarningSession] = await db.insert(courseSessionsTable).values({
+      courseId: pastWarningCourse.id,
+      startsAt: new Date(schedulerNow.getTime() - 30 * 60_000),
+      endsAt: new Date(schedulerNow.getTime() + 30 * 60_000),
+      capacity: 3, reservedSeats: 0, minimumEnrollments: 2,
+    }).returning();
+
     // Session has capacity=1 and reservedSeats=0, so after expiry the
     // process hook should promote the waiter.
     const processResponse = await request(baseUrl, "/admin/education/sessions/process", {
@@ -452,6 +731,124 @@ async function run(): Promise<void> {
     assert.equal(processResult.ok, true);
     assert.ok(processResult.waitlistExpired >= 1, "Expired waitlist offer must be counted.");
     assert.ok(processResult.waitlistPromoted >= 1, "Next waiting user must be promoted.");
+    assert.ok(processResult.minimumCancelled.includes(dueSession!.id));
+    assert.ok(!processResult.minimumCancelled.includes(protectedSessions[0]!.id));
+    assert.ok(!processResult.minimumCancelled.includes(protectedSessions[1]!.id));
+    assert.equal((await db.select().from(courseSessionsTable).where(eq(courseSessionsTable.id, protectedSessions[0]!.id)))[0]!.cancelledAt, null);
+    assert.equal((await db.select().from(courseSessionsTable).where(eq(courseSessionsTable.id, protectedSessions[1]!.id)))[0]!.cancelledAt, null);
+    assert.deepEqual((await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, protectedEnrollment!.id)))[0], protectedBefore.enrollment);
+    assert.deepEqual((await db.select().from(educationEscrowsTable).where(eq(educationEscrowsTable.id, protectedEscrow!.id)))[0], protectedBefore.escrow);
+    assert.equal((await db.select().from(educationLedgerEntriesTable).where(eq(educationLedgerEntriesTable.enrollmentId, protectedEnrollment!.id))).length, protectedBefore.ledgerCount);
+    assert.equal((await db.select().from(educationOutboxTable).where(eq(educationOutboxTable.sessionId, protectedSessions[0]!.id))).length, protectedBefore.outboxCount);
+    const cancelledDueEnrollment = (await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, dueEnrollment!.id)))[0]!;
+    assert.equal(cancelledDueEnrollment.status, "cancelled");
+    assert.equal(cancelledDueEnrollment.paymentStatus, "refunded");
+    assert.equal(cancelledDueEnrollment.accessGrantedAt, null);
+    assert.equal((await db.select().from(educationEscrowsTable).where(eq(educationEscrowsTable.id, dueEscrow!.id)))[0]!.status, "refunded");
+    assert.ok((await db.select().from(educationOutboxTable).where(eq(educationOutboxTable.sessionId, dueSession!.id))).length >= 1);
+    assert.ok((await db.select().from(educationNotificationsTable)
+      .where(and(eq(educationNotificationsTable.userId, buyer.id), eq(educationNotificationsTable.type, "session_cancelled")))).length > dueNotificationsBefore);
+    const warningRows = await db.select().from(educationOutboxTable).where(eq(educationOutboxTable.sessionId, warningSession!.id));
+    assert.equal(warningRows.filter((row) => row.eventType === "minimum_enrollment_risk" && row.participantId === warningParticipant!.id).length, 1);
+    assert.equal(warningRows.filter((row) => row.eventType === "minimum_enrollment_risk_manager").length, 1);
+    assert.equal((await db.select().from(educationOutboxTable).where(eq(educationOutboxTable.sessionId, distantWarningSession!.id))).length, 0);
+    assert.equal((await db.select().from(educationOutboxTable).where(eq(educationOutboxTable.sessionId, pastWarningSession!.id))).length, 0);
+    const warningReplay = await request(baseUrl, "/admin/education/sessions/process", { method: "POST", cookie: adminCookie });
+    assert.equal(warningReplay.status, 200);
+    assert.equal((await db.select().from(educationOutboxTable).where(eq(educationOutboxTable.sessionId, warningSession!.id))).length, warningRows.length);
+
+    // Candidate selection happens before canonical cancellation acquires its
+    // schedule lock. Reproduce that race and prove the DB-clock check under
+    // the lock rejects a session which started while the scheduler waited.
+    const raceCourse = await createSchedulerCourse("lock-race", new Date(schedulerNow.getTime() - 60_000));
+    const [raceSession] = await db.insert(courseSessionsTable).values({
+      courseId: raceCourse.id,
+      startsAt: new Date(schedulerNow.getTime() + 96 * 60 * 60_000),
+      endsAt: new Date(schedulerNow.getTime() + 97 * 60 * 60_000),
+      capacity: 3, reservedSeats: 1, minimumEnrollments: 2,
+    }).returning();
+    const [raceEnrollment] = await db.insert(courseEnrollmentsTable).values({
+      courseId: raceCourse.id,
+      userId: buyer.id,
+      purchaserId: buyer.id,
+      sessionId: raceSession!.id,
+      status: "active",
+      paymentStatus: "paid",
+      chargedAmount: 4_000,
+      accessGrantedAt: new Date(),
+    }).returning();
+    enrollmentIds.push(raceEnrollment!.id);
+    const [raceEscrow] = await db.insert(educationEscrowsTable).values({
+      enrollmentId: raceEnrollment!.id,
+      centerId: center!.id,
+      grossAmount: 4_000,
+      platformFee: 600,
+      reserveAmount: 400,
+      netAmount: 3_000,
+      releaseAt: new Date(schedulerNow.getTime() + 120 * 60 * 60_000),
+      status: "held",
+      paymentReference: `MIN-RACE-${suffix}`,
+    }).returning();
+    const raceBefore = {
+      enrollment: raceEnrollment!,
+      escrow: raceEscrow!,
+      ledgerCount: (await db.select().from(educationLedgerEntriesTable)
+        .where(eq(educationLedgerEntriesTable.enrollmentId, raceEnrollment!.id))).length,
+      outboxCount: (await db.select().from(educationOutboxTable)
+        .where(eq(educationOutboxTable.sessionId, raceSession!.id))).length,
+      notificationCount: (await db.select().from(educationNotificationsTable)
+        .where(and(eq(educationNotificationsTable.userId, buyer.id), eq(educationNotificationsTable.type, "session_cancelled")))).length,
+    };
+    let releaseScheduleLock!: () => void;
+    let scheduleLockAcquired!: () => void;
+    const scheduleLockRelease = new Promise<void>((resolve) => { releaseScheduleLock = resolve; });
+    const scheduleLockReady = new Promise<void>((resolve) => { scheduleLockAcquired = resolve; });
+    const heldScheduleLock = db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`education:schedule:center:${center!.id}`}))`);
+      scheduleLockAcquired();
+      await scheduleLockRelease;
+    });
+    await scheduleLockReady;
+    const racedProcessPromise = request(baseUrl, "/admin/education/sessions/process", {
+      method: "POST",
+      cookie: adminCookie,
+    });
+    let observedBlockedScheduler = false;
+    try {
+      for (let attempt = 0; attempt < 250; attempt++) {
+        const locks = (await db.execute(sql`
+          select count(*)::int as count
+          from pg_locks
+          where locktype = 'advisory' and granted = false
+        `)).rows as Array<{ count: number }>;
+        if (Number(locks[0]?.count ?? 0) > 0) {
+          observedBlockedScheduler = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      assert.equal(observedBlockedScheduler, true, "Scheduler must select the candidate and block on the held schedule lock.");
+      const databaseClock = (await db.execute(sql`select now() as now`)).rows as Array<{ now: Date }>;
+      const raceNow = new Date(databaseClock[0]!.now);
+      await db.update(courseSessionsTable).set({
+        startsAt: new Date(raceNow.getTime() - 2 * 60 * 60_000),
+        endsAt: new Date(raceNow.getTime() - 60 * 60_000),
+      }).where(eq(courseSessionsTable.id, raceSession!.id));
+    } finally {
+      releaseScheduleLock();
+      await heldScheduleLock;
+    }
+    const racedProcessResponse = await racedProcessPromise;
+    assert.equal(racedProcessResponse.status, 200);
+    const racedProcess = await json<{ minimumCancelled: string[] }>(racedProcessResponse);
+    assert.ok(!racedProcess.minimumCancelled.includes(raceSession!.id));
+    assert.equal((await db.select().from(courseSessionsTable).where(eq(courseSessionsTable.id, raceSession!.id)))[0]!.cancelledAt, null);
+    assert.deepEqual((await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, raceEnrollment!.id)))[0], raceBefore.enrollment);
+    assert.deepEqual((await db.select().from(educationEscrowsTable).where(eq(educationEscrowsTable.id, raceEscrow!.id)))[0], raceBefore.escrow);
+    assert.equal((await db.select().from(educationLedgerEntriesTable).where(eq(educationLedgerEntriesTable.enrollmentId, raceEnrollment!.id))).length, raceBefore.ledgerCount);
+    assert.equal((await db.select().from(educationOutboxTable).where(eq(educationOutboxTable.sessionId, raceSession!.id))).length, raceBefore.outboxCount);
+    assert.equal((await db.select().from(educationNotificationsTable)
+      .where(and(eq(educationNotificationsTable.userId, buyer.id), eq(educationNotificationsTable.type, "session_cancelled")))).length, raceBefore.notificationCount);
 
     // Verify the expired entry is now "expired".
     const [expiredEntry] = await db.select().from(educationWaitlistTable).where(eq(educationWaitlistTable.id, waitlistEntry3!.id)).limit(1);
@@ -749,6 +1146,15 @@ async function run(): Promise<void> {
       cookie: buyerCookie,
     });
     assert.equal(buyerProcessResponse.status, 403, "Non-admin must not be able to trigger the process endpoint.");
+    const operationalRouteSource = await readFile(new URL("../routes/education-operations.ts", import.meta.url), "utf8");
+    const cancellationServiceSource = await readFile(new URL("./education-sessions.ts", import.meta.url), "utf8");
+    const centerCancelSource = operationalRouteSource.slice(
+      operationalRouteSource.indexOf('router.post("/education/operations/centers/:centerId/sessions/:sessionId/cancel"'),
+      operationalRouteSource.indexOf('router.get("/education/operations/bookings/:bookingGroupId/installments', operationalRouteSource.indexOf('router.post("/education/operations/centers/:centerId/sessions/:sessionId/cancel"')),
+    );
+    assert.match(centerCancelSource, /cancelEducationSession\(/);
+    assert.doesNotMatch(centerCancelSource, /educationLedgerEntriesTable|type:\s*"refund"|for\s*\(const escrow/);
+    assert.doesNotMatch(cancellationServiceSource, /cancelLegacyEducationSessionEnrollmentsInTx/);
 
     console.log("Education session cancellation, waitlist promotion, and scheduled job tests passed.");
   } finally {
@@ -766,6 +1172,12 @@ async function run(): Promise<void> {
       await db.delete(courseEnrollmentsTable).where(inArray(courseEnrollmentsTable.id, enrollmentIds));
     }
     if (courseIds.length) {
+      const snapshots = await db.select({ id: educationPriceSnapshotsTable.id }).from(educationPriceSnapshotsTable)
+        .where(inArray(educationPriceSnapshotsTable.courseId, courseIds));
+      if (snapshots.length) {
+        await db.delete(educationInstallmentsTable).where(inArray(educationInstallmentsTable.priceSnapshotId, snapshots.map((row) => row.id)));
+        await db.delete(educationPriceSnapshotsTable).where(inArray(educationPriceSnapshotsTable.id, snapshots.map((row) => row.id)));
+      }
       await db.delete(coursesTable).where(inArray(coursesTable.id, courseIds));
     }
     if (centerId) {

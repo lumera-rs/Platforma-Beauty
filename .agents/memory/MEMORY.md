@@ -139,3 +139,10 @@
 - [Education related-course normalization](education-related-course-normalization.md) — canonical Unicode tag matching must run before global ranking and limiting.
 - [Education course review aggregates](education-course-review-aggregates.md) — single and batch course serializers must share published-review enrichment before contract parsing.
 - [SSR API response shape parity](ssr-api-response-shape-parity.md) — untyped server renderers and fixtures must consume the exact OpenAPI response shape.
+- [Education learner identity boundary](education-learner-identity-boundary.md) — booking purchasers manage seats and payments but never impersonate named learners.
+- [Education group mutation invariant](education-group-reschedule-invariant.md) — reschedule or cancel a multi-seat group together unless finances split atomically per seat.
+- [Education fixed-session compatibility](education-fixed-session-compatibility.md) — legacy fixed sessions remain bookable before educator assignments are backfilled.
+- [Education waitlist payment promotion](education-waitlist-payment-promotion.md) — settled waitlisted seats carry money state but gain learner access only on promotion.
+- [Education completion gate ordering](education-completion-gate-ordering.md) — lessons and attendance reconcile one live completion state regardless of arrival order.
+- [Education recurrence semantics](education-recurrence-semantics.md) — availability grid starts are alternatives; recurrence commits only fixed non-overlapping occurrences.
+- [Education minimum-enrollment scheduler](education-minimum-enrollment-scheduler.md) — recheck future-session eligibility under lock with the database clock before auto-cancellation.

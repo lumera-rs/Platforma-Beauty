@@ -73,13 +73,19 @@ async function seedLegacySchema(schema: string) {
     title text NOT NULL,
     category text NOT NULL,
     format text NOT NULL,
+    price integer NOT NULL DEFAULT 0,
     published boolean NOT NULL DEFAULT true,
     archived boolean NOT NULL DEFAULT false
   )`);
   await q(`CREATE TABLE "${schema}".course_enrollments (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    course_id uuid REFERENCES "${schema}".courses(id) ON DELETE CASCADE,
     user_id uuid NOT NULL REFERENCES "${schema}".users(id) ON DELETE CASCADE,
-    purchaser_id uuid NOT NULL REFERENCES "${schema}".users(id) ON DELETE CASCADE
+    purchaser_id uuid NOT NULL REFERENCES "${schema}".users(id) ON DELETE CASCADE,
+    employee_id uuid,
+    session_id uuid,
+    status text NOT NULL DEFAULT 'pending',
+    participant_key text GENERATED ALWAYS AS (coalesce(employee_id::text, '00000000-0000-0000-0000-000000000000')) STORED
   )`);
   await q(`CREATE TABLE "${schema}".salons (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -350,7 +356,7 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
-    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 89, "v89 is the current production schema rollout");
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 95, "v95 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
 
     // ── Run the rollout, then exercise its legacy conversion on rerun ──────
@@ -374,6 +380,7 @@ async function run() {
           `SELECT to_regclass($1) IS NOT NULL AS exists`, [`${s}.${table}`],
         ), `${table} is created by v84`);
       }
+      assert.ok(await columnExists("education_installments", "due_at"), "v95 adds nullable immutable installment due_at");
       const placementExclusion = (await q<{ definition: string }>(
         `SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
          WHERE conrelid=$1::regclass AND conname='education_placements_active_slot_no_overlap'`,
@@ -404,11 +411,10 @@ async function run() {
       );
       assert.equal(educationCourseColumns.rowCount, 14, "v87 adds every course marketplace column");
       assert.equal(
-        await objectExists(`SELECT to_regclass($1) IS NULL AS exists`, [`${s}.education_instructors`]),
+        await objectExists(`SELECT to_regclass($1) IS NOT NULL AS exists`, [`${s}.education_instructors`]),
         true,
-        "v89 safely completes when the canonical instructor table is absent from an upgrade fixture",
+        "v94 creates the canonical instructor table for legacy installations",
       );
-      await q(`CREATE TABLE "${s}".education_instructors (id uuid PRIMARY KEY DEFAULT gen_random_uuid())`);
       await q(`UPDATE "${s}".business_growth_schema_rollout SET version = 87 WHERE singleton = true`);
       await runBusinessGrowthSchemaDdl(client, s);
       const instructorPortfolioColumn = await q<{ column_default: string; is_nullable: string }>(
@@ -417,7 +423,7 @@ async function run() {
         [s],
       );
       assert.equal(instructorPortfolioColumn.rowCount, 1,
-        "v89 adds portfolio_media when the canonical instructor table exists");
+        "v94 preserves portfolio_media when the canonical instructor table exists");
       assert.equal(instructorPortfolioColumn.rows[0]!.is_nullable, "NO");
       assert.match(instructorPortfolioColumn.rows[0]!.column_default, /\[\]/);
       // A database that recorded v88 before the immutable presentation
@@ -434,6 +440,15 @@ async function run() {
       );
       assert.equal(giftSnapshotColumns.rowCount, 2,
         "v89 repairs both immutable gift presentation snapshots after recorded v88");
+      // A production database already stamped v93 must not skip the parity
+      // repair. Remove representative objects, mark v93, and prove v94 restores
+      // them through the normal versioned rollout.
+      await q(`DROP INDEX "${s}".education_booking_groups_center_session_status_idx`);
+      await q(`DROP INDEX "${s}".education_booking_groups_purchaser_idx`);
+      await q(`DROP INDEX "${s}".education_booking_participants_user_idx`);
+      await q(`ALTER TABLE "${s}".education_price_snapshots DROP CONSTRAINT education_price_snapshots_discount_reason_check`);
+      await q(`UPDATE "${s}".business_growth_schema_rollout SET version = 93 WHERE singleton = true`);
+      await runBusinessGrowthSchemaDdl(client, s);
       const lifecycleColumns = await q<{ column_name: string; is_nullable: string }>(
         `SELECT column_name, is_nullable
            FROM information_schema.columns
@@ -1244,6 +1259,14 @@ async function run() {
         `${idxName} leads with FK column ${fkColumn}`,
       );
     }
+    for (const indexName of [
+      "education_center_staff_instructor_profile_idx",
+      "education_booking_groups_center_session_status_idx",
+      "education_booking_groups_purchaser_idx",
+      "education_booking_participants_user_idx",
+    ]) {
+      assert.ok(await indexExists(indexName), `operational bootstrap parity index ${indexName} exists`);
+    }
 
     // ── Key constraints (unique + FK) ──────────────────────────────────────
     async function constraintExists(name: string) {
@@ -1261,6 +1284,11 @@ async function run() {
       "education_centers_online_refund_override_check",
       "education_centers_live_appeal_override_check",
       "education_centers_featured_price_override_check",
+      "education_price_snapshots_discount_reason_check",
+      "courses_operational_timezone_check",
+      "courses_cancellation_deadline_check",
+      "courses_early_bird_check",
+      "courses_installment_count_check",
     ]) {
       assert.ok(await constraintExists(constraint), `${constraint} created`);
     }

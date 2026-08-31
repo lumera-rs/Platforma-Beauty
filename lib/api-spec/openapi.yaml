@@ -3586,6 +3586,420 @@ paths:
       responses:
         "204": { description: Lesson deleted }
         "403": { description: Business access required }
+  /education/courses/{courseId}/availability:
+    get:
+      operationId: getEducationCourseAvailability
+      tags: [education]
+      summary: Get canonical Europe/Belgrade individual-course availability and occupancy
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+        - { name: date, in: query, schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' } }
+        - { name: educatorStaffId, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Availability projection
+          content: { application/json: { schema: { $ref: "#/components/schemas/EducationOperationalAvailability" } } }
+        "400": { description: Invalid calendar request }
+        "404": { description: Course or educator not found }
+  /education/operations/bookings:
+    get:
+      operationId: listMyEducationOperationalBookings
+      tags: [education]
+      summary: List operational education booking groups visible to the purchaser or a named participant
+      responses:
+        "200":
+          description: Authorized operational booking groups
+          content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/EducationOperationalBookingDetail" } } } }
+        "401": { description: Authentication required }
+    post:
+      operationId: createEducationOperationalBooking
+      tags: [education]
+      summary: Atomically create an online or center-created named-seat booking
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EducationOperationalBookingInput" } } }
+      responses:
+        "201":
+          description: Durable booking command receipt
+          content: { application/json: { schema: { $ref: "#/components/schemas/EducationOperationalBooking" } } }
+        "401": { description: Authentication required }
+        "403": { description: Center role is insufficient }
+        "404": { description: "Course, session, or center not found" }
+        "409": { description: "Idempotency mismatch, capacity, or availability conflict" }
+  /education/operations/bookings/{bookingGroupId}:
+    get:
+      operationId: getMyEducationOperationalBooking
+      tags: [education]
+      summary: Get an operational booking group visible to the purchaser or a named participant
+      parameters:
+        - name: bookingGroupId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Authorized operational booking group
+          content: { application/json: { schema: { $ref: "#/components/schemas/EducationOperationalBookingDetail" } } }
+        "401": { description: Authentication required }
+        "404": { description: Booking group not found or not visible }
+  /education/operations/bookings/{bookingGroupId}/calendar.ics:
+    get:
+      operationId: downloadEducationOperationalBookingCalendar
+      tags: [education]
+      summary: Download an authorized operational booking calendar
+      parameters:
+        - name: bookingGroupId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: RFC 5545 calendar
+          content: { text/calendar: { schema: { type: string } } }
+        "401": { description: Authentication required }
+        "404": { description: Booking group not found or not visible }
+  /education/operations/bookings/{bookingGroupId}/installments/{installmentNumber}/ips-qr:
+    get:
+      operationId: getEducationOperationalInstallmentIpsQr
+      tags: [education]
+      summary: Get deterministic NBS IPS QR payment data for a due booking installment
+      parameters:
+        - { name: bookingGroupId, in: path, required: true, schema: { type: string } }
+        - { name: installmentNumber, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200":
+          description: Payment data only; retrieval never confirms payment
+          content: { application/json: { schema: { $ref: "#/components/schemas/EducationIpsQrPayment" } } }
+        "400": { description: IPS payment account is not configured or invalid }
+        "401": { description: Authentication required }
+        "404": { description: Booking or due installment not found or not visible }
+  /education/operations/bookings/{bookingGroupId}/payment-plan:
+    get:
+      operationId: getEducationOperationalPaymentPlan
+      tags: [education]
+      summary: Get purchaser-visible installment status for an operational booking
+      parameters:
+        - { name: bookingGroupId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Payment plan, content: { application/json: { schema: { $ref: "#/components/schemas/EducationPaymentPlan" } } } }
+        "401": { description: Authentication required }
+        "404": { description: Booking not found or not visible }
+  /admin/education/installments/{installmentId}/settle:
+    post:
+      operationId: settleAdminEducationInstallment
+      tags: [admin, education]
+      summary: Manually settle one pending operational installment
+      parameters:
+        - { name: installmentId, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { description: Stable settlement result, content: { application/json: { schema: { $ref: "#/components/schemas/EducationInstallmentSettlement" } } } }
+        "401": { description: Authentication required }
+        "403": { description: Administrator access required }
+        "404": { description: Installment not found }
+        "409": { description: Settled installment or idempotency mismatch }
+  /admin/education/installments:
+    get:
+      operationId: listAdminEducationInstallments
+      tags: [admin, education]
+      summary: List due operational installments
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [pending, settled, refunded, cancelled] } }
+        - { name: reference, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Installments, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/EducationAdminInstallment" } } } } }
+  /education/operations/bookings/{bookingGroupId}/cancel:
+    post:
+      operationId: cancelEducationOperationalBooking
+      tags: [education]
+      summary: Cancel a whole operational booking group or selected named seats
+      parameters:
+        - name: bookingGroupId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/EducationOperationalBookingCancelInput" } } }
+      responses:
+        "200": { description: Cancellation result, content: { application/json: { schema: { $ref: "#/components/schemas/EducationOperationalBookingOperation" } } } }
+        "401": { description: Authentication required }
+        "404": { description: Booking group not found or not visible }
+        "409": { description: Booking snapshot or refund is no longer eligible }
+  /education/operations/bookings/{bookingGroupId}/reschedule:
+    patch:
+      operationId: rescheduleEducationOperationalBooking
+      tags: [education]
+      summary: Atomically move whole or selected operational booking seats to a compatible session
+      parameters:
+        - name: bookingGroupId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EducationOperationalBookingRescheduleInput" } } }
+      responses:
+        "200": { description: Reschedule result, content: { application/json: { schema: { $ref: "#/components/schemas/EducationOperationalBookingOperation" } } } }
+        "401": { description: Authentication required }
+        "404": { description: Booking group not found or not visible }
+        "409": { description: "Idempotency mismatch, target incompatibility, or capacity conflict" }
+  /education/operations/centers/{centerId}/sessions/{sessionId}/attendance/{participantId}:
+    get:
+      operationId: getEducationOperationalAttendance
+      tags: [education]
+      summary: Get attendance for a named participant in a center session
+      parameters:
+        - { name: centerId, in: path, required: true, schema: { type: string } }
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+        - { name: participantId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Attendance record, content: { application/json: { schema: { $ref: "#/components/schemas/EducationOperationalAttendance" } } } }
+        "403": { description: Attendance access required }
+        "404": { description: Participant or session not found in center }
+    put:
+      operationId: upsertEducationOperationalAttendance
+      tags: [education]
+      summary: Record attendance for a named participant in a center session
+      parameters:
+        - { name: centerId, in: path, required: true, schema: { type: string } }
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+        - { name: participantId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EducationOperationalAttendanceInput" } } }
+      responses:
+        "200": { description: Attendance recorded, content: { application/json: { schema: { $ref: "#/components/schemas/EducationOperationalAttendance" } } } }
+        "403": { description: Attendance access required }
+        "404": { description: Participant or session not found in center }
+  /education/operations/centers/{centerId}/sessions/{sessionId}/educator:
+    patch:
+      operationId: substituteEducationSessionEducator
+      tags: [education]
+      summary: Substitute the educator assigned to an operational session
+      parameters:
+        - { name: centerId, in: path, required: true, schema: { type: string } }
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EducationSessionEducatorSubstitutionInput" } } }
+      responses:
+        "200": { description: Updated assignment, content: { application/json: { schema: { $ref: "#/components/schemas/EducationSessionEducatorAssignment" } } } }
+        "403": { description: Center management access required }
+        "404": { description: Session or educator not found in center }
+        "409": { description: Replacement educator is unavailable }
+  /education/operations/centers/{centerId}/sessions/{sessionId}/cancel:
+    post:
+      operationId: cancelEducationOperationalSession
+      tags: [education]
+      summary: Cancel an operational session and process center-caused refunds
+      parameters:
+        - { name: centerId, in: path, required: true, schema: { type: string } }
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/EducationSessionCancellationInput" } } }
+      responses:
+        "200": { description: Session cancellation result, content: { application/json: { schema: { $ref: "#/components/schemas/EducationSessionCancellation" } } } }
+        "403": { description: Center management or assigned educator access required }
+        "404": { description: Session not found in center }
+        "409": { description: Payout prevents refund or session is already cancelled }
+  /education/operations/courses/{courseId}/recurrence/preview:
+    post:
+      operationId: previewEducationCourseRecurrence
+      tags: [education]
+      parameters: [{ $ref: "#/components/parameters/CourseId" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EducationCourseRecurrenceInput" } } }
+      responses:
+        "200": { description: Generated schedule candidates, content: { application/json: { schema: { $ref: "#/components/schemas/EducationCourseRecurrencePreview" } } } }
+        "400": { description: Invalid Belgrade calendar range }
+        "403": { description: Center calendar access required }
+        "404": { description: Course or educator not found }
+  /education/operations/courses/{courseId}/recurrence/commit:
+    post:
+      operationId: commitEducationCourseRecurrence
+      tags: [education]
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EducationCourseRecurrenceInput" } } }
+      responses:
+        "201": { description: Created sessions, content: { application/json: { schema: { $ref: "#/components/schemas/EducationCourseRecurrenceCommit" } } } }
+        "400": { description: Invalid Belgrade calendar range }
+        "403": { description: Center calendar access required }
+        "404": { description: Course or educator not found }
+        "409": { description: Idempotency fingerprint or educator schedule conflict }
+  /education/operations/centers/{centerId}/permissions:
+    get:
+      operationId: getEducationCenterOperationalPermissions
+      tags: [education]
+      parameters: [{ $ref: "#/components/parameters/EducationCenterId" }]
+      responses:
+        "200":
+          description: Current scoped operational permissions
+          content: { application/json: { schema: { $ref: "#/components/schemas/EducationCenterOperationalPermissions" } } }
+        "401": { description: Authentication required }
+        "403": { description: Center access required }
+  /education/operations/centers/{centerId}/calendar:
+    get:
+      operationId: getEducationCenterOperationsCalendar
+      tags: [education]
+      parameters:
+        - $ref: "#/components/parameters/EducationCenterId"
+        - { name: startDate, in: query, required: true, schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' } }
+        - { name: endDate, in: query, required: true, schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' } }
+        - { name: educatorStaffId, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Center operational sessions, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/EducationOperationsCalendarSession" } } } } }
+        "400": { description: Invalid or unbounded date range }
+        "403": { description: Center access required }
+  /education/operations/centers/{centerId}/staff:
+    get:
+      operationId: listEducationCenterOperationalStaff
+      tags: [education]
+      parameters: [{ $ref: "#/components/parameters/EducationCenterId" }]
+      responses:
+        "200":
+          description: Center staff
+          content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/EducationCenterStaffMember" } } } }
+        "403": { description: Center access required }
+    post:
+      operationId: createEducationCenterOperationalStaff
+      tags: [education]
+      parameters: [{ $ref: "#/components/parameters/EducationCenterId" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EducationCenterStaffInput" } } }
+      responses:
+        "201":
+          description: Staff membership created
+          content: { application/json: { schema: { $ref: "#/components/schemas/EducationCenterStaffMember" } } }
+        "403": { description: Owner or administrator access required }
+        "409": { description: Existing membership or active educator center conflict }
+  /education/operations/centers/{centerId}/staff/{staffId}:
+    patch:
+      operationId: updateEducationCenterOperationalStaff
+      tags: [education]
+      parameters:
+        - $ref: "#/components/parameters/EducationCenterId"
+        - { name: staffId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EducationCenterStaffUpdate" } } }
+      responses:
+        "200":
+          description: Staff membership updated
+          content: { application/json: { schema: { $ref: "#/components/schemas/EducationCenterStaffMember" } } }
+        "403": { description: Owner or administrator access required }
+        "404": { description: Staff member not in center }
+        "409": { description: Active educator center conflict }
+  /education/operations/centers/{centerId}/educators/{staffId}/weekly-availability:
+    get:
+      operationId: listEducationEducatorWeeklyAvailability
+      tags: [education]
+      parameters:
+        - $ref: "#/components/parameters/EducationCenterId"
+        - { name: staffId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Weekly availability, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/EducationEducatorWeeklyAvailability" } } } } }
+        "403": { description: Center access required }
+        "404": { description: Educator not in center }
+    post:
+      operationId: createEducationEducatorWeeklyAvailability
+      tags: [education]
+      parameters:
+        - $ref: "#/components/parameters/EducationCenterId"
+        - { name: staffId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EducationEducatorWeeklyAvailabilityInput" } } }
+      responses:
+        "201": { description: Availability block created, content: { application/json: { schema: { $ref: "#/components/schemas/EducationEducatorWeeklyAvailability" } } } }
+        "403": { description: Center access required }
+        "404": { description: Educator not in center }
+        "409": { description: Duplicate availability block }
+  /education/operations/centers/{centerId}/educators/{staffId}/weekly-availability/{availabilityId}:
+    patch:
+      operationId: updateEducationEducatorWeeklyAvailability
+      tags: [education]
+      parameters:
+        - $ref: "#/components/parameters/EducationCenterId"
+        - { name: staffId, in: path, required: true, schema: { type: string } }
+        - { name: availabilityId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EducationEducatorWeeklyAvailabilityInput" } } }
+      responses:
+        "200": { description: Availability block updated, content: { application/json: { schema: { $ref: "#/components/schemas/EducationEducatorWeeklyAvailability" } } } }
+        "403": { description: "Only owner, administrator, or the educator may edit" }
+        "404": { description: Availability block not in educator scope }
+    delete:
+      operationId: deleteEducationEducatorWeeklyAvailability
+      tags: [education]
+      parameters:
+        - $ref: "#/components/parameters/EducationCenterId"
+        - { name: staffId, in: path, required: true, schema: { type: string } }
+        - { name: availabilityId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Availability block deleted }
+        "403": { description: "Only owner, administrator, or the educator may edit" }
+        "404": { description: Availability block not in educator scope }
+  /education/operations/centers/{centerId}/educators/{staffId}/absences:
+    get:
+      operationId: listEducationEducatorAbsences
+      tags: [education]
+      parameters:
+        - $ref: "#/components/parameters/EducationCenterId"
+        - { name: staffId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Absence blocks, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/EducationEducatorAbsence" } } } } }
+        "403": { description: Center access required }
+        "404": { description: Educator not in center }
+    post:
+      operationId: createEducationEducatorAbsence
+      tags: [education]
+      parameters:
+        - $ref: "#/components/parameters/EducationCenterId"
+        - { name: staffId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EducationEducatorAbsenceInput" } } }
+      responses:
+        "201": { description: Absence created, content: { application/json: { schema: { $ref: "#/components/schemas/EducationEducatorAbsence" } } } }
+        "403": { description: Center access required }
+        "404": { description: Educator not in center }
+  /education/operations/centers/{centerId}/educators/{staffId}/absences/{absenceId}:
+    patch:
+      operationId: updateEducationEducatorAbsence
+      tags: [education]
+      parameters:
+        - $ref: "#/components/parameters/EducationCenterId"
+        - { name: staffId, in: path, required: true, schema: { type: string } }
+        - { name: absenceId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EducationEducatorAbsenceInput" } } }
+      responses:
+        "200": { description: Absence updated, content: { application/json: { schema: { $ref: "#/components/schemas/EducationEducatorAbsence" } } } }
+        "403": { description: "Only owner, administrator, or the educator may edit" }
+        "404": { description: Absence not in educator scope }
+    delete:
+      operationId: deleteEducationEducatorAbsence
+      tags: [education]
+      parameters:
+        - $ref: "#/components/parameters/EducationCenterId"
+        - { name: staffId, in: path, required: true, schema: { type: string } }
+        - { name: absenceId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Absence deleted }
+        "403": { description: "Only owner, administrator, or the educator may edit" }
+        "404": { description: Absence not in educator scope }
   /education/courses/{courseId}/sessions:
     get:
       operationId: listEducationSessions
@@ -12214,6 +12628,13 @@ components:
         groupDiscountMinimum: { type: ["number", "null"] }
         groupDiscountPercent: { type: ["number", "null"] }
         giftVoucherEligible: { type: boolean }
+        schedulingMode: { type: string, enum: [fixed_group, individual_calendar] }
+        cancellationCutoffHours: { type: integer, minimum: 0, maximum: 8760 }
+        depositDisposition: { type: string, enum: [refund, forfeit, transfer] }
+        minimumEnrollmentRiskDeadline: { type: ["string", "null"], format: date-time }
+        earlyBirdPrice: { type: ["number", "null"], minimum: 0 }
+        earlyBirdCutoff: { type: ["string", "null"], format: date-time }
+        installmentCount: { type: integer, enum: [1, 2, 3] }
         centerId: { type: ["string", "null"] }
         availableSeats: { type: ["number", "null"] }
         enrollmentStatus: { type: ["string", "null"], enum: [pending, active, completed, cancelled, null] }
@@ -12261,6 +12682,13 @@ components:
         giftVoucherEligible: { type: boolean }
         groupDiscountMinimum: { type: ["number", "null"], minimum: 2, maximum: 999 }
         groupDiscountPercent: { type: ["number", "null"], minimum: 0, maximum: 100 }
+        schedulingMode: { type: string, enum: [fixed_group, individual_calendar] }
+        cancellationCutoffHours: { type: integer, minimum: 0, maximum: 8760 }
+        depositDisposition: { type: string, enum: [refund, forfeit, transfer] }
+        minimumEnrollmentRiskDeadline: { type: ["string", "null"], format: date-time }
+        earlyBirdPrice: { type: ["number", "null"], minimum: 0 }
+        earlyBirdCutoff: { type: ["string", "null"], format: date-time }
+        installmentCount: { type: integer, enum: [1, 2, 3] }
       required: [title, category, format, price, duration, imageUrl]
     EducationCourseUpdate:
       type: object
@@ -12306,6 +12734,13 @@ components:
         giftVoucherEligible: { type: boolean }
         groupDiscountMinimum: { type: ["number", "null"], minimum: 2, maximum: 999 }
         groupDiscountPercent: { type: ["number", "null"], minimum: 0, maximum: 100 }
+        schedulingMode: { type: string, enum: [fixed_group, individual_calendar] }
+        cancellationCutoffHours: { type: integer, minimum: 0, maximum: 8760 }
+        depositDisposition: { type: string, enum: [refund, forfeit, transfer] }
+        minimumEnrollmentRiskDeadline: { type: ["string", "null"], format: date-time }
+        earlyBirdPrice: { type: ["number", "null"], minimum: 0 }
+        earlyBirdCutoff: { type: ["string", "null"], format: date-time }
+        installmentCount: { type: integer, enum: [1, 2, 3] }
     EducationSession:
       type: object
       properties:
@@ -12318,6 +12753,7 @@ components:
         availableSeats: { type: number }
         minimumEnrollments: { type: ["number", "null"] }
         cancelledAt: { type: ["string", "null"], format: date-time }
+        educatorStaffId: { type: ["string", "null"] }
       required: [id, startsAt, endsAt, capacity, reservedSeats, availableSeats]
     EducationSessionInput:
       type: object
@@ -12327,6 +12763,7 @@ components:
         location: { type: ["string", "null"] }
         capacity: { type: number, minimum: 1 }
         minimumEnrollments: { type: ["number", "null"], minimum: 0, maximum: 9999 }
+        educatorStaffId: { type: ["string", "null"] }
       required: [startsAt, endsAt, capacity]
     EducationLesson:
       type: object
@@ -12987,6 +13424,9 @@ components:
         onlineRefundDays: { type: number, minimum: 0, maximum: 365, multipleOf: 1 }
         liveAppealDays: { type: number, minimum: 0, maximum: 365, multipleOf: 1 }
         featuredCoursePrice: { type: number, minimum: 0, maximum: 100000000, multipleOf: 1 }
+        ipsRecipientName: { type: ["string", "null"], maxLength: 140 }
+        ipsRecipientAccount: { type: ["string", "null"], maxLength: 40 }
+        ipsPurpose: { type: ["string", "null"], maxLength: 140 }
       required: [commissionPercent, reservePercent, onlineRefundDays, liveAppealDays, featuredCoursePrice]
     EducationMarketplaceSettings:
       allOf:
@@ -13203,7 +13643,17 @@ components:
       properties:
         enrollment: { $ref: "#/components/schemas/EducationEnrollment" }
         course: { $ref: "#/components/schemas/EducationPrivateCourseDetail" }
-      required: [enrollment, course]
+        eligibility: { $ref: "#/components/schemas/EducationCertificateEligibility" }
+      required: [enrollment, course, eligibility]
+    EducationCertificateEligibility:
+      type: object
+      required: [total, completed, percent, certificateEligible, reasons]
+      properties:
+        total: { type: integer, minimum: 0 }
+        completed: { type: integer, minimum: 0 }
+        percent: { type: integer, minimum: 0, maximum: 100 }
+        certificateEligible: { type: boolean }
+        reasons: { type: array, items: { type: string } }
     AdminSummary:
       type: object
       properties:
@@ -16530,3 +16980,372 @@ components:
         unitPrice: { type: integer, const: 0 }
         price: { type: integer, const: 0 }
         thresholdLabel: { type: string }
+    EducationOperationalParticipantInput:
+      type: object
+      additionalProperties: false
+      required: [fullName]
+      properties:
+        fullName: { type: string, minLength: 1, maxLength: 240 }
+        email: { type: ["string", "null"], maxLength: 320 }
+        phone: { type: ["string", "null"], maxLength: 64 }
+        userId: { type: ["string", "null"] }
+    EducationOperationalBookingInput:
+      type: object
+      additionalProperties: false
+      required: [courseId, sessionId, participants]
+      properties:
+        courseId: { type: string }
+        sessionId: { type: string }
+        installmentCount: { type: integer, enum: [1, 2, 3], default: 1 }
+        participants:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: { $ref: "#/components/schemas/EducationOperationalParticipantInput" }
+    EducationOperationalBooking:
+      type: object
+      required: [id, courseId, sessionId, status, participantCount, paymentStatus, grossAmount, earlyBirdApplied, discountReason, installments]
+      properties:
+        id: { type: string }
+        courseId: { type: string }
+        sessionId: { type: string }
+        status: { type: string, enum: [pending, active, waitlisted, cancelled] }
+        participantCount: { type: integer, minimum: 1 }
+        paymentStatus: { type: string, enum: [pending] }
+        grossAmount: { type: integer, minimum: 0 }
+        earlyBirdApplied: { type: boolean }
+        discountReason: { type: string, enum: [none, early_bird, group, early_bird_and_group] }
+        installments:
+          type: array
+          items: { $ref: "#/components/schemas/EducationInstallmentPayment" }
+    EducationInstallmentPayment:
+      type: object
+      required: [installmentNumber, amount, paymentReference, status]
+      properties:
+        installmentNumber: { type: integer, minimum: 1 }
+        amount: { type: integer, minimum: 1 }
+        paymentReference: { type: string }
+        status: { type: string, enum: [pending, settled, refunded] }
+    EducationIpsQrPayment:
+      type: object
+      required: [payload, recipientName, recipientAccount, purpose, amount, currency, reference]
+      properties:
+        payload: { type: string }
+        recipientName: { type: string }
+        recipientAccount: { type: string }
+        purpose: { type: string }
+        amount: { type: integer, minimum: 1 }
+        currency: { type: string, const: RSD }
+        reference: { type: string }
+    EducationPaymentPlan:
+      type: object
+      required: [bookingGroupId, grossAmount, capturedAmount, refundedAmount, netPaidAmount, outstandingAmount, paymentStatus, installments]
+      properties:
+        bookingGroupId: { type: string }
+        grossAmount: { type: integer, minimum: 0 }
+        capturedAmount: { type: integer, minimum: 0 }
+        refundedAmount: { type: integer, minimum: 0 }
+        netPaidAmount: { type: integer, minimum: 0 }
+        outstandingAmount: { type: integer, minimum: 0 }
+        paymentStatus: { type: string, enum: [pending, partial, paid, refunded] }
+        installments: { type: array, items: { $ref: "#/components/schemas/EducationInstallmentPayment" } }
+    EducationInstallmentSettlement:
+      type: object
+      required: [installmentId, paymentReference, amount, capturedAmount, paymentStatus, replayed]
+      properties:
+        installmentId: { type: string }
+        paymentReference: { type: string }
+        amount: { type: integer }
+        capturedAmount: { type: integer }
+        paymentStatus: { type: string, enum: [partial, paid] }
+        replayed: { type: boolean }
+    EducationAdminInstallment:
+      type: object
+      required: [id, bookingGroupId, centerId, courseTitle, customerName, installmentNumber, amount, status, paymentReference, dueAt, settledAt]
+      properties:
+        id: { type: string }
+        bookingGroupId: { type: string }
+        centerId: { type: string }
+        courseTitle: { type: string }
+        customerName: { type: string }
+        installmentNumber: { type: integer }
+        amount: { type: integer }
+        status: { type: string, enum: [pending, settled, refunded, cancelled] }
+        paymentReference: { type: string }
+        dueAt: { type: ["string", "null"], format: date-time }
+        settledAt: { type: ["string", "null"], format: date-time }
+    EducationOperationalBookingParticipant:
+      type: object
+      required: [id, fullName, email, phone, status, userId, enrollmentId]
+      properties:
+        id: { type: string }
+        userId: { type: ["string", "null"] }
+        enrollmentId: { type: ["string", "null"] }
+        fullName: { type: string }
+        email: { type: ["string", "null"] }
+        phone: { type: ["string", "null"] }
+        status: { type: string, enum: [reserved, waitlisted, cancelled] }
+    EducationOperationalBookingDetail:
+      type: object
+      required: [id, centerId, courseId, courseTitle, sessionId, status, purchaserId, createdAt, updatedAt, session, participants]
+      properties:
+        id: { type: string }
+        centerId: { type: string }
+        courseId: { type: string }
+        courseTitle: { type: string }
+        sessionId: { type: ["string", "null"] }
+        purchaserId: { type: ["string", "null"] }
+        status: { type: string, enum: [pending, active, waitlisted, cancelled] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        session:
+          type: ["object", "null"]
+          required: [id, startsAt, endsAt, location, cancelledAt]
+          properties:
+            id: { type: string }
+            startsAt: { type: string, format: date-time }
+            endsAt: { type: string, format: date-time }
+            location: { type: ["string", "null"] }
+            cancelledAt: { type: ["string", "null"], format: date-time }
+        participants:
+          type: array
+          items: { $ref: "#/components/schemas/EducationOperationalBookingParticipant" }
+    EducationOperationalBookingCancelInput:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        participantIds:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string }
+        reason: { type: string, minLength: 3, maxLength: 1000 }
+    EducationOperationalBookingRescheduleInput:
+      type: object
+      additionalProperties: false
+      required: [targetSessionId]
+      properties:
+        targetSessionId: { type: string }
+        participantIds:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string }
+    EducationOperationalBookingOperation:
+      type: object
+      required: [bookingGroupId, sessionId, status, affectedParticipantIds, cancelledSeats, movedSeats, refundAmount, depositDisposition, replayed]
+      properties:
+        bookingGroupId: { type: string }
+        sessionId: { type: ["string", "null"] }
+        status: { type: string, enum: [pending, active, waitlisted, cancelled] }
+        affectedParticipantIds: { type: array, items: { type: string } }
+        cancelledSeats: { type: integer, minimum: 0 }
+        movedSeats: { type: integer, minimum: 0 }
+        refundAmount: { type: integer, minimum: 0 }
+        depositDisposition: { type: string, enum: [refund, forfeit, transfer] }
+        replayed: { type: boolean }
+    EducationOperationalAttendanceInput:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [present, absent, excused] }
+        occurredAt: { type: string, format: date-time }
+    EducationOperationalAttendance:
+      type: object
+      required: [participantId, sessionId, status, recordedAt, recordedByUserId]
+      properties:
+        participantId: { type: string }
+        sessionId: { type: string }
+        status: { type: string, enum: [present, absent, excused] }
+        recordedAt: { type: string, format: date-time }
+        recordedByUserId: { type: ["string", "null"] }
+    EducationSessionEducatorSubstitutionInput:
+      type: object
+      additionalProperties: false
+      required: [educatorStaffId]
+      properties:
+        educatorStaffId: { type: string }
+    EducationSessionEducatorAssignment:
+      type: object
+      required: [sessionId, educatorStaffId]
+      properties:
+        sessionId: { type: string }
+        educatorStaffId: { type: string }
+    EducationSessionCancellationInput:
+      type: object
+      additionalProperties: false
+      properties:
+        reason: { type: string, maxLength: 1000 }
+    EducationSessionCancellation:
+      type: object
+      required: [sessionId, cancelledParticipants, cancelledEnrollments, refundAmount]
+      properties:
+        sessionId: { type: string }
+        cancelledParticipants: { type: integer, minimum: 0 }
+        cancelledEnrollments: { type: integer, minimum: 0 }
+        refundAmount: { type: integer, minimum: 0 }
+    EducationOperationalAvailabilitySlot:
+      type: object
+      required: [sessionId, date, startTime, endTime, educatorStaffId]
+      properties:
+        sessionId: { type: string }
+        date: { type: string }
+        startTime: { type: string }
+        endTime: { type: string }
+        educatorStaffId: { type: ["string", "null"] }
+    EducationOperationalAvailability:
+      type: object
+      required: [timeZone, occupancy, slots]
+      properties:
+        timeZone: { type: string, const: Europe/Belgrade }
+        occupancy: { type: integer, minimum: 0 }
+        capacity: { type: ["integer", "null"], minimum: 0 }
+        freeSeats: { type: ["integer", "null"], minimum: 0 }
+        waitlistOpen: { type: boolean }
+        lastSpots: { type: boolean }
+        nextAvailable:
+          type: ["object", "null"]
+          properties:
+            sessionId: { type: string }
+            date: { type: string }
+            startTime: { type: string }
+            endTime: { type: string }
+            educatorStaffId: { type: ["string", "null"] }
+        slots:
+          type: array
+          items: { $ref: "#/components/schemas/EducationOperationalAvailabilitySlot" }
+    EducationCourseRecurrenceInput:
+      type: object
+      additionalProperties: false
+      required: [educatorStaffId, weekdays, startTime, endTime, durationMinutes, startDate, endDate]
+      properties:
+        educatorStaffId: { type: string }
+        weekdays: { type: array, minItems: 1, maxItems: 7, uniqueItems: true, items: { type: integer, minimum: 1, maximum: 7 } }
+        startTime: { type: string, pattern: '^(?:[01]\d|2[0-3]):[0-5]\d$' }
+        endTime: { type: string, pattern: '^(?:[01]\d|2[0-3]):[0-5]\d$' }
+        durationMinutes: { type: integer, minimum: 5, maximum: 720 }
+        granularityMinutes: { type: integer, minimum: 5, maximum: 180 }
+        startDate: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        endDate: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        capacity: { type: integer, minimum: 1, maximum: 1000 }
+        minimumEnrollments: { type: integer, minimum: 0 }
+        minimumEnrollmentRiskDeadline: { type: ["string", "null"], format: date-time }
+    EducationCourseRecurrenceCandidate:
+      type: object
+      required: [date, startTime, endTime]
+      properties:
+        date: { type: string }
+        startTime: { type: string }
+        endTime: { type: string }
+    EducationCourseRecurrencePreview:
+      type: object
+      required: [timeZone, candidates, skippedAbsenceCount, skippedConflictCount]
+      properties:
+        timeZone: { type: string, const: Europe/Belgrade }
+        candidates: { type: array, items: { $ref: "#/components/schemas/EducationCourseRecurrenceCandidate" } }
+        skippedAbsenceCount: { type: integer, minimum: 0 }
+        skippedConflictCount: { type: integer, minimum: 0 }
+    EducationCourseRecurrenceCommit:
+      type: object
+      required: [sessionIds, replayed]
+      properties:
+        sessionIds: { type: array, items: { type: string } }
+        replayed: { type: boolean }
+    EducationOperationsCalendarParticipant:
+      type: object
+      required: [id, fullName, email, phone, status]
+      properties:
+        id: { type: string }
+        fullName: { type: string }
+        email: { type: ["string", "null"] }
+        phone: { type: ["string", "null"] }
+        status: { type: string }
+    EducationOperationsCalendarSession:
+      type: object
+      required: [id, courseId, educatorStaffId, startsAt, endsAt, capacity, reservedSeats, participants]
+      properties:
+        id: { type: string }
+        courseId: { type: string }
+        educatorStaffId: { type: string }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        capacity: { type: integer }
+        reservedSeats: { type: integer }
+        participants: { type: array, items: { $ref: "#/components/schemas/EducationOperationsCalendarParticipant" } }
+    EducationCenterStaffMember:
+      type: object
+      required: [id, centerId, userId, role, active, instructorProfileId]
+      properties:
+        id: { type: string }
+        centerId: { type: string }
+        userId: { type: string }
+        instructorProfileId: { type: ["string", "null"] }
+        role: { type: string, enum: [owner_admin, manager_reception, educator] }
+        active: { type: boolean }
+    EducationCenterStaffInput:
+      type: object
+      additionalProperties: false
+      required: [userId, role]
+      properties:
+        userId: { type: string }
+        instructorProfileId: { type: ["string", "null"] }
+        role: { type: string, enum: [owner_admin, manager_reception, educator] }
+    EducationCenterStaffUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        role: { type: string, enum: [owner_admin, manager_reception, educator] }
+        active: { type: boolean }
+        instructorProfileId: { type: ["string", "null"] }
+    EducationCenterOperationalPermissions:
+      type: object
+      required: [centerId, role, canManageStaff, canManageCalendar, canTakeAttendance, educatorStaffId]
+      properties:
+        centerId: { type: string }
+        role: { type: string, enum: [owner_admin, manager_reception, educator] }
+        educatorStaffId: { type: ["string", "null"] }
+        canManageStaff: { type: boolean }
+        canManageCalendar: { type: boolean }
+        canTakeAttendance: { type: boolean }
+    EducationEducatorWeeklyAvailability:
+      type: object
+      required: [id, staffId, weekday, startTime, endTime]
+      properties:
+        id: { type: string }
+        staffId: { type: string }
+        weekday: { type: integer, minimum: 1, maximum: 7 }
+        startTime: { type: string, pattern: '^(?:[01]\d|2[0-3]):[0-5]\d$' }
+        endTime: { type: string, pattern: '^(?:[01]\d|2[0-3]):[0-5]\d$' }
+    EducationEducatorWeeklyAvailabilityInput:
+      type: object
+      additionalProperties: false
+      required: [weekday, startTime, endTime]
+      properties:
+        weekday: { type: integer, minimum: 1, maximum: 7 }
+        startTime: { type: string, pattern: '^(?:[01]\d|2[0-3]):[0-5]\d$' }
+        endTime: { type: string, pattern: '^(?:[01]\d|2[0-3]):[0-5]\d$' }
+    EducationEducatorAbsence:
+      type: object
+      required: [id, staffId, startDate, endDate, startTime, endTime, reason]
+      properties:
+        id: { type: string }
+        staffId: { type: string }
+        startDate: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        endDate: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        startTime: { type: ["string", "null"], pattern: '^(?:[01]\d|2[0-3]):[0-5]\d$' }
+        endTime: { type: ["string", "null"], pattern: '^(?:[01]\d|2[0-3]):[0-5]\d$' }
+        reason: { type: ["string", "null"], maxLength: 1000 }
+    EducationEducatorAbsenceInput:
+      type: object
+      additionalProperties: false
+      required: [startDate, endDate]
+      properties:
+        startDate: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        endDate: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        startTime: { type: ["string", "null"], pattern: '^(?:[01]\d|2[0-3]):[0-5]\d$' }
+        endTime: { type: ["string", "null"], pattern: '^(?:[01]\d|2[0-3]):[0-5]\d$' }
+        reason: { type: ["string", "null"], maxLength: 1000 }

@@ -32,4 +32,19 @@ export interface EducationMarketplaceSettingsInput {
      * @maximum 100000000
      */
   featuredCoursePrice: number;
+  /**
+     * @maxLength 140
+     * @nullable
+     */
+  ipsRecipientName?: string | null;
+  /**
+     * @maxLength 40
+     * @nullable
+     */
+  ipsRecipientAccount?: string | null;
+  /**
+     * @maxLength 140
+     * @nullable
+     */
+  ipsPurpose?: string | null;
 }

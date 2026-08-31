@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 89;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 95;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -143,6 +143,14 @@ const ENUM_LABELS: Record<string, string[]> = {
   education_placement_scope: ["home", "category", "subcategory"],
   education_placement_status: ["pending_payment", "active", "expired", "cancelled", "rejected"],
   education_gift_voucher_status: ["pending_payment", "active", "redeemed", "refunded", "cancelled"],
+  education_scheduling_mode: ["fixed_group", "individual_calendar"],
+  education_staff_role: ["owner_admin", "manager_reception", "educator"],
+  education_deposit_disposition: ["refund", "forfeit", "transfer"],
+  education_booking_group_status: ["pending", "active", "waitlisted", "cancelled"],
+  education_participant_status: ["reserved", "waitlisted", "cancelled"],
+  education_attendance_status: ["present", "absent", "excused"],
+  education_installment_status: ["pending", "settled", "refunded", "cancelled"],
+  education_outbox_status: ["pending", "processing", "sent", "failed"],
 };
 
 /**
@@ -4076,6 +4084,169 @@ function tableStatements(s: string): string[] {
          ALTER TABLE ${s}.education_center_subscriptions VALIDATE CONSTRAINT education_center_subscriptions_billing_cycle_check;
        END IF;
      END $$`,
+    // v90 — Education operational scheduling. This is additive so legacy
+    // course/enrollment/session records continue using fixed-group defaults.
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS scheduling_mode ${s}.education_scheduling_mode NOT NULL DEFAULT 'fixed_group'`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS operational_time_zone text NOT NULL DEFAULT 'Europe/Belgrade'`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS cancellation_deadline_hours integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS deposit_disposition ${s}.education_deposit_disposition NOT NULL DEFAULT 'refund'`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS minimum_enrollment_risk_deadline timestamptz`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS early_bird_price integer`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS early_bird_cutoff timestamptz`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS installment_count integer NOT NULL DEFAULT 1`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_instructors (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE CASCADE,
+      user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL, full_name text NOT NULL, photo_url text,
+      biography text NOT NULL DEFAULT '', industry_years integer NOT NULL DEFAULT 0, experience_years integer NOT NULL DEFAULT 0,
+      specializations jsonb NOT NULL DEFAULT '[]'::jsonb, qualifications jsonb NOT NULL DEFAULT '[]'::jsonb,
+      portfolio_media jsonb NOT NULL DEFAULT '[]'::jsonb, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS education_instructors_center_idx ON ${s}.education_instructors(center_id)`,
+    `CREATE INDEX IF NOT EXISTS education_instructors_user_idx ON ${s}.education_instructors(user_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.course_sessions (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), course_id uuid NOT NULL REFERENCES ${s}.courses(id) ON DELETE CASCADE,
+      starts_at timestamptz NOT NULL, ends_at timestamptz NOT NULL, location text, capacity integer NOT NULL DEFAULT 20,
+      reserved_seats integer NOT NULL DEFAULT 0, minimum_enrollments integer, cancelled_at timestamptz,
+      cancellation_reason text, created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS course_sessions_course_starts_at_idx ON ${s}.course_sessions(course_id, starts_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_center_staff (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE CASCADE,
+      user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE, instructor_profile_id uuid REFERENCES ${s}.education_instructors(id) ON DELETE SET NULL,
+      role ${s}.education_staff_role NOT NULL, active boolean NOT NULL DEFAULT true,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE(center_id, user_id)
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS education_center_staff_one_active_educator_center_unique ON ${s}.education_center_staff(user_id) WHERE role = 'educator' AND active`,
+    `CREATE INDEX IF NOT EXISTS education_center_staff_center_role_active_idx ON ${s}.education_center_staff(center_id, role, active)`,
+    `CREATE INDEX IF NOT EXISTS education_center_staff_instructor_profile_idx ON ${s}.education_center_staff(instructor_profile_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_educator_weekly_availability (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), staff_id uuid NOT NULL REFERENCES ${s}.education_center_staff(id) ON DELETE CASCADE,
+      weekday integer NOT NULL, start_time text NOT NULL, end_time text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      UNIQUE(staff_id, weekday, start_time, end_time), CHECK(weekday between 1 and 7), CHECK(start_time < end_time)
+    )`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_educator_absences (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), staff_id uuid NOT NULL REFERENCES ${s}.education_center_staff(id) ON DELETE CASCADE,
+      start_date date NOT NULL, end_date date NOT NULL, start_time text, end_time text, reason text, created_at timestamptz NOT NULL DEFAULT now(),
+      CHECK(end_date >= start_date), CHECK((start_time is null and end_time is null) or (start_time is not null and end_time is not null and start_time < end_time))
+    )`,
+    `CREATE INDEX IF NOT EXISTS education_educator_absences_staff_dates_idx ON ${s}.education_educator_absences(staff_id, start_date, end_date)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_session_educators (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), session_id uuid NOT NULL UNIQUE REFERENCES ${s}.course_sessions(id) ON DELETE CASCADE,
+      staff_id uuid NOT NULL REFERENCES ${s}.education_center_staff(id) ON DELETE RESTRICT, assigned_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      assigned_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS education_session_educators_staff_idx ON ${s}.education_session_educators(staff_id)`,
+    // v91 — durable idempotency receipts for individual-calendar recurrence commits.
+    `CREATE TABLE IF NOT EXISTS ${s}.education_recurrence_commands (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE CASCADE,
+      actor_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE, idempotency_key text NOT NULL,
+      request_fingerprint text NOT NULL, response_snapshot jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT education_recurrence_commands_key_check CHECK(length(btrim(idempotency_key)) > 0),
+      CONSTRAINT education_recurrence_commands_fingerprint_check CHECK(length(request_fingerprint) = 64),
+      UNIQUE(actor_user_id, idempotency_key)
+    )`,
+    `CREATE INDEX IF NOT EXISTS education_recurrence_commands_center_created_idx ON ${s}.education_recurrence_commands(center_id, created_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_booking_groups (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE CASCADE,
+      course_id uuid NOT NULL REFERENCES ${s}.courses(id) ON DELETE CASCADE, session_id uuid REFERENCES ${s}.course_sessions(id) ON DELETE SET NULL,
+      purchaser_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL, created_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      status ${s}.education_booking_group_status NOT NULL DEFAULT 'pending', idempotency_key text NOT NULL, request_fingerprint text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE(created_by_user_id, idempotency_key)
+    )`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_booking_participants (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), booking_group_id uuid NOT NULL REFERENCES ${s}.education_booking_groups(id) ON DELETE CASCADE,
+      user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL, full_name text NOT NULL, email text, phone text,
+      status ${s}.education_participant_status NOT NULL DEFAULT 'reserved', created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CHECK(user_id is not null or email is not null or phone is not null)
+    )`,
+    `CREATE INDEX IF NOT EXISTS education_booking_participants_group_status_idx ON ${s}.education_booking_participants(booking_group_id, status)`,
+    `CREATE INDEX IF NOT EXISTS education_booking_groups_center_session_status_idx ON ${s}.education_booking_groups(center_id, session_id, status)`,
+    `CREATE INDEX IF NOT EXISTS education_booking_groups_purchaser_idx ON ${s}.education_booking_groups(purchaser_id)`,
+    `CREATE INDEX IF NOT EXISTS education_booking_participants_user_idx ON ${s}.education_booking_participants(user_id)`,
+    `ALTER TABLE ${s}.course_enrollments ADD COLUMN IF NOT EXISTS booking_group_id uuid REFERENCES ${s}.education_booking_groups(id) ON DELETE SET NULL`,
+    `ALTER TABLE ${s}.course_enrollments ADD COLUMN IF NOT EXISTS participant_id uuid REFERENCES ${s}.education_booking_participants(id) ON DELETE SET NULL`,
+    // v92 operational guest attendees have no account, but must always be
+    // tied to the named participant record.
+    `ALTER TABLE ${s}.course_enrollments ALTER COLUMN user_id DROP NOT NULL`,
+    `ALTER TABLE ${s}.course_enrollments DROP CONSTRAINT IF EXISTS course_enrollments_operational_user_check`,
+    `ALTER TABLE ${s}.course_enrollments ADD CONSTRAINT course_enrollments_operational_user_check CHECK(user_id IS NOT NULL OR participant_id IS NOT NULL)`,
+    `DROP INDEX IF EXISTS ${s}.course_enrollments_course_purchaser_participant_unique`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS course_enrollments_course_purchaser_participant_unique ON ${s}.course_enrollments(course_id, purchaser_id, participant_key) WHERE participant_id IS NULL AND status <> 'cancelled'`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS course_enrollments_participant_active_unique ON ${s}.course_enrollments(participant_id) WHERE participant_id IS NOT NULL AND status <> 'cancelled'`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_attendance (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), participant_id uuid NOT NULL REFERENCES ${s}.education_booking_participants(id) ON DELETE CASCADE,
+      session_id uuid NOT NULL REFERENCES ${s}.course_sessions(id) ON DELETE CASCADE, status ${s}.education_attendance_status NOT NULL,
+      recorded_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL, recorded_at timestamptz NOT NULL DEFAULT now(), UNIQUE(participant_id, session_id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_price_snapshots (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), booking_group_id uuid NOT NULL UNIQUE REFERENCES ${s}.education_booking_groups(id) ON DELETE RESTRICT,
+      course_id uuid NOT NULL REFERENCES ${s}.courses(id) ON DELETE RESTRICT, gross_amount integer NOT NULL, platform_fee integer NOT NULL, reserve_amount integer NOT NULL, net_amount integer NOT NULL,
+       early_bird_applied boolean NOT NULL DEFAULT false, early_bird_cutoff_snapshot timestamptz, installment_count integer NOT NULL,
+       cancellation_deadline_at timestamptz,
+      deposit_disposition ${s}.education_deposit_disposition NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
+      CHECK(gross_amount >= 0 and platform_fee >= 0 and reserve_amount >= 0 and net_amount >= 0 and gross_amount = platform_fee + reserve_amount + net_amount), CHECK(installment_count in (1,2,3))
+    )`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_installments (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), price_snapshot_id uuid NOT NULL REFERENCES ${s}.education_price_snapshots(id) ON DELETE RESTRICT,
+      installment_number integer NOT NULL, amount integer NOT NULL, status ${s}.education_installment_status NOT NULL DEFAULT 'pending',
+       payment_reference text NOT NULL UNIQUE, due_at timestamptz, settled_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL, settled_at timestamptz, refunded_amount integer NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(price_snapshot_id, installment_number), CHECK(amount > 0 and refunded_amount >= 0 and refunded_amount <= amount)
+    )`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_installment_settlement_commands (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), installment_id uuid NOT NULL REFERENCES ${s}.education_installments(id) ON DELETE CASCADE,
+      actor_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE, idempotency_key text NOT NULL, request_fingerprint text NOT NULL,
+      response_snapshot jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT education_installment_settlement_command_key_check CHECK(length(btrim(idempotency_key)) > 0),
+      CONSTRAINT education_installment_settlement_command_fingerprint_check CHECK(length(request_fingerprint) = 64),
+      UNIQUE(actor_user_id, idempotency_key)
+    )`,
+    `CREATE INDEX IF NOT EXISTS education_installment_settlement_command_installment_idx ON ${s}.education_installment_settlement_commands(installment_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_platform_settings (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), commission_percent integer NOT NULL DEFAULT 15,
+      reserve_percent integer NOT NULL DEFAULT 10, online_refund_days integer NOT NULL DEFAULT 14,
+      live_appeal_days integer NOT NULL DEFAULT 7, featured_course_price integer NOT NULL DEFAULT 0,
+      updated_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS education_platform_settings_updated_by_idx ON ${s}.education_platform_settings(updated_by_user_id)`,
+    `ALTER TABLE ${s}.education_platform_settings ADD COLUMN IF NOT EXISTS ips_recipient_name text`,
+    `ALTER TABLE ${s}.education_platform_settings ADD COLUMN IF NOT EXISTS ips_recipient_account text`,
+    `ALTER TABLE ${s}.education_platform_settings ADD COLUMN IF NOT EXISTS ips_purpose text`,
+    `ALTER TABLE ${s}.education_price_snapshots ADD COLUMN IF NOT EXISTS discount_reason text NOT NULL DEFAULT 'none'`,
+    // v93 — immutable operational cancellation policy cutoff. Null marks
+    // pre-v93 groups, which retain their explicit legacy treatment.
+    `ALTER TABLE ${s}.education_price_snapshots ADD COLUMN IF NOT EXISTS cancellation_deadline_at timestamptz`,
+    // v95 — immutable installment due date for new bookings. Historical rows
+    // intentionally remain null and are rendered as having no deadline.
+    `ALTER TABLE ${s}.education_installments ADD COLUMN IF NOT EXISTS due_at timestamptz`,
+    // v94 — schema parity repairs for v90-v93. Constraint creation is guarded
+    // so databases already marked v93 are repaired without destructive DDL.
+    `DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'education_price_snapshots_discount_reason_check' AND conrelid = '${s}.education_price_snapshots'::regclass) THEN
+        ALTER TABLE ${s}.education_price_snapshots ADD CONSTRAINT education_price_snapshots_discount_reason_check CHECK(discount_reason in ('none', 'early_bird', 'group', 'early_bird_and_group'));
+      END IF;
+    END $$`,
+    `DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'courses_operational_timezone_check' AND conrelid = '${s}.courses'::regclass) THEN
+        ALTER TABLE ${s}.courses ADD CONSTRAINT courses_operational_timezone_check CHECK(operational_time_zone = 'Europe/Belgrade');
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'courses_cancellation_deadline_check' AND conrelid = '${s}.courses'::regclass) THEN
+        ALTER TABLE ${s}.courses ADD CONSTRAINT courses_cancellation_deadline_check CHECK(cancellation_deadline_hours >= 0 and cancellation_deadline_hours <= 8760);
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'courses_early_bird_check' AND conrelid = '${s}.courses'::regclass) THEN
+        ALTER TABLE ${s}.courses ADD CONSTRAINT courses_early_bird_check CHECK((early_bird_price is null and early_bird_cutoff is null) or (early_bird_price >= 0 and early_bird_price <= price and early_bird_cutoff is not null));
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'courses_installment_count_check' AND conrelid = '${s}.courses'::regclass) THEN
+        ALTER TABLE ${s}.courses ADD CONSTRAINT courses_installment_count_check CHECK(installment_count in (1, 2, 3));
+      END IF;
+    END $$`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_outbox (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE CASCADE,
+      session_id uuid REFERENCES ${s}.course_sessions(id) ON DELETE CASCADE, participant_id uuid REFERENCES ${s}.education_booking_participants(id) ON DELETE CASCADE,
+      event_type text NOT NULL, dedupe_key text NOT NULL UNIQUE, payload jsonb NOT NULL, status ${s}.education_outbox_status NOT NULL DEFAULT 'pending',
+      attempts integer NOT NULL DEFAULT 0, available_at timestamptz NOT NULL DEFAULT now(), leased_at timestamptz, sent_at timestamptz, created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS education_outbox_delivery_idx ON ${s}.education_outbox(status, available_at)`,
     // v74 — every aftercare FK gets a leading index so deletes/updates on its
     // parent cannot force scans as recommendation and delivery history grows.
   ];

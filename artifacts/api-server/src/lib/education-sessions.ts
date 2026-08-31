@@ -19,6 +19,7 @@ import {
   asc,
   eq,
   inArray,
+  isNull,
   lt,
   lte,
   sql,
@@ -29,10 +30,17 @@ import {
   coursesTable,
   db,
   educationCentersTable,
+  educationCenterStaffTable,
+  educationBookingGroupsTable,
+  educationBookingParticipantsTable,
+  educationInstallmentsTable,
+  educationPriceSnapshotsTable,
+  educationSessionEducatorsTable,
   educationEscrowsTable,
   educationFinancialEventsTable,
   educationLedgerEntriesTable,
   educationNotificationsTable,
+  educationOutboxTable,
   educationWaitlistTable,
   usersTable,
 } from "@workspace/db";
@@ -40,6 +48,8 @@ import { lumeraEmailHtml, sendTransactionalEmail } from "./brevo";
 import { logger } from "./logger";
 import { recordEducationEnrollmentReferralTransitionInTx } from "./referral-service";
 import { notifyCustomer } from "./customer-notifications";
+import { educationLocalDatesTouched } from "./education-availability-store";
+import { lockEducationScheduleResources } from "./education-locks";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -60,7 +70,7 @@ function emailSafe(value: string) {
 /** Send an education-specific SMS through the platform integration. We import
  *  lazily to avoid a circular-dep risk; the send function is always available
  *  at runtime. */
-async function sendEducationSms(input: {
+export async function sendEducationSms(input: {
   eventKey: string;
   phone: string | null | undefined;
   text: string;
@@ -116,7 +126,28 @@ export type CancelEducationSessionResult = {
   refundedEnrollments: number;
   cancelledWaitlistEntries: number;
   notifiedUsers: number;
+  cancelledParticipants: number;
+  cancelledEnrollments: number;
+  refundAmount: number;
 };
+
+export type CancelEducationSessionOptions = {
+  allowAlreadyCancelled?: boolean;
+  centerCaused?: boolean;
+  source?: "marketplace" | "operational" | "scheduler";
+};
+
+function emptyCancellationResult(sessionId: string): CancelEducationSessionResult {
+  return {
+    sessionId,
+    refundedEnrollments: 0,
+    cancelledWaitlistEntries: 0,
+    notifiedUsers: 0,
+    cancelledParticipants: 0,
+    cancelledEnrollments: 0,
+    refundAmount: 0,
+  };
+}
 
 /**
  * Cancel a course session, refund all paid escrows, and notify every enrolled
@@ -129,6 +160,7 @@ export async function cancelEducationSession(
   sessionId: string,
   actorUserId: string | null,
   reason: string,
+  options: CancelEducationSessionOptions = {},
 ): Promise<CancelEducationSessionResult> {
   // 1. Load session and course outside the transaction so we have the data for
   //    notifications even if the transaction rolls back early.
@@ -138,7 +170,10 @@ export async function cancelEducationSession(
     .where(eq(courseSessionsTable.id, sessionId))
     .limit(1);
   if (!session) throw new Error("Termin nije pronađen.");
-  if (session.cancelledAt) throw new Error("Termin je već otkazan.");
+  if (session.cancelledAt) {
+    if (options.allowAlreadyCancelled) return emptyCancellationResult(sessionId);
+    throw new Error("Termin je već otkazan.");
+  }
 
   const [course] = await db
     .select()
@@ -151,9 +186,33 @@ export async function cancelEducationSession(
 
   // 2. Transactional core: mark session cancelled, refund escrows, cancel
   //    waitlist entries, record ledger / audit events.
-  const { refundedEnrollmentIds, cancelledWaitlistIds, enrolledUserIds } =
+  const {
+    refundedEnrollmentIds,
+    cancelledWaitlistIds,
+    enrolledUserIds,
+    cancelledParticipants,
+    cancelledEnrollments,
+    refundAmount,
+  } =
     await db.transaction(async (tx) => {
-      // Take the center advisory lock (same key as all other financial ops).
+      const [assignment] = await tx
+        .select({ staffId: educationSessionEducatorsTable.staffId })
+        .from(educationSessionEducatorsTable)
+        .where(eq(educationSessionEducatorsTable.sessionId, sessionId))
+        .limit(1);
+
+      // Use the same schedule-resource ordering as every operational mutation,
+      // then serialize the center's financial aggregate.
+      if (centerId) {
+        await lockEducationScheduleResources(
+          tx,
+          educationLocalDatesTouched(session.startsAt, session.endsAt).map((date) => ({
+            centerId,
+            date,
+            educatorStaffId: assignment?.staffId,
+          })),
+        );
+      }
       if (centerId) await lockEducationCenterFinancials(tx, centerId);
 
       // Re-read session under lock.
@@ -164,7 +223,29 @@ export async function cancelEducationSession(
         .for("update")
         .limit(1);
       if (!locked) throw new Error("Termin nije pronađen.");
-      if (locked.cancelledAt) throw new Error("Termin je već otkazan.");
+      if (locked.cancelledAt) {
+        if (options.allowAlreadyCancelled) {
+          return {
+            refundedEnrollmentIds: [] as string[],
+            cancelledWaitlistIds: [] as string[],
+            enrolledUserIds: [] as string[],
+            cancelledParticipants: 0,
+            cancelledEnrollments: 0,
+            refundAmount: 0,
+          };
+        }
+        throw new Error("Termin je već otkazan.");
+      }
+      if (options.source === "scheduler") {
+        const [futureSession] = await tx.select({ id: courseSessionsTable.id })
+          .from(courseSessionsTable)
+          .where(and(
+            eq(courseSessionsTable.id, sessionId),
+            sql`${courseSessionsTable.startsAt} > now()`,
+          ))
+          .limit(1);
+        if (!futureSession) throw new Error("SESSION_ALREADY_STARTED");
+      }
 
       // Mark session cancelled.
       await tx
@@ -187,24 +268,20 @@ export async function cancelEducationSession(
       const enrollmentIds = enrollments.map((e) => e.id);
 
       // Find escrows for those enrollments and refund held/ready ones.
-      const escrows = enrollmentIds.length
+      const allEscrows = enrollmentIds.length
         ? await tx
             .select()
             .from(educationEscrowsTable)
-            .where(
-              and(
-                inArray(educationEscrowsTable.enrollmentId, enrollmentIds),
-                inArray(educationEscrowsTable.status, [
-                  "held",
-                  "ready_for_payout",
-                  "frozen",
-                ]),
-              ),
-            )
+            .where(inArray(educationEscrowsTable.enrollmentId, enrollmentIds))
+            .orderBy(asc(educationEscrowsTable.id))
             .for("update")
         : [];
+      if (allEscrows.some((escrow) => escrow.netPaidAt || escrow.reservePaidAt || ["paid_out", "partially_refunded"].includes(escrow.status))) throw new Error("PAYOUT");
+      const escrows = allEscrows.filter((escrow) => ["held", "ready_for_payout", "frozen"].includes(escrow.status));
 
       const refundedEnrollmentIds: string[] = [];
+      let refundAmount = 0;
+      const refundedByGroup = new Map<string, number>();
       for (const escrow of escrows) {
         const [updated] = await tx
           .update(educationEscrowsTable)
@@ -249,6 +326,9 @@ export async function cancelEducationSession(
         });
 
         refundedEnrollmentIds.push(escrow.enrollmentId);
+        refundAmount += escrow.grossAmount;
+        const enrollment = enrollments.find((candidate) => candidate.id === escrow.enrollmentId);
+        if (enrollment?.bookingGroupId) refundedByGroup.set(enrollment.bookingGroupId, (refundedByGroup.get(enrollment.bookingGroupId) ?? 0) + escrow.grossAmount);
       }
 
       // Preserve each enrollment's payment state: only an enrollment whose
@@ -257,12 +337,44 @@ export async function cancelEducationSession(
         await tx.update(courseEnrollmentsTable).set({
           status: "cancelled",
           paymentStatus: refundedEnrollmentIds.includes(enrollment.id) ? "refunded" : enrollment.paymentStatus,
+          accessGrantedAt: null,
           updatedAt: new Date(),
         }).where(and(eq(courseEnrollmentsTable.id, enrollment.id), inArray(courseEnrollmentsTable.status, ["pending", "active"])));
-        if (centerId) await recordEducationEnrollmentReferralTransitionInTx(tx, {
+        if (centerId && enrollment.userId) await recordEducationEnrollmentReferralTransitionInTx(tx, {
           enrollmentId: enrollment.id, studentUserId: enrollment.userId, centerId,
           occurredAt: new Date(), valid: false, reason: "education_session_cancelled",
         });
+      }
+
+      // Operational named-seat records are part of the same commercial
+      // cancellation aggregate; retained and scheduled callers must not leave
+      // groups/participants live after cancelling their enrollments.
+      const operationalEnrollments = enrollments.filter((enrollment) => enrollment.participantId && enrollment.bookingGroupId);
+      const operationalParticipantIds = operationalEnrollments.flatMap((enrollment) => enrollment.participantId ? [enrollment.participantId] : []);
+      const operationalGroupIds = [...new Set(operationalEnrollments.flatMap((enrollment) => enrollment.bookingGroupId ? [enrollment.bookingGroupId] : []))];
+      if (operationalParticipantIds.length) await tx.update(educationBookingParticipantsTable)
+        .set({ status: "cancelled", updatedAt: new Date() })
+        .where(inArray(educationBookingParticipantsTable.id, operationalParticipantIds));
+      if (operationalGroupIds.length) {
+        const snapshots = await tx.select({ id: educationPriceSnapshotsTable.id, bookingGroupId: educationPriceSnapshotsTable.bookingGroupId }).from(educationPriceSnapshotsTable)
+          .where(inArray(educationPriceSnapshotsTable.bookingGroupId, operationalGroupIds)).for("update");
+        const snapshotIds = snapshots.map((snapshot) => snapshot.id);
+        if (snapshotIds.length) {
+          await tx.update(educationInstallmentsTable).set({ status: "cancelled" })
+            .where(and(inArray(educationInstallmentsTable.priceSnapshotId, snapshotIds), eq(educationInstallmentsTable.status, "pending")));
+          for (const snapshot of snapshots) {
+            let remaining = refundedByGroup.get(snapshot.bookingGroupId) ?? 0;
+            const settled = await tx.select().from(educationInstallmentsTable).where(and(eq(educationInstallmentsTable.priceSnapshotId, snapshot.id), eq(educationInstallmentsTable.status, "settled"))).orderBy(asc(educationInstallmentsTable.installmentNumber)).for("update");
+            for (const installment of settled) {
+              const refund = Math.min(Math.max(0, installment.amount - installment.refundedAmount), remaining);
+              if (refund) await tx.update(educationInstallmentsTable).set({ refundedAmount: installment.refundedAmount + refund }).where(eq(educationInstallmentsTable.id, installment.id));
+              remaining -= refund;
+            }
+            if (remaining) throw new Error("PAYOUT");
+          }
+        }
+        await tx.update(educationBookingGroupsTable).set({ status: "cancelled", updatedAt: new Date() })
+          .where(inArray(educationBookingGroupsTable.id, operationalGroupIds));
       }
 
       // Release reserved seats (set to 0 – session is cancelled).
@@ -292,7 +404,7 @@ export async function cancelEducationSession(
       }
 
       // Collect all user IDs who need notifications.
-      const enrolledUserIds = enrollments.map((e) => e.userId);
+      const enrolledUserIds = enrollments.flatMap((e) => e.userId ? [e.userId] : []);
       const waitlistUserIds = waitlistEntries.map((w) => w.userId);
       const allUserIds = [...new Set([...enrolledUserIds, ...waitlistUserIds])];
 
@@ -317,50 +429,63 @@ export async function cancelEducationSession(
            metadata: { courseId: course.id, sessionId },
          });
       }
-
-      return { refundedEnrollmentIds, cancelledWaitlistIds, enrolledUserIds: allUserIds };
-    });
-
-  // 3. Out-of-transaction: send email and SMS notifications (best-effort).
-  const users = enrolledUserIds.length
-    ? await db
-        .select()
-        .from(usersTable)
-        .where(inArray(usersTable.id, enrolledUserIds))
-    : [];
-
-  await Promise.allSettled(
-    users.map(async (user) => {
-      await sendTransactionalEmail({
-        eventKey: `education-session-cancel:${sessionId}:email:${user.id}`,
-        emailType: "education_session_cancelled",
-        to: { email: user.email, name: `${user.firstName} ${user.lastName}` },
-        subject: "LUMERA Edukacije — termin je otkazan",
-        htmlContent: lumeraEmailHtml(
-          "Termin edukacije je otkazan",
-          `<p>Žao nam je, ali termin kursa <strong>${emailSafe(course.title)}</strong> je otkazan.</p>${reason ? `<p>Razlog: ${emailSafe(reason)}</p>` : ""}<p>Ako ste platili, povraćaj će biti obrađen prema platformskim pravilima.</p>`,
-        ),
-        metadata: { sessionId, courseId: course.id, reason },
-      });
-      // SMS: users who registered a phone can be fetched via their user record.
-      // The usersTable does not expose phone directly (it's in salonCustomersTable
-      // for CRM contacts), so we fire best-effort only for known phone fields.
-      const phone = (user as any).phone as string | undefined;
-      if (phone) {
-        await sendEducationSms({
-          eventKey: `education-session-cancel:${sessionId}:sms:${user.id}`,
-          phone,
-          text: `LUMERA Edukacije: termin kursa „${course.title}" je otkazan. ${reason ? reason.slice(0, 80) : ""}`.trim(),
-        });
+      // Provider work is durable and is intentionally not performed by this
+      // transaction or its caller. Operational cancellation rows use the same
+      // worker as route-originated cancellations.
+      if (centerId) {
+        for (const participantId of operationalParticipantIds) {
+          await tx.insert(educationOutboxTable).values({
+            centerId, sessionId, participantId, eventType: "session_cancelled",
+            dedupeKey: `education-session-cancel:${sessionId}:participant:${participantId}`,
+            payload: { reason, cancellationSource: options.source ?? "marketplace" },
+          }).onConflictDoNothing();
+        }
+        const legacyRecipients = await tx.select({ enrollment: courseEnrollmentsTable, user: usersTable })
+          .from(courseEnrollmentsTable).innerJoin(usersTable, eq(usersTable.id, courseEnrollmentsTable.userId))
+          .where(and(
+            inArray(courseEnrollmentsTable.id, enrollmentIds.length ? enrollmentIds : ["00000000-0000-0000-0000-000000000000"]),
+            isNull(courseEnrollmentsTable.participantId),
+          ));
+        for (const row of legacyRecipients) await tx.insert(educationOutboxTable).values({
+          centerId, sessionId, eventType: "session_cancelled",
+          dedupeKey: `education-session-cancel:${sessionId}:legacy-enrollment:${row.enrollment.id}`,
+          payload: {
+            reason,
+            cancellationSource: options.source ?? "marketplace",
+            legacyRecipient: { userId: row.user.id, email: row.user.email, phone: row.user.phoneNormalized, name: `${row.user.firstName} ${row.user.lastName}`.trim() },
+          },
+        }).onConflictDoNothing();
+        if (assignment) await tx.insert(educationOutboxTable).values({
+          centerId,
+          sessionId,
+          eventType: "session_cancelled_educator",
+          dedupeKey: `education-session-cancel:${sessionId}:educator:${assignment.staffId}`,
+          payload: {
+            educatorStaffId: assignment.staffId,
+            reason,
+            cancellationSource: options.source ?? "marketplace",
+          },
+        }).onConflictDoNothing();
       }
-    }),
-  );
+
+      return {
+        refundedEnrollmentIds,
+        cancelledWaitlistIds,
+        enrolledUserIds: allUserIds,
+        cancelledParticipants: operationalParticipantIds.length,
+        cancelledEnrollments: enrollments.length,
+        refundAmount,
+      };
+    });
 
   return {
     sessionId,
-    refundedEnrollments: refundedEnrollmentIds.length,
+    refundedEnrollments: new Set(refundedEnrollmentIds).size,
     cancelledWaitlistEntries: cancelledWaitlistIds.length,
     notifiedUsers: enrolledUserIds.length,
+    cancelledParticipants,
+    cancelledEnrollments,
+    refundAmount,
   };
 }
 
@@ -400,6 +525,58 @@ export async function releaseSeatAndPromoteWaiter(
   }
   const refreshed = { ...session, reservedSeats: nextReserved };
   if (refreshed.reservedSeats < refreshed.capacity) {
+    // Operational named seats are the canonical queue. The locked session row
+    // serializes releases/promotions, while participant createdAt/id provides
+    // deterministic FIFO ordering across online and center-created bookings.
+    const [waiting] = await tx
+      .select({ participant: educationBookingParticipantsTable, group: educationBookingGroupsTable })
+      .from(educationBookingParticipantsTable)
+      .innerJoin(educationBookingGroupsTable, eq(educationBookingGroupsTable.id, educationBookingParticipantsTable.bookingGroupId))
+      .where(and(
+        eq(educationBookingGroupsTable.sessionId, session.id),
+        eq(educationBookingParticipantsTable.status, "waitlisted"),
+      ))
+      .orderBy(asc(educationBookingParticipantsTable.createdAt), asc(educationBookingParticipantsTable.id))
+      .for("update")
+      .limit(1);
+    if (waiting) {
+      const [promoted] = await tx.update(educationBookingParticipantsTable)
+        .set({ status: "reserved", updatedAt: new Date() })
+        .where(and(eq(educationBookingParticipantsTable.id, waiting.participant.id), eq(educationBookingParticipantsTable.status, "waitlisted")))
+        .returning();
+      if (promoted) {
+        await tx.update(courseSessionsTable).set({ reservedSeats: nextReserved + 1 }).where(eq(courseSessionsTable.id, session.id));
+        const [enrollment] = await tx.select().from(courseEnrollmentsTable)
+          .where(eq(courseEnrollmentsTable.participantId, promoted.id)).for("update").limit(1);
+        const installments = await tx.select({ status: educationInstallmentsTable.status })
+          .from(educationPriceSnapshotsTable)
+          .innerJoin(educationInstallmentsTable, eq(educationInstallmentsTable.priceSnapshotId, educationPriceSnapshotsTable.id))
+          .where(and(
+            eq(educationPriceSnapshotsTable.bookingGroupId, waiting.group.id),
+          )).for("update");
+        const settled = installments.filter((row: any) => row.status === "settled");
+        const paymentStatus = installments.length > 0 && settled.length === installments.length ? "paid" : "pending";
+        if (enrollment) await tx.update(courseEnrollmentsTable).set({
+          sessionId: session.id,
+          status: settled.length ? "active" : "pending",
+          paymentStatus,
+          accessGrantedAt: settled.length ? enrollment.accessGrantedAt ?? new Date() : null,
+          updatedAt: new Date(),
+        }).where(eq(courseEnrollmentsTable.id, enrollment.id));
+        await tx.update(educationBookingGroupsTable)
+          .set({ status: settled.length ? "active" : "pending", updatedAt: new Date() })
+          .where(eq(educationBookingGroupsTable.id, waiting.group.id));
+        await tx.insert(educationOutboxTable).values({
+          centerId: waiting.group.centerId,
+          sessionId: session.id,
+          participantId: promoted.id,
+          eventType: "waitlist_offer",
+          dedupeKey: `education-operational-waitlist:${promoted.id}:promoted`,
+          payload: { bookingGroupId: waiting.group.id, participantId: promoted.id, courseId: course.id, sessionId: session.id },
+        }).onConflictDoNothing();
+        return null;
+      }
+    }
     // The freed seat is not left available: promoteNextWaitlistEntry re-holds
     // it for the promoted offer's 24-hour window (net reservedSeats unchanged
     // when a waiter is promoted). Only if there is no waiter does the seat
@@ -563,7 +740,7 @@ export async function cancelEducationEnrollment(input: {
             sql`${courseEnrollmentsTable.status} <> 'cancelled'`,
           ),
         );
-      if (course.centerId) await recordEducationEnrollmentReferralTransitionInTx(tx, {
+      if (course.centerId && locked.userId) await recordEducationEnrollmentReferralTransitionInTx(tx, {
         enrollmentId: locked.id, studentUserId: locked.userId, centerId: course.centerId,
         occurredAt: new Date(), valid: false, reason: "education_enrollment_cancelled_or_refunded",
       });
@@ -903,32 +1080,34 @@ async function sendWaitlistOfferNotifications(
  * next `horizonMs` milliseconds and haven't yet met the minimum.  Cancel them
  * automatically and fire full refund + notification pipelines.
  */
-async function cancelSessionsBelowMinimum(
-  horizonMs = 24 * 60 * 60 * 1000,
-): Promise<{ cancelled: string[] }> {
+async function cancelSessionsBelowMinimum(): Promise<{ cancelled: string[] }> {
   const now = new Date();
-  const horizon = new Date(now.getTime() + horizonMs);
+  const legacyHorizon = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
   const sessions = await db
-    .select()
+    .select({ session: courseSessionsTable })
     .from(courseSessionsTable)
+    .innerJoin(coursesTable, eq(coursesTable.id, courseSessionsTable.courseId))
     .where(
       and(
         sql`${courseSessionsTable.minimumEnrollments} is not null`,
         sql`${courseSessionsTable.cancelledAt} is null`,
-        lt(courseSessionsTable.startsAt, horizon),
-        sql`${courseSessionsTable.startsAt} > now()`,
+        sql`${courseSessionsTable.startsAt} > ${now}`,
+        // Older courses had no explicit deadline; preserve their historical
+        // 24-hour policy while new operational courses cancel only at deadline.
+        sql`(${coursesTable.minimumEnrollmentRiskDeadline} <= ${now} OR (${coursesTable.minimumEnrollmentRiskDeadline} is null AND ${courseSessionsTable.startsAt} < ${legacyHorizon}))`,
         sql`${courseSessionsTable.reservedSeats} < ${courseSessionsTable.minimumEnrollments}`,
       ),
     );
 
   const cancelled: string[] = [];
-  for (const session of sessions) {
+  for (const { session } of sessions) {
     try {
       await cancelEducationSession(
         session.id,
         null,
         "Minimalni broj polaznika nije dostignut.",
+        { source: "scheduler" },
       );
       cancelled.push(session.id);
     } catch (error) {
@@ -945,8 +1124,39 @@ async function cancelSessionsBelowMinimum(
 // Scheduled job entry point
 // ---------------------------------------------------------------------------
 
+async function enqueueMinimumEnrollmentRiskWarnings(now = new Date()) {
+  const warningHorizon = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const candidates = await db.select({ session: courseSessionsTable, centerId: coursesTable.centerId })
+    .from(courseSessionsTable).innerJoin(coursesTable, eq(coursesTable.id, courseSessionsTable.courseId))
+    .where(and(sql`${courseSessionsTable.minimumEnrollments} is not null`, sql`${courseSessionsTable.cancelledAt} is null`,
+      sql`${courseSessionsTable.reservedSeats} < ${courseSessionsTable.minimumEnrollments}`,
+      sql`${courseSessionsTable.startsAt} > ${now}`,
+      sql`${coursesTable.minimumEnrollmentRiskDeadline} is not null`,
+      sql`${coursesTable.minimumEnrollmentRiskDeadline} > ${now}`,
+      sql`${coursesTable.minimumEnrollmentRiskDeadline} <= ${warningHorizon}`));
+  let warned = 0;
+  for (const { session, centerId } of candidates) {
+    if (!centerId) continue;
+    const participants = await db.select({ id: educationBookingParticipantsTable.id }).from(educationBookingParticipantsTable)
+      .innerJoin(educationBookingGroupsTable, eq(educationBookingGroupsTable.id, educationBookingParticipantsTable.bookingGroupId))
+      .where(and(eq(educationBookingGroupsTable.sessionId, session.id), eq(educationBookingGroupsTable.status, "active"), eq(educationBookingParticipantsTable.status, "reserved")));
+    for (const participant of participants) {
+      await db.insert(educationOutboxTable).values({ centerId, sessionId: session.id, participantId: participant.id, eventType: "minimum_enrollment_risk", dedupeKey: `education-risk:${session.id}:participant:${participant.id}`, payload: {} }).onConflictDoNothing();
+      warned++;
+    }
+    const managers = await db.select({ id: educationCenterStaffTable.id }).from(educationCenterStaffTable)
+      .where(and(eq(educationCenterStaffTable.centerId, centerId), inArray(educationCenterStaffTable.role, ["owner_admin", "manager_reception"]), eq(educationCenterStaffTable.active, true)));
+    for (const manager of managers) {
+      await db.insert(educationOutboxTable).values({ centerId, sessionId: session.id, eventType: "minimum_enrollment_risk_manager", dedupeKey: `education-risk:${session.id}:manager:${manager.id}`, payload: { educatorStaffId: manager.id } }).onConflictDoNothing();
+      warned++;
+    }
+  }
+  return warned;
+}
+
 export type ProcessUpcomingEducationSessionsResult = {
   minimumCancelled: string[];
+  minimumRiskWarnings: number;
   waitlistExpired: number;
   waitlistPromoted: number;
 };
@@ -960,12 +1170,14 @@ export type ProcessUpcomingEducationSessionsResult = {
  *  2. Expire timed-out waitlist offers and promote the next waiting user.
  */
 export async function processUpcomingEducationSessions(): Promise<ProcessUpcomingEducationSessionsResult> {
-  const [{ cancelled }, { expired, promoted }] = await Promise.all([
+  const [{ cancelled }, { expired, promoted }, minimumRiskWarnings] = await Promise.all([
     cancelSessionsBelowMinimum(),
     expireWaitlistOffers(),
+    enqueueMinimumEnrollmentRiskWarnings(),
   ]);
   return {
     minimumCancelled: cancelled,
+    minimumRiskWarnings,
     waitlistExpired: expired,
     waitlistPromoted: promoted,
   };

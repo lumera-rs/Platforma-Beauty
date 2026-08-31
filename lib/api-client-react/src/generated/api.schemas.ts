@@ -5480,6 +5480,32 @@ export const CoursePaymentMode = {
   live_off_platform: 'live_off_platform',
 } as const;
 
+export type CourseSchedulingMode = typeof CourseSchedulingMode[keyof typeof CourseSchedulingMode];
+
+
+export const CourseSchedulingMode = {
+  fixed_group: 'fixed_group',
+  individual_calendar: 'individual_calendar',
+} as const;
+
+export type CourseDepositDisposition = typeof CourseDepositDisposition[keyof typeof CourseDepositDisposition];
+
+
+export const CourseDepositDisposition = {
+  refund: 'refund',
+  forfeit: 'forfeit',
+  transfer: 'transfer',
+} as const;
+
+export type CourseInstallmentCount = typeof CourseInstallmentCount[keyof typeof CourseInstallmentCount];
+
+
+export const CourseInstallmentCount = {
+  NUMBER_1: 1,
+  NUMBER_2: 2,
+  NUMBER_3: 3,
+} as const;
+
 /**
  * @nullable
  */
@@ -5603,6 +5629,23 @@ export interface Course {
   /** @nullable */
   groupDiscountPercent?: number | null;
   giftVoucherEligible?: boolean;
+  schedulingMode?: CourseSchedulingMode;
+  /**
+     * @minimum 0
+     * @maximum 8760
+     */
+  cancellationCutoffHours?: number;
+  depositDisposition?: CourseDepositDisposition;
+  /** @nullable */
+  minimumEnrollmentRiskDeadline?: string | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  earlyBirdPrice?: number | null;
+  /** @nullable */
+  earlyBirdCutoff?: string | null;
+  installmentCount?: CourseInstallmentCount;
   /** @nullable */
   centerId?: string | null;
   /** @nullable */
@@ -5650,6 +5693,32 @@ export const EducationCourseInputPaymentMode = {
   online_full: 'online_full',
   live_deposit: 'live_deposit',
   live_off_platform: 'live_off_platform',
+} as const;
+
+export type EducationCourseInputSchedulingMode = typeof EducationCourseInputSchedulingMode[keyof typeof EducationCourseInputSchedulingMode];
+
+
+export const EducationCourseInputSchedulingMode = {
+  fixed_group: 'fixed_group',
+  individual_calendar: 'individual_calendar',
+} as const;
+
+export type EducationCourseInputDepositDisposition = typeof EducationCourseInputDepositDisposition[keyof typeof EducationCourseInputDepositDisposition];
+
+
+export const EducationCourseInputDepositDisposition = {
+  refund: 'refund',
+  forfeit: 'forfeit',
+  transfer: 'transfer',
+} as const;
+
+export type EducationCourseInputInstallmentCount = typeof EducationCourseInputInstallmentCount[keyof typeof EducationCourseInputInstallmentCount];
+
+
+export const EducationCourseInputInstallmentCount = {
+  NUMBER_1: 1,
+  NUMBER_2: 2,
+  NUMBER_3: 3,
 } as const;
 
 export interface EducationCourseInput {
@@ -5757,6 +5826,23 @@ export interface EducationCourseInput {
      * @nullable
      */
   groupDiscountPercent?: number | null;
+  schedulingMode?: EducationCourseInputSchedulingMode;
+  /**
+     * @minimum 0
+     * @maximum 8760
+     */
+  cancellationCutoffHours?: number;
+  depositDisposition?: EducationCourseInputDepositDisposition;
+  /** @nullable */
+  minimumEnrollmentRiskDeadline?: string | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  earlyBirdPrice?: number | null;
+  /** @nullable */
+  earlyBirdCutoff?: string | null;
+  installmentCount?: EducationCourseInputInstallmentCount;
 }
 
 export type EducationCourseUpdateFormat = typeof EducationCourseUpdateFormat[keyof typeof EducationCourseUpdateFormat];
@@ -5798,6 +5884,32 @@ export const EducationCourseUpdatePaymentMode = {
   online_full: 'online_full',
   live_deposit: 'live_deposit',
   live_off_platform: 'live_off_platform',
+} as const;
+
+export type EducationCourseUpdateSchedulingMode = typeof EducationCourseUpdateSchedulingMode[keyof typeof EducationCourseUpdateSchedulingMode];
+
+
+export const EducationCourseUpdateSchedulingMode = {
+  fixed_group: 'fixed_group',
+  individual_calendar: 'individual_calendar',
+} as const;
+
+export type EducationCourseUpdateDepositDisposition = typeof EducationCourseUpdateDepositDisposition[keyof typeof EducationCourseUpdateDepositDisposition];
+
+
+export const EducationCourseUpdateDepositDisposition = {
+  refund: 'refund',
+  forfeit: 'forfeit',
+  transfer: 'transfer',
+} as const;
+
+export type EducationCourseUpdateInstallmentCount = typeof EducationCourseUpdateInstallmentCount[keyof typeof EducationCourseUpdateInstallmentCount];
+
+
+export const EducationCourseUpdateInstallmentCount = {
+  NUMBER_1: 1,
+  NUMBER_2: 2,
+  NUMBER_3: 3,
 } as const;
 
 export interface EducationCourseUpdate {
@@ -5906,6 +6018,23 @@ export interface EducationCourseUpdate {
      * @nullable
      */
   groupDiscountPercent?: number | null;
+  schedulingMode?: EducationCourseUpdateSchedulingMode;
+  /**
+     * @minimum 0
+     * @maximum 8760
+     */
+  cancellationCutoffHours?: number;
+  depositDisposition?: EducationCourseUpdateDepositDisposition;
+  /** @nullable */
+  minimumEnrollmentRiskDeadline?: string | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  earlyBirdPrice?: number | null;
+  /** @nullable */
+  earlyBirdCutoff?: string | null;
+  installmentCount?: EducationCourseUpdateInstallmentCount;
 }
 
 export interface EducationSession {
@@ -5921,6 +6050,8 @@ export interface EducationSession {
   minimumEnrollments?: number | null;
   /** @nullable */
   cancelledAt?: string | null;
+  /** @nullable */
+  educatorStaffId?: string | null;
 }
 
 export interface EducationSessionInput {
@@ -5936,6 +6067,8 @@ export interface EducationSessionInput {
      * @nullable
      */
   minimumEnrollments?: number | null;
+  /** @nullable */
+  educatorStaffId?: string | null;
 }
 
 export interface EducationLesson {
@@ -6882,6 +7015,21 @@ export interface EducationMarketplaceSettingsInput {
      * @maximum 100000000
      */
   featuredCoursePrice: number;
+  /**
+     * @maxLength 140
+     * @nullable
+     */
+  ipsRecipientName?: string | null;
+  /**
+     * @maxLength 40
+     * @nullable
+     */
+  ipsRecipientAccount?: string | null;
+  /**
+     * @maxLength 140
+     * @nullable
+     */
+  ipsPurpose?: string | null;
 }
 
 export type EducationMarketplaceSettings = EducationMarketplaceSettingsInput & {
@@ -7209,9 +7357,24 @@ export interface EducationDisputeResolutionInput {
   resolutionNote: string;
 }
 
+export interface EducationCertificateEligibility {
+  /** @minimum 0 */
+  total: number;
+  /** @minimum 0 */
+  completed: number;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  percent: number;
+  certificateEligible: boolean;
+  reasons: string[];
+}
+
 export interface EducationLms {
   enrollment: EducationEnrollment;
   course: EducationPrivateCourseDetail;
+  eligibility: EducationCertificateEligibility;
 }
 
 export type AdminSummaryDeliveryReportStaleProvidersItem = typeof AdminSummaryDeliveryReportStaleProvidersItem[keyof typeof AdminSummaryDeliveryReportStaleProvidersItem];
@@ -12313,6 +12476,625 @@ export interface AutomaticXyPromotionList {
   items: AutomaticXyPromotionListItemsItem[];
 }
 
+export interface EducationOperationalParticipantInput {
+  /**
+     * @minLength 1
+     * @maxLength 240
+     */
+  fullName: string;
+  /**
+     * @maxLength 320
+     * @nullable
+     */
+  email?: string | null;
+  /**
+     * @maxLength 64
+     * @nullable
+     */
+  phone?: string | null;
+  /** @nullable */
+  userId?: string | null;
+}
+
+export type EducationOperationalBookingInputInstallmentCount = typeof EducationOperationalBookingInputInstallmentCount[keyof typeof EducationOperationalBookingInputInstallmentCount];
+
+
+export const EducationOperationalBookingInputInstallmentCount = {
+  NUMBER_1: 1,
+  NUMBER_2: 2,
+  NUMBER_3: 3,
+} as const;
+
+export interface EducationOperationalBookingInput {
+  courseId: string;
+  sessionId: string;
+  installmentCount?: EducationOperationalBookingInputInstallmentCount;
+  /**
+     * @minItems 1
+     * @maxItems 20
+     */
+  participants: EducationOperationalParticipantInput[];
+}
+
+export type EducationOperationalBookingStatus = typeof EducationOperationalBookingStatus[keyof typeof EducationOperationalBookingStatus];
+
+
+export const EducationOperationalBookingStatus = {
+  pending: 'pending',
+  active: 'active',
+  waitlisted: 'waitlisted',
+  cancelled: 'cancelled',
+} as const;
+
+export type EducationOperationalBookingPaymentStatus = typeof EducationOperationalBookingPaymentStatus[keyof typeof EducationOperationalBookingPaymentStatus];
+
+
+export const EducationOperationalBookingPaymentStatus = {
+  pending: 'pending',
+} as const;
+
+export type EducationOperationalBookingDiscountReason = typeof EducationOperationalBookingDiscountReason[keyof typeof EducationOperationalBookingDiscountReason];
+
+
+export const EducationOperationalBookingDiscountReason = {
+  none: 'none',
+  early_bird: 'early_bird',
+  group: 'group',
+  early_bird_and_group: 'early_bird_and_group',
+} as const;
+
+export type EducationInstallmentPaymentStatus = typeof EducationInstallmentPaymentStatus[keyof typeof EducationInstallmentPaymentStatus];
+
+
+export const EducationInstallmentPaymentStatus = {
+  pending: 'pending',
+  settled: 'settled',
+  refunded: 'refunded',
+} as const;
+
+export interface EducationInstallmentPayment {
+  /** @minimum 1 */
+  installmentNumber: number;
+  /** @minimum 1 */
+  amount: number;
+  paymentReference: string;
+  status: EducationInstallmentPaymentStatus;
+}
+
+export interface EducationOperationalBooking {
+  id: string;
+  courseId: string;
+  sessionId: string;
+  status: EducationOperationalBookingStatus;
+  /** @minimum 1 */
+  participantCount: number;
+  paymentStatus: EducationOperationalBookingPaymentStatus;
+  /** @minimum 0 */
+  grossAmount: number;
+  earlyBirdApplied: boolean;
+  discountReason: EducationOperationalBookingDiscountReason;
+  installments: EducationInstallmentPayment[];
+}
+
+export interface EducationIpsQrPayment {
+  payload: string;
+  recipientName: string;
+  recipientAccount: string;
+  purpose: string;
+  /** @minimum 1 */
+  amount: number;
+  currency: 'RSD';
+  reference: string;
+}
+
+export type EducationPaymentPlanPaymentStatus = typeof EducationPaymentPlanPaymentStatus[keyof typeof EducationPaymentPlanPaymentStatus];
+
+
+export const EducationPaymentPlanPaymentStatus = {
+  pending: 'pending',
+  partial: 'partial',
+  paid: 'paid',
+  refunded: 'refunded',
+} as const;
+
+export interface EducationPaymentPlan {
+  bookingGroupId: string;
+  /** @minimum 0 */
+  grossAmount: number;
+  /** @minimum 0 */
+  capturedAmount: number;
+  /** @minimum 0 */
+  refundedAmount: number;
+  /** @minimum 0 */
+  netPaidAmount: number;
+  /** @minimum 0 */
+  outstandingAmount: number;
+  paymentStatus: EducationPaymentPlanPaymentStatus;
+  installments: EducationInstallmentPayment[];
+}
+
+export type EducationInstallmentSettlementPaymentStatus = typeof EducationInstallmentSettlementPaymentStatus[keyof typeof EducationInstallmentSettlementPaymentStatus];
+
+
+export const EducationInstallmentSettlementPaymentStatus = {
+  partial: 'partial',
+  paid: 'paid',
+} as const;
+
+export interface EducationInstallmentSettlement {
+  installmentId: string;
+  paymentReference: string;
+  amount: number;
+  capturedAmount: number;
+  paymentStatus: EducationInstallmentSettlementPaymentStatus;
+  replayed: boolean;
+}
+
+export type EducationAdminInstallmentStatus = typeof EducationAdminInstallmentStatus[keyof typeof EducationAdminInstallmentStatus];
+
+
+export const EducationAdminInstallmentStatus = {
+  pending: 'pending',
+  settled: 'settled',
+  refunded: 'refunded',
+  cancelled: 'cancelled',
+} as const;
+
+export interface EducationAdminInstallment {
+  id: string;
+  bookingGroupId: string;
+  centerId: string;
+  courseTitle: string;
+  customerName: string;
+  installmentNumber: number;
+  amount: number;
+  status: EducationAdminInstallmentStatus;
+  paymentReference: string;
+  /** @nullable */
+  dueAt: string | null;
+  /** @nullable */
+  settledAt: string | null;
+}
+
+export type EducationOperationalBookingParticipantStatus = typeof EducationOperationalBookingParticipantStatus[keyof typeof EducationOperationalBookingParticipantStatus];
+
+
+export const EducationOperationalBookingParticipantStatus = {
+  reserved: 'reserved',
+  waitlisted: 'waitlisted',
+  cancelled: 'cancelled',
+} as const;
+
+export interface EducationOperationalBookingParticipant {
+  id: string;
+  /** @nullable */
+  userId: string | null;
+  /** @nullable */
+  enrollmentId: string | null;
+  fullName: string;
+  /** @nullable */
+  email: string | null;
+  /** @nullable */
+  phone: string | null;
+  status: EducationOperationalBookingParticipantStatus;
+}
+
+export type EducationOperationalBookingDetailStatus = typeof EducationOperationalBookingDetailStatus[keyof typeof EducationOperationalBookingDetailStatus];
+
+
+export const EducationOperationalBookingDetailStatus = {
+  pending: 'pending',
+  active: 'active',
+  waitlisted: 'waitlisted',
+  cancelled: 'cancelled',
+} as const;
+
+/**
+ * @nullable
+ */
+export type EducationOperationalBookingDetailSession = {
+  id: string;
+  startsAt: string;
+  endsAt: string;
+  /** @nullable */
+  location: string | null;
+  /** @nullable */
+  cancelledAt: string | null;
+} | null;
+
+export interface EducationOperationalBookingDetail {
+  id: string;
+  centerId: string;
+  courseId: string;
+  courseTitle: string;
+  /** @nullable */
+  sessionId: string | null;
+  /** @nullable */
+  purchaserId: string | null;
+  status: EducationOperationalBookingDetailStatus;
+  createdAt: string;
+  updatedAt: string;
+  /** @nullable */
+  session: EducationOperationalBookingDetailSession;
+  participants: EducationOperationalBookingParticipant[];
+}
+
+export interface EducationOperationalBookingCancelInput {
+  /**
+     * @minItems 1
+     * @maxItems 20
+     */
+  participantIds?: string[];
+  /**
+     * @minLength 3
+     * @maxLength 1000
+     */
+  reason: string;
+}
+
+export interface EducationOperationalBookingRescheduleInput {
+  targetSessionId: string;
+  /**
+     * @minItems 1
+     * @maxItems 20
+     */
+  participantIds?: string[];
+}
+
+export type EducationOperationalBookingOperationStatus = typeof EducationOperationalBookingOperationStatus[keyof typeof EducationOperationalBookingOperationStatus];
+
+
+export const EducationOperationalBookingOperationStatus = {
+  pending: 'pending',
+  active: 'active',
+  waitlisted: 'waitlisted',
+  cancelled: 'cancelled',
+} as const;
+
+export type EducationOperationalBookingOperationDepositDisposition = typeof EducationOperationalBookingOperationDepositDisposition[keyof typeof EducationOperationalBookingOperationDepositDisposition];
+
+
+export const EducationOperationalBookingOperationDepositDisposition = {
+  refund: 'refund',
+  forfeit: 'forfeit',
+  transfer: 'transfer',
+} as const;
+
+export interface EducationOperationalBookingOperation {
+  bookingGroupId: string;
+  /** @nullable */
+  sessionId: string | null;
+  status: EducationOperationalBookingOperationStatus;
+  affectedParticipantIds: string[];
+  /** @minimum 0 */
+  cancelledSeats: number;
+  /** @minimum 0 */
+  movedSeats: number;
+  /** @minimum 0 */
+  refundAmount: number;
+  depositDisposition: EducationOperationalBookingOperationDepositDisposition;
+  replayed: boolean;
+}
+
+export type EducationOperationalAttendanceInputStatus = typeof EducationOperationalAttendanceInputStatus[keyof typeof EducationOperationalAttendanceInputStatus];
+
+
+export const EducationOperationalAttendanceInputStatus = {
+  present: 'present',
+  absent: 'absent',
+  excused: 'excused',
+} as const;
+
+export interface EducationOperationalAttendanceInput {
+  status: EducationOperationalAttendanceInputStatus;
+  occurredAt?: string;
+}
+
+export type EducationOperationalAttendanceStatus = typeof EducationOperationalAttendanceStatus[keyof typeof EducationOperationalAttendanceStatus];
+
+
+export const EducationOperationalAttendanceStatus = {
+  present: 'present',
+  absent: 'absent',
+  excused: 'excused',
+} as const;
+
+export interface EducationOperationalAttendance {
+  participantId: string;
+  sessionId: string;
+  status: EducationOperationalAttendanceStatus;
+  recordedAt: string;
+  /** @nullable */
+  recordedByUserId: string | null;
+}
+
+export interface EducationSessionEducatorSubstitutionInput {
+  educatorStaffId: string;
+}
+
+export interface EducationSessionEducatorAssignment {
+  sessionId: string;
+  educatorStaffId: string;
+}
+
+export interface EducationSessionCancellationInput {
+  /** @maxLength 1000 */
+  reason?: string;
+}
+
+export interface EducationSessionCancellation {
+  sessionId: string;
+  /** @minimum 0 */
+  cancelledParticipants: number;
+  /** @minimum 0 */
+  cancelledEnrollments: number;
+  /** @minimum 0 */
+  refundAmount: number;
+}
+
+export interface EducationOperationalAvailabilitySlot {
+  sessionId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  /** @nullable */
+  educatorStaffId: string | null;
+}
+
+/**
+ * @nullable
+ */
+export type EducationOperationalAvailabilityNextAvailable = {
+  sessionId?: string;
+  date?: string;
+  startTime?: string;
+  endTime?: string;
+  /** @nullable */
+  educatorStaffId?: string | null;
+} | null;
+
+export interface EducationOperationalAvailability {
+  timeZone: 'Europe/Belgrade';
+  /** @minimum 0 */
+  occupancy: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  capacity?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  freeSeats?: number | null;
+  waitlistOpen?: boolean;
+  lastSpots?: boolean;
+  /** @nullable */
+  nextAvailable?: EducationOperationalAvailabilityNextAvailable;
+  slots: EducationOperationalAvailabilitySlot[];
+}
+
+export interface EducationCourseRecurrenceInput {
+  educatorStaffId: string;
+  /**
+     * @minItems 1
+     * @maxItems 7
+     * @items.minimum 1
+     * @items.maximum 7
+     */
+  weekdays: number[];
+  /** @pattern ^(?:[01]\d|2[0-3]):[0-5]\d$ */
+  startTime: string;
+  /** @pattern ^(?:[01]\d|2[0-3]):[0-5]\d$ */
+  endTime: string;
+  /**
+     * @minimum 5
+     * @maximum 720
+     */
+  durationMinutes: number;
+  /**
+     * @minimum 5
+     * @maximum 180
+     */
+  granularityMinutes?: number;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  startDate: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  endDate: string;
+  /**
+     * @minimum 1
+     * @maximum 1000
+     */
+  capacity?: number;
+  /** @minimum 0 */
+  minimumEnrollments?: number;
+  /** @nullable */
+  minimumEnrollmentRiskDeadline?: string | null;
+}
+
+export interface EducationCourseRecurrenceCandidate {
+  date: string;
+  startTime: string;
+  endTime: string;
+}
+
+export interface EducationCourseRecurrencePreview {
+  timeZone: 'Europe/Belgrade';
+  candidates: EducationCourseRecurrenceCandidate[];
+  /** @minimum 0 */
+  skippedAbsenceCount: number;
+  /** @minimum 0 */
+  skippedConflictCount: number;
+}
+
+export interface EducationCourseRecurrenceCommit {
+  sessionIds: string[];
+  replayed: boolean;
+}
+
+export interface EducationOperationsCalendarParticipant {
+  id: string;
+  fullName: string;
+  /** @nullable */
+  email: string | null;
+  /** @nullable */
+  phone: string | null;
+  status: string;
+}
+
+export interface EducationOperationsCalendarSession {
+  id: string;
+  courseId: string;
+  educatorStaffId: string;
+  startsAt: string;
+  endsAt: string;
+  capacity: number;
+  reservedSeats: number;
+  participants: EducationOperationsCalendarParticipant[];
+}
+
+export type EducationCenterStaffMemberRole = typeof EducationCenterStaffMemberRole[keyof typeof EducationCenterStaffMemberRole];
+
+
+export const EducationCenterStaffMemberRole = {
+  owner_admin: 'owner_admin',
+  manager_reception: 'manager_reception',
+  educator: 'educator',
+} as const;
+
+export interface EducationCenterStaffMember {
+  id: string;
+  centerId: string;
+  userId: string;
+  /** @nullable */
+  instructorProfileId: string | null;
+  role: EducationCenterStaffMemberRole;
+  active: boolean;
+}
+
+export type EducationCenterStaffInputRole = typeof EducationCenterStaffInputRole[keyof typeof EducationCenterStaffInputRole];
+
+
+export const EducationCenterStaffInputRole = {
+  owner_admin: 'owner_admin',
+  manager_reception: 'manager_reception',
+  educator: 'educator',
+} as const;
+
+export interface EducationCenterStaffInput {
+  userId: string;
+  /** @nullable */
+  instructorProfileId?: string | null;
+  role: EducationCenterStaffInputRole;
+}
+
+export type EducationCenterStaffUpdateRole = typeof EducationCenterStaffUpdateRole[keyof typeof EducationCenterStaffUpdateRole];
+
+
+export const EducationCenterStaffUpdateRole = {
+  owner_admin: 'owner_admin',
+  manager_reception: 'manager_reception',
+  educator: 'educator',
+} as const;
+
+export interface EducationCenterStaffUpdate {
+  role?: EducationCenterStaffUpdateRole;
+  active?: boolean;
+  /** @nullable */
+  instructorProfileId?: string | null;
+}
+
+export type EducationCenterOperationalPermissionsRole = typeof EducationCenterOperationalPermissionsRole[keyof typeof EducationCenterOperationalPermissionsRole];
+
+
+export const EducationCenterOperationalPermissionsRole = {
+  owner_admin: 'owner_admin',
+  manager_reception: 'manager_reception',
+  educator: 'educator',
+} as const;
+
+export interface EducationCenterOperationalPermissions {
+  centerId: string;
+  role: EducationCenterOperationalPermissionsRole;
+  /** @nullable */
+  educatorStaffId: string | null;
+  canManageStaff: boolean;
+  canManageCalendar: boolean;
+  canTakeAttendance: boolean;
+}
+
+export interface EducationEducatorWeeklyAvailability {
+  id: string;
+  staffId: string;
+  /**
+     * @minimum 1
+     * @maximum 7
+     */
+  weekday: number;
+  /** @pattern ^(?:[01]\d|2[0-3]):[0-5]\d$ */
+  startTime: string;
+  /** @pattern ^(?:[01]\d|2[0-3]):[0-5]\d$ */
+  endTime: string;
+}
+
+export interface EducationEducatorWeeklyAvailabilityInput {
+  /**
+     * @minimum 1
+     * @maximum 7
+     */
+  weekday: number;
+  /** @pattern ^(?:[01]\d|2[0-3]):[0-5]\d$ */
+  startTime: string;
+  /** @pattern ^(?:[01]\d|2[0-3]):[0-5]\d$ */
+  endTime: string;
+}
+
+export interface EducationEducatorAbsence {
+  id: string;
+  staffId: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  startDate: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  endDate: string;
+  /**
+     * @nullable
+     * @pattern ^(?:[01]\d|2[0-3]):[0-5]\d$
+     */
+  startTime: string | null;
+  /**
+     * @nullable
+     * @pattern ^(?:[01]\d|2[0-3]):[0-5]\d$
+     */
+  endTime: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  reason: string | null;
+}
+
+export interface EducationEducatorAbsenceInput {
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  startDate: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  endDate: string;
+  /**
+     * @nullable
+     * @pattern ^(?:[01]\d|2[0-3]):[0-5]\d$
+     */
+  startTime?: string | null;
+  /**
+     * @nullable
+     * @pattern ^(?:[01]\d|2[0-3]):[0-5]\d$
+     */
+  endTime?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  reason?: string | null;
+}
+
 /**
  * Booking admission capacity is full; retry after the indicated delay.
  */
@@ -12900,6 +13682,41 @@ export const ListCoursesFormat = {
   'in-person': 'in-person',
   hybrid: 'hybrid',
 } as const;
+
+export type GetEducationCourseAvailabilityParams = {
+/**
+ * @pattern ^\d{4}-\d{2}-\d{2}$
+ */
+date?: string;
+educatorStaffId?: string;
+};
+
+export type ListAdminEducationInstallmentsParams = {
+status?: ListAdminEducationInstallmentsStatus;
+reference?: string;
+};
+
+export type ListAdminEducationInstallmentsStatus = typeof ListAdminEducationInstallmentsStatus[keyof typeof ListAdminEducationInstallmentsStatus];
+
+
+export const ListAdminEducationInstallmentsStatus = {
+  pending: 'pending',
+  settled: 'settled',
+  refunded: 'refunded',
+  cancelled: 'cancelled',
+} as const;
+
+export type GetEducationCenterOperationsCalendarParams = {
+/**
+ * @pattern ^\d{4}-\d{2}-\d{2}$
+ */
+startDate: string;
+/**
+ * @pattern ^\d{4}-\d{2}-\d{2}$
+ */
+endDate: string;
+educatorStaffId?: string;
+};
 
 export type ProposeEducationCourseTypeBody = {
   subcategoryId: string;

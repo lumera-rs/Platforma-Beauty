@@ -28,6 +28,9 @@ import {
   useListPublicEducationPlacements,
   useListPublicEducationSearchSuggestions, getListPublicEducationSearchSuggestionsQueryKey,
   useCreatePublicEducationCourseInquiry,
+  useCreateEducationOperationalBooking,
+  useGetEducationCourseAvailability,
+  useGetEducationCenterStatus,
   useListPublicEducationCenterReviews,
   getListPublicEducationCenterReviewsQueryKey,
   useCreateEducationCenterReview,
@@ -54,6 +57,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useDebouncedSearch } from "@/hooks/use-debounce";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { EducationOperationalBookingFlow } from "@/components/education/booking-flow";
+import { educationBookingCtaVisible } from "@/lib/education-operational-time";
 
 const money = (value: number) => new Intl.NumberFormat("sr-RS", {
   style: "currency", currency: "RSD", maximumFractionDigits: 0,
@@ -927,6 +932,13 @@ export function EducationPublicCourseDetail() {
   const courseId = params?.courseId ?? "";
   const { data: course, isLoading, isError } = useGetPublicEducationCourse(courseId);
   const { data: currentUser } = useGetCurrentUser();
+  const { data: viewerCenters } = useGetEducationCenterStatus({
+    query: {
+      enabled: Boolean(currentUser?.user && ["SALON_OWNER", "EDUKATIVNI_CENTAR", "SALON_EMPLOYEE"].includes(currentUser.user.role)),
+      retry: false,
+      queryKey: ["educationViewerCenters", currentUser?.user?.id],
+    },
+  });
   const { buy, buying } = useEducationPurchase();
   const session = course ? courseSession(course) : null;
   const { data: relatedCourses } = useListRelatedEducationCourses(courseId, { limit: 3 }, {
@@ -939,6 +951,20 @@ export function EducationPublicCourseDetail() {
   const [inquiryMsg, setInquiryMsg] = useState("");
   const inquiryMut = useCreatePublicEducationCourseInquiry();
   const { toast } = useToast();
+  const [operationalBookingOpen, setOperationalBookingOpen] = useState(false);
+  const operationalSession = course?.sessions?.find((item: any) => !item.cancelledAt && new Date(item.startsAt) > new Date());
+  const { data: operationalAvailability, isLoading: operationalAvailabilityLoading, isError: operationalAvailabilityError, refetch: refetchOperationalAvailability } = useGetEducationCourseAvailability(courseId, {}, {
+    query: { enabled: Boolean(courseId), queryKey: ["educationOperationalAvailability", courseId] },
+  });
+  const [operationalBookingKey, setOperationalBookingKey] = useState(() => crypto.randomUUID());
+  const createOperationalBookingMut = useCreateEducationOperationalBooking({ request: { headers: { "Idempotency-Key": operationalBookingKey } } });
+  const viewerPublishesCourse = Boolean(course?.center?.id && viewerCenters?.some((center) => center.id === course.center!.id));
+  const showOperationalBookingCta = educationBookingCtaVisible({
+    hasFutureSession: Boolean(operationalSession),
+    hasNextAvailable: Boolean(operationalAvailability?.nextAvailable),
+    isAdmin: currentUser?.user?.role === "ADMIN",
+    isPublisher: viewerPublishesCourse,
+  });
   const canSendInquiry = Boolean(
     currentUser?.user
     && ["SALON_OWNER", "EDUKATIVNI_CENTAR", "JOBSEEKER", "STUDENT"].includes(currentUser.user.role),
@@ -1070,9 +1096,25 @@ export function EducationPublicCourseDetail() {
         {course.reviews.length ? <section><h2 className="mb-4 font-serif text-2xl font-bold">Utisci polaznika</h2><div className="space-y-3">{course.reviews.map((review) => <Card key={review.id}><CardContent className="p-4"><p className="flex items-center gap-1 text-sm text-amber-600"><Star className="h-4 w-4 fill-amber-500" />{review.rating.toFixed(1)}</p><p className="mt-2 text-sm">{review.comment}</p></CardContent></Card>)}</div></section> : null}
       </div>
       <aside><Card className="sticky top-24 border-primary/25"><CourseWishlistButton course={course} /><CardContent className="p-6"><p className="text-2xl font-bold">{money(course.price)}</p>{course.paymentMode === "live_deposit" ? <p className="mt-1 text-sm text-muted-foreground">Plaćanje depozita od {money(course.depositAmount || 0)} za rezervaciju, ostatak uživo.</p> : course.paymentMode === "live_off_platform" ? <p className="mt-1 text-sm text-muted-foreground">Plaćanje uživo na lokaciji centra.</p> : <p className="mt-1 text-sm text-muted-foreground">Jednokratna uplata celokupnog iznosa.</p>}<Separator className="my-5" /><div className="space-y-3 text-sm"><p className="flex gap-2"><Building2 className="h-4 w-4 text-muted-foreground" />{course.publisher}</p>{course.city ? <p className="flex gap-2"><MapPin className="h-4 w-4 text-muted-foreground" />{course.city} <span className="text-muted-foreground">· detalji po uplati</span></p> : null}<p className="flex gap-2"><ShieldCheck className="h-4 w-4 text-muted-foreground" />{course.refundPolicy}</p></div>
-      {(!currentUser?.user || currentUser.user.role !== "CUSTOMER") && (
+      {currentUser?.user?.role !== "ADMIN" && !viewerPublishesCourse && (
         <>
-          <Button data-testid="buy-course-btn" className="mt-6 w-full" size="lg" disabled={buying === course.id} onClick={() => buy(course)}>{buying === course.id ? <Loader2 className="h-4 w-4 animate-spin" /> : session?.availableSeats === 0 ? "Dodaj se na listu čekanja" : "Prijavi se na edukaciju"}</Button>
+          {showOperationalBookingCta && (
+            <Button data-testid="operational-booking-cta" className="mt-6 w-full" size="lg" disabled={buying === course.id} onClick={() => {
+              if (!currentUser?.user) { setLocation("/prijava"); return; }
+              setOperationalBookingOpen(true);
+            }}>{currentUser?.user ? "Rezerviši edukaciju" : "Prijavite se za rezervaciju"}</Button>
+          )}
+          {!showOperationalBookingCta && (
+            <Button data-testid="legacy-enrollment-cta" className="mt-6 w-full" size="lg" disabled={buying === course.id} onClick={() => buy(course)}>
+              {buying === course.id ? "Obrada..." : "Prijavi se na edukaciju"}
+            </Button>
+          )}
+          <Dialog open={operationalBookingOpen} onOpenChange={setOperationalBookingOpen}>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+              <DialogHeader><DialogTitle>Rezervacija edukacije</DialogTitle><DialogDescription>Izaberite raspoloživ termin i unesite učesnike.</DialogDescription></DialogHeader>
+              <EducationOperationalBookingFlow course={course} availability={operationalAvailability} availabilityLoading={operationalAvailabilityLoading} availabilityError={operationalAvailabilityError} currentUser={currentUser} onCancel={() => setOperationalBookingOpen(false)} createBookingMut={createOperationalBookingMut} refetchAvail={refetchOperationalAvailability} resetIdempotencyKey={() => setOperationalBookingKey(crypto.randomUUID())} />
+            </DialogContent>
+          </Dialog>
 
           <Dialog>
             <DialogTrigger asChild>
