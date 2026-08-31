@@ -250,7 +250,9 @@ export default function OwnerSalonProfile() {
                     <div key={placement.id} className="rounded-xl border p-4" data-testid="featured-salon-placement">
                       <div className="flex flex-wrap justify-between gap-2">
                         <span className="font-medium">{placement.priceSnapshot.toLocaleString("sr-RS")} RSD · {placement.durationDaysSnapshot} dana</span>
-                        <span className="text-sm text-muted-foreground">{placement.status}</span>
+                        <span className="text-sm text-muted-foreground">
+                          {placement.status === "pending_payment" ? "Čeka uplatu" : placement.status === "expired" ? "Istekao" : placement.status}
+                        </span>
                       </div>
                       <p className="mt-1 font-mono text-xs">{placement.paymentReference}</p>
                       {placement.status === "pending_payment" && placement.paymentInstructionsAvailable && placement.ipsPayload ? (
@@ -258,8 +260,10 @@ export default function OwnerSalonProfile() {
                           <QRCodeSVG value={placement.ipsPayload} size={180} className="mx-auto" />
                           <p className="mt-2 text-xs">{placement.recipientName} · {placement.recipientAccount}</p>
                           <p className="mt-1 text-xs">Status ostaje na čekanju do ručne potvrde uplate.</p>
+                          <p className="mt-1 text-xs font-medium">Rok za uplatu: {new Date(new Date(placement.createdAt).getTime() + 24 * 60 * 60 * 1000).toLocaleString("sr-RS")}</p>
                         </div>
                       ) : placement.status === "pending_payment" ? <p className="mt-2 text-xs text-destructive">Istorijski zahtev nema važeća uputstva za uplatu; kreirajte novi zahtev.</p> : null}
+                      {placement.status === "expired" ? <p className="mt-2 text-sm text-destructive">Rok za uplatu je istekao. Za isticanje morate napraviti novi zahtev.</p> : null}
                       {placement.startsAt && placement.endsAt ? <p className="mt-2 text-xs text-muted-foreground">{new Date(placement.startsAt).toLocaleDateString("sr-RS")} – {new Date(placement.endsAt).toLocaleDateString("sr-RS")}</p> : null}
                     </div>
                   ))}

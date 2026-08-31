@@ -35,6 +35,7 @@ import
 }
  from "../lib/salon-notification-events"
 ;
+import { expireFeaturedPlacementPaymentInTx } from "../lib/featured-placement-payment-reminders";
 import {
   allocateReferralCreditInTx,
   bindLegalEntityBusinessInTx,
@@ -19324,12 +19325,12 @@ router.post("/education/waitlist/:waitlistId/accept", async (req, res): Promise<
 
 router.get("/education/notifications", async (req, res): Promise<void> => {
   const user = await current(req, res); if (!user) return;
-  if (!["JOBSEEKER", "STUDENT"].includes(user.role)) { res.status(403).json({ error: "Obaveštenja su privatna za polaznika." }); return; }
+  if (!["JOBSEEKER", "STUDENT", "EDUKATIVNI_CENTAR"].includes(user.role)) { res.status(403).json({ error: "Obaveštenja nisu dostupna ovom nalogu." }); return; }
   const notificationRows = await db.select().from(educationNotificationsTable)
     .where(eq(educationNotificationsTable.userId, user.id)).orderBy(desc(educationNotificationsTable.createdAt)).limit(100);
   // Active (offered, unexpired) waitlist offers surface an accept CTA. Each
   // active offer holds a reserved seat for its 24-hour window.
-  const offerRows = await db.select({
+  const offerRows = user.role === "EDUKATIVNI_CENTAR" ? [] : await db.select({
     id: educationWaitlistTable.id,
     courseId: educationWaitlistTable.courseId,
     courseTitle: coursesTable.title,
@@ -19377,7 +19378,7 @@ router.get("/education/notifications", async (req, res): Promise<void> => {
 
 router.patch("/education/notifications/:notificationId/read", async (req, res): Promise<void> => {
   const user = await current(req, res); if (!user) return;
-  if (!["JOBSEEKER", "STUDENT"].includes(user.role)) { res.status(403).json({ error: "Obaveštenja su privatna za polaznika." }); return; }
+  if (!["JOBSEEKER", "STUDENT", "EDUKATIVNI_CENTAR"].includes(user.role)) { res.status(403).json({ error: "Obaveštenja nisu dostupna ovom nalogu." }); return; }
   const [updated] = await db.update(educationNotificationsTable).set({ readAt: new Date() })
     .where(and(eq(educationNotificationsTable.id, String(req.params.notificationId ?? "")), eq(educationNotificationsTable.userId, user.id))).returning();
   if (!updated) { res.status(404).json({ error: "Obaveštenje nije pronađeno." }); return; }
@@ -20098,13 +20099,16 @@ async function expireStalePendingPlacement(
   scopeId: string | null,
   now: Date,
 ) {
-  await tx.update(educationPlacementsTable).set({ status: "expired", updatedAt: now }).where(and(
+  const stale = await tx.select().from(educationPlacementsTable).where(and(
     eq(educationPlacementsTable.kind, kind),
     eq(educationPlacementsTable.scope, scope),
     scope === "category" ? eq(educationPlacementsTable.scopeCategoryId, scopeId!) : scope === "subcategory" ? eq(educationPlacementsTable.scopeSubcategoryId, scopeId!) : undefined,
     eq(educationPlacementsTable.status, "pending_payment"),
     lte(educationPlacementsTable.createdAt, new Date(now.getTime() - EDUCATION_PLACEMENT_PAYMENT_WINDOW_MS)),
   ));
+  for (const placement of stale) {
+    await expireFeaturedPlacementPaymentInTx(tx, placement, now);
+  }
 }
 
 async function validateSharedPlacementScope(
@@ -22450,14 +22454,9 @@ router.post("/admin/education/placements/:paymentReference/settle", async (req, 
       if (row.status !== "pending_payment") throw new Error("Plasman nije u stanju za potvrdu uplate.");
       const now = new Date();
       if (row.createdAt.getTime() + EDUCATION_PLACEMENT_PAYMENT_WINDOW_MS <= now.getTime()) {
-        const [expired] = await tx.update(educationPlacementsTable).set({
-          status: "expired",
-          updatedAt: now,
-        }).where(and(
-          eq(educationPlacementsTable.id, row.id),
-          eq(educationPlacementsTable.status, "pending_payment"),
-        )).returning();
-        return { placement: expired!, expired: true };
+        const expired = await expireFeaturedPlacementPaymentInTx(tx, row, now);
+        if (!expired.placement) throw new Error("Plasman je istovremeno izmenjen.");
+        return { placement: expired.placement, expired: true };
       }
       await lockEducationPlacementResource(tx, row.kind, row.scope, row.scopeCategoryId ?? row.scopeSubcategoryId);
       const scopeValid = row.scope === "home"
@@ -22513,7 +22512,13 @@ router.get("/admin/featured-placements", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const page = parsed.data.page ?? 1;
   const pageSize = parsed.data.pageSize ?? 20;
-  const predicate = parsed.data.status ? eq(educationPlacementsTable.status, parsed.data.status) : undefined;
+  const statusPredicate = parsed.data.status ? eq(educationPlacementsTable.status, parsed.data.status) : undefined;
+  const predicate = parsed.data.status === "pending_payment"
+    ? and(
+      statusPredicate,
+      gt(educationPlacementsTable.createdAt, new Date(Date.now() - EDUCATION_PLACEMENT_PAYMENT_WINDOW_MS)),
+    )
+    : statusPredicate;
   const [[total], rows] = await Promise.all([
     db.select({ value: count() }).from(educationPlacementsTable).where(predicate),
     db.select().from(educationPlacementsTable).where(predicate)
@@ -22538,15 +22543,14 @@ router.post("/admin/featured-placements/:placementId/confirm", async (req, res):
       if (!row) throw new Error("NOT_FOUND");
       // Returning the persisted row makes retries idempotent: dates and audit
       // actor are never recalculated after the first successful confirmation.
-      if (row.status === "active") return { placement: row, activated: false };
+      if (row.status === "active") return { placement: row, activated: false, expired: false };
       if (row.status !== "pending_payment") throw new Error("Plasman nije u stanju za potvrdu uplate.");
       await lockEducationPlacementResource(tx, row.kind, row.scope, row.scopeCategoryId ?? row.scopeSubcategoryId);
       const now = new Date();
       if (row.createdAt.getTime() + EDUCATION_PLACEMENT_PAYMENT_WINDOW_MS <= now.getTime()) {
-        const [expired] = await tx.update(educationPlacementsTable).set({ status: "expired", updatedAt: now })
-          .where(and(eq(educationPlacementsTable.id, row.id), eq(educationPlacementsTable.status, "pending_payment"))).returning();
-        if (!expired) throw new Error("Plasman je istovremeno izmenjen.");
-        throw new Error("Rok za uplatu plasmana je istekao. Kreirajte novi zahtev.");
+        const expired = await expireFeaturedPlacementPaymentInTx(tx, row, now);
+        if (!expired.placement) throw new Error("Plasman je istovremeno izmenjen.");
+        return { placement: expired.placement, activated: false, expired: true };
       }
       await validateSharedPlacementScope(row.kind, row.scope, row.scopeCategoryId ?? row.scopeSubcategoryId, row.courseId);
       if (row.kind === "featured_center" && (!row.centerId || !(await educationCenterEligibility(row.centerId)).eligible)) {
@@ -22567,8 +22571,12 @@ router.post("/admin/featured-placements/:placementId/confirm", async (req, res):
         eq(educationPlacementsTable.status, "pending_payment"),
       )).returning();
       if (!updated) throw new Error("Plasman je istovremeno izmenjen.");
-      return { placement: updated, activated: true };
+      return { placement: updated, activated: true, expired: false };
     });
+    if (settlement.expired) {
+      res.status(409).json({ error: "Rok za uplatu plasmana je istekao. Kreirajte novi zahtev." });
+      return;
+    }
     if (settlement.activated && settlement.placement.kind === "featured_salon") {
       await publishCatalogInvalidation(["salons"]);
     }

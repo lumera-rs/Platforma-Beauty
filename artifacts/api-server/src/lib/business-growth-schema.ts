@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 97;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 98;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -3898,6 +3898,7 @@ function tableStatements(s: string): string[] {
          OR (starts_at IS NOT NULL AND ends_at IS NOT NULL AND ends_at > starts_at))
      )`,
     `CREATE INDEX IF NOT EXISTS education_placements_scope_status_dates_idx ON ${s}.education_placements (kind, scope, status, starts_at, ends_at)`,
+    `CREATE INDEX IF NOT EXISTS education_placements_pending_created_idx ON ${s}.education_placements (status, created_at)`,
     `CREATE INDEX IF NOT EXISTS education_placements_category_slot_idx ON ${s}.education_placements (scope_category_id, slot_number, status)`,
     `CREATE INDEX IF NOT EXISTS education_placements_subcategory_slot_idx ON ${s}.education_placements (scope_subcategory_id, slot_number, status)`,
     `CREATE EXTENSION IF NOT EXISTS btree_gist`,

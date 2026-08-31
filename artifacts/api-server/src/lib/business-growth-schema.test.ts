@@ -356,7 +356,7 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
-    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 97, "v97 is the current production schema rollout");
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 98, "v98 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
 
     // ── Run the rollout, then exercise its legacy conversion on rerun ──────
@@ -383,6 +383,10 @@ async function run() {
       assert.ok(await columnExists("education_installments", "due_at"), "v95 adds nullable immutable installment due_at");
       assert.ok(await columnExists("education_placements", "salon_id"), "v96 adds the shared featured-salon target");
       assert.ok(await columnExists("education_placements", "settled_at"), "v96 records immutable settlement time");
+      assert.ok(await objectExists(
+        `SELECT to_regclass($1) IS NOT NULL AS exists`,
+        [`${s}.education_placements_pending_created_idx`],
+      ), "v98 indexes pending placement payment deadlines");
       for (const column of [
         "payment_ips_payload_snapshot",
         "payment_recipient_name_snapshot",

@@ -204,7 +204,7 @@ export default function BusinessEducation({ hideLayout = false }: { hideLayout?:
           </div>
         ) : null}
         <Tabs defaultValue="catalog" className="space-y-6">
-          <TabsList>
+          <TabsList className="h-auto w-full flex-wrap justify-start gap-1 md:h-9 md:w-auto md:flex-nowrap">
             <TabsTrigger value="operations">Operacije</TabsTrigger>
             <TabsTrigger value="catalog">Katalog i edukacije</TabsTrigger>
             <TabsTrigger value="placements">Sponzorisane pozicije</TabsTrigger>
@@ -338,6 +338,9 @@ function CenterProfileView() {
 
 function MyPlacementsView() {
   const { data: placements, isLoading } = useListMyFeaturedPlacements({ query: { queryKey: getListMyFeaturedPlacementsQueryKey(), refetchInterval: 30_000 } });
+  const { data: notifications } = useListEducationNotifications({
+    query: { queryKey: getListEducationNotificationsQueryKey(), refetchInterval: 30_000 },
+  });
   const { data: courses } = useListCourses(undefined, { query: { queryKey: getListCoursesQueryKey() } });
   const { data: taxonomy } = useGetPublicEducationTaxonomy({ query: { queryKey: getGetPublicEducationTaxonomyQueryKey() } });
   const purchaseMut = useCreateFeaturedPlacement();
@@ -412,6 +415,18 @@ function MyPlacementsView() {
 
   return (
     <div className="space-y-6">
+      {notifications?.notifications
+        .filter((notification) => notification.type.startsWith("featured_placement_") && !notification.readAt)
+        .slice(0, 3)
+        .map((notification) => (
+          <Alert key={notification.id} data-testid="featured-placement-notification">
+            <Bell className="h-4 w-4" />
+            <AlertDescription>
+              <span className="font-medium">{notification.title}</span>
+              <span className="mt-1 block">{notification.body}</span>
+            </AlertDescription>
+          </Alert>
+        ))}
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-serif font-bold">Sponzorisane pozicije</h2>
@@ -505,7 +520,7 @@ function MyPlacementsView() {
                   <p className="text-xs text-muted-foreground mt-1">Obim: {p.scope}</p>
                 </div>
                 <Badge variant={p.status === "active" ? "default" : "secondary"}>
-                  {p.status}
+                  {p.status === "pending_payment" ? "Čeka uplatu" : p.status === "expired" ? "Istekao" : p.status}
                 </Badge>
               </div>
               <div className="mt-4 pt-4 border-t text-sm space-y-1">
@@ -517,8 +532,10 @@ function MyPlacementsView() {
                     <QRCodeSVG value={p.ipsPayload} size={160} className="mx-auto" />
                     <p className="text-xs">{p.recipientName} · {p.recipientAccount}</p>
                     <p className="text-xs">Uplata se aktivira tek nakon ručne potvrde administratora.</p>
+                    <p className="text-xs font-medium">Rok za uplatu: {new Date(new Date(p.createdAt).getTime() + 24 * 60 * 60 * 1000).toLocaleString("sr-RS")}</p>
                   </div>
                 ) : p.status === "pending_payment" ? <p className="mt-2 text-xs text-destructive">Ovaj istorijski zahtev nema važeća uputstva za uplatu. Kreirajte novi zahtev.</p> : null}
+                {p.status === "expired" ? <p className="mt-2 text-sm text-destructive">Rok za uplatu je istekao. Za isticanje morate napraviti novi zahtev.</p> : null}
                 {p.startsAt && <p className="text-xs mt-2">Trajanje: {new Date(p.startsAt).toLocaleDateString("sr-RS")} - {p.endsAt ? new Date(p.endsAt).toLocaleDateString("sr-RS") : ""}</p>}
               </div>
             </CardContent>

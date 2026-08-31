@@ -46,6 +46,7 @@ import {
   runAppointmentReviewInvitationSweep,
 } from "./lib/appointment-customer-events";
 import { enqueueEducationReminderSweep, processEducationOutbox } from "./lib/education-outbox";
+import { runFeaturedPlacementPaymentReminderSweep } from "./lib/featured-placement-payment-reminders";
 
 const rawPort = process.env["PORT"];
 
@@ -105,6 +106,10 @@ const educationSessionMaintenance = createResilientScheduledJob({
 });
 const educationOutboxDeliveries = createResilientScheduledJob({ job: "education-outbox-deliveries", run: processEducationOutbox });
 const educationReminderSweep = createResilientScheduledJob({ job: "education-reminder-sweep", run: enqueueEducationReminderSweep });
+const featuredPlacementPaymentReminders = createResilientScheduledJob({
+  job: "featured-placement-payment-reminders",
+  run: runFeaturedPlacementPaymentReminderSweep,
+});
 const educationGalleryCleanup = createResilientScheduledJob({
   job: "education-gallery-cleanup",
   run: runEducationGalleryCleanup,
@@ -216,6 +221,7 @@ const scheduledJobs = [
   appointmentReviewInvitations,
   systemPushDeliveries,
   smsOutboxDeliveries,
+  featuredPlacementPaymentReminders,
 ];
 
 const retryInterval = setInterval(() => {
@@ -244,6 +250,12 @@ const educationOutboxInterval = setInterval(() => {
 educationOutboxInterval.unref();
 void educationOutboxDeliveries.run();
 void educationReminderSweep.run();
+
+const featuredPlacementPaymentReminderInterval = setInterval(() => {
+  void featuredPlacementPaymentReminders.run();
+}, 15 * 60_000);
+featuredPlacementPaymentReminderInterval.unref();
+void featuredPlacementPaymentReminders.run();
 
 const beautyJobsExpiryInterval = setInterval(() => {
   void beautyJobsExpirySweep.run();
@@ -377,6 +389,7 @@ function clearScheduledTasks(): void {
   clearInterval(systemPushDeliveriesInterval);
   clearInterval(educationMaintenanceInterval);
   clearInterval(educationOutboxInterval);
+  clearInterval(featuredPlacementPaymentReminderInterval);
   clearInterval(beautyJobsExpiryInterval);
   clearInterval(referralMaintenanceInterval);
   clearInterval(educationGalleryCleanupInterval);

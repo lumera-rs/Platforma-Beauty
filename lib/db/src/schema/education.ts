@@ -344,6 +344,7 @@ export const educationPlacementsTable = pgTable("education_placements", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("education_placements_scope_status_dates_idx").on(table.kind, table.scope, table.status, table.startsAt, table.endsAt),
+  index("education_placements_pending_created_idx").on(table.status, table.createdAt),
   index("education_placements_category_slot_idx").on(table.scopeCategoryId, table.slotNumber, table.status),
   index("education_placements_subcategory_slot_idx").on(table.scopeSubcategoryId, table.slotNumber, table.status),
   index("education_placements_center_idx").on(table.centerId),

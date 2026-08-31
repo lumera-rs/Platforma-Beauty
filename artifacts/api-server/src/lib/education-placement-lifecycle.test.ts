@@ -9,16 +9,21 @@ import {
   courseCategoriesTable,
   educationCentersTable,
   educationCenterSubscriptionsTable,
+  educationNotificationsTable,
+  educationPlatformSettingsTable,
   educationPlacementSettingsTable,
   educationPlacementsTable,
   educationSectionsTable,
   educationSubcategoriesTable,
+  salonNotificationsTable,
+  salonsTable,
   subscriptionPlansTable,
   usersTable,
 } from "@workspace/db";
 import app from "../app";
 import { hashPassword, sessionCookieName } from "./auth";
 import { ensureDemoData } from "./seed";
+import { runFeaturedPlacementPaymentReminderSweep } from "./featured-placement-payment-reminders";
 
 const suffix = randomUUID();
 const password = "education-placement-test-password";
@@ -158,10 +163,18 @@ async function run(): Promise<void> {
   let server: ReturnType<typeof app.listen> | undefined;
   const userIds: string[] = [];
   let centerId: string | undefined;
+  let salonId: string | undefined;
   const courseIds: string[] = [];
   let sectionId: string | undefined;
   const categoryIds: string[] = [];
   const subcategoryIds: string[] = [];
+  let ipsSettingsRestore: {
+    id: string;
+    ipsRecipientName: string | null;
+    ipsRecipientAccount: string | null;
+    ipsPurpose: string | null;
+    createdForTest: boolean;
+  } | undefined;
 
   try {
     const passwordHash = await hashPassword(password);
@@ -202,6 +215,21 @@ async function run(): Promise<void> {
     }).returning();
     assert.ok(center);
     centerId = center.id;
+    const [salon] = await db.insert(salonsTable).values({
+      ownerId: owner.id,
+      name: `Placement reminder salon ${suffix}`,
+      slug: `placement-reminder-salon-${suffix}`,
+      city: "Beograd",
+      municipality: "Vračar",
+      address: "Test 1",
+      phone: "+381601234567",
+      email: `placement-reminder-salon-${suffix}@example.test`,
+      shortDescription: "Salon za proveru podsetnika.",
+      description: "Izolovani salon za proveru podsetnika za uplatu isticanja.",
+      imageUrl: "/test-featured-salon.jpg",
+    }).returning();
+    assert.ok(salon);
+    salonId = salon.id;
     await db.insert(educationCenterSubscriptionsTable).values({
       centerId,
       planId: plan.id,
@@ -217,6 +245,26 @@ async function run(): Promise<void> {
       login(baseUrl, admin.email),
       login(baseUrl, owner.email),
     ]);
+    const [priorIpsSettings] = await db.select().from(educationPlatformSettingsTable)
+      .orderBy(educationPlatformSettingsTable.createdAt).limit(1);
+    const [ipsSettings] = priorIpsSettings
+      ? await db.update(educationPlatformSettingsTable).set({
+        ipsRecipientName: "Placement Lifecycle Test",
+        ipsRecipientAccount: "840000000000000000",
+        ipsPurpose: "Featured placement",
+      }).where(eq(educationPlatformSettingsTable.id, priorIpsSettings.id)).returning()
+      : await db.insert(educationPlatformSettingsTable).values({
+        ipsRecipientName: "Placement Lifecycle Test",
+        ipsRecipientAccount: "840000000000000000",
+        ipsPurpose: "Featured placement",
+      }).returning();
+    ipsSettingsRestore = {
+      id: ipsSettings!.id,
+      ipsRecipientName: priorIpsSettings?.ipsRecipientName ?? null,
+      ipsRecipientAccount: priorIpsSettings?.ipsRecipientAccount ?? null,
+      ipsPurpose: priorIpsSettings?.ipsPurpose ?? null,
+      createdForTest: !priorIpsSettings,
+    };
 
     const [section] = await db.insert(educationSectionsTable).values({
       name: `Placement section ${suffix}`,
@@ -270,6 +318,40 @@ async function run(): Promise<void> {
     courseIds.push(...courses.map((course) => course.id));
 
     await patchSettings(baseUrl, adminCookie, 12_345, 1, 1);
+    const [salonReminderPlacement] = await db.insert(educationPlacementsTable).values({
+      kind: "featured_salon",
+      scope: "home",
+      salonId,
+      slotNumber: 1,
+      priceSnapshot: 10_000,
+      durationDaysSnapshot: 7,
+      status: "pending_payment",
+      paymentReference: `FP-${randomUUID().replaceAll("-", "").slice(0, 24)}`,
+      createdAt: new Date(Date.now() - 23 * 60 * 60 * 1000),
+    }).returning();
+    assert.ok(salonReminderPlacement);
+    await Promise.all([
+      runFeaturedPlacementPaymentReminderSweep(),
+      runFeaturedPlacementPaymentReminderSweep(),
+    ]);
+    assert.equal(
+      (await db.select().from(salonNotificationsTable)
+        .where(eq(salonNotificationsTable.salonId, salonId))).length,
+      1,
+      "Concurrent sweeps must create one salon-owner payment reminder.",
+    );
+    await db.update(educationPlacementsTable)
+      .set({ createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000) })
+      .where(eq(educationPlacementsTable.id, salonReminderPlacement.id));
+    await Promise.all([
+      runFeaturedPlacementPaymentReminderSweep(),
+      runFeaturedPlacementPaymentReminderSweep(),
+    ]);
+    const salonNotifications = await db.select().from(salonNotificationsTable)
+      .where(eq(salonNotificationsTable.salonId, salonId));
+    assert.equal(salonNotifications.length, 2, "Salon owner must receive one reminder and one expiry notification.");
+    assert.ok(salonNotifications.some((notification) => notification.title.includes("istekao")));
+
     const abandoned = await purchase(baseUrl, centerCookie);
     await db.update(educationPlacementsTable)
       .set({ createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000) })
@@ -284,6 +366,89 @@ async function run(): Promise<void> {
     ]);
     assert.equal(expiredRow[0]?.status, "expired", "A stale payment hold must expire on the next purchase.");
     assert.equal(reusableRow[0]?.slotNumber, 1, "The expired hold must release its slot.");
+    assert.equal(
+      (await db.select().from(educationNotificationsTable).where(eq(
+        educationNotificationsTable.eventKey,
+        `featured-placement:${abandoned.id}:payment-expired`,
+      ))).length,
+      1,
+      "Expiry during a replacement purchase must notify the owner.",
+    );
+
+    await db.update(educationPlacementsTable)
+      .set({ createdAt: new Date(Date.now() - 23 * 60 * 60 * 1000) })
+      .where(eq(educationPlacementsTable.id, reusable.id));
+    await Promise.all([
+      runFeaturedPlacementPaymentReminderSweep(),
+      runFeaturedPlacementPaymentReminderSweep(),
+    ]);
+    const reminderNotifications = await db.select().from(educationNotificationsTable)
+      .where(and(
+        eq(educationNotificationsTable.userId, owner.id),
+        eq(educationNotificationsTable.eventKey, `featured-placement:${reusable.id}:payment-reminder`),
+      ));
+    assert.equal(reminderNotifications.length, 1, "Concurrent sweeps must send one payment reminder.");
+    const ownerNotificationsResponse = await request(baseUrl, "/education/notifications", { cookie: centerCookie });
+    await assertStatus(ownerNotificationsResponse, 200);
+    const ownerNotifications = await responseJson<{ notifications: Array<{ type: string }> }>(ownerNotificationsResponse);
+    assert.ok(
+      ownerNotifications.notifications.some((notification) =>
+        notification.type === "featured_placement_payment_reminder"),
+      "The education owner must be able to read the placement reminder from the app inbox.",
+    );
+    const [stillAwaitingPayment] = await db.select().from(educationPlacementsTable)
+      .where(eq(educationPlacementsTable.id, reusable.id)).limit(1);
+    assert.equal(stillAwaitingPayment?.status, "pending_payment", "A reminder must not change placement lifecycle.");
+
+    await patchSettings(baseUrl, adminCookie, 12_345, 2, 1);
+    const adminQueueCandidate = await purchase(baseUrl, centerCookie);
+    await db.update(educationPlacementsTable)
+      .set({ createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000) })
+      .where(eq(educationPlacementsTable.id, adminQueueCandidate.id));
+    const adminQueueResponse = await request(baseUrl, "/admin/featured-placements?status=pending_payment&page=1&pageSize=100", {
+      cookie: adminCookie,
+    });
+    await assertStatus(adminQueueResponse, 200);
+    const adminQueue = await responseJson<{ items: Array<{ id: string }> }>(adminQueueResponse);
+    assert.ok(
+      !adminQueue.items.some((item) => item.id === adminQueueCandidate.id),
+      "Expired payment holds must not appear in the admin confirmation queue.",
+    );
+    await Promise.all([
+      runFeaturedPlacementPaymentReminderSweep(),
+      runFeaturedPlacementPaymentReminderSweep(),
+    ]);
+    const [expiredBySweep] = await db.select().from(educationPlacementsTable)
+      .where(eq(educationPlacementsTable.id, adminQueueCandidate.id)).limit(1);
+    assert.equal(expiredBySweep?.status, "expired");
+    const expiryNotifications = await db.select().from(educationNotificationsTable)
+      .where(and(
+        eq(educationNotificationsTable.userId, owner.id),
+        eq(educationNotificationsTable.eventKey, `featured-placement:${adminQueueCandidate.id}:payment-expired`),
+      ));
+    assert.equal(expiryNotifications.length, 1, "Concurrent sweeps must send one expiry notification.");
+
+    const confirmExpiryCandidate = await purchase(baseUrl, centerCookie);
+    await db.update(educationPlacementsTable)
+      .set({ createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000) })
+      .where(eq(educationPlacementsTable.id, confirmExpiryCandidate.id));
+    const confirmExpiredResponse = await request(
+      baseUrl,
+      `/admin/featured-placements/${confirmExpiryCandidate.id}/confirm`,
+      { method: "POST", cookie: adminCookie },
+    );
+    assert.equal(confirmExpiredResponse.status, 409);
+    const [expiredByConfirmation] = await db.select().from(educationPlacementsTable)
+      .where(eq(educationPlacementsTable.id, confirmExpiryCandidate.id)).limit(1);
+    assert.equal(expiredByConfirmation?.status, "expired", "Expired confirmation must commit the canonical expiry.");
+    assert.equal(
+      (await db.select().from(educationNotificationsTable).where(eq(
+        educationNotificationsTable.eventKey,
+        `featured-placement:${confirmExpiryCandidate.id}:payment-expired`,
+      ))).length,
+      1,
+      "Expiry discovered during admin confirmation must notify the owner.",
+    );
 
     const expiredSettlement = await settle(baseUrl, adminCookie, abandoned.paymentReference);
     assert.equal(expiredSettlement.response.status, 409, "An expired hold must not be settled later.");
@@ -376,6 +541,17 @@ async function run(): Promise<void> {
       await new Promise<void>((resolve, reject) =>
         server!.close((error) => error ? reject(error) : resolve()));
     }
+    if (ipsSettingsRestore) {
+      if (ipsSettingsRestore.createdForTest) {
+        await db.delete(educationPlatformSettingsTable).where(eq(educationPlatformSettingsTable.id, ipsSettingsRestore.id));
+      } else {
+        await db.update(educationPlatformSettingsTable).set({
+          ipsRecipientName: ipsSettingsRestore.ipsRecipientName,
+          ipsRecipientAccount: ipsSettingsRestore.ipsRecipientAccount,
+          ipsPurpose: ipsSettingsRestore.ipsPurpose,
+        }).where(eq(educationPlatformSettingsTable.id, ipsSettingsRestore.id));
+      }
+    }
     if (centerId) {
       await db.delete(educationPlacementsTable).where(eq(educationPlacementsTable.centerId, centerId));
       if (courseIds.length) {
@@ -385,6 +561,10 @@ async function run(): Promise<void> {
       await db.delete(educationCenterSubscriptionsTable)
         .where(eq(educationCenterSubscriptionsTable.centerId, centerId));
       await db.delete(educationCentersTable).where(eq(educationCentersTable.id, centerId));
+    }
+    if (salonId) {
+      await db.delete(educationPlacementsTable).where(eq(educationPlacementsTable.salonId, salonId));
+      await db.delete(salonsTable).where(eq(salonsTable.id, salonId));
     }
     await db.delete(educationPlacementSettingsTable).where(or(
       and(
