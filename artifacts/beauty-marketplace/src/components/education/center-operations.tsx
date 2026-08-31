@@ -590,23 +590,58 @@ function EducatorSchedule({ centerId, permissions }: { centerId: string, permiss
   const createAbsenceMut = useCreateEducationEducatorAbsence();
   const previewAbsenceMut = usePreviewEducationEducatorAbsence();
   const deleteAbsenceMut = useDeleteEducationEducatorAbsence();
+  const substituteEducatorMut = useSubstituteEducationSessionEducator();
+  const cancelSessionMut = useCancelEducationOperationalSession();
   const [absenceDialogOpen, setAbsenceDialogOpen] = useState(false);
   const [absenceDraft, setAbsenceDraft] = useState({ startDate: "", endDate: "", reason: "" });
+  const [replacementBySession, setReplacementBySession] = useState<Record<string, string>>({});
 
-  const handlePreviewAbsence = () => {
-    if (!activeStaffId) return;
+  const previewAbsence = (staffId = activeStaffId) => {
+    if (!staffId) return;
     if (!absenceDraft.startDate || !absenceDraft.endDate) {
       toast.error("Unesite početak i kraj odsustva.");
       return;
     }
     previewAbsenceMut.mutate({
       centerId,
-      staffId: activeStaffId,
+      staffId,
       data: {
         startDate: absenceDraft.startDate,
         endDate: absenceDraft.endDate,
         reason: absenceDraft.reason || null,
       },
+    });
+  };
+
+  const handleResolveBySubstitution = (sessionId: string) => {
+    const educatorStaffId = replacementBySession[sessionId];
+    if (!educatorStaffId) {
+      toast.error("Izaberite zamenskog edukatora.");
+      return;
+    }
+    substituteEducatorMut.mutate({ centerId, sessionId, data: { educatorStaffId } }, {
+      onSuccess: () => {
+        toast.success("Zamenski edukator je dodeljen.");
+        setReplacementBySession((current) => {
+          const next = { ...current };
+          delete next[sessionId];
+          return next;
+        });
+        previewAbsence();
+      },
+      onError: (e: any) => toast.error("Zamena nije uspela", { description: e.message }),
+    });
+  };
+
+  const handleResolveByCancellation = (sessionId: string) => {
+    if (!window.confirm("Da li ste sigurni da želite da otkažete termin? Svi prijavljeni će biti obavešteni.")) return;
+    const reason = window.prompt("Razlog otkazivanja (opciono):");
+    cancelSessionMut.mutate({ centerId, sessionId, data: { reason: reason || undefined } }, {
+      onSuccess: () => {
+        toast.success("Termin je otkazan.");
+        previewAbsence();
+      },
+      onError: (e: any) => toast.error("Otkazivanje nije uspelo", { description: e.message }),
     });
   };
 
@@ -693,6 +728,7 @@ function EducatorSchedule({ centerId, permissions }: { centerId: string, permiss
               </div>
               <Button size="sm" onClick={() => {
                 previewAbsenceMut.reset();
+                setReplacementBySession({});
                 setAbsenceDialogOpen(true);
               }}>Dodaj</Button>
             </CardHeader>
@@ -719,7 +755,7 @@ function EducatorSchedule({ centerId, permissions }: { centerId: string, permiss
         setAbsenceDialogOpen(open);
         if (!open) previewAbsenceMut.reset();
       }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto" data-testid="absence-dialog">
           <DialogHeader>
             <DialogTitle>Dodaj odsustvo</DialogTitle>
             <DialogDescription>
@@ -772,17 +808,51 @@ function EducatorSchedule({ centerId, permissions }: { centerId: string, permiss
                   Pronađeno konflikata: {previewAbsenceMut.data.conflicts.length}
                 </p>
                 <p className="text-xs text-amber-800">
-                  Otvorite ove termine u kalendaru i zamenite edukatora ili otkažite termin, pa ponovite pregled.
+                  Razrešite svaki termin ovde. Pregled će se automatski osvežiti posle uspešne akcije.
                 </p>
-                <div className="max-h-52 space-y-2 overflow-y-auto">
+                <div className="max-h-[45vh] space-y-2 overflow-y-auto">
                   {previewAbsenceMut.data.conflicts.map((conflict) => (
-                    <div key={conflict.sessionId} className="rounded-md border border-amber-200 bg-background p-2 text-sm">
+                    <div key={conflict.sessionId} className="space-y-3 rounded-md border border-amber-200 bg-background p-3 text-sm" data-testid={`absence-conflict-${conflict.sessionId}`}>
                       <p className="font-medium">{conflict.courseTitle}</p>
                       <p className="text-muted-foreground">
                         {educationBelgradeDateLabel(new Date(conflict.startsAt), { day: "2-digit", month: "2-digit", year: "numeric" })},{" "}
                         {educationBelgradeTime(new Date(conflict.startsAt))}–{educationBelgradeTime(new Date(conflict.endsAt))}
                         {" · "}{conflict.reservedSeats} rezervisanih mesta
                       </p>
+                      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                        <Select
+                          value={replacementBySession[conflict.sessionId] ?? ""}
+                          onValueChange={(staffId) => setReplacementBySession((current) => ({ ...current, [conflict.sessionId]: staffId }))}
+                        >
+                          <SelectTrigger aria-label={`Zamenski edukator za ${conflict.courseTitle}`}>
+                            <SelectValue placeholder="Izaberite zamenskog edukatora" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {staff?.filter((member) => member.role === "educator" && member.active && member.id !== activeStaffId).map((member) => (
+                              <SelectItem key={member.id} value={member.id}>{member.userId}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => handleResolveBySubstitution(conflict.sessionId)}
+                          disabled={!replacementBySession[conflict.sessionId] || substituteEducatorMut.isPending || cancelSessionMut.isPending}
+                        >
+                          {substituteEducatorMut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          Dodeli zamenu
+                        </Button>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        className="w-full sm:w-auto"
+                        onClick={() => handleResolveByCancellation(conflict.sessionId)}
+                        disabled={substituteEducatorMut.isPending || cancelSessionMut.isPending}
+                      >
+                        {cancelSessionMut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Otkaži termin
+                      </Button>
                     </div>
                   ))}
                 </div>
@@ -790,7 +860,7 @@ function EducatorSchedule({ centerId, permissions }: { centerId: string, permiss
             )
           )}
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={handlePreviewAbsence} disabled={previewAbsenceMut.isPending}>
+            <Button variant="outline" onClick={() => previewAbsence()} disabled={previewAbsenceMut.isPending}>
               {previewAbsenceMut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Proveri konflikte
             </Button>
