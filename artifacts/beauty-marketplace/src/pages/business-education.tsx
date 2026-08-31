@@ -23,6 +23,7 @@ import {
   useReorderEducationCourseGallery, useDeleteEducationCourseGalleryMedia,
   useGetPublicInstructorProfile,
   useListEducationNotifications, useAcceptEducationWaitlistOffer, useMarkEducationNotificationRead,
+  useGetEducationCenterStatus,
   getListCoursesQueryKey, getGetEducationCourseQueryKey,
   getListEnrollmentsQueryKey, getGetEducationLmsQueryKey, getListSalonEmployeesQueryKey,
   getListEducationInstructorsQueryKey, getGetEducationCourseFeaturedStatusQueryKey,
@@ -38,7 +39,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -101,12 +102,17 @@ const courseSchema = z.object({
 
   groupDiscountMinimum: z.coerce.number().int().min(2).max(999).optional().nullable(),
   groupDiscountPercent: z.coerce.number().int().min(0).max(100).optional().nullable(),
+  durationMinutes: z.coerce.number().int().min(1).max(5256000).optional().nullable(),
+  giftVoucherEligible: z.boolean().optional(),
 }).refine(
   (data) => (data.groupDiscountMinimum == null) === (data.groupDiscountPercent == null),
   { message: "Unesite i minimalan broj polaznika i procenat popusta za grupni popust.", path: ["groupDiscountPercent"] }
 ).refine(
   (data) => data.paymentMode !== "live_deposit" || (data.depositAmount && data.depositAmount > 0 && data.depositAmount <= data.price),
   { message: "Depozit mora biti veći od nule i manji od ukupne cene.", path: ["depositAmount"] }
+).refine(
+  (data) => data.paymentMode !== "live_deposit" || (!!data.refundPolicy && data.refundPolicy.trim().length > 0),
+  { message: "Politika povraćaja je obavezna za opciju 'Uživo (Depozit)'.", path: ["refundPolicy"] }
 ).refine(
   (data) => data.paymentMode !== "live_off_platform" || data.format !== "online",
   { message: "Plaćanje uživo je dozvoljeno samo za kurseve koji se održavaju uživo ili hibridno.", path: ["paymentMode"] }
@@ -176,6 +182,7 @@ export default function BusinessEducation({ hideLayout = false }: { hideLayout?:
           <TabsList>
             <TabsTrigger value="catalog">Katalog i edukacije</TabsTrigger>
             <TabsTrigger value="placements">Sponzorisane pozicije</TabsTrigger>
+            <TabsTrigger value="profile">Profil i status centra</TabsTrigger>
           </TabsList>
           <TabsContent value="catalog" className="m-0">
             <CatalogView />
@@ -183,9 +190,120 @@ export default function BusinessEducation({ hideLayout = false }: { hideLayout?:
           <TabsContent value="placements" className="m-0">
             <MyPlacementsView />
           </TabsContent>
+          <TabsContent value="profile" className="m-0">
+            <CenterProfileView />
+          </TabsContent>
         </Tabs>
       </div>
     </BusinessLayout>
+  );
+}
+
+function CenterProfileView() {
+  const { data: statusList, isLoading } = useGetEducationCenterStatus();
+
+  if (isLoading) return <div className="py-12 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary/50" /></div>;
+  if (!statusList || statusList.length === 0) return <div className="py-12 text-center text-muted-foreground">Nemate profil edukativnog centra.</div>;
+
+  return (
+    <div className="space-y-12 max-w-4xl">
+      <div>
+        <h2 className="text-2xl font-serif font-bold">Profil i status centra</h2>
+        <p className="text-muted-foreground">Vaša analitika, rangiranje i metrike bez uticaja sponzorisanih pozicija.</p>
+      </div>
+
+      {statusList.map((center) => (
+        <div key={center.id} className="space-y-6 pb-6 border-b last:border-0">
+          <h3 className="text-xl font-bold">{center.name}</h3>
+
+          <div className="grid gap-6 md:grid-cols-2">
+            <Card className={center.verificationStatus === "verified" ? "border-emerald-500/30 bg-emerald-50/10" : ""}>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  Status verifikacije
+                  <Badge variant={center.verificationStatus === "verified" ? "default" : center.verificationStatus === "pending" ? "secondary" : "destructive"}>
+                    {center.verificationStatus === "verified" ? "Verifikovan" : center.verificationStatus === "pending" ? "Na čekanju" : "Obustavljen"}
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {center.verificationNote && (
+                  <Alert variant={center.verificationStatus === "verified" ? "default" : "destructive"}>
+                    <Info className="h-4 w-4" />
+                    <AlertDescription>{center.verificationNote}</AlertDescription>
+                  </Alert>
+                )}
+                <p className="text-sm text-muted-foreground">
+                  Da bi se vaši kursevi prikazivali u katalogu, centar mora biti verifikovan. Uslovi za održavanje verifikacije uključuju visoku prosečnu ocenu i nizak procenat sporova.
+                </p>
+                <div className="pt-2">
+                  <div className="flex justify-between items-center pb-2 border-b">
+                    <span className="text-sm font-medium text-muted-foreground">Status pretplate</span>
+                    <span className="font-semibold">{center.subscriptionStatus === "active" ? "Aktivan" : (center.subscriptionStatus || "Nema")}</span>
+                  </div>
+                  {center.currentPeriodEnd && (
+                     <div className="flex justify-between items-center pt-2">
+                       <span className="text-sm font-medium text-muted-foreground">Pretplata ističe</span>
+                       <span className="font-semibold">{new Date(center.currentPeriodEnd).toLocaleDateString("sr-RS")}</span>
+                     </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Organske metrike</CardTitle>
+                <CardDescription>Metrike bez uticaja plaćenih pozicija.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="flex justify-between items-center pb-2 border-b">
+                  <span className="text-sm font-medium text-muted-foreground">Organski pregledi (90d)</span>
+                  <span className="font-semibold">{center.organicInquiriesAndCompletedEnrollments90d}</span>
+                </div>
+                <div className="flex justify-between items-center pb-2 border-b">
+                  <span className="text-sm font-medium text-muted-foreground">Završilo polaznika</span>
+                  <span className="font-semibold">{center.completedLearnerCount}</span>
+                </div>
+                <div className="flex justify-between items-center pb-2 border-b">
+                  <span className="text-sm font-medium text-muted-foreground">Objavljenih recenzija</span>
+                  <span className="font-semibold">{center.publishedReviewCount}</span>
+                </div>
+                <div className="flex justify-between items-center pb-2 border-b">
+                  <span className="text-sm font-medium text-muted-foreground">Prosečna ocena</span>
+                  <span className="font-semibold flex items-center">
+                    <Star className={`w-4 h-4 mr-1 ${center.publishedRating > 0 ? "text-amber-500 fill-amber-500" : "text-muted-foreground"}`} />
+                    {center.publishedRating > 0 ? center.publishedRating.toFixed(1) : "—"}
+                  </span>
+                </div>
+
+                <div className="pt-2">
+                  <p className="text-xs text-muted-foreground mb-3">{center.metricsExplanation}</p>
+
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span className="flex items-center gap-1"><Award className={`w-3 h-3 ${center.qualifiesMostRequested ? "text-primary" : "text-muted-foreground"}`}/> Najtraženije</span>
+                        <span>{Math.min(center.organicInquiriesAndCompletedEnrollments90d, 10)}/10</span>
+                      </div>
+                      <Progress value={Math.min(100, (center.organicInquiriesAndCompletedEnrollments90d / 10) * 100)} className="h-1.5" />
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span className="flex items-center gap-1"><Star className={`w-3 h-3 ${center.qualifiesTopRated ? "text-amber-500" : "text-muted-foreground"}`}/> Najbolje ocenjeno</span>
+                        <span>{Math.min(center.publishedReviewCount, 5)}/5 recenzija</span>
+                      </div>
+                      <Progress value={Math.min(100, (center.publishedReviewCount / 5) * 100)} className="h-1.5" />
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -1812,7 +1930,7 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
   const DEFAULT_REFUND_POLICY = "Povraćaj je moguć do isteka roka zaštite kupovine. Ako centar otkaže termin, kupovina se refundira u celosti.";
   const { register, handleSubmit, control, formState: { errors }, reset, setValue, watch } = useForm<any>({
     resolver: zodResolver(courseSchema) as any,
-    defaultValues: { format: 'online', level: 'all-levels', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE, refundPolicy: DEFAULT_REFUND_POLICY, paymentMode: 'online_full', subcategoryId: '', courseTypeId: '', groupDiscountMinimum: "", groupDiscountPercent: "", learningOutcomesText: "", includedItemsText: "", requirements: "" }
+    defaultValues: { format: 'online', level: 'all-levels', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE, refundPolicy: DEFAULT_REFUND_POLICY, paymentMode: 'online_full', subcategoryId: '', courseTypeId: '', groupDiscountMinimum: "", groupDiscountPercent: "", learningOutcomesText: "", includedItemsText: "", requirements: "", durationMinutes: "", giftVoucherEligible: false }
   });
   const coverImageUrl = watch("imageUrl");
   const watchFormat = watch("format");
@@ -1896,9 +2014,11 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
           depositAmount: course.depositAmount || "",
           groupDiscountMinimum: course.groupDiscountMinimum || "",
           groupDiscountPercent: course.groupDiscountPercent || "",
+          durationMinutes: course.durationMinutes || "",
+          giftVoucherEligible: course.giftVoucherEligible || false,
         });
       } else {
-        reset({ category: '', faqText: '', format: 'online', level: 'all-levels', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE, refundPolicy: DEFAULT_REFUND_POLICY, paymentMode: 'online_full', subcategoryId: '', courseTypeId: '', groupDiscountMinimum: "", groupDiscountPercent: "", learningOutcomesText: "", includedItemsText: "", requirements: "" });
+        reset({ category: '', faqText: '', format: 'online', level: 'all-levels', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE, refundPolicy: DEFAULT_REFUND_POLICY, paymentMode: 'online_full', subcategoryId: '', courseTypeId: '', groupDiscountMinimum: "", groupDiscountPercent: "", learningOutcomesText: "", includedItemsText: "", requirements: "", durationMinutes: "", giftVoucherEligible: false });
       }
     }
   }, [open, course, reset, taxonomy]);
@@ -1939,6 +2059,8 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
       depositAmount: values.paymentMode === "live_deposit" && values.depositAmount ? Number(values.depositAmount) : null,
       groupDiscountMinimum: values.groupDiscountMinimum ? Number(values.groupDiscountMinimum) : null,
       groupDiscountPercent: values.groupDiscountPercent ? Number(values.groupDiscountPercent) : null,
+      durationMinutes: values.durationMinutes ? Number(values.durationMinutes) : null,
+      giftVoucherEligible: !!values.giftVoucherEligible,
     };
 
     if (course) {
@@ -2066,6 +2188,19 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
                   {errors.depositAmount && <p className="text-xs text-destructive">{errors.depositAmount.message as string}</p>}
                 </div>
               )}
+
+              <div className="space-y-2 pt-2">
+                <Label>Politika povraćaja</Label>
+                <Textarea {...register("refundPolicy")} placeholder="Opišite uslove povraćaja novca..." />
+                {errors.refundPolicy && <p className="text-xs text-destructive">{errors.refundPolicy.message as string}</p>}
+              </div>
+
+              <div className="flex items-center space-x-2 pt-2">
+                <Controller control={control} name="giftVoucherEligible" render={({ field: { value, onChange } }) => (
+                  <Checkbox id="gift-voucher-check" checked={value} onCheckedChange={onChange} />
+                )} />
+                <Label htmlFor="gift-voucher-check">Moguća kupovina na poklon</Label>
+              </div>
             </div>
 
             <div className="space-y-4">
@@ -2113,6 +2248,12 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
                   <Label>Trajanje</Label>
                   <Input {...register("duration")} placeholder="Npr. 2 dana, 6 modula" />
                 </div>
+                <div className="space-y-2">
+                  <Label>Trajanje (minuti, opciono)</Label>
+                  <Input type="number" {...register("durationMinutes")} placeholder="Npr. 120" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4 mt-4">
                 <div className="space-y-2">
                   <Label>Nivo</Label>
                   <Controller control={control} name="level" render={({ field }) => (
@@ -2366,6 +2507,7 @@ const instructorSchema = z.object({
   experienceYears: z.coerce.number().int().min(0).optional(),
   specializations: z.string().optional(),
   qualifications: z.string().optional(),
+  portfolioMediaText: z.string().optional(),
 });
 type InstructorForm = z.infer<typeof instructorSchema>;
 
@@ -2390,12 +2532,25 @@ function InstructorsDialog({ open, onOpenChange }: { open: boolean; onOpenChange
       experienceYears: inst.experienceYears,
       specializations: (inst.specializations ?? []).join(", "),
       qualifications: (inst.qualifications ?? []).join(", "),
+      portfolioMediaText: (inst.portfolioMedia ?? []).join("\n"),
     });
   };
 
   const parseList = (val?: string) => (val ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const parseUrlList = (val?: string) => (val ?? "").split("\n").map((s) => s.trim()).filter(Boolean);
 
   const onSubmit = (data: InstructorForm) => {
+    const portfolioUrls = parseUrlList(data.portfolioMediaText);
+    const invalidUrl = portfolioUrls.find(u => !u.startsWith("https://"));
+    if (invalidUrl) {
+      toast.error("Nevažeći URL u portfoliju", { description: "Svi linkovi moraju početi sa https://" });
+      return;
+    }
+    if (portfolioUrls.length > 12) {
+      toast.error("Previše linkova", { description: "Maksimalno je dozvoljeno 12 portfolijo linkova." });
+      return;
+    }
+
     const payload = {
       fullName: data.fullName,
       photoUrl: data.photoUrl || undefined,
@@ -2404,6 +2559,7 @@ function InstructorsDialog({ open, onOpenChange }: { open: boolean; onOpenChange
       experienceYears: data.experienceYears ?? 0,
       specializations: parseList(data.specializations),
       qualifications: parseList(data.qualifications),
+      portfolioMedia: portfolioUrls,
     };
     if (editingId) {
       updateMut.mutate({ instructorId: editingId, data: payload }, {
@@ -2483,6 +2639,10 @@ function InstructorsDialog({ open, onOpenChange }: { open: boolean; onOpenChange
               <div className="space-y-1.5">
                 <Label className="text-xs">Kvalifikacije i sertifikati (zarezom odvojeno)</Label>
                 <Input placeholder="Npr. OPI sertifikat, Ombre majstor" {...register("qualifications")} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Portfolio linkovi (HTTPS, 1 po redu, maks 12)</Label>
+                <Textarea placeholder="https://instagram.com/..." rows={3} {...register("portfolioMediaText")} />
               </div>
               <div className="flex gap-2 pt-1">
                 {editingId && <Button type="button" variant="ghost" size="sm" onClick={() => { setEditingId(null); reset({}); }}>Odustani</Button>}

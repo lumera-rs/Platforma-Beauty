@@ -38,6 +38,9 @@ const InstructorPublicProfilePage = lazy(() => import('./pages/business-educatio
 const EducationMarketplace = lazy(() => import('./pages/education-marketplace'));
 const EducationPublicCenterPage = lazy(() => import('./pages/education-marketplace').then((module) => ({ default: module.EducationPublicCenterPage })));
 const EducationPublicCourseDetail = lazy(() => import('./pages/education-marketplace').then((module) => ({ default: module.EducationPublicCourseDetail })));
+const EducationTaxonomyPage = lazy(() => import('./pages/education-marketplace').then((module) => ({ default: module.EducationTaxonomyPage })));
+const EducationWishlistPage = lazy(() => import('./pages/education-marketplace').then((module) => ({ default: module.EducationWishlistPage })));
+const EducationVouchersPage = lazy(() => import('./pages/education-marketplace').then((module) => ({ default: module.EducationVouchersPage })));
 const MarketplaceGuides = lazy(() => import('./pages/marketplace-guides'));
 const LegalPage = lazy(() => import('./pages/legal'));
 const ReferralsPage = lazy(() => import('./pages/referrals'));
@@ -401,7 +404,12 @@ function Router() {
         <Route path="/vlasnik/obavestenja"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerNotifications /></RoleGuard></Route>
         <Route path="/vlasnik/loyalty"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerLoyalty /></RoleGuard></Route>
 
+        <Route path="/edukacije/lista-zelja"><RoleGuard allowedRoles={['CUSTOMER', 'SALON_OWNER', 'EDUKATIVNI_CENTAR', 'JOBSEEKER', 'STUDENT', 'SALON_EMPLOYEE', 'ADMIN', 'SUPER_ADMIN', 'INSTRUCTOR']} loginPath="/prijava"><EducationWishlistPage /></RoleGuard></Route>
+        <Route path="/edukacije/vauceri"><RoleGuard allowedRoles={['CUSTOMER', 'SALON_OWNER', 'EDUKATIVNI_CENTAR', 'JOBSEEKER', 'STUDENT', 'SALON_EMPLOYEE', 'ADMIN', 'SUPER_ADMIN', 'INSTRUCTOR']} loginPath="/prijava"><EducationVouchersPage /></RoleGuard></Route>
         <Route path="/edukacije/instruktori/:instructorId" component={InstructorPublicPage} />
+        <Route path="/edukacije/sekcije/:sectionSlug/:categorySlug/:subcategorySlug" component={EducationTaxonomyPage} />
+        <Route path="/edukacije/sekcije/:sectionSlug/:categorySlug" component={EducationTaxonomyPage} />
+        <Route path="/edukacije/sekcije/:sectionSlug" component={EducationTaxonomyPage} />
         <Route path="/edukacije/centri/:centerId" component={EducationPublicCenterPage} />
         <Route path="/edukacije/:courseId" component={EducationPublicCourseDetail} />
         <Route path="/edukacije"><EducationMarketplace /></Route>

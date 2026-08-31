@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, ReactNode } from "react";
 import { Link, useLocation, useRoute, useSearch } from "wouter";
 import {
   Award, BadgeCheck, BookOpen, Building2, CalendarDays, ChevronLeft, ChevronRight,
+  Gift, Heart, Briefcase,
   Clock3, Filter, Loader2, MapPin, ShieldCheck, Sparkles, Star, Users, Zap, Search, MessageCircle,
   LayoutGrid, TrendingUp, ChevronDown, CheckCircle2, Navigation, ArrowLeft, ArrowRight
 } from "lucide-react";
@@ -9,17 +10,34 @@ import {
   useGetCurrentUser,
   useGetPublicEducationCenter,
   useGetPublicEducationCourse,
-  useListPublicEducationCourses,
+  useListPublicEducationCourses, ListPublicEducationCoursesParams, ListPublicEducationPlacementsParams,
+
+  useListRelatedEducationCourses,
+  getListRelatedEducationCoursesQueryKey,
+  useListEducationWishlist,
+  useAddEducationWishlistItem,
+  useRemoveEducationWishlistItem,
+  getListEducationWishlistQueryKey,
+  usePurchaseEducationGiftVoucher,
+  useListEducationGiftVouchers,
+  getListEducationGiftVouchersQueryKey,
+  useRedeemEducationGiftVoucher,
+
   useGetPublicEducationTaxonomy,
   useGetPublicEducationRankings,
   useListPublicEducationPlacements,
   useListPublicEducationSearchSuggestions, getListPublicEducationSearchSuggestionsQueryKey,
   useCreatePublicEducationCourseInquiry,
+  useListPublicEducationCenterReviews,
+  getListPublicEducationCenterReviewsQueryKey,
+  useCreateEducationCenterReview,
+  getGetPublicEducationCenterQueryKey,
   getGetPublicEducationTaxonomyQueryKey,
   getGetPublicEducationRankingsQueryKey,
   getListPublicEducationPlacementsQueryKey,
   getListPublicEducationCoursesQueryKey,
 } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -34,7 +52,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { useDebouncedSearch } from "@/hooks/use-debounce";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 
 const money = (value: number) => new Intl.NumberFormat("sr-RS", {
@@ -58,6 +76,58 @@ function courseSession(course: any) {
   return course.sessions?.find((item: any) => !item.cancelledAt) ?? course.sessions?.[0] ?? null;
 }
 
+
+export function CourseWishlistButton({ course }: { course: any }) {
+  const { data: user } = useGetCurrentUser();
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: wishlistData } = useListEducationWishlist({ page: 1, pageSize: 1000 }, {
+    query: {
+      enabled: !!user?.user,
+      queryKey: getListEducationWishlistQueryKey({ page: 1, pageSize: 1000 })
+    }
+  });
+
+  const isSaved = wishlistData?.items?.some((i: any) => i.course?.id === course.id);
+
+  const addMut = useAddEducationWishlistItem({
+    mutation: {
+      onSuccess: () => {
+        toast.success("Sačuvano", { description: "Edukacija je dodata u vašu listu želja." });
+        queryClient.invalidateQueries({ queryKey: getListEducationWishlistQueryKey({ page: 1, pageSize: 1000 }) });
+      }
+    }
+  });
+
+  const removeMut = useRemoveEducationWishlistItem({
+    mutation: {
+      onSuccess: () => {
+        toast.success("Uklonjeno", { description: "Edukacija je uklonjena iz vaše liste želja." });
+        queryClient.invalidateQueries({ queryKey: getListEducationWishlistQueryKey({ page: 1, pageSize: 1000 }) });
+      }
+    }
+  });
+
+  const toggle = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!user?.user) {
+      setLocation("/prijava?returnTo=" + encodeURIComponent(window.location.pathname + window.location.search));
+      return;
+    }
+    if (isSaved) removeMut.mutate({ courseId: course.id });
+    else addMut.mutate({ data: { courseId: course.id } });
+  };
+
+  return (
+    <Button variant="ghost" size="icon" className="absolute top-3 right-3 z-10 bg-background/50 backdrop-blur hover:bg-background/80" onClick={toggle} disabled={addMut.isPending || removeMut.isPending}>
+      <Heart className={`h-5 w-5 ${isSaved ? "fill-primary text-primary" : "text-foreground"}`} />
+    </Button>
+  );
+}
+
 export function EducationCourseCard({ course, compact = false, placementLabel, onBuy, buying }: {
   course: any;
   compact?: boolean;
@@ -70,6 +140,7 @@ export function EducationCourseCard({ course, compact = false, placementLabel, o
     <Card className="group flex h-full flex-col overflow-hidden border-border/60 transition-all hover:border-primary/30 hover:shadow-xl hover:-translate-y-1">
       <Link href={`/edukacije/${course.id}`} className="block aspect-[16/9] overflow-hidden bg-muted relative">
         <OptimizedImage src={course.imageUrl} alt={course.title} width={800} height={450} responsiveSizes="(max-width: 640px) 100vw, 400px" className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" />
+        <CourseWishlistButton course={course} />
         {placementLabel && (
           <div className="absolute top-3 right-3">
             <Badge variant="default" className="bg-background/95 backdrop-blur text-foreground border border-border shadow-sm">{placementLabel}</Badge>
@@ -80,6 +151,7 @@ export function EducationCourseCard({ course, compact = false, placementLabel, o
         <div className="mb-2 flex flex-wrap gap-2">
           <Badge variant="secondary" className="bg-primary/5 text-primary hover:bg-primary/10">{formatLabel[course.format] ?? course.format}</Badge>
           {course.certification && <Badge variant="outline" className="border-primary/20 text-primary/80">Sertifikat</Badge>}
+          {course.accredited && <Badge variant="outline" className="border-emerald-500/30 text-emerald-600">Akreditovano</Badge>}
           {course.level && <Badge variant="outline" className="text-muted-foreground">{levelLabel[course.level] ?? course.level}</Badge>}
         </div>
         <Link href={`/edukacije/${course.id}`} className="font-serif text-xl font-bold leading-tight hover:text-primary mt-1 line-clamp-2">
@@ -92,10 +164,16 @@ export function EducationCourseCard({ course, compact = false, placementLabel, o
             <span className="truncate">{course.publisher ?? course.centerName}</span>
             {course.publisherVerified && <BadgeCheck className="h-4 w-4 shrink-0 text-emerald-600" aria-label="Verifikovan centar" />}
           </div>
+          {(course.instructorProfile || course.instructor) && (
+            <div className="flex items-center gap-2">
+              <span className="h-4 w-4 flex items-center justify-center shrink-0 text-primary/60">🗣️</span>
+              <span className="truncate">{course.instructorProfile?.fullName || course.instructor}</span>
+            </div>
+          )}
           {course.city && <p className="flex items-center gap-2"><MapPin className="h-4 w-4 shrink-0 text-primary/60" />{course.city}</p>}
-          <p className="flex items-center gap-2">
-            <Clock3 className="h-4 w-4 shrink-0 text-primary/60" />{course.duration}
-            {course.rating > 0 && <><span className="text-border mx-1">·</span><Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />{course.rating.toFixed(1)}</>}
+          <p className="flex flex-wrap items-center gap-2">
+            <span className="flex items-center gap-1"><Clock3 className="h-4 w-4 shrink-0 text-primary/60" />{course.duration}</span>
+            {course.rating > 0 && <span className="flex items-center gap-1 text-amber-600"><span className="text-border mx-1">·</span><Star className="h-3.5 w-3.5 fill-amber-500" />{course.rating.toFixed(1)} {course.reviewCount !== undefined ? `(${course.reviewCount})` : ""}</span>}
           </p>
           {session && <p className="flex items-center gap-2"><Users className="h-4 w-4 shrink-0 text-primary/60" />{session.availableSeats > 0 ? <span className="text-emerald-600">{session.availableSeats} slobodnih mesta</span> : "Lista čekanja"}</p>}
         </div>
@@ -112,6 +190,127 @@ export function EducationCourseCard({ course, compact = false, placementLabel, o
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function CourseFilters({
+  q, formatFilter, levelFilter, cityFilter, minPrice, maxPrice, accreditedFilter, certificationFilter, minRating,
+  minDurationMinutes, maxDurationMinutes, courseTypeId, languageFilter, setFilter, onClear, taxonomy, taxonomyScope
+}: any) {
+  const courseTypes = useMemo(() => {
+    if (!taxonomy) return [];
+    let types: any[] = [];
+    taxonomy.forEach((section: any) => {
+      if (taxonomyScope?.section && section.id !== taxonomyScope.section.id) return;
+      section.categories?.forEach((cat: any) => {
+        if (taxonomyScope?.category && cat.id !== taxonomyScope.category.id) return;
+        cat.subcategories?.forEach((sub: any) => {
+          if (taxonomyScope?.subcategory && sub.id !== taxonomyScope.subcategory.id) return;
+          sub.courseTypes?.forEach((ct: any) => types.push(ct));
+        });
+      });
+    });
+    const unique = types.filter((value, index, self) => index === self.findIndex((t) => t.id === value.id));
+    return unique.sort((a, b) => a.name.localeCompare(b.name));
+  }, [taxonomy, taxonomyScope]);
+
+  return (
+    <div className="space-y-5 filter-component">
+      <div className="space-y-2">
+        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Pretraga</Label>
+        <Input placeholder="Pretraži..." value={q || ""} onChange={e => setFilter('q', e.target.value)} className="bg-background border-border/50" />
+      </div>
+      <div className="space-y-2">
+        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Tip obuke</Label>
+        <Select value={courseTypeId || ""} onValueChange={v => setFilter("courseTypeId", v === "all" ? undefined : v)}>
+          <SelectTrigger className="bg-background border-border/50"><SelectValue placeholder="Svi tipovi" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Svi tipovi</SelectItem>
+            {courseTypes.map(ct => <SelectItem key={ct.id} value={ct.id}>{ct.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Format</Label>
+        <Select value={formatFilter || ""} onValueChange={v => setFilter("format", v === "all" ? undefined : v)}>
+          <SelectTrigger className="bg-background border-border/50"><SelectValue placeholder="Svi formati" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Svi formati</SelectItem>
+            <SelectItem value="online">Online</SelectItem>
+            <SelectItem value="in-person">Uživo</SelectItem>
+            <SelectItem value="hybrid">Hibridno</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Nivo</Label>
+        <Select value={levelFilter || ""} onValueChange={v => setFilter("level", v === "all" ? undefined : v)}>
+          <SelectTrigger className="bg-background border-border/50"><SelectValue placeholder="Svi nivoi" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Svi nivoi</SelectItem>
+            <SelectItem value="beginner">Početni</SelectItem>
+            <SelectItem value="intermediate">Srednji</SelectItem>
+            <SelectItem value="advanced">Napredni</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Jezik</Label>
+        <Select value={languageFilter || ""} onValueChange={v => setFilter("language", v === "all" ? undefined : v)}>
+          <SelectTrigger className="bg-background border-border/50"><SelectValue placeholder="Svi jezici" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Svi jezici</SelectItem>
+            <SelectItem value="sr">Srpski</SelectItem>
+            <SelectItem value="en">Engleski</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Grad</Label>
+        <Input placeholder="Npr. Beograd" value={cityFilter || ""} onChange={e => setFilter("city", e.target.value)} className="bg-background border-border/50" />
+      </div>
+      <div className="space-y-2">
+        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Cena (RSD)</Label>
+        <div className="flex gap-2">
+          <Input placeholder="Od" type="number" value={minPrice || ""} onChange={e => setFilter('minPrice', e.target.value)} />
+          <Input placeholder="Do" type="number" value={maxPrice || ""} onChange={e => setFilter('maxPrice', e.target.value)} />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Trajanje (minuti)</Label>
+        <div className="flex gap-2">
+          <Input placeholder="Od" type="number" value={minDurationMinutes || ""} onChange={e => setFilter('minDurationMinutes', e.target.value)} />
+          <Input placeholder="Do" type="number" value={maxDurationMinutes || ""} onChange={e => setFilter('maxDurationMinutes', e.target.value)} />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Minimalna ocena</Label>
+        <Select value={minRating ? String(minRating) : ""} onValueChange={v => setFilter("minRating", v === "all" ? undefined : v)}>
+          <SelectTrigger className="bg-background border-border/50"><SelectValue placeholder="Bilo koja ocena" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Bilo koja ocena</SelectItem>
+            <SelectItem value="4.5">Od 4.5</SelectItem>
+            <SelectItem value="4.0">Od 4.0</SelectItem>
+            <SelectItem value="3.0">Od 3.0</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex flex-col gap-2 pt-2">
+        <div className="flex items-center gap-2">
+          <Checkbox id="free-only" checked={maxPrice === 0} onCheckedChange={c => setFilter('maxPrice', c ? '0' : undefined)} />
+          <Label htmlFor="free-only">Samo besplatno</Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <Checkbox id="accr-filter" checked={!!accreditedFilter} onCheckedChange={c => setFilter('accredited', c ? 'true' : undefined)} />
+          <Label htmlFor="accr-filter">Akreditovano</Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <Checkbox id="cert-filter" checked={!!certificationFilter} onCheckedChange={c => setFilter('certification', c ? 'true' : undefined)} />
+          <Label htmlFor="cert-filter">Sertifikat uključen</Label>
+        </div>
+      </div>
+      <Button variant="secondary" className="w-full mt-4" onClick={onClear}>Obriši filtere</Button>
+    </div>
   );
 }
 
@@ -177,7 +376,20 @@ function AutocompleteSearch({ onSelect }: { onSelect: (id: string, type: string)
 
 const EDUCATION_PAGE_SIZE = 24;
 
-export default function EducationMarketplace() {
+export type TaxonomyScope = {
+  section?: { id: string, name: string, slug: string };
+  category?: { id: string, name: string, slug: string };
+  subcategory?: { id: string, name: string, slug: string };
+};
+
+export default function EducationMarketplace({
+  taxonomyScope,
+  basePath = "/edukacije"
+}: {
+  taxonomyScope?: TaxonomyScope;
+  basePath?: string;
+} = {}) {
+
   const searchString = useSearch();
   const [, setLocation] = useLocation();
   const searchParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
@@ -194,38 +406,74 @@ export default function EducationMarketplace() {
   const levelFilter = searchParams.get("level") as any || undefined;
   const languageFilter = searchParams.get("language") || undefined;
   const accreditedFilter = searchParams.get("accredited") === "true" ? true : undefined;
+  const certificationFilter = searchParams.get("certification") === "true" ? true : undefined;
+
   const minPrice = searchParams.get("minPrice") ? Number(searchParams.get("minPrice")) : undefined;
-  const maxPrice = searchParams.get("maxPrice") ? Number(searchParams.get("maxPrice")) : undefined;
+  const maxPrice = searchParams.get("maxPrice") && searchParams.get("maxPrice") !== "" ? Number(searchParams.get("maxPrice")) : undefined;
+  const minDurationMinutes = searchParams.get("minDurationMinutes") ? Number(searchParams.get("minDurationMinutes")) : undefined;
+  const maxDurationMinutes = searchParams.get("maxDurationMinutes") ? Number(searchParams.get("maxDurationMinutes")) : undefined;
+  const minRating = searchParams.get("minRating") ? Number(searchParams.get("minRating")) : undefined;
 
   const setFilter = (key: string, value: string | undefined) => {
     const next = new URLSearchParams(searchString);
     if (value) next.set(key, value);
     else next.delete(key);
     if (key !== 'page') next.set('page', '1'); // setPage(1)
-    setLocation(`?${next.toString()}`);
+    setLocation(`${basePath}?${next.toString()}`);
   };
 
+  const clearFilters = () => setLocation(basePath);
   const { data: taxonomy } = useGetPublicEducationTaxonomy({ query: { queryKey: getGetPublicEducationTaxonomyQueryKey() } });
   const { data: rankings } = useGetPublicEducationRankings({ query: { queryKey: getGetPublicEducationRankingsQueryKey() } });
-  const { data: placements } = useListPublicEducationPlacements({ scope: "home" }, { query: { queryKey: getListPublicEducationPlacementsQueryKey({ scope: "home" }) } });
 
-  const { data: courses, isLoading: loadingCourses } = useListPublicEducationCourses({
+  const placementScopeStr = taxonomyScope?.subcategory ? 'subcategory' : taxonomyScope?.category ? 'category' : taxonomyScope?.section ? null : 'home';
+  const placementScopeId = taxonomyScope?.subcategory?.id || taxonomyScope?.category?.id;
+
+  const placementParams: ListPublicEducationPlacementsParams | null = placementScopeStr ? {
+    scope: placementScopeStr as any,
+    ...(placementScopeId ? { scopeId: placementScopeId } : {})
+  } : null;
+
+  const effectivePlacementParams: ListPublicEducationPlacementsParams = placementParams || { scope: "home" as any };
+  const { data: placements } = useListPublicEducationPlacements(
+    effectivePlacementParams,
+    {
+      query: {
+        enabled: !!placementParams,
+        queryKey: getListPublicEducationPlacementsQueryKey(effectivePlacementParams)
+      }
+    }
+  );
+
+  const activeSectionId = taxonomyScope?.section?.id || sectionId;
+  const activeCategoryId = taxonomyScope?.category?.id || categoryId;
+  const activeSubcategoryId = taxonomyScope?.subcategory?.id || subcategoryId;
+
+  const queryParams: ListPublicEducationCoursesParams & { page: number; pageSize: number } = {
     q,
     category: categoryFilter,
-    sectionId,
-    categoryId,
-    subcategoryId,
+    sectionId: activeSectionId,
+    categoryId: activeCategoryId,
+    subcategoryId: activeSubcategoryId,
     courseTypeId,
-    format: formatFilter,
+    format: formatFilter as any,
     city: cityFilter,
-    level: levelFilter,
+    level: levelFilter as any,
     language: languageFilter,
     accredited: accreditedFilter,
+    certification: certificationFilter,
+    minRating,
     minPrice,
     maxPrice,
+    minDurationMinutes: minDurationMinutes as any,
+    maxDurationMinutes: maxDurationMinutes as any,
     page,
-    pageSize: EDUCATION_PAGE_SIZE
-  } as any, { query: { queryKey: getListPublicEducationCoursesQueryKey({ q, category: categoryFilter, sectionId, categoryId, subcategoryId, courseTypeId, format: formatFilter, city: cityFilter, level: levelFilter, language: languageFilter, accredited: accreditedFilter, minPrice, maxPrice, page, pageSize: EDUCATION_PAGE_SIZE } as any) } });
+    pageSize: EDUCATION_PAGE_SIZE,
+  };
+
+  const { data: courses, isLoading: loadingCourses } = useListPublicEducationCourses(queryParams, {
+    query: { queryKey: getListPublicEducationCoursesQueryKey(queryParams) }
+  });
 
   const hasNextPage = (courses?.length ?? 0) === EDUCATION_PAGE_SIZE;
 
@@ -241,15 +489,49 @@ export default function EducationMarketplace() {
         <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-background/80 to-background" />
 
         <div className="container relative z-10 mx-auto px-4 text-center py-20 lg:py-28">
-          <Badge className="mb-6 h-8 px-4 bg-primary/10 text-primary hover:bg-primary/20 border-primary/20 text-sm font-medium tracking-wide">
-            <Sparkles className="mr-2 h-4 w-4" /> B2B Edukacije
-          </Badge>
-          <h1 className="mx-auto max-w-4xl font-serif text-5xl font-bold tracking-tight text-foreground sm:text-6xl lg:text-7xl leading-[1.1]">
-            Evolucija vašeg <span className="text-primary italic">zanata</span>
-          </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground leading-relaxed">
-            Zvanični registar verifikovanih kurseva, masterclass-ova i sertifikovanih obuka za profesionalce u industriji lepote.
-          </p>
+          {taxonomyScope ? (
+            <>
+              <div className="mb-6 flex items-center justify-center space-x-2 text-sm text-muted-foreground font-medium">
+                <Link href="/edukacije" className="hover:text-primary transition-colors">Edukacije</Link>
+                {taxonomyScope.section && (
+                  <>
+                    <ChevronRight className="h-4 w-4" />
+                    <Link href={`/edukacije/sekcije/${taxonomyScope.section.slug}`} className="hover:text-primary transition-colors">{taxonomyScope.section.name}</Link>
+                  </>
+                )}
+                {taxonomyScope.category && (
+                  <>
+                    <ChevronRight className="h-4 w-4" />
+                    <Link href={`/edukacije/sekcije/${taxonomyScope.section?.slug}/${taxonomyScope.category.slug}`} className="hover:text-primary transition-colors">{taxonomyScope.category.name}</Link>
+                  </>
+                )}
+                {taxonomyScope.subcategory && (
+                  <>
+                    <ChevronRight className="h-4 w-4" />
+                    <span className="text-foreground">{taxonomyScope.subcategory.name}</span>
+                  </>
+                )}
+              </div>
+              <h1 className="mx-auto max-w-4xl font-serif text-5xl font-bold tracking-tight text-foreground sm:text-6xl lg:text-7xl leading-[1.1]">
+                {taxonomyScope.subcategory?.name || taxonomyScope.category?.name || taxonomyScope.section?.name}
+              </h1>
+              <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground leading-relaxed">
+                Pronađite najbolje obuke i kurseve u ovoj oblasti.
+              </p>
+            </>
+          ) : (
+            <>
+              <Badge className="mb-6 h-8 px-4 bg-primary/10 text-primary hover:bg-primary/20 border-primary/20 text-sm font-medium tracking-wide">
+                <Sparkles className="mr-2 h-4 w-4" /> B2B Edukacije
+              </Badge>
+              <h1 className="mx-auto max-w-4xl font-serif text-5xl font-bold tracking-tight text-foreground sm:text-6xl lg:text-7xl leading-[1.1]">
+                Evolucija vašeg <span className="text-primary italic">zanata</span>
+              </h1>
+              <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground leading-relaxed">
+                Zvanični registar verifikovanih kurseva, masterclass-ova i sertifikovanih obuka za profesionalce u industriji lepote.
+              </p>
+            </>
+          )}
 
           <div className="mt-10">
             <AutocompleteSearch onSelect={(id, kind) => {
@@ -259,19 +541,43 @@ export default function EducationMarketplace() {
               else if (kind === 'category') setFilter('categoryId', id);
               else if (kind === 'subcategory') setFilter('subcategoryId', id);
               else if (kind === 'courseType') setFilter('courseTypeId', id);
-              else setFilter('q', id); // fallback to text search
+              else setFilter('q', id);
             }} />
           </div>
 
-          <div className="mt-8 flex flex-wrap justify-center gap-2">
-            {flatCategories.slice(0, 5).map(cat => (
-              <Button key={cat.id} variant="secondary" size="sm" className="rounded-full bg-secondary/50 hover:bg-secondary border border-border/50 text-xs font-medium px-4 h-9" onClick={() => setFilter('categoryId', cat.id)}>
-                {cat.name}
-              </Button>
-            ))}
-          </div>
+          {!taxonomyScope && (
+            <div className="mt-8 flex flex-wrap justify-center gap-2">
+              {flatCategories.slice(0, 5).map(cat => (
+                <Button key={cat.id} variant="secondary" size="sm" className="rounded-full bg-secondary/50 hover:bg-secondary border border-border/50 text-xs font-medium px-4 h-9" onClick={() => setFilter('categoryId', cat.id)}>
+                  {cat.name}
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
+
+      {!taxonomyScope && taxonomy && taxonomy.length > 0 && (
+        <div className="border-b border-border/50 bg-muted/10">
+          <div className="container mx-auto px-4 py-12">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
+              {taxonomy.map((section: any) => (
+                <Link key={section.id} href={`/edukacije/sekcije/${section.slug}`}>
+                  <Card className="h-full border border-border/50 hover:border-primary/40 hover:shadow-md transition-all cursor-pointer bg-background group text-center">
+                    <CardContent className="p-6">
+                      <div className="w-12 h-12 rounded-full bg-primary/5 flex items-center justify-center text-primary mb-4 mx-auto group-hover:scale-110 transition-transform">
+                        <LayoutGrid className="w-6 h-6" />
+                      </div>
+                      <h3 className="font-medium text-sm text-foreground mb-1 leading-tight">{section.name}</h3>
+                      <p className="text-xs text-muted-foreground">{section.courseCount || 0} obuka</p>
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="container mx-auto px-4 py-12">
         <div className="flex flex-col lg:flex-row gap-10">
@@ -286,24 +592,16 @@ export default function EducationMarketplace() {
                 <SheetHeader>
                   <SheetTitle>Filteri</SheetTitle>
                 </SheetHeader>
-                <div className="py-4 space-y-6">
-                  {/* Reuse the desktop filter fields here by moving them to a component or just repeating */}
-                  <div className="space-y-2">
-                    <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Pretraga</Label>
-                    <Input placeholder="Pretraži..." value={q || ""} onChange={e => setFilter('q', e.target.value)} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Cena</Label>
-                    <div className="flex gap-2">
-                      <Input placeholder="Od" type="number" value={minPrice || ""} onChange={e => setFilter('minPrice', e.target.value)} />
-                      <Input placeholder="Do" type="number" value={maxPrice || ""} onChange={e => setFilter('maxPrice', e.target.value)} />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Checkbox id="accr-mob" checked={!!accreditedFilter} onCheckedChange={c => setFilter('accredited', c ? 'true' : undefined)} />
-                    <Label htmlFor="accr-mob">Samo akreditovano</Label>
-                  </div>
-                  <Button variant="secondary" className="w-full" onClick={() => setLocation('?')}>Obriši filtere</Button>
+                <div className="py-4">
+                  <CourseFilters
+                    q={q} formatFilter={formatFilter} levelFilter={levelFilter} cityFilter={cityFilter}
+                    minPrice={minPrice} maxPrice={maxPrice} accreditedFilter={accreditedFilter}
+                    certificationFilter={certificationFilter} minRating={minRating}
+                    minDurationMinutes={minDurationMinutes} maxDurationMinutes={maxDurationMinutes}
+                    courseTypeId={courseTypeId} languageFilter={languageFilter}
+                    setFilter={setFilter} onClear={clearFilters}
+                    taxonomy={taxonomy} taxonomyScope={taxonomyScope}
+                  />
                 </div>
               </SheetContent>
             </Sheet>
@@ -315,57 +613,16 @@ export default function EducationMarketplace() {
                 <h3 className="flex items-center text-sm font-semibold uppercase tracking-wider text-foreground mb-4">
                   <Filter className="w-4 h-4 mr-2 text-primary" /> Filteri pretrage
                 </h3>
-
-                <div className="space-y-5">
-                  <div className="space-y-2">
-                    <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Format</Label>
-                    <Select value={formatFilter || ""} onValueChange={v => setFilter("format", v === "all" ? undefined : v)}>
-                      <SelectTrigger className="bg-background border-border/50"><SelectValue placeholder="Svi formati" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Svi formati</SelectItem>
-                        <SelectItem value="online">Online</SelectItem>
-                        <SelectItem value="in-person">Uživo</SelectItem>
-                        <SelectItem value="hybrid">Hibridno</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Nivo</Label>
-                    <Select value={levelFilter || ""} onValueChange={v => setFilter("level", v === "all" ? undefined : v)}>
-                      <SelectTrigger className="bg-background border-border/50"><SelectValue placeholder="Svi nivoi" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Svi nivoi</SelectItem>
-                        <SelectItem value="beginner">Početni</SelectItem>
-                        <SelectItem value="intermediate">Srednji</SelectItem>
-                        <SelectItem value="advanced">Napredni</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Grad</Label>
-                    <Input placeholder="Npr. Beograd" value={cityFilter || ""} onChange={e => setFilter("city", e.target.value)} className="bg-background border-border/50" />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Cena (RSD)</Label>
-                    <div className="flex gap-2">
-                      <Input placeholder="Od" type="number" value={minPrice || ""} onChange={e => setFilter('minPrice', e.target.value)} />
-                      <Input placeholder="Do" type="number" value={maxPrice || ""} onChange={e => setFilter('maxPrice', e.target.value)} />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-2">
-                    <Checkbox id="accr" checked={!!accreditedFilter} onCheckedChange={c => setFilter('accredited', c ? 'true' : undefined)} />
-                    <Label htmlFor="accr">Samo akreditovane obuke</Label>
-                  </div>
-                </div>
+                <CourseFilters
+                    q={q} formatFilter={formatFilter} levelFilter={levelFilter} cityFilter={cityFilter}
+                    minPrice={minPrice} maxPrice={maxPrice} accreditedFilter={accreditedFilter}
+                    certificationFilter={certificationFilter} minRating={minRating}
+                    minDurationMinutes={minDurationMinutes} maxDurationMinutes={maxDurationMinutes}
+                    courseTypeId={courseTypeId} languageFilter={languageFilter}
+                    setFilter={setFilter} onClear={clearFilters}
+                    taxonomy={taxonomy} taxonomyScope={taxonomyScope}
+                  />
               </div>
-              {(formatFilter || cityFilter || levelFilter || minPrice || maxPrice || accreditedFilter || q || sectionId || categoryId || subcategoryId || courseTypeId) && (
-                <Button variant="ghost" size="sm" className="w-full text-muted-foreground hover:text-foreground" onClick={() => setLocation("?")}>
-                  Obriši sve filtere
-                </Button>
-              )}
             </div>
           </aside>
 
@@ -628,6 +885,43 @@ function useEducationPurchase() {
   return { buy, buying };
 }
 
+function SafeVideoEmbed({ url }: { url: string }) {
+  if (!url) return null;
+  let embedUrl = url;
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname.includes('youtube.com') || parsed.hostname.includes('youtu.be')) {
+      const videoId = parsed.hostname.includes('youtu.be') ? parsed.pathname.slice(1) : parsed.searchParams.get('v');
+      if (videoId) embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}`;
+    } else if (parsed.hostname.includes('vimeo.com')) {
+      const videoId = parsed.pathname.split('/').pop();
+      if (videoId) embedUrl = `https://player.vimeo.com/video/${videoId}?dnt=1`;
+    } else {
+      return (
+        <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-4 bg-muted/30 rounded-xl border border-border/50 hover:bg-muted/50 transition-colors mt-8">
+          <div className="bg-primary/10 p-3 rounded-full"><Sparkles className="w-5 h-5 text-primary" /></div>
+          <div><p className="font-medium text-foreground">Pogledaj video prezentaciju</p><p className="text-sm text-muted-foreground">Otvori spoljni link</p></div>
+        </a>
+      );
+    }
+
+    return (
+      <div className="aspect-video w-full rounded-2xl overflow-hidden border border-border/50 shadow-sm mt-8">
+        <iframe
+          src={embedUrl}
+          className="w-full h-full"
+          title="Video prezentacija"
+          frameBorder="0"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+        />
+      </div>
+    );
+  } catch (e) {
+    return null;
+  }
+}
+
 export function EducationPublicCourseDetail() {
   const [, params] = useRoute("/edukacije/:courseId");
   const courseId = params?.courseId ?? "";
@@ -635,6 +929,10 @@ export function EducationPublicCourseDetail() {
   const { data: currentUser } = useGetCurrentUser();
   const { buy, buying } = useEducationPurchase();
   const session = course ? courseSession(course) : null;
+  const { data: relatedCourses } = useListRelatedEducationCourses(courseId, { limit: 3 }, {
+    query: { enabled: !!courseId, queryKey: getListRelatedEducationCoursesQueryKey(courseId, { limit: 3 }) }
+  });
+
   const [, setLocation] = useLocation();
 
   const [inquiryOpen, setInquiryOpen] = useState(false);
@@ -676,7 +974,10 @@ export function EducationPublicCourseDetail() {
     <div className="mb-6 flex items-center gap-2 text-sm text-muted-foreground"><Link href="/edukacije" className="hover:text-foreground">Edukacije</Link><ChevronRight className="h-4 w-4" /><span>{course.category}</span></div>
     <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_330px]">
       <div className="space-y-8">
+
         <SalonGallery media={gallery} salonName={course.title} />
+        {course.trailerUrl && <SafeVideoEmbed url={course.trailerUrl} />}
+
         <div><div className="mb-3 flex flex-wrap gap-2"><Badge>{formatLabel[course.format]}</Badge><Badge variant="secondary">{levelLabel[course.level]}</Badge>{course.certification && <Badge variant="outline"><Award className="mr-1 h-3.5 w-3.5" /> Sertifikat</Badge>}</div><h1 className="font-serif text-4xl font-bold leading-tight">{course.title}</h1><p className="mt-4 text-lg leading-relaxed text-muted-foreground">{course.description}</p></div>
         <div className="grid gap-4 sm:grid-cols-3"><InfoCard icon={<Clock3 />} label="Trajanje" value={course.duration} /><InfoCard icon={<CalendarDays />} label="Početak" value={course.startDate ? new Date(course.startDate).toLocaleDateString("sr-RS") : "Po dogovoru"} /><InfoCard icon={<Users />} label="Mesta" value={session ? session.availableSeats > 0 ? `${session.availableSeats} slobodno` : "Lista čekanja" : "Bez ograničenja"} /></div>
                 {course.theoryHours || course.practicalHours || course.language ? (
@@ -686,6 +987,48 @@ export function EducationPublicCourseDetail() {
             {course.language ? <InfoCard icon={<Users />} label="Jezik" value={course.language} /> : null}
           </div>
         ) : null}
+
+        {course.instructorProfile && (
+          <div className="mt-12 p-6 border border-border/50 rounded-2xl bg-muted/20">
+            <h2 className="font-serif text-xl font-bold mb-6">Upoznajte instruktora</h2>
+            <div className="flex flex-col sm:flex-row gap-6 items-start">
+              {course.instructorProfile.photoUrl && (
+                <div className="shrink-0">
+                  <OptimizedImage src={course.instructorProfile.photoUrl} alt={course.instructorProfile.fullName} width={120} height={120} className="w-24 h-24 sm:w-32 sm:h-32 object-cover rounded-full border-4 border-background shadow-md" />
+                </div>
+              )}
+              <div className="flex-1 space-y-3">
+                <h3 className="font-serif text-lg font-bold">{course.instructorProfile.fullName}</h3>
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap">{course.instructorProfile.biography}</p>
+
+                <div className="flex flex-wrap gap-4 pt-3 text-sm">
+                  <div className="flex items-center gap-1.5 text-muted-foreground">
+                    <Briefcase className="w-4 h-4 text-primary" />
+                    <span><strong className="text-foreground">{course.instructorProfile.industryYears}</strong> god. u industriji</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-muted-foreground">
+                    <Award className="w-4 h-4 text-primary" />
+                    <span><strong className="text-foreground">{course.instructorProfile.experienceYears}</strong> god. edukatorskog iskustva</span>
+                  </div>
+                </div>
+
+                {course.instructorProfile.specializations && course.instructorProfile.specializations.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {course.instructorProfile.specializations.map((spec: string, i: number) => (
+                      <Badge key={i} variant="secondary" className="bg-primary/5 text-primary text-xs">{spec}</Badge>
+                    ))}
+                  </div>
+                )}
+
+                {course.instructorProfileId && (
+                  <Button variant="outline" size="sm" className="mt-4 w-full sm:w-auto" asChild>
+                    <Link href={`/edukacije/instruktori/${course.instructorProfileId}`}>Prikaži ceo profil</Link>
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {course.faq && course.faq.length > 0 ? (
           <section>
@@ -700,16 +1043,54 @@ export function EducationPublicCourseDetail() {
             </div>
           </section>
         ) : null}
+
+        {course.publicModules && course.publicModules.length > 0 && (
+          <section>
+            <h2 className="mb-4 font-serif text-2xl font-bold">Moduli obuke</h2>
+            <div className="space-y-4">
+              {course.publicModules.map((module: any) => (
+                <Card key={module.id}>
+                  <CardContent className="p-5 flex justify-between items-start">
+                    <div>
+                      <h3 className="font-semibold text-lg">{module.title}</h3>
+                      {module.description && <p className="mt-1 text-sm text-muted-foreground">{module.description}</p>}
+                    </div>
+                    <Badge variant="outline">{module.lessonCount} {module.lessonCount === 1 ? 'lekcija' : 'lekcija'}</Badge>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </section>
+        )}
+
         {course.dayProgram.length ? <section><h2 className="mb-4 font-serif text-2xl font-bold">Dnevni program</h2><div className="space-y-3">{course.dayProgram.map((day) => <Card key={day.id}><CardContent className="flex gap-4 p-4"><Badge className="h-7 shrink-0">Dan {day.dayNumber}</Badge><div><h3 className="font-semibold">{day.title}</h3><p className="mt-1 text-sm text-muted-foreground">{day.description}</p>{day.durationMinutes ? <p className="mt-2 text-xs text-muted-foreground">{day.durationMinutes} min</p> : null}</div></CardContent></Card>)}</div></section> : null}
         {course.learningOutcomes.length ? <section><h2 className="mb-3 font-serif text-2xl font-bold">Šta ćete naučiti</h2><div className="grid gap-2 sm:grid-cols-2">{course.learningOutcomes.map((outcome) => <div key={outcome} className="flex gap-2 rounded-lg bg-muted/50 p-3 text-sm"><BadgeCheck className="h-4 w-4 shrink-0 text-emerald-600" />{outcome}</div>)}</div></section> : null}
         {(course.includedItems.length || course.requirements) ? <section className="grid gap-4 sm:grid-cols-2">{course.includedItems.length ? <Card><CardHeader><CardTitle className="text-lg">Uključeno u cenu</CardTitle></CardHeader><CardContent className="space-y-2">{course.includedItems.map((item) => <p className="flex gap-2 text-sm" key={item}><BadgeCheck className="h-4 w-4 text-primary" />{item}</p>)}</CardContent></Card> : null}{course.requirements ? <Card><CardHeader><CardTitle className="text-lg">Preduslovi</CardTitle></CardHeader><CardContent className="text-sm text-muted-foreground">{course.requirements}</CardContent></Card> : null}</section> : null}
         {course.center ? <Card><CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center"><OptimizedImage src={course.center.imageUrl} alt={course.center.name} width={64} height={64} preferredSize="thumbnail" responsiveSizes="64px" className="h-16 w-16 rounded-xl object-cover" /><div className="flex-1"><p className="font-semibold">{course.center.name}</p><p className="mt-1 text-sm text-muted-foreground">{course.center.description}</p></div><Button variant="outline" asChild><Link href={`/edukacije/centri/${course.center.id}`}>Profil centra</Link></Button></CardContent></Card> : null}
         {course.reviews.length ? <section><h2 className="mb-4 font-serif text-2xl font-bold">Utisci polaznika</h2><div className="space-y-3">{course.reviews.map((review) => <Card key={review.id}><CardContent className="p-4"><p className="flex items-center gap-1 text-sm text-amber-600"><Star className="h-4 w-4 fill-amber-500" />{review.rating.toFixed(1)}</p><p className="mt-2 text-sm">{review.comment}</p></CardContent></Card>)}</div></section> : null}
       </div>
-      <aside><Card className="sticky top-24 border-primary/25"><CardContent className="p-6"><p className="text-2xl font-bold">{money(course.price)}</p>{course.paymentMode === "live_deposit" ? <p className="mt-1 text-sm text-muted-foreground">Plaćanje depozita od {money(course.depositAmount || 0)} za rezervaciju, ostatak uživo.</p> : course.paymentMode === "live_off_platform" ? <p className="mt-1 text-sm text-muted-foreground">Plaćanje uživo na lokaciji centra.</p> : <p className="mt-1 text-sm text-muted-foreground">Jednokratna uplata celokupnog iznosa.</p>}<Separator className="my-5" /><div className="space-y-3 text-sm"><p className="flex gap-2"><Building2 className="h-4 w-4 text-muted-foreground" />{course.publisher}</p>{course.city ? <p className="flex gap-2"><MapPin className="h-4 w-4 text-muted-foreground" />{course.city} <span className="text-muted-foreground">· detalji po uplati</span></p> : null}<p className="flex gap-2"><ShieldCheck className="h-4 w-4 text-muted-foreground" />{course.refundPolicy}</p></div>
+      <aside><Card className="sticky top-24 border-primary/25"><CourseWishlistButton course={course} /><CardContent className="p-6"><p className="text-2xl font-bold">{money(course.price)}</p>{course.paymentMode === "live_deposit" ? <p className="mt-1 text-sm text-muted-foreground">Plaćanje depozita od {money(course.depositAmount || 0)} za rezervaciju, ostatak uživo.</p> : course.paymentMode === "live_off_platform" ? <p className="mt-1 text-sm text-muted-foreground">Plaćanje uživo na lokaciji centra.</p> : <p className="mt-1 text-sm text-muted-foreground">Jednokratna uplata celokupnog iznosa.</p>}<Separator className="my-5" /><div className="space-y-3 text-sm"><p className="flex gap-2"><Building2 className="h-4 w-4 text-muted-foreground" />{course.publisher}</p>{course.city ? <p className="flex gap-2"><MapPin className="h-4 w-4 text-muted-foreground" />{course.city} <span className="text-muted-foreground">· detalji po uplati</span></p> : null}<p className="flex gap-2"><ShieldCheck className="h-4 w-4 text-muted-foreground" />{course.refundPolicy}</p></div>
       {(!currentUser?.user || currentUser.user.role !== "CUSTOMER") && (
         <>
           <Button data-testid="buy-course-btn" className="mt-6 w-full" size="lg" disabled={buying === course.id} onClick={() => buy(course)}>{buying === course.id ? <Loader2 className="h-4 w-4 animate-spin" /> : session?.availableSeats === 0 ? "Dodaj se na listu čekanja" : "Prijavi se na edukaciju"}</Button>
+
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="secondary" className="mt-2 w-full" size="lg">
+                <Gift className="h-4 w-4 mr-2" /> Kupi kao poklon vaučer
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Kupovina vaučera: {course.title}</DialogTitle>
+                <DialogDescription>
+                  Ispunite formu ispod da biste kupili ovu edukaciju kao poklon. Vaučer će biti dostupan nakon evidentirane uplate.
+                </DialogDescription>
+              </DialogHeader>
+              <VoucherPurchaseForm courseId={course.id} />
+            </DialogContent>
+          </Dialog>
+
           {canSendInquiry ? (
             <>
               <Button data-testid="inquiry-course-btn" variant="outline" className="mt-2 w-full" size="lg" onClick={() => setInquiryOpen(true)}><MessageCircle className="h-4 w-4 mr-2"/>Pošalji upit</Button>
@@ -732,11 +1113,119 @@ export function EducationPublicCourseDetail() {
 
       </CardContent></Card></aside>
     </div>
+
+      {relatedCourses && relatedCourses.length > 0 && (
+        <div className="mt-16 border-t border-border/40 pt-12">
+          <h2 className="font-serif text-2xl font-bold mb-6">Povezane edukacije</h2>
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {relatedCourses.map((c: any) => (
+              <EducationCourseCard key={c.id} course={c} />
+            ))}
+          </div>
+        </div>
+      )}
+
   </main></Layout>;
 }
 
 function InfoCard({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return <Card><CardContent className="flex gap-3 p-4"><span className="text-primary">{icon}</span><div><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 font-medium text-sm">{value}</p></div></CardContent></Card>;
+}
+
+
+function VoucherPurchaseForm({ courseId }: { courseId: string }) {
+  const [recipientName, setRecipientName] = useState("");
+  const [recipientEmail, setRecipientEmail] = useState("");
+  const [giftMessage, setGiftMessage] = useState("");
+  const [purchasedCode, setPurchasedCode] = useState<string | null>(null);
+  const [paymentReference, setPaymentReference] = useState<string | null>(null);
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const mut = usePurchaseEducationGiftVoucher({
+    request: { headers: { "Idempotency-Key": idempotencyKey } },
+  });
+  const { toast } = useToast();
+
+  const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+  const handlePurchase = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!recipientEmail || !isValidEmail(recipientEmail)) {
+      toast.error("Neispravan unos", { description: "Unesite validnu email adresu primaoca." });
+      return;
+    }
+    mut.mutate({
+      data: {
+        courseId,
+        recipientName: recipientName || undefined,
+        recipientEmail: recipientEmail,
+        giftMessage: giftMessage || undefined
+      }
+    }, {
+      onSuccess: (data: any) => {
+        setPurchasedCode(data.redemptionCode || "N/A");
+        setPaymentReference(data.paymentReference || "N/A");
+        toast.success("Vaučer je generisan", { description: "Sačuvajte kod i izvršite uplatu." });
+      },
+      onError: (e: any) => {
+        toast.error("Greška", { description: e.message });
+      }
+    });
+  };
+
+  if (purchasedCode) {
+    return (
+      <div className="space-y-4">
+        <div className="bg-primary/10 border border-primary/20 rounded-xl p-6 text-center">
+          <p className="text-sm text-muted-foreground mb-3 font-medium uppercase tracking-widest">Vaš kod vaučera</p>
+          <code className="text-3xl font-bold tracking-widest text-primary bg-background px-4 py-2 rounded-lg border border-border/50 inline-block shadow-sm">
+            {purchasedCode}
+          </code>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-3"
+            onClick={() => {
+              void navigator.clipboard.writeText(purchasedCode);
+              toast.success("Kod je kopiran");
+            }}
+          >
+            Kopiraj kod
+          </Button>
+          <p className="text-xs text-destructive mt-3 font-medium">Sačuvajte ovaj kod. Biće prikazan samo sada.</p>
+        </div>
+        <div className="bg-muted p-5 rounded-xl text-sm space-y-3 border border-border/50">
+          <p className="font-semibold text-base border-b border-border/50 pb-2">Uputstvo za plaćanje</p>
+          <p>Uplatite iznos edukacije na račun platforme (ili preuzmite predračun na email-u).</p>
+          <p className="flex items-center gap-2">
+            <span>Poziv na broj:</span>
+            <strong className="text-foreground text-base bg-background px-2 py-1 rounded">{paymentReference}</strong>
+          </p>
+          <p className="text-xs text-muted-foreground mt-2 bg-background/50 p-2 rounded">Nakon evidentirane uplate, vaučer će postati aktivan i primalac će moći da ga iskoristi.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={handlePurchase} className="space-y-4 pt-4">
+      <div className="space-y-2">
+        <Label htmlFor="recipient-email">Email primaoca <span className="text-destructive">*</span></Label>
+        <Input id="recipient-email" type="email" required value={recipientEmail} onChange={e => setRecipientEmail(e.target.value)} placeholder="Npr. ana@example.com" maxLength={320} aria-required="true" />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="recipient-name">Ime primaoca (opciono)</Label>
+        <Input id="recipient-name" value={recipientName} onChange={e => setRecipientName(e.target.value)} placeholder="Npr. Ana Jovanović" maxLength={160} />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="gift-message">Poruka za poklon (opciono)</Label>
+        <Textarea id="gift-message" value={giftMessage} onChange={e => setGiftMessage(e.target.value)} placeholder="Srećan rođendan i uspešan rad!" maxLength={1000} className="min-h-[100px]" />
+      </div>
+      <Button type="submit" className="w-full mt-4" size="lg" disabled={mut.isPending || !recipientEmail || !isValidEmail(recipientEmail)}>
+        {mut.isPending ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : "Generiši vaučer"}
+      </Button>
+    </form>
+  );
 }
 
 export function EducationPublicCenterPage() {
@@ -747,10 +1236,323 @@ export function EducationPublicCenterPage() {
   if (isLoading) return <Layout><div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div></Layout>;
   if (isError || !center) return <Layout><div className="container mx-auto px-4 py-20 text-center"><h1 className="font-serif text-3xl font-bold">Centar nije dostupan</h1><Button className="mt-6" asChild><Link href="/edukacije">Nazad na katalog</Link></Button></div></Layout>;
   const gallery = [{ type: "image" as const, url: center.imageUrl }, ...center.gallery.map((media) => ({ type: "image" as const, url: media.url }))];
+  const [page, setPage] = useState(1);
+  const { data: reviewsPage } = useListPublicEducationCenterReviews(centerId, { page, pageSize: 10 }, {
+    query: { queryKey: getListPublicEducationCenterReviewsQueryKey(centerId, { page, pageSize: 10 }) }
+  });
+
   return <Layout><main className="container mx-auto max-w-6xl px-4 py-8 sm:py-12">
     <div className="mb-6 flex items-center gap-2 text-sm text-muted-foreground"><Link href="/edukacije" className="hover:text-foreground">Edukacije</Link><ChevronRight className="h-4 w-4" /><span>Centar</span></div>
     <SalonGallery media={gallery} salonName={center.name} />
-    <section className="mt-8 grid gap-6 lg:grid-cols-[1fr_280px]"><div><div className="flex flex-wrap items-center gap-2"><Badge variant="secondary"><BadgeCheck className="mr-1 h-3.5 w-3.5 text-emerald-600" /> Verifikovan centar</Badge><Badge variant="outline">{center.courseCount} edukacija</Badge></div><h1 className="mt-3 font-serif text-4xl font-bold">{center.name}</h1><p className="mt-3 max-w-3xl text-lg text-muted-foreground">{center.description}</p></div><Card><CardContent className="space-y-3 p-5 text-sm"><p className="flex gap-2"><MapPin className="h-4 w-4 text-muted-foreground" />{center.city}</p><p className="flex gap-2"><Star className="h-4 w-4 fill-amber-500 text-amber-500" />{center.rating ? `${center.rating.toFixed(1)} · ${center.reviewCount} utisaka` : "Novi centar"}</p>{center.websiteUrl ? <a className="block text-primary underline" href={center.websiteUrl} target="_blank" rel="noreferrer">Sajt centra</a> : null}{center.instagramUrl ? <a className="block text-primary underline" href={center.instagramUrl} target="_blank" rel="noreferrer">Instagram</a> : null}</CardContent></Card></section>
-    <section className="mt-10"><h2 className="mb-5 font-serif text-3xl font-bold">Edukacije centra</h2><CourseGrid courses={center.courses} onBuy={buy} buying={buying} /></section>
+    <section className="mt-8 grid gap-6 lg:grid-cols-[1fr_280px]">
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="secondary"><BadgeCheck className="mr-1 h-3.5 w-3.5 text-emerald-600" /> Verifikovan centar</Badge>
+          <Badge variant="outline">{center.courseCount} edukacija</Badge>
+        </div>
+        <h1 className="mt-3 font-serif text-4xl font-bold">{center.name}</h1>
+        <p className="mt-3 max-w-3xl text-lg text-muted-foreground">{center.description}</p>
+
+
+      </div>
+      <Card>
+        <CardContent className="space-y-3 p-5 text-sm">
+          <p className="flex gap-2"><MapPin className="h-4 w-4 text-muted-foreground" />{center.city}</p>
+          <p className="flex gap-2"><Star className="h-4 w-4 fill-amber-500 text-amber-500" />{center.rating ? `${center.rating.toFixed(1)} · ${center.reviewCount} utisaka` : "Novi centar"}</p>
+          {center.websiteUrl ? <a className="block text-primary underline" href={center.websiteUrl} target="_blank" rel="noreferrer">Sajt centra</a> : null}
+          {center.instagramUrl ? <a className="block text-primary underline" href={center.instagramUrl} target="_blank" rel="noreferrer">Instagram</a> : null}
+        </CardContent>
+      </Card>
+    </section>
+
+    <section className="mt-16">
+      <h2 className="mb-8 font-serif text-3xl font-bold">Edukacije centra</h2>
+      <CourseGrid courses={center.courses} onBuy={buy} buying={buying} />
+    </section>
+
+    {reviewsPage && (
+      <section className="mt-16 border-t border-border/50 pt-12">
+        <div className="flex items-center justify-between mb-8">
+          <h2 className="font-serif text-3xl font-bold">Utisci polaznika</h2>
+        </div>
+
+        {reviewsPage.viewerEligibility?.canReview && reviewsPage.viewerEligibility.eligibleEnrollmentId && (
+          <div className="mb-8">
+            <CenterReviewForm centerId={centerId} enrollmentId={reviewsPage.viewerEligibility.eligibleEnrollmentId} />
+          </div>
+        )}
+
+        {!reviewsPage.viewerEligibility?.canReview && reviewsPage.viewerEligibility?.reason && (
+          <div className="mb-8 p-4 bg-muted/20 border border-border/50 rounded-xl text-center text-sm text-muted-foreground">
+            {reviewsPage.viewerEligibility.reason}
+          </div>
+        )}
+
+        <div className="space-y-4">
+          {reviewsPage.items.length === 0 ? (
+            <p className="text-muted-foreground">Centar još uvek nema recenzija.</p>
+          ) : (
+            reviewsPage.items.map((review: any) => (
+              <Card key={review.id}>
+                <CardContent className="p-5 flex gap-4">
+                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary shrink-0">
+                    {review.reviewerName?.charAt(0) || "K"}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold">{review.reviewerName || "Korisnik"}</span>
+                      <span className="text-muted-foreground text-sm">· {new Date(review.createdAt).toLocaleDateString('sr-RS')}</span>
+                    </div>
+                    <div className="flex mt-1 mb-2">
+                      {[1,2,3,4,5].map(star => (
+                        <Star key={star} className={`w-3.5 h-3.5 ${star <= review.rating ? "fill-amber-500 text-amber-500" : "text-muted"}`} />
+                      ))}
+                    </div>
+                    {review.comment && <p className="text-sm">{review.comment}</p>}
+                    {review.courseTitle && <p className="mt-2 text-xs text-primary/70">Pohađao/la: {review.courseTitle}</p>}
+                  </div>
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </div>
+
+        {Math.ceil(reviewsPage.total / reviewsPage.pageSize) > 1 && (
+          <div className="mt-8 flex justify-center gap-2">
+            <Button variant="outline" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Prethodna</Button>
+            <Button variant="outline" disabled={page === Math.ceil(reviewsPage.total / reviewsPage.pageSize)} onClick={() => setPage(p => p + 1)}>Sledeća</Button>
+          </div>
+        )}
+      </section>
+    )}
   </main></Layout>;
+}
+
+function CenterReviewForm({ centerId, enrollmentId }: { centerId: string, enrollmentId: string }) {
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState("");
+  const mut = useCreateEducationCenterReview();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const handleSubmit = () => {
+    if (rating === 0) {
+      toast.error("Greška", { description: "Unesite ocenu." });
+      return;
+    }
+    mut.mutate({
+      data: { enrollmentId, rating, comment: comment.trim() || undefined }
+    }, {
+      onSuccess: () => {
+        toast.success("Uspešno", { description: "Vaša recenzija je objavljena." });
+        setRating(0);
+        setComment("");
+        queryClient.invalidateQueries({ queryKey: getListPublicEducationCenterReviewsQueryKey(centerId, { page: 1, pageSize: 10 }) });
+        queryClient.invalidateQueries({ queryKey: getGetPublicEducationCenterQueryKey(centerId) });
+      },
+      onError: (e: any) => toast.error("Greška", { description: e.message })
+    });
+  };
+
+  return (
+    <Card className="bg-muted/10 border-primary/20">
+      <CardHeader>
+        <CardTitle className="text-lg">Ocenite edukativni centar</CardTitle>
+        <CardDescription>Bili ste polaznik ovog centra. Podelite svoje iskustvo sa drugima.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div>
+          <Label className="mb-2 block">Vaša ocena</Label>
+          <div className="flex gap-1">
+            {[1,2,3,4,5].map(star => (
+              <button key={star} onClick={() => setRating(star)} className="focus:outline-none transition-transform hover:scale-110">
+                <Star className={`w-8 h-8 ${star <= rating ? "fill-amber-500 text-amber-500" : "text-muted"}`} />
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <Label>Komentar (opciono)</Label>
+          <Textarea placeholder="Kako vam se svideo kurs?" value={comment} onChange={e => setComment(e.target.value)} className="mt-1" />
+        </div>
+        <Button onClick={handleSubmit} disabled={mut.isPending || rating === 0}>
+          {mut.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : "Objavi recenziju"}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function EducationTaxonomyPage() {
+  const [match, params] = useRoute("/edukacije/sekcije/:sectionSlug/:categorySlug?/:subcategorySlug?");
+  const { data: taxonomy, isLoading } = useGetPublicEducationTaxonomy({ query: { queryKey: getGetPublicEducationTaxonomyQueryKey() } });
+
+  const sectionSlug = (params as any)?.sectionSlug;
+  const categorySlug = (params as any)?.categorySlug;
+  const subcategorySlug = (params as any)?.subcategorySlug;
+
+  const scope = useMemo(() => {
+    if (!taxonomy || !sectionSlug) return { ready: true, valid: false, data: null };
+    const section = taxonomy.find((s: any) => s.slug === sectionSlug);
+    if (!section) return { ready: true, valid: false, data: null };
+
+    let category;
+    if (categorySlug) {
+      category = section.categories?.find((c: any) => c.slug === categorySlug);
+      if (!category) return { ready: true, valid: false, data: null };
+    }
+
+    let subcategory;
+    if (subcategorySlug) {
+      if (!category) return { ready: true, valid: false, data: null };
+      subcategory = category.subcategories?.find((s: any) => s.slug === subcategorySlug);
+      if (!subcategory) return { ready: true, valid: false, data: null };
+    }
+
+    return {
+      ready: true,
+      valid: true,
+      data: {
+        section: section ? { id: section.id, name: section.name, slug: section.slug } : undefined,
+        category: category ? { id: category.id, name: category.name, slug: category.slug } : undefined,
+        subcategory: subcategory ? { id: subcategory.id, name: subcategory.name, slug: subcategory.slug } : undefined
+      }
+    };
+  }, [taxonomy, sectionSlug, categorySlug, subcategorySlug]);
+
+  if (isLoading || !scope.ready) {
+    return <Layout><div className="flex justify-center py-20"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div></Layout>;
+  }
+
+  if (!scope.valid) {
+    return (
+      <Layout>
+        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-muted/20">
+          <h1 className="text-6xl font-serif font-bold text-primary mb-4">404</h1>
+          <h2 className="text-2xl font-bold mb-2">Kategorija nije pronađena</h2>
+          <p className="text-muted-foreground mb-8">Tražena kategorija ne postoji.</p>
+          <Button asChild>
+            <Link href="/edukacije">Nazad na katalog edukacija</Link>
+          </Button>
+        </div>
+      </Layout>
+    );
+  }
+
+  return <EducationMarketplace taxonomyScope={scope.data as any} basePath={window.location.pathname} />;
+}
+
+export function EducationWishlistPage() {
+  const { data: wishlistData, isLoading } = useListEducationWishlist({ page: 1, pageSize: 1000 }, { query: { queryKey: getListEducationWishlistQueryKey({ page: 1, pageSize: 1000 }) } });
+
+  return (
+    <Layout>
+      <div className="container mx-auto px-4 py-12 max-w-6xl">
+        <h1 className="font-serif text-3xl font-bold mb-8">Moja lista želja</h1>
+        {isLoading ? (
+          <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+        ) : !wishlistData || wishlistData.items.length === 0 ? (
+          <div className="text-center py-20 bg-muted/20 rounded-2xl border border-border/50">
+            <Heart className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <h2 className="text-xl font-bold mb-2">Vaša lista želja je prazna</h2>
+            <p className="text-muted-foreground mb-6">Sačuvajte edukacije koje vas zanimaju klikom na ikonicu srca.</p>
+            <Button asChild><Link href="/edukacije">Istraži edukacije</Link></Button>
+          </div>
+        ) : (
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {wishlistData.items.map((item: any) => (
+              <EducationCourseCard key={item.id} course={item.course} />
+            ))}
+          </div>
+        )}
+      </div>
+    </Layout>
+  );
+}
+
+export function EducationVouchersPage() {
+  const { data: vouchers, isLoading } = useListEducationGiftVouchers({ page: 1, pageSize: 100 }, { query: { queryKey: getListEducationGiftVouchersQueryKey({ page: 1, pageSize: 100 }) } });
+  const redeemMut = useRedeemEducationGiftVoucher();
+  const [code, setCode] = useState("");
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const handleRedeem = () => {
+    if (!code.trim()) return;
+    redeemMut.mutate({ data: { code: code.trim() } }, {
+      onSuccess: () => {
+        toast.success("Vaučer uspešno iskorišćen");
+        setCode("");
+        queryClient.invalidateQueries({ queryKey: getListEducationGiftVouchersQueryKey({ page: 1, pageSize: 100 }) });
+      },
+      onError: (e: any) => toast.error("Greška pri korišćenju vaučera", { description: e.message })
+    });
+  };
+
+  return (
+    <Layout>
+      <div className="container mx-auto px-4 py-12 max-w-6xl">
+        <h1 className="font-serif text-3xl font-bold mb-8">Moji vaučeri</h1>
+
+        <div className="grid md:grid-cols-[1fr_300px] gap-8">
+          <div>
+            {isLoading ? (
+              <div className="flex justify-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+            ) : !vouchers || vouchers.items.length === 0 ? (
+              <div className="text-center py-20 bg-muted/20 rounded-2xl border border-border/50">
+                <Gift className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h2 className="text-xl font-bold mb-2">Nemate vaučera</h2>
+                <p className="text-muted-foreground">Kada kupite ili dobijete vaučer, on će se pojaviti ovde.</p>
+              </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {vouchers.items.map((voucher: any) => (
+                  <Card key={voucher.id}>
+                    <CardContent className="p-5">
+                      <div className="flex justify-between items-start mb-4">
+                        <Badge variant={voucher.status === 'redeemed' ? 'secondary' : voucher.status === 'active' ? 'default' : 'outline'}>
+                          {voucher.status === 'redeemed' ? 'Iskorišćen' : voucher.status === 'active' ? 'Aktivan' : voucher.status === 'pending_payment' ? 'Na čekanju' : voucher.status}
+                        </Badge>
+                        <span className="text-xl font-bold">{new Intl.NumberFormat("sr-RS", { style: "currency", currency: "RSD", maximumFractionDigits: 0 }).format(voucher.amount || 0)}</span>
+                      </div>
+                      <h3 className="font-semibold text-lg line-clamp-1">{voucher.courseTitle}</h3>
+                      <div className="mt-4 space-y-2 text-sm text-muted-foreground">
+                        <div className="flex justify-between">
+                          <span>Kod:</span>
+                          <code className="bg-muted px-1.5 rounded text-foreground">****-{voucher.codeLast4}</code>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Referenca:</span>
+                          <span className="text-foreground">{voucher.paymentReference}</span>
+                        </div>
+                        {voucher.recipientName && <div className="border-t border-border/40 pt-2 mt-2"><p><strong>Za:</strong> {voucher.recipientName}</p></div>}
+                        {voucher.recipientEmail && <p><strong>Email:</strong> {voucher.recipientEmail}</p>}
+                        {voucher.giftMessage && <p className="italic">"{voucher.giftMessage}"</p>}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <Card className="sticky top-24">
+              <CardHeader>
+                <CardTitle>Iskoristi vaučer</CardTitle>
+                <CardDescription>Unesite kod koji ste dobili kako biste preuzeli vaučer.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Input placeholder="Unesite kod vaučera" value={code} onChange={e => setCode(e.target.value)} />
+                <Button className="w-full" onClick={handleRedeem} disabled={redeemMut.isPending || !code.trim()}>
+                  {redeemMut.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                  Iskoristi
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+    </Layout>
+  );
 }

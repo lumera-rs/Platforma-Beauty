@@ -33,6 +33,7 @@ export const educationPaymentModeEnum = pgEnum("education_payment_mode", ["onlin
 export const educationPlacementKindEnum = pgEnum("education_placement_kind", ["featured_center", "special_offer"]);
 export const educationPlacementScopeEnum = pgEnum("education_placement_scope", ["home", "category", "subcategory"]);
 export const educationPlacementStatusEnum = pgEnum("education_placement_status", ["pending_payment", "active", "expired", "cancelled", "rejected"]);
+export const educationGiftVoucherStatusEnum = pgEnum("education_gift_voucher_status", ["pending_payment", "active", "redeemed", "refunded", "cancelled"]);
 
 export const educationCentersTable = pgTable("education_centers", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -179,6 +180,7 @@ export const coursesTable = pgTable("courses", {
   city: text("city"),
   price: integer("price").notNull(),
   duration: text("duration").notNull(),
+  durationMinutes: integer("duration_minutes"),
   theoryHours: integer("theory_hours"),
   practicalHours: integer("practical_hours"),
   level: educationCourseLevelEnum("level").notNull().default("all-levels"),
@@ -204,6 +206,7 @@ export const coursesTable = pgTable("courses", {
   featuredActivatedAt: timestamp("featured_activated_at", { withTimezone: true }),
   featuredFee: integer("featured_fee").notNull().default(0),
   refundPolicy: text("refund_policy").notNull().default("Povraćaj je moguć do isteka roka zaštite kupovine. Ako centar otkaže termin, kupovina se refundira u celosti."),
+  giftVoucherEligible: boolean("gift_voucher_eligible").notNull().default(false),
   groupDiscountMinimum: integer("group_discount_minimum"),
   groupDiscountPercent: integer("group_discount_percent"),
   startDate: date("start_date", { mode: "string" }),
@@ -226,10 +229,12 @@ export const coursesTable = pgTable("courses", {
   index("courses_instructor_profile_idx").on(table.instructorProfileId),
   check("courses_theory_hours_nonnegative_check", sql`${table.theoryHours} is null or ${table.theoryHours} >= 0`),
   check("courses_practical_hours_nonnegative_check", sql`${table.practicalHours} is null or ${table.practicalHours} >= 0`),
+  check("courses_duration_minutes_check", sql`${table.durationMinutes} is null or ${table.durationMinutes} > 0`),
   check("courses_deposit_amount_nonnegative_check", sql`${table.depositAmount} is null or ${table.depositAmount} >= 0`),
   check("courses_live_deposit_check", sql`${table.paymentMode} <> 'live_deposit' or (${table.format} in ('in-person', 'hybrid') and ${table.depositAmount} > 0)`),
   check("courses_live_off_platform_check", sql`${table.paymentMode} <> 'live_off_platform' or ${table.format} in ('in-person', 'hybrid')`),
   check("courses_non_deposit_amount_check", sql`${table.paymentMode} = 'live_deposit' or ${table.depositAmount} is null`),
+  check("courses_published_live_deposit_refund_policy_check", sql`not (${table.published} and ${table.paymentMode} = 'live_deposit') or length(btrim(${table.refundPolicy})) > 0`),
 ]);
 
 export const educationInquiriesTable = pgTable("education_inquiries", {
@@ -396,6 +401,36 @@ export const courseReviewsTable = pgTable("course_reviews", {
   index("course_reviews_user_idx").on(table.userId),
 ]);
 
+/** A canonical center review is tied to a completed enrollment and is published separately from a course review. */
+export const educationCenterReviewsTable = pgTable("education_center_reviews", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "cascade" }),
+  enrollmentId: uuid("enrollment_id").notNull().unique().references(() => courseEnrollmentsTable.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  rating: integer("rating").notNull(),
+  comment: text("comment").notNull().default(""),
+  status: educationReviewStatusEnum("status").notNull().default("pending"),
+  adminNote: text("admin_note"),
+  moderatedAt: timestamp("moderated_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("education_center_reviews_center_status_created_idx").on(table.centerId, table.status, table.createdAt),
+  index("education_center_reviews_user_idx").on(table.userId),
+  check("education_center_reviews_rating_check", sql`${table.rating} between 1 and 5`),
+]);
+
+export const educationWishlistsTable = pgTable("education_wishlists", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  courseId: uuid("course_id").notNull().references(() => coursesTable.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("education_wishlists_user_course_unique").on(table.userId, table.courseId),
+  index("education_wishlists_user_created_idx").on(table.userId, table.createdAt, table.id),
+  index("education_wishlists_course_idx").on(table.courseId),
+]);
+
 export const educationFeaturedChargeStatusEnum = pgEnum("education_featured_charge_status", ["pending", "paid", "cancelled", "refunded"]);
 
 export const educationFeaturedChargesTable = pgTable("education_featured_charges", {
@@ -513,6 +548,48 @@ export const courseEnrollmentsTable = pgTable("course_enrollments", {
   index("course_enrollments_employee_idx").on(table.employeeId),
 ]);
 
+/**
+ * Gift vouchers use a SHA-256 lookup digest, never the redeemable plaintext.
+ * Course identity, title, price, center and purchaser/recipient are immutable purchase snapshots.
+ */
+export const educationGiftVouchersTable = pgTable("education_gift_vouchers", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  courseId: uuid("course_id").notNull().references(() => coursesTable.id, { onDelete: "restrict" }),
+  centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "restrict" }),
+  purchaserId: uuid("purchaser_id").notNull().references(() => usersTable.id, { onDelete: "restrict" }),
+  recipientUserId: uuid("recipient_user_id").references(() => usersTable.id, { onDelete: "restrict" }),
+  recipientEmail: text("recipient_email"),
+  recipientNameSnapshot: text("recipient_name_snapshot"),
+  giftMessageSnapshot: text("gift_message_snapshot"),
+  courseTitleSnapshot: text("course_title_snapshot").notNull(),
+  courseImageUrlSnapshot: text("course_image_url_snapshot").notNull(),
+  amountSnapshot: integer("amount_snapshot").notNull(),
+  currencySnapshot: text("currency_snapshot").notNull().default("RSD"),
+  codeHash: text("code_hash").notNull().unique(),
+  codeLast4: text("code_last4").notNull(),
+  status: educationGiftVoucherStatusEnum("status").notNull().default("pending_payment"),
+  paymentReference: text("payment_reference").notNull().unique(),
+  idempotencyKey: text("idempotency_key"),
+  settledByUserId: uuid("settled_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  settledAt: timestamp("settled_at", { withTimezone: true }),
+  redeemedByUserId: uuid("redeemed_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  redeemedEnrollmentId: uuid("redeemed_enrollment_id").unique().references(() => courseEnrollmentsTable.id, { onDelete: "restrict" }),
+  redeemedAt: timestamp("redeemed_at", { withTimezone: true }),
+  refundedByUserId: uuid("refunded_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  refundedAt: timestamp("refunded_at", { withTimezone: true }),
+  refundNote: text("refund_note"),
+  disputeId: uuid("dispute_id").references(() => educationDisputesTable.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("education_gift_vouchers_purchaser_idempotency_unique").on(table.purchaserId, table.idempotencyKey).where(sql`${table.idempotencyKey} is not null`),
+  index("education_gift_vouchers_purchaser_created_idx").on(table.purchaserId, table.createdAt, table.id),
+  index("education_gift_vouchers_recipient_created_idx").on(table.recipientUserId, table.createdAt, table.id),
+  index("education_gift_vouchers_center_status_idx").on(table.centerId, table.status, table.createdAt),
+  check("education_gift_vouchers_amount_check", sql`${table.amountSnapshot} >= 0`),
+  check("education_gift_vouchers_recipient_check", sql`num_nonnulls(${table.recipientUserId}, ${table.recipientEmail}) >= 1`),
+]);
+
 export const educationWaitlistTable = pgTable("education_waitlist", {
   id: uuid("id").defaultRandom().primaryKey(),
   sessionId: uuid("session_id").notNull().references(() => courseSessionsTable.id, { onDelete: "cascade" }),
@@ -550,6 +627,7 @@ export const educationInstructorsTable = pgTable("education_instructors", {
   experienceYears: integer("experience_years").notNull().default(0),
   specializations: jsonb("specializations").$type<string[]>().notNull().default([]),
   qualifications: jsonb("qualifications").$type<string[]>().notNull().default([]),
+  portfolioMedia: jsonb("portfolio_media").$type<string[]>().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [

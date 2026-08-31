@@ -3,7 +3,11 @@ import {
   addEducationBelgradeCalendarDays,
   educationBelgradeDateKey,
   educationPaymentModeError,
+  educationGiftVoucherRecipientMatches,
+  educationRelatedCourseTier,
   normalizedEducationTaxonomyName,
+  qualifiesAsMostRequestedEducationCenter,
+  qualifiesAsTopRatedEducationCenter,
 } from "./education-marketplace-domain";
 
 assert.equal(educationPaymentModeError({
@@ -43,3 +47,29 @@ assert.equal(
   "2026-10-25T11:00:00.000Z",
   "a Belgrade calendar day across fall-back is 25 elapsed hours",
 );
+
+assert.equal(qualifiesAsMostRequestedEducationCenter(9), false);
+assert.equal(qualifiesAsMostRequestedEducationCenter(10), true);
+assert.equal(qualifiesAsTopRatedEducationCenter(4), false);
+assert.equal(qualifiesAsTopRatedEducationCenter(5), true);
+
+const relatedSource = { subcategoryId: "nails", tags: [" Nail Art ", "Gel"] };
+assert.equal(educationRelatedCourseTier(relatedSource, { subcategoryId: "nails", tags: [] }), 0);
+assert.equal(educationRelatedCourseTier(relatedSource, { subcategoryId: "other", tags: ["nail art"] }), 1);
+assert.equal(
+  educationRelatedCourseTier(relatedSource, { subcategoryId: "other", tags: ["ＮＡＩＬ\t  ＡＲＴ"] }),
+  1,
+  "related tags share canonical NFKC, collapsed whitespace and case normalization",
+);
+assert.equal(educationRelatedCourseTier(relatedSource, { subcategoryId: "other", tags: ["massage"] }), null);
+
+const recipient = { id: "recipient", email: "Learner@Example.com" };
+assert.equal(educationGiftVoucherRecipientMatches(
+  { recipientUserId: "recipient", recipientEmail: "learner@example.com" }, recipient,
+), true);
+assert.equal(educationGiftVoucherRecipientMatches(
+  { recipientUserId: "other", recipientEmail: "learner@example.com" }, recipient,
+), false);
+assert.equal(educationGiftVoucherRecipientMatches(
+  { recipientUserId: null, recipientEmail: null }, recipient,
+), false);

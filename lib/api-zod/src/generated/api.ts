@@ -9343,6 +9343,17 @@ export const ListLoyaltyTiersResponse = zod.array(ListLoyaltyTiersResponseItem)
 /**
  * @summary Get verification and subscription status for the current education center
  */
+export const getEducationCenterStatusResponseOrganicInquiriesAndCompletedEnrollments90dMin = 0;
+
+export const getEducationCenterStatusResponseCompletedLearnerCountMin = 0;
+
+export const getEducationCenterStatusResponsePublishedReviewCountMin = 0;
+
+export const getEducationCenterStatusResponsePublishedRatingMin = 0;
+export const getEducationCenterStatusResponsePublishedRatingMax = 5;
+
+
+
 export const GetEducationCenterStatusResponseItem = zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -9350,7 +9361,14 @@ export const GetEducationCenterStatusResponseItem = zod.object({
   "verificationNote": zod.string().nullish(),
   "subscriptionStatus": zod.union([zod.literal('trial'),zod.literal('active'),zod.literal('past_due'),zod.literal('cancelled'),zod.literal('suspended'),zod.literal('free_via_loyalty'),zod.literal(null)]).nullish(),
   "currentPeriodEnd": zod.coerce.date().nullish(),
-  "eligible": zod.boolean()
+  "eligible": zod.boolean(),
+  "organicInquiriesAndCompletedEnrollments90d": zod.number().int().min(getEducationCenterStatusResponseOrganicInquiriesAndCompletedEnrollments90dMin),
+  "completedLearnerCount": zod.number().int().min(getEducationCenterStatusResponseCompletedLearnerCountMin),
+  "publishedReviewCount": zod.number().int().min(getEducationCenterStatusResponsePublishedReviewCountMin),
+  "publishedRating": zod.number().min(getEducationCenterStatusResponsePublishedRatingMin).max(getEducationCenterStatusResponsePublishedRatingMax),
+  "qualifiesMostRequested": zod.boolean(),
+  "qualifiesTopRated": zod.boolean(),
+  "metricsExplanation": zod.string()
 })
 export const GetEducationCenterStatusResponse = zod.array(GetEducationCenterStatusResponseItem)
 
@@ -10084,6 +10102,14 @@ export const ListCoursesQueryParams = zod.object({
   "pageSize": zod.coerce.number().int().min(1).max(listCoursesQueryPageSizeMax).default(listCoursesQueryPageSizeDefault).describe('Number of courses per page.')
 })
 
+export const listCoursesResponseInstructorProfileTwoIndustryYearsMin = 0;
+
+export const listCoursesResponseInstructorProfileTwoExperienceYearsMin = 0;
+
+export const listCoursesResponseDurationMinutesMultipleOf = 1;
+
+export const listCoursesResponseReviewCountMin = 0;
+
 export const listCoursesResponseTheoryHoursMin = 0;
 
 export const listCoursesResponsePracticalHoursMin = 0;
@@ -10092,6 +10118,9 @@ export const listCoursesResponseDepositAmountMin = 0;
 
 export const listCoursesResponseStudentCountMin = 0;
 export const listCoursesResponseStudentCountMultipleOf = 1;
+
+export const listCoursesResponseCompletedLearnerCountMin = 0;
+export const listCoursesResponseCompletedLearnerCountMultipleOf = 1;
 
 export const listCoursesResponseInquiryCount30dMin = 0;
 export const listCoursesResponseInquiryCount30dMultipleOf = 1;
@@ -10107,6 +10136,17 @@ export const ListCoursesResponseItem = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(listCoursesResponseInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(listCoursesResponseInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -10123,11 +10163,13 @@ export const ListCoursesResponseItem = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(listCoursesResponseDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(listCoursesResponseReviewCountMin),
   "certification": zod.boolean(),
   "theoryHours": zod.number().min(listCoursesResponseTheoryHoursMin).nullish(),
   "practicalHours": zod.number().min(listCoursesResponsePracticalHoursMin).nullish(),
@@ -10143,6 +10185,7 @@ export const ListCoursesResponseItem = zod.object({
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
   "depositAmount": zod.number().min(listCoursesResponseDepositAmountMin).nullish(),
   "studentCount": zod.number().min(listCoursesResponseStudentCountMin).multipleOf(listCoursesResponseStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(listCoursesResponseCompletedLearnerCountMin).multipleOf(listCoursesResponseCompletedLearnerCountMultipleOf).optional(),
   "inquiryCount30d": zod.number().min(listCoursesResponseInquiryCount30dMin).multipleOf(listCoursesResponseInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(listCoursesResponseViewCount30dMin).multipleOf(listCoursesResponseViewCount30dMultipleOf),
   "imageUrl": zod.string(),
@@ -10155,6 +10198,7 @@ export const ListCoursesResponseItem = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -10171,6 +10215,9 @@ export const createEducationCourseBodyCategoryMin = 2;
 
 export const createEducationCourseBodyPriceMin = 0;
 
+
+export const createEducationCourseBodyDurationMinutesMax = 5256000;
+export const createEducationCourseBodyDurationMinutesMultipleOf = 1;
 
 export const createEducationCourseBodyLearningOutcomesItemMax = 240;
 
@@ -10228,6 +10275,7 @@ export const CreateEducationCourseBody = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number().min(createEducationCourseBodyPriceMin),
   "duration": zod.string().min(1),
+  "durationMinutes": zod.number().min(1).max(createEducationCourseBodyDurationMinutesMax).multipleOf(createEducationCourseBodyDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']).optional(),
   "learningOutcomes": zod.array(zod.string().min(1).max(createEducationCourseBodyLearningOutcomesItemMax)).max(createEducationCourseBodyLearningOutcomesMax).optional(),
   "includedItems": zod.array(zod.string().min(1).max(createEducationCourseBodyIncludedItemsItemMax)).max(createEducationCourseBodyIncludedItemsMax).optional(),
@@ -10249,56 +10297,83 @@ export const CreateEducationCourseBody = zod.object({
   "imageUrl": zod.string().min(1),
   "startDate": zod.coerce.date().nullish(),
   "refundPolicy": zod.string().min(1).max(createEducationCourseBodyRefundPolicyMax).optional(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "groupDiscountMinimum": zod.number().min(createEducationCourseBodyGroupDiscountMinimumMin).max(createEducationCourseBodyGroupDiscountMinimumMax).nullish(),
   "groupDiscountPercent": zod.number().min(createEducationCourseBodyGroupDiscountPercentMin).max(createEducationCourseBodyGroupDiscountPercentMax).nullish()
 })
 
-export const createEducationCourseResponseOneTheoryHoursMin = 0;
+export const createEducationCourseResponseOneOneInstructorProfileTwoIndustryYearsMin = 0;
 
-export const createEducationCourseResponseOnePracticalHoursMin = 0;
+export const createEducationCourseResponseOneOneInstructorProfileTwoExperienceYearsMin = 0;
 
-export const createEducationCourseResponseOneDepositAmountMin = 0;
+export const createEducationCourseResponseOneOneDurationMinutesMultipleOf = 1;
 
-export const createEducationCourseResponseOneStudentCountMin = 0;
-export const createEducationCourseResponseOneStudentCountMultipleOf = 1;
+export const createEducationCourseResponseOneOneReviewCountMin = 0;
 
-export const createEducationCourseResponseOneInquiryCount30dMin = 0;
-export const createEducationCourseResponseOneInquiryCount30dMultipleOf = 1;
+export const createEducationCourseResponseOneOneTheoryHoursMin = 0;
 
-export const createEducationCourseResponseOneViewCount30dMin = 0;
-export const createEducationCourseResponseOneViewCount30dMultipleOf = 1;
+export const createEducationCourseResponseOneOnePracticalHoursMin = 0;
 
-export const createEducationCourseResponseTwoDayProgramItemDayNumberMultipleOf = 1;
+export const createEducationCourseResponseOneOneDepositAmountMin = 0;
 
-export const createEducationCourseResponseTwoDayProgramItemDurationMinutesMin = 0;
-export const createEducationCourseResponseTwoDayProgramItemDurationMinutesMultipleOf = 1;
+export const createEducationCourseResponseOneOneStudentCountMin = 0;
+export const createEducationCourseResponseOneOneStudentCountMultipleOf = 1;
 
-export const createEducationCourseResponseTwoGalleryItemSortOrderMultipleOf = 1;
+export const createEducationCourseResponseOneOneCompletedLearnerCountMin = 0;
+export const createEducationCourseResponseOneOneCompletedLearnerCountMultipleOf = 1;
 
-export const createEducationCourseResponseTwoCenterTwoReviewCountMin = 0;
-export const createEducationCourseResponseTwoCenterTwoReviewCountMultipleOf = 1;
+export const createEducationCourseResponseOneOneInquiryCount30dMin = 0;
+export const createEducationCourseResponseOneOneInquiryCount30dMultipleOf = 1;
 
-export const createEducationCourseResponseTwoCenterTwoCourseCountMin = 0;
-export const createEducationCourseResponseTwoCenterTwoCourseCountMultipleOf = 1;
+export const createEducationCourseResponseOneOneViewCount30dMin = 0;
+export const createEducationCourseResponseOneOneViewCount30dMultipleOf = 1;
 
-export const createEducationCourseResponseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+export const createEducationCourseResponseOneTwoPublicModulesItemSortOrderMin = 0;
 
-export const createEducationCourseResponseTwoCenterTwoCoursesItemTheoryHoursMin = 0;
+export const createEducationCourseResponseOneTwoPublicModulesItemLessonCountMin = 0;
 
-export const createEducationCourseResponseTwoCenterTwoCoursesItemPracticalHoursMin = 0;
+export const createEducationCourseResponseOneTwoDayProgramItemDayNumberMultipleOf = 1;
 
-export const createEducationCourseResponseTwoCenterTwoCoursesItemDepositAmountMin = 0;
+export const createEducationCourseResponseOneTwoDayProgramItemDurationMinutesMin = 0;
+export const createEducationCourseResponseOneTwoDayProgramItemDurationMinutesMultipleOf = 1;
 
-export const createEducationCourseResponseTwoCenterTwoCoursesItemStudentCountMin = 0;
-export const createEducationCourseResponseTwoCenterTwoCoursesItemStudentCountMultipleOf = 1;
+export const createEducationCourseResponseOneTwoGalleryItemSortOrderMultipleOf = 1;
 
-export const createEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount30dMin = 0;
-export const createEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf = 1;
+export const createEducationCourseResponseOneTwoCenterTwoReviewCountMin = 0;
+export const createEducationCourseResponseOneTwoCenterTwoReviewCountMultipleOf = 1;
 
-export const createEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMin = 0;
-export const createEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+export const createEducationCourseResponseOneTwoCenterTwoCourseCountMin = 0;
+export const createEducationCourseResponseOneTwoCenterTwoCourseCountMultipleOf = 1;
 
-export const createEducationCourseResponseTwoReviewsItemRatingMax = 5;
+export const createEducationCourseResponseOneTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const createEducationCourseResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin = 0;
+
+export const createEducationCourseResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin = 0;
+
+export const createEducationCourseResponseOneTwoCenterTwoCoursesItemDurationMinutesMultipleOf = 1;
+
+export const createEducationCourseResponseOneTwoCenterTwoCoursesItemReviewCountMin = 0;
+
+export const createEducationCourseResponseOneTwoCenterTwoCoursesItemTheoryHoursMin = 0;
+
+export const createEducationCourseResponseOneTwoCenterTwoCoursesItemPracticalHoursMin = 0;
+
+export const createEducationCourseResponseOneTwoCenterTwoCoursesItemDepositAmountMin = 0;
+
+export const createEducationCourseResponseOneTwoCenterTwoCoursesItemStudentCountMin = 0;
+export const createEducationCourseResponseOneTwoCenterTwoCoursesItemStudentCountMultipleOf = 1;
+
+export const createEducationCourseResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMin = 0;
+export const createEducationCourseResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf = 1;
+
+export const createEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMin = 0;
+export const createEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMultipleOf = 1;
+
+export const createEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMin = 0;
+export const createEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+export const createEducationCourseResponseOneTwoReviewsItemRatingMax = 5;
 
 
 
@@ -10308,6 +10383,17 @@ export const CreateEducationCourseResponse = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(createEducationCourseResponseOneOneInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(createEducationCourseResponseOneOneInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -10324,14 +10410,16 @@ export const CreateEducationCourseResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(createEducationCourseResponseOneOneDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(createEducationCourseResponseOneOneReviewCountMin),
   "certification": zod.boolean(),
-  "theoryHours": zod.number().min(createEducationCourseResponseOneTheoryHoursMin).nullish(),
-  "practicalHours": zod.number().min(createEducationCourseResponseOnePracticalHoursMin).nullish(),
+  "theoryHours": zod.number().min(createEducationCourseResponseOneOneTheoryHoursMin).nullish(),
+  "practicalHours": zod.number().min(createEducationCourseResponseOneOnePracticalHoursMin).nullish(),
   "certificateName": zod.string().nullish(),
   "accredited": zod.boolean(),
   "language": zod.string().nullish(),
@@ -10342,10 +10430,11 @@ export const CreateEducationCourseResponse = zod.object({
   "answer": zod.string()
 })),
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
-  "depositAmount": zod.number().min(createEducationCourseResponseOneDepositAmountMin).nullish(),
-  "studentCount": zod.number().min(createEducationCourseResponseOneStudentCountMin).multipleOf(createEducationCourseResponseOneStudentCountMultipleOf),
-  "inquiryCount30d": zod.number().min(createEducationCourseResponseOneInquiryCount30dMin).multipleOf(createEducationCourseResponseOneInquiryCount30dMultipleOf),
-  "viewCount30d": zod.number().min(createEducationCourseResponseOneViewCount30dMin).multipleOf(createEducationCourseResponseOneViewCount30dMultipleOf),
+  "depositAmount": zod.number().min(createEducationCourseResponseOneOneDepositAmountMin).nullish(),
+  "studentCount": zod.number().min(createEducationCourseResponseOneOneStudentCountMin).multipleOf(createEducationCourseResponseOneOneStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(createEducationCourseResponseOneOneCompletedLearnerCountMin).multipleOf(createEducationCourseResponseOneOneCompletedLearnerCountMultipleOf).optional(),
+  "inquiryCount30d": zod.number().min(createEducationCourseResponseOneOneInquiryCount30dMin).multipleOf(createEducationCourseResponseOneOneInquiryCount30dMultipleOf),
+  "viewCount30d": zod.number().min(createEducationCourseResponseOneOneViewCount30dMin).multipleOf(createEducationCourseResponseOneOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
@@ -10356,24 +10445,17 @@ export const CreateEducationCourseResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
-  "modules": zod.array(zod.object({
+  "publicModules": zod.array(zod.object({
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
-  "sortOrder": zod.number(),
-  "lessons": zod.array(zod.object({
-  "id": zod.string(),
-  "title": zod.string(),
-  "description": zod.string(),
-  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
-  "durationMinutes": zod.number(),
-  "sortOrder": zod.number(),
-  "completed": zod.boolean()
-}))
+  "sortOrder": zod.number().int().min(createEducationCourseResponseOneTwoPublicModulesItemSortOrderMin),
+  "lessonCount": zod.number().int().min(createEducationCourseResponseOneTwoPublicModulesItemLessonCountMin)
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
@@ -10388,16 +10470,16 @@ export const CreateEducationCourseResponse = zod.object({
 })),
   "dayProgram": zod.array(zod.object({
   "id": zod.string(),
-  "dayNumber": zod.number().min(1).multipleOf(createEducationCourseResponseTwoDayProgramItemDayNumberMultipleOf),
+  "dayNumber": zod.number().min(1).multipleOf(createEducationCourseResponseOneTwoDayProgramItemDayNumberMultipleOf),
   "title": zod.string(),
   "description": zod.string(),
-  "durationMinutes": zod.number().min(createEducationCourseResponseTwoDayProgramItemDurationMinutesMin).multipleOf(createEducationCourseResponseTwoDayProgramItemDurationMinutesMultipleOf).nullish()
+  "durationMinutes": zod.number().min(createEducationCourseResponseOneTwoDayProgramItemDurationMinutesMin).multipleOf(createEducationCourseResponseOneTwoDayProgramItemDurationMinutesMultipleOf).nullish()
 })),
   "gallery": zod.array(zod.object({
   "id": zod.string(),
   "url": zod.string(),
   "altText": zod.string(),
-  "sortOrder": zod.number().multipleOf(createEducationCourseResponseTwoGalleryItemSortOrderMultipleOf)
+  "sortOrder": zod.number().multipleOf(createEducationCourseResponseOneTwoGalleryItemSortOrderMultipleOf)
 })),
   "center": zod.union([zod.null(),zod.object({
   "id": zod.string(),
@@ -10409,13 +10491,13 @@ export const CreateEducationCourseResponse = zod.object({
   "instagramUrl": zod.string().nullish(),
   "verified": zod.boolean(),
   "rating": zod.number(),
-  "reviewCount": zod.number().min(createEducationCourseResponseTwoCenterTwoReviewCountMin).multipleOf(createEducationCourseResponseTwoCenterTwoReviewCountMultipleOf),
-  "courseCount": zod.number().min(createEducationCourseResponseTwoCenterTwoCourseCountMin).multipleOf(createEducationCourseResponseTwoCenterTwoCourseCountMultipleOf),
+  "reviewCount": zod.number().min(createEducationCourseResponseOneTwoCenterTwoReviewCountMin).multipleOf(createEducationCourseResponseOneTwoCenterTwoReviewCountMultipleOf),
+  "courseCount": zod.number().min(createEducationCourseResponseOneTwoCenterTwoCourseCountMin).multipleOf(createEducationCourseResponseOneTwoCenterTwoCourseCountMultipleOf),
   "gallery": zod.array(zod.object({
   "id": zod.string(),
   "url": zod.string(),
   "altText": zod.string(),
-  "sortOrder": zod.number().multipleOf(createEducationCourseResponseTwoCenterTwoGalleryItemSortOrderMultipleOf)
+  "sortOrder": zod.number().multipleOf(createEducationCourseResponseOneTwoCenterTwoGalleryItemSortOrderMultipleOf)
 })),
   "courses": zod.array(zod.object({
   "id": zod.string(),
@@ -10423,6 +10505,17 @@ export const CreateEducationCourseResponse = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(createEducationCourseResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(createEducationCourseResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -10439,14 +10532,16 @@ export const CreateEducationCourseResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(createEducationCourseResponseOneTwoCenterTwoCoursesItemDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(createEducationCourseResponseOneTwoCenterTwoCoursesItemReviewCountMin),
   "certification": zod.boolean(),
-  "theoryHours": zod.number().min(createEducationCourseResponseTwoCenterTwoCoursesItemTheoryHoursMin).nullish(),
-  "practicalHours": zod.number().min(createEducationCourseResponseTwoCenterTwoCoursesItemPracticalHoursMin).nullish(),
+  "theoryHours": zod.number().min(createEducationCourseResponseOneTwoCenterTwoCoursesItemTheoryHoursMin).nullish(),
+  "practicalHours": zod.number().min(createEducationCourseResponseOneTwoCenterTwoCoursesItemPracticalHoursMin).nullish(),
   "certificateName": zod.string().nullish(),
   "accredited": zod.boolean(),
   "language": zod.string().nullish(),
@@ -10457,10 +10552,11 @@ export const CreateEducationCourseResponse = zod.object({
   "answer": zod.string()
 })),
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
-  "depositAmount": zod.number().min(createEducationCourseResponseTwoCenterTwoCoursesItemDepositAmountMin).nullish(),
-  "studentCount": zod.number().min(createEducationCourseResponseTwoCenterTwoCoursesItemStudentCountMin).multipleOf(createEducationCourseResponseTwoCenterTwoCoursesItemStudentCountMultipleOf),
-  "inquiryCount30d": zod.number().min(createEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(createEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
-  "viewCount30d": zod.number().min(createEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(createEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf),
+  "depositAmount": zod.number().min(createEducationCourseResponseOneTwoCenterTwoCoursesItemDepositAmountMin).nullish(),
+  "studentCount": zod.number().min(createEducationCourseResponseOneTwoCenterTwoCoursesItemStudentCountMin).multipleOf(createEducationCourseResponseOneTwoCenterTwoCoursesItemStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(createEducationCourseResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMin).multipleOf(createEducationCourseResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf).optional(),
+  "inquiryCount30d": zod.number().min(createEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(createEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
+  "viewCount30d": zod.number().min(createEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(createEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
@@ -10471,6 +10567,7 @@ export const CreateEducationCourseResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -10478,9 +10575,25 @@ export const CreateEducationCourseResponse = zod.object({
 })]).optional(),
   "reviews": zod.array(zod.object({
   "id": zod.string(),
-  "rating": zod.number().min(1).max(createEducationCourseResponseTwoReviewsItemRatingMax),
+  "rating": zod.number().min(1).max(createEducationCourseResponseOneTwoReviewsItemRatingMax),
   "comment": zod.string(),
   "createdAt": zod.coerce.date()
+}))
+})).and(zod.object({
+  "modules": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number(),
+  "lessons": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+}))
 }))
 }))
 
@@ -10492,52 +10605,78 @@ export const GetEducationCourseParams = zod.object({
   "courseId": zod.coerce.string()
 })
 
-export const getEducationCourseResponseOneTheoryHoursMin = 0;
+export const getEducationCourseResponseOneOneInstructorProfileTwoIndustryYearsMin = 0;
 
-export const getEducationCourseResponseOnePracticalHoursMin = 0;
+export const getEducationCourseResponseOneOneInstructorProfileTwoExperienceYearsMin = 0;
 
-export const getEducationCourseResponseOneDepositAmountMin = 0;
+export const getEducationCourseResponseOneOneDurationMinutesMultipleOf = 1;
 
-export const getEducationCourseResponseOneStudentCountMin = 0;
-export const getEducationCourseResponseOneStudentCountMultipleOf = 1;
+export const getEducationCourseResponseOneOneReviewCountMin = 0;
 
-export const getEducationCourseResponseOneInquiryCount30dMin = 0;
-export const getEducationCourseResponseOneInquiryCount30dMultipleOf = 1;
+export const getEducationCourseResponseOneOneTheoryHoursMin = 0;
 
-export const getEducationCourseResponseOneViewCount30dMin = 0;
-export const getEducationCourseResponseOneViewCount30dMultipleOf = 1;
+export const getEducationCourseResponseOneOnePracticalHoursMin = 0;
 
-export const getEducationCourseResponseTwoDayProgramItemDayNumberMultipleOf = 1;
+export const getEducationCourseResponseOneOneDepositAmountMin = 0;
 
-export const getEducationCourseResponseTwoDayProgramItemDurationMinutesMin = 0;
-export const getEducationCourseResponseTwoDayProgramItemDurationMinutesMultipleOf = 1;
+export const getEducationCourseResponseOneOneStudentCountMin = 0;
+export const getEducationCourseResponseOneOneStudentCountMultipleOf = 1;
 
-export const getEducationCourseResponseTwoGalleryItemSortOrderMultipleOf = 1;
+export const getEducationCourseResponseOneOneCompletedLearnerCountMin = 0;
+export const getEducationCourseResponseOneOneCompletedLearnerCountMultipleOf = 1;
 
-export const getEducationCourseResponseTwoCenterTwoReviewCountMin = 0;
-export const getEducationCourseResponseTwoCenterTwoReviewCountMultipleOf = 1;
+export const getEducationCourseResponseOneOneInquiryCount30dMin = 0;
+export const getEducationCourseResponseOneOneInquiryCount30dMultipleOf = 1;
 
-export const getEducationCourseResponseTwoCenterTwoCourseCountMin = 0;
-export const getEducationCourseResponseTwoCenterTwoCourseCountMultipleOf = 1;
+export const getEducationCourseResponseOneOneViewCount30dMin = 0;
+export const getEducationCourseResponseOneOneViewCount30dMultipleOf = 1;
 
-export const getEducationCourseResponseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+export const getEducationCourseResponseOneTwoPublicModulesItemSortOrderMin = 0;
 
-export const getEducationCourseResponseTwoCenterTwoCoursesItemTheoryHoursMin = 0;
+export const getEducationCourseResponseOneTwoPublicModulesItemLessonCountMin = 0;
 
-export const getEducationCourseResponseTwoCenterTwoCoursesItemPracticalHoursMin = 0;
+export const getEducationCourseResponseOneTwoDayProgramItemDayNumberMultipleOf = 1;
 
-export const getEducationCourseResponseTwoCenterTwoCoursesItemDepositAmountMin = 0;
+export const getEducationCourseResponseOneTwoDayProgramItemDurationMinutesMin = 0;
+export const getEducationCourseResponseOneTwoDayProgramItemDurationMinutesMultipleOf = 1;
 
-export const getEducationCourseResponseTwoCenterTwoCoursesItemStudentCountMin = 0;
-export const getEducationCourseResponseTwoCenterTwoCoursesItemStudentCountMultipleOf = 1;
+export const getEducationCourseResponseOneTwoGalleryItemSortOrderMultipleOf = 1;
 
-export const getEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount30dMin = 0;
-export const getEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf = 1;
+export const getEducationCourseResponseOneTwoCenterTwoReviewCountMin = 0;
+export const getEducationCourseResponseOneTwoCenterTwoReviewCountMultipleOf = 1;
 
-export const getEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMin = 0;
-export const getEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+export const getEducationCourseResponseOneTwoCenterTwoCourseCountMin = 0;
+export const getEducationCourseResponseOneTwoCenterTwoCourseCountMultipleOf = 1;
 
-export const getEducationCourseResponseTwoReviewsItemRatingMax = 5;
+export const getEducationCourseResponseOneTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const getEducationCourseResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin = 0;
+
+export const getEducationCourseResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin = 0;
+
+export const getEducationCourseResponseOneTwoCenterTwoCoursesItemDurationMinutesMultipleOf = 1;
+
+export const getEducationCourseResponseOneTwoCenterTwoCoursesItemReviewCountMin = 0;
+
+export const getEducationCourseResponseOneTwoCenterTwoCoursesItemTheoryHoursMin = 0;
+
+export const getEducationCourseResponseOneTwoCenterTwoCoursesItemPracticalHoursMin = 0;
+
+export const getEducationCourseResponseOneTwoCenterTwoCoursesItemDepositAmountMin = 0;
+
+export const getEducationCourseResponseOneTwoCenterTwoCoursesItemStudentCountMin = 0;
+export const getEducationCourseResponseOneTwoCenterTwoCoursesItemStudentCountMultipleOf = 1;
+
+export const getEducationCourseResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMin = 0;
+export const getEducationCourseResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf = 1;
+
+export const getEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMin = 0;
+export const getEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMultipleOf = 1;
+
+export const getEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMin = 0;
+export const getEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+export const getEducationCourseResponseOneTwoReviewsItemRatingMax = 5;
 
 
 
@@ -10547,6 +10686,17 @@ export const GetEducationCourseResponse = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(getEducationCourseResponseOneOneInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(getEducationCourseResponseOneOneInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -10563,14 +10713,16 @@ export const GetEducationCourseResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(getEducationCourseResponseOneOneDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(getEducationCourseResponseOneOneReviewCountMin),
   "certification": zod.boolean(),
-  "theoryHours": zod.number().min(getEducationCourseResponseOneTheoryHoursMin).nullish(),
-  "practicalHours": zod.number().min(getEducationCourseResponseOnePracticalHoursMin).nullish(),
+  "theoryHours": zod.number().min(getEducationCourseResponseOneOneTheoryHoursMin).nullish(),
+  "practicalHours": zod.number().min(getEducationCourseResponseOneOnePracticalHoursMin).nullish(),
   "certificateName": zod.string().nullish(),
   "accredited": zod.boolean(),
   "language": zod.string().nullish(),
@@ -10581,10 +10733,11 @@ export const GetEducationCourseResponse = zod.object({
   "answer": zod.string()
 })),
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
-  "depositAmount": zod.number().min(getEducationCourseResponseOneDepositAmountMin).nullish(),
-  "studentCount": zod.number().min(getEducationCourseResponseOneStudentCountMin).multipleOf(getEducationCourseResponseOneStudentCountMultipleOf),
-  "inquiryCount30d": zod.number().min(getEducationCourseResponseOneInquiryCount30dMin).multipleOf(getEducationCourseResponseOneInquiryCount30dMultipleOf),
-  "viewCount30d": zod.number().min(getEducationCourseResponseOneViewCount30dMin).multipleOf(getEducationCourseResponseOneViewCount30dMultipleOf),
+  "depositAmount": zod.number().min(getEducationCourseResponseOneOneDepositAmountMin).nullish(),
+  "studentCount": zod.number().min(getEducationCourseResponseOneOneStudentCountMin).multipleOf(getEducationCourseResponseOneOneStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(getEducationCourseResponseOneOneCompletedLearnerCountMin).multipleOf(getEducationCourseResponseOneOneCompletedLearnerCountMultipleOf).optional(),
+  "inquiryCount30d": zod.number().min(getEducationCourseResponseOneOneInquiryCount30dMin).multipleOf(getEducationCourseResponseOneOneInquiryCount30dMultipleOf),
+  "viewCount30d": zod.number().min(getEducationCourseResponseOneOneViewCount30dMin).multipleOf(getEducationCourseResponseOneOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
@@ -10595,24 +10748,17 @@ export const GetEducationCourseResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
-  "modules": zod.array(zod.object({
+  "publicModules": zod.array(zod.object({
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
-  "sortOrder": zod.number(),
-  "lessons": zod.array(zod.object({
-  "id": zod.string(),
-  "title": zod.string(),
-  "description": zod.string(),
-  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
-  "durationMinutes": zod.number(),
-  "sortOrder": zod.number(),
-  "completed": zod.boolean()
-}))
+  "sortOrder": zod.number().int().min(getEducationCourseResponseOneTwoPublicModulesItemSortOrderMin),
+  "lessonCount": zod.number().int().min(getEducationCourseResponseOneTwoPublicModulesItemLessonCountMin)
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
@@ -10627,16 +10773,16 @@ export const GetEducationCourseResponse = zod.object({
 })),
   "dayProgram": zod.array(zod.object({
   "id": zod.string(),
-  "dayNumber": zod.number().min(1).multipleOf(getEducationCourseResponseTwoDayProgramItemDayNumberMultipleOf),
+  "dayNumber": zod.number().min(1).multipleOf(getEducationCourseResponseOneTwoDayProgramItemDayNumberMultipleOf),
   "title": zod.string(),
   "description": zod.string(),
-  "durationMinutes": zod.number().min(getEducationCourseResponseTwoDayProgramItemDurationMinutesMin).multipleOf(getEducationCourseResponseTwoDayProgramItemDurationMinutesMultipleOf).nullish()
+  "durationMinutes": zod.number().min(getEducationCourseResponseOneTwoDayProgramItemDurationMinutesMin).multipleOf(getEducationCourseResponseOneTwoDayProgramItemDurationMinutesMultipleOf).nullish()
 })),
   "gallery": zod.array(zod.object({
   "id": zod.string(),
   "url": zod.string(),
   "altText": zod.string(),
-  "sortOrder": zod.number().multipleOf(getEducationCourseResponseTwoGalleryItemSortOrderMultipleOf)
+  "sortOrder": zod.number().multipleOf(getEducationCourseResponseOneTwoGalleryItemSortOrderMultipleOf)
 })),
   "center": zod.union([zod.null(),zod.object({
   "id": zod.string(),
@@ -10648,13 +10794,13 @@ export const GetEducationCourseResponse = zod.object({
   "instagramUrl": zod.string().nullish(),
   "verified": zod.boolean(),
   "rating": zod.number(),
-  "reviewCount": zod.number().min(getEducationCourseResponseTwoCenterTwoReviewCountMin).multipleOf(getEducationCourseResponseTwoCenterTwoReviewCountMultipleOf),
-  "courseCount": zod.number().min(getEducationCourseResponseTwoCenterTwoCourseCountMin).multipleOf(getEducationCourseResponseTwoCenterTwoCourseCountMultipleOf),
+  "reviewCount": zod.number().min(getEducationCourseResponseOneTwoCenterTwoReviewCountMin).multipleOf(getEducationCourseResponseOneTwoCenterTwoReviewCountMultipleOf),
+  "courseCount": zod.number().min(getEducationCourseResponseOneTwoCenterTwoCourseCountMin).multipleOf(getEducationCourseResponseOneTwoCenterTwoCourseCountMultipleOf),
   "gallery": zod.array(zod.object({
   "id": zod.string(),
   "url": zod.string(),
   "altText": zod.string(),
-  "sortOrder": zod.number().multipleOf(getEducationCourseResponseTwoCenterTwoGalleryItemSortOrderMultipleOf)
+  "sortOrder": zod.number().multipleOf(getEducationCourseResponseOneTwoCenterTwoGalleryItemSortOrderMultipleOf)
 })),
   "courses": zod.array(zod.object({
   "id": zod.string(),
@@ -10662,6 +10808,17 @@ export const GetEducationCourseResponse = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(getEducationCourseResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(getEducationCourseResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -10678,14 +10835,16 @@ export const GetEducationCourseResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(getEducationCourseResponseOneTwoCenterTwoCoursesItemDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(getEducationCourseResponseOneTwoCenterTwoCoursesItemReviewCountMin),
   "certification": zod.boolean(),
-  "theoryHours": zod.number().min(getEducationCourseResponseTwoCenterTwoCoursesItemTheoryHoursMin).nullish(),
-  "practicalHours": zod.number().min(getEducationCourseResponseTwoCenterTwoCoursesItemPracticalHoursMin).nullish(),
+  "theoryHours": zod.number().min(getEducationCourseResponseOneTwoCenterTwoCoursesItemTheoryHoursMin).nullish(),
+  "practicalHours": zod.number().min(getEducationCourseResponseOneTwoCenterTwoCoursesItemPracticalHoursMin).nullish(),
   "certificateName": zod.string().nullish(),
   "accredited": zod.boolean(),
   "language": zod.string().nullish(),
@@ -10696,10 +10855,11 @@ export const GetEducationCourseResponse = zod.object({
   "answer": zod.string()
 })),
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
-  "depositAmount": zod.number().min(getEducationCourseResponseTwoCenterTwoCoursesItemDepositAmountMin).nullish(),
-  "studentCount": zod.number().min(getEducationCourseResponseTwoCenterTwoCoursesItemStudentCountMin).multipleOf(getEducationCourseResponseTwoCenterTwoCoursesItemStudentCountMultipleOf),
-  "inquiryCount30d": zod.number().min(getEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(getEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
-  "viewCount30d": zod.number().min(getEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(getEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf),
+  "depositAmount": zod.number().min(getEducationCourseResponseOneTwoCenterTwoCoursesItemDepositAmountMin).nullish(),
+  "studentCount": zod.number().min(getEducationCourseResponseOneTwoCenterTwoCoursesItemStudentCountMin).multipleOf(getEducationCourseResponseOneTwoCenterTwoCoursesItemStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(getEducationCourseResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMin).multipleOf(getEducationCourseResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf).optional(),
+  "inquiryCount30d": zod.number().min(getEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(getEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
+  "viewCount30d": zod.number().min(getEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(getEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
@@ -10710,6 +10870,7 @@ export const GetEducationCourseResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -10717,9 +10878,25 @@ export const GetEducationCourseResponse = zod.object({
 })]).optional(),
   "reviews": zod.array(zod.object({
   "id": zod.string(),
-  "rating": zod.number().min(1).max(getEducationCourseResponseTwoReviewsItemRatingMax),
+  "rating": zod.number().min(1).max(getEducationCourseResponseOneTwoReviewsItemRatingMax),
   "comment": zod.string(),
   "createdAt": zod.coerce.date()
+}))
+})).and(zod.object({
+  "modules": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number(),
+  "lessons": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+}))
 }))
 }))
 
@@ -10737,6 +10914,9 @@ export const updateEducationCourseBodyCategoryMin = 2;
 
 export const updateEducationCourseBodyPriceMin = 0;
 
+
+export const updateEducationCourseBodyDurationMinutesMax = 5256000;
+export const updateEducationCourseBodyDurationMinutesMultipleOf = 1;
 
 export const updateEducationCourseBodyLearningOutcomesItemMax = 240;
 
@@ -10794,6 +10974,7 @@ export const UpdateEducationCourseBody = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number().min(updateEducationCourseBodyPriceMin).optional(),
   "duration": zod.string().min(1).optional(),
+  "durationMinutes": zod.number().min(1).max(updateEducationCourseBodyDurationMinutesMax).multipleOf(updateEducationCourseBodyDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']).optional(),
   "learningOutcomes": zod.array(zod.string().min(1).max(updateEducationCourseBodyLearningOutcomesItemMax)).max(updateEducationCourseBodyLearningOutcomesMax).optional(),
   "includedItems": zod.array(zod.string().min(1).max(updateEducationCourseBodyIncludedItemsItemMax)).max(updateEducationCourseBodyIncludedItemsMax).optional(),
@@ -10816,56 +10997,83 @@ export const UpdateEducationCourseBody = zod.object({
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean().optional(),
   "refundPolicy": zod.string().min(1).max(updateEducationCourseBodyRefundPolicyMax).optional(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "groupDiscountMinimum": zod.number().min(updateEducationCourseBodyGroupDiscountMinimumMin).max(updateEducationCourseBodyGroupDiscountMinimumMax).nullish(),
   "groupDiscountPercent": zod.number().min(updateEducationCourseBodyGroupDiscountPercentMin).max(updateEducationCourseBodyGroupDiscountPercentMax).nullish()
 })
 
-export const updateEducationCourseResponseOneTheoryHoursMin = 0;
+export const updateEducationCourseResponseOneOneInstructorProfileTwoIndustryYearsMin = 0;
 
-export const updateEducationCourseResponseOnePracticalHoursMin = 0;
+export const updateEducationCourseResponseOneOneInstructorProfileTwoExperienceYearsMin = 0;
 
-export const updateEducationCourseResponseOneDepositAmountMin = 0;
+export const updateEducationCourseResponseOneOneDurationMinutesMultipleOf = 1;
 
-export const updateEducationCourseResponseOneStudentCountMin = 0;
-export const updateEducationCourseResponseOneStudentCountMultipleOf = 1;
+export const updateEducationCourseResponseOneOneReviewCountMin = 0;
 
-export const updateEducationCourseResponseOneInquiryCount30dMin = 0;
-export const updateEducationCourseResponseOneInquiryCount30dMultipleOf = 1;
+export const updateEducationCourseResponseOneOneTheoryHoursMin = 0;
 
-export const updateEducationCourseResponseOneViewCount30dMin = 0;
-export const updateEducationCourseResponseOneViewCount30dMultipleOf = 1;
+export const updateEducationCourseResponseOneOnePracticalHoursMin = 0;
 
-export const updateEducationCourseResponseTwoDayProgramItemDayNumberMultipleOf = 1;
+export const updateEducationCourseResponseOneOneDepositAmountMin = 0;
 
-export const updateEducationCourseResponseTwoDayProgramItemDurationMinutesMin = 0;
-export const updateEducationCourseResponseTwoDayProgramItemDurationMinutesMultipleOf = 1;
+export const updateEducationCourseResponseOneOneStudentCountMin = 0;
+export const updateEducationCourseResponseOneOneStudentCountMultipleOf = 1;
 
-export const updateEducationCourseResponseTwoGalleryItemSortOrderMultipleOf = 1;
+export const updateEducationCourseResponseOneOneCompletedLearnerCountMin = 0;
+export const updateEducationCourseResponseOneOneCompletedLearnerCountMultipleOf = 1;
 
-export const updateEducationCourseResponseTwoCenterTwoReviewCountMin = 0;
-export const updateEducationCourseResponseTwoCenterTwoReviewCountMultipleOf = 1;
+export const updateEducationCourseResponseOneOneInquiryCount30dMin = 0;
+export const updateEducationCourseResponseOneOneInquiryCount30dMultipleOf = 1;
 
-export const updateEducationCourseResponseTwoCenterTwoCourseCountMin = 0;
-export const updateEducationCourseResponseTwoCenterTwoCourseCountMultipleOf = 1;
+export const updateEducationCourseResponseOneOneViewCount30dMin = 0;
+export const updateEducationCourseResponseOneOneViewCount30dMultipleOf = 1;
 
-export const updateEducationCourseResponseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+export const updateEducationCourseResponseOneTwoPublicModulesItemSortOrderMin = 0;
 
-export const updateEducationCourseResponseTwoCenterTwoCoursesItemTheoryHoursMin = 0;
+export const updateEducationCourseResponseOneTwoPublicModulesItemLessonCountMin = 0;
 
-export const updateEducationCourseResponseTwoCenterTwoCoursesItemPracticalHoursMin = 0;
+export const updateEducationCourseResponseOneTwoDayProgramItemDayNumberMultipleOf = 1;
 
-export const updateEducationCourseResponseTwoCenterTwoCoursesItemDepositAmountMin = 0;
+export const updateEducationCourseResponseOneTwoDayProgramItemDurationMinutesMin = 0;
+export const updateEducationCourseResponseOneTwoDayProgramItemDurationMinutesMultipleOf = 1;
 
-export const updateEducationCourseResponseTwoCenterTwoCoursesItemStudentCountMin = 0;
-export const updateEducationCourseResponseTwoCenterTwoCoursesItemStudentCountMultipleOf = 1;
+export const updateEducationCourseResponseOneTwoGalleryItemSortOrderMultipleOf = 1;
 
-export const updateEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount30dMin = 0;
-export const updateEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf = 1;
+export const updateEducationCourseResponseOneTwoCenterTwoReviewCountMin = 0;
+export const updateEducationCourseResponseOneTwoCenterTwoReviewCountMultipleOf = 1;
 
-export const updateEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMin = 0;
-export const updateEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+export const updateEducationCourseResponseOneTwoCenterTwoCourseCountMin = 0;
+export const updateEducationCourseResponseOneTwoCenterTwoCourseCountMultipleOf = 1;
 
-export const updateEducationCourseResponseTwoReviewsItemRatingMax = 5;
+export const updateEducationCourseResponseOneTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin = 0;
+
+export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin = 0;
+
+export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemDurationMinutesMultipleOf = 1;
+
+export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemReviewCountMin = 0;
+
+export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemTheoryHoursMin = 0;
+
+export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemPracticalHoursMin = 0;
+
+export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemDepositAmountMin = 0;
+
+export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemStudentCountMin = 0;
+export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemStudentCountMultipleOf = 1;
+
+export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMin = 0;
+export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf = 1;
+
+export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMin = 0;
+export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMultipleOf = 1;
+
+export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMin = 0;
+export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+export const updateEducationCourseResponseOneTwoReviewsItemRatingMax = 5;
 
 
 
@@ -10875,6 +11083,17 @@ export const UpdateEducationCourseResponse = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(updateEducationCourseResponseOneOneInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(updateEducationCourseResponseOneOneInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -10891,14 +11110,16 @@ export const UpdateEducationCourseResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(updateEducationCourseResponseOneOneDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(updateEducationCourseResponseOneOneReviewCountMin),
   "certification": zod.boolean(),
-  "theoryHours": zod.number().min(updateEducationCourseResponseOneTheoryHoursMin).nullish(),
-  "practicalHours": zod.number().min(updateEducationCourseResponseOnePracticalHoursMin).nullish(),
+  "theoryHours": zod.number().min(updateEducationCourseResponseOneOneTheoryHoursMin).nullish(),
+  "practicalHours": zod.number().min(updateEducationCourseResponseOneOnePracticalHoursMin).nullish(),
   "certificateName": zod.string().nullish(),
   "accredited": zod.boolean(),
   "language": zod.string().nullish(),
@@ -10909,10 +11130,11 @@ export const UpdateEducationCourseResponse = zod.object({
   "answer": zod.string()
 })),
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
-  "depositAmount": zod.number().min(updateEducationCourseResponseOneDepositAmountMin).nullish(),
-  "studentCount": zod.number().min(updateEducationCourseResponseOneStudentCountMin).multipleOf(updateEducationCourseResponseOneStudentCountMultipleOf),
-  "inquiryCount30d": zod.number().min(updateEducationCourseResponseOneInquiryCount30dMin).multipleOf(updateEducationCourseResponseOneInquiryCount30dMultipleOf),
-  "viewCount30d": zod.number().min(updateEducationCourseResponseOneViewCount30dMin).multipleOf(updateEducationCourseResponseOneViewCount30dMultipleOf),
+  "depositAmount": zod.number().min(updateEducationCourseResponseOneOneDepositAmountMin).nullish(),
+  "studentCount": zod.number().min(updateEducationCourseResponseOneOneStudentCountMin).multipleOf(updateEducationCourseResponseOneOneStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(updateEducationCourseResponseOneOneCompletedLearnerCountMin).multipleOf(updateEducationCourseResponseOneOneCompletedLearnerCountMultipleOf).optional(),
+  "inquiryCount30d": zod.number().min(updateEducationCourseResponseOneOneInquiryCount30dMin).multipleOf(updateEducationCourseResponseOneOneInquiryCount30dMultipleOf),
+  "viewCount30d": zod.number().min(updateEducationCourseResponseOneOneViewCount30dMin).multipleOf(updateEducationCourseResponseOneOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
@@ -10923,24 +11145,17 @@ export const UpdateEducationCourseResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
-  "modules": zod.array(zod.object({
+  "publicModules": zod.array(zod.object({
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
-  "sortOrder": zod.number(),
-  "lessons": zod.array(zod.object({
-  "id": zod.string(),
-  "title": zod.string(),
-  "description": zod.string(),
-  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
-  "durationMinutes": zod.number(),
-  "sortOrder": zod.number(),
-  "completed": zod.boolean()
-}))
+  "sortOrder": zod.number().int().min(updateEducationCourseResponseOneTwoPublicModulesItemSortOrderMin),
+  "lessonCount": zod.number().int().min(updateEducationCourseResponseOneTwoPublicModulesItemLessonCountMin)
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
@@ -10955,16 +11170,16 @@ export const UpdateEducationCourseResponse = zod.object({
 })),
   "dayProgram": zod.array(zod.object({
   "id": zod.string(),
-  "dayNumber": zod.number().min(1).multipleOf(updateEducationCourseResponseTwoDayProgramItemDayNumberMultipleOf),
+  "dayNumber": zod.number().min(1).multipleOf(updateEducationCourseResponseOneTwoDayProgramItemDayNumberMultipleOf),
   "title": zod.string(),
   "description": zod.string(),
-  "durationMinutes": zod.number().min(updateEducationCourseResponseTwoDayProgramItemDurationMinutesMin).multipleOf(updateEducationCourseResponseTwoDayProgramItemDurationMinutesMultipleOf).nullish()
+  "durationMinutes": zod.number().min(updateEducationCourseResponseOneTwoDayProgramItemDurationMinutesMin).multipleOf(updateEducationCourseResponseOneTwoDayProgramItemDurationMinutesMultipleOf).nullish()
 })),
   "gallery": zod.array(zod.object({
   "id": zod.string(),
   "url": zod.string(),
   "altText": zod.string(),
-  "sortOrder": zod.number().multipleOf(updateEducationCourseResponseTwoGalleryItemSortOrderMultipleOf)
+  "sortOrder": zod.number().multipleOf(updateEducationCourseResponseOneTwoGalleryItemSortOrderMultipleOf)
 })),
   "center": zod.union([zod.null(),zod.object({
   "id": zod.string(),
@@ -10976,13 +11191,13 @@ export const UpdateEducationCourseResponse = zod.object({
   "instagramUrl": zod.string().nullish(),
   "verified": zod.boolean(),
   "rating": zod.number(),
-  "reviewCount": zod.number().min(updateEducationCourseResponseTwoCenterTwoReviewCountMin).multipleOf(updateEducationCourseResponseTwoCenterTwoReviewCountMultipleOf),
-  "courseCount": zod.number().min(updateEducationCourseResponseTwoCenterTwoCourseCountMin).multipleOf(updateEducationCourseResponseTwoCenterTwoCourseCountMultipleOf),
+  "reviewCount": zod.number().min(updateEducationCourseResponseOneTwoCenterTwoReviewCountMin).multipleOf(updateEducationCourseResponseOneTwoCenterTwoReviewCountMultipleOf),
+  "courseCount": zod.number().min(updateEducationCourseResponseOneTwoCenterTwoCourseCountMin).multipleOf(updateEducationCourseResponseOneTwoCenterTwoCourseCountMultipleOf),
   "gallery": zod.array(zod.object({
   "id": zod.string(),
   "url": zod.string(),
   "altText": zod.string(),
-  "sortOrder": zod.number().multipleOf(updateEducationCourseResponseTwoCenterTwoGalleryItemSortOrderMultipleOf)
+  "sortOrder": zod.number().multipleOf(updateEducationCourseResponseOneTwoCenterTwoGalleryItemSortOrderMultipleOf)
 })),
   "courses": zod.array(zod.object({
   "id": zod.string(),
@@ -10990,6 +11205,17 @@ export const UpdateEducationCourseResponse = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(updateEducationCourseResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(updateEducationCourseResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -11006,14 +11232,16 @@ export const UpdateEducationCourseResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(updateEducationCourseResponseOneTwoCenterTwoCoursesItemDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(updateEducationCourseResponseOneTwoCenterTwoCoursesItemReviewCountMin),
   "certification": zod.boolean(),
-  "theoryHours": zod.number().min(updateEducationCourseResponseTwoCenterTwoCoursesItemTheoryHoursMin).nullish(),
-  "practicalHours": zod.number().min(updateEducationCourseResponseTwoCenterTwoCoursesItemPracticalHoursMin).nullish(),
+  "theoryHours": zod.number().min(updateEducationCourseResponseOneTwoCenterTwoCoursesItemTheoryHoursMin).nullish(),
+  "practicalHours": zod.number().min(updateEducationCourseResponseOneTwoCenterTwoCoursesItemPracticalHoursMin).nullish(),
   "certificateName": zod.string().nullish(),
   "accredited": zod.boolean(),
   "language": zod.string().nullish(),
@@ -11024,10 +11252,11 @@ export const UpdateEducationCourseResponse = zod.object({
   "answer": zod.string()
 })),
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
-  "depositAmount": zod.number().min(updateEducationCourseResponseTwoCenterTwoCoursesItemDepositAmountMin).nullish(),
-  "studentCount": zod.number().min(updateEducationCourseResponseTwoCenterTwoCoursesItemStudentCountMin).multipleOf(updateEducationCourseResponseTwoCenterTwoCoursesItemStudentCountMultipleOf),
-  "inquiryCount30d": zod.number().min(updateEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(updateEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
-  "viewCount30d": zod.number().min(updateEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(updateEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf),
+  "depositAmount": zod.number().min(updateEducationCourseResponseOneTwoCenterTwoCoursesItemDepositAmountMin).nullish(),
+  "studentCount": zod.number().min(updateEducationCourseResponseOneTwoCenterTwoCoursesItemStudentCountMin).multipleOf(updateEducationCourseResponseOneTwoCenterTwoCoursesItemStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(updateEducationCourseResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMin).multipleOf(updateEducationCourseResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf).optional(),
+  "inquiryCount30d": zod.number().min(updateEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(updateEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
+  "viewCount30d": zod.number().min(updateEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(updateEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
@@ -11038,6 +11267,7 @@ export const UpdateEducationCourseResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -11045,9 +11275,25 @@ export const UpdateEducationCourseResponse = zod.object({
 })]).optional(),
   "reviews": zod.array(zod.object({
   "id": zod.string(),
-  "rating": zod.number().min(1).max(updateEducationCourseResponseTwoReviewsItemRatingMax),
+  "rating": zod.number().min(1).max(updateEducationCourseResponseOneTwoReviewsItemRatingMax),
   "comment": zod.string(),
   "createdAt": zod.coerce.date()
+}))
+})).and(zod.object({
+  "modules": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number(),
+  "lessons": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+}))
 }))
 }))
 
@@ -11069,52 +11315,78 @@ export const PublishEducationCourseParams = zod.object({
   "courseId": zod.coerce.string()
 })
 
-export const publishEducationCourseResponseOneTheoryHoursMin = 0;
+export const publishEducationCourseResponseOneOneInstructorProfileTwoIndustryYearsMin = 0;
 
-export const publishEducationCourseResponseOnePracticalHoursMin = 0;
+export const publishEducationCourseResponseOneOneInstructorProfileTwoExperienceYearsMin = 0;
 
-export const publishEducationCourseResponseOneDepositAmountMin = 0;
+export const publishEducationCourseResponseOneOneDurationMinutesMultipleOf = 1;
 
-export const publishEducationCourseResponseOneStudentCountMin = 0;
-export const publishEducationCourseResponseOneStudentCountMultipleOf = 1;
+export const publishEducationCourseResponseOneOneReviewCountMin = 0;
 
-export const publishEducationCourseResponseOneInquiryCount30dMin = 0;
-export const publishEducationCourseResponseOneInquiryCount30dMultipleOf = 1;
+export const publishEducationCourseResponseOneOneTheoryHoursMin = 0;
 
-export const publishEducationCourseResponseOneViewCount30dMin = 0;
-export const publishEducationCourseResponseOneViewCount30dMultipleOf = 1;
+export const publishEducationCourseResponseOneOnePracticalHoursMin = 0;
 
-export const publishEducationCourseResponseTwoDayProgramItemDayNumberMultipleOf = 1;
+export const publishEducationCourseResponseOneOneDepositAmountMin = 0;
 
-export const publishEducationCourseResponseTwoDayProgramItemDurationMinutesMin = 0;
-export const publishEducationCourseResponseTwoDayProgramItemDurationMinutesMultipleOf = 1;
+export const publishEducationCourseResponseOneOneStudentCountMin = 0;
+export const publishEducationCourseResponseOneOneStudentCountMultipleOf = 1;
 
-export const publishEducationCourseResponseTwoGalleryItemSortOrderMultipleOf = 1;
+export const publishEducationCourseResponseOneOneCompletedLearnerCountMin = 0;
+export const publishEducationCourseResponseOneOneCompletedLearnerCountMultipleOf = 1;
 
-export const publishEducationCourseResponseTwoCenterTwoReviewCountMin = 0;
-export const publishEducationCourseResponseTwoCenterTwoReviewCountMultipleOf = 1;
+export const publishEducationCourseResponseOneOneInquiryCount30dMin = 0;
+export const publishEducationCourseResponseOneOneInquiryCount30dMultipleOf = 1;
 
-export const publishEducationCourseResponseTwoCenterTwoCourseCountMin = 0;
-export const publishEducationCourseResponseTwoCenterTwoCourseCountMultipleOf = 1;
+export const publishEducationCourseResponseOneOneViewCount30dMin = 0;
+export const publishEducationCourseResponseOneOneViewCount30dMultipleOf = 1;
 
-export const publishEducationCourseResponseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+export const publishEducationCourseResponseOneTwoPublicModulesItemSortOrderMin = 0;
 
-export const publishEducationCourseResponseTwoCenterTwoCoursesItemTheoryHoursMin = 0;
+export const publishEducationCourseResponseOneTwoPublicModulesItemLessonCountMin = 0;
 
-export const publishEducationCourseResponseTwoCenterTwoCoursesItemPracticalHoursMin = 0;
+export const publishEducationCourseResponseOneTwoDayProgramItemDayNumberMultipleOf = 1;
 
-export const publishEducationCourseResponseTwoCenterTwoCoursesItemDepositAmountMin = 0;
+export const publishEducationCourseResponseOneTwoDayProgramItemDurationMinutesMin = 0;
+export const publishEducationCourseResponseOneTwoDayProgramItemDurationMinutesMultipleOf = 1;
 
-export const publishEducationCourseResponseTwoCenterTwoCoursesItemStudentCountMin = 0;
-export const publishEducationCourseResponseTwoCenterTwoCoursesItemStudentCountMultipleOf = 1;
+export const publishEducationCourseResponseOneTwoGalleryItemSortOrderMultipleOf = 1;
 
-export const publishEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount30dMin = 0;
-export const publishEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf = 1;
+export const publishEducationCourseResponseOneTwoCenterTwoReviewCountMin = 0;
+export const publishEducationCourseResponseOneTwoCenterTwoReviewCountMultipleOf = 1;
 
-export const publishEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMin = 0;
-export const publishEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+export const publishEducationCourseResponseOneTwoCenterTwoCourseCountMin = 0;
+export const publishEducationCourseResponseOneTwoCenterTwoCourseCountMultipleOf = 1;
 
-export const publishEducationCourseResponseTwoReviewsItemRatingMax = 5;
+export const publishEducationCourseResponseOneTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin = 0;
+
+export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin = 0;
+
+export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemDurationMinutesMultipleOf = 1;
+
+export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemReviewCountMin = 0;
+
+export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemTheoryHoursMin = 0;
+
+export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemPracticalHoursMin = 0;
+
+export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemDepositAmountMin = 0;
+
+export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemStudentCountMin = 0;
+export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemStudentCountMultipleOf = 1;
+
+export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMin = 0;
+export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf = 1;
+
+export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMin = 0;
+export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMultipleOf = 1;
+
+export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMin = 0;
+export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+export const publishEducationCourseResponseOneTwoReviewsItemRatingMax = 5;
 
 
 
@@ -11124,6 +11396,17 @@ export const PublishEducationCourseResponse = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(publishEducationCourseResponseOneOneInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(publishEducationCourseResponseOneOneInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -11140,14 +11423,16 @@ export const PublishEducationCourseResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(publishEducationCourseResponseOneOneDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(publishEducationCourseResponseOneOneReviewCountMin),
   "certification": zod.boolean(),
-  "theoryHours": zod.number().min(publishEducationCourseResponseOneTheoryHoursMin).nullish(),
-  "practicalHours": zod.number().min(publishEducationCourseResponseOnePracticalHoursMin).nullish(),
+  "theoryHours": zod.number().min(publishEducationCourseResponseOneOneTheoryHoursMin).nullish(),
+  "practicalHours": zod.number().min(publishEducationCourseResponseOneOnePracticalHoursMin).nullish(),
   "certificateName": zod.string().nullish(),
   "accredited": zod.boolean(),
   "language": zod.string().nullish(),
@@ -11158,10 +11443,11 @@ export const PublishEducationCourseResponse = zod.object({
   "answer": zod.string()
 })),
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
-  "depositAmount": zod.number().min(publishEducationCourseResponseOneDepositAmountMin).nullish(),
-  "studentCount": zod.number().min(publishEducationCourseResponseOneStudentCountMin).multipleOf(publishEducationCourseResponseOneStudentCountMultipleOf),
-  "inquiryCount30d": zod.number().min(publishEducationCourseResponseOneInquiryCount30dMin).multipleOf(publishEducationCourseResponseOneInquiryCount30dMultipleOf),
-  "viewCount30d": zod.number().min(publishEducationCourseResponseOneViewCount30dMin).multipleOf(publishEducationCourseResponseOneViewCount30dMultipleOf),
+  "depositAmount": zod.number().min(publishEducationCourseResponseOneOneDepositAmountMin).nullish(),
+  "studentCount": zod.number().min(publishEducationCourseResponseOneOneStudentCountMin).multipleOf(publishEducationCourseResponseOneOneStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(publishEducationCourseResponseOneOneCompletedLearnerCountMin).multipleOf(publishEducationCourseResponseOneOneCompletedLearnerCountMultipleOf).optional(),
+  "inquiryCount30d": zod.number().min(publishEducationCourseResponseOneOneInquiryCount30dMin).multipleOf(publishEducationCourseResponseOneOneInquiryCount30dMultipleOf),
+  "viewCount30d": zod.number().min(publishEducationCourseResponseOneOneViewCount30dMin).multipleOf(publishEducationCourseResponseOneOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
@@ -11172,24 +11458,17 @@ export const PublishEducationCourseResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
-  "modules": zod.array(zod.object({
+  "publicModules": zod.array(zod.object({
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
-  "sortOrder": zod.number(),
-  "lessons": zod.array(zod.object({
-  "id": zod.string(),
-  "title": zod.string(),
-  "description": zod.string(),
-  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
-  "durationMinutes": zod.number(),
-  "sortOrder": zod.number(),
-  "completed": zod.boolean()
-}))
+  "sortOrder": zod.number().int().min(publishEducationCourseResponseOneTwoPublicModulesItemSortOrderMin),
+  "lessonCount": zod.number().int().min(publishEducationCourseResponseOneTwoPublicModulesItemLessonCountMin)
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
@@ -11204,16 +11483,16 @@ export const PublishEducationCourseResponse = zod.object({
 })),
   "dayProgram": zod.array(zod.object({
   "id": zod.string(),
-  "dayNumber": zod.number().min(1).multipleOf(publishEducationCourseResponseTwoDayProgramItemDayNumberMultipleOf),
+  "dayNumber": zod.number().min(1).multipleOf(publishEducationCourseResponseOneTwoDayProgramItemDayNumberMultipleOf),
   "title": zod.string(),
   "description": zod.string(),
-  "durationMinutes": zod.number().min(publishEducationCourseResponseTwoDayProgramItemDurationMinutesMin).multipleOf(publishEducationCourseResponseTwoDayProgramItemDurationMinutesMultipleOf).nullish()
+  "durationMinutes": zod.number().min(publishEducationCourseResponseOneTwoDayProgramItemDurationMinutesMin).multipleOf(publishEducationCourseResponseOneTwoDayProgramItemDurationMinutesMultipleOf).nullish()
 })),
   "gallery": zod.array(zod.object({
   "id": zod.string(),
   "url": zod.string(),
   "altText": zod.string(),
-  "sortOrder": zod.number().multipleOf(publishEducationCourseResponseTwoGalleryItemSortOrderMultipleOf)
+  "sortOrder": zod.number().multipleOf(publishEducationCourseResponseOneTwoGalleryItemSortOrderMultipleOf)
 })),
   "center": zod.union([zod.null(),zod.object({
   "id": zod.string(),
@@ -11225,13 +11504,13 @@ export const PublishEducationCourseResponse = zod.object({
   "instagramUrl": zod.string().nullish(),
   "verified": zod.boolean(),
   "rating": zod.number(),
-  "reviewCount": zod.number().min(publishEducationCourseResponseTwoCenterTwoReviewCountMin).multipleOf(publishEducationCourseResponseTwoCenterTwoReviewCountMultipleOf),
-  "courseCount": zod.number().min(publishEducationCourseResponseTwoCenterTwoCourseCountMin).multipleOf(publishEducationCourseResponseTwoCenterTwoCourseCountMultipleOf),
+  "reviewCount": zod.number().min(publishEducationCourseResponseOneTwoCenterTwoReviewCountMin).multipleOf(publishEducationCourseResponseOneTwoCenterTwoReviewCountMultipleOf),
+  "courseCount": zod.number().min(publishEducationCourseResponseOneTwoCenterTwoCourseCountMin).multipleOf(publishEducationCourseResponseOneTwoCenterTwoCourseCountMultipleOf),
   "gallery": zod.array(zod.object({
   "id": zod.string(),
   "url": zod.string(),
   "altText": zod.string(),
-  "sortOrder": zod.number().multipleOf(publishEducationCourseResponseTwoCenterTwoGalleryItemSortOrderMultipleOf)
+  "sortOrder": zod.number().multipleOf(publishEducationCourseResponseOneTwoCenterTwoGalleryItemSortOrderMultipleOf)
 })),
   "courses": zod.array(zod.object({
   "id": zod.string(),
@@ -11239,6 +11518,17 @@ export const PublishEducationCourseResponse = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(publishEducationCourseResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(publishEducationCourseResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -11255,14 +11545,16 @@ export const PublishEducationCourseResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(publishEducationCourseResponseOneTwoCenterTwoCoursesItemDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(publishEducationCourseResponseOneTwoCenterTwoCoursesItemReviewCountMin),
   "certification": zod.boolean(),
-  "theoryHours": zod.number().min(publishEducationCourseResponseTwoCenterTwoCoursesItemTheoryHoursMin).nullish(),
-  "practicalHours": zod.number().min(publishEducationCourseResponseTwoCenterTwoCoursesItemPracticalHoursMin).nullish(),
+  "theoryHours": zod.number().min(publishEducationCourseResponseOneTwoCenterTwoCoursesItemTheoryHoursMin).nullish(),
+  "practicalHours": zod.number().min(publishEducationCourseResponseOneTwoCenterTwoCoursesItemPracticalHoursMin).nullish(),
   "certificateName": zod.string().nullish(),
   "accredited": zod.boolean(),
   "language": zod.string().nullish(),
@@ -11273,10 +11565,11 @@ export const PublishEducationCourseResponse = zod.object({
   "answer": zod.string()
 })),
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
-  "depositAmount": zod.number().min(publishEducationCourseResponseTwoCenterTwoCoursesItemDepositAmountMin).nullish(),
-  "studentCount": zod.number().min(publishEducationCourseResponseTwoCenterTwoCoursesItemStudentCountMin).multipleOf(publishEducationCourseResponseTwoCenterTwoCoursesItemStudentCountMultipleOf),
-  "inquiryCount30d": zod.number().min(publishEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(publishEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
-  "viewCount30d": zod.number().min(publishEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(publishEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf),
+  "depositAmount": zod.number().min(publishEducationCourseResponseOneTwoCenterTwoCoursesItemDepositAmountMin).nullish(),
+  "studentCount": zod.number().min(publishEducationCourseResponseOneTwoCenterTwoCoursesItemStudentCountMin).multipleOf(publishEducationCourseResponseOneTwoCenterTwoCoursesItemStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(publishEducationCourseResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMin).multipleOf(publishEducationCourseResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf).optional(),
+  "inquiryCount30d": zod.number().min(publishEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(publishEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
+  "viewCount30d": zod.number().min(publishEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(publishEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
@@ -11287,6 +11580,7 @@ export const PublishEducationCourseResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -11294,9 +11588,25 @@ export const PublishEducationCourseResponse = zod.object({
 })]).optional(),
   "reviews": zod.array(zod.object({
   "id": zod.string(),
-  "rating": zod.number().min(1).max(publishEducationCourseResponseTwoReviewsItemRatingMax),
+  "rating": zod.number().min(1).max(publishEducationCourseResponseOneTwoReviewsItemRatingMax),
   "comment": zod.string(),
   "createdAt": zod.coerce.date()
+}))
+})).and(zod.object({
+  "modules": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number(),
+  "lessons": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+}))
 }))
 }))
 
@@ -11913,52 +12223,78 @@ export const GetEducationLmsParams = zod.object({
   "enrollmentId": zod.coerce.string()
 })
 
-export const getEducationLmsResponseCourseOneTheoryHoursMin = 0;
+export const getEducationLmsResponseCourseOneOneInstructorProfileTwoIndustryYearsMin = 0;
 
-export const getEducationLmsResponseCourseOnePracticalHoursMin = 0;
+export const getEducationLmsResponseCourseOneOneInstructorProfileTwoExperienceYearsMin = 0;
 
-export const getEducationLmsResponseCourseOneDepositAmountMin = 0;
+export const getEducationLmsResponseCourseOneOneDurationMinutesMultipleOf = 1;
 
-export const getEducationLmsResponseCourseOneStudentCountMin = 0;
-export const getEducationLmsResponseCourseOneStudentCountMultipleOf = 1;
+export const getEducationLmsResponseCourseOneOneReviewCountMin = 0;
 
-export const getEducationLmsResponseCourseOneInquiryCount30dMin = 0;
-export const getEducationLmsResponseCourseOneInquiryCount30dMultipleOf = 1;
+export const getEducationLmsResponseCourseOneOneTheoryHoursMin = 0;
 
-export const getEducationLmsResponseCourseOneViewCount30dMin = 0;
-export const getEducationLmsResponseCourseOneViewCount30dMultipleOf = 1;
+export const getEducationLmsResponseCourseOneOnePracticalHoursMin = 0;
 
-export const getEducationLmsResponseCourseTwoDayProgramItemDayNumberMultipleOf = 1;
+export const getEducationLmsResponseCourseOneOneDepositAmountMin = 0;
 
-export const getEducationLmsResponseCourseTwoDayProgramItemDurationMinutesMin = 0;
-export const getEducationLmsResponseCourseTwoDayProgramItemDurationMinutesMultipleOf = 1;
+export const getEducationLmsResponseCourseOneOneStudentCountMin = 0;
+export const getEducationLmsResponseCourseOneOneStudentCountMultipleOf = 1;
 
-export const getEducationLmsResponseCourseTwoGalleryItemSortOrderMultipleOf = 1;
+export const getEducationLmsResponseCourseOneOneCompletedLearnerCountMin = 0;
+export const getEducationLmsResponseCourseOneOneCompletedLearnerCountMultipleOf = 1;
 
-export const getEducationLmsResponseCourseTwoCenterTwoReviewCountMin = 0;
-export const getEducationLmsResponseCourseTwoCenterTwoReviewCountMultipleOf = 1;
+export const getEducationLmsResponseCourseOneOneInquiryCount30dMin = 0;
+export const getEducationLmsResponseCourseOneOneInquiryCount30dMultipleOf = 1;
 
-export const getEducationLmsResponseCourseTwoCenterTwoCourseCountMin = 0;
-export const getEducationLmsResponseCourseTwoCenterTwoCourseCountMultipleOf = 1;
+export const getEducationLmsResponseCourseOneOneViewCount30dMin = 0;
+export const getEducationLmsResponseCourseOneOneViewCount30dMultipleOf = 1;
 
-export const getEducationLmsResponseCourseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+export const getEducationLmsResponseCourseOneTwoPublicModulesItemSortOrderMin = 0;
 
-export const getEducationLmsResponseCourseTwoCenterTwoCoursesItemTheoryHoursMin = 0;
+export const getEducationLmsResponseCourseOneTwoPublicModulesItemLessonCountMin = 0;
 
-export const getEducationLmsResponseCourseTwoCenterTwoCoursesItemPracticalHoursMin = 0;
+export const getEducationLmsResponseCourseOneTwoDayProgramItemDayNumberMultipleOf = 1;
 
-export const getEducationLmsResponseCourseTwoCenterTwoCoursesItemDepositAmountMin = 0;
+export const getEducationLmsResponseCourseOneTwoDayProgramItemDurationMinutesMin = 0;
+export const getEducationLmsResponseCourseOneTwoDayProgramItemDurationMinutesMultipleOf = 1;
 
-export const getEducationLmsResponseCourseTwoCenterTwoCoursesItemStudentCountMin = 0;
-export const getEducationLmsResponseCourseTwoCenterTwoCoursesItemStudentCountMultipleOf = 1;
+export const getEducationLmsResponseCourseOneTwoGalleryItemSortOrderMultipleOf = 1;
 
-export const getEducationLmsResponseCourseTwoCenterTwoCoursesItemInquiryCount30dMin = 0;
-export const getEducationLmsResponseCourseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf = 1;
+export const getEducationLmsResponseCourseOneTwoCenterTwoReviewCountMin = 0;
+export const getEducationLmsResponseCourseOneTwoCenterTwoReviewCountMultipleOf = 1;
 
-export const getEducationLmsResponseCourseTwoCenterTwoCoursesItemViewCount30dMin = 0;
-export const getEducationLmsResponseCourseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+export const getEducationLmsResponseCourseOneTwoCenterTwoCourseCountMin = 0;
+export const getEducationLmsResponseCourseOneTwoCenterTwoCourseCountMultipleOf = 1;
 
-export const getEducationLmsResponseCourseTwoReviewsItemRatingMax = 5;
+export const getEducationLmsResponseCourseOneTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin = 0;
+
+export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin = 0;
+
+export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemDurationMinutesMultipleOf = 1;
+
+export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemReviewCountMin = 0;
+
+export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemTheoryHoursMin = 0;
+
+export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemPracticalHoursMin = 0;
+
+export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemDepositAmountMin = 0;
+
+export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemStudentCountMin = 0;
+export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemStudentCountMultipleOf = 1;
+
+export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemCompletedLearnerCountMin = 0;
+export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf = 1;
+
+export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemInquiryCount30dMin = 0;
+export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemInquiryCount30dMultipleOf = 1;
+
+export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemViewCount30dMin = 0;
+export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+export const getEducationLmsResponseCourseOneTwoReviewsItemRatingMax = 5;
 
 
 
@@ -11983,6 +12319,17 @@ export const GetEducationLmsResponse = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(getEducationLmsResponseCourseOneOneInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(getEducationLmsResponseCourseOneOneInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -11999,14 +12346,16 @@ export const GetEducationLmsResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(getEducationLmsResponseCourseOneOneDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(getEducationLmsResponseCourseOneOneReviewCountMin),
   "certification": zod.boolean(),
-  "theoryHours": zod.number().min(getEducationLmsResponseCourseOneTheoryHoursMin).nullish(),
-  "practicalHours": zod.number().min(getEducationLmsResponseCourseOnePracticalHoursMin).nullish(),
+  "theoryHours": zod.number().min(getEducationLmsResponseCourseOneOneTheoryHoursMin).nullish(),
+  "practicalHours": zod.number().min(getEducationLmsResponseCourseOneOnePracticalHoursMin).nullish(),
   "certificateName": zod.string().nullish(),
   "accredited": zod.boolean(),
   "language": zod.string().nullish(),
@@ -12017,10 +12366,11 @@ export const GetEducationLmsResponse = zod.object({
   "answer": zod.string()
 })),
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
-  "depositAmount": zod.number().min(getEducationLmsResponseCourseOneDepositAmountMin).nullish(),
-  "studentCount": zod.number().min(getEducationLmsResponseCourseOneStudentCountMin).multipleOf(getEducationLmsResponseCourseOneStudentCountMultipleOf),
-  "inquiryCount30d": zod.number().min(getEducationLmsResponseCourseOneInquiryCount30dMin).multipleOf(getEducationLmsResponseCourseOneInquiryCount30dMultipleOf),
-  "viewCount30d": zod.number().min(getEducationLmsResponseCourseOneViewCount30dMin).multipleOf(getEducationLmsResponseCourseOneViewCount30dMultipleOf),
+  "depositAmount": zod.number().min(getEducationLmsResponseCourseOneOneDepositAmountMin).nullish(),
+  "studentCount": zod.number().min(getEducationLmsResponseCourseOneOneStudentCountMin).multipleOf(getEducationLmsResponseCourseOneOneStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(getEducationLmsResponseCourseOneOneCompletedLearnerCountMin).multipleOf(getEducationLmsResponseCourseOneOneCompletedLearnerCountMultipleOf).optional(),
+  "inquiryCount30d": zod.number().min(getEducationLmsResponseCourseOneOneInquiryCount30dMin).multipleOf(getEducationLmsResponseCourseOneOneInquiryCount30dMultipleOf),
+  "viewCount30d": zod.number().min(getEducationLmsResponseCourseOneOneViewCount30dMin).multipleOf(getEducationLmsResponseCourseOneOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
@@ -12031,24 +12381,17 @@ export const GetEducationLmsResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
-  "modules": zod.array(zod.object({
+  "publicModules": zod.array(zod.object({
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
-  "sortOrder": zod.number(),
-  "lessons": zod.array(zod.object({
-  "id": zod.string(),
-  "title": zod.string(),
-  "description": zod.string(),
-  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
-  "durationMinutes": zod.number(),
-  "sortOrder": zod.number(),
-  "completed": zod.boolean()
-}))
+  "sortOrder": zod.number().int().min(getEducationLmsResponseCourseOneTwoPublicModulesItemSortOrderMin),
+  "lessonCount": zod.number().int().min(getEducationLmsResponseCourseOneTwoPublicModulesItemLessonCountMin)
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
@@ -12063,16 +12406,16 @@ export const GetEducationLmsResponse = zod.object({
 })),
   "dayProgram": zod.array(zod.object({
   "id": zod.string(),
-  "dayNumber": zod.number().min(1).multipleOf(getEducationLmsResponseCourseTwoDayProgramItemDayNumberMultipleOf),
+  "dayNumber": zod.number().min(1).multipleOf(getEducationLmsResponseCourseOneTwoDayProgramItemDayNumberMultipleOf),
   "title": zod.string(),
   "description": zod.string(),
-  "durationMinutes": zod.number().min(getEducationLmsResponseCourseTwoDayProgramItemDurationMinutesMin).multipleOf(getEducationLmsResponseCourseTwoDayProgramItemDurationMinutesMultipleOf).nullish()
+  "durationMinutes": zod.number().min(getEducationLmsResponseCourseOneTwoDayProgramItemDurationMinutesMin).multipleOf(getEducationLmsResponseCourseOneTwoDayProgramItemDurationMinutesMultipleOf).nullish()
 })),
   "gallery": zod.array(zod.object({
   "id": zod.string(),
   "url": zod.string(),
   "altText": zod.string(),
-  "sortOrder": zod.number().multipleOf(getEducationLmsResponseCourseTwoGalleryItemSortOrderMultipleOf)
+  "sortOrder": zod.number().multipleOf(getEducationLmsResponseCourseOneTwoGalleryItemSortOrderMultipleOf)
 })),
   "center": zod.union([zod.null(),zod.object({
   "id": zod.string(),
@@ -12084,13 +12427,13 @@ export const GetEducationLmsResponse = zod.object({
   "instagramUrl": zod.string().nullish(),
   "verified": zod.boolean(),
   "rating": zod.number(),
-  "reviewCount": zod.number().min(getEducationLmsResponseCourseTwoCenterTwoReviewCountMin).multipleOf(getEducationLmsResponseCourseTwoCenterTwoReviewCountMultipleOf),
-  "courseCount": zod.number().min(getEducationLmsResponseCourseTwoCenterTwoCourseCountMin).multipleOf(getEducationLmsResponseCourseTwoCenterTwoCourseCountMultipleOf),
+  "reviewCount": zod.number().min(getEducationLmsResponseCourseOneTwoCenterTwoReviewCountMin).multipleOf(getEducationLmsResponseCourseOneTwoCenterTwoReviewCountMultipleOf),
+  "courseCount": zod.number().min(getEducationLmsResponseCourseOneTwoCenterTwoCourseCountMin).multipleOf(getEducationLmsResponseCourseOneTwoCenterTwoCourseCountMultipleOf),
   "gallery": zod.array(zod.object({
   "id": zod.string(),
   "url": zod.string(),
   "altText": zod.string(),
-  "sortOrder": zod.number().multipleOf(getEducationLmsResponseCourseTwoCenterTwoGalleryItemSortOrderMultipleOf)
+  "sortOrder": zod.number().multipleOf(getEducationLmsResponseCourseOneTwoCenterTwoGalleryItemSortOrderMultipleOf)
 })),
   "courses": zod.array(zod.object({
   "id": zod.string(),
@@ -12098,6 +12441,17 @@ export const GetEducationLmsResponse = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -12114,14 +12468,16 @@ export const GetEducationLmsResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemReviewCountMin),
   "certification": zod.boolean(),
-  "theoryHours": zod.number().min(getEducationLmsResponseCourseTwoCenterTwoCoursesItemTheoryHoursMin).nullish(),
-  "practicalHours": zod.number().min(getEducationLmsResponseCourseTwoCenterTwoCoursesItemPracticalHoursMin).nullish(),
+  "theoryHours": zod.number().min(getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemTheoryHoursMin).nullish(),
+  "practicalHours": zod.number().min(getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemPracticalHoursMin).nullish(),
   "certificateName": zod.string().nullish(),
   "accredited": zod.boolean(),
   "language": zod.string().nullish(),
@@ -12132,10 +12488,11 @@ export const GetEducationLmsResponse = zod.object({
   "answer": zod.string()
 })),
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
-  "depositAmount": zod.number().min(getEducationLmsResponseCourseTwoCenterTwoCoursesItemDepositAmountMin).nullish(),
-  "studentCount": zod.number().min(getEducationLmsResponseCourseTwoCenterTwoCoursesItemStudentCountMin).multipleOf(getEducationLmsResponseCourseTwoCenterTwoCoursesItemStudentCountMultipleOf),
-  "inquiryCount30d": zod.number().min(getEducationLmsResponseCourseTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(getEducationLmsResponseCourseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
-  "viewCount30d": zod.number().min(getEducationLmsResponseCourseTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(getEducationLmsResponseCourseTwoCenterTwoCoursesItemViewCount30dMultipleOf),
+  "depositAmount": zod.number().min(getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemDepositAmountMin).nullish(),
+  "studentCount": zod.number().min(getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemStudentCountMin).multipleOf(getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemCompletedLearnerCountMin).multipleOf(getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf).optional(),
+  "inquiryCount30d": zod.number().min(getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
+  "viewCount30d": zod.number().min(getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
@@ -12146,6 +12503,7 @@ export const GetEducationLmsResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -12153,9 +12511,25 @@ export const GetEducationLmsResponse = zod.object({
 })]).optional(),
   "reviews": zod.array(zod.object({
   "id": zod.string(),
-  "rating": zod.number().min(1).max(getEducationLmsResponseCourseTwoReviewsItemRatingMax),
+  "rating": zod.number().min(1).max(getEducationLmsResponseCourseOneTwoReviewsItemRatingMax),
   "comment": zod.string(),
   "createdAt": zod.coerce.date()
+}))
+})).and(zod.object({
+  "modules": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number(),
+  "lessons": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+}))
 }))
 }))
 })
@@ -12219,6 +12593,7 @@ export const ListEducationInstructorsResponseItem = zod.object({
   "experienceYears": zod.number(),
   "specializations": zod.array(zod.string()),
   "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url()),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -12236,6 +12611,9 @@ export const createEducationInstructorBodyIndustryYearsMin = 0;
 
 export const createEducationInstructorBodyExperienceYearsMin = 0;
 
+export const createEducationInstructorBodyPortfolioMediaItemRegExp = new RegExp('^https:/');
+export const createEducationInstructorBodyPortfolioMediaMax = 12;
+
 
 
 export const CreateEducationInstructorBody = zod.object({
@@ -12246,6 +12624,7 @@ export const CreateEducationInstructorBody = zod.object({
   "experienceYears": zod.number().min(createEducationInstructorBodyExperienceYearsMin).optional(),
   "specializations": zod.array(zod.string()).optional(),
   "qualifications": zod.array(zod.string()).optional(),
+  "portfolioMedia": zod.array(zod.string().url().regex(createEducationInstructorBodyPortfolioMediaItemRegExp)).max(createEducationInstructorBodyPortfolioMediaMax).optional(),
   "userId": zod.string().nullish()
 })
 
@@ -12260,6 +12639,7 @@ export const CreateEducationInstructorResponse = zod.object({
   "experienceYears": zod.number(),
   "specializations": zod.array(zod.string()),
   "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url()),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -12280,6 +12660,9 @@ export const updateEducationInstructorBodyIndustryYearsMin = 0;
 
 export const updateEducationInstructorBodyExperienceYearsMin = 0;
 
+export const updateEducationInstructorBodyPortfolioMediaItemRegExp = new RegExp('^https:/');
+export const updateEducationInstructorBodyPortfolioMediaMax = 12;
+
 
 
 export const UpdateEducationInstructorBody = zod.object({
@@ -12290,6 +12673,7 @@ export const UpdateEducationInstructorBody = zod.object({
   "experienceYears": zod.number().min(updateEducationInstructorBodyExperienceYearsMin).optional(),
   "specializations": zod.array(zod.string()).optional(),
   "qualifications": zod.array(zod.string()).optional(),
+  "portfolioMedia": zod.array(zod.string().url().regex(updateEducationInstructorBodyPortfolioMediaItemRegExp)).max(updateEducationInstructorBodyPortfolioMediaMax).optional(),
   "userId": zod.string().nullish()
 })
 
@@ -12304,6 +12688,7 @@ export const UpdateEducationInstructorResponse = zod.object({
   "experienceYears": zod.number(),
   "specializations": zod.array(zod.string()),
   "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url()),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -12326,6 +12711,14 @@ export const GetPublicInstructorProfileParams = zod.object({
   "instructorId": zod.coerce.string()
 })
 
+export const getPublicInstructorProfileResponseCoursesItemInstructorProfileTwoIndustryYearsMin = 0;
+
+export const getPublicInstructorProfileResponseCoursesItemInstructorProfileTwoExperienceYearsMin = 0;
+
+export const getPublicInstructorProfileResponseCoursesItemDurationMinutesMultipleOf = 1;
+
+export const getPublicInstructorProfileResponseCoursesItemReviewCountMin = 0;
+
 export const getPublicInstructorProfileResponseCoursesItemTheoryHoursMin = 0;
 
 export const getPublicInstructorProfileResponseCoursesItemPracticalHoursMin = 0;
@@ -12334,6 +12727,9 @@ export const getPublicInstructorProfileResponseCoursesItemDepositAmountMin = 0;
 
 export const getPublicInstructorProfileResponseCoursesItemStudentCountMin = 0;
 export const getPublicInstructorProfileResponseCoursesItemStudentCountMultipleOf = 1;
+
+export const getPublicInstructorProfileResponseCoursesItemCompletedLearnerCountMin = 0;
+export const getPublicInstructorProfileResponseCoursesItemCompletedLearnerCountMultipleOf = 1;
 
 export const getPublicInstructorProfileResponseCoursesItemInquiryCount30dMin = 0;
 export const getPublicInstructorProfileResponseCoursesItemInquiryCount30dMultipleOf = 1;
@@ -12352,6 +12748,7 @@ export const GetPublicInstructorProfileResponse = zod.object({
   "experienceYears": zod.number(),
   "specializations": zod.array(zod.string()),
   "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url()),
   "rating": zod.number(),
   "participantCount": zod.number(),
   "courses": zod.array(zod.object({
@@ -12360,6 +12757,17 @@ export const GetPublicInstructorProfileResponse = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(getPublicInstructorProfileResponseCoursesItemInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(getPublicInstructorProfileResponseCoursesItemInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -12376,11 +12784,13 @@ export const GetPublicInstructorProfileResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(getPublicInstructorProfileResponseCoursesItemDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(getPublicInstructorProfileResponseCoursesItemReviewCountMin),
   "certification": zod.boolean(),
   "theoryHours": zod.number().min(getPublicInstructorProfileResponseCoursesItemTheoryHoursMin).nullish(),
   "practicalHours": zod.number().min(getPublicInstructorProfileResponseCoursesItemPracticalHoursMin).nullish(),
@@ -12396,6 +12806,7 @@ export const GetPublicInstructorProfileResponse = zod.object({
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
   "depositAmount": zod.number().min(getPublicInstructorProfileResponseCoursesItemDepositAmountMin).nullish(),
   "studentCount": zod.number().min(getPublicInstructorProfileResponseCoursesItemStudentCountMin).multipleOf(getPublicInstructorProfileResponseCoursesItemStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(getPublicInstructorProfileResponseCoursesItemCompletedLearnerCountMin).multipleOf(getPublicInstructorProfileResponseCoursesItemCompletedLearnerCountMultipleOf).optional(),
   "inquiryCount30d": zod.number().min(getPublicInstructorProfileResponseCoursesItemInquiryCount30dMin).multipleOf(getPublicInstructorProfileResponseCoursesItemInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(getPublicInstructorProfileResponseCoursesItemViewCount30dMin).multipleOf(getPublicInstructorProfileResponseCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
@@ -12408,6 +12819,7 @@ export const GetPublicInstructorProfileResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -12483,52 +12895,78 @@ export const LinkEducationCourseInstructorBody = zod.object({
   "instructorId": zod.string().nullish()
 })
 
-export const linkEducationCourseInstructorResponseOneTheoryHoursMin = 0;
+export const linkEducationCourseInstructorResponseOneOneInstructorProfileTwoIndustryYearsMin = 0;
 
-export const linkEducationCourseInstructorResponseOnePracticalHoursMin = 0;
+export const linkEducationCourseInstructorResponseOneOneInstructorProfileTwoExperienceYearsMin = 0;
 
-export const linkEducationCourseInstructorResponseOneDepositAmountMin = 0;
+export const linkEducationCourseInstructorResponseOneOneDurationMinutesMultipleOf = 1;
 
-export const linkEducationCourseInstructorResponseOneStudentCountMin = 0;
-export const linkEducationCourseInstructorResponseOneStudentCountMultipleOf = 1;
+export const linkEducationCourseInstructorResponseOneOneReviewCountMin = 0;
 
-export const linkEducationCourseInstructorResponseOneInquiryCount30dMin = 0;
-export const linkEducationCourseInstructorResponseOneInquiryCount30dMultipleOf = 1;
+export const linkEducationCourseInstructorResponseOneOneTheoryHoursMin = 0;
 
-export const linkEducationCourseInstructorResponseOneViewCount30dMin = 0;
-export const linkEducationCourseInstructorResponseOneViewCount30dMultipleOf = 1;
+export const linkEducationCourseInstructorResponseOneOnePracticalHoursMin = 0;
 
-export const linkEducationCourseInstructorResponseTwoDayProgramItemDayNumberMultipleOf = 1;
+export const linkEducationCourseInstructorResponseOneOneDepositAmountMin = 0;
 
-export const linkEducationCourseInstructorResponseTwoDayProgramItemDurationMinutesMin = 0;
-export const linkEducationCourseInstructorResponseTwoDayProgramItemDurationMinutesMultipleOf = 1;
+export const linkEducationCourseInstructorResponseOneOneStudentCountMin = 0;
+export const linkEducationCourseInstructorResponseOneOneStudentCountMultipleOf = 1;
 
-export const linkEducationCourseInstructorResponseTwoGalleryItemSortOrderMultipleOf = 1;
+export const linkEducationCourseInstructorResponseOneOneCompletedLearnerCountMin = 0;
+export const linkEducationCourseInstructorResponseOneOneCompletedLearnerCountMultipleOf = 1;
 
-export const linkEducationCourseInstructorResponseTwoCenterTwoReviewCountMin = 0;
-export const linkEducationCourseInstructorResponseTwoCenterTwoReviewCountMultipleOf = 1;
+export const linkEducationCourseInstructorResponseOneOneInquiryCount30dMin = 0;
+export const linkEducationCourseInstructorResponseOneOneInquiryCount30dMultipleOf = 1;
 
-export const linkEducationCourseInstructorResponseTwoCenterTwoCourseCountMin = 0;
-export const linkEducationCourseInstructorResponseTwoCenterTwoCourseCountMultipleOf = 1;
+export const linkEducationCourseInstructorResponseOneOneViewCount30dMin = 0;
+export const linkEducationCourseInstructorResponseOneOneViewCount30dMultipleOf = 1;
 
-export const linkEducationCourseInstructorResponseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+export const linkEducationCourseInstructorResponseOneTwoPublicModulesItemSortOrderMin = 0;
 
-export const linkEducationCourseInstructorResponseTwoCenterTwoCoursesItemTheoryHoursMin = 0;
+export const linkEducationCourseInstructorResponseOneTwoPublicModulesItemLessonCountMin = 0;
 
-export const linkEducationCourseInstructorResponseTwoCenterTwoCoursesItemPracticalHoursMin = 0;
+export const linkEducationCourseInstructorResponseOneTwoDayProgramItemDayNumberMultipleOf = 1;
 
-export const linkEducationCourseInstructorResponseTwoCenterTwoCoursesItemDepositAmountMin = 0;
+export const linkEducationCourseInstructorResponseOneTwoDayProgramItemDurationMinutesMin = 0;
+export const linkEducationCourseInstructorResponseOneTwoDayProgramItemDurationMinutesMultipleOf = 1;
 
-export const linkEducationCourseInstructorResponseTwoCenterTwoCoursesItemStudentCountMin = 0;
-export const linkEducationCourseInstructorResponseTwoCenterTwoCoursesItemStudentCountMultipleOf = 1;
+export const linkEducationCourseInstructorResponseOneTwoGalleryItemSortOrderMultipleOf = 1;
 
-export const linkEducationCourseInstructorResponseTwoCenterTwoCoursesItemInquiryCount30dMin = 0;
-export const linkEducationCourseInstructorResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf = 1;
+export const linkEducationCourseInstructorResponseOneTwoCenterTwoReviewCountMin = 0;
+export const linkEducationCourseInstructorResponseOneTwoCenterTwoReviewCountMultipleOf = 1;
 
-export const linkEducationCourseInstructorResponseTwoCenterTwoCoursesItemViewCount30dMin = 0;
-export const linkEducationCourseInstructorResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+export const linkEducationCourseInstructorResponseOneTwoCenterTwoCourseCountMin = 0;
+export const linkEducationCourseInstructorResponseOneTwoCenterTwoCourseCountMultipleOf = 1;
 
-export const linkEducationCourseInstructorResponseTwoReviewsItemRatingMax = 5;
+export const linkEducationCourseInstructorResponseOneTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin = 0;
+
+export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin = 0;
+
+export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemDurationMinutesMultipleOf = 1;
+
+export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemReviewCountMin = 0;
+
+export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemTheoryHoursMin = 0;
+
+export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemPracticalHoursMin = 0;
+
+export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemDepositAmountMin = 0;
+
+export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemStudentCountMin = 0;
+export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemStudentCountMultipleOf = 1;
+
+export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMin = 0;
+export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf = 1;
+
+export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemInquiryCount30dMin = 0;
+export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemInquiryCount30dMultipleOf = 1;
+
+export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemViewCount30dMin = 0;
+export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+export const linkEducationCourseInstructorResponseOneTwoReviewsItemRatingMax = 5;
 
 
 
@@ -12538,6 +12976,17 @@ export const LinkEducationCourseInstructorResponse = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(linkEducationCourseInstructorResponseOneOneInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(linkEducationCourseInstructorResponseOneOneInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -12554,14 +13003,16 @@ export const LinkEducationCourseInstructorResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(linkEducationCourseInstructorResponseOneOneDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(linkEducationCourseInstructorResponseOneOneReviewCountMin),
   "certification": zod.boolean(),
-  "theoryHours": zod.number().min(linkEducationCourseInstructorResponseOneTheoryHoursMin).nullish(),
-  "practicalHours": zod.number().min(linkEducationCourseInstructorResponseOnePracticalHoursMin).nullish(),
+  "theoryHours": zod.number().min(linkEducationCourseInstructorResponseOneOneTheoryHoursMin).nullish(),
+  "practicalHours": zod.number().min(linkEducationCourseInstructorResponseOneOnePracticalHoursMin).nullish(),
   "certificateName": zod.string().nullish(),
   "accredited": zod.boolean(),
   "language": zod.string().nullish(),
@@ -12572,10 +13023,11 @@ export const LinkEducationCourseInstructorResponse = zod.object({
   "answer": zod.string()
 })),
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
-  "depositAmount": zod.number().min(linkEducationCourseInstructorResponseOneDepositAmountMin).nullish(),
-  "studentCount": zod.number().min(linkEducationCourseInstructorResponseOneStudentCountMin).multipleOf(linkEducationCourseInstructorResponseOneStudentCountMultipleOf),
-  "inquiryCount30d": zod.number().min(linkEducationCourseInstructorResponseOneInquiryCount30dMin).multipleOf(linkEducationCourseInstructorResponseOneInquiryCount30dMultipleOf),
-  "viewCount30d": zod.number().min(linkEducationCourseInstructorResponseOneViewCount30dMin).multipleOf(linkEducationCourseInstructorResponseOneViewCount30dMultipleOf),
+  "depositAmount": zod.number().min(linkEducationCourseInstructorResponseOneOneDepositAmountMin).nullish(),
+  "studentCount": zod.number().min(linkEducationCourseInstructorResponseOneOneStudentCountMin).multipleOf(linkEducationCourseInstructorResponseOneOneStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(linkEducationCourseInstructorResponseOneOneCompletedLearnerCountMin).multipleOf(linkEducationCourseInstructorResponseOneOneCompletedLearnerCountMultipleOf).optional(),
+  "inquiryCount30d": zod.number().min(linkEducationCourseInstructorResponseOneOneInquiryCount30dMin).multipleOf(linkEducationCourseInstructorResponseOneOneInquiryCount30dMultipleOf),
+  "viewCount30d": zod.number().min(linkEducationCourseInstructorResponseOneOneViewCount30dMin).multipleOf(linkEducationCourseInstructorResponseOneOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
@@ -12586,24 +13038,17 @@ export const LinkEducationCourseInstructorResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
-  "modules": zod.array(zod.object({
+  "publicModules": zod.array(zod.object({
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
-  "sortOrder": zod.number(),
-  "lessons": zod.array(zod.object({
-  "id": zod.string(),
-  "title": zod.string(),
-  "description": zod.string(),
-  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
-  "durationMinutes": zod.number(),
-  "sortOrder": zod.number(),
-  "completed": zod.boolean()
-}))
+  "sortOrder": zod.number().int().min(linkEducationCourseInstructorResponseOneTwoPublicModulesItemSortOrderMin),
+  "lessonCount": zod.number().int().min(linkEducationCourseInstructorResponseOneTwoPublicModulesItemLessonCountMin)
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
@@ -12618,16 +13063,16 @@ export const LinkEducationCourseInstructorResponse = zod.object({
 })),
   "dayProgram": zod.array(zod.object({
   "id": zod.string(),
-  "dayNumber": zod.number().min(1).multipleOf(linkEducationCourseInstructorResponseTwoDayProgramItemDayNumberMultipleOf),
+  "dayNumber": zod.number().min(1).multipleOf(linkEducationCourseInstructorResponseOneTwoDayProgramItemDayNumberMultipleOf),
   "title": zod.string(),
   "description": zod.string(),
-  "durationMinutes": zod.number().min(linkEducationCourseInstructorResponseTwoDayProgramItemDurationMinutesMin).multipleOf(linkEducationCourseInstructorResponseTwoDayProgramItemDurationMinutesMultipleOf).nullish()
+  "durationMinutes": zod.number().min(linkEducationCourseInstructorResponseOneTwoDayProgramItemDurationMinutesMin).multipleOf(linkEducationCourseInstructorResponseOneTwoDayProgramItemDurationMinutesMultipleOf).nullish()
 })),
   "gallery": zod.array(zod.object({
   "id": zod.string(),
   "url": zod.string(),
   "altText": zod.string(),
-  "sortOrder": zod.number().multipleOf(linkEducationCourseInstructorResponseTwoGalleryItemSortOrderMultipleOf)
+  "sortOrder": zod.number().multipleOf(linkEducationCourseInstructorResponseOneTwoGalleryItemSortOrderMultipleOf)
 })),
   "center": zod.union([zod.null(),zod.object({
   "id": zod.string(),
@@ -12639,13 +13084,13 @@ export const LinkEducationCourseInstructorResponse = zod.object({
   "instagramUrl": zod.string().nullish(),
   "verified": zod.boolean(),
   "rating": zod.number(),
-  "reviewCount": zod.number().min(linkEducationCourseInstructorResponseTwoCenterTwoReviewCountMin).multipleOf(linkEducationCourseInstructorResponseTwoCenterTwoReviewCountMultipleOf),
-  "courseCount": zod.number().min(linkEducationCourseInstructorResponseTwoCenterTwoCourseCountMin).multipleOf(linkEducationCourseInstructorResponseTwoCenterTwoCourseCountMultipleOf),
+  "reviewCount": zod.number().min(linkEducationCourseInstructorResponseOneTwoCenterTwoReviewCountMin).multipleOf(linkEducationCourseInstructorResponseOneTwoCenterTwoReviewCountMultipleOf),
+  "courseCount": zod.number().min(linkEducationCourseInstructorResponseOneTwoCenterTwoCourseCountMin).multipleOf(linkEducationCourseInstructorResponseOneTwoCenterTwoCourseCountMultipleOf),
   "gallery": zod.array(zod.object({
   "id": zod.string(),
   "url": zod.string(),
   "altText": zod.string(),
-  "sortOrder": zod.number().multipleOf(linkEducationCourseInstructorResponseTwoCenterTwoGalleryItemSortOrderMultipleOf)
+  "sortOrder": zod.number().multipleOf(linkEducationCourseInstructorResponseOneTwoCenterTwoGalleryItemSortOrderMultipleOf)
 })),
   "courses": zod.array(zod.object({
   "id": zod.string(),
@@ -12653,6 +13098,17 @@ export const LinkEducationCourseInstructorResponse = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -12669,14 +13125,16 @@ export const LinkEducationCourseInstructorResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemReviewCountMin),
   "certification": zod.boolean(),
-  "theoryHours": zod.number().min(linkEducationCourseInstructorResponseTwoCenterTwoCoursesItemTheoryHoursMin).nullish(),
-  "practicalHours": zod.number().min(linkEducationCourseInstructorResponseTwoCenterTwoCoursesItemPracticalHoursMin).nullish(),
+  "theoryHours": zod.number().min(linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemTheoryHoursMin).nullish(),
+  "practicalHours": zod.number().min(linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemPracticalHoursMin).nullish(),
   "certificateName": zod.string().nullish(),
   "accredited": zod.boolean(),
   "language": zod.string().nullish(),
@@ -12687,10 +13145,11 @@ export const LinkEducationCourseInstructorResponse = zod.object({
   "answer": zod.string()
 })),
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
-  "depositAmount": zod.number().min(linkEducationCourseInstructorResponseTwoCenterTwoCoursesItemDepositAmountMin).nullish(),
-  "studentCount": zod.number().min(linkEducationCourseInstructorResponseTwoCenterTwoCoursesItemStudentCountMin).multipleOf(linkEducationCourseInstructorResponseTwoCenterTwoCoursesItemStudentCountMultipleOf),
-  "inquiryCount30d": zod.number().min(linkEducationCourseInstructorResponseTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(linkEducationCourseInstructorResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
-  "viewCount30d": zod.number().min(linkEducationCourseInstructorResponseTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(linkEducationCourseInstructorResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf),
+  "depositAmount": zod.number().min(linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemDepositAmountMin).nullish(),
+  "studentCount": zod.number().min(linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemStudentCountMin).multipleOf(linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMin).multipleOf(linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf).optional(),
+  "inquiryCount30d": zod.number().min(linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
+  "viewCount30d": zod.number().min(linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
@@ -12701,6 +13160,7 @@ export const LinkEducationCourseInstructorResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -12708,9 +13168,25 @@ export const LinkEducationCourseInstructorResponse = zod.object({
 })]).optional(),
   "reviews": zod.array(zod.object({
   "id": zod.string(),
-  "rating": zod.number().min(1).max(linkEducationCourseInstructorResponseTwoReviewsItemRatingMax),
+  "rating": zod.number().min(1).max(linkEducationCourseInstructorResponseOneTwoReviewsItemRatingMax),
   "comment": zod.string(),
   "createdAt": zod.coerce.date()
+}))
+})).and(zod.object({
+  "modules": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number(),
+  "lessons": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+}))
 }))
 }))
 
@@ -12747,52 +13223,78 @@ export const ReplaceEducationCourseDaysBody = zod.object({
 })).min(1).max(replaceEducationCourseDaysBodyDaysMax)
 })
 
-export const replaceEducationCourseDaysResponseOneTheoryHoursMin = 0;
+export const replaceEducationCourseDaysResponseOneOneInstructorProfileTwoIndustryYearsMin = 0;
 
-export const replaceEducationCourseDaysResponseOnePracticalHoursMin = 0;
+export const replaceEducationCourseDaysResponseOneOneInstructorProfileTwoExperienceYearsMin = 0;
 
-export const replaceEducationCourseDaysResponseOneDepositAmountMin = 0;
+export const replaceEducationCourseDaysResponseOneOneDurationMinutesMultipleOf = 1;
 
-export const replaceEducationCourseDaysResponseOneStudentCountMin = 0;
-export const replaceEducationCourseDaysResponseOneStudentCountMultipleOf = 1;
+export const replaceEducationCourseDaysResponseOneOneReviewCountMin = 0;
 
-export const replaceEducationCourseDaysResponseOneInquiryCount30dMin = 0;
-export const replaceEducationCourseDaysResponseOneInquiryCount30dMultipleOf = 1;
+export const replaceEducationCourseDaysResponseOneOneTheoryHoursMin = 0;
 
-export const replaceEducationCourseDaysResponseOneViewCount30dMin = 0;
-export const replaceEducationCourseDaysResponseOneViewCount30dMultipleOf = 1;
+export const replaceEducationCourseDaysResponseOneOnePracticalHoursMin = 0;
 
-export const replaceEducationCourseDaysResponseTwoDayProgramItemDayNumberMultipleOf = 1;
+export const replaceEducationCourseDaysResponseOneOneDepositAmountMin = 0;
 
-export const replaceEducationCourseDaysResponseTwoDayProgramItemDurationMinutesMin = 0;
-export const replaceEducationCourseDaysResponseTwoDayProgramItemDurationMinutesMultipleOf = 1;
+export const replaceEducationCourseDaysResponseOneOneStudentCountMin = 0;
+export const replaceEducationCourseDaysResponseOneOneStudentCountMultipleOf = 1;
 
-export const replaceEducationCourseDaysResponseTwoGalleryItemSortOrderMultipleOf = 1;
+export const replaceEducationCourseDaysResponseOneOneCompletedLearnerCountMin = 0;
+export const replaceEducationCourseDaysResponseOneOneCompletedLearnerCountMultipleOf = 1;
 
-export const replaceEducationCourseDaysResponseTwoCenterTwoReviewCountMin = 0;
-export const replaceEducationCourseDaysResponseTwoCenterTwoReviewCountMultipleOf = 1;
+export const replaceEducationCourseDaysResponseOneOneInquiryCount30dMin = 0;
+export const replaceEducationCourseDaysResponseOneOneInquiryCount30dMultipleOf = 1;
 
-export const replaceEducationCourseDaysResponseTwoCenterTwoCourseCountMin = 0;
-export const replaceEducationCourseDaysResponseTwoCenterTwoCourseCountMultipleOf = 1;
+export const replaceEducationCourseDaysResponseOneOneViewCount30dMin = 0;
+export const replaceEducationCourseDaysResponseOneOneViewCount30dMultipleOf = 1;
 
-export const replaceEducationCourseDaysResponseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+export const replaceEducationCourseDaysResponseOneTwoPublicModulesItemSortOrderMin = 0;
 
-export const replaceEducationCourseDaysResponseTwoCenterTwoCoursesItemTheoryHoursMin = 0;
+export const replaceEducationCourseDaysResponseOneTwoPublicModulesItemLessonCountMin = 0;
 
-export const replaceEducationCourseDaysResponseTwoCenterTwoCoursesItemPracticalHoursMin = 0;
+export const replaceEducationCourseDaysResponseOneTwoDayProgramItemDayNumberMultipleOf = 1;
 
-export const replaceEducationCourseDaysResponseTwoCenterTwoCoursesItemDepositAmountMin = 0;
+export const replaceEducationCourseDaysResponseOneTwoDayProgramItemDurationMinutesMin = 0;
+export const replaceEducationCourseDaysResponseOneTwoDayProgramItemDurationMinutesMultipleOf = 1;
 
-export const replaceEducationCourseDaysResponseTwoCenterTwoCoursesItemStudentCountMin = 0;
-export const replaceEducationCourseDaysResponseTwoCenterTwoCoursesItemStudentCountMultipleOf = 1;
+export const replaceEducationCourseDaysResponseOneTwoGalleryItemSortOrderMultipleOf = 1;
 
-export const replaceEducationCourseDaysResponseTwoCenterTwoCoursesItemInquiryCount30dMin = 0;
-export const replaceEducationCourseDaysResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf = 1;
+export const replaceEducationCourseDaysResponseOneTwoCenterTwoReviewCountMin = 0;
+export const replaceEducationCourseDaysResponseOneTwoCenterTwoReviewCountMultipleOf = 1;
 
-export const replaceEducationCourseDaysResponseTwoCenterTwoCoursesItemViewCount30dMin = 0;
-export const replaceEducationCourseDaysResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+export const replaceEducationCourseDaysResponseOneTwoCenterTwoCourseCountMin = 0;
+export const replaceEducationCourseDaysResponseOneTwoCenterTwoCourseCountMultipleOf = 1;
 
-export const replaceEducationCourseDaysResponseTwoReviewsItemRatingMax = 5;
+export const replaceEducationCourseDaysResponseOneTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin = 0;
+
+export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin = 0;
+
+export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemDurationMinutesMultipleOf = 1;
+
+export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemReviewCountMin = 0;
+
+export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemTheoryHoursMin = 0;
+
+export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemPracticalHoursMin = 0;
+
+export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemDepositAmountMin = 0;
+
+export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemStudentCountMin = 0;
+export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemStudentCountMultipleOf = 1;
+
+export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMin = 0;
+export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf = 1;
+
+export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemInquiryCount30dMin = 0;
+export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemInquiryCount30dMultipleOf = 1;
+
+export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemViewCount30dMin = 0;
+export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+export const replaceEducationCourseDaysResponseOneTwoReviewsItemRatingMax = 5;
 
 
 
@@ -12802,6 +13304,17 @@ export const ReplaceEducationCourseDaysResponse = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(replaceEducationCourseDaysResponseOneOneInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(replaceEducationCourseDaysResponseOneOneInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -12818,14 +13331,16 @@ export const ReplaceEducationCourseDaysResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(replaceEducationCourseDaysResponseOneOneDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(replaceEducationCourseDaysResponseOneOneReviewCountMin),
   "certification": zod.boolean(),
-  "theoryHours": zod.number().min(replaceEducationCourseDaysResponseOneTheoryHoursMin).nullish(),
-  "practicalHours": zod.number().min(replaceEducationCourseDaysResponseOnePracticalHoursMin).nullish(),
+  "theoryHours": zod.number().min(replaceEducationCourseDaysResponseOneOneTheoryHoursMin).nullish(),
+  "practicalHours": zod.number().min(replaceEducationCourseDaysResponseOneOnePracticalHoursMin).nullish(),
   "certificateName": zod.string().nullish(),
   "accredited": zod.boolean(),
   "language": zod.string().nullish(),
@@ -12836,10 +13351,11 @@ export const ReplaceEducationCourseDaysResponse = zod.object({
   "answer": zod.string()
 })),
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
-  "depositAmount": zod.number().min(replaceEducationCourseDaysResponseOneDepositAmountMin).nullish(),
-  "studentCount": zod.number().min(replaceEducationCourseDaysResponseOneStudentCountMin).multipleOf(replaceEducationCourseDaysResponseOneStudentCountMultipleOf),
-  "inquiryCount30d": zod.number().min(replaceEducationCourseDaysResponseOneInquiryCount30dMin).multipleOf(replaceEducationCourseDaysResponseOneInquiryCount30dMultipleOf),
-  "viewCount30d": zod.number().min(replaceEducationCourseDaysResponseOneViewCount30dMin).multipleOf(replaceEducationCourseDaysResponseOneViewCount30dMultipleOf),
+  "depositAmount": zod.number().min(replaceEducationCourseDaysResponseOneOneDepositAmountMin).nullish(),
+  "studentCount": zod.number().min(replaceEducationCourseDaysResponseOneOneStudentCountMin).multipleOf(replaceEducationCourseDaysResponseOneOneStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(replaceEducationCourseDaysResponseOneOneCompletedLearnerCountMin).multipleOf(replaceEducationCourseDaysResponseOneOneCompletedLearnerCountMultipleOf).optional(),
+  "inquiryCount30d": zod.number().min(replaceEducationCourseDaysResponseOneOneInquiryCount30dMin).multipleOf(replaceEducationCourseDaysResponseOneOneInquiryCount30dMultipleOf),
+  "viewCount30d": zod.number().min(replaceEducationCourseDaysResponseOneOneViewCount30dMin).multipleOf(replaceEducationCourseDaysResponseOneOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
@@ -12850,24 +13366,17 @@ export const ReplaceEducationCourseDaysResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
-  "modules": zod.array(zod.object({
+  "publicModules": zod.array(zod.object({
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
-  "sortOrder": zod.number(),
-  "lessons": zod.array(zod.object({
-  "id": zod.string(),
-  "title": zod.string(),
-  "description": zod.string(),
-  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
-  "durationMinutes": zod.number(),
-  "sortOrder": zod.number(),
-  "completed": zod.boolean()
-}))
+  "sortOrder": zod.number().int().min(replaceEducationCourseDaysResponseOneTwoPublicModulesItemSortOrderMin),
+  "lessonCount": zod.number().int().min(replaceEducationCourseDaysResponseOneTwoPublicModulesItemLessonCountMin)
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
@@ -12882,16 +13391,16 @@ export const ReplaceEducationCourseDaysResponse = zod.object({
 })),
   "dayProgram": zod.array(zod.object({
   "id": zod.string(),
-  "dayNumber": zod.number().min(1).multipleOf(replaceEducationCourseDaysResponseTwoDayProgramItemDayNumberMultipleOf),
+  "dayNumber": zod.number().min(1).multipleOf(replaceEducationCourseDaysResponseOneTwoDayProgramItemDayNumberMultipleOf),
   "title": zod.string(),
   "description": zod.string(),
-  "durationMinutes": zod.number().min(replaceEducationCourseDaysResponseTwoDayProgramItemDurationMinutesMin).multipleOf(replaceEducationCourseDaysResponseTwoDayProgramItemDurationMinutesMultipleOf).nullish()
+  "durationMinutes": zod.number().min(replaceEducationCourseDaysResponseOneTwoDayProgramItemDurationMinutesMin).multipleOf(replaceEducationCourseDaysResponseOneTwoDayProgramItemDurationMinutesMultipleOf).nullish()
 })),
   "gallery": zod.array(zod.object({
   "id": zod.string(),
   "url": zod.string(),
   "altText": zod.string(),
-  "sortOrder": zod.number().multipleOf(replaceEducationCourseDaysResponseTwoGalleryItemSortOrderMultipleOf)
+  "sortOrder": zod.number().multipleOf(replaceEducationCourseDaysResponseOneTwoGalleryItemSortOrderMultipleOf)
 })),
   "center": zod.union([zod.null(),zod.object({
   "id": zod.string(),
@@ -12903,13 +13412,13 @@ export const ReplaceEducationCourseDaysResponse = zod.object({
   "instagramUrl": zod.string().nullish(),
   "verified": zod.boolean(),
   "rating": zod.number(),
-  "reviewCount": zod.number().min(replaceEducationCourseDaysResponseTwoCenterTwoReviewCountMin).multipleOf(replaceEducationCourseDaysResponseTwoCenterTwoReviewCountMultipleOf),
-  "courseCount": zod.number().min(replaceEducationCourseDaysResponseTwoCenterTwoCourseCountMin).multipleOf(replaceEducationCourseDaysResponseTwoCenterTwoCourseCountMultipleOf),
+  "reviewCount": zod.number().min(replaceEducationCourseDaysResponseOneTwoCenterTwoReviewCountMin).multipleOf(replaceEducationCourseDaysResponseOneTwoCenterTwoReviewCountMultipleOf),
+  "courseCount": zod.number().min(replaceEducationCourseDaysResponseOneTwoCenterTwoCourseCountMin).multipleOf(replaceEducationCourseDaysResponseOneTwoCenterTwoCourseCountMultipleOf),
   "gallery": zod.array(zod.object({
   "id": zod.string(),
   "url": zod.string(),
   "altText": zod.string(),
-  "sortOrder": zod.number().multipleOf(replaceEducationCourseDaysResponseTwoCenterTwoGalleryItemSortOrderMultipleOf)
+  "sortOrder": zod.number().multipleOf(replaceEducationCourseDaysResponseOneTwoCenterTwoGalleryItemSortOrderMultipleOf)
 })),
   "courses": zod.array(zod.object({
   "id": zod.string(),
@@ -12917,6 +13426,17 @@ export const ReplaceEducationCourseDaysResponse = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -12933,14 +13453,16 @@ export const ReplaceEducationCourseDaysResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemReviewCountMin),
   "certification": zod.boolean(),
-  "theoryHours": zod.number().min(replaceEducationCourseDaysResponseTwoCenterTwoCoursesItemTheoryHoursMin).nullish(),
-  "practicalHours": zod.number().min(replaceEducationCourseDaysResponseTwoCenterTwoCoursesItemPracticalHoursMin).nullish(),
+  "theoryHours": zod.number().min(replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemTheoryHoursMin).nullish(),
+  "practicalHours": zod.number().min(replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemPracticalHoursMin).nullish(),
   "certificateName": zod.string().nullish(),
   "accredited": zod.boolean(),
   "language": zod.string().nullish(),
@@ -12951,10 +13473,11 @@ export const ReplaceEducationCourseDaysResponse = zod.object({
   "answer": zod.string()
 })),
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
-  "depositAmount": zod.number().min(replaceEducationCourseDaysResponseTwoCenterTwoCoursesItemDepositAmountMin).nullish(),
-  "studentCount": zod.number().min(replaceEducationCourseDaysResponseTwoCenterTwoCoursesItemStudentCountMin).multipleOf(replaceEducationCourseDaysResponseTwoCenterTwoCoursesItemStudentCountMultipleOf),
-  "inquiryCount30d": zod.number().min(replaceEducationCourseDaysResponseTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(replaceEducationCourseDaysResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
-  "viewCount30d": zod.number().min(replaceEducationCourseDaysResponseTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(replaceEducationCourseDaysResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf),
+  "depositAmount": zod.number().min(replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemDepositAmountMin).nullish(),
+  "studentCount": zod.number().min(replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemStudentCountMin).multipleOf(replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMin).multipleOf(replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf).optional(),
+  "inquiryCount30d": zod.number().min(replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
+  "viewCount30d": zod.number().min(replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
@@ -12965,6 +13488,7 @@ export const ReplaceEducationCourseDaysResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -12972,9 +13496,25 @@ export const ReplaceEducationCourseDaysResponse = zod.object({
 })]).optional(),
   "reviews": zod.array(zod.object({
   "id": zod.string(),
-  "rating": zod.number().min(1).max(replaceEducationCourseDaysResponseTwoReviewsItemRatingMax),
+  "rating": zod.number().min(1).max(replaceEducationCourseDaysResponseOneTwoReviewsItemRatingMax),
   "comment": zod.string(),
   "createdAt": zod.coerce.date()
+}))
+})).and(zod.object({
+  "modules": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number(),
+  "lessons": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+}))
 }))
 }))
 
@@ -12984,11 +13524,16 @@ export const ReplaceEducationCourseDaysResponse = zod.object({
  */
 export const listPublicEducationCoursesQueryQMax = 160;
 
+export const listPublicEducationCoursesQueryMinRatingMin = 0;
+export const listPublicEducationCoursesQueryMinRatingMax = 5;
+
 export const listPublicEducationCoursesQueryMinPriceMin = 0;
 
 export const listPublicEducationCoursesQueryMaxPriceMin = 0;
 
 export const listPublicEducationCoursesQueryMaxDurationDaysMultipleOf = 1;
+
+
 
 export const listPublicEducationCoursesQueryPageDefault = 1;
 
@@ -13008,14 +13553,26 @@ export const ListPublicEducationCoursesQueryParams = zod.object({
   "courseTypeId": zod.coerce.string().optional(),
   "language": zod.coerce.string().optional(),
   "accredited": zod.coerce.boolean().optional(),
+  "certification": zod.coerce.boolean().optional(),
+  "minRating": zod.coerce.number().min(listPublicEducationCoursesQueryMinRatingMin).max(listPublicEducationCoursesQueryMinRatingMax).optional().describe('Minimum aggregate rating from published course reviews; unrated courses have rating 0.'),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']).optional(),
   "minPrice": zod.coerce.number().min(listPublicEducationCoursesQueryMinPriceMin).optional(),
   "maxPrice": zod.coerce.number().min(listPublicEducationCoursesQueryMaxPriceMin).optional(),
   "startDate": zod.date().optional().describe('Include courses that start on or after this date.'),
   "maxDurationDays": zod.coerce.number().min(1).multipleOf(listPublicEducationCoursesQueryMaxDurationDaysMultipleOf).optional().describe('Include courses whose published daily program has at most this many days.'),
+  "minDurationMinutes": zod.coerce.number().int().min(1).optional().describe('Include only courses with an explicit parsable duration at or above this bound.'),
+  "maxDurationMinutes": zod.coerce.number().int().min(1).optional().describe('Include only courses with an explicit parsable duration at or below this bound.'),
   "page": zod.coerce.number().int().min(1).default(listPublicEducationCoursesQueryPageDefault).describe('1-based page index for stable createdAt desc, id desc ordering.'),
   "pageSize": zod.coerce.number().int().min(1).max(listPublicEducationCoursesQueryPageSizeMax).default(listPublicEducationCoursesQueryPageSizeDefault).describe('Number of courses per page.')
 })
+
+export const listPublicEducationCoursesResponseOneInstructorProfileTwoIndustryYearsMin = 0;
+
+export const listPublicEducationCoursesResponseOneInstructorProfileTwoExperienceYearsMin = 0;
+
+export const listPublicEducationCoursesResponseOneDurationMinutesMultipleOf = 1;
+
+export const listPublicEducationCoursesResponseOneReviewCountMin = 0;
 
 export const listPublicEducationCoursesResponseOneTheoryHoursMin = 0;
 
@@ -13026,11 +13583,18 @@ export const listPublicEducationCoursesResponseOneDepositAmountMin = 0;
 export const listPublicEducationCoursesResponseOneStudentCountMin = 0;
 export const listPublicEducationCoursesResponseOneStudentCountMultipleOf = 1;
 
+export const listPublicEducationCoursesResponseOneCompletedLearnerCountMin = 0;
+export const listPublicEducationCoursesResponseOneCompletedLearnerCountMultipleOf = 1;
+
 export const listPublicEducationCoursesResponseOneInquiryCount30dMin = 0;
 export const listPublicEducationCoursesResponseOneInquiryCount30dMultipleOf = 1;
 
 export const listPublicEducationCoursesResponseOneViewCount30dMin = 0;
 export const listPublicEducationCoursesResponseOneViewCount30dMultipleOf = 1;
+
+export const listPublicEducationCoursesResponseTwoPublicModulesItemSortOrderMin = 0;
+
+export const listPublicEducationCoursesResponseTwoPublicModulesItemLessonCountMin = 0;
 
 export const listPublicEducationCoursesResponseTwoDayProgramItemDayNumberMultipleOf = 1;
 
@@ -13047,6 +13611,14 @@ export const listPublicEducationCoursesResponseTwoCenterTwoCourseCountMultipleOf
 
 export const listPublicEducationCoursesResponseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
 
+export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin = 0;
+
+export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin = 0;
+
+export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemDurationMinutesMultipleOf = 1;
+
+export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemReviewCountMin = 0;
+
 export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemTheoryHoursMin = 0;
 
 export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemPracticalHoursMin = 0;
@@ -13055,6 +13627,9 @@ export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemDepositAmo
 
 export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemStudentCountMin = 0;
 export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemStudentCountMultipleOf = 1;
+
+export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemCompletedLearnerCountMin = 0;
+export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf = 1;
 
 export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMin = 0;
 export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf = 1;
@@ -13072,6 +13647,17 @@ export const ListPublicEducationCoursesResponseItem = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(listPublicEducationCoursesResponseOneInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(listPublicEducationCoursesResponseOneInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -13088,11 +13674,13 @@ export const ListPublicEducationCoursesResponseItem = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(listPublicEducationCoursesResponseOneDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(listPublicEducationCoursesResponseOneReviewCountMin),
   "certification": zod.boolean(),
   "theoryHours": zod.number().min(listPublicEducationCoursesResponseOneTheoryHoursMin).nullish(),
   "practicalHours": zod.number().min(listPublicEducationCoursesResponseOnePracticalHoursMin).nullish(),
@@ -13108,6 +13696,7 @@ export const ListPublicEducationCoursesResponseItem = zod.object({
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
   "depositAmount": zod.number().min(listPublicEducationCoursesResponseOneDepositAmountMin).nullish(),
   "studentCount": zod.number().min(listPublicEducationCoursesResponseOneStudentCountMin).multipleOf(listPublicEducationCoursesResponseOneStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(listPublicEducationCoursesResponseOneCompletedLearnerCountMin).multipleOf(listPublicEducationCoursesResponseOneCompletedLearnerCountMultipleOf).optional(),
   "inquiryCount30d": zod.number().min(listPublicEducationCoursesResponseOneInquiryCount30dMin).multipleOf(listPublicEducationCoursesResponseOneInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(listPublicEducationCoursesResponseOneViewCount30dMin).multipleOf(listPublicEducationCoursesResponseOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
@@ -13120,24 +13709,17 @@ export const ListPublicEducationCoursesResponseItem = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
-  "modules": zod.array(zod.object({
+  "publicModules": zod.array(zod.object({
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
-  "sortOrder": zod.number(),
-  "lessons": zod.array(zod.object({
-  "id": zod.string(),
-  "title": zod.string(),
-  "description": zod.string(),
-  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
-  "durationMinutes": zod.number(),
-  "sortOrder": zod.number(),
-  "completed": zod.boolean()
-}))
+  "sortOrder": zod.number().int().min(listPublicEducationCoursesResponseTwoPublicModulesItemSortOrderMin),
+  "lessonCount": zod.number().int().min(listPublicEducationCoursesResponseTwoPublicModulesItemLessonCountMin)
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
@@ -13187,6 +13769,17 @@ export const ListPublicEducationCoursesResponseItem = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(listPublicEducationCoursesResponseTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(listPublicEducationCoursesResponseTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -13203,11 +13796,13 @@ export const ListPublicEducationCoursesResponseItem = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(listPublicEducationCoursesResponseTwoCenterTwoCoursesItemDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(listPublicEducationCoursesResponseTwoCenterTwoCoursesItemReviewCountMin),
   "certification": zod.boolean(),
   "theoryHours": zod.number().min(listPublicEducationCoursesResponseTwoCenterTwoCoursesItemTheoryHoursMin).nullish(),
   "practicalHours": zod.number().min(listPublicEducationCoursesResponseTwoCenterTwoCoursesItemPracticalHoursMin).nullish(),
@@ -13223,6 +13818,7 @@ export const ListPublicEducationCoursesResponseItem = zod.object({
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
   "depositAmount": zod.number().min(listPublicEducationCoursesResponseTwoCenterTwoCoursesItemDepositAmountMin).nullish(),
   "studentCount": zod.number().min(listPublicEducationCoursesResponseTwoCenterTwoCoursesItemStudentCountMin).multipleOf(listPublicEducationCoursesResponseTwoCenterTwoCoursesItemStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(listPublicEducationCoursesResponseTwoCenterTwoCoursesItemCompletedLearnerCountMin).multipleOf(listPublicEducationCoursesResponseTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf).optional(),
   "inquiryCount30d": zod.number().min(listPublicEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(listPublicEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(listPublicEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(listPublicEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
@@ -13235,6 +13831,7 @@ export const ListPublicEducationCoursesResponseItem = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -13257,6 +13854,14 @@ export const GetPublicEducationCourseParams = zod.object({
   "courseId": zod.coerce.string()
 })
 
+export const getPublicEducationCourseResponseOneInstructorProfileTwoIndustryYearsMin = 0;
+
+export const getPublicEducationCourseResponseOneInstructorProfileTwoExperienceYearsMin = 0;
+
+export const getPublicEducationCourseResponseOneDurationMinutesMultipleOf = 1;
+
+export const getPublicEducationCourseResponseOneReviewCountMin = 0;
+
 export const getPublicEducationCourseResponseOneTheoryHoursMin = 0;
 
 export const getPublicEducationCourseResponseOnePracticalHoursMin = 0;
@@ -13266,11 +13871,18 @@ export const getPublicEducationCourseResponseOneDepositAmountMin = 0;
 export const getPublicEducationCourseResponseOneStudentCountMin = 0;
 export const getPublicEducationCourseResponseOneStudentCountMultipleOf = 1;
 
+export const getPublicEducationCourseResponseOneCompletedLearnerCountMin = 0;
+export const getPublicEducationCourseResponseOneCompletedLearnerCountMultipleOf = 1;
+
 export const getPublicEducationCourseResponseOneInquiryCount30dMin = 0;
 export const getPublicEducationCourseResponseOneInquiryCount30dMultipleOf = 1;
 
 export const getPublicEducationCourseResponseOneViewCount30dMin = 0;
 export const getPublicEducationCourseResponseOneViewCount30dMultipleOf = 1;
+
+export const getPublicEducationCourseResponseTwoPublicModulesItemSortOrderMin = 0;
+
+export const getPublicEducationCourseResponseTwoPublicModulesItemLessonCountMin = 0;
 
 export const getPublicEducationCourseResponseTwoDayProgramItemDayNumberMultipleOf = 1;
 
@@ -13287,6 +13899,14 @@ export const getPublicEducationCourseResponseTwoCenterTwoCourseCountMultipleOf =
 
 export const getPublicEducationCourseResponseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
 
+export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin = 0;
+
+export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin = 0;
+
+export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemDurationMinutesMultipleOf = 1;
+
+export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemReviewCountMin = 0;
+
 export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemTheoryHoursMin = 0;
 
 export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemPracticalHoursMin = 0;
@@ -13295,6 +13915,9 @@ export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemDepositAmoun
 
 export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemStudentCountMin = 0;
 export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemStudentCountMultipleOf = 1;
+
+export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemCompletedLearnerCountMin = 0;
+export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf = 1;
 
 export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount30dMin = 0;
 export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf = 1;
@@ -13312,6 +13935,17 @@ export const GetPublicEducationCourseResponse = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(getPublicEducationCourseResponseOneInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(getPublicEducationCourseResponseOneInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -13328,11 +13962,13 @@ export const GetPublicEducationCourseResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(getPublicEducationCourseResponseOneDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(getPublicEducationCourseResponseOneReviewCountMin),
   "certification": zod.boolean(),
   "theoryHours": zod.number().min(getPublicEducationCourseResponseOneTheoryHoursMin).nullish(),
   "practicalHours": zod.number().min(getPublicEducationCourseResponseOnePracticalHoursMin).nullish(),
@@ -13348,6 +13984,7 @@ export const GetPublicEducationCourseResponse = zod.object({
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
   "depositAmount": zod.number().min(getPublicEducationCourseResponseOneDepositAmountMin).nullish(),
   "studentCount": zod.number().min(getPublicEducationCourseResponseOneStudentCountMin).multipleOf(getPublicEducationCourseResponseOneStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(getPublicEducationCourseResponseOneCompletedLearnerCountMin).multipleOf(getPublicEducationCourseResponseOneCompletedLearnerCountMultipleOf).optional(),
   "inquiryCount30d": zod.number().min(getPublicEducationCourseResponseOneInquiryCount30dMin).multipleOf(getPublicEducationCourseResponseOneInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(getPublicEducationCourseResponseOneViewCount30dMin).multipleOf(getPublicEducationCourseResponseOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
@@ -13360,24 +13997,17 @@ export const GetPublicEducationCourseResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
-  "modules": zod.array(zod.object({
+  "publicModules": zod.array(zod.object({
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
-  "sortOrder": zod.number(),
-  "lessons": zod.array(zod.object({
-  "id": zod.string(),
-  "title": zod.string(),
-  "description": zod.string(),
-  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
-  "durationMinutes": zod.number(),
-  "sortOrder": zod.number(),
-  "completed": zod.boolean()
-}))
+  "sortOrder": zod.number().int().min(getPublicEducationCourseResponseTwoPublicModulesItemSortOrderMin),
+  "lessonCount": zod.number().int().min(getPublicEducationCourseResponseTwoPublicModulesItemLessonCountMin)
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
@@ -13427,6 +14057,17 @@ export const GetPublicEducationCourseResponse = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(getPublicEducationCourseResponseTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(getPublicEducationCourseResponseTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -13443,11 +14084,13 @@ export const GetPublicEducationCourseResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(getPublicEducationCourseResponseTwoCenterTwoCoursesItemDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(getPublicEducationCourseResponseTwoCenterTwoCoursesItemReviewCountMin),
   "certification": zod.boolean(),
   "theoryHours": zod.number().min(getPublicEducationCourseResponseTwoCenterTwoCoursesItemTheoryHoursMin).nullish(),
   "practicalHours": zod.number().min(getPublicEducationCourseResponseTwoCenterTwoCoursesItemPracticalHoursMin).nullish(),
@@ -13463,6 +14106,7 @@ export const GetPublicEducationCourseResponse = zod.object({
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
   "depositAmount": zod.number().min(getPublicEducationCourseResponseTwoCenterTwoCoursesItemDepositAmountMin).nullish(),
   "studentCount": zod.number().min(getPublicEducationCourseResponseTwoCenterTwoCoursesItemStudentCountMin).multipleOf(getPublicEducationCourseResponseTwoCenterTwoCoursesItemStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(getPublicEducationCourseResponseTwoCenterTwoCoursesItemCompletedLearnerCountMin).multipleOf(getPublicEducationCourseResponseTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf).optional(),
   "inquiryCount30d": zod.number().min(getPublicEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(getPublicEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(getPublicEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(getPublicEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
@@ -13475,6 +14119,7 @@ export const GetPublicEducationCourseResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -13487,6 +14132,303 @@ export const GetPublicEducationCourseResponse = zod.object({
   "createdAt": zod.coerce.date()
 }))
 }))
+
+
+/**
+ * @summary List eligible related courses, preferring the same subcategory and then shared tags
+ */
+export const ListRelatedEducationCoursesParams = zod.object({
+  "courseId": zod.coerce.string()
+})
+
+export const listRelatedEducationCoursesQueryLimitDefault = 6;
+export const listRelatedEducationCoursesQueryLimitMax = 20;
+
+
+
+export const ListRelatedEducationCoursesQueryParams = zod.object({
+  "limit": zod.coerce.number().int().min(1).max(listRelatedEducationCoursesQueryLimitMax).default(listRelatedEducationCoursesQueryLimitDefault)
+})
+
+export const listRelatedEducationCoursesResponseOneInstructorProfileTwoIndustryYearsMin = 0;
+
+export const listRelatedEducationCoursesResponseOneInstructorProfileTwoExperienceYearsMin = 0;
+
+export const listRelatedEducationCoursesResponseOneDurationMinutesMultipleOf = 1;
+
+export const listRelatedEducationCoursesResponseOneReviewCountMin = 0;
+
+export const listRelatedEducationCoursesResponseOneTheoryHoursMin = 0;
+
+export const listRelatedEducationCoursesResponseOnePracticalHoursMin = 0;
+
+export const listRelatedEducationCoursesResponseOneDepositAmountMin = 0;
+
+export const listRelatedEducationCoursesResponseOneStudentCountMin = 0;
+export const listRelatedEducationCoursesResponseOneStudentCountMultipleOf = 1;
+
+export const listRelatedEducationCoursesResponseOneCompletedLearnerCountMin = 0;
+export const listRelatedEducationCoursesResponseOneCompletedLearnerCountMultipleOf = 1;
+
+export const listRelatedEducationCoursesResponseOneInquiryCount30dMin = 0;
+export const listRelatedEducationCoursesResponseOneInquiryCount30dMultipleOf = 1;
+
+export const listRelatedEducationCoursesResponseOneViewCount30dMin = 0;
+export const listRelatedEducationCoursesResponseOneViewCount30dMultipleOf = 1;
+
+export const listRelatedEducationCoursesResponseTwoPublicModulesItemSortOrderMin = 0;
+
+export const listRelatedEducationCoursesResponseTwoPublicModulesItemLessonCountMin = 0;
+
+export const listRelatedEducationCoursesResponseTwoDayProgramItemDayNumberMultipleOf = 1;
+
+export const listRelatedEducationCoursesResponseTwoDayProgramItemDurationMinutesMin = 0;
+export const listRelatedEducationCoursesResponseTwoDayProgramItemDurationMinutesMultipleOf = 1;
+
+export const listRelatedEducationCoursesResponseTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const listRelatedEducationCoursesResponseTwoCenterTwoReviewCountMin = 0;
+export const listRelatedEducationCoursesResponseTwoCenterTwoReviewCountMultipleOf = 1;
+
+export const listRelatedEducationCoursesResponseTwoCenterTwoCourseCountMin = 0;
+export const listRelatedEducationCoursesResponseTwoCenterTwoCourseCountMultipleOf = 1;
+
+export const listRelatedEducationCoursesResponseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin = 0;
+
+export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin = 0;
+
+export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemDurationMinutesMultipleOf = 1;
+
+export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemReviewCountMin = 0;
+
+export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemTheoryHoursMin = 0;
+
+export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemPracticalHoursMin = 0;
+
+export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemDepositAmountMin = 0;
+
+export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemStudentCountMin = 0;
+export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemStudentCountMultipleOf = 1;
+
+export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemCompletedLearnerCountMin = 0;
+export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf = 1;
+
+export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMin = 0;
+export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf = 1;
+
+export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMin = 0;
+export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+export const listRelatedEducationCoursesResponseTwoReviewsItemRatingMax = 5;
+
+
+
+export const ListRelatedEducationCoursesResponseItem = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(listRelatedEducationCoursesResponseOneInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(listRelatedEducationCoursesResponseOneInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "sectionId": zod.string().nullish(),
+  "sectionName": zod.string().nullish(),
+  "categoryId": zod.string().nullish(),
+  "categoryName": zod.string().nullish(),
+  "subcategoryId": zod.string().nullish(),
+  "subcategoryName": zod.string().nullish(),
+  "courseTypeId": zod.string().nullish(),
+  "courseTypeName": zod.string().nullish(),
+  "taxonomyPath": zod.array(zod.string()),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(listRelatedEducationCoursesResponseOneDurationMinutesMultipleOf).nullish(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
+  "rating": zod.number(),
+  "reviewCount": zod.number().int().min(listRelatedEducationCoursesResponseOneReviewCountMin),
+  "certification": zod.boolean(),
+  "theoryHours": zod.number().min(listRelatedEducationCoursesResponseOneTheoryHoursMin).nullish(),
+  "practicalHours": zod.number().min(listRelatedEducationCoursesResponseOnePracticalHoursMin).nullish(),
+  "certificateName": zod.string().nullish(),
+  "accredited": zod.boolean(),
+  "language": zod.string().nullish(),
+  "trailerUrl": zod.string().nullish(),
+  "tags": zod.array(zod.string()),
+  "faq": zod.array(zod.object({
+  "question": zod.string(),
+  "answer": zod.string()
+})),
+  "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
+  "depositAmount": zod.number().min(listRelatedEducationCoursesResponseOneDepositAmountMin).nullish(),
+  "studentCount": zod.number().min(listRelatedEducationCoursesResponseOneStudentCountMin).multipleOf(listRelatedEducationCoursesResponseOneStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(listRelatedEducationCoursesResponseOneCompletedLearnerCountMin).multipleOf(listRelatedEducationCoursesResponseOneCompletedLearnerCountMultipleOf).optional(),
+  "inquiryCount30d": zod.number().min(listRelatedEducationCoursesResponseOneInquiryCount30dMin).multipleOf(listRelatedEducationCoursesResponseOneInquiryCount30dMultipleOf),
+  "viewCount30d": zod.number().min(listRelatedEducationCoursesResponseOneViewCount30dMin).multipleOf(listRelatedEducationCoursesResponseOneViewCount30dMultipleOf),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
+  "centerId": zod.string().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}).and(zod.object({
+  "publicModules": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number().int().min(listRelatedEducationCoursesResponseTwoPublicModulesItemSortOrderMin),
+  "lessonCount": zod.number().int().min(listRelatedEducationCoursesResponseTwoPublicModulesItemLessonCountMin)
+})),
+  "sessions": zod.array(zod.object({
+  "id": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "location": zod.string().nullish(),
+  "capacity": zod.number(),
+  "reservedSeats": zod.number(),
+  "availableSeats": zod.number(),
+  "minimumEnrollments": zod.number().nullish(),
+  "cancelledAt": zod.coerce.date().nullish()
+})),
+  "dayProgram": zod.array(zod.object({
+  "id": zod.string(),
+  "dayNumber": zod.number().min(1).multipleOf(listRelatedEducationCoursesResponseTwoDayProgramItemDayNumberMultipleOf),
+  "title": zod.string(),
+  "description": zod.string(),
+  "durationMinutes": zod.number().min(listRelatedEducationCoursesResponseTwoDayProgramItemDurationMinutesMin).multipleOf(listRelatedEducationCoursesResponseTwoDayProgramItemDurationMinutesMultipleOf).nullish()
+})),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(listRelatedEducationCoursesResponseTwoGalleryItemSortOrderMultipleOf)
+})),
+  "center": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "description": zod.string(),
+  "imageUrl": zod.string(),
+  "websiteUrl": zod.string().nullish(),
+  "instagramUrl": zod.string().nullish(),
+  "verified": zod.boolean(),
+  "rating": zod.number(),
+  "reviewCount": zod.number().min(listRelatedEducationCoursesResponseTwoCenterTwoReviewCountMin).multipleOf(listRelatedEducationCoursesResponseTwoCenterTwoReviewCountMultipleOf),
+  "courseCount": zod.number().min(listRelatedEducationCoursesResponseTwoCenterTwoCourseCountMin).multipleOf(listRelatedEducationCoursesResponseTwoCenterTwoCourseCountMultipleOf),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(listRelatedEducationCoursesResponseTwoCenterTwoGalleryItemSortOrderMultipleOf)
+})),
+  "courses": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "sectionId": zod.string().nullish(),
+  "sectionName": zod.string().nullish(),
+  "categoryId": zod.string().nullish(),
+  "categoryName": zod.string().nullish(),
+  "subcategoryId": zod.string().nullish(),
+  "subcategoryName": zod.string().nullish(),
+  "courseTypeId": zod.string().nullish(),
+  "courseTypeName": zod.string().nullish(),
+  "taxonomyPath": zod.array(zod.string()),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemDurationMinutesMultipleOf).nullish(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
+  "rating": zod.number(),
+  "reviewCount": zod.number().int().min(listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemReviewCountMin),
+  "certification": zod.boolean(),
+  "theoryHours": zod.number().min(listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemTheoryHoursMin).nullish(),
+  "practicalHours": zod.number().min(listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemPracticalHoursMin).nullish(),
+  "certificateName": zod.string().nullish(),
+  "accredited": zod.boolean(),
+  "language": zod.string().nullish(),
+  "trailerUrl": zod.string().nullish(),
+  "tags": zod.array(zod.string()),
+  "faq": zod.array(zod.object({
+  "question": zod.string(),
+  "answer": zod.string()
+})),
+  "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
+  "depositAmount": zod.number().min(listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemDepositAmountMin).nullish(),
+  "studentCount": zod.number().min(listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemStudentCountMin).multipleOf(listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemCompletedLearnerCountMin).multipleOf(listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf).optional(),
+  "inquiryCount30d": zod.number().min(listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
+  "viewCount30d": zod.number().min(listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
+  "centerId": zod.string().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}))
+})]).optional(),
+  "reviews": zod.array(zod.object({
+  "id": zod.string(),
+  "rating": zod.number().min(1).max(listRelatedEducationCoursesResponseTwoReviewsItemRatingMax),
+  "comment": zod.string(),
+  "createdAt": zod.coerce.date()
+}))
+}))
+export const ListRelatedEducationCoursesResponse = zod.array(ListRelatedEducationCoursesResponseItem)
 
 
 /**
@@ -13594,6 +14536,14 @@ export const ListPublicEducationSearchSuggestionsResponseItem = zod.object({
 export const ListPublicEducationSearchSuggestionsResponse = zod.array(ListPublicEducationSearchSuggestionsResponseItem)
 
 
+export const getPublicEducationRankingsResponseNewCentersItemEvidenceCountMin = 0;
+
+export const getPublicEducationRankingsResponseMostRequestedCenters90dItemEvidenceCountMin = 0;
+
+export const getPublicEducationRankingsResponseTopRatedCentersItemEvidenceCountMin = 0;
+
+
+
 export const GetPublicEducationRankingsResponse = zod.object({
   "popularCategories30d": zod.array(zod.object({
   "categoryId": zod.string(),
@@ -13607,6 +14557,8 @@ export const GetPublicEducationRankingsResponse = zod.object({
   "name": zod.string(),
   "city": zod.string(),
   "metric": zod.number(),
+  "evidenceCount": zod.number().int().min(getPublicEducationRankingsResponseNewCentersItemEvidenceCountMin).optional(),
+  "explanation": zod.string().optional(),
   "createdAt": zod.coerce.date()
 })),
   "mostRequestedCenters90d": zod.array(zod.object({
@@ -13614,6 +14566,8 @@ export const GetPublicEducationRankingsResponse = zod.object({
   "name": zod.string(),
   "city": zod.string(),
   "metric": zod.number(),
+  "evidenceCount": zod.number().int().min(getPublicEducationRankingsResponseMostRequestedCenters90dItemEvidenceCountMin).optional(),
+  "explanation": zod.string().optional(),
   "createdAt": zod.coerce.date()
 })),
   "topRatedCenters": zod.array(zod.object({
@@ -13621,6 +14575,8 @@ export const GetPublicEducationRankingsResponse = zod.object({
   "name": zod.string(),
   "city": zod.string(),
   "metric": zod.number(),
+  "evidenceCount": zod.number().int().min(getPublicEducationRankingsResponseTopRatedCentersItemEvidenceCountMin).optional(),
+  "explanation": zod.string().optional(),
   "createdAt": zod.coerce.date()
 }))
 })
@@ -13677,6 +14633,14 @@ export const ListPopularEducationCoursesQueryParams = zod.object({
   "limit": zod.coerce.number().int().min(1).max(listPopularEducationCoursesQueryLimitMax).optional()
 })
 
+export const listPopularEducationCoursesResponseOneInstructorProfileTwoIndustryYearsMin = 0;
+
+export const listPopularEducationCoursesResponseOneInstructorProfileTwoExperienceYearsMin = 0;
+
+export const listPopularEducationCoursesResponseOneDurationMinutesMultipleOf = 1;
+
+export const listPopularEducationCoursesResponseOneReviewCountMin = 0;
+
 export const listPopularEducationCoursesResponseOneTheoryHoursMin = 0;
 
 export const listPopularEducationCoursesResponseOnePracticalHoursMin = 0;
@@ -13686,11 +14650,18 @@ export const listPopularEducationCoursesResponseOneDepositAmountMin = 0;
 export const listPopularEducationCoursesResponseOneStudentCountMin = 0;
 export const listPopularEducationCoursesResponseOneStudentCountMultipleOf = 1;
 
+export const listPopularEducationCoursesResponseOneCompletedLearnerCountMin = 0;
+export const listPopularEducationCoursesResponseOneCompletedLearnerCountMultipleOf = 1;
+
 export const listPopularEducationCoursesResponseOneInquiryCount30dMin = 0;
 export const listPopularEducationCoursesResponseOneInquiryCount30dMultipleOf = 1;
 
 export const listPopularEducationCoursesResponseOneViewCount30dMin = 0;
 export const listPopularEducationCoursesResponseOneViewCount30dMultipleOf = 1;
+
+export const listPopularEducationCoursesResponseTwoPublicModulesItemSortOrderMin = 0;
+
+export const listPopularEducationCoursesResponseTwoPublicModulesItemLessonCountMin = 0;
 
 export const listPopularEducationCoursesResponseTwoDayProgramItemDayNumberMultipleOf = 1;
 
@@ -13707,6 +14678,14 @@ export const listPopularEducationCoursesResponseTwoCenterTwoCourseCountMultipleO
 
 export const listPopularEducationCoursesResponseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
 
+export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin = 0;
+
+export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin = 0;
+
+export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemDurationMinutesMultipleOf = 1;
+
+export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemReviewCountMin = 0;
+
 export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemTheoryHoursMin = 0;
 
 export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemPracticalHoursMin = 0;
@@ -13715,6 +14694,9 @@ export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemDepositAm
 
 export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemStudentCountMin = 0;
 export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemStudentCountMultipleOf = 1;
+
+export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemCompletedLearnerCountMin = 0;
+export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf = 1;
 
 export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMin = 0;
 export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf = 1;
@@ -13732,6 +14714,17 @@ export const ListPopularEducationCoursesResponseItem = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(listPopularEducationCoursesResponseOneInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(listPopularEducationCoursesResponseOneInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -13748,11 +14741,13 @@ export const ListPopularEducationCoursesResponseItem = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(listPopularEducationCoursesResponseOneDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(listPopularEducationCoursesResponseOneReviewCountMin),
   "certification": zod.boolean(),
   "theoryHours": zod.number().min(listPopularEducationCoursesResponseOneTheoryHoursMin).nullish(),
   "practicalHours": zod.number().min(listPopularEducationCoursesResponseOnePracticalHoursMin).nullish(),
@@ -13768,6 +14763,7 @@ export const ListPopularEducationCoursesResponseItem = zod.object({
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
   "depositAmount": zod.number().min(listPopularEducationCoursesResponseOneDepositAmountMin).nullish(),
   "studentCount": zod.number().min(listPopularEducationCoursesResponseOneStudentCountMin).multipleOf(listPopularEducationCoursesResponseOneStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(listPopularEducationCoursesResponseOneCompletedLearnerCountMin).multipleOf(listPopularEducationCoursesResponseOneCompletedLearnerCountMultipleOf).optional(),
   "inquiryCount30d": zod.number().min(listPopularEducationCoursesResponseOneInquiryCount30dMin).multipleOf(listPopularEducationCoursesResponseOneInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(listPopularEducationCoursesResponseOneViewCount30dMin).multipleOf(listPopularEducationCoursesResponseOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
@@ -13780,24 +14776,17 @@ export const ListPopularEducationCoursesResponseItem = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
-  "modules": zod.array(zod.object({
+  "publicModules": zod.array(zod.object({
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
-  "sortOrder": zod.number(),
-  "lessons": zod.array(zod.object({
-  "id": zod.string(),
-  "title": zod.string(),
-  "description": zod.string(),
-  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
-  "durationMinutes": zod.number(),
-  "sortOrder": zod.number(),
-  "completed": zod.boolean()
-}))
+  "sortOrder": zod.number().int().min(listPopularEducationCoursesResponseTwoPublicModulesItemSortOrderMin),
+  "lessonCount": zod.number().int().min(listPopularEducationCoursesResponseTwoPublicModulesItemLessonCountMin)
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
@@ -13847,6 +14836,17 @@ export const ListPopularEducationCoursesResponseItem = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(listPopularEducationCoursesResponseTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(listPopularEducationCoursesResponseTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -13863,11 +14863,13 @@ export const ListPopularEducationCoursesResponseItem = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(listPopularEducationCoursesResponseTwoCenterTwoCoursesItemDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(listPopularEducationCoursesResponseTwoCenterTwoCoursesItemReviewCountMin),
   "certification": zod.boolean(),
   "theoryHours": zod.number().min(listPopularEducationCoursesResponseTwoCenterTwoCoursesItemTheoryHoursMin).nullish(),
   "practicalHours": zod.number().min(listPopularEducationCoursesResponseTwoCenterTwoCoursesItemPracticalHoursMin).nullish(),
@@ -13883,6 +14885,7 @@ export const ListPopularEducationCoursesResponseItem = zod.object({
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
   "depositAmount": zod.number().min(listPopularEducationCoursesResponseTwoCenterTwoCoursesItemDepositAmountMin).nullish(),
   "studentCount": zod.number().min(listPopularEducationCoursesResponseTwoCenterTwoCoursesItemStudentCountMin).multipleOf(listPopularEducationCoursesResponseTwoCenterTwoCoursesItemStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(listPopularEducationCoursesResponseTwoCenterTwoCoursesItemCompletedLearnerCountMin).multipleOf(listPopularEducationCoursesResponseTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf).optional(),
   "inquiryCount30d": zod.number().min(listPopularEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(listPopularEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(listPopularEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(listPopularEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
@@ -13895,6 +14898,7 @@ export const ListPopularEducationCoursesResponseItem = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -13925,6 +14929,14 @@ export const getPublicEducationCenterResponseCourseCountMultipleOf = 1;
 
 export const getPublicEducationCenterResponseGalleryItemSortOrderMultipleOf = 1;
 
+export const getPublicEducationCenterResponseCoursesItemInstructorProfileTwoIndustryYearsMin = 0;
+
+export const getPublicEducationCenterResponseCoursesItemInstructorProfileTwoExperienceYearsMin = 0;
+
+export const getPublicEducationCenterResponseCoursesItemDurationMinutesMultipleOf = 1;
+
+export const getPublicEducationCenterResponseCoursesItemReviewCountMin = 0;
+
 export const getPublicEducationCenterResponseCoursesItemTheoryHoursMin = 0;
 
 export const getPublicEducationCenterResponseCoursesItemPracticalHoursMin = 0;
@@ -13933,6 +14945,9 @@ export const getPublicEducationCenterResponseCoursesItemDepositAmountMin = 0;
 
 export const getPublicEducationCenterResponseCoursesItemStudentCountMin = 0;
 export const getPublicEducationCenterResponseCoursesItemStudentCountMultipleOf = 1;
+
+export const getPublicEducationCenterResponseCoursesItemCompletedLearnerCountMin = 0;
+export const getPublicEducationCenterResponseCoursesItemCompletedLearnerCountMultipleOf = 1;
 
 export const getPublicEducationCenterResponseCoursesItemInquiryCount30dMin = 0;
 export const getPublicEducationCenterResponseCoursesItemInquiryCount30dMultipleOf = 1;
@@ -13966,6 +14981,17 @@ export const GetPublicEducationCenterResponse = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(getPublicEducationCenterResponseCoursesItemInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(getPublicEducationCenterResponseCoursesItemInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -13982,11 +15008,13 @@ export const GetPublicEducationCenterResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(getPublicEducationCenterResponseCoursesItemDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(getPublicEducationCenterResponseCoursesItemReviewCountMin),
   "certification": zod.boolean(),
   "theoryHours": zod.number().min(getPublicEducationCenterResponseCoursesItemTheoryHoursMin).nullish(),
   "practicalHours": zod.number().min(getPublicEducationCenterResponseCoursesItemPracticalHoursMin).nullish(),
@@ -14002,6 +15030,7 @@ export const GetPublicEducationCenterResponse = zod.object({
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
   "depositAmount": zod.number().min(getPublicEducationCenterResponseCoursesItemDepositAmountMin).nullish(),
   "studentCount": zod.number().min(getPublicEducationCenterResponseCoursesItemStudentCountMin).multipleOf(getPublicEducationCenterResponseCoursesItemStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(getPublicEducationCenterResponseCoursesItemCompletedLearnerCountMin).multipleOf(getPublicEducationCenterResponseCoursesItemCompletedLearnerCountMultipleOf).optional(),
   "inquiryCount30d": zod.number().min(getPublicEducationCenterResponseCoursesItemInquiryCount30dMin).multipleOf(getPublicEducationCenterResponseCoursesItemInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(getPublicEducationCenterResponseCoursesItemViewCount30dMin).multipleOf(getPublicEducationCenterResponseCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
@@ -14014,6 +15043,7 @@ export const GetPublicEducationCenterResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
@@ -14021,9 +15051,1019 @@ export const GetPublicEducationCenterResponse = zod.object({
 })
 
 
+export const ListPublicEducationCenterReviewsParams = zod.object({
+  "centerId": zod.coerce.string()
+})
+
+export const listPublicEducationCenterReviewsQueryPageDefault = 1;
+
+export const listPublicEducationCenterReviewsQueryPageSizeDefault = 20;
+export const listPublicEducationCenterReviewsQueryPageSizeMax = 100;
+
+
+
+export const ListPublicEducationCenterReviewsQueryParams = zod.object({
+  "page": zod.coerce.number().int().min(1).default(listPublicEducationCenterReviewsQueryPageDefault),
+  "pageSize": zod.coerce.number().int().min(1).max(listPublicEducationCenterReviewsQueryPageSizeMax).default(listPublicEducationCenterReviewsQueryPageSizeDefault)
+})
+
+export const listPublicEducationCenterReviewsResponseItemsItemRatingMax = 5;
+
+
+
+export const ListPublicEducationCenterReviewsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "enrollmentId": zod.string(),
+  "rating": zod.number().int().min(1).max(listPublicEducationCenterReviewsResponseItemsItemRatingMax),
+  "comment": zod.string(),
+  "status": zod.enum(['pending', 'published', 'rejected']),
+  "createdAt": zod.coerce.date()
+})),
+  "page": zod.number().int(),
+  "pageSize": zod.number().int(),
+  "total": zod.number().int(),
+  "viewerEligibility": zod.object({
+  "canReview": zod.boolean(),
+  "eligibleEnrollmentId": zod.string().optional(),
+  "reason": zod.string().optional()
+})
+})
+
+
+/**
+ * @summary Review the center for a completed enrollment
+ */
+export const createEducationCenterReviewBodyRatingMax = 5;
+
+export const createEducationCenterReviewBodyCommentMax = 4000;
+
+
+
+export const CreateEducationCenterReviewBody = zod.object({
+  "enrollmentId": zod.string(),
+  "rating": zod.number().int().min(1).max(createEducationCenterReviewBodyRatingMax),
+  "comment": zod.string().max(createEducationCenterReviewBodyCommentMax).optional()
+})
+
+export const createEducationCenterReviewResponseRatingMax = 5;
+
+
+
+export const CreateEducationCenterReviewResponse = zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "enrollmentId": zod.string(),
+  "rating": zod.number().int().min(1).max(createEducationCenterReviewResponseRatingMax),
+  "comment": zod.string(),
+  "status": zod.enum(['pending', 'published', 'rejected']),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary List center reviews for moderation without learner PII
+ */
+export const adminListEducationCenterReviewsQueryStatusDefault = `pending`;
+export const adminListEducationCenterReviewsQueryPageDefault = 1;
+
+export const adminListEducationCenterReviewsQueryPageSizeDefault = 20;
+export const adminListEducationCenterReviewsQueryPageSizeMax = 100;
+
+
+
+export const AdminListEducationCenterReviewsQueryParams = zod.object({
+  "centerId": zod.coerce.string().optional(),
+  "status": zod.enum(['pending', 'published', 'rejected', 'all']).default(adminListEducationCenterReviewsQueryStatusDefault),
+  "page": zod.coerce.number().int().min(1).default(adminListEducationCenterReviewsQueryPageDefault),
+  "pageSize": zod.coerce.number().int().min(1).max(adminListEducationCenterReviewsQueryPageSizeMax).default(adminListEducationCenterReviewsQueryPageSizeDefault)
+})
+
+export const adminListEducationCenterReviewsResponseItemsItemRatingMax = 5;
+
+
+export const adminListEducationCenterReviewsResponsePageSizeMax = 100;
+
+export const adminListEducationCenterReviewsResponseTotalMin = 0;
+
+
+
+export const AdminListEducationCenterReviewsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "enrollmentId": zod.string(),
+  "rating": zod.number().int().min(1).max(adminListEducationCenterReviewsResponseItemsItemRatingMax),
+  "comment": zod.string(),
+  "status": zod.enum(['pending', 'published', 'rejected']),
+  "adminNote": zod.string().nullable(),
+  "moderatedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})),
+  "page": zod.number().int().min(1),
+  "pageSize": zod.number().int().min(1).max(adminListEducationCenterReviewsResponsePageSizeMax),
+  "total": zod.number().int().min(adminListEducationCenterReviewsResponseTotalMin)
+})
+
+
+export const AdminModerateEducationCenterReviewParams = zod.object({
+  "reviewId": zod.coerce.string()
+})
+
+export const adminModerateEducationCenterReviewBodyAdminNoteMax = 2000;
+
+
+
+export const AdminModerateEducationCenterReviewBody = zod.object({
+  "status": zod.enum(['published', 'rejected']),
+  "adminNote": zod.string().max(adminModerateEducationCenterReviewBodyAdminNoteMax).nullish()
+}).strict()
+
+export const adminModerateEducationCenterReviewResponseRatingMax = 5;
+
+
+
+export const AdminModerateEducationCenterReviewResponse = zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "enrollmentId": zod.string(),
+  "rating": zod.number().int().min(1).max(adminModerateEducationCenterReviewResponseRatingMax),
+  "comment": zod.string(),
+  "status": zod.enum(['pending', 'published', 'rejected']),
+  "adminNote": zod.string().nullable(),
+  "moderatedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary List the signed-in user's fresh, publicly eligible saved courses
+ */
+export const listEducationWishlistQueryPageDefault = 1;
+
+export const listEducationWishlistQueryPageSizeDefault = 24;
+export const listEducationWishlistQueryPageSizeMax = 100;
+
+
+
+export const ListEducationWishlistQueryParams = zod.object({
+  "page": zod.coerce.number().int().min(1).default(listEducationWishlistQueryPageDefault),
+  "pageSize": zod.coerce.number().int().min(1).max(listEducationWishlistQueryPageSizeMax).default(listEducationWishlistQueryPageSizeDefault)
+})
+
+export const listEducationWishlistResponseItemsItemCourseOneInstructorProfileTwoIndustryYearsMin = 0;
+
+export const listEducationWishlistResponseItemsItemCourseOneInstructorProfileTwoExperienceYearsMin = 0;
+
+export const listEducationWishlistResponseItemsItemCourseOneDurationMinutesMultipleOf = 1;
+
+export const listEducationWishlistResponseItemsItemCourseOneReviewCountMin = 0;
+
+export const listEducationWishlistResponseItemsItemCourseOneTheoryHoursMin = 0;
+
+export const listEducationWishlistResponseItemsItemCourseOnePracticalHoursMin = 0;
+
+export const listEducationWishlistResponseItemsItemCourseOneDepositAmountMin = 0;
+
+export const listEducationWishlistResponseItemsItemCourseOneStudentCountMin = 0;
+export const listEducationWishlistResponseItemsItemCourseOneStudentCountMultipleOf = 1;
+
+export const listEducationWishlistResponseItemsItemCourseOneCompletedLearnerCountMin = 0;
+export const listEducationWishlistResponseItemsItemCourseOneCompletedLearnerCountMultipleOf = 1;
+
+export const listEducationWishlistResponseItemsItemCourseOneInquiryCount30dMin = 0;
+export const listEducationWishlistResponseItemsItemCourseOneInquiryCount30dMultipleOf = 1;
+
+export const listEducationWishlistResponseItemsItemCourseOneViewCount30dMin = 0;
+export const listEducationWishlistResponseItemsItemCourseOneViewCount30dMultipleOf = 1;
+
+export const listEducationWishlistResponseItemsItemCourseTwoPublicModulesItemSortOrderMin = 0;
+
+export const listEducationWishlistResponseItemsItemCourseTwoPublicModulesItemLessonCountMin = 0;
+
+export const listEducationWishlistResponseItemsItemCourseTwoDayProgramItemDayNumberMultipleOf = 1;
+
+export const listEducationWishlistResponseItemsItemCourseTwoDayProgramItemDurationMinutesMin = 0;
+export const listEducationWishlistResponseItemsItemCourseTwoDayProgramItemDurationMinutesMultipleOf = 1;
+
+export const listEducationWishlistResponseItemsItemCourseTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoReviewCountMin = 0;
+export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoReviewCountMultipleOf = 1;
+
+export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCourseCountMin = 0;
+export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCourseCountMultipleOf = 1;
+
+export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin = 0;
+
+export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin = 0;
+
+export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemDurationMinutesMultipleOf = 1;
+
+export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemReviewCountMin = 0;
+
+export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemTheoryHoursMin = 0;
+
+export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemPracticalHoursMin = 0;
+
+export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemDepositAmountMin = 0;
+
+export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemStudentCountMin = 0;
+export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemStudentCountMultipleOf = 1;
+
+export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemCompletedLearnerCountMin = 0;
+export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf = 1;
+
+export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemInquiryCount30dMin = 0;
+export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf = 1;
+
+export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemViewCount30dMin = 0;
+export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+export const listEducationWishlistResponseItemsItemCourseTwoReviewsItemRatingMax = 5;
+
+
+
+export const ListEducationWishlistResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "course": zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(listEducationWishlistResponseItemsItemCourseOneInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(listEducationWishlistResponseItemsItemCourseOneInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "sectionId": zod.string().nullish(),
+  "sectionName": zod.string().nullish(),
+  "categoryId": zod.string().nullish(),
+  "categoryName": zod.string().nullish(),
+  "subcategoryId": zod.string().nullish(),
+  "subcategoryName": zod.string().nullish(),
+  "courseTypeId": zod.string().nullish(),
+  "courseTypeName": zod.string().nullish(),
+  "taxonomyPath": zod.array(zod.string()),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(listEducationWishlistResponseItemsItemCourseOneDurationMinutesMultipleOf).nullish(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
+  "rating": zod.number(),
+  "reviewCount": zod.number().int().min(listEducationWishlistResponseItemsItemCourseOneReviewCountMin),
+  "certification": zod.boolean(),
+  "theoryHours": zod.number().min(listEducationWishlistResponseItemsItemCourseOneTheoryHoursMin).nullish(),
+  "practicalHours": zod.number().min(listEducationWishlistResponseItemsItemCourseOnePracticalHoursMin).nullish(),
+  "certificateName": zod.string().nullish(),
+  "accredited": zod.boolean(),
+  "language": zod.string().nullish(),
+  "trailerUrl": zod.string().nullish(),
+  "tags": zod.array(zod.string()),
+  "faq": zod.array(zod.object({
+  "question": zod.string(),
+  "answer": zod.string()
+})),
+  "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
+  "depositAmount": zod.number().min(listEducationWishlistResponseItemsItemCourseOneDepositAmountMin).nullish(),
+  "studentCount": zod.number().min(listEducationWishlistResponseItemsItemCourseOneStudentCountMin).multipleOf(listEducationWishlistResponseItemsItemCourseOneStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(listEducationWishlistResponseItemsItemCourseOneCompletedLearnerCountMin).multipleOf(listEducationWishlistResponseItemsItemCourseOneCompletedLearnerCountMultipleOf).optional(),
+  "inquiryCount30d": zod.number().min(listEducationWishlistResponseItemsItemCourseOneInquiryCount30dMin).multipleOf(listEducationWishlistResponseItemsItemCourseOneInquiryCount30dMultipleOf),
+  "viewCount30d": zod.number().min(listEducationWishlistResponseItemsItemCourseOneViewCount30dMin).multipleOf(listEducationWishlistResponseItemsItemCourseOneViewCount30dMultipleOf),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
+  "centerId": zod.string().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}).and(zod.object({
+  "publicModules": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number().int().min(listEducationWishlistResponseItemsItemCourseTwoPublicModulesItemSortOrderMin),
+  "lessonCount": zod.number().int().min(listEducationWishlistResponseItemsItemCourseTwoPublicModulesItemLessonCountMin)
+})),
+  "sessions": zod.array(zod.object({
+  "id": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "location": zod.string().nullish(),
+  "capacity": zod.number(),
+  "reservedSeats": zod.number(),
+  "availableSeats": zod.number(),
+  "minimumEnrollments": zod.number().nullish(),
+  "cancelledAt": zod.coerce.date().nullish()
+})),
+  "dayProgram": zod.array(zod.object({
+  "id": zod.string(),
+  "dayNumber": zod.number().min(1).multipleOf(listEducationWishlistResponseItemsItemCourseTwoDayProgramItemDayNumberMultipleOf),
+  "title": zod.string(),
+  "description": zod.string(),
+  "durationMinutes": zod.number().min(listEducationWishlistResponseItemsItemCourseTwoDayProgramItemDurationMinutesMin).multipleOf(listEducationWishlistResponseItemsItemCourseTwoDayProgramItemDurationMinutesMultipleOf).nullish()
+})),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(listEducationWishlistResponseItemsItemCourseTwoGalleryItemSortOrderMultipleOf)
+})),
+  "center": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "description": zod.string(),
+  "imageUrl": zod.string(),
+  "websiteUrl": zod.string().nullish(),
+  "instagramUrl": zod.string().nullish(),
+  "verified": zod.boolean(),
+  "rating": zod.number(),
+  "reviewCount": zod.number().min(listEducationWishlistResponseItemsItemCourseTwoCenterTwoReviewCountMin).multipleOf(listEducationWishlistResponseItemsItemCourseTwoCenterTwoReviewCountMultipleOf),
+  "courseCount": zod.number().min(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCourseCountMin).multipleOf(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCourseCountMultipleOf),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(listEducationWishlistResponseItemsItemCourseTwoCenterTwoGalleryItemSortOrderMultipleOf)
+})),
+  "courses": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "sectionId": zod.string().nullish(),
+  "sectionName": zod.string().nullish(),
+  "categoryId": zod.string().nullish(),
+  "categoryName": zod.string().nullish(),
+  "subcategoryId": zod.string().nullish(),
+  "subcategoryName": zod.string().nullish(),
+  "courseTypeId": zod.string().nullish(),
+  "courseTypeName": zod.string().nullish(),
+  "taxonomyPath": zod.array(zod.string()),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemDurationMinutesMultipleOf).nullish(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
+  "rating": zod.number(),
+  "reviewCount": zod.number().int().min(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemReviewCountMin),
+  "certification": zod.boolean(),
+  "theoryHours": zod.number().min(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemTheoryHoursMin).nullish(),
+  "practicalHours": zod.number().min(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemPracticalHoursMin).nullish(),
+  "certificateName": zod.string().nullish(),
+  "accredited": zod.boolean(),
+  "language": zod.string().nullish(),
+  "trailerUrl": zod.string().nullish(),
+  "tags": zod.array(zod.string()),
+  "faq": zod.array(zod.object({
+  "question": zod.string(),
+  "answer": zod.string()
+})),
+  "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
+  "depositAmount": zod.number().min(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemDepositAmountMin).nullish(),
+  "studentCount": zod.number().min(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemStudentCountMin).multipleOf(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemCompletedLearnerCountMin).multipleOf(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf).optional(),
+  "inquiryCount30d": zod.number().min(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
+  "viewCount30d": zod.number().min(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemViewCount30dMultipleOf),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
+  "centerId": zod.string().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}))
+})]).optional(),
+  "reviews": zod.array(zod.object({
+  "id": zod.string(),
+  "rating": zod.number().min(1).max(listEducationWishlistResponseItemsItemCourseTwoReviewsItemRatingMax),
+  "comment": zod.string(),
+  "createdAt": zod.coerce.date()
+}))
+}))
+})),
+  "page": zod.number().int(),
+  "pageSize": zod.number().int(),
+  "total": zod.number().int()
+})
+
+
+export const AddEducationWishlistItemBody = zod.object({
+  "courseId": zod.string()
+})
+
+export const addEducationWishlistItemResponseCourseOneInstructorProfileTwoIndustryYearsMin = 0;
+
+export const addEducationWishlistItemResponseCourseOneInstructorProfileTwoExperienceYearsMin = 0;
+
+export const addEducationWishlistItemResponseCourseOneDurationMinutesMultipleOf = 1;
+
+export const addEducationWishlistItemResponseCourseOneReviewCountMin = 0;
+
+export const addEducationWishlistItemResponseCourseOneTheoryHoursMin = 0;
+
+export const addEducationWishlistItemResponseCourseOnePracticalHoursMin = 0;
+
+export const addEducationWishlistItemResponseCourseOneDepositAmountMin = 0;
+
+export const addEducationWishlistItemResponseCourseOneStudentCountMin = 0;
+export const addEducationWishlistItemResponseCourseOneStudentCountMultipleOf = 1;
+
+export const addEducationWishlistItemResponseCourseOneCompletedLearnerCountMin = 0;
+export const addEducationWishlistItemResponseCourseOneCompletedLearnerCountMultipleOf = 1;
+
+export const addEducationWishlistItemResponseCourseOneInquiryCount30dMin = 0;
+export const addEducationWishlistItemResponseCourseOneInquiryCount30dMultipleOf = 1;
+
+export const addEducationWishlistItemResponseCourseOneViewCount30dMin = 0;
+export const addEducationWishlistItemResponseCourseOneViewCount30dMultipleOf = 1;
+
+export const addEducationWishlistItemResponseCourseTwoPublicModulesItemSortOrderMin = 0;
+
+export const addEducationWishlistItemResponseCourseTwoPublicModulesItemLessonCountMin = 0;
+
+export const addEducationWishlistItemResponseCourseTwoDayProgramItemDayNumberMultipleOf = 1;
+
+export const addEducationWishlistItemResponseCourseTwoDayProgramItemDurationMinutesMin = 0;
+export const addEducationWishlistItemResponseCourseTwoDayProgramItemDurationMinutesMultipleOf = 1;
+
+export const addEducationWishlistItemResponseCourseTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const addEducationWishlistItemResponseCourseTwoCenterTwoReviewCountMin = 0;
+export const addEducationWishlistItemResponseCourseTwoCenterTwoReviewCountMultipleOf = 1;
+
+export const addEducationWishlistItemResponseCourseTwoCenterTwoCourseCountMin = 0;
+export const addEducationWishlistItemResponseCourseTwoCenterTwoCourseCountMultipleOf = 1;
+
+export const addEducationWishlistItemResponseCourseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin = 0;
+
+export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin = 0;
+
+export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemDurationMinutesMultipleOf = 1;
+
+export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemReviewCountMin = 0;
+
+export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemTheoryHoursMin = 0;
+
+export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemPracticalHoursMin = 0;
+
+export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemDepositAmountMin = 0;
+
+export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemStudentCountMin = 0;
+export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemStudentCountMultipleOf = 1;
+
+export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemCompletedLearnerCountMin = 0;
+export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf = 1;
+
+export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemInquiryCount30dMin = 0;
+export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf = 1;
+
+export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemViewCount30dMin = 0;
+export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+export const addEducationWishlistItemResponseCourseTwoReviewsItemRatingMax = 5;
+
+
+
+export const AddEducationWishlistItemResponse = zod.object({
+  "id": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "course": zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(addEducationWishlistItemResponseCourseOneInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(addEducationWishlistItemResponseCourseOneInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "sectionId": zod.string().nullish(),
+  "sectionName": zod.string().nullish(),
+  "categoryId": zod.string().nullish(),
+  "categoryName": zod.string().nullish(),
+  "subcategoryId": zod.string().nullish(),
+  "subcategoryName": zod.string().nullish(),
+  "courseTypeId": zod.string().nullish(),
+  "courseTypeName": zod.string().nullish(),
+  "taxonomyPath": zod.array(zod.string()),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(addEducationWishlistItemResponseCourseOneDurationMinutesMultipleOf).nullish(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
+  "rating": zod.number(),
+  "reviewCount": zod.number().int().min(addEducationWishlistItemResponseCourseOneReviewCountMin),
+  "certification": zod.boolean(),
+  "theoryHours": zod.number().min(addEducationWishlistItemResponseCourseOneTheoryHoursMin).nullish(),
+  "practicalHours": zod.number().min(addEducationWishlistItemResponseCourseOnePracticalHoursMin).nullish(),
+  "certificateName": zod.string().nullish(),
+  "accredited": zod.boolean(),
+  "language": zod.string().nullish(),
+  "trailerUrl": zod.string().nullish(),
+  "tags": zod.array(zod.string()),
+  "faq": zod.array(zod.object({
+  "question": zod.string(),
+  "answer": zod.string()
+})),
+  "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
+  "depositAmount": zod.number().min(addEducationWishlistItemResponseCourseOneDepositAmountMin).nullish(),
+  "studentCount": zod.number().min(addEducationWishlistItemResponseCourseOneStudentCountMin).multipleOf(addEducationWishlistItemResponseCourseOneStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(addEducationWishlistItemResponseCourseOneCompletedLearnerCountMin).multipleOf(addEducationWishlistItemResponseCourseOneCompletedLearnerCountMultipleOf).optional(),
+  "inquiryCount30d": zod.number().min(addEducationWishlistItemResponseCourseOneInquiryCount30dMin).multipleOf(addEducationWishlistItemResponseCourseOneInquiryCount30dMultipleOf),
+  "viewCount30d": zod.number().min(addEducationWishlistItemResponseCourseOneViewCount30dMin).multipleOf(addEducationWishlistItemResponseCourseOneViewCount30dMultipleOf),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
+  "centerId": zod.string().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}).and(zod.object({
+  "publicModules": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number().int().min(addEducationWishlistItemResponseCourseTwoPublicModulesItemSortOrderMin),
+  "lessonCount": zod.number().int().min(addEducationWishlistItemResponseCourseTwoPublicModulesItemLessonCountMin)
+})),
+  "sessions": zod.array(zod.object({
+  "id": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "location": zod.string().nullish(),
+  "capacity": zod.number(),
+  "reservedSeats": zod.number(),
+  "availableSeats": zod.number(),
+  "minimumEnrollments": zod.number().nullish(),
+  "cancelledAt": zod.coerce.date().nullish()
+})),
+  "dayProgram": zod.array(zod.object({
+  "id": zod.string(),
+  "dayNumber": zod.number().min(1).multipleOf(addEducationWishlistItemResponseCourseTwoDayProgramItemDayNumberMultipleOf),
+  "title": zod.string(),
+  "description": zod.string(),
+  "durationMinutes": zod.number().min(addEducationWishlistItemResponseCourseTwoDayProgramItemDurationMinutesMin).multipleOf(addEducationWishlistItemResponseCourseTwoDayProgramItemDurationMinutesMultipleOf).nullish()
+})),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(addEducationWishlistItemResponseCourseTwoGalleryItemSortOrderMultipleOf)
+})),
+  "center": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "description": zod.string(),
+  "imageUrl": zod.string(),
+  "websiteUrl": zod.string().nullish(),
+  "instagramUrl": zod.string().nullish(),
+  "verified": zod.boolean(),
+  "rating": zod.number(),
+  "reviewCount": zod.number().min(addEducationWishlistItemResponseCourseTwoCenterTwoReviewCountMin).multipleOf(addEducationWishlistItemResponseCourseTwoCenterTwoReviewCountMultipleOf),
+  "courseCount": zod.number().min(addEducationWishlistItemResponseCourseTwoCenterTwoCourseCountMin).multipleOf(addEducationWishlistItemResponseCourseTwoCenterTwoCourseCountMultipleOf),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(addEducationWishlistItemResponseCourseTwoCenterTwoGalleryItemSortOrderMultipleOf)
+})),
+  "courses": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "sectionId": zod.string().nullish(),
+  "sectionName": zod.string().nullish(),
+  "categoryId": zod.string().nullish(),
+  "categoryName": zod.string().nullish(),
+  "subcategoryId": zod.string().nullish(),
+  "subcategoryName": zod.string().nullish(),
+  "courseTypeId": zod.string().nullish(),
+  "courseTypeName": zod.string().nullish(),
+  "taxonomyPath": zod.array(zod.string()),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemDurationMinutesMultipleOf).nullish(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
+  "rating": zod.number(),
+  "reviewCount": zod.number().int().min(addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemReviewCountMin),
+  "certification": zod.boolean(),
+  "theoryHours": zod.number().min(addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemTheoryHoursMin).nullish(),
+  "practicalHours": zod.number().min(addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemPracticalHoursMin).nullish(),
+  "certificateName": zod.string().nullish(),
+  "accredited": zod.boolean(),
+  "language": zod.string().nullish(),
+  "trailerUrl": zod.string().nullish(),
+  "tags": zod.array(zod.string()),
+  "faq": zod.array(zod.object({
+  "question": zod.string(),
+  "answer": zod.string()
+})),
+  "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
+  "depositAmount": zod.number().min(addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemDepositAmountMin).nullish(),
+  "studentCount": zod.number().min(addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemStudentCountMin).multipleOf(addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemCompletedLearnerCountMin).multipleOf(addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf).optional(),
+  "inquiryCount30d": zod.number().min(addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
+  "viewCount30d": zod.number().min(addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemViewCount30dMultipleOf),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
+  "centerId": zod.string().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}))
+})]).optional(),
+  "reviews": zod.array(zod.object({
+  "id": zod.string(),
+  "rating": zod.number().min(1).max(addEducationWishlistItemResponseCourseTwoReviewsItemRatingMax),
+  "comment": zod.string(),
+  "createdAt": zod.coerce.date()
+}))
+}))
+})
+
+
+export const RemoveEducationWishlistItemParams = zod.object({
+  "courseId": zod.coerce.string()
+})
+
+export const RemoveEducationWishlistItemResponse = zod.void()
+
+
+/**
+ * @summary List vouchers purchased by or assigned to the signed-in user
+ */
+export const listEducationGiftVouchersQueryPageDefault = 1;
+
+export const listEducationGiftVouchersQueryPageSizeDefault = 20;
+export const listEducationGiftVouchersQueryPageSizeMax = 100;
+
+
+
+export const ListEducationGiftVouchersQueryParams = zod.object({
+  "page": zod.coerce.number().int().min(1).default(listEducationGiftVouchersQueryPageDefault),
+  "pageSize": zod.coerce.number().int().min(1).max(listEducationGiftVouchersQueryPageSizeMax).default(listEducationGiftVouchersQueryPageSizeDefault)
+})
+
+export const listEducationGiftVouchersResponseItemsItemAmountMin = 0;
+
+
+
+export const ListEducationGiftVouchersResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "courseId": zod.string(),
+  "centerId": zod.string(),
+  "purchaserId": zod.string(),
+  "recipientUserId": zod.string().nullable(),
+  "recipientEmail": zod.string().nullable(),
+  "recipientName": zod.string().nullable(),
+  "giftMessage": zod.string().nullable(),
+  "courseTitle": zod.string(),
+  "courseImageUrl": zod.string(),
+  "amount": zod.number().int().min(listEducationGiftVouchersResponseItemsItemAmountMin),
+  "currency": zod.string(),
+  "codeLast4": zod.string(),
+  "status": zod.enum(['pending_payment', 'active', 'redeemed', 'refunded', 'cancelled']),
+  "paymentReference": zod.string(),
+  "redeemedEnrollmentId": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+})),
+  "page": zod.number().int(),
+  "pageSize": zod.number().int(),
+  "total": zod.number().int()
+})
+
+
+/**
+ * @summary Create a manual-payment gift voucher purchase
+ */
+export const purchaseEducationGiftVoucherHeaderIdempotencyKeyMax = 200;
+
+
+
+export const PurchaseEducationGiftVoucherHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(purchaseEducationGiftVoucherHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+})
+
+export const purchaseEducationGiftVoucherBodyRecipientEmailMax = 320;
+
+export const purchaseEducationGiftVoucherBodyRecipientNameMax = 160;
+
+export const purchaseEducationGiftVoucherBodyGiftMessageMax = 1000;
+
+
+
+export const PurchaseEducationGiftVoucherBody = zod.object({
+  "courseId": zod.string(),
+  "recipientUserId": zod.string().nullish(),
+  "recipientEmail": zod.string().max(purchaseEducationGiftVoucherBodyRecipientEmailMax).nullish(),
+  "recipientName": zod.string().min(1).max(purchaseEducationGiftVoucherBodyRecipientNameMax).nullish(),
+  "giftMessage": zod.string().min(1).max(purchaseEducationGiftVoucherBodyGiftMessageMax).nullish()
+})
+
+export const purchaseEducationGiftVoucherResponseOneAmountMin = 0;
+
+
+
+export const PurchaseEducationGiftVoucherResponse = zod.object({
+  "id": zod.string(),
+  "courseId": zod.string(),
+  "centerId": zod.string(),
+  "purchaserId": zod.string(),
+  "recipientUserId": zod.string().nullable(),
+  "recipientEmail": zod.string().nullable(),
+  "recipientName": zod.string().nullable(),
+  "giftMessage": zod.string().nullable(),
+  "courseTitle": zod.string(),
+  "courseImageUrl": zod.string(),
+  "amount": zod.number().int().min(purchaseEducationGiftVoucherResponseOneAmountMin),
+  "currency": zod.string(),
+  "codeLast4": zod.string(),
+  "status": zod.enum(['pending_payment', 'active', 'redeemed', 'refunded', 'cancelled']),
+  "paymentReference": zod.string(),
+  "redeemedEnrollmentId": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+}).and(zod.object({
+  "redemptionCode": zod.string().describe('One-time purchase response disclosure. It is not persisted as plaintext or returned by list\/admin APIs.')
+}))
+
+
+/**
+ * @summary Atomically redeem one active assigned voucher into one enrollment
+ */
+export const redeemEducationGiftVoucherBodyCodeMin = 12;
+export const redeemEducationGiftVoucherBodyCodeMax = 128;
+
+
+
+export const RedeemEducationGiftVoucherBody = zod.object({
+  "code": zod.string().min(redeemEducationGiftVoucherBodyCodeMin).max(redeemEducationGiftVoucherBodyCodeMax)
+})
+
+export const RedeemEducationGiftVoucherResponse = zod.object({
+  "id": zod.string(),
+  "courseId": zod.string(),
+  "courseTitle": zod.string(),
+  "learnerName": zod.string(),
+  "employeeId": zod.string().nullish(),
+  "status": zod.enum(['pending', 'active', 'completed', 'cancelled']),
+  "paymentStatus": zod.enum(['pending', 'paid', 'failed', 'refunded']),
+  "progress": zod.number(),
+  "nextLesson": zod.string().nullish(),
+  "purchasedAt": zod.coerce.date(),
+  "escrowStatus": zod.union([zod.literal('held'),zod.literal('ready_for_payout'),zod.literal('frozen'),zod.literal('paid_out'),zod.literal('refunded'),zod.literal('partially_refunded'),zod.literal(null)]).nullish(),
+  "escrowReleaseAt": zod.coerce.date().nullish()
+})
+
+
+export const AdminSettleEducationGiftVoucherParams = zod.object({
+  "voucherId": zod.coerce.string()
+})
+
+export const adminSettleEducationGiftVoucherResponseAmountMin = 0;
+
+
+
+export const AdminSettleEducationGiftVoucherResponse = zod.object({
+  "id": zod.string(),
+  "courseId": zod.string(),
+  "centerId": zod.string(),
+  "purchaserId": zod.string(),
+  "recipientUserId": zod.string().nullable(),
+  "recipientEmail": zod.string().nullable(),
+  "recipientName": zod.string().nullable(),
+  "giftMessage": zod.string().nullable(),
+  "courseTitle": zod.string(),
+  "courseImageUrl": zod.string(),
+  "amount": zod.number().int().min(adminSettleEducationGiftVoucherResponseAmountMin),
+  "currency": zod.string(),
+  "codeLast4": zod.string(),
+  "status": zod.enum(['pending_payment', 'active', 'redeemed', 'refunded', 'cancelled']),
+  "paymentReference": zod.string(),
+  "redeemedEnrollmentId": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary List all customer education gift vouchers for settlement and refund administration
+ */
+export const adminListEducationGiftVouchersQueryStatusDefault = `all`;
+export const adminListEducationGiftVouchersQueryPageDefault = 1;
+
+export const adminListEducationGiftVouchersQueryPageSizeDefault = 20;
+export const adminListEducationGiftVouchersQueryPageSizeMax = 100;
+
+
+
+export const AdminListEducationGiftVouchersQueryParams = zod.object({
+  "status": zod.enum(['all', 'pending_payment', 'active', 'redeemed', 'refunded', 'cancelled']).default(adminListEducationGiftVouchersQueryStatusDefault),
+  "page": zod.coerce.number().int().min(1).default(adminListEducationGiftVouchersQueryPageDefault),
+  "pageSize": zod.coerce.number().int().min(1).max(adminListEducationGiftVouchersQueryPageSizeMax).default(adminListEducationGiftVouchersQueryPageSizeDefault)
+})
+
+export const adminListEducationGiftVouchersResponseItemsItemOneAmountMin = 0;
+
+
+export const adminListEducationGiftVouchersResponsePageSizeMax = 100;
+
+export const adminListEducationGiftVouchersResponseTotalMin = 0;
+
+
+
+export const AdminListEducationGiftVouchersResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "courseId": zod.string(),
+  "centerId": zod.string(),
+  "purchaserId": zod.string(),
+  "recipientUserId": zod.string().nullable(),
+  "recipientEmail": zod.string().nullable(),
+  "recipientName": zod.string().nullable(),
+  "giftMessage": zod.string().nullable(),
+  "courseTitle": zod.string(),
+  "courseImageUrl": zod.string(),
+  "amount": zod.number().int().min(adminListEducationGiftVouchersResponseItemsItemOneAmountMin),
+  "currency": zod.string(),
+  "codeLast4": zod.string(),
+  "status": zod.enum(['pending_payment', 'active', 'redeemed', 'refunded', 'cancelled']),
+  "paymentReference": zod.string(),
+  "redeemedEnrollmentId": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+}).and(zod.object({
+  "maskedCode": zod.string(),
+  "settledByUserId": zod.string().nullable(),
+  "settledAt": zod.coerce.date().nullable(),
+  "redeemedByUserId": zod.string().nullable(),
+  "redeemedAt": zod.coerce.date().nullable(),
+  "refundedByUserId": zod.string().nullable(),
+  "refundedAt": zod.coerce.date().nullable(),
+  "refundNote": zod.string().nullable(),
+  "disputeId": zod.string().nullable(),
+  "updatedAt": zod.coerce.date()
+}))),
+  "page": zod.number().int().min(1),
+  "pageSize": zod.number().int().min(1).max(adminListEducationGiftVouchersResponsePageSizeMax),
+  "total": zod.number().int().min(adminListEducationGiftVouchersResponseTotalMin)
+})
+
+
+export const AdminRefundEducationGiftVoucherParams = zod.object({
+  "voucherId": zod.coerce.string()
+})
+
+export const adminRefundEducationGiftVoucherBodyNoteMax = 2000;
+
+
+
+export const AdminRefundEducationGiftVoucherBody = zod.object({
+  "note": zod.string().min(1).max(adminRefundEducationGiftVoucherBodyNoteMax),
+  "disputeId": zod.string().nullish()
+}).strict()
+
+export const adminRefundEducationGiftVoucherResponseAmountMin = 0;
+
+
+
+export const AdminRefundEducationGiftVoucherResponse = zod.object({
+  "id": zod.string(),
+  "courseId": zod.string(),
+  "centerId": zod.string(),
+  "purchaserId": zod.string(),
+  "recipientUserId": zod.string().nullable(),
+  "recipientEmail": zod.string().nullable(),
+  "recipientName": zod.string().nullable(),
+  "giftMessage": zod.string().nullable(),
+  "courseTitle": zod.string(),
+  "courseImageUrl": zod.string(),
+  "amount": zod.number().int().min(adminRefundEducationGiftVoucherResponseAmountMin),
+  "currency": zod.string(),
+  "codeLast4": zod.string(),
+  "status": zod.enum(['pending_payment', 'active', 'redeemed', 'refunded', 'cancelled']),
+  "paymentReference": zod.string(),
+  "redeemedEnrollmentId": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+})
+
+
 /**
  * @summary List currently featured education courses for the public catalog shelf
  */
+export const listFeaturedEducationCoursesResponseOneInstructorProfileTwoIndustryYearsMin = 0;
+
+export const listFeaturedEducationCoursesResponseOneInstructorProfileTwoExperienceYearsMin = 0;
+
+export const listFeaturedEducationCoursesResponseOneDurationMinutesMultipleOf = 1;
+
+export const listFeaturedEducationCoursesResponseOneReviewCountMin = 0;
+
 export const listFeaturedEducationCoursesResponseOneTheoryHoursMin = 0;
 
 export const listFeaturedEducationCoursesResponseOnePracticalHoursMin = 0;
@@ -14033,11 +16073,18 @@ export const listFeaturedEducationCoursesResponseOneDepositAmountMin = 0;
 export const listFeaturedEducationCoursesResponseOneStudentCountMin = 0;
 export const listFeaturedEducationCoursesResponseOneStudentCountMultipleOf = 1;
 
+export const listFeaturedEducationCoursesResponseOneCompletedLearnerCountMin = 0;
+export const listFeaturedEducationCoursesResponseOneCompletedLearnerCountMultipleOf = 1;
+
 export const listFeaturedEducationCoursesResponseOneInquiryCount30dMin = 0;
 export const listFeaturedEducationCoursesResponseOneInquiryCount30dMultipleOf = 1;
 
 export const listFeaturedEducationCoursesResponseOneViewCount30dMin = 0;
 export const listFeaturedEducationCoursesResponseOneViewCount30dMultipleOf = 1;
+
+export const listFeaturedEducationCoursesResponseTwoPublicModulesItemSortOrderMin = 0;
+
+export const listFeaturedEducationCoursesResponseTwoPublicModulesItemLessonCountMin = 0;
 
 export const listFeaturedEducationCoursesResponseTwoDayProgramItemDayNumberMultipleOf = 1;
 
@@ -14054,6 +16101,14 @@ export const listFeaturedEducationCoursesResponseTwoCenterTwoCourseCountMultiple
 
 export const listFeaturedEducationCoursesResponseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
 
+export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin = 0;
+
+export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin = 0;
+
+export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemDurationMinutesMultipleOf = 1;
+
+export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemReviewCountMin = 0;
+
 export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemTheoryHoursMin = 0;
 
 export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemPracticalHoursMin = 0;
@@ -14062,6 +16117,9 @@ export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemDepositA
 
 export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemStudentCountMin = 0;
 export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemStudentCountMultipleOf = 1;
+
+export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemCompletedLearnerCountMin = 0;
+export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf = 1;
 
 export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMin = 0;
 export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf = 1;
@@ -14079,6 +16137,17 @@ export const ListFeaturedEducationCoursesResponseItem = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(listFeaturedEducationCoursesResponseOneInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(listFeaturedEducationCoursesResponseOneInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -14095,11 +16164,13 @@ export const ListFeaturedEducationCoursesResponseItem = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(listFeaturedEducationCoursesResponseOneDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(listFeaturedEducationCoursesResponseOneReviewCountMin),
   "certification": zod.boolean(),
   "theoryHours": zod.number().min(listFeaturedEducationCoursesResponseOneTheoryHoursMin).nullish(),
   "practicalHours": zod.number().min(listFeaturedEducationCoursesResponseOnePracticalHoursMin).nullish(),
@@ -14115,6 +16186,7 @@ export const ListFeaturedEducationCoursesResponseItem = zod.object({
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
   "depositAmount": zod.number().min(listFeaturedEducationCoursesResponseOneDepositAmountMin).nullish(),
   "studentCount": zod.number().min(listFeaturedEducationCoursesResponseOneStudentCountMin).multipleOf(listFeaturedEducationCoursesResponseOneStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(listFeaturedEducationCoursesResponseOneCompletedLearnerCountMin).multipleOf(listFeaturedEducationCoursesResponseOneCompletedLearnerCountMultipleOf).optional(),
   "inquiryCount30d": zod.number().min(listFeaturedEducationCoursesResponseOneInquiryCount30dMin).multipleOf(listFeaturedEducationCoursesResponseOneInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(listFeaturedEducationCoursesResponseOneViewCount30dMin).multipleOf(listFeaturedEducationCoursesResponseOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
@@ -14127,24 +16199,17 @@ export const ListFeaturedEducationCoursesResponseItem = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
-  "modules": zod.array(zod.object({
+  "publicModules": zod.array(zod.object({
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
-  "sortOrder": zod.number(),
-  "lessons": zod.array(zod.object({
-  "id": zod.string(),
-  "title": zod.string(),
-  "description": zod.string(),
-  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
-  "durationMinutes": zod.number(),
-  "sortOrder": zod.number(),
-  "completed": zod.boolean()
-}))
+  "sortOrder": zod.number().int().min(listFeaturedEducationCoursesResponseTwoPublicModulesItemSortOrderMin),
+  "lessonCount": zod.number().int().min(listFeaturedEducationCoursesResponseTwoPublicModulesItemLessonCountMin)
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
@@ -14194,6 +16259,17 @@ export const ListFeaturedEducationCoursesResponseItem = zod.object({
   "description": zod.string(),
   "instructor": zod.string(),
   "instructorProfileId": zod.string().nullish(),
+  "instructorProfile": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "biography": zod.string(),
+  "industryYears": zod.number().int().min(listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemInstructorProfileTwoIndustryYearsMin),
+  "experienceYears": zod.number().int().min(listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemInstructorProfileTwoExperienceYearsMin),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "portfolioMedia": zod.array(zod.string().url())
+})]).optional(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -14210,11 +16286,13 @@ export const ListFeaturedEducationCoursesResponseItem = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "durationMinutes": zod.number().min(1).multipleOf(listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemDurationMinutesMultipleOf).nullish(),
   "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
   "learningOutcomes": zod.array(zod.string()),
   "includedItems": zod.array(zod.string()),
   "requirements": zod.string(),
   "rating": zod.number(),
+  "reviewCount": zod.number().int().min(listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemReviewCountMin),
   "certification": zod.boolean(),
   "theoryHours": zod.number().min(listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemTheoryHoursMin).nullish(),
   "practicalHours": zod.number().min(listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemPracticalHoursMin).nullish(),
@@ -14230,6 +16308,7 @@ export const ListFeaturedEducationCoursesResponseItem = zod.object({
   "paymentMode": zod.enum(['online_full', 'live_deposit', 'live_off_platform']),
   "depositAmount": zod.number().min(listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemDepositAmountMin).nullish(),
   "studentCount": zod.number().min(listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemStudentCountMin).multipleOf(listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemStudentCountMultipleOf),
+  "completedLearnerCount": zod.number().min(listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemCompletedLearnerCountMin).multipleOf(listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemCompletedLearnerCountMultipleOf).optional(),
   "inquiryCount30d": zod.number().min(listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
@@ -14242,6 +16321,7 @@ export const ListFeaturedEducationCoursesResponseItem = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "giftVoucherEligible": zod.boolean().optional(),
   "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()

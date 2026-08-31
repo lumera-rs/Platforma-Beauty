@@ -11,6 +11,7 @@ import type { CourseFormat } from './courseFormat';
 import type { CourseLevel } from './courseLevel';
 import type { CoursePaymentMode } from './coursePaymentMode';
 import type { CoursePublisherType } from './coursePublisherType';
+import type { EducationInstructorSummary } from './educationInstructorSummary';
 
 export interface Course {
   id: string;
@@ -19,6 +20,7 @@ export interface Course {
   instructor: string;
   /** @nullable */
   instructorProfileId?: string | null;
+  instructorProfile?: null | EducationInstructorSummary;
   publisher: string;
   publisherType: CoursePublisherType;
   category: string;
@@ -44,11 +46,18 @@ export interface Course {
   city?: string | null;
   price: number;
   duration: string;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  durationMinutes?: number | null;
   level: CourseLevel;
   learningOutcomes: string[];
   includedItems: string[];
   requirements: string;
   rating: number;
+  /** @minimum 0 */
+  reviewCount: number;
   certification: boolean;
   /**
      * @minimum 0
@@ -78,6 +87,8 @@ export interface Course {
   /** @minimum 0 */
   studentCount: number;
   /** @minimum 0 */
+  completedLearnerCount?: number;
+  /** @minimum 0 */
   inquiryCount30d: number;
   /** @minimum 0 */
   viewCount30d: number;
@@ -96,6 +107,7 @@ export interface Course {
   groupDiscountMinimum?: number | null;
   /** @nullable */
   groupDiscountPercent?: number | null;
+  giftVoucherEligible?: boolean;
   /** @nullable */
   centerId?: string | null;
   /** @nullable */

@@ -5493,6 +5493,21 @@ export const CourseEnrollmentStatus = {
   cancelled: 'cancelled',
 } as const;
 
+export interface EducationInstructorSummary {
+  id: string;
+  fullName: string;
+  /** @nullable */
+  photoUrl: string | null;
+  biography: string;
+  /** @minimum 0 */
+  industryYears: number;
+  /** @minimum 0 */
+  experienceYears: number;
+  specializations: string[];
+  qualifications: string[];
+  portfolioMedia: string[];
+}
+
 export interface Course {
   id: string;
   title: string;
@@ -5500,6 +5515,7 @@ export interface Course {
   instructor: string;
   /** @nullable */
   instructorProfileId?: string | null;
+  instructorProfile?: null | EducationInstructorSummary;
   publisher: string;
   publisherType: CoursePublisherType;
   category: string;
@@ -5525,11 +5541,18 @@ export interface Course {
   city?: string | null;
   price: number;
   duration: string;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  durationMinutes?: number | null;
   level: CourseLevel;
   learningOutcomes: string[];
   includedItems: string[];
   requirements: string;
   rating: number;
+  /** @minimum 0 */
+  reviewCount: number;
   certification: boolean;
   /**
      * @minimum 0
@@ -5559,6 +5582,8 @@ export interface Course {
   /** @minimum 0 */
   studentCount: number;
   /** @minimum 0 */
+  completedLearnerCount?: number;
+  /** @minimum 0 */
   inquiryCount30d: number;
   /** @minimum 0 */
   viewCount30d: number;
@@ -5577,6 +5602,7 @@ export interface Course {
   groupDiscountMinimum?: number | null;
   /** @nullable */
   groupDiscountPercent?: number | null;
+  giftVoucherEligible?: boolean;
   /** @nullable */
   centerId?: string | null;
   /** @nullable */
@@ -5645,6 +5671,12 @@ export interface EducationCourseInput {
   price: number;
   /** @minLength 1 */
   duration: string;
+  /**
+     * @minimum 1
+     * @maximum 5256000
+     * @nullable
+     */
+  durationMinutes?: number | null;
   level?: EducationCourseInputLevel;
   /**
      * @maxItems 20
@@ -5712,6 +5744,7 @@ export interface EducationCourseInput {
      * @maxLength 2000
      */
   refundPolicy?: string;
+  giftVoucherEligible?: boolean;
   /**
      * @minimum 2
      * @maximum 999
@@ -5786,6 +5819,12 @@ export interface EducationCourseUpdate {
   price?: number;
   /** @minLength 1 */
   duration?: string;
+  /**
+     * @minimum 1
+     * @maximum 5256000
+     * @nullable
+     */
+  durationMinutes?: number | null;
   level?: EducationCourseUpdateLevel;
   /**
      * @maxItems 20
@@ -5854,6 +5893,7 @@ export interface EducationCourseUpdate {
      * @maxLength 2000
      */
   refundPolicy?: string;
+  giftVoucherEligible?: boolean;
   /**
      * @minimum 2
      * @maximum 999
@@ -5936,6 +5976,16 @@ export interface EducationModuleInput {
   sortOrder?: number;
 }
 
+export interface EducationPublicModule {
+  id: string;
+  title: string;
+  description: string;
+  /** @minimum 0 */
+  sortOrder: number;
+  /** @minimum 0 */
+  lessonCount: number;
+}
+
 export interface EducationCourseDay {
   id: string;
   /** @minimum 1 */
@@ -5988,13 +6038,17 @@ export interface EducationCourseReview {
 }
 
 export type EducationCourseDetail = Course & ({
-  modules: EducationModule[];
+  publicModules: EducationPublicModule[];
   sessions: EducationSession[];
   dayProgram: EducationCourseDay[];
   gallery: EducationMedia[];
   center?: null | EducationCenterPublic;
   reviews: EducationCourseReview[];
 });
+
+export type EducationPrivateCourseDetail = EducationCourseDetail & {
+  modules: EducationModule[];
+};
 
 export type EducationCourseDaysInputDaysItem = {
   /**
@@ -6195,6 +6249,9 @@ export interface EducationRankedCenter {
   name: string;
   city: string;
   metric: number;
+  /** @minimum 0 */
+  evidenceCount?: number;
+  explanation?: string;
   createdAt: string;
 }
 
@@ -6203,6 +6260,235 @@ export interface EducationRankings {
   newCenters: EducationRankedCenter[];
   mostRequestedCenters90d: EducationRankedCenter[];
   topRatedCenters: EducationRankedCenter[];
+}
+
+export type EducationCenterReviewStatus = typeof EducationCenterReviewStatus[keyof typeof EducationCenterReviewStatus];
+
+
+export const EducationCenterReviewStatus = {
+  pending: 'pending',
+  published: 'published',
+  rejected: 'rejected',
+} as const;
+
+export interface EducationCenterReview {
+  id: string;
+  centerId: string;
+  enrollmentId: string;
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  comment: string;
+  status: EducationCenterReviewStatus;
+  createdAt: string;
+}
+
+export interface EducationCenterReviewInput {
+  enrollmentId: string;
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  /** @maxLength 4000 */
+  comment?: string;
+}
+
+export type EducationCenterReviewPageViewerEligibility = {
+  canReview: boolean;
+  eligibleEnrollmentId?: string;
+  reason?: string;
+};
+
+export interface EducationCenterReviewPage {
+  items: EducationCenterReview[];
+  page: number;
+  pageSize: number;
+  total: number;
+  viewerEligibility: EducationCenterReviewPageViewerEligibility;
+}
+
+export type AdminEducationCenterReviewStatus = typeof AdminEducationCenterReviewStatus[keyof typeof AdminEducationCenterReviewStatus];
+
+
+export const AdminEducationCenterReviewStatus = {
+  pending: 'pending',
+  published: 'published',
+  rejected: 'rejected',
+} as const;
+
+export interface AdminEducationCenterReview {
+  id: string;
+  centerId: string;
+  enrollmentId: string;
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  comment: string;
+  status: AdminEducationCenterReviewStatus;
+  /** @nullable */
+  adminNote: string | null;
+  /** @nullable */
+  moderatedAt: string | null;
+  createdAt: string;
+}
+
+export interface AdminEducationCenterReviewPage {
+  items: AdminEducationCenterReview[];
+  /** @minimum 1 */
+  page: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  pageSize: number;
+  /** @minimum 0 */
+  total: number;
+}
+
+export interface EducationWishlistInput {
+  courseId: string;
+}
+
+export interface EducationWishlistItem {
+  id: string;
+  createdAt: string;
+  course: EducationCourseDetail;
+}
+
+export interface EducationWishlistPage {
+  items: EducationWishlistItem[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export type EducationGiftVoucherStatus = typeof EducationGiftVoucherStatus[keyof typeof EducationGiftVoucherStatus];
+
+
+export const EducationGiftVoucherStatus = {
+  pending_payment: 'pending_payment',
+  active: 'active',
+  redeemed: 'redeemed',
+  refunded: 'refunded',
+  cancelled: 'cancelled',
+} as const;
+
+export interface EducationGiftVoucher {
+  id: string;
+  courseId: string;
+  centerId: string;
+  purchaserId: string;
+  /** @nullable */
+  recipientUserId: string | null;
+  /** @nullable */
+  recipientEmail: string | null;
+  /** @nullable */
+  recipientName: string | null;
+  /** @nullable */
+  giftMessage: string | null;
+  courseTitle: string;
+  courseImageUrl: string;
+  /** @minimum 0 */
+  amount: number;
+  currency: string;
+  codeLast4: string;
+  status: EducationGiftVoucherStatus;
+  paymentReference: string;
+  /** @nullable */
+  redeemedEnrollmentId: string | null;
+  createdAt: string;
+}
+
+export type EducationGiftVoucherPurchase = EducationGiftVoucher & {
+  /** One-time purchase response disclosure. It is not persisted as plaintext or returned by list/admin APIs. */
+  redemptionCode: string;
+};
+
+export type AdminEducationGiftVoucher = EducationGiftVoucher & ({
+  maskedCode: string;
+  /** @nullable */
+  settledByUserId: string | null;
+  /** @nullable */
+  settledAt: string | null;
+  /** @nullable */
+  redeemedByUserId: string | null;
+  /** @nullable */
+  redeemedAt: string | null;
+  /** @nullable */
+  refundedByUserId: string | null;
+  /** @nullable */
+  refundedAt: string | null;
+  /** @nullable */
+  refundNote: string | null;
+  /** @nullable */
+  disputeId: string | null;
+  updatedAt: string;
+});
+
+export interface AdminEducationGiftVoucherPage {
+  items: AdminEducationGiftVoucher[];
+  /** @minimum 1 */
+  page: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  pageSize: number;
+  /** @minimum 0 */
+  total: number;
+}
+
+export interface EducationGiftVoucherPage {
+  items: EducationGiftVoucher[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface EducationGiftVoucherPurchaseInput {
+  courseId: string;
+  /** @nullable */
+  recipientUserId?: string | null;
+  /**
+     * @maxLength 320
+     * @nullable
+     */
+  recipientEmail?: string | null;
+  /**
+     * @minLength 1
+     * @maxLength 160
+     * @nullable
+     */
+  recipientName?: string | null;
+  /**
+     * @minLength 1
+     * @maxLength 1000
+     * @nullable
+     */
+  giftMessage?: string | null;
+}
+
+export interface EducationGiftVoucherRedeemInput {
+  /**
+     * @minLength 12
+     * @maxLength 128
+     */
+  code: string;
+}
+
+export interface EducationGiftVoucherRefundInput {
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  note: string;
+  /** @nullable */
+  disputeId?: string | null;
 }
 
 export type EducationPlacementSettingInputKind = typeof EducationPlacementSettingInputKind[keyof typeof EducationPlacementSettingInputKind];
@@ -6499,6 +6785,20 @@ export interface EducationCenterStatus {
   /** @nullable */
   currentPeriodEnd?: string | null;
   eligible: boolean;
+  /** @minimum 0 */
+  organicInquiriesAndCompletedEnrollments90d: number;
+  /** @minimum 0 */
+  completedLearnerCount: number;
+  /** @minimum 0 */
+  publishedReviewCount: number;
+  /**
+     * @minimum 0
+     * @maximum 5
+     */
+  publishedRating: number;
+  qualifiesMostRequested: boolean;
+  qualifiesTopRated: boolean;
+  metricsExplanation: string;
 }
 
 export interface EducationMessage {
@@ -6602,6 +6902,7 @@ export interface EducationInstructorProfile {
   experienceYears: number;
   specializations: string[];
   qualifications: string[];
+  portfolioMedia: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -6622,6 +6923,11 @@ export interface EducationInstructorInput {
   experienceYears?: number;
   specializations?: string[];
   qualifications?: string[];
+  /**
+     * @maxItems 12
+     * @items.pattern ^https://
+     */
+  portfolioMedia?: string[];
   /** @nullable */
   userId?: string | null;
 }
@@ -6636,6 +6942,7 @@ export interface EducationInstructorPublicProfile {
   experienceYears: number;
   specializations: string[];
   qualifications: string[];
+  portfolioMedia: string[];
   rating: number;
   participantCount: number;
   courses: Course[];
@@ -6904,7 +7211,7 @@ export interface EducationDisputeResolutionInput {
 
 export interface EducationLms {
   enrollment: EducationEnrollment;
-  course: EducationCourseDetail;
+  course: EducationPrivateCourseDetail;
 }
 
 export type AdminSummaryDeliveryReportStaleProvidersItem = typeof AdminSummaryDeliveryReportStaleProvidersItem[keyof typeof AdminSummaryDeliveryReportStaleProvidersItem];
@@ -12636,6 +12943,13 @@ subcategoryId?: string;
 courseTypeId?: string;
 language?: string;
 accredited?: boolean;
+certification?: boolean;
+/**
+ * Minimum aggregate rating from published course reviews; unrated courses have rating 0.
+ * @minimum 0
+ * @maximum 5
+ */
+minRating?: number;
 level?: ListPublicEducationCoursesLevel;
 /**
  * @minimum 0
@@ -12654,6 +12968,16 @@ startDate?: string;
  * @minimum 1
  */
 maxDurationDays?: number;
+/**
+ * Include only courses with an explicit parsable duration at or above this bound.
+ * @minimum 1
+ */
+minDurationMinutes?: number;
+/**
+ * Include only courses with an explicit parsable duration at or below this bound.
+ * @minimum 1
+ */
+maxDurationMinutes?: number;
 /**
  * 1-based page index for stable createdAt desc, id desc ordering.
  * @minimum 1
@@ -12685,6 +13009,14 @@ export const ListPublicEducationCoursesLevel = {
   advanced: 'advanced',
   'all-levels': 'all-levels',
 } as const;
+
+export type ListRelatedEducationCoursesParams = {
+/**
+ * @minimum 1
+ * @maximum 20
+ */
+limit?: number;
+};
 
 export type CreatePublicEducationCourseInquiryBody = {
   /**
@@ -12737,6 +13069,108 @@ export type ListPopularEducationCoursesParams = {
  */
 limit?: number;
 };
+
+export type ListPublicEducationCenterReviewsParams = {
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
+
+export type AdminListEducationCenterReviewsParams = {
+centerId?: string;
+status?: AdminListEducationCenterReviewsStatus;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
+
+export type AdminListEducationCenterReviewsStatus = typeof AdminListEducationCenterReviewsStatus[keyof typeof AdminListEducationCenterReviewsStatus];
+
+
+export const AdminListEducationCenterReviewsStatus = {
+  pending: 'pending',
+  published: 'published',
+  rejected: 'rejected',
+  all: 'all',
+} as const;
+
+export type AdminModerateEducationCenterReviewBodyStatus = typeof AdminModerateEducationCenterReviewBodyStatus[keyof typeof AdminModerateEducationCenterReviewBodyStatus];
+
+
+export const AdminModerateEducationCenterReviewBodyStatus = {
+  published: 'published',
+  rejected: 'rejected',
+} as const;
+
+export type AdminModerateEducationCenterReviewBody = {
+  status: AdminModerateEducationCenterReviewBodyStatus;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  adminNote?: string | null;
+};
+
+export type ListEducationWishlistParams = {
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
+
+export type ListEducationGiftVouchersParams = {
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
+
+export type AdminListEducationGiftVouchersParams = {
+status?: AdminListEducationGiftVouchersStatus;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
+
+export type AdminListEducationGiftVouchersStatus = typeof AdminListEducationGiftVouchersStatus[keyof typeof AdminListEducationGiftVouchersStatus];
+
+
+export const AdminListEducationGiftVouchersStatus = {
+  all: 'all',
+  pending_payment: 'pending_payment',
+  active: 'active',
+  redeemed: 'redeemed',
+  refunded: 'refunded',
+  cancelled: 'cancelled',
+} as const;
 
 export type AdminListSalonsParams = {
 search?: string;

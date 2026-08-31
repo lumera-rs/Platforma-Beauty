@@ -310,6 +310,16 @@ async function mockAdminApi(page: Page): Promise<void> {
         });
         return;
       }
+      if (path === "/api/admin/education/gift-vouchers" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/admin/education/gift-vouchers",
+            apiSchemas.AdminListEducationGiftVouchersResponse,
+            { items: [], page: 1, pageSize: 20, total: 0 },
+          ),
+        });
+        return;
+      }
       if (path === "/api/admin/education/centers" && method === "GET") {
         await route.fulfill({
           json: checkedApiFixture("/api/admin/education/centers", apiSchemas.ListAdminEducationCentersResponse, []),

@@ -5,10 +5,10 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
-import type { EducationCourseDetail } from './educationCourseDetail';
 import type { EducationEnrollment } from './educationEnrollment';
+import type { EducationPrivateCourseDetail } from './educationPrivateCourseDetail';
 
 export interface EducationLms {
   enrollment: EducationEnrollment;
-  course: EducationCourseDetail;
+  course: EducationPrivateCourseDetail;
 }

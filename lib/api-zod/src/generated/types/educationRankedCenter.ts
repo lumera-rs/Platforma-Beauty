@@ -11,5 +11,8 @@ export interface EducationRankedCenter {
   name: string;
   city: string;
   metric: number;
+  /** @minimum 0 */
+  evidenceCount?: number;
+  explanation?: string;
   createdAt: Date;
 }

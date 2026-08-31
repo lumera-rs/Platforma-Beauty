@@ -10,11 +10,11 @@ import type { EducationCenterPublic } from './educationCenterPublic';
 import type { EducationCourseDay } from './educationCourseDay';
 import type { EducationCourseReview } from './educationCourseReview';
 import type { EducationMedia } from './educationMedia';
-import type { EducationModule } from './educationModule';
+import type { EducationPublicModule } from './educationPublicModule';
 import type { EducationSession } from './educationSession';
 
 export type EducationCourseDetail = Course & ({
-  modules: EducationModule[];
+  publicModules: EducationPublicModule[];
   sessions: EducationSession[];
   dayProgram: EducationCourseDay[];
   gallery: EducationMedia[];

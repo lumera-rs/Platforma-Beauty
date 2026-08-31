@@ -136,3 +136,6 @@
 - [OpenAPI closed-object runtime](openapi-closed-object-runtime.md) — exact request shapes need raw-input checks when generated validators strip unknown keys.
 - [Business relation mutation locks](business-relation-mutation-locks.md) — lock shared resources before participating accounts, and keep read-only planning snapshots free of row locks.
 - [Education placement lifecycle](education-placement-lifecycle.md) — paid slots use scoped targets, bounded holds, immutable terms, and Belgrade calendar-day activation.
+- [Education related-course normalization](education-related-course-normalization.md) — canonical Unicode tag matching must run before global ranking and limiting.
+- [Education course review aggregates](education-course-review-aggregates.md) — single and batch course serializers must share published-review enrichment before contract parsing.
+- [SSR API response shape parity](ssr-api-response-shape-parity.md) — untyped server renderers and fixtures must consume the exact OpenAPI response shape.

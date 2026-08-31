@@ -19,4 +19,18 @@ export interface EducationCenterStatus {
   /** @nullable */
   currentPeriodEnd?: Date | null;
   eligible: boolean;
+  /** @minimum 0 */
+  organicInquiriesAndCompletedEnrollments90d: number;
+  /** @minimum 0 */
+  completedLearnerCount: number;
+  /** @minimum 0 */
+  publishedReviewCount: number;
+  /**
+     * @minimum 0
+     * @maximum 5
+     */
+  publishedRating: number;
+  qualifiesMostRequested: boolean;
+  qualifiesTopRated: boolean;
+  metricsExplanation: string;
 }

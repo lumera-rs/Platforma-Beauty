@@ -93,3 +93,32 @@ export function educationPaymentModeError(input: EducationPaymentModeInput): str
 export function normalizedEducationTaxonomyName(name: string) {
   return name.normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase("sr-Latn");
 }
+
+export const EDUCATION_MOST_REQUESTED_MIN_EVENTS = 10;
+export const EDUCATION_TOP_RATED_MIN_REVIEWS = 5;
+
+export function qualifiesAsMostRequestedEducationCenter(eventCount: number) {
+  return Number.isInteger(eventCount) && eventCount >= EDUCATION_MOST_REQUESTED_MIN_EVENTS;
+}
+
+export function qualifiesAsTopRatedEducationCenter(reviewCount: number) {
+  return Number.isInteger(reviewCount) && reviewCount >= EDUCATION_TOP_RATED_MIN_REVIEWS;
+}
+
+export function educationRelatedCourseTier(
+  source: { subcategoryId: string | null; tags: string[] },
+  candidate: { subcategoryId: string | null; tags: string[] },
+) {
+  if (source.subcategoryId && candidate.subcategoryId === source.subcategoryId) return 0;
+  const sourceTags = new Set(source.tags.map(normalizedEducationTaxonomyName));
+  return candidate.tags.some((tag) => sourceTags.has(normalizedEducationTaxonomyName(tag))) ? 1 : null;
+}
+
+export function educationGiftVoucherRecipientMatches(
+  voucher: { recipientUserId: string | null; recipientEmail: string | null },
+  user: { id: string; email: string },
+) {
+  if (voucher.recipientUserId && voucher.recipientUserId !== user.id) return false;
+  if (voucher.recipientEmail && voucher.recipientEmail.toLocaleLowerCase("en-US") !== user.email.toLocaleLowerCase("en-US")) return false;
+  return Boolean(voucher.recipientUserId || voucher.recipientEmail);
+}

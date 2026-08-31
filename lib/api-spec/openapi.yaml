@@ -3321,7 +3321,7 @@ paths:
           description: Course created
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/EducationCourseDetail" }
+              schema: { $ref: "#/components/schemas/EducationPrivateCourseDetail" }
         "403": { description: Business access required }
   /education/courses/{courseId}:
     get:
@@ -3335,7 +3335,7 @@ paths:
           description: Course detail
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/EducationCourseDetail" }
+              schema: { $ref: "#/components/schemas/EducationPrivateCourseDetail" }
         "403": { description: Business access required }
         "404": { description: Course not found }
     patch:
@@ -3354,7 +3354,7 @@ paths:
           description: Updated course
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/EducationCourseDetail" }
+              schema: { $ref: "#/components/schemas/EducationPrivateCourseDetail" }
         "403": { description: Business access required }
     delete:
       operationId: archiveEducationCourse
@@ -3377,7 +3377,7 @@ paths:
           description: Published course
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/EducationCourseDetail" }
+              schema: { $ref: "#/components/schemas/EducationPrivateCourseDetail" }
         "403": { description: Business access required }
   /education/courses/{courseId}/gallery/upload-url:
     post:
@@ -3994,7 +3994,7 @@ paths:
           description: Updated course
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/EducationCourseDetail" }
+              schema: { $ref: "#/components/schemas/EducationPrivateCourseDetail" }
         "403": { description: Course owner access required }
         "404": { description: Course or instructor not found }
   /education/courses/{courseId}/days:
@@ -4014,7 +4014,7 @@ paths:
           description: Updated course
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/EducationCourseDetail" }
+              schema: { $ref: "#/components/schemas/EducationPrivateCourseDetail" }
         "403": { description: Course owner access required }
         "404": { description: Course not found }
   /education/public/courses:
@@ -4053,6 +4053,13 @@ paths:
         - name: accredited
           in: query
           schema: { type: boolean }
+        - name: certification
+          in: query
+          schema: { type: boolean }
+        - name: minRating
+          in: query
+          description: Minimum aggregate rating from published course reviews; unrated courses have rating 0.
+          schema: { type: number, minimum: 0, maximum: 5 }
         - name: level
           in: query
           schema: { type: string, enum: [beginner, intermediate, advanced, all-levels] }
@@ -4070,6 +4077,14 @@ paths:
           in: query
           description: Include courses whose published daily program has at most this many days.
           schema: { type: number, multipleOf: 1, minimum: 1 }
+        - name: minDurationMinutes
+          in: query
+          description: Include only courses with an explicit parsable duration at or above this bound.
+          schema: { type: integer, minimum: 1 }
+        - name: maxDurationMinutes
+          in: query
+          description: Include only courses with an explicit parsable duration at or below this bound.
+          schema: { type: integer, minimum: 1 }
         - name: page
           in: query
           description: 1-based page index for stable createdAt desc, id desc ordering.
@@ -4099,6 +4114,25 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/EducationCourseDetail" }
+        "404": { description: Course not available }
+  /education/public/courses/{courseId}/related:
+    get:
+      operationId: listRelatedEducationCourses
+      tags: [education]
+      summary: List eligible related courses, preferring the same subcategory and then shared tags
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 20, default: 6 }
+      responses:
+        "200":
+          description: Public related courses excluding the current course
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EducationCourseDetail" }
         "404": { description: Course not available }
   /education/public/courses/{courseId}/inquiries:
     post:
@@ -4231,6 +4265,250 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/EducationCenterPublic" }
         "404": { description: Center not available }
+  /education/public/centers/{centerId}/reviews:
+    get:
+      operationId: listPublicEducationCenterReviews
+      tags: [education]
+      parameters:
+        - $ref: "#/components/parameters/EducationCenterId"
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: Published canonical center reviews
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationCenterReviewPage" }
+  /education/center-reviews:
+    post:
+      operationId: createEducationCenterReview
+      tags: [education]
+      summary: Review the center for a completed enrollment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationCenterReviewInput" }
+      responses:
+        "201":
+          description: Review submitted for moderation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationCenterReview" }
+        "403": { description: Completed enrollment ownership required }
+        "409": { description: Enrollment already reviewed }
+  /admin/education/center-reviews:
+    get:
+      operationId: adminListEducationCenterReviews
+      tags: [admin, education]
+      summary: List center reviews for moderation without learner PII
+      parameters:
+        - name: centerId
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, published, rejected, all], default: pending }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: Stable oldest-first center review moderation queue
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminEducationCenterReviewPage" }
+        "401": { description: Authentication required }
+        "403": { description: Admin role required }
+  /admin/education/center-reviews/{reviewId}:
+    patch:
+      operationId: adminModerateEducationCenterReview
+      tags: [admin, education]
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                status: { type: string, enum: [published, rejected] }
+                adminNote: { type: ["string", "null"], maxLength: 2000 }
+              required: [status]
+      responses:
+        "200":
+          description: Moderated center review
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminEducationCenterReview" }
+        "404": { description: Review not found }
+  /education/wishlist:
+    get:
+      operationId: listEducationWishlist
+      tags: [education]
+      summary: List the signed-in user's fresh, publicly eligible saved courses
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 24 }
+      responses:
+        "200":
+          description: Private paginated education wishlist
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationWishlistPage" }
+    post:
+      operationId: addEducationWishlistItem
+      tags: [education]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationWishlistInput" }
+      responses:
+        "201":
+          description: Course saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationWishlistItem" }
+        "200":
+          description: Course was already saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationWishlistItem" }
+        "404": { description: Public course not available }
+  /education/wishlist/{courseId}:
+    delete:
+      operationId: removeEducationWishlistItem
+      tags: [education]
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+      responses:
+        "204": { description: Removed or already absent }
+  /education/gift-vouchers:
+    get:
+      operationId: listEducationGiftVouchers
+      tags: [education]
+      summary: List vouchers purchased by or assigned to the signed-in user
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: Private voucher page; redemption codes are never returned
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationGiftVoucherPage" }
+    post:
+      operationId: purchaseEducationGiftVoucher
+      tags: [education]
+      summary: Create a manual-payment gift voucher purchase
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationGiftVoucherPurchaseInput" }
+      responses:
+        "201":
+          description: Pending manual-payment voucher; raw code is disclosed once
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationGiftVoucherPurchase" }
+        "409": { description: Idempotency key was reused with incompatible input }
+  /education/gift-vouchers/redeem:
+    post:
+      operationId: redeemEducationGiftVoucher
+      tags: [education]
+      summary: Atomically redeem one active assigned voucher into one enrollment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationGiftVoucherRedeemInput" }
+      responses:
+        "201":
+          description: Voucher redeemed and enrollment created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationEnrollment" }
+        "409": { description: "Voucher is invalid, unpaid, unassigned, or already redeemed" }
+  /admin/education/gift-vouchers/{voucherId}/settle:
+    post:
+      operationId: adminSettleEducationGiftVoucher
+      tags: [admin, education]
+      parameters:
+        - name: voucherId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Manual payment confirmed, or the existing active voucher returned for an idempotent settlement retry
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationGiftVoucher" }
+  /admin/education/gift-vouchers:
+    get:
+      operationId: adminListEducationGiftVouchers
+      tags: [admin, education]
+      summary: List all customer education gift vouchers for settlement and refund administration
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [all, pending_payment, active, redeemed, refunded, cancelled], default: all }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: Admin voucher page; code hashes and raw redemption codes are never exposed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminEducationGiftVoucherPage" }
+  /admin/education/gift-vouchers/{voucherId}/refund:
+    post:
+      operationId: adminRefundEducationGiftVoucher
+      tags: [admin, education]
+      parameters:
+        - name: voucherId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationGiftVoucherRefundInput" }
+      responses:
+        "200":
+          description: Voucher refunded with audit linkage
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationGiftVoucher" }
   /education/public/featured:
     get:
       operationId: listFeaturedEducationCourses
@@ -11878,6 +12156,10 @@ components:
         description: { type: string }
         instructor: { type: string }
         instructorProfileId: { type: ["string", "null"] }
+        instructorProfile:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/EducationInstructorSummary"
         publisher: { type: string }
         publisherType: { type: string, enum: [SALON, EDUCATION_CENTER] }
         category: { type: string }
@@ -11894,11 +12176,13 @@ components:
         city: { type: ["string", "null"] }
         price: { type: number }
         duration: { type: string }
+        durationMinutes: { type: ["number", "null"], multipleOf: 1, minimum: 1 }
         level: { type: string, enum: [beginner, intermediate, advanced, all-levels] }
         learningOutcomes: { type: array, items: { type: string } }
         includedItems: { type: array, items: { type: string } }
         requirements: { type: string }
         rating: { type: number }
+        reviewCount: { type: integer, minimum: 0 }
         certification: { type: boolean }
         theoryHours: { type: ["number", "null"], minimum: 0 }
         practicalHours: { type: ["number", "null"], minimum: 0 }
@@ -11916,6 +12200,7 @@ components:
         paymentMode: { type: string, enum: [online_full, live_deposit, live_off_platform] }
         depositAmount: { type: ["number", "null"], minimum: 0 }
         studentCount: { type: number, multipleOf: 1, minimum: 0 }
+        completedLearnerCount: { type: number, multipleOf: 1, minimum: 0 }
         inquiryCount30d: { type: number, multipleOf: 1, minimum: 0 }
         viewCount30d: { type: number, multipleOf: 1, minimum: 0 }
         imageUrl: { type: string }
@@ -11928,10 +12213,11 @@ components:
         refundPolicy: { type: ["string", "null"] }
         groupDiscountMinimum: { type: ["number", "null"] }
         groupDiscountPercent: { type: ["number", "null"] }
+        giftVoucherEligible: { type: boolean }
         centerId: { type: ["string", "null"] }
         availableSeats: { type: ["number", "null"] }
         enrollmentStatus: { type: ["string", "null"], enum: [pending, active, completed, cancelled, null] }
-      required: [id, title, description, instructor, publisher, publisherType, category, taxonomyPath, format, price, duration, level, learningOutcomes, includedItems, requirements, rating, certification, accredited, tags, faq, paymentMode, studentCount, inquiryCount30d, viewCount30d, imageUrl, published, archived]
+      required: [id, title, description, instructor, publisher, publisherType, category, taxonomyPath, format, price, duration, level, learningOutcomes, includedItems, requirements, rating, reviewCount, certification, accredited, tags, faq, paymentMode, studentCount, inquiryCount30d, viewCount30d, imageUrl, published, archived]
     EducationCourseInput:
       type: object
       properties:
@@ -11945,6 +12231,7 @@ components:
         city: { type: ["string", "null"] }
         price: { type: number, minimum: 0 }
         duration: { type: string, minLength: 1 }
+        durationMinutes: { type: ["number", "null"], multipleOf: 1, minimum: 1, maximum: 5256000 }
         level: { type: string, enum: [beginner, intermediate, advanced, all-levels] }
         learningOutcomes: { type: array, maxItems: 20, items: { type: string, minLength: 1, maxLength: 240 } }
         includedItems: { type: array, maxItems: 20, items: { type: string, minLength: 1, maxLength: 240 } }
@@ -11971,6 +12258,7 @@ components:
         imageUrl: { type: string, minLength: 1 }
         startDate: { type: ["string", "null"], format: date }
         refundPolicy: { type: string, minLength: 1, maxLength: 2000 }
+        giftVoucherEligible: { type: boolean }
         groupDiscountMinimum: { type: ["number", "null"], minimum: 2, maximum: 999 }
         groupDiscountPercent: { type: ["number", "null"], minimum: 0, maximum: 100 }
       required: [title, category, format, price, duration, imageUrl]
@@ -11987,6 +12275,7 @@ components:
         city: { type: ["string", "null"] }
         price: { type: number, minimum: 0 }
         duration: { type: string, minLength: 1 }
+        durationMinutes: { type: ["number", "null"], multipleOf: 1, minimum: 1, maximum: 5256000 }
         level: { type: string, enum: [beginner, intermediate, advanced, all-levels] }
         learningOutcomes: { type: array, maxItems: 20, items: { type: string, minLength: 1, maxLength: 240 } }
         includedItems: { type: array, maxItems: 20, items: { type: string, minLength: 1, maxLength: 240 } }
@@ -12014,6 +12303,7 @@ components:
         startDate: { type: ["string", "null"], format: date }
         published: { type: boolean }
         refundPolicy: { type: string, minLength: 1, maxLength: 2000 }
+        giftVoucherEligible: { type: boolean }
         groupDiscountMinimum: { type: ["number", "null"], minimum: 2, maximum: 999 }
         groupDiscountPercent: { type: ["number", "null"], minimum: 0, maximum: 100 }
     EducationSession:
@@ -12083,9 +12373,9 @@ components:
         - $ref: "#/components/schemas/Course"
         - type: object
           properties:
-            modules:
+            publicModules:
               type: array
-              items: { $ref: "#/components/schemas/EducationModule" }
+              items: { $ref: "#/components/schemas/EducationPublicModule" }
             sessions:
               type: array
               items: { $ref: "#/components/schemas/EducationSession" }
@@ -12102,7 +12392,25 @@ components:
             reviews:
               type: array
               items: { $ref: "#/components/schemas/EducationCourseReview" }
-          required: [modules, sessions, dayProgram, gallery, reviews]
+          required: [publicModules, sessions, dayProgram, gallery, reviews]
+    EducationPrivateCourseDetail:
+      allOf:
+        - $ref: "#/components/schemas/EducationCourseDetail"
+        - type: object
+          properties:
+            modules:
+              type: array
+              items: { $ref: "#/components/schemas/EducationModule" }
+          required: [modules]
+    EducationPublicModule:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        description: { type: string }
+        sortOrder: { type: integer, minimum: 0 }
+        lessonCount: { type: integer, minimum: 0 }
+      required: [id, title, description, sortOrder, lessonCount]
     EducationCourseDay:
       type: object
       properties:
@@ -12309,6 +12617,8 @@ components:
         name: { type: string }
         city: { type: string }
         metric: { type: number }
+        evidenceCount: { type: integer, minimum: 0 }
+        explanation: { type: string }
         createdAt: { type: string, format: date-time }
       required: [centerId, name, city, metric, createdAt]
     EducationRankings:
@@ -12319,6 +12629,182 @@ components:
         mostRequestedCenters90d: { type: array, items: { $ref: "#/components/schemas/EducationRankedCenter" } }
         topRatedCenters: { type: array, items: { $ref: "#/components/schemas/EducationRankedCenter" } }
       required: [popularCategories30d, newCenters, mostRequestedCenters90d, topRatedCenters]
+    EducationInstructorSummary:
+      type: object
+      properties:
+        id: { type: string }
+        fullName: { type: string }
+        photoUrl: { type: ["string", "null"] }
+        biography: { type: string }
+        industryYears: { type: integer, minimum: 0 }
+        experienceYears: { type: integer, minimum: 0 }
+        specializations: { type: array, items: { type: string } }
+        qualifications: { type: array, items: { type: string } }
+        portfolioMedia: { type: array, items: { type: string, format: uri } }
+      required: [id, fullName, photoUrl, biography, industryYears, experienceYears, specializations, qualifications, portfolioMedia]
+    EducationCenterReview:
+      type: object
+      properties:
+        id: { type: string }
+        centerId: { type: string }
+        enrollmentId: { type: string }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string }
+        status: { type: string, enum: [pending, published, rejected] }
+        createdAt: { type: string, format: date-time }
+      required: [id, centerId, enrollmentId, rating, comment, status, createdAt]
+    EducationCenterReviewInput:
+      type: object
+      additionalProperties: false
+      properties:
+        enrollmentId: { type: string }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string, maxLength: 4000 }
+      required: [enrollmentId, rating]
+    EducationCenterReviewPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/EducationCenterReview" } }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+        viewerEligibility:
+          type: object
+          properties:
+            canReview: { type: boolean }
+            eligibleEnrollmentId: { type: string }
+            reason: { type: string }
+          required: [canReview]
+      required: [items, page, pageSize, total, viewerEligibility]
+    AdminEducationCenterReview:
+      type: object
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        centerId: { type: string }
+        enrollmentId: { type: string }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string }
+        status: { type: string, enum: [pending, published, rejected] }
+        adminNote: { type: ["string", "null"] }
+        moderatedAt: { type: ["string", "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+      required: [id, centerId, enrollmentId, rating, comment, status, adminNote, moderatedAt, createdAt]
+    AdminEducationCenterReviewPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AdminEducationCenterReview" } }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        total: { type: integer, minimum: 0 }
+      required: [items, page, pageSize, total]
+    EducationWishlistInput:
+      type: object
+      additionalProperties: false
+      properties:
+        courseId: { type: string }
+      required: [courseId]
+    EducationWishlistItem:
+      type: object
+      properties:
+        id: { type: string }
+        createdAt: { type: string, format: date-time }
+        course: { $ref: "#/components/schemas/EducationCourseDetail" }
+      required: [id, createdAt, course]
+    EducationWishlistPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/EducationWishlistItem" } }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+      required: [items, page, pageSize, total]
+    EducationGiftVoucher:
+      type: object
+      properties:
+        id: { type: string }
+        courseId: { type: string }
+        centerId: { type: string }
+        purchaserId: { type: string }
+        recipientUserId: { type: ["string", "null"] }
+        recipientEmail: { type: ["string", "null"] }
+        recipientName: { type: ["string", "null"] }
+        giftMessage: { type: ["string", "null"] }
+        courseTitle: { type: string }
+        courseImageUrl: { type: string }
+        amount: { type: integer, minimum: 0 }
+        currency: { type: string }
+        codeLast4: { type: string }
+        status: { type: string, enum: [pending_payment, active, redeemed, refunded, cancelled] }
+        paymentReference: { type: string }
+        redeemedEnrollmentId: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+      required: [id, courseId, centerId, purchaserId, recipientUserId, recipientEmail, recipientName, giftMessage, courseTitle, courseImageUrl, amount, currency, codeLast4, status, paymentReference, redeemedEnrollmentId, createdAt]
+    EducationGiftVoucherPurchase:
+      allOf:
+        - $ref: "#/components/schemas/EducationGiftVoucher"
+        - type: object
+          properties:
+            redemptionCode:
+              type: string
+              description: One-time purchase response disclosure. It is not persisted as plaintext or returned by list/admin APIs.
+          required: [redemptionCode]
+    AdminEducationGiftVoucher:
+      allOf:
+        - $ref: "#/components/schemas/EducationGiftVoucher"
+        - type: object
+          properties:
+            maskedCode: { type: string }
+            settledByUserId: { type: ["string", "null"] }
+            settledAt: { type: ["string", "null"], format: date-time }
+            redeemedByUserId: { type: ["string", "null"] }
+            redeemedAt: { type: ["string", "null"], format: date-time }
+            refundedByUserId: { type: ["string", "null"] }
+            refundedAt: { type: ["string", "null"], format: date-time }
+            refundNote: { type: ["string", "null"] }
+            disputeId: { type: ["string", "null"] }
+            updatedAt: { type: string, format: date-time }
+          required: [maskedCode, settledByUserId, settledAt, redeemedByUserId, redeemedAt, refundedByUserId, refundedAt, refundNote, disputeId, updatedAt]
+    AdminEducationGiftVoucherPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AdminEducationGiftVoucher" } }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        total: { type: integer, minimum: 0 }
+      required: [items, page, pageSize, total]
+    EducationGiftVoucherPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/EducationGiftVoucher" } }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+      required: [items, page, pageSize, total]
+    EducationGiftVoucherPurchaseInput:
+      type: object
+      additionalProperties: false
+      properties:
+        courseId: { type: string }
+        recipientUserId: { type: ["string", "null"] }
+        recipientEmail: { type: ["string", "null"], maxLength: 320 }
+        recipientName: { type: ["string", "null"], minLength: 1, maxLength: 160 }
+        giftMessage: { type: ["string", "null"], minLength: 1, maxLength: 1000 }
+      required: [courseId]
+    EducationGiftVoucherRedeemInput:
+      type: object
+      additionalProperties: false
+      properties:
+        code: { type: string, minLength: 12, maxLength: 128 }
+      required: [code]
+    EducationGiftVoucherRefundInput:
+      type: object
+      additionalProperties: false
+      properties:
+        note: { type: string, minLength: 1, maxLength: 2000 }
+        disputeId: { type: ["string", "null"] }
+      required: [note]
     EducationPlacementSettingInput:
       type: object
       additionalProperties: false
@@ -12445,7 +12931,14 @@ components:
         subscriptionStatus: { type: ["string", "null"], enum: [trial, active, past_due, cancelled, suspended, free_via_loyalty, null] }
         currentPeriodEnd: { type: ["string", "null"], format: date-time }
         eligible: { type: boolean }
-      required: [id, name, verificationStatus, eligible]
+        organicInquiriesAndCompletedEnrollments90d: { type: integer, minimum: 0 }
+        completedLearnerCount: { type: integer, minimum: 0 }
+        publishedReviewCount: { type: integer, minimum: 0 }
+        publishedRating: { type: number, minimum: 0, maximum: 5 }
+        qualifiesMostRequested: { type: boolean }
+        qualifiesTopRated: { type: boolean }
+        metricsExplanation: { type: string }
+      required: [id, name, verificationStatus, eligible, organicInquiriesAndCompletedEnrollments90d, completedLearnerCount, publishedReviewCount, publishedRating, qualifiesMostRequested, qualifiesTopRated, metricsExplanation]
     EducationMessage:
       type: object
       properties:
@@ -12516,9 +13009,10 @@ components:
         experienceYears: { type: number }
         specializations: { type: array, items: { type: string } }
         qualifications: { type: array, items: { type: string } }
+        portfolioMedia: { type: array, items: { type: string, format: uri } }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-      required: [id, centerId, fullName, biography, industryYears, experienceYears, specializations, qualifications, createdAt, updatedAt]
+      required: [id, centerId, fullName, biography, industryYears, experienceYears, specializations, qualifications, portfolioMedia, createdAt, updatedAt]
     EducationInstructorInput:
       type: object
       properties:
@@ -12529,6 +13023,7 @@ components:
         experienceYears: { type: number, minimum: 0 }
         specializations: { type: array, items: { type: string } }
         qualifications: { type: array, items: { type: string } }
+        portfolioMedia: { type: array, maxItems: 12, uniqueItems: true, items: { type: string, format: uri, pattern: '^https://' } }
         userId: { type: ["string", "null"] }
       required: [fullName]
     EducationInstructorPublicProfile:
@@ -12542,12 +13037,13 @@ components:
         experienceYears: { type: number }
         specializations: { type: array, items: { type: string } }
         qualifications: { type: array, items: { type: string } }
+        portfolioMedia: { type: array, items: { type: string, format: uri } }
         rating: { type: number }
         participantCount: { type: number }
         courses:
           type: array
           items: { $ref: "#/components/schemas/Course" }
-      required: [id, name, biography, industryYears, experienceYears, specializations, qualifications, rating, participantCount, courses]
+      required: [id, name, biography, industryYears, experienceYears, specializations, qualifications, portfolioMedia, rating, participantCount, courses]
     EducationCourseFeaturedInput:
       type: object
       properties:
@@ -12706,7 +13202,7 @@ components:
       type: object
       properties:
         enrollment: { $ref: "#/components/schemas/EducationEnrollment" }
-        course: { $ref: "#/components/schemas/EducationCourseDetail" }
+        course: { $ref: "#/components/schemas/EducationPrivateCourseDetail" }
       required: [enrollment, course]
     AdminSummary:
       type: object

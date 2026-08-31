@@ -9,6 +9,15 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useAdminListEducationCenterReviews,
+  getAdminListEducationCenterReviewsQueryKey,
+  getListPublicEducationCenterReviewsQueryKey,
+  useAdminModerateEducationCenterReview,
+  type AdminListEducationCenterReviewsStatus
+} from "@workspace/api-client-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // Types
 type BillingSetting = {
@@ -56,13 +65,25 @@ const api = async <T,>(url: string, options?: RequestInit) => {
 export default function AdminEducationCenterDetail() {
   const [, params] = useRoute("/admin/edukacije/centri/:centerId");
   const centerId = params?.centerId ?? "";
-  
+
   const { toast } = useToast();
   const actionGuard = useImmediateActionGuard();
-  
+  const queryClient = useQueryClient();
+
   const [center, setCenter] = useState<CenterDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  
+
+  // Reviews
+  const [reviewPage, setReviewPage] = useState(1);
+  const [reviewFilter, setReviewFilter] = useState<AdminListEducationCenterReviewsStatus | "">("");
+
+  const { data: reviewsData, isLoading: loadingReviews } = useAdminListEducationCenterReviews(
+    { centerId, status: reviewFilter || undefined, page: reviewPage, pageSize: 10 },
+    { query: { enabled: !!centerId, queryKey: getAdminListEducationCenterReviewsQueryKey({ centerId, status: reviewFilter || undefined, page: reviewPage, pageSize: 10 }) } }
+  );
+
+  const moderateReviewMut = useAdminModerateEducationCenterReview();
+
   // Local state for edits
   const [pib, setPib] = useState("");
   const [overrides, setOverrides] = useState<Record<OverrideKey, { enabled: boolean; value: string }>>({
@@ -79,7 +100,7 @@ export default function AdminEducationCenterDetail() {
       const data = await api<CenterDetail>(`/api/admin/education/centers/${centerId}`);
       setCenter(data);
       setPib(data.pib || "");
-      
+
       const newOverrides = { ...overrides };
       (Object.keys(data.billingSettings) as OverrideKey[]).forEach((key) => {
         const setting = data.billingSettings[key];
@@ -106,12 +127,12 @@ export default function AdminEducationCenterDetail() {
     const actionKey = `status:${centerId}`;
     if (!actionGuard.begin(actionKey)) return;
     try {
-      const updated = await api<CenterDetail>(`/api/admin/education/centers/${centerId}`, { 
-        method: "PATCH", 
-        body: JSON.stringify({ 
-          verificationStatus, 
-          subscriptionStatus: verificationStatus === "verified" ? "active" : undefined 
-        }) 
+      const updated = await api<CenterDetail>(`/api/admin/education/centers/${centerId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          verificationStatus,
+          subscriptionStatus: verificationStatus === "verified" ? "active" : undefined
+        })
       });
       setCenter(updated);
       toast.success("Status centra je ažuriran.");
@@ -126,11 +147,11 @@ export default function AdminEducationCenterDetail() {
     if (!center) return;
     const actionKey = `details:${centerId}`;
     if (!actionGuard.begin(actionKey)) return;
-    
+
     // Validate overrides
     const parsedOverrides: Record<string, number | null> = {};
     let hasError = false;
-    
+
     (Object.keys(overrides) as OverrideKey[]).forEach((key) => {
       if (overrides[key].enabled) {
         const rawValue = overrides[key].value.trim();
@@ -145,20 +166,20 @@ export default function AdminEducationCenterDetail() {
         parsedOverrides[key] = null;
       }
     });
-    
+
     if (hasError) {
       actionGuard.end(actionKey);
       return;
     }
-    
+
     // Commission + Reserve check
-    const comm = parsedOverrides.commissionPercent !== undefined && parsedOverrides.commissionPercent !== null 
-      ? parsedOverrides.commissionPercent 
+    const comm = parsedOverrides.commissionPercent !== undefined && parsedOverrides.commissionPercent !== null
+      ? parsedOverrides.commissionPercent
       : center.billingSettings.commissionPercent.globalDefault;
-    const res = parsedOverrides.reservePercent !== undefined && parsedOverrides.reservePercent !== null 
-      ? parsedOverrides.reservePercent 
+    const res = parsedOverrides.reservePercent !== undefined && parsedOverrides.reservePercent !== null
+      ? parsedOverrides.reservePercent
       : center.billingSettings.reservePercent.globalDefault;
-      
+
     if (comm + res > 100) {
       toast.error("Nevažeća pravila", { description: "Zbir provizije i rezerve ne sme preći 100%." });
       actionGuard.end(actionKey);
@@ -170,15 +191,15 @@ export default function AdminEducationCenterDetail() {
         pib: pib.trim() || null,
         billingOverrides: parsedOverrides,
       };
-      
-      const updated = await api<CenterDetail>(`/api/admin/education/centers/${centerId}`, { 
-        method: "PATCH", 
-        body: JSON.stringify(payload) 
+
+      const updated = await api<CenterDetail>(`/api/admin/education/centers/${centerId}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload)
       });
-      
+
       setCenter(updated);
       setPib(updated.pib || "");
-      
+
       const newOverrides = { ...overrides };
       (Object.keys(updated.billingSettings) as OverrideKey[]).forEach((key) => {
         const setting = updated.billingSettings[key];
@@ -188,7 +209,7 @@ export default function AdminEducationCenterDetail() {
         };
       });
       setOverrides(newOverrides);
-      
+
       toast.success("Podaci centra su sačuvani.");
     } catch (error) {
       toast.error("Promene nisu sačuvane", { description: error instanceof Error ? error.message : undefined });
@@ -216,6 +237,22 @@ export default function AdminEducationCenterDetail() {
     }));
   };
 
+  const moderateReview = (review: any, status: "published" | "rejected") => {
+    if (!actionGuard.begin(`moderate-review:${review.id}`)) return;
+    const adminNote = window.prompt("Interna napomena za moderaciju (opciono):");
+    if (adminNote === null) return actionGuard.end(`moderate-review:${review.id}`);
+
+    moderateReviewMut.mutate({ reviewId: review.id, data: { status, adminNote: adminNote || null } as any }, {
+      onSuccess: () => {
+        toast.success(`Recenzija je ${status === 'published' ? 'odobrena' : 'odbijena'}.`);
+        queryClient.invalidateQueries({ queryKey: getAdminListEducationCenterReviewsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getListPublicEducationCenterReviewsQueryKey(centerId) });
+      },
+      onError: (e: any) => toast.error("Greška pri moderaciji", { description: e.message }),
+      onSettled: () => actionGuard.end(`moderate-review:${review.id}`)
+    });
+  };
+
   const labels: Record<OverrideKey, { title: string; suffix: string; desc: string }> = {
     commissionPercent: { title: "Provizija", suffix: "%", desc: "Zadržano od svake transakcije." },
     reservePercent: { title: "Rezerva", suffix: "%", desc: "Zadržano do isteka perioda oslobađanja." },
@@ -239,7 +276,7 @@ export default function AdminEducationCenterDetail() {
               <Building2 className="h-4 w-4" /> Edukativni centar {center?.city ? `· ${center.city}` : ""}
             </p>
           </div>
-          
+
           {center && (
             <div className="flex flex-wrap gap-2 md:justify-end">
               <Badge variant={center.verificationStatus === "verified" ? "default" : center.verificationStatus === "pending" ? "secondary" : "destructive"} className="text-sm px-3 py-1">
@@ -258,7 +295,7 @@ export default function AdminEducationCenterDetail() {
           </div>
         ) : (
           <div className="grid gap-6 md:grid-cols-12">
-            
+
             {/* Left Column: Basic Info & Actions */}
             <div className="md:col-span-4 space-y-6">
               <Card className="border-border/60 shadow-sm">
@@ -271,16 +308,16 @@ export default function AdminEducationCenterDetail() {
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-foreground">PIB (Poreski identifikacioni broj)</label>
-                    <Input 
-                      value={pib} 
-                      onChange={(e) => setPib(e.target.value)} 
+                    <Input
+                      value={pib}
+                      onChange={(e) => setPib(e.target.value)}
                        maxLength={50}
                       placeholder="Nije uneto"
                       className="font-mono text-sm"
                     />
                     <p className="text-xs text-muted-foreground">Postojeći centri mogu ostati bez PIB-a dok ga administrator ne evidentira.</p>
                   </div>
-                  
+
                   {center.verificationNote && (
                     <div className="pt-4 mt-4 border-t border-border">
                       <p className="text-sm font-medium mb-1">Napomena o verifikaciji:</p>
@@ -302,8 +339,8 @@ export default function AdminEducationCenterDetail() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {center.verificationStatus !== "verified" ? (
-                    <Button 
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" 
+                    <Button
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
                       onClick={() => updateStatus("verified")}
                       disabled={actionGuard.isActive(`status:${center.id}`)}
                     >
@@ -311,9 +348,9 @@ export default function AdminEducationCenterDetail() {
                       Verifikuj i aktiviraj
                     </Button>
                   ) : (
-                    <Button 
-                      className="w-full" 
-                      variant="destructive" 
+                    <Button
+                      className="w-full"
+                      variant="destructive"
                       onClick={() => updateStatus("suspended")}
                       disabled={actionGuard.isActive(`status:${center.id}`)}
                     >
@@ -339,8 +376,8 @@ export default function AdminEducationCenterDetail() {
                         Konfigurišite prilagođena pravila za ovaj centar. Ako su isključena, primenjuju se globalna pravila.
                       </CardDescription>
                     </div>
-                    <Button 
-                      onClick={saveDetails} 
+                    <Button
+                      onClick={saveDetails}
                       disabled={actionGuard.isActive(`details:${center.id}`)}
                       className="w-full shrink-0 sm:w-auto"
                     >
@@ -353,18 +390,18 @@ export default function AdminEducationCenterDetail() {
                     </Button>
                   </div>
                 </CardHeader>
-                
+
                 <CardContent className="p-0">
                   <div className="divide-y divide-border/40">
                     {(Object.keys(overrides) as OverrideKey[]).map((key) => {
                       const label = labels[key];
                       const setting = center.billingSettings[key];
                       const isCustom = overrides[key].enabled;
-                      
+
                       return (
                         <div key={key} className={`p-5 transition-colors ${isCustom ? "bg-primary/5" : ""}`}>
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                            
+
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-1">
                                 <h3 className="font-semibold text-foreground">{label.title}</h3>
@@ -376,22 +413,22 @@ export default function AdminEducationCenterDetail() {
                               </div>
                               <p className="text-sm text-muted-foreground">{label.desc}</p>
                             </div>
-                            
+
                             <div className="flex items-center gap-4 shrink-0 bg-background rounded-lg border border-border p-2 shadow-sm">
                               <div className="flex items-center gap-2 min-w-[120px]">
-                                <Switch 
-                                  checked={isCustom} 
-                                  onCheckedChange={(c) => toggleOverride(key, c)} 
+                                <Switch
+                                  checked={isCustom}
+                                  onCheckedChange={(c) => toggleOverride(key, c)}
                                   aria-label={`Prilagođeno pravilo za ${label.title}`}
                                 />
                                 <span className="text-sm font-medium text-muted-foreground">
                                   {isCustom ? "Zameni" : "Nasledi"}
                                 </span>
                               </div>
-                              
+
                               <div className="w-[100px] relative">
-                                <Input 
-                                  type="number" 
+                                <Input
+                                  type="number"
                                   min="0"
                                  max={overrideLimits[key]}
                                  step="1"
@@ -405,9 +442,9 @@ export default function AdminEducationCenterDetail() {
                                 </span>
                               </div>
                             </div>
-                            
+
                           </div>
-                          
+
                           {/* Hint showing what the global value is if custom is applied */}
                           {isCustom && (
                             <div className="mt-3 text-xs text-primary/70 flex items-center gap-1.5 bg-primary/10 w-fit px-2 py-1 rounded-md">
@@ -422,7 +459,84 @@ export default function AdminEducationCenterDetail() {
                 </CardContent>
               </Card>
             </div>
-            
+          </div>
+        )}
+
+        {/* Center Reviews Moderation */}
+        {center && (
+          <div className="mt-8">
+            <Card className="border-border/60 shadow-sm">
+              <CardHeader className="pb-0 border-b border-border/40">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-end pb-4">
+                  <div>
+                    <CardTitle className="text-xl flex items-center gap-2">Recenzije i ocene</CardTitle>
+                    <CardDescription className="mt-1">
+                      Pregled i moderacija svih recenzija ovog centra.
+                    </CardDescription>
+                  </div>
+                </div>
+                <Tabs value={reviewFilter} onValueChange={(val) => { setReviewFilter(val as any); setReviewPage(1); }} className="w-full">
+                  <TabsList className="mb-[-1px] rounded-none border-b border-border bg-transparent p-0 justify-start flex-wrap h-auto">
+                    <TabsTrigger value="" className="rounded-b-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2">Sve</TabsTrigger>
+                    <TabsTrigger value="pending" className="rounded-b-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2">Na čekanju</TabsTrigger>
+                    <TabsTrigger value="published" className="rounded-b-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2">Objavljene</TabsTrigger>
+                    <TabsTrigger value="rejected" className="rounded-b-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2">Odbijene</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </CardHeader>
+              <CardContent className="pt-6">
+                {loadingReviews ? (
+                  <div className="py-8 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary/40" /></div>
+                ) : reviewsData?.items && reviewsData.items.length > 0 ? (
+                  <div className="space-y-4">
+                    {reviewsData.items.map((r: any) => (
+                      <div key={r.id} className="p-4 border rounded-xl bg-card">
+                        <div className="flex flex-col md:flex-row gap-4 md:items-start md:justify-between">
+                          <div className="flex-1 space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold">{r.rating} / 5</span>
+                              <Badge variant={r.status === "published" ? "default" : r.status === "rejected" ? "destructive" : "secondary"}>{r.status}</Badge>
+                            </div>
+                            {r.comment && <p className="text-sm mt-2">"{r.comment}"</p>}
+                            <p className="text-xs text-muted-foreground mt-2">ID ugovora: {r.enrollmentId} · Kreirano: {new Date(r.createdAt).toLocaleDateString("sr-RS")}</p>
+                            {r.adminNote && (
+                              <div className="mt-2 p-2 bg-muted rounded-md border border-border/50">
+                                <p className="text-xs font-semibold">Interna napomena:</p>
+                                <p className="text-xs text-muted-foreground">{r.adminNote}</p>
+                                {r.moderatedAt && <p className="text-[10px] text-muted-foreground/70 mt-1">Moderator akcija: {new Date(r.moderatedAt).toLocaleString("sr-RS")}</p>}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-2 shrink-0">
+                            {r.status === "pending" && (
+                              <>
+                                <Button size="sm" onClick={() => moderateReview(r, "published")} disabled={actionGuard.isActive(`moderate-review:${r.id}`)}>Odobri</Button>
+                                <Button size="sm" variant="destructive" onClick={() => moderateReview(r, "rejected")} disabled={actionGuard.isActive(`moderate-review:${r.id}`)}>Odbij</Button>
+                              </>
+                            )}
+                            {r.status === "published" && (
+                              <Button size="sm" variant="outline" onClick={() => moderateReview(r, "rejected")} disabled={actionGuard.isActive(`moderate-review:${r.id}`)}>Povući (Odbij)</Button>
+                            )}
+                            {r.status === "rejected" && (
+                              <Button size="sm" variant="outline" onClick={() => moderateReview(r, "published")} disabled={actionGuard.isActive(`moderate-review:${r.id}`)}>Vrati (Odobri)</Button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {Math.ceil(reviewsData.total / reviewsData.pageSize) > 1 && (
+                      <div className="flex justify-center gap-2 mt-6">
+                        <Button variant="outline" size="sm" onClick={() => setReviewPage(p => Math.max(1, p - 1))} disabled={reviewPage === 1}>Prethodna</Button>
+                        <span className="text-sm py-1">Strana {reviewPage} od {Math.ceil(reviewsData.total / reviewsData.pageSize)}</span>
+                        <Button variant="outline" size="sm" onClick={() => setReviewPage(p => Math.min(Math.ceil(reviewsData.total / reviewsData.pageSize), p + 1))} disabled={reviewPage === Math.ceil(reviewsData.total / reviewsData.pageSize)}>Sledeća</Button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="py-8 text-center text-muted-foreground text-sm">Nema recenzija po izabranom filteru.</p>
+                )}
+              </CardContent>
+            </Card>
           </div>
         )}
       </div>

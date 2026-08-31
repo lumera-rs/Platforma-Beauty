@@ -22,6 +22,13 @@ subcategoryId?: string;
 courseTypeId?: string;
 language?: string;
 accredited?: boolean;
+certification?: boolean;
+/**
+ * Minimum aggregate rating from published course reviews; unrated courses have rating 0.
+ * @minimum 0
+ * @maximum 5
+ */
+minRating?: number;
 level?: ListPublicEducationCoursesLevel;
 /**
  * @minimum 0
@@ -40,6 +47,16 @@ startDate?: Date;
  * @minimum 1
  */
 maxDurationDays?: number;
+/**
+ * Include only courses with an explicit parsable duration at or above this bound.
+ * @minimum 1
+ */
+minDurationMinutes?: number;
+/**
+ * Include only courses with an explicit parsable duration at or below this bound.
+ * @minimum 1
+ */
+maxDurationMinutes?: number;
 /**
  * 1-based page index for stable createdAt desc, id desc ordering.
  * @minimum 1

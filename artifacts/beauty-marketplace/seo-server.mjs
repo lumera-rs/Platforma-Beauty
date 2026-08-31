@@ -323,6 +323,72 @@ async function renderPublicPage(req, pathname) {
     };
   }
 
+  const educationTaxonomyMatch = pathname.match(/^\/edukacije\/sekcije\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?$/);
+  if (educationTaxonomyMatch) {
+    const sectionSlug = decodeURIComponent(educationTaxonomyMatch[1]);
+    const categorySlug = educationTaxonomyMatch[2] ? decodeURIComponent(educationTaxonomyMatch[2]) : null;
+    const subcategorySlug = educationTaxonomyMatch[3] ? decodeURIComponent(educationTaxonomyMatch[3]) : null;
+
+    const taxonomy = await getJson(req, '/api/education/public/taxonomy');
+    if (!Array.isArray(taxonomy)) return null;
+
+    const section = taxonomy.find(s => s.slug === sectionSlug);
+    if (!section) return null;
+
+    let category = null;
+    let subcategory = null;
+    let filterParams = `sectionId=${encodeURIComponent(section.id)}`;
+    let title = section.name;
+    let description = `Pronađite kurseve i obuke iz kategorije ${section.name}.`;
+
+    if (categorySlug) {
+      category = section.categories?.find(c => c.slug === categorySlug);
+      if (!category) return null;
+      filterParams = `categoryId=${encodeURIComponent(category.id)}`;
+      title = category.name;
+      description = `Istražite edukacije za ${category.name}.`;
+
+      if (subcategorySlug) {
+        subcategory = category.subcategories?.find(s => s.slug === subcategorySlug);
+        if (!subcategory) return null;
+        filterParams = `subcategoryId=${encodeURIComponent(subcategory.id)}`;
+        title = subcategory.name;
+        description = `Kursevi i obuke za tehniku ${subcategory.name}.`;
+      }
+    }
+
+    const courseResponse = await getJson(req, `/api/education/public/courses?page=1&pageSize=24&${filterParams}`);
+    const courses = Array.isArray(courseResponse) ? courseResponse : [];
+
+    const crumbs = [{ name: 'Edukacije', pathname: '/edukacije' }];
+    crumbs.push({ name: section.name, pathname: `/edukacije/sekcije/${encodeURIComponent(section.slug)}` });
+    if (category) crumbs.push({ name: category.name, pathname: `/edukacije/sekcije/${encodeURIComponent(section.slug)}/${encodeURIComponent(category.slug)}` });
+    if (subcategory) crumbs.push({ name: subcategory.name, pathname: `/edukacije/sekcije/${encodeURIComponent(section.slug)}/${encodeURIComponent(category.slug)}/${encodeURIComponent(subcategory.slug)}` });
+
+    const meta = makeMeta(pathname, `${title} | Edukacije | LUMERA`, description, {
+      schema: {
+        '@context': 'https://schema.org',
+        '@graph': [{
+          '@type': 'ItemList',
+          name: title,
+          itemListElement: courses.map((course, index) => ({
+            '@type': 'ListItem',
+            position: index + 1,
+            url: `${origin}/edukacije/${course.id}`,
+            name: course.title,
+          })),
+        }, breadcrumbs(origin, crumbs)],
+      },
+    });
+
+    const cards = courses.map((course) => card({ href: `/edukacije/${course.id}`, title: course.title, description: course.description || `${course.category} · ${course.duration}`, image: course.imageUrl, detail: `${course.publisher} · ${course.price} RSD` })).join('');
+
+    return {
+      meta,
+      html: pageShell(meta, `<section>${breadcrumbHtml(crumbs)}<h1>${escapeHtml(title)}</h1><p>${escapeHtml(description)}</p></section><section><h2>Dostupne edukacije</h2><div class="seo-grid">${cards || '<p>Trenutno nema edukacija u ovoj kategoriji.</p>'}</div></section>`, origin),
+    };
+  }
+
   const supplierProductMatch = pathname.match(/^\/shop\/([^/]+)\/proizvod\/([^/]+)$/);
   if (supplierProductMatch) {
     const supplierSlug = decodeURIComponent(supplierProductMatch[1]);
@@ -516,11 +582,12 @@ async function buildSitemap(req) {
   const entries = [...staticPages.keys(), ...categoryPages.keys()]
     .filter((pathname) => pathname !== '/pridruzi-se-edukativni-centar')
     .map((pathname) => ({ pathname, priority: pathname === '/' ? '1.0' : categoryPages.has(pathname) ? '0.8' : '0.7' }));
-  const [salons, courses, suppliers, beautyJobs] = await Promise.all([
+  const [salons, courses, suppliers, beautyJobs, taxonomy] = await Promise.all([
     listAll(req, '/api/salons', 24),
     listAll(req, '/api/education/public/courses', 24),
     getJson(req, '/api/suppliers'),
     listAll(req, '/api/beauty-jobs', 100),
+    getJson(req, '/api/education/public/taxonomy'),
   ]);
   const seenCenters = new Set();
   const seenInstructors = new Set();
@@ -550,6 +617,19 @@ async function buildSitemap(req) {
   for (const job of beautyJobs) {
     entries.push({ pathname: `/poslovi/${encodeURIComponent(beautyJobSlug(job))}/${encodeURIComponent(job.id)}`, lastmod: job.updatedAt ? new Date(job.updatedAt).toISOString().slice(0, 10) : undefined, priority: '0.7' });
   }
+
+  if (Array.isArray(taxonomy)) {
+    for (const section of taxonomy) {
+      entries.push({ pathname: `/edukacije/sekcije/${encodeURIComponent(section.slug)}`, priority: '0.7' });
+      for (const category of (section.categories || [])) {
+        entries.push({ pathname: `/edukacije/sekcije/${encodeURIComponent(section.slug)}/${encodeURIComponent(category.slug)}`, priority: '0.6' });
+        for (const sub of (category.subcategories || [])) {
+          entries.push({ pathname: `/edukacije/sekcije/${encodeURIComponent(section.slug)}/${encodeURIComponent(category.slug)}/${encodeURIComponent(sub.slug)}`, priority: '0.5' });
+        }
+      }
+    }
+  }
+
   return sitemapXml(origin, entries);
 }
 

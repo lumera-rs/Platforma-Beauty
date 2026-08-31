@@ -99,6 +99,9 @@ import
   educationCourseTypesTable,
   educationInquiriesTable,
   educationCourseMetricEventsTable,
+  educationCenterReviewsTable,
+  educationWishlistsTable,
+  educationGiftVouchersTable,
   educationPlacementSettingsTable,
   educationPlacementsTable,
   educationCenterSubscriptionsTable,
@@ -241,6 +244,10 @@ import {
   addEducationBelgradeCalendarDays,
   educationBelgradeDateKey,
   educationPaymentModeError,
+  educationGiftVoucherRecipientMatches,
+  educationRelatedCourseTier,
+  qualifiesAsMostRequestedEducationCenter,
+  qualifiesAsTopRatedEducationCenter,
   normalizedEducationTaxonomyName,
 } from "../lib/education-marketplace-domain";
 
@@ -619,6 +626,11 @@ import
   ToggleProductWishlistItemBody,
   RemoveProductWishlistItemParams,
   RemoveProductWishlistItemQueryParams,
+  AddEducationWishlistItemBody,
+  PurchaseEducationGiftVoucherBody,
+  RedeemEducationGiftVoucherBody,
+  CreateEducationCenterReviewBody,
+  AdminRefundEducationGiftVoucherBody,
 }
  from "@workspace/api-zod"
 ;
@@ -3188,10 +3200,13 @@ async function centerPublicView(
   const centerCourses = await db.select({ id: coursesTable.id }).from(coursesTable)
     .where(eq(coursesTable.centerId, center.id));
   const courseIds = centerCourses.map((course) => course.id);
-  const publishedReviews = courseIds.length
-    ? await db.select().from(courseReviewsTable)
-      .where(and(inArray(courseReviewsTable.courseId, courseIds), eq(courseReviewsTable.status, "published")))
-    : [];
+  const [courseReviewRows, centerReviewRows] = await Promise.all([
+    courseIds.length ? db.select({ rating: courseReviewsTable.rating }).from(courseReviewsTable)
+      .where(and(inArray(courseReviewsTable.courseId, courseIds), eq(courseReviewsTable.status, "published"))) : [],
+    db.select({ rating: educationCenterReviewsTable.rating }).from(educationCenterReviewsTable)
+      .where(and(eq(educationCenterReviewsTable.centerId, center.id), eq(educationCenterReviewsTable.status, "published"))),
+  ]);
+  const publishedReviews = [...courseReviewRows, ...centerReviewRows];
   const rating = publishedReviews.length
     ? Math.round((publishedReviews.reduce((sum, review) => sum + review.rating, 0) / publishedReviews.length) * 10) / 10
     : 0;
@@ -3224,12 +3239,15 @@ async function educationCourseEnrichment(courseIds: string[]) {
   const categoryIds = [...new Set(courses.flatMap((row) => row.categoryId ? [row.categoryId] : []))];
   const subcategoryIds = [...new Set(courses.flatMap((row) => row.subcategoryId ? [row.subcategoryId] : []))];
   const courseTypeIds = [...new Set(courses.flatMap((row) => row.courseTypeId ? [row.courseTypeId] : []))];
-  const [categories, subcategories, courseTypes, enrollmentCounts, inquiryCounts, viewCounts] = await Promise.all([
+  const [categories, subcategories, courseTypes, enrollmentCounts, completedCounts, inquiryCounts, viewCounts, reviewAggregates] = await Promise.all([
     categoryIds.length ? db.select().from(courseCategoriesTable).where(inArray(courseCategoriesTable.id, categoryIds)) : [],
     subcategoryIds.length ? db.select().from(educationSubcategoriesTable).where(inArray(educationSubcategoriesTable.id, subcategoryIds)) : [],
     courseTypeIds.length ? db.select().from(educationCourseTypesTable).where(inArray(educationCourseTypesTable.id, courseTypeIds)) : [],
     db.select({ courseId: courseEnrollmentsTable.courseId, value: count() }).from(courseEnrollmentsTable)
       .where(and(inArray(courseEnrollmentsTable.courseId, courseIds), inArray(courseEnrollmentsTable.status, ["active", "completed"])))
+      .groupBy(courseEnrollmentsTable.courseId),
+    db.select({ courseId: courseEnrollmentsTable.courseId, value: count() }).from(courseEnrollmentsTable)
+      .where(and(inArray(courseEnrollmentsTable.courseId, courseIds), eq(courseEnrollmentsTable.status, "completed")))
       .groupBy(courseEnrollmentsTable.courseId),
     db.select({ courseId: educationInquiriesTable.courseId, value: count() }).from(educationInquiriesTable)
       .where(and(inArray(educationInquiriesTable.courseId, courseIds), gte(educationInquiriesTable.createdAt, new Date(Date.now() - 30 * 86400_000))))
@@ -3237,6 +3255,13 @@ async function educationCourseEnrichment(courseIds: string[]) {
     db.select({ courseId: educationCourseMetricEventsTable.courseId, value: count() }).from(educationCourseMetricEventsTable)
       .where(and(inArray(educationCourseMetricEventsTable.courseId, courseIds), eq(educationCourseMetricEventsTable.eventType, "view"), gte(educationCourseMetricEventsTable.occurredAt, new Date(Date.now() - 30 * 86400_000))))
       .groupBy(educationCourseMetricEventsTable.courseId),
+    db.select({
+      courseId: courseReviewsTable.courseId,
+      reviewCount: count(),
+      rating: sql<number>`coalesce(avg(${courseReviewsTable.rating}), 0)`,
+    }).from(courseReviewsTable)
+      .where(and(inArray(courseReviewsTable.courseId, courseIds), eq(courseReviewsTable.status, "published")))
+      .groupBy(courseReviewsTable.courseId),
   ]);
   const sectionIds = [...new Set(categories.flatMap((row) => row.sectionId ? [row.sectionId] : []))];
   const sections = sectionIds.length ? await db.select().from(educationSectionsTable).where(inArray(educationSectionsTable.id, sectionIds)) : [];
@@ -3245,8 +3270,13 @@ async function educationCourseEnrichment(courseIds: string[]) {
   const typeById = new Map(courseTypes.map((row) => [row.id, row]));
   const sectionById = new Map(sections.map((row) => [row.id, row]));
   const studentByCourse = new Map(enrollmentCounts.map((row) => [row.courseId, Number(row.value)]));
+  const completedByCourse = new Map(completedCounts.map((row) => [row.courseId, Number(row.value)]));
   const inquiryByCourse = new Map(inquiryCounts.map((row) => [row.courseId, Number(row.value)]));
   const viewByCourse = new Map(viewCounts.map((row) => [row.courseId, Number(row.value)]));
+  const reviewsByCourse = new Map(reviewAggregates.map((row) => [row.courseId, {
+    reviewCount: Number(row.reviewCount),
+    rating: Math.round(Number(row.rating) * 10) / 10,
+  }]));
   return new Map(courses.map((course) => {
     const category = course.categoryId ? categoryById.get(course.categoryId) : undefined;
     const subcategory = course.subcategoryId ? subcategoryById.get(course.subcategoryId) : undefined;
@@ -3263,10 +3293,21 @@ async function educationCourseEnrichment(courseIds: string[]) {
       courseTypeName: courseType?.name ?? null,
       taxonomyPath: [section?.name, category?.name ?? course.legacyCategory, subcategory?.name, courseType?.name].filter((value): value is string => Boolean(value)),
       studentCount: studentByCourse.get(course.id) ?? 0,
+      completedLearnerCount: completedByCourse.get(course.id) ?? 0,
       inquiryCount30d: inquiryByCourse.get(course.id) ?? 0,
       viewCount30d: viewByCourse.get(course.id) ?? 0,
+      rating: reviewsByCourse.get(course.id)?.rating ?? 0,
+      reviewCount: reviewsByCourse.get(course.id)?.reviewCount ?? 0,
     }];
   }));
+}
+
+/** Keep every course serializer on the published-review-only aggregate contract. */
+function educationCourseReviewAggregate(enrichment: Record<string, unknown> | undefined) {
+  return {
+    rating: typeof enrichment?.rating === "number" ? enrichment.rating : 0,
+    reviewCount: typeof enrichment?.reviewCount === "number" ? enrichment.reviewCount : 0,
+  };
 }
 
 async function validEducationTaxonomySelection(input: {
@@ -3322,6 +3363,7 @@ async function educationCourseView(
   // fall back to the legacy user-based link for courses linked before profile IDs existed.
   let instructorName = "Stručni tim";
   let instructorProfileId: string | null = null;
+  let publicInstructorProfile: ReturnType<typeof instructorProfileSummary> | null = null;
   if (course.centerId) {
     let instructorProfile: typeof educationInstructorsTable.$inferSelect | undefined;
     if (course.instructorProfileId) {
@@ -3336,6 +3378,7 @@ async function educationCourseView(
     if (instructorProfile) {
       instructorName = instructorProfile.fullName;
       instructorProfileId = instructorProfile.id;
+      publicInstructorProfile = instructorProfileSummary(instructorProfile);
     }
   }
   return {
@@ -3344,20 +3387,22 @@ async function educationCourseView(
     description: course.description,
     instructor: instructorName,
     instructorProfileId,
+    instructorProfile: publicInstructorProfile,
     publisher: publisher?.name ?? "LUMERA partner",
     publisherType: course.salonId ? "SALON" as const : "EDUCATION_CENTER" as const,
     publisherVerified: center[0]?.verificationStatus === "verified",
     category: course.category,
     ...enrichments.get(course.id),
+    ...educationCourseReviewAggregate(enrichments.get(course.id)),
     format: course.format,
     city: course.city,
     price: course.price,
     duration: course.duration,
+    durationMinutes: course.durationMinutes,
     level: course.level,
     learningOutcomes: course.learningOutcomes,
     includedItems: course.includedItems,
     requirements: course.requirements,
-    rating: course.rating / 10,
     certification: course.certification,
     theoryHours: course.theoryHours,
     practicalHours: course.practicalHours,
@@ -3374,6 +3419,7 @@ async function educationCourseView(
     refundPolicy: course.refundPolicy,
     groupDiscountMinimum: course.groupDiscountMinimum,
     groupDiscountPercent: course.groupDiscountPercent,
+    giftVoucherEligible: course.giftVoucherEligible,
     centerId: course.centerId,
     imageUrl: course.imageUrl,
     startDate: course.startDate,
@@ -3382,6 +3428,12 @@ async function educationCourseView(
     availableSeats: sessions.length ? Math.max(...sessions.map((session) => session.availableSeats)) : null,
     enrollmentStatus: enrollment?.status ?? null,
     modules,
+    // Public preview is intentionally an allowlist: no lesson metadata,
+    // bodies, or media can cross this boundary.
+    publicModules: modules.map((module) => ({
+      id: module.id, title: module.title, description: module.description,
+      sortOrder: module.sortOrder, lessonCount: module.lessons.length,
+    })),
     sessions,
     dayProgram,
     gallery,
@@ -17991,6 +18043,7 @@ router.post("/education/courses", async (req, res): Promise<void> => {
         city: data.city ?? publisher.city,
         price: data.price,
         duration: data.duration,
+        durationMinutes: data.durationMinutes ?? null,
         level: data.level ?? "all-levels",
         learningOutcomes: data.learningOutcomes ?? [],
         includedItems: data.includedItems ?? [],
@@ -18009,6 +18062,7 @@ router.post("/education/courses", async (req, res): Promise<void> => {
         imageUrl: data.imageUrl,
         startDate: data.startDate ? calendarDate(data.startDate) : null,
         ...(data.refundPolicy !== undefined ? { refundPolicy: data.refundPolicy } : {}),
+        giftVoucherEligible: data.giftVoucherEligible ?? false,
         groupDiscountMinimum: data.groupDiscountMinimum ?? null,
         groupDiscountPercent: data.groupDiscountPercent ?? null,
         published: false,
@@ -18061,6 +18115,11 @@ router.patch("/education/courses/:courseId", async (req, res): Promise<void> => 
   };
   const paymentModeError = educationPaymentModeError(mergedPayment);
   if (paymentModeError) { res.status(400).json({ error: paymentModeError }); return; }
+  const mergedPublished = data.published ?? course.published;
+  const mergedRefundPolicy = data.refundPolicy ?? course.refundPolicy;
+  if (mergedPublished && mergedPayment.paymentMode === "live_deposit" && !mergedRefundPolicy.trim()) {
+    res.status(400).json({ error: "Objavljeni kurs sa depozitom mora imati jasno definisanu politiku povraćaja." }); return;
+  }
   if (!await validEducationTaxonomySelection({
     categoryId: data.categoryId === undefined ? course.categoryId : data.categoryId,
     subcategoryId: data.subcategoryId === undefined ? course.subcategoryId : data.subcategoryId,
@@ -18126,6 +18185,9 @@ router.post("/education/courses/:courseId/publish", async (req, res): Promise<vo
   if (course.centerId && !(await educationCenterEligibility(course.centerId)).eligible) {
     res.status(403).json({ error: "Kurs ne može biti objavljen dok centar nije verifikovan i pretplata aktivna." });
     return;
+  }
+  if (course.paymentMode === "live_deposit" && !course.refundPolicy.trim()) {
+    res.status(400).json({ error: "Kurs sa depozitom mora imati jasno definisanu politiku povraćaja pre objave." }); return;
   }
   const [updated] = await db.update(coursesTable).set({ published: true, archived: false, updatedAt: new Date() }).where(eq(coursesTable.id, course.id)).returning();
   void publishCatalogInvalidation(["education-categories"]);
@@ -19563,6 +19625,7 @@ export async function batchEducationCourseViews(
     // Instructor resolution.
     let instructorName = "Stručni tim";
     let instructorProfileId: string | null = null;
+    let instructorProfile: ReturnType<typeof instructorProfileSummary> | null = null;
     if (course.centerId) {
       const profile = course.instructorProfileId
         ? instructorById.get(course.instructorProfileId)
@@ -19572,6 +19635,7 @@ export async function batchEducationCourseViews(
       if (profile) {
         instructorName = profile.fullName;
         instructorProfileId = profile.id;
+        instructorProfile = instructorProfileSummary(profile);
       }
     }
 
@@ -19652,20 +19716,22 @@ export async function batchEducationCourseViews(
       description: course.description,
       instructor: instructorName,
       instructorProfileId,
+      instructorProfile,
       publisher: publisher?.name ?? "LUMERA partner",
       publisherType: course.salonId ? "SALON" as const : "EDUCATION_CENTER" as const,
       publisherVerified: center?.verificationStatus === "verified",
       category: course.category,
       ...enrichments.get(course.id),
+      ...educationCourseReviewAggregate(enrichments.get(course.id)),
       format: course.format,
       city: course.city,
       price: course.price,
       duration: course.duration,
+      durationMinutes: course.durationMinutes,
       level: course.level,
       learningOutcomes: course.learningOutcomes,
       includedItems: course.includedItems,
       requirements: course.requirements,
-      rating: course.rating / 10,
       certification: course.certification,
       theoryHours: course.theoryHours,
       practicalHours: course.practicalHours,
@@ -19682,6 +19748,7 @@ export async function batchEducationCourseViews(
       refundPolicy: course.refundPolicy,
       groupDiscountMinimum: course.groupDiscountMinimum,
       groupDiscountPercent: course.groupDiscountPercent,
+      giftVoucherEligible: course.giftVoucherEligible,
       centerId: course.centerId,
       imageUrl: course.imageUrl,
       startDate: course.startDate,
@@ -19690,6 +19757,10 @@ export async function batchEducationCourseViews(
       availableSeats: sessions.length ? Math.max(...sessions.map((s) => s.availableSeats)) : null,
       enrollmentStatus: enrollment?.status ?? null,
       modules,
+      publicModules: modules.map((module) => ({
+        id: module.id, title: module.title, description: module.description,
+        sortOrder: module.sortOrder, lessonCount: module.lessons.length,
+      })),
       sessions,
       dayProgram,
       gallery,
@@ -19938,7 +20009,7 @@ router.get("/education/public/rankings", async (_req, res): Promise<void> => {
   const now = new Date();
   const thirtyDays = new Date(now.getTime() - 30 * 86400_000);
   const ninetyDays = new Date(now.getTime() - 90 * 86400_000);
-  const [categoryMetrics, centers, inquiryMetrics, reviewMetrics] = await Promise.all([
+  const [categoryMetrics, centers, inquiryRows, completedRows, courseReviewRows, centerReviewRows] = await Promise.all([
     db.select({
       categoryId: courseCategoriesTable.id,
       name: courseCategoriesTable.name,
@@ -19951,24 +20022,42 @@ router.get("/education/public/rankings", async (_req, res): Promise<void> => {
       .groupBy(courseCategoriesTable.id, courseCategoriesTable.name),
     db.select().from(educationCentersTable).where(eq(educationCentersTable.verificationStatus, "verified")).orderBy(desc(educationCentersTable.createdAt)).limit(10),
     db.select({ centerId: educationInquiriesTable.centerId, value: count() }).from(educationInquiriesTable)
-      .where(gte(educationInquiriesTable.createdAt, ninetyDays)).groupBy(educationInquiriesTable.centerId).having(gte(count(), 10)),
+      .where(gte(educationInquiriesTable.createdAt, ninetyDays)).groupBy(educationInquiriesTable.centerId),
+    db.select({ centerId: coursesTable.centerId, value: count() }).from(courseEnrollmentsTable)
+      .innerJoin(coursesTable, eq(courseEnrollmentsTable.courseId, coursesTable.id))
+      .where(and(eq(courseEnrollmentsTable.status, "completed"), gte(courseEnrollmentsTable.completedAt, ninetyDays), isNotNull(coursesTable.centerId)))
+      .groupBy(coursesTable.centerId),
     db.select({
       centerId: coursesTable.centerId,
-      rating: sql<number>`round(avg(${courseReviewsTable.rating})::numeric, 1)`,
-      reviewCount: count(),
+      rating: courseReviewsTable.rating,
     }).from(courseReviewsTable).innerJoin(coursesTable, eq(courseReviewsTable.courseId, coursesTable.id))
-      .where(and(eq(courseReviewsTable.status, "published"), isNotNull(coursesTable.centerId)))
-      .groupBy(coursesTable.centerId).having(gte(count(), 5)),
+      .where(and(eq(courseReviewsTable.status, "published"), isNotNull(coursesTable.centerId))),
+    db.select({ centerId: educationCenterReviewsTable.centerId, rating: educationCenterReviewsTable.rating })
+      .from(educationCenterReviewsTable).where(eq(educationCenterReviewsTable.status, "published")),
   ]);
+  const requests = new Map<string, number>();
+  for (const row of [...inquiryRows, ...completedRows]) {
+    if (row.centerId) requests.set(row.centerId, (requests.get(row.centerId) ?? 0) + Number(row.value));
+  }
+  const inquiryMetrics = [...requests].filter(([, value]) => qualifiesAsMostRequestedEducationCenter(value)).map(([centerId, value]) => ({ centerId, value }));
+  const reviews = new Map<string, number[]>();
+  for (const row of [...courseReviewRows, ...centerReviewRows]) {
+    if (!row.centerId) continue;
+    reviews.set(row.centerId, [...(reviews.get(row.centerId) ?? []), row.rating]);
+  }
+  const reviewMetrics = [...reviews].filter(([, ratings]) => qualifiesAsTopRatedEducationCenter(ratings.length)).map(([centerId, ratings]) => ({
+    centerId, rating: Math.round((ratings.reduce((sum, value) => sum + value, 0) / ratings.length) * 10) / 10,
+    reviewCount: ratings.length,
+  }));
   const centerById = new Map(centers.map((center) => [center.id, center]));
   const extraCenterIds = [...new Set([...inquiryMetrics.map((row) => row.centerId), ...reviewMetrics.flatMap((row) => row.centerId ? [row.centerId] : [])])];
   if (extraCenterIds.length) {
     const extra = await db.select().from(educationCentersTable).where(and(inArray(educationCentersTable.id, extraCenterIds), eq(educationCentersTable.verificationStatus, "verified")));
     for (const center of extra) centerById.set(center.id, center);
   }
-  const rankedCenter = (centerId: string, metric: number) => {
+  const rankedCenter = (centerId: string, metric: number, evidenceCount = 0, explanation = "Organski rezultat; plaćeni plasmani ne utiču na rang.") => {
     const center = centerById.get(centerId);
-    return center ? { centerId, name: center.name, city: center.city, metric, createdAt: center.createdAt.toISOString() } : null;
+    return center ? { centerId, name: center.name, city: center.city, metric, evidenceCount, explanation, createdAt: center.createdAt.toISOString() } : null;
   };
   res.json({
     popularCategories30d: categoryMetrics.map((row) => ({
@@ -19976,8 +20065,8 @@ router.get("/education/public/rankings", async (_req, res): Promise<void> => {
       score: Number(row.views) + Number(row.inquiries),
     })).sort((a, b) => b.score - a.score),
     newCenters: centers.map((center) => rankedCenter(center.id, 0)),
-    mostRequestedCenters90d: inquiryMetrics.map((row) => rankedCenter(row.centerId, Number(row.value))).filter(Boolean).sort((a, b) => b!.metric - a!.metric),
-    topRatedCenters: reviewMetrics.map((row) => row.centerId ? rankedCenter(row.centerId, Number(row.rating)) : null).filter(Boolean).sort((a, b) => b!.metric - a!.metric),
+    mostRequestedCenters90d: inquiryMetrics.map((row) => rankedCenter(row.centerId, Number(row.value), Number(row.value), "Najmanje 10 upita i završenih upisa u poslednjih 90 dana; plaćeni plasmani se ne računaju.")).filter(Boolean).sort((a, b) => b!.metric - a!.metric),
+    topRatedCenters: reviewMetrics.map((row) => row.centerId ? rankedCenter(row.centerId, Number(row.rating), row.reviewCount, "Prosečna ocena iz najmanje 5 objavljenih recenzija kursa ili centra; plaćeni plasmani se ne računaju.") : null).filter(Boolean).sort((a, b) => b!.metric - a!.metric),
   });
 });
 
@@ -20033,8 +20122,10 @@ router.get("/education/public/courses", async (req, res): Promise<void> => {
   if (typeof req.query.startDate === "string" && !isValidCalendarDate(req.query.startDate)) {
     res.status(400).json({ error: "Filteri nisu ispravni." }); return;
   }
+  const normalizedQuery = normalizeBooleanQuery(req.query, ["accredited", "certification"]);
+  if (!normalizedQuery) { res.status(400).json({ error: "Filteri nisu ispravni." }); return; }
   const queryInput = {
-    ...req.query,
+    ...normalizedQuery,
     startDate: typeof req.query.startDate === "string" ? new Date(`${req.query.startDate}T00:00:00.000Z`) : req.query.startDate,
   };
   const parsed = ListPublicEducationCoursesQueryParams.safeParse(queryInput);
@@ -20061,10 +20152,17 @@ router.get("/education/public/courses", async (req, res): Promise<void> => {
   if (query.courseTypeId) sqlPredicates.push(eq(coursesTable.courseTypeId, query.courseTypeId));
   if (query.language) sqlPredicates.push(eq(sql`lower(${coursesTable.language})`, query.language.toLowerCase()));
   if (query.accredited !== undefined) sqlPredicates.push(eq(coursesTable.accredited, query.accredited));
+  if (query.certification !== undefined) sqlPredicates.push(eq(coursesTable.certification, query.certification));
   if (query.level) sqlPredicates.push(eq(coursesTable.level, query.level));
   if (query.minPrice !== undefined) sqlPredicates.push(gte(coursesTable.price, query.minPrice));
   if (query.maxPrice !== undefined) sqlPredicates.push(lte(coursesTable.price, query.maxPrice));
+  if (query.minDurationMinutes !== undefined) sqlPredicates.push(gte(coursesTable.durationMinutes, query.minDurationMinutes));
+  if (query.maxDurationMinutes !== undefined) sqlPredicates.push(lte(coursesTable.durationMinutes, query.maxDurationMinutes));
   if (query.startDate) sqlPredicates.push(gte(coursesTable.startDate, calendarDate(query.startDate)));
+  if (query.minRating !== undefined) sqlPredicates.push(sql`coalesce((
+    select avg(cr.rating) from ${courseReviewsTable} cr
+    where cr.course_id = ${coursesTable.id} and cr.status = 'published'
+  ), 0) >= ${query.minRating}`);
 
   // maxDurationDays pushed to SQL via a correlated day-program count so it applies
   // before the bound. Courses with no published day-program count as 1 day (prior
@@ -20110,7 +20208,47 @@ router.get("/education/public/courses/:courseId", async (req, res): Promise<void
     }).onConflictDoNothing();
   }
   // Single-course detail: use educationCourseView for full center/session/gallery depth.
-  res.json(calendarDateCourseResponse(GetPublicEducationCourseResponse.parse(await educationCourseView(course))));
+  const { modules: _privateModules, ...publicView } = await educationCourseView(course);
+  res.json(calendarDateCourseResponse(GetPublicEducationCourseResponse.parse(publicView)));
+});
+
+router.get("/education/public/courses/:courseId/related", async (req, res): Promise<void> => {
+  const courseId = String(req.params.courseId ?? "");
+  const limit = Math.min(20, Math.max(1, Number(req.query.limit) || 6));
+  const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, courseId)).limit(1);
+  if (!course || !(await isPublicEducationCourse(course))) {
+    res.status(404).json({ error: "Edukacija nije dostupna." }); return;
+  }
+  if (!course.subcategoryId && !course.tags.length) { res.json([]); return; }
+  // Tags have a deliberately richer contract than PostgreSQL JSONB `?|`:
+  // NFKC, collapsed whitespace and locale-insensitive case. Scan the eligible
+  // catalog in bounded pages and retain only the globally best requested
+  // records, so normalized matches beyond the first page cannot be missed
+  // without accumulating the catalog in memory.
+  const batchSize = 200;
+  let offset = 0;
+  const ranked: Array<{ course: typeof coursesTable.$inferSelect; tier: number }> = [];
+  const compare = (a: typeof ranked[number], b: typeof ranked[number]) =>
+    a.tier - b.tier
+    || b.course.rating - a.course.rating
+    || b.course.createdAt.getTime() - a.course.createdAt.getTime()
+    || b.course.id.localeCompare(a.course.id);
+  for (;;) {
+    const batch = await db.select().from(coursesTable)
+      .where(publicEducationCoursePredicate([ne(coursesTable.id, course.id)]))
+      .orderBy(desc(coursesTable.createdAt), desc(coursesTable.id)).limit(batchSize).offset(offset);
+    if (!batch.length) break;
+    for (const candidate of batch) {
+      const tier = educationRelatedCourseTier(course, candidate);
+      if (tier === null) continue;
+      ranked.push({ course: candidate, tier });
+      ranked.sort(compare);
+      if (ranked.length > limit) ranked.pop();
+    }
+    offset += batch.length;
+    if (batch.length < batchSize) break;
+  }
+  res.json((await batchEducationCourseViews(ranked.map((row) => row.course))).map(publicEducationCourseView));
 });
 
 router.post("/education/public/courses/:courseId/inquiries", async (req, res): Promise<void> => {
@@ -20205,6 +20343,478 @@ router.get("/education/public/centers/:centerId", async (req, res): Promise<void
   res.json(GetPublicEducationCenterResponse.parse(await centerPublicView(eligibility.center, cards)));
 });
 
+function educationCenterReviewView(row: typeof educationCenterReviewsTable.$inferSelect) {
+  return {
+    id: row.id, centerId: row.centerId, enrollmentId: row.enrollmentId, rating: row.rating,
+    comment: row.comment, status: row.status, createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function adminEducationCenterReviewView(row: typeof educationCenterReviewsTable.$inferSelect) {
+  return {
+    id: row.id, centerId: row.centerId, enrollmentId: row.enrollmentId,
+    rating: row.rating, comment: row.comment, status: row.status,
+    adminNote: row.adminNote ?? null,
+    moderatedAt: row.moderatedAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+router.get("/education/public/centers/:centerId/reviews", async (req, res): Promise<void> => {
+  const centerId = String(req.params.centerId ?? "");
+  const eligibility = await educationCenterEligibility(centerId);
+  if (!eligibility.eligible) { res.status(404).json({ error: "Edukativni centar nije dostupan." }); return; }
+  const { page, pageSize, limit, offset } = parsePagination(req.query, 20);
+  const predicate = and(eq(educationCenterReviewsTable.centerId, centerId), eq(educationCenterReviewsTable.status, "published"));
+  const [rows, totalRows] = await Promise.all([
+    db.select().from(educationCenterReviewsTable).where(predicate)
+      .orderBy(desc(educationCenterReviewsTable.createdAt), desc(educationCenterReviewsTable.id)).limit(limit).offset(offset),
+    db.select({ value: count() }).from(educationCenterReviewsTable).where(predicate),
+  ]);
+  // This is deliberately a direct, unpaginated eligibility query. A learner
+  // must not lose their review affordance merely because the enrollment that
+  // qualifies them fell off a paginated enrollment response.
+  const viewer = await getCurrentUser(req);
+  let viewerEligibility: { canReview: boolean; eligibleEnrollmentId?: string; reason?: string };
+  if (!viewer) {
+    viewerEligibility = { canReview: false, reason: "authentication_required" };
+  } else {
+    const eligible = await db.select({ id: courseEnrollmentsTable.id }).from(courseEnrollmentsTable)
+      .innerJoin(coursesTable, eq(courseEnrollmentsTable.courseId, coursesTable.id))
+      .where(and(
+        eq(courseEnrollmentsTable.userId, viewer.id),
+        eq(courseEnrollmentsTable.status, "completed"),
+        eq(coursesTable.centerId, centerId),
+        notInArray(courseEnrollmentsTable.id, db.select({ id: educationCenterReviewsTable.enrollmentId }).from(educationCenterReviewsTable)),
+      )).orderBy(desc(courseEnrollmentsTable.completedAt), desc(courseEnrollmentsTable.id)).limit(1);
+    viewerEligibility = eligible[0]
+      ? { canReview: true, eligibleEnrollmentId: eligible[0].id }
+      : { canReview: false, reason: "no_unreviewed_completed_enrollment" };
+  }
+  res.json({ items: rows.map(educationCenterReviewView), page, pageSize, total: Number(totalRows[0]?.value ?? 0), viewerEligibility });
+});
+
+router.post("/education/center-reviews", async (req, res): Promise<void> => {
+  const user = await current(req, res); if (!user) return;
+  const parsed = CreateEducationCenterReviewBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const [enrollment] = await db.select().from(courseEnrollmentsTable)
+    .where(and(eq(courseEnrollmentsTable.id, parsed.data.enrollmentId), eq(courseEnrollmentsTable.userId, user.id))).limit(1);
+  if (!enrollment || enrollment.status !== "completed") {
+    res.status(403).json({ error: "Recenziju centra može ostaviti samo polaznik sa završenom edukacijom." }); return;
+  }
+  const [course] = await db.select({ centerId: coursesTable.centerId }).from(coursesTable)
+    .where(eq(coursesTable.id, enrollment.courseId)).limit(1);
+  if (!course?.centerId) { res.status(409).json({ error: "Upis nije povezan sa edukativnim centrom." }); return; }
+  try {
+    const [created] = await db.insert(educationCenterReviewsTable).values({
+      centerId: course.centerId, enrollmentId: enrollment.id, userId: user.id,
+      rating: parsed.data.rating, comment: parsed.data.comment?.trim() ?? "",
+    }).returning();
+    res.status(201).json(educationCenterReviewView(created!));
+  } catch (error: any) {
+    if (error?.code === "23505") { res.status(409).json({ error: "Ovaj upis je već ocenjen." }); return; }
+    throw error;
+  }
+});
+
+router.get("/admin/education/center-reviews", async (req, res): Promise<void> => {
+  const admin = await requireAdmin(req, res); if (!admin) return;
+  const centerId = typeof req.query.centerId === "string" ? req.query.centerId.trim() : "";
+  const status = typeof req.query.status === "string" ? req.query.status : "pending";
+  if (centerId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(centerId)) {
+    res.status(400).json({ error: "Edukativni centar nije ispravan." }); return;
+  }
+  if (!["pending", "published", "rejected", "all"].includes(status)) {
+    res.status(400).json({ error: "Status recenzije nije ispravan." }); return;
+  }
+  const { page, pageSize, limit, offset } = parsePagination(req.query, 20);
+  const conditions = [
+    ...(centerId ? [eq(educationCenterReviewsTable.centerId, centerId)] : []),
+    ...(status !== "all" ? [eq(educationCenterReviewsTable.status, status as "pending" | "published" | "rejected")] : []),
+  ];
+  const predicate = conditions.length ? and(...conditions) : undefined;
+  const [rows, totalRows] = await Promise.all([
+    db.select().from(educationCenterReviewsTable).where(predicate)
+      .orderBy(asc(educationCenterReviewsTable.createdAt), asc(educationCenterReviewsTable.id))
+      .limit(limit).offset(offset),
+    db.select({ value: count() }).from(educationCenterReviewsTable).where(predicate),
+  ]);
+  res.json({
+    items: rows.map(adminEducationCenterReviewView),
+    page, pageSize, total: Number(totalRows[0]?.value ?? 0),
+  });
+});
+
+router.patch("/admin/education/center-reviews/:reviewId", async (req, res): Promise<void> => {
+  const admin = await requireAdmin(req, res); if (!admin) return;
+  const status = req.body?.status;
+  if (!["published", "rejected"].includes(status)) { res.status(400).json({ error: "Status recenzije nije ispravan." }); return; }
+  const adminNote = req.body?.adminNote;
+  if (adminNote !== undefined && adminNote !== null && (typeof adminNote !== "string" || adminNote.length > 2000)) {
+    res.status(400).json({ error: "Napomena administratora nije ispravna." }); return;
+  }
+  const now = new Date();
+  const [updated] = await db.update(educationCenterReviewsTable).set({
+    status, adminNote: typeof adminNote === "string" ? adminNote.trim() || null : null,
+    moderatedAt: now, updatedAt: now,
+  })
+    .where(eq(educationCenterReviewsTable.id, String(req.params.reviewId ?? ""))).returning();
+  if (!updated) { res.status(404).json({ error: "Recenzija nije pronađena." }); return; }
+  res.json(adminEducationCenterReviewView(updated));
+});
+
+router.get("/education/wishlist", async (req, res): Promise<void> => {
+  const user = await current(req, res); if (!user) return;
+  const { page, pageSize, limit, offset } = parsePagination(req.query, 24);
+  const eligible = publicEducationCoursePredicate();
+  const [rows, totalRows] = await Promise.all([
+    db.select({ wishlist: educationWishlistsTable, course: coursesTable }).from(educationWishlistsTable)
+      .innerJoin(coursesTable, eq(educationWishlistsTable.courseId, coursesTable.id))
+      .where(and(eq(educationWishlistsTable.userId, user.id), eligible))
+      .orderBy(desc(educationWishlistsTable.createdAt), desc(educationWishlistsTable.id)).limit(limit).offset(offset),
+    db.select({ value: count() }).from(educationWishlistsTable)
+      .innerJoin(coursesTable, eq(educationWishlistsTable.courseId, coursesTable.id))
+      .where(and(eq(educationWishlistsTable.userId, user.id), eligible)),
+  ]);
+  const views = (await batchEducationCourseViews(rows.map((row) => row.course))).map(publicEducationCourseView);
+  res.json({
+    items: rows.map((row, index) => ({ id: row.wishlist.id, createdAt: row.wishlist.createdAt.toISOString(), course: views[index] })),
+    page, pageSize, total: Number(totalRows[0]?.value ?? 0),
+  });
+});
+
+router.post("/education/wishlist", async (req, res): Promise<void> => {
+  const user = await current(req, res); if (!user) return;
+  const parsed = AddEducationWishlistItemBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, parsed.data.courseId)).limit(1);
+  if (!course || !(await isPublicEducationCourse(course))) { res.status(404).json({ error: "Edukacija nije dostupna." }); return; }
+  const [existing] = await db.select().from(educationWishlistsTable)
+    .where(and(eq(educationWishlistsTable.userId, user.id), eq(educationWishlistsTable.courseId, course.id))).limit(1);
+  if (existing) {
+    res.json({ id: existing.id, createdAt: existing.createdAt.toISOString(), course: publicEducationCourseView(await educationCourseView(course)) }); return;
+  }
+  const [created] = await db.insert(educationWishlistsTable).values({ userId: user.id, courseId: course.id })
+    .onConflictDoNothing().returning();
+  const row = created ?? (await db.select().from(educationWishlistsTable)
+    .where(and(eq(educationWishlistsTable.userId, user.id), eq(educationWishlistsTable.courseId, course.id))).limit(1))[0]!;
+  res.status(created ? 201 : 200).json({ id: row.id, createdAt: row.createdAt.toISOString(), course: publicEducationCourseView(await educationCourseView(course)) });
+});
+
+router.delete("/education/wishlist/:courseId", async (req, res): Promise<void> => {
+  const user = await current(req, res); if (!user) return;
+  await db.delete(educationWishlistsTable).where(and(
+    eq(educationWishlistsTable.userId, user.id), eq(educationWishlistsTable.courseId, String(req.params.courseId ?? "")),
+  ));
+  res.sendStatus(204);
+});
+
+function giftVoucherCodeHash(code: string) {
+  return createHash("sha256").update(code.normalize("NFKC").trim().toUpperCase()).digest("hex");
+}
+
+function educationGiftVoucherView(row: typeof educationGiftVouchersTable.$inferSelect) {
+  return {
+    id: row.id, courseId: row.courseId, centerId: row.centerId, purchaserId: row.purchaserId,
+    recipientUserId: row.recipientUserId, recipientEmail: row.recipientEmail,
+    recipientName: row.recipientNameSnapshot, giftMessage: row.giftMessageSnapshot,
+    courseTitle: row.courseTitleSnapshot, courseImageUrl: row.courseImageUrlSnapshot,
+    amount: row.amountSnapshot, currency: row.currencySnapshot, codeLast4: row.codeLast4,
+    status: row.status, paymentReference: row.paymentReference,
+    redeemedEnrollmentId: row.redeemedEnrollmentId, createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function adminEducationGiftVoucherView(row: typeof educationGiftVouchersTable.$inferSelect) {
+  return {
+    ...educationGiftVoucherView(row),
+    maskedCode: `••••${row.codeLast4}`,
+    settledByUserId: row.settledByUserId, settledAt: row.settledAt?.toISOString() ?? null,
+    redeemedByUserId: row.redeemedByUserId, redeemedAt: row.redeemedAt?.toISOString() ?? null,
+    refundedByUserId: row.refundedByUserId, refundedAt: row.refundedAt?.toISOString() ?? null,
+    refundNote: row.refundNote, disputeId: row.disputeId, updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/** The only course representation permitted outside publisher/enrolled APIs. */
+function publicEducationCourseView<T extends { modules?: unknown }>(view: T): Omit<T, "modules"> {
+  const { modules: _privateModules, ...publicView } = view;
+  return publicView;
+}
+
+router.get("/education/gift-vouchers", async (req, res): Promise<void> => {
+  const user = await current(req, res); if (!user) return;
+  const { page, pageSize, limit, offset } = parsePagination(req.query, 20);
+  // Recipient identity is conjunctive when both fields were captured; this
+  // exactly mirrors redemption and prevents an email-only partial match.
+  const predicate = or(
+    eq(educationGiftVouchersTable.purchaserId, user.id),
+    and(
+      or(isNull(educationGiftVouchersTable.recipientUserId), eq(educationGiftVouchersTable.recipientUserId, user.id)),
+      or(isNull(educationGiftVouchersTable.recipientEmail), eq(sql`lower(${educationGiftVouchersTable.recipientEmail})`, user.email.toLowerCase())),
+    ),
+  );
+  const [rows, totals] = await Promise.all([
+    db.select().from(educationGiftVouchersTable).where(predicate)
+      .orderBy(desc(educationGiftVouchersTable.createdAt), desc(educationGiftVouchersTable.id)).limit(limit).offset(offset),
+    db.select({ value: count() }).from(educationGiftVouchersTable).where(predicate),
+  ]);
+  res.json({ items: rows.map(educationGiftVoucherView), page, pageSize, total: Number(totals[0]?.value ?? 0) });
+});
+
+router.post("/education/gift-vouchers", async (req, res): Promise<void> => {
+  const user = await current(req, res); if (!user) return;
+  const parsed = PurchaseEducationGiftVoucherBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const idempotencyKey = String(req.header("Idempotency-Key") ?? "").trim();
+  if (!idempotencyKey || idempotencyKey.length > 200) { res.status(400).json({ error: "Idempotency-Key je obavezan." }); return; }
+  const recipientEmail = parsed.data.recipientEmail?.normalize("NFKC").trim().toLowerCase() ?? null;
+  const recipientUserId = parsed.data.recipientUserId ?? null;
+  const recipientName = parsed.data.recipientName?.normalize("NFKC").trim() || null;
+  const giftMessage = parsed.data.giftMessage?.normalize("NFKC").trim() || null;
+  if (!recipientEmail && !recipientUserId) { res.status(400).json({ error: "Primalac vaučera je obavezan." }); return; }
+  if (recipientEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(recipientEmail)) {
+    res.status(400).json({ error: "Email primaoca nije ispravan." }); return;
+  }
+  if (recipientUserId) {
+    const [recipient] = await db.select({ id: usersTable.id, email: usersTable.email }).from(usersTable).where(eq(usersTable.id, recipientUserId)).limit(1);
+    if (!recipient) { res.status(400).json({ error: "Nalog primaoca nije pronađen." }); return; }
+    if (recipientEmail && recipient.email.toLowerCase() !== recipientEmail) {
+      res.status(400).json({ error: "ID i email primaoca ne pripadaju istom nalogu." }); return;
+    }
+  }
+  const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, parsed.data.courseId)).limit(1);
+  if (!course?.centerId || !course.giftVoucherEligible || !(await isPublicEducationCourse(course))) {
+    res.status(404).json({ error: "Poklon vaučer nije dostupan za ovu edukaciju." }); return;
+  }
+  const existing = (await db.select().from(educationGiftVouchersTable).where(and(
+    eq(educationGiftVouchersTable.purchaserId, user.id), eq(educationGiftVouchersTable.idempotencyKey, idempotencyKey),
+  )).limit(1))[0];
+  if (existing) {
+    if (existing.courseId !== course.id || existing.recipientUserId !== recipientUserId || existing.recipientEmail !== recipientEmail
+      || existing.recipientNameSnapshot !== recipientName || existing.giftMessageSnapshot !== giftMessage) {
+      res.status(409).json({ error: "Idempotency-Key je već korišćen za drugi zahtev." }); return;
+    }
+    res.json({ ...educationGiftVoucherView(existing), redemptionCode: "" }); return;
+  }
+  const rawCode = `EDU-${randomBytes(18).toString("base64url").toUpperCase()}`;
+  try {
+    const [created] = await db.insert(educationGiftVouchersTable).values({
+      courseId: course.id, centerId: course.centerId, purchaserId: user.id,
+      recipientUserId, recipientEmail, recipientNameSnapshot: recipientName, giftMessageSnapshot: giftMessage, courseTitleSnapshot: course.title,
+      courseImageUrlSnapshot: course.imageUrl, amountSnapshot: course.price,
+      codeHash: giftVoucherCodeHash(rawCode), codeLast4: rawCode.slice(-4),
+      paymentReference: `EDU-GIFT-${randomUUID()}`, idempotencyKey,
+    }).returning();
+    res.status(201).json({ ...educationGiftVoucherView(created!), redemptionCode: rawCode });
+  } catch (error: any) {
+    if (error?.code === "23505") {
+      const replay = (await db.select().from(educationGiftVouchersTable).where(and(
+        eq(educationGiftVouchersTable.purchaserId, user.id), eq(educationGiftVouchersTable.idempotencyKey, idempotencyKey),
+      )).limit(1))[0];
+      if (replay) {
+        if (replay.courseId !== course.id || replay.recipientUserId !== recipientUserId || replay.recipientEmail !== recipientEmail
+          || replay.recipientNameSnapshot !== recipientName || replay.giftMessageSnapshot !== giftMessage) {
+          res.status(409).json({ error: "Idempotency-Key je već korišćen za drugi zahtev." }); return;
+        }
+        res.json({ ...educationGiftVoucherView(replay), redemptionCode: "" }); return;
+      }
+    }
+    throw error;
+  }
+});
+
+router.get("/admin/education/gift-vouchers", async (req, res): Promise<void> => {
+  const admin = await requireAdmin(req, res); if (!admin) return;
+  const status = typeof req.query.status === "string" ? req.query.status : "all";
+  if (!["all", "pending_payment", "active", "redeemed", "refunded", "cancelled"].includes(status)) {
+    res.status(400).json({ error: "Status vaučera nije ispravan." }); return;
+  }
+  const { page, pageSize, limit, offset } = parsePagination(req.query, 20);
+  const predicate = status === "all" ? undefined
+    : eq(educationGiftVouchersTable.status, status as "pending_payment" | "active" | "redeemed" | "refunded" | "cancelled");
+  const [rows, totals] = await Promise.all([
+    db.select().from(educationGiftVouchersTable).where(predicate)
+      .orderBy(desc(educationGiftVouchersTable.createdAt), desc(educationGiftVouchersTable.id)).limit(limit).offset(offset),
+    db.select({ value: count() }).from(educationGiftVouchersTable).where(predicate),
+  ]);
+  res.json({
+    items: rows.map(adminEducationGiftVoucherView), page, pageSize, total: Number(totals[0]?.value ?? 0),
+  });
+});
+
+router.post("/admin/education/gift-vouchers/:voucherId/settle", async (req, res): Promise<void> => {
+  const admin = await requireAdmin(req, res); if (!admin) return;
+  const voucherId = String(req.params.voucherId ?? "");
+  const [updated] = await db.update(educationGiftVouchersTable).set({
+    status: "active", settledByUserId: admin.id, settledAt: new Date(), updatedAt: new Date(),
+  }).where(and(
+    eq(educationGiftVouchersTable.id, voucherId),
+    eq(educationGiftVouchersTable.status, "pending_payment"),
+  )).returning();
+  if (updated) { res.json(educationGiftVoucherView(updated)); return; }
+  // A retry after a successful manual settlement is intentionally a no-op.
+  // The conditional update above is still the state transition and remains atomic.
+  const [alreadySettled] = await db.select().from(educationGiftVouchersTable)
+    .where(and(eq(educationGiftVouchersTable.id, voucherId), eq(educationGiftVouchersTable.status, "active")))
+    .limit(1);
+  if (alreadySettled) { res.json(educationGiftVoucherView(alreadySettled)); return; }
+  res.status(409).json({ error: "Vaučer nije u statusu za potvrdu ručne uplate." });
+});
+
+router.post("/education/gift-vouchers/redeem", async (req, res): Promise<void> => {
+  const user = await current(req, res); if (!user) return;
+  const parsed = RedeemEducationGiftVoucherBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  try {
+    const enrollment = await db.transaction(async (tx) => {
+      const [voucher] = await tx.select().from(educationGiftVouchersTable)
+        .where(eq(educationGiftVouchersTable.codeHash, giftVoucherCodeHash(parsed.data.code))).for("update").limit(1);
+      if (!voucher || voucher.status !== "active" || voucher.redeemedEnrollmentId) throw new Error("Vaučer nije aktivan ili je već iskorišćen.");
+      if (!educationGiftVoucherRecipientMatches(voucher, user)) throw new Error("Vaučer je namenjen drugom korisniku.");
+      const [course] = await tx.select().from(coursesTable).where(eq(coursesTable.id, voucher.courseId)).limit(1);
+      if (!course || !course.published || course.archived || !course.centerId || course.centerId !== voucher.centerId) {
+        throw new Error("Edukacija sa vaučera više nije dostupna.");
+      }
+      await lockEducationCenterFinancials(tx, voucher.centerId);
+      const [duplicate] = await tx.select({ id: courseEnrollmentsTable.id }).from(courseEnrollmentsTable).where(and(
+        eq(courseEnrollmentsTable.courseId, course.id), eq(courseEnrollmentsTable.purchaserId, user.id),
+        ne(courseEnrollmentsTable.status, "cancelled"),
+      )).limit(1);
+      if (duplicate) throw new Error("Već imate aktivan upis za ovu edukaciju.");
+      let session: typeof courseSessionsTable.$inferSelect | undefined;
+      if (course.format !== "online") {
+        [session] = await tx.select().from(courseSessionsTable).where(and(
+          eq(courseSessionsTable.courseId, course.id), isNull(courseSessionsTable.cancelledAt),
+          gt(courseSessionsTable.startsAt, new Date()), lt(courseSessionsTable.reservedSeats, courseSessionsTable.capacity),
+        )).orderBy(asc(courseSessionsTable.startsAt)).for("update").limit(1);
+        if (!session) throw new Error("Nema slobodnog termina za ovaj vaučer.");
+        await tx.update(courseSessionsTable).set({ reservedSeats: sql`${courseSessionsTable.reservedSeats} + 1` })
+          .where(eq(courseSessionsTable.id, session.id));
+      }
+      const now = new Date();
+      const [created] = await tx.insert(courseEnrollmentsTable).values({
+        courseId: course.id, userId: user.id, purchaserId: user.id, sessionId: session?.id ?? null,
+        status: "active", paymentStatus: "paid", chargedAmount: voucher.amountSnapshot,
+        accessGrantedAt: now, idempotencyKey: `gift:${voucher.id}`,
+        auditData: { giftVoucherId: voucher.id, ...(session ? { seatReserved: true } : {}) },
+      }).returning();
+      const settings = await resolveEducationBillingSettingsForChargeInTx(voucher.centerId, tx);
+      const gross = voucher.amountSnapshot;
+      const platformFee = Math.round(gross * settings.effective.commissionPercent / 100);
+      const reserveAmount = Math.round((gross - platformFee) * settings.effective.reservePercent / 100);
+      const netAmount = gross - platformFee - reserveAmount;
+      const releaseAt = await releaseAtForEducationCourse(course, settings.effective, session);
+      const [escrow] = await tx.insert(educationEscrowsTable).values({
+        enrollmentId: created!.id, centerId: voucher.centerId, grossAmount: gross,
+        platformFee, reserveAmount, netAmount, releaseAt, status: "held",
+        paymentReference: voucher.paymentReference,
+      }).returning();
+      await tx.insert(educationLedgerEntriesTable).values([
+        { escrowId: escrow!.id, enrollmentId: created!.id, centerId: voucher.centerId, type: "charge", amount: gross, idempotencyKey: `gift:${voucher.id}:charge`, metadata: { giftVoucherId: voucher.id } },
+        { escrowId: escrow!.id, enrollmentId: created!.id, centerId: voucher.centerId, type: "platform_fee", amount: platformFee, idempotencyKey: `gift:${voucher.id}:fee`, metadata: { giftVoucherId: voucher.id } },
+        { escrowId: escrow!.id, enrollmentId: created!.id, centerId: voucher.centerId, type: "reserve_hold", amount: reserveAmount, idempotencyKey: `gift:${voucher.id}:reserve`, metadata: { giftVoucherId: voucher.id } },
+      ]);
+      await tx.insert(educationFinancialEventsTable).values({
+        escrowId: escrow!.id, enrollmentId: created!.id, actorUserId: user.id,
+        eventType: "gift_voucher_redeemed", previousStatus: "active", nextStatus: "redeemed",
+        amount: gross, metadata: { giftVoucherId: voucher.id },
+      });
+      await tx.update(educationGiftVouchersTable).set({
+        status: "redeemed", redeemedByUserId: user.id, redeemedEnrollmentId: created!.id,
+        redeemedAt: now, updatedAt: now,
+      }).where(eq(educationGiftVouchersTable.id, voucher.id));
+      return created!;
+    });
+    res.status(201).json(await educationEnrollmentView(enrollment));
+  } catch (error) {
+    res.status(409).json({ error: error instanceof Error ? error.message : "Vaučer nije moguće iskoristiti." });
+  }
+});
+
+router.post("/admin/education/gift-vouchers/:voucherId/refund", async (req, res): Promise<void> => {
+  const admin = await requireAdmin(req, res); if (!admin) return;
+  const parsed = AdminRefundEducationGiftVoucherBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  try {
+    const result = await db.transaction(async (tx) => {
+      const [row] = await tx.select().from(educationGiftVouchersTable)
+        .where(eq(educationGiftVouchersTable.id, String(req.params.voucherId ?? ""))).for("update").limit(1);
+      if (!row || !["active", "redeemed"].includes(row.status)) throw new Error("Vaučer nije u statusu za refundaciju.");
+      await lockEducationCenterFinancials(tx, row.centerId);
+      if (parsed.data.disputeId) {
+        const [dispute] = await tx.select({
+          id: educationDisputesTable.id,
+          enrollmentId: educationDisputesTable.enrollmentId,
+        }).from(educationDisputesTable)
+          .where(eq(educationDisputesTable.id, parsed.data.disputeId)).limit(1);
+        if (!dispute) throw new Error("Spor nije pronađen.");
+        if (!row.redeemedEnrollmentId || dispute.enrollmentId !== row.redeemedEnrollmentId) {
+          throw new Error("Spor nije vezan za upis nastao korišćenjem ovog vaučera.");
+        }
+      }
+      let promoted: typeof educationWaitlistTable.$inferSelect | null = null;
+      let promotedCourse: typeof coursesTable.$inferSelect | null = null;
+      if (row.redeemedEnrollmentId) {
+        const [enrollment] = await tx.select().from(courseEnrollmentsTable)
+          .where(eq(courseEnrollmentsTable.id, row.redeemedEnrollmentId)).for("update").limit(1);
+        if (!enrollment) throw new Error("Upis nastao korišćenjem vaučera nije pronađen.");
+        const [escrow] = await tx.select().from(educationEscrowsTable)
+          .where(eq(educationEscrowsTable.enrollmentId, row.redeemedEnrollmentId)).for("update").limit(1);
+        // This is deliberately the same pre-payout eligibility boundary as the
+        // canonical enrollment cancellation path. Post-payout reconciliation
+        // is a separate accounting workflow and must not partially cancel.
+        if (!escrow || !["held", "ready_for_payout", "frozen"].includes(escrow.status)
+          || escrow.netPaidAt !== null || escrow.reservePaidAt !== null) {
+          throw new Error("Vaučer je već ušao u isplatu centra; potrebna je posebna post-isplatna korekcija.");
+        }
+        const [refundedEscrow] = await tx.update(educationEscrowsTable)
+          .set({ status: "refunded", updatedAt: new Date() })
+          .where(and(
+            eq(educationEscrowsTable.id, escrow.id),
+            inArray(educationEscrowsTable.status, ["held", "ready_for_payout", "frozen"]),
+            isNull(educationEscrowsTable.netPaidAt),
+            isNull(educationEscrowsTable.reservePaidAt),
+          )).returning();
+        if (!refundedEscrow) throw new Error("Vaučer je već ušao u isplatu centra; potrebna je posebna post-isplatna korekcija.");
+        await tx.insert(educationLedgerEntriesTable).values({
+          escrowId: escrow.id, enrollmentId: row.redeemedEnrollmentId, centerId: row.centerId,
+          type: "refund", amount: -row.amountSnapshot, actorUserId: admin.id,
+          idempotencyKey: `gift:${row.id}:refund`, note: parsed.data.note, metadata: { giftVoucherId: row.id, disputeId: parsed.data.disputeId ?? null },
+        });
+        await tx.insert(educationFinancialEventsTable).values({
+          escrowId: escrow.id, enrollmentId: row.redeemedEnrollmentId, actorUserId: admin.id,
+          eventType: "enrollment_cancelled_refund", previousStatus: escrow.status, nextStatus: "refunded",
+          amount: -row.amountSnapshot, note: parsed.data.note,
+          metadata: { giftVoucherId: row.id, disputeId: parsed.data.disputeId ?? null },
+        });
+        await tx.update(courseEnrollmentsTable).set({ status: "cancelled", paymentStatus: "refunded", updatedAt: new Date() })
+          .where(eq(courseEnrollmentsTable.id, row.redeemedEnrollmentId));
+        const holdsSeat = Boolean((enrollment.auditData as { seatReserved?: boolean } | null)?.seatReserved);
+        if (enrollment.sessionId && holdsSeat) {
+          const [course] = await tx.select().from(coursesTable)
+            .where(eq(coursesTable.id, enrollment.courseId)).limit(1);
+          if (!course) throw new Error("Kurs za upis nije pronađen.");
+          promoted = await releaseSeatAndPromoteWaiter(tx, enrollment.sessionId, course);
+          promotedCourse = course;
+        }
+      }
+      const [updated] = await tx.update(educationGiftVouchersTable).set({
+        status: "refunded", refundedByUserId: admin.id, refundedAt: new Date(),
+        refundNote: parsed.data.note, disputeId: parsed.data.disputeId ?? null, updatedAt: new Date(),
+      }).where(eq(educationGiftVouchersTable.id, row.id)).returning();
+      return { voucher: updated!, promoted, promotedCourse };
+    });
+    if (result.promoted && result.promotedCourse) {
+      await notifyPromotedWaiter(result.promoted, result.promotedCourse);
+    }
+    res.json(educationGiftVoucherView(result.voucher));
+  } catch (error) {
+    res.status(409).json({ error: error instanceof Error ? error.message : "Vaučer nije refundiran." });
+  }
+});
+
 router.get("/education/public/featured", async (_req, res): Promise<void> => {
   const courses = await db.select().from(coursesTable)
     .where(and(
@@ -20227,7 +20837,7 @@ router.get("/education/public/featured", async (_req, res): Promise<void> => {
   const visible = courses.filter((course) =>
     course.centerId && eligibilityMap.get(course.centerId) === true && paidCourseIds.has(course.id),
   );
-  res.json(await batchEducationCourseViews(visible));
+  res.json((await batchEducationCourseViews(visible)).map(publicEducationCourseView));
 });
 
 router.get("/education/instructors", async (req, res): Promise<void> => {
@@ -20240,12 +20850,15 @@ router.get("/education/instructors", async (req, res): Promise<void> => {
 
 function instructorBodyFields(body: Record<string, unknown>) {
   const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean).slice(0, 20) : [];
+  const portfolioMedia = Array.isArray(body.portfolioMedia) ? body.portfolioMedia : [];
+  if (portfolioMedia.length > 12 || portfolioMedia.some((value) => typeof value !== "string" || value.length > 2000 || !/^https:\/\//i.test(value))
+    || new Set(portfolioMedia).size !== portfolioMedia.length) throw new Error("Portfolio mora sadržati najviše 12 jedinstvenih HTTPS URL adresa.");
   return {
     photoUrl: typeof body.photoUrl === "string" ? body.photoUrl : null,
     biography: typeof body.biography === "string" ? body.biography.slice(0, 4000) : "",
     industryYears: typeof body.industryYears === "number" && body.industryYears >= 0 ? Math.floor(body.industryYears) : 0,
     experienceYears: typeof body.experienceYears === "number" && body.experienceYears >= 0 ? Math.floor(body.experienceYears) : 0,
-    specializations: strings(body.specializations), qualifications: strings(body.qualifications),
+    specializations: strings(body.specializations), qualifications: strings(body.qualifications), portfolioMedia,
   };
 }
 
@@ -20254,8 +20867,21 @@ function instructorProfileView(instructor: typeof educationInstructorsTable.$inf
     id: instructor.id, centerId: instructor.centerId, userId: instructor.userId ?? null,
     fullName: instructor.fullName, photoUrl: instructor.photoUrl ?? null, biography: instructor.biography,
     industryYears: instructor.industryYears, experienceYears: instructor.experienceYears,
-    specializations: instructor.specializations, qualifications: instructor.qualifications,
+    specializations: instructor.specializations, qualifications: instructor.qualifications, portfolioMedia: instructor.portfolioMedia,
     createdAt: instructor.createdAt.toISOString(), updatedAt: instructor.updatedAt.toISOString(),
+  };
+}
+
+function instructorProfileSummary(instructor: typeof educationInstructorsTable.$inferSelect) {
+  return {
+    id: instructor.id,
+    fullName: instructor.fullName,
+    photoUrl: instructor.photoUrl ?? null,
+    biography: instructor.biography,
+    industryYears: instructor.industryYears,
+    experienceYears: instructor.experienceYears,
+    specializations: instructor.specializations,
+    qualifications: instructor.qualifications, portfolioMedia: instructor.portfolioMedia,
   };
 }
 
@@ -20273,9 +20899,11 @@ router.post("/education/instructors", async (req, res): Promise<void> => {
       res.status(400).json({ error: "Izaberite važeći nalog instruktora." }); return;
     }
   }
-  const [created] = await db.insert(educationInstructorsTable).values({
-    centerId, userId, fullName, ...instructorBodyFields(body),
-  }).returning();
+  let fields;
+  try { fields = instructorBodyFields(body); } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Portfolio nije ispravan." }); return;
+  }
+  const [created] = await db.insert(educationInstructorsTable).values({ centerId, userId, fullName, ...fields }).returning();
   res.status(201).json(instructorProfileView(created!));
 });
 
@@ -20296,8 +20924,12 @@ router.patch("/education/instructors/:instructorId", async (req, res): Promise<v
       res.status(400).json({ error: "Izaberite važeći nalog instruktora." }); return;
     }
   }
+  let fields;
+  try { fields = instructorBodyFields({ ...instructor, ...body }); } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Portfolio nije ispravan." }); return;
+  }
   const [updated] = await db.update(educationInstructorsTable).set({
-    fullName, userId, ...instructorBodyFields(body), updatedAt: new Date(),
+    fullName, userId, ...fields, updatedAt: new Date(),
   }).where(eq(educationInstructorsTable.id, instructor.id)).returning();
   res.json(instructorProfileView(updated!));
 });
@@ -20337,8 +20969,8 @@ router.get("/education/instructors/:instructorId/public", async (req, res): Prom
   res.json({
     id: instructor.id, name: instructor.fullName, photoUrl: instructor.photoUrl ?? null, biography: instructor.biography,
     industryYears: instructor.industryYears, experienceYears: instructor.experienceYears, specializations: instructor.specializations,
-    qualifications: instructor.qualifications, rating, participantCount: enrollments.length,
-    courses: await batchEducationCourseViews(publicCourses),
+    qualifications: instructor.qualifications, portfolioMedia: instructor.portfolioMedia, rating, participantCount: enrollments.length,
+    courses: (await batchEducationCourseViews(publicCourses)).map(publicEducationCourseView),
   });
 });
 
@@ -20351,12 +20983,32 @@ router.get("/education/center/status", async (req, res): Promise<void> => {
     ? await db.select().from(educationCenterSubscriptionsTable).where(inArray(educationCenterSubscriptionsTable.centerId, centerIds))
     : [];
   const subByCenterId = new Map(subscriptions.map((s) => [s.centerId, s]));
+  const ninetyDays = new Date(Date.now() - 90 * 86400_000);
+  const [inquiries, completed, learners, courseReviews, centerReviews] = await Promise.all([
+    db.select({ centerId: educationInquiriesTable.centerId, value: count() }).from(educationInquiriesTable).where(and(inArray(educationInquiriesTable.centerId, centerIds), gte(educationInquiriesTable.createdAt, ninetyDays))).groupBy(educationInquiriesTable.centerId),
+    db.select({ centerId: coursesTable.centerId, value: count() }).from(courseEnrollmentsTable).innerJoin(coursesTable, eq(courseEnrollmentsTable.courseId, coursesTable.id)).where(and(inArray(coursesTable.centerId, centerIds), eq(courseEnrollmentsTable.status, "completed"), gte(courseEnrollmentsTable.completedAt, ninetyDays))).groupBy(coursesTable.centerId),
+    db.select({ centerId: coursesTable.centerId, value: count() }).from(courseEnrollmentsTable).innerJoin(coursesTable, eq(courseEnrollmentsTable.courseId, coursesTable.id)).where(and(inArray(coursesTable.centerId, centerIds), eq(courseEnrollmentsTable.status, "completed"))).groupBy(coursesTable.centerId),
+    db.select({ centerId: coursesTable.centerId, rating: courseReviewsTable.rating }).from(courseReviewsTable).innerJoin(coursesTable, eq(courseReviewsTable.courseId, coursesTable.id)).where(and(inArray(coursesTable.centerId, centerIds), eq(courseReviewsTable.status, "published"))),
+    db.select({ centerId: educationCenterReviewsTable.centerId, rating: educationCenterReviewsTable.rating }).from(educationCenterReviewsTable).where(and(inArray(educationCenterReviewsTable.centerId, centerIds), eq(educationCenterReviewsTable.status, "published"))),
+  ]);
+  const requestCounts = new Map<string, number>();
+  for (const row of [...inquiries, ...completed]) if (row.centerId) requestCounts.set(row.centerId, (requestCounts.get(row.centerId) ?? 0) + Number(row.value));
+  const learnerCounts = new Map(learners.flatMap((row) => row.centerId ? [[row.centerId, Number(row.value)] as const] : []));
+  const ratings = new Map<string, number[]>();
+  for (const row of [...courseReviews, ...centerReviews]) if (row.centerId) ratings.set(row.centerId, [...(ratings.get(row.centerId) ?? []), row.rating]);
   const centers = access.centers.map((center) => {
     const subscription = subByCenterId.get(center.id);
     const eligible = center.verificationStatus === "verified" && hasActiveEducationSubscription(subscription?.status);
     return {
       id: center.id, name: center.name, verificationStatus: center.verificationStatus, verificationNote: center.verificationNote,
       subscriptionStatus: subscription?.status ?? null, currentPeriodEnd: subscription?.currentPeriodEnd?.toISOString() ?? null, eligible,
+      organicInquiriesAndCompletedEnrollments90d: requestCounts.get(center.id) ?? 0,
+      completedLearnerCount: learnerCounts.get(center.id) ?? 0,
+      publishedReviewCount: ratings.get(center.id)?.length ?? 0,
+      publishedRating: ratings.get(center.id)?.length ? Math.round((ratings.get(center.id)!.reduce((sum, rating) => sum + rating, 0) / ratings.get(center.id)!.length) * 10) / 10 : 0,
+      qualifiesMostRequested: qualifiesAsMostRequestedEducationCenter(requestCounts.get(center.id) ?? 0),
+      qualifiesTopRated: qualifiesAsTopRatedEducationCenter(ratings.get(center.id)?.length ?? 0),
+      metricsExplanation: "Organski upiti i završeni upisi u poslednjih 90 dana; objavljene recenzije kursa i centra. Plaćeni plasmani se ne računaju.",
     };
   });
   res.json(centers);

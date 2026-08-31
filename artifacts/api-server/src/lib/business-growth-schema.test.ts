@@ -350,7 +350,7 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
-    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 86, "v86 is the current production schema rollout");
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 89, "v89 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
 
     // ── Run the rollout, then exercise its legacy conversion on rerun ──────
@@ -365,6 +365,9 @@ async function run() {
         "education_course_metric_events",
         "education_placement_settings",
         "education_placements",
+        "education_center_reviews",
+        "education_wishlists",
+        "education_gift_vouchers",
       ];
       for (const table of educationFoundationTables) {
         assert.ok(await objectExists(
@@ -394,12 +397,43 @@ async function run() {
       const educationCourseColumns = await q<{ column_name: string }>(
         `SELECT column_name FROM information_schema.columns
          WHERE table_schema=$1 AND table_name='courses'
-           AND column_name IN ('subcategory_id', 'course_type_id', 'theory_hours', 'practical_hours',
+            AND column_name IN ('subcategory_id', 'course_type_id', 'theory_hours', 'practical_hours',
              'certificate_name', 'accredited', 'language', 'trailer_url', 'tags', 'faq',
-             'payment_mode', 'deposit_amount')`,
+              'payment_mode', 'deposit_amount', 'duration_minutes', 'gift_voucher_eligible')`,
         [s],
       );
-      assert.equal(educationCourseColumns.rowCount, 12, "v84 adds every course foundation column");
+      assert.equal(educationCourseColumns.rowCount, 14, "v87 adds every course marketplace column");
+      assert.equal(
+        await objectExists(`SELECT to_regclass($1) IS NULL AS exists`, [`${s}.education_instructors`]),
+        true,
+        "v89 safely completes when the canonical instructor table is absent from an upgrade fixture",
+      );
+      await q(`CREATE TABLE "${s}".education_instructors (id uuid PRIMARY KEY DEFAULT gen_random_uuid())`);
+      await q(`UPDATE "${s}".business_growth_schema_rollout SET version = 87 WHERE singleton = true`);
+      await runBusinessGrowthSchemaDdl(client, s);
+      const instructorPortfolioColumn = await q<{ column_default: string; is_nullable: string }>(
+        `SELECT column_default, is_nullable FROM information_schema.columns
+          WHERE table_schema=$1 AND table_name='education_instructors' AND column_name='portfolio_media'`,
+        [s],
+      );
+      assert.equal(instructorPortfolioColumn.rowCount, 1,
+        "v89 adds portfolio_media when the canonical instructor table exists");
+      assert.equal(instructorPortfolioColumn.rows[0]!.is_nullable, "NO");
+      assert.match(instructorPortfolioColumn.rows[0]!.column_default, /\[\]/);
+      // A database that recorded v88 before the immutable presentation
+      // snapshots shipped must be repaired by the additive v89 rollout.
+      await q(`ALTER TABLE "${s}".education_gift_vouchers DROP COLUMN recipient_name_snapshot`);
+      await q(`ALTER TABLE "${s}".education_gift_vouchers DROP COLUMN gift_message_snapshot`);
+      await q(`UPDATE "${s}".business_growth_schema_rollout SET version = 88 WHERE singleton = true`);
+      await runBusinessGrowthSchemaDdl(client, s);
+      const giftSnapshotColumns = await q<{ column_name: string }>(
+        `SELECT column_name FROM information_schema.columns WHERE table_schema=$1
+         AND table_name='education_gift_vouchers'
+         AND column_name IN ('recipient_name_snapshot', 'gift_message_snapshot')`,
+        [s],
+      );
+      assert.equal(giftSnapshotColumns.rowCount, 2,
+        "v89 repairs both immutable gift presentation snapshots after recorded v88");
       const lifecycleColumns = await q<{ column_name: string; is_nullable: string }>(
         `SELECT column_name, is_nullable
            FROM information_schema.columns

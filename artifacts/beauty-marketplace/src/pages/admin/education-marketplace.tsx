@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { parseStrictDecimal, parseStrictInt } from "@/lib/admin-form-utils";
 import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
@@ -31,7 +33,16 @@ import {
   useUpdateAdminEducationPlacementSettings,
   useListAdminEducationPlacements,
   useSettleAdminEducationPlacement,
-
+  useAdminListEducationGiftVouchers,
+  useAdminSettleEducationGiftVoucher,
+  useAdminRefundEducationGiftVoucher,
+  getAdminListEducationGiftVouchersQueryKey,
+  getListEducationGiftVouchersQueryKey,
+  getListEducationPurchasesQueryKey,
+  getListPublicEducationCoursesQueryKey,
+  getGetPublicEducationCourseQueryKey,
+  type AdminEducationGiftVoucher,
+  type AdminListEducationGiftVouchersStatus,
   getGetAdminEducationSettingsQueryKey,
   getListAdminEducationCentersQueryKey,
   getGetAdminEducationFinanceQueryKey,
@@ -44,12 +55,25 @@ import {
 const money = (value: number) => new Intl.NumberFormat("sr-RS", { style: "currency", currency: "RSD", maximumFractionDigits: 0 }).format(value);
 const PLACEMENT_KINDS = ["featured_center", "special_offer"] as const;
 const PLACEMENT_SCOPES = ["home", "category", "subcategory"] as const;
+const VOUCHER_PAGE_SIZE = 20;
+const VOUCHER_STATUS_OPTIONS: Array<{ value: AdminListEducationGiftVouchersStatus; label: string }> = [
+  { value: "all", label: "Svi statusi" },
+  { value: "pending_payment", label: "Čeka uplatu" },
+  { value: "active", label: "Aktivan" },
+  { value: "redeemed", label: "Iskorišćen" },
+  { value: "refunded", label: "Refundiran" },
+  { value: "cancelled", label: "Otkazan" },
+];
 const placementSettingKey = (kind: string, scope: string) => `${kind}:${scope}`;
+const voucherDate = (value: Date | string | null) => value ? new Date(value).toLocaleString("sr-RS") : null;
 
 export default function AdminEducationMarketplace() {
   const { toast } = useToast();
   const actionGuard = useImmediateActionGuard();
   const queryClient = useQueryClient();
+  const [voucherStatus, setVoucherStatus] = useState<AdminListEducationGiftVouchersStatus>("all");
+  const [voucherPage, setVoucherPage] = useState(1);
+  const voucherParams = { status: voucherStatus, page: voucherPage, pageSize: VOUCHER_PAGE_SIZE };
 
   const { data: settings, isLoading: loadingSettings } = useGetAdminEducationSettings({ query: { queryKey: getGetAdminEducationSettingsQueryKey() } });
   const { data: centers, isLoading: loadingCenters } = useListAdminEducationCenters({ query: { queryKey: getListAdminEducationCentersQueryKey() } });
@@ -58,6 +82,7 @@ export default function AdminEducationMarketplace() {
   const { data: taxonomyProposals, isLoading: loadingProposals } = useListAdminEducationTaxonomyProposals({ status: 'pending' }, { query: { queryKey: getListAdminEducationTaxonomyProposalsQueryKey({ status: 'pending' }) } });
   const { data: placementSettings, isLoading: loadingPlacementSettings } = useGetAdminEducationPlacementSettings({ query: { queryKey: getGetAdminEducationPlacementSettingsQueryKey() } });
   const { data: placements, isLoading: loadingPlacements } = useListAdminEducationPlacements({ query: { queryKey: getListAdminEducationPlacementsQueryKey() } });
+  const { data: vouchersPage, isLoading: loadingVouchers } = useAdminListEducationGiftVouchers(voucherParams, { query: { queryKey: getAdminListEducationGiftVouchersQueryKey(voucherParams) } });
 
   const updateSettingsMut = useUpdateAdminEducationSettings();
   const updateCenterMut = useUpdateAdminEducationCenter();
@@ -69,9 +94,17 @@ export default function AdminEducationMarketplace() {
   const { data: taxonomy } = useGetPublicEducationTaxonomy({ query: { queryKey: getGetPublicEducationTaxonomyQueryKey() } });
   const updatePlacementSettingsMut = useUpdateAdminEducationPlacementSettings();
   const settlePlacementMut = useSettleAdminEducationPlacement();
+  const settleVoucherMut = useAdminSettleEducationGiftVoucher();
+  const refundVoucherMut = useAdminRefundEducationGiftVoucher();
 
   const [settingsRaw, setSettingsRaw] = useState<any>({ commissionPercent: "0", reservePercent: "0", onlineRefundDays: "0", liveAppealDays: "0", featuredCoursePrice: "0" });
   const [placementSettingsRaw, setPlacementSettingsRaw] = useState<Record<string, { price: string, durationDays: string, slotCount: string }>>({});
+
+  const [settleVoucherOpen, setSettleVoucherOpen] = useState(false);
+  const [refundVoucherOpen, setRefundVoucherOpen] = useState(false);
+  const [selectedVoucher, setSelectedVoucher] = useState<AdminEducationGiftVoucher | null>(null);
+  const [voucherRefundNote, setVoucherRefundNote] = useState("");
+  const [voucherRefundDisputeId, setVoucherRefundDisputeId] = useState("");
 
   useEffect(() => {
     if (settings) {
@@ -272,7 +305,67 @@ export default function AdminEducationMarketplace() {
     });
   };
 
-  if (loadingSettings || loadingCenters || loadingFinance || loadingDisputes || loadingProposals || loadingPlacementSettings || loadingPlacements) {
+  const invalidateVoucherCaches = (voucher: AdminEducationGiftVoucher, availabilityChanged = false) => {
+    queryClient.invalidateQueries({ queryKey: getAdminListEducationGiftVouchersQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getListEducationGiftVouchersQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getGetAdminEducationFinanceQueryKey() });
+    if (availabilityChanged) {
+      queryClient.invalidateQueries({ queryKey: getListEducationPurchasesQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getListPublicEducationCoursesQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getGetPublicEducationCourseQueryKey(voucher.courseId) });
+    }
+  };
+
+  const openSettleVoucher = (voucher: AdminEducationGiftVoucher) => {
+    setSelectedVoucher(voucher);
+    setSettleVoucherOpen(true);
+  };
+
+  const confirmSettleVoucher = () => {
+    if (!selectedVoucher || !actionGuard.begin(`settle-voucher:${selectedVoucher.id}`)) return;
+    settleVoucherMut.mutate({ voucherId: selectedVoucher.id }, {
+      onSuccess: () => {
+        toast.success("Uplata za vaučer je potvrđena.");
+        invalidateVoucherCaches(selectedVoucher);
+        setSettleVoucherOpen(false);
+      },
+      onError: (e) => toast.error("Greška", { description: e.message }),
+      onSettled: () => actionGuard.end(`settle-voucher:${selectedVoucher.id}`)
+    });
+  };
+
+  const openRefundVoucher = (voucher: AdminEducationGiftVoucher) => {
+    setSelectedVoucher(voucher);
+    setVoucherRefundNote("");
+    setVoucherRefundDisputeId("");
+    setRefundVoucherOpen(true);
+  };
+
+  const confirmRefundVoucher = () => {
+    if (!selectedVoucher || !actionGuard.begin(`refund-voucher:${selectedVoucher.id}`)) return;
+    if (!voucherRefundNote.trim()) {
+      toast.error("Unesite razlog za refundaciju.");
+      actionGuard.end(`refund-voucher:${selectedVoucher.id}`);
+      return;
+    }
+    refundVoucherMut.mutate({
+      voucherId: selectedVoucher.id,
+      data: {
+        note: voucherRefundNote.trim(),
+        disputeId: voucherRefundDisputeId.trim() || undefined
+      }
+    }, {
+      onSuccess: () => {
+        toast.success("Vaučer je refundiran.");
+        invalidateVoucherCaches(selectedVoucher, selectedVoucher.status === "redeemed");
+        setRefundVoucherOpen(false);
+      },
+      onError: (e) => toast.error("Greška", { description: e.message }),
+      onSettled: () => actionGuard.end(`refund-voucher:${selectedVoucher.id}`)
+    });
+  };
+
+  if (loadingSettings || loadingCenters || loadingFinance || loadingDisputes || loadingProposals || loadingPlacementSettings || loadingPlacements || loadingVouchers) {
     return <AdminLayout><div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div></AdminLayout>;
   }
 
@@ -402,6 +495,61 @@ export default function AdminEducationMarketplace() {
             </CardContent>
           </Card>
 
+          {/* Gift Vouchers */}
+          <Card>
+            <CardHeader><CardTitle className="flex gap-2">Poklon vaučeri</CardTitle><CardDescription>Upravljanje uplatama i refundacijama vaučera.</CardDescription></CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex flex-col gap-3 border-b pb-3 sm:flex-row sm:items-end sm:justify-between">
+                <div className="space-y-1">
+                  <Label htmlFor="voucher-status">Status vaučera</Label>
+                  <select
+                    id="voucher-status"
+                    value={voucherStatus}
+                    onChange={(event) => {
+                      const nextStatus = VOUCHER_STATUS_OPTIONS.find((option) => option.value === event.target.value)?.value;
+                      if (nextStatus) {
+                        setVoucherStatus(nextStatus);
+                        setVoucherPage(1);
+                      }
+                    }}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm sm:w-52"
+                  >
+                    {VOUCHER_STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </div>
+                {vouchersPage && <p className="text-sm text-muted-foreground">Ukupno: {vouchersPage.total}</p>}
+              </div>
+              {vouchersPage && vouchersPage.items.length > 0 ? vouchersPage.items.map((v) => (
+                <div key={v.id} className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold">{v.courseTitle}</p>
+                      <Badge variant={v.status === "active" ? "default" : v.status === "pending_payment" ? "secondary" : v.status === "refunded" ? "destructive" : "outline"}>{v.status}</Badge>
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      <p>Kod: {v.maskedCode} · Ref: {v.paymentReference} · {money(v.amount)}</p>
+                      <p>Kreiran: {voucherDate(v.createdAt)}</p>
+                    </div>
+                    {v.settledAt && <p className="text-xs text-muted-foreground">Uplata potvrđena: {voucherDate(v.settledAt)}</p>}
+                    {v.redeemedAt && <p className="text-xs text-muted-foreground">Iskorišćen: {voucherDate(v.redeemedAt)}</p>}
+                    {v.refundedAt && <p className="text-xs text-muted-foreground">Refundiran: {voucherDate(v.refundedAt)}{v.refundNote ? ` · ${v.refundNote}` : ""}</p>}
+                  </div>
+                  <div className="flex flex-wrap gap-2 shrink-0">
+                    {v.status === "pending_payment" && <Button size="sm" onClick={() => openSettleVoucher(v)} disabled={actionGuard.isActive(`settle-voucher:${v.id}`)}>Potvrdi uplatu</Button>}
+                    {(v.status === "active" || v.status === "redeemed") && <Button size="sm" variant="destructive" onClick={() => openRefundVoucher(v)} disabled={actionGuard.isActive(`refund-voucher:${v.id}`)}>Refundiraj</Button>}
+                  </div>
+                </div>
+              )) : <p className="py-4 text-sm text-muted-foreground">Nema vaučera.</p>}
+              {vouchersPage && vouchersPage.total > VOUCHER_PAGE_SIZE && <div className="flex items-center justify-between pt-1">
+                <p className="text-sm text-muted-foreground">Stranica {vouchersPage.page} od {Math.max(1, Math.ceil(vouchersPage.total / vouchersPage.pageSize))}</p>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setVoucherPage((page) => Math.max(1, page - 1))} disabled={vouchersPage.page <= 1}>Prethodna</Button>
+                  <Button size="sm" variant="outline" onClick={() => setVoucherPage((page) => page + 1)} disabled={vouchersPage.page >= Math.ceil(vouchersPage.total / vouchersPage.pageSize)}>Sledeća</Button>
+                </div>
+              </div>}
+            </CardContent>
+          </Card>
+
           {/* Escrow */}
           <Card>
             <CardHeader><CardTitle>Escrow i ručne isplate</CardTitle><CardDescription>Net iznos postaje podoban po isteku roka.</CardDescription></CardHeader>
@@ -487,5 +635,49 @@ export default function AdminEducationMarketplace() {
         </div>
       </div>
     </div>
+
+    <Dialog open={settleVoucherOpen} onOpenChange={setSettleVoucherOpen}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Potvrda uplate vaučera</DialogTitle></DialogHeader>
+        <div className="py-4">
+          <p>Da li ste sigurni da želite da potvrdite uplatu za poklon vaučer?</p>
+          {selectedVoucher && <p className="font-semibold mt-2">Referenca: {selectedVoucher.paymentReference}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setSettleVoucherOpen(false)}>Otkaži</Button>
+          <Button onClick={confirmSettleVoucher} disabled={!selectedVoucher || settleVoucherMut.isPending}>Potvrdi uplatu</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={refundVoucherOpen} onOpenChange={setRefundVoucherOpen}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Refundacija vaučera</DialogTitle></DialogHeader>
+        <div className="py-4 space-y-4">
+          {selectedVoucher && <p className="font-medium text-sm text-muted-foreground mb-4">Referenca: {selectedVoucher.paymentReference}</p>}
+          <div className="space-y-2">
+            <Label>Razlog za refundaciju *</Label>
+            <Textarea
+              value={voucherRefundNote}
+              onChange={(e) => setVoucherRefundNote(e.target.value)}
+              placeholder="Kratko obrazloženje..."
+              rows={3}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>ID spora (opciono)</Label>
+            <Input
+              value={voucherRefundDisputeId}
+              onChange={(e) => setVoucherRefundDisputeId(e.target.value)}
+              placeholder="Ako postoji otvoren spor..."
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setRefundVoucherOpen(false)}>Otkaži</Button>
+          <Button variant="destructive" onClick={confirmRefundVoucher} disabled={!selectedVoucher || refundVoucherMut.isPending || !voucherRefundNote.trim()}>Refundiraj</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </AdminLayout>;
 }

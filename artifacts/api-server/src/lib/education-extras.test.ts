@@ -12,14 +12,20 @@ import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
+import { GetEducationCourseResponse, GetPublicEducationCourseResponse } from "@workspace/api-zod";
 import {
   courseEnrollmentsTable,
   courseSessionsTable,
   coursesTable,
   db,
   educationCentersTable,
+  educationCenterReviewsTable,
   educationCenterSubscriptionsTable,
+  educationCourseMetricEventsTable,
   educationEscrowsTable,
+  educationGiftVouchersTable,
+  educationInquiriesTable,
+  educationInstructorsTable,
   educationLedgerEntriesTable,
   employeeLocationAssignmentsTable,
   employeesTable,
@@ -27,6 +33,7 @@ import {
   courseModulesTable,
   courseLessonsTable,
   subscriptionPlansTable,
+  courseReviewsTable,
   usersTable,
   salonsTable,
 } from "@workspace/db";
@@ -535,6 +542,318 @@ async function run(): Promise<void> {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
+    // TEST: Marketplace public/owner contracts added in schema v88.
+    // ═══════════════════════════════════════════════════════════════════════
+    {
+      const centerOwnerCookie = await login(baseUrl, centerOwner.email);
+
+      const invalidInstructor = await request(baseUrl, "/education/instructors", {
+        method: "POST", cookie: centerOwnerCookie,
+        body: { fullName: "Neispravan Portfolio", portfolioMedia: ["http://example.test/image.jpg"] },
+      });
+      assert.equal(invalidInstructor.status, 400, "Instructor portfolio must reject non-HTTPS media.");
+      const portfolioMedia = ["https://cdn.example.test/work-1.jpg", "https://cdn.example.test/work-2.jpg"];
+      const instructorResponse = await request(baseUrl, "/education/instructors", {
+        method: "POST", cookie: centerOwnerCookie,
+        body: { fullName: "Portfolio Instruktor", portfolioMedia },
+      });
+      assert.equal(instructorResponse.status, 201, "Owner can create an instructor with a valid portfolio.");
+      const instructor = await json<{ id: string; portfolioMedia: string[] }>(instructorResponse);
+      assert.deepEqual(instructor.portfolioMedia, portfolioMedia, "Owner response preserves portfolio media.");
+      const publicInstructorResponse = await request(baseUrl, `/education/instructors/${instructor.id}/public`);
+      assert.equal(publicInstructorResponse.status, 200);
+      assert.deepEqual(
+        (await json<{ portfolioMedia: string[] }>(publicInstructorResponse)).portfolioMedia,
+        portfolioMedia,
+        "Public instructor profile exposes the persisted portfolio.",
+      );
+
+      const certEnrollments = await db.select().from(courseEnrollmentsTable)
+        .where(eq(courseEnrollmentsTable.courseId, certCourse.id));
+      assert.ok(certEnrollments.length >= 3, "Review aggregate fixture requires three course enrollments.");
+      await db.insert(courseReviewsTable).values([
+        {
+          courseId: certCourse.id, enrollmentId: certEnrollments[0]!.id,
+          userId: certEnrollments[0]!.userId, rating: 5, comment: "Odličan", status: "published",
+        },
+        {
+          courseId: certCourse.id, enrollmentId: certEnrollments[1]!.id,
+          userId: certEnrollments[1]!.userId, rating: 4, comment: "Vrlo dobar", status: "published",
+        },
+        {
+          courseId: certCourse.id, enrollmentId: certEnrollments[2]!.id,
+          userId: certEnrollments[2]!.userId, rating: 1, comment: "Čeka proveru", status: "pending",
+        },
+      ]);
+      const aggregateListResponse = await request(
+        baseUrl,
+        `/education/public/courses?q=${encodeURIComponent(certCourse.title)}&certification=true&minRating=4.5`,
+      );
+      assert.equal(aggregateListResponse.status, 200);
+      const aggregateList = await json<Array<{ id: string; rating: number; reviewCount: number }>>(aggregateListResponse);
+      assert.deepEqual(
+        aggregateList.map(({ id, rating, reviewCount }) => ({ id, rating, reviewCount })),
+        [{ id: certCourse.id, rating: 4.5, reviewCount: 2 }],
+        "Public cards use only published reviews for minRating, rating and reviewCount.",
+      );
+      const failedRatingFilter = await json<Array<{ id: string }>>(await request(
+        baseUrl,
+        `/education/public/courses?q=${encodeURIComponent(certCourse.title)}&minRating=4.6`,
+      ));
+      assert.equal(failedRatingFilter.length, 0, "minRating applies before pagination.");
+      const certificationFalse = await json<Array<{ id: string }>>(await request(
+        baseUrl,
+        `/education/public/courses?q=${encodeURIComponent(liveCourse.title)}&certification=false`,
+      ));
+      assert.deepEqual(certificationFalse.map((row) => row.id), [liveCourse.id],
+        "certification=false is an exact boolean filter.");
+
+      const publicDetailResponse = await request(baseUrl, `/education/public/courses/${certCourse.id}`);
+      assert.equal(publicDetailResponse.status, 200);
+      const publicDetail = await json<{
+        publicModules: Array<Record<string, unknown>>; rating: number; reviewCount: number;
+        modules?: unknown;
+      }>(publicDetailResponse);
+      assert.equal(publicDetail.rating, 4.5);
+      assert.equal(publicDetail.reviewCount, 2);
+      assert.equal(publicDetail.modules, undefined, "Public detail never serializes private modules.");
+      assert.equal(publicDetail.publicModules.length, 1);
+      assert.deepEqual(
+        Object.keys(publicDetail.publicModules[0]!).sort(),
+        ["description", "id", "lessonCount", "sortOrder", "title"],
+        "Public module preview is a strict metadata allowlist.",
+      );
+      assert.equal(publicDetail.publicModules[0]!.lessonCount, 1);
+      GetPublicEducationCourseResponse.parse(publicDetail);
+      const detailOwnerCookie = await login(baseUrl, centerOwner.email);
+      const privateDetailResponse = await request(baseUrl, `/education/courses/${certCourse.id}`, { cookie: detailOwnerCookie });
+      assert.equal(privateDetailResponse.status, 200);
+      const privateDetail = GetEducationCourseResponse.parse(await json(privateDetailResponse));
+      assert.equal(privateDetail.rating, 4.5);
+      assert.equal(privateDetail.reviewCount, 2);
+      assert.ok(Array.isArray(privateDetail.modules), "Owner detail retains protected LMS modules.");
+
+      const [zeroReviewCourse] = await db.insert(coursesTable).values({
+        centerId: center.id, title: `Zero review detail ${suffix}`, description: "Bez objavljenih utisaka.",
+        category: "Drugo", format: "online", city: "Novi Sad", price: 1000, duration: "1 sat",
+        imageUrl: "/zero-review.jpg", published: true,
+      }).returning();
+      assert.ok(zeroReviewCourse);
+      courseIds.push(zeroReviewCourse.id);
+      const zeroPublicResponse = await request(baseUrl, `/education/public/courses/${zeroReviewCourse.id}`);
+      assert.equal(zeroPublicResponse.status, 200);
+      const zeroPublicDetail = GetPublicEducationCourseResponse.parse(await json(zeroPublicResponse));
+      assert.equal(zeroPublicDetail.rating, 0);
+      assert.equal(zeroPublicDetail.reviewCount, 0);
+      assert.ok(!JSON.stringify(publicDetail.publicModules).includes("Sadržaj lekcije"),
+        "Public module preview never contains lesson body content.");
+      const serializedPublicDetail = JSON.stringify(publicDetail);
+      for (const privateKey of ["lessons", "body", "content", "privateMedia"]) {
+        assert.ok(!serializedPublicDetail.includes(`\"${privateKey}\"`),
+          `Public detail must not serialize ${privateKey}.`);
+      }
+      // Related courses use the same tag contract as the domain helper rather
+      // than JSONB's byte-for-byte tag matching. These candidates deliberately
+      // have no shared subcategory, so the match is tier 1 tag-only.
+      await db.update(coursesTable).set({ tags: [" Nail   Art "] }).where(eq(coursesTable.id, certCourse.id));
+      const [normalizedTagMatch, nearMiss] = await db.insert(coursesTable).values([
+        {
+          centerId: center.id, title: `Normalized related ${suffix}`, description: "Tag normalizacija.",
+          category: "Drugo", format: "online", city: "Novi Sad", price: 1000, duration: "1 sat",
+          imageUrl: "/related.jpg", published: true, tags: ["ＮＡＩＬ\tＡＲＴ"], rating: 48,
+        },
+        {
+          centerId: center.id, title: `Near miss related ${suffix}`, description: "Ne sme da se poklopi.",
+          category: "Drugo", format: "online", city: "Novi Sad", price: 1000, duration: "1 sat",
+          imageUrl: "/related.jpg", published: true, tags: ["nail arts"], rating: 50,
+        },
+      ]).returning();
+      courseIds.push(normalizedTagMatch!.id, nearMiss!.id);
+      // Push the normalized match beyond the related endpoint's 200-row scan
+      // page. The implementation must continue paging before applying limit.
+      const unrelatedRelatedFillers = await db.insert(coursesTable).values(
+        Array.from({ length: 200 }, (_, index) => ({
+          centerId: center.id, title: `Related filler ${suffix}-${index}`, description: "Nepovezan kandidat.",
+          category: "Drugo", format: "online" as const, city: "Novi Sad", price: 1000, duration: "1 sat",
+          imageUrl: "/related.jpg", published: true, tags: ["masaža"],
+        })),
+      ).returning({ id: coursesTable.id });
+      courseIds.push(...unrelatedRelatedFillers.map((row) => row.id));
+      const relatedResponse = await request(baseUrl, `/education/public/courses/${certCourse.id}/related?limit=1`);
+      assert.equal(relatedResponse.status, 200);
+      const related = await json<Array<{ id: string; publicModules: unknown[]; modules?: unknown }>>(relatedResponse);
+      assert.deepEqual(related.map((row) => row.id), [normalizedTagMatch!.id],
+        "Different-subcategory NFKC/case/whitespace-equivalent tag is tier-1 related; near miss is excluded.");
+      assert.equal(related[0]!.modules, undefined, "Related public results never expose private modules.");
+      assert.ok(Array.isArray(related[0]!.publicModules));
+      await db.delete(coursesTable).where(inArray(coursesTable.id, [
+        normalizedTagMatch!.id, nearMiss!.id, ...unrelatedRelatedFillers.map((row) => row.id),
+      ]));
+
+      const anonymousReviewsResponse = await request(baseUrl, `/education/public/centers/${center.id}/reviews?page=1&pageSize=1`);
+      assert.deepEqual(
+        (await json<{ viewerEligibility: unknown }>(anonymousReviewsResponse)).viewerEligibility,
+        { canReview: false, reason: "authentication_required" },
+      );
+      const completed = await db.select().from(courseEnrollmentsTable).where(and(
+        eq(courseEnrollmentsTable.userId, buyer.id),
+        eq(courseEnrollmentsTable.status, "completed"),
+      ));
+      const centerCompleted = completed.filter((row) => [certCourse.id, liveCourse.id].includes(row.courseId));
+      assert.equal(centerCompleted.length, 2, "Eligibility fixture requires two completed enrollments.");
+      const [firstCenterReview] = await db.insert(educationCenterReviewsTable).values({
+        centerId: center.id, enrollmentId: centerCompleted[0]!.id, userId: buyer.id,
+        rating: 5, comment: "Prva", status: "published",
+      }).returning();
+      const eligibleResponse = await request(baseUrl, `/education/public/centers/${center.id}/reviews?page=1&pageSize=1`, { cookie: buyerCookie });
+      const eligibleBody = await json<{ viewerEligibility: { canReview: boolean; eligibleEnrollmentId?: string } }>(eligibleResponse);
+      assert.equal(eligibleBody.viewerEligibility.canReview, true,
+        "An already-reviewed enrollment does not hide another completed enrollment.");
+      assert.equal(eligibleBody.viewerEligibility.eligibleEnrollmentId, centerCompleted[1]!.id,
+        "Eligibility is complete and independent of review-page pagination.");
+      const [secondCenterReview] = await db.insert(educationCenterReviewsTable).values({
+        centerId: center.id, enrollmentId: centerCompleted[1]!.id, userId: buyer.id,
+        rating: 4, comment: "Druga", status: "published",
+      }).returning();
+      const exhaustedResponse = await request(baseUrl, `/education/public/centers/${center.id}/reviews`, { cookie: buyerCookie });
+      assert.deepEqual(
+        (await json<{ viewerEligibility: unknown }>(exhaustedResponse)).viewerEligibility,
+        { canReview: false, reason: "no_unreviewed_completed_enrollment" },
+        "Already-reviewed completed enrollments are all excluded.",
+      );
+      await db.update(educationCenterReviewsTable).set({ status: "pending" })
+        .where(eq(educationCenterReviewsTable.id, firstCenterReview!.id));
+      assert.equal(
+        (await request(baseUrl, "/admin/education/center-reviews")).status,
+        401,
+        "Center-review moderation listing requires authentication.",
+      );
+      assert.equal(
+        (await request(baseUrl, "/admin/education/center-reviews", { cookie: centerOwnerCookie })).status,
+        403,
+        "Center-review moderation listing requires an admin role.",
+      );
+      const pendingAdminResponse = await request(
+        baseUrl, `/admin/education/center-reviews?centerId=${center.id}`, { cookie: adminCookie },
+      );
+      assert.equal(pendingAdminResponse.status, 200);
+      const pendingAdminPage = await json<{
+        items: Array<Record<string, unknown>>; page: number; pageSize: number; total: number;
+      }>(pendingAdminResponse);
+      assert.equal(pendingAdminPage.total, 1, "Default moderation queue includes pending reviews.");
+      assert.equal(pendingAdminPage.items[0]!.id, firstCenterReview!.id);
+      assert.deepEqual(
+        Object.keys(pendingAdminPage.items[0]!).sort(),
+        ["adminNote", "centerId", "comment", "createdAt", "enrollmentId", "id", "moderatedAt", "rating", "status"],
+        "Admin listing exposes moderation fields but no learner identity or contact PII.",
+      );
+      const publishedAdminPage = await json<{ items: Array<{ id: string; status: string }> }>(
+        await request(
+          baseUrl, `/admin/education/center-reviews?centerId=${center.id}&status=published`,
+          { cookie: adminCookie },
+        ),
+      );
+      assert.deepEqual(publishedAdminPage.items, [{
+        id: secondCenterReview!.id, centerId: center.id, enrollmentId: centerCompleted[1]!.id,
+        rating: 4, comment: "Druga", status: "published", adminNote: null,
+        moderatedAt: null, createdAt: secondCenterReview!.createdAt.toISOString(),
+      }], "Status filter returns only matching reviews.");
+      const pageOne = await json<{ items: Array<{ id: string }> }>(await request(
+        baseUrl, `/admin/education/center-reviews?centerId=${center.id}&status=all&page=1&pageSize=1`,
+        { cookie: adminCookie },
+      ));
+      const pageTwo = await json<{ items: Array<{ id: string }> }>(await request(
+        baseUrl, `/admin/education/center-reviews?centerId=${center.id}&status=all&page=2&pageSize=1`,
+        { cookie: adminCookie },
+      ));
+      assert.equal(pageOne.items.length, 1);
+      assert.equal(pageTwo.items.length, 1);
+      assert.notEqual(pageOne.items[0]!.id, pageTwo.items[0]!.id,
+        "Stable moderation pagination has no overlap.");
+      const moderatedResponse = await request(
+        baseUrl, `/admin/education/center-reviews/${firstCenterReview!.id}`,
+        { method: "PATCH", cookie: adminCookie, body: { status: "rejected", adminNote: "Neprimeren sadržaj" } },
+      );
+      assert.equal(moderatedResponse.status, 200);
+      const moderated = await json<{ adminNote: string | null; moderatedAt: string | null }>(moderatedResponse);
+      assert.equal(moderated.adminNote, "Neprimeren sadržaj");
+      assert.ok(moderated.moderatedAt, "Moderation response records its timestamp.");
+
+      await db.insert(educationInquiriesTable).values(Array.from({ length: 8 }, (_, index) => ({
+        courseId: certCourse.id, centerId: center.id, userId: buyer.id, message: `Organski upit ${index}`,
+      })));
+      const statusBeforePaidEvents = await json<Array<{
+        id: string; organicInquiriesAndCompletedEnrollments90d: number; qualifiesMostRequested: boolean;
+      }>>(await request(baseUrl, "/education/center/status", { cookie: centerOwnerCookie }));
+      const centerStatus = statusBeforePaidEvents.find((row) => row.id === center.id)!;
+      assert.equal(centerStatus.organicInquiriesAndCompletedEnrollments90d, 10);
+      assert.equal(centerStatus.qualifiesMostRequested, true,
+        "Owner metric uses the same inclusive threshold of ten as public ranking.");
+      const rankingsBeforePaidEvents = await json<{
+        mostRequestedCenters90d: Array<{ centerId: string; metric: number }>;
+      }>(await request(baseUrl, "/education/public/rankings"));
+      assert.equal(
+        rankingsBeforePaidEvents.mostRequestedCenters90d.find((row) => row.centerId === center.id)?.metric,
+        centerStatus.organicInquiriesAndCompletedEnrollments90d,
+        "Public rankings and owner status share the exact organic threshold input.",
+      );
+      await db.insert(educationCourseMetricEventsTable).values(Array.from({ length: 20 }, (_, index) => ({
+        courseId: certCourse.id, centerId: center.id, actorUserId: buyer.id,
+        eventType: "view", dedupeKey: `paid-placement-view:${suffix}:${index}`,
+      })));
+      const statusAfterPaidEvents = await json<Array<{
+        id: string; organicInquiriesAndCompletedEnrollments90d: number;
+      }>>(await request(baseUrl, "/education/center/status", { cookie: centerOwnerCookie }));
+      assert.equal(
+        statusAfterPaidEvents.find((row) => row.id === center.id)!.organicInquiriesAndCompletedEnrollments90d,
+        10,
+        "Paid/promotional view events cannot influence the explainable organic request metric.",
+      );
+      const rankingsAfterPaidEvents = await json<{
+        mostRequestedCenters90d: Array<{ centerId: string; metric: number }>;
+      }>(await request(baseUrl, "/education/public/rankings"));
+      assert.equal(
+        rankingsAfterPaidEvents.mostRequestedCenters90d.find((row) => row.centerId === center.id)?.metric,
+        10,
+        "Paid/promotional view events cannot influence the public center ranking either.",
+      );
+
+      await db.update(coursesTable).set({ giftVoucherEligible: true }).where(eq(coursesTable.id, certCourse.id));
+      const giftKey = `gift-v88-${suffix}`;
+      const giftBody = {
+        courseId: certCourse.id, recipientUserId: buyer.id,
+        recipientName: "  Poklon Primalac  ", giftMessage: "  Srećno u učenju!  ",
+      };
+      const giftResponse = await request(baseUrl, "/education/gift-vouchers", {
+        method: "POST", cookie: buyerCookie, headers: { "idempotency-key": giftKey }, body: giftBody,
+      });
+      assert.equal(giftResponse.status, 201);
+      const gift = await json<{ id: string; recipientName: string; giftMessage: string }>(giftResponse);
+      assert.equal(gift.recipientName, "Poklon Primalac");
+      assert.equal(gift.giftMessage, "Srećno u učenju!");
+      const giftReplay = await request(baseUrl, "/education/gift-vouchers", {
+        method: "POST", cookie: buyerCookie, headers: { "idempotency-key": giftKey }, body: giftBody,
+      });
+      assert.equal(giftReplay.status, 200, "Identical gift presentation is idempotent.");
+      const changedGiftReplay = await request(baseUrl, "/education/gift-vouchers", {
+        method: "POST", cookie: buyerCookie, headers: { "idempotency-key": giftKey },
+        body: { ...giftBody, giftMessage: "Druga poruka" },
+      });
+      assert.equal(changedGiftReplay.status, 409, "Gift presentation participates in idempotency identity.");
+      await assert.rejects(
+        db.update(educationGiftVouchersTable).set({ giftMessageSnapshot: "Izmenjeno" })
+          .where(eq(educationGiftVouchersTable.id, gift.id)),
+        (error: unknown) => /immutable/.test(String(
+          (error as { cause?: { message?: string } })?.cause?.message ?? error,
+        )),
+        "Gift presentation snapshots are database-immutable.",
+      );
+      assert.ok((await db.select().from(educationInstructorsTable)
+        .where(eq(educationInstructorsTable.id, instructor.id))).length === 1);
+      console.log("✓ v88 portfolio, metrics, eligibility, public module and gift contracts.");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
     // TEST: Authenticated /education/courses pushes ownership + scalar filters to
     // SQL so owned (even unpublished) courses are never silently omitted, and the
     // session-location authorization is preserved in the list view.
@@ -931,6 +1250,9 @@ async function run(): Promise<void> {
   } finally {
     if (server) {
       await new Promise<void>((resolve, reject) => server!.close((err) => err ? reject(err) : resolve()));
+    }
+    if (createdUserIds.length) {
+      await db.delete(educationGiftVouchersTable).where(inArray(educationGiftVouchersTable.purchaserId, createdUserIds));
     }
     if (enrollmentIds.length) {
       await db.delete(lessonProgressTable).where(inArray(lessonProgressTable.enrollmentId, enrollmentIds));

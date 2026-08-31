@@ -17,6 +17,7 @@ export interface EducationInstructorPublicProfile {
   experienceYears: number;
   specializations: string[];
   qualifications: string[];
+  portfolioMedia: string[];
   rating: number;
   participantCount: number;
   courses: Course[];

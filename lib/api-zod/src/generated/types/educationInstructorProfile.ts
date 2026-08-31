@@ -19,6 +19,7 @@ export interface EducationInstructorProfile {
   experienceYears: number;
   specializations: string[];
   qualifications: string[];
+  portfolioMedia: string[];
   createdAt: Date;
   updatedAt: Date;
 }

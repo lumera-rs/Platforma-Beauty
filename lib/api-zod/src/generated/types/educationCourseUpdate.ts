@@ -29,6 +29,12 @@ export interface EducationCourseUpdate {
   price?: number;
   /** @minLength 1 */
   duration?: string;
+  /**
+     * @minimum 1
+     * @maximum 5256000
+     * @nullable
+     */
+  durationMinutes?: number | null;
   level?: EducationCourseUpdateLevel;
   /**
      * @maxItems 20
@@ -97,6 +103,7 @@ export interface EducationCourseUpdate {
      * @maxLength 2000
      */
   refundPolicy?: string;
+  giftVoucherEligible?: boolean;
   /**
      * @minimum 2
      * @maximum 999

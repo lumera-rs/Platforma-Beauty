@@ -425,3 +425,76 @@ test('legacy Beauty Poslovi public URLs permanently redirect to canonical routes
     global.fetch = originalFetch;
   }
 });
+test('Education taxonomy pages render canonical metadata, breadcrumbs, and are in sitemap', async () => {
+  const originalFetch = global.fetch;
+  const taxonomy = [{
+    id: "s1", name: "Frizerske obuke", slug: "frizerske-obuke",
+    categories: [{
+      id: "c1", name: "Ženske frizure", slug: "zenske-frizure",
+      subcategories: [{ id: "sc1", name: "Balayage", slug: "balayage" }]
+    }]
+  }];
+  const courses = [{ id: "course1", title: "Master Balayage", publisher: "Studio" }];
+  const courseFilters = [];
+
+  global.fetch = async (input) => {
+    const url = new URL(input);
+    if (url.pathname === '/api/education/public/taxonomy') {
+      return new Response(JSON.stringify(taxonomy), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (url.pathname === '/api/education/public/courses') {
+      courseFilters.push({
+        sectionId: url.searchParams.get('sectionId'),
+        categoryId: url.searchParams.get('categoryId'),
+        subcategoryId: url.searchParams.get('subcategoryId'),
+      });
+      return new Response(JSON.stringify(courses), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (url.pathname === '/api/salons' || url.pathname === '/api/suppliers' || url.pathname === '/api/beauty-jobs') {
+      return new Response(JSON.stringify([]), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+
+  try {
+    const sitemap = await createSeoResponse(request('/sitemap.xml'), template);
+    assert.equal(sitemap.status, 200);
+    assert.match(sitemap.body, /https:\/\/lumera\.example\/edukacije\/sekcije\/frizerske-obuke/);
+    assert.match(sitemap.body, /https:\/\/lumera\.example\/edukacije\/sekcije\/frizerske-obuke\/zenske-frizure/);
+    assert.match(sitemap.body, /https:\/\/lumera\.example\/edukacije\/sekcije\/frizerske-obuke\/zenske-frizure\/balayage/);
+
+    courseFilters.length = 0;
+    const sectionResp = await createSeoResponse(request('/edukacije/sekcije/frizerske-obuke'), template);
+    assert.equal(sectionResp.status, 200);
+    assert.match(sectionResp.body, /<title>Frizerske obuke \| Edukacije \| LUMERA<\/title>/);
+    assert.match(sectionResp.body, /rel="canonical" href="https:\/\/lumera\.example\/edukacije\/sekcije\/frizerske-obuke"/);
+    assert.match(sectionResp.body, /Master Balayage/);
+    assert.match(sectionResp.body, /href="\/edukacije\/course1"/);
+    assert.deepEqual(courseFilters, [{ sectionId: 's1', categoryId: null, subcategoryId: null }]);
+
+    courseFilters.length = 0;
+    const categoryResp = await createSeoResponse(request('/edukacije/sekcije/frizerske-obuke/zenske-frizure'), template);
+    assert.equal(categoryResp.status, 200);
+    assert.match(categoryResp.body, /<title>Ženske frizure \| Edukacije \| LUMERA<\/title>/);
+    assert.match(categoryResp.body, /rel="canonical" href="https:\/\/lumera\.example\/edukacije\/sekcije\/frizerske-obuke\/zenske-frizure"/);
+    assert.match(categoryResp.body, /Master Balayage/);
+    assert.match(categoryResp.body, /href="\/edukacije\/course1"/);
+    assert.deepEqual(courseFilters, [{ sectionId: null, categoryId: 'c1', subcategoryId: null }]);
+
+    courseFilters.length = 0;
+    const subcategoryResp = await createSeoResponse(request('/edukacije/sekcije/frizerske-obuke/zenske-frizure/balayage'), template);
+    assert.equal(subcategoryResp.status, 200);
+    assert.match(subcategoryResp.body, /<title>Balayage \| Edukacije \| LUMERA<\/title>/);
+    assert.match(subcategoryResp.body, /rel="canonical" href="https:\/\/lumera\.example\/edukacije\/sekcije\/frizerske-obuke\/zenske-frizure\/balayage"/);
+    assert.match(subcategoryResp.body, /Master Balayage/);
+    assert.match(subcategoryResp.body, /href="\/edukacije\/course1"/);
+    assert.deepEqual(courseFilters, [{ sectionId: null, categoryId: null, subcategoryId: 'sc1' }]);
+
+    const invalidCategory = await createSeoResponse(request('/edukacije/sekcije/frizerske-obuke/nepostojeca-kategorija'), template);
+    const invalidSubcategory = await createSeoResponse(request('/edukacije/sekcije/frizerske-obuke/zenske-frizure/nepostojeca-potkategorija'), template);
+    assert.equal(invalidCategory.status, 404);
+    assert.equal(invalidSubcategory.status, 404);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});

@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { type AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   courseEnrollmentsTable,
   courseSessionsTable,
@@ -25,6 +25,7 @@ import {
   educationCenterSubscriptionsTable,
   educationEscrowsTable,
   educationFinancialEventsTable,
+  educationGiftVouchersTable,
   educationLedgerEntriesTable,
   educationNotificationsTable,
   educationPlatformSettingsTable,
@@ -62,6 +63,18 @@ async function json<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+function normalizedPersistedValue(value: unknown): unknown {
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "bigint") return value.toString();
+  if (Array.isArray(value)) return value.map(normalizedPersistedValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, nested]) => [key, normalizedPersistedValue(nested)]));
+  }
+  return value;
+}
+
 async function login(baseUrl: string, email: string): Promise<string> {
   const response = await request(baseUrl, "/auth/login", {
     method: "POST",
@@ -80,6 +93,7 @@ async function run(): Promise<void> {
   const createdUserIds: string[] = [];
   const courseIds: string[] = [];
   const enrollmentIds: string[] = [];
+  const giftVoucherIds: string[] = [];
   let centerId: string | undefined;
 
   try {
@@ -526,6 +540,209 @@ async function run(): Promise<void> {
     assert.ok(Array.isArray(inbox.offers), "Inbox must expose an offers array.");
     assert.ok(inbox.offers.some((o) => o.id === rePromoted!.id), "The active offer must appear in the learner's inbox.");
 
+    // ── 7e. Gift refund payout boundary + one-transaction seat lifecycle ─────
+    async function redeemedGiftFixture(format: "online" | "in-person", withWaiter = false) {
+      const [giftCourse] = await db.insert(coursesTable).values({
+        centerId: center!.id, title: `Gift refund ${format} ${randomUUID()}`,
+        description: "Izolovani refund fixture.", category: "Stilizovanje", format,
+        city: format === "online" ? null : "Beograd", price: 5000, duration: "1 dan",
+        imageUrl: "/gift-refund.jpg", published: true, giftVoucherEligible: true,
+      }).returning();
+      courseIds.push(giftCourse!.id);
+      let giftSession: typeof courseSessionsTable.$inferSelect | undefined;
+      if (format === "in-person") {
+        [giftSession] = await db.insert(courseSessionsTable).values({
+          courseId: giftCourse!.id, startsAt: new Date(Date.now() + 40 * 86400_000),
+          endsAt: new Date(Date.now() + 40 * 86400_000 + 3600_000), capacity: 1, reservedSeats: 0,
+        }).returning();
+      }
+      const purchase = await request(baseUrl, "/education/gift-vouchers", {
+        method: "POST", cookie: buyerCookie, headers: { "idempotency-key": randomUUID() },
+        body: { courseId: giftCourse!.id, recipientUserId: buyer.id },
+      });
+      assert.equal(purchase.status, 201);
+      const purchased = await json<{ id: string; redemptionCode: string }>(purchase);
+      giftVoucherIds.push(purchased.id);
+      assert.equal((await request(baseUrl, `/admin/education/gift-vouchers/${purchased.id}/settle`, {
+        method: "POST", cookie: adminCookie, body: {},
+      })).status, 200);
+      const redeemed = await request(baseUrl, "/education/gift-vouchers/redeem", {
+        method: "POST", cookie: buyerCookie, body: { code: purchased.redemptionCode },
+      });
+      assert.equal(redeemed.status, 201);
+      const enrollment = await json<{ id: string }>(redeemed);
+      enrollmentIds.push(enrollment.id);
+      let waiting: typeof educationWaitlistTable.$inferSelect | undefined;
+      if (giftSession && withWaiter) {
+        [waiting] = await db.insert(educationWaitlistTable).values({
+          sessionId: giftSession.id, courseId: giftCourse!.id, userId: waiter.id,
+          purchaserId: waiter.id, position: 1, status: "waiting",
+        }).returning();
+      }
+      const [escrow] = await db.select().from(educationEscrowsTable)
+        .where(eq(educationEscrowsTable.enrollmentId, enrollment.id)).limit(1);
+      return { voucherId: purchased.id, enrollmentId: enrollment.id, escrow: escrow!, session: giftSession, waiting };
+    }
+
+    async function refundState(fixture: Awaited<ReturnType<typeof redeemedGiftFixture>>) {
+      const [voucher] = await db.select().from(educationGiftVouchersTable).where(eq(educationGiftVouchersTable.id, fixture.voucherId));
+      const [enrollment] = await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, fixture.enrollmentId));
+      const [escrow] = await db.select().from(educationEscrowsTable).where(eq(educationEscrowsTable.id, fixture.escrow.id));
+      const ledger = await db.select().from(educationLedgerEntriesTable)
+        .where(eq(educationLedgerEntriesTable.enrollmentId, fixture.enrollmentId));
+      const financialEvents = await db.select().from(educationFinancialEventsTable)
+        .where(eq(educationFinancialEventsTable.enrollmentId, fixture.enrollmentId));
+      const sessionRow = fixture.session
+        ? (await db.select().from(courseSessionsTable).where(eq(courseSessionsTable.id, fixture.session.id)))[0] : null;
+      const waitlist = fixture.session
+        ? await db.select().from(educationWaitlistTable).where(eq(educationWaitlistTable.sessionId, fixture.session.id)) : [];
+      return normalizedPersistedValue({
+        voucher,
+        enrollment,
+        escrow,
+        ledgerRows: ledger.sort((a, b) => a.id.localeCompare(b.id)),
+        financialEventRows: financialEvents.sort((a, b) => a.id.localeCompare(b.id)),
+        session: sessionRow,
+        waitlistRows: waitlist.sort((a, b) => a.id.localeCompare(b.id)),
+      }) as {
+        voucher: typeof voucher; enrollment: typeof enrollment; escrow: typeof escrow;
+        ledgerRows: Array<typeof educationLedgerEntriesTable.$inferSelect>;
+        financialEventRows: Array<typeof educationFinancialEventsTable.$inferSelect>;
+        session: typeof sessionRow;
+        waitlistRows: Array<typeof educationWaitlistTable.$inferSelect>;
+      };
+    }
+
+    for (const payoutCase of ["paid_out", "netPaidAt", "reservePaidAt"] as const) {
+      const fixture = await redeemedGiftFixture("in-person", true);
+      await db.update(educationEscrowsTable).set(
+        payoutCase === "paid_out" ? { status: "paid_out" }
+          : payoutCase === "netPaidAt" ? { netPaidAt: new Date() } : { reservePaidAt: new Date() },
+      ).where(eq(educationEscrowsTable.id, fixture.escrow.id));
+      const before = await refundState(fixture);
+      const response = await request(baseUrl, `/admin/education/gift-vouchers/${fixture.voucherId}/refund`, {
+        method: "POST", cookie: adminCookie, body: { note: `blocked ${payoutCase}` },
+      });
+      assert.equal(response.status, 409, `${payoutCase} must require post-payout reconciliation.`);
+      assert.deepEqual(await refundState(fixture), before, `${payoutCase} rejection must be mutation-free.`);
+    }
+
+    const successful = await redeemedGiftFixture("in-person", true);
+    const successBefore = await refundState(successful);
+    const successResponse = await request(baseUrl, `/admin/education/gift-vouchers/${successful.voucherId}/refund`, {
+      method: "POST", cookie: adminCookie, body: { note: "Atomic successful refund" },
+    });
+    assert.equal(successResponse.status, 200);
+    const successState = await refundState(successful);
+    assert.equal(successState.voucher.status, "refunded");
+    assert.equal(successState.voucher.refundNote, "Atomic successful refund");
+    assert.ok(successState.voucher.refundedAt);
+    assert.equal(successState.voucher.refundedByUserId, adminUser.id);
+    assert.equal(successState.voucher.disputeId, null);
+    assert.equal(successState.enrollment.status, "cancelled");
+    assert.equal(successState.enrollment.paymentStatus, "refunded");
+    assert.equal(successState.escrow.status, "refunded");
+    const originalSuccessLedger = successBefore.ledgerRows.filter((row) => row.type !== "refund");
+    const retainedSuccessLedger = successState.ledgerRows.filter((row) => row.type !== "refund");
+    assert.deepEqual(retainedSuccessLedger, originalSuccessLedger,
+      "Refund must preserve every complete original ledger row unchanged.");
+    assert.deepEqual(
+      originalSuccessLedger.map((row) => row.type).sort(),
+      ["charge", "platform_fee", "reserve_hold"],
+      "Fixture must prove all three original voucher accounting rows are preserved.",
+    );
+    const successRefundLedger = successState.ledgerRows.filter((row) => row.type === "refund");
+    assert.equal(successRefundLedger.length, 1);
+    assert.equal(successRefundLedger[0]!.amount, -successful.escrow.grossAmount);
+    assert.equal(successRefundLedger[0]!.idempotencyKey, `gift:${successful.voucherId}:refund`);
+    assert.equal(successState.ledgerRows.length, successBefore.ledgerRows.length + 1,
+      "Successful refund adds exactly one ledger row and no others.");
+    const successRefundEvents = successState.financialEventRows
+      .filter((row) => row.eventType === "enrollment_cancelled_refund");
+    assert.equal(successRefundEvents.length, 1);
+    assert.equal(successRefundEvents[0]!.previousStatus, "held");
+    assert.equal(successRefundEvents[0]!.nextStatus, "refunded");
+    assert.equal(successState.session?.reservedSeats, 1, "Promoted offer re-holds the released seat.");
+    assert.equal(successState.waitlistRows.find((row) => row.id === successful.waiting!.id)?.status, "offered");
+    const repeatedSuccess = await request(baseUrl, `/admin/education/gift-vouchers/${successful.voucherId}/refund`, {
+      method: "POST", cookie: adminCookie, body: { note: "must not duplicate" },
+    });
+    assert.equal(repeatedSuccess.status, 409);
+    assert.deepEqual(await refundState(successful), successState,
+      "Repeated terminal refund cannot duplicate or mutate any persisted effect.");
+
+    const rollback = await redeemedGiftFixture("in-person", true);
+    const rollbackBefore = await refundState(rollback);
+    await db.execute(sql`CREATE OR REPLACE FUNCTION education_test_reject_gift_refund() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN IF NEW.status = 'refunded' THEN RAISE EXCEPTION 'injected late voucher failure'; END IF; RETURN NEW; END $$`);
+    await db.execute(sql.raw(`CREATE TRIGGER gift_refund_failure BEFORE UPDATE ON education_gift_vouchers
+      FOR EACH ROW EXECUTE FUNCTION education_test_reject_gift_refund()`));
+    const failed = await request(baseUrl, `/admin/education/gift-vouchers/${rollback.voucherId}/refund`, {
+      method: "POST", cookie: adminCookie, body: { note: "must roll back" },
+    });
+    assert.equal(failed.status, 409);
+    assert.deepEqual(await refundState(rollback), rollbackBefore, "Late failure must roll back finance, seat and waitlist.");
+    await db.execute(sql.raw("DROP TRIGGER gift_refund_failure ON education_gift_vouchers"));
+    await db.execute(sql.raw("DROP FUNCTION education_test_reject_gift_refund()"));
+    const retry = await request(baseUrl, `/admin/education/gift-vouchers/${rollback.voucherId}/refund`, {
+      method: "POST", cookie: adminCookie, body: { note: "retry succeeds" },
+    });
+    assert.equal(retry.status, 200);
+    const retryState = await refundState(rollback);
+    assert.equal(retryState.voucher.status, "refunded");
+    assert.equal(retryState.enrollment.status, "cancelled");
+    assert.equal(retryState.enrollment.paymentStatus, "refunded");
+    assert.equal(retryState.escrow.status, "refunded");
+    assert.deepEqual(
+      retryState.ledgerRows.filter((row) => row.type !== "refund"),
+      rollbackBefore.ledgerRows.filter((row) => row.type !== "refund"),
+      "Retry must preserve complete original voucher ledger rows unchanged.",
+    );
+    assert.equal(retryState.ledgerRows.filter((row) => row.type === "refund").length, 1);
+    assert.equal(retryState.ledgerRows.length, rollbackBefore.ledgerRows.length + 1);
+    assert.equal(retryState.financialEventRows
+      .filter((row) => row.eventType === "enrollment_cancelled_refund").length, 1);
+    assert.equal(retryState.waitlistRows.filter((row) => row.status === "offered").length, 1);
+    assert.equal(retryState.session?.reservedSeats, 1);
+    const retryTerminalSnapshot = await refundState(rollback);
+    assert.equal((await request(baseUrl, `/admin/education/gift-vouchers/${rollback.voucherId}/refund`, {
+      method: "POST", cookie: adminCookie, body: { note: "second retry blocked" },
+    })).status, 409);
+    assert.deepEqual(await refundState(rollback), retryTerminalSnapshot);
+
+    const online = await redeemedGiftFixture("online");
+    assert.equal((await request(baseUrl, `/admin/education/gift-vouchers/${online.voucherId}/refund`, {
+      method: "POST", cookie: adminCookie, body: { note: "online refund" },
+    })).status, 200);
+    const onlineState = await refundState(online);
+    assert.equal(onlineState.session, null);
+    assert.equal(onlineState.waitlistRows.length, 0);
+    assert.equal(onlineState.ledgerRows.filter((row) => row.type === "refund").length, 1);
+    assert.equal(onlineState.financialEventRows
+      .filter((row) => row.eventType === "enrollment_cancelled_refund").length, 1);
+
+    // Admin voucher operations are global (not purchaser/recipient scoped), but
+    // the list remains code-safe and paginated for settlement/refund screens.
+    const forbiddenVoucherList = await request(baseUrl, "/admin/education/gift-vouchers", {
+      cookie: buyerCookie,
+    });
+    assert.equal(forbiddenVoucherList.status, 403);
+    const adminVoucherList = await request(baseUrl, "/admin/education/gift-vouchers?status=refunded&page=1&pageSize=1", {
+      cookie: adminCookie,
+    });
+    assert.equal(adminVoucherList.status, 200);
+    const adminVoucherPage = await json<{ items: Array<Record<string, unknown>>; page: number; pageSize: number; total: number }>(adminVoucherList);
+    assert.equal(adminVoucherPage.page, 1);
+    assert.equal(adminVoucherPage.pageSize, 1);
+    assert.ok(adminVoucherPage.total >= 3, "Unrelated admin sees all customer refunded vouchers.");
+    assert.equal(adminVoucherPage.items.length, 1);
+    assert.ok(typeof adminVoucherPage.items[0]!.maskedCode === "string");
+    const adminVoucherSerialized = JSON.stringify(adminVoucherPage);
+    assert.ok(!adminVoucherSerialized.includes("codeHash"));
+    assert.ok(!adminVoucherSerialized.includes("redemptionCode"));
+    assert.ok(!adminVoucherSerialized.includes("idempotencyKey"));
+    console.log("✓ 6 voucher refund integration cases passed.");
+
     // ── 8. Non-admin cannot call the process endpoint ────────────────────────
     const buyerProcessResponse = await request(baseUrl, "/admin/education/sessions/process", {
       method: "POST",
@@ -540,7 +757,12 @@ async function run(): Promise<void> {
         server!.close((err) => (err ? reject(err) : resolve())),
       );
     }
+    if (giftVoucherIds.length) {
+      await db.delete(educationGiftVouchersTable).where(inArray(educationGiftVouchersTable.id, giftVoucherIds));
+    }
     if (enrollmentIds.length) {
+      await db.delete(educationFinancialEventsTable)
+        .where(inArray(educationFinancialEventsTable.enrollmentId, enrollmentIds));
       await db.delete(courseEnrollmentsTable).where(inArray(courseEnrollmentsTable.id, enrollmentIds));
     }
     if (courseIds.length) {

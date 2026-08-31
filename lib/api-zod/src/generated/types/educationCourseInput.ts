@@ -29,6 +29,12 @@ export interface EducationCourseInput {
   price: number;
   /** @minLength 1 */
   duration: string;
+  /**
+     * @minimum 1
+     * @maximum 5256000
+     * @nullable
+     */
+  durationMinutes?: number | null;
   level?: EducationCourseInputLevel;
   /**
      * @maxItems 20
@@ -96,6 +102,7 @@ export interface EducationCourseInput {
      * @maxLength 2000
      */
   refundPolicy?: string;
+  giftVoucherEligible?: boolean;
   /**
      * @minimum 2
      * @maximum 999

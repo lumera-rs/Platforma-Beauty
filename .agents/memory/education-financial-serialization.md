@@ -1,6 +1,6 @@
 ---
 name: Education financial serialization
-description: Rules for keeping education escrow payouts and disputes mutually consistent under concurrent requests.
+description: Rules for keeping education escrow, payouts, disputes, voucher refunds, and capacity mutually consistent.
 ---
 
 All financial mutations for one education center must acquire the same transaction-scoped advisory lock before reading or updating escrow records. Lock the affected escrow row too, and condition every status update on its prior state and unpaid fields.
@@ -56,3 +56,9 @@ Per-center billing overrides and global billing defaults must share a second adv
 **Why:** A globally valid commission/reserve pair can still make a center invalid when combined with one nullable override, and resolving settings outside the financial write transaction can snapshot stale fees or deadlines.
 
 **How to apply:** Use the shared billing resolver and global-shared → center lock order for settlement, featured charges, demo seed escrows, and any future financial snapshot. Global updates must reject if any center would resolve above 100%; explicit zero remains custom, while only null inherits.
+
+Redeemed voucher refunds must stay inside the pre-payout escrow boundary and atomically couple finance with enrollment capacity.
+
+**Why:** Refunding after payout creates an unreconciled double loss, while committing voucher/escrow changes before seat release can strand capacity and waitlisted learners if the second step fails.
+
+**How to apply:** Reject any refund when payout timestamps are set or escrow is outside a pre-payout state. In one transaction, lock the center, voucher, enrollment, escrow, and session; write the refund ledger/event, cancel access, release or re-hold the seat, offer the waiter, and finalize the voucher. Regression tests should compare complete persisted state on rejection and injected rollback.

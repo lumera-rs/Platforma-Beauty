@@ -22,6 +22,11 @@ export interface EducationInstructorInput {
   experienceYears?: number;
   specializations?: string[];
   qualifications?: string[];
+  /**
+     * @maxItems 12
+     * @items.pattern ^https://
+     */
+  portfolioMedia?: string[];
   /** @nullable */
   userId?: string | null;
 }

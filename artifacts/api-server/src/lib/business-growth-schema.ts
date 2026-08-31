@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 86;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 89;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -137,10 +137,12 @@ const ENUM_LABELS: Record<string, string[]> = {
   aftercare_delivery_status: ["QUEUED", "PROCESSING", "SENT", "FAILED", "SKIPPED"],
   salon_resource_type: ["chair", "booth", "bed", "room", "equipment", "other"],
   education_course_type_status: ["approved", "pending", "rejected"],
+  education_review_status: ["pending", "published", "rejected"],
   education_payment_mode: ["online_full", "live_deposit", "live_off_platform"],
   education_placement_kind: ["featured_center", "special_offer"],
   education_placement_scope: ["home", "category", "subcategory"],
   education_placement_status: ["pending_payment", "active", "expired", "cancelled", "rejected"],
+  education_gift_voucher_status: ["pending_payment", "active", "redeemed", "refunded", "cancelled"],
 };
 
 /**
@@ -3951,6 +3953,122 @@ function tableStatements(s: string): string[] {
          END IF;
        END IF;
      END $$`,
+    // v87 — remaining Education marketplace: explicit duration, canonical
+    // center reviews, private wishlists and manual-payment gift vouchers.
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS duration_minutes integer`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS gift_voucher_eligible boolean NOT NULL DEFAULT false`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='${s}.courses'::regclass AND conname='courses_duration_minutes_check') THEN
+         ALTER TABLE ${s}.courses ADD CONSTRAINT courses_duration_minutes_check
+           CHECK (duration_minutes IS NULL OR duration_minutes > 0) NOT VALID;
+       END IF;
+       IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='courses' AND column_name='refund_policy')
+          AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='${s}.courses'::regclass AND conname='courses_published_live_deposit_refund_policy_check') THEN
+         ALTER TABLE ${s}.courses ADD CONSTRAINT courses_published_live_deposit_refund_policy_check
+           CHECK (NOT (published AND payment_mode='live_deposit') OR length(btrim(refund_policy)) > 0) NOT VALID;
+       END IF;
+     END $$`,
+    `ALTER TABLE ${s}.courses VALIDATE CONSTRAINT courses_duration_minutes_check`,
+    `DO $$ BEGIN
+       IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='${s}.courses'::regclass AND conname='courses_published_live_deposit_refund_policy_check') THEN
+         ALTER TABLE ${s}.courses VALIDATE CONSTRAINT courses_published_live_deposit_refund_policy_check;
+       END IF;
+     END $$`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_center_reviews (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE CASCADE,
+       enrollment_id uuid NOT NULL UNIQUE REFERENCES ${s}.course_enrollments(id) ON DELETE CASCADE,
+       user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE,
+       rating integer NOT NULL CHECK (rating BETWEEN 1 AND 5), comment text NOT NULL DEFAULT '',
+       status ${s}.education_review_status NOT NULL DEFAULT 'pending',
+       created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+     )`,
+    `CREATE INDEX IF NOT EXISTS education_center_reviews_center_status_created_idx
+       ON ${s}.education_center_reviews (center_id, status, created_at)`,
+    `CREATE INDEX IF NOT EXISTS education_center_reviews_user_idx ON ${s}.education_center_reviews (user_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_wishlists (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE,
+       course_id uuid NOT NULL REFERENCES ${s}.courses(id) ON DELETE CASCADE,
+       created_at timestamptz NOT NULL DEFAULT now(), UNIQUE (user_id, course_id)
+     )`,
+    `CREATE INDEX IF NOT EXISTS education_wishlists_user_created_idx ON ${s}.education_wishlists (user_id, created_at, id)`,
+    `CREATE INDEX IF NOT EXISTS education_wishlists_course_idx ON ${s}.education_wishlists (course_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_gift_vouchers (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       course_id uuid NOT NULL REFERENCES ${s}.courses(id) ON DELETE RESTRICT,
+       center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE RESTRICT,
+       purchaser_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE RESTRICT,
+       recipient_user_id uuid REFERENCES ${s}.users(id) ON DELETE RESTRICT, recipient_email text,
+       course_title_snapshot text NOT NULL, course_image_url_snapshot text NOT NULL,
+       amount_snapshot integer NOT NULL CHECK (amount_snapshot >= 0), currency_snapshot text NOT NULL DEFAULT 'RSD',
+       code_hash text NOT NULL UNIQUE, code_last4 text NOT NULL,
+       status ${s}.education_gift_voucher_status NOT NULL DEFAULT 'pending_payment',
+       payment_reference text NOT NULL UNIQUE, idempotency_key text,
+       settled_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL, settled_at timestamptz,
+       redeemed_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+       redeemed_enrollment_id uuid UNIQUE REFERENCES ${s}.course_enrollments(id) ON DELETE RESTRICT, redeemed_at timestamptz,
+       refunded_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL, refunded_at timestamptz,
+       refund_note text, dispute_id uuid,
+       created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+       CONSTRAINT education_gift_vouchers_recipient_check CHECK (num_nonnulls(recipient_user_id, recipient_email) >= 1)
+     )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS education_gift_vouchers_purchaser_idempotency_unique
+       ON ${s}.education_gift_vouchers (purchaser_id, idempotency_key) WHERE idempotency_key IS NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS education_gift_vouchers_purchaser_created_idx ON ${s}.education_gift_vouchers (purchaser_id, created_at, id)`,
+    `CREATE INDEX IF NOT EXISTS education_gift_vouchers_recipient_created_idx ON ${s}.education_gift_vouchers (recipient_user_id, created_at, id)`,
+    `CREATE INDEX IF NOT EXISTS education_gift_vouchers_center_status_idx ON ${s}.education_gift_vouchers (center_id, status, created_at)`,
+    `DO $$ BEGIN
+       IF to_regclass('${s}.education_disputes') IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='${s}.education_gift_vouchers'::regclass AND conname='education_gift_vouchers_dispute_id_fkey') THEN
+         ALTER TABLE ${s}.education_gift_vouchers ADD CONSTRAINT education_gift_vouchers_dispute_id_fkey
+           FOREIGN KEY (dispute_id) REFERENCES ${s}.education_disputes(id) ON DELETE SET NULL;
+       END IF;
+     END $$`,
+    `CREATE OR REPLACE FUNCTION ${s}.prevent_education_gift_voucher_snapshot_update()
+       RETURNS trigger LANGUAGE plpgsql AS $$
+       BEGIN
+         IF NEW.course_id IS DISTINCT FROM OLD.course_id OR NEW.center_id IS DISTINCT FROM OLD.center_id
+           OR NEW.purchaser_id IS DISTINCT FROM OLD.purchaser_id OR NEW.recipient_user_id IS DISTINCT FROM OLD.recipient_user_id
+           OR NEW.recipient_email IS DISTINCT FROM OLD.recipient_email
+           OR NEW.course_title_snapshot IS DISTINCT FROM OLD.course_title_snapshot
+           OR NEW.course_image_url_snapshot IS DISTINCT FROM OLD.course_image_url_snapshot
+           OR NEW.amount_snapshot IS DISTINCT FROM OLD.amount_snapshot OR NEW.currency_snapshot IS DISTINCT FROM OLD.currency_snapshot
+           OR NEW.code_hash IS DISTINCT FROM OLD.code_hash OR NEW.code_last4 IS DISTINCT FROM OLD.code_last4
+           OR NEW.payment_reference IS DISTINCT FROM OLD.payment_reference THEN
+           RAISE EXCEPTION 'Education gift voucher purchase snapshot is immutable';
+         END IF;
+         RETURN NEW;
+       END $$`,
+    `DROP TRIGGER IF EXISTS education_gift_vouchers_snapshot_immutable ON ${s}.education_gift_vouchers`,
+    `CREATE TRIGGER education_gift_vouchers_snapshot_immutable BEFORE UPDATE ON ${s}.education_gift_vouchers
+       FOR EACH ROW EXECUTE FUNCTION ${s}.prevent_education_gift_voucher_snapshot_update()`,
+    // v88 — instructor portfolios and immutable optional gift presentation.
+    // education_instructors is owned by the canonical Drizzle schema rather
+    // than this additive bootstrap, so old/disposable upgrade fixtures may not
+    // contain it. ALTER when present; canonical schema creation already
+    // includes the column for new installations.
+    `ALTER TABLE IF EXISTS ${s}.education_instructors ADD COLUMN IF NOT EXISTS portfolio_media jsonb NOT NULL DEFAULT '[]'::jsonb`,
+    `ALTER TABLE ${s}.education_gift_vouchers ADD COLUMN IF NOT EXISTS recipient_name_snapshot text`,
+    `ALTER TABLE ${s}.education_gift_vouchers ADD COLUMN IF NOT EXISTS gift_message_snapshot text`,
+    `ALTER TABLE ${s}.education_center_reviews ADD COLUMN IF NOT EXISTS admin_note text`,
+    `ALTER TABLE ${s}.education_center_reviews ADD COLUMN IF NOT EXISTS moderated_at timestamptz`,
+    `CREATE OR REPLACE FUNCTION ${s}.prevent_education_gift_voucher_snapshot_update()
+       RETURNS trigger LANGUAGE plpgsql AS $$
+       BEGIN
+         IF NEW.course_id IS DISTINCT FROM OLD.course_id OR NEW.center_id IS DISTINCT FROM OLD.center_id
+           OR NEW.purchaser_id IS DISTINCT FROM OLD.purchaser_id OR NEW.recipient_user_id IS DISTINCT FROM OLD.recipient_user_id
+           OR NEW.recipient_email IS DISTINCT FROM OLD.recipient_email OR NEW.recipient_name_snapshot IS DISTINCT FROM OLD.recipient_name_snapshot
+           OR NEW.gift_message_snapshot IS DISTINCT FROM OLD.gift_message_snapshot
+           OR NEW.course_title_snapshot IS DISTINCT FROM OLD.course_title_snapshot
+           OR NEW.course_image_url_snapshot IS DISTINCT FROM OLD.course_image_url_snapshot
+           OR NEW.amount_snapshot IS DISTINCT FROM OLD.amount_snapshot OR NEW.currency_snapshot IS DISTINCT FROM OLD.currency_snapshot
+           OR NEW.code_hash IS DISTINCT FROM OLD.code_hash OR NEW.code_last4 IS DISTINCT FROM OLD.code_last4
+           OR NEW.payment_reference IS DISTINCT FROM OLD.payment_reference THEN
+           RAISE EXCEPTION 'Education gift voucher purchase snapshot is immutable';
+         END IF;
+         RETURN NEW;
+       END $$`,
     `DO $$ BEGIN
        IF to_regclass('${s}.education_center_subscriptions') IS NOT NULL THEN
          CREATE UNIQUE INDEX IF NOT EXISTS education_center_subscriptions_payment_reference_unique
@@ -3999,7 +4117,35 @@ export async function runBusinessGrowthSchemaDdl(
       const state = await client.query<{ version: number }>(
         `SELECT version FROM ${quoted}.business_growth_schema_rollout WHERE singleton = true`,
       );
-      if ((state.rows[0]?.version ?? 0) >= BUSINESS_GROWTH_SCHEMA_VERSION) return;
+      if ((state.rows[0]?.version ?? 0) >= BUSINESS_GROWTH_SCHEMA_VERSION) {
+        // Keep additive contract repairs replayable even for installations that
+        // recorded the current version before an interrupted/manual rollout.
+        await client.query(`ALTER TABLE IF EXISTS ${quoted}.education_instructors ADD COLUMN IF NOT EXISTS portfolio_media jsonb NOT NULL DEFAULT '[]'::jsonb`);
+        await client.query(`ALTER TABLE IF EXISTS ${quoted}.education_center_reviews ADD COLUMN IF NOT EXISTS admin_note text`);
+        await client.query(`ALTER TABLE IF EXISTS ${quoted}.education_center_reviews ADD COLUMN IF NOT EXISTS moderated_at timestamptz`);
+        await client.query(`ALTER TABLE IF EXISTS ${quoted}.education_gift_vouchers ADD COLUMN IF NOT EXISTS recipient_name_snapshot text`);
+        await client.query(`ALTER TABLE IF EXISTS ${quoted}.education_gift_vouchers ADD COLUMN IF NOT EXISTS gift_message_snapshot text`);
+        await client.query(`CREATE OR REPLACE FUNCTION ${quoted}.prevent_education_gift_voucher_snapshot_update()
+          RETURNS trigger LANGUAGE plpgsql AS $$
+          BEGIN
+            IF NEW.course_id IS DISTINCT FROM OLD.course_id OR NEW.center_id IS DISTINCT FROM OLD.center_id
+              OR NEW.purchaser_id IS DISTINCT FROM OLD.purchaser_id OR NEW.recipient_user_id IS DISTINCT FROM OLD.recipient_user_id
+              OR NEW.recipient_email IS DISTINCT FROM OLD.recipient_email OR NEW.recipient_name_snapshot IS DISTINCT FROM OLD.recipient_name_snapshot
+              OR NEW.gift_message_snapshot IS DISTINCT FROM OLD.gift_message_snapshot
+              OR NEW.course_title_snapshot IS DISTINCT FROM OLD.course_title_snapshot
+              OR NEW.course_image_url_snapshot IS DISTINCT FROM OLD.course_image_url_snapshot
+              OR NEW.amount_snapshot IS DISTINCT FROM OLD.amount_snapshot OR NEW.currency_snapshot IS DISTINCT FROM OLD.currency_snapshot
+              OR NEW.code_hash IS DISTINCT FROM OLD.code_hash OR NEW.code_last4 IS DISTINCT FROM OLD.code_last4
+              OR NEW.payment_reference IS DISTINCT FROM OLD.payment_reference THEN
+              RAISE EXCEPTION 'Education gift voucher purchase snapshot is immutable';
+            END IF;
+            RETURN NEW;
+          END $$`);
+        await client.query(`DROP TRIGGER IF EXISTS education_gift_vouchers_snapshot_immutable ON ${quoted}.education_gift_vouchers`);
+        await client.query(`CREATE TRIGGER education_gift_vouchers_snapshot_immutable BEFORE UPDATE ON ${quoted}.education_gift_vouchers
+          FOR EACH ROW EXECUTE FUNCTION ${quoted}.prevent_education_gift_voucher_snapshot_update()`);
+        return;
+      }
     }
     const statements: string[] = [];
     for (const [typeName, labels] of Object.entries(ENUM_LABELS)) {
