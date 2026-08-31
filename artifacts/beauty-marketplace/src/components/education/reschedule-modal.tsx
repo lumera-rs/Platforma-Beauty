@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { educationBelgradeDateKey } from "@/lib/education-operational-time";
-import { useGetEducationCourseAvailability, useRescheduleEducationOperationalBooking } from "@workspace/api-client-react";
+import { getApiErrorDetails, useGetEducationCourseAvailability, useRescheduleEducationOperationalBooking } from "@workspace/api-client-react";
 
 export function RescheduleModal({ booking, onClose, onSuccess }: { booking: any, onClose: () => void, onSuccess: () => void }) {
   const { data: availability, isLoading: isAvailLoading, isError: isAvailError, refetch: refetchAvailability } = useGetEducationCourseAvailability(booking.courseId, {}, {
@@ -62,13 +62,14 @@ export function RescheduleModal({ booking, onClose, onSuccess }: { booking: any,
         toast.success("Termin je uspešno promenjen");
         onSuccess();
       },
-      onError: (err: any) => {
-        if (err?.status === 409 || err?.response?.status === 409) {
+      onError: (error: unknown) => {
+        const { status, message } = getApiErrorDetails(error);
+        if (status === 409) {
           toast.error("Konflikt", { description: "Kapacitet za novi termin je popunjen." });
           setSelectedCandidate(null);
           void refetchAvailability();
         } else {
-          toast.error("Greška", { description: err.message });
+          toast.error("Greška", { description: message });
         }
       }
     });

@@ -18,7 +18,7 @@ test("featured salons use the shared owner-paid placement contract", () => {
   assert.match(marketplace, /educationPlacementsTable\.endsAt/);
   assert.match(marketplace, /priceSnapshot:\s*setting\.price/);
   assert.match(marketplace, /durationDaysSnapshot:\s*setting\.durationDays/);
-  assert.match(marketplace, /if \(row\.status === "active"\) return \{ placement: row, activated: false \}/);
+  assert.match(marketplace, /if \(row\.status === "active"\) return \{ placement: row, expired: false \}/);
   assert.match(marketplace, /\.limit\(pageSize\)\.offset\(\(page - 1\) \* pageSize\)/);
   assert.match(marketplace, /educationIpsQrPayload\(\{/);
 });
@@ -36,6 +36,7 @@ test("featured-placement work keeps Education operational IPS QR contract isolat
 
 test("shared placement lifecycle expires stale holds and validates placement scope", () => {
   const marketplace = readFileSync(new URL("../../../api-server/src/routes/marketplace.ts", import.meta.url), "utf8");
+  const reminders = readFileSync(new URL("../../../api-server/src/lib/featured-placement-payment-reminders.ts", import.meta.url), "utf8");
   const openapi = readFileSync(new URL("../../../../lib/api-spec/openapi.yaml", import.meta.url), "utf8");
 
   // Creation clears expired pending holds while holding the identical placement
@@ -43,8 +44,10 @@ test("shared placement lifecycle expires stale holds and validates placement sco
   // payments, while active retries return their original dates.
   assert.match(marketplace, /await lockEducationPlacementResource\(tx, kind, scope, scopeId\);\s+await expireStalePendingPlacement/s);
   assert.match(marketplace, /row\.createdAt\.getTime\(\) \+ EDUCATION_PLACEMENT_PAYMENT_WINDOW_MS <= now\.getTime\(\)/);
-  assert.match(marketplace, /status: "expired", updatedAt: now/);
-  assert.match(marketplace, /if \(row\.status === "active"\) return \{ placement: row, activated: false \}/);
+  assert.match(marketplace, /await expireFeaturedPlacementPaymentInTx\(tx, (placement|row), now\)/);
+  assert.match(reminders, /\.set\(\{\s*status: "expired", updatedAt: now\s*\}\)/);
+  assert.match(reminders, /insertOwnerNotification\(tx, updated, owner, "payment-expired"\)/);
+  assert.match(marketplace, /if \(row\.status === "active"\) return \{ placement: row, activated: false, expired: false \}/);
   assert.match(marketplace, /validateSharedPlacementScope\(row\.kind, row\.scope/);
   assert.match(marketplace, /course\.categoryId !== scopeId|course\.subcategoryId !== scopeId/);
 

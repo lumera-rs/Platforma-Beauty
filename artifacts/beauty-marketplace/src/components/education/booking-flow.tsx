@@ -10,7 +10,7 @@ import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { educationBelgradeDateKey } from "@/lib/education-operational-time";
-import { useGetEducationOperationalInstallmentIpsQr } from "@workspace/api-client-react";
+import { getApiErrorDetails, useGetEducationOperationalInstallmentIpsQr } from "@workspace/api-client-react";
 
 // Use proper types from API when available
 export function EducationOperationalBookingFlow({ 
@@ -123,12 +123,13 @@ export function EducationOperationalBookingFlow({
         setStep("success");
         refetchAvail();
       },
-      onError: (err: any) => {
-        if (err?.status === 409 || err?.response?.status === 409) {
+      onError: (error: unknown) => {
+        const { status, message } = getApiErrorDetails(error);
+        if (status === 409) {
           alert("Kapacitet je popunjen ili je došlo do konflikta. Proverite dostupnost.");
           refetchAvail();
         } else {
-          alert(err.message || "Greška pri rezervaciji.");
+          alert(message || "Greška pri rezervaciji.");
         }
       }
     });
