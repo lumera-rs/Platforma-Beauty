@@ -21117,6 +21117,10 @@ router.delete("/education/instructors/:instructorId", async (req, res): Promise<
 
 router.get("/education/instructors/:instructorId/public", async (req, res): Promise<void> => {
   const instructorId = String(req.params.instructorId ?? "");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(instructorId)) {
+    res.status(404).json({ error: "Instruktor nije pronađen." });
+    return;
+  }
   const [instructor] = await db.select().from(educationInstructorsTable).where(eq(educationInstructorsTable.id, instructorId)).limit(1);
   if (!instructor) { res.status(404).json({ error: "Instruktor nije pronađen." }); return; }
   const allCourses = await db.select().from(coursesTable).where(eq(coursesTable.centerId, instructor.centerId));

@@ -290,6 +290,20 @@ async function run(): Promise<void> {
     const salonOwnerCookie = await login(baseUrl, salonOwner.email);
 
     // ═══════════════════════════════════════════════════════════════════════
+    // TEST: Public instructor profile rejects a non-UUID path parameter
+    // ═══════════════════════════════════════════════════════════════════════
+    {
+      const invalidInstructorResponse = await request(baseUrl, "/education/instructors/1/public");
+      assert.equal(invalidInstructorResponse.status, 404, "A non-UUID instructor ID must return a controlled 404.");
+      assert.deepEqual(
+        await json<{ error: string }>(invalidInstructorResponse),
+        { error: "Instruktor nije pronađen." },
+        "Invalid instructor links must use the public not-found response.",
+      );
+      console.log("✓ Non-UUID public instructor ID rejected without a database exception.");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
     // TEST: Refund policy visible in public course list
     // ═══════════════════════════════════════════════════════════════════════
     {
