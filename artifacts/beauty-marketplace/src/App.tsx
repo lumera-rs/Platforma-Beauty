@@ -479,6 +479,14 @@ function RoutedErrorBoundary({ children }: { children: ReactNode }) {
   return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>;
 }
 
+function CustomerAppShellActivity() {
+  const { data: userResp } = useGetCurrentUser();
+
+  if (userResp?.user?.role !== "CUSTOMER") return null;
+
+  return <RetailCartStatus />;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -487,7 +495,7 @@ function App() {
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
             <Suspense fallback={null}>
               <ClientSeoMetadata />
-              <RetailCartStatus />
+              <CustomerAppShellActivity />
             </Suspense>
             <Router />
           </WouterRouter>

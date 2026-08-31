@@ -18,13 +18,14 @@ export function Navbar() {
   const { data: userResp, isLoading: isUserLoading } = useGetCurrentUser();
   const logout = useLogout();
   const user = userResp?.user;
+  const isCustomer = user?.role === "CUSTOMER";
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const { data: cartSummary } = useGetRetailCartSummary({
     query: {
       queryKey: getGetRetailCartSummaryQueryKey(),
-      enabled: !isUserLoading && user?.role !== "JOBSEEKER",
+      enabled: !isUserLoading && isCustomer,
       staleTime: Infinity,
       refetchOnWindowFocus: false,
       retry: false,
@@ -34,7 +35,7 @@ export function Navbar() {
 
   const { data: notificationsPage } = useListCustomerNotifications(
     { limit: 1 },
-    { query: { enabled: !!user && user.role === 'CUSTOMER', queryKey: getListCustomerNotificationsQueryKey({ limit: 1 }) } }
+    { query: { enabled: isCustomer, queryKey: getListCustomerNotificationsQueryKey({ limit: 1 }) } }
   );
   const unreadNotificationCount = notificationsPage?.unreadCount ?? 0;
 
@@ -135,7 +136,7 @@ export function Navbar() {
                 </Link>
               </Button>
             )}
-            {user?.role !== "JOBSEEKER" && (
+            {isCustomer && (
               <Button variant="ghost" size="icon" className="relative" asChild>
                 <Link href="/korpa" aria-label={`Korpa${cartItemCount && cartItemCount > 0 ? `, ${cartItemCount} stavki` : ""}`} data-testid="link-cart">
                   <ShoppingBag className="h-5 w-5" />
@@ -291,7 +292,7 @@ export function Navbar() {
               <BriefcaseBusiness className="h-4 w-4" />
               Za salone i biznise
             </Link>
-            {user?.role !== "JOBSEEKER" && (
+            {isCustomer && (
               <Link href="/korpa" className="flex items-center gap-2 py-2 text-sm text-muted-foreground" onClick={closeMobileMenu} data-testid="link-mobile-cart">
                 <ShoppingBag className="h-4 w-4" />
                 Korpa
