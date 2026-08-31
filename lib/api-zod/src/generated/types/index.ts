@@ -748,6 +748,7 @@ export * from './employeeTimeBlockInput';
 export * from './favoriteInput';
 export * from './favoriteResult';
 export * from './featuredPlacement';
+export * from './featuredPlacementConfirmation';
 export * from './featuredPlacementCurrency';
 export * from './featuredPlacementInput';
 export * from './featuredPlacementInputKind';

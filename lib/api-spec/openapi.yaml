@@ -3237,7 +3237,7 @@ paths:
           description: Confirmed placement; repeated confirmation returns the same activation
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/FeaturedPlacement" }
+              schema: { $ref: "#/components/schemas/FeaturedPlacementConfirmation" }
         "404": { description: Placement not found }
         "409": { description: Placement cannot be confirmed }
   /education/courses:
@@ -13355,6 +13355,15 @@ components:
         settledAt: { type: ["string", "null"], format: date-time }
         createdAt: { type: string, format: date-time }
       required: [id, kind, label, salonId, centerId, courseId, scope, scopeId, status, priceSnapshot, durationDaysSnapshot, paymentReference, ipsPayload, recipientName, recipientAccount, purpose, currency, paymentInstructionsAvailable, startsAt, endsAt, settledAt, createdAt]
+    FeaturedPlacementConfirmation:
+      allOf:
+        - $ref: "#/components/schemas/FeaturedPlacement"
+        - type: object
+          properties:
+            activated:
+              type: boolean
+              description: True only when this request transitioned the placement from pending payment to active.
+          required: [activated]
     FeaturedPlacementPage:
       type: object
       properties:

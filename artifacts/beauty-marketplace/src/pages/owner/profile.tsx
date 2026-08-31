@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { BadgeCheck, CircleAlert, Copy, CreditCard, ExternalLink, House, ImagePlus, Loader2, Save, Trash2, UserRoundCheck, Video, Zap } from "lucide-react";
 import { BusinessLayout } from "@/components/business-layout";
@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { OptimizedImage } from "@/components/optimized-image";
 import { MarketingEmailPreferences } from "@/components/marketing-email-preferences";
 import { uploadOptimizedImage, type FinalizedMediaAsset } from "@/lib/media-upload";
+import { trackEvent } from "@/lib/analytics";
 import { QRCodeSVG } from "qrcode.react";
 import {
   getGetManagedSalonProfileQueryKey,
@@ -30,6 +31,7 @@ export default function OwnerSalonProfile() {
   const updateProfile = useUpdateManagedSalonProfile();
   const { data: placements } = useListMyFeaturedPlacements({ query: { queryKey: getListMyFeaturedPlacementsQueryKey(), refetchInterval: 30_000 } });
   const createPlacement = useCreateFeaturedPlacement();
+  const trackedQrPlacementIds = useRef(new Set<string>());
   const [videoUrl, setVideoUrl] = useState("");
   const [acceptsCards, setAcceptsCards] = useState(false);
   const [instantBooking, setInstantBooking] = useState(false);
@@ -49,6 +51,23 @@ export default function OwnerSalonProfile() {
     setImageUrl(salon?.imageUrl ?? "");
     setGallery(salon?.gallery ?? []);
   }, [salon]);
+
+  useEffect(() => {
+    placements?.forEach((placement) => {
+      if (
+        placement.status !== "pending_payment"
+        || !placement.paymentInstructionsAvailable
+        || !placement.ipsPayload
+        || trackedQrPlacementIds.current.has(placement.id)
+      ) return;
+
+      trackedQrPlacementIds.current.add(placement.id);
+      trackEvent("featured_placement_qr_viewed", {
+        placement_kind: placement.kind,
+        placement_scope: placement.scope,
+      });
+    });
+  }, [placements]);
 
   const uploadProfileImage = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -212,7 +231,11 @@ export default function OwnerSalonProfile() {
                     onClick={() => createPlacement.mutate({
                       data: { kind: "featured_salon", scope: "home", targetId: salon.id },
                     }, {
-                      onSuccess: () => {
+                      onSuccess: (placement) => {
+                        trackEvent("featured_placement_requested", {
+                          placement_kind: placement.kind,
+                          placement_scope: placement.scope,
+                        });
                         toast.success("Zahtev za isticanje je kreiran.");
                         queryClient.invalidateQueries({ queryKey: getListMyFeaturedPlacementsQueryKey() });
                       },

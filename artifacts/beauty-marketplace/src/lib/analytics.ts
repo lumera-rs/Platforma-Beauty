@@ -17,3 +17,18 @@ export function trackEvent(name: string, data?: AnalyticsData): void {
     // Analytics must never interrupt the customer flow.
   }
 }
+
+type FeaturedPlacementConfirmation = {
+  activated: boolean;
+  kind: string;
+  scope: string;
+};
+
+export function trackFeaturedPlacementPaid(confirmation: FeaturedPlacementConfirmation): void {
+  if (!confirmation.activated) return;
+
+  trackEvent("featured_placement_paid", {
+    placement_kind: confirmation.kind,
+    placement_scope: confirmation.scope,
+  });
+}

@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { parseStrictDecimal, parseStrictInt } from "@/lib/admin-form-utils";
+import { trackFeaturedPlacementPaid } from "@/lib/analytics";
 import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -279,7 +280,8 @@ export default function AdminEducationMarketplace() {
     if (!actionGuard.begin(`placement-settle:${placement.paymentReference}`)) return;
     if (!window.confirm(`Potvrditi uplatu za pozicioniranje "${placement.paymentReference}"?`)) return actionGuard.end(`placement-settle:${placement.paymentReference}`);
     settlePlacementMut.mutate({ placementId: placement.id }, {
-      onSuccess: () => {
+      onSuccess: (confirmedPlacement) => {
+        trackFeaturedPlacementPaid(confirmedPlacement);
         toast.success("Plaćanje pozicije je evidentirano i pozicija je aktivirana.");
         queryClient.invalidateQueries({ queryKey: getListAdminFeaturedPlacementsQueryKey() });
       },

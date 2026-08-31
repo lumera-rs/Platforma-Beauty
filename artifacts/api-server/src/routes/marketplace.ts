@@ -22572,7 +22572,10 @@ router.post("/admin/featured-placements/:placementId/confirm", async (req, res):
     if (settlement.activated && settlement.placement.kind === "featured_salon") {
       await publishCatalogInvalidation(["salons"]);
     }
-    res.json(ConfirmAdminFeaturedPlacementResponse.parse(await featuredPlacementView(settlement.placement)));
+    res.json(ConfirmAdminFeaturedPlacementResponse.parse({
+      ...(await featuredPlacementView(settlement.placement)),
+      activated: settlement.activated,
+    }));
   } catch (error) {
     if (error instanceof Error && error.message === "NOT_FOUND") {
       res.status(404).json({ error: "Plasman nije pronađen." }); return;

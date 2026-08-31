@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Link, useRoute, useLocation } from "wouter";
 import { z } from "zod";
 import { useForm, Controller } from "react-hook-form";
@@ -55,6 +55,7 @@ import { rollbackQueries, updateQueryOptimistically } from "@/lib/optimistic-que
 import { EDUCATION_NOTIFICATION_MUTATION_KEY, educationNotificationMutationQueue, useMutationQueueBusy } from "@/lib/optimistic-mutation-queue";
 import { OptimizedImage } from "@/components/optimized-image";
 import { uploadOptimizedImage } from "@/lib/media-upload";
+import { trackEvent } from "@/lib/analytics";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
@@ -342,6 +343,7 @@ function MyPlacementsView() {
   const purchaseMut = useCreateFeaturedPlacement();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const trackedQrPlacementIds = useRef(new Set<string>());
 
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [kind, setKind] = useState<"featured_center" | "special_offer">("special_offer");
@@ -351,6 +353,23 @@ function MyPlacementsView() {
 
   const categories = useMemo(() => taxonomy ? taxonomy.flatMap(s => s.categories) : [], [taxonomy]);
   const subcategories = useMemo(() => categories.flatMap(c => c.subcategories), [categories]);
+
+  useEffect(() => {
+    placements?.forEach((placement: any) => {
+      if (
+        placement.status !== "pending_payment"
+        || !placement.paymentInstructionsAvailable
+        || !placement.ipsPayload
+        || trackedQrPlacementIds.current.has(placement.id)
+      ) return;
+
+      trackedQrPlacementIds.current.add(placement.id);
+      trackEvent("featured_placement_qr_viewed", {
+        placement_kind: placement.kind,
+        placement_scope: placement.scope,
+      });
+    });
+  }, [placements]);
 
   const purchase = () => {
     let finalScopeId: string | null = scopeId;
@@ -377,6 +396,10 @@ function MyPlacementsView() {
       }
     }, {
       onSuccess: (res: any) => {
+        trackEvent("featured_placement_requested", {
+          placement_kind: res.kind,
+          placement_scope: res.scope,
+        });
         toast.success("Zahtev evidentiran", { description: `Referenca za uplatu: ${res.paymentReference}` });
         queryClient.invalidateQueries({ queryKey: getListMyFeaturedPlacementsQueryKey() });
         setPurchaseOpen(false);

@@ -3,7 +3,7 @@ import test from "node:test";
 
 // Node's built-in TypeScript test runner requires the source extension.
 // @ts-expect-error TS does not allow TypeScript extensions in emitted imports.
-import { trackEvent } from "./analytics.ts";
+import { trackEvent, trackFeaturedPlacementPaid } from "./analytics.ts";
 
 test("forwards privacy-safe custom events to the Replit-injected tracker", () => {
   const calls: Array<{ name: string; data: Record<string, string | number | boolean> | undefined }> = [];
@@ -52,6 +52,34 @@ test("never lets tracker failures interrupt booking", () => {
 
   try {
     assert.doesNotThrow(() => trackEvent("grouped_booking_completed"));
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("records a paid placement only for the first server-confirmed activation", () => {
+  const calls: Array<{ name: string; data: Record<string, string | number | boolean> | undefined }> = [];
+  const originalWindow = globalThis.window;
+
+  globalThis.window = {
+    umami: {
+      track(name, data) {
+        calls.push({ name, data });
+      },
+    },
+  } as Window & typeof globalThis;
+
+  try {
+    trackFeaturedPlacementPaid({ activated: true, kind: "featured_salon", scope: "home" });
+    trackFeaturedPlacementPaid({ activated: false, kind: "featured_salon", scope: "home" });
+
+    assert.deepEqual(calls, [{
+      name: "featured_placement_paid",
+      data: {
+        placement_kind: "featured_salon",
+        placement_scope: "home",
+      },
+    }]);
   } finally {
     globalThis.window = originalWindow;
   }
