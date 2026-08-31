@@ -3201,35 +3201,45 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/EducationPlacementSetting" }
-  /admin/education/placements:
+  /admin/featured-placements:
     get:
-      operationId: listAdminEducationPlacements
-      tags: [admin, education]
+      operationId: listAdminFeaturedPlacements
+      tags: [admin]
+      summary: List the shared paid-placement confirmation queue
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending_payment, active, expired, cancelled, rejected] }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
       responses:
         "200":
-          description: Placements
+          description: Paginated shared placement queue
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/EducationPlacement" }
-  /admin/education/placements/{paymentReference}/settle:
+              schema: { $ref: "#/components/schemas/FeaturedPlacementPage" }
+  /admin/featured-placements/{placementId}/confirm:
     post:
-      operationId: settleAdminEducationPlacement
-      tags: [admin, education]
-      summary: Manually settle one placement by its canonical payment reference
+      operationId: confirmAdminFeaturedPlacement
+      tags: [admin]
+      summary: Idempotently confirm a pending placement bank transfer
       parameters:
-        - name: paymentReference
+        - name: placementId
           in: path
           required: true
-          schema: { type: string, minLength: 1, maxLength: 200 }
+          schema: { type: string }
       responses:
         "200":
-          description: Active placement; repeated settlement is idempotent
+          description: Confirmed placement; repeated confirmation returns the same activation
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/EducationPlacement" }
-        "409": { description: "Price, scope, availability, or placement state is invalid" }
+              schema: { $ref: "#/components/schemas/FeaturedPlacement" }
+        "404": { description: Placement not found }
+        "409": { description: Placement cannot be confirmed }
   /education/courses:
     get:
       operationId: listCourses
@@ -4099,35 +4109,37 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/EducationCourseType" }
         "409": { description: An exact normalized type already exists }
-  /education/placements/mine:
+  /featured-placements/mine:
     get:
-      operationId: listMyEducationPlacements
-      tags: [education]
+      operationId: listMyFeaturedPlacements
+      tags: [salon-management, education]
+      summary: List paid placements owned by the signed-in business owner
       responses:
         "200":
-          description: Placements owned by the current education center
+          description: Owner-visible placement history including payment instructions
           content:
             application/json:
               schema:
                 type: array
-                items: { $ref: "#/components/schemas/EducationPlacement" }
-  /education/placements/purchase:
+                items: { $ref: "#/components/schemas/FeaturedPlacement" }
+        "403": { description: Business owner access required }
+  /featured-placements:
     post:
-      operationId: purchaseEducationPlacement
-      tags: [education]
-      summary: Reserve a placement pending manual payment settlement
+      operationId: createFeaturedPlacement
+      tags: [salon-management, education]
+      summary: Create a shared pending placement charge and server-generated IPS payload
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/EducationPlacementPurchaseInput" }
+            schema: { $ref: "#/components/schemas/FeaturedPlacementInput" }
       responses:
         "201":
-          description: Placement awaiting payment
+          description: Pending fixed-price, fixed-duration placement charge
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/EducationPlacement" }
-        "409": { description: "Placement product, scope, or availability is invalid" }
+              schema: { $ref: "#/components/schemas/FeaturedPlacement" }
+        "409": { description: "Product, payment account, ownership, or availability is invalid" }
   /education/sessions/{sessionId}:
     patch:
       operationId: updateEducationSession
@@ -13268,9 +13280,9 @@ components:
       type: object
       additionalProperties: false
       properties:
-        kind: { type: string, enum: [featured_center, special_offer] }
+        kind: { type: string, enum: [featured_salon, featured_center, special_offer] }
         scope: { type: string, enum: [home, category, subcategory] }
-        price: { type: number, minimum: 0, multipleOf: 1 }
+        price: { type: number, minimum: 1, multipleOf: 1 }
         durationDays: { type: number, minimum: 1, maximum: 365, multipleOf: 1 }
         slotCount: { type: number, minimum: 1, maximum: 1000, multipleOf: 1 }
       required: [kind, scope, price, durationDays, slotCount]
@@ -13306,6 +13318,53 @@ components:
         endsAt: { type: ["string", "null"], format: date-time }
         createdAt: { type: string, format: date-time }
       required: [id, centerId, kind, label, scope, courseId, status, price, paymentReference, createdAt]
+    FeaturedPlacementInput:
+      type: object
+      additionalProperties: false
+      properties:
+        kind: { type: string, enum: [featured_salon, featured_center, special_offer] }
+        scope: { type: string, enum: [home, category, subcategory], default: home }
+        scopeId: { type: ["string", "null"] }
+        targetId: { type: ["string", "null"] }
+      required: [kind]
+    FeaturedPlacement:
+      type: object
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [featured_salon, featured_center, special_offer] }
+        label: { type: string }
+        salonId: { type: ["string", "null"] }
+        centerId: { type: ["string", "null"] }
+        courseId: { type: ["string", "null"] }
+        scope: { type: string, enum: [home, category, subcategory] }
+        scopeId: { type: ["string", "null"] }
+        status: { type: string, enum: [pending_payment, active, expired, cancelled, rejected] }
+        priceSnapshot: { type: integer, minimum: 0 }
+        durationDaysSnapshot: { type: integer, minimum: 1 }
+        paymentReference: { type: string }
+        ipsPayload: { type: ["string", "null"] }
+        recipientName: { type: ["string", "null"] }
+        recipientAccount: { type: ["string", "null"] }
+        purpose: { type: ["string", "null"] }
+        currency:
+          type: ["string", "null"]
+          enum: [RSD, null]
+        paymentInstructionsAvailable: { type: boolean }
+        startsAt: { type: ["string", "null"], format: date-time }
+        endsAt: { type: ["string", "null"], format: date-time }
+        settledAt: { type: ["string", "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+      required: [id, kind, label, salonId, centerId, courseId, scope, scopeId, status, priceSnapshot, durationDaysSnapshot, paymentReference, ipsPayload, recipientName, recipientAccount, purpose, currency, paymentInstructionsAvailable, startsAt, endsAt, settledAt, createdAt]
+    FeaturedPlacementPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/FeaturedPlacement" }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+      required: [items, page, pageSize, total]
     EducationPublicPlacement:
       type: object
       properties:

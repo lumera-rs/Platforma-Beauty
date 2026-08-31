@@ -13,10 +13,14 @@ import { useToast } from "@/hooks/use-toast";
 import { OptimizedImage } from "@/components/optimized-image";
 import { MarketingEmailPreferences } from "@/components/marketing-email-preferences";
 import { uploadOptimizedImage, type FinalizedMediaAsset } from "@/lib/media-upload";
+import { QRCodeSVG } from "qrcode.react";
 import {
   getGetManagedSalonProfileQueryKey,
   useGetManagedSalonProfile,
   useUpdateManagedSalonProfile,
+  useListMyFeaturedPlacements,
+  useCreateFeaturedPlacement,
+  getListMyFeaturedPlacementsQueryKey,
 } from "@workspace/api-client-react";
 
 export default function OwnerSalonProfile() {
@@ -24,6 +28,8 @@ export default function OwnerSalonProfile() {
   const { toast } = useToast();
   const { data: salon, isLoading } = useGetManagedSalonProfile();
   const updateProfile = useUpdateManagedSalonProfile();
+  const { data: placements } = useListMyFeaturedPlacements({ query: { queryKey: getListMyFeaturedPlacementsQueryKey(), refetchInterval: 30_000 } });
+  const createPlacement = useCreateFeaturedPlacement();
   const [videoUrl, setVideoUrl] = useState("");
   const [acceptsCards, setAcceptsCards] = useState(false);
   const [instantBooking, setInstantBooking] = useState(false);
@@ -191,6 +197,49 @@ export default function OwnerSalonProfile() {
                       </AlertDescription>
                     </Alert>
                   )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Istaknuti salon</CardTitle>
+                  <CardDescription>Zatražite plaćeno isticanje. Cena i trajanje se zaključavaju u trenutku zahteva, a javni prikaz počinje tek kada administrator potvrdi uplatu.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Button
+                    type="button"
+                    disabled={createPlacement.isPending || placements?.some((item) => item.kind === "featured_salon" && item.status === "pending_payment")}
+                    onClick={() => createPlacement.mutate({
+                      data: { kind: "featured_salon", scope: "home", targetId: salon.id },
+                    }, {
+                      onSuccess: () => {
+                        toast.success("Zahtev za isticanje je kreiran.");
+                        queryClient.invalidateQueries({ queryKey: getListMyFeaturedPlacementsQueryKey() });
+                      },
+                      onError: (error) => toast.error(error.message),
+                    })}
+                    data-testid="request-featured-salon"
+                  >
+                    {createPlacement.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Zatraži isticanje
+                  </Button>
+                  {placements?.filter((item) => item.kind === "featured_salon").map((placement) => (
+                    <div key={placement.id} className="rounded-xl border p-4" data-testid="featured-salon-placement">
+                      <div className="flex flex-wrap justify-between gap-2">
+                        <span className="font-medium">{placement.priceSnapshot.toLocaleString("sr-RS")} RSD · {placement.durationDaysSnapshot} dana</span>
+                        <span className="text-sm text-muted-foreground">{placement.status}</span>
+                      </div>
+                      <p className="mt-1 font-mono text-xs">{placement.paymentReference}</p>
+                      {placement.status === "pending_payment" && placement.paymentInstructionsAvailable && placement.ipsPayload ? (
+                        <div className="mt-4 rounded-lg bg-white p-3 text-center text-slate-950">
+                          <QRCodeSVG value={placement.ipsPayload} size={180} className="mx-auto" />
+                          <p className="mt-2 text-xs">{placement.recipientName} · {placement.recipientAccount}</p>
+                          <p className="mt-1 text-xs">Status ostaje na čekanju do ručne potvrde uplate.</p>
+                        </div>
+                      ) : placement.status === "pending_payment" ? <p className="mt-2 text-xs text-destructive">Istorijski zahtev nema važeća uputstva za uplatu; kreirajte novi zahtev.</p> : null}
+                      {placement.startsAt && placement.endsAt ? <p className="mt-2 text-xs text-muted-foreground">{new Date(placement.startsAt).toLocaleDateString("sr-RS")} – {new Date(placement.endsAt).toLocaleDateString("sr-RS")}</p> : null}
+                    </div>
+                  ))}
                 </CardContent>
               </Card>
 

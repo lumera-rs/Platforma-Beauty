@@ -10,7 +10,7 @@ import {
   useGetCurrentUser, useGetPublicEducationTaxonomy, getGetPublicEducationTaxonomyQueryKey, useListCourses, useGetEducationCourse,
   useListEnrollments, useGetEducationLms,
   useListSalonEmployees,
-  useListMyEducationPlacements, getListMyEducationPlacementsQueryKey, usePurchaseEducationPlacement, useProposeEducationCourseType,
+  useListMyFeaturedPlacements, getListMyFeaturedPlacementsQueryKey, useCreateFeaturedPlacement, useProposeEducationCourseType,
   useCreateEducationCourse, useUpdateEducationCourse,
   usePublishEducationCourse, useArchiveEducationCourse,
   useCreateEducationModule, useCreateEducationLesson,
@@ -31,6 +31,7 @@ import {
   getApiErrorMessage,
   type EducationNotificationList,
 } from "@workspace/api-client-react";
+import { QRCodeSVG } from "qrcode.react";
 
 import { BusinessLayout } from "@/components/business-layout";
 import { CenterOperationsView } from "@/components/education/center-operations";
@@ -335,10 +336,10 @@ function CenterProfileView() {
 }
 
 function MyPlacementsView() {
-  const { data: placements, isLoading } = useListMyEducationPlacements({ query: { queryKey: getListMyEducationPlacementsQueryKey() } });
+  const { data: placements, isLoading } = useListMyFeaturedPlacements({ query: { queryKey: getListMyFeaturedPlacementsQueryKey(), refetchInterval: 30_000 } });
   const { data: courses } = useListCourses(undefined, { query: { queryKey: getListCoursesQueryKey() } });
   const { data: taxonomy } = useGetPublicEducationTaxonomy({ query: { queryKey: getGetPublicEducationTaxonomyQueryKey() } });
-  const purchaseMut = usePurchaseEducationPlacement();
+  const purchaseMut = useCreateFeaturedPlacement();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -372,12 +373,12 @@ function MyPlacementsView() {
         kind,
         scope,
         scopeId: finalScopeId,
-        courseId: finalCourseId
+        targetId: kind === "special_offer" ? finalCourseId : null
       }
     }, {
       onSuccess: (res: any) => {
         toast.success("Zahtev evidentiran", { description: `Referenca za uplatu: ${res.paymentReference}` });
-        queryClient.invalidateQueries({ queryKey: getListMyEducationPlacementsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getListMyFeaturedPlacementsQueryKey() });
         setPurchaseOpen(false);
         setScopeId("");
         setCourseId("");
@@ -486,8 +487,15 @@ function MyPlacementsView() {
               </div>
               <div className="mt-4 pt-4 border-t text-sm space-y-1">
                 {p.courseId && <p className="text-muted-foreground truncate">Kurs ID: {p.courseId}</p>}
-                <p>Cena: {money(p.price)}</p>
+                <p>Cena: {money(p.priceSnapshot)} · {p.durationDaysSnapshot} dana</p>
                 <p>Ref: <span className="font-mono text-xs">{p.paymentReference}</span></p>
+                {p.status === "pending_payment" && p.paymentInstructionsAvailable && p.ipsPayload ? (
+                  <div className="mt-3 space-y-2 rounded-lg border bg-white p-3 text-center text-slate-950">
+                    <QRCodeSVG value={p.ipsPayload} size={160} className="mx-auto" />
+                    <p className="text-xs">{p.recipientName} · {p.recipientAccount}</p>
+                    <p className="text-xs">Uplata se aktivira tek nakon ručne potvrde administratora.</p>
+                  </div>
+                ) : p.status === "pending_payment" ? <p className="mt-2 text-xs text-destructive">Ovaj istorijski zahtev nema važeća uputstva za uplatu. Kreirajte novi zahtev.</p> : null}
                 {p.startsAt && <p className="text-xs mt-2">Trajanje: {new Date(p.startsAt).toLocaleDateString("sr-RS")} - {p.endsAt ? new Date(p.endsAt).toLocaleDateString("sr-RS") : ""}</p>}
               </div>
             </CardContent>

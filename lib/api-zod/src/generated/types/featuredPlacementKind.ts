@@ -6,10 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type EducationPlacementSettingInputKind = typeof EducationPlacementSettingInputKind[keyof typeof EducationPlacementSettingInputKind];
+export type FeaturedPlacementKind = typeof FeaturedPlacementKind[keyof typeof FeaturedPlacementKind];
 
 
-export const EducationPlacementSettingInputKind = {
+export const FeaturedPlacementKind = {
   featured_salon: 'featured_salon',
   featured_center: 'featured_center',
   special_offer: 'special_offer',

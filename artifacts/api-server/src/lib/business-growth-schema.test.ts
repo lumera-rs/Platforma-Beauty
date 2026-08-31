@@ -356,7 +356,7 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
-    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 96, "v96 is the current production schema rollout");
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 97, "v97 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
 
     // ── Run the rollout, then exercise its legacy conversion on rerun ──────
@@ -381,6 +381,23 @@ async function run() {
         ), `${table} is created by v84`);
       }
       assert.ok(await columnExists("education_installments", "due_at"), "v95 adds nullable immutable installment due_at");
+      assert.ok(await columnExists("education_placements", "salon_id"), "v96 adds the shared featured-salon target");
+      assert.ok(await columnExists("education_placements", "settled_at"), "v96 records immutable settlement time");
+      for (const column of [
+        "payment_ips_payload_snapshot",
+        "payment_recipient_name_snapshot",
+        "payment_recipient_account_snapshot",
+        "payment_purpose_snapshot",
+        "payment_currency_snapshot",
+      ]) {
+        assert.ok(await columnExists("education_placements", column), `v97 adds immutable placement instruction column ${column}`);
+      }
+      const placementKind = (await q<{ labels: string[] }>(
+        `SELECT array_agg(enumlabel ORDER BY enumsortorder) AS labels
+         FROM pg_enum WHERE enumtypid = $1::regtype`,
+        [`${s}.education_placement_kind`],
+      )).rows[0];
+      assert.ok(placementKind?.labels.includes("featured_salon"), "v96 adds featured_salon to the placement kind enum");
       const placementExclusion = (await q<{ definition: string }>(
         `SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
          WHERE conrelid=$1::regclass AND conname='education_placements_active_slot_no_overlap'`,

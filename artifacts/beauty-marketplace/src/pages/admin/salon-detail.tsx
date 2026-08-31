@@ -80,8 +80,8 @@ export default function AdminSalonDetail() {
                 <Switch checked={salon.isVerified} onCheckedChange={(checked) => update("verified", { isVerified: checked })} disabled={actionGuard.isActive("verified")} />
               </div>
               <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
-                <div><p className="font-medium">Istaknuti salon</p><p className="text-sm text-muted-foreground">Administracija odlučuje da li je salon prikazan u istaknutoj kolekciji.</p></div>
-                <Switch checked={salon.featured} onCheckedChange={(checked) => update("featured", { featured: checked })} disabled={actionGuard.isActive("featured")} />
+                <div><p className="font-medium">Plaćeno isticanje salona</p><p className="text-sm text-muted-foreground">Vlasnik podnosi zahtev i dobija IPS QR; javno isticanje počinje tek nakon potvrde uplate.</p></div>
+                <Button asChild variant="outline"><Link href="/admin/edukacije">Red za potvrdu uplata</Link></Button>
               </div>
               <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
                 <div><p className="font-medium">Top Salon</p><p className="text-sm text-muted-foreground">Administrativni bedž za preporučene salone na platformi.</p></div>

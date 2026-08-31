@@ -31,8 +31,8 @@ import {
   useReviewAdminEducationTaxonomyProposal,
   useGetAdminEducationPlacementSettings,
   useUpdateAdminEducationPlacementSettings,
-  useListAdminEducationPlacements,
-  useSettleAdminEducationPlacement,
+  useListAdminFeaturedPlacements,
+  useConfirmAdminFeaturedPlacement,
   useAdminListEducationGiftVouchers,
   useAdminSettleEducationGiftVoucher,
   useAdminRefundEducationGiftVoucher,
@@ -52,12 +52,14 @@ import {
   getListEducationDisputesQueryKey,
   getListAdminEducationTaxonomyProposalsQueryKey,
   getGetAdminEducationPlacementSettingsQueryKey,
-  getListAdminEducationPlacementsQueryKey,
+  getListAdminFeaturedPlacementsQueryKey,
 } from "@workspace/api-client-react";
 
 const money = (value: number) => new Intl.NumberFormat("sr-RS", { style: "currency", currency: "RSD", maximumFractionDigits: 0 }).format(value);
-const PLACEMENT_KINDS = ["featured_center", "special_offer"] as const;
+const PLACEMENT_KINDS = ["featured_salon", "featured_center", "special_offer"] as const;
 const PLACEMENT_SCOPES = ["home", "category", "subcategory"] as const;
+const placementScopes = (kind: typeof PLACEMENT_KINDS[number]) =>
+  kind === "featured_salon" ? (["home"] as const) : PLACEMENT_SCOPES;
 const VOUCHER_PAGE_SIZE = 20;
 const VOUCHER_STATUS_OPTIONS: Array<{ value: AdminListEducationGiftVouchersStatus; label: string }> = [
   { value: "all", label: "Svi statusi" },
@@ -79,6 +81,7 @@ export default function AdminEducationMarketplace() {
   const { data: installmentsPage, isLoading: loadingInstallments } = useListAdminEducationInstallments({ status: installmentStatus === "all" ? undefined : installmentStatus }, { query: { queryKey: getListAdminEducationInstallmentsQueryKey({ status: installmentStatus === "all" ? undefined : installmentStatus }) } });
   const settleInstallmentMut = useSettleAdminEducationInstallment({ request: { headers: { "Idempotency-Key": crypto.randomUUID() } } });
   const [voucherPage, setVoucherPage] = useState(1);
+  const [placementPage, setPlacementPage] = useState(1);
   const voucherParams = { status: voucherStatus, page: voucherPage, pageSize: VOUCHER_PAGE_SIZE };
 
   const { data: settings, isLoading: loadingSettings } = useGetAdminEducationSettings({ query: { queryKey: getGetAdminEducationSettingsQueryKey() } });
@@ -87,7 +90,8 @@ export default function AdminEducationMarketplace() {
   const { data: disputes, isLoading: loadingDisputes } = useListEducationDisputes({ query: { queryKey: getListEducationDisputesQueryKey() } });
   const { data: taxonomyProposals, isLoading: loadingProposals } = useListAdminEducationTaxonomyProposals({ status: 'pending' }, { query: { queryKey: getListAdminEducationTaxonomyProposalsQueryKey({ status: 'pending' }) } });
   const { data: placementSettings, isLoading: loadingPlacementSettings } = useGetAdminEducationPlacementSettings({ query: { queryKey: getGetAdminEducationPlacementSettingsQueryKey() } });
-  const { data: placements, isLoading: loadingPlacements } = useListAdminEducationPlacements({ query: { queryKey: getListAdminEducationPlacementsQueryKey() } });
+  const placementParams = { status: "pending_payment" as const, page: placementPage, pageSize: 20 };
+  const { data: placementsPage, isLoading: loadingPlacements } = useListAdminFeaturedPlacements(placementParams, { query: { queryKey: getListAdminFeaturedPlacementsQueryKey(placementParams), refetchInterval: 30_000 } });
   const { data: vouchersPage, isLoading: loadingVouchers } = useAdminListEducationGiftVouchers(voucherParams, { query: { queryKey: getAdminListEducationGiftVouchersQueryKey(voucherParams) } });
 
   const updateSettingsMut = useUpdateAdminEducationSettings();
@@ -99,7 +103,7 @@ export default function AdminEducationMarketplace() {
   const updateTaxonomyMut = useUpdateAdminEducationTaxonomy();
   const { data: taxonomy } = useGetPublicEducationTaxonomy({ query: { queryKey: getGetPublicEducationTaxonomyQueryKey() } });
   const updatePlacementSettingsMut = useUpdateAdminEducationPlacementSettings();
-  const settlePlacementMut = useSettleAdminEducationPlacement();
+  const settlePlacementMut = useConfirmAdminFeaturedPlacement();
   const settleVoucherMut = useAdminSettleEducationGiftVoucher();
   const refundVoucherMut = useAdminRefundEducationGiftVoucher();
 
@@ -165,7 +169,7 @@ export default function AdminEducationMarketplace() {
   const savePlacementSettings = () => {
     if (!placementSettings) return;
     try {
-      const items = PLACEMENT_KINDS.flatMap((kind) => PLACEMENT_SCOPES.map((scope) => {
+      const items = PLACEMENT_KINDS.flatMap((kind) => placementScopes(kind).map((scope) => {
         const vals = placementSettingsRaw[placementSettingKey(kind, scope)]
           ?? { price: "0", durationDays: "30", slotCount: "4" };
 
@@ -274,10 +278,10 @@ export default function AdminEducationMarketplace() {
     }
     if (!actionGuard.begin(`placement-settle:${placement.paymentReference}`)) return;
     if (!window.confirm(`Potvrditi uplatu za pozicioniranje "${placement.paymentReference}"?`)) return actionGuard.end(`placement-settle:${placement.paymentReference}`);
-    settlePlacementMut.mutate({ paymentReference: placement.paymentReference }, {
+    settlePlacementMut.mutate({ placementId: placement.id }, {
       onSuccess: () => {
         toast.success("Plaćanje pozicije je evidentirano i pozicija je aktivirana.");
-        queryClient.invalidateQueries({ queryKey: getListAdminEducationPlacementsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getListAdminFeaturedPlacementsQueryKey() });
       },
       onError: (e) => toast.error("Greška", { description: e.message }),
       onSettled: () => actionGuard.end(`placement-settle:${placement.paymentReference}`)
@@ -507,15 +511,22 @@ export default function AdminEducationMarketplace() {
           <Card>
             <CardHeader><CardTitle className="flex gap-2"><Megaphone className="h-5 w-5 text-primary" />Plaćanje pozicija (Novi sistem)</CardTitle><CardDescription>Aktivacija pozicija nakon uplate naknade.</CardDescription></CardHeader>
             <CardContent className="space-y-3">
-              {placements && placements.length > 0 ? placements.map((p: any) => (
+              {placementsPage && placementsPage.items.length > 0 ? placementsPage.items.map((p) => (
                 <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4">
                   <div>
                     <div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{p.paymentReference}</p><Badge variant={p.status === "active" ? "default" : "secondary"}>{p.status}</Badge></div>
-                    <p className="mt-1 text-sm text-muted-foreground">{p.kind} · {p.scope} · {money(p.price)}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{p.kind} · {p.scope} · {money(p.priceSnapshot)} · {p.durationDaysSnapshot} dana</p>
                   </div>
                   {p.status === "pending_payment" && <Button size="sm" onClick={() => settlePlacement(p)} disabled={actionGuard.isActive(`placement-settle:${p.paymentReference}`)}>Aktiviraj / Potvrdi</Button>}
                 </div>
-              )) : <p className="py-4 text-sm text-muted-foreground">Nema sponzorisanih pozicija.</p>}
+              )) : <p className="py-4 text-sm text-muted-foreground">Nema uplata koje čekaju potvrdu.</p>}
+              {placementsPage && placementsPage.total > placementsPage.pageSize ? (
+                <div className="flex items-center justify-between border-t pt-3">
+                  <Button variant="outline" size="sm" disabled={placementPage === 1} onClick={() => setPlacementPage((page) => page - 1)}>Prethodna</Button>
+                  <span className="text-xs text-muted-foreground">Strana {placementPage} · ukupno {placementsPage.total}</span>
+                  <Button variant="outline" size="sm" disabled={placementPage * placementsPage.pageSize >= placementsPage.total} onClick={() => setPlacementPage((page) => page + 1)}>Sledeća</Button>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -654,7 +665,7 @@ export default function AdminEducationMarketplace() {
               {PLACEMENT_KINDS.map((kind) => (
                 <div key={kind} className="space-y-4">
                   <h4 className="font-medium text-foreground">{kind === "featured_center" ? "Istaknuti centri" : "Specijalne ponude (Kursevi)"}</h4>
-                  {PLACEMENT_SCOPES.map((scope) => {
+                  {placementScopes(kind).map((scope) => {
                     const rowKey = placementSettingKey(kind, scope);
                     const row = placementSettingsRaw[rowKey] || { price: "0", durationDays: "30", slotCount: "4" };
                     const priceId = `ps-price-${rowKey}`;
@@ -662,7 +673,7 @@ export default function AdminEducationMarketplace() {
                     const slotsId = `ps-slots-${rowKey}`;
                     return (
                       <div key={scope} className="grid grid-cols-3 gap-2 items-end bg-muted/30 p-2 rounded-md border">
-                        <div><Label htmlFor={priceId} className="text-xs text-muted-foreground">{scope} - Cena</Label><Input id={priceId} data-testid={priceId} size={1} type="number" min="0" value={row.price} onChange={e => updatePS(kind, scope, "price", e.target.value)} /></div>
+                        <div><Label htmlFor={priceId} className="text-xs text-muted-foreground">{scope} - Cena</Label><Input id={priceId} data-testid={priceId} size={1} type="number" min="1" value={row.price} onChange={e => updatePS(kind, scope, "price", e.target.value)} /></div>
                         <div><Label htmlFor={durationId} className="text-xs text-muted-foreground">Dani</Label><Input id={durationId} data-testid={durationId} size={1} type="number" min="1" value={row.durationDays} onChange={e => updatePS(kind, scope, "durationDays", e.target.value)} /></div>
                         <div><Label htmlFor={slotsId} className="text-xs text-muted-foreground">Slotovi</Label><Input id={slotsId} data-testid={slotsId} size={1} type="number" min="1" value={row.slotCount} onChange={e => updatePS(kind, scope, "slotCount", e.target.value)} /></div>
                       </div>

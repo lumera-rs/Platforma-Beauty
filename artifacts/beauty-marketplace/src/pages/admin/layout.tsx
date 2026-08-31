@@ -15,7 +15,7 @@ const navLinks = [
   { href: "/admin/loyalty", label: "Loyalty Program", icon: Star },
   { href: "/admin/retencija", label: "Pragovi retencije", icon: SlidersHorizontal },
   { href: "/admin/pretplate", label: "Pretplate", icon: CreditCard },
-  { href: "/admin/edukacije", label: "Edukacije i escrow", icon: GraduationCap },
+  { href: "/admin/edukacije", label: "Uplate isticanja i edukacije", icon: GraduationCap },
   { href: "/admin/preporuke", label: "Preporuke", icon: Gift },
   { href: "/admin/recenzije", label: "Recenzije salona", icon: MessageSquare },
   { href: "/admin/recenzije-proizvoda", label: "Moderacija proizvoda", icon: ShieldAlert },

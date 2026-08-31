@@ -11,7 +11,7 @@ import type { EducationPlacementSettingInputScope } from './educationPlacementSe
 export interface EducationPlacementSettingInput {
   kind: EducationPlacementSettingInputKind;
   scope: EducationPlacementSettingInputScope;
-  /** @minimum 0 */
+  /** @minimum 1 */
   price: number;
   /**
      * @minimum 1

@@ -30,7 +30,8 @@ export const educationCourseLevelEnum = pgEnum("education_course_level", ["begin
 export const educationReviewStatusEnum = pgEnum("education_review_status", ["pending", "published", "rejected"]);
 export const educationCourseTypeStatusEnum = pgEnum("education_course_type_status", ["approved", "pending", "rejected"]);
 export const educationPaymentModeEnum = pgEnum("education_payment_mode", ["online_full", "live_deposit", "live_off_platform"]);
-export const educationPlacementKindEnum = pgEnum("education_placement_kind", ["featured_center", "special_offer"]);
+/** Shared paid placement products across the salon and education marketplaces. */
+export const educationPlacementKindEnum = pgEnum("education_placement_kind", ["featured_salon", "featured_center", "special_offer"]);
 export const educationPlacementScopeEnum = pgEnum("education_placement_scope", ["home", "category", "subcategory"]);
 export const educationPlacementStatusEnum = pgEnum("education_placement_status", ["pending_payment", "active", "expired", "cancelled", "rejected"]);
 export const educationGiftVoucherStatusEnum = pgEnum("education_gift_voucher_status", ["pending_payment", "active", "redeemed", "refunded", "cancelled"]);
@@ -322,16 +323,23 @@ export const educationPlacementsTable = pgTable("education_placements", {
     sql`coalesce(scope_category_id::text, scope_subcategory_id::text, 'home')`,
   ),
   centerId: uuid("center_id").references(() => educationCentersTable.id, { onDelete: "cascade" }),
+  salonId: uuid("salon_id").references(() => salonsTable.id, { onDelete: "cascade" }),
   courseId: uuid("course_id").references(() => coursesTable.id, { onDelete: "cascade" }),
   slotNumber: integer("slot_number").notNull(),
   priceSnapshot: integer("price_snapshot").notNull(),
   durationDaysSnapshot: integer("duration_days_snapshot").notNull(),
   status: educationPlacementStatusEnum("status").notNull().default("pending_payment"),
   paymentReference: text("payment_reference").unique(),
+  paymentIpsPayloadSnapshot: text("payment_ips_payload_snapshot"),
+  paymentRecipientNameSnapshot: text("payment_recipient_name_snapshot"),
+  paymentRecipientAccountSnapshot: text("payment_recipient_account_snapshot"),
+  paymentPurposeSnapshot: text("payment_purpose_snapshot"),
+  paymentCurrencySnapshot: text("payment_currency_snapshot"),
   startsAt: timestamp("starts_at", { withTimezone: true }),
   endsAt: timestamp("ends_at", { withTimezone: true }),
   rotationSeed: integer("rotation_seed").notNull().default(0),
   settledByUserId: uuid("settled_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  settledAt: timestamp("settled_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
@@ -339,9 +347,10 @@ export const educationPlacementsTable = pgTable("education_placements", {
   index("education_placements_category_slot_idx").on(table.scopeCategoryId, table.slotNumber, table.status),
   index("education_placements_subcategory_slot_idx").on(table.scopeSubcategoryId, table.slotNumber, table.status),
   index("education_placements_center_idx").on(table.centerId),
+  index("education_placements_salon_idx").on(table.salonId),
   index("education_placements_course_idx").on(table.courseId),
   index("education_placements_settled_by_idx").on(table.settledByUserId),
-  check("education_placements_target_check", sql`(${table.kind} = 'featured_center' and ${table.centerId} is not null and ${table.courseId} is null) or (${table.kind} = 'special_offer' and ${table.courseId} is not null and ${table.centerId} is null)`),
+  check("education_placements_target_check", sql`(${table.kind} = 'featured_salon' and ${table.salonId} is not null and ${table.centerId} is null and ${table.courseId} is null) or (${table.kind} = 'featured_center' and ${table.centerId} is not null and ${table.salonId} is null and ${table.courseId} is null) or (${table.kind} = 'special_offer' and ${table.courseId} is not null and ${table.centerId} is null and ${table.salonId} is null)`),
   check("education_placements_scope_check", sql`(${table.scope} = 'home' and ${table.scopeCategoryId} is null and ${table.scopeSubcategoryId} is null) or (${table.scope} = 'category' and ${table.scopeCategoryId} is not null and ${table.scopeSubcategoryId} is null) or (${table.scope} = 'subcategory' and ${table.scopeCategoryId} is null and ${table.scopeSubcategoryId} is not null)`),
   check("education_placements_dates_check", sql`(${table.startsAt} is null and ${table.endsAt} is null) or (${table.startsAt} is not null and ${table.endsAt} is not null and ${table.endsAt} > ${table.startsAt})`),
   check("education_placements_slot_check", sql`${table.slotNumber} > 0`),

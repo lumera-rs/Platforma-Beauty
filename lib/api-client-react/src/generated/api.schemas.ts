@@ -6628,6 +6628,7 @@ export type EducationPlacementSettingInputKind = typeof EducationPlacementSettin
 
 
 export const EducationPlacementSettingInputKind = {
+  featured_salon: 'featured_salon',
   featured_center: 'featured_center',
   special_offer: 'special_offer',
 } as const;
@@ -6644,7 +6645,7 @@ export const EducationPlacementSettingInputScope = {
 export interface EducationPlacementSettingInput {
   kind: EducationPlacementSettingInputKind;
   scope: EducationPlacementSettingInputScope;
-  /** @minimum 0 */
+  /** @minimum 1 */
   price: number;
   /**
      * @minimum 1
@@ -6737,6 +6738,7 @@ export interface EducationPlacement {
   createdAt: string;
 }
 
+export type FeaturedPlacementInputKind = typeof FeaturedPlacementInputKind[keyof typeof FeaturedPlacementInputKind];
 export type EducationPublicPlacementKind = typeof EducationPublicPlacementKind[keyof typeof EducationPublicPlacementKind];
 
 
@@ -13651,6 +13653,18 @@ export type ReviewAdminEducationTaxonomyProposalBody = {
   note?: string | null;
 };
 
+export type ListAdminFeaturedPlacementsParams = {
+status?: ListAdminFeaturedPlacementsStatus;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
 export type ListCoursesParams = {
 format?: ListCoursesFormat;
 city?: string;
@@ -15181,3 +15195,117 @@ export type AdminDeleteAutomaticXyPromotionParams = {
  */
 version: number;
 };
+
+export interface FeaturedPlacementPage {
+  items: FeaturedPlacement[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export const FeaturedPlacementInputScope = {
+  home: 'home',
+  category: 'category',
+  subcategory: 'subcategory',
+} as const;
+
+export type FeaturedPlacementScope = typeof FeaturedPlacementScope[keyof typeof FeaturedPlacementScope];
+
+export interface FeaturedPlacementInput {
+  kind: FeaturedPlacementInputKind;
+  scope?: FeaturedPlacementInputScope;
+  /** @nullable */
+  scopeId?: string | null;
+  /** @nullable */
+  targetId?: string | null;
+}
+
+export type FeaturedPlacementKind = typeof FeaturedPlacementKind[keyof typeof FeaturedPlacementKind];
+
+export const FeaturedPlacementStatus = {
+  pending_payment: 'pending_payment',
+  active: 'active',
+  expired: 'expired',
+  cancelled: 'cancelled',
+  rejected: 'rejected',
+} as const;
+
+export type ListAdminFeaturedPlacementsStatus = typeof ListAdminFeaturedPlacementsStatus[keyof typeof ListAdminFeaturedPlacementsStatus];
+
+export interface FeaturedPlacement {
+  id: string;
+  kind: FeaturedPlacementKind;
+  label: string;
+  /** @nullable */
+  salonId: string | null;
+  /** @nullable */
+  centerId: string | null;
+  /** @nullable */
+  courseId: string | null;
+  scope: FeaturedPlacementScope;
+  /** @nullable */
+  scopeId: string | null;
+  status: FeaturedPlacementStatus;
+  /** @minimum 0 */
+  priceSnapshot: number;
+  /** @minimum 1 */
+  durationDaysSnapshot: number;
+  paymentReference: string;
+  /** @nullable */
+  ipsPayload: string | null;
+  /** @nullable */
+  recipientName: string | null;
+  /** @nullable */
+  recipientAccount: string | null;
+  /** @nullable */
+  purpose: string | null;
+  /** @nullable */
+  currency: FeaturedPlacementCurrency;
+  paymentInstructionsAvailable: boolean;
+  /** @nullable */
+  startsAt: string | null;
+  /** @nullable */
+  endsAt: string | null;
+  /** @nullable */
+  settledAt: string | null;
+  createdAt: string;
+}
+
+/**
+ * @nullable
+ */
+export type FeaturedPlacementCurrency = typeof FeaturedPlacementCurrency[keyof typeof FeaturedPlacementCurrency] | null;
+
+export const ListAdminFeaturedPlacementsStatus = {
+  pending_payment: 'pending_payment',
+  active: 'active',
+  expired: 'expired',
+  cancelled: 'cancelled',
+  rejected: 'rejected',
+} as const;
+
+export const FeaturedPlacementInputKind = {
+  featured_salon: 'featured_salon',
+  featured_center: 'featured_center',
+  special_offer: 'special_offer',
+} as const;
+
+export type FeaturedPlacementStatus = typeof FeaturedPlacementStatus[keyof typeof FeaturedPlacementStatus];
+
+export const FeaturedPlacementCurrency = {
+  RSD: 'RSD',
+} as const;
+
+export type FeaturedPlacementInputScope = typeof FeaturedPlacementInputScope[keyof typeof FeaturedPlacementInputScope];
+
+export const FeaturedPlacementScope = {
+  home: 'home',
+  category: 'category',
+  subcategory: 'subcategory',
+} as const;
+
+export const FeaturedPlacementKind = {
+  featured_salon: 'featured_salon',
+  featured_center: 'featured_center',
+  special_offer: 'special_offer',
+} as const;

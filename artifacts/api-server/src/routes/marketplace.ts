@@ -249,6 +249,7 @@ import {
   educationBelgradeDateKey,
   educationPaymentModeError,
   educationGiftVoucherRecipientMatches,
+  educationIpsQrPayload,
   educationRelatedCourseTier,
   qualifiesAsMostRequestedEducationCenter,
   qualifiesAsTopRatedEducationCenter,
@@ -635,6 +636,13 @@ import
   RedeemEducationGiftVoucherBody,
   CreateEducationCenterReviewBody,
   AdminRefundEducationGiftVoucherBody,
+  CreateFeaturedPlacementBody,
+  CreateFeaturedPlacementResponse,
+  ListMyFeaturedPlacementsResponse,
+  ListAdminFeaturedPlacementsQueryParams,
+  ListAdminFeaturedPlacementsResponse,
+  ConfirmAdminFeaturedPlacementParams,
+  ConfirmAdminFeaturedPlacementResponse,
 }
  from "@workspace/api-zod"
 ;
@@ -3864,13 +3872,20 @@ async function salonCards(
   if (!salons.length) return [];
   const ids = salons.map((salon) => salon.id);
   const lastBookedSince = new Date(Date.now() - SALON_CARD_LOOK_BACK_DAYS * 24 * 60 * 60 * 1000);
-  const [allServices, allHours, lastBookedRows] = await Promise.all([
+  const [allServices, allHours, lastBookedRows, paidPlacementRows] = await Promise.all([
     db.select().from(servicesTable).where(and(inArray(servicesTable.salonId, ids), eq(servicesTable.active, true))),
     db.select().from(salonHoursTable).where(inArray(salonHoursTable.salonId, ids)),
     db.select({ salonId: appointmentsTable.salonId, lastBookedAt: sql<Date | null>`max(${appointmentsTable.createdAt})` })
       .from(appointmentsTable)
       .where(and(inArray(appointmentsTable.salonId, ids), gte(appointmentsTable.createdAt, lastBookedSince)))
       .groupBy(appointmentsTable.salonId),
+    db.select({ salonId: educationPlacementsTable.salonId }).from(educationPlacementsTable).where(and(
+      inArray(educationPlacementsTable.salonId, ids),
+      eq(educationPlacementsTable.kind, "featured_salon"),
+      eq(educationPlacementsTable.status, "active"),
+      lte(educationPlacementsTable.startsAt, new Date()),
+      gt(educationPlacementsTable.endsAt, new Date()),
+    )),
   ]);
   // Replace per-salon array filters with grouped maps so card assembly stays
   // O(n) instead of O(salons * appointments).
@@ -3878,13 +3893,17 @@ async function salonCards(
   const hoursBySalon = groupBySalon(allHours);
   const lastBookedBySalon = new Map<string, Date | null>();
   for (const row of lastBookedRows) lastBookedBySalon.set(row.salonId, row.lastBookedAt ? new Date(row.lastBookedAt) : null);
-  return salons.map((salon) => card(
+  const paidFeaturedSalonIds = new Set(paidPlacementRows.flatMap((row) => row.salonId ? [row.salonId] : []));
+  return salons.map((salon) => ({
+    ...card(
     salon,
     servicesBySalon.get(salon.id) ?? [],
     hoursBySalon.get(salon.id) ?? [],
     earliestSlotBySalon.get(salon.id) ?? null,
     lastBookedBySalon.get(salon.id) ?? null,
-  ));
+    ),
+    featured: paidFeaturedSalonIds.has(salon.id),
+  }));
 }
 
 function groupBySalon<T extends { salonId: string }>(rows: T[]): Map<string, T[]> {
@@ -5993,6 +6012,14 @@ router.get("/salons", async (req, res): Promise<void> => {
   const homeServiceExists = sql`exists (select 1 from ${servicesTable} where ${activeService} and ${servicesTable.homeServiceAvailable} = true)`;
   const discountExists = sql`exists (select 1 from ${servicesTable} where ${activeService} and ${servicesTable.promoPrice} is not null and ${servicesTable.promoPrice} < ${servicesTable.price})`;
   const openSundayExists = sql`exists (select 1 from ${salonHoursTable} where ${salonHoursTable.salonId} = ${salonsTable.id} and ${salonHoursTable.weekday} = 7 and ${salonHoursTable.closed} = false)`;
+  const activePaidFeaturedExists = sql`exists (
+    select 1 from ${educationPlacementsTable}
+    where ${educationPlacementsTable.salonId} = ${salonsTable.id}
+      and ${educationPlacementsTable.kind} = 'featured_salon'
+      and ${educationPlacementsTable.status} = 'active'
+      and ${educationPlacementsTable.startsAt} <= now()
+      and ${educationPlacementsTable.endsAt} > now()
+  )`;
   // startingPrice mirrors the card: MIN(COALESCE(promo, price)) over active
   // services, defaulting to 0 when a salon has no active services.
   const startingPriceExpr = sql`coalesce((select min(coalesce(${servicesTable.promoPrice}, ${servicesTable.price})) from ${servicesTable} where ${activeService}), 0)`;
@@ -6130,7 +6157,7 @@ router.get("/salons", async (req, res): Promise<void> => {
     query.acceptsCards !== undefined ? eq(salonsTable.acceptsCards, query.acceptsCards) : undefined,
     query.instantBooking !== undefined ? eq(salonsTable.instantBooking, query.instantBooking) : undefined,
     query.topSalon !== undefined ? eq(salonsTable.topSalon, query.topSalon) : undefined,
-    query.featured !== undefined ? eq(salonsTable.featured, query.featured) : undefined,
+    query.featured !== undefined ? sql`${activePaidFeaturedExists} = ${query.featured}` : undefined,
   ].filter((predicate): predicate is Exclude<typeof predicate, undefined> => predicate !== undefined);
   const where = and(...predicates);
 
@@ -6164,12 +6191,12 @@ router.get("/salons", async (req, res): Promise<void> => {
             )) end)`;
           return [sql`${distanceExpr} asc nulls last`, sql`${salonsTable.id} asc`];
         }
-        return [sql`${salonsTable.topSalon} desc`, sql`${salonsTable.featured} desc`, sql`${salonsTable.rating} desc`, sql`${salonsTable.id} asc`];
+        return [sql`${salonsTable.topSalon} desc`, sql`${activePaidFeaturedExists} desc`, sql`${salonsTable.rating} desc`, sql`${salonsTable.id} asc`];
       case "first-available":
         return [sql`${earliestAvailabilityExpr} asc nulls last`, sql`${salonsTable.id} asc`];
       default:
         // recommended
-        return [sql`${salonsTable.topSalon} desc`, sql`${salonsTable.featured} desc`, sql`${salonsTable.rating} desc`, sql`${salonsTable.id} asc`];
+        return [sql`${salonsTable.topSalon} desc`, sql`${activePaidFeaturedExists} desc`, sql`${salonsTable.rating} desc`, sql`${salonsTable.id} asc`];
     }
   };
 
@@ -6270,6 +6297,14 @@ router.get("/discovery/home", async (req, res): Promise<void> => {
           and ${appointmentsTable.createdAt} >= ${recentSince}
           and ${appointmentsTable.status} <> 'cancelled'
       ), 0)`;
+      const activePaidFeaturedExists = sql`exists (
+        select 1 from ${educationPlacementsTable}
+        where ${educationPlacementsTable.salonId} = ${salonsTable.id}
+          and ${educationPlacementsTable.kind} = 'featured_salon'
+          and ${educationPlacementsTable.status} = 'active'
+          and ${educationPlacementsTable.startsAt} <= now()
+          and ${educationPlacementsTable.endsAt} > now()
+      )`;
 
       // Each shelf is ranked and bounded in PostgreSQL. A cold cache miss
       // therefore touches at most the union of five 12-salon candidate sets.
@@ -6289,7 +6324,7 @@ router.get("/discovery/home", async (req, res): Promise<void> => {
           .orderBy(asc(serviceCategoriesTable.name))
           .limit(DEFAULT_POPULAR_CATEGORY_ORDER.length),
         db.select().from(salonsTable)
-          .where(and(basePredicate, eq(salonsTable.featured, true)))
+          .where(and(basePredicate, activePaidFeaturedExists))
           .orderBy(desc(salonsTable.topSalon), desc(salonsTable.rating), desc(salonsTable.reviewCount), asc(salonsTable.id))
           .limit(shelfLimit),
         db.select().from(salonsTable)
@@ -6340,7 +6375,7 @@ router.get("/discovery/home", async (req, res): Promise<void> => {
 
       const candidateIds = candidates.map((salon) => salon.id);
       const categoryNames = mainServiceCategories.map((category) => category.name);
-      const [services, hours, discountServices, categoryBookings] = await Promise.all([
+      const [services, hours, discountServices, categoryBookings, paidFeaturedRows] = await Promise.all([
         db.select().from(servicesTable)
           .where(and(inArray(servicesTable.salonId, candidateIds), eq(servicesTable.active, true))),
         db.select().from(salonHoursTable).where(inArray(salonHoursTable.salonId, candidateIds)),
@@ -6377,13 +6412,25 @@ router.get("/discovery/home", async (req, res): Promise<void> => {
               .orderBy(desc(count()), asc(servicesTable.categoryName))
               .limit(8)
           : Promise.resolve([] as { categoryName: string; bookingCount: number }[]),
+        db.select({ salonId: educationPlacementsTable.salonId }).from(educationPlacementsTable).where(and(
+          inArray(educationPlacementsTable.salonId, candidateIds),
+          eq(educationPlacementsTable.kind, "featured_salon"),
+          eq(educationPlacementsTable.status, "active"),
+          lte(educationPlacementsTable.startsAt, new Date()),
+          gt(educationPlacementsTable.endsAt, new Date()),
+        )),
       ]);
 
       const servicesBySalon = groupBySalon(services);
       const hoursBySalon = groupBySalon(hours);
+      const paidFeaturedSalonIds = new Set(paidFeaturedRows.flatMap((row) => row.salonId ? [row.salonId] : []));
       const cardById = new Map(candidates.map((salon) => [
         salon.id,
-        card(salon, servicesBySalon.get(salon.id) ?? [], hoursBySalon.get(salon.id) ?? []),
+        {
+          ...card(salon, servicesBySalon.get(salon.id) ?? [], hoursBySalon.get(salon.id) ?? []),
+          // Never leak the legacy admin boolean into any public home shelf.
+          featured: paidFeaturedSalonIds.has(salon.id),
+        },
       ]));
       const cardsFor = (rows: (typeof salonsTable.$inferSelect)[]) =>
         rows.flatMap((salon) => {
@@ -6569,6 +6616,14 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
       promoPrice: service.promoPrice,
       bookingCount: service.bookingCount,
     }));
+  const [activeFeaturedPlacement] = await db.select({ id: educationPlacementsTable.id })
+    .from(educationPlacementsTable).where(and(
+      eq(educationPlacementsTable.salonId, salon.id),
+      eq(educationPlacementsTable.kind, "featured_salon"),
+      eq(educationPlacementsTable.status, "active"),
+      lte(educationPlacementsTable.startsAt, new Date()),
+      gt(educationPlacementsTable.endsAt, new Date()),
+    )).limit(1);
   res.json(GetSalonResponse.parse({
     ...card(
       salon,
@@ -6577,6 +6632,7 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
       earliestSlotFromResponse(firstAvailability),
       lastBookedRows[0]?.lastBookedAt ? new Date(lastBookedRows[0].lastBookedAt) : null,
     ),
+    featured: Boolean(activeFeaturedPlacement),
     gallery: salon.gallery,
     videoUrl: salon.videoUrl,
     description: salon.description,
@@ -19965,8 +20021,115 @@ function educationCourseTypeView(row: typeof educationCourseTypesTable.$inferSel
   };
 }
 
-function educationPlacementLabel(kind: "featured_center" | "special_offer") {
+function educationPlacementLabel(kind: SharedPlacementKind) {
+  if (kind === "featured_salon") return "Istaknuti salon";
   return kind === "featured_center" ? "Istaknuti edukativni centar" : "Specijalna ponuda";
+}
+
+type SharedPlacementKind = "featured_salon" | "featured_center" | "special_offer";
+
+function featuredPlacementLabel(kind: SharedPlacementKind) {
+  if (kind === "featured_salon") return "Istaknuti salon";
+  return educationPlacementLabel(kind);
+}
+
+function ipsSafePlacementReference(row: typeof educationPlacementsTable.$inferSelect) {
+  const reference = row.paymentReference ?? "";
+  // v96 normalizes old rows at boot. Keep owner/admin reads safe even during a
+  // rolling deployment before that migration instance has acquired its lock.
+  return reference.length > 0 && reference.length <= 35
+    ? reference
+    : `FP-${createHash("sha256").update(reference || row.id).digest("hex").slice(0, 32)}`;
+}
+
+async function featuredPlacementView(row: typeof educationPlacementsTable.$inferSelect) {
+  const hasPaymentSnapshot = row.priceSnapshot >= 1
+    && Boolean(row.paymentIpsPayloadSnapshot)
+    && Boolean(row.paymentRecipientNameSnapshot)
+    && Boolean(row.paymentRecipientAccountSnapshot)
+    && Boolean(row.paymentPurposeSnapshot)
+    && row.paymentCurrencySnapshot === "RSD";
+  if (!hasPaymentSnapshot) {
+    // Historical rows predate immutable instructions. Never reconstruct them
+    // from mutable global settings: expose a stable, explicitly nonpayable
+    // representation while preserving placement status/history.
+    return {
+      id: row.id, kind: row.kind, label: featuredPlacementLabel(row.kind),
+      salonId: row.salonId, centerId: row.centerId, courseId: row.courseId,
+      scope: row.scope, scopeId: row.scopeCategoryId ?? row.scopeSubcategoryId,
+      status: row.status, priceSnapshot: row.priceSnapshot, durationDaysSnapshot: row.durationDaysSnapshot,
+      paymentReference: ipsSafePlacementReference(row), ipsPayload: null,
+      recipientName: null, recipientAccount: null, purpose: null, currency: null,
+      paymentInstructionsAvailable: false,
+      startsAt: row.startsAt?.toISOString() ?? null, endsAt: row.endsAt?.toISOString() ?? null,
+      settledAt: row.settledAt?.toISOString() ?? null, createdAt: row.createdAt.toISOString(),
+    };
+  }
+  return {
+    id: row.id,
+    kind: row.kind,
+    label: featuredPlacementLabel(row.kind),
+    salonId: row.salonId,
+    centerId: row.centerId,
+    courseId: row.courseId,
+    scope: row.scope,
+    scopeId: row.scopeCategoryId ?? row.scopeSubcategoryId,
+    status: row.status,
+    priceSnapshot: row.priceSnapshot,
+    durationDaysSnapshot: row.durationDaysSnapshot,
+    paymentReference: ipsSafePlacementReference(row),
+    ipsPayload: row.paymentIpsPayloadSnapshot!,
+    recipientName: row.paymentRecipientNameSnapshot!,
+    recipientAccount: row.paymentRecipientAccountSnapshot!,
+    purpose: row.paymentPurposeSnapshot!,
+    currency: "RSD" as const,
+    paymentInstructionsAvailable: true,
+    startsAt: row.startsAt?.toISOString() ?? null,
+    endsAt: row.endsAt?.toISOString() ?? null,
+    settledAt: row.settledAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+async function expireStalePendingPlacement(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  kind: SharedPlacementKind,
+  scope: "home" | "category" | "subcategory",
+  scopeId: string | null,
+  now: Date,
+) {
+  await tx.update(educationPlacementsTable).set({ status: "expired", updatedAt: now }).where(and(
+    eq(educationPlacementsTable.kind, kind),
+    eq(educationPlacementsTable.scope, scope),
+    scope === "category" ? eq(educationPlacementsTable.scopeCategoryId, scopeId!) : scope === "subcategory" ? eq(educationPlacementsTable.scopeSubcategoryId, scopeId!) : undefined,
+    eq(educationPlacementsTable.status, "pending_payment"),
+    lte(educationPlacementsTable.createdAt, new Date(now.getTime() - EDUCATION_PLACEMENT_PAYMENT_WINDOW_MS)),
+  ));
+}
+
+async function validateSharedPlacementScope(
+  kind: SharedPlacementKind,
+  scope: "home" | "category" | "subcategory",
+  scopeId: string | null,
+  courseId: string | null,
+) {
+  if ((scope === "home" && scopeId) || (scope !== "home" && !scopeId)) throw new Error("Opseg plasmana nije ispravan.");
+  if (scope === "category") {
+    const [category] = await db.select({ id: courseCategoriesTable.id }).from(courseCategoriesTable)
+      .where(and(eq(courseCategoriesTable.id, scopeId!), eq(courseCategoriesTable.active, true))).limit(1);
+    if (!category) throw new Error("Kategorija plasmana nije aktivna.");
+  }
+  if (scope === "subcategory") {
+    const [subcategory] = await db.select({ id: educationSubcategoriesTable.id }).from(educationSubcategoriesTable)
+      .where(and(eq(educationSubcategoriesTable.id, scopeId!), eq(educationSubcategoriesTable.active, true))).limit(1);
+    if (!subcategory) throw new Error("Potkategorija plasmana nije aktivna.");
+  }
+  if (kind === "special_offer") {
+    const [course] = courseId ? await db.select().from(coursesTable).where(eq(coursesTable.id, courseId)).limit(1) : [];
+    if (!course || (scope === "category" && course.categoryId !== scopeId) || (scope === "subcategory" && course.subcategoryId !== scopeId)) {
+      throw new Error("Kurs specijalne ponude ne pripada izabranom opsegu.");
+    }
+  }
 }
 
 const EDUCATION_PLACEMENT_PAYMENT_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -19983,7 +20146,7 @@ function educationPlacementView(row: typeof educationPlacementsTable.$inferSelec
 
 async function lockEducationPlacementResource(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-  kind: "featured_center" | "special_offer",
+  kind: SharedPlacementKind,
   scope: "home" | "category" | "subcategory",
   scopeId: string | null,
 ) {
@@ -20041,12 +20204,16 @@ router.post("/education/placements/purchase", async (req, res): Promise<void> =>
   if (!["featured_center", "special_offer"].includes(kind) || !["home", "category", "subcategory"].includes(scope)) {
     res.status(400).json({ error: "Vrsta ili opseg plasmana nije ispravan." }); return;
   }
+  if (kind === "featured_center" && !(await educationCenterEligibility(center.id)).eligible) {
+    res.status(409).json({ error: "Edukativni centar trenutno ne ispunjava uslove za javni marketplace." }); return;
+  }
   try {
     const placement = await db.transaction(async (tx) => {
       await lockEducationCenterFinancials(tx, center.id);
       const [setting] = await tx.select().from(educationPlacementSettingsTable)
         .where(and(eq(educationPlacementSettingsTable.kind, kind), eq(educationPlacementSettingsTable.scope, scope))).for("update").limit(1);
       if (!setting) throw new Error("Ovaj plasman trenutno nije u ponudi.");
+      if (setting.price < 1) throw new Error("Cena plaćenog plasmana mora biti najmanje 1 RSD.");
       if ((scope === "home" && scopeId) || (scope !== "home" && !scopeId)) throw new Error("Opseg plasmana nije ispravan.");
       await lockEducationPlacementResource(tx, kind, scope, scopeId);
       if (scope === "category") {
@@ -20069,14 +20236,7 @@ router.post("/education/placements/purchase", async (req, res): Promise<void> =>
         }
       }
       const now = new Date();
-      const pendingCutoff = new Date(now.getTime() - EDUCATION_PLACEMENT_PAYMENT_WINDOW_MS);
-      await tx.update(educationPlacementsTable).set({ status: "expired", updatedAt: now }).where(and(
-        eq(educationPlacementsTable.kind, kind),
-        eq(educationPlacementsTable.scope, scope),
-        scope === "category" ? eq(educationPlacementsTable.scopeCategoryId, scopeId!) : scope === "subcategory" ? eq(educationPlacementsTable.scopeSubcategoryId, scopeId!) : undefined,
-        eq(educationPlacementsTable.status, "pending_payment"),
-        lte(educationPlacementsTable.createdAt, pendingCutoff),
-      ));
+      await expireStalePendingPlacement(tx, kind, scope, scopeId, now);
       const occupied = await tx.select({ slotNumber: educationPlacementsTable.slotNumber }).from(educationPlacementsTable)
         .where(and(
           eq(educationPlacementsTable.kind, kind), eq(educationPlacementsTable.scope, scope),
@@ -20087,6 +20247,15 @@ router.post("/education/placements/purchase", async (req, res): Promise<void> =>
       const used = new Set(occupied.map((row) => row.slotNumber));
       const slotNumber = Array.from({ length: setting.slotCount }, (_, index) => index + 1).find((slot) => !used.has(slot));
       if (!slotNumber) throw new Error("Svi slotovi za izabrani opseg su zauzeti.");
+      const paymentReference = `FP-${randomBytes(12).toString("hex")}`;
+      const paymentSettings = await getEducationPlatformSettings();
+      const ips = educationIpsQrPayload({
+        recipientName: paymentSettings.ipsRecipientName,
+        recipientAccount: paymentSettings.ipsRecipientAccount,
+        purpose: paymentSettings.ipsPurpose,
+        amount: setting.price,
+        reference: paymentReference,
+      });
       const [created] = await tx.insert(educationPlacementsTable).values({
         kind, scope,
         scopeCategoryId: scope === "category" ? scopeId : null,
@@ -20094,7 +20263,14 @@ router.post("/education/placements/purchase", async (req, res): Promise<void> =>
         centerId: kind === "featured_center" ? center.id : null,
         courseId: kind === "special_offer" ? courseId : null,
         slotNumber, priceSnapshot: setting.price, durationDaysSnapshot: setting.durationDays, status: "pending_payment",
-        paymentReference: `EDU-PLACEMENT-${randomUUID()}`,
+        // Adapter endpoint shares the QR-safe canonical reference format used
+        // by /featured-placements; NBS IPS permits at most 35 characters.
+        paymentReference,
+        paymentIpsPayloadSnapshot: ips.payload,
+        paymentRecipientNameSnapshot: ips.recipientName,
+        paymentRecipientAccountSnapshot: ips.recipientAccount,
+        paymentPurposeSnapshot: ips.purpose,
+        paymentCurrencySnapshot: ips.currency,
         rotationSeed: slotNumber,
       }).returning();
       return created!;
@@ -20102,6 +20278,116 @@ router.post("/education/placements/purchase", async (req, res): Promise<void> =>
     res.status(201).json(educationPlacementView(placement));
   } catch (error) {
     res.status(409).json({ error: error instanceof Error ? error.message : "Plasman nije rezervisan." });
+  }
+});
+
+router.get("/featured-placements/mine", async (req, res): Promise<void> => {
+  const user = await current(req, res); if (!user) return;
+  const [salons, centers] = await Promise.all([
+    db.select({ id: salonsTable.id }).from(salonsTable).where(eq(salonsTable.ownerId, user.id)),
+    db.select({ id: educationCentersTable.id }).from(educationCentersTable).where(eq(educationCentersTable.ownerId, user.id)),
+  ]);
+  if (!salons.length && !centers.length) { res.status(403).json({ error: "Nalog nije povezan sa poslovnim profilom." }); return; }
+  const courseIds = centers.length
+    ? (await db.select({ id: coursesTable.id }).from(coursesTable).where(inArray(coursesTable.centerId, centers.map((row) => row.id)))).map((row) => row.id)
+    : [];
+  const predicates = [
+    salons.length ? inArray(educationPlacementsTable.salonId, salons.map((row) => row.id)) : undefined,
+    centers.length ? inArray(educationPlacementsTable.centerId, centers.map((row) => row.id)) : undefined,
+    courseIds.length ? inArray(educationPlacementsTable.courseId, courseIds) : undefined,
+  ].filter((value): value is SQL => Boolean(value));
+  const rows = await db.select().from(educationPlacementsTable).where(or(...predicates))
+    .orderBy(desc(educationPlacementsTable.createdAt));
+  res.json(ListMyFeaturedPlacementsResponse.parse(await Promise.all(rows.map(featuredPlacementView))));
+});
+
+router.post("/featured-placements", async (req, res): Promise<void> => {
+  const parsed = CreateFeaturedPlacementBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const user = await current(req, res); if (!user) return;
+  const { kind } = parsed.data;
+  const scope = parsed.data.scope ?? "home";
+  const scopeId = parsed.data.scopeId ?? null;
+  const targetId = parsed.data.targetId ?? null;
+  const [ownedSalons, ownedCenters] = await Promise.all([
+    db.select().from(salonsTable).where(eq(salonsTable.ownerId, user.id)),
+    db.select().from(educationCentersTable).where(eq(educationCentersTable.ownerId, user.id)),
+  ]);
+  const salon = kind === "featured_salon"
+    ? ownedSalons.find((row) => !targetId || row.id === targetId)
+    : undefined;
+  const center = kind !== "featured_salon"
+    ? ownedCenters.find((row) => kind === "special_offer" || !targetId || row.id === targetId)
+    : undefined;
+  if (kind === "featured_salon" && (!salon || scope !== "home" || scopeId)) {
+    res.status(409).json({ error: "Istaknuti salon mora upućivati na vaš salon i početnu stranu." }); return;
+  }
+  let course: typeof coursesTable.$inferSelect | undefined;
+  if (kind === "special_offer") {
+    [course] = targetId ? await db.select().from(coursesTable).where(eq(coursesTable.id, targetId)).limit(1) : [];
+    if (!course?.centerId || !ownedCenters.some((row) => row.id === course!.centerId) || !course.published || course.archived) {
+      res.status(409).json({ error: "Specijalna ponuda mora upućivati na vaš objavljen kurs." }); return;
+    }
+  } else if (kind === "featured_center" && !center) {
+    res.status(409).json({ error: "Edukativni centar nije pronađen." }); return;
+  }
+  try {
+    if (kind === "featured_center" && !(await educationCenterEligibility(center!.id)).eligible) {
+      throw new Error("Edukativni centar trenutno ne ispunjava uslove za javni marketplace.");
+    }
+    if (kind === "special_offer" && !(await isPublicEducationCourse(course!))) {
+      throw new Error("Kurs trenutno nije javno dostupan za specijalnu ponudu.");
+    }
+    await validateSharedPlacementScope(kind, scope, scopeId, course?.id ?? null);
+    const paymentReference = `FP-${randomBytes(12).toString("hex")}`;
+    const created = await db.transaction(async (tx) => {
+      await lockEducationPlacementResource(tx, kind, scope, scopeId);
+      await expireStalePendingPlacement(tx, kind, scope, scopeId, new Date());
+      const [setting] = await tx.select().from(educationPlacementSettingsTable)
+        .where(and(eq(educationPlacementSettingsTable.kind, kind), eq(educationPlacementSettingsTable.scope, scope))).for("update").limit(1);
+      if (!setting) throw new Error("Ovaj plasman trenutno nije u ponudi.");
+      if (setting.price < 1) throw new Error("Cena plaćenog plasmana mora biti najmanje 1 RSD.");
+      const paymentSettings = await getEducationPlatformSettings();
+      // Validate the complete server-owned IPS charge before persisting it, so
+      // a missing payment account can never leave an unusable pending row.
+      const ips = educationIpsQrPayload({
+        recipientName: paymentSettings.ipsRecipientName,
+        recipientAccount: paymentSettings.ipsRecipientAccount,
+        purpose: paymentSettings.ipsPurpose,
+        amount: setting.price,
+        reference: paymentReference,
+      });
+      const occupied = await tx.select({ slotNumber: educationPlacementsTable.slotNumber }).from(educationPlacementsTable).where(and(
+        eq(educationPlacementsTable.kind, kind), eq(educationPlacementsTable.scope, scope),
+        scope === "category" ? eq(educationPlacementsTable.scopeCategoryId, scopeId!) : scope === "subcategory" ? eq(educationPlacementsTable.scopeSubcategoryId, scopeId!) : undefined,
+        inArray(educationPlacementsTable.status, ["pending_payment", "active"]),
+        or(isNull(educationPlacementsTable.endsAt), gt(educationPlacementsTable.endsAt, new Date())),
+      )).for("update");
+      const used = new Set(occupied.map((row) => row.slotNumber));
+      const slotNumber = Array.from({ length: setting.slotCount }, (_, index) => index + 1).find((slot) => !used.has(slot));
+      if (!slotNumber) throw new Error("Svi slotovi za izabrani plasman su zauzeti.");
+      const [row] = await tx.insert(educationPlacementsTable).values({
+        kind, scope,
+        scopeCategoryId: scope === "category" ? scopeId : null,
+        scopeSubcategoryId: scope === "subcategory" ? scopeId : null,
+        salonId: salon?.id ?? null,
+        centerId: kind === "featured_center" ? center!.id : null,
+        courseId: course?.id ?? null,
+        slotNumber, priceSnapshot: setting.price, durationDaysSnapshot: setting.durationDays,
+        paymentReference,
+        paymentIpsPayloadSnapshot: ips.payload,
+        paymentRecipientNameSnapshot: ips.recipientName,
+        paymentRecipientAccountSnapshot: ips.recipientAccount,
+        paymentPurposeSnapshot: ips.purpose,
+        paymentCurrencySnapshot: ips.currency,
+        status: "pending_payment", rotationSeed: slotNumber,
+      }).returning();
+      return row!;
+    });
+    res.status(201).json(CreateFeaturedPlacementResponse.parse(await featuredPlacementView(created)));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Zahtev nije kreiran.";
+    res.status(message.startsWith("IPS_PAYMENT_") ? 409 : 409).json({ error: message });
   }
 });
 
@@ -22120,8 +22406,8 @@ router.patch("/admin/education/placement-settings", async (req, res): Promise<vo
     const rows = await db.transaction(async (tx) => {
       const output = [];
       for (const item of req.body) {
-        if (!["featured_center", "special_offer"].includes(item?.kind) || !["home", "category", "subcategory"].includes(item?.scope)
-          || !Number.isInteger(item?.price) || item.price < 0 || !Number.isInteger(item?.slotCount) || item.slotCount < 1
+        if (!["featured_salon", "featured_center", "special_offer"].includes(item?.kind) || !["home", "category", "subcategory"].includes(item?.scope)
+          || !Number.isInteger(item?.price) || item.price < 1 || !Number.isInteger(item?.slotCount) || item.slotCount < 1
           || !Number.isInteger(item?.durationDays) || item.durationDays < 1) throw new Error("Podešavanje plasmana nije ispravno.");
         const [row] = await tx.insert(educationPlacementSettingsTable).values({
           kind: item.kind, scope: item.scope, price: item.price, slotCount: item.slotCount,
@@ -22207,7 +22493,7 @@ router.post("/admin/education/placements/:paymentReference/settle", async (req, 
       const startsAt = now;
       const endsAt = addEducationBelgradeCalendarDays(startsAt, row.durationDaysSnapshot);
       const [updated] = await tx.update(educationPlacementsTable).set({
-        status: "active", startsAt, endsAt, settledByUserId: admin.id, updatedAt: startsAt,
+        status: "active", startsAt, endsAt, settledAt: startsAt, settledByUserId: admin.id, updatedAt: startsAt,
       }).where(and(eq(educationPlacementsTable.id, row.id), eq(educationPlacementsTable.status, "pending_payment"))).returning();
       return { placement: updated!, expired: false };
     });
@@ -22217,6 +22503,80 @@ router.post("/admin/education/placements/:paymentReference/settle", async (req, 
     }
     res.json(educationPlacementView(settlement.placement));
   } catch (error) {
+    res.status(409).json({ error: error instanceof Error ? error.message : "Potvrda uplate nije uspela." });
+  }
+});
+
+router.get("/admin/featured-placements", async (req, res): Promise<void> => {
+  const admin = await requireAdmin(req, res); if (!admin) return;
+  const parsed = ListAdminFeaturedPlacementsQueryParams.safeParse(req.query);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const page = parsed.data.page ?? 1;
+  const pageSize = parsed.data.pageSize ?? 20;
+  const predicate = parsed.data.status ? eq(educationPlacementsTable.status, parsed.data.status) : undefined;
+  const [[total], rows] = await Promise.all([
+    db.select({ value: count() }).from(educationPlacementsTable).where(predicate),
+    db.select().from(educationPlacementsTable).where(predicate)
+      .orderBy(desc(educationPlacementsTable.createdAt), desc(educationPlacementsTable.id))
+      .limit(pageSize).offset((page - 1) * pageSize),
+  ]);
+  res.json(ListAdminFeaturedPlacementsResponse.parse({
+    items: await Promise.all(rows.map(featuredPlacementView)),
+    page, pageSize, total: Number(total?.value ?? 0),
+  }));
+});
+
+router.post("/admin/featured-placements/:placementId/confirm", async (req, res): Promise<void> => {
+  const admin = await requireAdmin(req, res); if (!admin) return;
+  const parsed = ConfirmAdminFeaturedPlacementParams.safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  try {
+    const settlement = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`featured-placement:${parsed.data.placementId}`}))`);
+      const [row] = await tx.select().from(educationPlacementsTable)
+        .where(eq(educationPlacementsTable.id, parsed.data.placementId)).for("update").limit(1);
+      if (!row) throw new Error("NOT_FOUND");
+      // Returning the persisted row makes retries idempotent: dates and audit
+      // actor are never recalculated after the first successful confirmation.
+      if (row.status === "active") return { placement: row, activated: false };
+      if (row.status !== "pending_payment") throw new Error("Plasman nije u stanju za potvrdu uplate.");
+      await lockEducationPlacementResource(tx, row.kind, row.scope, row.scopeCategoryId ?? row.scopeSubcategoryId);
+      const now = new Date();
+      if (row.createdAt.getTime() + EDUCATION_PLACEMENT_PAYMENT_WINDOW_MS <= now.getTime()) {
+        const [expired] = await tx.update(educationPlacementsTable).set({ status: "expired", updatedAt: now })
+          .where(and(eq(educationPlacementsTable.id, row.id), eq(educationPlacementsTable.status, "pending_payment"))).returning();
+        if (!expired) throw new Error("Plasman je istovremeno izmenjen.");
+        throw new Error("Rok za uplatu plasmana je istekao. Kreirajte novi zahtev.");
+      }
+      await validateSharedPlacementScope(row.kind, row.scope, row.scopeCategoryId ?? row.scopeSubcategoryId, row.courseId);
+      if (row.kind === "featured_center" && (!row.centerId || !(await educationCenterEligibility(row.centerId)).eligible)) {
+        throw new Error("Edukativni centar više ne ispunjava uslove za javni marketplace.");
+      }
+      if (row.kind === "special_offer") {
+        const [course] = await tx.select().from(coursesTable).where(eq(coursesTable.id, row.courseId!)).limit(1);
+        if (!course || !course.published || course.archived || !(await isPublicEducationCourse(course))) {
+          throw new Error("Kurs specijalne ponude više nije javno dostupan.");
+        }
+      }
+      const endsAt = addEducationBelgradeCalendarDays(now, row.durationDaysSnapshot);
+      const [updated] = await tx.update(educationPlacementsTable).set({
+        status: "active", startsAt: now, endsAt, settledAt: now,
+        settledByUserId: admin.id, updatedAt: now,
+      }).where(and(
+        eq(educationPlacementsTable.id, row.id),
+        eq(educationPlacementsTable.status, "pending_payment"),
+      )).returning();
+      if (!updated) throw new Error("Plasman je istovremeno izmenjen.");
+      return { placement: updated, activated: true };
+    });
+    if (settlement.activated && settlement.placement.kind === "featured_salon") {
+      await publishCatalogInvalidation(["salons"]);
+    }
+    res.json(ConfirmAdminFeaturedPlacementResponse.parse(await featuredPlacementView(settlement.placement)));
+  } catch (error) {
+    if (error instanceof Error && error.message === "NOT_FOUND") {
+      res.status(404).json({ error: "Plasman nije pronađen." }); return;
+    }
     res.status(409).json({ error: error instanceof Error ? error.message : "Potvrda uplate nije uspela." });
   }
 });

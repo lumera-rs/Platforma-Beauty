@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 96;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 97;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -139,7 +139,7 @@ const ENUM_LABELS: Record<string, string[]> = {
   education_course_type_status: ["approved", "pending", "rejected"],
   education_review_status: ["pending", "published", "rejected"],
   education_payment_mode: ["online_full", "live_deposit", "live_off_platform"],
-  education_placement_kind: ["featured_center", "special_offer"],
+  education_placement_kind: ["featured_salon", "featured_center", "special_offer"],
   education_placement_scope: ["home", "category", "subcategory"],
   education_placement_status: ["pending_payment", "active", "expired", "cancelled", "rejected"],
   education_gift_voucher_status: ["pending_payment", "active", "redeemed", "refunded", "cancelled"],
@@ -3951,6 +3951,31 @@ function tableStatements(s: string): string[] {
     `CREATE INDEX IF NOT EXISTS education_placements_center_idx ON ${s}.education_placements (center_id)`,
     `CREATE INDEX IF NOT EXISTS education_placements_course_idx ON ${s}.education_placements (course_id)`,
     `CREATE INDEX IF NOT EXISTS education_placements_settled_by_idx ON ${s}.education_placements (settled_by_user_id)`,
+    // v96 — one paid-placement ledger now also targets salons. Existing
+    // education rows and endpoint contracts remain untouched.
+    `ALTER TABLE ${s}.education_placements ADD COLUMN IF NOT EXISTS salon_id uuid REFERENCES ${s}.salons(id) ON DELETE CASCADE`,
+    `ALTER TABLE ${s}.education_placements ADD COLUMN IF NOT EXISTS settled_at timestamptz`,
+    `CREATE INDEX IF NOT EXISTS education_placements_salon_idx ON ${s}.education_placements (salon_id)`,
+    `ALTER TABLE ${s}.education_placements DROP CONSTRAINT IF EXISTS education_placements_target_check`,
+    `ALTER TABLE ${s}.education_placements ADD CONSTRAINT education_placements_target_check CHECK (
+       (kind='featured_salon' AND salon_id IS NOT NULL AND center_id IS NULL AND course_id IS NULL)
+       OR (kind='featured_center' AND center_id IS NOT NULL AND salon_id IS NULL AND course_id IS NULL)
+       OR (kind='special_offer' AND course_id IS NOT NULL AND center_id IS NULL AND salon_id IS NULL)
+     ) NOT VALID`,
+    `ALTER TABLE ${s}.education_placements VALIDATE CONSTRAINT education_placements_target_check`,
+    `INSERT INTO ${s}.education_placement_settings (kind, scope, price, slot_count, duration_days)
+       VALUES ('featured_salon', 'home', 5000, 12, 30)
+       ON CONFLICT (kind, scope) DO NOTHING`,
+    `UPDATE ${s}.education_placements
+       SET payment_reference = 'FP-' || replace(id::text, '-', '')
+       WHERE payment_reference IS NULL OR length(payment_reference) > 35`,
+    // v97 — immutable payment instructions. Nullable by design: historical
+    // rows predate snapshots and remain readable as explicitly nonpayable.
+    `ALTER TABLE ${s}.education_placements ADD COLUMN IF NOT EXISTS payment_ips_payload_snapshot text`,
+    `ALTER TABLE ${s}.education_placements ADD COLUMN IF NOT EXISTS payment_recipient_name_snapshot text`,
+    `ALTER TABLE ${s}.education_placements ADD COLUMN IF NOT EXISTS payment_recipient_account_snapshot text`,
+    `ALTER TABLE ${s}.education_placements ADD COLUMN IF NOT EXISTS payment_purpose_snapshot text`,
+    `ALTER TABLE ${s}.education_placements ADD COLUMN IF NOT EXISTS payment_currency_snapshot text`,
     `DO $$ BEGIN
        IF to_regclass('${s}.education_center_subscriptions') IS NOT NULL THEN
          ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS billing_cycle text NOT NULL DEFAULT 'monthly';

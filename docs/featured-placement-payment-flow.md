@@ -21,11 +21,33 @@ The agreed target flow for paid featured placements is:
 6. The same mechanism is used for featured salons, featured education centers,
    and education special offers; these are not separate payment flows.
 
-The fixed price, duration, settlement fields, owner entry point, and
-administrator queue are implementation inputs for the follow-up feature. Until
-that feature is implemented, the existing admin-only featured-salon switch is
-the source of truth for salon designation, and it must not be presented as an
-IPS payment or automatic payment confirmation.
+The shared flow is implemented by the placement product/settings and placement
+ledger used by all three placement kinds. Price and duration are copied to the
+ledger row when the owner creates a request and cannot change with later
+settings edits. Placement prices are positive whole dinar amounts (at least 1
+RSD); a legacy zero-price history row is deliberately nonpayable and is never
+automatically activated. The API returns a server-generated NBS IPS payload based on the
+platform payment account; recipient, account, purpose, currency, and the final
+payload are snapshotted on the charge. Later platform-setting changes therefore
+cannot alter payment history. Rows created before instruction snapshots remain
+readable with `paymentInstructionsAvailable: false`; instructions are never
+silently reconstructed from current settings. The browser only renders the
+returned payload.
+
+Owners can review pending and historical requests. Administrators use the
+paginated pending queue and confirmation is idempotent: a retry returns the
+original confirmed row and never moves its start/end dates. Public salon and
+education placement reads require `active`, `starts_at <= now`, and
+`ends_at > now`; pending or expired rows never activate public placement.
+
+The legacy salon `featured` column may remain for backwards-compatible
+administrative records, but it is not authoritative for public paid placement.
+
+The former education-only purchase/list/settlement API operations have been
+retired from the published contract and owner/admin clients. Existing server
+routes remain only as backwards-compatible adapters while clients move to the
+shared placement endpoints; they issue the same QR-safe `FP-…` references and
+apply the same expiry and settlement rules.
 
 ## Compatibility boundary
 
