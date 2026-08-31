@@ -201,7 +201,10 @@ async function stopSecondaryApiProcess(child: ChildProcess | undefined): Promise
 async function routeNotificationPollingTo(
   page: Page,
   baseUrl: string,
-  onNotificationRequest?: () => void,
+  callbacks?: {
+    onNotificationRequest?: () => void;
+    onNotificationResponse?: () => void;
+  },
 ): Promise<void> {
   await page.route(notificationRequestPattern, async (route: Route) => {
     const requestUrl = new URL(route.request().url());
@@ -210,10 +213,15 @@ async function routeNotificationPollingTo(
       return;
     }
 
-    onNotificationRequest?.();
+    callbacks?.onNotificationRequest?.();
     const targetUrl = new URL(`${requestUrl.pathname}${requestUrl.search}`, baseUrl);
     const response = await route.fetch({ url: targetUrl.toString() });
+    const responseDelayMs = Number(process.env.LUMERA_TEST_SALON_NOTIFICATION_RESPONSE_DELAY_MS ?? 0);
+    if (Number.isFinite(responseDelayMs) && responseDelayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, responseDelayMs));
+    }
     await route.fulfill({ response });
+    callbacks?.onNotificationResponse?.();
   });
 }
 
@@ -668,6 +676,7 @@ test("a listener outage falls back to polling and reconnects without a post-stop
   let missedEventSubscription: NotificationEventSubscription | undefined;
   let eventSubscription: NotificationEventSubscription | undefined;
   const notificationRequestTimes: number[] = [];
+  const notificationResponseTimes: number[] = [];
 
   try {
     await db.update(salonNotificationsTable)
@@ -681,21 +690,23 @@ test("a listener outage falls back to polling and reconnects without a post-stop
     await routeNotificationPollingTo(
       page,
       secondaryApi.baseUrl,
-      () => notificationRequestTimes.push(Date.now()),
+      {
+        onNotificationRequest: () => notificationRequestTimes.push(Date.now()),
+        onNotificationResponse: () => notificationResponseTimes.push(Date.now()),
+      },
     );
     notificationRequestsRouted = true;
     await signIn(page, fixture.ownerA);
     await page.goto("/vlasnik");
     await expect(page.getByTestId("status-unread-notification-count")).toHaveCount(0);
-    // Owner routes are lazy-loaded, so the navbar query can start after
-    // page.goto resolves. Wait for the routed request instead of assuming it
-    // already happened synchronously.
+    // Owner routes are lazy-loaded, and React Query starts its refetch interval
+    // only after the response settles. Anchor the timing assertion to that
+    // completed response so initial API latency is not counted as poll delay.
     await expect.poll(
-      () => notificationRequestTimes.length,
-      { timeout: 5_000 },
+      () => notificationResponseTimes.length,
+      { timeout: 10_000 },
     ).toBeGreaterThan(0);
-    await page.waitForTimeout(250);
-    const initialNotificationRequestAt = notificationRequestTimes.at(-1)!;
+    const initialNotificationResponseAt = notificationResponseTimes.at(-1)!;
     const notificationRequestCountBeforeOutage = notificationRequestTimes.length;
     missedEventSubscription = await subscribeToNotificationEvents(secondaryApi.baseUrl, page);
 
@@ -717,7 +728,7 @@ test("a listener outage falls back to polling and reconnects without a post-stop
       { timeout: 7_000 },
     ).toBeGreaterThan(notificationRequestCountBeforeOutage);
     const fallbackPollDelayMs = notificationRequestTimes[notificationRequestCountBeforeOutage]!
-      - initialNotificationRequestAt;
+      - initialNotificationResponseAt;
     expect(fallbackPollDelayMs).toBeGreaterThanOrEqual(4_500);
     expect(fallbackPollDelayMs).toBeLessThan(6_500);
     await expect(page.getByTestId("status-unread-notification-count")).toHaveText("1");
