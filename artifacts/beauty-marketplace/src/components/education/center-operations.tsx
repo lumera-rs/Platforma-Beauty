@@ -45,6 +45,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Loader2, Calendar as CalendarIcon, Users, UserCog, CalendarClock, ChevronLeft, ChevronRight, UserPlus, Clock, Trash2, Edit2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { trackEvent } from "@/lib/analytics";
 import { educationBelgradeDateKey, educationBelgradeDateLabel, educationBelgradeTime } from "@/lib/education-operational-time";
 
 // ==========================================
@@ -596,21 +597,33 @@ function EducatorSchedule({ centerId, permissions }: { centerId: string, permiss
   const [absenceDraft, setAbsenceDraft] = useState({ startDate: "", endDate: "", reason: "" });
   const [replacementBySession, setReplacementBySession] = useState<Record<string, string>>({});
 
-  const previewAbsence = (staffId = activeStaffId) => {
+  const previewAbsence = (staffId = activeStaffId, trackConflictView = true) => {
     if (!staffId) return;
     if (!absenceDraft.startDate || !absenceDraft.endDate) {
       toast.error("Unesite početak i kraj odsustva.");
       return;
     }
-    previewAbsenceMut.mutate({
-      centerId,
-      staffId,
-      data: {
-        startDate: absenceDraft.startDate,
-        endDate: absenceDraft.endDate,
-        reason: absenceDraft.reason || null,
+    previewAbsenceMut.mutate(
+      {
+        centerId,
+        staffId,
+        data: {
+          startDate: absenceDraft.startDate,
+          endDate: absenceDraft.endDate,
+          reason: absenceDraft.reason || null,
+        },
       },
-    });
+      {
+        onSuccess: (preview) => {
+          if (trackConflictView && preview.conflicts.length > 0) {
+            trackEvent("absence_conflicts_viewed", {
+              conflict_count: preview.conflicts.length,
+              location: "absence_dialog",
+            });
+          }
+        },
+      },
+    );
   };
 
   const handleResolveBySubstitution = (sessionId: string) => {
@@ -621,13 +634,17 @@ function EducatorSchedule({ centerId, permissions }: { centerId: string, permiss
     }
     substituteEducatorMut.mutate({ centerId, sessionId, data: { educatorStaffId } }, {
       onSuccess: () => {
+        trackEvent("absence_conflict_resolved", {
+          action: "educator_substituted",
+          location: "absence_dialog",
+        });
         toast.success("Zamenski edukator je dodeljen.");
         setReplacementBySession((current) => {
           const next = { ...current };
           delete next[sessionId];
           return next;
         });
-        previewAbsence();
+        previewAbsence(activeStaffId, false);
       },
       onError: (e: any) => toast.error("Zamena nije uspela", { description: e.message }),
     });
@@ -638,8 +655,12 @@ function EducatorSchedule({ centerId, permissions }: { centerId: string, permiss
     const reason = window.prompt("Razlog otkazivanja (opciono):");
     cancelSessionMut.mutate({ centerId, sessionId, data: { reason: reason || undefined } }, {
       onSuccess: () => {
+        trackEvent("absence_conflict_resolved", {
+          action: "session_cancelled",
+          location: "absence_dialog",
+        });
         toast.success("Termin je otkazan.");
-        previewAbsence();
+        previewAbsence(activeStaffId, false);
       },
       onError: (e: any) => toast.error("Otkazivanje nije uspelo", { description: e.message }),
     });
