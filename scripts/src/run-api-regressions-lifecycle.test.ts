@@ -77,6 +77,7 @@ const releaseGateCommands = [
   "test:api-regressions-lifecycle",
   "test:retail-checkout-api",
   "test:supplier-catalog-api",
+  "test:education-placement-lifecycle",
   "test:education-extras",
   "test:admin-form-resilience",
   "test:salon-notifications:release",

@@ -68,6 +68,7 @@
     "test:final-booking-qa": "tsx ./src/run-final-booking-qa.ts",
     "cleanup:final-booking-qa": "tsx ./src/run-final-booking-qa.ts --recover-interrupted-databases",
     "test:supplier-catalog-api": "tsx ./src/run-supplier-catalog-api.ts",
+    "test:education-placement-lifecycle": "tsx ./src/run-education-placement-lifecycle.ts",
     "test:api-regressions": "tsx ./src/run-api-regressions.ts",
     "test:api-regressions-lifecycle": "tsx --test ./src/run-api-regressions-lifecycle.test.ts",
     "cleanup:api-regressions": "tsx ./src/run-api-regressions.ts --recover-interrupted-databases",
