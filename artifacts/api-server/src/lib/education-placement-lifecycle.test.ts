@@ -2,13 +2,17 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { type AddressInfo } from "node:net";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import {
   db,
+  coursesTable,
+  courseCategoriesTable,
   educationCentersTable,
   educationCenterSubscriptionsTable,
   educationPlacementSettingsTable,
   educationPlacementsTable,
+  educationSectionsTable,
+  educationSubcategoriesTable,
   subscriptionPlansTable,
   usersTable,
 } from "@workspace/db";
@@ -18,11 +22,6 @@ import { ensureDemoData } from "./seed";
 
 const suffix = randomUUID();
 const password = "education-placement-test-password";
-const placementKey = and(
-  eq(educationPlacementSettingsTable.kind, "featured_center"),
-  eq(educationPlacementSettingsTable.scope, "home"),
-);
-
 type PlacementView = {
   id: string;
   status: string;
@@ -103,6 +102,19 @@ async function patchSettings(
   await assertStatus(response, 200);
 }
 
+async function patchScopedSettings(
+  baseUrl: string,
+  adminCookie: string,
+  scope: "category" | "subcategory",
+) {
+  const response = await request(baseUrl, "/admin/education/placement-settings", {
+    method: "PATCH",
+    cookie: adminCookie,
+    body: [{ kind: "special_offer", scope, price: 7_500, slotCount: 1, durationDays: 3 }],
+  });
+  await assertStatus(response, 200);
+}
+
 async function purchase(baseUrl: string, centerCookie: string): Promise<PlacementView> {
   const response = await request(baseUrl, "/education/placements/purchase", {
     method: "POST",
@@ -111,6 +123,21 @@ async function purchase(baseUrl: string, centerCookie: string): Promise<Placemen
   });
   await assertStatus(response, 201);
   return responseJson<PlacementView>(response);
+}
+
+async function purchaseSpecialOffer(
+  baseUrl: string,
+  centerCookie: string,
+  scope: "category" | "subcategory",
+  scopeId: string,
+  courseId: string,
+): Promise<{ response: Response; body: PlacementView | { error: string } }> {
+  const response = await request(baseUrl, "/education/placements/purchase", {
+    method: "POST",
+    cookie: centerCookie,
+    body: { kind: "special_offer", scope, scopeId, courseId },
+  });
+  return { response, body: await responseJson<PlacementView | { error: string }>(response) };
 }
 
 async function settle(
@@ -131,6 +158,10 @@ async function run(): Promise<void> {
   let server: ReturnType<typeof app.listen> | undefined;
   const userIds: string[] = [];
   let centerId: string | undefined;
+  const courseIds: string[] = [];
+  let sectionId: string | undefined;
+  const categoryIds: string[] = [];
+  const subcategoryIds: string[] = [];
 
   try {
     const passwordHash = await hashPassword(password);
@@ -187,6 +218,57 @@ async function run(): Promise<void> {
       login(baseUrl, owner.email),
     ]);
 
+    const [section] = await db.insert(educationSectionsTable).values({
+      name: `Placement section ${suffix}`,
+      slug: `placement-section-${suffix}`,
+    }).returning();
+    assert.ok(section);
+    sectionId = section.id;
+    const categories = await db.insert(courseCategoriesTable).values([
+      { name: `Placement category A ${suffix}`, slug: `placement-category-a-${suffix}`, sectionId },
+      { name: `Placement category B ${suffix}`, slug: `placement-category-b-${suffix}`, sectionId },
+    ]).returning();
+    assert.equal(categories.length, 2);
+    categoryIds.push(...categories.map((category) => category.id));
+    const subcategories = await db.insert(educationSubcategoriesTable).values([
+      { categoryId: categories[0]!.id, name: `Placement subcategory A ${suffix}`, slug: `placement-subcategory-a-${suffix}` },
+      { categoryId: categories[1]!.id, name: `Placement subcategory B ${suffix}`, slug: `placement-subcategory-b-${suffix}` },
+    ]).returning();
+    assert.equal(subcategories.length, 2);
+    subcategoryIds.push(...subcategories.map((subcategory) => subcategory.id));
+    const courses = await db.insert(coursesTable).values([
+      {
+        centerId,
+        categoryId: categories[0]!.id,
+        subcategoryId: subcategories[0]!.id,
+        title: `Placement course A ${suffix}`,
+        description: "Javni kurs za proveru opsega plasmana.",
+        category: categories[0]!.name,
+        format: "online",
+        city: "Beograd",
+        price: 15_000,
+        duration: "3 dana",
+        imageUrl: "/test-education-placement.jpg",
+        published: true,
+      },
+      {
+        centerId,
+        categoryId: categories[1]!.id,
+        subcategoryId: subcategories[1]!.id,
+        title: `Placement course B ${suffix}`,
+        description: "Javni kurs za proveru odvojenog opsega plasmana.",
+        category: categories[1]!.name,
+        format: "online",
+        city: "Beograd",
+        price: 16_000,
+        duration: "3 dana",
+        imageUrl: "/test-education-placement.jpg",
+        published: true,
+      },
+    ]).returning();
+    assert.equal(courses.length, 2);
+    courseIds.push(...courses.map((course) => course.id));
+
     await patchSettings(baseUrl, adminCookie, 12_345, 1, 1);
     const abandoned = await purchase(baseUrl, centerCookie);
     await db.update(educationPlacementsTable)
@@ -237,7 +319,58 @@ async function run(): Promise<void> {
     assert.equal(fall.startsAt, fallStart);
     assert.equal(fall.endsAt, "2026-10-25T11:00:00.000Z", "Fall-back must add one Belgrade calendar day.");
 
-    console.log("Education placement expiry, snapshot, slot reuse, and DST regressions passed.");
+    for (const scope of ["category", "subcategory"] as const) {
+      await patchScopedSettings(baseUrl, adminCookie, scope);
+      const scopeIds = scope === "category"
+        ? categories.map((category) => category.id)
+        : subcategories.map((subcategory) => subcategory.id);
+
+      const wrongTarget = await purchaseSpecialOffer(baseUrl, centerCookie, scope, scopeIds[1]!, courses[0]!.id);
+      assert.equal(wrongTarget.response.status, 409, `${scope} placement must reject a course from another namespace.`);
+
+      const stale = await purchaseSpecialOffer(baseUrl, centerCookie, scope, scopeIds[0]!, courses[0]!.id);
+      assert.equal(stale.response.status, 201);
+      const stalePlacement = stale.body as PlacementView;
+      await db.update(educationPlacementsTable)
+        .set({ createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000) })
+        .where(eq(educationPlacementsTable.id, stalePlacement.id));
+
+      const otherNamespace = await purchaseSpecialOffer(baseUrl, centerCookie, scope, scopeIds[1]!, courses[1]!.id);
+      assert.equal(otherNamespace.response.status, 201, `${scope} namespaces must have independent slot 1 inventory.`);
+      const [stillPending, otherRow] = await Promise.all([
+        db.select().from(educationPlacementsTable).where(eq(educationPlacementsTable.id, stalePlacement.id)).limit(1),
+        db.select().from(educationPlacementsTable).where(eq(educationPlacementsTable.id, (otherNamespace.body as PlacementView).id)).limit(1),
+      ]);
+      assert.equal(stillPending[0]?.status, "pending_payment", `${scope} purchase must not expire another namespace.`);
+      assert.equal(otherRow[0]?.slotNumber, 1);
+
+      const reused = await purchaseSpecialOffer(baseUrl, centerCookie, scope, scopeIds[0]!, courses[0]!.id);
+      assert.equal(reused.response.status, 201);
+      const [expiredScopedRow, reusedScopedRow] = await Promise.all([
+        db.select().from(educationPlacementsTable).where(eq(educationPlacementsTable.id, stalePlacement.id)).limit(1),
+        db.select().from(educationPlacementsTable).where(eq(educationPlacementsTable.id, (reused.body as PlacementView).id)).limit(1),
+      ]);
+      assert.equal(expiredScopedRow[0]?.status, "expired");
+      assert.equal(reusedScopedRow[0]?.slotNumber, 1, `${scope} must reuse an expired slot in its own namespace.`);
+
+      await db.update(coursesTable).set({ published: false }).where(eq(coursesTable.id, courses[0]!.id));
+      const ineligibleSettlement = await settle(baseUrl, adminCookie, (reused.body as PlacementView).paymentReference);
+      assert.equal(ineligibleSettlement.response.status, 409, `${scope} settlement must reject a course that is no longer public.`);
+      await db.update(coursesTable).set({ published: true }).where(eq(coursesTable.id, courses[0]!.id));
+
+      const changedTaxonomy = scope === "category"
+        ? { categoryId: categories[1]!.id }
+        : { subcategoryId: subcategories[1]!.id };
+      const restoredTaxonomy = scope === "category"
+        ? { categoryId: categories[0]!.id }
+        : { subcategoryId: subcategories[0]!.id };
+      await db.update(coursesTable).set(changedTaxonomy).where(eq(coursesTable.id, courses[0]!.id));
+      const movedTargetSettlement = await settle(baseUrl, adminCookie, (reused.body as PlacementView).paymentReference);
+      assert.equal(movedTargetSettlement.response.status, 409, `${scope} settlement must reject a course moved to another namespace.`);
+      await db.update(coursesTable).set(restoredTaxonomy).where(eq(coursesTable.id, courses[0]!.id));
+    }
+
+    console.log("Education placement expiry, snapshot, scoped slot reuse, eligibility, and DST regressions passed.");
   } finally {
     if (server) {
       await new Promise<void>((resolve, reject) =>
@@ -245,11 +378,33 @@ async function run(): Promise<void> {
     }
     if (centerId) {
       await db.delete(educationPlacementsTable).where(eq(educationPlacementsTable.centerId, centerId));
+      if (courseIds.length) {
+        await db.delete(educationPlacementsTable).where(inArray(educationPlacementsTable.courseId, courseIds));
+        await db.delete(coursesTable).where(inArray(coursesTable.id, courseIds));
+      }
       await db.delete(educationCenterSubscriptionsTable)
         .where(eq(educationCenterSubscriptionsTable.centerId, centerId));
       await db.delete(educationCentersTable).where(eq(educationCentersTable.id, centerId));
     }
-    await db.delete(educationPlacementSettingsTable).where(placementKey);
+    await db.delete(educationPlacementSettingsTable).where(or(
+      and(
+        eq(educationPlacementSettingsTable.kind, "featured_center"),
+        eq(educationPlacementSettingsTable.scope, "home"),
+      ),
+      and(
+        eq(educationPlacementSettingsTable.kind, "special_offer"),
+        inArray(educationPlacementSettingsTable.scope, ["category", "subcategory"]),
+      ),
+    ));
+    if (subcategoryIds.length) {
+      await db.delete(educationSubcategoriesTable).where(inArray(educationSubcategoriesTable.id, subcategoryIds));
+    }
+    if (categoryIds.length) {
+      await db.delete(courseCategoriesTable).where(inArray(courseCategoriesTable.id, categoryIds));
+    }
+    if (sectionId) {
+      await db.delete(educationSectionsTable).where(eq(educationSectionsTable.id, sectionId));
+    }
     if (userIds.length) {
       await db.delete(usersTable).where(inArray(usersTable.id, userIds));
     }

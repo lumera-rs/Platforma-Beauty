@@ -135,4 +135,4 @@
 - [Product demo identity isolation](product-demo-identity-isolation.md) — authorization regressions use exact-ID marker fixtures and never borrow product-facing demo accounts.
 - [OpenAPI closed-object runtime](openapi-closed-object-runtime.md) — exact request shapes need raw-input checks when generated validators strip unknown keys.
 - [Business relation mutation locks](business-relation-mutation-locks.md) — lock shared resources before participating accounts, and keep read-only planning snapshots free of row locks.
-- [Education placement lifecycle](education-placement-lifecycle.md) — paid slots use bounded pending holds, immutable purchase terms, and Belgrade calendar-day activation.
+- [Education placement lifecycle](education-placement-lifecycle.md) — paid slots use scoped targets, bounded holds, immutable terms, and Belgrade calendar-day activation.

@@ -19818,6 +19818,10 @@ router.post("/education/placements/purchase", async (req, res): Promise<void> =>
         if (!course || !course.published || course.archived || !(await isPublicEducationCourse(course))) {
           throw new Error("Specijalna ponuda mora upućivati na vaš javno dostupan kurs.");
         }
+        if ((scope === "category" && course.categoryId !== scopeId)
+          || (scope === "subcategory" && course.subcategoryId !== scopeId)) {
+          throw new Error("Kurs specijalne ponude ne pripada izabranom opsegu.");
+        }
       }
       const now = new Date();
       const pendingCutoff = new Date(now.getTime() - EDUCATION_PLACEMENT_PAYMENT_WINDOW_MS);
@@ -21323,6 +21327,10 @@ router.post("/admin/education/placements/:paymentReference/settle", async (req, 
         const [targetCourse] = await tx.select().from(coursesTable).where(eq(coursesTable.id, row.courseId!)).limit(1);
         if (!targetCourse || !targetCourse.published || targetCourse.archived || !(await isPublicEducationCourse(targetCourse))) {
           throw new Error("Kurs specijalne ponude više nije javno dostupan.");
+        }
+        if ((row.scope === "category" && targetCourse.categoryId !== row.scopeCategoryId)
+          || (row.scope === "subcategory" && targetCourse.subcategoryId !== row.scopeSubcategoryId)) {
+          throw new Error("Kurs specijalne ponude više ne pripada izabranom opsegu.");
         }
       }
       const [conflict] = await tx.select({ id: educationPlacementsTable.id }).from(educationPlacementsTable).where(and(
