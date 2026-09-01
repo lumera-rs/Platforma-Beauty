@@ -62,6 +62,9 @@ export const educationCentersTable = pgTable("education_centers", {
   pib: text("pib"),
   websiteUrl: text("website_url"),
   instagramUrl: text("instagram_url"),
+  paymentReferenceNumber: text("payment_reference_number").unique(),
+  legalEntityType: text("legal_entity_type").notNull().default("legal_entity"),
+  bankAccount: text("bank_account"),
   commissionPercentOverride: integer("commission_percent_override"),
   reservePercentOverride: integer("reserve_percent_override"),
   onlineRefundDaysOverride: integer("online_refund_days_override"),
@@ -82,6 +85,8 @@ export const educationCentersTable = pgTable("education_centers", {
   check("education_centers_online_refund_override_check", sql`${table.onlineRefundDaysOverride} between 0 and 365`),
   check("education_centers_live_appeal_override_check", sql`${table.liveAppealDaysOverride} between 0 and 365`),
   check("education_centers_featured_price_override_check", sql`${table.featuredCoursePriceOverride} >= 0`),
+  check("education_centers_legal_entity_type_check", sql`${table.legalEntityType} in ('individual','legal_entity')`),
+  check("education_centers_bank_account_check", sql`${table.bankAccount} is null or ${table.bankAccount} ~ '^[0-9]{18}$'`),
 ]);
 
 export const educationCenterSubscriptionsTable = pgTable("education_center_subscriptions", {
@@ -95,13 +100,96 @@ export const educationCenterSubscriptionsTable = pgTable("education_center_subsc
   paymentReference: text("payment_reference").unique(),
   paidAt: timestamp("paid_at", { withTimezone: true }),
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  trialStartedAt: timestamp("trial_started_at", { withTimezone: true }),
+  trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
+  graceEndsAt: timestamp("grace_ends_at", { withTimezone: true }),
+  deactivatedAt: timestamp("deactivated_at", { withTimezone: true }),
+  autoRenew: boolean("auto_renew").notNull().default(true),
+  contractKind: text("contract_kind").notNull().default("standard"),
+  contractEndsAt: timestamp("contract_ends_at", { withTimezone: true }),
+  courseLimitOverride: integer("course_limit_override"),
+  pendingPlanId: uuid("pending_plan_id").references(() => subscriptionPlansTable.id),
+  pendingPlanEffectiveAt: timestamp("pending_plan_effective_at", { withTimezone: true }),
+  graceExtensionNote: text("grace_extension_note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   // Leading FK coverage for planId (all education centers on a plan).
   index("education_center_subscriptions_plan_idx").on(table.planId),
+  index("education_center_subscriptions_grace_idx").on(table.status, table.graceEndsAt),
   check("education_center_subscriptions_billing_cycle_check", sql`${table.billingCycle} in ('monthly', 'yearly')`),
+  check("education_center_subscriptions_contract_kind_check", sql`${table.contractKind} in ('standard','custom')`),
+  check("education_center_subscriptions_course_limit_override_check", sql`${table.courseLimitOverride} is null or ${table.courseLimitOverride} >= 0`),
 ]);
+
+export const educationTrialClaimsTable = pgTable("education_trial_claims", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  normalizedEmailHash: text("normalized_email_hash").notNull(),
+  normalizedPhoneHash: text("normalized_phone_hash"),
+  normalizedPibHash: text("normalized_pib_hash"),
+  userId: uuid("user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  centerId: uuid("center_id").references(() => educationCentersTable.id, { onDelete: "set null" }),
+  claimedAt: timestamp("claimed_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("education_trial_claims_email_unique").on(table.normalizedEmailHash),
+  uniqueIndex("education_trial_claims_phone_unique").on(table.normalizedPhoneHash).where(sql`${table.normalizedPhoneHash} is not null`),
+  uniqueIndex("education_trial_claims_pib_unique").on(table.normalizedPibHash).where(sql`${table.normalizedPibHash} is not null`),
+]);
+
+export const educationFinancialAuditLogTable = pgTable("education_financial_audit_log", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  actorUserId: uuid("actor_user_id").references(() => usersTable.id, { onDelete: "restrict" }),
+  action: text("action").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  oldValue: jsonb("old_value").$type<Record<string, unknown> | null>(),
+  newValue: jsonb("new_value").$type<Record<string, unknown> | null>(),
+  reason: text("reason"),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+  timeZone: text("time_zone").notNull().default("Europe/Belgrade"),
+}, (table) => [
+  index("education_financial_audit_entity_idx").on(table.entityType, table.entityId, table.occurredAt),
+  check("education_financial_audit_timezone_check", sql`${table.timeZone} = 'Europe/Belgrade'`),
+]);
+
+export const educationPaymentObligationsTable = pgTable("education_payment_obligations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  centerId: uuid("center_id").references(() => educationCentersTable.id, { onDelete: "restrict" }),
+  salonId: uuid("salon_id").references(() => salonsTable.id, { onDelete: "restrict" }),
+  enrollmentId: uuid("enrollment_id").references((): any => courseEnrollmentsTable.id, { onDelete: "restrict" }),
+  subscriptionId: uuid("subscription_id").references(() => educationCenterSubscriptionsTable.id, { onDelete: "restrict" }),
+  kind: text("kind").notNull(),
+  status: text("status").notNull().default("pending"),
+  expectedAmount: integer("expected_amount").notNull(),
+  confirmedAmount: integer("confirmed_amount"),
+  recipientNameSnapshot: text("recipient_name_snapshot").notNull(),
+  recipientAccountSnapshot: text("recipient_account_snapshot").notNull(),
+  paymentCodeSnapshot: text("payment_code_snapshot").notNull(),
+  purposeSnapshot: text("purpose_snapshot").notNull(),
+  referenceSnapshot: text("reference_snapshot").notNull().unique(),
+  ipsPayloadSnapshot: text("ips_payload_snapshot"),
+  issuedAt: timestamp("issued_at", { withTimezone: true }).notNull().defaultNow(),
+  dueAt: timestamp("due_at", { withTimezone: true }),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  confirmedByUserId: uuid("confirmed_by_user_id").references(() => usersTable.id, { onDelete: "restrict" }),
+  cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  cancelledByUserId: uuid("cancelled_by_user_id").references(() => usersTable.id, { onDelete: "restrict" }),
+}, (table) => [
+  index("education_payment_obligations_center_status_idx").on(table.centerId, table.status, table.dueAt),
+  check("education_payment_obligations_target_check", sql`num_nonnulls(${table.centerId}, ${table.salonId}) >= 1`),
+  check("education_payment_obligations_status_check", sql`${table.status} in ('pending','paid','cancelled')`),
+  check("education_payment_obligations_amount_check", sql`${table.expectedAmount} > 0 and (${table.confirmedAmount} is null or ${table.confirmedAmount} >= 0)`),
+  check("education_payment_obligations_account_check", sql`${table.recipientAccountSnapshot} ~ '^[0-9]{18}$'`),
+  check("education_payment_obligations_code_check", sql`${table.paymentCodeSnapshot} in ('221','289')`),
+]);
+
+export const educationGraceNotesTable = pgTable("education_grace_notes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "cascade" }),
+  authorUserId: uuid("author_user_id").notNull().references(() => usersTable.id, { onDelete: "restrict" }),
+  note: text("note").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("education_grace_notes_center_created_idx").on(table.centerId, table.createdAt)]);
 
 export const educationPlatformSettingsTable = pgTable("education_platform_settings", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -114,6 +202,7 @@ export const educationPlatformSettingsTable = pgTable("education_platform_settin
   ipsRecipientName: text("ips_recipient_name"),
   ipsRecipientAccount: text("ips_recipient_account"),
   ipsPurpose: text("ips_purpose"),
+  bankReconciliationEnabled: boolean("bank_reconciliation_enabled").notNull().default(false),
   updatedByUserId: uuid("updated_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -238,6 +327,10 @@ export const coursesTable = pgTable("courses", {
   installmentCount: integer("installment_count").notNull().default(1),
   startDate: date("start_date", { mode: "string" }),
   endDate: date("end_date", { mode: "string" }),
+  onlineAccessDays: integer("online_access_days"),
+  extensionPrice1Month: integer("extension_price_1_month"),
+  extensionPrice3Months: integer("extension_price_3_months"),
+  extensionPrice6Months: integer("extension_price_6_months"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
@@ -266,6 +359,12 @@ export const coursesTable = pgTable("courses", {
   check("courses_cancellation_deadline_check", sql`${table.cancellationDeadlineHours} >= 0 and ${table.cancellationDeadlineHours} <= 8760`),
   check("courses_early_bird_check", sql`(${table.earlyBirdPrice} is null and ${table.earlyBirdCutoff} is null) or (${table.earlyBirdPrice} >= 0 and ${table.earlyBirdPrice} <= ${table.price} and ${table.earlyBirdCutoff} is not null)`),
   check("courses_installment_count_check", sql`${table.installmentCount} in (1, 2, 3)`),
+  check("courses_online_access_check", sql`${table.format} <> 'online' or ${table.onlineAccessDays} > 0`),
+  check("courses_extension_prices_check", sql`
+    (${table.extensionPrice1Month} is null or ${table.extensionPrice1Month} >= 0)
+    and (${table.extensionPrice3Months} is null or ${table.extensionPrice3Months} >= 0)
+    and (${table.extensionPrice6Months} is null or ${table.extensionPrice6Months} >= 0)
+  `),
 ]);
 
 export const educationInquiriesTable = pgTable("education_inquiries", {
@@ -562,6 +661,12 @@ export const courseEnrollmentsTable = pgTable("course_enrollments", {
   nextLesson: text("next_lesson"),
   purchasedAt: timestamp("purchased_at", { withTimezone: true }).notNull().defaultNow(),
   accessGrantedAt: timestamp("access_granted_at", { withTimezone: true }),
+  accessExpiresAt: timestamp("access_expires_at", { withTimezone: true }),
+  accessDaysSnapshot: integer("access_days_snapshot"),
+  coursePriceSnapshot: integer("course_price_snapshot"),
+  extensionPricesSnapshot: jsonb("extension_prices_snapshot").$type<{ oneMonth: number | null; threeMonths: number | null; sixMonths: number | null }>(),
+  digitalContentConsentAt: timestamp("digital_content_consent_at", { withTimezone: true }),
+  digitalContentConsentUserId: uuid("digital_content_consent_user_id").references(() => usersTable.id, { onDelete: "restrict" }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
   certificateIssuedAt: timestamp("certificate_issued_at", { withTimezone: true }),
   certificateNumber: text("certificate_number"),
@@ -595,8 +700,28 @@ export const courseEnrollmentsTable = pgTable("course_enrollments", {
   index("course_enrollments_employee_idx").on(table.employeeId),
   index("course_enrollments_booking_group_idx").on(table.bookingGroupId),
   index("course_enrollments_bundle_purchase_idx").on(table.bundlePurchaseId),
+  index("course_enrollments_access_expiry_idx").on(table.userId, table.accessExpiresAt),
   uniqueIndex("course_enrollments_participant_active_unique").on(table.participantId).where(sql`${table.participantId} is not null and ${table.status} <> 'cancelled'`),
   check("course_enrollments_operational_user_check", sql`${table.userId} is not null or ${table.participantId} is not null`),
+]);
+
+export const educationAccessExtensionsTable = pgTable("education_access_extensions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  enrollmentId: uuid("enrollment_id").notNull().references(() => courseEnrollmentsTable.id, { onDelete: "restrict" }),
+  purchaserId: uuid("purchaser_id").notNull().references(() => usersTable.id, { onDelete: "restrict" }),
+  months: integer("months").notNull(),
+  amount: integer("amount").notNull(),
+  status: text("status").notNull().default("pending"),
+  previousAccessExpiresAt: timestamp("previous_access_expires_at", { withTimezone: true }).notNull(),
+  extendedAccessExpiresAt: timestamp("extended_access_expires_at", { withTimezone: true }).notNull(),
+  paymentObligationId: uuid("payment_obligation_id").references(() => educationPaymentObligationsTable.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  settledAt: timestamp("settled_at", { withTimezone: true }),
+}, (table) => [
+  index("education_access_extensions_enrollment_idx").on(table.enrollmentId, table.createdAt),
+  check("education_access_extensions_months_check", sql`${table.months} in (1,3,6)`),
+  check("education_access_extensions_amount_check", sql`${table.amount} >= 0`),
+  check("education_access_extensions_status_check", sql`${table.status} in ('pending','settled','cancelled')`),
 ]);
 
 /**
@@ -1057,9 +1182,19 @@ export const educationB2bOrdersTable = pgTable("education_b2b_orders", {
   discountRsd: integer("discount_rsd").notNull(),
   totalRsd: integer("total_rsd").notNull(),
   benefitSnapshot: jsonb("benefit_snapshot").$type<Record<string, unknown>>().notNull(),
+  paymentStatus: text("payment_status").notNull().default("pending"),
+  fulfillmentStatus: text("fulfillment_status").notNull().default("RECEIVED"),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  refundedAmountRsd: integer("refunded_amount_rsd").notNull().default(0),
+  settledByUserId: uuid("settled_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  settledAt: timestamp("settled_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("education_b2b_orders_center_created_idx").on(table.centerId, table.createdAt),
+  index("education_b2b_orders_qualified_spend_idx").on(table.centerId, table.paymentStatus, table.fulfillmentStatus, table.completedAt),
+  check("education_b2b_orders_payment_status_check", sql`${table.paymentStatus} in ('pending','paid','refunded','cancelled')`),
+  check("education_b2b_orders_fulfillment_status_check", sql`${table.fulfillmentStatus} in ('RECEIVED','PREPARING','PACKING','SHIPPED','COMPLETED','CANCELLED')`),
+  check("education_b2b_orders_refund_check", sql`${table.refundedAmountRsd} >= 0 and ${table.refundedAmountRsd} <= ${table.totalRsd}`),
 ]);
 
 export const educationB2bOrderItemsTable = pgTable("education_b2b_order_items", {

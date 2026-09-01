@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 101;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 102;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -4412,6 +4412,102 @@ function tableStatements(s: string): string[] {
     `CREATE TABLE IF NOT EXISTS ${s}.education_bundle_courses (bundle_id uuid NOT NULL REFERENCES ${s}.education_bundles(id) ON DELETE CASCADE, course_id uuid NOT NULL REFERENCES ${s}.courses(id) ON DELETE RESTRICT, sort_order integer NOT NULL, PRIMARY KEY(bundle_id, course_id), UNIQUE(bundle_id, sort_order))`,
     `CREATE TABLE IF NOT EXISTS ${s}.education_contact_history (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE CASCADE, learner_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL, enrollment_id uuid REFERENCES ${s}.course_enrollments(id) ON DELETE SET NULL, channel text NOT NULL, note text NOT NULL, actor_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL, created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE INDEX IF NOT EXISTS education_contact_history_center_learner_idx ON ${s}.education_contact_history(center_id, learner_user_id, created_at)`,
+    // v102 — education subscriptions, immutable payment instructions and
+    // learner access snapshots. Every change is additive for rolling deploys.
+    `ALTER TABLE ${s}.salons ADD COLUMN IF NOT EXISTS payment_reference_number text`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS salons_payment_reference_number_unique ON ${s}.salons(payment_reference_number) WHERE payment_reference_number IS NOT NULL`,
+    `ALTER TABLE ${s}.education_centers ADD COLUMN IF NOT EXISTS payment_reference_number text`,
+    `ALTER TABLE ${s}.education_centers ADD COLUMN IF NOT EXISTS legal_entity_type text NOT NULL DEFAULT 'legal_entity'`,
+    `ALTER TABLE ${s}.education_centers ADD COLUMN IF NOT EXISTS bank_account text`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS education_centers_payment_reference_number_unique ON ${s}.education_centers(payment_reference_number) WHERE payment_reference_number IS NOT NULL`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='education_centers_legal_entity_type_check' AND conrelid='${s}.education_centers'::regclass) THEN
+         ALTER TABLE ${s}.education_centers ADD CONSTRAINT education_centers_legal_entity_type_check CHECK(legal_entity_type IN ('individual','legal_entity'));
+       END IF;
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='education_centers_bank_account_check' AND conrelid='${s}.education_centers'::regclass) THEN
+         ALTER TABLE ${s}.education_centers ADD CONSTRAINT education_centers_bank_account_check CHECK(bank_account IS NULL OR bank_account ~ '^[0-9]{18}$');
+       END IF;
+     END $$`,
+    `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS trial_started_at timestamptz`,
+    `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS trial_ends_at timestamptz`,
+    `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS grace_ends_at timestamptz`,
+    `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS deactivated_at timestamptz`,
+    `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS auto_renew boolean NOT NULL DEFAULT true`,
+    `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS contract_kind text NOT NULL DEFAULT 'standard'`,
+    `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS contract_ends_at timestamptz`,
+    `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS course_limit_override integer`,
+    `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS pending_plan_id uuid REFERENCES ${s}.subscription_plans(id)`,
+    `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS pending_plan_effective_at timestamptz`,
+    `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS grace_extension_note text`,
+    `CREATE INDEX IF NOT EXISTS education_center_subscriptions_grace_idx ON ${s}.education_center_subscriptions(status, grace_ends_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_trial_claims (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), normalized_email_hash text NOT NULL,
+       normalized_phone_hash text, normalized_pib_hash text,
+       user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+       center_id uuid REFERENCES ${s}.education_centers(id) ON DELETE SET NULL,
+       claimed_at timestamptz NOT NULL DEFAULT now()
+     )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS education_trial_claims_email_unique ON ${s}.education_trial_claims(normalized_email_hash)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS education_trial_claims_phone_unique ON ${s}.education_trial_claims(normalized_phone_hash) WHERE normalized_phone_hash IS NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS education_trial_claims_pib_unique ON ${s}.education_trial_claims(normalized_pib_hash) WHERE normalized_pib_hash IS NOT NULL`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_financial_audit_log (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), actor_user_id uuid REFERENCES ${s}.users(id) ON DELETE RESTRICT,
+       action text NOT NULL, entity_type text NOT NULL, entity_id text NOT NULL,
+       old_value jsonb, new_value jsonb, reason text,
+       occurred_at timestamptz NOT NULL DEFAULT now(), time_zone text NOT NULL DEFAULT 'Europe/Belgrade' CHECK(time_zone='Europe/Belgrade')
+     )`,
+    `CREATE INDEX IF NOT EXISTS education_financial_audit_entity_idx ON ${s}.education_financial_audit_log(entity_type, entity_id, occurred_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_payment_obligations (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       center_id uuid REFERENCES ${s}.education_centers(id) ON DELETE RESTRICT,
+       salon_id uuid REFERENCES ${s}.salons(id) ON DELETE RESTRICT,
+       enrollment_id uuid REFERENCES ${s}.course_enrollments(id) ON DELETE RESTRICT,
+       subscription_id uuid REFERENCES ${s}.education_center_subscriptions(id) ON DELETE RESTRICT,
+       kind text NOT NULL, status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','paid','cancelled')),
+       expected_amount integer NOT NULL CHECK(expected_amount > 0), confirmed_amount integer,
+       recipient_name_snapshot text NOT NULL, recipient_account_snapshot text NOT NULL CHECK(recipient_account_snapshot ~ '^[0-9]{18}$'),
+       payment_code_snapshot text NOT NULL CHECK(payment_code_snapshot IN ('221','289')),
+       purpose_snapshot text NOT NULL, reference_snapshot text NOT NULL UNIQUE, ips_payload_snapshot text,
+       issued_at timestamptz NOT NULL DEFAULT now(), due_at timestamptz,
+       confirmed_at timestamptz, confirmed_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE RESTRICT,
+       cancelled_at timestamptz, cancelled_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE RESTRICT,
+       CHECK(num_nonnulls(center_id, salon_id) >= 1)
+     )`,
+    `CREATE INDEX IF NOT EXISTS education_payment_obligations_center_status_idx ON ${s}.education_payment_obligations(center_id, status, due_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_grace_notes (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE CASCADE,
+       author_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE RESTRICT, note text NOT NULL,
+       created_at timestamptz NOT NULL DEFAULT now()
+     )`,
+    `CREATE INDEX IF NOT EXISTS education_grace_notes_center_created_idx ON ${s}.education_grace_notes(center_id, created_at)`,
+    `ALTER TABLE ${s}.education_platform_settings ADD COLUMN IF NOT EXISTS bank_reconciliation_enabled boolean NOT NULL DEFAULT false`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS online_access_days integer`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS extension_price_1_month integer`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS extension_price_3_months integer`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS extension_price_6_months integer`,
+    `ALTER TABLE ${s}.course_enrollments ADD COLUMN IF NOT EXISTS access_expires_at timestamptz`,
+    `ALTER TABLE ${s}.course_enrollments ADD COLUMN IF NOT EXISTS access_days_snapshot integer`,
+    `ALTER TABLE ${s}.course_enrollments ADD COLUMN IF NOT EXISTS course_price_snapshot integer`,
+    `ALTER TABLE ${s}.course_enrollments ADD COLUMN IF NOT EXISTS extension_prices_snapshot jsonb`,
+    `ALTER TABLE ${s}.course_enrollments ADD COLUMN IF NOT EXISTS digital_content_consent_at timestamptz`,
+    `ALTER TABLE ${s}.course_enrollments ADD COLUMN IF NOT EXISTS digital_content_consent_user_id uuid REFERENCES ${s}.users(id) ON DELETE RESTRICT`,
+    `CREATE INDEX IF NOT EXISTS course_enrollments_access_expiry_idx ON ${s}.course_enrollments(user_id, access_expires_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_access_extensions (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), enrollment_id uuid NOT NULL REFERENCES ${s}.course_enrollments(id) ON DELETE RESTRICT,
+       purchaser_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE RESTRICT, months integer NOT NULL CHECK(months IN (1,3,6)),
+       amount integer NOT NULL CHECK(amount >= 0), status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','settled','cancelled')),
+       previous_access_expires_at timestamptz NOT NULL, extended_access_expires_at timestamptz NOT NULL,
+       payment_obligation_id uuid REFERENCES ${s}.education_payment_obligations(id) ON DELETE RESTRICT,
+       created_at timestamptz NOT NULL DEFAULT now(), settled_at timestamptz
+     )`,
+    `CREATE INDEX IF NOT EXISTS education_access_extensions_enrollment_idx ON ${s}.education_access_extensions(enrollment_id, created_at)`,
+    `ALTER TABLE ${s}.education_b2b_orders ADD COLUMN IF NOT EXISTS payment_status text NOT NULL DEFAULT 'pending'`,
+    `ALTER TABLE ${s}.education_b2b_orders ADD COLUMN IF NOT EXISTS fulfillment_status text NOT NULL DEFAULT 'RECEIVED'`,
+    `ALTER TABLE ${s}.education_b2b_orders ADD COLUMN IF NOT EXISTS completed_at timestamptz`,
+    `ALTER TABLE ${s}.education_b2b_orders ADD COLUMN IF NOT EXISTS refunded_amount_rsd integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.education_b2b_orders ADD COLUMN IF NOT EXISTS settled_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL`,
+    `ALTER TABLE ${s}.education_b2b_orders ADD COLUMN IF NOT EXISTS settled_at timestamptz`,
+    `CREATE INDEX IF NOT EXISTS education_b2b_orders_qualified_spend_idx ON ${s}.education_b2b_orders(center_id, payment_status, fulfillment_status, completed_at)`,
     // v74 — every aftercare FK gets a leading index so deletes/updates on its
     // parent cannot force scans as recommendation and delivery history grows.
   ];
