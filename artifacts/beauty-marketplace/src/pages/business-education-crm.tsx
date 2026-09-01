@@ -1,16 +1,23 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useGetEducationCenterCrm, useGetEducationCenterStatus, useGetCurrentUser } from "@workspace/api-client-react";
 import { BusinessLayout } from "@/components/business-layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, Users, BookOpen, CheckCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function BusinessEducationCrm() {
   const { data: userResp } = useGetCurrentUser();
   const { data: statusList, isLoading: isStatusLoading } = useGetEducationCenterStatus({ 
     query: { enabled: Boolean(userResp?.user), queryKey: ["educationCenterStatus"] } 
   });
-  const centerId = statusList?.[0]?.id || "";
+  const [selectedCenterId, setSelectedCenterId] = useState("");
+  const centerId = selectedCenterId || statusList?.[0]?.id || "";
+  useEffect(() => {
+    if (statusList?.length && !statusList.some((center) => center.id === selectedCenterId)) {
+      setSelectedCenterId(statusList[0]!.id);
+    }
+  }, [selectedCenterId, statusList]);
   
   const { data: crmResp, isLoading } = useGetEducationCenterCrm(centerId, { 
     query: { enabled: Boolean(centerId), queryKey: ["query", centerId] } 
@@ -25,11 +32,23 @@ export default function BusinessEducationCrm() {
   return (
     <BusinessLayout>
       <div className="container mx-auto px-4 py-8 max-w-6xl">
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center mb-8">
           <div>
             <h1 className="text-3xl font-serif font-bold text-foreground">Polaznici</h1>
             <p className="text-muted-foreground mt-1">Evidencija polaznika i ukupna statistika pohađanja</p>
           </div>
+          {(statusList?.length ?? 0) > 1 && (
+            <Select value={centerId} onValueChange={setSelectedCenterId}>
+              <SelectTrigger className="w-full sm:w-72" aria-label="Izaberite edukativni centar">
+                <SelectValue placeholder="Izaberite edukativni centar" />
+              </SelectTrigger>
+              <SelectContent>
+                {statusList!.map((center) => (
+                  <SelectItem key={center.id} value={center.id}>{center.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         <div className="grid gap-6">
@@ -42,7 +61,8 @@ export default function BusinessEducationCrm() {
                       <Users className="w-6 h-6" />
                     </div>
                     <div>
-                      <h3 className="font-bold text-lg">Korisnik ID: {learner.userId || "Gost"}</h3>
+                      <h3 className="font-bold text-lg" data-testid={`text-crm-participant-${learner.userId || idx}`}>{learner.learnerName}</h3>
+                      <p className="text-xs text-muted-foreground">Polaznik {learner.userId ? `ID: ${learner.userId}` : "bez povezanog naloga"}</p>
                     </div>
                   </div>
                   <div className="flex gap-4 min-w-[200px]">

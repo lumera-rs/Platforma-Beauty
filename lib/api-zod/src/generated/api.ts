@@ -8101,6 +8101,7 @@ export const GetEducationCenterCrmParams = zod.object({
 export const GetEducationCenterCrmResponse = zod.object({
   "learners": zod.array(zod.object({
   "userId": zod.string().nullable(),
+  "learnerName": zod.string(),
   "count": zod.number().int(),
   "completed": zod.number().int()
 }))
@@ -13709,10 +13710,18 @@ export const CreateEducationSessionResponse = zod.object({
 
 
 /**
- * @summary Request a course purchase; access and escrow begin only after manual settlement
+ * @summary Request a course purchase for the purchaser or one salon employee; access and escrow begin only after trusted manual settlement
  */
 export const EnrollInEducationCourseParams = zod.object({
   "courseId": zod.coerce.string()
+})
+
+export const enrollInEducationCourseHeaderIdempotencyKeyMax = 200;
+
+
+
+export const EnrollInEducationCourseHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(enrollInEducationCourseHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const EnrollInEducationCourseBody = zod.object({
@@ -13735,6 +13744,30 @@ export const EnrollInEducationCourseResponse = zod.object({
   "escrowStatus": zod.union([zod.literal('held'),zod.literal('ready_for_payout'),zod.literal('frozen'),zod.literal('paid_out'),zod.literal('refunded'),zod.literal('partially_refunded'),zod.literal(null)]).nullish(),
   "escrowReleaseAt": zod.coerce.date().nullish()
 })
+
+
+/**
+ * @summary Get the canonical IPS/manual-payment instructions for the authenticated purchaser's pending enrollment
+ */
+export const GetEducationEnrollmentPaymentInstructionsParams = zod.object({
+  "enrollmentId": zod.coerce.string()
+})
+
+
+
+
+export const GetEducationEnrollmentPaymentInstructionsResponse = zod.object({
+  "enrollmentId": zod.string(),
+  "amount": zod.number().int().min(1),
+  "currency": zod.literal("RSD"),
+  "reference": zod.string(),
+  "recipientName": zod.string(),
+  "recipientAccount": zod.string(),
+  "purpose": zod.string(),
+  "payload": zod.string(),
+  "paymentStatus": zod.enum(['pending']),
+  "settlementNotice": zod.string()
+}).describe('Server-owned IPS instructions for a pending marketplace enrollment. Rendering these instructions has no settlement or access side effect.')
 
 
 /**

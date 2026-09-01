@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { type AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
   courseEnrollmentsTable,
   courseSessionsTable,
   coursesTable,
   db,
+  employeeLocationAssignmentsTable,
+  employeesTable,
   educationCentersTable,
   educationCenterSubscriptionsTable,
   educationDisputesTable,
@@ -18,6 +20,7 @@ import {
   educationPlatformSettingsTable,
   educationThreadsTable,
   subscriptionPlansTable,
+  salonsTable,
   usersTable,
 } from "@workspace/db";
 import app from "../app";
@@ -109,7 +112,9 @@ async function run(): Promise<void> {
   const raceCenterIds: string[] = [];
   const courseIds: string[] = [];
   const enrollmentIds: string[] = [];
+  const salonIds: string[] = [];
   const createdUserIds: string[] = [];
+  let ipsSettingsSnapshot: { id: string; ipsRecipientName: string | null; ipsRecipientAccount: string | null; ipsPurpose: string | null } | undefined;
   let releaseRaceLock: (() => void) | undefined;
   let raceLockHolder: Promise<void> | undefined;
 
@@ -148,12 +153,30 @@ async function run(): Promise<void> {
         passwordSetAt: new Date(),
         role: "STUDENT",
       },
+      {
+        firstName: "Vlasnik",
+        lastName: "Salona",
+        email: `education-salon-owner-${suffix}@example.test`,
+        passwordHash: fixturePasswordHash,
+        passwordSetAt: new Date(),
+        role: "SALON_OWNER",
+      },
+      {
+        firstName: "Zaposleni",
+        lastName: "Salona",
+        email: `education-salon-employee-${suffix}@example.test`,
+        passwordHash: fixturePasswordHash,
+        passwordSetAt: new Date(),
+        role: "SALON_EMPLOYEE",
+      },
     ]).returning();
     createdUserIds.push(...fixtureUsers.map((user) => user.id));
     const admin = fixtureUsers[0]!;
     const centerOwner = fixtureUsers[1]!;
     const buyer = fixtureUsers[2]!;
     const outsider = fixtureUsers[3]!;
+    const salonOwner = fixtureUsers[4]!;
+    const salonEmployeeUser = fixtureUsers[5]!;
 
     const [plan] = await db.select().from(subscriptionPlansTable)
       .where(eq(subscriptionPlansTable.active, true))
@@ -408,9 +431,117 @@ async function run(): Promise<void> {
     const centerOwnerCookie = await login(baseUrl, centerOwner.email);
     const buyerCookie = await login(baseUrl, buyer.email);
     const outsiderCookie = await login(baseUrl, outsider.email);
-
-    const [settings] = await db.select().from(educationPlatformSettingsTable).limit(1);
+    const salonOwnerCookie = await login(baseUrl, salonOwner.email);
+    const [settings] = await db.select().from(educationPlatformSettingsTable).orderBy(asc(educationPlatformSettingsTable.createdAt)).limit(1);
     assert.ok(settings);
+    ipsSettingsSnapshot = {
+      id: settings.id,
+      ipsRecipientName: settings.ipsRecipientName,
+      ipsRecipientAccount: settings.ipsRecipientAccount,
+      ipsPurpose: settings.ipsPurpose,
+    };
+    const configureIpsResponse = await request(baseUrl, "/admin/education/settings", {
+      method: "PATCH",
+      cookie: adminCookie,
+      body: {
+        commissionPercent: settings.commissionPercent,
+        reservePercent: settings.reservePercent,
+        onlineRefundDays: settings.onlineRefundDays,
+        liveAppealDays: settings.liveAppealDays,
+        featuredCoursePrice: settings.featuredCoursePrice,
+        ipsRecipientName: "LUMERA test",
+        ipsRecipientAccount: "160000000000000000",
+        ipsPurpose: "Edukacija",
+      },
+    });
+    assert.equal(configureIpsResponse.status, 200, "The fixture must configure IPS through the canonical admin API.");
+
+    // Full SALON_OWNER → external education-center enrollment path. Keep this
+    // isolated from the financial scenarios below: it proves that an owner
+    // pays for exactly one employee, cannot self-settle, and that the same
+    // enrollment reaches both the owner and the center participant surfaces.
+    const [ownerSalon, foreignSalon] = await db.insert(salonsTable).values([
+      { ownerId: salonOwner.id, name: `Education owner salon ${suffix}`, slug: `education-owner-${suffix}`, city: "Beograd", municipality: "Vračar", address: "Test 1", postalCode: "11000", phone: "+381601234567", email: `owner-salon-${suffix}@example.test`, shortDescription: "Test salon", description: "Test salon za edukacije.", imageUrl: "/test.jpg" },
+      { ownerId: outsider.id, name: `Education foreign salon ${suffix}`, slug: `education-foreign-${suffix}`, city: "Beograd", municipality: "Vračar", address: "Test 2", postalCode: "11000", phone: "+381601234568", email: `foreign-salon-${suffix}@example.test`, shortDescription: "Test salon", description: "Strani test salon.", imageUrl: "/test.jpg" },
+    ]).returning();
+    assert.ok(ownerSalon && foreignSalon);
+    salonIds.push(ownerSalon.id, foreignSalon.id);
+    const [assignedEmployee, foreignEmployee] = await db.insert(employeesTable).values([
+      { salonId: ownerSalon.id, userId: salonEmployeeUser.id, name: "Testirani zaposleni", role: "Stilist", bio: "Test", avatarUrl: "/employee.jpg", email: salonEmployeeUser.email },
+      { salonId: foreignSalon.id, name: "Strani zaposleni", role: "Stilist", bio: "Test", avatarUrl: "/employee.jpg" },
+    ]).returning();
+    assert.ok(assignedEmployee && foreignEmployee);
+    await db.insert(employeeLocationAssignmentsTable).values({ employeeId: assignedEmployee.id, salonId: ownerSalon.id, active: true, isDefault: true });
+    const [ownerFlowCourse] = await db.insert(coursesTable).values({
+      centerId: center.id, title: `Owner enrollment course ${suffix}`, description: "Spoljni kurs za vlasnika salona.",
+      category: "Finansijska pokrivenost", format: "in-person", city: "Beograd", price: 11100, duration: "1 dan",
+      certification: true, imageUrl: "/test-education-finance.jpg", published: true, paymentMode: "online_full",
+    }).returning();
+    assert.ok(ownerFlowCourse);
+    courseIds.push(ownerFlowCourse.id);
+    const [ownerFlowSession] = await db.insert(courseSessionsTable).values({
+      courseId: ownerFlowCourse.id, startsAt: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
+      endsAt: new Date(Date.now() + 11 * 24 * 60 * 60 * 1000), location: "Beograd", capacity: 4,
+    }).returning();
+    assert.ok(ownerFlowSession);
+    const ownerEnrollmentKey = `salon-owner-enrollment-${suffix}`;
+    const foreignEmployeeResponse = await request(baseUrl, `/education/courses/${ownerFlowCourse.id}/enrollments`, {
+      method: "POST", cookie: salonOwnerCookie, headers: { "idempotency-key": `foreign-${suffix}` },
+      body: { employeeId: foreignEmployee.id, sessionId: ownerFlowSession.id, paymentMode: "online_full" },
+    });
+    assert.equal(foreignEmployeeResponse.status, 403, "A salon owner must not enroll another salon's employee.");
+    const ownerEnrollmentResponse = await request(baseUrl, `/education/courses/${ownerFlowCourse.id}/enrollments`, {
+      method: "POST", cookie: salonOwnerCookie, headers: { "idempotency-key": ownerEnrollmentKey },
+      body: { employeeId: assignedEmployee.id, sessionId: ownerFlowSession.id, paymentMode: "online_full" },
+    });
+    assert.equal(ownerEnrollmentResponse.status, 201);
+    const ownerPending = await json<{ id: string; status: string; paymentStatus: string; employeeId: string | null }>(ownerEnrollmentResponse);
+    enrollmentIds.push(ownerPending.id);
+    assert.equal(ownerPending.status, "pending");
+    assert.equal(ownerPending.paymentStatus, "pending");
+    assert.equal(ownerPending.employeeId, assignedEmployee.id);
+    const idempotentOwnerResponse = await request(baseUrl, `/education/courses/${ownerFlowCourse.id}/enrollments`, {
+      method: "POST", cookie: salonOwnerCookie, headers: { "idempotency-key": ownerEnrollmentKey },
+      body: { employeeId: assignedEmployee.id, sessionId: ownerFlowSession.id, paymentMode: "online_full" },
+    });
+    assert.equal(idempotentOwnerResponse.status, 201, "An owner retry must replay the original enrollment.");
+    assert.equal((await json<{ id: string }>(idempotentOwnerResponse)).id, ownerPending.id);
+    const instructionsResponse = await request(baseUrl, `/education/enrollments/${ownerPending.id}/payment-instructions`, { cookie: salonOwnerCookie });
+    if (instructionsResponse.status !== 200) {
+      throw new Error(`Expected purchaser IPS instructions, got ${instructionsResponse.status}: ${JSON.stringify(await json(instructionsResponse))}`);
+    }
+    const instructions = await json<{ enrollmentId: string; amount: number; reference: string; payload: string; paymentStatus: string }>(instructionsResponse);
+    assert.equal(instructions.enrollmentId, ownerPending.id);
+    assert.equal(instructions.amount, ownerFlowCourse.price);
+    assert.equal(instructions.paymentStatus, "pending");
+    assert.match(instructions.payload, new RegExp(`S:${instructions.reference}`));
+    assert.equal((await request(baseUrl, `/education/enrollments/${ownerPending.id}/payment-instructions`, { cookie: outsiderCookie })).status, 403);
+    const ownerPendingRows = await json<Array<{ id: string; status: string; paymentStatus: string }>>(await request(baseUrl, "/education/enrollments", { cookie: salonOwnerCookie }));
+    assert.equal(ownerPendingRows.find((row) => row.id === ownerPending.id)?.status, "pending");
+    assert.equal(ownerPendingRows.find((row) => row.id === ownerPending.id)?.paymentStatus, "pending");
+    const crmBefore = await json<{ learners: Array<{ userId: string | null; learnerName: string }> }>(await request(baseUrl, `/education/centers/${center.id}/crm`, { cookie: centerOwnerCookie }));
+    assert.ok(crmBefore.learners.some((learner) => learner.userId === salonEmployeeUser.id && learner.learnerName === assignedEmployee.name), "Center CRM must expose the assigned employee, not only the purchaser.");
+    const ownerSettlement = await request(baseUrl, `/admin/education/enrollments/${ownerPending.id}/settle`, { method: "POST", cookie: adminCookie });
+    assert.equal(ownerSettlement.status, 200, "Only trusted admin settlement activates the owner purchase.");
+    const settledOwnerEnrollment = await json<{ status: string; paymentStatus: string }>(ownerSettlement);
+    assert.equal(settledOwnerEnrollment.status, "active");
+    assert.equal(settledOwnerEnrollment.paymentStatus, "paid");
+    const [ownerEscrow] = await db.select().from(educationEscrowsTable).where(eq(educationEscrowsTable.enrollmentId, ownerPending.id));
+    assert.equal(ownerEscrow?.grossAmount, ownerFlowCourse.price);
+    assert.equal(ownerEscrow?.platformFee, Math.floor(ownerFlowCourse.price * settings.commissionPercent / 100));
+    assert.equal(ownerEscrow?.reserveAmount, Math.floor(ownerFlowCourse.price * settings.reservePercent / 100));
+    const ownerLedger = await db.select().from(educationLedgerEntriesTable).where(eq(educationLedgerEntriesTable.enrollmentId, ownerPending.id));
+    assert.equal(ownerLedger.filter((entry) => entry.type === "charge").length, 1);
+    assert.equal(ownerLedger.filter((entry) => entry.type === "platform_fee").length, 1);
+    assert.equal(ownerLedger.filter((entry) => entry.type === "reserve_hold").length, 1);
+    const ownerEvents = await db.select().from(educationFinancialEventsTable).where(and(eq(educationFinancialEventsTable.enrollmentId, ownerPending.id), eq(educationFinancialEventsTable.eventType, "purchase_settled_manual")));
+    assert.equal(ownerEvents.length, 1);
+    const ownerActiveRows = await json<Array<{ id: string; status: string; paymentStatus: string }>>(await request(baseUrl, "/education/enrollments", { cookie: salonOwnerCookie }));
+    assert.equal(ownerActiveRows.find((row) => row.id === ownerPending.id)?.status, "active");
+    assert.equal(ownerActiveRows.find((row) => row.id === ownerPending.id)?.paymentStatus, "paid");
+    const centerRows = await json<Array<{ id: string; status: string; paymentStatus: string }>>(await request(baseUrl, "/education/enrollments", { cookie: centerOwnerCookie }));
+    assert.equal(centerRows.find((row) => row.id === ownerPending.id)?.status, "active");
+    assert.equal(centerRows.find((row) => row.id === ownerPending.id)?.paymentStatus, "paid");
 
     assert.equal(
       (await request(baseUrl, `/admin/education/centers/${center.id}`)).status,
@@ -1462,6 +1593,17 @@ async function run(): Promise<void> {
     for (const raceCenterId of raceCenterIds) {
       await db.delete(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, raceCenterId));
       await db.delete(educationCentersTable).where(eq(educationCentersTable.id, raceCenterId));
+    }
+    if (salonIds.length) {
+      await db.delete(salonsTable).where(inArray(salonsTable.id, salonIds));
+    }
+    if (ipsSettingsSnapshot) {
+      await db.update(educationPlatformSettingsTable).set({
+        ipsRecipientName: ipsSettingsSnapshot.ipsRecipientName,
+        ipsRecipientAccount: ipsSettingsSnapshot.ipsRecipientAccount,
+        ipsPurpose: ipsSettingsSnapshot.ipsPurpose,
+        updatedAt: new Date(),
+      }).where(eq(educationPlatformSettingsTable.id, ipsSettingsSnapshot.id));
     }
     if (createdUserIds.length) {
       await db.delete(usersTable).where(inArray(usersTable.id, createdUserIds));

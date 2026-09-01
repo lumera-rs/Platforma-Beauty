@@ -611,6 +611,8 @@ export * from './educationEnrollment';
 export * from './educationEnrollmentEscrowStatus';
 export * from './educationEnrollmentInput';
 export * from './educationEnrollmentInputPaymentMode';
+export * from './educationEnrollmentPaymentInstructions';
+export * from './educationEnrollmentPaymentInstructionsPaymentStatus';
 export * from './educationEnrollmentPaymentStatus';
 export * from './educationEnrollmentStatus';
 export * from './educationFeaturedChargeSettlement';

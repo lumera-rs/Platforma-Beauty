@@ -15,6 +15,7 @@ import {
   usePublishEducationCourse, useArchiveEducationCourse,
   useCreateEducationModule, useCreateEducationLesson,
   useCreateEducationSession, useEnrollInEducationCourse,
+  useGetEducationEnrollmentPaymentInstructions, getGetEducationEnrollmentPaymentInstructionsQueryKey,
   useCompleteEducationLesson,
   useListEducationInstructors, useCreateEducationInstructor, useUpdateEducationInstructor, useDeleteEducationInstructor,
   useGetEducationCourseFeaturedStatus, useUpdateEducationCourseFeatured, useLinkEducationCourseInstructor,
@@ -144,6 +145,10 @@ export default function BusinessEducation({ hideLayout = false }: { hideLayout?:
   const [matchJobseekerLms, jobseekerLmsParams] = useRoute("/poslovi/nalog/edukacije/lms/:enrollmentId");
   const [matchCourse, paramsCourse] = useRoute("/biznis/edukacije/:courseId");
   const { data: userResponse } = useGetCurrentUser();
+  const mayHaveCenterMembership = Boolean(userResponse?.user);
+  const { data: statusList } = useGetEducationCenterStatus({ query: { enabled: mayHaveCenterMembership, retry: false, queryKey: [ "educationCenterStatus" ] } });
+  const [selectedOperationsCenterId, setSelectedOperationsCenterId] = useState("");
+  const operationsCenterId = selectedOperationsCenterId || statusList?.[0]?.id || "";
 
   if (matchStudentLms && studentLmsParams) {
     return <Layout hideCustomerNavigation><LmsView enrollmentId={studentLmsParams.enrollmentId} /></Layout>;
@@ -175,11 +180,7 @@ export default function BusinessEducation({ hideLayout = false }: { hideLayout?:
     return hideLayout ? learningView : <Layout>{learningView}</Layout>;
   }
 
-  const mayHaveCenterMembership = Boolean(userResponse?.user);
-  const { data: statusList } = useGetEducationCenterStatus({ query: { enabled: mayHaveCenterMembership, retry: false, queryKey: [ "educationCenterStatus" ] } });
   const isCenter = Boolean(statusList?.length);
-  const [selectedOperationsCenterId, setSelectedOperationsCenterId] = useState("");
-  const operationsCenterId = selectedOperationsCenterId || statusList?.[0]?.id || "";
 
   if (!isCenter) {
     if (userResponse?.user?.role === "SALON_EMPLOYEE") {
@@ -905,6 +906,11 @@ function CatalogView() {
               {filters.mine ? 'Moje edukacije' : 'Katalog edukacija'}
             </h2>
             <div className="flex gap-2">
+              {user?.role === "SALON_OWNER" && (
+                <Button variant="outline" asChild>
+                  <Link href="/vlasnik/edukacije" data-testid="link-owner-employee-enrollments">Moje prijave zaposlenih</Link>
+                </Button>
+              )}
               {isEducationCenter && (
                 <Button variant="outline" onClick={() => setInstructorsOpen(true)} className="gap-2">
                   <UserCircle2 className="w-4 h-4" /> Instruktori
@@ -1021,7 +1027,6 @@ function CatalogView() {
 }
 
 function CourseDetailView({ courseId }: { courseId: string }) {
-  const [, setLocation] = useLocation();
   const { data: userResponse } = useGetCurrentUser();
   const user = userResponse?.user;
   const canCreate = user?.role === 'EDUKATIVNI_CENTAR';
@@ -1037,6 +1042,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
   }, [myCourses, courseId]);
 
   const isEducationCenter = user?.role === "EDUKATIVNI_CENTAR";
+  const isSalonOwner = user?.role === "SALON_OWNER";
 
   const { data: enrollments } = useListEnrollments(undefined, { query: { enabled: !!course?.enrollmentStatus, queryKey: getListEnrollmentsQueryKey() } });
   const { data: employees } = useListSalonEmployees({
@@ -1053,7 +1059,6 @@ function CourseDetailView({ courseId }: { courseId: string }) {
   });
   const myEnrollment = enrollments?.find((e: any) => e.courseId === courseId);
 
-  const enroll = useEnrollInEducationCourse();
   const update = useUpdateEducationCourse();
   const publish = usePublishEducationCourse();
   const archive = useArchiveEducationCourse();
@@ -1072,20 +1077,45 @@ function CourseDetailView({ courseId }: { courseId: string }) {
   const [groupSelectedIds, setGroupSelectedIds] = useState<string[]>([]);
   const [groupEnrolling, setGroupEnrolling] = useState(false);
   const [groupSessionId, setGroupSessionId] = useState("");
+  const [sessionId, setSessionId] = useState("");
+  const [paymentMode, setPaymentMode] = useState<"online_full" | "live_deposit" | "live_off_platform">("online_full");
+  const [createdEnrollmentId, setCreatedEnrollmentId] = useState<string | null>(null);
+  const enrollmentIdempotencyKey = useMemo(
+    () => crypto.randomUUID(),
+    [courseId, learnerId, sessionId, paymentMode],
+  );
+  const enroll = useEnrollInEducationCourse({
+    request: { headers: { "Idempotency-Key": enrollmentIdempotencyKey } },
+  });
+  const pendingEnrollmentId = createdEnrollmentId
+    ?? (isSalonOwner && myEnrollment?.status === "pending" && myEnrollment?.paymentStatus === "pending" ? myEnrollment.id : null);
+  const { data: paymentInstructions, isLoading: paymentInstructionsLoading, isError: paymentInstructionsError } = useGetEducationEnrollmentPaymentInstructions(
+    pendingEnrollmentId ?? "",
+    { query: { enabled: Boolean(pendingEnrollmentId), queryKey: getGetEducationEnrollmentPaymentInstructionsQueryKey(pendingEnrollmentId ?? "") } },
+  );
 
   useEffect(() => {
     if (course) setPriceEdit(String(course.price));
   }, [course?.id, course?.price]);
+  useEffect(() => {
+    if (course?.paymentMode) setPaymentMode(course.paymentMode);
+    setSessionId("");
+    setCreatedEnrollmentId(null);
+  }, [course?.id, course?.paymentMode]);
 
   const handleEnroll = () => {
-    enroll.mutate({ courseId, data: { employeeId: learnerId || null } }, {
+    if (isSalonOwner && !learnerId) {
+      toast.error("Izaberite jednog zaposlenog pre slanja prijave.");
+      return;
+    }
+    enroll.mutate({ courseId, data: { employeeId: learnerId || null, sessionId: sessionId || null, paymentMode } }, {
       onSuccess: (res: any) => {
-        toast.success("Uspešno ste rezervisali mesto");
+        setCreatedEnrollmentId(res.id);
+        toast.success("Zahtev za upis je primljen. Pratite instrukcije za uplatu.");
         queryClient.invalidateQueries({ queryKey: getGetEducationCourseQueryKey(courseId) });
         queryClient.invalidateQueries({ queryKey: getListEnrollmentsQueryKey() });
-        if (res?.id) setLocation(`/biznis/edukacije/lms/${res.id}`);
       },
-      onError: () => toast.error("Greška pri rezervaciji")
+      onError: (error) => toast.error("Greška pri rezervaciji", { description: getApiErrorMessage(error, "Proverite izabrani termin i zaposlenog.") })
     });
   };
 
@@ -1540,19 +1570,65 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                         {isSalonOperator && employees?.length ? (
                           <div className="space-y-1.5">
                             <Label htmlFor="education-learner">Polaznik</Label>
-                            <Select value={learnerId || "self"} onValueChange={(value) => setLearnerId(value === "self" ? "" : value)}>
+                            <Select value={isSalonOwner ? learnerId : learnerId || "self"} onValueChange={(value) => setLearnerId(value === "self" ? "" : value)}>
                               <SelectTrigger id="education-learner"><SelectValue placeholder="Izaberite polaznika" /></SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="self">Ja lično</SelectItem>
+                                {!isSalonOwner && <SelectItem value="self">Ja lično</SelectItem>}
                                 {employees.map((employee) => <SelectItem key={employee.id} value={employee.id}>{employee.name}</SelectItem>)}
                               </SelectContent>
                             </Select>
-                            <p className="text-xs text-muted-foreground">Izabrani zaposleni koristi svoj poslovni nalog za LMS; vlasnik u ovom prostoru prati prijavu i napredak tima.</p>
+                            <p className="text-xs text-muted-foreground">{isSalonOwner ? "Vlasnik salona kupuje mesto za tačno jednog zaposlenog." : "Izabrani zaposleni koristi svoj poslovni nalog za LMS; vlasnik u ovom prostoru prati prijavu i napredak tima."}</p>
                           </div>
                         ) : null}
-                        <Button className="w-full text-base h-12 shadow-md hover:shadow-lg transition-shadow" size="lg" onClick={handleEnroll} disabled={enroll.isPending}>
+                        {(course.format === "in-person" || course.format === "hybrid") && course.sessions?.length > 0 && (
+                          <div className="space-y-1.5">
+                            <Label htmlFor="education-session">Termin</Label>
+                            <Select value={sessionId || "auto"} onValueChange={(value) => setSessionId(value === "auto" ? "" : value)}>
+                              <SelectTrigger id="education-session" data-testid="select-enrollment-session"><SelectValue placeholder="Automatski prvi slobodan termin" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="auto">Automatski prvi slobodan termin</SelectItem>
+                                {course.sessions.filter((session: any) => session.availableSeats > 0).map((session: any) => (
+                                  <SelectItem key={session.id} value={session.id}>{new Date(session.startsAt).toLocaleDateString("sr-RS")} · {session.availableSeats} mesta</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                        <div className="space-y-1.5">
+                          <Label htmlFor="education-payment-mode">Način plaćanja</Label>
+                          <Select value={paymentMode} onValueChange={(value) => setPaymentMode(value as typeof paymentMode)}>
+                            <SelectTrigger id="education-payment-mode" data-testid="select-enrollment-payment-mode"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {course.paymentMode === "online_full" && <SelectItem value="online_full">Puna uplata putem IPS-a</SelectItem>}
+                              {course.paymentMode === "live_deposit" && <SelectItem value="live_deposit">Depozit putem IPS-a</SelectItem>}
+                              {course.paymentMode === "live_off_platform" && <SelectItem value="live_off_platform">Plaćanje direktno organizatoru</SelectItem>}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <Button data-testid="button-submit-employee-enrollment" className="w-full text-base h-12 shadow-md hover:shadow-lg transition-shadow" size="lg" onClick={handleEnroll} disabled={enroll.isPending || (isSalonOwner && !learnerId)}>
                           {enroll.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Rezervacija...</> : 'Rezerviši mesto'}
                         </Button>
+                        {pendingEnrollmentId && (
+                          <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/20" data-testid="status-enrollment-payment-pending">
+                            <p className="font-semibold text-amber-900 dark:text-amber-200">Prijava čeka ručnu potvrdu uplate</p>
+                            {paymentInstructionsLoading && <p className="mt-1 text-muted-foreground">Učitavam IPS instrukcije…</p>}
+                            {paymentInstructions && (
+                              <div className="mt-2 space-y-1 text-xs text-amber-950 dark:text-amber-100">
+                                <p><strong>Iznos:</strong> {paymentInstructions.amount.toLocaleString("sr-RS")} {paymentInstructions.currency}</p>
+                                <p><strong>Primalac:</strong> {paymentInstructions.recipientName}</p>
+                                <p><strong>Račun:</strong> {paymentInstructions.recipientAccount}</p>
+                                <p><strong>Poziv na broj:</strong> {paymentInstructions.reference}</p>
+                                <QRCodeSVG value={paymentInstructions.payload} size={112} className="mt-2 rounded bg-white p-1" />
+                                <p className="pt-1 font-medium">{paymentInstructions.settlementNotice}</p>
+                              </div>
+                            )}
+                            {paymentInstructionsError && (
+                              <p className="mt-1 text-xs text-destructive" data-testid="text-payment-instructions-error">
+                                {getApiErrorMessage(paymentInstructionsError, "IPS instrukcije trenutno nisu dostupne. Pokušajte ponovo ili kontaktirajte podršku.")}
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </>
                     )}
                   </div>

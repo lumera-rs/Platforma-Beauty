@@ -297,6 +297,7 @@ import type {
   EducationEducatorWeeklyAvailabilityInput,
   EducationEnrollment,
   EducationEnrollmentInput,
+  EducationEnrollmentPaymentInstructions,
   EducationFeaturedChargeSettlement,
   EducationFeaturedChargeSettlementInput,
   EducationFinanceOverview,
@@ -19791,7 +19792,7 @@ export const getEnrollInEducationCourseUrl = (courseId: string,) => {
 }
 
 /**
- * @summary Request a course purchase; access and escrow begin only after manual settlement
+ * @summary Request a course purchase for the purchaser or one salon employee; access and escrow begin only after trusted manual settlement
  */
 export const enrollInEducationCourse = async (courseId: string,
     educationEnrollmentInput?: EducationEnrollmentInput, options?: Parameters<typeof customFetch>[1]): Promise<EducationEnrollment> => {
@@ -19841,7 +19842,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type EnrollInEducationCourseMutationError = ErrorType<void>
 
     /**
- * @summary Request a course purchase; access and escrow begin only after manual settlement
+ * @summary Request a course purchase for the purchaser or one salon employee; access and escrow begin only after trusted manual settlement
  */
 export const useEnrollInEducationCourse = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof enrollInEducationCourse>>, TError,{courseId: string;data?: BodyType<EducationEnrollmentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -19853,6 +19854,83 @@ export const useEnrollInEducationCourse = <TError = ErrorType<void>,
       > => {
       return useMutation(getEnrollInEducationCourseMutationOptions(options));
     }
+
+export const getGetEducationEnrollmentPaymentInstructionsUrl = (enrollmentId: string,) => {
+
+
+
+
+  return `/api/education/enrollments/${enrollmentId}/payment-instructions`
+}
+
+/**
+ * @summary Get the canonical IPS/manual-payment instructions for the authenticated purchaser's pending enrollment
+ */
+export const getEducationEnrollmentPaymentInstructions = async (enrollmentId: string, options?: Parameters<typeof customFetch>[1]): Promise<EducationEnrollmentPaymentInstructions> => {
+
+  return customFetch<EducationEnrollmentPaymentInstructions>(getGetEducationEnrollmentPaymentInstructionsUrl(enrollmentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetEducationEnrollmentPaymentInstructionsQueryKey = (enrollmentId: string,) => {
+    return [
+    `/api/education/enrollments/${enrollmentId}/payment-instructions`
+    ] as const;
+    }
+
+
+export const getGetEducationEnrollmentPaymentInstructionsQueryOptions = <TData = Awaited<ReturnType<typeof getEducationEnrollmentPaymentInstructions>>, TError = ErrorType<void>>(enrollmentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEducationEnrollmentPaymentInstructions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetEducationEnrollmentPaymentInstructionsQueryKey(enrollmentId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getEducationEnrollmentPaymentInstructions>>> = ({ signal }) => getEducationEnrollmentPaymentInstructions(enrollmentId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: enrollmentId !== null && enrollmentId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEducationEnrollmentPaymentInstructions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetEducationEnrollmentPaymentInstructionsQueryResult = NonNullable<Awaited<ReturnType<typeof getEducationEnrollmentPaymentInstructions>>>
+export type GetEducationEnrollmentPaymentInstructionsQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get the canonical IPS/manual-payment instructions for the authenticated purchaser's pending enrollment
+ */
+
+export function useGetEducationEnrollmentPaymentInstructions<TData = Awaited<ReturnType<typeof getEducationEnrollmentPaymentInstructions>>, TError = ErrorType<void>>(
+ enrollmentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEducationEnrollmentPaymentInstructions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetEducationEnrollmentPaymentInstructionsQueryOptions(enrollmentId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getProposeEducationCourseTypeUrl = () => {
 

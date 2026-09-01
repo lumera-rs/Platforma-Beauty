@@ -61,3 +61,49 @@ test("LMS view keeps hooks above loading and empty-state returns", () => {
   const loadingReturnIndex = source.indexOf("if (isLoading) return", componentStart);
   assert.ok(componentStart >= 0 && memoIndex > componentStart && loadingReturnIndex > memoIndex);
 });
+
+test("salon owner enrollment keeps a stable command key and never claims pending payment as paid", () => {
+  const source = readFileSync(new URL("../pages/business-education.tsx", import.meta.url), "utf8");
+  const ownerList = readFileSync(new URL("../pages/owner/education-enrollments.tsx", import.meta.url), "utf8");
+  const ownerNavigation = readFileSync(new URL("./salon-owner-navigation.ts", import.meta.url), "utf8");
+  assert.match(source, /useMemo\(\s*\(\)\s*=>\s*crypto\.randomUUID\(\),\s*\[courseId, learnerId, sessionId, paymentMode\]/s);
+  assert.match(source, /"Idempotency-Key": enrollmentIdempotencyKey/);
+  assert.match(source, /useGetEducationEnrollmentPaymentInstructions/);
+  assert.match(source, /Prijava čeka ručnu potvrdu uplate/);
+  assert.match(source, /isSalonOwner && !learnerId/);
+  assert.match(source, /Select value=\{isSalonOwner \? learnerId : learnerId \|\| "self"\}/);
+  assert.match(source, /getApiErrorMessage\(paymentInstructionsError/);
+  assert.doesNotMatch(source, /Za ovu prijavu plaćanje se dogovara direktno sa organizatorom/);
+  assert.doesNotMatch(source, /paymentStatus:\s*["']paid["']/);
+  assert.match(ownerList, /Uplata nije potvrđena/);
+  assert.match(ownerNavigation, /href: "\/vlasnik\/edukacije"/);
+});
+
+test("business navbar cancels owner notification transport before logout clears the session", () => {
+  const source = readFileSync(new URL("../components/business-navbar.tsx", import.meta.url), "utf8");
+  assert.match(source, /const \[isLoggingOut, setIsLoggingOut\] = useState\(false\)/);
+  assert.match(source, /user\?\.role === "SALON_OWNER" && !isLoggingOut/);
+  assert.match(source, /setIsLoggingOut\(true\)/);
+  assert.match(source, /queryClient\.cancelQueries\(\{ queryKey: notificationsQueryKey \}\)/);
+  assert.match(source, /queryClient\.removeQueries\(\{ queryKey: notificationsQueryKey \}\)/);
+  assert.match(source, /onError: \(\) => setIsLoggingOut\(false\)/);
+});
+
+test("course detail declares enrollment and IPS hooks before every loading return", () => {
+  const source = readFileSync(new URL("../pages/business-education.tsx", import.meta.url), "utf8");
+  const componentStart = source.indexOf("function CourseDetailView");
+  const paymentHook = source.indexOf("useGetEducationEnrollmentPaymentInstructions", componentStart);
+  const loadingReturn = source.indexOf("if (isLoading)", componentStart);
+  assert.ok(componentStart >= 0 && paymentHook > componentStart && loadingReturn > paymentHook,
+    "Course detail must not conditionally add the IPS hook after its loading return.");
+});
+
+test("business education declares center membership hooks before route returns", () => {
+  const source = readFileSync(new URL("../pages/business-education.tsx", import.meta.url), "utf8");
+  const componentStart = source.indexOf("export default function BusinessEducation");
+  const detailReturn = source.indexOf("if (matchCourse && paramsCourse)", componentStart);
+  const centerStatusHook = source.indexOf("useGetEducationCenterStatus", componentStart);
+  const operationsCenterState = source.indexOf("useState(\"\")", centerStatusHook);
+  assert.ok(centerStatusHook > componentStart && centerStatusHook < detailReturn);
+  assert.ok(operationsCenterState > centerStatusHook && operationsCenterState < detailReturn);
+});

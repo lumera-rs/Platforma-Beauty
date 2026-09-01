@@ -9,6 +9,7 @@
 export interface EducationCrmLearner {
   /** @nullable */
   userId: string | null;
+  learnerName: string;
   count: number;
   completed: number;
 }

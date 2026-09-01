@@ -31,9 +31,10 @@ export function BusinessNavbar() {
   const { data: userResp } = useGetCurrentUser();
   const logout = useLogout();
   const user = userResp?.user;
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const isSalonOperator = user?.role === "SALON_OWNER" || user?.role === "EDUKATIVNI_CENTAR";
   const canUseSalonCart = user?.role === "SALON_OWNER";
-  const hasSalonNotificationContext = user?.role === "SALON_OWNER";
+  const hasSalonNotificationContext = user?.role === "SALON_OWNER" && !isLoggingOut;
   const canSwitchLocations = user?.role === "SALON_OWNER";
   const { data: cart } = useGetShopCart({ query: { enabled: canUseSalonCart, queryKey: getGetShopCartQueryKey() } });
   const notificationsQueryKey = useMemo(() => salonNotificationsQueryKey(user?.id), [user?.id]);
@@ -93,11 +94,18 @@ export function BusinessNavbar() {
   }, [closeMobileMenu, isMobileMenuOpen]);
 
   const handleLogout = () => {
+    // Disable polling/SSE synchronously. Waiting for the logout response leaves
+    // a short window where the owner navbar otherwise continues to request an
+    // endpoint with an invalidated session.
+    setIsLoggingOut(true);
+    void queryClient.cancelQueries({ queryKey: notificationsQueryKey });
+    queryClient.removeQueries({ queryKey: notificationsQueryKey });
     logout.mutate(undefined, {
       onSuccess: () => {
         queryClient.clear();
         setLocation("/");
-      }
+      },
+      onError: () => setIsLoggingOut(false),
     });
   };
 

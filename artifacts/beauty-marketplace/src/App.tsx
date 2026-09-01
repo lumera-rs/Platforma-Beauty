@@ -84,6 +84,7 @@ const OwnerAutomations = lazy(() => import('./pages/owner/automations'));
 const OwnerPackages = lazy(() => import('./pages/owner/packages'));
 const OwnerPerformance = lazy(() => import('./pages/owner/performance'));
 const OwnerAiAssistant = lazy(() => import('./pages/owner/ai-assistant'));
+const OwnerEducationEnrollments = lazy(() => import('./pages/owner/education-enrollments'));
 const OwnerCartPage = lazy(() => import('./pages/owner/checkout').then((module) => ({ default: module.OwnerCartPage })));
 const OwnerCheckoutDeliveryPage = lazy(() => import('./pages/owner/checkout').then((module) => ({ default: module.OwnerCheckoutDeliveryPage })));
 const OwnerCheckoutReviewPage = lazy(() => import('./pages/owner/checkout').then((module) => ({ default: module.OwnerCheckoutReviewPage })));
@@ -420,6 +421,7 @@ function Router() {
         <Route path="/vlasnik/porudzbine-na-cekanju"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrderApprovals /></RoleGuard></Route>
         <Route path="/vlasnik/obavestenja"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerNotifications /></RoleGuard></Route>
         <Route path="/vlasnik/loyalty"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerLoyalty /></RoleGuard></Route>
+        <Route path="/vlasnik/edukacije"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerEducationEnrollments /></RoleGuard></Route>
 
         <Route path="/edukacije/lista-zelja"><RoleGuard allowedRoles={['CUSTOMER', 'SALON_OWNER', 'EDUKATIVNI_CENTAR', 'JOBSEEKER', 'STUDENT', 'SALON_EMPLOYEE', 'ADMIN', 'SUPER_ADMIN', 'INSTRUCTOR']} loginPath="/prijava"><EducationWishlistPage /></RoleGuard></Route>
         <Route path="/edukacije/vauceri"><RoleGuard allowedRoles={['CUSTOMER', 'SALON_OWNER', 'EDUKATIVNI_CENTAR', 'JOBSEEKER', 'STUDENT', 'SALON_EMPLOYEE', 'ADMIN', 'SUPER_ADMIN', 'INSTRUCTOR']} loginPath="/prijava"><EducationVouchersPage /></RoleGuard></Route>

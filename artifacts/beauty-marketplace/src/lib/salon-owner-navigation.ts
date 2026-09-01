@@ -9,6 +9,7 @@ import {
   ClipboardCheck,
   Clock3,
   DollarSign,
+  GraduationCap,
   HeartHandshake,
   HelpCircle,
   LayoutDashboard,
@@ -76,6 +77,7 @@ export const salonOwnerNavSections: SalonOwnerNavSection[] = [
     label: "Marketplace",
     items: [
       { href: "/biznis/edukacije", label: "Edukacije", guideId: "vl-edukacije", icon: BookOpen },
+      { href: "/vlasnik/edukacije", label: "Prijave zaposlenih", guideId: "vl-prijave-edukacija", icon: GraduationCap },
       { href: "/biznis/poslovi", label: "Poslovi", guideId: "vl-poslovi", icon: BriefcaseBusiness },
     ],
   },

@@ -5090,6 +5090,7 @@ export interface EducationBundleUpdate {
 export interface EducationCrmLearner {
   /** @nullable */
   userId: string | null;
+  learnerName: string;
   count: number;
   completed: number;
 }
@@ -7282,6 +7283,30 @@ export interface EducationEnrollment {
   escrowStatus?: EducationEnrollmentEscrowStatus;
   /** @nullable */
   escrowReleaseAt?: string | null;
+}
+
+export type EducationEnrollmentPaymentInstructionsPaymentStatus = typeof EducationEnrollmentPaymentInstructionsPaymentStatus[keyof typeof EducationEnrollmentPaymentInstructionsPaymentStatus];
+
+
+export const EducationEnrollmentPaymentInstructionsPaymentStatus = {
+  pending: 'pending',
+} as const;
+
+/**
+ * Server-owned IPS instructions for a pending marketplace enrollment. Rendering these instructions has no settlement or access side effect.
+ */
+export interface EducationEnrollmentPaymentInstructions {
+  enrollmentId: string;
+  /** @minimum 1 */
+  amount: number;
+  currency: 'RSD';
+  reference: string;
+  recipientName: string;
+  recipientAccount: string;
+  purpose: string;
+  payload: string;
+  paymentStatus: EducationEnrollmentPaymentInstructionsPaymentStatus;
+  settlementNotice: string;
 }
 
 export interface EducationNotification {

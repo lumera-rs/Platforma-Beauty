@@ -461,6 +461,8 @@ import
   EnrollInEducationCourseBody,
   EnrollInEducationCourseParams,
   EnrollInEducationCourseResponse,
+  GetEducationEnrollmentPaymentInstructionsParams,
+  GetEducationEnrollmentPaymentInstructionsResponse,
   GetEducationCourseParams,
   GetEducationCourseResponse,
   RequestEducationCourseGalleryUploadBody,
@@ -19202,6 +19204,50 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
     metadata: { enrollmentId: enrollment.id, courseId: course.id },
   });
   res.status(201).json(EnrollInEducationCourseResponse.parse(await educationEnrollmentView(enrollment)));
+});
+
+// Payment instructions are a read-only rendering of a pending obligation.
+// They deliberately share the platform IPS encoder used by other manual
+// education charges and never mutate the enrollment or grant course access.
+router.get("/education/enrollments/:enrollmentId/payment-instructions", async (req, res): Promise<void> => {
+  const user = await current(req, res); if (!user) return;
+  const params = GetEducationEnrollmentPaymentInstructionsParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: "Identifikator prijave nije ispravan." }); return; }
+  const [enrollment] = await db.select().from(courseEnrollmentsTable)
+    .where(eq(courseEnrollmentsTable.id, params.data.enrollmentId)).limit(1);
+  if (!enrollment) { res.status(404).json({ error: "Prijava nije pronađena." }); return; }
+  if (enrollment.purchaserId !== user.id) {
+    res.status(403).json({ error: "Samo kupac može videti instrukcije za uplatu." }); return;
+  }
+  if (enrollment.status !== "pending" || enrollment.paymentStatus !== "pending") {
+    res.status(409).json({ error: "Instrukcije su dostupne samo dok uplata čeka potvrdu." }); return;
+  }
+  if (!enrollment.chargedAmount || enrollment.chargedAmount < 1) {
+    res.status(409).json({ error: "Za ovu prijavu nema platformske obaveze za uplatu." }); return;
+  }
+  try {
+    const settings = await getEducationPlatformSettings();
+    // 3-character prefix plus a hyphenless UUID fits the NBS 35-character
+    // reference limit while staying deterministic across reloads/retries.
+    const ips = educationIpsQrPayload({
+      recipientName: settings.ipsRecipientName,
+      recipientAccount: settings.ipsRecipientAccount,
+      purpose: settings.ipsPurpose,
+      amount: enrollment.chargedAmount,
+      reference: `EDU${enrollment.id.replace(/-/g, "")}`,
+    });
+    res.json(GetEducationEnrollmentPaymentInstructionsResponse.parse({
+      enrollmentId: enrollment.id,
+      ...ips,
+      paymentStatus: "pending",
+      settlementNotice: "Uplata i pristup kursu biće evidentirani tek nakon ručne potvrde LUMERA administracije.",
+    }));
+  } catch (error) {
+    const message = error instanceof Error && error.message.startsWith("IPS_PAYMENT_")
+      ? "Instrukcije za IPS uplatu trenutno nisu podešene."
+      : "Instrukcije za uplatu nisu dostupne.";
+    res.status(409).json({ error: message });
+  }
 });
 
 // Waitlists are deliberately session-scoped: a place on one date is never a
