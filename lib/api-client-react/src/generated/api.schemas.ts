@@ -4949,6 +4949,344 @@ export interface BillingDetailsInput {
   postalCode: string;
 }
 
+export interface EducationCenterResource {
+  id: string;
+  centerId: string;
+  type: string;
+  name: string;
+  /** @nullable */
+  capacity: number | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EducationCenterResourceCreate {
+  type: string;
+  /**
+     * @minLength 1
+     * @maxLength 160
+     */
+  name: string;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  capacity?: number | null;
+}
+
+export interface EducationCenterResourceUpdate {
+  /**
+     * @minLength 1
+     * @maxLength 160
+     */
+  name?: string;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  capacity?: number | null;
+  active?: boolean;
+}
+
+export interface EducationSessionResourceAssign {
+  resourceId: string;
+  /** @minimum 1 */
+  quantity?: number;
+}
+
+export interface EducationSessionResource {
+  id: string;
+  resourceId: string;
+  sessionId: string;
+  quantity: number;
+}
+
+export interface EducationInventoryItem {
+  id: string;
+  centerId: string;
+  /** @nullable */
+  productId: string | null;
+  name: string;
+  quantity: number;
+  unit: string;
+  reorderLevel: number;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface EducationInventoryItemCreate {
+  /** @minLength 1 */
+  name: string;
+  /** @nullable */
+  productId?: string | null;
+  /** @minimum 0 */
+  quantity: number;
+  /** @minLength 1 */
+  unit: string;
+  /** @minimum 0 */
+  reorderLevel?: number;
+}
+
+export interface EducationInventoryMovementCreate {
+  delta: number;
+  /** @minLength 1 */
+  note: string;
+  /** @nullable */
+  courseId?: string | null;
+  /** @nullable */
+  sessionId?: string | null;
+}
+
+export interface EducationInventoryMovement {
+  id: string;
+  itemId: string;
+  centerId: string;
+  delta: number;
+  /** @nullable */
+  courseId: string | null;
+  /** @nullable */
+  sessionId: string | null;
+  note: string;
+  /** @nullable */
+  actorUserId: string | null;
+  createdAt: string;
+}
+
+export interface EducationBundle {
+  id: string;
+  centerId: string;
+  name: string;
+  description: string;
+  price: number;
+  active: boolean;
+  published: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EducationBundleCreate {
+  /** @minLength 1 */
+  name: string;
+  description?: string;
+  /** @minimum 0 */
+  price: number;
+  active?: boolean;
+  published?: boolean;
+  courseIds?: string[];
+}
+
+export interface EducationBundleUpdate {
+  /** @minLength 1 */
+  name?: string;
+  description?: string;
+  /** @minimum 0 */
+  price?: number;
+  active?: boolean;
+  published?: boolean;
+  courseIds?: string[];
+}
+
+export interface EducationCrmLearner {
+  /** @nullable */
+  userId: string | null;
+  count: number;
+  completed: number;
+}
+
+export interface EducationCrmResponse {
+  learners: EducationCrmLearner[];
+}
+
+export interface EducationContactCreate {
+  /** @nullable */
+  learnerUserId?: string | null;
+  /** @nullable */
+  enrollmentId?: string | null;
+  /** @minLength 1 */
+  channel: string;
+  /** @minLength 1 */
+  note: string;
+}
+
+export interface EducationContactHistory {
+  id: string;
+  centerId: string;
+  /** @nullable */
+  learnerUserId: string | null;
+  /** @nullable */
+  enrollmentId: string | null;
+  channel: string;
+  note: string;
+  /** @nullable */
+  actorUserId: string | null;
+  createdAt: string;
+}
+
+export interface EducationInstructorPerformance {
+  /** @nullable */
+  instructorId: string | null;
+  courses: number;
+  enrollments: number;
+  completions: number;
+}
+
+export interface EducationInstructorPerformanceResponse {
+  instructors: EducationInstructorPerformance[];
+}
+
+export interface EducationCenterAssistantRequest {
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  prompt: string;
+}
+
+export interface EducationCenterAssistantResponse {
+  reply: string;
+  grounding: string;
+}
+
+export interface EducationB2bProduct {
+  id: string;
+  name: string;
+  description: string;
+  /** @minimum 0 */
+  priceRsd: number;
+  /** @minimum 0 */
+  stock: number;
+}
+
+export interface EducationB2bProductList {
+  products: EducationB2bProduct[];
+}
+
+export interface EducationB2bTier {
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  /** @minimum 0 */
+  minSpendRsd: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  maxSpendRsd: number | null;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  discountPercent: number;
+  /** @minimum 0 */
+  sortOrder: number;
+}
+
+export interface EducationB2bTierInput {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  /** @minimum 0 */
+  minSpendRsd: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  maxSpendRsd: number | null;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  discountPercent: number;
+  /** @minimum 0 */
+  sortOrder: number;
+}
+
+export interface EducationB2bTierSettings {
+  /** @minimum 1 */
+  version: number;
+  tiers: EducationB2bTier[];
+}
+
+export interface EducationB2bTierSettingsInput {
+  /** @minimum 1 */
+  expectedVersion: number;
+  tiers: EducationB2bTierInput[];
+}
+
+export interface EducationB2bBenefit {
+  periodStart: string;
+  periodEnd: string;
+  /** @minimum 0 */
+  priorMonthSpendRsd: number;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  discountPercent: number;
+  discountReason: string;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  amountToNextTierRsd: number | null;
+  /** @nullable */
+  tierId: string | null;
+  /** @minimum 1 */
+  settingsVersion: number;
+}
+
+export interface EducationB2bOrderLineInput {
+  productId: string;
+  /**
+     * @minimum 1
+     * @maximum 1000
+     */
+  quantity: number;
+}
+
+export interface EducationB2bOrderInput {
+  /**
+     * @minItems 1
+     * @maxItems 100
+     */
+  lines: EducationB2bOrderLineInput[];
+}
+
+export type EducationB2bCheckoutInput = EducationB2bOrderInput & {
+  /** @minimum 0 */
+  expectedTotalRsd: number;
+};
+
+export type EducationB2bQuoteLinesItem = {
+  productId: string;
+  name: string;
+  quantity: number;
+  unitPriceRsd: number;
+  lineSubtotalRsd: number;
+};
+
+export interface EducationB2bQuote {
+  lines: EducationB2bQuoteLinesItem[];
+  /** @minimum 0 */
+  subtotalRsd: number;
+  /** @minimum 0 */
+  educationCenterDiscountRsd: number;
+  /** @minimum 0 */
+  payableTotalRsd: number;
+  benefit: EducationB2bBenefit;
+}
+
+export type EducationB2bOrder = EducationB2bQuote & {
+  id: string;
+  createdAt: string;
+};
+
 export type ShopCheckoutProfilePaymentMethodsItem = typeof ShopCheckoutProfilePaymentMethodsItem[keyof typeof ShopCheckoutProfilePaymentMethodsItem];
 
 

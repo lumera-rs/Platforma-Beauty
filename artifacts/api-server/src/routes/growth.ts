@@ -71,9 +71,13 @@ const router = Router();
 // Auth helpers
 // ---------------------------------------------------------------------------
 
+export function isSalonOwnerRole(role: string | null | undefined) {
+  return role === "SALON_OWNER";
+}
+
 async function requireSalonOwner(req: import("express").Request) {
   const user = await getCurrentUser(req);
-  if (!user || !["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(user.role)) return null;
+  if (!user || !isSalonOwnerRole(user.role)) return null;
 
   const [ownerRow] = await db
     .select({ activeSalonId: usersTable.activeSalonId })

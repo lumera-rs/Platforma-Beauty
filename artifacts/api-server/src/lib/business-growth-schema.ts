@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 98;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 101;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -4292,6 +4292,126 @@ function tableStatements(s: string): string[] {
     `CREATE INDEX IF NOT EXISTS education_outbox_participant_idx ON ${s}.education_outbox(participant_id)`,
     `CREATE INDEX IF NOT EXISTS education_price_snapshots_course_idx ON ${s}.education_price_snapshots(course_id)`,
     `CREATE INDEX IF NOT EXISTS education_session_educators_assigned_by_idx ON ${s}.education_session_educators(assigned_by_user_id)`,
+    // v99 — isolate legacy education registrations from salon tenancy.  The
+    // exact registration copy plus the education owner role is provenance
+    // evidence.  We first detach active_salon_id, then delete only when the
+    // database catalog proves that no FK-dependent row exists.  Otherwise the
+    // row is retained, inactive and explicitly retired.
+    `ALTER TABLE ${s}.salons ADD COLUMN IF NOT EXISTS provisioning_source text`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_salon_cleanup_reports (
+       version integer PRIMARY KEY, candidates integer NOT NULL,
+       detached_users integer NOT NULL, deleted_salons integer NOT NULL,
+       retired_salons integer NOT NULL, completed_at timestamptz NOT NULL DEFAULT now()
+     )`,
+    `DO $cleanup$
+     DECLARE candidate record; dependency record; has_dependency boolean;
+       salon_owner_column text; cleanup_supported boolean;
+       candidate_count integer := 0; detached_count integer := 0;
+       deleted_count integer := 0; retired_count integer := 0; affected integer;
+     BEGIN
+       SELECT column_name INTO salon_owner_column FROM information_schema.columns
+         WHERE table_schema = current_schema() AND table_name = 'salons'
+           AND column_name IN ('user_id', 'owner_id')
+         ORDER BY CASE column_name WHEN 'user_id' THEN 0 ELSE 1 END LIMIT 1;
+       SELECT salon_owner_column IS NOT NULL
+         AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='salons' AND column_name='active')
+         AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='salons' AND column_name='slug')
+         AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='salons' AND column_name='short_description')
+         AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='salons' AND column_name='description')
+         AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='users' AND column_name='active_salon_id')
+         INTO cleanup_supported;
+       IF NOT cleanup_supported THEN
+         INSERT INTO ${s}.education_salon_cleanup_reports (version,candidates,detached_users,deleted_salons,retired_salons)
+         VALUES (99,0,0,0,0) ON CONFLICT (version) DO NOTHING;
+         RETURN;
+       END IF;
+       FOR candidate IN EXECUTE format(
+          'SELECT s.id FROM ${s}.salons s JOIN ${s}.users u ON u.id = s.%I
+           WHERE u.role::text = ''EDUKATIVNI_CENTAR''
+             AND EXISTS (SELECT 1 FROM ${s}.education_centers ec WHERE ec.owner_id = u.id)
+             AND s.active = false AND s.slug LIKE ''%%-'' || left(u.id::text, 8)
+             AND s.short_description = s.name || '' je novi LUMERA partner.''
+             AND s.description = ''Poslovni profil za '' || s.name || ''. Dopunite ponudu, tim i radno vreme iz poslovnog portala.''
+             AND s.provisioning_source IS NULL', salon_owner_column)
+       LOOP
+         candidate_count := candidate_count + 1;
+         UPDATE ${s}.users SET active_salon_id = NULL
+           WHERE active_salon_id = candidate.id;
+         GET DIAGNOSTICS affected = ROW_COUNT;
+         detached_count := detached_count + affected;
+          -- Never delete a historic tenant row: it may be referenced by
+          -- records unknown to this rollout or retained for audit purposes.
+          -- The row is merely retired after detaching any active selection.
+          UPDATE ${s}.salons SET active = false,
+            provisioning_source = 'legacy_education_registration_retired'
+            WHERE id = candidate.id;
+          retired_count := retired_count + 1;
+       END LOOP;
+       INSERT INTO ${s}.education_salon_cleanup_reports
+         (version, candidates, detached_users, deleted_salons, retired_salons, completed_at)
+       VALUES (99, candidate_count, detached_count, deleted_count, retired_count, now())
+       ON CONFLICT (version) DO NOTHING;
+     END $cleanup$`,
+    // v100 — administrator-configured education-center B2B benefit and
+    // immutable final-checkout evidence. No business thresholds are seeded.
+    `CREATE TABLE IF NOT EXISTS ${s}.education_b2b_discount_settings (
+       id boolean PRIMARY KEY DEFAULT true CHECK (id = true), version integer NOT NULL DEFAULT 1,
+       updated_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+       updated_at timestamptz NOT NULL DEFAULT now()
+     )`,
+    `INSERT INTO ${s}.education_b2b_discount_settings (id, version) VALUES (true, 1) ON CONFLICT (id) DO NOTHING`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_b2b_discount_tiers (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL,
+       min_spend_rsd integer NOT NULL, max_spend_rsd integer, discount_percent integer NOT NULL,
+       sort_order integer NOT NULL UNIQUE, version integer NOT NULL DEFAULT 1,
+       created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+       CHECK (min_spend_rsd >= 0 AND (max_spend_rsd IS NULL OR max_spend_rsd >= min_spend_rsd)),
+       CHECK (discount_percent BETWEEN 0 AND 100)
+     )`,
+    `DO $tiers$
+     BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'education_b2b_discount_tiers_no_overlap') THEN
+         ALTER TABLE ${s}.education_b2b_discount_tiers
+           ADD CONSTRAINT education_b2b_discount_tiers_no_overlap
+           EXCLUDE USING gist
+           (int8range(min_spend_rsd::bigint,
+             CASE WHEN max_spend_rsd IS NULL THEN NULL ELSE max_spend_rsd::bigint + 1 END, '[)') WITH &&);
+       END IF;
+     END $tiers$`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_b2b_discount_audits (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), version integer NOT NULL,
+       actor_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+       tiers_snapshot jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
+     )`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_b2b_orders (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE RESTRICT,
+       purchaser_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE RESTRICT,
+       lines_snapshot jsonb NOT NULL, subtotal_rsd integer NOT NULL,
+       discount_rsd integer NOT NULL, total_rsd integer NOT NULL,
+       benefit_snapshot jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
+       CHECK (subtotal_rsd >= 0 AND discount_rsd >= 0 AND total_rsd = subtotal_rsd - discount_rsd)
+     )`,
+    `CREATE INDEX IF NOT EXISTS education_b2b_orders_center_created_idx ON ${s}.education_b2b_orders(center_id, created_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_b2b_order_items (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       order_id uuid NOT NULL REFERENCES ${s}.education_b2b_orders(id) ON DELETE RESTRICT,
+       product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE RESTRICT,
+       quantity integer NOT NULL CHECK (quantity > 0), unit_price_rsd integer NOT NULL CHECK (unit_price_rsd >= 0),
+       line_total_rsd integer NOT NULL CHECK (line_total_rsd = quantity * unit_price_rsd)
+     )`,
+    `CREATE INDEX IF NOT EXISTS education_b2b_order_items_order_idx ON ${s}.education_b2b_order_items(order_id)`,
+    // v101 — center-owned operations, inventory, packages and learner contact journal.
+    `CREATE TABLE IF NOT EXISTS ${s}.education_resources (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE CASCADE, kind text NOT NULL CHECK(kind IN ('room','equipment')), name text NOT NULL, capacity integer, active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE INDEX IF NOT EXISTS education_resources_center_kind_idx ON ${s}.education_resources(center_id, kind)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_session_resources (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), resource_id uuid NOT NULL REFERENCES ${s}.education_resources(id) ON DELETE RESTRICT, session_id uuid NOT NULL REFERENCES ${s}.course_sessions(id) ON DELETE CASCADE, quantity integer NOT NULL DEFAULT 1 CHECK(quantity > 0), UNIQUE(resource_id, session_id))`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_inventory_items (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE CASCADE, product_id uuid REFERENCES ${s}.products(id) ON DELETE RESTRICT, name text NOT NULL, quantity_on_hand integer NOT NULL DEFAULT 0 CHECK(quantity_on_hand >= 0), reorder_level integer NOT NULL DEFAULT 0 CHECK(reorder_level >= 0), active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_inventory_movements (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), item_id uuid NOT NULL REFERENCES ${s}.education_inventory_items(id) ON DELETE RESTRICT, center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE RESTRICT, delta integer NOT NULL CHECK(delta <> 0), course_id uuid REFERENCES ${s}.courses(id) ON DELETE SET NULL, session_id uuid REFERENCES ${s}.course_sessions(id) ON DELETE SET NULL, note text NOT NULL, actor_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL, created_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE INDEX IF NOT EXISTS education_inventory_movements_item_created_idx ON ${s}.education_inventory_movements(item_id, created_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_bundles (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE CASCADE, title text NOT NULL, description text NOT NULL DEFAULT '', price integer NOT NULL CHECK(price >= 0), active boolean NOT NULL DEFAULT true, published boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_bundle_courses (bundle_id uuid NOT NULL REFERENCES ${s}.education_bundles(id) ON DELETE CASCADE, course_id uuid NOT NULL REFERENCES ${s}.courses(id) ON DELETE RESTRICT, sort_order integer NOT NULL, PRIMARY KEY(bundle_id, course_id), UNIQUE(bundle_id, sort_order))`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_contact_history (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE CASCADE, learner_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL, enrollment_id uuid REFERENCES ${s}.course_enrollments(id) ON DELETE SET NULL, channel text NOT NULL, note text NOT NULL, actor_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL, created_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE INDEX IF NOT EXISTS education_contact_history_center_learner_idx ON ${s}.education_contact_history(center_id, learner_user_id, created_at)`,
     // v74 — every aftercare FK gets a leading index so deletes/updates on its
     // parent cannot force scans as recommendation and delivery history grows.
   ];
@@ -4409,6 +4529,16 @@ export async function ensureBusinessGrowthSchema(schemaName = "public"): Promise
   const previousSearchPath = await currentSearchPath(client);
   try {
     await runBusinessGrowthSchemaDdl(client, schemaName);
+    const cleanup = await client.query<{
+      candidates: number; detached_users: number; deleted_salons: number; retired_salons: number;
+    }>(`SELECT candidates, detached_users, deleted_salons, retired_salons
+         FROM ${quoteSchema(schemaName)}.education_salon_cleanup_reports WHERE version = 99`);
+    if (cleanup.rows[0]) {
+      logger.info(
+        { version: 99, ...cleanup.rows[0] },
+        "Education registration salon cleanup report",
+      );
+    }
     logger.info(
       { version: BUSINESS_GROWTH_SCHEMA_VERSION, schema: schemaName },
       "Business Growth database schema is ready",

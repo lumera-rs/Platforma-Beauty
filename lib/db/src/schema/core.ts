@@ -332,6 +332,8 @@ export const salonsTable = pgTable("salons", {
   companyAddress: text("company_address"),
   companyCity: text("company_city"),
   companyPostalCode: text("company_postal_code"),
+  /** Auditable origin; never use this field as an authorization grant. */
+  provisioningSource: text("provisioning_source"),
   shortDescription: text("short_description").notNull(),
   description: text("description").notNull(),
   imageUrl: text("image_url").notNull(),

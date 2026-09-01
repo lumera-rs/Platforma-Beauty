@@ -2610,7 +2610,7 @@ async function requireEducationAccess(req: Request, res: Response): Promise<Educ
   }
   const admin = isAdmin(user);
   const [salon, centers] = await Promise.all([
-    ["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(user.role) ? ownedSalon(user.id) : Promise.resolve(null),
+    user.role === "SALON_OWNER" ? ownedSalon(user.id) : Promise.resolve(null),
     db.select().from(educationCentersTable).innerJoin(educationCenterStaffTable, and(
       eq(educationCenterStaffTable.centerId, educationCentersTable.id),
       eq(educationCenterStaffTable.userId, user.id),
@@ -2671,6 +2671,31 @@ function isCourseOwner(access: EducationAccess, course: typeof coursesTable.$inf
     (access.salon && course.salonId === access.salon.id)
     || access.centers.some((center) => center.id === course.centerId),
   );
+}
+
+/**
+ * Course-authoring is an education-center capability.  In particular, a
+ * legacy salon row must never turn an education-center account into a salon
+ * publisher, and salon owners remain learners/purchasers rather than course
+ * authors.
+ */
+async function canManageEducationCourses(access: EducationAccess, centerId?: string | null) {
+  if (access.admin) return true;
+  const scopedCenters = centerId
+    ? access.centers.filter((center) => center.id === centerId)
+    : access.centers;
+  if (!scopedCenters.length) return false;
+  if (access.user.role === "EDUKATIVNI_CENTAR"
+    && scopedCenters.some((center) => center.ownerId === access.user.id)) return true;
+  const [membership] = await db.select({ id: educationCenterStaffTable.id })
+    .from(educationCenterStaffTable)
+    .where(and(
+      eq(educationCenterStaffTable.userId, access.user.id),
+      eq(educationCenterStaffTable.active, true),
+      inArray(educationCenterStaffTable.centerId, scopedCenters.map((center) => center.id)),
+      inArray(educationCenterStaffTable.role, ["owner_admin", "manager_reception"]),
+    )).limit(1);
+  return Boolean(membership);
 }
 
 function hasActiveEducationSubscription(status: string | null | undefined) {
@@ -2813,7 +2838,10 @@ async function requireOwnedCourse(access: EducationAccess, courseId: string, res
     res.status(404).json({ error: "Kurs nije pronađen." });
     return null;
   }
-  if (!isCourseOwner(access, course)) {
+  // Course authoring is center-only. A salon-owned legacy course must never
+  // grant salon tenancy any mutation authority; platform administrators retain
+  // their existing moderation/edit capability for center courses.
+  if (!course.centerId || (!access.admin && !(await canManageEducationCourses(access, course.centerId)))) {
     res.status(403).json({ error: access.admin ? "Administratori imaju samo uvid u tuđe kurseve." : "Nemate pravo izmene ovog kursa." });
     return null;
   }
@@ -2823,7 +2851,7 @@ async function requireOwnedCourse(access: EducationAccess, courseId: string, res
 async function requireOwnedEducationCenterCourse(access: EducationAccess, courseId: string, res: Response) {
   const course = await requireOwnedCourse(access, courseId, res);
   if (!course) return null;
-  if (!course.centerId || !access.centers.some((center) => center.id === course.centerId)) {
+  if (!course.centerId || (!access.admin && !access.centers.some((center) => center.id === course.centerId))) {
     res.status(403).json({ error: "Galerijom mogu upravljati samo vlasnici edukativnog centra." });
     return null;
   }
@@ -3643,7 +3671,7 @@ async function requireCustomer(req: Request, res: Response) {
 export async function requireSalonOwner(req: Request, res: Response) {
   const user = await current(req, res);
   if (!user) return null;
-  if (!["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(user.role)) {
+  if (user.role !== "SALON_OWNER") {
     res.status(403).json({ error: "Ova funkcija je dostupna samo vlasnicima salona." });
     return null;
   }
@@ -3787,7 +3815,7 @@ type ShopAccess = {
 async function requireShopAccess(req: Request, res: Response): Promise<ShopAccess | null> {
   const user = await current(req, res);
   if (!user) return null;
-  if (["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(user.role)) {
+  if (user.role === "SALON_OWNER") {
     const salon = await ownedSalon(user.id);
     if (!salon) {
       res.status(403).json({ error: "Nalog nije povezan sa salonom." });
@@ -5681,7 +5709,7 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
           role,
         }).returning())[0]!;
 
-      const [workspace] = await tx.insert(salonsTable).values({
+      const [workspace] = input.businessType === "SALON" ? await tx.insert(salonsTable).values({
           ownerId: created!.id,
           name: input.businessName,
           slug: businessSlug(input.businessName, created!.id),
@@ -5697,7 +5725,8 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
           active: false,
           companyName: input.businessName,
           companyTaxId: input.pib,
-        }).returning({ id: salonsTable.id });
+          provisioningSource: "business_registration_salon",
+        }).returning({ id: salonsTable.id }) : [];
       let referredEducationCenterId: string | null = null;
       if (input.businessType === "EDUCATION_CENTER") {
         const [center] = await tx.insert(educationCentersTable).values({
@@ -5734,7 +5763,10 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
           ? socialBusinessCompletion ? "oauth_business_salon" : "business_salon"
           : socialBusinessCompletion ? "oauth_business_education" : "business_education",
       });
-      return (await tx.update(usersTable).set({ activeSalonId: workspace!.id, updatedAt: new Date() })
+      return (await tx.update(usersTable).set({
+        activeSalonId: input.businessType === "SALON" ? workspace!.id : null,
+        updatedAt: new Date(),
+      })
         .where(eq(usersTable.id, created!.id)).returning())[0]!;
     });
 
@@ -7689,7 +7721,7 @@ async function bookingGroupAccess(req: Request, res: Response, groupId: string) 
   const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, group.salonId)).limit(1);
   if (!salon) { res.status(404).json({ error: "Salon nije pronađen." }); return null; }
   if (user.role === "CUSTOMER" && group.customerId === user.id) return { user, group, salon, employee: null };
-  if (["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(user.role) && salon.ownerId === user.id) return { user, group, salon, employee: null };
+  if (user.role === "SALON_OWNER" && salon.ownerId === user.id) return { user, group, salon, employee: null };
   if (user.role === "SALON_EMPLOYEE") {
     const [employee] = await db.select().from(employeesTable)
       .innerJoin(employeeLocationAssignmentsTable, and(
@@ -8262,7 +8294,7 @@ router.post("/appointments/:appointmentId/lifecycle", async (req, res): Promise<
   const [params, body] = [TransitionAppointmentLifecycleParams.safeParse(req.params), TransitionAppointmentLifecycleBody.safeParse(req.body)];
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci o promeni statusa nisu ispravni." }); return; }
   let allowedSalonId: string | null = null; let employeeId: string | null = null;
-  if (["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(actor.role)) allowedSalonId = (await ownedSalon(actor.id))?.id ?? null;
+  if (actor.role === "SALON_OWNER") allowedSalonId = (await ownedSalon(actor.id))?.id ?? null;
   else if (actor.role === "SALON_EMPLOYEE") {
     const access = await requireSalonEmployee(req, res); if (!access) return;
     allowedSalonId = access.salon.id; employeeId = access.employee.id;
@@ -8920,7 +8952,7 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
 router.get("/salon/managed-salons", async (req, res): Promise<void> => {
   const user = await current(req, res);
   if (!user) return;
-  if (!["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(user.role)) { res.status(403).json({ error: "Ova funkcija je dostupna samo vlasnicima salona." }); return; }
+  if (user.role !== "SALON_OWNER") { res.status(403).json({ error: "Ova funkcija je dostupna samo vlasnicima salona." }); return; }
   const salons = await db.select({ id: salonsTable.id, name: salonsTable.name, slug: salonsTable.slug }).from(salonsTable).where(eq(salonsTable.ownerId, user.id)).orderBy(asc(salonsTable.name));
   const activeSalon = await ownedSalon(user.id);
   res.json({ activeSalonId: activeSalon?.id ?? null, salons });
@@ -8929,7 +8961,8 @@ router.get("/salon/managed-salons", async (req, res): Promise<void> => {
 router.put("/salon/active-salon", async (req, res): Promise<void> => {
   const user = await current(req, res);
   if (!user) return;
-  if (!["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(user.role) || typeof req.body?.salonId !== "string") { res.status(400).json({ error: "Izaberite salon." }); return; }
+  if (user.role !== "SALON_OWNER") { res.status(403).json({ error: "Ova funkcija je dostupna samo vlasnicima salona." }); return; }
+  if (typeof req.body?.salonId !== "string") { res.status(400).json({ error: "Izaberite salon." }); return; }
   const [salon] = await db.select({ id: salonsTable.id }).from(salonsTable).where(and(eq(salonsTable.id, req.body.salonId), eq(salonsTable.ownerId, user.id))).limit(1);
   if (!salon) { res.status(404).json({ error: "Salon nije dostupan ovom nalogu." }); return; }
   await db.update(usersTable).set({ activeSalonId: salon.id, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
@@ -18112,6 +18145,10 @@ router.get("/education/courses", async (req, res): Promise<void> => {
 
 router.post("/education/courses", async (req, res): Promise<void> => {
   const access = await requireEducationAccess(req, res); if (!access) return;
+  if (!await canManageEducationCourses(access) || access.admin) {
+    res.status(403).json({ error: "Kurseve može kreirati samo ovlašćeno osoblje edukativnog centra." });
+    return;
+  }
   const parsed = CreateEducationCourseBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const publisher = access.salon ?? access.centers[0];
@@ -18220,6 +18257,10 @@ router.get("/education/courses/:courseId", async (req, res): Promise<void> => {
 
 router.patch("/education/courses/:courseId", async (req, res): Promise<void> => {
   const access = await requireEducationAccess(req, res); if (!access) return;
+  if (!await canManageEducationCourses(access)) {
+    res.status(403).json({ error: "Kurseve može menjati samo ovlašćeno osoblje edukativnog centra." });
+    return;
+  }
   const [params, body] = [UpdateEducationCourseParams.safeParse(req.params), UpdateEducationCourseBody.safeParse(req.body)];
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci kursa nisu ispravni." }); return; }
   const course = await requireOwnedCourse(access, params.data.courseId, res); if (!course) return;
@@ -18316,6 +18357,10 @@ router.patch("/education/courses/:courseId", async (req, res): Promise<void> => 
 
 router.post("/education/courses/:courseId/publish", async (req, res): Promise<void> => {
   const access = await requireEducationAccess(req, res); if (!access) return;
+  if (!await canManageEducationCourses(access)) {
+    res.status(403).json({ error: "Kurseve može objaviti samo ovlašćeno osoblje edukativnog centra." });
+    return;
+  }
   const parsed = PublishEducationCourseParams.safeParse(req.params);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const course = await requireOwnedCourse(access, parsed.data.courseId, res); if (!course) return;
@@ -21822,7 +21867,7 @@ router.get("/education/enrollments/:enrollmentId/session.ics", async (req, res):
 
 router.post("/education/courses/:courseId/group-enrollments", async (req, res): Promise<void> => {
   const user = await current(req, res); if (!user) return;
-  if (!["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(user.role)) {
+  if (user.role !== "SALON_OWNER") {
     res.status(403).json({ error: "Grupna prijava je dostupna samo vlasnicima salona." }); return;
   }
   const courseId = String(req.params.courseId ?? "");

@@ -2519,6 +2519,155 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ShopCheckoutProfile" }
+  /education/b2b/benefit:
+    get:
+      operationId: getEducationB2bBenefit
+      tags: [education]
+      summary: Get the center's automatically selected prior-calendar-month B2B benefit
+      responses:
+        "200": { description: Benefit summary, content: { application/json: { schema: { $ref: "#/components/schemas/EducationB2bBenefit" } } } }
+        "403": { description: Education center access required }
+  /education/b2b/products:
+    get:
+      operationId: listEducationB2bProducts
+      tags: [education]
+      summary: List eligible B2B products for an education center
+      responses:
+        "200":
+          description: Eligible products
+          content: { application/json: { schema: { $ref: "#/components/schemas/EducationB2bProductList" } } }
+  /education/centers/{centerId}/resources:
+    get:
+      operationId: listEducationCenterResources
+      tags: [education]
+      parameters: [{ in: path, name: centerId, required: true, schema: { type: string } }]
+      responses: { "200": { description: Center-owned rooms and equipment, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/EducationCenterResource" } } } } } }
+    post:
+      operationId: createEducationCenterResource
+      tags: [education]
+      parameters: [{ in: path, name: centerId, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/EducationCenterResourceCreate" } } } }
+      responses: { "201": { description: Created resource, content: { application/json: { schema: { $ref: "#/components/schemas/EducationCenterResource" } } } } }
+  /education/centers/{centerId}/resources/{id}:
+    patch:
+      operationId: updateEducationCenterResource
+      tags: [education]
+      parameters: [{ in: path, name: centerId, required: true, schema: { type: string } }, { in: path, name: id, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/EducationCenterResourceUpdate" } } } }
+      responses: { "200": { description: Updated resource, content: { application/json: { schema: { $ref: "#/components/schemas/EducationCenterResource" } } } } }
+  /education/centers/{centerId}/sessions/{sessionId}/resources:
+    post:
+      operationId: assignEducationSessionResource
+      tags: [education]
+      parameters: [{ in: path, name: centerId, required: true, schema: { type: string } }, { in: path, name: sessionId, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/EducationSessionResourceAssign" } } } }
+      responses: { "201": { description: Resource allocation, content: { application/json: { schema: { $ref: "#/components/schemas/EducationSessionResource" } } } } }
+  /education/centers/{centerId}/inventory:
+    get:
+      operationId: listEducationCenterInventory
+      tags: [education]
+      parameters: [{ in: path, name: centerId, required: true, schema: { type: string } }]
+      responses: { "200": { description: Center-owned inventory, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/EducationInventoryItem" } } } } } }
+    post:
+      operationId: createEducationCenterInventoryItem
+      tags: [education]
+      parameters: [{ in: path, name: centerId, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/EducationInventoryItemCreate" } } } }
+      responses: { "201": { description: Created inventory item, content: { application/json: { schema: { $ref: "#/components/schemas/EducationInventoryItem" } } } } }
+  /education/centers/{centerId}/inventory/{id}/movements:
+    post:
+      operationId: createEducationInventoryMovement
+      tags: [education]
+      parameters: [{ in: path, name: centerId, required: true, schema: { type: string } }, { in: path, name: id, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/EducationInventoryMovementCreate" } } } }
+      responses: { "201": { description: Immutable movement, content: { application/json: { schema: { $ref: "#/components/schemas/EducationInventoryMovement" } } } } }
+  /education/centers/{centerId}/bundles:
+    get:
+      operationId: listEducationCenterBundles
+      tags: [education]
+      parameters: [{ in: path, name: centerId, required: true, schema: { type: string } }]
+      responses: { "200": { description: Center packages, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/EducationBundle" } } } } } }
+    post:
+      operationId: createEducationCenterBundle
+      tags: [education]
+      parameters: [{ in: path, name: centerId, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/EducationBundleCreate" } } } }
+      responses: { "201": { description: Created package, content: { application/json: { schema: { $ref: "#/components/schemas/EducationBundle" } } } } }
+  /education/centers/{centerId}/bundles/{id}:
+    patch:
+      operationId: updateEducationCenterBundle
+      tags: [education]
+      parameters: [{ in: path, name: centerId, required: true, schema: { type: string } }, { in: path, name: id, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/EducationBundleUpdate" } } } }
+      responses: { "200": { description: Updated package, content: { application/json: { schema: { $ref: "#/components/schemas/EducationBundle" } } } } }
+    delete:
+      operationId: archiveEducationCenterBundle
+      tags: [education]
+      parameters: [{ in: path, name: centerId, required: true, schema: { type: string } }, { in: path, name: id, required: true, schema: { type: string } }]
+      responses: { "204": { description: Package archived } }
+  /education/centers/{centerId}/crm:
+    get:
+      operationId: getEducationCenterCrm
+      tags: [education]
+      parameters: [{ in: path, name: centerId, required: true, schema: { type: string } }]
+      responses: { "200": { description: Enrollment-derived learners and retention data, content: { application/json: { schema: { $ref: "#/components/schemas/EducationCrmResponse" } } } } }
+  /education/centers/{centerId}/contacts:
+    get:
+      operationId: listEducationContactHistory
+      tags: [education]
+      parameters: [{ in: path, name: centerId, required: true, schema: { type: string } }]
+      responses: { "200": { description: Contact history, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/EducationContactHistory" } } } } } }
+    post:
+      operationId: createEducationContactHistory
+      tags: [education]
+      parameters: [{ in: path, name: centerId, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/EducationContactCreate" } } } }
+      responses: { "201": { description: Contact history entry, content: { application/json: { schema: { $ref: "#/components/schemas/EducationContactHistory" } } } } }
+  /education/centers/{centerId}/instructors/performance:
+    get:
+      operationId: getEducationInstructorPerformance
+      tags: [education]
+      parameters: [{ in: path, name: centerId, required: true, schema: { type: string } }]
+      responses: { "200": { description: Center instructor performance aggregate, content: { application/json: { schema: { $ref: "#/components/schemas/EducationInstructorPerformanceResponse" } } } } }
+  /education/centers/{centerId}/assistant:
+    post:
+      operationId: educationCenterAssistant
+      tags: [education]
+      parameters: [{ in: path, name: centerId, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/EducationCenterAssistantRequest" } } } }
+      responses: { "200": { description: Serbian center-grounded assistant answer, content: { application/json: { schema: { $ref: "#/components/schemas/EducationCenterAssistantResponse" } } } } }
+  /education/b2b/quote:
+    post:
+      operationId: quoteEducationB2bOrder
+      tags: [education]
+      summary: Preview a center B2B product order with its current automatic benefit
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/EducationB2bOrderInput" } } } }
+      responses:
+        "200": { description: Canonical quote, content: { application/json: { schema: { $ref: "#/components/schemas/EducationB2bQuote" } } } }
+  /education/b2b/checkout:
+    post:
+      operationId: checkoutEducationB2bOrder
+      tags: [education]
+      summary: Finalize a center B2B order and persist immutable benefit evidence
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/EducationB2bCheckoutInput" } } } }
+      responses:
+        "201": { description: Persisted order, content: { application/json: { schema: { $ref: "#/components/schemas/EducationB2bOrder" } } } }
+        "409": { description: Quote changed }
+  /admin/education/b2b-discount-tiers:
+    get:
+      operationId: adminGetEducationB2bDiscountTiers
+      tags: [admin]
+      summary: Read versioned education-center B2B discount tiers
+      responses:
+        "200": { description: Current settings, content: { application/json: { schema: { $ref: "#/components/schemas/EducationB2bTierSettings" } } } }
+    put:
+      operationId: adminReplaceEducationB2bDiscountTiers
+      tags: [admin]
+      summary: Atomically replace education-center B2B tiers
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/EducationB2bTierSettingsInput" } } } }
+      responses:
+        "200": { description: Updated settings, content: { application/json: { schema: { $ref: "#/components/schemas/EducationB2bTierSettings" } } } }
+        "409": { description: Settings version conflict }
   /shop/approval-requests:
     get:
       operationId: listShopApprovalRequests
@@ -12307,6 +12456,201 @@ components:
         city: { type: string, minLength: 1 }
         postalCode: { type: string, minLength: 1 }
       required: [companyName, pib, registrationNumber, street, city, postalCode]
+    EducationCenterResource:
+      type: object
+      properties:
+        id: { type: string }
+        centerId: { type: string }
+        type: { type: string }
+        name: { type: string }
+        capacity: { type: [integer, "null"] }
+        active: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, centerId, type, name, capacity, active, createdAt, updatedAt]
+    EducationCenterResourceCreate:
+      type: object
+      additionalProperties: false
+      properties: { type: { type: string }, name: { type: string, minLength: 1, maxLength: 160 }, capacity: { type: [integer, "null"], minimum: 0 } }
+      required: [type, name]
+    EducationCenterResourceUpdate:
+      type: object
+      additionalProperties: false
+      properties: { name: { type: string, minLength: 1, maxLength: 160 }, capacity: { type: [integer, "null"], minimum: 1 }, active: { type: boolean } }
+    EducationSessionResourceAssign:
+      type: object
+      additionalProperties: false
+      properties: { resourceId: { type: string }, quantity: { type: integer, minimum: 1 } }
+      required: [resourceId]
+    EducationSessionResource:
+      type: object
+      properties: { id: { type: string }, resourceId: { type: string }, sessionId: { type: string }, quantity: { type: integer } }
+      required: [id, resourceId, sessionId, quantity]
+    EducationInventoryItem:
+      type: object
+      properties: { id: { type: string }, centerId: { type: string }, productId: { type: ["string", "null"] }, name: { type: string }, quantity: { type: integer }, unit: { type: string }, reorderLevel: { type: integer }, active: { type: boolean }, createdAt: { type: string, format: date-time } }
+      required: [id, centerId, productId, name, quantity, unit, reorderLevel, active, createdAt]
+    EducationInventoryItemCreate:
+      type: object
+      additionalProperties: false
+      properties: { name: { type: string, minLength: 1 }, productId: { type: ["string", "null"] }, quantity: { type: integer, minimum: 0 }, unit: { type: string, minLength: 1 }, reorderLevel: { type: integer, minimum: 0 } }
+      required: [name, quantity, unit]
+    EducationInventoryMovementCreate:
+      type: object
+      additionalProperties: false
+      properties: { delta: { type: integer }, note: { type: string, minLength: 1 }, courseId: { type: ["string", "null"] }, sessionId: { type: ["string", "null"] } }
+      required: [delta, note]
+    EducationInventoryMovement:
+      type: object
+      properties: { id: { type: string }, itemId: { type: string }, centerId: { type: string }, delta: { type: integer }, courseId: { type: ["string", "null"] }, sessionId: { type: ["string", "null"] }, note: { type: string }, actorUserId: { type: ["string", "null"] }, createdAt: { type: string, format: date-time } }
+      required: [id, itemId, centerId, delta, courseId, sessionId, note, actorUserId, createdAt]
+    EducationBundle:
+      type: object
+      properties: { id: { type: string }, centerId: { type: string }, name: { type: string }, description: { type: string }, price: { type: integer }, active: { type: boolean }, published: { type: boolean }, createdAt: { type: string, format: date-time }, updatedAt: { type: string, format: date-time } }
+      required: [id, centerId, name, description, price, active, published, createdAt, updatedAt]
+    EducationBundleCreate:
+      type: object
+      additionalProperties: false
+      properties: { name: { type: string, minLength: 1 }, description: { type: string }, price: { type: integer, minimum: 0 }, active: { type: boolean }, published: { type: boolean }, courseIds: { type: array, items: { type: string } } }
+      required: [name, price]
+    EducationBundleUpdate:
+      type: object
+      additionalProperties: false
+      properties: { name: { type: string, minLength: 1 }, description: { type: string }, price: { type: integer, minimum: 0 }, active: { type: boolean }, published: { type: boolean }, courseIds: { type: array, items: { type: string } } }
+    EducationCrmLearner:
+      type: object
+      properties: { userId: { type: ["string", "null"] }, count: { type: integer }, completed: { type: integer } }
+      required: [userId, count, completed]
+    EducationCrmResponse:
+      type: object
+      properties: { learners: { type: array, items: { $ref: "#/components/schemas/EducationCrmLearner" } } }
+      required: [learners]
+    EducationContactCreate:
+      type: object
+      additionalProperties: false
+      properties: { learnerUserId: { type: ["string", "null"] }, enrollmentId: { type: ["string", "null"] }, channel: { type: string, minLength: 1 }, note: { type: string, minLength: 1 } }
+      required: [channel, note]
+    EducationContactHistory:
+      type: object
+      properties: { id: { type: string }, centerId: { type: string }, learnerUserId: { type: ["string", "null"] }, enrollmentId: { type: ["string", "null"] }, channel: { type: string }, note: { type: string }, actorUserId: { type: ["string", "null"] }, createdAt: { type: string, format: date-time } }
+      required: [id, centerId, learnerUserId, enrollmentId, channel, note, actorUserId, createdAt]
+    EducationInstructorPerformance:
+      type: object
+      properties: { instructorId: { type: ["string", "null"] }, courses: { type: integer }, enrollments: { type: integer }, completions: { type: integer } }
+      required: [instructorId, courses, enrollments, completions]
+    EducationInstructorPerformanceResponse:
+      type: object
+      properties: { instructors: { type: array, items: { $ref: "#/components/schemas/EducationInstructorPerformance" } } }
+      required: [instructors]
+    EducationCenterAssistantRequest:
+      type: object
+      additionalProperties: false
+      properties: { prompt: { type: string, minLength: 1, maxLength: 2000 } }
+      required: [prompt]
+    EducationCenterAssistantResponse:
+      type: object
+      properties: { reply: { type: string }, grounding: { type: string } }
+      required: [reply, grounding]
+    EducationB2bProduct:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        priceRsd: { type: integer, minimum: 0 }
+        stock: { type: integer, minimum: 0 }
+      required: [id, name, description, priceRsd, stock]
+    EducationB2bProductList:
+      type: object
+      properties:
+        products: { type: array, items: { $ref: "#/components/schemas/EducationB2bProduct" } }
+      required: [products]
+    EducationB2bTier:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        minSpendRsd: { type: integer, minimum: 0 }
+        maxSpendRsd: { type: [integer, "null"], minimum: 0 }
+        discountPercent: { type: integer, minimum: 0, maximum: 100 }
+        sortOrder: { type: integer, minimum: 0 }
+      required: [id, name, minSpendRsd, maxSpendRsd, discountPercent, sortOrder]
+    EducationB2bTierInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        minSpendRsd: { type: integer, minimum: 0 }
+        maxSpendRsd: { type: [integer, "null"], minimum: 0 }
+        discountPercent: { type: integer, minimum: 0, maximum: 100 }
+        sortOrder: { type: integer, minimum: 0 }
+      required: [name, minSpendRsd, maxSpendRsd, discountPercent, sortOrder]
+    EducationB2bTierSettings:
+      type: object
+      properties:
+        version: { type: integer, minimum: 1 }
+        tiers: { type: array, items: { $ref: "#/components/schemas/EducationB2bTier" } }
+      required: [version, tiers]
+    EducationB2bTierSettingsInput:
+      type: object
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        tiers: { type: array, items: { $ref: "#/components/schemas/EducationB2bTierInput" } }
+      required: [expectedVersion, tiers]
+    EducationB2bBenefit:
+      type: object
+      properties:
+        periodStart: { type: string, format: date-time }
+        periodEnd: { type: string, format: date-time }
+        priorMonthSpendRsd: { type: integer, minimum: 0 }
+        discountPercent: { type: integer, minimum: 0, maximum: 100 }
+        discountReason: { type: string }
+        amountToNextTierRsd: { type: [integer, "null"], minimum: 0 }
+        tierId: { type: ["string", "null"] }
+        settingsVersion: { type: integer, minimum: 1 }
+      required: [periodStart, periodEnd, priorMonthSpendRsd, discountPercent, discountReason, amountToNextTierRsd, tierId, settingsVersion]
+    EducationB2bOrderLineInput:
+      type: object
+      properties:
+        productId: { type: string }
+        quantity: { type: integer, minimum: 1, maximum: 1000 }
+      required: [productId, quantity]
+    EducationB2bOrderInput:
+      type: object
+      properties:
+        lines: { type: array, minItems: 1, maxItems: 100, items: { $ref: "#/components/schemas/EducationB2bOrderLineInput" } }
+      required: [lines]
+    EducationB2bCheckoutInput:
+      allOf:
+        - $ref: "#/components/schemas/EducationB2bOrderInput"
+        - type: object
+          properties:
+            expectedTotalRsd: { type: integer, minimum: 0 }
+          required: [expectedTotalRsd]
+    EducationB2bQuote:
+      type: object
+      properties:
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              productId: { type: string }
+              name: { type: string }
+              quantity: { type: integer }
+              unitPriceRsd: { type: integer }
+              lineSubtotalRsd: { type: integer }
+            required: [productId, name, quantity, unitPriceRsd, lineSubtotalRsd]
+        subtotalRsd: { type: integer, minimum: 0 }
+        educationCenterDiscountRsd: { type: integer, minimum: 0 }
+        payableTotalRsd: { type: integer, minimum: 0 }
+        benefit: { $ref: "#/components/schemas/EducationB2bBenefit" }
+      required: [lines, subtotalRsd, educationCenterDiscountRsd, payableTotalRsd, benefit]
+    EducationB2bOrder:
+      allOf:
+        - $ref: "#/components/schemas/EducationB2bQuote"
+        - type: object
+          properties: { id: { type: string }, createdAt: { type: string, format: date-time } }
+          required: [id, createdAt]
     ShopCheckoutProfile:
       type: object
       properties:

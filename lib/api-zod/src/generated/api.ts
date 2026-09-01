@@ -7788,6 +7788,606 @@ export const GetShopCheckoutProfileResponse = zod.object({
 
 
 /**
+ * @summary Get the center's automatically selected prior-calendar-month B2B benefit
+ */
+export const getEducationB2bBenefitResponsePriorMonthSpendRsdMin = 0;
+
+export const getEducationB2bBenefitResponseDiscountPercentMin = 0;
+export const getEducationB2bBenefitResponseDiscountPercentMax = 100;
+
+export const getEducationB2bBenefitResponseAmountToNextTierRsdMin = 0;
+
+
+
+
+export const GetEducationB2bBenefitResponse = zod.object({
+  "periodStart": zod.coerce.date(),
+  "periodEnd": zod.coerce.date(),
+  "priorMonthSpendRsd": zod.number().int().min(getEducationB2bBenefitResponsePriorMonthSpendRsdMin),
+  "discountPercent": zod.number().int().min(getEducationB2bBenefitResponseDiscountPercentMin).max(getEducationB2bBenefitResponseDiscountPercentMax),
+  "discountReason": zod.string(),
+  "amountToNextTierRsd": zod.number().int().min(getEducationB2bBenefitResponseAmountToNextTierRsdMin).nullable(),
+  "tierId": zod.string().nullable(),
+  "settingsVersion": zod.number().int().min(1)
+})
+
+
+/**
+ * @summary List eligible B2B products for an education center
+ */
+export const listEducationB2bProductsResponseProductsItemPriceRsdMin = 0;
+
+export const listEducationB2bProductsResponseProductsItemStockMin = 0;
+
+
+
+export const ListEducationB2bProductsResponse = zod.object({
+  "products": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "priceRsd": zod.number().int().min(listEducationB2bProductsResponseProductsItemPriceRsdMin),
+  "stock": zod.number().int().min(listEducationB2bProductsResponseProductsItemStockMin)
+}))
+})
+
+
+export const ListEducationCenterResourcesParams = zod.object({
+  "centerId": zod.coerce.string()
+})
+
+export const ListEducationCenterResourcesResponseItem = zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "type": zod.string(),
+  "name": zod.string(),
+  "capacity": zod.number().int().nullable(),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListEducationCenterResourcesResponse = zod.array(ListEducationCenterResourcesResponseItem)
+
+
+export const CreateEducationCenterResourceParams = zod.object({
+  "centerId": zod.coerce.string()
+})
+
+export const createEducationCenterResourceBodyNameMax = 160;
+
+export const createEducationCenterResourceBodyCapacityMin = 0;
+
+
+
+export const CreateEducationCenterResourceBody = zod.object({
+  "type": zod.string(),
+  "name": zod.string().min(1).max(createEducationCenterResourceBodyNameMax),
+  "capacity": zod.number().int().min(createEducationCenterResourceBodyCapacityMin).nullish()
+})
+
+export const CreateEducationCenterResourceResponse = zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "type": zod.string(),
+  "name": zod.string(),
+  "capacity": zod.number().int().nullable(),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+export const UpdateEducationCenterResourceParams = zod.object({
+  "centerId": zod.coerce.string(),
+  "id": zod.coerce.string()
+})
+
+export const updateEducationCenterResourceBodyNameMax = 160;
+
+
+
+
+export const UpdateEducationCenterResourceBody = zod.object({
+  "name": zod.string().min(1).max(updateEducationCenterResourceBodyNameMax).optional(),
+  "capacity": zod.number().int().min(1).nullish(),
+  "active": zod.boolean().optional()
+})
+
+export const UpdateEducationCenterResourceResponse = zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "type": zod.string(),
+  "name": zod.string(),
+  "capacity": zod.number().int().nullable(),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+export const AssignEducationSessionResourceParams = zod.object({
+  "centerId": zod.coerce.string(),
+  "sessionId": zod.coerce.string()
+})
+
+
+
+
+export const AssignEducationSessionResourceBody = zod.object({
+  "resourceId": zod.string(),
+  "quantity": zod.number().int().min(1).optional()
+})
+
+export const AssignEducationSessionResourceResponse = zod.object({
+  "id": zod.string(),
+  "resourceId": zod.string(),
+  "sessionId": zod.string(),
+  "quantity": zod.number().int()
+})
+
+
+export const ListEducationCenterInventoryParams = zod.object({
+  "centerId": zod.coerce.string()
+})
+
+export const ListEducationCenterInventoryResponseItem = zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "productId": zod.string().nullable(),
+  "name": zod.string(),
+  "quantity": zod.number().int(),
+  "unit": zod.string(),
+  "reorderLevel": zod.number().int(),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})
+export const ListEducationCenterInventoryResponse = zod.array(ListEducationCenterInventoryResponseItem)
+
+
+export const CreateEducationCenterInventoryItemParams = zod.object({
+  "centerId": zod.coerce.string()
+})
+
+
+export const createEducationCenterInventoryItemBodyQuantityMin = 0;
+
+
+export const createEducationCenterInventoryItemBodyReorderLevelMin = 0;
+
+
+
+export const CreateEducationCenterInventoryItemBody = zod.object({
+  "name": zod.string().min(1),
+  "productId": zod.string().nullish(),
+  "quantity": zod.number().int().min(createEducationCenterInventoryItemBodyQuantityMin),
+  "unit": zod.string().min(1),
+  "reorderLevel": zod.number().int().min(createEducationCenterInventoryItemBodyReorderLevelMin).optional()
+})
+
+export const CreateEducationCenterInventoryItemResponse = zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "productId": zod.string().nullable(),
+  "name": zod.string(),
+  "quantity": zod.number().int(),
+  "unit": zod.string(),
+  "reorderLevel": zod.number().int(),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})
+
+
+export const CreateEducationInventoryMovementParams = zod.object({
+  "centerId": zod.coerce.string(),
+  "id": zod.coerce.string()
+})
+
+
+
+
+export const CreateEducationInventoryMovementBody = zod.object({
+  "delta": zod.number().int(),
+  "note": zod.string().min(1),
+  "courseId": zod.string().nullish(),
+  "sessionId": zod.string().nullish()
+})
+
+export const CreateEducationInventoryMovementResponse = zod.object({
+  "id": zod.string(),
+  "itemId": zod.string(),
+  "centerId": zod.string(),
+  "delta": zod.number().int(),
+  "courseId": zod.string().nullable(),
+  "sessionId": zod.string().nullable(),
+  "note": zod.string(),
+  "actorUserId": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+})
+
+
+export const ListEducationCenterBundlesParams = zod.object({
+  "centerId": zod.coerce.string()
+})
+
+export const ListEducationCenterBundlesResponseItem = zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "price": zod.number().int(),
+  "active": zod.boolean(),
+  "published": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListEducationCenterBundlesResponse = zod.array(ListEducationCenterBundlesResponseItem)
+
+
+export const CreateEducationCenterBundleParams = zod.object({
+  "centerId": zod.coerce.string()
+})
+
+
+export const createEducationCenterBundleBodyPriceMin = 0;
+
+
+
+export const CreateEducationCenterBundleBody = zod.object({
+  "name": zod.string().min(1),
+  "description": zod.string().optional(),
+  "price": zod.number().int().min(createEducationCenterBundleBodyPriceMin),
+  "active": zod.boolean().optional(),
+  "published": zod.boolean().optional(),
+  "courseIds": zod.array(zod.string()).optional()
+})
+
+export const CreateEducationCenterBundleResponse = zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "price": zod.number().int(),
+  "active": zod.boolean(),
+  "published": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+export const UpdateEducationCenterBundleParams = zod.object({
+  "centerId": zod.coerce.string(),
+  "id": zod.coerce.string()
+})
+
+
+export const updateEducationCenterBundleBodyPriceMin = 0;
+
+
+
+export const UpdateEducationCenterBundleBody = zod.object({
+  "name": zod.string().min(1).optional(),
+  "description": zod.string().optional(),
+  "price": zod.number().int().min(updateEducationCenterBundleBodyPriceMin).optional(),
+  "active": zod.boolean().optional(),
+  "published": zod.boolean().optional(),
+  "courseIds": zod.array(zod.string()).optional()
+})
+
+export const UpdateEducationCenterBundleResponse = zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "price": zod.number().int(),
+  "active": zod.boolean(),
+  "published": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+export const ArchiveEducationCenterBundleParams = zod.object({
+  "centerId": zod.coerce.string(),
+  "id": zod.coerce.string()
+})
+
+export const ArchiveEducationCenterBundleResponse = zod.void()
+
+
+export const GetEducationCenterCrmParams = zod.object({
+  "centerId": zod.coerce.string()
+})
+
+export const GetEducationCenterCrmResponse = zod.object({
+  "learners": zod.array(zod.object({
+  "userId": zod.string().nullable(),
+  "count": zod.number().int(),
+  "completed": zod.number().int()
+}))
+})
+
+
+export const ListEducationContactHistoryParams = zod.object({
+  "centerId": zod.coerce.string()
+})
+
+export const ListEducationContactHistoryResponseItem = zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "learnerUserId": zod.string().nullable(),
+  "enrollmentId": zod.string().nullable(),
+  "channel": zod.string(),
+  "note": zod.string(),
+  "actorUserId": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+})
+export const ListEducationContactHistoryResponse = zod.array(ListEducationContactHistoryResponseItem)
+
+
+export const CreateEducationContactHistoryParams = zod.object({
+  "centerId": zod.coerce.string()
+})
+
+
+
+
+
+export const CreateEducationContactHistoryBody = zod.object({
+  "learnerUserId": zod.string().nullish(),
+  "enrollmentId": zod.string().nullish(),
+  "channel": zod.string().min(1),
+  "note": zod.string().min(1)
+})
+
+export const CreateEducationContactHistoryResponse = zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "learnerUserId": zod.string().nullable(),
+  "enrollmentId": zod.string().nullable(),
+  "channel": zod.string(),
+  "note": zod.string(),
+  "actorUserId": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+})
+
+
+export const GetEducationInstructorPerformanceParams = zod.object({
+  "centerId": zod.coerce.string()
+})
+
+export const GetEducationInstructorPerformanceResponse = zod.object({
+  "instructors": zod.array(zod.object({
+  "instructorId": zod.string().nullable(),
+  "courses": zod.number().int(),
+  "enrollments": zod.number().int(),
+  "completions": zod.number().int()
+}))
+})
+
+
+export const EducationCenterAssistantParams = zod.object({
+  "centerId": zod.coerce.string()
+})
+
+export const educationCenterAssistantBodyPromptMax = 2000;
+
+
+
+export const EducationCenterAssistantBody = zod.object({
+  "prompt": zod.string().min(1).max(educationCenterAssistantBodyPromptMax)
+})
+
+export const EducationCenterAssistantResponse = zod.object({
+  "reply": zod.string(),
+  "grounding": zod.string()
+})
+
+
+/**
+ * @summary Preview a center B2B product order with its current automatic benefit
+ */
+export const quoteEducationB2bOrderBodyLinesItemQuantityMax = 1000;
+
+export const quoteEducationB2bOrderBodyLinesMax = 100;
+
+
+
+export const QuoteEducationB2bOrderBody = zod.object({
+  "lines": zod.array(zod.object({
+  "productId": zod.string(),
+  "quantity": zod.number().int().min(1).max(quoteEducationB2bOrderBodyLinesItemQuantityMax)
+})).min(1).max(quoteEducationB2bOrderBodyLinesMax)
+})
+
+export const quoteEducationB2bOrderResponseSubtotalRsdMin = 0;
+
+export const quoteEducationB2bOrderResponseEducationCenterDiscountRsdMin = 0;
+
+export const quoteEducationB2bOrderResponsePayableTotalRsdMin = 0;
+
+export const quoteEducationB2bOrderResponseBenefitPriorMonthSpendRsdMin = 0;
+
+export const quoteEducationB2bOrderResponseBenefitDiscountPercentMin = 0;
+export const quoteEducationB2bOrderResponseBenefitDiscountPercentMax = 100;
+
+export const quoteEducationB2bOrderResponseBenefitAmountToNextTierRsdMin = 0;
+
+
+
+
+export const QuoteEducationB2bOrderResponse = zod.object({
+  "lines": zod.array(zod.object({
+  "productId": zod.string(),
+  "name": zod.string(),
+  "quantity": zod.number().int(),
+  "unitPriceRsd": zod.number().int(),
+  "lineSubtotalRsd": zod.number().int()
+})),
+  "subtotalRsd": zod.number().int().min(quoteEducationB2bOrderResponseSubtotalRsdMin),
+  "educationCenterDiscountRsd": zod.number().int().min(quoteEducationB2bOrderResponseEducationCenterDiscountRsdMin),
+  "payableTotalRsd": zod.number().int().min(quoteEducationB2bOrderResponsePayableTotalRsdMin),
+  "benefit": zod.object({
+  "periodStart": zod.coerce.date(),
+  "periodEnd": zod.coerce.date(),
+  "priorMonthSpendRsd": zod.number().int().min(quoteEducationB2bOrderResponseBenefitPriorMonthSpendRsdMin),
+  "discountPercent": zod.number().int().min(quoteEducationB2bOrderResponseBenefitDiscountPercentMin).max(quoteEducationB2bOrderResponseBenefitDiscountPercentMax),
+  "discountReason": zod.string(),
+  "amountToNextTierRsd": zod.number().int().min(quoteEducationB2bOrderResponseBenefitAmountToNextTierRsdMin).nullable(),
+  "tierId": zod.string().nullable(),
+  "settingsVersion": zod.number().int().min(1)
+})
+})
+
+
+/**
+ * @summary Finalize a center B2B order and persist immutable benefit evidence
+ */
+export const checkoutEducationB2bOrderBodyOneLinesItemQuantityMax = 1000;
+
+export const checkoutEducationB2bOrderBodyOneLinesMax = 100;
+
+export const checkoutEducationB2bOrderBodyTwoExpectedTotalRsdMin = 0;
+
+
+
+export const CheckoutEducationB2bOrderBody = zod.object({
+  "lines": zod.array(zod.object({
+  "productId": zod.string(),
+  "quantity": zod.number().int().min(1).max(checkoutEducationB2bOrderBodyOneLinesItemQuantityMax)
+})).min(1).max(checkoutEducationB2bOrderBodyOneLinesMax)
+}).and(zod.object({
+  "expectedTotalRsd": zod.number().int().min(checkoutEducationB2bOrderBodyTwoExpectedTotalRsdMin)
+}))
+
+export const checkoutEducationB2bOrderResponseOneSubtotalRsdMin = 0;
+
+export const checkoutEducationB2bOrderResponseOneEducationCenterDiscountRsdMin = 0;
+
+export const checkoutEducationB2bOrderResponseOnePayableTotalRsdMin = 0;
+
+export const checkoutEducationB2bOrderResponseOneBenefitPriorMonthSpendRsdMin = 0;
+
+export const checkoutEducationB2bOrderResponseOneBenefitDiscountPercentMin = 0;
+export const checkoutEducationB2bOrderResponseOneBenefitDiscountPercentMax = 100;
+
+export const checkoutEducationB2bOrderResponseOneBenefitAmountToNextTierRsdMin = 0;
+
+
+
+
+export const CheckoutEducationB2bOrderResponse = zod.object({
+  "lines": zod.array(zod.object({
+  "productId": zod.string(),
+  "name": zod.string(),
+  "quantity": zod.number().int(),
+  "unitPriceRsd": zod.number().int(),
+  "lineSubtotalRsd": zod.number().int()
+})),
+  "subtotalRsd": zod.number().int().min(checkoutEducationB2bOrderResponseOneSubtotalRsdMin),
+  "educationCenterDiscountRsd": zod.number().int().min(checkoutEducationB2bOrderResponseOneEducationCenterDiscountRsdMin),
+  "payableTotalRsd": zod.number().int().min(checkoutEducationB2bOrderResponseOnePayableTotalRsdMin),
+  "benefit": zod.object({
+  "periodStart": zod.coerce.date(),
+  "periodEnd": zod.coerce.date(),
+  "priorMonthSpendRsd": zod.number().int().min(checkoutEducationB2bOrderResponseOneBenefitPriorMonthSpendRsdMin),
+  "discountPercent": zod.number().int().min(checkoutEducationB2bOrderResponseOneBenefitDiscountPercentMin).max(checkoutEducationB2bOrderResponseOneBenefitDiscountPercentMax),
+  "discountReason": zod.string(),
+  "amountToNextTierRsd": zod.number().int().min(checkoutEducationB2bOrderResponseOneBenefitAmountToNextTierRsdMin).nullable(),
+  "tierId": zod.string().nullable(),
+  "settingsVersion": zod.number().int().min(1)
+})
+}).and(zod.object({
+  "id": zod.string(),
+  "createdAt": zod.coerce.date()
+}))
+
+
+/**
+ * @summary Read versioned education-center B2B discount tiers
+ */
+
+export const adminGetEducationB2bDiscountTiersResponseTiersItemNameMax = 100;
+
+export const adminGetEducationB2bDiscountTiersResponseTiersItemMinSpendRsdMin = 0;
+
+export const adminGetEducationB2bDiscountTiersResponseTiersItemMaxSpendRsdMin = 0;
+
+export const adminGetEducationB2bDiscountTiersResponseTiersItemDiscountPercentMin = 0;
+export const adminGetEducationB2bDiscountTiersResponseTiersItemDiscountPercentMax = 100;
+
+export const adminGetEducationB2bDiscountTiersResponseTiersItemSortOrderMin = 0;
+
+
+
+export const AdminGetEducationB2bDiscountTiersResponse = zod.object({
+  "version": zod.number().int().min(1),
+  "tiers": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string().min(1).max(adminGetEducationB2bDiscountTiersResponseTiersItemNameMax),
+  "minSpendRsd": zod.number().int().min(adminGetEducationB2bDiscountTiersResponseTiersItemMinSpendRsdMin),
+  "maxSpendRsd": zod.number().int().min(adminGetEducationB2bDiscountTiersResponseTiersItemMaxSpendRsdMin).nullable(),
+  "discountPercent": zod.number().int().min(adminGetEducationB2bDiscountTiersResponseTiersItemDiscountPercentMin).max(adminGetEducationB2bDiscountTiersResponseTiersItemDiscountPercentMax),
+  "sortOrder": zod.number().int().min(adminGetEducationB2bDiscountTiersResponseTiersItemSortOrderMin)
+}))
+})
+
+
+/**
+ * @summary Atomically replace education-center B2B tiers
+ */
+
+export const adminReplaceEducationB2bDiscountTiersBodyTiersItemNameMax = 100;
+
+export const adminReplaceEducationB2bDiscountTiersBodyTiersItemMinSpendRsdMin = 0;
+
+export const adminReplaceEducationB2bDiscountTiersBodyTiersItemMaxSpendRsdMin = 0;
+
+export const adminReplaceEducationB2bDiscountTiersBodyTiersItemDiscountPercentMin = 0;
+export const adminReplaceEducationB2bDiscountTiersBodyTiersItemDiscountPercentMax = 100;
+
+export const adminReplaceEducationB2bDiscountTiersBodyTiersItemSortOrderMin = 0;
+
+
+
+export const AdminReplaceEducationB2bDiscountTiersBody = zod.object({
+  "expectedVersion": zod.number().int().min(1),
+  "tiers": zod.array(zod.object({
+  "name": zod.string().min(1).max(adminReplaceEducationB2bDiscountTiersBodyTiersItemNameMax),
+  "minSpendRsd": zod.number().int().min(adminReplaceEducationB2bDiscountTiersBodyTiersItemMinSpendRsdMin),
+  "maxSpendRsd": zod.number().int().min(adminReplaceEducationB2bDiscountTiersBodyTiersItemMaxSpendRsdMin).nullable(),
+  "discountPercent": zod.number().int().min(adminReplaceEducationB2bDiscountTiersBodyTiersItemDiscountPercentMin).max(adminReplaceEducationB2bDiscountTiersBodyTiersItemDiscountPercentMax),
+  "sortOrder": zod.number().int().min(adminReplaceEducationB2bDiscountTiersBodyTiersItemSortOrderMin)
+}))
+}).strict()
+
+
+export const adminReplaceEducationB2bDiscountTiersResponseTiersItemNameMax = 100;
+
+export const adminReplaceEducationB2bDiscountTiersResponseTiersItemMinSpendRsdMin = 0;
+
+export const adminReplaceEducationB2bDiscountTiersResponseTiersItemMaxSpendRsdMin = 0;
+
+export const adminReplaceEducationB2bDiscountTiersResponseTiersItemDiscountPercentMin = 0;
+export const adminReplaceEducationB2bDiscountTiersResponseTiersItemDiscountPercentMax = 100;
+
+export const adminReplaceEducationB2bDiscountTiersResponseTiersItemSortOrderMin = 0;
+
+
+
+export const AdminReplaceEducationB2bDiscountTiersResponse = zod.object({
+  "version": zod.number().int().min(1),
+  "tiers": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string().min(1).max(adminReplaceEducationB2bDiscountTiersResponseTiersItemNameMax),
+  "minSpendRsd": zod.number().int().min(adminReplaceEducationB2bDiscountTiersResponseTiersItemMinSpendRsdMin),
+  "maxSpendRsd": zod.number().int().min(adminReplaceEducationB2bDiscountTiersResponseTiersItemMaxSpendRsdMin).nullable(),
+  "discountPercent": zod.number().int().min(adminReplaceEducationB2bDiscountTiersResponseTiersItemDiscountPercentMin).max(adminReplaceEducationB2bDiscountTiersResponseTiersItemDiscountPercentMax),
+  "sortOrder": zod.number().int().min(adminReplaceEducationB2bDiscountTiersResponseTiersItemSortOrderMin)
+}))
+})
+
+
+/**
  * @summary List approval requests for the active location or every location owned by the owner
  */
 export const listShopApprovalRequestsQueryScopeDefault = `location`;

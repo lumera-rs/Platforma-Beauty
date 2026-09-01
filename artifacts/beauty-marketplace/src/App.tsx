@@ -94,6 +94,16 @@ const WidgetBooking = lazy(() => import('./pages/widget-booking'));
 const EmployeePortal = lazy(() => import('./pages/employee/portal'));
 const BusinessGuidePage = lazy(() => import('./pages/business-guide'));
 const EmployeePasswordChange = lazy(() => import('./pages/employee/portal').then((module) => ({ default: module.EmployeePasswordChange })));
+
+const BusinessEducationResources = lazy(() => import('./pages/business-education-resources'));
+const BusinessEducationInventory = lazy(() => import('./pages/business-education-inventory'));
+const BusinessEducationBundles = lazy(() => import('./pages/business-education-bundles'));
+const BusinessEducationCrm = lazy(() => import('./pages/business-education-crm'));
+const BusinessEducationPerformance = lazy(() => import('./pages/business-education-performance'));
+const BusinessEducationAiAssistant = lazy(() => import('./pages/business-education-ai-assistant'));
+const BusinessEducationB2b = lazy(() => import('./pages/business-education-b2b'));
+const AdminEducationB2b = lazy(() => import('./pages/admin/education-b2b-popusti'));
+
 const AdminDashboard = lazy(() => import('./pages/admin/dashboard'));
 const AdminSalons = lazy(() => import('./pages/admin/salons'));
 const AdminSalonDetail = lazy(() => import('./pages/admin/salon-detail'));
@@ -335,7 +345,7 @@ function Router() {
         </Route>
         <Route path="/moji-oglasi"><LegacyBeautyJobsDashboardRedirect /></Route>
         <Route path="/biznis/vodic">
-          <RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava">
+          <RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava">
             <BusinessGuidePage />
           </RoleGuard>
         </Route>
@@ -369,40 +379,47 @@ function Router() {
             <BusinessHub />
           </RoleGuard>
         </Route>
+        <Route path="/biznis/resursi"><RoleGuard allowedRoles={['EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><BusinessEducationResources /></RoleGuard></Route>
+        <Route path="/biznis/zalihe"><RoleGuard allowedRoles={['EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><BusinessEducationInventory /></RoleGuard></Route>
+        <Route path="/biznis/paketi"><RoleGuard allowedRoles={['EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><BusinessEducationBundles /></RoleGuard></Route>
+        <Route path="/biznis/polaznici"><RoleGuard allowedRoles={['EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><BusinessEducationCrm /></RoleGuard></Route>
+        <Route path="/biznis/predavaci-ucinak"><RoleGuard allowedRoles={['EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><BusinessEducationPerformance /></RoleGuard></Route>
+        <Route path="/biznis/ai-asistent"><RoleGuard allowedRoles={['EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><BusinessEducationAiAssistant /></RoleGuard></Route>
+        <Route path="/biznis/b2b"><RoleGuard allowedRoles={['EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><BusinessEducationB2b /></RoleGuard></Route>
         <Route path="/zaposleni/promeni-lozinku"><RoleGuard allowedRoles={['SALON_EMPLOYEE']} loginPath="/poslovna-prijava" allowEmployeePasswordChange><EmployeePasswordChange /></RoleGuard></Route>
         <Route path="/zaposleni"><RoleGuard allowedRoles={['SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><EmployeePortal /></RoleGuard></Route>
 
-        <Route path="/vlasnik/kontrolna-tabla"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerDashboard /></RoleGuard></Route>
-        <Route path="/vlasnik"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerDashboard /></RoleGuard></Route>
-        <Route path="/vlasnik/kalendar"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerCalendar /></RoleGuard></Route>
-        <Route path="/vlasnik/termini"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerCalendar /></RoleGuard></Route>
-        <Route path="/vlasnik/resursi"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerResources /></RoleGuard></Route>
-        <Route path="/vlasnik/usluge"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerServices /></RoleGuard></Route>
-        <Route path="/vlasnik/profil"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerSalonProfile /></RoleGuard></Route>
-        <Route path="/vlasnik/zaposleni"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerEmployees /></RoleGuard></Route>
-        <Route path="/vlasnik/klijenti"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerRetention /></RoleGuard></Route>
-        <Route path="/vlasnik/inventar"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerInventory /></RoleGuard></Route>
-        <Route path="/vlasnik/radno-vreme"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerStaffOps /></RoleGuard></Route>
+        <Route path="/vlasnik/kontrolna-tabla"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerDashboard /></RoleGuard></Route>
+        <Route path="/vlasnik"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerDashboard /></RoleGuard></Route>
+        <Route path="/vlasnik/kalendar"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCalendar /></RoleGuard></Route>
+        <Route path="/vlasnik/termini"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCalendar /></RoleGuard></Route>
+        <Route path="/vlasnik/resursi"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerResources /></RoleGuard></Route>
+        <Route path="/vlasnik/usluge"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerServices /></RoleGuard></Route>
+        <Route path="/vlasnik/profil"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerSalonProfile /></RoleGuard></Route>
+        <Route path="/vlasnik/zaposleni"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerEmployees /></RoleGuard></Route>
+        <Route path="/vlasnik/klijenti"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerRetention /></RoleGuard></Route>
+        <Route path="/vlasnik/inventar"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerInventory /></RoleGuard></Route>
+        <Route path="/vlasnik/radno-vreme"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerStaffOps /></RoleGuard></Route>
         <Route path="/widget/:slug"><WidgetBooking /></Route>
-        <Route path="/vlasnik/automatizacije"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerAutomations /></RoleGuard></Route>
-        <Route path="/vlasnik/paketi"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerPackages /></RoleGuard></Route>
-        <Route path="/vlasnik/performanse"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerPerformance /></RoleGuard></Route>
-        <Route path="/vlasnik/ai-asistent"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerAiAssistant /></RoleGuard></Route>
-        <Route path="/vlasnik/shop/:supplierSlug/proizvodi/:productId"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerProductDetail /></RoleGuard></Route>
-        <Route path="/vlasnik/shop/:supplierSlug"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerShop /></RoleGuard></Route>
-        <Route path="/vlasnik/shop"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerShop /></RoleGuard></Route>
-        <Route path="/vlasnik/prodavnica/import"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerShopImportPage /></RoleGuard></Route>
-        <Route path="/vlasnik/prodavnica/korpa"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerCartPage /></RoleGuard></Route>
-        <Route path="/vlasnik/prodavnica/dostava"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerCheckoutDeliveryPage /></RoleGuard></Route>
-        <Route path="/vlasnik/prodavnica/pregled"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerCheckoutReviewPage /></RoleGuard></Route>
-        <Route path="/vlasnik/prodavnica/porudzbina/:id/potvrda"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerOrderConfirmationPage /></RoleGuard></Route>
+        <Route path="/vlasnik/automatizacije"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerAutomations /></RoleGuard></Route>
+        <Route path="/vlasnik/paketi"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerPackages /></RoleGuard></Route>
+        <Route path="/vlasnik/performanse"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerPerformance /></RoleGuard></Route>
+        <Route path="/vlasnik/ai-asistent"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerAiAssistant /></RoleGuard></Route>
+        <Route path="/vlasnik/shop/:supplierSlug/proizvodi/:productId"><RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerProductDetail /></RoleGuard></Route>
+        <Route path="/vlasnik/shop/:supplierSlug"><RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerShop /></RoleGuard></Route>
+        <Route path="/vlasnik/shop"><RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerShop /></RoleGuard></Route>
+        <Route path="/vlasnik/prodavnica/import"><RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerShopImportPage /></RoleGuard></Route>
+        <Route path="/vlasnik/prodavnica/korpa"><RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerCartPage /></RoleGuard></Route>
+        <Route path="/vlasnik/prodavnica/dostava"><RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerCheckoutDeliveryPage /></RoleGuard></Route>
+        <Route path="/vlasnik/prodavnica/pregled"><RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerCheckoutReviewPage /></RoleGuard></Route>
+        <Route path="/vlasnik/prodavnica/porudzbina/:id/potvrda"><RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerOrderConfirmationPage /></RoleGuard></Route>
         <Route path="/biznis/poslovi"><RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR']} loginPath="/poslovna-prijava"><BusinessBeautyJobs /></RoleGuard></Route>
-        <Route path="/vlasnik/porudzbine/:orderId"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerOrders /></RoleGuard></Route>
-        <Route path="/vlasnik/porudzbine"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerOrders /></RoleGuard></Route>
-        <Route path="/vlasnik/porudzbine-na-cekanju/:id"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerOrderApprovals /></RoleGuard></Route>
-        <Route path="/vlasnik/porudzbine-na-cekanju"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerOrderApprovals /></RoleGuard></Route>
+        <Route path="/vlasnik/porudzbine/:orderId"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrders /></RoleGuard></Route>
+        <Route path="/vlasnik/porudzbine"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrders /></RoleGuard></Route>
+        <Route path="/vlasnik/porudzbine-na-cekanju/:id"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrderApprovals /></RoleGuard></Route>
+        <Route path="/vlasnik/porudzbine-na-cekanju"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrderApprovals /></RoleGuard></Route>
         <Route path="/vlasnik/obavestenja"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerNotifications /></RoleGuard></Route>
-        <Route path="/vlasnik/loyalty"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR']} loginPath="/poslovna-prijava"><OwnerLoyalty /></RoleGuard></Route>
+        <Route path="/vlasnik/loyalty"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerLoyalty /></RoleGuard></Route>
 
         <Route path="/edukacije/lista-zelja"><RoleGuard allowedRoles={['CUSTOMER', 'SALON_OWNER', 'EDUKATIVNI_CENTAR', 'JOBSEEKER', 'STUDENT', 'SALON_EMPLOYEE', 'ADMIN', 'SUPER_ADMIN', 'INSTRUCTOR']} loginPath="/prijava"><EducationWishlistPage /></RoleGuard></Route>
         <Route path="/edukacije/vauceri"><RoleGuard allowedRoles={['CUSTOMER', 'SALON_OWNER', 'EDUKATIVNI_CENTAR', 'JOBSEEKER', 'STUDENT', 'SALON_EMPLOYEE', 'ADMIN', 'SUPER_ADMIN', 'INSTRUCTOR']} loginPath="/prijava"><EducationVouchersPage /></RoleGuard></Route>
@@ -419,6 +436,7 @@ function Router() {
         <Route path="/admin/saloni"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSalons /></RoleGuard></Route>
         <Route path="/admin/predlosci-usluga"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminServiceTemplates /></RoleGuard></Route>
         <Route path="/admin/korisnici"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminUsers /></RoleGuard></Route>
+        <Route path="/admin/education-b2b-popusti"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminEducationB2b /></RoleGuard></Route>
         <Route path="/admin/preporuke"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminReferrals /></RoleGuard></Route>
         <Route path="/admin/poslovi/pregled/:listingId"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><BeautyJobDetail /></RoleGuard></Route>
         <Route path="/admin/odbijeni-oglasi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminRejectedBeautyJobs /></RoleGuard></Route>

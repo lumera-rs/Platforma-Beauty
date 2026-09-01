@@ -204,15 +204,14 @@ async function run(): Promise<void> {
       .where(eq(salonsTable.ownerId, educationRegistration.body.user.id)).limit(1);
     const [registeredEducationCenter] = await db.select().from(educationCentersTable)
       .where(eq(educationCentersTable.ownerId, educationRegistration.body.user.id)).limit(1);
-    assert.ok(registeredEducationUser?.activeSalonId, "education registration sets an active salon workspace");
-    assert.equal(registeredEducationUser.activeSalonId, registeredEducationSalon?.id, "active salon points to the created workspace");
-    assert.equal(registeredEducationSalon?.active, false, "new operational workspace is private until onboarding completes");
+    assert.equal(registeredEducationUser?.activeSalonId, null, "education registration never selects a salon workspace");
+    assert.equal(registeredEducationSalon, undefined, "education registration never provisions a salon row");
     assert.equal(registeredEducationCenter?.description, "Stručne beauty edukacije, praktični programi i sertifikacije za profesionalce.");
     assert.equal(registeredEducationCenter?.pib, "109876543");
     assert.equal(registeredEducationCenter?.contactEmail, `education-contact-${suffix}@example.test`);
     assert.equal(registeredEducationCenter?.websiteUrl, "https://education.example.test");
     const educationToken = await createSession(educationRegistration.body.user.id);
-    assert.equal((await request(base, "/salon/profile", educationToken)).status, 200, "education center can access salon-owner workspace APIs");
+    assert.equal((await request(base, "/salon/profile", educationToken)).status, 403, "education center cannot access salon-owner workspace APIs");
     const educationListing = await request(
       base,
       "/beauty-jobs",
@@ -220,8 +219,7 @@ async function run(): Promise<void> {
       "POST",
       body(hairCategory.id, `Instruktor edukacija ${suffix}`),
     );
-    assert.equal(educationListing.status, 201, "education center can post a Beauty Poslovi listing");
-    createdListingIds.push(educationListing.body.id);
+    assert.equal(educationListing.status, 403, "education center cannot use salon-owned Beauty Poslovi publishing");
 
     const registrationDigits = suffix.replace(/\D/g, "").slice(0, 6).padEnd(6, "7");
     const registrationPhone = `+38164${registrationDigits}`;

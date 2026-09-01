@@ -2,9 +2,24 @@ import { useEffect, useState } from "react";
 import { useLocation, Link } from "wouter";
 import { useGetCurrentUser, useGetReferralDashboard, getGetReferralDashboardQueryKey } from "@workspace/api-client-react";
 import { BusinessLayout } from "@/components/business-layout";
-import { Loader2, BookOpen, ArrowRight, Building2, CheckCircle2, GraduationCap, Gift, ChevronRight } from "lucide-react";
+import { Loader2, BookOpen, ArrowRight, Building2, CheckCircle2, GraduationCap, Gift, ChevronRight, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+
+const VERIFICATION_STATUS_LABELS: Record<string, string> = {
+  pending: "Na čekanju",
+  verified: "Verifikovan",
+  suspended: "Obustavljen",
+};
+
+const SUBSCRIPTION_STATUS_LABELS: Record<string, string> = {
+  active: "Aktivna",
+  pending: "Na čekanju",
+  inactive: "Nije aktivirana",
+  canceled: "Otkazana",
+  cancelled: "Otkazana",
+  expired: "Istekla",
+};
 
 export default function BusinessHub() {
   const [, setLocation] = useLocation();
@@ -79,11 +94,19 @@ export default function BusinessHub() {
               </div>
               <div className="rounded-xl border bg-muted/20 p-4">
                 <p className="text-muted-foreground mb-1">Verifikacija centra</p>
-                <p className="font-semibold capitalize">{centerStatus?.verificationStatus ?? "Učitavanje..."}</p>
+                <p className="font-semibold">
+                  {centerStatus?.verificationStatus
+                    ? VERIFICATION_STATUS_LABELS[centerStatus.verificationStatus.toLowerCase()] ?? "Nepoznat status"
+                    : "Učitavanje..."}
+                </p>
               </div>
               <div className="rounded-xl border bg-muted/20 p-4">
                 <p className="text-muted-foreground mb-1">Pretplata</p>
-                <p className="font-semibold capitalize">{centerStatus?.subscriptionStatus ?? "Nije aktivirana"}</p>
+                <p className="font-semibold">
+                  {centerStatus?.subscriptionStatus
+                    ? SUBSCRIPTION_STATUS_LABELS[centerStatus.subscriptionStatus.toLowerCase()] ?? "Nepoznat status"
+                    : "Nije aktivirana"}
+                </p>
               </div>
             </CardContent>
             {centerStatus && !centerStatus.eligible ? <CardContent className="pt-0 text-sm text-muted-foreground">Kursevi ostaju sačuvani kao nacrt dok LUMERA administrator ne verifikuje centar i ne aktivira pretplatu.{centerStatus.verificationNote ? ` Napomena: ${centerStatus.verificationNote}` : ""}</CardContent> : null}
@@ -133,9 +156,9 @@ export default function BusinessHub() {
               </div>
               <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Button variant="outline" className="h-28 flex flex-col items-center justify-center gap-3 bg-card hover:bg-primary/5 hover:text-primary hover:border-primary/30 border-border shadow-sm group transition-all" asChild>
-                  <Link href="/vlasnik">
-                    <Building2 className="w-7 h-7 text-muted-foreground group-hover:text-primary transition-colors" />
-                    <span className="font-medium">Salon workspace</span>
+                  <Link href="/biznis/polaznici">
+                    <Users className="w-7 h-7 text-muted-foreground group-hover:text-primary transition-colors" />
+                    <span className="font-medium">Polaznici</span>
                   </Link>
                 </Button>
                 <Button variant="outline" className="h-28 flex flex-col items-center justify-center gap-3 bg-card hover:bg-primary/5 hover:text-primary hover:border-primary/30 border-border shadow-sm group transition-all" asChild>
@@ -147,13 +170,13 @@ export default function BusinessHub() {
                 <Button variant="outline" className="h-28 flex flex-col items-center justify-center gap-3 bg-card hover:bg-primary/5 hover:text-primary hover:border-primary/30 border-border shadow-sm group transition-all" asChild>
                   <Link href="/biznis/poslovi">
                     <GraduationCap className="w-7 h-7 text-muted-foreground group-hover:text-primary transition-colors" />
-                    <span className="font-medium">Beauty Poslovi</span>
+                    <span className="font-medium">Poslovi u lepoti</span>
                   </Link>
                 </Button>
                 <Button variant="outline" className="h-28 flex flex-col items-center justify-center gap-3 bg-card hover:bg-accent/10 hover:text-accent hover:border-accent/30 border-border shadow-sm group transition-all" asChild>
-                  <Link href="/za-biznise">
+                  <Link href="/biznis/b2b">
                     <Building2 className="w-7 h-7 text-muted-foreground group-hover:text-accent transition-colors" />
-                    <span className="font-medium">Poslovne pogodnosti</span>
+                    <span className="font-medium">B2B nabavka</span>
                   </Link>
                 </Button>
               </div>

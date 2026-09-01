@@ -4,7 +4,14 @@ import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Building2, Facebook, GraduationCap, Loader2, Mail, ShieldCheck } from "lucide-react";
-import { getApiErrorMessage, useGetCurrentUser, useLogin, useRegisterBusiness } from "@workspace/api-client-react";
+import {
+  getApiErrorMessage,
+  getGetCurrentUserQueryKey,
+  useGetCurrentUser,
+  useLogin,
+  useRegisterBusiness,
+} from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { BusinessLayout } from "@/components/business-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,6 +54,7 @@ export default function BusinessAuth({ initialTab }: BusinessAuthProps) {
   const [, setLocation] = useLocation();
   const searchString = useSearch();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { data: currentUser, isLoading } = useGetCurrentUser();
   const login = useLogin();
   const register = useRegisterBusiness();
@@ -148,6 +156,7 @@ export default function BusinessAuth({ initialTab }: BusinessAuthProps) {
                       onSubmit={loginForm.handleSubmit((values) => {
                         login.mutate({ data: values }, {
                           onSuccess: (response) => {
+                            queryClient.setQueryData(getGetCurrentUserQueryKey(), response);
                             toast.success("Uspešna prijava", { description: "Otvaramo vaš poslovni prostor." });
                             setLocation(returnTo ?? homeForRole(response.user.role));
                           },
@@ -200,6 +209,7 @@ export default function BusinessAuth({ initialTab }: BusinessAuthProps) {
                         }
                         register.mutate({ data: { ...values, referralCode } }, {
                           onSuccess: (response) => {
+                            queryClient.setQueryData(getGetCurrentUserQueryKey(), response);
                             clearStoredReferralCode();
                             toast.success("Poslovni nalog je kreiran", { description: "Dobrodošli u LUMERA Biznis." });
                             setLocation(returnTo ?? homeForRole(response.user.role));

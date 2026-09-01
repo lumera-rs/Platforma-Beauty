@@ -8,7 +8,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { salonNotificationsQueryKey } from "@/lib/salon-notifications";
 import { salonOwnerNavLinks } from "@/lib/salon-owner-navigation";
+import { educationCenterNavLinks } from "@/lib/education-center-navigation";
 import { SalonOwnerNavigation } from "@/components/salon-owner-navigation";
+import { EducationCenterNavigation } from "@/components/education-center-navigation";
 import { OwnerLocationWizard } from "@/components/owner-location-wizard";
 import {
   DropdownMenu,
@@ -30,9 +32,10 @@ export function BusinessNavbar() {
   const logout = useLogout();
   const user = userResp?.user;
   const isSalonOperator = user?.role === "SALON_OWNER" || user?.role === "EDUKATIVNI_CENTAR";
+  const canUseSalonCart = user?.role === "SALON_OWNER";
   const hasSalonNotificationContext = user?.role === "SALON_OWNER";
   const canSwitchLocations = user?.role === "SALON_OWNER";
-  const { data: cart } = useGetShopCart({ query: { enabled: isSalonOperator, queryKey: getGetShopCartQueryKey() } });
+  const { data: cart } = useGetShopCart({ query: { enabled: canUseSalonCart, queryKey: getGetShopCartQueryKey() } });
   const notificationsQueryKey = useMemo(() => salonNotificationsQueryKey(user?.id), [user?.id]);
   const { data: notifications = [] } = useListSalonNotifications({ page: 1, pageSize: 100 }, {
     query: {
@@ -187,10 +190,7 @@ export function BusinessNavbar() {
           { href: "/biznis/vodic", label: "Pomoć" },
         ];
       case 'EDUKATIVNI_CENTAR':
-        return [
-          { href: "/biznis", label: "Centar" },
-          ...salonOwnerNavLinks,
-        ];
+        return educationCenterNavLinks;
       case 'ADMIN':
       case 'SUPER_ADMIN':
         return [
@@ -254,7 +254,7 @@ export function BusinessNavbar() {
               </Button>
             )}
 
-            {isSalonOperator && (
+            {canUseSalonCart && (
               <Button variant="ghost" size="icon" className="relative text-white hover:bg-white/10 hover:text-white" asChild>
                 <Link href="/vlasnik/prodavnica/korpa" aria-label="Otvori korpu">
                   <ShoppingCart className="h-5 w-5" />
@@ -286,15 +286,9 @@ export function BusinessNavbar() {
                   </div>
                   
                   {isSalonOperator && (
-                    <DropdownMenuItem onClick={() => setLocation('/vlasnik')}>
+                    <DropdownMenuItem onClick={() => setLocation(user.role === 'EDUKATIVNI_CENTAR' ? '/biznis' : '/vlasnik')}>
                       <LayoutDashboard className="mr-2 h-4 w-4" />
-                      Dashboard
-                    </DropdownMenuItem>
-                  )}
-                  {user.role === 'EDUKATIVNI_CENTAR' && (
-                    <DropdownMenuItem onClick={() => setLocation('/biznis')}>
-                      <BookOpen className="mr-2 h-4 w-4" />
-                      Centar za edukaciju
+                      {user.role === 'EDUKATIVNI_CENTAR' ? 'Pregled' : 'Dashboard'}
                     </DropdownMenuItem>
                   )}
                   
@@ -342,17 +336,24 @@ export function BusinessNavbar() {
           data-testid="business-mobile-menu"
         >
           {isSalonOperator ? (
-            <SalonOwnerNavigation
-              variant="dark"
-              onNavigate={closeMobileMenu}
-              showNotifications={hasSalonNotificationContext}
-              unreadNotificationCount={unreadNotificationCount}
-              managedSalons={canSwitchLocations ? managedSalons : []}
-              activeSalonId={activeSalonId}
-              isSwitchingSalon={isSwitchingSalon}
-              onSwitchSalon={canSwitchLocations ? (salonId) => { void switchSalon(salonId); } : undefined}
-              cartItemCount={cart?.itemCount ?? 0}
-            />
+            user?.role === "EDUKATIVNI_CENTAR" ? (
+              <EducationCenterNavigation
+                variant="dark"
+                onNavigate={closeMobileMenu}
+              />
+            ) : (
+              <SalonOwnerNavigation
+                variant="dark"
+                onNavigate={closeMobileMenu}
+                showNotifications={hasSalonNotificationContext}
+                unreadNotificationCount={unreadNotificationCount}
+                managedSalons={canSwitchLocations ? managedSalons : []}
+                activeSalonId={activeSalonId}
+                isSwitchingSalon={isSwitchingSalon}
+                onSwitchSalon={canSwitchLocations ? (salonId) => { void switchSalon(salonId); } : undefined}
+                cartItemCount={cart?.itemCount ?? 0}
+              />
+            )
           ) : (
           <div className="container mx-auto px-4 py-4 flex flex-col gap-4">
             <Link 

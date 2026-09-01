@@ -151,3 +151,4 @@
 - [Education absence assignment invariant](education-absence-assignment-invariant.md) — absences and educator assignments must reject each other under one schedule-lock protocol.
 - [Idempotent outcome analytics](idempotent-outcome-analytics.md) — count an outcome only when the server confirms that request performed the state transition.
 - [Capability-scoped background requests](capability-scoped-background-requests.md) — gate polling, realtime streams, links, and direct routes by the server capability they consume.
+- [Cross-role auth cache replacement](cross-role-auth-cache-replacement.md) — replace cached current-user data before redirecting after login or registration.

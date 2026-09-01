@@ -59,6 +59,7 @@ import { trackEvent } from "@/lib/analytics";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import {
   GraduationCap, Search, MapPin, Clock, Award,
   PlayCircle, Users, CheckCircle2, ArrowLeft,
@@ -131,10 +132,10 @@ const courseSchema = z.object({
   { message: "Online kursevi zahtevaju potpuno online plaćanje.", path: ["paymentMode"] }
 ).refine(
   (data) => Boolean(data.earlyBirdPrice == null) === !data.earlyBirdCutoff,
-  { message: "Early-bird cena i rok se unose zajedno.", path: ["earlyBirdCutoff"] }
+  { message: "Rana prijava cena i rok se unose zajedno.", path: ["earlyBirdCutoff"] }
 ).refine(
   (data) => data.earlyBirdPrice == null || data.earlyBirdPrice < data.price,
-  { message: "Early-bird cena mora biti manja od redovne cene.", path: ["earlyBirdPrice"] }
+  { message: "Rana prijava cena mora biti manja od redovne cene.", path: ["earlyBirdPrice"] }
 );
 
 export default function BusinessEducation({ hideLayout = false }: { hideLayout?: boolean }) {
@@ -196,7 +197,7 @@ export default function BusinessEducation({ hideLayout = false }: { hideLayout?:
       <div className="container mx-auto px-4 py-8">
         {statusList && statusList.length > 1 ? (
           <div className="mb-4 max-w-sm">
-            <Label>Centar za operacije</Label>
+            <Label className="flex items-center gap-2" aria-describedby="help-Centar-za-operacije">Centar za operacije <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Centar-za-operacije">Pomoć za polje: Centar za operacije</TooltipContent></Tooltip></Label>
             <Select value={operationsCenterId} onValueChange={setSelectedOperationsCenterId}>
               <SelectTrigger data-testid="education-center-selector"><SelectValue /></SelectTrigger>
               <SelectContent>{statusList.map((center) => <SelectItem key={center.id} value={center.id}>{center.name}</SelectItem>)}</SelectContent>
@@ -440,7 +441,7 @@ function MyPlacementsView() {
           <DialogHeader><DialogTitle>Kupi poziciju</DialogTitle></DialogHeader>
           <div className="space-y-4 pt-4">
             <div className="space-y-2">
-              <Label>Tip pozicije</Label>
+              <Label className="flex items-center gap-2" aria-describedby="help-Tip-pozicije">Tip pozicije <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Tip-pozicije">Pomoć za polje: Tip pozicije</TooltipContent></Tooltip></Label>
               <Select value={kind} onValueChange={(val: any) => setKind(val)}>
                 <SelectTrigger data-testid="placement-kind-select"><SelectValue/></SelectTrigger>
                 <SelectContent>
@@ -452,7 +453,7 @@ function MyPlacementsView() {
 
             {kind === "special_offer" && (
               <div className="space-y-2">
-                <Label>Izaberite edukaciju</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Izaberite-edukaciju">Izaberite edukaciju <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Izaberite-edukaciju">Pomoć za polje: Izaberite edukaciju</TooltipContent></Tooltip></Label>
                 <Select value={courseId} onValueChange={setCourseId}>
                   <SelectTrigger data-testid="placement-course-select"><SelectValue placeholder="Izaberite kurs..." /></SelectTrigger>
                   <SelectContent>
@@ -465,7 +466,7 @@ function MyPlacementsView() {
             )}
 
             <div className="space-y-2">
-              <Label>Obim</Label>
+              <Label className="flex items-center gap-2" aria-describedby="help-Obim">Obim <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Obim">Pomoć za polje: Obim</TooltipContent></Tooltip></Label>
               <Select value={scope} onValueChange={(val: any) => { setScope(val); setScopeId(""); }}>
                 <SelectTrigger data-testid="placement-scope-select"><SelectValue/></SelectTrigger>
                 <SelectContent>
@@ -478,7 +479,7 @@ function MyPlacementsView() {
 
             {scope === "category" && (
               <div className="space-y-2">
-                <Label>Izaberite kategoriju</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Izaberite-kategoriju">Izaberite kategoriju <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Izaberite-kategoriju">Pomoć za polje: Izaberite kategoriju</TooltipContent></Tooltip></Label>
                 <Select value={scopeId} onValueChange={setScopeId}>
                   <SelectTrigger data-testid="placement-category-select"><SelectValue placeholder="Izaberite kategoriju..." /></SelectTrigger>
                   <SelectContent>
@@ -492,7 +493,7 @@ function MyPlacementsView() {
 
             {scope === "subcategory" && (
               <div className="space-y-2">
-                <Label>Izaberite potkategoriju</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Izaberite-potkategoriju">Izaberite potkategoriju <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Izaberite-potkategoriju">Pomoć za polje: Izaberite potkategoriju</TooltipContent></Tooltip></Label>
                 <Select value={scopeId} onValueChange={setScopeId}>
                   <SelectTrigger data-testid="placement-subcategory-select"><SelectValue placeholder="Izaberite potkategoriju..." /></SelectTrigger>
                   <SelectContent>
@@ -779,7 +780,7 @@ const EDUCATION_PAGE_SIZE = 24;
 function CatalogView() {
   const { data: userResponse } = useGetCurrentUser();
   const user = userResponse?.user;
-  const canCreate = user?.role === 'SALON_OWNER' || user?.role === 'EDUKATIVNI_CENTAR';
+  const canCreate = user?.role === 'EDUKATIVNI_CENTAR';
   const isEducationCenter = user?.role === 'EDUKATIVNI_CENTAR';
 
   const [filters, setFilters] = useState<any>({});
@@ -829,12 +830,12 @@ function CatalogView() {
 
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Kategorija</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Kategorija">Kategorija <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Kategorija">Uža kategorija edukacije</TooltipContent></Tooltip></Label>
                 <Input placeholder="Npr. Manikir, Masaža..." value={filters.category || ""} onChange={e => handleFilterChange("category", e.target.value)} />
               </div>
 
               <div className="space-y-2">
-                <Label>Format nastave</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Format-nastave">Format nastave <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Format-nastave">Pomoć za polje: Format nastave</TooltipContent></Tooltip></Label>
                 <Select value={filters.format || ""} onValueChange={v => handleFilterChange("format", v === "all" ? undefined : v)}>
                   <SelectTrigger><SelectValue placeholder="Svi formati" /></SelectTrigger>
                   <SelectContent>
@@ -847,17 +848,17 @@ function CatalogView() {
               </div>
 
               <div className="space-y-2">
-                <Label>Grad</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Grad">Grad <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Grad">Grad u kom se održava edukacija</TooltipContent></Tooltip></Label>
                 <Input placeholder="Npr. Beograd" value={filters.city || ""} onChange={e => handleFilterChange("city", e.target.value)} />
               </div>
 
               <div className="space-y-2">
-                <Label>Edukativni centar</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Edukativni-centar">Edukativni centar <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Edukativni-centar">Pomoć za polje: Edukativni centar</TooltipContent></Tooltip></Label>
                 <Input placeholder="Naziv organizatora" value={filters.center || ""} onChange={e => handleFilterChange("center", e.target.value)} />
               </div>
 
               <div className="space-y-2">
-                <Label>Raspon cene (RSD)</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Raspon-cene-(RSD)">Raspon cene (RSD) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Raspon-cene-(RSD)">Pomoć za polje: Raspon cene (RSD)</TooltipContent></Tooltip></Label>
                 <div className="flex items-center gap-2">
                   <Input type="number" placeholder="Od" min="0" value={filters.minPrice || ""} onChange={e => handleFilterChange("minPrice", e.target.value ? Number(e.target.value) : undefined)} />
                   <span className="text-muted-foreground">-</span>
@@ -866,12 +867,12 @@ function CatalogView() {
               </div>
 
               <div className="space-y-2">
-                <Label>Početak nakon</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Početak-nakon">Početak nakon <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Početak-nakon">Pomoć za polje: Početak nakon</TooltipContent></Tooltip></Label>
                 <Input type="date" value={filters.startDate ?? ""} onChange={e => handleFilterChange("startDate", e.target.value || undefined)} />
               </div>
 
               <div className="space-y-2">
-                <Label>Minimalna ocena</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Minimalna-ocena">Minimalna ocena <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Minimalna-ocena">Pomoć za polje: Minimalna ocena</TooltipContent></Tooltip></Label>
                 <Select value={filters.minRating?.toString() || ""} onValueChange={v => handleFilterChange("minRating", v ? Number(v) : undefined)}>
                   <SelectTrigger><SelectValue placeholder="Bilo koja ocena" /></SelectTrigger>
                   <SelectContent>
@@ -1023,7 +1024,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
   const [, setLocation] = useLocation();
   const { data: userResponse } = useGetCurrentUser();
   const user = userResponse?.user;
-  const canCreate = user?.role === 'SALON_OWNER' || user?.role === 'EDUKATIVNI_CENTAR';
+  const canCreate = user?.role === 'EDUKATIVNI_CENTAR';
   const isSalonOperator = user?.role === "SALON_OWNER" || user?.role === "EDUKATIVNI_CENTAR";
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -2182,17 +2183,18 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
         <DialogHeader>
           <DialogTitle>{course ? "Izmeni edukaciju" : "Nova edukacija"}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit(submit)} className="space-y-6">
+        <TooltipProvider>
+<form onSubmit={handleSubmit(submit)} className="space-y-6">
           <div className="grid md:grid-cols-2 gap-6">
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Naziv edukacije</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Naziv-edukacije">Naziv edukacije <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Naziv-edukacije">Zvaničan komercijalni naziv kurseva</TooltipContent></Tooltip></Label>
                 <Input {...register("title")} />
                 {errors.title && <p className="text-xs text-destructive">{errors.title.message as string}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label>Oblast (Sekcija)</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Oblast-(Sekcija)">Oblast (Sekcija) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Oblast-(Sekcija)">Šira oblast kojoj edukacija pripada</TooltipContent></Tooltip></Label>
                 <Controller control={control} name="sectionId" render={({ field }) => (
                   <Select value={field.value} onValueChange={(val) => { field.onChange(val); setValue("categoryId", ""); setValue("subcategoryId", ""); setValue("courseTypeId", ""); }}>
                     <SelectTrigger><SelectValue placeholder="Izaberite sekciju" /></SelectTrigger>
@@ -2204,7 +2206,7 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
               </div>
 
               <div className="space-y-2">
-                <Label>Kategorija</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Kategorija">Kategorija <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Kategorija">Uža kategorija edukacije</TooltipContent></Tooltip></Label>
                 <Controller control={control} name="categoryId" render={({ field }) => (
                   <Select value={field.value} onValueChange={(val) => { field.onChange(val); setValue("subcategoryId", ""); setValue("courseTypeId", ""); }} disabled={!watchSectionId}>
                     <SelectTrigger><SelectValue placeholder="Izaberite kategoriju" /></SelectTrigger>
@@ -2216,7 +2218,7 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
               </div>
 
               <div className="space-y-2">
-                <Label>Potkategorija</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Potkategorija">Potkategorija <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Potkategorija">Specifična potkategorija</TooltipContent></Tooltip></Label>
                 <Controller control={control} name="subcategoryId" render={({ field }) => (
                   <Select value={field.value} onValueChange={(val) => { field.onChange(val); setValue("courseTypeId", ""); }} disabled={!watchCategoryId}>
                     <SelectTrigger><SelectValue placeholder="Izaberite potkategoriju" /></SelectTrigger>
@@ -2229,7 +2231,7 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
               </div>
 
               <div className="space-y-2">
-                <Label>Tip obuke</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Tip-obuke">Tip obuke <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Tip-obuke">Format i nivo obuke</TooltipContent></Tooltip></Label>
                 <Controller control={control} name="courseTypeId" render={({ field }) => (
                   <Select value={field.value} onValueChange={field.onChange} disabled={!watchSubcategoryId}>
                     <SelectTrigger><SelectValue placeholder="Izaberite tip" /></SelectTrigger>
@@ -2243,26 +2245,26 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
               </div>
 
               <div className="space-y-2">
-                <Label>Legacy Kategorija (ili izaberite iznad)</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Stara-kategorija-(ili-izaberite-iznad)">Stara kategorija (ili izaberite iznad) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Stara-kategorija-(ili-izaberite-iznad)">Unos stare kategorije ukoliko nova nije odabrana</TooltipContent></Tooltip></Label>
                 <Input {...register("category")} placeholder="Ako ne izaberete potkategoriju, unesite ručno" />
               </div>
               <div className="space-y-2">
-                <Label>Opis</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Opis">Opis <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Opis">Detaljan opis edukacije i šta polaznici dobijaju</TooltipContent></Tooltip></Label>
                 <Textarea {...register("description")} rows={4} />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Cena (RSD)</Label>
+                  <Label className="flex items-center gap-2" aria-describedby="help-Cena-(RSD)">Cena (RSD) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Cena-(RSD)">Konačna cena edukacije za polaznike</TooltipContent></Tooltip></Label>
                   <Input type="number" {...register("price")} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Način plaćanja</Label>
+                  <Label className="flex items-center gap-2" aria-describedby="help-Način-plaćanja">Način plaćanja <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Način-plaćanja">Kako polaznici mogu platiti edukaciju</TooltipContent></Tooltip></Label>
                   <Controller control={control} name="paymentMode" render={({ field }) => (
                     <Select value={field.value} onValueChange={field.onChange}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="online_full">Online (Ceklokupan iznos)</SelectItem>
+                        <SelectItem value="online_full">Onlajn (celokupan iznos)</SelectItem>
                         {watchFormat !== 'online' && <SelectItem value="live_deposit">Depozit + Uživo</SelectItem>}
                         {watchFormat !== 'online' && <SelectItem value="live_off_platform">Plaćanje uživo (van platforme)</SelectItem>}
                       </SelectContent>
@@ -2273,14 +2275,14 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
 
               {watchPaymentMode === "live_deposit" && (
                 <div className="space-y-2">
-                  <Label>Iznos depozita (RSD)</Label>
+                  <Label className="flex items-center gap-2" aria-describedby="help-Iznos-depozita-(RSD)">Iznos depozita (RSD) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Iznos-depozita-(RSD)">Pomoć za polje: Iznos depozita (RSD)</TooltipContent></Tooltip></Label>
                   <Input type="number" {...register("depositAmount")} />
                   {errors.depositAmount && <p className="text-xs text-destructive">{errors.depositAmount.message as string}</p>}
                 </div>
               )}
 
               <div className="space-y-2 pt-2">
-                <Label>Politika povraćaja</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Politika-povraćaja">Politika povraćaja <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Politika-povraćaja">Pomoć za polje: Politika povraćaja</TooltipContent></Tooltip></Label>
                 <Textarea {...register("refundPolicy")} placeholder="Opišite uslove povraćaja novca..." />
                 {errors.refundPolicy && <p className="text-xs text-destructive">{errors.refundPolicy.message as string}</p>}
               </div>
@@ -2295,9 +2297,9 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
 
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Naslovna fotografija</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Naslovna-fotografija">Naslovna fotografija <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Naslovna-fotografija">Pomoć za polje: Naslovna fotografija</TooltipContent></Tooltip></Label>
                 <div className="border rounded-md overflow-hidden relative aspect-video bg-muted group">
-                  <img src={coverImageUrl} alt="Cover" className="w-full h-full object-cover" />
+                  <img src={coverImageUrl} alt="Naslovna fotografija" className="w-full h-full object-cover" />
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <Button type="button" variant="secondary" onClick={() => document.getElementById("cover-upload")?.click()} disabled={uploadingCover}>
                       {uploadingCover ? <Loader2 className="h-4 w-4 animate-spin" /> : "Promeni sliku"}
@@ -2309,7 +2311,7 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Format</Label>
+                  <Label className="flex items-center gap-2" aria-describedby="help-Format">Format <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Format">Način održavanja edukacije</TooltipContent></Tooltip></Label>
                   <Controller control={control} name="format" render={({ field }) => (
                     <Select value={field.value} onValueChange={(v) => { field.onChange(v); if(v==='online') setValue('paymentMode', 'online_full'); }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
@@ -2323,29 +2325,29 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
                 </div>
                 {watchFormat !== 'online' && (
                   <div className="space-y-2">
-                    <Label>Grad</Label>
+                    <Label className="flex items-center gap-2" aria-describedby="help-Grad">Grad <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Grad">Grad u kom se održava edukacija</TooltipContent></Tooltip></Label>
                     <Input {...register("city")} placeholder="Npr. Beograd" />
                   </div>
                 )}
               </div>
 
               <div className="space-y-2">
-                <Label>Česta pitanja (FAQ)</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Česta-pitanja-(Najčešća-pitanja)">Česta pitanja (Najčešća pitanja) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Česta-pitanja-(Najčešća-pitanja)">Pomoć za polje: Česta pitanja (Najčešća pitanja)</TooltipContent></Tooltip></Label>
                 <Textarea {...register("faqText")} placeholder="P: Pitanje\nO: Odgovor\n\n(odvojite praznim redom)" rows={4} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Trajanje</Label>
+                  <Label className="flex items-center gap-2" aria-describedby="help-Trajanje">Trajanje <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Trajanje">Ukupno trajanje u danima ili nedeljama</TooltipContent></Tooltip></Label>
                   <Input {...register("duration")} placeholder="Npr. 2 dana, 6 modula" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Trajanje (minuti, opciono)</Label>
+                  <Label className="flex items-center gap-2" aria-describedby="help-Trajanje-(minuti,-opciono)">Trajanje (minuti, opciono) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Trajanje-(minuti,-opciono)">Pomoć za polje: Trajanje (minuti, opciono)</TooltipContent></Tooltip></Label>
                   <Input type="number" {...register("durationMinutes")} placeholder="Npr. 120" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4 mt-4">
                 <div className="space-y-2">
-                  <Label>Nivo</Label>
+                  <Label className="flex items-center gap-2" aria-describedby="help-Nivo">Nivo <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Nivo">Nivo predznanja koji je potreban</TooltipContent></Tooltip></Label>
                   <Controller control={control} name="level" render={({ field }) => (
                     <Select value={field.value} onValueChange={field.onChange}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
@@ -2362,11 +2364,11 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Teorija (sati)</Label>
+                  <Label className="flex items-center gap-2" aria-describedby="help-Teorija-(sati)">Teorija (sati) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Teorija-(sati)">Pomoć za polje: Teorija (sati)</TooltipContent></Tooltip></Label>
                   <Input type="number" {...register("theoryHours")} placeholder="Opciono" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Praksa (sati)</Label>
+                  <Label className="flex items-center gap-2" aria-describedby="help-Praksa-(sati)">Praksa (sati) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Praksa-(sati)">Pomoć za polje: Praksa (sati)</TooltipContent></Tooltip></Label>
                   <Input type="number" {...register("practicalHours")} placeholder="Opciono" />
                 </div>
               </div>
@@ -2381,7 +2383,7 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
               {watch("certification") && (
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Naziv sertifikata</Label>
+                    <Label className="flex items-center gap-2" aria-describedby="help-Naziv-sertifikata">Naziv sertifikata <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Naziv-sertifikata">Tačan naziv dokumenta koji se izdaje</TooltipContent></Tooltip></Label>
                     <Input {...register("certificateName")} placeholder="Npr. PMU Master" />
                   </div>
                   <div className="flex items-center space-x-2 pt-8">
@@ -2400,31 +2402,31 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
             <p className="text-xs text-muted-foreground mb-4">Sva vremena su u vremenskoj zoni Europe/Belgrade.</p>
             <div className="grid md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Režim zakazivanja</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Režim-zakazivanja">Režim zakazivanja <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Režim-zakazivanja">Način na koji se formiraju grupe</TooltipContent></Tooltip></Label>
                 <Controller control={control} name="schedulingMode" render={({ field }) => <Select value={field.value} onValueChange={field.onChange}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="fixed_group">Fiksna grupna sesija</SelectItem><SelectItem value="individual_calendar">Individualni termini / kalendar</SelectItem></SelectContent></Select>} />
               </div>
               <div className="space-y-2">
-                <Label>Broj rata</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Broj-rata">Broj rata <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Broj-rata">Mogućnost plaćanja na više rata</TooltipContent></Tooltip></Label>
                 <Controller control={control} name="installmentCount" render={({ field }) => <Select value={String(field.value)} onValueChange={(value) => field.onChange(Number(value))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="1">1 rata</SelectItem><SelectItem value="2">2 rate</SelectItem><SelectItem value="3">3 rate</SelectItem></SelectContent></Select>} />
               </div>
               <div className="space-y-2">
-                <Label>Rok za otkazivanje (sati)</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Rok-za-otkazivanje-(sati)">Rok za otkazivanje (sati) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Rok-za-otkazivanje-(sati)">Rok do kad je dozvoljeno besplatno otkazivanje</TooltipContent></Tooltip></Label>
                 <Input type="number" min="0" max="8760" {...register("cancellationCutoffHours")} />
               </div>
               <div className="space-y-2">
-                <Label>Postupanje sa depozitom</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Postupanje-sa-depozitom">Postupanje sa depozitom <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Postupanje-sa-depozitom">Šta se dešava sa depozitom u slučaju otkazivanja</TooltipContent></Tooltip></Label>
                 <Controller control={control} name="depositDisposition" render={({ field }) => <Select value={field.value} onValueChange={field.onChange}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="refund">Povraćaj</SelectItem><SelectItem value="forfeit">Zadržava se</SelectItem><SelectItem value="transfer">Prenos na drugi termin</SelectItem></SelectContent></Select>} />
               </div>
               <div className="space-y-2">
-                <Label>Early-bird cena (RSD)</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Rana-prijava-cena-(RSD)">Rana prijava cena (RSD) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Rana-prijava-cena-(RSD)">Niža cena za prijave pre zadatog roka</TooltipContent></Tooltip></Label>
                 <Input type="number" min="0" {...register("earlyBirdPrice")} placeholder="Npr. 15000" />
               </div>
               <div className="space-y-2">
-                <Label>Early-bird rok</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Rana-prijava-rok">Rana prijava rok <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Rana-prijava-rok">Datum do kog važi niža cena</TooltipContent></Tooltip></Label>
                 <Input type="datetime-local" {...register("earlyBirdCutoff")} />
               </div>
               <div className="space-y-2">
-                <Label>Rok rizika minimalnog broja polaznika</Label>
+                <Label className="flex items-center gap-2" aria-describedby="help-Rok-rizika-minimalnog-broja-polaznika">Rok rizika minimalnog broja polaznika <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Rok-rizika-minimalnog-broja-polaznika">Krajnji rok za potvrdu održavanja edukacije</TooltipContent></Tooltip></Label>
                 <Input type="datetime-local" {...register("minimumEnrollmentRiskDeadline")} />
               </div>
             </div>
@@ -2435,6 +2437,7 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
             <Button type="submit" disabled={create.isPending || update.isPending}>{course ? "Sačuvaj izmene" : "Kreiraj edukaciju"}</Button>
           </DialogFooter>
         </form>
+        </TooltipProvider>
       </DialogContent>
     </Dialog>
   );
@@ -2471,12 +2474,12 @@ function CreateModuleDialog({ courseId, open, onOpenChange }: { courseId: string
         <DialogHeader><DialogTitle className="font-serif text-xl">Novi modul</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-4">
           <div className="space-y-2">
-            <Label>Naziv modula *</Label>
+            <Label className="flex items-center gap-2" aria-describedby="help-Naziv-modula-*">Naziv modula * <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Naziv-modula-*">Pomoć za polje: Naziv modula *</TooltipContent></Tooltip></Label>
             <Input placeholder="Npr. Uvod u teoriju..." {...register("title")} />
             {errors.title && <p className="text-sm text-destructive">{errors.title.message as string}</p>}
           </div>
           <div className="space-y-2">
-            <Label>Opis (opciono)</Label>
+            <Label className="flex items-center gap-2" aria-describedby="help-Opis-(opciono)">Opis (opciono) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Opis-(opciono)">Pomoć za polje: Opis (opciono)</TooltipContent></Tooltip></Label>
             <Textarea placeholder="Kratak opis sadržaja modula..." rows={3} {...register("description")} />
           </div>
           <DialogFooter className="pt-4">
@@ -2523,17 +2526,17 @@ function CreateLessonDialog({ moduleId, courseId, open, onOpenChange }: { module
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-4">
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
             <div className="space-y-2 sm:col-span-3">
-              <Label>Naslov lekcije *</Label>
+              <Label className="flex items-center gap-2" aria-describedby="help-Naslov-lekcije-*">Naslov lekcije * <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Naslov-lekcije-*">Pomoć za polje: Naslov lekcije *</TooltipContent></Tooltip></Label>
               <Input placeholder="Npr. Priprema radnog mesta" {...register("title")} />
               {errors.title && <p className="text-sm text-destructive">{errors.title.message as string}</p>}
             </div>
             <div className="space-y-2 sm:col-span-1">
-              <Label>Trajanje (min) *</Label>
+              <Label className="flex items-center gap-2" aria-describedby="help-Trajanje-(min)-*">Trajanje (min) * <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Trajanje-(min)-*">Pomoć za polje: Trajanje (min) *</TooltipContent></Tooltip></Label>
               <Input type="number" min="1" {...register("durationMinutes")} />
             </div>
           </div>
           <div className="space-y-2">
-            <Label>Sadržaj (Tekst ili HTML)</Label>
+            <Label className="flex items-center gap-2" aria-describedby="help-Sadržaj-(Tekst-ili-HTML)">Sadržaj (Tekst ili HTML) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Sadržaj-(Tekst-ili-HTML)">Pomoć za polje: Sadržaj (Tekst ili HTML)</TooltipContent></Tooltip></Label>
             <Textarea className="font-mono text-sm" rows={8} placeholder="<p>Dobrodošli u prvu lekciju...</p>" {...register("content")} />
           </div>
           <DialogFooter className="pt-4">
@@ -2588,27 +2591,27 @@ function CreateSessionDialog({ courseId, open, onOpenChange }: { courseId: strin
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Početak *</Label>
+              <Label className="flex items-center gap-2" aria-describedby="help-Početak-*">Početak * <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Početak-*">Pomoć za polje: Početak *</TooltipContent></Tooltip></Label>
               <Input type="datetime-local" {...register("startsAt")} />
               {errors.startsAt && <p className="text-sm text-destructive">{errors.startsAt.message as string}</p>}
             </div>
             <div className="space-y-2">
-              <Label>Kraj *</Label>
+              <Label className="flex items-center gap-2" aria-describedby="help-Kraj-*">Kraj * <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Kraj-*">Pomoć za polje: Kraj *</TooltipContent></Tooltip></Label>
               <Input type="datetime-local" {...register("endsAt")} />
               {errors.endsAt && <p className="text-sm text-destructive">{errors.endsAt.message as string}</p>}
             </div>
           </div>
           <div className="space-y-2">
-            <Label>Tačna lokacija (adresa ili link)</Label>
+            <Label className="flex items-center gap-2" aria-describedby="help-Tačna-lokacija-(adresa-ili-link)">Tačna lokacija (adresa ili link) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Tačna-lokacija-(adresa-ili-link)">Pomoć za polje: Tačna lokacija (adresa ili link)</TooltipContent></Tooltip></Label>
             <Input placeholder="Npr. Resavska 10, Novi Sad" {...register("location")} />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Kapacitet polaznika *</Label>
+              <Label className="flex items-center gap-2" aria-describedby="help-Kapacitet-polaznika-*">Kapacitet polaznika * <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Kapacitet-polaznika-*">Pomoć za polje: Kapacitet polaznika *</TooltipContent></Tooltip></Label>
               <Input type="number" min="1" {...register("capacity")} />
             </div>
             <div className="space-y-2">
-              <Label>Minimalan broj prijava</Label>
+              <Label className="flex items-center gap-2" aria-describedby="help-Minimalan-broj-prijava">Minimalan broj prijava <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Minimalan-broj-prijava">Pomoć za polje: Minimalan broj prijava</TooltipContent></Tooltip></Label>
               <Input type="number" min="0" max="9999" placeholder="Opciono" {...register("minimumEnrollments")} />
               <p className="text-xs text-muted-foreground">Prag ispod kojeg se termin može otkazati.</p>
             </div>
