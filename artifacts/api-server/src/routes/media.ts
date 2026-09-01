@@ -301,7 +301,15 @@ async function requireMediaUser(req: Request, res: Response) {
 }
 
 async function ownedSalon(userId: string) {
-  const [owner] = await db.select({ activeSalonId: usersTable.activeSalonId }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const [owner] = await db.select({ role: usersTable.role, activeSalonId: usersTable.activeSalonId })
+    .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (owner?.role !== "SALON_OWNER") {
+    if (owner?.role === "EDUKATIVNI_CENTAR" && owner.activeSalonId) {
+      await db.update(usersTable).set({ activeSalonId: null, updatedAt: new Date() })
+        .where(eq(usersTable.id, userId));
+    }
+    return null;
+  }
   const [selected] = owner?.activeSalonId
     ? await db.select().from(salonsTable).where(and(eq(salonsTable.ownerId, userId), eq(salonsTable.id, owner.activeSalonId))).limit(1)
     : [];

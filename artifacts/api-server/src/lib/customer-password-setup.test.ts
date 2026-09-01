@@ -260,9 +260,9 @@ async function run(): Promise<void> {
       .where(eq(educationCentersTable.ownerId, centerSetup.user.id));
     assert.ok(createdCenter);
     const [centerWorkspace] = await db.select().from(salonsTable).where(eq(salonsTable.ownerId, centerSetup.user.id));
-    assert.ok(centerWorkspace, "education-center setup creates its compatible salon workspace");
+    assert.equal(centerWorkspace, undefined, "education-center setup does not create a salon workspace");
     assert.equal((await db.select({ activeSalonId: usersTable.activeSalonId }).from(usersTable)
-      .where(eq(usersTable.id, centerSetup.user.id)))[0]?.activeSalonId, centerWorkspace.id);
+      .where(eq(usersTable.id, centerSetup.user.id)))[0]?.activeSalonId, null);
 
     const instructorEmail = `setup-business-instructor-${suffix}@example.test`;
     const instructorSetupResponse = await genericCreate({
@@ -318,8 +318,11 @@ async function run(): Promise<void> {
     const [convertedEducationCenter] = await db.select().from(educationCentersTable)
       .where(eq(educationCentersTable.ownerId, conversionCenter.id));
     assert.ok(convertedEducationCenter);
-    assert.ok((await db.select().from(salonsTable)
-      .where(eq(salonsTable.ownerId, conversionCenter.id)))[0], "center conversion creates its workspace");
+    assert.equal((await db.select().from(salonsTable)
+      .where(eq(salonsTable.ownerId, conversionCenter.id)))[0], undefined,
+    "center conversion does not create a salon workspace");
+    assert.equal((await db.select({ activeSalonId: usersTable.activeSalonId }).from(usersTable)
+      .where(eq(usersTable.id, conversionCenter.id)))[0]?.activeSalonId, null);
 
     assert.equal((await convert(conversionInstructor.id, {
       role: "INSTRUCTOR",

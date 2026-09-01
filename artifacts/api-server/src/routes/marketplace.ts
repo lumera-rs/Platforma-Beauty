@@ -1292,7 +1292,15 @@ async function signInMethods(user: typeof usersTable.$inferSelect) {
 }
 
 async function ownedSalon(userId: string) {
-  const [owner] = await db.select({ activeSalonId: usersTable.activeSalonId }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const [owner] = await db.select({ role: usersTable.role, activeSalonId: usersTable.activeSalonId })
+    .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (owner?.role !== "SALON_OWNER") {
+    if (owner?.role === "EDUKATIVNI_CENTAR" && owner.activeSalonId) {
+      await db.update(usersTable).set({ activeSalonId: null, updatedAt: new Date() })
+        .where(eq(usersTable.id, userId));
+    }
+    return null;
+  }
   const [selected] = owner?.activeSalonId
     ? await db.select().from(salonsTable).where(and(eq(salonsTable.ownerId, userId), eq(salonsTable.id, owner.activeSalonId))).limit(1)
     : [];
@@ -23847,15 +23855,6 @@ router.post("/admin/accounts/setup", async (req, res): Promise<void> => {
         await tx.update(usersTable).set({ activeSalonId: salon.id, updatedAt: new Date() }).where(eq(usersTable.id, created.id));
       } else if (parsed.role === "EDUKATIVNI_CENTAR") {
         const input = parsed.educationCenter!;
-        const [workspace] = await tx.insert(salonsTable).values({
-          ownerId: created.id, name: input.name, slug: businessSlug(input.name, created.id),
-          city: input.city, municipality: input.city, address: input.contactAddress,
-          phone: input.contactPhone, email: input.contactEmail, companyName: input.name,
-          companyTaxId: input.pib, shortDescription: `${input.name} je novi LUMERA partner.`,
-          description: `Poslovni profil za ${input.name}. Dopunite ponudu, tim i radno vreme iz poslovnog portala.`,
-          imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=1200&auto=format&fit=crop",
-          active: false,
-        }).returning({ id: salonsTable.id });
         const [center] = await tx.insert(educationCentersTable).values({
           ownerId: created.id, name: input.name, city: input.city, description: input.description,
           imageUrl: "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?q=80&w=1200&auto=format&fit=crop",
@@ -23866,7 +23865,6 @@ router.post("/admin/accounts/setup", async (req, res): Promise<void> => {
           pib: input.pib, legalName: input.name, ownerUserId: created.id, educationCenterId: center!.id,
         });
         await tx.update(educationCentersTable).set({ pib: binding.normalizedPib }).where(eq(educationCentersTable.id, center!.id));
-        await tx.update(usersTable).set({ activeSalonId: workspace!.id, updatedAt: new Date() }).where(eq(usersTable.id, created.id));
       } else if (parsed.role === "INSTRUCTOR") {
         const input = parsed.instructor!;
         const [center] = await tx.select({ id: educationCentersTable.id, ownerId: educationCentersTable.ownerId })
@@ -24068,28 +24066,19 @@ router.post("/admin/users/:userId/business-conversion", async (req, res): Promis
         }).where(eq(usersTable.id, target.id));
       } else if (parsed.role === "EDUKATIVNI_CENTAR") {
         const input = parsed.educationCenter!;
-        const [workspace] = await tx.insert(salonsTable).values({
-          ownerId: target.id, name: input.name, slug: businessSlug(input.name, target.id),
-          city: input.city, municipality: input.city, address: input.contactAddress,
-          phone: input.contactPhone, email: input.contactEmail, companyName: input.name,
-          companyTaxId: input.pib, shortDescription: `${input.name} je novi LUMERA partner.`,
-          description: `Poslovni profil za ${input.name}. Dopunite ponudu, tim i radno vreme iz poslovnog portala.`,
-          imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=1200&auto=format&fit=crop",
-          active: false,
-        }).returning({ id: salonsTable.id });
         const [center] = await tx.insert(educationCentersTable).values({
           ownerId: target.id, name: input.name, city: input.city, description: input.description,
           imageUrl: "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?q=80&w=1200&auto=format&fit=crop",
           contactEmail: input.contactEmail, contactPhone: input.contactPhone,
           contactAddress: input.contactAddress, pib: input.pib,
         }).returning({ id: educationCentersTable.id });
-        if (!workspace || !center) throw new Error("Business conversion education insert returned no row.");
+        if (!center) throw new Error("Business conversion education insert returned no row.");
         const binding = await bindLegalEntityBusinessInTx(tx, {
           pib: input.pib, legalName: input.name, ownerUserId: target.id, educationCenterId: center.id,
         });
         await tx.update(educationCentersTable).set({ pib: binding.normalizedPib }).where(eq(educationCentersTable.id, center.id));
         await tx.update(usersTable).set({
-          role: parsed.role, activeSalonId: workspace.id, updatedAt: new Date(),
+          role: parsed.role, activeSalonId: null, updatedAt: new Date(),
         }).where(eq(usersTable.id, target.id));
       } else {
         const input = parsed.instructor!;
