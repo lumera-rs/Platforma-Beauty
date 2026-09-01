@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 103;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 106;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -4547,6 +4547,42 @@ function tableStatements(s: string): string[] {
     `CREATE INDEX IF NOT EXISTS education_session_resources_session_idx ON ${s}.education_session_resources(session_id)`,
     `CREATE INDEX IF NOT EXISTS education_trial_claims_center_idx ON ${s}.education_trial_claims(center_id)`,
     `CREATE INDEX IF NOT EXISTS education_trial_claims_user_idx ON ${s}.education_trial_claims(user_id)`,
+    // v104 — canonical Education billing periods and immutable obligation periods.
+    `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS current_period_start timestamptz`,
+    `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS pending_billing_cycle text`,
+    `ALTER TABLE ${s}.education_payment_obligations ADD COLUMN IF NOT EXISTS billing_cycle_snapshot text`,
+    `ALTER TABLE ${s}.education_payment_obligations ADD COLUMN IF NOT EXISTS service_period_start timestamptz`,
+    `ALTER TABLE ${s}.education_payment_obligations ADD COLUMN IF NOT EXISTS service_period_end timestamptz`,
+    // v105 — database-enforced subscription obligation idempotency and cycle validation.
+    `DO $$ BEGIN ALTER TABLE ${s}.education_center_subscriptions ADD CONSTRAINT education_center_subscriptions_pending_billing_cycle_check CHECK (pending_billing_cycle IS NULL OR pending_billing_cycle IN ('monthly','yearly')); EXCEPTION WHEN duplicate_object THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE ${s}.education_payment_obligations ADD CONSTRAINT education_payment_obligations_cycle_check CHECK (billing_cycle_snapshot IS NULL OR billing_cycle_snapshot IN ('monthly','yearly')); EXCEPTION WHEN duplicate_object THEN NULL; END $$`,
+    `WITH ranked AS (
+       SELECT id, row_number() OVER (PARTITION BY subscription_id, kind ORDER BY issued_at, id) AS position
+       FROM ${s}.education_payment_obligations
+       WHERE status = 'pending' AND subscription_id IS NOT NULL AND kind IN ('subscription_renewal','subscription_upgrade')
+     )
+     UPDATE ${s}.education_payment_obligations target
+     SET status = 'cancelled', cancelled_at = now()
+     FROM ranked WHERE target.id = ranked.id AND ranked.position > 1`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS education_payment_obligations_pending_subscription_kind_uniq
+       ON ${s}.education_payment_obligations(subscription_id, kind)
+       WHERE status = 'pending' AND subscription_id IS NOT NULL AND kind IN ('subscription_renewal','subscription_upgrade')`,
+    // v106 — renewal and upgrade obligations are mutually exclusive.
+    `DROP INDEX IF EXISTS ${s}.education_payment_obligations_pending_subscription_kind_uniq`,
+    `WITH ranked AS (
+       SELECT id, row_number() OVER (
+         PARTITION BY subscription_id
+         ORDER BY CASE WHEN kind = 'subscription_upgrade' THEN 0 ELSE 1 END, issued_at DESC, id
+       ) AS position
+       FROM ${s}.education_payment_obligations
+       WHERE status = 'pending' AND subscription_id IS NOT NULL AND kind IN ('subscription_renewal','subscription_upgrade')
+     )
+     UPDATE ${s}.education_payment_obligations target
+     SET status = 'cancelled', cancelled_at = now()
+     FROM ranked WHERE target.id = ranked.id AND ranked.position > 1`,
+    `CREATE UNIQUE INDEX education_payment_obligations_pending_subscription_kind_uniq
+       ON ${s}.education_payment_obligations(subscription_id)
+       WHERE status = 'pending' AND subscription_id IS NOT NULL AND kind IN ('subscription_renewal','subscription_upgrade')`,
     // v74 — every aftercare FK gets a leading index so deletes/updates on its
     // parent cannot force scans as recommendation and delivery history grows.
   ];

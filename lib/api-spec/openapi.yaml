@@ -3081,6 +3081,53 @@ paths:
       summary: Create center payment instructions for subscription renewal
       responses:
         "200": { description: IPS instructions, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+  /admin/education/payment-obligations:
+    get:
+      operationId: listEducationPaymentObligations
+      tags: [admin, education]
+      summary: List immutable Education payment obligations
+      responses:
+        "200": { description: Payment obligations, content: { application/json: { schema: { type: array, items: { type: object, additionalProperties: true } } } } }
+  /admin/education/payment-obligations/{obligationId}/settle:
+    post:
+      operationId: settleEducationPaymentObligation
+      tags: [admin, education]
+      summary: Settle one Education payment obligation
+      parameters: [{ name: obligationId, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                confirmedAmountRsd: { type: integer, minimum: 0 }
+                reason: { type: string, minLength: 3, maxLength: 1000 }
+              required: [confirmedAmountRsd, reason]
+      responses:
+        "200": { description: Settled obligation, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+  /admin/education/centers/{centerId}/custom-contract:
+    post:
+      operationId: configureEducationCustomContract
+      tags: [admin, education]
+      summary: Configure a negotiated Education subscription contract
+      parameters: [{ name: centerId, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                amountRsd: { type: integer, minimum: 1 }
+                billingCycle: { type: string, enum: [monthly, yearly] }
+                contractEndsAt: { type: string, format: date-time }
+                reason: { type: string, minLength: 3, maxLength: 1000 }
+              required: [amountRsd, billingCycle, contractEndsAt, reason]
+      responses:
+        "200": { description: Contract configured, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
   /education/purchases:
     get:
       operationId: listEducationPurchases
@@ -9831,8 +9878,19 @@ components:
         websiteUrl: { type: string, format: uri }
         instagramUrl: { type: string, format: uri }
         description: { type: string, minLength: 20, maxLength: 2000 }
+        planId: { type: string, format: uuid }
+        billingCycle:
+          type: string
+          enum: [monthly, yearly]
         referralCode: { type: string, minLength: 3, maxLength: 64 }
       required: [firstName, lastName, email, phone, businessType, businessName, city, municipality, address, postalCode, pib]
+      allOf:
+        - if:
+            properties:
+              businessType: { const: EDUCATION_CENTER }
+            required: [businessType]
+          then:
+            required: [planId, billingCycle]
     LoginInput:
       type: object
       properties:

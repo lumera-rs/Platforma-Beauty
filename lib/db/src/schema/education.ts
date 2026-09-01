@@ -191,6 +191,9 @@ export const educationPaymentObligationsTable = pgTable("education_payment_oblig
   index("education_payment_obligations_subscription_idx").on(table.subscriptionId),
   index("education_payment_obligations_confirmed_by_idx").on(table.confirmedByUserId),
   index("education_payment_obligations_cancelled_by_idx").on(table.cancelledByUserId),
+  uniqueIndex("education_payment_obligations_pending_subscription_kind_uniq")
+    .on(table.subscriptionId)
+    .where(sql`${table.status} = 'pending' and ${table.subscriptionId} is not null and ${table.kind} in ('subscription_renewal','subscription_upgrade')`),
   check("education_payment_obligations_target_check", sql`num_nonnulls(${table.centerId}, ${table.salonId}) >= 1`),
   check("education_payment_obligations_status_check", sql`${table.status} in ('pending','paid','cancelled')`),
   check("education_payment_obligations_amount_check", sql`${table.expectedAmount} > 0 and (${table.confirmedAmount} is null or ${table.confirmedAmount} >= 0)`),

@@ -206,6 +206,8 @@ import type {
   CitySummary,
   CommerceExperienceSettings,
   CommerceExperienceSettingsInput,
+  ConfigureEducationCustomContract200,
+  ConfigureEducationCustomContractBody,
   Coupon,
   CouponInput,
   CourierService,
@@ -449,6 +451,7 @@ import type {
   ListEducationBundles200Item,
   ListEducationCenterBundlePurchases200Item,
   ListEducationGiftVouchersParams,
+  ListEducationPaymentObligations200Item,
   ListEducationWishlistParams,
   ListEnrollmentsParams,
   ListMyAppointmentsParams,
@@ -611,6 +614,8 @@ import type {
   ServiceTemplateBatchInput,
   ServiceTemplateBatchResult,
   SettleAdminEducationBundlePurchase200,
+  SettleEducationPaymentObligation200,
+  SettleEducationPaymentObligationBody,
   ShiftSwapCreate,
   ShiftSwapRequest,
   ShiftSwapRespondBody,
@@ -14771,6 +14776,227 @@ export const useGetEducationSubscriptionRenewalInstructions = <TError = ErrorTyp
         TContext
       > => {
       return useMutation(getGetEducationSubscriptionRenewalInstructionsMutationOptions(options));
+    }
+
+export const getListEducationPaymentObligationsUrl = () => {
+
+
+
+
+  return `/api/admin/education/payment-obligations`
+}
+
+/**
+ * @summary List immutable Education payment obligations
+ */
+export const listEducationPaymentObligations = async ( options?: Parameters<typeof customFetch>[1]): Promise<ListEducationPaymentObligations200Item[]> => {
+
+  return customFetch<ListEducationPaymentObligations200Item[]>(getListEducationPaymentObligationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListEducationPaymentObligationsQueryKey = () => {
+    return [
+    `/api/admin/education/payment-obligations`
+    ] as const;
+    }
+
+
+export const getListEducationPaymentObligationsQueryOptions = <TData = Awaited<ReturnType<typeof listEducationPaymentObligations>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEducationPaymentObligations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListEducationPaymentObligationsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listEducationPaymentObligations>>> = ({ signal }) => listEducationPaymentObligations({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEducationPaymentObligations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListEducationPaymentObligationsQueryResult = NonNullable<Awaited<ReturnType<typeof listEducationPaymentObligations>>>
+export type ListEducationPaymentObligationsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List immutable Education payment obligations
+ */
+
+export function useListEducationPaymentObligations<TData = Awaited<ReturnType<typeof listEducationPaymentObligations>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEducationPaymentObligations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListEducationPaymentObligationsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSettleEducationPaymentObligationUrl = (obligationId: string,) => {
+
+
+
+
+  return `/api/admin/education/payment-obligations/${obligationId}/settle`
+}
+
+/**
+ * @summary Settle one Education payment obligation
+ */
+export const settleEducationPaymentObligation = async (obligationId: string,
+    settleEducationPaymentObligationBody: SettleEducationPaymentObligationBody, options?: Parameters<typeof customFetch>[1]): Promise<SettleEducationPaymentObligation200> => {
+
+  return customFetch<SettleEducationPaymentObligation200>(getSettleEducationPaymentObligationUrl(obligationId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(settleEducationPaymentObligationBody)
+  }
+);}
+
+
+
+
+
+export const getSettleEducationPaymentObligationMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof settleEducationPaymentObligation>>, TError,{obligationId: string;data: BodyType<SettleEducationPaymentObligationBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof settleEducationPaymentObligation>>, TError,{obligationId: string;data: BodyType<SettleEducationPaymentObligationBody>}, TContext> => {
+
+const mutationKey = ['settleEducationPaymentObligation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof settleEducationPaymentObligation>>, {obligationId: string;data: BodyType<SettleEducationPaymentObligationBody>}> = (props) => {
+          const {obligationId,data} = props ?? {};
+
+          return  settleEducationPaymentObligation(obligationId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SettleEducationPaymentObligationMutationResult = NonNullable<Awaited<ReturnType<typeof settleEducationPaymentObligation>>>
+    export type SettleEducationPaymentObligationMutationBody = BodyType<SettleEducationPaymentObligationBody>
+    export type SettleEducationPaymentObligationMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Settle one Education payment obligation
+ */
+export const useSettleEducationPaymentObligation = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof settleEducationPaymentObligation>>, TError,{obligationId: string;data: BodyType<SettleEducationPaymentObligationBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof settleEducationPaymentObligation>>,
+        TError,
+        {obligationId: string;data: BodyType<SettleEducationPaymentObligationBody>},
+        TContext
+      > => {
+      return useMutation(getSettleEducationPaymentObligationMutationOptions(options));
+    }
+
+export const getConfigureEducationCustomContractUrl = (centerId: string,) => {
+
+
+
+
+  return `/api/admin/education/centers/${centerId}/custom-contract`
+}
+
+/**
+ * @summary Configure a negotiated Education subscription contract
+ */
+export const configureEducationCustomContract = async (centerId: string,
+    configureEducationCustomContractBody: ConfigureEducationCustomContractBody, options?: Parameters<typeof customFetch>[1]): Promise<ConfigureEducationCustomContract200> => {
+
+  return customFetch<ConfigureEducationCustomContract200>(getConfigureEducationCustomContractUrl(centerId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(configureEducationCustomContractBody)
+  }
+);}
+
+
+
+
+
+export const getConfigureEducationCustomContractMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof configureEducationCustomContract>>, TError,{centerId: string;data: BodyType<ConfigureEducationCustomContractBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof configureEducationCustomContract>>, TError,{centerId: string;data: BodyType<ConfigureEducationCustomContractBody>}, TContext> => {
+
+const mutationKey = ['configureEducationCustomContract'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof configureEducationCustomContract>>, {centerId: string;data: BodyType<ConfigureEducationCustomContractBody>}> = (props) => {
+          const {centerId,data} = props ?? {};
+
+          return  configureEducationCustomContract(centerId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ConfigureEducationCustomContractMutationResult = NonNullable<Awaited<ReturnType<typeof configureEducationCustomContract>>>
+    export type ConfigureEducationCustomContractMutationBody = BodyType<ConfigureEducationCustomContractBody>
+    export type ConfigureEducationCustomContractMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Configure a negotiated Education subscription contract
+ */
+export const useConfigureEducationCustomContract = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof configureEducationCustomContract>>, TError,{centerId: string;data: BodyType<ConfigureEducationCustomContractBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof configureEducationCustomContract>>,
+        TError,
+        {centerId: string;data: BodyType<ConfigureEducationCustomContractBody>},
+        TContext
+      > => {
+      return useMutation(getConfigureEducationCustomContractMutationOptions(options));
     }
 
 export const getListEducationPurchasesUrl = () => {

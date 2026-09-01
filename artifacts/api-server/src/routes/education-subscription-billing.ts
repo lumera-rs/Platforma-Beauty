@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
 import { and, asc, desc, eq, gt, inArray, isNotNull, lt, lte, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -10,21 +10,28 @@ import {
 } from "@workspace/db";
 import { getCurrentUser } from "../lib/auth";
 import { addEducationBelgradeCalendarDays, educationBelgradeDateKey, educationIpsQrPayload } from "../lib/education-marketplace-domain";
+import {
+  addEducationBillingPeriod, educationCycleAmount, educationPaymentReference,
+  educationUpgradeProration, hashTrialIdentifier, normalizeTrialEmail,
+  normalizeTrialPhone, normalizeTrialPib, type EducationBillingCycle,
+} from "../lib/education-subscription-domain";
 
 const router: IRouter = Router();
 const planBody = z.object({ planId: z.string().uuid(), billingCycle: z.enum(["monthly", "yearly"]).default("monthly") });
 const reasonBody = z.object({ reason: z.string().trim().min(3).max(1000) });
 const extendBody = z.object({ months: z.union([z.literal(1), z.literal(3), z.literal(6)]) });
-const belgradeMonth = (date: Date) => {
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Belgrade", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
-  return { year: Number(parts.find((p) => p.type === "year")?.value), month: Number(parts.find((p) => p.type === "month")?.value), day: Number(parts.find((p) => p.type === "day")?.value) };
-};
+const customContractBody = z.object({
+  amountRsd: z.number().int().positive(),
+  billingCycle: z.enum(["monthly", "yearly"]),
+  contractEndsAt: z.string().datetime(),
+  reason: z.string().trim().min(3).max(1000),
+});
 const addMonths = (date: Date, months: number) => {
-  const p = belgradeMonth(date);
-  return new Date(Date.UTC(p.year, p.month - 1 + months, p.day, 12));
+  let result = date;
+  for (let index = 0; index < months; index += 1) result = addEducationBillingPeriod(result, "monthly");
+  return result;
 };
-const hash = (value: string | null | undefined) => value ? createHash("sha256").update(value.trim().toLowerCase()).digest("hex") : null;
-const reference = (prefix: string, id: string) => `${prefix}${createHash("sha256").update(id).digest("hex").replace(/\D/g, "").padStart(18, "0").slice(0, 18)}`;
+const reference = educationPaymentReference;
 const user = async (req: any, res: any) => {
   const current = await getCurrentUser(req);
   if (!current) { res.status(401).json({ error: "Prijava je obavezna." }); return null; }
@@ -69,16 +76,94 @@ router.post("/education/subscription/select-plan", async (req, res) => {
       const now = new Date();
       const [existing] = await tx.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, access.center.id)).for("update").limit(1);
       const trialClaim = await tx.insert(educationTrialClaimsTable).values({
-        normalizedEmailHash: hash(access.current.email)!, userId: access.current.id, centerId: access.center.id,
+        normalizedEmailHash: hashTrialIdentifier(normalizeTrialEmail(access.current.email))!,
+        normalizedPhoneHash: hashTrialIdentifier(normalizeTrialPhone(access.current.phone)),
+        normalizedPibHash: hashTrialIdentifier(normalizeTrialPib(access.center.pib)),
+        userId: access.current.id, centerId: access.center.id,
       }).onConflictDoNothing().returning();
       const trial = !existing && trialClaim.length > 0;
-      const trialEndsAt = trial ? addMonths(now, 1) : null;
+      const trialEndsAt = trial && plan.trialDays > 0 ? addEducationBelgradeCalendarDays(now, plan.trialDays) : null;
+      const cycle = parsed.data.billingCycle;
+      const amount = educationCycleAmount(plan.price, cycle);
+      if (existing && (existing.status === "active" || existing.status === "trial") && existing.currentPeriodEnd) {
+        if (existing.planId === plan.id && existing.billingCycle === cycle && !existing.pendingPlanId) {
+          return { ...existing, payment: null, change: "unchanged" };
+        }
+        const [currentPlan] = await tx.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, existing.planId)).limit(1);
+        if (!currentPlan) throw new Error("CURRENT_PLAN_MISSING");
+        if (plan.price <= currentPlan.price) {
+          await tx.update(educationPaymentObligationsTable).set({
+            status: "cancelled", cancelledAt: now, cancelledByUserId: access.current.id,
+          }).where(and(
+            eq(educationPaymentObligationsTable.subscriptionId, existing.id),
+            eq(educationPaymentObligationsTable.status, "pending"),
+            inArray(educationPaymentObligationsTable.kind, ["subscription_renewal", "subscription_upgrade"]),
+          ));
+          const [paidFutureRenewal] = await tx.select({
+            servicePeriodEnd: educationPaymentObligationsTable.servicePeriodEnd,
+          }).from(educationPaymentObligationsTable).where(and(
+            eq(educationPaymentObligationsTable.subscriptionId, existing.id),
+            eq(educationPaymentObligationsTable.kind, "subscription_renewal"),
+            eq(educationPaymentObligationsTable.status, "paid"),
+            gt(educationPaymentObligationsTable.servicePeriodStart, now),
+          )).orderBy(desc(educationPaymentObligationsTable.servicePeriodEnd)).limit(1);
+          const effectiveAt = paidFutureRenewal?.servicePeriodEnd ?? existing.currentPeriodEnd;
+          const [saved] = await tx.update(educationCenterSubscriptionsTable).set({
+            pendingPlanId: plan.id, pendingBillingCycle: cycle,
+            pendingPlanEffectiveAt: effectiveAt, updatedAt: now,
+          }).where(eq(educationCenterSubscriptionsTable.id, existing.id)).returning();
+          return { ...saved!, payment: null, change: "scheduled_downgrade" };
+        }
+        const periodStart = existing.currentPeriodStart ?? now;
+        const prorated = educationUpgradeProration({
+          currentMonthlyPrice: currentPlan.price, nextMonthlyPrice: plan.price, billingCycle: existing.billingCycle as EducationBillingCycle,
+          periodStart, periodEnd: existing.currentPeriodEnd, now,
+        });
+        const [settings] = await tx.select().from(educationPlatformSettingsTable).orderBy(asc(educationPlatformSettingsTable.createdAt)).limit(1);
+        if (!settings?.ipsRecipientName || !settings.ipsRecipientAccount) throw new Error("PLATFORM_PAYMENT_NOT_CONFIGURED");
+        await tx.update(educationPaymentObligationsTable).set({
+          status: "cancelled", cancelledAt: now, cancelledByUserId: access.current.id,
+        }).where(and(
+          eq(educationPaymentObligationsTable.subscriptionId, existing.id),
+          eq(educationPaymentObligationsTable.kind, "subscription_renewal"),
+          eq(educationPaymentObligationsTable.status, "pending"),
+        ));
+        const [pendingUpgrade] = await tx.select().from(educationPaymentObligationsTable).where(and(
+          eq(educationPaymentObligationsTable.subscriptionId, existing.id),
+          eq(educationPaymentObligationsTable.kind, "subscription_upgrade"),
+          eq(educationPaymentObligationsTable.status, "pending"),
+        )).limit(1);
+        if (pendingUpgrade && existing.pendingPlanId === plan.id && existing.pendingBillingCycle === cycle) {
+          return { ...existing, payment: pendingUpgrade, change: "upgrade_pending_payment" };
+        }
+        if (pendingUpgrade) {
+          await tx.update(educationPaymentObligationsTable).set({
+            status: "cancelled", cancelledAt: now, cancelledByUserId: access.current.id,
+          }).where(eq(educationPaymentObligationsTable.id, pendingUpgrade.id));
+        }
+        const obligationId = randomUUID();
+        const paymentReference = reference("UPG", obligationId);
+        const [payment] = await tx.insert(educationPaymentObligationsTable).values({
+          id: obligationId, centerId: access.center.id, subscriptionId: existing.id, kind: "subscription_upgrade",
+          expectedAmount: prorated, recipientNameSnapshot: settings.ipsRecipientName, recipientAccountSnapshot: settings.ipsRecipientAccount,
+          paymentCodeSnapshot: "221", purposeSnapshot: "Proporcionalna doplata za viši Education plan",
+          referenceSnapshot: paymentReference, billingCycleSnapshot: existing.billingCycle,
+          servicePeriodStart: now, servicePeriodEnd: existing.currentPeriodEnd,
+          ipsPayloadSnapshot: JSON.stringify(educationIpsQrPayload({ recipientName: settings.ipsRecipientName, recipientAccount: settings.ipsRecipientAccount, purpose: "Proporcionalna doplata za viši Education plan", amount: prorated, reference: paymentReference })),
+        }).returning();
+        const [saved] = await tx.update(educationCenterSubscriptionsTable).set({
+          pendingPlanId: plan.id, pendingBillingCycle: cycle, pendingPlanEffectiveAt: now, updatedAt: now,
+        }).where(eq(educationCenterSubscriptionsTable.id, existing.id)).returning();
+        return { ...saved!, payment: payment!, change: "upgrade_pending_payment" };
+      }
       const next = {
         planId: plan.id, status: trial ? "trial" as const : "past_due" as const,
-        dueAmount: trial ? 0 : plan.price, billingCycle: parsed.data.billingCycle,
+        dueAmount: trial ? 0 : amount, billingCycle: cycle,
         trialStartedAt: trial ? now : existing?.trialStartedAt ?? null,
         trialEndsAt: trial ? trialEndsAt : existing?.trialEndsAt ?? null,
+        currentPeriodStart: trial ? now : existing?.currentPeriodStart ?? null,
         currentPeriodEnd: trialEndsAt, graceEndsAt: null, deactivatedAt: null,
+        pendingPlanId: null, pendingBillingCycle: null, pendingPlanEffectiveAt: null,
         updatedAt: now,
       };
       const [saved] = existing
@@ -94,7 +179,7 @@ router.post("/education/subscription/select-plan", async (req, res) => {
         newValue: { planId: plan.id, status: next.status, trial },
         reason: trial ? "Prvi Education trial" : "Izbor ili promena plana",
       });
-      return saved;
+      return { ...saved!, payment: null, change: trial ? "trial_started" : "renewal_required" };
     });
     res.status(201).json(result);
   } catch { res.status(409).json({ error: "Plan nije moguće aktivirati. Trial može biti iskorišćen samo jednom." }); }
@@ -102,18 +187,54 @@ router.post("/education/subscription/select-plan", async (req, res) => {
 
 router.post("/education/subscription/renewal-instructions", async (req, res) => {
   const access = await ownerCenter(req, res); if (!access) return;
-  const [subscription] = await db.select({ subscription: educationCenterSubscriptionsTable, plan: subscriptionPlansTable })
-    .from(educationCenterSubscriptionsTable).innerJoin(subscriptionPlansTable, eq(subscriptionPlansTable.id, educationCenterSubscriptionsTable.planId))
-    .where(eq(educationCenterSubscriptionsTable.centerId, access.center.id)).limit(1);
-  if (!subscription) { res.status(404).json({ error: "Pretplata nije pronađena." }); return; }
-  if (!access.center.bankAccount || !access.center.paymentReferenceNumber) { res.status(409).json({ error: "Centar nema podešen validan račun i referentni broj." }); return; }
-  const id = `SUB-${subscription.subscription.id}-${Date.now()}`;
-  const amount = subscription.subscription.dueAmount || subscription.plan.price;
-  const payload = educationIpsQrPayload({
-    recipientName: access.center.name, recipientAccount: access.center.bankAccount,
-    purpose: "Pretplata za Education centar", amount, reference: access.center.paymentReferenceNumber,
+  const result = await db.transaction(async (tx) => {
+    const [subscriptionRow] = await tx.select().from(educationCenterSubscriptionsTable)
+      .where(eq(educationCenterSubscriptionsTable.centerId, access.center.id)).for("update").limit(1);
+    if (!subscriptionRow) return { error: "NOT_FOUND" as const };
+    const [existing] = await tx.select().from(educationPaymentObligationsTable).where(and(
+      eq(educationPaymentObligationsTable.subscriptionId, subscriptionRow.id),
+      eq(educationPaymentObligationsTable.kind, "subscription_renewal"),
+      eq(educationPaymentObligationsTable.status, "pending"),
+    )).limit(1);
+    if (existing) return { obligation: existing };
+    const [pendingUpgrade] = await tx.select({ id: educationPaymentObligationsTable.id }).from(educationPaymentObligationsTable).where(and(
+      eq(educationPaymentObligationsTable.subscriptionId, subscriptionRow.id),
+      eq(educationPaymentObligationsTable.kind, "subscription_upgrade"),
+      eq(educationPaymentObligationsTable.status, "pending"),
+    )).limit(1);
+    if (pendingUpgrade) return { error: "UPGRADE_PENDING" as const };
+    const [settings] = await tx.select().from(educationPlatformSettingsTable).orderBy(asc(educationPlatformSettingsTable.createdAt)).limit(1);
+    if (!settings?.ipsRecipientName || !settings.ipsRecipientAccount) return { error: "SETTINGS" as const };
+    const now = new Date();
+    const periodStart = subscriptionRow.contractKind === "custom"
+      ? now
+      : subscriptionRow.currentPeriodEnd && subscriptionRow.currentPeriodEnd > now ? subscriptionRow.currentPeriodEnd : now;
+    const pendingChangeApplies = Boolean(subscriptionRow.pendingPlanId && subscriptionRow.pendingPlanEffectiveAt && subscriptionRow.pendingPlanEffectiveAt <= periodStart);
+    const effectivePlanId = pendingChangeApplies ? subscriptionRow.pendingPlanId! : subscriptionRow.planId;
+    const cycle = (pendingChangeApplies ? subscriptionRow.pendingBillingCycle ?? subscriptionRow.billingCycle : subscriptionRow.billingCycle) as EducationBillingCycle;
+    const [plan] = await tx.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, effectivePlanId)).limit(1);
+    if (!plan) return { error: "NOT_FOUND" as const };
+    const amount = subscriptionRow.contractKind === "custom" ? subscriptionRow.dueAmount : educationCycleAmount(plan.price, cycle);
+    const periodEnd = subscriptionRow.contractKind === "custom" && subscriptionRow.contractEndsAt
+      ? subscriptionRow.contractEndsAt : addEducationBillingPeriod(periodStart, cycle);
+    if (periodEnd <= periodStart) return { error: "CONTRACT_EXPIRED" as const };
+    const obligationId = randomUUID();
+    const paymentReference = reference("SUB", obligationId);
+    const payload = educationIpsQrPayload({ recipientName: settings.ipsRecipientName, recipientAccount: settings.ipsRecipientAccount, purpose: "Pretplata za Education centar", amount, reference: paymentReference });
+    const [created] = await tx.insert(educationPaymentObligationsTable).values({
+      id: obligationId, centerId: access.center.id, subscriptionId: subscriptionRow.id, kind: "subscription_renewal",
+      expectedAmount: amount, recipientNameSnapshot: settings.ipsRecipientName, recipientAccountSnapshot: settings.ipsRecipientAccount,
+      paymentCodeSnapshot: "221", purposeSnapshot: "Pretplata za Education centar", referenceSnapshot: paymentReference,
+      ipsPayloadSnapshot: JSON.stringify(payload), billingCycleSnapshot: cycle, servicePeriodStart: periodStart, servicePeriodEnd: periodEnd,
+    }).returning();
+    return { obligation: created! };
   });
-  res.json({ amount, reference: access.center.paymentReferenceNumber, paymentCode: "221", ips: payload, environment: process.env.NODE_ENV });
+  if ("error" in result) {
+    res.status(result.error === "NOT_FOUND" ? 404 : 409).json({ error: result.error === "SETTINGS" ? "Platforma nema podešen račun za pretplate." : result.error === "CONTRACT_EXPIRED" ? "Ugovor je istekao ili nema važeći period." : result.error === "UPGRADE_PENDING" ? "Najpre evidentirajte ili poništite otvorenu doplatu za viši plan." : "Pretplata nije pronađena." });
+    return;
+  }
+  const obligation = result.obligation;
+  res.json({ amount: obligation.expectedAmount, reference: obligation.referenceSnapshot, paymentCode: obligation.paymentCodeSnapshot, ips: obligation.ipsPayloadSnapshot ? JSON.parse(obligation.ipsPayloadSnapshot) : null, environment: process.env.NODE_ENV });
 });
 
 router.get("/admin/education/grace-centers", async (req, res) => {
@@ -148,10 +269,48 @@ router.post("/admin/education/centers/:centerId/reactivate", async (req, res) =>
   const updated = await db.transaction(async (tx) => {
     const [sub] = await tx.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, req.params.centerId)).for("update").limit(1);
     if (!sub) throw new Error("NOT_FOUND");
-    const [saved] = await tx.update(educationCenterSubscriptionsTable).set({ status: "active", deactivatedAt: null, graceEndsAt: null, currentPeriodEnd: addMonths(new Date(), 1), updatedAt: new Date() }).where(eq(educationCenterSubscriptionsTable.id, sub.id)).returning();
+    if (!sub.paidAt || !sub.currentPeriodEnd || sub.currentPeriodEnd <= new Date()) throw new Error("PAYMENT_REQUIRED");
+    const [saved] = await tx.update(educationCenterSubscriptionsTable).set({ status: "active", deactivatedAt: null, graceEndsAt: null, updatedAt: new Date() }).where(eq(educationCenterSubscriptionsTable.id, sub.id)).returning();
     await tx.insert(educationFinancialAuditLogTable).values({ actorUserId: actor.id, action: "education_center_reactivated", entityType: "education_center", entityId: req.params.centerId, oldValue: { status: sub.status }, newValue: { status: "active" }, reason: parsed.data.reason });
     return saved;
-  }).catch((error) => { if (error instanceof Error && error.message === "NOT_FOUND") return null; throw error; });
+  }).catch((error) => { if (error instanceof Error && error.message === "NOT_FOUND") return null; if (error instanceof Error && error.message === "PAYMENT_REQUIRED") return false; throw error; });
+  if (updated === null) { res.status(404).json({ error: "Pretplata nije pronađena." }); return; }
+  if (updated === false) { res.status(409).json({ error: "Reaktivacija zahteva evidentiranu uplatu i važeći plaćeni period." }); return; }
+  res.json(updated);
+});
+
+router.post("/admin/education/centers/:centerId/custom-contract", async (req, res) => {
+  const actor = await superAdmin(req, res); if (!actor) return;
+  const parsed = customContractBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Iznos, ciklus, datum isteka i razlog ugovora su obavezni." }); return; }
+  const contractEndsAt = new Date(parsed.data.contractEndsAt);
+  if (contractEndsAt <= new Date()) { res.status(400).json({ error: "Datum isteka ugovora mora biti u budućnosti." }); return; }
+  const updated = await db.transaction(async (tx) => {
+    const [subscription] = await tx.select().from(educationCenterSubscriptionsTable)
+      .where(eq(educationCenterSubscriptionsTable.centerId, req.params.centerId)).for("update").limit(1);
+    if (!subscription) return null;
+    await tx.update(educationPaymentObligationsTable).set({
+      status: "cancelled", cancelledAt: new Date(), cancelledByUserId: actor.id,
+    }).where(and(
+      eq(educationPaymentObligationsTable.subscriptionId, subscription.id),
+      eq(educationPaymentObligationsTable.status, "pending"),
+      inArray(educationPaymentObligationsTable.kind, ["subscription_renewal", "subscription_upgrade"]),
+    ));
+    const [saved] = await tx.update(educationCenterSubscriptionsTable).set({
+      contractKind: "custom", contractEndsAt, billingCycle: parsed.data.billingCycle,
+      dueAmount: parsed.data.amountRsd, status: "past_due", graceEndsAt: null, deactivatedAt: null,
+      currentPeriodStart: null, currentPeriodEnd: null,
+      pendingPlanId: null, pendingBillingCycle: null, pendingPlanEffectiveAt: null, updatedAt: new Date(),
+    }).where(eq(educationCenterSubscriptionsTable.id, subscription.id)).returning();
+    await tx.insert(educationFinancialAuditLogTable).values({
+      actorUserId: actor.id, action: "education_custom_contract_configured",
+      entityType: "education_center_subscription", entityId: subscription.id,
+      oldValue: { contractKind: subscription.contractKind, contractEndsAt: subscription.contractEndsAt, dueAmount: subscription.dueAmount },
+      newValue: { contractKind: "custom", contractEndsAt, dueAmount: parsed.data.amountRsd, billingCycle: parsed.data.billingCycle },
+      reason: parsed.data.reason,
+    });
+    return saved!;
+  });
   if (!updated) { res.status(404).json({ error: "Pretplata nije pronađena." }); return; }
   res.json(updated);
 });
@@ -214,7 +373,26 @@ router.post("/admin/education/payment-obligations/:obligationId/settle", async (
         }
       }
       if (obligation.subscriptionId) {
-        await tx.update(educationCenterSubscriptionsTable).set({ status: "active", paidAt: new Date(), currentPeriodEnd: addMonths(new Date(), 1), graceEndsAt: null, deactivatedAt: null, updatedAt: new Date() }).where(eq(educationCenterSubscriptionsTable.id, obligation.subscriptionId));
+        const [subscription] = await tx.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.id, obligation.subscriptionId)).for("update").limit(1);
+        if (!subscription) throw new Error("NOT_FOUND");
+        const upgrade = obligation.kind === "subscription_upgrade";
+        const now = new Date();
+        const prepaidRenewal = obligation.kind === "subscription_renewal"
+          && Boolean(obligation.servicePeriodStart && obligation.servicePeriodStart > now);
+        const scheduledPlanPaidByRenewal = obligation.kind === "subscription_renewal"
+          && Boolean(subscription.pendingPlanId && subscription.pendingPlanEffectiveAt && obligation.servicePeriodStart
+            && subscription.pendingPlanEffectiveAt <= obligation.servicePeriodStart);
+        await tx.update(educationCenterSubscriptionsTable).set(prepaidRenewal ? {
+          paidAt: now, updatedAt: now,
+        } : {
+          ...(subscription.pendingPlanId && (upgrade || scheduledPlanPaidByRenewal)
+            ? { planId: subscription.pendingPlanId, billingCycle: subscription.pendingBillingCycle ?? subscription.billingCycle, pendingPlanId: null, pendingBillingCycle: null, pendingPlanEffectiveAt: null }
+            : {}),
+          status: "active", paidAt: now,
+          currentPeriodStart: upgrade ? subscription.currentPeriodStart : obligation.servicePeriodStart ?? now,
+          currentPeriodEnd: upgrade ? subscription.currentPeriodEnd : obligation.servicePeriodEnd ?? addEducationBillingPeriod(now, (obligation.billingCycleSnapshot ?? subscription.billingCycle) as EducationBillingCycle),
+          graceEndsAt: null, deactivatedAt: null, updatedAt: now,
+        }).where(eq(educationCenterSubscriptionsTable.id, obligation.subscriptionId));
       }
       await tx.insert(educationFinancialAuditLogTable).values({
         actorUserId: actor.id, action: "education_payment_obligation_settled",

@@ -828,7 +828,15 @@ export const BusinessRegistrationInputBusinessType = {
   EDUCATION_CENTER: 'EDUCATION_CENTER',
 } as const;
 
-export interface BusinessRegistrationInput {
+export type BusinessRegistrationInputBillingCycle = typeof BusinessRegistrationInputBillingCycle[keyof typeof BusinessRegistrationInputBillingCycle];
+
+
+export const BusinessRegistrationInputBillingCycle = {
+  monthly: 'monthly',
+  yearly: 'yearly',
+} as const;
+
+export type BusinessRegistrationInput = unknown & {
   /** @minLength 1 */
   firstName: string;
   /** @minLength 1 */
@@ -866,12 +874,14 @@ export interface BusinessRegistrationInput {
      * @maxLength 2000
      */
   description?: string;
+  planId?: string;
+  billingCycle?: BusinessRegistrationInputBillingCycle;
   /**
      * @minLength 3
      * @maxLength 64
      */
   referralCode?: string;
-}
+};
 
 export interface LoginInput {
   email: string;
@@ -14125,6 +14135,42 @@ export type SelectEducationSubscriptionPlanBody = {
 export type SelectEducationSubscriptionPlan201 = { [key: string]: unknown };
 
 export type GetEducationSubscriptionRenewalInstructions200 = { [key: string]: unknown };
+
+export type ListEducationPaymentObligations200Item = { [key: string]: unknown };
+
+export type SettleEducationPaymentObligationBody = {
+  /** @minimum 0 */
+  confirmedAmountRsd: number;
+  /**
+     * @minLength 3
+     * @maxLength 1000
+     */
+  reason: string;
+};
+
+export type SettleEducationPaymentObligation200 = { [key: string]: unknown };
+
+export type ConfigureEducationCustomContractBodyBillingCycle = typeof ConfigureEducationCustomContractBodyBillingCycle[keyof typeof ConfigureEducationCustomContractBodyBillingCycle];
+
+
+export const ConfigureEducationCustomContractBodyBillingCycle = {
+  monthly: 'monthly',
+  yearly: 'yearly',
+} as const;
+
+export type ConfigureEducationCustomContractBody = {
+  /** @minimum 1 */
+  amountRsd: number;
+  billingCycle: ConfigureEducationCustomContractBodyBillingCycle;
+  contractEndsAt: string;
+  /**
+     * @minLength 3
+     * @maxLength 1000
+     */
+  reason: string;
+};
+
+export type ConfigureEducationCustomContract200 = { [key: string]: unknown };
 
 export type ListEducationBundles200Item = { [key: string]: unknown };
 

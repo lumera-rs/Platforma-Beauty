@@ -5,6 +5,7 @@ import { BusinessLayout } from "@/components/business-layout";
 import { Loader2, BookOpen, ArrowRight, Building2, CheckCircle2, GraduationCap, Gift, ChevronRight, Users, CreditCard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EducationFieldHelp } from "@/components/education/education-field-help";
 
 const VERIFICATION_STATUS_LABELS: Record<string, string> = {
   pending: "Na čekanju",
@@ -19,6 +20,10 @@ const SUBSCRIPTION_STATUS_LABELS: Record<string, string> = {
   canceled: "Otkazana",
   cancelled: "Otkazana",
   expired: "Istekla",
+  trial: "Probni period",
+  past_due: "Čeka uplatu",
+  suspended: "Obustavljena",
+  free_via_loyalty: "Aktivna kroz pogodnost",
 };
 
 export default function BusinessHub() {
@@ -29,6 +34,7 @@ export default function BusinessHub() {
   const [subscription, setSubscription] = useState<any>(null);
   const [plans, setPlans] = useState<Array<{ id: string; name: string; price: number; trialDays: number; features: string[]; limits: Record<string, number> }>>([]);
   const [selectedPlanId, setSelectedPlanId] = useState("");
+  const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
   const [savingPlan, setSavingPlan] = useState(false);
   const [planMessage, setPlanMessage] = useState("");
 
@@ -74,7 +80,7 @@ export default function BusinessHub() {
     try {
       const response = await fetch("/api/education/subscription/select-plan", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ planId: selectedPlanId, billingCycle: "monthly" }),
+        body: JSON.stringify({ planId: selectedPlanId, billingCycle }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Plan nije moguće aktivirati.");
@@ -145,11 +151,10 @@ export default function BusinessHub() {
              {centerStatus && !centerStatus.eligible ? <CardContent className="pt-0 text-sm text-muted-foreground">Kursevi ostaju sačuvani kao nacrt dok LUMERA administrator ne verifikuje centar i ne aktivira pretplatu.{centerStatus.verificationNote ? ` Napomena: ${centerStatus.verificationNote}` : ""}</CardContent> : null}
           </Card>
 
-           {!subscription?.subscription && (
-             <Card className="mb-12 border-primary/20 shadow-sm">
+            <Card className="mb-12 border-primary/20 shadow-sm">
                <CardHeader>
-                 <CardTitle className="flex items-center gap-2 font-serif"><CreditCard className="h-5 w-5 text-primary" />Izaberite plan za Education centar</CardTitle>
-                 <CardDescription>Izbor plana je obavezan za rad centra. Prvi nalog dobija jedan probni period od 30 dana.</CardDescription>
+                  <CardTitle className="flex items-center gap-2 font-serif"><CreditCard className="h-5 w-5 text-primary" />{subscription?.subscription ? "Promenite Education plan" : "Izaberite plan za Education centar"}</CardTitle>
+                  <CardDescription>Niži plan se primenjuje po isteku tekućeg perioda. Viši plan zahteva proporcionalnu doplatu za preostali period.</CardDescription>
                </CardHeader>
                <CardContent className="space-y-5">
                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -162,11 +167,22 @@ export default function BusinessHub() {
                      </label>
                    ))}
                  </div>
+                  <label className="block max-w-xs space-y-2 text-sm font-medium">
+                    <span className="flex items-center gap-2">Ciklus naplate <EducationFieldHelp id="business-hub-billing-cycle-help" label="Ciklus naplate" text="Mesečni ciklus se obnavlja svakog meseca. Godišnji ciklus unapred obračunava dvanaest meseci." /></span>
+                    <select
+                      aria-describedby="business-hub-billing-cycle-help"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2"
+                      value={billingCycle}
+                      onChange={(event) => setBillingCycle(event.target.value as "monthly" | "yearly")}
+                    >
+                      <option value="monthly">Mesečno</option>
+                      <option value="yearly">Godišnje</option>
+                    </select>
+                  </label>
                  <Button onClick={choosePlan} disabled={!selectedPlanId || savingPlan}>{savingPlan ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Sačuvaj izbor plana</Button>
                  {planMessage ? <p role="status" className="text-sm text-muted-foreground">{planMessage}</p> : null}
                </CardContent>
              </Card>
-           )}
 
           {(refChannelC || refChannelA) && (
             <div className="grid sm:grid-cols-2 gap-4 mb-12">

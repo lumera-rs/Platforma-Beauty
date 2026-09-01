@@ -111,6 +111,7 @@ import
   educationPlacementsTable,
   educationCenterSubscriptionsTable,
   educationFinancialAuditLogTable,
+  educationTrialClaimsTable,
   educationDisputesTable,
   educationEscrowsTable,
   educationFeaturedChargesTable,
@@ -257,6 +258,10 @@ import {
   qualifiesAsTopRatedEducationCenter,
   normalizedEducationTaxonomyName,
 } from "../lib/education-marketplace-domain";
+import {
+  educationCycleAmount, educationPaymentReference, hashTrialIdentifier,
+  normalizeTrialEmail, normalizeTrialPhone, normalizeTrialPib,
+} from "../lib/education-subscription-domain";
 
 import 
 {
@@ -5695,6 +5700,17 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Opis edukativnih programa i sertifikacija je obavezan." });
     return;
   }
+  if (input.businessType === "EDUCATION_CENTER" && (!input.planId || !input.billingCycle)) {
+    res.status(400).json({ error: "Izbor aktivnog Education plana i ciklusa naplate je obavezan." });
+    return;
+  }
+  const [educationPlan] = input.businessType === "EDUCATION_CENTER"
+    ? await db.select().from(subscriptionPlansTable).where(and(eq(subscriptionPlansTable.id, input.planId!), eq(subscriptionPlansTable.active, true))).limit(1)
+    : [];
+  if (input.businessType === "EDUCATION_CENTER" && !educationPlan) {
+    res.status(400).json({ error: "Izabrani Education plan nije aktivan." });
+    return;
+  }
   if (!input.pib?.trim()) {
     res.status(400).json({ error: "PIB pravnog lica je obavezan." });
     return;
@@ -5749,7 +5765,9 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
         }).returning({ id: salonsTable.id }) : [];
       let referredEducationCenterId: string | null = null;
       if (input.businessType === "EDUCATION_CENTER") {
+        const centerId = randomUUID();
         const [center] = await tx.insert(educationCentersTable).values({
+           id: centerId,
           ownerId: created!.id,
           name: input.businessName,
           city: input.city,
@@ -5759,10 +5777,40 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
           contactPhone: input.contactPhone?.trim() || input.phone,
           contactAddress: input.contactAddress?.trim() || input.address,
           pib: input.pib,
+           paymentReferenceNumber: educationPaymentReference("EDU", centerId),
           websiteUrl: input.websiteUrl?.trim() || undefined,
           instagramUrl: input.instagramUrl?.trim() || undefined,
         }).returning({ id: educationCentersTable.id });
         referredEducationCenterId = center!.id;
+        const now = new Date();
+        const claim = await tx.insert(educationTrialClaimsTable).values({
+          normalizedEmailHash: hashTrialIdentifier(normalizeTrialEmail(email))!,
+          normalizedPhoneHash: hashTrialIdentifier(normalizeTrialPhone(input.phone)),
+          normalizedPibHash: hashTrialIdentifier(normalizeTrialPib(input.pib)),
+          userId: created.id,
+          centerId: center!.id,
+        }).onConflictDoNothing().returning({ id: educationTrialClaimsTable.id });
+        const trial = claim.length > 0 && educationPlan!.trialDays > 0;
+        const trialEndsAt = trial ? addEducationBelgradeCalendarDays(now, educationPlan!.trialDays) : null;
+        const [subscription] = await tx.insert(educationCenterSubscriptionsTable).values({
+          centerId: center!.id,
+          planId: educationPlan!.id,
+          status: trial ? "trial" : "past_due",
+          dueAmount: trial ? 0 : educationCycleAmount(educationPlan!.price, input.billingCycle!),
+          billingCycle: input.billingCycle!,
+          currentPeriodStart: trial ? now : null,
+          currentPeriodEnd: trialEndsAt,
+          trialStartedAt: trial ? now : null,
+          trialEndsAt,
+        }).returning({ id: educationCenterSubscriptionsTable.id });
+        await tx.insert(educationFinancialAuditLogTable).values({
+          actorUserId: created.id,
+          action: "education_subscription_created_at_registration",
+          entityType: "education_center_subscription",
+          entityId: subscription!.id,
+          newValue: { planId: educationPlan!.id, billingCycle: input.billingCycle, status: trial ? "trial" : "past_due" },
+          reason: trial ? "Jednokratni Education probni period" : "Trial je već iskorišćen; potrebna je uplata",
+        });
       }
       const legalBinding = await bindLegalEntityBusinessInTx(tx, {
         pib: input.pib, legalName: input.businessName, ownerUserId: created.id,
@@ -22832,6 +22880,9 @@ router.patch("/admin/education/centers/:centerId", async (req, res): Promise<voi
   const allowedSubscription = ["trial", "active", "past_due", "cancelled", "suspended", "free_via_loyalty"];
   if (!allowedVerification.includes(verificationStatus) || (subscriptionStatus && !allowedSubscription.includes(subscriptionStatus))) {
     res.status(400).json({ error: "Status nije ispravan." }); return;
+  }
+  if (subscriptionStatus !== undefined) {
+    res.status(409).json({ error: "Finansijski status pretplate nije moguće menjati kroz verifikaciju centra." }); return;
   }
   if ((subscriptionStatus || planId) && user.role !== "SUPER_ADMIN") {
     res.status(403).json({ error: "Samo super administrator može menjati finansijski status ili plan centra." }); return;

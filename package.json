@@ -29,6 +29,7 @@
     "test:education-gift-refunds": "pnpm --filter @workspace/api-server run test:education-gift-refunds",
     "test:education-role-routing": "pnpm --filter @workspace/scripts exec tsx ../artifacts/beauty-marketplace/src/lib/role-routing.test.ts",
     "test:education-finance": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-financial.test.ts",
+    "test:education-subscription-contract": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-subscription-contract.test.ts && pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-subscription-billing.test.ts",
     "test:education-placement-lifecycle": "pnpm --filter @workspace/scripts run test:education-placement-lifecycle",
     "test:education-sessions": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-sessions.test.ts",
     "test:retail-checkout-api": "pnpm --filter @workspace/scripts run test:retail-checkout-api",

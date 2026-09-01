@@ -4,7 +4,7 @@ import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { GraduationCap, Loader2, CheckCircle2, ChevronRight } from "lucide-react";
-import { getApiErrorMessage, useRegisterBusiness } from "@workspace/api-client-react";
+import { getApiErrorMessage, useListEducationSubscriptionPlans, useRegisterBusiness } from "@workspace/api-client-react";
 import { BusinessLayout } from "@/components/business-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -34,6 +34,8 @@ const eduRegistrationSchema = z.object({
   websiteUrl: z.union([z.string().url("Unesite punu adresu sajta."), z.literal("")]),
   instagramUrl: z.union([z.string().url("Unesite pun Instagram link."), z.literal("")]),
   description: z.string().min(20, "Opišite programe, oblasti rada ili sertifikacije u najmanje 20 karaktera.").max(2000),
+  planId: z.string().uuid("Izaberite Education plan."),
+  billingCycle: z.enum(["monthly", "yearly"]),
 });
 
 type EduRegistrationValues = z.infer<typeof eduRegistrationSchema>;
@@ -43,6 +45,7 @@ export default function EducationCenterRegistration() {
   const { toast } = useToast();
   const [step, setStep] = useState<1 | 2>(1);
   const registerBusiness = useRegisterBusiness();
+  const { data: plans = [], isLoading: plansLoading } = useListEducationSubscriptionPlans();
   const referralCode = useReferralCapture();
 
   const form = useForm<EduRegistrationValues>({
@@ -62,6 +65,8 @@ export default function EducationCenterRegistration() {
       websiteUrl: "",
       instagramUrl: "",
       description: "",
+      planId: "",
+      billingCycle: "monthly",
     },
   });
 
@@ -206,6 +211,48 @@ export default function EducationCenterRegistration() {
                         </FormItem>
                       )}
                     />
+
+                    <div className="grid gap-5 sm:grid-cols-2">
+                      <FormField
+                        control={form.control}
+                        name="planId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="flex items-center gap-2">Education plan <EducationFieldHelp id="edu-registration-plan-help" label="Education plan" text="Izaberite plan koji određuje mesečnu cenu i dostupne mogućnosti centra. Probni period se može iskoristiti samo jednom." /></FormLabel>
+                            <FormControl>
+                              <select
+                                aria-describedby="edu-registration-plan-help"
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                disabled={plansLoading}
+                                {...field}
+                              >
+                                <option value="">{plansLoading ? "Učitavanje planova…" : "Izaberite plan"}</option>
+                                {plans.map((plan) => (
+                                  <option key={plan.id} value={plan.id}>{plan.name} — {(plan.price / 100).toLocaleString("sr-RS")} RSD mesečno</option>
+                                ))}
+                              </select>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="billingCycle"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="flex items-center gap-2">Ciklus naplate <EducationFieldHelp id="edu-registration-cycle-help" label="Ciklus naplate" text="Mesečni ciklus obnavlja se svakog meseca, a godišnji unapred obračunava dvanaest mesečnih perioda." /></FormLabel>
+                            <FormControl>
+                              <select aria-describedby="edu-registration-cycle-help" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" {...field}>
+                                <option value="monthly">Mesečno</option>
+                                <option value="yearly">Godišnje</option>
+                              </select>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
                     <FormField
                       control={form.control}
                       name="phone"
@@ -358,7 +405,7 @@ export default function EducationCenterRegistration() {
                       <Button type="button" variant="outline" size="lg" className="h-14 w-1/3 text-base" onClick={() => setStep(1)}>
                         Nazad
                       </Button>
-                      <Button type="submit" size="lg" className="h-14 w-2/3 bg-accent text-accent-foreground hover:bg-accent/90 text-base" disabled={registerBusiness.isPending}>
+                      <Button type="submit" size="lg" className="h-14 w-2/3 bg-accent text-accent-foreground hover:bg-accent/90 text-base" disabled={registerBusiness.isPending || plansLoading || plans.length === 0}>
                         {registerBusiness.isPending && <Loader2 className="mr-2 h-5 w-5 animate-spin" />}
                         Završi registraciju
                       </Button>

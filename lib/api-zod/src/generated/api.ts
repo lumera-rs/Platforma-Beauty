@@ -102,56 +102,58 @@ export const RegisterResponse = zod.object({
  */
 
 
-export const registerBusinessBodyPasswordMin = 8;
+export const registerBusinessBodyTwoPasswordMin = 8;
 
-export const registerBusinessBodyPhoneMin = 6;
+export const registerBusinessBodyTwoPhoneMin = 6;
 
-export const registerBusinessBodyBusinessNameMin = 2;
+export const registerBusinessBodyTwoBusinessNameMin = 2;
 
-export const registerBusinessBodyCityMin = 2;
+export const registerBusinessBodyTwoCityMin = 2;
 
-export const registerBusinessBodyMunicipalityMin = 2;
+export const registerBusinessBodyTwoMunicipalityMin = 2;
 
-export const registerBusinessBodyAddressMin = 3;
+export const registerBusinessBodyTwoAddressMin = 3;
 
-export const registerBusinessBodyPostalCodeMin = 4;
+export const registerBusinessBodyTwoPostalCodeMin = 4;
 
-export const registerBusinessBodyContactPhoneMin = 6;
+export const registerBusinessBodyTwoContactPhoneMin = 6;
 
-export const registerBusinessBodyContactAddressMin = 3;
+export const registerBusinessBodyTwoContactAddressMin = 3;
 
-export const registerBusinessBodyPibMin = 8;
-export const registerBusinessBodyPibMax = 50;
+export const registerBusinessBodyTwoPibMin = 8;
+export const registerBusinessBodyTwoPibMax = 50;
 
-export const registerBusinessBodyDescriptionMin = 20;
-export const registerBusinessBodyDescriptionMax = 2000;
+export const registerBusinessBodyTwoDescriptionMin = 20;
+export const registerBusinessBodyTwoDescriptionMax = 2000;
 
-export const registerBusinessBodyReferralCodeMin = 3;
-export const registerBusinessBodyReferralCodeMax = 64;
+export const registerBusinessBodyTwoReferralCodeMin = 3;
+export const registerBusinessBodyTwoReferralCodeMax = 64;
 
 
 
-export const RegisterBusinessBody = zod.object({
+export const RegisterBusinessBody = zod.unknown().and(zod.object({
   "firstName": zod.string().min(1),
   "lastName": zod.string().min(1),
   "email": zod.string(),
-  "password": zod.string().min(registerBusinessBodyPasswordMin).optional(),
-  "phone": zod.string().min(registerBusinessBodyPhoneMin),
+  "password": zod.string().min(registerBusinessBodyTwoPasswordMin).optional(),
+  "phone": zod.string().min(registerBusinessBodyTwoPhoneMin),
   "businessType": zod.enum(['SALON', 'EDUCATION_CENTER']),
-  "businessName": zod.string().min(registerBusinessBodyBusinessNameMin),
-  "city": zod.string().min(registerBusinessBodyCityMin),
-  "municipality": zod.string().min(registerBusinessBodyMunicipalityMin),
-  "address": zod.string().min(registerBusinessBodyAddressMin),
-  "postalCode": zod.string().min(registerBusinessBodyPostalCodeMin),
+  "businessName": zod.string().min(registerBusinessBodyTwoBusinessNameMin),
+  "city": zod.string().min(registerBusinessBodyTwoCityMin),
+  "municipality": zod.string().min(registerBusinessBodyTwoMunicipalityMin),
+  "address": zod.string().min(registerBusinessBodyTwoAddressMin),
+  "postalCode": zod.string().min(registerBusinessBodyTwoPostalCodeMin),
   "contactEmail": zod.string().optional(),
-  "contactPhone": zod.string().min(registerBusinessBodyContactPhoneMin).optional(),
-  "contactAddress": zod.string().min(registerBusinessBodyContactAddressMin).optional(),
-  "pib": zod.string().min(registerBusinessBodyPibMin).max(registerBusinessBodyPibMax),
+  "contactPhone": zod.string().min(registerBusinessBodyTwoContactPhoneMin).optional(),
+  "contactAddress": zod.string().min(registerBusinessBodyTwoContactAddressMin).optional(),
+  "pib": zod.string().min(registerBusinessBodyTwoPibMin).max(registerBusinessBodyTwoPibMax),
   "websiteUrl": zod.string().url().optional(),
   "instagramUrl": zod.string().url().optional(),
-  "description": zod.string().min(registerBusinessBodyDescriptionMin).max(registerBusinessBodyDescriptionMax).optional(),
-  "referralCode": zod.string().min(registerBusinessBodyReferralCodeMin).max(registerBusinessBodyReferralCodeMax).optional()
-})
+  "description": zod.string().min(registerBusinessBodyTwoDescriptionMin).max(registerBusinessBodyTwoDescriptionMax).optional(),
+  "planId": zod.string().uuid().optional(),
+  "billingCycle": zod.enum(['monthly', 'yearly']).optional(),
+  "referralCode": zod.string().min(registerBusinessBodyTwoReferralCodeMin).max(registerBusinessBodyTwoReferralCodeMax).optional()
+}))
 
 export const registerBusinessResponseUserDateOfBirthRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
 
@@ -10020,6 +10022,58 @@ export const SelectEducationSubscriptionPlanResponse = zod.record(zod.string(), 
  * @summary Create center payment instructions for subscription renewal
  */
 export const GetEducationSubscriptionRenewalInstructionsResponse = zod.record(zod.string(), zod.unknown())
+
+
+/**
+ * @summary List immutable Education payment obligations
+ */
+export const ListEducationPaymentObligationsResponseItem = zod.record(zod.string(), zod.unknown())
+export const ListEducationPaymentObligationsResponse = zod.array(ListEducationPaymentObligationsResponseItem)
+
+
+/**
+ * @summary Settle one Education payment obligation
+ */
+export const SettleEducationPaymentObligationParams = zod.object({
+  "obligationId": zod.string().uuid()
+})
+
+export const settleEducationPaymentObligationBodyConfirmedAmountRsdMin = 0;
+
+export const settleEducationPaymentObligationBodyReasonMin = 3;
+export const settleEducationPaymentObligationBodyReasonMax = 1000;
+
+
+
+export const SettleEducationPaymentObligationBody = zod.object({
+  "confirmedAmountRsd": zod.number().int().min(settleEducationPaymentObligationBodyConfirmedAmountRsdMin),
+  "reason": zod.string().min(settleEducationPaymentObligationBodyReasonMin).max(settleEducationPaymentObligationBodyReasonMax)
+}).strict()
+
+export const SettleEducationPaymentObligationResponse = zod.record(zod.string(), zod.unknown())
+
+
+/**
+ * @summary Configure a negotiated Education subscription contract
+ */
+export const ConfigureEducationCustomContractParams = zod.object({
+  "centerId": zod.string().uuid()
+})
+
+
+export const configureEducationCustomContractBodyReasonMin = 3;
+export const configureEducationCustomContractBodyReasonMax = 1000;
+
+
+
+export const ConfigureEducationCustomContractBody = zod.object({
+  "amountRsd": zod.number().int().min(1),
+  "billingCycle": zod.enum(['monthly', 'yearly']),
+  "contractEndsAt": zod.coerce.date(),
+  "reason": zod.string().min(configureEducationCustomContractBodyReasonMin).max(configureEducationCustomContractBodyReasonMax)
+}).strict()
+
+export const ConfigureEducationCustomContractResponse = zod.record(zod.string(), zod.unknown())
 
 
 /**

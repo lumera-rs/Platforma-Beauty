@@ -125,11 +125,7 @@ try {
   }
 
   const reactivated = await call(base, adminCookie, `/admin/education/centers/${centerId}/reactivate`, "POST", { reason: "Uplata potvrđena nakon provere" });
-  assert.equal(reactivated.status, 200);
-  assert.equal(reactivated.body.status, "active");
-  const [reactivationAudit] = await db.select().from(educationFinancialAuditLogTable)
-    .where(eq(educationFinancialAuditLogTable.entityId, centerId));
-  assert.equal(reactivationAudit?.reason, "Uplata potvrđena nakon provere");
+  assert.equal(reactivated.status, 409, "Admin reactivation must not create a paid period without settlement.");
 
   await db.update(coursesTable).set({
     extensionPrice1Month: 9_100, extensionPrice3Months: 9_300, extensionPrice6Months: 9_600,
@@ -178,6 +174,7 @@ try {
     await db.delete(educationFinancialAuditLogTable).where(eq(educationFinancialAuditLogTable.entityId, centerId));
     const subscriptions = await db.select({ id: educationCenterSubscriptionsTable.id }).from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, centerId));
     for (const subscription of subscriptions) {
+      await db.delete(educationPaymentObligationsTable).where(eq(educationPaymentObligationsTable.subscriptionId, subscription.id));
       await db.delete(educationFinancialAuditLogTable).where(eq(educationFinancialAuditLogTable.entityId, subscription.id));
       await db.delete(emailDeliveriesTable).where(like(emailDeliveriesTable.eventKey, `education-subscription-expiry:${subscription.id}:%`));
     }

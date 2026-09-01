@@ -62,3 +62,9 @@ Redeemed voucher refunds must stay inside the pre-payout escrow boundary and ato
 **Why:** Refunding after payout creates an unreconciled double loss, while committing voucher/escrow changes before seat release can strand capacity and waitlisted learners if the second step fails.
 
 **How to apply:** Reject any refund when payout timestamps are set or escrow is outside a pre-payout state. In one transaction, lock the center, voucher, enrollment, escrow, and session; write the refund ledger/event, cancel access, release or re-hold the seat, offer the waiter, and finalize the voucher. Regression tests should compare complete persisted state on rejection and injected rollback.
+
+Subscription renewal and upgrade obligations must be mutually exclusive per center subscription, and every plan transition must preserve the terms of any period already paid in advance.
+
+**Why:** Overlapping renewal and upgrade obligations let settlement of one grant the entitlement attached to the other. Repricing a paid future period after a downgrade either overcharges the center or removes benefits it already purchased.
+
+**How to apply:** Serialize obligation issuance on the subscription row and back it with a partial unique index across pending renewal/upgrade kinds. Quote deferred changes using the plan effective at the next service-period boundary. If a future period is already paid, defer any later downgrade or cycle change until that paid period ends; activate prepaid periods at their boundary, never at settlement time.

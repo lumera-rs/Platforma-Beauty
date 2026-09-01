@@ -47,6 +47,10 @@ type CenterDetail = {
 };
 
 type OverrideKey = keyof CenterDetail["billingSettings"];
+type PaymentObligation = {
+  id: string; centerId: string | null; kind: string; status: string; expectedAmount: number;
+  referenceSnapshot: string; servicePeriodStart: string | null; servicePeriodEnd: string | null;
+};
 
 const overrideLimits: Record<OverrideKey, number> = {
   commissionPercent: 100,
@@ -87,6 +91,12 @@ export default function AdminEducationCenterDetail() {
 
   // Local state for edits
   const [pib, setPib] = useState("");
+  const [customAmount, setCustomAmount] = useState("");
+  const [customCycle, setCustomCycle] = useState<"monthly" | "yearly">("monthly");
+  const [customEndsAt, setCustomEndsAt] = useState("");
+  const [customReason, setCustomReason] = useState("");
+  const [obligations, setObligations] = useState<PaymentObligation[]>([]);
+  const [settlementReason, setSettlementReason] = useState("");
   const [overrides, setOverrides] = useState<Record<OverrideKey, { enabled: boolean; value: string }>>({
     commissionPercent: { enabled: false, value: "" },
     reservePercent: { enabled: false, value: "" },
@@ -98,8 +108,12 @@ export default function AdminEducationCenterDetail() {
   const load = async () => {
     setLoading(true);
     try {
-      const data = await api<CenterDetail>(`/api/admin/education/centers/${centerId}`);
+      const [data, paymentRows] = await Promise.all([
+        api<CenterDetail>(`/api/admin/education/centers/${centerId}`),
+        api<PaymentObligation[]>("/api/admin/education/payment-obligations"),
+      ]);
       setCenter(data);
+      setObligations(paymentRows.filter((row) => row.centerId === centerId));
       setPib(data.pib || "");
 
       const newOverrides = { ...overrides };
@@ -131,8 +145,7 @@ export default function AdminEducationCenterDetail() {
       const updated = await api<CenterDetail>(`/api/admin/education/centers/${centerId}`, {
         method: "PATCH",
         body: JSON.stringify({
-          verificationStatus,
-          subscriptionStatus: verificationStatus === "verified" ? "active" : undefined
+          verificationStatus
         })
       });
       setCenter(updated);
@@ -142,6 +155,40 @@ export default function AdminEducationCenterDetail() {
     } finally {
       actionGuard.end(actionKey);
     }
+  };
+
+  const configureCustomContract = async () => {
+    const amountRsd = Number(customAmount);
+    if (!Number.isInteger(amountRsd) || amountRsd <= 0 || !customEndsAt || customReason.trim().length < 3) {
+      toast.error("Popunite iznos, ciklus, datum isteka i razlog ugovora."); return;
+    }
+    const actionKey = `custom-contract:${centerId}`;
+    if (!actionGuard.begin(actionKey)) return;
+    try {
+      await api(`/api/admin/education/centers/${centerId}/custom-contract`, {
+        method: "POST",
+        body: JSON.stringify({ amountRsd, billingCycle: customCycle, contractEndsAt: new Date(customEndsAt).toISOString(), reason: customReason }),
+      });
+      toast.success("Ugovoreni plan je sačuvan. Aktiviraće se tek nakon evidentirane uplate.");
+      await load();
+    } catch (error) {
+      toast.error("Ugovor nije sačuvan", { description: error instanceof Error ? error.message : undefined });
+    } finally { actionGuard.end(actionKey); }
+  };
+
+  const settleObligation = async (obligation: PaymentObligation) => {
+    if (settlementReason.trim().length < 3) { toast.error("Unesite razlog ručne potvrde uplate."); return; }
+    const actionKey = `settle:${obligation.id}`;
+    if (!actionGuard.begin(actionKey)) return;
+    try {
+      await api(`/api/admin/education/payment-obligations/${obligation.id}/settle`, {
+        method: "POST", body: JSON.stringify({ confirmedAmountRsd: obligation.expectedAmount, reason: settlementReason }),
+      });
+      toast.success("Uplata je evidentirana i primenjena.");
+      await load();
+    } catch (error) {
+      toast.error("Uplata nije evidentirana", { description: error instanceof Error ? error.message : undefined });
+    } finally { actionGuard.end(actionKey); }
   };
 
   const saveDetails = async () => {
@@ -350,7 +397,7 @@ export default function AdminEducationCenterDetail() {
                       disabled={actionGuard.isActive(`status:${center.id}`)}
                     >
                       <BadgeCheck className="mr-2 h-4 w-4" />
-                      Verifikuj i aktiviraj
+                      Verifikuj centar
                     </Button>
                   ) : (
                     <Button
@@ -369,6 +416,49 @@ export default function AdminEducationCenterDetail() {
 
             {/* Right Column: Billing overrides */}
             <div className="md:col-span-8 space-y-6">
+              <Card className="border-border/60 shadow-sm">
+                <CardHeader>
+                  <CardTitle className="text-xl flex items-center gap-2"><FileText className="h-5 w-5 text-primary" />Ugovorena pretplata i ručne uplate</CardTitle>
+                  <CardDescription>Ugovor samo definiše obavezu. Pristup se aktivira isključivo evidentiranjem tačnog iznosa uplate.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="space-y-2 text-sm font-medium">
+                      <span className="flex items-center gap-2">Ugovoreni iznos u RSD <EducationFieldHelp id="custom-contract-amount-help" label="Ugovoreni iznos" text="Pun iznos koji centar plaća za ugovoreni period. Mora odgovarati potvrđenoj uplati." /></span>
+                      <Input aria-describedby="custom-contract-amount-help" inputMode="numeric" value={customAmount} onChange={(event) => setCustomAmount(event.target.value)} />
+                    </label>
+                    <label className="space-y-2 text-sm font-medium">
+                      <span className="flex items-center gap-2">Ciklus <EducationFieldHelp id="custom-contract-cycle-help" label="Ciklus ugovora" text="Određuje da li je ugovoreni obračun mesečni ili godišnji." /></span>
+                      <select aria-describedby="custom-contract-cycle-help" className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={customCycle} onChange={(event) => setCustomCycle(event.target.value as "monthly" | "yearly")}>
+                        <option value="monthly">Mesečno</option><option value="yearly">Godišnje</option>
+                      </select>
+                    </label>
+                    <label className="space-y-2 text-sm font-medium">
+                      <span className="flex items-center gap-2">Važi do <EducationFieldHelp id="custom-contract-end-help" label="Datum isteka ugovora" text="Krajnji datum plaćenog ugovornog perioda; mora biti u budućnosti." /></span>
+                      <Input aria-describedby="custom-contract-end-help" type="datetime-local" value={customEndsAt} onChange={(event) => setCustomEndsAt(event.target.value)} />
+                    </label>
+                    <label className="space-y-2 text-sm font-medium">
+                      <span className="flex items-center gap-2">Razlog i napomena <EducationFieldHelp id="custom-contract-reason-help" label="Razlog ugovora" text="Unesite osnov za posebne uslove radi finansijskog traga i kasnije kontrole." /></span>
+                      <Input aria-describedby="custom-contract-reason-help" value={customReason} onChange={(event) => setCustomReason(event.target.value)} />
+                    </label>
+                  </div>
+                  <Button onClick={configureCustomContract} disabled={actionGuard.isActive(`custom-contract:${centerId}`)}>Sačuvaj ugovorene uslove</Button>
+                  {obligations.some((row) => row.status === "pending") ? (
+                    <div className="space-y-3 border-t pt-5">
+                      <label className="block space-y-2 text-sm font-medium">
+                        <span className="flex items-center gap-2">Razlog ručne potvrde <EducationFieldHelp id="manual-settlement-reason-help" label="Razlog potvrde uplate" text="Ova napomena ulazi u finansijski audit. Sistem sam proverava tačan očekivani iznos i sprečava duplo evidentiranje." /></span>
+                        <Input aria-describedby="manual-settlement-reason-help" value={settlementReason} onChange={(event) => setSettlementReason(event.target.value)} />
+                      </label>
+                      {obligations.filter((row) => row.status === "pending").map((row) => (
+                        <div key={row.id} className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div><p className="font-medium">{row.expectedAmount.toLocaleString("sr-RS")} RSD</p><p className="text-xs text-muted-foreground">{row.referenceSnapshot} · {row.kind}</p></div>
+                          <Button size="sm" onClick={() => settleObligation(row)} disabled={actionGuard.isActive(`settle:${row.id}`)}>Evidentiraj tačan iznos</Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <p className="text-sm text-muted-foreground">Nema otvorenih obaveza za ručnu potvrdu.</p>}
+                </CardContent>
+              </Card>
               <Card className="border-border/60 shadow-sm">
                 <CardHeader className="pb-2 border-b border-border/40">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">

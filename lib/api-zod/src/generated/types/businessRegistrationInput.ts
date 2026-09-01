@@ -5,9 +5,10 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { BusinessRegistrationInputBillingCycle } from './businessRegistrationInputBillingCycle';
 import type { BusinessRegistrationInputBusinessType } from './businessRegistrationInputBusinessType';
 
-export interface BusinessRegistrationInput {
+export type BusinessRegistrationInput = unknown & {
   /** @minLength 1 */
   firstName: string;
   /** @minLength 1 */
@@ -45,9 +46,11 @@ export interface BusinessRegistrationInput {
      * @maxLength 2000
      */
   description?: string;
+  planId?: string;
+  billingCycle?: BusinessRegistrationInputBillingCycle;
   /**
      * @minLength 3
      * @maxLength 64
      */
   referralCode?: string;
-}
+};
