@@ -109,7 +109,7 @@ export default function AdminEducationMarketplace() {
   const settleVoucherMut = useAdminSettleEducationGiftVoucher();
   const refundVoucherMut = useAdminRefundEducationGiftVoucher();
 
-  const [settingsRaw, setSettingsRaw] = useState<any>({ commissionPercent: "0", reservePercent: "0", onlineRefundDays: "0", liveAppealDays: "0", featuredCoursePrice: "0" });
+  const [settingsRaw, setSettingsRaw] = useState<any>({ commissionPercent: "0", reservePercent: "0", onlineRefundDays: "0", liveAppealDays: "0", featuredCoursePrice: "0", ipsAccountEnvironment: "production" });
   const [placementSettingsRaw, setPlacementSettingsRaw] = useState<Record<string, { price: string, durationDays: string, slotCount: string }>>({});
   const [pendingBundlePurchases, setPendingBundlePurchases] = useState<any[]>([]);
   const loadPendingBundles = () => void fetch("/api/admin/education/bundle-purchases/pending", { credentials: "include" }).then(r => r.ok ? r.json() : []).then(setPendingBundlePurchases);
@@ -134,6 +134,7 @@ export default function AdminEducationMarketplace() {
         onlineRefundDays: String(settings.onlineRefundDays),
         liveAppealDays: String(settings.liveAppealDays),
         featuredCoursePrice: String(settings.featuredCoursePrice),
+        ipsAccountEnvironment: settings.ipsAccountEnvironment ?? "production",
       });
     }
   }, [settings]);
@@ -167,6 +168,7 @@ export default function AdminEducationMarketplace() {
       onlineRefundDays: onlineParsed.value,
       liveAppealDays: liveParsed.value,
       featuredCoursePrice: featuredParsed.value,
+      ipsAccountEnvironment: settingsRaw.ipsAccountEnvironment,
     }}, {
       onSuccess: () => {
         toast.success("Pravila obračuna su sačuvana.");
@@ -682,6 +684,16 @@ export default function AdminEducationMarketplace() {
                     <Input type="number" min="0" value={settingsRaw[key]} onChange={(e) => setSettingsRaw({ ...settingsRaw, [key]: e.target.value })} aria-describedby={`marketplace-setting-help-${key}`} />
                   </div>
                 ))}
+              </div>
+              <div className="space-y-2 text-sm font-medium">
+                <div className="flex items-center gap-1">
+                  <Label htmlFor="ips-account-environment">Okruženje bankovnog računa</Label>
+                  <EducationFieldHelp id="ips-account-environment-help" label="Okruženje bankovnog računa" text="Produkcioni račun radi samo na objavljenoj produkciji. Za razvoj i testiranje izaberite posebno označen test račun." />
+                </div>
+                <select id="ips-account-environment" value={settingsRaw.ipsAccountEnvironment} onChange={(event) => setSettingsRaw({ ...settingsRaw, ipsAccountEnvironment: event.target.value })} aria-describedby="ips-account-environment-help" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                  <option value="production">Produkcioni račun</option>
+                  <option value="test">Test račun</option>
+                </select>
               </div>
               <Button onClick={saveSettings} disabled={updateSettingsMut.isPending} className="w-full">Sačuvaj pravila</Button>
 

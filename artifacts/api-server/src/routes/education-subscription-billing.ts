@@ -9,7 +9,7 @@ import {
   educationPlatformSettingsTable, subscriptionPlansTable,
 } from "@workspace/db";
 import { getCurrentUser } from "../lib/auth";
-import { addEducationBelgradeCalendarDays, educationBelgradeDateKey, educationIpsQrPayload } from "../lib/education-marketplace-domain";
+import { addEducationBelgradeCalendarDays, educationBelgradeDateKey, educationIpsPaymentCode, educationIpsQrPayload, educationIpsRuntimeEnvironment } from "../lib/education-marketplace-domain";
 import {
   addEducationBillingPeriod, educationCycleAmount, educationPaymentReference,
   educationUpgradeProration, hashTrialIdentifier, normalizeTrialEmail,
@@ -147,10 +147,10 @@ router.post("/education/subscription/select-plan", async (req, res) => {
           id: obligationId, centerId: access.center.id, subscriptionId: existing.id, kind: "subscription_upgrade",
            planIdSnapshot: plan.id,
           expectedAmount: prorated, recipientNameSnapshot: settings.ipsRecipientName, recipientAccountSnapshot: settings.ipsRecipientAccount,
-          paymentCodeSnapshot: "221", purposeSnapshot: "Proporcionalna doplata za viši Education plan",
+          paymentCodeSnapshot: educationIpsPaymentCode("platform"), purposeSnapshot: "Proporcionalna doplata za viši Education plan",
           referenceSnapshot: paymentReference, billingCycleSnapshot: existing.billingCycle,
           servicePeriodStart: now, servicePeriodEnd: existing.currentPeriodEnd,
-          ipsPayloadSnapshot: JSON.stringify(educationIpsQrPayload({ recipientName: settings.ipsRecipientName, recipientAccount: settings.ipsRecipientAccount, purpose: "Proporcionalna doplata za viši Education plan", amount: prorated, reference: paymentReference })),
+          ipsPayloadSnapshot: JSON.stringify(educationIpsQrPayload({ recipientName: settings.ipsRecipientName, recipientAccount: settings.ipsRecipientAccount, purpose: "Proporcionalna doplata za viši Education plan", amount: prorated, reference: paymentReference, recipientType: "platform", transactionType: "subscription", accountEnvironment: settings.ipsAccountEnvironment as "production" | "test", runtimeEnvironment: educationIpsRuntimeEnvironment() })),
         }).returning();
         const [paidFutureRenewal] = cycle === existing.billingCycle ? [] : await tx.select({
           servicePeriodEnd: educationPaymentObligationsTable.servicePeriodEnd,
@@ -181,9 +181,6 @@ router.post("/education/subscription/select-plan", async (req, res) => {
       const [saved] = existing
         ? await tx.update(educationCenterSubscriptionsTable).set(next).where(eq(educationCenterSubscriptionsTable.id, existing.id)).returning()
         : await tx.insert(educationCenterSubscriptionsTable).values({ centerId: access.center.id, paymentMethod: "BANK_TRANSFER", ...next }).returning();
-      if (!access.center.paymentReferenceNumber) {
-        await tx.update(educationCentersTable).set({ paymentReferenceNumber: reference("EDU", access.center.id), updatedAt: now }).where(eq(educationCentersTable.id, access.center.id));
-      }
       await tx.insert(educationFinancialAuditLogTable).values({
         actorUserId: access.current.id, action: "education_subscription_plan_selected",
         entityType: "education_center_subscription", entityId: saved!.id,
@@ -242,12 +239,12 @@ router.post("/education/subscription/renewal-instructions", async (req, res) => 
     if (periodEnd <= periodStart) return { error: "CONTRACT_EXPIRED" as const };
     const obligationId = randomUUID();
     const paymentReference = reference("SUB", obligationId);
-    const payload = educationIpsQrPayload({ recipientName: settings.ipsRecipientName, recipientAccount: settings.ipsRecipientAccount, purpose: "Pretplata za Education centar", amount, reference: paymentReference });
+    const payload = educationIpsQrPayload({ recipientName: settings.ipsRecipientName, recipientAccount: settings.ipsRecipientAccount, purpose: "Pretplata za Education centar", amount, reference: paymentReference, recipientType: "platform", transactionType: "subscription", accountEnvironment: settings.ipsAccountEnvironment as "production" | "test", runtimeEnvironment: educationIpsRuntimeEnvironment() });
     const [created] = await tx.insert(educationPaymentObligationsTable).values({
       id: obligationId, centerId: access.center.id, subscriptionId: subscriptionRow.id, kind: "subscription_renewal",
       planIdSnapshot: effectivePlanId,
       expectedAmount: amount, recipientNameSnapshot: settings.ipsRecipientName, recipientAccountSnapshot: settings.ipsRecipientAccount,
-      paymentCodeSnapshot: "221", purposeSnapshot: "Pretplata za Education centar", referenceSnapshot: paymentReference,
+      paymentCodeSnapshot: educationIpsPaymentCode("platform"), purposeSnapshot: "Pretplata za Education centar", referenceSnapshot: paymentReference,
       ipsPayloadSnapshot: JSON.stringify(payload), billingCycleSnapshot: cycle, servicePeriodStart: periodStart, servicePeriodEnd: periodEnd,
     }).returning();
     return { obligation: created! };
@@ -257,7 +254,7 @@ router.post("/education/subscription/renewal-instructions", async (req, res) => 
     return;
   }
   const obligation = result.obligation;
-  res.json({ amount: obligation.expectedAmount, reference: obligation.referenceSnapshot, paymentCode: obligation.paymentCodeSnapshot, ips: obligation.ipsPayloadSnapshot ? JSON.parse(obligation.ipsPayloadSnapshot) : null, environment: process.env.NODE_ENV });
+  res.json({ amount: obligation.expectedAmount, reference: obligation.referenceSnapshot, paymentCode: obligation.paymentCodeSnapshot, ips: obligation.ipsPayloadSnapshot ? JSON.parse(obligation.ipsPayloadSnapshot) : null });
 });
 
 router.get("/admin/education/grace-centers", async (req, res) => {
@@ -358,7 +355,10 @@ router.post("/education/enrollments/:enrollmentId/extension", async (req, res) =
     const price = parsed.data.months === 1 ? enrollment.enrollment.extensionPricesSnapshot?.oneMonth ?? enrollment.course.extensionPrice1Month : parsed.data.months === 3 ? enrollment.enrollment.extensionPricesSnapshot?.threeMonths ?? enrollment.course.extensionPrice3Months : enrollment.enrollment.extensionPricesSnapshot?.sixMonths ?? enrollment.course.extensionPrice6Months;
     if (price == null) throw new Error("PRICE");
     const extended = addMonths(enrollment.enrollment.accessExpiresAt, parsed.data.months);
-    const obligation = await tx.insert(educationPaymentObligationsTable).values({ centerId: enrollment.center.id, enrollmentId: enrollment.enrollment.id, kind: "course_extension", expectedAmount: price, recipientNameSnapshot: enrollment.center.name, recipientAccountSnapshot: enrollment.center.bankAccount, paymentCodeSnapshot: enrollment.center.legalEntityType === "individual" ? "289" : "221", purposeSnapshot: "Produženje pristupa online kursu", referenceSnapshot: reference("EXT", req.params.enrollmentId), ipsPayloadSnapshot: JSON.stringify(educationIpsQrPayload({ recipientName: enrollment.center.name, recipientAccount: enrollment.center.bankAccount, purpose: "Produženje pristupa online kursu", amount: price, reference: reference("EXT", req.params.enrollmentId) })) }).returning();
+    const recipientType = enrollment.center.legalEntityType === "individual" ? "education_center_individual" as const : "education_center_legal" as const;
+    const paymentReference = reference("EXT", req.params.enrollmentId);
+    const ips = educationIpsQrPayload({ recipientName: enrollment.center.name, recipientAccount: enrollment.center.bankAccount, purpose: "Produženje pristupa online kursu", amount: price, reference: paymentReference, recipientType, transactionType: "course_extension", accountEnvironment: enrollment.center.bankAccountEnvironment as "production" | "test", runtimeEnvironment: educationIpsRuntimeEnvironment() });
+    const obligation = await tx.insert(educationPaymentObligationsTable).values({ centerId: enrollment.center.id, enrollmentId: enrollment.enrollment.id, kind: "course_extension", expectedAmount: price, recipientNameSnapshot: enrollment.center.name, recipientAccountSnapshot: enrollment.center.bankAccount, paymentCodeSnapshot: ips.paymentCode, purposeSnapshot: "Produženje pristupa online kursu", referenceSnapshot: paymentReference, ipsPayloadSnapshot: JSON.stringify(ips) }).returning();
     await tx.insert(educationAccessExtensionsTable).values({
       enrollmentId: enrollment.enrollment.id,
       purchaserId: access.id,

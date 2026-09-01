@@ -153,3 +153,4 @@
 - [Capability-scoped background requests](capability-scoped-background-requests.md) — gate polling, realtime streams, links, and direct routes by the server capability they consume.
 - [Cross-role auth cache replacement](cross-role-auth-cache-replacement.md) — replace cached current-user data before redirecting after login or registration.
 - [Education bundle purchase boundary](education-bundle-purchase-boundary.md) — one immutable parent charge owns bundle finance; course enrollments only project access.
+- [Payment account environments](payment-account-environments.md) — account classification is explicit; production accounts work only in a confirmed published production runtime.

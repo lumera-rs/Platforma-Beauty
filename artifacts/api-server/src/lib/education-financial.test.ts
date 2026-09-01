@@ -114,7 +114,7 @@ async function run(): Promise<void> {
   const enrollmentIds: string[] = [];
   const salonIds: string[] = [];
   const createdUserIds: string[] = [];
-  let ipsSettingsSnapshot: { id: string; ipsRecipientName: string | null; ipsRecipientAccount: string | null; ipsPurpose: string | null } | undefined;
+  let ipsSettingsSnapshot: { id: string; ipsRecipientName: string | null; ipsRecipientAccount: string | null; ipsPurpose: string | null; ipsAccountEnvironment: string } | undefined;
   let releaseRaceLock: (() => void) | undefined;
   let raceLockHolder: Promise<void> | undefined;
 
@@ -439,6 +439,7 @@ async function run(): Promise<void> {
       ipsRecipientName: settings.ipsRecipientName,
       ipsRecipientAccount: settings.ipsRecipientAccount,
       ipsPurpose: settings.ipsPurpose,
+      ipsAccountEnvironment: settings.ipsAccountEnvironment,
     };
     const configureIpsResponse = await request(baseUrl, "/admin/education/settings", {
       method: "PATCH",
@@ -452,6 +453,7 @@ async function run(): Promise<void> {
         ipsRecipientName: "LUMERA test",
         ipsRecipientAccount: "160000000000000000",
         ipsPurpose: "Edukacija",
+        ipsAccountEnvironment: "test",
       },
     });
     assert.equal(configureIpsResponse.status, 200, "The fixture must configure IPS through the canonical admin API.");
@@ -510,11 +512,21 @@ async function run(): Promise<void> {
     if (instructionsResponse.status !== 200) {
       throw new Error(`Expected purchaser IPS instructions, got ${instructionsResponse.status}: ${JSON.stringify(await json(instructionsResponse))}`);
     }
-    const instructions = await json<{ enrollmentId: string; amount: number; reference: string; payload: string; paymentStatus: string }>(instructionsResponse);
+    const instructions = await json<{ enrollmentId: string; amount: number; reference: string; recipientAccount: string; payload: string; paymentStatus: string }>(instructionsResponse);
     assert.equal(instructions.enrollmentId, ownerPending.id);
     assert.equal(instructions.amount, ownerFlowCourse.price);
     assert.equal(instructions.paymentStatus, "pending");
     assert.match(instructions.payload, new RegExp(`S:${instructions.reference}`));
+    await db.update(educationPlatformSettingsTable).set({ ipsRecipientAccount: "170000000000000000" })
+      .where(eq(educationPlatformSettingsTable.id, settings.id));
+    const persistedInstructions = await json<{ recipientAccount: string; payload: string }>(
+      await request(baseUrl, `/education/enrollments/${ownerPending.id}/payment-instructions`, { cookie: salonOwnerCookie }),
+    );
+    assert.equal(persistedInstructions.recipientAccount, instructions.recipientAccount);
+    assert.equal(persistedInstructions.payload, instructions.payload,
+      "Enrollment instructions remain the issuance snapshot after platform settings change.");
+    await db.update(educationPlatformSettingsTable).set({ ipsRecipientAccount: "160000000000000000" })
+      .where(eq(educationPlatformSettingsTable.id, settings.id));
     assert.equal((await request(baseUrl, `/education/enrollments/${ownerPending.id}/payment-instructions`, { cookie: outsiderCookie })).status, 403);
     const ownerPendingRows = await json<Array<{ id: string; status: string; paymentStatus: string }>>(await request(baseUrl, "/education/enrollments", { cookie: salonOwnerCookie }));
     assert.equal(ownerPendingRows.find((row) => row.id === ownerPending.id)?.status, "pending");
@@ -1602,6 +1614,7 @@ async function run(): Promise<void> {
         ipsRecipientName: ipsSettingsSnapshot.ipsRecipientName,
         ipsRecipientAccount: ipsSettingsSnapshot.ipsRecipientAccount,
         ipsPurpose: ipsSettingsSnapshot.ipsPurpose,
+        ipsAccountEnvironment: ipsSettingsSnapshot.ipsAccountEnvironment,
         updatedAt: new Date(),
       }).where(eq(educationPlatformSettingsTable.id, ipsSettingsSnapshot.id));
     }

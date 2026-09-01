@@ -166,6 +166,35 @@ export type EducationIpsPaymentInstructions = {
   purpose: string | null;
 };
 
+export type EducationIpsRecipientType =
+  | "platform"
+  | "education_center_individual"
+  | "education_center_legal";
+
+export type EducationIpsTransactionType =
+  | "subscription"
+  | "course_enrollment"
+  | "course_extension"
+  | "operational_installment"
+  | "bundle_purchase"
+  | "placement";
+
+export type EducationIpsAccountEnvironment = "production" | "test";
+
+export function educationIpsPaymentCode(recipientType: EducationIpsRecipientType) {
+  return recipientType === "education_center_individual" ? "289" : "221";
+}
+
+/** NODE_ENV is deliberately reduced to the two payment account classifications. */
+export function educationIpsRuntimeEnvironment(): EducationIpsAccountEnvironment {
+  const deploymentValue = process.env.REPLIT_DEPLOYMENT ?? process.env.REPL_DEPLOYMENT;
+  const publishedDeployment = deploymentValue !== undefined && ["1", "true", "yes", "production"].includes(deploymentValue.trim().toLowerCase());
+  const optionalMarkerAllowsProduction = process.env.REPLIT_ENVIRONMENT === undefined || process.env.REPLIT_ENVIRONMENT === "production";
+  return process.env.NODE_ENV === "production" && publishedDeployment && optionalMarkerAllowsProduction
+    ? "production"
+    : "test";
+}
+
 /**
  * NBS IPS "S" payload. This is deliberately only a deterministic rendering of
  * an already due obligation: it performs no provider call and has no payment
@@ -174,17 +203,27 @@ export type EducationIpsPaymentInstructions = {
 export function educationIpsQrPayload(input: EducationIpsPaymentInstructions & {
   amount: number;
   reference: string;
+  recipientType: EducationIpsRecipientType;
+  transactionType: EducationIpsTransactionType;
+  /** Classification of the configured recipient account, not the request. */
+  accountEnvironment: EducationIpsAccountEnvironment;
+  /** Explicit deployment classification keeps payment safety testable. */
+  runtimeEnvironment: EducationIpsAccountEnvironment;
 }) {
   const recipient = input.recipientName?.trim();
   const account = input.recipientAccount?.replace(/[\s-]/g, "");
   const purpose = input.purpose?.trim();
   if (!recipient || !account || !purpose) throw new Error("IPS_PAYMENT_ACCOUNT_NOT_CONFIGURED");
   if (!/^\d{18}$/.test(account)) throw new Error("IPS_PAYMENT_ACCOUNT_INVALID");
+  if (input.accountEnvironment === "production" && input.runtimeEnvironment !== "production") {
+    throw new Error("IPS_PAYMENT_PRODUCTION_ACCOUNT_BLOCKED");
+  }
   if (!Number.isInteger(input.amount) || input.amount <= 0) throw new Error("IPS_PAYMENT_AMOUNT_INVALID");
   if (!input.reference.trim() || input.reference.length > 35) throw new Error("IPS_PAYMENT_REFERENCE_INVALID");
+  const paymentCode = educationIpsPaymentCode(input.recipientType);
   const fields = [
     "K:PR", "V:01", "C:1", `R:${account}`, `N:${recipient}`,
-    `I:RSD${input.amount.toFixed(2)}`, `P:${purpose}`, "SF:221", `S:${input.reference.trim()}`,
+    `I:RSD${input.amount.toFixed(2)}`, `P:${purpose}`, `SF:${paymentCode}`, `S:${input.reference.trim()}`,
   ];
   return {
     payload: fields.join("|"),
@@ -194,6 +233,7 @@ export function educationIpsQrPayload(input: EducationIpsPaymentInstructions & {
     amount: input.amount,
     currency: "RSD" as const,
     reference: input.reference.trim(),
+    paymentCode,
   };
 }
 

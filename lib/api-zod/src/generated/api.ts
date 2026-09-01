@@ -10288,6 +10288,7 @@ export const GetAdminEducationSettingsResponse = zod.object({
   "featuredCoursePrice": zod.number().min(getAdminEducationSettingsResponseOneFeaturedCoursePriceMin).max(getAdminEducationSettingsResponseOneFeaturedCoursePriceMax).multipleOf(getAdminEducationSettingsResponseOneFeaturedCoursePriceMultipleOf),
   "ipsRecipientName": zod.string().max(getAdminEducationSettingsResponseOneIpsRecipientNameMax).nullish(),
   "ipsRecipientAccount": zod.string().max(getAdminEducationSettingsResponseOneIpsRecipientAccountMax).nullish(),
+  "ipsAccountEnvironment": zod.enum(['production', 'test']).optional(),
   "ipsPurpose": zod.string().max(getAdminEducationSettingsResponseOneIpsPurposeMax).nullish()
 }).and(zod.object({
   "id": zod.string(),
@@ -10331,6 +10332,7 @@ export const UpdateAdminEducationSettingsBody = zod.object({
   "featuredCoursePrice": zod.number().min(updateAdminEducationSettingsBodyFeaturedCoursePriceMin).max(updateAdminEducationSettingsBodyFeaturedCoursePriceMax).multipleOf(updateAdminEducationSettingsBodyFeaturedCoursePriceMultipleOf),
   "ipsRecipientName": zod.string().max(updateAdminEducationSettingsBodyIpsRecipientNameMax).nullish(),
   "ipsRecipientAccount": zod.string().max(updateAdminEducationSettingsBodyIpsRecipientAccountMax).nullish(),
+  "ipsAccountEnvironment": zod.enum(['production', 'test']).optional(),
   "ipsPurpose": zod.string().max(updateAdminEducationSettingsBodyIpsPurposeMax).nullish()
 }).strict()
 
@@ -10370,6 +10372,7 @@ export const UpdateAdminEducationSettingsResponse = zod.object({
   "featuredCoursePrice": zod.number().min(updateAdminEducationSettingsResponseOneFeaturedCoursePriceMin).max(updateAdminEducationSettingsResponseOneFeaturedCoursePriceMax).multipleOf(updateAdminEducationSettingsResponseOneFeaturedCoursePriceMultipleOf),
   "ipsRecipientName": zod.string().max(updateAdminEducationSettingsResponseOneIpsRecipientNameMax).nullish(),
   "ipsRecipientAccount": zod.string().max(updateAdminEducationSettingsResponseOneIpsRecipientAccountMax).nullish(),
+  "ipsAccountEnvironment": zod.enum(['production', 'test']).optional(),
   "ipsPurpose": zod.string().max(updateAdminEducationSettingsResponseOneIpsPurposeMax).nullish()
 }).and(zod.object({
   "id": zod.string(),
@@ -11491,8 +11494,11 @@ export const CreateEducationCourseResponse = zod.object({
 /**
  * @summary Get a business course and its curriculum
  */
+export const getEducationCoursePathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const GetEducationCourseParams = zod.object({
-  "courseId": zod.coerce.string()
+  "courseId": zod.coerce.string().regex(getEducationCoursePathCourseIdRegExp)
 })
 
 export const getEducationCourseResponseOneOneInstructorProfileTwoIndustryYearsMin = 0;
@@ -11819,8 +11825,11 @@ export const GetEducationCourseResponse = zod.object({
 /**
  * @summary Update an owned course
  */
+export const updateEducationCoursePathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const UpdateEducationCourseParams = zod.object({
-  "courseId": zod.coerce.string()
+  "courseId": zod.coerce.string().regex(updateEducationCoursePathCourseIdRegExp)
 })
 
 export const updateEducationCourseBodyTitleMin = 2;
@@ -12253,8 +12262,11 @@ export const UpdateEducationCourseResponse = zod.object({
 /**
  * @summary Archive an owned course
  */
+export const archiveEducationCoursePathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const ArchiveEducationCourseParams = zod.object({
-  "courseId": zod.coerce.string()
+  "courseId": zod.coerce.string().regex(archiveEducationCoursePathCourseIdRegExp)
 })
 
 export const ArchiveEducationCourseResponse = zod.void()
@@ -12263,8 +12275,11 @@ export const ArchiveEducationCourseResponse = zod.void()
 /**
  * @summary Publish an owned course
  */
+export const publishEducationCoursePathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const PublishEducationCourseParams = zod.object({
-  "courseId": zod.coerce.string()
+  "courseId": zod.coerce.string().regex(publishEducationCoursePathCourseIdRegExp)
 })
 
 export const publishEducationCourseResponseOneOneInstructorProfileTwoIndustryYearsMin = 0;
@@ -12591,8 +12606,11 @@ export const PublishEducationCourseResponse = zod.object({
 /**
  * @summary Request a direct upload URL for an owned course gallery image
  */
+export const requestEducationCourseGalleryUploadPathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const RequestEducationCourseGalleryUploadParams = zod.object({
-  "courseId": zod.coerce.string()
+  "courseId": zod.coerce.string().regex(requestEducationCourseGalleryUploadPathCourseIdRegExp)
 })
 
 export const requestEducationCourseGalleryUploadBodyNameMax = 240;
@@ -12622,8 +12640,11 @@ export const RequestEducationCourseGalleryUploadResponse = zod.object({
 /**
  * @summary Attach an uploaded image to an owned course gallery
  */
+export const addEducationCourseGalleryMediaPathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const AddEducationCourseGalleryMediaParams = zod.object({
-  "courseId": zod.coerce.string()
+  "courseId": zod.coerce.string().regex(addEducationCourseGalleryMediaPathCourseIdRegExp)
 })
 
 export const addEducationCourseGalleryMediaBodyMediaIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
@@ -12651,8 +12672,11 @@ export const AddEducationCourseGalleryMediaResponse = zod.object({
 /**
  * @summary Reorder and update captions in an owned course gallery
  */
+export const reorderEducationCourseGalleryPathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const ReorderEducationCourseGalleryParams = zod.object({
-  "courseId": zod.coerce.string()
+  "courseId": zod.coerce.string().regex(reorderEducationCourseGalleryPathCourseIdRegExp)
 })
 
 export const reorderEducationCourseGalleryBodyItemsItemMediaIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
@@ -12685,11 +12709,12 @@ export const ReorderEducationCourseGalleryResponse = zod.array(ReorderEducationC
 /**
  * @summary Remove an image from an owned course gallery
  */
+export const deleteEducationCourseGalleryMediaPathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
 export const deleteEducationCourseGalleryMediaPathMediaIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
 
 
 export const DeleteEducationCourseGalleryMediaParams = zod.object({
-  "courseId": zod.coerce.string(),
+  "courseId": zod.coerce.string().regex(deleteEducationCourseGalleryMediaPathCourseIdRegExp),
   "mediaId": zod.coerce.string().regex(deleteEducationCourseGalleryMediaPathMediaIdRegExp)
 })
 
@@ -12712,8 +12737,11 @@ export const GetEducationGalleryMediaResponse = zod.unknown()
 /**
  * @summary List course modules and lessons
  */
+export const listEducationModulesPathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const ListEducationModulesParams = zod.object({
-  "courseId": zod.coerce.string()
+  "courseId": zod.coerce.string().regex(listEducationModulesPathCourseIdRegExp)
 })
 
 export const ListEducationModulesResponseItem = zod.object({
@@ -12737,8 +12765,11 @@ export const ListEducationModulesResponse = zod.array(ListEducationModulesRespon
 /**
  * @summary Create a module in an owned course
  */
+export const createEducationModulePathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const CreateEducationModuleParams = zod.object({
-  "courseId": zod.coerce.string()
+  "courseId": zod.coerce.string().regex(createEducationModulePathCourseIdRegExp)
 })
 
 
@@ -12891,8 +12922,11 @@ export const DeleteEducationLessonResponse = zod.void()
 /**
  * @summary Get canonical Europe/Belgrade individual-course availability and occupancy
  */
+export const getEducationCourseAvailabilityPathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const GetEducationCourseAvailabilityParams = zod.object({
-  "courseId": zod.coerce.string()
+  "courseId": zod.coerce.string().regex(getEducationCourseAvailabilityPathCourseIdRegExp)
 })
 
 export const getEducationCourseAvailabilityQueryDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
@@ -13362,8 +13396,11 @@ export const CancelEducationOperationalSessionResponse = zod.object({
 })
 
 
+export const previewEducationCourseRecurrencePathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const PreviewEducationCourseRecurrenceParams = zod.object({
-  "courseId": zod.coerce.string()
+  "courseId": zod.coerce.string().regex(previewEducationCourseRecurrencePathCourseIdRegExp)
 })
 
 export const previewEducationCourseRecurrenceBodyWeekdaysItemMax = 7;
@@ -13418,8 +13455,11 @@ export const PreviewEducationCourseRecurrenceResponse = zod.object({
 })
 
 
+export const commitEducationCourseRecurrencePathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const CommitEducationCourseRecurrenceParams = zod.object({
-  "courseId": zod.coerce.string()
+  "courseId": zod.coerce.string().regex(commitEducationCourseRecurrencePathCourseIdRegExp)
 })
 
 export const commitEducationCourseRecurrenceHeaderIdempotencyKeyMax = 200;
@@ -13824,8 +13864,11 @@ export const DeleteEducationEducatorAbsenceResponse = zod.void()
 /**
  * @summary List course sessions
  */
+export const listEducationSessionsPathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const ListEducationSessionsParams = zod.object({
-  "courseId": zod.coerce.string()
+  "courseId": zod.coerce.string().regex(listEducationSessionsPathCourseIdRegExp)
 })
 
 export const ListEducationSessionsResponseItem = zod.object({
@@ -13846,8 +13889,11 @@ export const ListEducationSessionsResponse = zod.array(ListEducationSessionsResp
 /**
  * @summary Schedule a live course session
  */
+export const createEducationSessionPathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const CreateEducationSessionParams = zod.object({
-  "courseId": zod.coerce.string()
+  "courseId": zod.coerce.string().regex(createEducationSessionPathCourseIdRegExp)
 })
 
 
@@ -13882,8 +13928,11 @@ export const CreateEducationSessionResponse = zod.object({
 /**
  * @summary Request a course purchase for the purchaser or one salon employee; access and escrow begin only after trusted manual settlement
  */
+export const enrollInEducationCoursePathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const EnrollInEducationCourseParams = zod.object({
-  "courseId": zod.coerce.string()
+  "courseId": zod.coerce.string().regex(enrollInEducationCoursePathCourseIdRegExp)
 })
 
 export const enrollInEducationCourseHeaderIdempotencyKeyMax = 200;
@@ -14863,8 +14912,11 @@ export const GetPublicInstructorProfileResponse = zod.object({
 /**
  * @summary Get featured status and current platform price for a course
  */
+export const getEducationCourseFeaturedStatusPathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const GetEducationCourseFeaturedStatusParams = zod.object({
-  "courseId": zod.coerce.string()
+  "courseId": zod.coerce.string().regex(getEducationCourseFeaturedStatusPathCourseIdRegExp)
 })
 
 export const GetEducationCourseFeaturedStatusResponse = zod.object({
@@ -14887,8 +14939,11 @@ export const GetEducationCourseFeaturedStatusResponse = zod.object({
 /**
  * @summary Activate or deactivate featured placement for an owned course
  */
+export const updateEducationCourseFeaturedPathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const UpdateEducationCourseFeaturedParams = zod.object({
-  "courseId": zod.coerce.string()
+  "courseId": zod.coerce.string().regex(updateEducationCourseFeaturedPathCourseIdRegExp)
 })
 
 export const updateEducationCourseFeaturedBodyPaymentReferenceMax = 200;
@@ -14920,8 +14975,11 @@ export const UpdateEducationCourseFeaturedResponse = zod.object({
 /**
  * @summary Link or unlink an instructor profile to an owned course
  */
+export const linkEducationCourseInstructorPathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const LinkEducationCourseInstructorParams = zod.object({
-  "courseId": zod.coerce.string()
+  "courseId": zod.coerce.string().regex(linkEducationCourseInstructorPathCourseIdRegExp)
 })
 
 export const LinkEducationCourseInstructorBody = zod.object({
@@ -15252,8 +15310,11 @@ export const LinkEducationCourseInstructorResponse = zod.object({
 /**
  * @summary Replace the public daily program for an owned course
  */
+export const replaceEducationCourseDaysPathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const ReplaceEducationCourseDaysParams = zod.object({
-  "courseId": zod.coerce.string()
+  "courseId": zod.coerce.string().regex(replaceEducationCourseDaysPathCourseIdRegExp)
 })
 
 export const replaceEducationCourseDaysBodyDaysItemDayNumberMax = 31;
@@ -15958,8 +16019,11 @@ export const ListPublicEducationCoursesResponse = zod.array(ListPublicEducationC
 /**
  * @summary Get a public course detail with redacted logistics
  */
+export const getPublicEducationCoursePathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const GetPublicEducationCourseParams = zod.object({
-  "courseId": zod.coerce.string()
+  "courseId": zod.coerce.string().regex(getPublicEducationCoursePathCourseIdRegExp)
 })
 
 export const getPublicEducationCourseResponseOneInstructorProfileTwoIndustryYearsMin = 0;
@@ -16270,8 +16334,11 @@ export const GetPublicEducationCourseResponse = zod.object({
 /**
  * @summary List eligible related courses, preferring the same subcategory and then shared tags
  */
+export const listRelatedEducationCoursesPathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const ListRelatedEducationCoursesParams = zod.object({
-  "courseId": zod.coerce.string()
+  "courseId": zod.coerce.string().regex(listRelatedEducationCoursesPathCourseIdRegExp)
 })
 
 export const listRelatedEducationCoursesQueryLimitDefault = 6;
@@ -16592,8 +16659,11 @@ export const ListRelatedEducationCoursesResponse = zod.array(ListRelatedEducatio
 /**
  * @summary Send an authenticated inquiry to a course center
  */
+export const createPublicEducationCourseInquiryPathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const CreatePublicEducationCourseInquiryParams = zod.object({
-  "courseId": zod.coerce.string()
+  "courseId": zod.coerce.string().regex(createPublicEducationCourseInquiryPathCourseIdRegExp)
 })
 
 export const createPublicEducationCourseInquiryBodyMessageMax = 2000;
@@ -18034,8 +18104,11 @@ export const AddEducationWishlistItemResponse = zod.object({
 })
 
 
+export const removeEducationWishlistItemPathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const RemoveEducationWishlistItemParams = zod.object({
-  "courseId": zod.coerce.string()
+  "courseId": zod.coerce.string().regex(removeEducationWishlistItemPathCourseIdRegExp)
 })
 
 export const RemoveEducationWishlistItemResponse = zod.void()

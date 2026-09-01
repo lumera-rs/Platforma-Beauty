@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 107;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 110;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -151,6 +151,10 @@ const ENUM_LABELS: Record<string, string[]> = {
   education_attendance_status: ["present", "absent", "excused"],
   education_installment_status: ["pending", "settled", "refunded", "cancelled"],
   education_outbox_status: ["pending", "processing", "sent", "failed"],
+  education_bundle_purchase_status: ["pending_payment", "settled", "cancelled", "refunded"],
+  education_bundle_purchase_target: ["individual", "salon_employee"],
+  education_escrow_status: ["held", "ready_for_payout", "frozen", "paid_out", "refunded", "partially_refunded"],
+  education_ledger_entry_type: ["charge", "platform_fee", "reserve_hold", "release", "payout", "refund", "adjustment"],
 };
 
 /**
@@ -199,6 +203,47 @@ END $$`;
  * legacy base tables into the temp schema before running the bootstrap, so these
  * FK targets exist there too.
  */
+/**
+ * Legacy payable rows predate the immutable QR snapshot columns.  Freeze only
+ * rows that can be rendered safely from their durable amount/reference and a
+ * complete canonical platform account. Rows without that data deliberately
+ * remain null; their read endpoints return an explicit compatibility error.
+ */
+function paymentInstructionSnapshotBackfillStatements(s: string): string[] {
+  const validSettings = `(SELECT ips_recipient_name, regexp_replace(ips_recipient_account, '[[:space:]-]', '', 'g') AS account, ips_purpose
+    FROM ${s}.education_platform_settings
+    WHERE btrim(COALESCE(ips_recipient_name, '')) <> ''
+      AND btrim(COALESCE(ips_purpose, '')) <> ''
+      AND regexp_replace(COALESCE(ips_recipient_account, ''), '[[:space:]-]', '', 'g') ~ '^[0-9]{18}$'
+    ORDER BY updated_at DESC, id DESC LIMIT 1)`;
+  const payload = (amount: string, reference: string) => `concat(
+    'K:PR|V:01|C:1|R:', settings.account, '|N:', settings.ips_recipient_name,
+    '|I:RSD', to_char(${amount}::numeric, 'FM999999999999990.00'),
+    '|P:', settings.ips_purpose, '|SF:221|S:', ${reference})`;
+  return [
+    `UPDATE ${s}.course_enrollments enrollment
+       SET payment_instructions_snapshot = jsonb_build_object(
+         'payload', ${payload("enrollment.charged_amount", "'EDU' || replace(enrollment.id::text, '-', '')")},
+         'recipientName', settings.ips_recipient_name, 'recipientAccount', settings.account,
+         'purpose', settings.ips_purpose, 'amount', enrollment.charged_amount, 'currency', 'RSD',
+         'reference', 'EDU' || replace(enrollment.id::text, '-', ''), 'paymentCode', '221')
+       FROM ${validSettings} settings
+       WHERE enrollment.payment_instructions_snapshot IS NULL
+         AND enrollment.status = 'pending' AND enrollment.payment_status = 'pending'
+         AND enrollment.charged_amount > 0`,
+    `UPDATE ${s}.education_installments installment
+       SET payment_instructions_snapshot = jsonb_build_object(
+         'payload', ${payload("installment.amount", "installment.payment_reference")},
+         'recipientName', settings.ips_recipient_name, 'recipientAccount', settings.account,
+         'purpose', settings.ips_purpose, 'amount', installment.amount, 'currency', 'RSD',
+         'reference', installment.payment_reference, 'paymentCode', '221')
+       FROM ${validSettings} settings
+       WHERE installment.payment_instructions_snapshot IS NULL
+         AND installment.status = 'pending' AND installment.amount > 0
+         AND btrim(COALESCE(installment.payment_reference, '')) <> ''`,
+  ];
+}
+
 function tableStatements(s: string): string[] {
   return [
     `CREATE EXTENSION IF NOT EXISTS pg_trgm`,
@@ -4410,6 +4455,41 @@ function tableStatements(s: string): string[] {
     `CREATE INDEX IF NOT EXISTS education_inventory_movements_item_created_idx ON ${s}.education_inventory_movements(item_id, created_at)`,
     `CREATE TABLE IF NOT EXISTS ${s}.education_bundles (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE CASCADE, title text NOT NULL, description text NOT NULL DEFAULT '', price integer NOT NULL CHECK(price >= 0), active boolean NOT NULL DEFAULT true, published boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE TABLE IF NOT EXISTS ${s}.education_bundle_courses (bundle_id uuid NOT NULL REFERENCES ${s}.education_bundles(id) ON DELETE CASCADE, course_id uuid NOT NULL REFERENCES ${s}.courses(id) ON DELETE RESTRICT, sort_order integer NOT NULL, PRIMARY KEY(bundle_id, course_id), UNIQUE(bundle_id, sort_order))`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_bundle_purchases (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), bundle_id uuid NOT NULL REFERENCES ${s}.education_bundles(id) ON DELETE RESTRICT,
+       center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE RESTRICT, purchaser_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE RESTRICT,
+       target_type ${s}.education_bundle_purchase_target NOT NULL, learner_user_id uuid REFERENCES ${s}.users(id) ON DELETE RESTRICT,
+       salon_id uuid REFERENCES ${s}.salons(id) ON DELETE RESTRICT, employee_id uuid REFERENCES ${s}.employees(id) ON DELETE RESTRICT,
+       amount integer NOT NULL CHECK(amount >= 0), currency text NOT NULL DEFAULT 'RSD',
+       status ${s}.education_bundle_purchase_status NOT NULL DEFAULT 'pending_payment', payment_method ${s}.payment_method,
+       payment_reference text NOT NULL UNIQUE, payment_instructions jsonb NOT NULL DEFAULT '{}'::jsonb,
+       idempotency_key text NOT NULL, idempotency_fingerprint text NOT NULL, requested_at timestamptz NOT NULL DEFAULT now(),
+       settled_at timestamptz, settled_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+       cancelled_at timestamptz, refunded_at timestamptz, audit_data jsonb NOT NULL DEFAULT '{}'::jsonb,
+       updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE(purchaser_id,idempotency_key),
+       CHECK ((target_type='individual' AND learner_user_id IS NOT NULL AND salon_id IS NULL AND employee_id IS NULL)
+         OR (target_type='salon_employee' AND learner_user_id IS NOT NULL AND salon_id IS NOT NULL AND employee_id IS NOT NULL))
+     )`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_bundle_purchase_items (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), purchase_id uuid NOT NULL REFERENCES ${s}.education_bundle_purchases(id) ON DELETE CASCADE,
+       course_id uuid NOT NULL REFERENCES ${s}.courses(id) ON DELETE RESTRICT, course_title text NOT NULL,
+       course_terms jsonb NOT NULL DEFAULT '{}'::jsonb, sort_order integer NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
+       UNIQUE(purchase_id,course_id), UNIQUE(purchase_id,sort_order)
+     )`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_bundle_purchase_escrows (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), purchase_id uuid NOT NULL UNIQUE REFERENCES ${s}.education_bundle_purchases(id) ON DELETE CASCADE,
+       center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE RESTRICT, gross_amount integer NOT NULL,
+       platform_fee_amount integer NOT NULL DEFAULT 0, reserve_amount integer NOT NULL DEFAULT 0, net_amount integer NOT NULL,
+       status ${s}.education_escrow_status NOT NULL DEFAULT 'held', release_at timestamptz,
+       created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+       CHECK (gross_amount >= 0 AND platform_fee_amount >= 0 AND reserve_amount >= 0 AND net_amount >= 0
+         AND platform_fee_amount + reserve_amount <= gross_amount AND net_amount = gross_amount - platform_fee_amount - reserve_amount)
+     )`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_bundle_purchase_ledger_entries (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), escrow_id uuid NOT NULL REFERENCES ${s}.education_bundle_purchase_escrows(id) ON DELETE CASCADE,
+       entry_type ${s}.education_ledger_entry_type NOT NULL, amount integer NOT NULL,
+       created_at timestamptz NOT NULL DEFAULT now(), metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+     )`,
     `CREATE TABLE IF NOT EXISTS ${s}.education_contact_history (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE CASCADE, learner_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL, enrollment_id uuid REFERENCES ${s}.course_enrollments(id) ON DELETE SET NULL, channel text NOT NULL, note text NOT NULL, actor_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL, created_at timestamptz NOT NULL DEFAULT now())`,
     `CREATE INDEX IF NOT EXISTS education_contact_history_center_learner_idx ON ${s}.education_contact_history(center_id, learner_user_id, created_at)`,
     // v102 — education subscriptions, immutable payment instructions and
@@ -4419,7 +4499,40 @@ function tableStatements(s: string): string[] {
     `ALTER TABLE ${s}.education_centers ADD COLUMN IF NOT EXISTS payment_reference_number text`,
     `ALTER TABLE ${s}.education_centers ADD COLUMN IF NOT EXISTS legal_entity_type text NOT NULL DEFAULT 'legal_entity'`,
     `ALTER TABLE ${s}.education_centers ADD COLUMN IF NOT EXISTS bank_account text`,
+    `ALTER TABLE ${s}.education_centers ADD COLUMN IF NOT EXISTS bank_account_environment text NOT NULL DEFAULT 'production'`,
+    `ALTER TABLE ${s}.education_platform_settings ADD COLUMN IF NOT EXISTS ips_account_environment text NOT NULL DEFAULT 'production'`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='education_centers_bank_account_environment_check' AND conrelid='${s}.education_centers'::regclass) THEN
+         ALTER TABLE ${s}.education_centers ADD CONSTRAINT education_centers_bank_account_environment_check CHECK(bank_account_environment IN ('production','test'));
+       END IF;
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='education_platform_settings_ips_account_environment_check' AND conrelid='${s}.education_platform_settings'::regclass) THEN
+         ALTER TABLE ${s}.education_platform_settings ADD CONSTRAINT education_platform_settings_ips_account_environment_check CHECK(ips_account_environment IN ('production','test'));
+       END IF;
+     END $$`,
     `CREATE UNIQUE INDEX IF NOT EXISTS education_centers_payment_reference_number_unique ON ${s}.education_centers(payment_reference_number) WHERE payment_reference_number IS NOT NULL`,
+    // v108 — a business reference is assigned exactly once.  Historical nulls
+    // are deterministically backfilled before the trigger makes the invariant
+    // permanent; callers may never replace an issued reference.
+    `UPDATE ${s}.salons SET payment_reference_number = 'SAL' || replace(id::text, '-', '') WHERE payment_reference_number IS NULL`,
+    `UPDATE ${s}.education_centers SET payment_reference_number = 'EDU' || replace(id::text, '-', '') WHERE payment_reference_number IS NULL`,
+    `CREATE OR REPLACE FUNCTION ${s}.assign_immutable_business_payment_reference() RETURNS trigger AS $$
+      BEGIN
+        IF TG_OP = 'INSERT' AND NEW.payment_reference_number IS NULL THEN
+          NEW.payment_reference_number := CASE WHEN TG_TABLE_NAME = 'salons'
+            THEN 'SAL' || replace(NEW.id::text, '-', '')
+            ELSE 'EDU' || replace(NEW.id::text, '-', '') END;
+        ELSIF TG_OP = 'UPDATE' AND NEW.payment_reference_number IS DISTINCT FROM OLD.payment_reference_number THEN
+          RAISE EXCEPTION 'payment_reference_number is immutable';
+        END IF;
+        RETURN NEW;
+      END;
+    $$ LANGUAGE plpgsql`,
+    `DROP TRIGGER IF EXISTS salons_immutable_payment_reference ON ${s}.salons`,
+    `CREATE TRIGGER salons_immutable_payment_reference BEFORE INSERT OR UPDATE OF payment_reference_number ON ${s}.salons
+      FOR EACH ROW EXECUTE FUNCTION ${s}.assign_immutable_business_payment_reference()`,
+    `DROP TRIGGER IF EXISTS education_centers_immutable_payment_reference ON ${s}.education_centers`,
+    `CREATE TRIGGER education_centers_immutable_payment_reference BEFORE INSERT OR UPDATE OF payment_reference_number ON ${s}.education_centers
+      FOR EACH ROW EXECUTE FUNCTION ${s}.assign_immutable_business_payment_reference()`,
     `DO $$ BEGIN
        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='education_centers_legal_entity_type_check' AND conrelid='${s}.education_centers'::regclass) THEN
          ALTER TABLE ${s}.education_centers ADD CONSTRAINT education_centers_legal_entity_type_check CHECK(legal_entity_type IN ('individual','legal_entity'));
@@ -4589,6 +4702,44 @@ function tableStatements(s: string): string[] {
     `CREATE UNIQUE INDEX IF NOT EXISTS education_payment_obligations_renewal_period_uniq
        ON ${s}.education_payment_obligations(subscription_id, service_period_start)
        WHERE kind = 'subscription_renewal' AND status IN ('pending','paid') AND subscription_id IS NOT NULL AND service_period_start IS NOT NULL`,
+    // v110 — payment instructions are issuance snapshots. Bundle references are
+    // derived from the purchase UUID, globally unique, and immutable thereafter.
+    `ALTER TABLE ${s}.course_enrollments ADD COLUMN IF NOT EXISTS payment_status text NOT NULL DEFAULT 'pending'`,
+    `ALTER TABLE ${s}.course_enrollments ADD COLUMN IF NOT EXISTS charged_amount integer`,
+    `ALTER TABLE ${s}.course_enrollments ADD COLUMN IF NOT EXISTS payment_instructions_snapshot jsonb`,
+    `ALTER TABLE ${s}.education_installments ADD COLUMN IF NOT EXISTS payment_instructions_snapshot jsonb`,
+    ...paymentInstructionSnapshotBackfillStatements(s),
+    `ALTER TABLE ${s}.education_bundle_purchases ADD COLUMN IF NOT EXISTS payment_reference text`,
+    `DROP TRIGGER IF EXISTS education_bundle_purchases_payment_reference_immutable ON ${s}.education_bundle_purchases`,
+    `UPDATE ${s}.education_bundle_purchases
+       SET payment_reference = 'BND-' || left(replace(id::text, '-', ''), 30),
+           payment_instructions = jsonb_set(COALESCE(payment_instructions, '{}'::jsonb), '{reference}',
+             to_jsonb('BND-' || left(replace(id::text, '-', ''), 30)), true)
+       WHERE payment_reference IS NULL`,
+    `UPDATE ${s}.education_bundle_purchases
+       SET payment_instructions = jsonb_set(COALESCE(payment_instructions, '{}'::jsonb), '{reference}', to_jsonb(payment_reference), true)
+       WHERE payment_instructions->>'reference' IS DISTINCT FROM payment_reference`,
+    `ALTER TABLE ${s}.education_bundle_purchases ALTER COLUMN payment_reference SET NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS education_bundle_purchases_payment_reference_unique
+       ON ${s}.education_bundle_purchases(payment_reference)`,
+    `DO $$ BEGIN
+       ALTER TABLE ${s}.education_bundle_purchases ADD CONSTRAINT education_bundle_purchases_payment_reference_snapshot_check
+         CHECK (payment_instructions->>'reference' IS NOT NULL AND payment_instructions->>'reference' = payment_reference);
+       EXCEPTION WHEN duplicate_object THEN NULL;
+     END $$`,
+    `CREATE OR REPLACE FUNCTION ${s}.reject_bundle_payment_reference_change() RETURNS trigger AS $$
+       BEGIN
+         IF NEW.payment_reference IS DISTINCT FROM OLD.payment_reference
+           OR NEW.payment_instructions IS DISTINCT FROM OLD.payment_instructions THEN
+           RAISE EXCEPTION 'education bundle payment_reference is immutable; payment instructions are immutable';
+         END IF;
+         RETURN NEW;
+       END
+     $$ LANGUAGE plpgsql`,
+    `DROP TRIGGER IF EXISTS education_bundle_purchases_payment_reference_immutable ON ${s}.education_bundle_purchases`,
+    `CREATE TRIGGER education_bundle_purchases_payment_reference_immutable
+       BEFORE UPDATE OF payment_reference, payment_instructions ON ${s}.education_bundle_purchases
+       FOR EACH ROW EXECUTE FUNCTION ${s}.reject_bundle_payment_reference_change()`,
     // v74 — every aftercare FK gets a leading index so deletes/updates on its
     // parent cannot force scans as recommendation and delivery history grows.
   ];
@@ -4657,6 +4808,38 @@ export async function runBusinessGrowthSchemaDdl(
         await client.query(`DROP TRIGGER IF EXISTS education_gift_vouchers_snapshot_immutable ON ${quoted}.education_gift_vouchers`);
         await client.query(`CREATE TRIGGER education_gift_vouchers_snapshot_immutable BEFORE UPDATE ON ${quoted}.education_gift_vouchers
           FOR EACH ROW EXECUTE FUNCTION ${quoted}.prevent_education_gift_voucher_snapshot_update()`);
+        await client.query(`ALTER TABLE IF EXISTS ${quoted}.course_enrollments ADD COLUMN IF NOT EXISTS payment_instructions_snapshot jsonb`);
+        await client.query(`ALTER TABLE IF EXISTS ${quoted}.course_enrollments ADD COLUMN IF NOT EXISTS payment_status text NOT NULL DEFAULT 'pending'`);
+        await client.query(`ALTER TABLE IF EXISTS ${quoted}.course_enrollments ADD COLUMN IF NOT EXISTS charged_amount integer`);
+        await client.query(`ALTER TABLE IF EXISTS ${quoted}.education_installments ADD COLUMN IF NOT EXISTS payment_instructions_snapshot jsonb`);
+        for (const statement of paymentInstructionSnapshotBackfillStatements(quoted)) await client.query(statement);
+        if ((await client.query(`SELECT to_regclass($1) IS NOT NULL AS exists`, [`${schemaName}.education_bundle_purchases`])).rows[0]?.exists) {
+          await client.query(`ALTER TABLE ${quoted}.education_bundle_purchases ADD COLUMN IF NOT EXISTS payment_reference text`);
+          await client.query(`DROP TRIGGER IF EXISTS education_bundle_purchases_payment_reference_immutable ON ${quoted}.education_bundle_purchases`);
+          await client.query(`UPDATE ${quoted}.education_bundle_purchases
+            SET payment_reference = 'BND-' || left(replace(id::text, '-', ''), 30),
+                payment_instructions = jsonb_set(COALESCE(payment_instructions, '{}'::jsonb), '{reference}',
+                  to_jsonb('BND-' || left(replace(id::text, '-', ''), 30)), true)
+            WHERE payment_reference IS NULL`);
+          await client.query(`UPDATE ${quoted}.education_bundle_purchases
+            SET payment_instructions = jsonb_set(COALESCE(payment_instructions, '{}'::jsonb), '{reference}', to_jsonb(payment_reference), true)
+            WHERE payment_instructions->>'reference' IS DISTINCT FROM payment_reference`);
+          await client.query(`ALTER TABLE ${quoted}.education_bundle_purchases ALTER COLUMN payment_reference SET NOT NULL`);
+          await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS education_bundle_purchases_payment_reference_unique
+            ON ${quoted}.education_bundle_purchases(payment_reference)`);
+          await client.query(`CREATE OR REPLACE FUNCTION ${quoted}.reject_bundle_payment_reference_change() RETURNS trigger AS $$
+            BEGIN
+              IF NEW.payment_reference IS DISTINCT FROM OLD.payment_reference
+                OR NEW.payment_instructions IS DISTINCT FROM OLD.payment_instructions THEN
+                RAISE EXCEPTION 'education bundle payment_reference is immutable; payment instructions are immutable';
+              END IF;
+              RETURN NEW;
+            END
+          $$ LANGUAGE plpgsql`);
+          await client.query(`CREATE TRIGGER education_bundle_purchases_payment_reference_immutable
+            BEFORE UPDATE OF payment_reference, payment_instructions ON ${quoted}.education_bundle_purchases
+            FOR EACH ROW EXECUTE FUNCTION ${quoted}.reject_bundle_payment_reference_change()`);
+        }
         return;
       }
     }

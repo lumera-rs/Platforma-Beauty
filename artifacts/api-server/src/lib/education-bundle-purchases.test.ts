@@ -12,6 +12,7 @@ import {
 } from "@workspace/db";
 import app from "../app";
 import { hashPassword, sessionCookieName } from "./auth";
+import { educationIpsQrPayload, educationIpsRuntimeEnvironment } from "./education-marketplace-domain";
 
 const suffix = randomUUID();
 const password = "bundle-purchase-test-password";
@@ -34,8 +35,30 @@ async function run() {
   let server: ReturnType<typeof app.listen> | undefined;
   const userIds: string[] = [], salonIds: string[] = [], employeeIds: string[] = [], courseIds: string[] = [];
   let centerId: string | undefined, bundleId: string | undefined, purchaseId: string | undefined;
-  let financeSettings: { id: string; commissionPercent: number; reservePercent: number } | undefined;
+  let financeSettings: typeof educationPlatformSettingsTable.$inferSelect | undefined;
   try {
+    const environment = { NODE_ENV: process.env.NODE_ENV, REPLIT_DEPLOYMENT: process.env.REPLIT_DEPLOYMENT, REPL_DEPLOYMENT: process.env.REPL_DEPLOYMENT, REPLIT_ENVIRONMENT: process.env.REPLIT_ENVIRONMENT };
+    const classify = (values: Partial<typeof environment>) => {
+      for (const key of Object.keys(environment) as Array<keyof typeof environment>) {
+        if (key in values) process.env[key] = values[key];
+        else delete process.env[key];
+      }
+      return educationIpsRuntimeEnvironment();
+    };
+    assert.equal(classify({ NODE_ENV: "production", REPLIT_DEPLOYMENT: "true" }), "production");
+    assert.equal(classify({ NODE_ENV: "production", REPL_DEPLOYMENT: "1" }), "production");
+    assert.equal(classify({ NODE_ENV: "production", REPLIT_DEPLOYMENT: "yes", REPLIT_ENVIRONMENT: "test" }), "test");
+    assert.equal(classify({ NODE_ENV: "development", REPLIT_DEPLOYMENT: "true" }), "test");
+    for (const key of Object.keys(environment) as Array<keyof typeof environment>) {
+      if (environment[key] === undefined) delete process.env[key];
+      else process.env[key] = environment[key];
+    }
+    const individualPayload = educationIpsQrPayload({ recipientName: "Test centar", recipientAccount: "111111111111111111", purpose: "Test", amount: 1000, reference: "TEST-1", recipientType: "education_center_individual", transactionType: "course_enrollment", accountEnvironment: "test", runtimeEnvironment: "test" });
+    assert.equal(individualPayload.paymentCode, "289");
+    assert.match(individualPayload.payload, /SF:289/);
+    assert.equal(educationIpsQrPayload({ recipientName: "Platforma", recipientAccount: "111111111111111111", purpose: "Test", amount: 1000, reference: "TEST-2", recipientType: "platform", transactionType: "subscription", accountEnvironment: "test", runtimeEnvironment: "test" }).paymentCode, "221");
+    assert.throws(() => educationIpsQrPayload({ recipientName: "Platforma", recipientAccount: "111111111111111111", purpose: "Test", amount: 1000, reference: "TEST-3", recipientType: "platform", transactionType: "subscription", accountEnvironment: "production", runtimeEnvironment: "test" }), /IPS_PAYMENT_PRODUCTION_ACCOUNT_BLOCKED/);
+    assert.throws(() => educationIpsQrPayload({ recipientName: "Platforma", recipientAccount: "123", purpose: "Test", amount: 1000, reference: "TEST-4", recipientType: "platform", transactionType: "subscription", accountEnvironment: "test", runtimeEnvironment: "test" }), /IPS_PAYMENT_ACCOUNT_INVALID/);
     const passwordHash = await hashPassword(password);
     const users = await db.insert(usersTable).values([
       { firstName: "Admin", lastName: "Bundle", email: `bundle-admin-${suffix}@example.test`, passwordHash, passwordSetAt: new Date(), role: "SUPER_ADMIN" },
@@ -51,7 +74,10 @@ async function run() {
     const [existingSettings] = await db.select().from(educationPlatformSettingsTable).orderBy(asc(educationPlatformSettingsTable.createdAt)).limit(1);
     assert.ok(existingSettings, "Bundle settlement coverage requires platform settings.");
     financeSettings = existingSettings;
+    await db.update(educationPlatformSettingsTable).set({ ipsRecipientName: "LUMERA TEST", ipsRecipientAccount: "111111111111111111", ipsPurpose: "Test uplata", ipsAccountEnvironment: "test" }).where(eq(educationPlatformSettingsTable.id, existingSettings.id));
     const [center] = await db.insert(educationCentersTable).values({ ownerId: centerOwner.id, name: `Bundle test ${suffix}`, city: "Beograd", description: "Test", imageUrl: "/test.jpg", verificationStatus: "verified" }).returning();
+    assert.ok(center.paymentReferenceNumber?.startsWith("EDU"));
+    await assert.rejects(db.update(educationCentersTable).set({ paymentReferenceNumber: `CHANGED-${suffix}` }).where(eq(educationCentersTable.id, center.id)));
     centerId = center.id;
     const courses = await db.insert(coursesTable).values([
       { centerId, title: "Bundle course one", description: "Test", category: "Test", format: "online", city: "Beograd", price: 12000, duration: "2 weeks", certification: true, imageUrl: "/test.jpg", published: true },
@@ -67,6 +93,7 @@ async function run() {
       { ownerId: otherOwner.id, name: `Other salon ${suffix}`, slug: `bundle-other-${suffix}`, city: "Beograd", municipality: "Vracar", address: "Test 2", phone: "222", email: `bundle-other-salon-${suffix}@example.test`, shortDescription: "Test", description: "Test", imageUrl: "/test.jpg" },
     ]).returning();
     salonIds.push(...salons.map(salon => salon.id));
+    assert.ok(salons.every(salon => salon.paymentReferenceNumber?.startsWith("SAL")));
     const employees = await db.insert(employeesTable).values([
       { salonId: salons[0].id, userId: employeeUser.id, name: "Authorized employee", role: "Stylist", bio: "Test", avatarUrl: "/test.jpg" },
       { salonId: salons[1].id, userId: foreignEmployeeUser.id, name: "Foreign employee", role: "Stylist", bio: "Test", avatarUrl: "/test.jpg" },
@@ -112,8 +139,27 @@ async function run() {
     const key = `individual-${suffix}`;
     const created = await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": key }, body: { targetType: "individual" } });
     assert.equal(created.status, 201);
-    const purchase = await created.json() as { id: string; amount: number; paymentInstructions: unknown };
+    const purchase = await created.json() as { id: string; amount: number; paymentInstructions: { reference: string; recipientAccount: string } };
     purchaseId = purchase.id; assert.equal(purchase.amount, 21000); assert.ok(purchase.paymentInstructions);
+    assert.equal(purchase.paymentInstructions.recipientAccount, "111111111111111111");
+    const secondPurchaseResponse = await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, {
+      method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": `individual-second-${suffix}` },
+      body: { targetType: "individual" },
+    });
+    assert.equal(secondPurchaseResponse.status, 201, "The same bundle can issue a separate purchase reference.");
+    const secondPurchase = await secondPurchaseResponse.json() as { id: string; paymentInstructions: { reference: string } };
+    assert.notEqual(secondPurchase.id, purchase.id);
+    assert.notEqual(secondPurchase.paymentInstructions.reference, purchase.paymentInstructions.reference,
+      "Bundle payment references derive from the purchase UUID, not the bundle UUID.");
+    await db.update(educationPlatformSettingsTable).set({ ipsRecipientAccount: "222222222222222222" }).where(eq(educationPlatformSettingsTable.id, financeSettings.id));
+    const pdfResponse = await request(baseUrl, `/education/payment-slips/bundle/${purchaseId}`, { cookie: buyerCookie });
+    assert.equal(pdfResponse.status, 200);
+    assert.match(pdfResponse.headers.get("content-type") ?? "", /application\/pdf/);
+    const pdfText = Buffer.from(await pdfResponse.arrayBuffer()).toString("latin1");
+    assert.equal((pdfText.match(/\/Type\s*\/Page\b/g) ?? []).length, 1, "A4 uplatnica must contain exactly one page.");
+    assert.match(pdfText, /\/MediaBox \[0 0 595\.28 841\.89\]/);
+    assert.match(pdfText, /(?:31){18}/, "PDF renders the hex-encoded account snapshot captured by this purchase.");
+    assert.doesNotMatch(pdfText, /(?:32){18}/, "PDF never regenerates from current platform settings.");
     assert.deepEqual((await db.select().from(educationBundlePurchaseItemsTable).where(eq(educationBundlePurchaseItemsTable.purchaseId, purchaseId))).map(item => item.courseId).sort(), qualifyingCourseIds,
       "Purchase snapshots exactly the same qualifying course set shown publicly.");
     const replay = await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": key }, body: { targetType: "individual" } });
@@ -181,6 +227,11 @@ async function run() {
     console.log("Education bundle purchase regression passed.");
   } finally {
     if (server) await new Promise<void>((resolve, reject) => server!.close(error => error ? reject(error) : resolve()));
+    if (financeSettings) await db.update(educationPlatformSettingsTable).set({
+      commissionPercent: financeSettings.commissionPercent, reservePercent: financeSettings.reservePercent,
+      ipsRecipientName: financeSettings.ipsRecipientName, ipsRecipientAccount: financeSettings.ipsRecipientAccount,
+      ipsPurpose: financeSettings.ipsPurpose, ipsAccountEnvironment: financeSettings.ipsAccountEnvironment,
+    }).where(eq(educationPlatformSettingsTable.id, financeSettings.id));
     if (bundleId) {
       const purchases = await db.select({ id: educationBundlePurchasesTable.id }).from(educationBundlePurchasesTable).where(eq(educationBundlePurchasesTable.bundleId, bundleId));
       if (purchases.length) {

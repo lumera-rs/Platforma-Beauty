@@ -34,6 +34,7 @@ type IpsSettingsSnapshot = {
   featuredCoursePrice: number;
   ipsRecipientName: string | null;
   ipsRecipientAccount: string | null;
+  ipsAccountEnvironment: string;
   ipsPurpose: string | null;
   updatedByUserId: string | null;
 };
@@ -198,12 +199,12 @@ test("salon owner purchases one employee's verified center course through IPS se
       settingsSnapshot = existing;
       await db.update(educationPlatformSettingsTable).set({
         commissionPercent: COMMISSION_PERCENT, reservePercent: RESERVE_PERCENT,
-        ipsRecipientName: "LUMERA Browser IPS", ipsRecipientAccount: "160000000000000000", ipsPurpose: "Edukacija",
+        ipsRecipientName: "LUMERA Browser IPS", ipsRecipientAccount: "160000000000000000", ipsPurpose: "Edukacija", ipsAccountEnvironment: "test",
       }).where(eq(educationPlatformSettingsTable.id, existing.id));
     } else {
       const [created] = await db.insert(educationPlatformSettingsTable).values({
         commissionPercent: COMMISSION_PERCENT, reservePercent: RESERVE_PERCENT,
-        ipsRecipientName: "LUMERA Browser IPS", ipsRecipientAccount: "160000000000000000", ipsPurpose: "Edukacija",
+        ipsRecipientName: "LUMERA Browser IPS", ipsRecipientAccount: "160000000000000000", ipsPurpose: "Edukacija", ipsAccountEnvironment: "test",
       }).returning();
       if (!created) throw new Error("Could not create canonical education IPS settings.");
       createdSettingsId = created.id;

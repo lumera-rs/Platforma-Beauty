@@ -61,6 +61,18 @@ async function seedLegacySchema(schema: string) {
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
   )`);
+  // Legacy Education billing tables are pre-existing core dependencies of the
+  // additive rollout (the rollout only evolves them). Keep their fixture shape
+  // intentionally minimal so missing-column upgrades remain exercised.
+  await q(`CREATE TABLE "${schema}".subscription_plans (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid()
+  )`);
+  await q(`CREATE TABLE "${schema}".education_center_subscriptions (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    center_id uuid NOT NULL REFERENCES "${schema}".education_centers(id),
+    plan_id uuid NOT NULL REFERENCES "${schema}".subscription_plans(id),
+    status text NOT NULL DEFAULT 'trial'
+  )`);
   await q(`CREATE TABLE "${schema}".course_categories (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     name text NOT NULL UNIQUE,
@@ -356,13 +368,117 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
-    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 101, "v101 is the current production schema rollout");
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 110, "v110 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
 
     // ── Run the rollout, then exercise its legacy conversion on rerun ──────
     const client = await pool.connect();
     try {
       await runBusinessGrowthSchemaDdl(client, s);
+      assert.ok(await columnExists("course_enrollments", "payment_instructions_snapshot"),
+        "v110 adds immutable enrollment payment instructions");
+      assert.ok(await columnExists("education_installments", "payment_instructions_snapshot"),
+        "v110 adds immutable installment payment instructions");
+      assert.ok(await columnExists("education_bundle_purchases", "payment_reference"),
+        "v110 adds the dedicated bundle payment reference");
+      assert.ok(await columnExists("education_bundle_purchases", "payment_instructions"),
+        "bundle purchases retain their complete instruction snapshot");
+      await assert.rejects(
+        q(`UPDATE "${s}".education_centers SET bank_account_environment='invalid' WHERE id=$1`,
+          [fixtures.legacyEducationCenter.id]),
+        /education_centers_bank_account_environment_check/,
+      );
+      const [platformSettings] = (await q<{ id: string }>(
+        `INSERT INTO "${s}".education_platform_settings DEFAULT VALUES RETURNING id`,
+      )).rows;
+      await assert.rejects(
+        q(`UPDATE "${s}".education_platform_settings SET ips_account_environment='invalid' WHERE id=$1`,
+          [platformSettings!.id]),
+        /education_platform_settings_ips_account_environment_check/,
+      );
+      await q(`UPDATE "${s}".education_platform_settings
+        SET ips_recipient_name='Legacy platform', ips_recipient_account='111111111111111111',
+            ips_purpose='Legacy payment', ips_account_environment='test'
+        WHERE id=$1`, [platformSettings!.id]);
+      await q(`UPDATE "${s}".course_enrollments
+        SET status='pending', payment_status='pending', charged_amount=1200, payment_instructions_snapshot=NULL
+        WHERE id=$1`, [fixtures.enrollment.id]);
+      const legacyCategory = (await q<{ id: string }>(
+        `INSERT INTO "${s}".course_categories (name,slug) VALUES ('Legacy payment','legacy-payment') RETURNING id`,
+      )).rows[0]!;
+      const legacyCourse = (await q<{ id: string }>(
+        `INSERT INTO "${s}".courses (center_id,category_id,title,category,format,price)
+         VALUES ($1,$2,'Legacy installment','Legacy payment','in-person',900) RETURNING id`,
+        [fixtures.legacyEducationCenter.id, legacyCategory.id],
+      )).rows[0]!;
+      const legacyGroup = (await q<{ id: string }>(
+        `INSERT INTO "${s}".education_booking_groups (center_id,course_id,purchaser_id,created_by_user_id,idempotency_key,request_fingerprint)
+         VALUES ($1,$2,$3,$3,'legacy-installment','fingerprint') RETURNING id`,
+        [fixtures.legacyEducationCenter.id, legacyCourse.id, fixtures.enrollmentPurchaser.id],
+      )).rows[0]!;
+      const legacyPriceSnapshot = (await q<{ id: string }>(
+        `INSERT INTO "${s}".education_price_snapshots
+          (booking_group_id,course_id,gross_amount,platform_fee,reserve_amount,net_amount,installment_count,deposit_disposition)
+         VALUES ($1,$2,900,0,0,900,1,'refund') RETURNING id`,
+        [legacyGroup.id, legacyCourse.id],
+      )).rows[0]!;
+      const legacyInstallment = (await q<{ id: string }>(
+        `INSERT INTO "${s}".education_installments (price_snapshot_id,installment_number,amount,payment_reference)
+         VALUES ($1,1,900,'EDU-LEGACY-INSTALLMENT') RETURNING id`,
+        [legacyPriceSnapshot.id],
+      )).rows[0]!;
+      const legacyBundle = (await q<{ id: string }>(
+        `INSERT INTO "${s}".education_bundles (center_id,title,price) VALUES ($1,'Legacy bundle',1000) RETURNING id`,
+        [fixtures.legacyEducationCenter.id],
+      )).rows[0]!;
+      const legacyPurchase = (await q<{ id: string }>(
+        `INSERT INTO "${s}".education_bundle_purchases
+           (bundle_id,center_id,purchaser_id,target_type,learner_user_id,amount,payment_reference,payment_instructions,idempotency_key,idempotency_fingerprint)
+         VALUES ($1,$2,$3,'individual',$3,1000,'OLD-REFERENCE','{"reference":"OLD-REFERENCE"}','legacy-v110','fingerprint')
+         RETURNING id`,
+        [legacyBundle.id, fixtures.legacyEducationCenter.id, fixtures.enrollmentPurchaser.id],
+      )).rows[0]!;
+      await q(`DROP TRIGGER IF EXISTS education_bundle_purchases_payment_reference_immutable ON "${s}".education_bundle_purchases`);
+      await q(`ALTER TABLE "${s}".education_bundle_purchases DROP CONSTRAINT education_bundle_purchases_payment_reference_snapshot_check`);
+      await q(`ALTER TABLE "${s}".education_bundle_purchases ALTER COLUMN payment_reference DROP NOT NULL`);
+      await q(`UPDATE "${s}".education_bundle_purchases
+        SET payment_reference=NULL, payment_instructions='{"reference":"stale"}'::jsonb WHERE id=$1`, [legacyPurchase.id]);
+      await q(`UPDATE "${s}".business_growth_schema_rollout SET version=109 WHERE singleton=true`);
+      await runBusinessGrowthSchemaDdl(client, s);
+      const enrollmentSnapshot = (await q<{ snapshot: Record<string, unknown> }>(
+        `SELECT payment_instructions_snapshot snapshot FROM "${s}".course_enrollments WHERE id=$1`, [fixtures.enrollment.id],
+      )).rows[0]!.snapshot;
+      const installmentSnapshot = (await q<{ snapshot: Record<string, unknown> }>(
+        `SELECT payment_instructions_snapshot snapshot FROM "${s}".education_installments WHERE id=$1`, [legacyInstallment.id],
+      )).rows[0]!.snapshot;
+      assert.equal(enrollmentSnapshot.reference, `EDU${fixtures.enrollment.id.replace(/-/g, "")}`);
+      assert.equal(installmentSnapshot.reference, "EDU-LEGACY-INSTALLMENT");
+      await q(`UPDATE "${s}".education_platform_settings SET ips_recipient_account='222222222222222222' WHERE id=$1`, [platformSettings!.id]);
+      assert.deepEqual((await q<{ snapshot: Record<string, unknown> }>(
+        `SELECT payment_instructions_snapshot snapshot FROM "${s}".course_enrollments WHERE id=$1`, [fixtures.enrollment.id],
+      )).rows[0]!.snapshot, enrollmentSnapshot, "legacy enrollment snapshot remains frozen after settings change");
+      assert.deepEqual((await q<{ snapshot: Record<string, unknown> }>(
+        `SELECT payment_instructions_snapshot snapshot FROM "${s}".education_installments WHERE id=$1`, [legacyInstallment.id],
+      )).rows[0]!.snapshot, installmentSnapshot, "legacy installment snapshot remains frozen after settings change");
+      const repairedPurchase = (await q<{ payment_reference: string; snapshot_reference: string }>(
+        `SELECT payment_reference, payment_instructions->>'reference' snapshot_reference
+           FROM "${s}".education_bundle_purchases WHERE id=$1`,
+        [legacyPurchase.id],
+      )).rows[0]!;
+      assert.equal(repairedPurchase.payment_reference, `BND-${legacyPurchase.id.replace(/-/g, "").slice(0, 30)}`);
+      assert.equal(repairedPurchase.snapshot_reference, repairedPurchase.payment_reference,
+        "v110 backfills the payment snapshot with the canonical purchase reference");
+      await assert.rejects(
+        q(`INSERT INTO "${s}".education_bundle_purchases
+             (bundle_id,center_id,purchaser_id,target_type,learner_user_id,amount,payment_reference,idempotency_key,idempotency_fingerprint)
+           VALUES ($1,$2,$3,'individual',$3,1000,$4,'legacy-v110-duplicate','fingerprint')`,
+          [legacyBundle.id, fixtures.legacyEducationCenter.id, fixtures.enrollmentPurchaser.id, repairedPurchase.payment_reference]),
+        /education_bundle_purchases_payment_reference/,
+      );
+      await assert.rejects(
+        q(`UPDATE "${s}".education_bundle_purchases SET payment_reference='CHANGED' WHERE id=$1`, [legacyPurchase.id]),
+        /payment_reference is immutable/,
+      );
       const educationFoundationTables = [
         "education_sections",
         "education_subcategories",

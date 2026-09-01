@@ -659,6 +659,7 @@ export * from './educationLessonInput';
 export * from './educationLms';
 export * from './educationMarketplaceSettings';
 export * from './educationMarketplaceSettingsInput';
+export * from './educationMarketplaceSettingsInputIpsAccountEnvironment';
 export * from './educationMedia';
 export * from './educationMessage';
 export * from './educationMessageThread';

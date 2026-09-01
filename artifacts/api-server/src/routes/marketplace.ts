@@ -253,6 +253,7 @@ import {
   educationPaymentModeError,
   educationGiftVoucherRecipientMatches,
   educationIpsQrPayload,
+   educationIpsRuntimeEnvironment,
   educationRelatedCourseTier,
   qualifiesAsMostRequestedEducationCenter,
   qualifiesAsTopRatedEducationCenter,
@@ -19182,6 +19183,21 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
   }
   let enrollment: typeof courseEnrollmentsTable.$inferSelect | null;
   try {
+    const enrollmentId = randomUUID();
+    const paymentSettings = chargedAmount > 0 ? await getEducationPlatformSettings() : null;
+    const paymentInstructionsSnapshot = chargedAmount > 0
+      ? educationIpsQrPayload({
+        recipientName: paymentSettings!.ipsRecipientName,
+        recipientAccount: paymentSettings!.ipsRecipientAccount,
+        purpose: paymentSettings!.ipsPurpose,
+        amount: chargedAmount,
+        reference: `EDU${enrollmentId.replace(/-/g, "")}`,
+        recipientType: "platform",
+        transactionType: "course_enrollment",
+        accountEnvironment: paymentSettings!.ipsAccountEnvironment as "production" | "test",
+        runtimeEnvironment: educationIpsRuntimeEnvironment(),
+      })
+      : null;
     enrollment = await db.transaction(async (tx) => {
       // Public enrollments and center verification changes must share the
       // center lock. Recheck eligibility after acquiring it so a revocation
@@ -19209,6 +19225,7 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
         }
       }
       const [created] = await tx.insert(courseEnrollmentsTable).values({
+        id: enrollmentId,
         courseId: course.id,
         userId: user.id,
         salonId: access?.salon?.id ?? null,
@@ -19221,6 +19238,7 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
         auditData: { source: "education-marketplace", idempotencyKey, requestedSessionId, paymentMode: selectedPaymentMode },
         idempotencyKey,
         idempotencyFingerprint: idempotencyKey ? idempotencyFingerprint : null,
+        paymentInstructionsSnapshot,
       }).returning();
       await notifyCustomer(tx, {
         userId: user.id,
@@ -19284,16 +19302,8 @@ router.get("/education/enrollments/:enrollmentId/payment-instructions", async (r
     res.status(409).json({ error: "Za ovu prijavu nema platformske obaveze za uplatu." }); return;
   }
   try {
-    const settings = await getEducationPlatformSettings();
-    // 3-character prefix plus a hyphenless UUID fits the NBS 35-character
-    // reference limit while staying deterministic across reloads/retries.
-    const ips = educationIpsQrPayload({
-      recipientName: settings.ipsRecipientName,
-      recipientAccount: settings.ipsRecipientAccount,
-      purpose: settings.ipsPurpose,
-      amount: enrollment.chargedAmount,
-      reference: `EDU${enrollment.id.replace(/-/g, "")}`,
-    });
+    const ips = enrollment.paymentInstructionsSnapshot as Record<string, unknown> | null;
+    if (!ips) throw new Error("IPS_PAYMENT_SNAPSHOT_MISSING");
     res.json(GetEducationEnrollmentPaymentInstructionsResponse.parse({
       enrollmentId: enrollment.id,
       ...ips,
@@ -20416,6 +20426,10 @@ router.post("/education/placements/purchase", async (req, res): Promise<void> =>
         purpose: paymentSettings.ipsPurpose,
         amount: setting.price,
         reference: paymentReference,
+        recipientType: "platform",
+        transactionType: "placement",
+        accountEnvironment: paymentSettings.ipsAccountEnvironment as "production" | "test",
+        runtimeEnvironment: educationIpsRuntimeEnvironment(),
       });
       const [created] = await tx.insert(educationPlacementsTable).values({
         kind, scope,
@@ -20517,6 +20531,10 @@ router.post("/featured-placements", async (req, res): Promise<void> => {
         purpose: paymentSettings.ipsPurpose,
         amount: setting.price,
         reference: paymentReference,
+        recipientType: "platform",
+        transactionType: "placement",
+        accountEnvironment: paymentSettings.ipsAccountEnvironment as "production" | "test",
+        runtimeEnvironment: educationIpsRuntimeEnvironment(),
       });
       const occupied = await tx.select({ slotNumber: educationPlacementsTable.slotNumber }).from(educationPlacementsTable).where(and(
         eq(educationPlacementsTable.kind, kind), eq(educationPlacementsTable.scope, scope),
@@ -22487,6 +22505,7 @@ function educationSettingsView(settings: typeof educationPlatformSettingsTable.$
     featuredCoursePrice: settings.featuredCoursePrice,
     ipsRecipientName: settings.ipsRecipientName,
     ipsRecipientAccount: settings.ipsRecipientAccount,
+    ipsAccountEnvironment: settings.ipsAccountEnvironment,
     ipsPurpose: settings.ipsPurpose,
     updatedAt: settings.updatedAt.toISOString(),
   };
@@ -22767,12 +22786,14 @@ router.patch("/admin/education/settings", async (req, res): Promise<void> => {
     liveAppealDays: parseNumericInput(req.body?.liveAppealDays),
     featuredCoursePrice: Number.isInteger(featuredCoursePriceRaw) && featuredCoursePriceRaw >= 0 ? featuredCoursePriceRaw : 0,
     ipsRecipientName: typeof req.body?.ipsRecipientName === "string" && req.body.ipsRecipientName.trim() ? req.body.ipsRecipientName.trim() : null,
-    ipsRecipientAccount: typeof req.body?.ipsRecipientAccount === "string" && req.body.ipsRecipientAccount.trim() ? req.body.ipsRecipientAccount.trim() : null,
+    ipsRecipientAccount: typeof req.body?.ipsRecipientAccount === "string" && req.body.ipsRecipientAccount.trim() ? req.body.ipsRecipientAccount.replace(/[\s-]/g, "") : null,
+    ipsAccountEnvironment: req.body?.ipsAccountEnvironment === "test" ? "test" as const : "production" as const,
     ipsPurpose: typeof req.body?.ipsPurpose === "string" && req.body.ipsPurpose.trim() ? req.body.ipsPurpose.trim() : null,
   };
   if (![candidate.commissionPercent, candidate.reservePercent, candidate.onlineRefundDays, candidate.liveAppealDays, candidate.featuredCoursePrice].every((value) => Number.isInteger(value) && value >= 0)
     || candidate.commissionPercent + candidate.reservePercent > 100
     || candidate.onlineRefundDays > 365 || candidate.liveAppealDays > 365
+    || (candidate.ipsRecipientAccount !== null && !/^\d{18}$/.test(candidate.ipsRecipientAccount))
     || [candidate.ipsRecipientName, candidate.ipsRecipientAccount, candidate.ipsPurpose].some((value) => value !== null && value.length > 140)) {
     res.status(400).json({ error: "Proverite procente i rokove. Zbir provizije i rezerve ne može preći 100%." });
     return;

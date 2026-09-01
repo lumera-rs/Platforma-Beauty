@@ -52,7 +52,7 @@ import {
 } from "../lib/education-availability-store";
 import { lockEducationScheduleResources } from "../lib/education-locks";
 import { cancelEducationSession, releaseSeatAndPromoteWaiter } from "../lib/education-sessions";
-import { educationIpsQrPayload, educationOperationalPriceQuote } from "../lib/education-marketplace-domain";
+import { educationIpsQrPayload, educationIpsRuntimeEnvironment, educationOperationalPriceQuote } from "../lib/education-marketplace-domain";
 import { getEducationPlatformSettings, lockEducationBillingRules, resolveEducationBillingSettings } from "../lib/education-billing";
 import { operationalCancellationDisposition, operationalPaymentTotals, operationalRescheduleAllowed } from "../lib/education-operational-policy";
 import { reconcileOperationalEducationEnrollmentInTx } from "../lib/education-certificate-eligibility";
@@ -868,11 +868,8 @@ router.get("/education/operations/bookings/:bookingGroupId/installments/:install
   )).limit(1) : [];
   if (!installment) { res.status(404).json({ error: "Dospela rata nije pronađena." }); return; }
   try {
-    const settings = await getEducationPlatformSettings();
-    res.json(GetEducationOperationalInstallmentIpsQrResponse.parse(educationIpsQrPayload({
-      recipientName: settings.ipsRecipientName, recipientAccount: settings.ipsRecipientAccount,
-      purpose: settings.ipsPurpose, amount: installment.amount, reference: installment.paymentReference,
-    })));
+    if (!installment.paymentInstructionsSnapshot) throw new Error("IPS_PAYMENT_SNAPSHOT_MISSING");
+    res.json(GetEducationOperationalInstallmentIpsQrResponse.parse(installment.paymentInstructionsSnapshot));
   } catch (error) {
     res.status(400).json({ error: error instanceof Error && error.message === "IPS_PAYMENT_ACCOUNT_NOT_CONFIGURED"
       ? "IPS račun primaoca nije podešen od administratora." : "IPS podaci za uplatu nisu ispravni." });
@@ -1364,9 +1361,21 @@ router.post("/education/operations/bookings", async (req, res): Promise<void> =>
       cancellationDeadlineAt: new Date(lockedSession.startsAt.getTime() - lockedCourse.cancellationDeadlineHours * 3_600_000),
     }).returning();
     if (quote.installments.length) {
+      const paymentSettings = await getEducationPlatformSettings();
       await tx.insert(educationInstallmentsTable).values(quote.installments.map((amount, index) => ({
         priceSnapshotId: snapshot!.id, installmentNumber: index + 1, amount,
         paymentReference: `EDU-${group!.id.replace(/-/g, "").slice(0, 16)}-${index + 1}`,
+        paymentInstructionsSnapshot: educationIpsQrPayload({
+          recipientName: paymentSettings.ipsRecipientName,
+          recipientAccount: paymentSettings.ipsRecipientAccount,
+          purpose: paymentSettings.ipsPurpose,
+          amount,
+          reference: `EDU-${group!.id.replace(/-/g, "").slice(0, 16)}-${index + 1}`,
+          recipientType: "platform",
+          transactionType: "operational_installment",
+          accountEnvironment: paymentSettings.ipsAccountEnvironment as "production" | "test",
+          runtimeEnvironment: educationIpsRuntimeEnvironment(),
+        }),
         dueAt: index === 0 ? group!.createdAt : new Date(lockedSession.startsAt.getTime() - (quote.installments.length - index - 1) * 30 * 86_400_000),
       })));
     }

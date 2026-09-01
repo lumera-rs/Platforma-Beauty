@@ -15,6 +15,7 @@ import {
 import app from "../app";
 import { createSession, sessionCookieName } from "./auth";
 import { ensureBusinessGrowthSchema } from "./business-growth-schema";
+import { educationIpsQrPayload } from "./education-marketplace-domain";
 import { enqueueEducationReminderSweep, processEducationOutbox } from "./education-outbox";
 import { releaseSeatAndPromoteWaiter } from "./education-sessions";
 
@@ -57,6 +58,7 @@ async function run() {
     ipsRecipientName: string | null;
     ipsRecipientAccount: string | null;
     ipsPurpose: string | null;
+    ipsAccountEnvironment: string;
     createdForTest: boolean;
   } | undefined;
   try {
@@ -123,19 +125,37 @@ async function run() {
         ipsRecipientName: "Education Platform Test",
         ipsRecipientAccount: "840000000000000000",
         ipsPurpose: "Course installment",
+        ipsAccountEnvironment: "test",
       }).where(eq(educationPlatformSettingsTable.id, priorIpsSettings.id)).returning()
       : await db.insert(educationPlatformSettingsTable).values({
         ipsRecipientName: "Education Platform Test",
         ipsRecipientAccount: "840000000000000000",
         ipsPurpose: "Course installment",
+        ipsAccountEnvironment: "test",
       }).returning();
     ipsSettingsRestore = {
       id: ipsSettings!.id,
       ipsRecipientName: priorIpsSettings?.ipsRecipientName ?? null,
       ipsRecipientAccount: priorIpsSettings?.ipsRecipientAccount ?? null,
       ipsPurpose: priorIpsSettings?.ipsPurpose ?? null,
+      ipsAccountEnvironment: priorIpsSettings?.ipsAccountEnvironment ?? "production",
       createdForTest: !priorIpsSettings,
     };
+    for (const installment of installments) {
+      await db.update(educationInstallmentsTable).set({
+        paymentInstructionsSnapshot: educationIpsQrPayload({
+          recipientName: ipsSettings!.ipsRecipientName,
+          recipientAccount: ipsSettings!.ipsRecipientAccount,
+          purpose: ipsSettings!.ipsPurpose,
+          amount: installment.amount,
+          reference: installment.paymentReference,
+          recipientType: "platform",
+          transactionType: "operational_installment",
+          accountEnvironment: "test",
+          runtimeEnvironment: "test",
+        }),
+      }).where(eq(educationInstallmentsTable.id, installment.id));
+    }
     const paymentPlanPath = `/education/operations/bookings/${group!.id}/payment-plan`;
     const ipsQrPath = `/education/operations/bookings/${group!.id}/installments/1/ips-qr`;
     const purchaserPlanResponse = await get(base, paymentPlanPath, cookies[3]!);
@@ -147,7 +167,13 @@ async function run() {
     assert.equal(purchaserPlan.bookingGroupId, group!.id);
     assert.deepEqual(purchaserPlan.installments.map((row) => row.installmentNumber), [1, 2]);
     assert.equal(purchaserPlan.installments[0]!.paymentReference, installments[0]!.paymentReference);
-    assert.equal((await get(base, ipsQrPath, cookies[3]!)).status, 200);
+    const issuedIpsResponse = await get(base, ipsQrPath, cookies[3]!);
+    assert.equal(issuedIpsResponse.status, 200);
+    const issuedIps = await issuedIpsResponse.json() as { recipientAccount: string; payload: string };
+    await db.update(educationPlatformSettingsTable).set({ ipsRecipientAccount: "850000000000000000" })
+      .where(eq(educationPlatformSettingsTable.id, ipsSettings!.id));
+    const persistedIps = await (await get(base, ipsQrPath, cookies[3]!)).json() as { recipientAccount: string; payload: string };
+    assert.deepEqual(persistedIps, issuedIps, "Installment GET returns its issuance snapshot after platform settings change.");
 
     const assertPrivatePaymentDenial = async (auth: string) => {
       for (const path of [paymentPlanPath, ipsQrPath]) {
@@ -1409,6 +1435,7 @@ async function run() {
           ipsRecipientName: ipsSettingsRestore.ipsRecipientName,
           ipsRecipientAccount: ipsSettingsRestore.ipsRecipientAccount,
           ipsPurpose: ipsSettingsRestore.ipsPurpose,
+          ipsAccountEnvironment: ipsSettingsRestore.ipsAccountEnvironment,
         }).where(eq(educationPlatformSettingsTable.id, ipsSettingsRestore.id));
       }
     }

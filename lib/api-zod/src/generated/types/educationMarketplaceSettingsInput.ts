@@ -5,6 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { EducationMarketplaceSettingsInputIpsAccountEnvironment } from './educationMarketplaceSettingsInputIpsAccountEnvironment';
 
 export interface EducationMarketplaceSettingsInput {
   /**
@@ -42,6 +43,7 @@ export interface EducationMarketplaceSettingsInput {
      * @nullable
      */
   ipsRecipientAccount?: string | null;
+  ipsAccountEnvironment?: EducationMarketplaceSettingsInputIpsAccountEnvironment;
   /**
      * @maxLength 140
      * @nullable

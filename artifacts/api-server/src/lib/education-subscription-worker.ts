@@ -5,7 +5,7 @@ import {
   educationPaymentObligationsTable, educationPlatformSettingsTable, subscriptionPlansTable, usersTable,
 } from "@workspace/db";
 import { enqueueTransactionalEmail, lumeraEmailHtml } from "./brevo";
-import { educationIpsQrPayload } from "./education-marketplace-domain";
+import { educationIpsPaymentCode, educationIpsQrPayload, educationIpsRuntimeEnvironment } from "./education-marketplace-domain";
 import { addEducationBillingPeriod, educationCycleAmount, educationPaymentReference, type EducationBillingCycle } from "./education-subscription-domain";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -99,9 +99,9 @@ export async function runEducationSubscriptionLifecycle() {
               id: obligationId, centerId: locked.centerId, subscriptionId: locked.id, kind: "subscription_renewal",
                planIdSnapshot: nextPlanId,
               expectedAmount: amount, recipientNameSnapshot: settings.ipsRecipientName, recipientAccountSnapshot: settings.ipsRecipientAccount,
-              paymentCodeSnapshot: "221", purposeSnapshot: purpose, referenceSnapshot: reference,
+              paymentCodeSnapshot: educationIpsPaymentCode("platform"), purposeSnapshot: purpose, referenceSnapshot: reference,
               billingCycleSnapshot: nextCycle, servicePeriodStart: periodStart, servicePeriodEnd: periodEnd,
-              ipsPayloadSnapshot: JSON.stringify(educationIpsQrPayload({ recipientName: settings.ipsRecipientName, recipientAccount: settings.ipsRecipientAccount, purpose, amount, reference })),
+              ipsPayloadSnapshot: JSON.stringify(educationIpsQrPayload({ recipientName: settings.ipsRecipientName, recipientAccount: settings.ipsRecipientAccount, purpose, amount, reference, recipientType: "platform", transactionType: "subscription", accountEnvironment: settings.ipsAccountEnvironment as "production" | "test", runtimeEnvironment: educationIpsRuntimeEnvironment() })),
             });
           }
         }

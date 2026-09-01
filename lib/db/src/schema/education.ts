@@ -65,6 +65,7 @@ export const educationCentersTable = pgTable("education_centers", {
   paymentReferenceNumber: text("payment_reference_number").unique(),
   legalEntityType: text("legal_entity_type").notNull().default("legal_entity"),
   bankAccount: text("bank_account"),
+  bankAccountEnvironment: text("bank_account_environment").notNull().default("production"),
   commissionPercentOverride: integer("commission_percent_override"),
   reservePercentOverride: integer("reserve_percent_override"),
   onlineRefundDaysOverride: integer("online_refund_days_override"),
@@ -87,6 +88,7 @@ export const educationCentersTable = pgTable("education_centers", {
   check("education_centers_featured_price_override_check", sql`${table.featuredCoursePriceOverride} >= 0`),
   check("education_centers_legal_entity_type_check", sql`${table.legalEntityType} in ('individual','legal_entity')`),
   check("education_centers_bank_account_check", sql`${table.bankAccount} is null or ${table.bankAccount} ~ '^[0-9]{18}$'`),
+  check("education_centers_bank_account_environment_check", sql`${table.bankAccountEnvironment} in ('production','test')`),
 ]);
 
 export const educationCenterSubscriptionsTable = pgTable("education_center_subscriptions", {
@@ -228,6 +230,7 @@ export const educationPlatformSettingsTable = pgTable("education_platform_settin
   /** Public payment instructions, set by an administrator; never infer these. */
   ipsRecipientName: text("ips_recipient_name"),
   ipsRecipientAccount: text("ips_recipient_account"),
+  ipsAccountEnvironment: text("ips_account_environment").notNull().default("production"),
   ipsPurpose: text("ips_purpose"),
   bankReconciliationEnabled: boolean("bank_reconciliation_enabled").notNull().default(false),
   updatedByUserId: uuid("updated_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
@@ -236,6 +239,7 @@ export const educationPlatformSettingsTable = pgTable("education_platform_settin
 }, (table) => [
   // Leading FK coverage for updatedByUserId (audit trail).
   index("education_platform_settings_updated_by_idx").on(table.updatedByUserId),
+  check("education_platform_settings_ips_account_environment_check", sql`${table.ipsAccountEnvironment} in ('production','test')`),
 ]);
 
 export const educationSectionsTable = pgTable("education_sections", {
@@ -701,6 +705,7 @@ export const courseEnrollmentsTable = pgTable("course_enrollments", {
   auditData: jsonb("audit_data").$type<Record<string, unknown>>().notNull().default({}),
   idempotencyKey: text("idempotency_key"),
   idempotencyFingerprint: text("idempotency_fingerprint"),
+  paymentInstructionsSnapshot: jsonb("payment_instructions_snapshot").$type<Record<string, unknown>>(),
   // Set only by the bundle settlement transaction.  A non-null value means
   // financial responsibility belongs exclusively to education_bundle_purchases.
   bundlePurchaseId: uuid("bundle_purchase_id").references((): any => educationBundlePurchasesTable.id, { onDelete: "restrict" }),
@@ -1006,6 +1011,7 @@ export const educationInstallmentsTable = pgTable("education_installments", {
   amount: integer("amount").notNull(),
   status: educationInstallmentStatusEnum("status").notNull().default("pending"),
   paymentReference: text("payment_reference").notNull().unique(),
+  paymentInstructionsSnapshot: jsonb("payment_instructions_snapshot").$type<Record<string, unknown>>(),
   dueAt: timestamp("due_at", { withTimezone: true }),
   settledByUserId: uuid("settled_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   settledAt: timestamp("settled_at", { withTimezone: true }),
@@ -1312,6 +1318,7 @@ export const educationBundlePurchasesTable = pgTable("education_bundle_purchases
   currency: text("currency").notNull().default("RSD"),
   status: educationBundlePurchaseStatusEnum("status").notNull().default("pending_payment"),
   paymentMethod: paymentMethodEnum("payment_method"),
+  paymentReference: text("payment_reference").notNull(),
   paymentInstructions: jsonb("payment_instructions").$type<Record<string, unknown>>().notNull().default({}),
   idempotencyKey: text("idempotency_key").notNull(),
   idempotencyFingerprint: text("idempotency_fingerprint").notNull(),
@@ -1324,6 +1331,7 @@ export const educationBundlePurchasesTable = pgTable("education_bundle_purchases
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   uniqueIndex("education_bundle_purchases_purchaser_idempotency_unique").on(t.purchaserId, t.idempotencyKey),
+  uniqueIndex("education_bundle_purchases_payment_reference_unique").on(t.paymentReference),
   index("education_bundle_purchases_center_status_idx").on(t.centerId, t.status),
   index("education_bundle_purchases_purchaser_requested_idx").on(t.purchaserId, t.requestedAt),
   index("education_bundle_purchases_bundle_idx").on(t.bundleId),
@@ -1332,6 +1340,7 @@ export const educationBundlePurchasesTable = pgTable("education_bundle_purchases
   index("education_bundle_purchases_employee_idx").on(t.employeeId),
   index("education_bundle_purchases_settled_by_idx").on(t.settledByUserId),
   check("education_bundle_purchases_amount_check", sql`${t.amount} >= 0`),
+  check("education_bundle_purchases_payment_reference_snapshot_check", sql`${t.paymentInstructions}->>'reference' is not null and ${t.paymentInstructions}->>'reference' = ${t.paymentReference}`),
   check("education_bundle_purchases_target_check", sql`(${t.targetType} = 'individual' and ${t.learnerUserId} is not null and ${t.salonId} is null and ${t.employeeId} is null) or (${t.targetType} = 'salon_employee' and ${t.learnerUserId} is not null and ${t.salonId} is not null and ${t.employeeId} is not null)`),
 ]);
 

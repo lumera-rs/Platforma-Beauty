@@ -7508,6 +7508,14 @@ export interface EducationDispute {
   resolvedAt?: string | null;
 }
 
+export type EducationMarketplaceSettingsInputIpsAccountEnvironment = typeof EducationMarketplaceSettingsInputIpsAccountEnvironment[keyof typeof EducationMarketplaceSettingsInputIpsAccountEnvironment];
+
+
+export const EducationMarketplaceSettingsInputIpsAccountEnvironment = {
+  production: 'production',
+  test: 'test',
+} as const;
+
 export interface EducationMarketplaceSettingsInput {
   /**
      * @minimum 0
@@ -7544,6 +7552,7 @@ export interface EducationMarketplaceSettingsInput {
      * @nullable
      */
   ipsRecipientAccount?: string | null;
+  ipsAccountEnvironment?: EducationMarketplaceSettingsInputIpsAccountEnvironment;
   /**
      * @maxLength 140
      * @nullable

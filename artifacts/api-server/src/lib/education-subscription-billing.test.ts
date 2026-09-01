@@ -6,10 +6,11 @@ import { eq, inArray, like } from "drizzle-orm";
 import app from "../app";
 import { createSession, sessionCookieName } from "./auth";
 import { runEducationSubscriptionLifecycle } from "./education-subscription-worker";
+import { getEducationPlatformSettings } from "./education-billing";
 import {
   courseEnrollmentsTable, coursesTable, db, educationAccessExtensionsTable,
   educationCenterSubscriptionsTable, educationCentersTable, educationFinancialAuditLogTable,
-  educationPaymentObligationsTable, educationTrialClaimsTable, emailDeliveriesTable,
+  educationPaymentObligationsTable, educationPlatformSettingsTable, educationTrialClaimsTable, emailDeliveriesTable,
   sessionsTable, subscriptionPlansTable, usersTable,
 } from "@workspace/db";
 
@@ -21,6 +22,7 @@ let observerCenterId: string | undefined;
 let courseId: string | undefined;
 let planId: string | undefined;
 let server: ReturnType<typeof app.listen> | undefined;
+let settingsEnvironmentRestore: string | undefined;
 
 const call = async (base: string, cookie: string, path: string, method = "GET", body?: unknown) => {
   const response = await fetch(`${base}/api${path}`, {
@@ -32,6 +34,9 @@ const call = async (base: string, cookie: string, path: string, method = "GET", 
 };
 
 try {
+  const platformSettings = await getEducationPlatformSettings();
+  settingsEnvironmentRestore = platformSettings.ipsAccountEnvironment;
+  await db.update(educationPlatformSettingsTable).set({ ipsAccountEnvironment: "test" }).where(eq(educationPlatformSettingsTable.id, platformSettings.id));
   const [owner, learner1, learner2, learner3, observer, admin] = await db.insert(usersTable).values([
     { firstName: "Owner", lastName: marker, email: `owner-${marker}@example.test`, passwordHash: "fixture", passwordSetAt: new Date(), role: "EDUKATIVNI_CENTAR" },
     { firstName: "Learner1", lastName: marker, email: `learner1-${marker}@example.test`, passwordHash: "fixture", passwordSetAt: new Date(), role: "STUDENT" },
@@ -47,7 +52,7 @@ try {
   planId = plan!.id;
   const [center] = await db.insert(educationCentersTable).values({
     ownerId: owner!.id, name: marker, city: "Beograd", description: marker,
-    imageUrl: "/test.jpg", verificationStatus: "verified", bankAccount: "840000000000000000",
+    imageUrl: "/test.jpg", verificationStatus: "verified", bankAccount: "840000000000000000", bankAccountEnvironment: "test",
   }).returning();
   centerId = center!.id;
   const [observerCenter] = await db.insert(educationCentersTable).values({
@@ -190,4 +195,8 @@ try {
     await db.delete(usersTable).where(inArray(usersTable.id, userIds));
   }
   if (planId) await db.delete(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, planId));
+  if (settingsEnvironmentRestore) {
+    const platformSettings = await getEducationPlatformSettings();
+    await db.update(educationPlatformSettingsTable).set({ ipsAccountEnvironment: settingsEnvironmentRestore }).where(eq(educationPlatformSettingsTable.id, platformSettings.id));
+  }
 }

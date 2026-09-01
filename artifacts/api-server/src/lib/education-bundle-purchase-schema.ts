@@ -14,11 +14,41 @@ export async function ensureEducationBundlePurchaseSchema(schemaName = "public")
       target_type ${schema}.education_bundle_purchase_target NOT NULL, learner_user_id uuid REFERENCES ${schema}.users(id) ON DELETE RESTRICT,
       salon_id uuid REFERENCES ${schema}.salons(id) ON DELETE RESTRICT, employee_id uuid REFERENCES ${schema}.employees(id) ON DELETE RESTRICT,
       amount integer NOT NULL CHECK(amount >= 0), currency text NOT NULL DEFAULT 'RSD', status ${schema}.education_bundle_purchase_status NOT NULL DEFAULT 'pending_payment',
-      payment_method payment_method, payment_instructions jsonb NOT NULL DEFAULT '{}'::jsonb, idempotency_key text NOT NULL, idempotency_fingerprint text NOT NULL,
+       payment_method payment_method, payment_reference text NOT NULL UNIQUE, payment_instructions jsonb NOT NULL DEFAULT '{}'::jsonb, idempotency_key text NOT NULL, idempotency_fingerprint text NOT NULL,
       requested_at timestamptz NOT NULL DEFAULT now(), settled_at timestamptz, settled_by_user_id uuid REFERENCES ${schema}.users(id) ON DELETE SET NULL,
       cancelled_at timestamptz, refunded_at timestamptz, audit_data jsonb NOT NULL DEFAULT '{}'::jsonb, updated_at timestamptz NOT NULL DEFAULT now(),
       CHECK ((target_type='individual' AND learner_user_id IS NOT NULL AND salon_id IS NULL AND employee_id IS NULL) OR (target_type='salon_employee' AND learner_user_id IS NOT NULL AND salon_id IS NOT NULL AND employee_id IS NOT NULL)),
       UNIQUE(purchaser_id,idempotency_key))`);
+    await client.query(`ALTER TABLE ${schema}.education_bundle_purchases ADD COLUMN IF NOT EXISTS payment_reference text`);
+    await client.query(`DROP TRIGGER IF EXISTS education_bundle_purchases_payment_reference_immutable ON ${schema}.education_bundle_purchases`);
+    await client.query(`UPDATE ${schema}.education_bundle_purchases
+      SET payment_reference = 'BND-' || left(replace(id::text, '-', ''), 30),
+          payment_instructions = jsonb_set(COALESCE(payment_instructions, '{}'::jsonb), '{reference}',
+            to_jsonb('BND-' || left(replace(id::text, '-', ''), 30)), true)
+      WHERE payment_reference IS NULL`);
+    await client.query(`UPDATE ${schema}.education_bundle_purchases
+      SET payment_instructions = jsonb_set(COALESCE(payment_instructions, '{}'::jsonb), '{reference}', to_jsonb(payment_reference), true)
+      WHERE payment_instructions->>'reference' IS DISTINCT FROM payment_reference`);
+    await client.query(`ALTER TABLE ${schema}.education_bundle_purchases ALTER COLUMN payment_reference SET NOT NULL`);
+    await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS education_bundle_purchases_payment_reference_unique ON ${schema}.education_bundle_purchases(payment_reference)`);
+    await client.query(`DO $$ BEGIN
+      ALTER TABLE ${schema}.education_bundle_purchases ADD CONSTRAINT education_bundle_purchases_payment_reference_snapshot_check
+        CHECK (payment_instructions->>'reference' IS NOT NULL AND payment_instructions->>'reference' = payment_reference);
+      EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$`);
+    await client.query(`CREATE OR REPLACE FUNCTION ${schema}.reject_bundle_payment_reference_change() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.payment_reference IS DISTINCT FROM OLD.payment_reference
+          OR NEW.payment_instructions IS DISTINCT FROM OLD.payment_instructions THEN
+          RAISE EXCEPTION 'education bundle payment_reference is immutable; payment instructions are immutable';
+        END IF;
+        RETURN NEW;
+      END
+    $$ LANGUAGE plpgsql`);
+    await client.query(`DROP TRIGGER IF EXISTS education_bundle_purchases_payment_reference_immutable ON ${schema}.education_bundle_purchases`);
+    await client.query(`CREATE TRIGGER education_bundle_purchases_payment_reference_immutable
+      BEFORE UPDATE OF payment_reference, payment_instructions ON ${schema}.education_bundle_purchases
+      FOR EACH ROW EXECUTE FUNCTION ${schema}.reject_bundle_payment_reference_change()`);
     await client.query(`ALTER TABLE ${schema}.education_bundle_purchases DROP CONSTRAINT IF EXISTS education_bundle_purchases_check`);
     await client.query(`ALTER TABLE ${schema}.education_bundle_purchases DROP CONSTRAINT IF EXISTS education_bundle_purchases_target_check`);
     await client.query(`UPDATE ${schema}.education_bundle_purchases purchase

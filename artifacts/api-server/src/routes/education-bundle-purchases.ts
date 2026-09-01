@@ -1,12 +1,13 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import PDFDocument from "pdfkit";
 import { z } from "zod";
 import {
   courseEnrollmentsTable, coursesTable, db, educationBundlePurchaseEscrowsTable,
   educationBundlePurchaseItemsTable, educationBundlePurchaseLedgerEntriesTable,
   educationBundlePurchasesTable, educationBundleCoursesTable, educationBundlesTable,
-  educationCentersTable, employeesTable, salonsTable,
+  educationCentersTable, educationPaymentObligationsTable, employeesTable, salonsTable,
   usersTable,
 } from "@workspace/db";
 import { getCurrentUser, isAdmin } from "../lib/auth";
@@ -16,7 +17,7 @@ import {
   lockEducationCenterFinancials,
   resolveEducationBillingSettingsForChargeInTx,
 } from "../lib/education-billing";
-import { educationIpsQrPayload } from "../lib/education-marketplace-domain";
+import { educationIpsQrPayload, educationIpsRuntimeEnvironment } from "../lib/education-marketplace-domain";
 
 const router: IRouter = Router();
 const purchaseBody = z.object({
@@ -42,6 +43,77 @@ async function canManageCenter(userId: string, centerId: string) {
   const [center] = await db.select({ ownerId: educationCentersTable.ownerId }).from(educationCentersTable).where(eq(educationCentersTable.id, centerId)).limit(1);
   return center?.ownerId === userId;
 }
+
+function paymentSlipPdf(fields: {
+  title: string; amount: number; recipientName: string; recipientAccount: string;
+  reference: string; purpose: string; paymentCode: string;
+}) {
+  return new Promise<Buffer>((resolve, reject) => {
+    const document = new PDFDocument({ size: "A4", margin: 52, compress: false, info: { Title: fields.title } });
+    const chunks: Buffer[] = [];
+    document.on("data", (chunk: Buffer) => chunks.push(chunk));
+    document.on("end", () => resolve(Buffer.concat(chunks)));
+    document.on("error", reject);
+    document.fontSize(20).text(fields.title);
+    document.moveDown(0.5).fontSize(10).fillColor("#555").text("Instrukcije za plaćanje putem IPS / bank transfera");
+    document.moveDown(1.5).fillColor("#111").fontSize(12);
+    const rows = [
+      ["Primalac", fields.recipientName],
+      ["Račun primaoca", fields.recipientAccount],
+      ["Iznos", `${fields.amount.toLocaleString("sr-RS")} RSD`],
+      ["Šifra plaćanja", fields.paymentCode],
+      ["Poziv na broj", fields.reference],
+      ["Svrha uplate", fields.purpose],
+    ];
+    for (const [label, value] of rows) {
+      document.font("Helvetica-Bold").text(`${label}: `, { continued: true }).font("Helvetica").text(value);
+      document.moveDown(0.35);
+    }
+    document.moveDown(2).fontSize(10).fillColor("#555")
+      .text("Ovaj dokument je uplatnica sa instrukcijama za plaćanje i nije SEF e-faktura.");
+    document.end();
+  });
+}
+
+router.get("/education/payment-slips/:type/:id", async (req, res) => {
+  const actor = await user(req, res); if (!actor) return;
+  if (req.params.type === "bundle") {
+    const [purchase] = await db.select().from(educationBundlePurchasesTable).where(eq(educationBundlePurchasesTable.id, req.params.id)).limit(1);
+    if (!purchase || (!isAdmin(actor) && purchase.purchaserId !== actor.id)) { res.status(404).json({ error: "Kupovina nije pronađena." }); return; }
+    const instructions = purchase.paymentInstructions as Record<string, unknown> | null;
+    if (!instructions || typeof instructions.recipientName !== "string" || typeof instructions.recipientAccount !== "string"
+      || typeof instructions.reference !== "string" || typeof instructions.purpose !== "string"
+      || typeof instructions.paymentCode !== "string") { res.status(409).json({ error: "Sačuvane instrukcije za plaćanje nisu dostupne." }); return; }
+    const pdf = await paymentSlipPdf({
+      title: "Uplatnica za paket edukacija", amount: purchase.amount,
+      recipientName: instructions.recipientName, recipientAccount: instructions.recipientAccount,
+      reference: instructions.reference, purpose: instructions.purpose, paymentCode: instructions.paymentCode,
+    });
+    res.type("application/pdf").setHeader("Content-Disposition", `attachment; filename="uplatnica-paket-${purchase.id}.pdf"`).send(pdf);
+    return;
+  }
+  if (req.params.type !== "obligation") { res.status(404).json({ error: "Uplatnica nije pronađena." }); return; }
+  const [obligation] = await db.select().from(educationPaymentObligationsTable).where(eq(educationPaymentObligationsTable.id, req.params.id)).limit(1);
+  if (!obligation) { res.status(404).json({ error: "Obaveza nije pronađena." }); return; }
+  const [enrollment] = obligation.enrollmentId
+    ? await db.select({ purchaserId: courseEnrollmentsTable.purchaserId }).from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, obligation.enrollmentId)).limit(1)
+    : [];
+  const [center] = obligation.centerId
+    ? await db.select({ ownerId: educationCentersTable.ownerId }).from(educationCentersTable).where(eq(educationCentersTable.id, obligation.centerId)).limit(1)
+    : [];
+  const [salon] = obligation.salonId
+    ? await db.select({ ownerId: salonsTable.ownerId }).from(salonsTable).where(eq(salonsTable.id, obligation.salonId)).limit(1)
+    : [];
+  if (!isAdmin(actor) && enrollment?.purchaserId !== actor.id && center?.ownerId !== actor.id && salon?.ownerId !== actor.id) {
+    res.status(404).json({ error: "Obaveza nije pronađena." }); return;
+  }
+  const pdf = await paymentSlipPdf({
+    title: "Uplatnica za Education obavezu", amount: obligation.expectedAmount,
+    recipientName: obligation.recipientNameSnapshot, recipientAccount: obligation.recipientAccountSnapshot,
+    reference: obligation.referenceSnapshot, purpose: obligation.purposeSnapshot, paymentCode: obligation.paymentCodeSnapshot,
+  });
+  res.type("application/pdf").setHeader("Content-Disposition", `attachment; filename="uplatnica-${obligation.id}.pdf"`).send(pdf);
+});
 
 // Public catalog deliberately exposes only currently purchasable packages.
 router.get("/education/bundles", async (_req, res) => {
@@ -89,12 +161,17 @@ router.post("/education/bundles/:bundleId/purchases", async (req, res) => {
     target = { learnerUserId: employee.userId, salonId: parsed.data.salonId, employeeId: parsed.data.employeeId };
   }
   const settings = await getEducationPlatformSettings();
-  const reference = `BND-${bundle.id.replace(/-/g, "").slice(0, 18)}`;
-  let instructions: Record<string, unknown> = { reference, pending: true };
-  if (settings) try { instructions = { ...instructions, ...educationIpsQrPayload({ recipientName: settings.ipsRecipientName, recipientAccount: settings.ipsRecipientAccount, purpose: settings.ipsPurpose, amount: bundle.price, reference }) }; } catch { /* settings may intentionally be incomplete */ }
+  const purchaseId = randomUUID();
+  const reference = `BND-${purchaseId.replace(/-/g, "").slice(0, 30)}`;
+  let instructions: Record<string, unknown>;
+  try {
+    instructions = educationIpsQrPayload({ recipientName: settings.ipsRecipientName, recipientAccount: settings.ipsRecipientAccount, purpose: settings.ipsPurpose, amount: bundle.price, reference, recipientType: "platform", transactionType: "bundle_purchase", accountEnvironment: settings.ipsAccountEnvironment as "production" | "test", runtimeEnvironment: educationIpsRuntimeEnvironment() });
+  } catch {
+    res.status(409).json({ error: "Instrukcije za IPS uplatu trenutno nisu podešene." }); return;
+  }
   try {
     const created = await db.transaction(async tx => {
-      const [purchase] = await tx.insert(educationBundlePurchasesTable).values({ bundleId: bundle.id, centerId: bundle.centerId, purchaserId: buyer.id, targetType: parsed.data.targetType, ...target, amount: bundle.price, idempotencyKey: key, idempotencyFingerprint: fp, paymentInstructions: instructions, auditData: { bundleTitle: bundle.title } }).returning();
+       const [purchase] = await tx.insert(educationBundlePurchasesTable).values({ id: purchaseId, bundleId: bundle.id, centerId: bundle.centerId, purchaserId: buyer.id, targetType: parsed.data.targetType, ...target, amount: bundle.price, paymentReference: reference, idempotencyKey: key, idempotencyFingerprint: fp, paymentInstructions: instructions, auditData: { bundleTitle: bundle.title } }).returning();
       await tx.insert(educationBundlePurchaseItemsTable).values(bundleCourses.map((course, sortOrder) => ({ purchaseId: purchase.id, courseId: course.id, courseTitle: course.title, courseTerms: { duration: course.duration, format: course.format }, sortOrder })));
       return purchase;
     });

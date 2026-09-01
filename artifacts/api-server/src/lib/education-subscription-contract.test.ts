@@ -61,11 +61,11 @@ try {
   if (currentSettings) {
     settingsRestore = currentSettings;
     await db.update(educationPlatformSettingsTable).set({
-      ipsRecipientName: `LUMERA ${marker}`, ipsRecipientAccount: "840000000000000000", ipsPurpose: "Education pretplata",
+      ipsRecipientName: `LUMERA ${marker}`, ipsRecipientAccount: "840000000000000000", ipsPurpose: "Education pretplata", ipsAccountEnvironment: "test",
     }).where(eq(educationPlatformSettingsTable.id, currentSettings.id));
   } else {
     const [created] = await db.insert(educationPlatformSettingsTable).values({
-      ipsRecipientName: `LUMERA ${marker}`, ipsRecipientAccount: "840000000000000000", ipsPurpose: "Education pretplata",
+      ipsRecipientName: `LUMERA ${marker}`, ipsRecipientAccount: "840000000000000000", ipsPurpose: "Education pretplata", ipsAccountEnvironment: "test",
     }).returning();
     insertedSettingsId = created!.id;
   }
@@ -288,7 +288,7 @@ try {
   if (settingsRestore) {
     await db.update(educationPlatformSettingsTable).set({
       ipsRecipientName: settingsRestore.ipsRecipientName, ipsRecipientAccount: settingsRestore.ipsRecipientAccount,
-      ipsPurpose: settingsRestore.ipsPurpose, updatedAt: settingsRestore.updatedAt,
+      ipsPurpose: settingsRestore.ipsPurpose, ipsAccountEnvironment: settingsRestore.ipsAccountEnvironment, updatedAt: settingsRestore.updatedAt,
     }).where(eq(educationPlatformSettingsTable.id, settingsRestore.id));
   } else if (insertedSettingsId) {
     await db.delete(educationPlatformSettingsTable).where(eq(educationPlatformSettingsTable.id, insertedSettingsId));

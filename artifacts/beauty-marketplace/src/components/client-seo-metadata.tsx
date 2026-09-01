@@ -121,7 +121,7 @@ async function dynamicMetadata(pathname: string, queryClient: QueryClient): Prom
       indexable: true,
     };
   }
-  const course = pathname.match(/^\/edukacije\/([a-zA-Z0-9-]+)$/);
+  const course = pathname.match(/^\/edukacije\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i);
   if (course) {
     const response = await fetch(`/api/education/public/courses/${encodeURIComponent(course[1])}`);
     if (!response.ok) return null;
