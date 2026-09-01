@@ -9975,6 +9975,54 @@ export const GetEducationCenterStatusResponse = zod.array(GetEducationCenterStat
 
 
 /**
+ * @summary List active Education center subscription plans
+ */
+export const listEducationSubscriptionPlansResponsePriceMin = 0;
+
+export const listEducationSubscriptionPlansResponseTrialDaysMin = 0;
+
+
+
+export const ListEducationSubscriptionPlansResponseItem = zod.object({
+  "id": zod.string().uuid(),
+  "name": zod.string(),
+  "price": zod.number().int().min(listEducationSubscriptionPlansResponsePriceMin),
+  "trialDays": zod.number().int().min(listEducationSubscriptionPlansResponseTrialDaysMin),
+  "features": zod.array(zod.string()),
+  "limits": zod.record(zod.string(), zod.number().int())
+})
+export const ListEducationSubscriptionPlansResponse = zod.array(ListEducationSubscriptionPlansResponseItem)
+
+
+/**
+ * @summary Get the current Education center subscription lifecycle
+ */
+export const GetEducationSubscriptionStatusResponse = zod.object({
+  "center": zod.record(zod.string(), zod.unknown()),
+  "subscription": zod.record(zod.string(), zod.unknown()).nullable(),
+  "inGrace": zod.boolean(),
+  "operational": zod.boolean()
+})
+
+
+/**
+ * @summary Select or change the Education center subscription plan
+ */
+export const SelectEducationSubscriptionPlanBody = zod.object({
+  "planId": zod.string().uuid(),
+  "billingCycle": zod.enum(['monthly', 'yearly'])
+})
+
+export const SelectEducationSubscriptionPlanResponse = zod.record(zod.string(), zod.unknown())
+
+
+/**
+ * @summary Create center payment instructions for subscription renewal
+ */
+export const GetEducationSubscriptionRenewalInstructionsResponse = zod.record(zod.string(), zod.unknown())
+
+
+/**
  * @summary List the current buyer's education purchases
  */
 export const ListEducationPurchasesResponseItem = zod.object({

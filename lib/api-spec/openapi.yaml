@@ -3034,6 +3034,53 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/EducationCenterStatus" }
+  /education/subscription/plans:
+    get:
+      operationId: listEducationSubscriptionPlans
+      tags: [education]
+      summary: List active Education center subscription plans
+      responses:
+        "200":
+          description: Plans
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/EducationSubscriptionPlan" } }
+  /education/subscription/status:
+    get:
+      operationId: getEducationSubscriptionStatus
+      tags: [education]
+      summary: Get the current Education center subscription lifecycle
+      responses:
+        "200":
+          description: Subscription status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationSubscriptionStatus" }
+  /education/subscription/select-plan:
+    post:
+      operationId: selectEducationSubscriptionPlan
+      tags: [education]
+      summary: Select or change the Education center subscription plan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                planId: { type: string, format: uuid }
+                billingCycle: { type: string, enum: [monthly, yearly] }
+              required: [planId, billingCycle]
+      responses:
+        "201": { description: Plan selected, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+  /education/subscription/renewal-instructions:
+    post:
+      operationId: getEducationSubscriptionRenewalInstructions
+      tags: [education]
+      summary: Create center payment instructions for subscription renewal
+      responses:
+        "200": { description: IPS instructions, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
   /education/purchases:
     get:
       operationId: listEducationPurchases
@@ -13915,6 +13962,24 @@ components:
         qualifiesTopRated: { type: boolean }
         metricsExplanation: { type: string }
       required: [id, name, verificationStatus, eligible, organicInquiriesAndCompletedEnrollments90d, completedLearnerCount, publishedReviewCount, publishedRating, qualifiesMostRequested, qualifiesTopRated, metricsExplanation]
+    EducationSubscriptionPlan:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        price: { type: integer, minimum: 0 }
+        trialDays: { type: integer, minimum: 0 }
+        features: { type: array, items: { type: string } }
+        limits: { type: object, additionalProperties: { type: integer } }
+      required: [id, name, price, trialDays, features, limits]
+    EducationSubscriptionStatus:
+      type: object
+      properties:
+        center: { type: object, additionalProperties: true }
+        subscription: { type: ["object", "null"], additionalProperties: true }
+        inGrace: { type: boolean }
+        operational: { type: boolean }
+      required: [center, subscription, inGrace, operational]
     EducationMessage:
       type: object
       properties:

@@ -48,6 +48,7 @@ import {
 } from "./lib/appointment-customer-events";
 import { enqueueEducationReminderSweep, processEducationOutbox } from "./lib/education-outbox";
 import { runFeaturedPlacementPaymentReminderSweep } from "./lib/featured-placement-payment-reminders";
+import { runEducationSubscriptionLifecycle } from "./lib/education-subscription-worker";
 
 const rawPort = process.env["PORT"];
 
@@ -111,6 +112,10 @@ const educationReminderSweep = createResilientScheduledJob({ job: "education-rem
 const featuredPlacementPaymentReminders = createResilientScheduledJob({
   job: "featured-placement-payment-reminders",
   run: runFeaturedPlacementPaymentReminderSweep,
+});
+const educationSubscriptionLifecycle = createResilientScheduledJob({
+  job: "education-subscription-lifecycle",
+  run: runEducationSubscriptionLifecycle,
 });
 const educationGalleryCleanup = createResilientScheduledJob({
   job: "education-gallery-cleanup",
@@ -224,6 +229,7 @@ const scheduledJobs = [
   systemPushDeliveries,
   smsOutboxDeliveries,
   featuredPlacementPaymentReminders,
+  educationSubscriptionLifecycle,
 ];
 
 const retryInterval = setInterval(() => {
@@ -258,6 +264,11 @@ const featuredPlacementPaymentReminderInterval = setInterval(() => {
 }, 15 * 60_000);
 featuredPlacementPaymentReminderInterval.unref();
 void featuredPlacementPaymentReminders.run();
+const educationSubscriptionInterval = setInterval(() => {
+  void educationSubscriptionLifecycle.run();
+}, 60 * 60_000);
+educationSubscriptionInterval.unref();
+void educationSubscriptionLifecycle.run();
 
 const beautyJobsExpiryInterval = setInterval(() => {
   void beautyJobsExpirySweep.run();

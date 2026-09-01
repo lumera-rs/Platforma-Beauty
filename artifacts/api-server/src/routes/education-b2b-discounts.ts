@@ -1,10 +1,11 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, asc, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { z } from "zod";
 import {
   coursesTable, db, educationB2bDiscountAuditsTable, educationB2bDiscountSettingsTable,
   educationB2bDiscountTiersTable, educationB2bOrderItemsTable, educationB2bOrdersTable,
-  educationCenterStaffTable, educationCentersTable, educationFeaturedChargesTable,
-  educationPlacementsTable, productsTable,
+  educationCenterStaffTable, educationCentersTable, educationFinancialAuditLogTable,
+  productsTable,
 } from "@workspace/db";
 import {
   AdminGetEducationB2bDiscountTiersResponse, AdminReplaceEducationB2bDiscountTiersBody,
@@ -12,7 +13,7 @@ import {
   CheckoutEducationB2bOrderResponse, GetEducationB2bBenefitResponse,
   QuoteEducationB2bOrderBody, QuoteEducationB2bOrderResponse,
 } from "@workspace/api-zod";
-import { getCurrentUser, isAdmin } from "../lib/auth";
+import { getCurrentUser } from "../lib/auth";
 import { educationBelgradeInstant } from "../lib/education-availability-store";
 
 const router: IRouter = Router();
@@ -58,20 +59,17 @@ async function benefit(centerId: string, now = new Date(), store: any = db) {
     .where(eq(educationB2bDiscountSettingsTable.id, true)).for("share").limit(1);
   const tiers = await store.select().from(educationB2bDiscountTiersTable)
     .orderBy(asc(educationB2bDiscountTiersTable.minSpendRsd), asc(educationB2bDiscountTiersTable.sortOrder));
-  const featured = await store.select({ amount: sql<number>`coalesce(sum(${educationFeaturedChargesTable.amount}), 0)::int` })
-    .from(educationFeaturedChargesTable).where(and(
-      eq(educationFeaturedChargesTable.centerId, centerId), eq(educationFeaturedChargesTable.status, "paid"),
-      gte(educationFeaturedChargesTable.settledAt, period.start), lt(educationFeaturedChargesTable.settledAt, period.end),
-    ));
-  const placements = await store.select({ amount: sql<number>`coalesce(sum(${educationPlacementsTable.priceSnapshot}), 0)::int` })
-    .from(educationPlacementsTable)
-    .leftJoin(coursesTable, eq(coursesTable.id, educationPlacementsTable.courseId))
+  const completedOrders = await store.select({
+    amount: sql<number>`coalesce(sum(greatest(${educationB2bOrdersTable.totalRsd} - ${educationB2bOrdersTable.refundedAmountRsd}, 0)), 0)::int`,
+  }).from(educationB2bOrdersTable)
     .where(and(
-      or(eq(educationPlacementsTable.centerId, centerId), eq(coursesTable.centerId, centerId)),
-      inArray(educationPlacementsTable.status, ["active", "expired"]),
-      gte(educationPlacementsTable.settledAt, period.start), lt(educationPlacementsTable.settledAt, period.end),
+      eq(educationB2bOrdersTable.centerId, centerId),
+      eq(educationB2bOrdersTable.paymentStatus, "paid"),
+      eq(educationB2bOrdersTable.fulfillmentStatus, "COMPLETED"),
+      gte(educationB2bOrdersTable.completedAt, period.start),
+      lt(educationB2bOrdersTable.completedAt, period.end),
     ));
-  const spend = Number(featured[0]?.amount ?? 0) + Number(placements[0]?.amount ?? 0);
+  const spend = Number(completedOrders[0]?.amount ?? 0);
   const tier = selectEducationB2bTier(
     tiers as Array<typeof educationB2bDiscountTiersTable.$inferSelect>, spend,
   );
@@ -79,7 +77,7 @@ async function benefit(centerId: string, now = new Date(), store: any = db) {
   return {
     periodStart: period.start.toISOString(), periodEnd: period.end.toISOString(),
     priorMonthSpendRsd: spend, discountPercent: tier?.discountPercent ?? 0,
-    discountReason: tier ? `Automatski nivo „${tier.name}” prema plaćenim naknadama prethodnog meseca.` : "Prethodni mesec ne pripada nijednom podešenom nivou.",
+    discountReason: tier ? `Automatski nivo „${tier.name}” prema neto plaćenim i završenim B2B porudžbinama prethodnog meseca.` : "Prethodni mesec ne pripada nijednom podešenom nivou.",
     amountToNextTierRsd: next ? next.minSpendRsd - spend : null,
     tierId: tier?.id ?? null, settingsVersion: settings?.version ?? 1,
   };
@@ -176,7 +174,7 @@ router.post("/education/b2b/checkout", async (req, res) => {
 router.get("/admin/education/b2b-discount-tiers", async (req, res) => {
   const user = await getCurrentUser(req);
   if (!user) { res.status(401).json({ error: "Prijava je obavezna." }); return; }
-  if (!isAdmin(user)) { res.status(403).json({ error: "Administratorski pristup je obavezan." }); return; }
+  if (user.role !== "SUPER_ADMIN") { res.status(403).json({ error: "Samo super administrator može menjati finansijska pravila." }); return; }
   const current = await db.transaction(async (tx) => {
     const settings = await tx.select().from(educationB2bDiscountSettingsTable)
       .where(eq(educationB2bDiscountSettingsTable.id, true)).for("share").limit(1);
@@ -190,7 +188,7 @@ router.get("/admin/education/b2b-discount-tiers", async (req, res) => {
 router.put("/admin/education/b2b-discount-tiers", async (req, res) => {
   const user = await getCurrentUser(req);
   if (!user) { res.status(401).json({ error: "Prijava je obavezna." }); return; }
-  if (!isAdmin(user)) { res.status(403).json({ error: "Administratorski pristup je obavezan." }); return; }
+  if (user.role !== "SUPER_ADMIN") { res.status(403).json({ error: "Samo super administrator može menjati finansijska pravila." }); return; }
   const body = AdminReplaceEducationB2bDiscountTiersBody.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: "Nivoi popusta nisu ispravni." }); return; }
   const sorted = [...body.data.tiers].sort((a, b) => a.minSpendRsd - b.minSpendRsd);
@@ -204,6 +202,8 @@ router.put("/admin/education/b2b-discount-tiers", async (req, res) => {
       .where(eq(educationB2bDiscountSettingsTable.id, true)).for("update").limit(1);
     const version = settings?.version ?? 1;
     if (version !== body.data.expectedVersion) return null;
+    const oldTiers = await tx.select().from(educationB2bDiscountTiersTable)
+      .orderBy(asc(educationB2bDiscountTiersTable.sortOrder));
     await tx.delete(educationB2bDiscountTiersTable);
     const tiers = body.data.tiers.length ? await tx.insert(educationB2bDiscountTiersTable)
       .values(body.data.tiers.map((tier) => ({ ...tier, version: version + 1 }))).returning() : [];
@@ -215,10 +215,87 @@ router.put("/admin/education/b2b-discount-tiers", async (req, res) => {
     await tx.insert(educationB2bDiscountAuditsTable).values({
       version: version + 1, actorUserId: user.id, tiersSnapshot: body.data.tiers,
     });
+    await tx.insert(educationFinancialAuditLogTable).values({
+      actorUserId: user.id, action: "b2b_discount_tiers_changed",
+      entityType: "education_b2b_discount_settings", entityId: "global",
+      oldValue: { version, tiers: oldTiers },
+      newValue: { version: version + 1, tiers: body.data.tiers },
+      reason: "Promena pragova i procenata Education B2B pogodnosti.",
+    });
     return { version: version + 1, tiers };
   });
   if (!updated) { res.status(409).json({ error: "Podešavanja su u međuvremenu promenjena." }); return; }
   res.json(AdminReplaceEducationB2bDiscountTiersResponse.parse(updated));
+});
+
+const orderFinanceBody = z.object({
+  confirmedAmountRsd: z.number().int().nonnegative(),
+  reason: z.string().trim().min(3).max(1000),
+});
+
+router.post("/admin/education/b2b-orders/:orderId/settle", async (req, res) => {
+  const actor = await getCurrentUser(req);
+  if (!actor) { res.status(401).json({ error: "Prijava je obavezna." }); return; }
+  if (actor.role !== "SUPER_ADMIN") { res.status(403).json({ error: "Samo super administrator može potvrditi uplatu." }); return; }
+  const body = orderFinanceBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: "Potvrđeni iznos i razlog su obavezni." }); return; }
+  try {
+    const order = await db.transaction(async (tx) => {
+      const [locked] = await tx.select().from(educationB2bOrdersTable)
+        .where(eq(educationB2bOrdersTable.id, req.params.orderId)).for("update").limit(1);
+      if (!locked) throw new Error("NOT_FOUND");
+      if (locked.paymentStatus !== "pending") throw new Error("ALREADY_RECORDED");
+      const [updated] = await tx.update(educationB2bOrdersTable).set({
+        paymentStatus: "paid", settledAt: new Date(), settledByUserId: actor.id,
+      }).where(and(eq(educationB2bOrdersTable.id, locked.id), eq(educationB2bOrdersTable.paymentStatus, "pending"))).returning();
+      if (!updated) throw new Error("ALREADY_RECORDED");
+      await tx.insert(educationFinancialAuditLogTable).values({
+        actorUserId: actor.id, action: "education_b2b_order_settled",
+        entityType: "education_b2b_order", entityId: locked.id,
+        oldValue: { paymentStatus: locked.paymentStatus, expectedAmountRsd: locked.totalRsd },
+        newValue: { paymentStatus: "paid", confirmedAmountRsd: body.data.confirmedAmountRsd },
+        reason: body.data.reason,
+      });
+      return updated;
+    });
+    res.json(order);
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "FAILED";
+    res.status(code === "NOT_FOUND" ? 404 : 409).json({ error: code === "ALREADY_RECORDED" ? "Uplata je već evidentirana." : "Porudžbina nije pronađena." });
+  }
+});
+
+router.post("/admin/education/b2b-orders/:orderId/refund", async (req, res) => {
+  const actor = await getCurrentUser(req);
+  if (!actor) { res.status(401).json({ error: "Prijava je obavezna." }); return; }
+  if (actor.role !== "SUPER_ADMIN") { res.status(403).json({ error: "Samo super administrator može evidentirati refundaciju." }); return; }
+  const body = orderFinanceBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: "Iznos i razlog su obavezni." }); return; }
+  try {
+    const order = await db.transaction(async (tx) => {
+      const [locked] = await tx.select().from(educationB2bOrdersTable)
+        .where(eq(educationB2bOrdersTable.id, req.params.orderId)).for("update").limit(1);
+      if (!locked) throw new Error("NOT_FOUND");
+      if (locked.paymentStatus !== "paid" || body.data.confirmedAmountRsd > locked.totalRsd - locked.refundedAmountRsd) throw new Error("INVALID_REFUND");
+      const refundedAmountRsd = locked.refundedAmountRsd + body.data.confirmedAmountRsd;
+      const [updated] = await tx.update(educationB2bOrdersTable).set({
+        refundedAmountRsd,
+        paymentStatus: refundedAmountRsd === locked.totalRsd ? "refunded" : "paid",
+      }).where(eq(educationB2bOrdersTable.id, locked.id)).returning();
+      await tx.insert(educationFinancialAuditLogTable).values({
+        actorUserId: actor.id, action: "education_b2b_order_refunded",
+        entityType: "education_b2b_order", entityId: locked.id,
+        oldValue: { refundedAmountRsd: locked.refundedAmountRsd, paymentStatus: locked.paymentStatus },
+        newValue: { refundedAmountRsd, paymentStatus: updated!.paymentStatus },
+        reason: body.data.reason,
+      });
+      return updated;
+    });
+    res.json(order);
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "FAILED";
+    res.status(code === "NOT_FOUND" ? 404 : 409).json({ error: code === "INVALID_REFUND" ? "Refundacija nije dozvoljena ili iznos prelazi preostalu uplatu." : "Porudžbina nije pronađena." });
+  }
 });
 
 export default router;

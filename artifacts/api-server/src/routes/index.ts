@@ -19,6 +19,7 @@ import educationOperationsRouter from "./education-operations";
 import educationB2bDiscountsRouter from "./education-b2b-discounts";
 import educationCenterOperationsRouter from "./education-center-operations";
 import educationBundlePurchasesRouter from "./education-bundle-purchases";
+import educationSubscriptionBillingRouter from "./education-subscription-billing";
 
 const router: IRouter = Router();
 
@@ -38,6 +39,7 @@ router.use(educationOperationsRouter);
 router.use(educationB2bDiscountsRouter);
 router.use(educationCenterOperationsRouter);
 router.use(educationBundlePurchasesRouter);
+router.use(educationSubscriptionBillingRouter);
 router.use(marketplaceRouter);
 router.use(retailSubscriptionsRouter);
 router.use(growthRouter);

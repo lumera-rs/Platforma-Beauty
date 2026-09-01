@@ -416,7 +416,7 @@ function Router() {
         <Route path="/vlasnik/prodavnica/dostava"><RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerCheckoutDeliveryPage /></RoleGuard></Route>
         <Route path="/vlasnik/prodavnica/pregled"><RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerCheckoutReviewPage /></RoleGuard></Route>
         <Route path="/vlasnik/prodavnica/porudzbina/:id/potvrda"><RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><OwnerOrderConfirmationPage /></RoleGuard></Route>
-        <Route path="/biznis/poslovi"><RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR']} loginPath="/poslovna-prijava"><BusinessBeautyJobs /></RoleGuard></Route>
+         <Route path="/biznis/poslovi"><RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE', 'INSTRUCTOR']} loginPath="/poslovna-prijava"><BusinessBeautyJobs /></RoleGuard></Route>
         <Route path="/vlasnik/porudzbine/:orderId"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrders /></RoleGuard></Route>
         <Route path="/vlasnik/porudzbine"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrders /></RoleGuard></Route>
         <Route path="/vlasnik/porudzbine-na-cekanju/:id"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrderApprovals /></RoleGuard></Route>

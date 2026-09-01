@@ -7415,6 +7415,34 @@ export interface EducationCenterStatus {
   metricsExplanation: string;
 }
 
+export type EducationSubscriptionPlanLimits = {[key: string]: number};
+
+export interface EducationSubscriptionPlan {
+  id: string;
+  name: string;
+  /** @minimum 0 */
+  price: number;
+  /** @minimum 0 */
+  trialDays: number;
+  features: string[];
+  limits: EducationSubscriptionPlanLimits;
+}
+
+export type EducationSubscriptionStatusCenter = { [key: string]: unknown };
+
+/**
+ * @nullable
+ */
+export type EducationSubscriptionStatusSubscription = { [key: string]: unknown } | null;
+
+export interface EducationSubscriptionStatus {
+  center: EducationSubscriptionStatusCenter;
+  /** @nullable */
+  subscription: EducationSubscriptionStatusSubscription;
+  inGrace: boolean;
+  operational: boolean;
+}
+
 export interface EducationMessage {
   id: string;
   body: string;
@@ -14080,6 +14108,23 @@ export const AdminListOrdersDeliveryMethod = {
   courier: 'courier',
   personal_belgrade: 'personal_belgrade',
 } as const;
+
+export type SelectEducationSubscriptionPlanBodyBillingCycle = typeof SelectEducationSubscriptionPlanBodyBillingCycle[keyof typeof SelectEducationSubscriptionPlanBodyBillingCycle];
+
+
+export const SelectEducationSubscriptionPlanBodyBillingCycle = {
+  monthly: 'monthly',
+  yearly: 'yearly',
+} as const;
+
+export type SelectEducationSubscriptionPlanBody = {
+  planId: string;
+  billingCycle: SelectEducationSubscriptionPlanBodyBillingCycle;
+};
+
+export type SelectEducationSubscriptionPlan201 = { [key: string]: unknown };
+
+export type GetEducationSubscriptionRenewalInstructions200 = { [key: string]: unknown };
 
 export type ListEducationBundles200Item = { [key: string]: unknown };
 

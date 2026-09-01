@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, Link } from "wouter";
 import { useGetCurrentUser, useGetReferralDashboard, getGetReferralDashboardQueryKey } from "@workspace/api-client-react";
 import { BusinessLayout } from "@/components/business-layout";
-import { Loader2, BookOpen, ArrowRight, Building2, CheckCircle2, GraduationCap, Gift, ChevronRight, Users } from "lucide-react";
+import { Loader2, BookOpen, ArrowRight, Building2, CheckCircle2, GraduationCap, Gift, ChevronRight, Users, CreditCard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -26,6 +26,11 @@ export default function BusinessHub() {
   const { data, isLoading } = useGetCurrentUser();
   const user = data?.user;
   const [centerStatus, setCenterStatus] = useState<{ verificationStatus: string; subscriptionStatus: string | null; eligible: boolean; verificationNote: string | null } | null>(null);
+  const [subscription, setSubscription] = useState<any>(null);
+  const [plans, setPlans] = useState<Array<{ id: string; name: string; price: number; trialDays: number; features: string[]; limits: Record<string, number> }>>([]);
+  const [selectedPlanId, setSelectedPlanId] = useState("");
+  const [savingPlan, setSavingPlan] = useState(false);
+  const [planMessage, setPlanMessage] = useState("");
 
   const { data: refDash } = useGetReferralDashboard({
     query: { enabled: user?.role === "EDUKATIVNI_CENTAR", queryKey: getGetReferralDashboardQueryKey() }
@@ -51,6 +56,34 @@ export default function BusinessHub() {
     if (user?.role !== "EDUKATIVNI_CENTAR") return;
     fetch("/api/education/center/status").then((response) => response.ok ? response.json() : []).then((centers) => setCenterStatus(centers[0] ?? null)).catch(() => setCenterStatus(null));
   }, [user?.role]);
+  useEffect(() => {
+    if (user?.role !== "EDUKATIVNI_CENTAR") return;
+    Promise.all([
+      fetch("/api/education/subscription/status").then((response) => response.ok ? response.json() : null),
+      fetch("/api/education/subscription/plans").then((response) => response.ok ? response.json() : []),
+    ]).then(([status, availablePlans]) => {
+      setSubscription(status);
+      setPlans(availablePlans);
+      if (!selectedPlanId && availablePlans[0]) setSelectedPlanId(availablePlans[0].id);
+    }).catch(() => setPlanMessage("Podaci o planovima trenutno nisu dostupni."));
+  }, [user?.role]);
+
+  const choosePlan = async () => {
+    if (!selectedPlanId) return;
+    setSavingPlan(true); setPlanMessage("");
+    try {
+      const response = await fetch("/api/education/subscription/select-plan", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ planId: selectedPlanId, billingCycle: "monthly" }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Plan nije moguće aktivirati.");
+      setSubscription((current: any) => ({ ...(current ?? {}), subscription: body, operational: body.status === "trial" || body.status === "active" }));
+      setPlanMessage(body.status === "trial" ? "Aktiviran je probni period od 30 dana." : "Plan je sačuvan. Instrukcije za uplatu su dostupne u podešavanjima.");
+    } catch (error) {
+      setPlanMessage(error instanceof Error ? error.message : "Plan nije moguće aktivirati.");
+    } finally { setSavingPlan(false); }
+  };
 
   if (isLoading || !user || user.role !== "EDUKATIVNI_CENTAR") {
     return (
@@ -109,8 +142,31 @@ export default function BusinessHub() {
                 </p>
               </div>
             </CardContent>
-            {centerStatus && !centerStatus.eligible ? <CardContent className="pt-0 text-sm text-muted-foreground">Kursevi ostaju sačuvani kao nacrt dok LUMERA administrator ne verifikuje centar i ne aktivira pretplatu.{centerStatus.verificationNote ? ` Napomena: ${centerStatus.verificationNote}` : ""}</CardContent> : null}
+             {centerStatus && !centerStatus.eligible ? <CardContent className="pt-0 text-sm text-muted-foreground">Kursevi ostaju sačuvani kao nacrt dok LUMERA administrator ne verifikuje centar i ne aktivira pretplatu.{centerStatus.verificationNote ? ` Napomena: ${centerStatus.verificationNote}` : ""}</CardContent> : null}
           </Card>
+
+           {!subscription?.subscription && (
+             <Card className="mb-12 border-primary/20 shadow-sm">
+               <CardHeader>
+                 <CardTitle className="flex items-center gap-2 font-serif"><CreditCard className="h-5 w-5 text-primary" />Izaberite plan za Education centar</CardTitle>
+                 <CardDescription>Izbor plana je obavezan za rad centra. Prvi nalog dobija jedan probni period od 30 dana.</CardDescription>
+               </CardHeader>
+               <CardContent className="space-y-5">
+                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                   {plans.map((plan) => (
+                     <label key={plan.id} className={`cursor-pointer rounded-xl border p-4 transition ${selectedPlanId === plan.id ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-border"}`}>
+                       <input className="sr-only" type="radio" name="education-plan" value={plan.id} checked={selectedPlanId === plan.id} onChange={() => setSelectedPlanId(plan.id)} aria-describedby={`plan-help-${plan.id}`} />
+                       <span className="block font-semibold">{plan.name}</span>
+                       <span className="mt-1 block text-2xl font-serif">{plan.price.toLocaleString("sr-RS")} RSD <span className="text-sm font-normal text-muted-foreground">/ mesečno</span></span>
+                       <span id={`plan-help-${plan.id}`} className="mt-2 block text-sm text-muted-foreground">{plan.features?.slice(0, 3).join(" · ") || "Osnovne Education funkcije"}</span>
+                     </label>
+                   ))}
+                 </div>
+                 <Button onClick={choosePlan} disabled={!selectedPlanId || savingPlan}>{savingPlan ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Sačuvaj izbor plana</Button>
+                 {planMessage ? <p role="status" className="text-sm text-muted-foreground">{planMessage}</p> : null}
+               </CardContent>
+             </Card>
+           )}
 
           {(refChannelC || refChannelA) && (
             <div className="grid sm:grid-cols-2 gap-4 mb-12">
@@ -149,31 +205,31 @@ export default function BusinessHub() {
             </div>
           )}
 
-          <div className="grid md:grid-cols-2 gap-8 mb-12">
+           <div className={`grid md:grid-cols-2 gap-8 mb-12 ${subscription?.operational === false ? "opacity-60" : ""}`}>
             <div className="md:col-span-2">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-2xl font-serif font-bold text-foreground">Brze Akcije</h2>
               </div>
               <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Button variant="outline" className="h-28 flex flex-col items-center justify-center gap-3 bg-card hover:bg-primary/5 hover:text-primary hover:border-primary/30 border-border shadow-sm group transition-all" asChild>
+                 <Button disabled={subscription?.operational === false} variant="outline" className="h-28 flex flex-col items-center justify-center gap-3 bg-card hover:bg-primary/5 hover:text-primary hover:border-primary/30 border-border shadow-sm group transition-all" asChild>
                   <Link href="/biznis/polaznici">
                     <Users className="w-7 h-7 text-muted-foreground group-hover:text-primary transition-colors" />
                     <span className="font-medium">Polaznici</span>
                   </Link>
                 </Button>
-                <Button variant="outline" className="h-28 flex flex-col items-center justify-center gap-3 bg-card hover:bg-primary/5 hover:text-primary hover:border-primary/30 border-border shadow-sm group transition-all" asChild>
+                 <Button disabled={subscription?.operational === false} variant="outline" className="h-28 flex flex-col items-center justify-center gap-3 bg-card hover:bg-primary/5 hover:text-primary hover:border-primary/30 border-border shadow-sm group transition-all" asChild>
                   <Link href="/biznis/edukacije">
                     <BookOpen className="w-7 h-7 text-muted-foreground group-hover:text-primary transition-colors" />
                     <span className="font-medium">Katalog edukacija</span>
                   </Link>
                 </Button>
-                <Button variant="outline" className="h-28 flex flex-col items-center justify-center gap-3 bg-card hover:bg-primary/5 hover:text-primary hover:border-primary/30 border-border shadow-sm group transition-all" asChild>
+                 <Button disabled={subscription?.operational === false} variant="outline" className="h-28 flex flex-col items-center justify-center gap-3 bg-card hover:bg-primary/5 hover:text-primary hover:border-primary/30 border-border shadow-sm group transition-all" asChild>
                   <Link href="/biznis/poslovi">
                     <GraduationCap className="w-7 h-7 text-muted-foreground group-hover:text-primary transition-colors" />
                     <span className="font-medium">Poslovi u lepoti</span>
                   </Link>
                 </Button>
-                <Button variant="outline" className="h-28 flex flex-col items-center justify-center gap-3 bg-card hover:bg-accent/10 hover:text-accent hover:border-accent/30 border-border shadow-sm group transition-all" asChild>
+                 <Button disabled={subscription?.operational === false} variant="outline" className="h-28 flex flex-col items-center justify-center gap-3 bg-card hover:bg-accent/10 hover:text-accent hover:border-accent/30 border-border shadow-sm group transition-all" asChild>
                   <Link href="/biznis/b2b">
                     <Building2 className="w-7 h-7 text-muted-foreground group-hover:text-accent transition-colors" />
                     <span className="font-medium">B2B nabavka</span>

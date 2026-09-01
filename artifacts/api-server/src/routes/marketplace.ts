@@ -110,6 +110,7 @@ import
   educationPlacementSettingsTable,
   educationPlacementsTable,
   educationCenterSubscriptionsTable,
+  educationFinancialAuditLogTable,
   educationDisputesTable,
   educationEscrowsTable,
   educationFeaturedChargesTable,
@@ -2708,8 +2709,17 @@ async function canManageEducationCourses(access: EducationAccess, centerId?: str
   return Boolean(membership);
 }
 
-function hasActiveEducationSubscription(status: string | null | undefined) {
-  return status === "active" || status === "free_via_loyalty";
+function hasActiveEducationSubscription(
+  subscription: { status?: string | null; currentPeriodEnd?: Date | null; trialEndsAt?: Date | null; graceEndsAt?: Date | null } | string | null | undefined,
+  now = new Date(),
+) {
+  if (!subscription) return false;
+  const normalized = typeof subscription === "string" ? { status: subscription } : subscription;
+  const end = normalized.status === "trial" ? normalized.trialEndsAt ?? normalized.currentPeriodEnd
+    : normalized.status === "past_due" ? normalized.graceEndsAt
+    : normalized.currentPeriodEnd;
+  const withinPeriod = !end || end > now;
+  return withinPeriod && ["active", "trial", "free_via_loyalty", "past_due"].includes(normalized.status ?? "");
 }
 
 async function educationCenterEligibility(centerId: string) {
@@ -2720,7 +2730,7 @@ async function educationCenterEligibility(centerId: string) {
   return {
     center: center[0] ?? null,
     subscription: subscription[0] ?? null,
-    eligible: center[0]?.verificationStatus === "verified" && hasActiveEducationSubscription(subscription[0]?.status),
+    eligible: center[0]?.verificationStatus === "verified" && hasActiveEducationSubscription(subscription[0]),
   };
 }
 
@@ -2739,7 +2749,7 @@ async function batchCenterEligibility(centerIds: string[]): Promise<Map<string, 
   const result = new Map<string, boolean>();
   for (const center of centers) {
     const sub = subByCenterId.get(center.id);
-    result.set(center.id, center.verificationStatus === "verified" && hasActiveEducationSubscription(sub?.status));
+    result.set(center.id, center.verificationStatus === "verified" && hasActiveEducationSubscription(sub));
   }
   return result;
 }
@@ -19138,7 +19148,7 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
           .where(eq(educationCenterSubscriptionsTable.centerId, course.centerId))
           .for("update")
           .limit(1);
-        if (currentCenter?.verificationStatus !== "verified" || !hasActiveEducationSubscription(subscription?.status)) {
+        if (currentCenter?.verificationStatus !== "verified" || !hasActiveEducationSubscription(subscription)) {
           return null;
         }
       }
@@ -19271,7 +19281,7 @@ router.post("/education/courses/:courseId/sessions/:sessionId/waitlist", async (
       const [center] = await tx.select().from(educationCentersTable).where(eq(educationCentersTable.id, course.centerId)).for("update").limit(1);
       const [subscription] = await tx.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, course.centerId)).for("update").limit(1);
       const [lockedCourse] = await tx.select().from(coursesTable).where(eq(coursesTable.id, course.id)).for("update").limit(1);
-      if (!lockedCourse?.published || lockedCourse.archived || center?.verificationStatus !== "verified" || !hasActiveEducationSubscription(subscription?.status)) {
+      if (!lockedCourse?.published || lockedCourse.archived || center?.verificationStatus !== "verified" || !hasActiveEducationSubscription(subscription)) {
         throw new Error("Kurs više nije dostupan za listu čekanja.");
       }
       const [session] = await tx.select().from(courseSessionsTable)
@@ -19330,7 +19340,7 @@ router.post("/education/waitlist/:waitlistId/accept", async (req, res): Promise<
       const [center] = await tx.select().from(educationCentersTable).where(eq(educationCentersTable.id, course.centerId!)).for("update").limit(1);
       const [subscription] = await tx.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, course.centerId!)).for("update").limit(1);
       const [lockedCourse] = await tx.select().from(coursesTable).where(eq(coursesTable.id, course.id)).for("update").limit(1);
-      if (!lockedCourse?.published || lockedCourse.archived || center?.verificationStatus !== "verified" || !hasActiveEducationSubscription(subscription?.status)) {
+      if (!lockedCourse?.published || lockedCourse.archived || center?.verificationStatus !== "verified" || !hasActiveEducationSubscription(subscription)) {
         throw new Error("Kurs više nije dostupan.");
       }
       // Re-read the waitlist entry under lock and validate the offer.
@@ -19510,7 +19520,7 @@ router.post("/admin/education/enrollments/:enrollmentId/settle", async (req, res
         .where(eq(educationCenterSubscriptionsTable.centerId, course.centerId))
         .for("update")
         .limit(1);
-      if (center?.verificationStatus !== "verified" || !hasActiveEducationSubscription(subscription?.status)) {
+      if (center?.verificationStatus !== "verified" || !hasActiveEducationSubscription(subscription)) {
         throw new Error("Centar više nije verifikovan ili nema aktivnu pretplatu.");
       }
       let session: typeof courseSessionsTable.$inferSelect | null = null;
@@ -21578,7 +21588,7 @@ router.get("/education/center/status", async (req, res): Promise<void> => {
   for (const row of [...courseReviews, ...centerReviews]) if (row.centerId) ratings.set(row.centerId, [...(ratings.get(row.centerId) ?? []), row.rating]);
   const centers = access.centers.map((center) => {
     const subscription = subByCenterId.get(center.id);
-    const eligible = center.verificationStatus === "verified" && hasActiveEducationSubscription(subscription?.status);
+    const eligible = center.verificationStatus === "verified" && hasActiveEducationSubscription(subscription);
     return {
       id: center.id, name: center.name, verificationStatus: center.verificationStatus, verificationNote: center.verificationNote,
       subscriptionStatus: subscription?.status ?? null, currentPeriodEnd: subscription?.currentPeriodEnd?.toISOString() ?? null, eligible,
@@ -21982,7 +21992,7 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
           .where(eq(educationCentersTable.id, course.centerId)).for("update").limit(1);
         const [subscription] = await tx.select().from(educationCenterSubscriptionsTable)
           .where(eq(educationCenterSubscriptionsTable.centerId, course.centerId)).for("update").limit(1);
-        if (currentCenter?.verificationStatus !== "verified" || !hasActiveEducationSubscription(subscription?.status)) {
+        if (currentCenter?.verificationStatus !== "verified" || !hasActiveEducationSubscription(subscription)) {
           throw new Error("Centar više nije verifikovan ili nema aktivnu pretplatu.");
         }
       }
@@ -22818,9 +22828,18 @@ router.patch("/admin/education/centers/:centerId", async (req, res): Promise<voi
   const verificationStatus = typeof req.body?.verificationStatus === "string" ? req.body.verificationStatus : center.verificationStatus;
   const allowedVerification = ["pending", "verified", "rejected", "suspended"];
   const subscriptionStatus = typeof req.body?.subscriptionStatus === "string" ? req.body.subscriptionStatus : undefined;
+  const planId = typeof req.body?.planId === "string" ? req.body.planId : null;
   const allowedSubscription = ["trial", "active", "past_due", "cancelled", "suspended", "free_via_loyalty"];
   if (!allowedVerification.includes(verificationStatus) || (subscriptionStatus && !allowedSubscription.includes(subscriptionStatus))) {
     res.status(400).json({ error: "Status nije ispravan." }); return;
+  }
+  if ((subscriptionStatus || planId) && user.role !== "SUPER_ADMIN") {
+    res.status(403).json({ error: "Samo super administrator može menjati finansijski status ili plan centra." }); return;
+  }
+  if (planId) {
+    const [selectedPlan] = await db.select({ id: subscriptionPlansTable.id }).from(subscriptionPlansTable)
+      .where(and(eq(subscriptionPlansTable.id, planId), eq(subscriptionPlansTable.active, true))).limit(1);
+    if (!selectedPlan) { res.status(400).json({ error: "Izabrani plan nije aktivan." }); return; }
   }
   const hasOwn = (key: string) => Object.prototype.hasOwnProperty.call(req.body ?? {}, key);
   const pib = hasOwn("pib")
@@ -22862,7 +22881,6 @@ router.patch("/admin/education/centers/:centerId", async (req, res): Promise<voi
       overrideUpdates[educationBillingOverrideColumns[key]] = value;
     }
   }
-  const planId = typeof req.body?.planId === "string" ? req.body.planId : null;
   let updated: typeof center | undefined;
   try {
     await db.transaction(async (tx) => {
@@ -22920,6 +22938,13 @@ router.patch("/admin/education/centers/:centerId", async (req, res): Promise<voi
             currentPeriodEnd: subscriptionStatus === "active" ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : existing.currentPeriodEnd,
             updatedAt: new Date(),
           }).where(eq(educationCenterSubscriptionsTable.id, existing.id));
+          await tx.insert(educationFinancialAuditLogTable).values({
+            actorUserId: user.id, action: "admin_education_subscription_status_changed",
+            entityType: "education_center_subscription", entityId: existing.id,
+            oldValue: { status: existing.status, planId: existing.planId, currentPeriodEnd: existing.currentPeriodEnd },
+            newValue: { status: subscriptionStatus, planId: planId ?? existing.planId },
+            reason: typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 1000) : "Administratorska promena subscription statusa",
+          });
         } else {
           const [fallbackPlan] = planId
             ? await tx.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, planId)).limit(1)

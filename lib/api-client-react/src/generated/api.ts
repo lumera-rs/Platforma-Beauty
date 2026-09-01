@@ -360,6 +360,8 @@ import type {
   EducationSessionInput,
   EducationSessionResource,
   EducationSessionResourceAssign,
+  EducationSubscriptionPlan,
+  EducationSubscriptionStatus,
   EducationTaxonomyItem,
   EducationTaxonomyPatch,
   EducationTaxonomySection,
@@ -407,6 +409,7 @@ import type {
   GetEducationBundle200,
   GetEducationCenterOperationsCalendarParams,
   GetEducationCourseAvailabilityParams,
+  GetEducationSubscriptionRenewalInstructions200,
   GetMarketplaceHomeDiscoveryParams,
   GetMediaAssetParams,
   GetSalonAvailabilityParams,
@@ -597,6 +600,8 @@ import type {
   SearchEmployeeAvailabilityParams,
   SearchProductSuggestion,
   SearchSalonAvailabilityParams,
+  SelectEducationSubscriptionPlan201,
+  SelectEducationSubscriptionPlanBody,
   Service,
   ServiceCategoryImageUploadInput,
   ServiceConsumption,
@@ -14471,6 +14476,302 @@ export function useGetEducationCenterStatus<TData = Awaited<ReturnType<typeof ge
 
 
 
+
+export const getListEducationSubscriptionPlansUrl = () => {
+
+
+
+
+  return `/api/education/subscription/plans`
+}
+
+/**
+ * @summary List active Education center subscription plans
+ */
+export const listEducationSubscriptionPlans = async ( options?: Parameters<typeof customFetch>[1]): Promise<EducationSubscriptionPlan[]> => {
+
+  return customFetch<EducationSubscriptionPlan[]>(getListEducationSubscriptionPlansUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListEducationSubscriptionPlansQueryKey = () => {
+    return [
+    `/api/education/subscription/plans`
+    ] as const;
+    }
+
+
+export const getListEducationSubscriptionPlansQueryOptions = <TData = Awaited<ReturnType<typeof listEducationSubscriptionPlans>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEducationSubscriptionPlans>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListEducationSubscriptionPlansQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listEducationSubscriptionPlans>>> = ({ signal }) => listEducationSubscriptionPlans({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEducationSubscriptionPlans>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListEducationSubscriptionPlansQueryResult = NonNullable<Awaited<ReturnType<typeof listEducationSubscriptionPlans>>>
+export type ListEducationSubscriptionPlansQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List active Education center subscription plans
+ */
+
+export function useListEducationSubscriptionPlans<TData = Awaited<ReturnType<typeof listEducationSubscriptionPlans>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEducationSubscriptionPlans>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListEducationSubscriptionPlansQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetEducationSubscriptionStatusUrl = () => {
+
+
+
+
+  return `/api/education/subscription/status`
+}
+
+/**
+ * @summary Get the current Education center subscription lifecycle
+ */
+export const getEducationSubscriptionStatus = async ( options?: Parameters<typeof customFetch>[1]): Promise<EducationSubscriptionStatus> => {
+
+  return customFetch<EducationSubscriptionStatus>(getGetEducationSubscriptionStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetEducationSubscriptionStatusQueryKey = () => {
+    return [
+    `/api/education/subscription/status`
+    ] as const;
+    }
+
+
+export const getGetEducationSubscriptionStatusQueryOptions = <TData = Awaited<ReturnType<typeof getEducationSubscriptionStatus>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEducationSubscriptionStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetEducationSubscriptionStatusQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getEducationSubscriptionStatus>>> = ({ signal }) => getEducationSubscriptionStatus({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEducationSubscriptionStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetEducationSubscriptionStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getEducationSubscriptionStatus>>>
+export type GetEducationSubscriptionStatusQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the current Education center subscription lifecycle
+ */
+
+export function useGetEducationSubscriptionStatus<TData = Awaited<ReturnType<typeof getEducationSubscriptionStatus>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEducationSubscriptionStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetEducationSubscriptionStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSelectEducationSubscriptionPlanUrl = () => {
+
+
+
+
+  return `/api/education/subscription/select-plan`
+}
+
+/**
+ * @summary Select or change the Education center subscription plan
+ */
+export const selectEducationSubscriptionPlan = async (selectEducationSubscriptionPlanBody: SelectEducationSubscriptionPlanBody, options?: Parameters<typeof customFetch>[1]): Promise<SelectEducationSubscriptionPlan201> => {
+
+  return customFetch<SelectEducationSubscriptionPlan201>(getSelectEducationSubscriptionPlanUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(selectEducationSubscriptionPlanBody)
+  }
+);}
+
+
+
+
+
+export const getSelectEducationSubscriptionPlanMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof selectEducationSubscriptionPlan>>, TError,{data: BodyType<SelectEducationSubscriptionPlanBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof selectEducationSubscriptionPlan>>, TError,{data: BodyType<SelectEducationSubscriptionPlanBody>}, TContext> => {
+
+const mutationKey = ['selectEducationSubscriptionPlan'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof selectEducationSubscriptionPlan>>, {data: BodyType<SelectEducationSubscriptionPlanBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  selectEducationSubscriptionPlan(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SelectEducationSubscriptionPlanMutationResult = NonNullable<Awaited<ReturnType<typeof selectEducationSubscriptionPlan>>>
+    export type SelectEducationSubscriptionPlanMutationBody = BodyType<SelectEducationSubscriptionPlanBody>
+    export type SelectEducationSubscriptionPlanMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Select or change the Education center subscription plan
+ */
+export const useSelectEducationSubscriptionPlan = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof selectEducationSubscriptionPlan>>, TError,{data: BodyType<SelectEducationSubscriptionPlanBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof selectEducationSubscriptionPlan>>,
+        TError,
+        {data: BodyType<SelectEducationSubscriptionPlanBody>},
+        TContext
+      > => {
+      return useMutation(getSelectEducationSubscriptionPlanMutationOptions(options));
+    }
+
+export const getGetEducationSubscriptionRenewalInstructionsUrl = () => {
+
+
+
+
+  return `/api/education/subscription/renewal-instructions`
+}
+
+/**
+ * @summary Create center payment instructions for subscription renewal
+ */
+export const getEducationSubscriptionRenewalInstructions = async ( options?: Parameters<typeof customFetch>[1]): Promise<GetEducationSubscriptionRenewalInstructions200> => {
+
+  return customFetch<GetEducationSubscriptionRenewalInstructions200>(getGetEducationSubscriptionRenewalInstructionsUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetEducationSubscriptionRenewalInstructionsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getEducationSubscriptionRenewalInstructions>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof getEducationSubscriptionRenewalInstructions>>, TError,void, TContext> => {
+
+const mutationKey = ['getEducationSubscriptionRenewalInstructions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof getEducationSubscriptionRenewalInstructions>>, void> = () => {
+
+
+          return  getEducationSubscriptionRenewalInstructions(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GetEducationSubscriptionRenewalInstructionsMutationResult = NonNullable<Awaited<ReturnType<typeof getEducationSubscriptionRenewalInstructions>>>
+
+    export type GetEducationSubscriptionRenewalInstructionsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create center payment instructions for subscription renewal
+ */
+export const useGetEducationSubscriptionRenewalInstructions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getEducationSubscriptionRenewalInstructions>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof getEducationSubscriptionRenewalInstructions>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getGetEducationSubscriptionRenewalInstructionsMutationOptions(options));
+    }
 
 export const getListEducationPurchasesUrl = () => {
 
