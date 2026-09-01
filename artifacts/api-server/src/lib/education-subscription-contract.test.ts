@@ -125,6 +125,10 @@ try {
   [subscription] = await db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
   assert.equal(subscription!.status, "active");
   assert.ok(subscription!.currentPeriodEnd!.getTime() - subscription!.currentPeriodStart!.getTime() > 360 * 86_400_000);
+  const rejectedCurrentContract = await call(base, `/admin/education/centers/${centerA.id}/custom-contract`, "POST", {
+    amountRsd: 222_222, billingCycle: "yearly", contractEndsAt: new Date(Date.now() + 400 * 86_400_000).toISOString(), reason: "Ne sme prekinuti tekući plaćeni period",
+  }, adminCookie);
+  assert.equal(rejectedCurrentContract.status, 409, "A custom contract must not revoke the current paid period.");
 
   await db.update(educationCenterSubscriptionsTable).set({
     planId: high!.id, billingCycle: "monthly", status: "active",
@@ -141,6 +145,10 @@ try {
   assert.equal(prepaidHigh!.planIdSnapshot, high!.id, "The purchased plan must be immutable on the renewal obligation.");
   const reverseOrderDowngrade = await call(base, "/education/subscription/select-plan", "POST", { planId: low!.id, billingCycle: "yearly" }, secondOwnerCookie);
   assert.equal(new Date(reverseOrderDowngrade.body.pendingPlanEffectiveAt).getTime(), prepaidHigh!.servicePeriodEnd!.getTime(), "Downgrade after prepayment must wait until the paid future period ends.");
+  const rejectedPaidContract = await call(base, `/admin/education/centers/${centerB.id}/custom-contract`, "POST", {
+    amountRsd: 333_333, billingCycle: "yearly", contractEndsAt: new Date(Date.now() + 400 * 86_400_000).toISOString(), reason: "Ne sme prekinuti plaćeni period",
+  }, adminCookie);
+  assert.equal(rejectedPaidContract.status, 409, "A custom contract must not revoke a current or future paid period.");
   await db.update(educationPaymentObligationsTable).set({
     servicePeriodStart: new Date(Date.now() - 1_000), servicePeriodEnd: new Date(Date.now() + 20 * 86_400_000),
   }).where(eq(educationPaymentObligationsTable.id, prepaidHigh!.id));
@@ -185,8 +193,8 @@ try {
   }).where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
   const supersededRenewal = await call(base, "/education/subscription/renewal-instructions", "POST", undefined, ownerCookie);
   const [upgrade, repeatedUpgrade] = await Promise.all([
-    call(base, "/education/subscription/select-plan", "POST", { planId: high!.id, billingCycle: "monthly" }, ownerCookie),
-    call(base, "/education/subscription/select-plan", "POST", { planId: high!.id, billingCycle: "monthly" }, ownerCookie),
+    call(base, "/education/subscription/select-plan", "POST", { planId: high!.id, billingCycle: "yearly" }, ownerCookie),
+    call(base, "/education/subscription/select-plan", "POST", { planId: high!.id, billingCycle: "yearly" }, ownerCookie),
   ]);
   assert.equal(upgrade.status, 201);
   assert.equal(upgrade.body.change, "upgrade_pending_payment");
@@ -200,7 +208,8 @@ try {
   }, adminCookie)).status, 200);
   [subscription] = await db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
   assert.equal(subscription!.planId, high!.id);
-
+  assert.equal(subscription!.billingCycle, "monthly", "Upgrade proration must preserve the paid current cycle.");
+  assert.equal(subscription!.pendingBillingCycle, "yearly", "Requested cycle change must remain scheduled for the next boundary.");
   await db.update(educationPaymentObligationsTable).set({ servicePeriodEnd: new Date(Date.now() - 2_000) })
     .where(and(
       eq(educationPaymentObligationsTable.subscriptionId, subscription!.id),
@@ -208,9 +217,17 @@ try {
       eq(educationPaymentObligationsTable.status, "paid"),
     ));
   await db.update(educationCenterSubscriptionsTable).set({
+    currentPeriodEnd: new Date(Date.now() - 1_000), pendingPlanEffectiveAt: new Date(Date.now() - 1_000),
+  })
+    .where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
+  await runEducationSubscriptionLifecycle();
+  [subscription] = await db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
+  assert.equal(subscription!.billingCycle, "yearly", "The requested cycle must apply at the next service boundary.");
+  await db.update(educationCenterSubscriptionsTable).set({
     planId: low!.id, billingCycle: "monthly", status: "active",
     currentPeriodStart: new Date(Date.now() - 20 * 86_400_000),
     currentPeriodEnd: new Date(Date.now() + 10 * 86_400_000),
+    pendingPlanId: null, pendingBillingCycle: null, pendingPlanEffectiveAt: null,
   }).where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
   const expiringUpgrade = await call(base, "/education/subscription/select-plan", "POST", { planId: high!.id, billingCycle: "monthly" }, ownerCookie);
   await db.update(educationCenterSubscriptionsTable).set({ currentPeriodEnd: new Date(Date.now() - 1_000) }).where(eq(educationCenterSubscriptionsTable.id, subscription!.id));

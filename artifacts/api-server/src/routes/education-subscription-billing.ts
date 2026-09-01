@@ -152,8 +152,19 @@ router.post("/education/subscription/select-plan", async (req, res) => {
           servicePeriodStart: now, servicePeriodEnd: existing.currentPeriodEnd,
           ipsPayloadSnapshot: JSON.stringify(educationIpsQrPayload({ recipientName: settings.ipsRecipientName, recipientAccount: settings.ipsRecipientAccount, purpose: "Proporcionalna doplata za viši Education plan", amount: prorated, reference: paymentReference })),
         }).returning();
+        const [paidFutureRenewal] = cycle === existing.billingCycle ? [] : await tx.select({
+          servicePeriodEnd: educationPaymentObligationsTable.servicePeriodEnd,
+        }).from(educationPaymentObligationsTable).where(and(
+          eq(educationPaymentObligationsTable.subscriptionId, existing.id),
+          eq(educationPaymentObligationsTable.kind, "subscription_renewal"),
+          eq(educationPaymentObligationsTable.status, "paid"),
+          gt(educationPaymentObligationsTable.servicePeriodStart, now),
+        )).orderBy(desc(educationPaymentObligationsTable.servicePeriodEnd)).limit(1);
+        const pendingEffectiveAt = cycle === existing.billingCycle
+          ? now
+          : paidFutureRenewal?.servicePeriodEnd ?? existing.currentPeriodEnd;
         const [saved] = await tx.update(educationCenterSubscriptionsTable).set({
-          pendingPlanId: plan.id, pendingBillingCycle: cycle, pendingPlanEffectiveAt: now, updatedAt: now,
+          pendingPlanId: plan.id, pendingBillingCycle: cycle, pendingPlanEffectiveAt: pendingEffectiveAt, updatedAt: now,
         }).where(eq(educationCenterSubscriptionsTable.id, existing.id)).returning();
         return { ...saved!, payment: payment!, change: "upgrade_pending_payment" };
       }
@@ -183,7 +194,10 @@ router.post("/education/subscription/select-plan", async (req, res) => {
       return { ...saved!, payment: null, change: trial ? "trial_started" : "renewal_required" };
     });
     res.status(201).json(result);
-  } catch { res.status(409).json({ error: "Plan nije moguće aktivirati. Trial može biti iskorišćen samo jednom." }); }
+  } catch (error) {
+    req.log?.error({ err: error }, "Education subscription plan selection failed");
+    res.status(409).json({ error: "Plan nije moguće aktivirati. Trial može biti iskorišćen samo jednom." });
+  }
 });
 
 router.post("/education/subscription/renewal-instructions", async (req, res) => {
@@ -298,8 +312,16 @@ router.post("/admin/education/centers/:centerId/custom-contract", async (req, re
     const [subscription] = await tx.select().from(educationCenterSubscriptionsTable)
       .where(eq(educationCenterSubscriptionsTable.centerId, req.params.centerId)).for("update").limit(1);
     if (!subscription) return null;
+    const now = new Date();
+    const [paidPeriod] = await tx.select({ id: educationPaymentObligationsTable.id }).from(educationPaymentObligationsTable).where(and(
+      eq(educationPaymentObligationsTable.subscriptionId, subscription.id),
+      eq(educationPaymentObligationsTable.kind, "subscription_renewal"),
+      eq(educationPaymentObligationsTable.status, "paid"),
+      gt(educationPaymentObligationsTable.servicePeriodEnd, now),
+    )).limit(1);
+    if ((subscription.status === "active" && subscription.currentPeriodEnd && subscription.currentPeriodEnd > now) || paidPeriod) return false;
     await tx.update(educationPaymentObligationsTable).set({
-      status: "cancelled", cancelledAt: new Date(), cancelledByUserId: actor.id,
+      status: "cancelled", cancelledAt: now, cancelledByUserId: actor.id,
     }).where(and(
       eq(educationPaymentObligationsTable.subscriptionId, subscription.id),
       eq(educationPaymentObligationsTable.status, "pending"),
@@ -309,7 +331,7 @@ router.post("/admin/education/centers/:centerId/custom-contract", async (req, re
       contractKind: "custom", contractEndsAt, billingCycle: parsed.data.billingCycle,
       dueAmount: parsed.data.amountRsd, status: "past_due", graceEndsAt: null, deactivatedAt: null,
       currentPeriodStart: null, currentPeriodEnd: null,
-      pendingPlanId: null, pendingBillingCycle: null, pendingPlanEffectiveAt: null, updatedAt: new Date(),
+      pendingPlanId: null, pendingBillingCycle: null, pendingPlanEffectiveAt: null, updatedAt: now,
     }).where(eq(educationCenterSubscriptionsTable.id, subscription.id)).returning();
     await tx.insert(educationFinancialAuditLogTable).values({
       actorUserId: actor.id, action: "education_custom_contract_configured",
@@ -320,7 +342,8 @@ router.post("/admin/education/centers/:centerId/custom-contract", async (req, re
     });
     return saved!;
   });
-  if (!updated) { res.status(404).json({ error: "Pretplata nije pronađena." }); return; }
+  if (updated === null) { res.status(404).json({ error: "Pretplata nije pronađena." }); return; }
+  if (updated === false) { res.status(409).json({ error: "Poseban ugovor može početi tek kada se završe svi već plaćeni periodi." }); return; }
   res.json(updated);
 });
 
@@ -393,13 +416,16 @@ router.post("/admin/education/payment-obligations/:obligationId/settle", async (
             && subscription.pendingPlanEffectiveAt <= obligation.servicePeriodStart);
         const snapshotPlanId = obligation.planIdSnapshot ?? subscription.planId;
         const snapshotCycle = (obligation.billingCycleSnapshot ?? subscription.billingCycle) as EducationBillingCycle;
+        const deferredUpgradeCycle = upgrade
+          && Boolean(subscription.pendingBillingCycle && subscription.pendingBillingCycle !== snapshotCycle
+            && subscription.pendingPlanEffectiveAt && subscription.pendingPlanEffectiveAt > now);
         await tx.update(educationCenterSubscriptionsTable).set(prepaidRenewal ? {
           paidAt: now, updatedAt: now,
         } : {
           ...(upgrade || obligation.kind === "subscription_renewal"
             ? { planId: snapshotPlanId, billingCycle: snapshotCycle }
             : {}),
-          ...(subscription.pendingPlanId && (upgrade || scheduledPlanPaidByRenewal)
+          ...(subscription.pendingPlanId && ((upgrade && !deferredUpgradeCycle) || scheduledPlanPaidByRenewal)
             ? { pendingPlanId: null, pendingBillingCycle: null, pendingPlanEffectiveAt: null }
             : {}),
           status: "active", paidAt: now,
