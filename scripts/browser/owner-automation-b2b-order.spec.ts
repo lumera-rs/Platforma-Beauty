@@ -372,9 +372,20 @@ test("SALON_OWNER completes canonical B2B checkout and sees the persisted order 
     await expect(page.getByRole("heading", { name: "Pregled i plaćanje" })).toBeVisible();
     await expect(page.getByText(fixture.productName, { exact: false })).toBeVisible();
     await page.getByRole("checkbox").check();
+    const checkoutResponsePromise = page.waitForResponse((response) => (
+      response.request().method() === "POST"
+      && new URL(response.url()).pathname === "/api/shop/checkout"
+    ));
     await page.getByRole("button", { name: "Potvrdi porudžbinu" }).click();
+    const checkoutResponse = await checkoutResponsePromise;
+    const checkoutBody = await checkoutResponse.text();
+    expect(
+      checkoutResponse.ok(),
+      `Canonical checkout failed with ${checkoutResponse.status()}: ${checkoutBody}`,
+    ).toBe(true);
 
-    await expect(page.getByRole("heading", { name: "Hvala vam na porudžbini!" })).toBeVisible();
+    await expect(page).toHaveURL(/\/vlasnik\/prodavnica\/porudzbina\/[^/]+\/potvrda$/, { timeout: 15_000 });
+    await expect(page.getByRole("heading", { name: "Hvala vam na porudžbini!" })).toBeVisible({ timeout: 15_000 });
     const orders = await db.select().from(ordersTable).where(eq(ordersTable.salonId, fixture.salonId));
     expect(orders, "Canonical checkout must create one marker-owned order.").toHaveLength(1);
     orderId = orders[0]!.id;

@@ -85,6 +85,7 @@
     "test:salon-notifications:release": "pnpm --filter @workspace/scripts run test:salon-notifications:release",
     "test:service-library": "pnpm --filter @workspace/scripts run test:service-library",
     "test:service-availability": "pnpm --filter @workspace/scripts run test:service-availability",
+    "test:salon-owner-regressions": "pnpm --filter @workspace/scripts run test:salon-owner-regressions",
     "test:booking-settings": "pnpm --filter @workspace/scripts run test:booking-settings",
     "test:campaign-period-preset": "pnpm --filter @workspace/scripts run test:campaign-period-preset",
     "test:campaign-one-day-comparison": "pnpm --filter @workspace/scripts run test:campaign-one-day-comparison",
