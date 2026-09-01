@@ -695,9 +695,13 @@ export const courseEnrollmentsTable = pgTable("course_enrollments", {
   accessExpiresAt: timestamp("access_expires_at", { withTimezone: true }),
   accessDaysSnapshot: integer("access_days_snapshot"),
   coursePriceSnapshot: integer("course_price_snapshot"),
+  durationSnapshot: text("duration_snapshot"),
   extensionPricesSnapshot: jsonb("extension_prices_snapshot").$type<{ oneMonth: number | null; threeMonths: number | null; sixMonths: number | null }>(),
   digitalContentConsentAt: timestamp("digital_content_consent_at", { withTimezone: true }),
   digitalContentConsentUserId: uuid("digital_content_consent_user_id").references(() => usersTable.id, { onDelete: "restrict" }),
+  /** Server-owned immutable acceptance evidence for immediate digital supply. */
+  digitalContentConsentTextSnapshot: text("digital_content_consent_text_snapshot"),
+  digitalContentConsentVersionSnapshot: text("digital_content_consent_version_snapshot"),
   completedAt: timestamp("completed_at", { withTimezone: true }),
   certificateIssuedAt: timestamp("certificate_issued_at", { withTimezone: true }),
   certificateNumber: text("certificate_number"),
@@ -736,6 +740,16 @@ export const courseEnrollmentsTable = pgTable("course_enrollments", {
   index("course_enrollments_digital_consent_user_idx").on(table.digitalContentConsentUserId),
   uniqueIndex("course_enrollments_participant_active_unique").on(table.participantId).where(sql`${table.participantId} is not null and ${table.status} <> 'cancelled'`),
   check("course_enrollments_operational_user_check", sql`${table.userId} is not null or ${table.participantId} is not null`),
+  check("course_enrollments_access_snapshot_check", sql`
+    ${table.accessDaysSnapshot} is null or ${table.accessDaysSnapshot} > 0
+  `),
+  check("course_enrollments_digital_consent_snapshot_check", sql`
+    (${table.digitalContentConsentAt} is null and ${table.digitalContentConsentUserId} is null
+      and ${table.digitalContentConsentTextSnapshot} is null and ${table.digitalContentConsentVersionSnapshot} is null)
+    or (${table.digitalContentConsentAt} is not null and ${table.digitalContentConsentUserId} is not null
+      and length(btrim(${table.digitalContentConsentTextSnapshot})) > 0
+      and length(btrim(${table.digitalContentConsentVersionSnapshot})) > 0)
+  `),
 ]);
 
 export const educationAccessExtensionsTable = pgTable("education_access_extensions", {
@@ -754,6 +768,8 @@ export const educationAccessExtensionsTable = pgTable("education_access_extensio
   index("education_access_extensions_enrollment_idx").on(table.enrollmentId, table.createdAt),
   index("education_access_extensions_purchaser_idx").on(table.purchaserId),
   index("education_access_extensions_payment_obligation_idx").on(table.paymentObligationId),
+  uniqueIndex("education_access_extensions_open_enrollment_unique").on(table.enrollmentId)
+    .where(sql`${table.status} = 'pending'`),
   check("education_access_extensions_months_check", sql`${table.months} in (1,3,6)`),
   check("education_access_extensions_amount_check", sql`${table.amount} >= 0`),
   check("education_access_extensions_status_check", sql`${table.status} in ('pending','settled','cancelled')`),

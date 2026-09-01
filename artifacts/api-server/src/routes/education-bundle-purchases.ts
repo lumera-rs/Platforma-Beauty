@@ -1,13 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import PDFDocument from "pdfkit";
 import { z } from "zod";
 import {
   courseEnrollmentsTable, coursesTable, db, educationBundlePurchaseEscrowsTable,
   educationBundlePurchaseItemsTable, educationBundlePurchaseLedgerEntriesTable,
   educationBundlePurchasesTable, educationBundleCoursesTable, educationBundlesTable,
-  educationCentersTable, educationPaymentObligationsTable, employeesTable, salonsTable,
+  educationCentersTable, educationCenterSubscriptionsTable, educationPaymentObligationsTable, employeesTable, salonsTable,
   usersTable,
 } from "@workspace/db";
 import { getCurrentUser, isAdmin } from "../lib/auth";
@@ -18,6 +18,8 @@ import {
   resolveEducationBillingSettingsForChargeInTx,
 } from "../lib/education-billing";
 import { educationIpsQrPayload, educationIpsRuntimeEnvironment } from "../lib/education-marketplace-domain";
+import { assertOnlineEnrollmentRequest, DIGITAL_CONTENT_CONSENT_TEXT, DIGITAL_CONTENT_CONSENT_VERSION, issueOnlineEnrollmentFields } from "../lib/education-entitlement";
+import { eligibleEducationCenterSql, hasActiveEducationSubscription } from "../lib/education-center-eligibility";
 
 const router: IRouter = Router();
 const purchaseBody = z.object({
@@ -25,8 +27,28 @@ const purchaseBody = z.object({
   learnerUserId: z.string().uuid().optional(),
   salonId: z.string().uuid().optional(),
   employeeId: z.string().uuid().optional(),
+  digitalContentConsent: z.boolean().optional(),
 });
 const fingerprint = (body: unknown) => createHash("sha256").update(JSON.stringify(body)).digest("hex");
+type BundleCourseTerms = {
+  duration: string; format: "online" | "in-person" | "hybrid"; coursePrice: number;
+  onlineAccessDays: number | null; extensionPrice1Month: number | null;
+  extensionPrice3Months: number | null; extensionPrice6Months: number | null;
+  digitalContentConsent: null | { acceptedAt: string; userId: string; text: string; version: string };
+};
+function bundleTerms(value: unknown): BundleCourseTerms {
+  const terms = value as Partial<BundleCourseTerms>;
+  if (!terms || !["online", "in-person", "hybrid"].includes(terms.format ?? "") || typeof terms.duration !== "string"
+    || typeof terms.coursePrice !== "number") throw new Error("ITEM_TERMS_MISSING");
+  if (terms.format === "online" && (!Number.isInteger(terms.onlineAccessDays) || terms.onlineAccessDays! < 1
+    || terms.extensionPrice1Month == null || terms.extensionPrice1Month <= 0
+    || terms.extensionPrice3Months == null || terms.extensionPrice3Months <= 0
+    || terms.extensionPrice6Months == null || terms.extensionPrice6Months <= 0
+    || !terms.digitalContentConsent || typeof terms.digitalContentConsent.acceptedAt !== "string"
+    || typeof terms.digitalContentConsent.userId !== "string" || typeof terms.digitalContentConsent.text !== "string"
+    || typeof terms.digitalContentConsent.version !== "string")) throw new Error("ITEM_TERMS_MISSING");
+  return terms as BundleCourseTerms;
+}
 async function user(req: Request, res: Response) {
   const result = await getCurrentUser(req);
   if (!result) res.status(401).json({ error: "Prijava je obavezna." });
@@ -119,7 +141,8 @@ router.get("/education/payment-slips/:type/:id", async (req, res) => {
 router.get("/education/bundles", async (_req, res) => {
   const rows = await db.select({ bundle: educationBundlesTable, centerName: educationCentersTable.name })
     .from(educationBundlesTable).innerJoin(educationCentersTable, eq(educationCentersTable.id, educationBundlesTable.centerId))
-    .where(and(eq(educationBundlesTable.active, true), eq(educationBundlesTable.published, true)));
+    .where(and(eq(educationBundlesTable.active, true), eq(educationBundlesTable.published, true),
+      eligibleEducationCenterSql(educationBundlesTable.centerId)));
   const ids = rows.map(r => r.bundle.id);
   const links = ids.length ? await db.select({ bundleId: educationBundleCoursesTable.bundleId }).from(educationBundleCoursesTable).where(inArray(educationBundleCoursesTable.bundleId, ids)) : [];
   const items = ids.length ? await db.select({ bundleId: educationBundleCoursesTable.bundleId, courseId: coursesTable.id, title: coursesTable.title, courseCenterId: coursesTable.centerId })
@@ -127,7 +150,9 @@ router.get("/education/bundles", async (_req, res) => {
   res.json(rows.filter(r => { const all = links.filter(link => link.bundleId === r.bundle.id).length; return all > 0 && all === items.filter(item => item.bundleId === r.bundle.id && item.courseCenterId === r.bundle.centerId).length; }).map(r => ({ ...r.bundle, name: r.bundle.title, centerName: r.centerName, courses: items.filter(i => i.bundleId === r.bundle.id && i.courseCenterId === r.bundle.centerId).map(({ courseCenterId: _courseCenterId, ...item }) => item) })));
 });
 router.get("/education/bundles/:bundleId", async (req, res) => {
-  const [bundle] = await db.select().from(educationBundlesTable).where(and(eq(educationBundlesTable.id, req.params.bundleId), eq(educationBundlesTable.active, true), eq(educationBundlesTable.published, true))).limit(1);
+  const [bundle] = await db.select().from(educationBundlesTable).where(and(eq(educationBundlesTable.id, req.params.bundleId),
+    eq(educationBundlesTable.active, true), eq(educationBundlesTable.published, true),
+    eligibleEducationCenterSql(educationBundlesTable.centerId))).limit(1);
   if (!bundle) { res.status(404).json({ error: "Paket nije pronađen." }); return; }
   const courses = await db.select({ courseId: coursesTable.id, title: coursesTable.title, description: coursesTable.description, duration: coursesTable.duration })
     .from(educationBundleCoursesTable).innerJoin(coursesTable, eq(coursesTable.id, educationBundleCoursesTable.courseId)).where(and(eq(educationBundleCoursesTable.bundleId, bundle.id), eq(coursesTable.centerId, bundle.centerId), eq(coursesTable.published, true), eq(coursesTable.archived, false)));
@@ -142,12 +167,19 @@ router.post("/education/bundles/:bundleId/purchases", async (req, res) => {
   const fp = fingerprint(parsed.data);
   const prior = await db.select().from(educationBundlePurchasesTable).where(and(eq(educationBundlePurchasesTable.purchaserId, buyer.id), eq(educationBundlePurchasesTable.idempotencyKey, key))).limit(1);
   if (prior[0]) { if (prior[0].idempotencyFingerprint !== fp) { res.status(409).json({ error: "Idempotency-Key je već korišćen za drugi zahtev." }); return; } res.json(view(prior[0], true)); return; }
-  const [bundle] = await db.select().from(educationBundlesTable).where(and(eq(educationBundlesTable.id, req.params.bundleId), eq(educationBundlesTable.active, true), eq(educationBundlesTable.published, true))).limit(1);
+  const [bundle] = await db.select().from(educationBundlesTable).where(and(eq(educationBundlesTable.id, req.params.bundleId),
+    eq(educationBundlesTable.active, true), eq(educationBundlesTable.published, true),
+    eligibleEducationCenterSql(educationBundlesTable.centerId))).limit(1);
   if (!bundle) { res.status(404).json({ error: "Paket nije dostupan." }); return; }
-  const bundleCourses = await db.select({ id: coursesTable.id, title: coursesTable.title, duration: coursesTable.duration, format: coursesTable.format })
+  const bundleCourses = await db.select({ id: coursesTable.id, title: coursesTable.title, duration: coursesTable.duration, format: coursesTable.format,
+    price: coursesTable.price, onlineAccessDays: coursesTable.onlineAccessDays, extensionPrice1Month: coursesTable.extensionPrice1Month,
+    extensionPrice3Months: coursesTable.extensionPrice3Months, extensionPrice6Months: coursesTable.extensionPrice6Months })
     .from(educationBundleCoursesTable).innerJoin(coursesTable, eq(coursesTable.id, educationBundleCoursesTable.courseId)).where(and(eq(educationBundleCoursesTable.bundleId, bundle.id), eq(coursesTable.centerId, bundle.centerId), eq(coursesTable.published, true), eq(coursesTable.archived, false)));
   const links = await db.select({ courseId: educationBundleCoursesTable.courseId }).from(educationBundleCoursesTable).where(eq(educationBundleCoursesTable.bundleId, bundle.id));
   if (!bundleCourses.length || bundleCourses.length !== links.length) { res.status(409).json({ error: "Paket nema dosledan skup aktivnih kurseva." }); return; }
+  if (bundleCourses.some(course => course.format === "online") && parsed.data.digitalContentConsent !== true) {
+    res.status(400).json({ error: "Za kupovinu paketa sa online kursom potrebna je izričita saglasnost za početak digitalnog sadržaja." }); return;
+  }
   let target: { learnerUserId: string | null; salonId: string | null; employeeId: string | null };
   if (parsed.data.targetType === "individual") {
     if (parsed.data.learnerUserId && parsed.data.learnerUserId !== buyer.id) { res.status(403).json({ error: "Možete kupiti paket samo za sebe." }); return; }
@@ -163,20 +195,86 @@ router.post("/education/bundles/:bundleId/purchases", async (req, res) => {
   const settings = await getEducationPlatformSettings();
   const purchaseId = randomUUID();
   const reference = `BND-${purchaseId.replace(/-/g, "").slice(0, 30)}`;
-  let instructions: Record<string, unknown>;
-  try {
-    instructions = educationIpsQrPayload({ recipientName: settings.ipsRecipientName, recipientAccount: settings.ipsRecipientAccount, purpose: settings.ipsPurpose, amount: bundle.price, reference, recipientType: "platform", transactionType: "bundle_purchase", accountEnvironment: settings.ipsAccountEnvironment as "production" | "test", runtimeEnvironment: educationIpsRuntimeEnvironment() });
-  } catch {
-    res.status(409).json({ error: "Instrukcije za IPS uplatu trenutno nisu podešene." }); return;
-  }
   try {
     const created = await db.transaction(async tx => {
-       const [purchase] = await tx.insert(educationBundlePurchasesTable).values({ id: purchaseId, bundleId: bundle.id, centerId: bundle.centerId, purchaserId: buyer.id, targetType: parsed.data.targetType, ...target, amount: bundle.price, paymentReference: reference, idempotencyKey: key, idempotencyFingerprint: fp, paymentInstructions: instructions, auditData: { bundleTitle: bundle.title } }).returning();
-      await tx.insert(educationBundlePurchaseItemsTable).values(bundleCourses.map((course, sortOrder) => ({ purchaseId: purchase.id, courseId: course.id, courseTitle: course.title, courseTerms: { duration: course.duration, format: course.format }, sortOrder })));
+       // Serialize checkout with center suspension and subscription changes.
+       // The locked rows are the source of truth; public prechecks alone cannot
+       // authorize creation because eligibility may change while checking out.
+       await lockEducationCenterFinancials(tx, bundle.centerId);
+       const [lockedCenter] = await tx.select().from(educationCentersTable)
+         .where(eq(educationCentersTable.id, bundle.centerId)).for("update").limit(1);
+       const [lockedSubscription] = await tx.select({
+         subscription: educationCenterSubscriptionsTable,
+         databaseNow: sql<string>`current_timestamp`,
+       }).from(educationCenterSubscriptionsTable)
+         .where(eq(educationCenterSubscriptionsTable.centerId, bundle.centerId)).for("update").limit(1);
+       if (lockedCenter?.verificationStatus !== "verified" || !lockedSubscription
+         || !hasActiveEducationSubscription(lockedSubscription.subscription, new Date(lockedSubscription.databaseNow))) {
+         throw new Error("CENTER_INELIGIBLE");
+       }
+        const [lockedBundle] = await tx.select().from(educationBundlesTable)
+          .where(eq(educationBundlesTable.id, bundle.id)).for("update").limit(1);
+        if (!lockedBundle || lockedBundle.centerId !== bundle.centerId || !lockedBundle.active || !lockedBundle.published) {
+          throw new Error("BUNDLE_UNAVAILABLE");
+        }
+        const lockedLinks = await tx.select().from(educationBundleCoursesTable)
+          .where(eq(educationBundleCoursesTable.bundleId, lockedBundle.id)).for("update");
+        const lockedCourses = lockedLinks.length
+          ? await tx.select().from(coursesTable)
+            .where(inArray(coursesTable.id, lockedLinks.map(link => link.courseId))).for("update")
+          : [];
+        const courseById = new Map(lockedCourses.map(course => [course.id, course]));
+        const exactCourses = lockedLinks
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+          .map(link => courseById.get(link.courseId))
+          .filter((course): course is typeof coursesTable.$inferSelect => Boolean(course));
+        if (!exactCourses.length || exactCourses.length !== lockedLinks.length
+          || exactCourses.some(course => course.centerId !== lockedBundle.centerId
+          || !course.published || course.archived)) {
+          throw new Error("BUNDLE_UNAVAILABLE");
+        }
+        for (const course of exactCourses) {
+          assertOnlineEnrollmentRequest(course, parsed.data.digitalContentConsent);
+        }
+        const instructions = educationIpsQrPayload({
+          recipientName: settings.ipsRecipientName, recipientAccount: settings.ipsRecipientAccount,
+          purpose: settings.ipsPurpose, amount: lockedBundle.price, reference,
+          recipientType: "platform", transactionType: "bundle_purchase",
+          accountEnvironment: settings.ipsAccountEnvironment as "production" | "test",
+          runtimeEnvironment: educationIpsRuntimeEnvironment(),
+        });
+       const consentAt = new Date();
+        const hasOnlineCourse = exactCourses.some(course => course.format === "online");
+        const [purchase] = await tx.insert(educationBundlePurchasesTable).values({ id: purchaseId, bundleId: lockedBundle.id, centerId: lockedBundle.centerId, purchaserId: buyer.id, targetType: parsed.data.targetType, ...target, amount: lockedBundle.price, paymentReference: reference, idempotencyKey: key, idempotencyFingerprint: fp, paymentInstructions: instructions, auditData: { bundleTitle: lockedBundle.title, digitalContentConsent: hasOnlineCourse ? { acceptedAt: consentAt.toISOString(), userId: buyer.id, text: DIGITAL_CONTENT_CONSENT_TEXT, version: DIGITAL_CONTENT_CONSENT_VERSION } : null } }).returning();
+       await tx.insert(educationBundlePurchaseItemsTable).values(exactCourses.map((course, sortOrder) => ({
+        purchaseId: purchase.id, courseId: course.id, courseTitle: course.title,
+        courseTerms: {
+          duration: course.duration, format: course.format, coursePrice: course.price,
+          onlineAccessDays: course.onlineAccessDays, extensionPrice1Month: course.extensionPrice1Month,
+          extensionPrice3Months: course.extensionPrice3Months, extensionPrice6Months: course.extensionPrice6Months,
+          digitalContentConsent: course.format === "online" ? { acceptedAt: consentAt.toISOString(), userId: buyer.id, text: DIGITAL_CONTENT_CONSENT_TEXT, version: DIGITAL_CONTENT_CONSENT_VERSION } : null,
+        }, sortOrder })));
       return purchase;
     });
     res.status(201).json(view(created, true));
-  } catch { res.status(409).json({ error: "Kupovina je već evidentirana." }); }
+  } catch (error) {
+    if (error instanceof Error && error.message === "CENTER_INELIGIBLE") {
+      res.status(409).json({ error: "Paket više nije dostupan za kupovinu." }); return;
+    }
+    if (error instanceof Error && error.message === "ONLINE_CONTENT_CONSENT_REQUIRED") {
+      res.status(409).json({ error: "Za kupovinu paketa sa online kursom potrebna je izričita saglasnost za početak digitalnog sadržaja." }); return;
+    }
+    if (error instanceof Error && error.message === "ONLINE_ACCESS_POLICY_MISSING") {
+      res.status(409).json({ error: "Online kurs u paketu nema kompletno podešene uslove pristupa." }); return;
+    }
+    if (error instanceof Error && error.message === "BUNDLE_UNAVAILABLE") {
+      res.status(409).json({ error: "Paket više nije dostupan za kupovinu." }); return;
+    }
+    if (error instanceof Error && error.message.startsWith("IPS_PAYMENT_")) {
+      res.status(409).json({ error: "Instrukcije za IPS uplatu trenutno nisu podešene." }); return;
+    }
+    res.status(409).json({ error: "Kupovina je već evidentirana." });
+  }
 });
 router.get("/education/bundle-purchases", async (req, res) => {
   const buyer = await user(req, res); if (!buyer) return;
@@ -219,12 +317,6 @@ router.post("/admin/education/bundle-purchases/:purchaseId/settle", async (req, 
        await lockEducationBillingRules(tx, "shared");
        await lockEducationCenterFinancials(tx, purchase.centerId);
        await tx.select({ id: educationCentersTable.id }).from(educationCentersTable).where(eq(educationCentersTable.id, purchase.centerId)).for("update");
-       const settings = await resolveEducationBillingSettingsForChargeInTx(purchase.centerId, tx);
-       if (settings.effective.commissionPercent + settings.effective.reservePercent > 100) throw new Error("INVALID_FINANCE_SETTINGS");
-       const fee = Math.floor(purchase.amount * settings.effective.commissionPercent / 100);
-       const reserve = Math.floor(purchase.amount * settings.effective.reservePercent / 100);
-      const [escrow] = await tx.insert(educationBundlePurchaseEscrowsTable).values({ purchaseId: purchase.id, centerId: purchase.centerId, grossAmount: purchase.amount, platformFeeAmount: fee, reserveAmount: reserve, netAmount: purchase.amount - fee - reserve }).returning();
-      await tx.insert(educationBundlePurchaseLedgerEntriesTable).values([{ escrowId: escrow.id, entryType: "charge", amount: purchase.amount }, { escrowId: escrow.id, entryType: "platform_fee", amount: fee }, { escrowId: escrow.id, entryType: "reserve_hold", amount: reserve }]);
       const items = await tx.select().from(educationBundlePurchaseItemsTable).where(eq(educationBundlePurchaseItemsTable.purchaseId, purchase.id));
       let participantUserId = purchase.learnerUserId;
       if (purchase.employeeId) {
@@ -233,7 +325,38 @@ router.post("/admin/education/bundle-purchases/:purchaseId/settle", async (req, 
         if (!employee?.userId || employee.userId !== purchase.learnerUserId) throw new Error("EMPLOYEE_IDENTITY_CHANGED");
       }
       if (!participantUserId) throw new Error("PARTICIPANT_REQUIRED");
-      await tx.insert(courseEnrollmentsTable).values(items.map(item => ({ courseId: item.courseId, purchaserId: purchase.purchaserId, userId: participantUserId, salonId: purchase.salonId, employeeId: purchase.employeeId, bundlePurchaseId: purchase.id, status: "active" as const, paymentStatus: "paid" as const, chargedAmount: null, accessGrantedAt: new Date(), auditData: { bundlePurchaseId: purchase.id, terms: item.courseTerms } })));
+      const courses = await tx.select({ id: coursesTable.id }).from(coursesTable).where(inArray(coursesTable.id, items.map(item => item.courseId))).for("update");
+      const existingCourseIds = new Set(courses.map(course => course.id));
+      const validatedItems = items.map(item => {
+        if (!existingCourseIds.has(item.courseId)) throw new Error("COURSE_MISSING");
+        const terms = bundleTerms(item.courseTerms);
+        if (terms.format === "online" && terms.digitalContentConsent?.userId !== purchase.purchaserId) {
+          throw new Error("ITEM_TERMS_MISSING");
+        }
+        return { item, terms };
+      });
+      const settings = await resolveEducationBillingSettingsForChargeInTx(purchase.centerId, tx);
+      if (settings.effective.commissionPercent + settings.effective.reservePercent > 100) throw new Error("INVALID_FINANCE_SETTINGS");
+      const fee = Math.floor(purchase.amount * settings.effective.commissionPercent / 100);
+      const reserve = Math.floor(purchase.amount * settings.effective.reservePercent / 100);
+      const [escrow] = await tx.insert(educationBundlePurchaseEscrowsTable).values({ purchaseId: purchase.id, centerId: purchase.centerId, grossAmount: purchase.amount, platformFeeAmount: fee, reserveAmount: reserve, netAmount: purchase.amount - fee - reserve }).returning();
+      await tx.insert(educationBundlePurchaseLedgerEntriesTable).values([{ escrowId: escrow.id, entryType: "charge", amount: purchase.amount }, { escrowId: escrow.id, entryType: "platform_fee", amount: fee }, { escrowId: escrow.id, entryType: "reserve_hold", amount: reserve }]);
+      const accessGrantedAt = new Date();
+      await tx.insert(courseEnrollmentsTable).values(validatedItems.map(({ item, terms }) => {
+        return {
+          courseId: item.courseId, purchaserId: purchase.purchaserId, userId: participantUserId, salonId: purchase.salonId, employeeId: purchase.employeeId,
+          bundlePurchaseId: purchase.id, status: "active" as const, paymentStatus: "paid" as const, chargedAmount: null, accessGrantedAt,
+          ...(terms.format === "online" ? issueOnlineEnrollmentFields({
+            price: terms.coursePrice, duration: terms.duration, onlineAccessDays: terms.onlineAccessDays,
+            extensionPrice1Month: terms.extensionPrice1Month, extensionPrice3Months: terms.extensionPrice3Months,
+            extensionPrice6Months: terms.extensionPrice6Months,
+          }, {
+            userId: terms.digitalContentConsent!.userId, acceptedAt: new Date(terms.digitalContentConsent!.acceptedAt),
+            textSnapshot: terms.digitalContentConsent!.text, versionSnapshot: terms.digitalContentConsent!.version,
+          }, accessGrantedAt) : {}),
+          auditData: { bundlePurchaseId: purchase.id, terms },
+        };
+      }));
       const [settled] = await tx.update(educationBundlePurchasesTable).set({ status: "settled", settledAt: new Date(), settledByUserId: admin.id, updatedAt: new Date() }).where(eq(educationBundlePurchasesTable.id, purchase.id)).returning();
       return settled;
     });

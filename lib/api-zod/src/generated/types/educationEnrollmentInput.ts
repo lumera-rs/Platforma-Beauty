@@ -13,4 +13,6 @@ export interface EducationEnrollmentInput {
   /** @nullable */
   sessionId?: string | null;
   paymentMode?: EducationEnrollmentInputPaymentMode;
+  /** Explicit purchaser consent to immediate supply of online digital content. */
+  digitalContentConsent?: boolean;
 }

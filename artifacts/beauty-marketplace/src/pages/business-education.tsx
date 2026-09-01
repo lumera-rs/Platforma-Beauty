@@ -14,7 +14,7 @@ import {
   useCreateEducationCourse, useUpdateEducationCourse,
   usePublishEducationCourse, useArchiveEducationCourse,
   useCreateEducationModule, useCreateEducationLesson,
-  useCreateEducationSession, useEnrollInEducationCourse,
+  useCreateEducationSession, useEnrollInEducationCourse, useCreateEducationEnrollmentExtension,
   useGetEducationEnrollmentPaymentInstructions, getGetEducationEnrollmentPaymentInstructionsQueryKey,
   useCompleteEducationLesson,
   useListEducationInstructors, useCreateEducationInstructor, useUpdateEducationInstructor, useDeleteEducationInstructor,
@@ -117,6 +117,10 @@ const courseSchema = z.object({
   earlyBirdPrice: z.preprocess((value) => value === "" ? null : value, z.coerce.number().min(0).nullable().optional()),
   earlyBirdCutoff: z.string().optional(),
   installmentCount: z.coerce.number().int().min(1).max(3).optional(),
+  onlineAccessDays: z.preprocess((val) => (val === "" ? null : val), z.coerce.number().int().min(1).nullable().optional()),
+  extensionPrice1Month: z.preprocess((val) => (val === "" ? null : val), z.coerce.number().min(1).nullable().optional()),
+  extensionPrice3Months: z.preprocess((val) => (val === "" ? null : val), z.coerce.number().min(1).nullable().optional()),
+  extensionPrice6Months: z.preprocess((val) => (val === "" ? null : val), z.coerce.number().min(1).nullable().optional()),
 }).refine(
   (data) => (data.groupDiscountMinimum == null) === (data.groupDiscountPercent == null),
   { message: "Unesite i minimalan broj polaznika i procenat popusta za grupni popust.", path: ["groupDiscountPercent"] }
@@ -132,6 +136,18 @@ const courseSchema = z.object({
 ).refine(
   (data) => data.format !== "online" || data.paymentMode === "online_full",
   { message: "Online kursevi zahtevaju potpuno online plaćanje.", path: ["paymentMode"] }
+).refine(
+  (data) => data.format !== "online" || (data.onlineAccessDays != null && data.onlineAccessDays > 0),
+  { message: "Broj dana pristupa je obavezan za online edukacije.", path: ["onlineAccessDays"] }
+).refine(
+  (data) => data.format !== "online" || (data.extensionPrice1Month != null && data.extensionPrice1Month > 0),
+  { message: "Cena produženja za 1 mesec mora biti veća od nule.", path: ["extensionPrice1Month"] }
+).refine(
+  (data) => data.format !== "online" || (data.extensionPrice3Months != null && data.extensionPrice3Months > 0),
+  { message: "Cena produženja za 3 meseca mora biti veća od nule.", path: ["extensionPrice3Months"] }
+).refine(
+  (data) => data.format !== "online" || (data.extensionPrice6Months != null && data.extensionPrice6Months > 0),
+  { message: "Cena produženja za 6 meseci mora biti veća od nule.", path: ["extensionPrice6Months"] }
 ).refine(
   (data) => Boolean(data.earlyBirdPrice == null) === !data.earlyBirdCutoff,
   { message: "Rana prijava cena i rok se unose zajedno.", path: ["earlyBirdCutoff"] }
@@ -1880,10 +1896,14 @@ function CourseProgramEditor({ courseId, days: initialDays }: { courseId: string
 
 function LmsView({ enrollmentId }: { enrollmentId: string }) {
   const { data: userResponse } = useGetCurrentUser();
-  const { data: lms, isLoading } = useGetEducationLms(enrollmentId);
+  const { data: lms, isLoading, isError } = useGetEducationLms(enrollmentId, {
+    query: { queryKey: getGetEducationLmsQueryKey(enrollmentId), retry: false },
+  });
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const complete = useCompleteEducationLesson();
+  const createExtension = useCreateEducationEnrollmentExtension();
+  const [pendingExtension, setPendingExtension] = useState<any>(null);
   const [certDownloading, setCertDownloading] = useState(false);
   const [icsDownloading, setIcsDownloading] = useState(false);
 
@@ -1909,10 +1929,10 @@ function LmsView({ enrollmentId }: { enrollmentId: string }) {
   }, [lms, activeLessonId]);
 
   if (isLoading) return <div className="flex h-[80vh] items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
-  if (!lms) return <div className="flex h-[80vh] items-center justify-center flex-col text-center">
+  if (isError || !lms) return <div className="flex h-[80vh] items-center justify-center flex-col px-4 text-center">
     <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4 text-muted-foreground"><Monitor className="w-8 h-8" /></div>
-    <h2 className="text-2xl font-bold mb-2">Sistem za učenje nije dostupan</h2>
-    <p className="text-muted-foreground mb-6">Vaša rezervacija možda nije potvrđena ili edukacija ne sadrži online lekcije.</p>
+    <h2 className="text-2xl font-bold mb-2">Nemate pristup ovoj edukaciji</h2>
+    <p className="text-muted-foreground mb-6">Pristup nije aktivan, istekao je ili je prebačen drugom polazniku.</p>
     <Button asChild><Link href="/biznis/edukacije">Nazad na katalog</Link></Button>
   </div>;
 
@@ -1978,6 +1998,11 @@ function LmsView({ enrollmentId }: { enrollmentId: string }) {
 
   const isCompleted = lms.enrollment.status === "completed";
   const isPaid = lms.enrollment.paymentStatus === "paid";
+  const extensionPrices = lms.enrollment.extensionPricesSnapshot as {
+    oneMonth: number;
+    threeMonths: number;
+    sixMonths: number;
+  } | null | undefined;
   const hasCertification = (lms.course as any).certification as boolean;
   // Sessions are live for in-person/hybrid courses that have at least one session.
   // The ICS endpoint needs a sessionId on the enrollment — if sessions exist, the button
@@ -1999,6 +2024,56 @@ function LmsView({ enrollmentId }: { enrollmentId: string }) {
             </div>
             <Progress value={lms.enrollment.progress} className="h-2 bg-sidebar-accent [&>div]:bg-primary" />
           </div>
+          {lms.enrollment.accessExpiresAt && extensionPrices && (
+            <div className="mt-4 rounded-lg border border-sidebar-border bg-sidebar-accent/30 p-3">
+              <p className="text-xs font-semibold text-sidebar-foreground">
+                Pristup do {new Date(lms.enrollment.accessExpiresAt).toLocaleDateString("sr-RS")}
+              </p>
+              <p className="mt-1 text-xs text-sidebar-foreground/70">
+                Produženje se aktivira tek posle potvrde uplate.
+              </p>
+              <div className="mt-3 grid grid-cols-3 gap-1.5">
+                {([
+                  { months: 1 as const, key: "oneMonth" as const, label: "1 mesec" },
+                  { months: 3 as const, key: "threeMonths" as const, label: "3 meseca" },
+                  { months: 6 as const, key: "sixMonths" as const, label: "6 meseci" },
+                ]).map((option) => (
+                  <Button
+                    key={option.months}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-auto min-w-0 flex-col gap-0.5 px-1 py-2 text-[11px]"
+                    disabled={createExtension.isPending}
+                    onClick={() => createExtension.mutate(
+                      { enrollmentId, data: { months: option.months } },
+                      {
+                        onSuccess: (result) => {
+                          setPendingExtension(result);
+                          queryClient.invalidateQueries({ queryKey: getGetEducationLmsQueryKey(enrollmentId) });
+                          queryClient.invalidateQueries({ queryKey: getListEnrollmentsQueryKey() });
+                          toast.success("Zahtev za produženje je kreiran");
+                        },
+                        onError: (error) => toast.error("Produženje nije kreirano", {
+                          description: getApiErrorMessage(error, "Pokušajte ponovo."),
+                        }),
+                      },
+                    )}
+                  >
+                    <span>{option.label}</span>
+                    <span>{money(extensionPrices[option.key])}</span>
+                  </Button>
+                ))}
+              </div>
+              {pendingExtension && (
+                <div className="mt-3 rounded-md bg-background/70 p-2 text-xs text-sidebar-foreground">
+                  <p className="font-medium">Uplata na čekanju</p>
+                  <p>Iznos: {money(pendingExtension.payment.expectedAmount)}</p>
+                  <p className="break-all">Poziv na broj: {pendingExtension.payment.referenceSnapshot}</p>
+                </div>
+              )}
+            </div>
+          )}
           {/* Certificate and ICS download buttons */}
           {isPaid && (
             <div className="mt-4 space-y-2">
@@ -2203,9 +2278,13 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
            earlyBirdPrice: course.earlyBirdPrice ?? "",
            earlyBirdCutoff: course.earlyBirdCutoff ? course.earlyBirdCutoff.slice(0, 16) : "",
            installmentCount: course.installmentCount ?? 1,
+          onlineAccessDays: course.onlineAccessDays || "",
+          extensionPrice1Month: course.extensionPrice1Month ?? "",
+          extensionPrice3Months: course.extensionPrice3Months ?? "",
+          extensionPrice6Months: course.extensionPrice6Months ?? "",
         });
       } else {
-        reset({ category: '', faqText: '', format: 'online', level: 'all-levels', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE, refundPolicy: DEFAULT_REFUND_POLICY, paymentMode: 'online_full', subcategoryId: '', courseTypeId: '', groupDiscountMinimum: "", groupDiscountPercent: "", learningOutcomesText: "", includedItemsText: "", requirements: "", durationMinutes: "", giftVoucherEligible: false, schedulingMode: "fixed_group", cancellationCutoffHours: 0, depositDisposition: "refund", installmentCount: 1, earlyBirdPrice: "", earlyBirdCutoff: "", minimumEnrollmentRiskDeadline: "" });
+        reset({ category: '', faqText: '', format: 'online', level: 'all-levels', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE, refundPolicy: DEFAULT_REFUND_POLICY, paymentMode: 'online_full', subcategoryId: '', courseTypeId: '', groupDiscountMinimum: "", groupDiscountPercent: "", learningOutcomesText: "", includedItemsText: "", requirements: "", durationMinutes: "", giftVoucherEligible: false, schedulingMode: "fixed_group", cancellationCutoffHours: 0, depositDisposition: "refund", installmentCount: 1, earlyBirdPrice: "", earlyBirdCutoff: "", minimumEnrollmentRiskDeadline: "", onlineAccessDays: "", extensionPrice1Month: "", extensionPrice3Months: "", extensionPrice6Months: "" });
       }
     }
   }, [open, course, reset, taxonomy]);
@@ -2439,6 +2518,37 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
                   )} />
                   <EducationFieldHelp id="education-course-format-help" label="Format edukacije" text="Odredite da li se edukacija održava onlajn, uživo ili kombinovano." />
                 </div>
+                {watchFormat === 'online' && (
+                  <div className="col-span-2 space-y-4 pt-4 border-t border-border">
+                    <h4 className="text-sm font-semibold">Uslovi online pristupa</h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label aria-describedby="help-online-access-days">Trajanje osnovnog pristupa (u danima) *</Label>
+                        <Input aria-describedby="help-online-access-days" type="number" {...register("onlineAccessDays")} placeholder="npr. 30" />
+                        <EducationFieldHelp id="help-online-access-days" label="Trajanje osnovnog pristupa" text="Koliko dana će polaznik imati pristup online sadržaju nakon kupovine." />
+                        {errors.onlineAccessDays && <p className="text-xs text-destructive">{String(errors.onlineAccessDays.message)}</p>}
+                      </div>
+                      <div className="space-y-2">
+                        <Label aria-describedby="help-ext-1m">Cena produženja (1 mesec) *</Label>
+                        <Input aria-describedby="help-ext-1m" type="number" min="1" {...register("extensionPrice1Month")} placeholder="RSD" />
+                        <EducationFieldHelp id="help-ext-1m" label="Produženje 1 mesec" text="Unesite cenu veću od nule za produženje pristupa na dodatnih mesec dana." />
+                        {errors.extensionPrice1Month && <p className="text-xs text-destructive">{String(errors.extensionPrice1Month.message)}</p>}
+                      </div>
+                      <div className="space-y-2">
+                        <Label aria-describedby="help-ext-3m">Cena produženja (3 meseca) *</Label>
+                        <Input aria-describedby="help-ext-3m" type="number" min="1" {...register("extensionPrice3Months")} placeholder="RSD" />
+                        <EducationFieldHelp id="help-ext-3m" label="Produženje 3 meseca" text="Unesite cenu veću od nule za produženje pristupa na dodatna 3 meseca." />
+                        {errors.extensionPrice3Months && <p className="text-xs text-destructive">{String(errors.extensionPrice3Months.message)}</p>}
+                      </div>
+                      <div className="space-y-2">
+                        <Label aria-describedby="help-ext-6m">Cena produženja (6 meseci) *</Label>
+                        <Input aria-describedby="help-ext-6m" type="number" min="1" {...register("extensionPrice6Months")} placeholder="RSD" />
+                        <EducationFieldHelp id="help-ext-6m" label="Produženje 6 meseci" text="Unesite cenu veću od nule za produženje pristupa na dodatnih 6 meseci." />
+                        {errors.extensionPrice6Months && <p className="text-xs text-destructive">{String(errors.extensionPrice6Months.message)}</p>}
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {watchFormat !== 'online' && (
                   <div className="space-y-2">
                     <Label className="flex items-center gap-2" aria-describedby="help-Grad">Grad <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Grad">Grad u kom se održava edukacija</TooltipContent></Tooltip></Label>

@@ -3683,6 +3683,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/EducationPrivateCourseDetail" }
         "403": { description: Business access required }
+        "409": { description: Pure online format cannot retain live sessions }
     delete:
       operationId: archiveEducationCourse
       tags: [education]
@@ -3941,7 +3942,7 @@ paths:
     post:
       operationId: createEducationOperationalBooking
       tags: [education]
-      summary: Atomically create an online or center-created named-seat booking
+      summary: Atomically create a named-seat booking for an in-person or hybrid course
       parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
       requestBody:
         required: true
@@ -3953,7 +3954,7 @@ paths:
         "401": { description: Authentication required }
         "403": { description: Center role is insufficient }
         "404": { description: "Course, session, or center not found" }
-        "409": { description: "Idempotency mismatch, capacity, or availability conflict" }
+        "409": { description: "Idempotency mismatch, capacity, availability conflict, or online course" }
   /education/operations/bookings/{bookingGroupId}:
     get:
       operationId: getMyEducationOperationalBooking
@@ -4383,6 +4384,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/EducationSession" }
         "403": { description: Business access required }
+        "409": { description: Pure online courses cannot have live sessions }
   /education/courses/{courseId}/enrollments:
     post:
       operationId: enrollInEducationCourse
@@ -4419,6 +4421,52 @@ paths:
         "403": { description: Only the purchaser may view payment instructions }
         "404": { description: Enrollment not found }
         "409": { description: Enrollment has no platform payment due or is no longer pending }
+  /education/enrollments/{enrollmentId}/extension:
+    post:
+      operationId: createEducationEnrollmentExtension
+      tags: [education]
+      summary: Create a payment obligation to extend online-course access
+      parameters: [{ $ref: "#/components/parameters/EnrollmentId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EducationEnrollmentExtensionInput"
+      responses:
+        "200":
+          description: Pending extension and its immutable payment obligation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EducationEnrollmentExtensionResponse"
+        "400": { description: "Extension duration must be 1, 3, or 6 months" }
+        "401": { description: Authentication required }
+        "404": { description: Active online enrollment or its center was not found }
+        "409": { description: Extension pricing is unavailable or an extension is already pending }
+  /education/enrollments/{enrollmentId}/transfer:
+    post:
+      operationId: transferEducationOnlineEnrollment
+      tags: [education]
+      summary: Transfer the remaining active online-course access between active employees of the purchaser's salon
+      parameters: [{ $ref: "#/components/parameters/EnrollmentId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                targetEmployeeId: { type: string }
+              required: [targetEmployeeId]
+      responses:
+        "200":
+          description: Enrollment with the new learner identity; purchaser and purchase evidence remain unchanged
+          content: { application/json: { schema: { $ref: "#/components/schemas/EducationEnrollment" } } }
+        "401": { description: Authentication required }
+        "404": { description: Enrollment not found }
+        "409": { description: "Transfer is invalid, expired, unauthorized, or concurrent" }
   /education/course-types/proposals:
     post:
       operationId: proposeEducationCourseType
@@ -4492,6 +4540,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/EducationSession" }
         "403": { description: Business access required }
+        "409": { description: Pure online courses cannot update live sessions }
     delete:
       operationId: deleteEducationSession
       tags: [education]
@@ -13208,6 +13257,10 @@ components:
         earlyBirdPrice: { type: ["number", "null"], minimum: 0 }
         earlyBirdCutoff: { type: ["string", "null"], format: date-time }
         installmentCount: { type: integer, enum: [1, 2, 3] }
+        onlineAccessDays: { type: ["integer", "null"], minimum: 1 }
+        extensionPrice1Month: { type: ["integer", "null"], minimum: 1 }
+        extensionPrice3Months: { type: ["integer", "null"], minimum: 1 }
+        extensionPrice6Months: { type: ["integer", "null"], minimum: 1 }
         centerId: { type: ["string", "null"] }
         availableSeats: { type: ["number", "null"] }
         enrollmentStatus: { type: ["string", "null"], enum: [pending, active, completed, cancelled, null] }
@@ -13262,6 +13315,10 @@ components:
         earlyBirdPrice: { type: ["number", "null"], minimum: 0 }
         earlyBirdCutoff: { type: ["string", "null"], format: date-time }
         installmentCount: { type: integer, enum: [1, 2, 3] }
+        onlineAccessDays: { type: ["integer", "null"], minimum: 1 }
+        extensionPrice1Month: { type: ["integer", "null"], minimum: 1 }
+        extensionPrice3Months: { type: ["integer", "null"], minimum: 1 }
+        extensionPrice6Months: { type: ["integer", "null"], minimum: 1 }
       required: [title, category, format, price, duration, imageUrl]
     EducationCourseUpdate:
       type: object
@@ -13314,6 +13371,10 @@ components:
         earlyBirdPrice: { type: ["number", "null"], minimum: 0 }
         earlyBirdCutoff: { type: ["string", "null"], format: date-time }
         installmentCount: { type: integer, enum: [1, 2, 3] }
+        onlineAccessDays: { type: ["integer", "null"], minimum: 1 }
+        extensionPrice1Month: { type: ["integer", "null"], minimum: 1 }
+        extensionPrice3Months: { type: ["integer", "null"], minimum: 1 }
+        extensionPrice6Months: { type: ["integer", "null"], minimum: 1 }
     EducationSession:
       type: object
       properties:
@@ -13531,6 +13592,7 @@ components:
         employeeId: { type: ["string", "null"] }
         sessionId: { type: ["string", "null"] }
         paymentMode: { type: string, enum: [online_full, live_deposit, live_off_platform] }
+        digitalContentConsent: { type: boolean, description: Explicit purchaser consent to immediate supply of online digital content. }
     EducationTaxonomyItem:
       type: object
       properties:
@@ -13807,6 +13869,7 @@ components:
       additionalProperties: false
       properties:
         code: { type: string, minLength: 12, maxLength: 128 }
+        digitalContentConsent: { type: boolean }
       required: [code]
     EducationGiftVoucherRefundInput:
       type: object
@@ -13942,6 +14005,13 @@ components:
         progress: { type: number }
         nextLesson: { type: ["string", "null"] }
         purchasedAt: { type: string, format: date-time }
+        accessExpiresAt: { type: ["string", "null"], format: date-time }
+        coursePriceSnapshot: { type: ["integer", "null"] }
+        durationSnapshot: { type: ["string", "null"] }
+        accessDaysSnapshot: { type: ["integer", "null"] }
+        extensionPricesSnapshot: { type: ["object", "null"], additionalProperties: true }
+        digitalContentConsentAt: { type: ["string", "null"], format: date-time }
+        digitalContentConsentVersionSnapshot: { type: ["string", "null"] }
         escrowStatus: { type: ["string", "null"], enum: [held, ready_for_payout, frozen, paid_out, refunded, partially_refunded, null] }
         escrowReleaseAt: { type: ["string", "null"], format: date-time }
       required: [id, courseId, courseTitle, learnerName, status, paymentStatus, progress, purchasedAt]
@@ -13960,6 +14030,38 @@ components:
         paymentStatus: { type: string, enum: [pending] }
         settlementNotice: { type: string }
       required: [enrollmentId, amount, currency, reference, recipientName, recipientAccount, purpose, payload, paymentStatus, settlementNotice]
+    EducationEnrollmentExtensionInput:
+      type: object
+      additionalProperties: false
+      properties:
+        months: { type: integer, enum: [1, 3, 6] }
+      required: [months]
+    EducationEnrollmentExtension:
+      type: object
+      properties:
+        months: { type: integer, enum: [1, 3, 6] }
+        amount: { type: integer, minimum: 0 }
+        previousAccessExpiresAt: { type: string, format: date-time }
+        extendedAccessExpiresAt: { type: string, format: date-time }
+      required: [months, amount, previousAccessExpiresAt, extendedAccessExpiresAt]
+    EducationPaymentObligation:
+      type: object
+      description: Immutable payment-instruction snapshot for a manually settled obligation.
+      additionalProperties: true
+      properties:
+        id: { type: string, format: uuid }
+        enrollmentId: { type: ["string", "null"], format: uuid }
+        kind: { type: string }
+        expectedAmount: { type: integer, minimum: 0 }
+        referenceSnapshot: { type: string }
+        status: { type: string, enum: [pending, paid, cancelled] }
+      required: [id, enrollmentId, kind, expectedAmount, referenceSnapshot, status]
+    EducationEnrollmentExtensionResponse:
+      type: object
+      properties:
+        extension: { $ref: "#/components/schemas/EducationEnrollmentExtension" }
+        payment: { $ref: "#/components/schemas/EducationPaymentObligation" }
+      required: [extension, payment]
     EducationNotification:
       type: object
       properties:

@@ -53,6 +53,7 @@ import {
 } from "./education-billing";
 import { getOrCreateShippingConfig } from "./shipping-config";
 import { EDUCATION_TAXONOMY } from "./education-taxonomy";
+import { issueOnlineEnrollmentFields } from "./education-entitlement";
 
 let seedPromise: Promise<void> | undefined;
 const LEGACY_CATALOG_SUPPLIER_ID = "9b5970ea-0a8c-5e60-9d32-2a09f0890560";
@@ -597,6 +598,12 @@ async function seed(): Promise<void> {
     title: ["Maderoterapija od osnova do prakse", "Manualna limfna drenaža", "Rituali nege lica", "Biznis za beauty studio"][index % 4]!,
     category: "Stručne tehnike",
     format: index % 3 === 0 ? "online" as const : "in-person" as const,
+    ...(index % 3 === 0 ? {
+      onlineAccessDays: 365,
+      extensionPrice1Month: 1900,
+      extensionPrice3Months: 4900,
+      extensionPrice6Months: 7900,
+    } : {}),
     city: index % 3 === 0 ? null : centers[index % centers.length]!.city,
     price: 6900 + index * 1700,
     duration: `${4 + index} nedelja`,
@@ -651,6 +658,7 @@ async function seed(): Promise<void> {
     { courseId: educationCourses[1]!.id, startsAt: new Date("2026-09-11T09:00:00.000Z"), endsAt: new Date("2026-09-11T16:00:00.000Z"), location: "Beograd, Vračar", capacity: 12 },
     { courseId: salonCourse!.id, startsAt: new Date("2026-09-18T10:00:00.000Z"), endsAt: new Date("2026-09-18T15:00:00.000Z"), location: salons[0]!.address, capacity: 10 },
   ]);
+  const initialDemoAccessGrantedAt = new Date();
   const [enrollment] = await db.insert(courseEnrollmentsTable).values({
     courseId: educationCourses[0]!.id,
     userId: owner.id,
@@ -661,6 +669,11 @@ async function seed(): Promise<void> {
     paymentStatus: "paid",
     progress: 33,
     nextLesson: lessons[1]!.id,
+    accessGrantedAt: initialDemoAccessGrantedAt,
+    ...issueOnlineEnrollmentFields(educationCourses[0]!, {
+      userId: owner.id,
+      acceptedAt: initialDemoAccessGrantedAt,
+    }, initialDemoAccessGrantedAt),
     auditData: { source: "demo-seed" },
   }).returning();
   await db.insert(lessonProgressTable).values({ enrollmentId: enrollment!.id, lessonId: lessons[0]!.id, completedByUserId: owner.id });
@@ -1155,7 +1168,18 @@ async function synchronizeInferredServesMen(): Promise<void> {
 export async function seedEducationContent(
   database: Pick<typeof db, "select" | "insert" | "update"> = db,
 ): Promise<void> {
-  const [course] = await database.select().from(coursesTable).limit(1);
+  await database.update(coursesTable).set({
+    onlineAccessDays: 365,
+    extensionPrice1Month: 1900,
+    extensionPrice3Months: 4900,
+    extensionPrice6Months: 7900,
+    updatedAt: new Date(),
+  }).where(and(eq(coursesTable.isTest, true), eq(coursesTable.format, "online")));
+  let [course] = await database.select().from(coursesTable)
+    .where(and(eq(coursesTable.isTest, true), eq(coursesTable.format, "online"))).limit(1);
+  if (!course) {
+    [course] = await database.select().from(coursesTable).where(eq(coursesTable.isTest, true)).limit(1);
+  }
   if (!course) return;
   const [existingDay] = await database.select({ id: courseDaysTable.id }).from(courseDaysTable).where(eq(courseDaysTable.courseId, course.id)).limit(1);
   if (!existingDay) {
@@ -1189,7 +1213,7 @@ export async function seedEducationContent(
       capacity: 15,
     });
   }
-  const [owner] = await database.select().from(usersTable).where(eq(usersTable.role, "SALON_OWNER")).limit(1);
+  const [owner] = await database.select().from(usersTable).where(eq(usersTable.email, "salon@lumera.local")).limit(1);
   if (!owner) return;
   const [salon] = await database.select().from(salonsTable).where(eq(salonsTable.ownerId, owner.id)).limit(1);
   if (!salon) return;
@@ -1223,6 +1247,7 @@ export async function seedEducationContent(
     status: courseEnrollmentsTable.status,
     paymentStatus: courseEnrollmentsTable.paymentStatus,
     accessGrantedAt: courseEnrollmentsTable.accessGrantedAt,
+    accessDaysSnapshot: courseEnrollmentsTable.accessDaysSnapshot,
   }).from(courseEnrollmentsTable).where(and(
     eq(courseEnrollmentsTable.courseId, course.id),
     eq(courseEnrollmentsTable.purchaserId, owner.id),
@@ -1233,14 +1258,23 @@ export async function seedEducationContent(
     const normalizedNextLesson = existingEnrollment.nextLesson
       ? lessons.find((lesson) => lesson.id === existingEnrollment.nextLesson || lesson.title === existingEnrollment.nextLesson)?.id ?? null
       : null;
+    const repairAccessGrantedAt = existingEnrollment.accessGrantedAt ?? new Date();
     const enrollmentRepair = {
       ...(normalizedNextLesson !== existingEnrollment.nextLesson ? { nextLesson: normalizedNextLesson } : {}),
       ...(existingEnrollment.status === "pending" ? { status: "active" as const } : {}),
       ...(existingEnrollment.status !== "completed" && existingEnrollment.paymentStatus !== "paid"
         ? { paymentStatus: "paid" as const }
         : {}),
-      ...(existingEnrollment.status !== "completed" && !existingEnrollment.accessGrantedAt
-        ? { accessGrantedAt: new Date() }
+      ...(!existingEnrollment.accessGrantedAt
+        && (existingEnrollment.status !== "completed"
+          || (course.format === "online" && existingEnrollment.accessDaysSnapshot == null))
+        ? { accessGrantedAt: repairAccessGrantedAt }
+        : {}),
+      ...(course.format === "online" && existingEnrollment.accessDaysSnapshot == null
+        ? issueOnlineEnrollmentFields(course, {
+          userId: owner.id,
+          acceptedAt: repairAccessGrantedAt,
+        }, repairAccessGrantedAt)
         : {}),
     };
     if (Object.keys(enrollmentRepair).length) {
@@ -1250,6 +1284,7 @@ export async function seedEducationContent(
     }
     return;
   }
+  const incrementalAccessGrantedAt = new Date();
   const [enrollment] = await database.insert(courseEnrollmentsTable).values({
     courseId: course.id,
     userId: owner.id,
@@ -1260,7 +1295,11 @@ export async function seedEducationContent(
     paymentStatus: "paid",
     progress: lessons.length > 1 ? 50 : 0,
     nextLesson: lessons[1]?.id ?? lessons[0]?.id ?? null,
-    accessGrantedAt: new Date(),
+    accessGrantedAt: incrementalAccessGrantedAt,
+    ...(course.format === "online" ? issueOnlineEnrollmentFields(course, {
+      userId: owner.id,
+      acceptedAt: incrementalAccessGrantedAt,
+    }, incrementalAccessGrantedAt) : {}),
     auditData: { source: "incremental-demo-seed" },
   }).returning();
   if (lessons[0]) {

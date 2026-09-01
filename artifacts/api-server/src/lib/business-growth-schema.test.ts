@@ -368,13 +368,17 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
-    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 110, "v110 is the current production schema rollout");
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 111, "v111 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
+    assert.equal(await columnExists("courses", "duration"), false,
+      "legacy fixture intentionally predates courses.duration");
 
     // ── Run the rollout, then exercise its legacy conversion on rerun ──────
     const client = await pool.connect();
     try {
       await runBusinessGrowthSchemaDdl(client, s);
+      assert.ok(await columnExists("courses", "duration"),
+        "v111 adds courses.duration before the entitlement backfill");
       assert.ok(await columnExists("course_enrollments", "payment_instructions_snapshot"),
         "v110 adds immutable enrollment payment instructions");
       assert.ok(await columnExists("education_installments", "payment_instructions_snapshot"),

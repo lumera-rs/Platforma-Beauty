@@ -1640,15 +1640,17 @@ export function EducationVouchersPage() {
   const { data: vouchers, isLoading } = useListEducationGiftVouchers({ page: 1, pageSize: 100 }, { query: { queryKey: getListEducationGiftVouchersQueryKey({ page: 1, pageSize: 100 }) } });
   const redeemMut = useRedeemEducationGiftVoucher();
   const [code, setCode] = useState("");
+  const [digitalContentConsent, setDigitalContentConsent] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const handleRedeem = () => {
     if (!code.trim()) return;
-    redeemMut.mutate({ data: { code: code.trim() } }, {
+    redeemMut.mutate({ data: { code: code.trim(), digitalContentConsent } }, {
       onSuccess: () => {
         toast.success("Vaučer uspešno iskorišćen");
         setCode("");
+        setDigitalContentConsent(false);
         queryClient.invalidateQueries({ queryKey: getListEducationGiftVouchersQueryKey({ page: 1, pageSize: 100 }) });
       },
       onError: (e: any) => toast.error("Greška pri korišćenju vaučera", { description: e.message })
@@ -1711,7 +1713,21 @@ export function EducationVouchersPage() {
               <CardContent className="space-y-4">
                 <Label className="flex items-center gap-2">Kod vaučera <EducationFieldHelp id="education-voucher-redemption-code-help" label="Kod vaučera" text="Unesite ceo kod koji ste dobili od kupca poklona, uključujući sva slova, brojeve i crtice." /></Label>
                 <Input aria-describedby="education-voucher-redemption-code-help" placeholder="Unesite kod vaučera" value={code} onChange={e => setCode(e.target.value)} />
-                <Button className="w-full" onClick={handleRedeem} disabled={redeemMut.isPending || !code.trim()}>
+                <div className="rounded-lg border p-3">
+                  <div className="flex items-start gap-3">
+                    <Checkbox
+                      id="education-voucher-digital-consent"
+                      aria-describedby="education-voucher-digital-consent-help"
+                      checked={digitalContentConsent}
+                      onCheckedChange={(checked) => setDigitalContentConsent(checked === true)}
+                    />
+                    <Label htmlFor="education-voucher-digital-consent" className="text-sm leading-relaxed">
+                      Ako vaučer obuhvata online kurs, saglasan/saglasna sam da digitalni sadržaj bude dostupan odmah i prihvatam gubitak prava na odustanak nakon početka pristupa.
+                    </Label>
+                  </div>
+                  <EducationFieldHelp id="education-voucher-digital-consent-help" label="Saglasnost za digitalni sadržaj" text="Potvrda je potrebna da bi online pristup mogao da počne odmah po iskorišćenju aktivnog vaučera." />
+                </div>
+                <Button className="w-full" onClick={handleRedeem} disabled={redeemMut.isPending || !code.trim() || !digitalContentConsent}>
                   {redeemMut.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                   Iskoristi
                 </Button>

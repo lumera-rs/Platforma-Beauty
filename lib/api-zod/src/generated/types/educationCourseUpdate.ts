@@ -136,4 +136,24 @@ export interface EducationCourseUpdate {
   /** @nullable */
   earlyBirdCutoff?: Date | null;
   installmentCount?: EducationCourseUpdateInstallmentCount;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  onlineAccessDays?: number | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  extensionPrice1Month?: number | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  extensionPrice3Months?: number | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  extensionPrice6Months?: number | null;
 }

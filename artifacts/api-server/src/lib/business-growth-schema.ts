@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 110;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 111;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -4601,9 +4601,39 @@ function tableStatements(s: string): string[] {
     `ALTER TABLE ${s}.course_enrollments ADD COLUMN IF NOT EXISTS access_expires_at timestamptz`,
     `ALTER TABLE ${s}.course_enrollments ADD COLUMN IF NOT EXISTS access_days_snapshot integer`,
     `ALTER TABLE ${s}.course_enrollments ADD COLUMN IF NOT EXISTS course_price_snapshot integer`,
+    `ALTER TABLE ${s}.course_enrollments ADD COLUMN IF NOT EXISTS duration_snapshot text`,
     `ALTER TABLE ${s}.course_enrollments ADD COLUMN IF NOT EXISTS extension_prices_snapshot jsonb`,
     `ALTER TABLE ${s}.course_enrollments ADD COLUMN IF NOT EXISTS digital_content_consent_at timestamptz`,
     `ALTER TABLE ${s}.course_enrollments ADD COLUMN IF NOT EXISTS digital_content_consent_user_id uuid REFERENCES ${s}.users(id) ON DELETE RESTRICT`,
+    `ALTER TABLE ${s}.course_enrollments ADD COLUMN IF NOT EXISTS digital_content_consent_text_snapshot text`,
+    `ALTER TABLE ${s}.course_enrollments ADD COLUMN IF NOT EXISTS digital_content_consent_version_snapshot text`,
+    // Some pre-business-growth installations have the original enrollment
+    // table without payment_status.  It must exist before the entitlement
+    // preservation backfill below, rather than relying on the later legacy
+    // compatibility pass.
+    `ALTER TABLE ${s}.course_enrollments ADD COLUMN IF NOT EXISTS payment_status text NOT NULL DEFAULT 'pending'`,
+    `ALTER TABLE ${s}.course_enrollments ADD COLUMN IF NOT EXISTS access_granted_at timestamptz`,
+    `ALTER TABLE ${s}.course_enrollments ADD COLUMN IF NOT EXISTS purchased_at timestamptz`,
+    // The oldest supported courses table predates the human-readable duration
+    // column. Add it before referencing it in the evidence backfill. IF NOT
+    // EXISTS makes replays preserve every value already held by modern rows.
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS duration text`,
+    // Preserve issuance evidence where it already exists.  Legacy paid online
+    // rows gain a snapshot only when absent; existing expiries are never moved
+    // backwards and no synthetic consent is manufactured.
+    `UPDATE ${s}.course_enrollments enrollment SET
+       access_days_snapshot = COALESCE(enrollment.access_days_snapshot, course.online_access_days),
+       course_price_snapshot = COALESCE(enrollment.course_price_snapshot, course.price),
+       duration_snapshot = COALESCE(enrollment.duration_snapshot, course.duration),
+       extension_prices_snapshot = COALESCE(enrollment.extension_prices_snapshot,
+         jsonb_build_object('oneMonth', course.extension_price_1_month, 'threeMonths', course.extension_price_3_months, 'sixMonths', course.extension_price_6_months)),
+       access_expires_at = CASE WHEN enrollment.access_expires_at IS NULL
+         THEN COALESCE(enrollment.access_granted_at, enrollment.purchased_at, now()) + make_interval(days => course.online_access_days)
+         ELSE enrollment.access_expires_at END
+     FROM ${s}.courses course
+     WHERE enrollment.course_id = course.id AND course.format = 'online'
+       AND enrollment.status IN ('active','completed') AND enrollment.payment_status = 'paid'
+       AND course.online_access_days > 0`,
     `CREATE INDEX IF NOT EXISTS course_enrollments_access_expiry_idx ON ${s}.course_enrollments(user_id, access_expires_at)`,
     `CREATE TABLE IF NOT EXISTS ${s}.education_access_extensions (
        id uuid PRIMARY KEY DEFAULT gen_random_uuid(), enrollment_id uuid NOT NULL REFERENCES ${s}.course_enrollments(id) ON DELETE RESTRICT,
@@ -4614,6 +4644,8 @@ function tableStatements(s: string): string[] {
        created_at timestamptz NOT NULL DEFAULT now(), settled_at timestamptz
      )`,
     `CREATE INDEX IF NOT EXISTS education_access_extensions_enrollment_idx ON ${s}.education_access_extensions(enrollment_id, created_at)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS education_access_extensions_open_enrollment_unique
+       ON ${s}.education_access_extensions(enrollment_id) WHERE status = 'pending'`,
     `ALTER TABLE ${s}.education_b2b_orders ADD COLUMN IF NOT EXISTS payment_status text NOT NULL DEFAULT 'pending'`,
     `ALTER TABLE ${s}.education_b2b_orders ADD COLUMN IF NOT EXISTS fulfillment_status text NOT NULL DEFAULT 'RECEIVED'`,
     `ALTER TABLE ${s}.education_b2b_orders ADD COLUMN IF NOT EXISTS completed_at timestamptz`,
@@ -4811,6 +4843,11 @@ export async function runBusinessGrowthSchemaDdl(
         await client.query(`ALTER TABLE IF EXISTS ${quoted}.course_enrollments ADD COLUMN IF NOT EXISTS payment_instructions_snapshot jsonb`);
         await client.query(`ALTER TABLE IF EXISTS ${quoted}.course_enrollments ADD COLUMN IF NOT EXISTS payment_status text NOT NULL DEFAULT 'pending'`);
         await client.query(`ALTER TABLE IF EXISTS ${quoted}.course_enrollments ADD COLUMN IF NOT EXISTS charged_amount integer`);
+        await client.query(`ALTER TABLE IF EXISTS ${quoted}.course_enrollments ADD COLUMN IF NOT EXISTS duration_snapshot text`);
+        await client.query(`ALTER TABLE IF EXISTS ${quoted}.course_enrollments ADD COLUMN IF NOT EXISTS access_granted_at timestamptz`);
+        await client.query(`ALTER TABLE IF EXISTS ${quoted}.course_enrollments ADD COLUMN IF NOT EXISTS purchased_at timestamptz`);
+        await client.query(`ALTER TABLE IF EXISTS ${quoted}.course_enrollments ADD COLUMN IF NOT EXISTS digital_content_consent_text_snapshot text`);
+        await client.query(`ALTER TABLE IF EXISTS ${quoted}.course_enrollments ADD COLUMN IF NOT EXISTS digital_content_consent_version_snapshot text`);
         await client.query(`ALTER TABLE IF EXISTS ${quoted}.education_installments ADD COLUMN IF NOT EXISTS payment_instructions_snapshot jsonb`);
         for (const statement of paymentInstructionSnapshotBackfillStatements(quoted)) await client.query(statement);
         if ((await client.query(`SELECT to_regclass($1) IS NOT NULL AS exists`, [`${schemaName}.education_bundle_purchases`])).rows[0]?.exists) {

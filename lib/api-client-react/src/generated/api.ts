@@ -298,6 +298,8 @@ import type {
   EducationEducatorWeeklyAvailability,
   EducationEducatorWeeklyAvailabilityInput,
   EducationEnrollment,
+  EducationEnrollmentExtensionInput,
+  EducationEnrollmentExtensionResponse,
   EducationEnrollmentInput,
   EducationEnrollmentPaymentInstructions,
   EducationFeaturedChargeSettlement,
@@ -642,6 +644,7 @@ import type {
   SystemPushDeliveryAcknowledgement,
   TimeSlot,
   TrackRetailOrderParams,
+  TransferEducationOnlineEnrollmentBody,
   TreatmentPackage,
   TreatmentPackagePublic,
   TreatmentPhoto,
@@ -18641,7 +18644,7 @@ export const getCreateEducationOperationalBookingUrl = () => {
 }
 
 /**
- * @summary Atomically create an online or center-created named-seat booking
+ * @summary Atomically create a named-seat booking for an in-person or hybrid course
  */
 export const createEducationOperationalBooking = async (educationOperationalBookingInput: EducationOperationalBookingInput, options?: Parameters<typeof customFetch>[1]): Promise<EducationOperationalBooking> => {
 
@@ -18690,7 +18693,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type CreateEducationOperationalBookingMutationError = ErrorType<void>
 
     /**
- * @summary Atomically create an online or center-created named-seat booking
+ * @summary Atomically create a named-seat booking for an in-person or hybrid course
  */
 export const useCreateEducationOperationalBooking = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEducationOperationalBooking>>, TError,{data: BodyType<EducationOperationalBookingInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -21048,6 +21051,150 @@ export function useGetEducationEnrollmentPaymentInstructions<TData = Awaited<Ret
 
 
 
+
+export const getCreateEducationEnrollmentExtensionUrl = (enrollmentId: string,) => {
+
+
+
+
+  return `/api/education/enrollments/${enrollmentId}/extension`
+}
+
+/**
+ * @summary Create a payment obligation to extend online-course access
+ */
+export const createEducationEnrollmentExtension = async (enrollmentId: string,
+    educationEnrollmentExtensionInput: EducationEnrollmentExtensionInput, options?: Parameters<typeof customFetch>[1]): Promise<EducationEnrollmentExtensionResponse> => {
+
+  return customFetch<EducationEnrollmentExtensionResponse>(getCreateEducationEnrollmentExtensionUrl(enrollmentId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(educationEnrollmentExtensionInput)
+  }
+);}
+
+
+
+
+
+export const getCreateEducationEnrollmentExtensionMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEducationEnrollmentExtension>>, TError,{enrollmentId: string;data: BodyType<EducationEnrollmentExtensionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createEducationEnrollmentExtension>>, TError,{enrollmentId: string;data: BodyType<EducationEnrollmentExtensionInput>}, TContext> => {
+
+const mutationKey = ['createEducationEnrollmentExtension'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createEducationEnrollmentExtension>>, {enrollmentId: string;data: BodyType<EducationEnrollmentExtensionInput>}> = (props) => {
+          const {enrollmentId,data} = props ?? {};
+
+          return  createEducationEnrollmentExtension(enrollmentId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateEducationEnrollmentExtensionMutationResult = NonNullable<Awaited<ReturnType<typeof createEducationEnrollmentExtension>>>
+    export type CreateEducationEnrollmentExtensionMutationBody = BodyType<EducationEnrollmentExtensionInput>
+    export type CreateEducationEnrollmentExtensionMutationError = ErrorType<void>
+
+    /**
+ * @summary Create a payment obligation to extend online-course access
+ */
+export const useCreateEducationEnrollmentExtension = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEducationEnrollmentExtension>>, TError,{enrollmentId: string;data: BodyType<EducationEnrollmentExtensionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createEducationEnrollmentExtension>>,
+        TError,
+        {enrollmentId: string;data: BodyType<EducationEnrollmentExtensionInput>},
+        TContext
+      > => {
+      return useMutation(getCreateEducationEnrollmentExtensionMutationOptions(options));
+    }
+
+export const getTransferEducationOnlineEnrollmentUrl = (enrollmentId: string,) => {
+
+
+
+
+  return `/api/education/enrollments/${enrollmentId}/transfer`
+}
+
+/**
+ * @summary Transfer the remaining active online-course access between active employees of the purchaser's salon
+ */
+export const transferEducationOnlineEnrollment = async (enrollmentId: string,
+    transferEducationOnlineEnrollmentBody: TransferEducationOnlineEnrollmentBody, options?: Parameters<typeof customFetch>[1]): Promise<EducationEnrollment> => {
+
+  return customFetch<EducationEnrollment>(getTransferEducationOnlineEnrollmentUrl(enrollmentId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(transferEducationOnlineEnrollmentBody)
+  }
+);}
+
+
+
+
+
+export const getTransferEducationOnlineEnrollmentMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof transferEducationOnlineEnrollment>>, TError,{enrollmentId: string;data: BodyType<TransferEducationOnlineEnrollmentBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof transferEducationOnlineEnrollment>>, TError,{enrollmentId: string;data: BodyType<TransferEducationOnlineEnrollmentBody>}, TContext> => {
+
+const mutationKey = ['transferEducationOnlineEnrollment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof transferEducationOnlineEnrollment>>, {enrollmentId: string;data: BodyType<TransferEducationOnlineEnrollmentBody>}> = (props) => {
+          const {enrollmentId,data} = props ?? {};
+
+          return  transferEducationOnlineEnrollment(enrollmentId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type TransferEducationOnlineEnrollmentMutationResult = NonNullable<Awaited<ReturnType<typeof transferEducationOnlineEnrollment>>>
+    export type TransferEducationOnlineEnrollmentMutationBody = BodyType<TransferEducationOnlineEnrollmentBody>
+    export type TransferEducationOnlineEnrollmentMutationError = ErrorType<void>
+
+    /**
+ * @summary Transfer the remaining active online-course access between active employees of the purchaser's salon
+ */
+export const useTransferEducationOnlineEnrollment = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof transferEducationOnlineEnrollment>>, TError,{enrollmentId: string;data: BodyType<TransferEducationOnlineEnrollmentBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof transferEducationOnlineEnrollment>>,
+        TError,
+        {enrollmentId: string;data: BodyType<TransferEducationOnlineEnrollmentBody>},
+        TContext
+      > => {
+      return useMutation(getTransferEducationOnlineEnrollmentMutationOptions(options));
+    }
 
 export const getProposeEducationCourseTypeUrl = () => {
 

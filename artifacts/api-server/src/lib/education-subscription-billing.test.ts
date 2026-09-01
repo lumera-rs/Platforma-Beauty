@@ -71,6 +71,7 @@ try {
     courseId: courseId!, userId: learners[index]!.id, purchaserId: learners[index]!.id, status: "active" as const,
     paymentStatus: "paid" as const, accessGrantedAt: new Date(), accessExpiresAt: initialExpiry,
     idempotencyKey: `${marker}-${index}`,
+    accessDaysSnapshot: 30,
     extensionPricesSnapshot: { oneMonth: 1_111, threeMonths: 3_333, sixMonths: 6_666 },
   }))).returning();
 
@@ -135,6 +136,17 @@ try {
   await db.update(coursesTable).set({
     extensionPrice1Month: 9_100, extensionPrice3Months: 9_300, extensionPrice6Months: 9_600,
   }).where(eq(coursesTable.id, courseId));
+  await db.update(courseEnrollmentsTable).set({
+    extensionPricesSnapshot: { oneMonth: 0, threeMonths: 3_333, sixMonths: 6_666 },
+  }).where(eq(courseEnrollmentsTable.id, enrollments[0]!.id));
+  assert.equal((await call(base, learnerCookies[0]!, `/education/enrollments/${enrollments[0]!.id}/extension`, "POST", { months: 1 })).status, 409,
+    "Legacy zero extension snapshots are rejected cleanly.");
+  assert.equal((await db.select().from(educationPaymentObligationsTable)
+    .where(eq(educationPaymentObligationsTable.enrollmentId, enrollments[0]!.id))).length, 0,
+  "Zero-price rejection happens before payment-obligation creation.");
+  await db.update(courseEnrollmentsTable).set({
+    extensionPricesSnapshot: { oneMonth: 1_111, threeMonths: 3_333, sixMonths: 6_666 },
+  }).where(eq(courseEnrollmentsTable.id, enrollments[0]!.id));
   const expected = [1_111, 3_333, 6_666];
   for (let index = 0; index < enrollments.length; index++) {
     const months = ([1, 3, 6] as const)[index]!;

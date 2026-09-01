@@ -16,7 +16,7 @@ import { once } from "node:events";
 import { type AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
   courseEnrollmentsTable,
   courseSessionsTable,
@@ -38,6 +38,7 @@ import {
   educationInstallmentsTable,
   educationPlatformSettingsTable,
   educationWaitlistTable,
+  pool,
   subscriptionPlansTable,
   usersTable,
 } from "@workspace/db";
@@ -47,6 +48,7 @@ import { ensureDemoData } from "./seed";
 
 const suffix = randomUUID();
 const password = "education-sessions-test-password";
+const SETTINGS_LOCK = "education-online-access-transfer-settings";
 
 type RequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
@@ -96,6 +98,8 @@ async function login(baseUrl: string, email: string): Promise<string> {
 
 async function run(): Promise<void> {
   await ensureDemoData();
+  const settingsLockClient = await pool.connect();
+  await settingsLockClient.query("select pg_advisory_lock(hashtext($1))", [SETTINGS_LOCK]);
 
   let server: ReturnType<typeof app.listen> | undefined;
   const createdUserIds: string[] = [];
@@ -103,8 +107,14 @@ async function run(): Promise<void> {
   const enrollmentIds: string[] = [];
   const giftVoucherIds: string[] = [];
   let centerId: string | undefined;
+  let settingsSnapshot: typeof educationPlatformSettingsTable.$inferSelect | undefined;
 
   try {
+    [settingsSnapshot] = await db.select().from(educationPlatformSettingsTable)
+      .orderBy(asc(educationPlatformSettingsTable.createdAt)).limit(1);
+    assert.ok(settingsSnapshot, "Global Education platform settings are required.");
+    await db.update(educationPlatformSettingsTable).set({ ipsAccountEnvironment: "test" })
+      .where(eq(educationPlatformSettingsTable.id, settingsSnapshot.id));
     // ── Fixture users ────────────────────────────────────────────────────────
     const passwordHash = await hashPassword(password);
     const fixtureUsers = await db.insert(usersTable).values([
@@ -944,6 +954,12 @@ async function run(): Promise<void> {
         description: "Izolovani refund fixture.", category: "Stilizovanje", format,
         city: format === "online" ? null : "Beograd", price: 5000, duration: "1 dan",
         imageUrl: "/gift-refund.jpg", published: true, giftVoucherEligible: true,
+        ...(format === "online" ? {
+          onlineAccessDays: 30,
+          extensionPrice1Month: 1000,
+          extensionPrice3Months: 2500,
+          extensionPrice6Months: 4000,
+        } : {}),
       }).returning();
       courseIds.push(giftCourse!.id);
       let giftSession: typeof courseSessionsTable.$inferSelect | undefined;
@@ -964,7 +980,8 @@ async function run(): Promise<void> {
         method: "POST", cookie: adminCookie, body: {},
       })).status, 200);
       const redeemed = await request(baseUrl, "/education/gift-vouchers/redeem", {
-        method: "POST", cookie: buyerCookie, body: { code: purchased.redemptionCode },
+        method: "POST", cookie: buyerCookie,
+        body: { code: purchased.redemptionCode, ...(format === "online" ? { digitalContentConsent: true } : {}) },
       });
       assert.equal(redeemed.status, 201);
       const enrollment = await json<{ id: string }>(redeemed);
@@ -1187,6 +1204,18 @@ async function run(): Promise<void> {
     }
     if (createdUserIds.length) {
       await db.delete(usersTable).where(inArray(usersTable.id, createdUserIds));
+    }
+    try {
+      if (settingsSnapshot) {
+        await db.update(educationPlatformSettingsTable).set(settingsSnapshot)
+          .where(eq(educationPlatformSettingsTable.id, settingsSnapshot.id));
+      }
+    } finally {
+      try {
+        await settingsLockClient.query("select pg_advisory_unlock(hashtext($1))", [SETTINGS_LOCK]);
+      } finally {
+        settingsLockClient.release();
+      }
     }
   }
 }

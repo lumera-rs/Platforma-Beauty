@@ -259,6 +259,10 @@ import {
   qualifiesAsTopRatedEducationCenter,
   normalizedEducationTaxonomyName,
 } from "../lib/education-marketplace-domain";
+import { assertOnlineEnrollmentRequest, isOnlineEnrollmentSnapshot, issueOnlineEnrollmentFields } from "../lib/education-entitlement";
+import {
+  educationCenterEligibility, eligibleEducationCenterSql, hasActiveEducationSubscription,
+} from "../lib/education-center-eligibility";
 import {
   educationCycleAmount, educationPaymentReference, hashTrialIdentifier,
   normalizeTrialEmail, normalizeTrialPhone, normalizeTrialPib,
@@ -843,6 +847,8 @@ const OAUTH_STATE_COOKIE = "lumera_oauth_state";
 const CUSTOMER_SETUP_TTL_MS = 15 * 60 * 1000;
 const CUSTOMER_SETUP_MAX_ATTEMPTS = 5;
 const CUSTOMER_SETUP_INVALID_MESSAGE = "Link za postavljanje lozinke nije važeći ili više nije dostupan.";
+// This is deliberately server-owned.  A client can attest only to the boolean
+// request field; it cannot choose the legal wording, version, account or time.
 
 let adminSummaryAfterFirstReadForTest: (() => Promise<void>) | undefined;
 
@@ -2715,31 +2721,6 @@ async function canManageEducationCourses(access: EducationAccess, centerId?: str
   return Boolean(membership);
 }
 
-function hasActiveEducationSubscription(
-  subscription: { status?: string | null; currentPeriodEnd?: Date | null; trialEndsAt?: Date | null; graceEndsAt?: Date | null } | string | null | undefined,
-  now = new Date(),
-) {
-  if (!subscription) return false;
-  const normalized = typeof subscription === "string" ? { status: subscription } : subscription;
-  const end = normalized.status === "trial" ? normalized.trialEndsAt ?? normalized.currentPeriodEnd
-    : normalized.status === "past_due" ? normalized.graceEndsAt
-    : normalized.currentPeriodEnd;
-  const withinPeriod = !end || end > now;
-  return withinPeriod && ["active", "trial", "free_via_loyalty", "past_due"].includes(normalized.status ?? "");
-}
-
-async function educationCenterEligibility(centerId: string) {
-  const [center, subscription] = await Promise.all([
-    db.select().from(educationCentersTable).where(eq(educationCentersTable.id, centerId)).limit(1),
-    db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, centerId)).limit(1),
-  ]);
-  return {
-    center: center[0] ?? null,
-    subscription: subscription[0] ?? null,
-    eligible: center[0]?.verificationStatus === "verified" && hasActiveEducationSubscription(subscription[0]),
-  };
-}
-
 /**
  * Batch variant of educationCenterEligibility.
  * Returns a Map<centerId, boolean> for all requested centerIds in two DB round-trips.
@@ -2805,8 +2786,9 @@ async function releaseAtForEducationCourse(
   course: typeof coursesTable.$inferSelect,
   settings: Pick<Record<EducationBillingKey, number>, "onlineRefundDays" | "liveAppealDays">,
   assignedSession?: Pick<typeof courseSessionsTable.$inferSelect, "id" | "endsAt"> | null,
+  online = course.format === "online",
 ) {
-  if (course.format === "online") {
+  if (online) {
     return new Date(Date.now() + settings.onlineRefundDays * 24 * 60 * 60 * 1000);
   }
   if (!assignedSession?.endsAt || assignedSession.endsAt <= new Date()) throw new Error("Nije moguće potvrditi kupovinu za termin koji je već završen.");
@@ -3579,6 +3561,13 @@ async function educationEnrollmentView(enrollment: typeof courseEnrollmentsTable
     progress: enrollment.progress,
     nextLesson,
     purchasedAt: enrollment.purchasedAt.toISOString(),
+    accessExpiresAt: enrollment.accessExpiresAt?.toISOString() ?? null,
+    coursePriceSnapshot: enrollment.coursePriceSnapshot,
+    durationSnapshot: enrollment.durationSnapshot,
+    accessDaysSnapshot: enrollment.accessDaysSnapshot,
+    extensionPricesSnapshot: enrollment.extensionPricesSnapshot,
+    digitalContentConsentAt: enrollment.digitalContentConsentAt?.toISOString() ?? null,
+    digitalContentConsentVersionSnapshot: enrollment.digitalContentConsentVersionSnapshot,
     escrowStatus: escrow[0]?.status ?? null,
     escrowReleaseAt: escrow[0]?.releaseAt?.toISOString() ?? null,
     dispute: disputes[0] ? {
@@ -3671,6 +3660,13 @@ async function batchEducationEnrollmentViews(enrollments: (typeof courseEnrollme
       progress: enrollment.progress,
       nextLesson,
       purchasedAt: enrollment.purchasedAt.toISOString(),
+      accessExpiresAt: enrollment.accessExpiresAt?.toISOString() ?? null,
+      coursePriceSnapshot: enrollment.coursePriceSnapshot,
+      durationSnapshot: enrollment.durationSnapshot,
+      accessDaysSnapshot: enrollment.accessDaysSnapshot,
+      extensionPricesSnapshot: enrollment.extensionPricesSnapshot,
+      digitalContentConsentAt: enrollment.digitalContentConsentAt?.toISOString() ?? null,
+      digitalContentConsentVersionSnapshot: enrollment.digitalContentConsentVersionSnapshot,
       escrowStatus: escrow?.status ?? null,
       escrowReleaseAt: escrow?.releaseAt?.toISOString() ?? null,
       dispute: dispute ? {
@@ -18237,6 +18233,12 @@ router.post("/education/courses", async (req, res): Promise<void> => {
   const depositAmount = data.depositAmount ?? null;
   const paymentModeError = educationPaymentModeError({ format: data.format, paymentMode, depositAmount, price: data.price });
   if (paymentModeError) { res.status(400).json({ error: paymentModeError }); return; }
+  if (data.format === "online" && (!data.onlineAccessDays || data.onlineAccessDays < 1
+    || data.extensionPrice1Month == null || data.extensionPrice1Month <= 0
+    || data.extensionPrice3Months == null || data.extensionPrice3Months <= 0
+    || data.extensionPrice6Months == null || data.extensionPrice6Months <= 0)) {
+    res.status(400).json({ error: "Online kurs mora imati pozitivan broj dana pristupa i pozitivne cene produženja za 1, 3 i 6 meseci." }); return;
+  }
   if (!await validEducationTaxonomySelection({
     categoryId: data.categoryId ?? null, subcategoryId: data.subcategoryId ?? null, courseTypeId: data.courseTypeId ?? null,
   })) { res.status(400).json({ error: "Izabrana taksonomija kursa nije ispravna ili odobrena." }); return; }
@@ -18282,6 +18284,10 @@ router.post("/education/courses", async (req, res): Promise<void> => {
         earlyBirdPrice: data.earlyBirdPrice ?? null,
         earlyBirdCutoff: data.earlyBirdCutoff ? new Date(data.earlyBirdCutoff) : null,
         installmentCount: data.installmentCount ?? 1,
+        onlineAccessDays: data.onlineAccessDays ?? null,
+        extensionPrice1Month: data.extensionPrice1Month ?? null,
+        extensionPrice3Months: data.extensionPrice3Months ?? null,
+        extensionPrice6Months: data.extensionPrice6Months ?? null,
         imageUrl: data.imageUrl,
         startDate: data.startDate ? calendarDate(data.startDate) : null,
         ...(data.refundPolicy !== undefined ? { refundPolicy: data.refundPolicy } : {}),
@@ -18359,6 +18365,18 @@ router.patch("/education/courses/:courseId", async (req, res): Promise<void> => 
   };
   const paymentModeError = educationPaymentModeError(mergedPayment);
   if (paymentModeError) { res.status(400).json({ error: paymentModeError }); return; }
+  const mergedOnline = {
+    format: data.format ?? course.format,
+    accessDays: data.onlineAccessDays === undefined ? course.onlineAccessDays : data.onlineAccessDays,
+    oneMonth: data.extensionPrice1Month === undefined ? course.extensionPrice1Month : data.extensionPrice1Month,
+    threeMonths: data.extensionPrice3Months === undefined ? course.extensionPrice3Months : data.extensionPrice3Months,
+    sixMonths: data.extensionPrice6Months === undefined ? course.extensionPrice6Months : data.extensionPrice6Months,
+  };
+  if (mergedOnline.format === "online" && (!mergedOnline.accessDays || mergedOnline.accessDays < 1
+    || mergedOnline.oneMonth == null || mergedOnline.oneMonth <= 0 || mergedOnline.threeMonths == null
+    || mergedOnline.threeMonths <= 0 || mergedOnline.sixMonths == null || mergedOnline.sixMonths <= 0)) {
+    res.status(400).json({ error: "Online kurs mora imati pozitivan broj dana pristupa i pozitivne cene produženja za 1, 3 i 6 meseci." }); return;
+  }
   const mergedPublished = data.published ?? course.published;
   const mergedRefundPolicy = data.refundPolicy ?? course.refundPolicy;
   if (mergedPublished && mergedPayment.paymentMode === "live_deposit" && !mergedRefundPolicy.trim()) {
@@ -18383,6 +18401,14 @@ router.patch("/education/courses/:courseId", async (req, res): Promise<void> => 
   let updated: typeof coursesTable.$inferSelect | undefined;
   try {
     [updated] = await db.transaction(async (tx) => {
+      const [lockedCourse] = await tx.select().from(coursesTable)
+        .where(eq(coursesTable.id, course.id)).for("update").limit(1);
+      if (!lockedCourse) throw new Error("COURSE_NOT_FOUND");
+      if ((data.format ?? lockedCourse.format) === "online") {
+        const [existingSession] = await tx.select({ id: courseSessionsTable.id })
+          .from(courseSessionsTable).where(eq(courseSessionsTable.courseId, lockedCourse.id)).limit(1);
+        if (existingSession) throw new Error("ONLINE_COURSE_HAS_SESSIONS");
+      }
       if (data.imageUrl !== undefined && mediaAssetIdFromUrl(data.imageUrl) && !await claimMediaReference({
         userId: access.user.id,
         url: data.imageUrl,
@@ -18414,6 +18440,10 @@ router.patch("/education/courses/:courseId", async (req, res): Promise<void> => 
       return rows;
     });
   } catch (error) {
+    if (error instanceof Error && error.message === "ONLINE_COURSE_HAS_SESSIONS") {
+      res.status(409).json({ error: "Online kurs ne može imati termine uživo." });
+      return;
+    }
     if (!(error instanceof MediaClaimConflictError)) throw error;
     res.status(409).json({ error: "Naslovna fotografija je u međuvremenu povezana sa drugim zapisom." });
     return;
@@ -18439,6 +18469,12 @@ router.post("/education/courses/:courseId/publish", async (req, res): Promise<vo
   }
   if (course.paymentMode === "live_deposit" && !course.refundPolicy.trim()) {
     res.status(400).json({ error: "Kurs sa depozitom mora imati jasno definisanu politiku povraćaja pre objave." }); return;
+  }
+  if (course.format === "online" && (!course.onlineAccessDays || course.onlineAccessDays < 1
+    || course.extensionPrice1Month == null || course.extensionPrice1Month <= 0
+    || course.extensionPrice3Months == null || course.extensionPrice3Months <= 0
+    || course.extensionPrice6Months == null || course.extensionPrice6Months <= 0)) {
+    res.status(400).json({ error: "Online kurs mora imati pozitivan broj dana pristupa i pozitivne cene produženja za 1, 3 i 6 meseci." }); return;
   }
   const [updated] = await db.update(coursesTable).set({ published: true, archived: false, updatedAt: new Date() }).where(eq(coursesTable.id, course.id)).returning();
   void publishCatalogInvalidation(["education-categories"]);
@@ -18993,6 +19029,9 @@ router.post("/education/courses/:courseId/sessions", async (req, res): Promise<v
   const [params, body] = [CreateEducationSessionParams.safeParse(req.params), CreateEducationSessionBody.safeParse(req.body)];
   if (!params.success || !body.success || body.data.endsAt <= body.data.startsAt) { res.status(400).json({ error: "Termin kursa nije ispravan." }); return; }
   const course = await requireOwnedCourse(access, params.data.courseId, res); if (!course) return;
+  if (course.format === "online") {
+    res.status(409).json({ error: "Online kurs ne može imati termine uživo." }); return;
+  }
   if (course.centerId) {
     const [actorStaff] = await db.select({ role: educationCenterStaffTable.role }).from(educationCenterStaffTable).where(and(
       eq(educationCenterStaffTable.centerId, course.centerId), eq(educationCenterStaffTable.userId, access.user.id),
@@ -19042,6 +19081,9 @@ router.post("/education/courses/:courseId/sessions", async (req, res): Promise<v
           educatorStaffId, startsAt, endsAt, store: tx,
         })) throw new Error("EDUCATOR_ABSENT");
       }
+      const [lockedCourse] = await tx.select().from(coursesTable)
+        .where(eq(coursesTable.id, course.id)).for("update").limit(1);
+      if (!lockedCourse || lockedCourse.format === "online") throw new Error("ONLINE_SESSION_UNAVAILABLE");
       const [created] = await tx.insert(courseSessionsTable).values({
         courseId: course.id, startsAt, endsAt, location: body.data.location ?? null,
         capacity: body.data.capacity, minimumEnrollments: createMinimumEnrollments,
@@ -19055,6 +19097,7 @@ router.post("/education/courses/:courseId/sessions", async (req, res): Promise<v
     if (error instanceof Error && error.message === "EDUCATOR_INVALID") { res.status(400).json({ error: "Izabrani edukator nije aktivan član ovog centra." }); return; }
     if (error instanceof Error && error.message === "EDUCATOR_OVERLAP") { res.status(409).json({ error: "Edukator već ima termin koji se preklapa." }); return; }
     if (error instanceof Error && error.message === "EDUCATOR_ABSENT") { res.status(409).json({ error: "Edukator je odsutan u izabranom terminu." }); return; }
+    if (error instanceof Error && error.message === "ONLINE_SESSION_UNAVAILABLE") { res.status(409).json({ error: "Online kurs ne može imati termine uživo." }); return; }
     throw error;
   }
   res.status(201).json(CreateEducationSessionResponse.parse({ id: session!.id, startsAt: session!.startsAt.toISOString(), endsAt: session!.endsAt.toISOString(), location: session!.location, capacity: session!.capacity, reservedSeats: session!.reservedSeats, availableSeats: session!.capacity, minimumEnrollments: session!.minimumEnrollments, cancelledAt: session!.cancelledAt?.toISOString() ?? null, educatorStaffId }));
@@ -19092,6 +19135,9 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
   const idempotencyKey = req.get("idempotency-key")?.trim() || null;
   if (idempotencyKey && idempotencyKey.length > 200) { res.status(400).json({ error: "Idempotency ključ je predugačak." }); return; }
   const requestedSessionId = body.data.sessionId ?? null;
+  if (course.format === "online" && requestedSessionId) {
+    res.status(409).json({ error: "Online kurs ne može koristiti termin uživo." }); return;
+  }
   const selectedPaymentMode = body.data.paymentMode ?? course.paymentMode;
   if (selectedPaymentMode !== course.paymentMode) {
     res.status(409).json({ error: "Izabrani način plaćanja nije ponuđen za ovaj kurs." }); return;
@@ -19100,6 +19146,14 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
     format: course.format, paymentMode: selectedPaymentMode, depositAmount: course.depositAmount, price: course.price,
   });
   if (paymentModeError) { res.status(409).json({ error: paymentModeError }); return; }
+  if (course.format === "online" && body.data.digitalContentConsent !== true) {
+    res.status(400).json({ error: "Za kupovinu online kursa potrebna je izričita saglasnost za početak digitalnog sadržaja." }); return;
+  }
+  if (course.format === "online" && (!course.onlineAccessDays || course.extensionPrice1Month == null
+    || course.extensionPrice1Month <= 0 || course.extensionPrice3Months == null || course.extensionPrice3Months <= 0
+    || course.extensionPrice6Months == null || course.extensionPrice6Months <= 0)) {
+    res.status(409).json({ error: "Online kurs nema kompletno podešene uslove pristupa." }); return;
+  }
   const chargedAmount = selectedPaymentMode === "live_deposit" ? course.depositAmount! : selectedPaymentMode === "live_off_platform" ? 0 : course.price;
   const idempotencyFingerprint = `${course.id}:${employee?.id ?? "purchaser"}:${access?.salon?.id ?? "direct"}:${requestedSessionId ?? "auto"}:${selectedPaymentMode}`;
   if (idempotencyKey) {
@@ -19119,12 +19173,19 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
     let enrollment: typeof courseEnrollmentsTable.$inferSelect | null;
     try {
       enrollment = await db.transaction(async (tx) => {
+        const [lockedCourse] = await tx.select().from(coursesTable)
+          .where(eq(coursesTable.id, course.id)).for("update").limit(1);
+        if (!lockedCourse) throw new Error("Kurs više nije dostupan.");
+        assertOnlineEnrollmentRequest(lockedCourse, body.data.digitalContentConsent);
         const sessions = await tx.select().from(courseSessionsTable)
           .where(eq(courseSessionsTable.courseId, course.id))
           .orderBy(asc(courseSessionsTable.startsAt))
           .for("update");
-        const session = sessions.find((item) => item.reservedSeats < item.capacity);
-        if (course.format !== "online" && !session) return null;
+        const session = lockedCourse.format === "online"
+          ? undefined
+          : sessions.find((item) => item.reservedSeats < item.capacity);
+        if (lockedCourse.format !== "online" && !session) return null;
+        const accessGrantedAt = new Date();
         const [created] = await tx.insert(courseEnrollmentsTable).values({
           courseId: course.id,
           userId: user.id,
@@ -19135,7 +19196,8 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
           paymentStatus: "paid",
           chargedAmount: course.price,
           nextLesson: firstLesson?.id ?? null,
-          accessGrantedAt: new Date(),
+          accessGrantedAt,
+          ...(lockedCourse.format === "online" ? issueOnlineEnrollmentFields(lockedCourse, { userId: user.id, acceptedAt: accessGrantedAt }, accessGrantedAt) : {}),
           auditData: { source: "business-workspace", sessionId: session?.id ?? null, idempotencyKey },
           idempotencyKey,
           idempotencyFingerprint: idempotencyKey ? idempotencyFingerprint : null,
@@ -19163,6 +19225,12 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
       if (errorCode === "23505") {
         res.status(409).json({ error: "Ovaj polaznik je već prijavljen na kurs." });
         return;
+      }
+      if (error instanceof Error && error.message === "ONLINE_CONTENT_CONSENT_REQUIRED") {
+        res.status(409).json({ error: "Za online kurs potrebna je izričita saglasnost za digitalni sadržaj." }); return;
+      }
+      if (error instanceof Error && error.message === "ONLINE_ACCESS_POLICY_MISSING") {
+        res.status(409).json({ error: "Online kurs nema kompletno podešene uslove pristupa." }); return;
       }
       throw error;
     }
@@ -19216,6 +19284,13 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
           return null;
         }
       }
+      const [lockedCourse] = await tx.select().from(coursesTable)
+        .where(eq(coursesTable.id, course.id)).for("update").limit(1);
+      if (!lockedCourse) return null;
+      assertOnlineEnrollmentRequest(lockedCourse, body.data.digitalContentConsent);
+      if (requestedSessionId && lockedCourse.format === "online") {
+        throw new Error("Online kurs ne može koristiti termin uživo.");
+      }
       if (requestedSessionId) {
         const [requestedSession] = await tx.select().from(courseSessionsTable)
           .where(and(eq(courseSessionsTable.id, requestedSessionId), eq(courseSessionsTable.courseId, course.id)))
@@ -19239,6 +19314,7 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
         idempotencyKey,
         idempotencyFingerprint: idempotencyKey ? idempotencyFingerprint : null,
         paymentInstructionsSnapshot,
+        ...(lockedCourse.format === "online" ? issueOnlineEnrollmentFields(lockedCourse, { userId: user.id, acceptedAt: new Date() }) : {}),
       }).returning();
       await notifyCustomer(tx, {
         userId: user.id,
@@ -19263,6 +19339,12 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
         res.status(201).json(EnrollInEducationCourseResponse.parse(await educationEnrollmentView(replayed)));
         return;
       }
+    }
+    if (message === "ONLINE_CONTENT_CONSENT_REQUIRED") {
+      res.status(409).json({ error: "Za online kurs potrebna je izričita saglasnost za digitalni sadržaj." }); return;
+    }
+    if (message === "ONLINE_ACCESS_POLICY_MISSING") {
+      res.status(409).json({ error: "Online kurs nema kompletno podešene uslove pristupa." }); return;
     }
     if (errorCode === "23505") { res.status(409).json({ error: "Ovaj polaznik je već prijavljen na kurs." }); return; }
     throw error;
@@ -19339,7 +19421,8 @@ router.post("/education/courses/:courseId/sessions/:sessionId/waitlist", async (
       const [center] = await tx.select().from(educationCentersTable).where(eq(educationCentersTable.id, course.centerId)).for("update").limit(1);
       const [subscription] = await tx.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, course.centerId)).for("update").limit(1);
       const [lockedCourse] = await tx.select().from(coursesTable).where(eq(coursesTable.id, course.id)).for("update").limit(1);
-      if (!lockedCourse?.published || lockedCourse.archived || center?.verificationStatus !== "verified" || !hasActiveEducationSubscription(subscription)) {
+      if (!lockedCourse?.published || lockedCourse.archived || lockedCourse.format === "online"
+        || center?.verificationStatus !== "verified" || !hasActiveEducationSubscription(subscription)) {
         throw new Error("Kurs više nije dostupan za listu čekanja.");
       }
       const [session] = await tx.select().from(courseSessionsTable)
@@ -19400,6 +19483,9 @@ router.post("/education/waitlist/:waitlistId/accept", async (req, res): Promise<
       const [lockedCourse] = await tx.select().from(coursesTable).where(eq(coursesTable.id, course.id)).for("update").limit(1);
       if (!lockedCourse?.published || lockedCourse.archived || center?.verificationStatus !== "verified" || !hasActiveEducationSubscription(subscription)) {
         throw new Error("Kurs više nije dostupan.");
+      }
+      if (lockedCourse.format === "online") {
+        throw new Error("Online kurs ne može koristiti termine ili listu čekanja.");
       }
       // Re-read the waitlist entry under lock and validate the offer.
       const [entry] = await tx.select().from(educationWaitlistTable)
@@ -19582,7 +19668,7 @@ router.post("/admin/education/enrollments/:enrollmentId/settle", async (req, res
         throw new Error("Centar više nije verifikovan ili nema aktivnu pretplatu.");
       }
       let session: typeof courseSessionsTable.$inferSelect | null = null;
-      if (course.format !== "online") {
+      if (!isOnlineEnrollmentSnapshot(enrollment)) {
         const sessions = await tx.select().from(courseSessionsTable).where(eq(courseSessionsTable.courseId, course.id)).orderBy(asc(courseSessionsTable.startsAt)).for("update");
         const seatAlreadyReserved = Boolean((enrollment.auditData as { seatReserved?: boolean } | null)?.seatReserved);
         session = enrollment.sessionId
@@ -19592,8 +19678,20 @@ router.post("/admin/education/enrollments/:enrollmentId/settle", async (req, res
         if (!seatAlreadyReserved) await tx.update(courseSessionsTable).set({ reservedSeats: session.reservedSeats + 1 }).where(eq(courseSessionsTable.id, session.id));
       }
       const firstLesson = (await modulesForCourse(course.id)).flatMap((module) => module.lessons)[0];
+      const accessGrantedAt = new Date();
       const [confirmed] = await tx.update(courseEnrollmentsTable).set({
-        status: "active", paymentStatus: "paid", accessGrantedAt: new Date(), nextLesson: firstLesson?.id ?? null, sessionId: session?.id ?? null,
+        status: "active", paymentStatus: "paid", accessGrantedAt,
+        ...(isOnlineEnrollmentSnapshot(enrollment) ? issueOnlineEnrollmentFields({
+          price: enrollment.coursePriceSnapshot!, duration: enrollment.durationSnapshot!,
+          onlineAccessDays: enrollment.accessDaysSnapshot,
+          extensionPrice1Month: enrollment.extensionPricesSnapshot?.oneMonth ?? null,
+          extensionPrice3Months: enrollment.extensionPricesSnapshot?.threeMonths ?? null,
+          extensionPrice6Months: enrollment.extensionPricesSnapshot?.sixMonths ?? null,
+        }, {
+          userId: enrollment.digitalContentConsentUserId!, acceptedAt: enrollment.digitalContentConsentAt!,
+          textSnapshot: enrollment.digitalContentConsentTextSnapshot!, versionSnapshot: enrollment.digitalContentConsentVersionSnapshot!,
+        }, accessGrantedAt) : {}),
+        nextLesson: firstLesson?.id ?? null, sessionId: session?.id ?? null,
         auditData: { ...enrollment.auditData, settlement: "admin_confirmed", settledBy: admin.id, sessionId: session?.id ?? null, seatReserved: Boolean(session) },
         updatedAt: new Date(),
       }).where(and(eq(courseEnrollmentsTable.id, enrollment.id), eq(courseEnrollmentsTable.status, "pending"), eq(courseEnrollmentsTable.paymentStatus, "pending"))).returning();
@@ -19617,7 +19715,7 @@ router.post("/admin/education/enrollments/:enrollmentId/settle", async (req, res
       const platformFee = Math.floor(grossAmount * settings.effective.commissionPercent / 100);
       const reserveAmount = Math.floor(grossAmount * settings.effective.reservePercent / 100);
       const netAmount = grossAmount - platformFee - reserveAmount;
-      const releaseAt = await releaseAtForEducationCourse(course, settings.effective, session);
+      const releaseAt = await releaseAtForEducationCourse(course, settings.effective, session, isOnlineEnrollmentSnapshot(enrollment));
       const [escrow] = await tx.insert(educationEscrowsTable).values({
         enrollmentId: confirmed.id, centerId: course.centerId, grossAmount, platformFee, reserveAmount, netAmount, releaseAt,
         paymentReference: `manual-settlement:${confirmed.id}`,
@@ -19667,6 +19765,9 @@ router.patch("/education/sessions/:sessionId", async (req, res): Promise<void> =
   const updated = await db.transaction(async (tx) => {
     const [locked] = await tx.select().from(courseSessionsTable).where(eq(courseSessionsTable.id, session.id)).for("update").limit(1);
     if (!locked) throw new Error("NOT_FOUND");
+    const [lockedCourse] = await tx.select().from(coursesTable)
+      .where(eq(coursesTable.id, locked.courseId)).for("update").limit(1);
+    if (!lockedCourse || lockedCourse.format === "online") throw new Error("ONLINE_SESSION_UNAVAILABLE");
     const [operationalAssignment, operationalBooking, publicOperationalCourse] = await Promise.all([
       tx.select({ id: educationSessionEducatorsTable.sessionId }).from(educationSessionEducatorsTable).where(eq(educationSessionEducatorsTable.sessionId, locked.id)).limit(1),
       tx.select({ id: educationBookingGroupsTable.id }).from(educationBookingGroupsTable).where(eq(educationBookingGroupsTable.sessionId, locked.id)).limit(1),
@@ -19686,10 +19787,12 @@ router.patch("/education/sessions/:sessionId", async (req, res): Promise<void> =
     }).where(eq(courseSessionsTable.id, locked.id)).returning();
     return row!;
   }).catch((error: unknown) => {
+    if (error instanceof Error && error.message === "ONLINE_SESSION_UNAVAILABLE") return "online" as const;
     if (error instanceof Error && error.message === "OPERATIONAL_SESSION_REQUIRES_SCHEDULER") return null;
     if (error instanceof Error && error.message === "CAPACITY") return false;
     throw error;
   });
+  if (updated === "online") { res.status(409).json({ error: "Online kurs ne može imati termine uživo." }); return; }
   if (updated === null) { res.status(409).json({ code: "OPERATIONAL_SESSION_REQUIRES_SCHEDULER", error: "Operativni termin se menja kroz planer." }); return; }
   if (updated === false) { res.status(409).json({ error: "Kapacitet ne može biti manji od postojećih rezervacija." }); return; }
   res.json(UpdateEducationSessionResponse.parse({
@@ -19799,8 +19902,12 @@ router.get("/education/enrollments/:enrollmentId/lms", async (req, res): Promise
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const [enrollment] = await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, parsed.data.enrollmentId)).limit(1);
   if (!enrollment) { res.status(403).json({ error: "Nemate pristup ovom sadržaju Sistema za učenje." }); return; }
-  const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, enrollment.courseId)).limit(1);
-  if (!course) { res.status(404).json({ error: "Kurs nije pronađen." }); return; }
+  const [courseClock] = await db.select({
+    course: coursesTable,
+    databaseNow: sql<string>`current_timestamp`,
+  }).from(coursesTable).where(eq(coursesTable.id, enrollment.courseId)).limit(1);
+  if (!courseClock) { res.status(404).json({ error: "Kurs nije pronađen." }); return; }
+  const course = courseClock.course;
   const assignedEmployee = Boolean(
     enrollment.employeeId
     && lmsAccess.learnerEmployeeId
@@ -19818,6 +19925,11 @@ router.get("/education/enrollments/:enrollmentId/lms", async (req, res): Promise
     res.status(403).json({ error: "Pristup kursu se aktivira tek nakon potvrđene uplate." });
     return;
   }
+  if (isOnlineEnrollmentSnapshot(enrollment)
+    && (!enrollment.accessExpiresAt || enrollment.accessExpiresAt <= new Date(courseClock.databaseNow))) {
+    res.status(403).json({ error: "Pristup online kursu je istekao." });
+    return;
+  }
   const progress = await db.select().from(lessonProgressTable).where(eq(lessonProgressTable.enrollmentId, enrollment.id));
   const response = GetEducationLmsResponse.parse({
     enrollment: await educationEnrollmentView(enrollment),
@@ -19827,47 +19939,123 @@ router.get("/education/enrollments/:enrollmentId/lms", async (req, res): Promise
   res.json({ ...response, course: calendarDateCourseResponse(response.course) });
 });
 
+// A salon-owned seat is transferable, but its commercial and consent evidence
+// belongs permanently to the original purchase.  Lock the enrollment first,
+// then employee rows in deterministic id order to make concurrent transfers
+// serialize without a lost update.
+router.post("/education/enrollments/:enrollmentId/transfer", async (req, res): Promise<void> => {
+  const actor = await current(req, res); if (!actor) return;
+  const targetEmployeeId = typeof req.body?.targetEmployeeId === "string" ? req.body.targetEmployeeId : "";
+  if (!targetEmployeeId) { res.status(400).json({ error: "Izaberite zaposlenog kome se pristup prenosi." }); return; }
+  try {
+    const result = await db.transaction(async (tx) => {
+      const [enrollment] = await tx.select().from(courseEnrollmentsTable)
+        .where(eq(courseEnrollmentsTable.id, String(req.params.enrollmentId))).for("update").limit(1);
+      if (!enrollment) throw new Error("NOT_FOUND");
+      if (enrollment.purchaserId !== actor.id || !enrollment.salonId || !enrollment.employeeId) throw new Error("FORBIDDEN");
+      const [courseClock] = await tx.select({
+        format: coursesTable.format,
+        databaseNow: sql<string>`current_timestamp`,
+      }).from(coursesTable).where(eq(coursesTable.id, enrollment.courseId)).limit(1);
+      if (!courseClock || !isOnlineEnrollmentSnapshot(enrollment) || enrollment.status !== "active" || enrollment.paymentStatus !== "paid"
+        || !enrollment.accessExpiresAt || enrollment.accessExpiresAt <= new Date(courseClock.databaseNow)) throw new Error("EXPIRED");
+      const ids = [enrollment.employeeId, targetEmployeeId].sort();
+      const workers = await tx.select().from(employeesTable).where(inArray(employeesTable.id, ids)).for("update");
+      const source = workers.find(row => row.id === enrollment.employeeId);
+      const target = workers.find(row => row.id === targetEmployeeId);
+      if (!source || !target || source.id === target.id || !source.active || !target.active || !source.userId || !target.userId
+        || source.salonId !== enrollment.salonId || target.salonId !== enrollment.salonId) throw new Error("EMPLOYEE");
+      const assignments = await tx.select({ employeeId: employeeLocationAssignmentsTable.employeeId }).from(employeeLocationAssignmentsTable)
+        .where(and(eq(employeeLocationAssignmentsTable.salonId, enrollment.salonId), eq(employeeLocationAssignmentsTable.active, true),
+          inArray(employeeLocationAssignmentsTable.employeeId, [source.id, target.id]))).for("update");
+      if (new Set(assignments.map(row => row.employeeId)).size !== 2) throw new Error("EMPLOYEE");
+      const [salon] = await tx.select({ ownerId: salonsTable.ownerId }).from(salonsTable)
+        .where(eq(salonsTable.id, enrollment.salonId)).for("update").limit(1);
+      if (salon?.ownerId !== actor.id) throw new Error("FORBIDDEN");
+      const [updated] = await tx.update(courseEnrollmentsTable).set({ employeeId: target.id, userId: target.userId, updatedAt: new Date() })
+        .where(and(eq(courseEnrollmentsTable.id, enrollment.id), eq(courseEnrollmentsTable.employeeId, source.id))).returning();
+      if (!updated) throw new Error("REPLAY");
+      await tx.insert(educationFinancialAuditLogTable).values({
+        actorUserId: actor.id, action: "education_online_access_transferred", entityType: "course_enrollment", entityId: enrollment.id,
+        oldValue: { employeeId: source.id, userId: source.userId }, newValue: { employeeId: target.id, userId: target.userId },
+        reason: "Prenos preostalog pristupa online kursu između zaposlenih istog salona.",
+      });
+      return updated;
+    });
+    res.json(EnrollInEducationCourseResponse.parse(await educationEnrollmentView(result)));
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "";
+    const errorMessage = code === "NOT_FOUND" ? "Prijava nije pronađena." : code === "EXPIRED"
+      ? "Pristup je istekao ili nije aktivan." : code === "EMPLOYEE"
+        ? "Zaposleni moraju biti različiti, aktivni i trenutno povezani sa istim salonom." : "Nemate pravo da prenesete ovaj pristup.";
+    res.status(code === "NOT_FOUND" ? 404 : 409).json({ error: errorMessage });
+  }
+});
+
 router.post("/education/enrollments/:enrollmentId/lessons/:lessonId/complete", async (req, res): Promise<void> => {
   const lmsAccess = await requireLmsAccess(req, res); if (!lmsAccess) return;
   const parsed = CompleteEducationLessonParams.safeParse(req.params);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const [enrollment, lesson] = await Promise.all([
-    db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, parsed.data.enrollmentId)).limit(1),
-    db.select().from(courseLessonsTable).where(eq(courseLessonsTable.id, parsed.data.lessonId)).limit(1),
-  ]);
-  const assignedEmployee = Boolean(
-    enrollment[0]?.employeeId
-    && lmsAccess.learnerEmployeeId
-    && enrollment[0].employeeId === lmsAccess.learnerEmployeeId,
-  );
-  const operationalLearner = Boolean(enrollment[0]?.participantId);
-  const mayCompleteLesson = Boolean(enrollment[0]) && (operationalLearner
-    ? enrollment[0]!.userId === lmsAccess.access.user.id
-    : enrollment[0]!.purchaserId === lmsAccess.access.user.id || assignedEmployee);
-  if (!enrollment[0] || !mayCompleteLesson || enrollment[0].status !== "active") { res.status(403).json({ error: "Nemate pravo izmene ovog napretka." }); return; }
-  if (!lesson[0]) { res.status(404).json({ error: "Lekcija nije pronađena." }); return; }
-  const [module] = await db.select().from(courseModulesTable).where(eq(courseModulesTable.id, lesson[0].moduleId)).limit(1);
-  if (!module || module.courseId !== enrollment[0].courseId) { res.status(400).json({ error: "Lekcija ne pripada ovom kursu." }); return; }
-  const modules = await modulesForCourse(enrollment[0].courseId);
-  const allLessons = modules.flatMap((item) => item.lessons);
-  const updated = await db.transaction(async (tx) => {
-    const [lockedEnrollment] = await tx.select().from(courseEnrollmentsTable)
-      .where(eq(courseEnrollmentsTable.id, enrollment[0]!.id)).for("update").limit(1);
-    if (!lockedEnrollment || lockedEnrollment.status !== "active") throw new Error("ENROLLMENT_NOT_ACTIVE");
+  try {
+    const updated = await db.transaction(async (tx) => {
+      // Enrollment ownership, status, and online entitlement are all checked
+      // from the locked row. This serializes completion with transfer,
+      // settlement, refund, and extension changes.
+      const [lockedEnrollment] = await tx.select().from(courseEnrollmentsTable)
+        .where(eq(courseEnrollmentsTable.id, parsed.data.enrollmentId)).for("update").limit(1);
+      if (!lockedEnrollment) throw new Error("FORBIDDEN");
+      const assignedEmployee = Boolean(
+        lockedEnrollment.employeeId
+        && lmsAccess.learnerEmployeeId
+        && lockedEnrollment.employeeId === lmsAccess.learnerEmployeeId,
+      );
+      const operationalLearner = Boolean(lockedEnrollment.participantId);
+      const mayCompleteLesson = operationalLearner
+        ? lockedEnrollment.userId === lmsAccess.access.user.id
+        : lockedEnrollment.purchaserId === lmsAccess.access.user.id || assignedEmployee;
+      if (!mayCompleteLesson || lockedEnrollment.status !== "active") throw new Error("FORBIDDEN");
+      const [courseClock] = await tx.select({
+        course: coursesTable,
+        databaseNow: sql<string>`current_timestamp`,
+      }).from(coursesTable).where(eq(coursesTable.id, lockedEnrollment.courseId)).limit(1);
+      if (!courseClock) throw new Error("COURSE_NOT_FOUND");
+      const databaseNow = new Date(courseClock.databaseNow);
+      if (isOnlineEnrollmentSnapshot(lockedEnrollment)
+        && (!lockedEnrollment.accessExpiresAt || lockedEnrollment.accessExpiresAt <= databaseNow)) {
+        throw new Error("ONLINE_ACCESS_EXPIRED");
+      }
+      const [lesson] = await tx.select().from(courseLessonsTable)
+        .where(eq(courseLessonsTable.id, parsed.data.lessonId)).limit(1);
+      if (!lesson) throw new Error("LESSON_NOT_FOUND");
+      const [module] = await tx.select().from(courseModulesTable)
+        .where(eq(courseModulesTable.id, lesson.moduleId)).limit(1);
+      if (!module || module.courseId !== lockedEnrollment.courseId) throw new Error("LESSON_COURSE_MISMATCH");
+      const allLessons = await tx.select({ id: courseLessonsTable.id }).from(courseLessonsTable)
+        .innerJoin(courseModulesTable, eq(courseModulesTable.id, courseLessonsTable.moduleId))
+        .where(eq(courseModulesTable.courseId, lockedEnrollment.courseId));
     await tx.insert(lessonProgressTable).values({
-      enrollmentId: lockedEnrollment.id, lessonId: lesson[0]!.id, completedByUserId: lmsAccess.access.user.id,
+        enrollmentId: lockedEnrollment.id, lessonId: lesson.id, completedByUserId: lmsAccess.access.user.id,
     }).onConflictDoNothing();
-    // Read through the same transaction/client so the just-inserted final
-    // lesson participates in all certificate gates.
-    const completed = await tx.select().from(lessonProgressTable).where(eq(lessonProgressTable.enrollmentId, lockedEnrollment.id));
-    const completedIds = new Set(completed.map((item: any) => item.lessonId));
-    if (lockedEnrollment.participantId) return reconcileOperationalEducationEnrollmentInTx(tx, lockedEnrollment.id);
-    const progress = allLessons.length ? Math.round((completedIds.size / allLessons.length) * 100) : 0;
-    const nextLesson = allLessons.find((item) => !completedIds.has(item.id))?.id ?? null;
-    const [row] = await tx.update(courseEnrollmentsTable).set({ progress, nextLesson, status: progress === 100 ? "completed" : "active", completedAt: progress === 100 ? lockedEnrollment.completedAt ?? new Date() : null, updatedAt: new Date() }).where(eq(courseEnrollmentsTable.id, lockedEnrollment.id)).returning();
-    return row;
-  });
-  res.json(CompleteEducationLessonResponse.parse(await educationEnrollmentView(updated!)));
+      // Read through the same transaction/client so the just-inserted final
+      // lesson participates in all certificate gates.
+      const completed = await tx.select().from(lessonProgressTable).where(eq(lessonProgressTable.enrollmentId, lockedEnrollment.id));
+      const completedIds = new Set(completed.map((item: any) => item.lessonId));
+      if (lockedEnrollment.participantId) return reconcileOperationalEducationEnrollmentInTx(tx, lockedEnrollment.id);
+      const progress = allLessons.length ? Math.round((completedIds.size / allLessons.length) * 100) : 0;
+      const nextLesson = allLessons.find((item) => !completedIds.has(item.id))?.id ?? null;
+      const [row] = await tx.update(courseEnrollmentsTable).set({ progress, nextLesson, status: progress === 100 ? "completed" : "active", completedAt: progress === 100 ? lockedEnrollment.completedAt ?? databaseNow : null, updatedAt: databaseNow }).where(eq(courseEnrollmentsTable.id, lockedEnrollment.id)).returning();
+      return row;
+    });
+    res.json(CompleteEducationLessonResponse.parse(await educationEnrollmentView(updated!)));
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "";
+    if (code === "ONLINE_ACCESS_EXPIRED") { res.status(403).json({ error: "Pristup online kursu je istekao." }); return; }
+    if (code === "LESSON_NOT_FOUND") { res.status(404).json({ error: "Lekcija nije pronađena." }); return; }
+    if (code === "COURSE_NOT_FOUND") { res.status(404).json({ error: "Kurs nije pronađen." }); return; }
+    if (code === "LESSON_COURSE_MISMATCH") { res.status(400).json({ error: "Lekcija ne pripada ovom kursu." }); return; }
+    if (code === "FORBIDDEN") { res.status(403).json({ error: "Nemate pravo izmene ovog napretka." }); return; }
+    throw error;
+  }
 });
 
 /**
@@ -19896,15 +20084,7 @@ function publicEducationCoursePredicate(extraPredicates: Parameters<typeof and>[
     eq(coursesTable.published, true),
     eq(coursesTable.archived, false),
     isNotNull(coursesTable.centerId),
-    // Mirror educationCenterEligibility exactly: verified center with an
-    // active / free-via-loyalty subscription.
-    sql`exists (
-      select 1 from ${educationCentersTable} ec
-      join ${educationCenterSubscriptionsTable} ecs on ecs.center_id = ec.id
-      where ec.id = ${coursesTable.centerId}
-        and ec.verification_status = 'verified'
-        and ecs.status in ('active', 'free_via_loyalty')
-    )`,
+    eligibleEducationCenterSql(coursesTable.centerId),
     ...extraPredicates,
   );
 }
@@ -21312,11 +21492,12 @@ router.post("/education/gift-vouchers/redeem", async (req, res): Promise<void> =
         .where(eq(educationGiftVouchersTable.codeHash, giftVoucherCodeHash(parsed.data.code))).for("update").limit(1);
       if (!voucher || voucher.status !== "active" || voucher.redeemedEnrollmentId) throw new Error("Vaučer nije aktivan ili je već iskorišćen.");
       if (!educationGiftVoucherRecipientMatches(voucher, user)) throw new Error("Vaučer je namenjen drugom korisniku.");
-      const [course] = await tx.select().from(coursesTable).where(eq(coursesTable.id, voucher.courseId)).limit(1);
+      await lockEducationCenterFinancials(tx, voucher.centerId);
+      const [course] = await tx.select().from(coursesTable).where(eq(coursesTable.id, voucher.courseId)).for("update").limit(1);
       if (!course || !course.published || course.archived || !course.centerId || course.centerId !== voucher.centerId) {
         throw new Error("Edukacija sa vaučera više nije dostupna.");
       }
-      await lockEducationCenterFinancials(tx, voucher.centerId);
+      assertOnlineEnrollmentRequest(course, parsed.data.digitalContentConsent);
       const [duplicate] = await tx.select({ id: courseEnrollmentsTable.id }).from(courseEnrollmentsTable).where(and(
         eq(courseEnrollmentsTable.courseId, course.id), eq(courseEnrollmentsTable.purchaserId, user.id),
         ne(courseEnrollmentsTable.status, "cancelled"),
@@ -21337,6 +21518,7 @@ router.post("/education/gift-vouchers/redeem", async (req, res): Promise<void> =
         courseId: course.id, userId: user.id, purchaserId: user.id, sessionId: session?.id ?? null,
         status: "active", paymentStatus: "paid", chargedAmount: voucher.amountSnapshot,
         accessGrantedAt: now, idempotencyKey: `gift:${voucher.id}`,
+        ...(course.format === "online" ? issueOnlineEnrollmentFields(course, { userId: user.id, acceptedAt: now }, now) : {}),
         auditData: { giftVoucherId: voucher.id, ...(session ? { seatReserved: true } : {}) },
       }).returning();
       const settings = await resolveEducationBillingSettingsForChargeInTx(voucher.centerId, tx);
@@ -21368,7 +21550,14 @@ router.post("/education/gift-vouchers/redeem", async (req, res): Promise<void> =
     });
     res.status(201).json(await educationEnrollmentView(enrollment));
   } catch (error) {
-    res.status(409).json({ error: error instanceof Error ? error.message : "Vaučer nije moguće iskoristiti." });
+    const message = error instanceof Error ? error.message : "Vaučer nije moguće iskoristiti.";
+    if (message === "ONLINE_CONTENT_CONSENT_REQUIRED") {
+      res.status(409).json({ error: "Za online kurs potrebna je izričita saglasnost za digitalni sadržaj." }); return;
+    }
+    if (message === "ONLINE_ACCESS_POLICY_MISSING") {
+      res.status(409).json({ error: "Online kurs nema kompletno podešene uslove pristupa." }); return;
+    }
+    res.status(409).json({ error: message });
   }
 });
 
@@ -21816,42 +22005,61 @@ router.get("/education/enrollments/:enrollmentId/certificate", async (req, res):
   const user = await current(req, res); if (!user) return;
   if (user.role === "CUSTOMER") { res.status(403).json({ error: "Edukacije nisu dostupne CUSTOMER nalozima." }); return; }
   const enrollmentId = String(req.params.enrollmentId ?? "");
-  const [enrollment] = await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, enrollmentId)).limit(1);
-  if (!enrollment) { res.status(404).json({ error: "Prijava nije pronađena." }); return; }
-  // Operational named-seat certificates belong only to the linked learner.
-  // Purchasers and staff manage the booking through operational endpoints but
-  // cannot impersonate a participant or download their personal certificate.
-  if (enrollment.participantId && enrollment.userId !== user.id) {
-    res.status(403).json({ error: "Nemate pristup ovom sertifikatu." }); return;
+  let result: {
+    enrollment: typeof courseEnrollmentsTable.$inferSelect;
+    course: typeof coursesTable.$inferSelect;
+  };
+  try {
+    result = await db.transaction(async (tx) => {
+      const [enrollment] = await tx.select().from(courseEnrollmentsTable)
+        .where(eq(courseEnrollmentsTable.id, enrollmentId)).for("update").limit(1);
+      if (!enrollment) throw new Error("NOT_FOUND");
+      // Operational named-seat certificates belong only to the linked learner.
+      if (enrollment.participantId && enrollment.userId !== user.id) throw new Error("FORBIDDEN");
+      if (!enrollment.participantId && enrollment.purchaserId !== user.id && !isAdmin(user)) {
+        const [employee] = enrollment.employeeId
+          ? await tx.select().from(employeesTable).where(eq(employeesTable.id, enrollment.employeeId)).limit(1)
+          : [];
+        if (!employee || employee.userId !== user.id) throw new Error("FORBIDDEN");
+      }
+      const [courseClock] = await tx.select({
+        course: coursesTable,
+        databaseNow: sql<string>`current_timestamp`,
+      }).from(coursesTable).where(eq(coursesTable.id, enrollment.courseId)).limit(1);
+      if (!courseClock) throw new Error("COURSE_NOT_FOUND");
+      const databaseNow = new Date(courseClock.databaseNow);
+      // Completion remains on the learner's record, but private online
+      // artifacts are no longer issuable or downloadable after entitlement.
+      if (isOnlineEnrollmentSnapshot(enrollment)
+        && (!enrollment.accessExpiresAt || enrollment.accessExpiresAt <= databaseNow)) {
+        throw new Error("ONLINE_ACCESS_EXPIRED");
+      }
+      const eligibility = await educationCertificateEligibility(enrollment, tx);
+      if (enrollment.status !== "completed" || enrollment.paymentStatus !== "paid" || !eligibility.certificateEligible) {
+        throw new Error("NOT_ELIGIBLE");
+      }
+      if (!courseClock.course.certification) throw new Error("NO_CERTIFICATION");
+      if (enrollment.certificateNumber) return { enrollment, course: courseClock.course };
+      const certificateNumber = `LUMERA-${Date.now().toString(36).toUpperCase()}-${randomBytes(3).toString("hex").toUpperCase()}`;
+      const [issued] = await tx.update(courseEnrollmentsTable).set({
+        certificateNumber,
+        certificateIssuedAt: databaseNow,
+        updatedAt: databaseNow,
+      }).where(eq(courseEnrollmentsTable.id, enrollment.id)).returning();
+      return { enrollment: issued!, course: courseClock.course };
+    });
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "";
+    if (code === "NOT_FOUND") { res.status(404).json({ error: "Prijava nije pronađena." }); return; }
+    if (code === "COURSE_NOT_FOUND") { res.status(404).json({ error: "Kurs nije pronađen." }); return; }
+    if (code === "FORBIDDEN") { res.status(403).json({ error: "Nemate pristup ovom sertifikatu." }); return; }
+    if (code === "ONLINE_ACCESS_EXPIRED") { res.status(403).json({ error: "Pristup online kursu je istekao." }); return; }
+    if (code === "NOT_ELIGIBLE") { res.status(409).json({ error: "Sertifikat je dostupan tek nakon što završite kurs i platite." }); return; }
+    if (code === "NO_CERTIFICATION") { res.status(409).json({ error: "Ovaj kurs ne nudi zvanični sertifikat." }); return; }
+    throw error;
   }
-  // Legacy enrollments preserve the historical purchaser/employee/admin rule.
-  if (!enrollment.participantId && enrollment.purchaserId !== user.id && !isAdmin(user)) {
-    // Allow the learner employee themselves to download via their user session
-    const [emp] = enrollment.employeeId
-      ? await db.select().from(employeesTable).where(eq(employeesTable.id, enrollment.employeeId)).limit(1)
-      : [];
-    if (!emp || emp.userId !== user.id) {
-      res.status(403).json({ error: "Nemate pristup ovom sertifikatu." }); return;
-    }
-  }
-  const eligibility = await educationCertificateEligibility(enrollment);
-  if (enrollment.status !== "completed" || enrollment.paymentStatus !== "paid" || !eligibility.certificateEligible) {
-    res.status(409).json({ error: "Sertifikat je dostupan tek nakon što završite kurs i platite." }); return;
-  }
-  const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, enrollment.courseId)).limit(1);
-  if (!course) { res.status(404).json({ error: "Kurs nije pronađen." }); return; }
-  if (!course.certification) { res.status(409).json({ error: "Ovaj kurs ne nudi zvanični sertifikat." }); return; }
-
-  // Issue certificate number if not yet issued.
-  let certNumber = enrollment.certificateNumber;
-  if (!certNumber) {
-    certNumber = `LUMERA-${Date.now().toString(36).toUpperCase()}-${randomBytes(3).toString("hex").toUpperCase()}`;
-    await db.update(courseEnrollmentsTable).set({
-      certificateNumber: certNumber,
-      certificateIssuedAt: new Date(),
-      updatedAt: new Date(),
-    }).where(eq(courseEnrollmentsTable.id, enrollment.id));
-  }
+  const { enrollment, course } = result;
+  const certNumber = enrollment.certificateNumber!;
 
   const [purchaser, employee, participant] = await Promise.all([
     db.select().from(usersTable).where(eq(usersTable.id, enrollment.purchaserId)).limit(1),
@@ -22019,6 +22227,16 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
   if (!course || !(await isPublicEducationCourse(course)) && !(course.salonId === salon.id && course.published && !course.archived)) {
     res.status(404).json({ error: "Kurs nije dostupan za grupnu prijavu." }); return;
   }
+  if (course.format === "online" && req.body?.digitalContentConsent !== true) {
+    res.status(400).json({ error: "Za online kurs potrebna je izričita saglasnost za digitalni sadržaj." }); return;
+  }
+  if (course.format === "online" && sessionId) {
+    res.status(409).json({ error: "Online kurs ne može koristiti termin uživo." }); return;
+  }
+  if (course.format === "online" && (!course.onlineAccessDays || course.onlineAccessDays < 1
+    || !course.extensionPrice1Month || !course.extensionPrice3Months || !course.extensionPrice6Months)) {
+    res.status(409).json({ error: "Online kurs nema kompletno podešene pozitivne uslove pristupa." }); return;
+  }
 
   // Validate all employees belong to caller's salon
   const employees = employeeIds.length
@@ -22062,7 +22280,14 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
           throw new Error("Centar više nije verifikovan ili nema aktivnu pretplatu.");
         }
       }
-      const isSalonInternal = course.salonId === salon.id && !course.centerId;
+      const [lockedCourse] = await tx.select().from(coursesTable)
+        .where(eq(coursesTable.id, course.id)).for("update").limit(1);
+      if (!lockedCourse) throw new Error("Kurs više nije dostupan.");
+      assertOnlineEnrollmentRequest(lockedCourse, req.body?.digitalContentConsent);
+      if (sessionId && lockedCourse.format === "online") {
+        throw new Error("Online kurs ne može koristiti termin uživo.");
+      }
+      const isSalonInternal = lockedCourse.salonId === salon.id && !lockedCourse.centerId;
       if (sessionId) {
         const [reqSession] = await tx.select().from(courseSessionsTable)
           .where(and(eq(courseSessionsTable.id, sessionId), eq(courseSessionsTable.courseId, course.id)))
@@ -22085,6 +22310,7 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
             .where(eq(courseSessionsTable.id, reqSession.id));
         }
       }
+      const accessGrantedAt = new Date();
       const values = employees.map((emp) => ({
         courseId: course.id,
         userId: emp.userId ?? user.id,
@@ -22094,7 +22320,10 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
         status: isSalonInternal ? ("active" as const) : ("pending" as const),
         paymentStatus: isSalonInternal ? ("paid" as const) : ("pending" as const),
         chargedAmount: unitPrice,
-        ...(isSalonInternal ? { accessGrantedAt: new Date() } : {}),
+        ...(isSalonInternal ? { accessGrantedAt } : {}),
+        ...(lockedCourse.format === "online" ? issueOnlineEnrollmentFields(
+          lockedCourse, { userId: user.id, acceptedAt: accessGrantedAt }, isSalonInternal ? accessGrantedAt : undefined,
+        ) : {}),
         sessionId: sessionId,
         auditData: {
           source: "group-enrollment",
@@ -22115,6 +22344,12 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
       : undefined;
     if (errorCode === "23505") {
       res.status(409).json({ error: "Jedan ili više zaposlenih je već prijavljen na ovaj kurs." }); return;
+    }
+    if (error instanceof Error && error.message === "ONLINE_CONTENT_CONSENT_REQUIRED") {
+      res.status(409).json({ error: "Za online kurs potrebna je izričita saglasnost za digitalni sadržaj." }); return;
+    }
+    if (error instanceof Error && error.message === "ONLINE_ACCESS_POLICY_MISSING") {
+      res.status(409).json({ error: "Online kurs nema kompletno podešene uslove pristupa." }); return;
     }
     res.status(409).json({ error: error instanceof Error ? error.message : "Grupna prijava nije uspela." }); return;
   }

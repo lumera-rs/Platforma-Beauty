@@ -116,6 +116,88 @@ async function run() {
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     const cookies = await Promise.all(users.map((u) => cookie(u.id)));
 
+    const [onlineOperationalCourse] = await db.insert(coursesTable).values({
+      centerId: center!.id,
+      title: `Online operational boundary ${suffix}`,
+      category: "Test",
+      format: "online",
+      price: 9_000,
+      duration: "30 dana",
+      imageUrl: "https://example.test/online-boundary.jpg",
+      published: true,
+      archived: false,
+      onlineAccessDays: 30,
+      extensionPrice1Month: 1_000,
+      extensionPrice3Months: 2_500,
+      extensionPrice6Months: 4_500,
+    }).returning();
+    const onlineSessionInput = {
+      startsAt: new Date(Date.now() + 4 * 3_600_000).toISOString(),
+      endsAt: new Date(Date.now() + 5 * 3_600_000).toISOString(),
+      capacity: 4,
+    };
+    const onlineSessionResponse = await fetch(`${base}/api/education/courses/${onlineOperationalCourse!.id}/sessions`, {
+      method: "POST",
+      headers: { cookie: cookies[0]!, "content-type": "application/json" },
+      body: JSON.stringify(onlineSessionInput),
+    });
+    assert.equal(onlineSessionResponse.status, 409, "Pure online courses cannot create live sessions.");
+    assert.equal((await db.select({ value: sql<number>`count(*)::int` }).from(courseSessionsTable)
+      .where(eq(courseSessionsTable.courseId, onlineOperationalCourse!.id)))[0]!.value, 0);
+
+    const [legacyOnlineSession] = await db.insert(courseSessionsTable).values({
+      courseId: onlineOperationalCourse!.id,
+      startsAt: new Date(onlineSessionInput.startsAt),
+      endsAt: new Date(onlineSessionInput.endsAt),
+      capacity: 4,
+    }).returning();
+    const operationalWriteCounts = async () => {
+      const [[groups], [participants], [enrollments], [installments]] = await Promise.all([
+        db.select({ value: sql<number>`count(*)::int` }).from(educationBookingGroupsTable)
+          .where(eq(educationBookingGroupsTable.courseId, onlineOperationalCourse!.id)),
+        db.select({ value: sql<number>`count(*)::int` }).from(educationBookingParticipantsTable)
+          .innerJoin(educationBookingGroupsTable, eq(educationBookingGroupsTable.id, educationBookingParticipantsTable.bookingGroupId))
+          .where(eq(educationBookingGroupsTable.courseId, onlineOperationalCourse!.id)),
+        db.select({ value: sql<number>`count(*)::int` }).from(courseEnrollmentsTable)
+          .where(eq(courseEnrollmentsTable.courseId, onlineOperationalCourse!.id)),
+        db.select({ value: sql<number>`count(*)::int` }).from(educationInstallmentsTable)
+          .innerJoin(educationPriceSnapshotsTable, eq(educationPriceSnapshotsTable.id, educationInstallmentsTable.priceSnapshotId))
+          .where(eq(educationPriceSnapshotsTable.courseId, onlineOperationalCourse!.id)),
+      ]);
+      return [groups!.value, participants!.value, enrollments!.value, installments!.value];
+    };
+    const writesBeforeOnlineBooking = await operationalWriteCounts();
+    const onlineBookingResponse = await fetch(`${base}/api/education/operations/bookings`, {
+      method: "POST",
+      headers: {
+        cookie: cookies[3]!,
+        "content-type": "application/json",
+        "Idempotency-Key": `online-boundary-${suffix}`,
+      },
+      body: JSON.stringify({
+        courseId: onlineOperationalCourse!.id,
+        sessionId: legacyOnlineSession!.id,
+        installmentCount: 1,
+        participants: [{ fullName: "Blocked Online Participant" }],
+      }),
+    });
+    assert.equal(onlineBookingResponse.status, 409, "Legacy online sessions cannot enter operational booking.");
+    assert.deepEqual(await operationalWriteCounts(), writesBeforeOnlineBooking,
+      "Rejected online booking creates no group, participant, enrollment, or installment writes.");
+    const retainSessionAsOnlineResponse = await fetch(`${base}/api/education/courses/${course!.id}`, {
+      method: "PATCH",
+      headers: { cookie: cookies[0]!, "content-type": "application/json" },
+      body: JSON.stringify({
+        format: "online",
+        onlineAccessDays: 30,
+        extensionPrice1Month: 1_000,
+        extensionPrice3Months: 2_500,
+        extensionPrice6Months: 4_500,
+      }),
+    });
+    assert.equal(retainSessionAsOnlineResponse.status, 409,
+      "A format edit cannot turn a course with retained live sessions into a pure online course.");
+
     // Payment instructions belong to the purchaser and center staff, not to a
     // named learner. Preserve the singleton's prior IPS values for isolation.
     const [priorIpsSettings] = await db.select().from(educationPlatformSettingsTable)

@@ -15,6 +15,7 @@ import {
   educationUpgradeProration, hashTrialIdentifier, normalizeTrialEmail,
   normalizeTrialPhone, normalizeTrialPib, type EducationBillingCycle,
 } from "../lib/education-subscription-domain";
+import { isOnlineEnrollmentSnapshot } from "../lib/education-entitlement";
 
 const router: IRouter = Router();
 const planBody = z.object({ planId: z.string().uuid(), billingCycle: z.enum(["monthly", "yearly"]).default("monthly") });
@@ -351,12 +352,16 @@ router.post("/education/enrollments/:enrollmentId/extension", async (req, res) =
     const [enrollment] = await tx.select({ enrollment: courseEnrollmentsTable, course: coursesTable, center: educationCentersTable })
       .from(courseEnrollmentsTable).innerJoin(coursesTable, eq(coursesTable.id, courseEnrollmentsTable.courseId)).innerJoin(educationCentersTable, eq(educationCentersTable.id, coursesTable.centerId))
       .where(and(eq(courseEnrollmentsTable.id, req.params.enrollmentId), eq(courseEnrollmentsTable.userId, access.id))).for("update").limit(1);
-    if (!enrollment || !enrollment.enrollment.accessExpiresAt || !enrollment.center.bankAccount) throw new Error("NOT_FOUND");
-    const price = parsed.data.months === 1 ? enrollment.enrollment.extensionPricesSnapshot?.oneMonth ?? enrollment.course.extensionPrice1Month : parsed.data.months === 3 ? enrollment.enrollment.extensionPricesSnapshot?.threeMonths ?? enrollment.course.extensionPrice3Months : enrollment.enrollment.extensionPricesSnapshot?.sixMonths ?? enrollment.course.extensionPrice6Months;
-    if (price == null) throw new Error("PRICE");
+    if (!enrollment || !isOnlineEnrollmentSnapshot(enrollment.enrollment)
+      || !enrollment.enrollment.accessExpiresAt || !enrollment.center.bankAccount) throw new Error("NOT_FOUND");
+    const price = parsed.data.months === 1 ? enrollment.enrollment.extensionPricesSnapshot?.oneMonth : parsed.data.months === 3 ? enrollment.enrollment.extensionPricesSnapshot?.threeMonths : enrollment.enrollment.extensionPricesSnapshot?.sixMonths;
+    if (price == null || price <= 0) throw new Error("PRICE");
+    const [openExtension] = await tx.select({ id: educationAccessExtensionsTable.id }).from(educationAccessExtensionsTable)
+      .where(and(eq(educationAccessExtensionsTable.enrollmentId, enrollment.enrollment.id), eq(educationAccessExtensionsTable.status, "pending"))).for("update").limit(1);
+    if (openExtension) throw new Error("PENDING");
     const extended = addMonths(enrollment.enrollment.accessExpiresAt, parsed.data.months);
     const recipientType = enrollment.center.legalEntityType === "individual" ? "education_center_individual" as const : "education_center_legal" as const;
-    const paymentReference = reference("EXT", req.params.enrollmentId);
+    const paymentReference = reference("EXT", randomUUID());
     const ips = educationIpsQrPayload({ recipientName: enrollment.center.name, recipientAccount: enrollment.center.bankAccount, purpose: "Produženje pristupa online kursu", amount: price, reference: paymentReference, recipientType, transactionType: "course_extension", accountEnvironment: enrollment.center.bankAccountEnvironment as "production" | "test", runtimeEnvironment: educationIpsRuntimeEnvironment() });
     const obligation = await tx.insert(educationPaymentObligationsTable).values({ centerId: enrollment.center.id, enrollmentId: enrollment.enrollment.id, kind: "course_extension", expectedAmount: price, recipientNameSnapshot: enrollment.center.name, recipientAccountSnapshot: enrollment.center.bankAccount, paymentCodeSnapshot: ips.paymentCode, purposeSnapshot: "Produženje pristupa online kursu", referenceSnapshot: paymentReference, ipsPayloadSnapshot: JSON.stringify(ips) }).returning();
     await tx.insert(educationAccessExtensionsTable).values({
@@ -370,9 +375,10 @@ router.post("/education/enrollments/:enrollmentId/extension", async (req, res) =
     });
     res.json({ extension: { months: parsed.data.months, amount: price, previousAccessExpiresAt: enrollment.enrollment.accessExpiresAt, extendedAccessExpiresAt: extended }, payment: obligation[0] });
     return true;
-  }).catch((error) => { if (error instanceof Error && error.message === "NOT_FOUND") return false; if (error instanceof Error && error.message === "PRICE") return null; throw error; });
+  }).catch((error) => { if (error instanceof Error && error.message === "NOT_FOUND") return false; if (error instanceof Error && error.message === "PRICE") return null; if (error instanceof Error && error.message === "PENDING") return "PENDING" as const; throw error; });
   if (result === false) res.status(404).json({ error: "Aktivan pristup ili centar nije pronađen." });
   else if (result === null) res.status(409).json({ error: "Centar nije podesio cene produženja." });
+  else if (result === "PENDING") res.status(409).json({ error: "Već postoji otvoren zahtev za produženje pristupa." });
 });
 
 router.get("/admin/education/payment-obligations", async (req, res) => {
@@ -400,8 +406,14 @@ router.post("/admin/education/payment-obligations/:obligationId/settle", async (
         const [extension] = await tx.select().from(educationAccessExtensionsTable)
           .where(eq(educationAccessExtensionsTable.paymentObligationId, obligation.id)).for("update").limit(1);
         if (extension) {
-          await tx.update(educationAccessExtensionsTable).set({ status: "settled", settledAt: new Date() }).where(eq(educationAccessExtensionsTable.id, extension.id));
-          await tx.update(courseEnrollmentsTable).set({ accessExpiresAt: extension.extendedAccessExpiresAt, updatedAt: new Date() }).where(eq(courseEnrollmentsTable.id, obligation.enrollmentId));
+          const settledAt = new Date();
+          const [enrollment] = await tx.select().from(courseEnrollmentsTable)
+            .where(eq(courseEnrollmentsTable.id, obligation.enrollmentId)).for("update").limit(1);
+          if (!enrollment) throw new Error("NOT_FOUND");
+          const base = enrollment.accessExpiresAt && enrollment.accessExpiresAt > settledAt ? enrollment.accessExpiresAt : settledAt;
+          const extendedAccessExpiresAt = addMonths(base, extension.months);
+          await tx.update(educationAccessExtensionsTable).set({ status: "settled", settledAt, previousAccessExpiresAt: base, extendedAccessExpiresAt }).where(and(eq(educationAccessExtensionsTable.id, extension.id), eq(educationAccessExtensionsTable.status, "pending")));
+          await tx.update(courseEnrollmentsTable).set({ accessExpiresAt: extendedAccessExpiresAt, updatedAt: settledAt }).where(eq(courseEnrollmentsTable.id, obligation.enrollmentId));
         }
       }
       if (obligation.subscriptionId) {

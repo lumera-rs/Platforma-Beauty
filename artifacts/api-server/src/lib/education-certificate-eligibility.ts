@@ -3,6 +3,7 @@ import {
   courseEnrollmentsTable, courseLessonsTable, courseModulesTable, courseSessionsTable, coursesTable, db,
   educationAttendanceTable, educationBookingGroupsTable, educationBookingParticipantsTable, educationInstallmentsTable, educationPriceSnapshotsTable, lessonProgressTable,
 } from "@workspace/db";
+import { isOnlineEnrollmentSnapshot } from "./education-entitlement";
 
 export type EducationEligibility = {
   total: number; completed: number; percent: number; certificateEligible: boolean; reasons: string[];
@@ -35,12 +36,13 @@ export async function educationCertificateEligibility(enrollment: typeof courseE
       if (installments.some((item: { status: string }) => item.status !== "settled")) reasons.push("payment_incomplete");
     }
   }
-  const needsLessons = course?.format === "online" || course?.format === "hybrid";
+  const snapshotOnline = isOnlineEnrollmentSnapshot(enrollment);
+  const needsLessons = snapshotOnline || course?.format === "hybrid";
   if (needsLessons && lessons.some((id: string) => !done.has(id))) reasons.push("lessons_incomplete");
   // `course_format` is deliberately the public contract vocabulary.  The
   // former `live` check could never match and issued in-person certificates
   // without attendance.
-  const needsAttendance = course?.format === "in-person" || course?.format === "hybrid";
+  const needsAttendance = !snapshotOnline && (course?.format === "in-person" || course?.format === "hybrid");
   if (needsAttendance) {
     const sessions = participant[0] ? await store.select({ id: courseSessionsTable.id }).from(educationBookingGroupsTable).innerJoin(courseSessionsTable, eq(courseSessionsTable.id, educationBookingGroupsTable.sessionId)).where(and(eq(educationBookingGroupsTable.courseId, enrollment.courseId), isNull(courseSessionsTable.cancelledAt), eq(educationBookingGroupsTable.id, participant[0].bookingGroupId))) : [];
     const attendance = sessions.length ? await store.select().from(educationAttendanceTable).where(and(eq(educationAttendanceTable.participantId, enrollment.participantId), inArray(educationAttendanceTable.sessionId, sessions.map((x: { id: string }) => x.id)))) : [];

@@ -12,6 +12,7 @@
     "test:education-operational-ui": "pnpm --filter @workspace/scripts exec tsx ../artifacts/beauty-marketplace/src/lib/education-operational-time.test.ts",
     "test:education-operational-routes": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-operational-routes.test.ts",
     "test:education-subscription-billing": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-subscription-billing.test.ts",
+    "test:education-online-access-transfer": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-online-access-transfer.test.ts",
     "typecheck": "tsc --build --force ../../lib/db ../../lib/api-zod && tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

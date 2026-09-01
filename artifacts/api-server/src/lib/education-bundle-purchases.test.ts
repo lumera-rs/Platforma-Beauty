@@ -7,11 +7,12 @@ import {
   courseEnrollmentsTable, coursesTable, db, educationBundleCoursesTable,
   educationBundlePurchaseEscrowsTable, educationBundlePurchaseItemsTable,
   educationBundlePurchaseLedgerEntriesTable, educationBundlePurchasesTable,
-  educationBundlesTable, educationCentersTable, educationEscrowsTable, educationPlatformSettingsTable, employeesTable,
-  salonsTable, usersTable,
+  educationBundlesTable, educationCentersTable, educationCenterSubscriptionsTable, educationEscrowsTable,
+  educationPlatformSettingsTable, employeesTable, salonsTable, subscriptionPlansTable, usersTable,
 } from "@workspace/db";
 import app from "../app";
 import { hashPassword, sessionCookieName } from "./auth";
+import { lockEducationCenterFinancials } from "./education-billing";
 import { educationIpsQrPayload, educationIpsRuntimeEnvironment } from "./education-marketplace-domain";
 
 const suffix = randomUUID();
@@ -34,7 +35,7 @@ async function login(baseUrl: string, email: string) {
 async function run() {
   let server: ReturnType<typeof app.listen> | undefined;
   const userIds: string[] = [], salonIds: string[] = [], employeeIds: string[] = [], courseIds: string[] = [];
-  let centerId: string | undefined, bundleId: string | undefined, purchaseId: string | undefined;
+  let centerId: string | undefined, bundleId: string | undefined, purchaseId: string | undefined, planId: string | undefined;
   let financeSettings: typeof educationPlatformSettingsTable.$inferSelect | undefined;
   try {
     const environment = { NODE_ENV: process.env.NODE_ENV, REPLIT_DEPLOYMENT: process.env.REPLIT_DEPLOYMENT, REPL_DEPLOYMENT: process.env.REPL_DEPLOYMENT, REPLIT_ENVIRONMENT: process.env.REPLIT_ENVIRONMENT };
@@ -79,9 +80,14 @@ async function run() {
     assert.ok(center.paymentReferenceNumber?.startsWith("EDU"));
     await assert.rejects(db.update(educationCentersTable).set({ paymentReferenceNumber: `CHANGED-${suffix}` }).where(eq(educationCentersTable.id, center.id)));
     centerId = center.id;
+    const [plan] = await db.insert(subscriptionPlansTable).values({ name: `Bundle plan ${suffix}`, price: 1, active: true }).returning();
+    planId = plan.id;
+    await db.insert(educationCenterSubscriptionsTable).values({
+      centerId, planId, status: "active", dueAmount: 1, currentPeriodEnd: new Date(Date.now() + 86_400_000),
+    });
     const courses = await db.insert(coursesTable).values([
-      { centerId, title: "Bundle course one", description: "Test", category: "Test", format: "online", city: "Beograd", price: 12000, duration: "2 weeks", certification: true, imageUrl: "/test.jpg", published: true },
-      { centerId, title: "Bundle course two", description: "Test", category: "Test", format: "online", city: "Beograd", price: 14000, duration: "3 weeks", certification: true, imageUrl: "/test.jpg", published: true },
+      { centerId, title: "Bundle course one", description: "Test", category: "Test", format: "online", city: "Beograd", price: 12000, duration: "2 weeks", certification: true, imageUrl: "/test.jpg", published: true, onlineAccessDays: 30, extensionPrice1Month: 1000, extensionPrice3Months: 2500, extensionPrice6Months: 4500 },
+      { centerId, title: "Bundle course two", description: "Test", category: "Test", format: "online", city: "Beograd", price: 14000, duration: "3 weeks", certification: true, imageUrl: "/test.jpg", published: true, onlineAccessDays: 60, extensionPrice1Month: 1100, extensionPrice3Months: 2600, extensionPrice6Months: 4600 },
     ]).returning();
     courseIds.push(...courses.map(course => course.id));
     const [bundle] = await db.insert(educationBundlesTable).values({ centerId, title: "Published bundle", description: "Test bundle", price: 21000, active: true, published: true }).returning();
@@ -127,6 +133,66 @@ async function run() {
     const qualifyingCourseIds = courseIds.slice().sort();
     assert.deepEqual(listedBundle.courses.map(course => course.courseId).sort(), qualifyingCourseIds);
     assert.deepEqual(detailBundle.courses.map(course => course.courseId).sort(), qualifyingCourseIds);
+    await db.update(educationCentersTable).set({ verificationStatus: "suspended" }).where(eq(educationCentersTable.id, centerId));
+    await db.update(educationCenterSubscriptionsTable).set({ status: "suspended" }).where(eq(educationCenterSubscriptionsTable.centerId, centerId));
+    const suspendedList = await request(baseUrl, "/education/bundles");
+    assert.equal((await suspendedList.json() as Array<{ id: string }>).some(row => row.id === testBundleId), false,
+      "A suspended center's bundle disappears from the public list.");
+    assert.equal((await request(baseUrl, `/education/bundles/${testBundleId}`)).status, 404,
+      "A suspended center's bundle has no public detail.");
+    const suspendedKey = `suspended-${suffix}`;
+    assert.ok([404, 409].includes((await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, {
+      method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": suspendedKey },
+      body: { targetType: "individual", digitalContentConsent: true },
+    })).status), "A suspended center cannot issue a bundle purchase.");
+    assert.equal((await db.select().from(educationBundlePurchasesTable)
+      .where(eq(educationBundlePurchasesTable.idempotencyKey, suspendedKey))).length, 0,
+    "Rejected suspended-center checkout writes no purchase.");
+    await db.update(educationCentersTable).set({ verificationStatus: "verified" }).where(eq(educationCentersTable.id, centerId));
+    await db.update(educationCenterSubscriptionsTable).set({ status: "active" }).where(eq(educationCenterSubscriptionsTable.centerId, centerId));
+    assert.equal((await request(baseUrl, `/education/bundles/${testBundleId}`)).status, 200,
+      "Restoring center eligibility restores the existing bundle.");
+    const racingKey = `suspension-race-${suffix}`;
+    let racingPurchase!: Promise<Response>;
+    await db.transaction(async (tx) => {
+      await lockEducationCenterFinancials(tx, centerId!);
+      racingPurchase = request(baseUrl, `/education/bundles/${testBundleId}/purchases`, {
+        method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": racingKey },
+        body: { targetType: "individual", digitalContentConsent: true },
+      });
+      // Let the request pass its public precheck and block on the same
+      // deterministic center lock before committing the suspension.
+      await new Promise(resolve => setTimeout(resolve, 100));
+      await tx.update(educationCentersTable).set({ verificationStatus: "suspended" }).where(eq(educationCentersTable.id, centerId!));
+      await tx.update(educationCenterSubscriptionsTable).set({ status: "suspended" }).where(eq(educationCenterSubscriptionsTable.centerId, centerId!));
+    });
+    assert.equal((await racingPurchase).status, 409,
+      "Checkout that raced with suspension must fail its locked eligibility recheck.");
+    assert.equal((await db.select().from(educationBundlePurchasesTable)
+      .where(eq(educationBundlePurchasesTable.idempotencyKey, racingKey))).length, 0,
+    "Suspension race writes no bundle purchase.");
+    await db.update(educationCentersTable).set({ verificationStatus: "verified" }).where(eq(educationCentersTable.id, centerId));
+    await db.update(educationCenterSubscriptionsTable).set({ status: "active" }).where(eq(educationCenterSubscriptionsTable.centerId, centerId));
+    await db.update(coursesTable).set({ format: "hybrid" }).where(inArray(coursesTable.id, courseIds));
+    const consentRaceKey = `consent-race-${suffix}`;
+    let consentRacePurchase!: Promise<Response>;
+    await db.transaction(async (tx) => {
+      await lockEducationCenterFinancials(tx, centerId!);
+      consentRacePurchase = request(baseUrl, `/education/bundles/${testBundleId}/purchases`, {
+        method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": consentRaceKey },
+        body: { targetType: "individual" },
+      });
+      // The public read observes hybrid terms, then checkout blocks on the
+      // center lock until one exact course row becomes online.
+      await new Promise(resolve => setTimeout(resolve, 100));
+      await tx.update(coursesTable).set({ format: "online" }).where(eq(coursesTable.id, courses[0].id));
+    });
+    assert.equal((await consentRacePurchase).status, 409,
+      "Bundle checkout revalidates omitted consent against locked online terms.");
+    assert.equal((await db.select().from(educationBundlePurchasesTable)
+      .where(eq(educationBundlePurchasesTable.idempotencyKey, consentRaceKey))).length, 0,
+    "Bundle consent race creates no purchase, payment snapshot, or consent evidence.");
+    await db.update(coursesTable).set({ format: "online" }).where(inArray(coursesTable.id, courseIds));
     await db.update(coursesTable).set({ published: false }).where(eq(coursesTable.id, courses[1].id));
     assert.equal((await request(baseUrl, "/education/bundles")).status, 200);
     assert.equal((await (await request(baseUrl, "/education/bundles")).json() as Array<{ id: string }>).some(row => row.id === testBundleId), false,
@@ -136,15 +202,16 @@ async function run() {
     await db.update(coursesTable).set({ published: true }).where(eq(coursesTable.id, courses[1].id));
 
     assert.equal((await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, body: { targetType: "individual" } })).status, 400, "Idempotency-Key is required.");
+    assert.equal((await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": `missing-consent-${suffix}` }, body: { targetType: "individual" } })).status, 400, "Online bundle purchase requires explicit digital-content consent.");
     const key = `individual-${suffix}`;
-    const created = await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": key }, body: { targetType: "individual" } });
+    const created = await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": key }, body: { targetType: "individual", digitalContentConsent: true } });
     assert.equal(created.status, 201);
     const purchase = await created.json() as { id: string; amount: number; paymentInstructions: { reference: string; recipientAccount: string } };
     purchaseId = purchase.id; assert.equal(purchase.amount, 21000); assert.ok(purchase.paymentInstructions);
     assert.equal(purchase.paymentInstructions.recipientAccount, "111111111111111111");
     const secondPurchaseResponse = await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, {
       method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": `individual-second-${suffix}` },
-      body: { targetType: "individual" },
+      body: { targetType: "individual", digitalContentConsent: true },
     });
     assert.equal(secondPurchaseResponse.status, 201, "The same bundle can issue a separate purchase reference.");
     const secondPurchase = await secondPurchaseResponse.json() as { id: string; paymentInstructions: { reference: string } };
@@ -162,13 +229,13 @@ async function run() {
     assert.doesNotMatch(pdfText, /(?:32){18}/, "PDF never regenerates from current platform settings.");
     assert.deepEqual((await db.select().from(educationBundlePurchaseItemsTable).where(eq(educationBundlePurchaseItemsTable.purchaseId, purchaseId))).map(item => item.courseId).sort(), qualifyingCourseIds,
       "Purchase snapshots exactly the same qualifying course set shown publicly.");
-    const replay = await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": key }, body: { targetType: "individual" } });
+    const replay = await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": key }, body: { targetType: "individual", digitalContentConsent: true } });
     assert.equal(replay.status, 200); assert.equal((await replay.json() as { id: string }).id, purchaseId);
     assert.equal((await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": key }, body: { targetType: "salon_employee", salonId: salons[0].id, employeeId: employees[0].id } })).status, 409);
     assert.equal((await db.select().from(educationBundlePurchasesTable).where(eq(educationBundlePurchasesTable.id, purchaseId))).length, 1);
 
-    assert.equal((await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: ownerCookie, headers: { "Idempotency-Key": `foreign-${suffix}` }, body: { targetType: "salon_employee", salonId: salons[1].id, employeeId: employees[1].id } })).status, 403);
-    const employeePurchaseResponse = await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: ownerCookie, headers: { "Idempotency-Key": `employee-${suffix}` }, body: { targetType: "salon_employee", salonId: salons[0].id, employeeId: employees[0].id } });
+    assert.equal((await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: ownerCookie, headers: { "Idempotency-Key": `foreign-${suffix}` }, body: { targetType: "salon_employee", salonId: salons[1].id, employeeId: employees[1].id, digitalContentConsent: true } })).status, 403);
+    const employeePurchaseResponse = await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: ownerCookie, headers: { "Idempotency-Key": `employee-${suffix}` }, body: { targetType: "salon_employee", salonId: salons[0].id, employeeId: employees[0].id, digitalContentConsent: true } });
     assert.equal(employeePurchaseResponse.status, 201, "Salon owner may buy for their active employee.");
     const employeePurchaseId = (await employeePurchaseResponse.json() as { id: string }).id;
     assert.equal((await db.select().from(educationBundlePurchasesTable).where(eq(educationBundlePurchasesTable.id, employeePurchaseId)))[0]?.learnerUserId, employeeUser.id,
@@ -191,6 +258,7 @@ async function run() {
     assert.equal((await db.select().from(educationBundlePurchasesTable).where(eq(educationBundlePurchasesTable.id, purchaseId)))[0]?.amount, 21000);
     assert.deepEqual(afterItems.map(item => item.courseId).sort(), beforeItems.map(item => item.courseId).sort(), "Purchased course snapshot must survive later bundle edits.");
     assert.deepEqual(afterItems.map(item => item.courseTerms), beforeItems.map(item => item.courseTerms), "Purchased terms must survive later course edits.");
+    await db.update(coursesTable).set({ price: 999_999, onlineAccessDays: 3, extensionPrice1Month: 1, extensionPrice3Months: 2, extensionPrice6Months: 3 }).where(eq(coursesTable.id, courses[0].id));
 
     await db.update(educationPlatformSettingsTable).set({ commissionPercent: 60, reservePercent: 50 }).where(eq(educationPlatformSettingsTable.id, financeSettings.id));
     assert.equal((await request(baseUrl, `/admin/education/bundle-purchases/${purchaseId}/settle`, { method: "POST", cookie: adminCookie })).status, 409,
@@ -198,6 +266,19 @@ async function run() {
     assert.equal((await db.select().from(educationBundlePurchaseEscrowsTable).where(eq(educationBundlePurchaseEscrowsTable.purchaseId, purchaseId))).length, 0);
     assert.equal((await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.bundlePurchaseId, purchaseId))).length, 0);
     await db.update(educationPlatformSettingsTable).set({ commissionPercent: financeSettings.commissionPercent, reservePercent: financeSettings.reservePercent }).where(eq(educationPlatformSettingsTable.id, financeSettings.id));
+    const [employeeBundleItem] = await db.select().from(educationBundlePurchaseItemsTable)
+      .where(eq(educationBundlePurchaseItemsTable.purchaseId, employeePurchaseId)).limit(1);
+    const validEmployeeTerms = employeeBundleItem!.courseTerms as Record<string, unknown>;
+    await db.update(educationBundlePurchaseItemsTable).set({
+      courseTerms: { ...validEmployeeTerms, extensionPrice1Month: 0 },
+    }).where(eq(educationBundlePurchaseItemsTable.id, employeeBundleItem!.id));
+    assert.equal((await request(baseUrl, `/admin/education/bundle-purchases/${employeePurchaseId}/settle`, { method: "POST", cookie: adminCookie })).status, 409,
+      "Bundle settlement rejects a legacy zero extension-price snapshot.");
+    assert.equal((await db.select().from(courseEnrollmentsTable)
+      .where(eq(courseEnrollmentsTable.bundlePurchaseId, employeePurchaseId))).length, 0,
+    "Invalid bundle terms cannot issue enrollments.");
+    await db.update(educationBundlePurchaseItemsTable).set({ courseTerms: validEmployeeTerms })
+      .where(eq(educationBundlePurchaseItemsTable.id, employeeBundleItem!.id));
     await db.update(employeesTable).set({ userId: foreignEmployeeUser.id }).where(eq(employeesTable.id, employees[0].id));
     assert.equal((await request(baseUrl, `/admin/education/bundle-purchases/${employeePurchaseId}/settle`, { method: "POST", cookie: adminCookie })).status, 409,
       "Settlement rejects an employee identity relink.");
@@ -221,6 +302,15 @@ async function run() {
     assert.equal(ledger.find(row => row.entryType === "reserve_hold")?.amount, escrows[0].reserveAmount);
     const enrollments = await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.bundlePurchaseId, purchaseId));
     assert.equal(enrollments.length, beforeItems.length); assert.ok(enrollments.every(row => row.bundlePurchaseId === purchaseId && row.status === "active" && row.paymentStatus === "paid"));
+    const firstEnrollment = enrollments.find(row => row.courseId === courses[0].id)!;
+    assert.equal(firstEnrollment.coursePriceSnapshot, 12000);
+    assert.equal(firstEnrollment.durationSnapshot, "2 weeks");
+    assert.equal(firstEnrollment.accessDaysSnapshot, 30);
+    assert.deepEqual(firstEnrollment.extensionPricesSnapshot, { oneMonth: 1000, threeMonths: 2500, sixMonths: 4500 });
+    assert.ok(firstEnrollment.accessGrantedAt && firstEnrollment.accessExpiresAt && firstEnrollment.accessExpiresAt.getTime() - firstEnrollment.accessGrantedAt.getTime() === 30 * 86_400_000);
+    assert.equal(firstEnrollment.digitalContentConsentUserId, buyer.id);
+    assert.match(firstEnrollment.digitalContentConsentTextSnapshot ?? "", /gubim zakonsko pravo/);
+    assert.equal(firstEnrollment.digitalContentConsentVersionSnapshot, "online-digital-content-v1");
     assert.equal((await db.select().from(educationEscrowsTable).where(inArray(educationEscrowsTable.enrollmentId, enrollments.map(row => row.id)))).length, 0, "Bundle children never receive independent escrow/ledger rows.");
     assert.equal((await request(baseUrl, `/education/centers/${centerId}/bundles/${testBundleId}`, { method: "DELETE", cookie: centerCookie })).status, 204,
       "Center may archive a bundle.");
@@ -245,7 +335,9 @@ async function run() {
     if (employeeIds.length) await db.delete(employeesTable).where(inArray(employeesTable.id, employeeIds));
     if (salonIds.length) await db.delete(salonsTable).where(inArray(salonsTable.id, salonIds));
     if (courseIds.length) await db.delete(coursesTable).where(inArray(coursesTable.id, courseIds));
+    if (centerId) await db.delete(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, centerId));
     if (centerId) await db.delete(educationCentersTable).where(eq(educationCentersTable.id, centerId));
+    if (planId) await db.delete(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, planId));
     if (financeSettings) await db.update(educationPlatformSettingsTable).set({ commissionPercent: financeSettings.commissionPercent, reservePercent: financeSettings.reservePercent }).where(eq(educationPlatformSettingsTable.id, financeSettings.id));
     if (userIds.length) await db.delete(usersTable).where(inArray(usersTable.id, userIds));
   }

@@ -5995,6 +5995,26 @@ export interface Course {
   /** @nullable */
   earlyBirdCutoff?: string | null;
   installmentCount?: CourseInstallmentCount;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  onlineAccessDays?: number | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  extensionPrice1Month?: number | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  extensionPrice3Months?: number | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  extensionPrice6Months?: number | null;
   /** @nullable */
   centerId?: string | null;
   /** @nullable */
@@ -6192,6 +6212,26 @@ export interface EducationCourseInput {
   /** @nullable */
   earlyBirdCutoff?: string | null;
   installmentCount?: EducationCourseInputInstallmentCount;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  onlineAccessDays?: number | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  extensionPrice1Month?: number | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  extensionPrice3Months?: number | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  extensionPrice6Months?: number | null;
 }
 
 export type EducationCourseUpdateFormat = typeof EducationCourseUpdateFormat[keyof typeof EducationCourseUpdateFormat];
@@ -6384,6 +6424,26 @@ export interface EducationCourseUpdate {
   /** @nullable */
   earlyBirdCutoff?: string | null;
   installmentCount?: EducationCourseUpdateInstallmentCount;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  onlineAccessDays?: number | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  extensionPrice1Month?: number | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  extensionPrice3Months?: number | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  extensionPrice6Months?: number | null;
 }
 
 export interface EducationSession {
@@ -6631,6 +6691,8 @@ export interface EducationEnrollmentInput {
   /** @nullable */
   sessionId?: string | null;
   paymentMode?: EducationEnrollmentInputPaymentMode;
+  /** Explicit purchaser consent to immediate supply of online digital content. */
+  digitalContentConsent?: boolean;
 }
 
 export interface EducationTaxonomyItem {
@@ -6961,6 +7023,7 @@ export interface EducationGiftVoucherRedeemInput {
      * @maxLength 128
      */
   code: string;
+  digitalContentConsent?: boolean;
 }
 
 export interface EducationGiftVoucherRefundInput {
@@ -7264,6 +7327,11 @@ export const EducationEnrollmentPaymentStatus = {
 /**
  * @nullable
  */
+export type EducationEnrollmentExtensionPricesSnapshot = { [key: string]: unknown } | null;
+
+/**
+ * @nullable
+ */
 export type EducationEnrollmentEscrowStatus = typeof EducationEnrollmentEscrowStatus[keyof typeof EducationEnrollmentEscrowStatus] | null;
 
 
@@ -7289,6 +7357,20 @@ export interface EducationEnrollment {
   /** @nullable */
   nextLesson?: string | null;
   purchasedAt: string;
+  /** @nullable */
+  accessExpiresAt?: string | null;
+  /** @nullable */
+  coursePriceSnapshot?: number | null;
+  /** @nullable */
+  durationSnapshot?: string | null;
+  /** @nullable */
+  accessDaysSnapshot?: number | null;
+  /** @nullable */
+  extensionPricesSnapshot?: EducationEnrollmentExtensionPricesSnapshot;
+  /** @nullable */
+  digitalContentConsentAt?: string | null;
+  /** @nullable */
+  digitalContentConsentVersionSnapshot?: string | null;
   /** @nullable */
   escrowStatus?: EducationEnrollmentEscrowStatus;
   /** @nullable */
@@ -7317,6 +7399,65 @@ export interface EducationEnrollmentPaymentInstructions {
   payload: string;
   paymentStatus: EducationEnrollmentPaymentInstructionsPaymentStatus;
   settlementNotice: string;
+}
+
+export type EducationEnrollmentExtensionInputMonths = typeof EducationEnrollmentExtensionInputMonths[keyof typeof EducationEnrollmentExtensionInputMonths];
+
+
+export const EducationEnrollmentExtensionInputMonths = {
+  NUMBER_1: 1,
+  NUMBER_3: 3,
+  NUMBER_6: 6,
+} as const;
+
+export interface EducationEnrollmentExtensionInput {
+  months: EducationEnrollmentExtensionInputMonths;
+}
+
+export type EducationEnrollmentExtensionMonths = typeof EducationEnrollmentExtensionMonths[keyof typeof EducationEnrollmentExtensionMonths];
+
+
+export const EducationEnrollmentExtensionMonths = {
+  NUMBER_1: 1,
+  NUMBER_3: 3,
+  NUMBER_6: 6,
+} as const;
+
+export interface EducationEnrollmentExtension {
+  months: EducationEnrollmentExtensionMonths;
+  /** @minimum 0 */
+  amount: number;
+  previousAccessExpiresAt: string;
+  extendedAccessExpiresAt: string;
+}
+
+export type EducationPaymentObligationStatus = typeof EducationPaymentObligationStatus[keyof typeof EducationPaymentObligationStatus];
+
+
+export const EducationPaymentObligationStatus = {
+  pending: 'pending',
+  paid: 'paid',
+  cancelled: 'cancelled',
+} as const;
+
+/**
+ * Immutable payment-instruction snapshot for a manually settled obligation.
+ */
+export interface EducationPaymentObligation {
+  id: string;
+  /** @nullable */
+  enrollmentId: string | null;
+  kind: string;
+  /** @minimum 0 */
+  expectedAmount: number;
+  referenceSnapshot: string;
+  status: EducationPaymentObligationStatus;
+  [key: string]: unknown;
+ }
+
+export interface EducationEnrollmentExtensionResponse {
+  extension: EducationEnrollmentExtension;
+  payment: EducationPaymentObligation;
 }
 
 export interface EducationNotification {
@@ -14376,6 +14517,10 @@ startDate: string;
  */
 endDate: string;
 educatorStaffId?: string;
+};
+
+export type TransferEducationOnlineEnrollmentBody = {
+  targetEmployeeId: string;
 };
 
 export type ProposeEducationCourseTypeBody = {

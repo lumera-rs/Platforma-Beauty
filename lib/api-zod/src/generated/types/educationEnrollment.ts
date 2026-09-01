@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { EducationEnrollmentEscrowStatus } from './educationEnrollmentEscrowStatus';
+import type { EducationEnrollmentExtensionPricesSnapshot } from './educationEnrollmentExtensionPricesSnapshot';
 import type { EducationEnrollmentPaymentStatus } from './educationEnrollmentPaymentStatus';
 import type { EducationEnrollmentStatus } from './educationEnrollmentStatus';
 
@@ -22,6 +23,20 @@ export interface EducationEnrollment {
   /** @nullable */
   nextLesson?: string | null;
   purchasedAt: Date;
+  /** @nullable */
+  accessExpiresAt?: Date | null;
+  /** @nullable */
+  coursePriceSnapshot?: number | null;
+  /** @nullable */
+  durationSnapshot?: string | null;
+  /** @nullable */
+  accessDaysSnapshot?: number | null;
+  /** @nullable */
+  extensionPricesSnapshot?: EducationEnrollmentExtensionPricesSnapshot;
+  /** @nullable */
+  digitalContentConsentAt?: Date | null;
+  /** @nullable */
+  digitalContentConsentVersionSnapshot?: string | null;
   /** @nullable */
   escrowStatus?: EducationEnrollmentEscrowStatus;
   /** @nullable */

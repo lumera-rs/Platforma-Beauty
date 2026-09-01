@@ -6,11 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface EducationGiftVoucherRedeemInput {
-  /**
-     * @minLength 12
-     * @maxLength 128
-     */
-  code: string;
-  digitalContentConsent?: boolean;
-}
+/**
+ * @nullable
+ */
+export type EducationEnrollmentExtensionPricesSnapshot = { [key: string]: unknown } | null;

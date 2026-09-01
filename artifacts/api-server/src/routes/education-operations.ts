@@ -533,6 +533,7 @@ router.post("/education/operations/courses/:courseId/recurrence/preview", async 
   if (!params.success || !body.success) { invalid(res, (!params.success ? params.error : body.error!).message); return; }
   const [course] = await db.select().from(coursesTable).where(and(eq(coursesTable.id, params.data.courseId), eq(coursesTable.published, true), eq(coursesTable.archived, false))).limit(1);
   if (!course?.centerId) { res.status(404).json({ error: "Kurs nije pronađen." }); return; }
+  if (course.format === "online") { res.status(409).json({ error: "Online kurs ne može imati termine uživo." }); return; }
   const target = await operationalEducator(req, course.centerId, body.data.educatorStaffId, "create");
   if (!target.access.user) { res.status(401).json({ error: "Prijava je obavezna." }); return; }
   if (!target.access.role || !target.allowed) { res.status(403).json({ error: "Nemate pravo na kalendar kursa." }); return; }
@@ -556,6 +557,7 @@ router.post("/education/operations/courses/:courseId/recurrence/commit", async (
     eq(coursesTable.archived, false),
   )).limit(1);
   if (!course?.centerId) { res.status(404).json({ error: "Kurs nije pronađen." }); return; }
+  if (course.format === "online") { res.status(409).json({ error: "Online kurs ne može imati termine uživo." }); return; }
   const target = await operationalEducator(req, course.centerId, body.data.educatorStaffId, "create");
   if (!target.access.user) { res.status(401).json({ error: "Prijava je obavezna." }); return; }
   if (!target.access.role || !target.allowed) { res.status(403).json({ error: "Nemate pravo na kalendar kursa." }); return; }
@@ -565,6 +567,9 @@ router.post("/education/operations/courses/:courseId/recurrence/commit", async (
     const fingerprint = createHash("sha256").update(JSON.stringify(body.data)).digest("hex");
     const result = await db.transaction(async (tx) => {
       await lockEducationScheduleResources(tx, dateList.map((date) => ({ centerId: course.centerId!, date, educatorStaffId: target.staff!.id })));
+      const [lockedCourse] = await tx.select().from(coursesTable)
+        .where(eq(coursesTable.id, course.id)).for("update").limit(1);
+      if (!lockedCourse || lockedCourse.format === "online") throw new Error("ONLINE_SESSION_UNAVAILABLE");
       const [existing] = await tx.select().from(educationRecurrenceCommandsTable).where(and(
         eq(educationRecurrenceCommandsTable.actorUserId, target.access.user!.id),
         eq(educationRecurrenceCommandsTable.idempotencyKey, headers.data["Idempotency-Key"]),
@@ -576,7 +581,7 @@ router.post("/education/operations/courses/:courseId/recurrence/commit", async (
       // The lock serializes all competing educator writes. Re-read canonical
       // availability only after it is held, so a concurrent commit cannot retain
       // stale preview candidates.
-      const facts = await recurrencePreviewFacts(course, body.data, tx);
+      const facts = await recurrencePreviewFacts(lockedCourse, body.data, tx);
       const created = [];
       for (const candidate of facts.candidates) {
         const startsAt = educationBelgradeInstant(candidate.date, candidate.startTime);
@@ -1301,7 +1306,11 @@ router.post("/education/operations/bookings", async (req, res): Promise<void> =>
     const [lockedSession] = await tx.select().from(courseSessionsTable).where(eq(courseSessionsTable.id, session.id)).for("update").limit(1);
     if (!lockedSession || lockedSession.cancelledAt) throw new Error("SESSION_UNAVAILABLE");
     const [lockedCourse] = await tx.select().from(coursesTable).where(eq(coursesTable.id, course.id)).for("update").limit(1);
-    if (!lockedCourse?.centerId || lockedCourse.centerId !== course.centerId) throw new Error("SESSION_UNAVAILABLE");
+    if (!lockedCourse?.centerId || lockedCourse.centerId !== course.centerId
+      || lockedSession.courseId !== lockedCourse.id || !lockedCourse.published || lockedCourse.archived) {
+      throw new Error("SESSION_UNAVAILABLE");
+    }
+    if (lockedCourse.format === "online") throw new Error("ONLINE_OPERATION_UNAVAILABLE");
     // PostgreSQL's transaction clock is authoritative: a direct API request
     // must not create any commercial records once the exact slot has started.
     const started = await tx.select({ id: courseSessionsTable.id }).from(courseSessionsTable)
@@ -1404,7 +1413,7 @@ router.post("/education/operations/bookings", async (req, res): Promise<void> =>
     }).onConflictDoNothing();
     return { group: group!, quote };
   }).catch((error: unknown) => {
-    if (error instanceof Error && ["IDEMPOTENCY_MISMATCH", "SESSION_UNAVAILABLE", "SESSION_STARTED", "INSTALLMENT_PLAN_UNAVAILABLE"].includes(error.message)) return null;
+    if (error instanceof Error && ["IDEMPOTENCY_MISMATCH", "SESSION_UNAVAILABLE", "SESSION_STARTED", "INSTALLMENT_PLAN_UNAVAILABLE", "ONLINE_OPERATION_UNAVAILABLE"].includes(error.message)) return null;
     throw error;
   });
   if (!result) { res.status(409).json({ error: "Rezervacija nije dostupna ili idempotency ključ ne odgovara zahtevu." }); return; }
