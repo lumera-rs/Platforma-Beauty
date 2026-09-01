@@ -99,6 +99,7 @@ export const educationCenterSubscriptionsTable = pgTable("education_center_subsc
   billingCycle: text("billing_cycle").notNull().default("monthly"),
   paymentReference: text("payment_reference").unique(),
   paidAt: timestamp("paid_at", { withTimezone: true }),
+  currentPeriodStart: timestamp("current_period_start", { withTimezone: true }),
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
   trialStartedAt: timestamp("trial_started_at", { withTimezone: true }),
   trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
@@ -109,6 +110,7 @@ export const educationCenterSubscriptionsTable = pgTable("education_center_subsc
   contractEndsAt: timestamp("contract_ends_at", { withTimezone: true }),
   courseLimitOverride: integer("course_limit_override"),
   pendingPlanId: uuid("pending_plan_id").references(() => subscriptionPlansTable.id),
+  pendingBillingCycle: text("pending_billing_cycle"),
   pendingPlanEffectiveAt: timestamp("pending_plan_effective_at", { withTimezone: true }),
   graceExtensionNote: text("grace_extension_note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -116,8 +118,10 @@ export const educationCenterSubscriptionsTable = pgTable("education_center_subsc
 }, (table) => [
   // Leading FK coverage for planId (all education centers on a plan).
   index("education_center_subscriptions_plan_idx").on(table.planId),
+  index("education_center_subscriptions_pending_plan_idx").on(table.pendingPlanId),
   index("education_center_subscriptions_grace_idx").on(table.status, table.graceEndsAt),
   check("education_center_subscriptions_billing_cycle_check", sql`${table.billingCycle} in ('monthly', 'yearly')`),
+  check("education_center_subscriptions_pending_billing_cycle_check", sql`${table.pendingBillingCycle} is null or ${table.pendingBillingCycle} in ('monthly', 'yearly')`),
   check("education_center_subscriptions_contract_kind_check", sql`${table.contractKind} in ('standard','custom')`),
   check("education_center_subscriptions_course_limit_override_check", sql`${table.courseLimitOverride} is null or ${table.courseLimitOverride} >= 0`),
 ]);
@@ -131,6 +135,8 @@ export const educationTrialClaimsTable = pgTable("education_trial_claims", {
   centerId: uuid("center_id").references(() => educationCentersTable.id, { onDelete: "set null" }),
   claimedAt: timestamp("claimed_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  index("education_trial_claims_user_idx").on(table.userId),
+  index("education_trial_claims_center_idx").on(table.centerId),
   uniqueIndex("education_trial_claims_email_unique").on(table.normalizedEmailHash),
   uniqueIndex("education_trial_claims_phone_unique").on(table.normalizedPhoneHash).where(sql`${table.normalizedPhoneHash} is not null`),
   uniqueIndex("education_trial_claims_pib_unique").on(table.normalizedPibHash).where(sql`${table.normalizedPibHash} is not null`),
@@ -148,6 +154,7 @@ export const educationFinancialAuditLogTable = pgTable("education_financial_audi
   occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
   timeZone: text("time_zone").notNull().default("Europe/Belgrade"),
 }, (table) => [
+  index("education_financial_audit_actor_idx").on(table.actorUserId),
   index("education_financial_audit_entity_idx").on(table.entityType, table.entityId, table.occurredAt),
   check("education_financial_audit_timezone_check", sql`${table.timeZone} = 'Europe/Belgrade'`),
 ]);
@@ -170,17 +177,26 @@ export const educationPaymentObligationsTable = pgTable("education_payment_oblig
   ipsPayloadSnapshot: text("ips_payload_snapshot"),
   issuedAt: timestamp("issued_at", { withTimezone: true }).notNull().defaultNow(),
   dueAt: timestamp("due_at", { withTimezone: true }),
+  billingCycleSnapshot: text("billing_cycle_snapshot"),
+  servicePeriodStart: timestamp("service_period_start", { withTimezone: true }),
+  servicePeriodEnd: timestamp("service_period_end", { withTimezone: true }),
   confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
   confirmedByUserId: uuid("confirmed_by_user_id").references(() => usersTable.id, { onDelete: "restrict" }),
   cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
   cancelledByUserId: uuid("cancelled_by_user_id").references(() => usersTable.id, { onDelete: "restrict" }),
 }, (table) => [
   index("education_payment_obligations_center_status_idx").on(table.centerId, table.status, table.dueAt),
+  index("education_payment_obligations_salon_idx").on(table.salonId),
+  index("education_payment_obligations_enrollment_idx").on(table.enrollmentId),
+  index("education_payment_obligations_subscription_idx").on(table.subscriptionId),
+  index("education_payment_obligations_confirmed_by_idx").on(table.confirmedByUserId),
+  index("education_payment_obligations_cancelled_by_idx").on(table.cancelledByUserId),
   check("education_payment_obligations_target_check", sql`num_nonnulls(${table.centerId}, ${table.salonId}) >= 1`),
   check("education_payment_obligations_status_check", sql`${table.status} in ('pending','paid','cancelled')`),
   check("education_payment_obligations_amount_check", sql`${table.expectedAmount} > 0 and (${table.confirmedAmount} is null or ${table.confirmedAmount} >= 0)`),
   check("education_payment_obligations_account_check", sql`${table.recipientAccountSnapshot} ~ '^[0-9]{18}$'`),
   check("education_payment_obligations_code_check", sql`${table.paymentCodeSnapshot} in ('221','289')`),
+  check("education_payment_obligations_cycle_check", sql`${table.billingCycleSnapshot} is null or ${table.billingCycleSnapshot} in ('monthly','yearly')`),
 ]);
 
 export const educationGraceNotesTable = pgTable("education_grace_notes", {
@@ -189,7 +205,10 @@ export const educationGraceNotesTable = pgTable("education_grace_notes", {
   authorUserId: uuid("author_user_id").notNull().references(() => usersTable.id, { onDelete: "restrict" }),
   note: text("note").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [index("education_grace_notes_center_created_idx").on(table.centerId, table.createdAt)]);
+}, (table) => [
+  index("education_grace_notes_center_created_idx").on(table.centerId, table.createdAt),
+  index("education_grace_notes_author_idx").on(table.authorUserId),
+]);
 
 export const educationPlatformSettingsTable = pgTable("education_platform_settings", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -701,6 +720,7 @@ export const courseEnrollmentsTable = pgTable("course_enrollments", {
   index("course_enrollments_booking_group_idx").on(table.bookingGroupId),
   index("course_enrollments_bundle_purchase_idx").on(table.bundlePurchaseId),
   index("course_enrollments_access_expiry_idx").on(table.userId, table.accessExpiresAt),
+  index("course_enrollments_digital_consent_user_idx").on(table.digitalContentConsentUserId),
   uniqueIndex("course_enrollments_participant_active_unique").on(table.participantId).where(sql`${table.participantId} is not null and ${table.status} <> 'cancelled'`),
   check("course_enrollments_operational_user_check", sql`${table.userId} is not null or ${table.participantId} is not null`),
 ]);
@@ -719,6 +739,8 @@ export const educationAccessExtensionsTable = pgTable("education_access_extensio
   settledAt: timestamp("settled_at", { withTimezone: true }),
 }, (table) => [
   index("education_access_extensions_enrollment_idx").on(table.enrollmentId, table.createdAt),
+  index("education_access_extensions_purchaser_idx").on(table.purchaserId),
+  index("education_access_extensions_payment_obligation_idx").on(table.paymentObligationId),
   check("education_access_extensions_months_check", sql`${table.months} in (1,3,6)`),
   check("education_access_extensions_amount_check", sql`${table.amount} >= 0`),
   check("education_access_extensions_status_check", sql`${table.status} in ('pending','settled','cancelled')`),
@@ -1162,7 +1184,9 @@ export const educationB2bDiscountSettingsTable = pgTable("education_b2b_discount
   version: integer("version").notNull().default(1),
   updatedByUserId: uuid("updated_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("education_b2b_discount_settings_updated_by_idx").on(table.updatedByUserId),
+]);
 
 export const educationB2bDiscountAuditsTable = pgTable("education_b2b_discount_audits", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -1170,7 +1194,9 @@ export const educationB2bDiscountAuditsTable = pgTable("education_b2b_discount_a
   actorUserId: uuid("actor_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   tiersSnapshot: jsonb("tiers_snapshot").$type<unknown[]>().notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("education_b2b_discount_audits_actor_idx").on(table.actorUserId),
+]);
 
 /** Immutable quote/checkout evidence, separate from salon orders. */
 export const educationB2bOrdersTable = pgTable("education_b2b_orders", {
@@ -1191,6 +1217,8 @@ export const educationB2bOrdersTable = pgTable("education_b2b_orders", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("education_b2b_orders_center_created_idx").on(table.centerId, table.createdAt),
+  index("education_b2b_orders_purchaser_idx").on(table.purchaserUserId),
+  index("education_b2b_orders_settled_by_idx").on(table.settledByUserId),
   index("education_b2b_orders_qualified_spend_idx").on(table.centerId, table.paymentStatus, table.fulfillmentStatus, table.completedAt),
   check("education_b2b_orders_payment_status_check", sql`${table.paymentStatus} in ('pending','paid','refunded','cancelled')`),
   check("education_b2b_orders_fulfillment_status_check", sql`${table.fulfillmentStatus} in ('RECEIVED','PREPARING','PACKING','SHIPPED','COMPLETED','CANCELLED')`),
@@ -1204,7 +1232,10 @@ export const educationB2bOrderItemsTable = pgTable("education_b2b_order_items", 
   quantity: integer("quantity").notNull(),
   unitPriceRsd: integer("unit_price_rsd").notNull(),
   lineTotalRsd: integer("line_total_rsd").notNull(),
-}, (table) => [index("education_b2b_order_items_order_idx").on(table.orderId)]);
+}, (table) => [
+  index("education_b2b_order_items_order_idx").on(table.orderId),
+  index("education_b2b_order_items_product_idx").on(table.productId),
+]);
 
 // Center operations are deliberately separate from salon stock and scheduling.
 export const educationResourcesTable = pgTable("education_resources", {
@@ -1215,18 +1246,33 @@ export const educationResourcesTable = pgTable("education_resources", {
 export const educationSessionResourcesTable = pgTable("education_session_resources", {
   id: uuid("id").defaultRandom().primaryKey(), resourceId: uuid("resource_id").notNull().references(() => educationResourcesTable.id, { onDelete: "restrict" }),
   sessionId: uuid("session_id").notNull().references(() => courseSessionsTable.id, { onDelete: "cascade" }), quantity: integer("quantity").notNull().default(1),
-}, (t) => [uniqueIndex("education_session_resources_unique").on(t.resourceId, t.sessionId), check("education_session_resources_quantity_check", sql`${t.quantity} > 0`)]);
+}, (t) => [
+  uniqueIndex("education_session_resources_unique").on(t.resourceId, t.sessionId),
+  index("education_session_resources_session_idx").on(t.sessionId),
+  check("education_session_resources_quantity_check", sql`${t.quantity} > 0`),
+]);
 export const educationInventoryItemsTable = pgTable("education_inventory_items", {
   id: uuid("id").defaultRandom().primaryKey(), centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "cascade" }),
   productId: uuid("product_id").references(() => productsTable.id, { onDelete: "restrict" }), name: text("name").notNull(), quantityOnHand: integer("quantity_on_hand").notNull().default(0),
   reorderLevel: integer("reorder_level").notNull().default(0), active: boolean("active").notNull().default(true), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [index("education_inventory_center_idx").on(t.centerId), check("education_inventory_nonnegative_check", sql`${t.quantityOnHand} >= 0 and ${t.reorderLevel} >= 0`)]);
+}, (t) => [
+  index("education_inventory_center_idx").on(t.centerId),
+  index("education_inventory_product_idx").on(t.productId),
+  check("education_inventory_nonnegative_check", sql`${t.quantityOnHand} >= 0 and ${t.reorderLevel} >= 0`),
+]);
 export const educationInventoryMovementsTable = pgTable("education_inventory_movements", {
   id: uuid("id").defaultRandom().primaryKey(), itemId: uuid("item_id").notNull().references(() => educationInventoryItemsTable.id, { onDelete: "restrict" }),
   centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "restrict" }), delta: integer("delta").notNull(),
   courseId: uuid("course_id").references(() => coursesTable.id, { onDelete: "set null" }), sessionId: uuid("session_id").references(() => courseSessionsTable.id, { onDelete: "set null" }),
   note: text("note").notNull(), actorUserId: uuid("actor_user_id").references(() => usersTable.id, { onDelete: "set null" }), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [index("education_inventory_movements_item_created_idx").on(t.itemId, t.createdAt), check("education_inventory_movements_delta_check", sql`${t.delta} <> 0`)]);
+}, (t) => [
+  index("education_inventory_movements_item_created_idx").on(t.itemId, t.createdAt),
+  index("education_inventory_movements_center_idx").on(t.centerId),
+  index("education_inventory_movements_course_idx").on(t.courseId),
+  index("education_inventory_movements_session_idx").on(t.sessionId),
+  index("education_inventory_movements_actor_idx").on(t.actorUserId),
+  check("education_inventory_movements_delta_check", sql`${t.delta} <> 0`),
+]);
 export const educationBundlesTable = pgTable("education_bundles", {
   id: uuid("id").defaultRandom().primaryKey(), centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "cascade" }),
   title: text("title").notNull(), description: text("description").notNull().default(""), price: integer("price").notNull(), active: boolean("active").notNull().default(true),
@@ -1234,7 +1280,11 @@ export const educationBundlesTable = pgTable("education_bundles", {
 }, (t) => [index("education_bundles_center_published_idx").on(t.centerId, t.published), check("education_bundles_price_check", sql`${t.price} >= 0`)]);
 export const educationBundleCoursesTable = pgTable("education_bundle_courses", {
   bundleId: uuid("bundle_id").notNull().references(() => educationBundlesTable.id, { onDelete: "cascade" }), courseId: uuid("course_id").notNull().references(() => coursesTable.id, { onDelete: "restrict" }), sortOrder: integer("sort_order").notNull(),
-}, (t) => [uniqueIndex("education_bundle_courses_unique").on(t.bundleId, t.courseId), uniqueIndex("education_bundle_courses_order_unique").on(t.bundleId, t.sortOrder)]);
+}, (t) => [
+  uniqueIndex("education_bundle_courses_unique").on(t.bundleId, t.courseId),
+  uniqueIndex("education_bundle_courses_order_unique").on(t.bundleId, t.sortOrder),
+  index("education_bundle_courses_course_idx").on(t.courseId),
+]);
 
 /**
  * Immutable commercial boundary for an education package.  Do not add an
@@ -1268,7 +1318,11 @@ export const educationBundlePurchasesTable = pgTable("education_bundle_purchases
   uniqueIndex("education_bundle_purchases_purchaser_idempotency_unique").on(t.purchaserId, t.idempotencyKey),
   index("education_bundle_purchases_center_status_idx").on(t.centerId, t.status),
   index("education_bundle_purchases_purchaser_requested_idx").on(t.purchaserId, t.requestedAt),
+  index("education_bundle_purchases_bundle_idx").on(t.bundleId),
+  index("education_bundle_purchases_learner_idx").on(t.learnerUserId),
+  index("education_bundle_purchases_salon_idx").on(t.salonId),
   index("education_bundle_purchases_employee_idx").on(t.employeeId),
+  index("education_bundle_purchases_settled_by_idx").on(t.settledByUserId),
   check("education_bundle_purchases_amount_check", sql`${t.amount} >= 0`),
   check("education_bundle_purchases_target_check", sql`(${t.targetType} = 'individual' and ${t.learnerUserId} is not null and ${t.salonId} is null and ${t.employeeId} is null) or (${t.targetType} = 'salon_employee' and ${t.learnerUserId} is not null and ${t.salonId} is not null and ${t.employeeId} is not null)`),
 ]);
@@ -1285,6 +1339,7 @@ export const educationBundlePurchaseItemsTable = pgTable("education_bundle_purch
 }, (t) => [
   uniqueIndex("education_bundle_purchase_items_course_unique").on(t.purchaseId, t.courseId),
   uniqueIndex("education_bundle_purchase_items_order_unique").on(t.purchaseId, t.sortOrder),
+  index("education_bundle_purchase_items_course_idx").on(t.courseId),
 ]);
 
 /** One and only one escrow for the bundle purchase's full financial amount. */
@@ -1323,7 +1378,12 @@ export const educationContactHistoryTable = pgTable("education_contact_history",
   id: uuid("id").defaultRandom().primaryKey(), centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "cascade" }),
   learnerUserId: uuid("learner_user_id").references(() => usersTable.id, { onDelete: "set null" }), enrollmentId: uuid("enrollment_id").references(() => courseEnrollmentsTable.id, { onDelete: "set null" }),
   channel: text("channel").notNull(), note: text("note").notNull(), actorUserId: uuid("actor_user_id").references(() => usersTable.id, { onDelete: "set null" }), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [index("education_contact_history_center_learner_idx").on(t.centerId, t.learnerUserId, t.createdAt)]);
+}, (t) => [
+  index("education_contact_history_center_learner_idx").on(t.centerId, t.learnerUserId, t.createdAt),
+  index("education_contact_history_learner_idx").on(t.learnerUserId),
+  index("education_contact_history_enrollment_idx").on(t.enrollmentId),
+  index("education_contact_history_actor_idx").on(t.actorUserId),
+]);
 
 export const educationDisputesTable = pgTable("education_disputes", {
   id: uuid("id").defaultRandom().primaryKey(),

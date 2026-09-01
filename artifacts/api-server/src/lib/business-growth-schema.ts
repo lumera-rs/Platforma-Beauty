@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 102;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 103;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -4508,6 +4508,45 @@ function tableStatements(s: string): string[] {
     `ALTER TABLE ${s}.education_b2b_orders ADD COLUMN IF NOT EXISTS settled_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL`,
     `ALTER TABLE ${s}.education_b2b_orders ADD COLUMN IF NOT EXISTS settled_at timestamptz`,
     `CREATE INDEX IF NOT EXISTS education_b2b_orders_qualified_spend_idx ON ${s}.education_b2b_orders(center_id, payment_status, fulfillment_status, completed_at)`,
+    // v103 — leading indexes for every Education foreign key. PostgreSQL does
+    // not create these automatically, and production never runs drizzle push.
+    `CREATE INDEX IF NOT EXISTS course_enrollments_digital_consent_user_idx ON ${s}.course_enrollments(digital_content_consent_user_id)`,
+    `CREATE INDEX IF NOT EXISTS education_access_extensions_payment_obligation_idx ON ${s}.education_access_extensions(payment_obligation_id)`,
+    `CREATE INDEX IF NOT EXISTS education_access_extensions_purchaser_idx ON ${s}.education_access_extensions(purchaser_id)`,
+    `CREATE INDEX IF NOT EXISTS education_b2b_discount_audits_actor_idx ON ${s}.education_b2b_discount_audits(actor_user_id)`,
+    `CREATE INDEX IF NOT EXISTS education_b2b_discount_settings_updated_by_idx ON ${s}.education_b2b_discount_settings(updated_by_user_id)`,
+    `CREATE INDEX IF NOT EXISTS education_b2b_order_items_product_idx ON ${s}.education_b2b_order_items(product_id)`,
+    `CREATE INDEX IF NOT EXISTS education_b2b_orders_purchaser_idx ON ${s}.education_b2b_orders(purchaser_user_id)`,
+    `CREATE INDEX IF NOT EXISTS education_b2b_orders_settled_by_idx ON ${s}.education_b2b_orders(settled_by_user_id)`,
+    `CREATE INDEX IF NOT EXISTS education_bundle_courses_course_idx ON ${s}.education_bundle_courses(course_id)`,
+    `CREATE INDEX IF NOT EXISTS education_bundle_purchase_escrows_center_status_idx ON ${s}.education_bundle_purchase_escrows(center_id, status)`,
+    `CREATE INDEX IF NOT EXISTS education_bundle_purchase_items_course_idx ON ${s}.education_bundle_purchase_items(course_id)`,
+    `CREATE INDEX IF NOT EXISTS education_bundle_purchases_bundle_idx ON ${s}.education_bundle_purchases(bundle_id)`,
+    `CREATE INDEX IF NOT EXISTS education_bundle_purchases_employee_idx ON ${s}.education_bundle_purchases(employee_id)`,
+    `CREATE INDEX IF NOT EXISTS education_bundle_purchases_learner_idx ON ${s}.education_bundle_purchases(learner_user_id)`,
+    `CREATE INDEX IF NOT EXISTS education_bundle_purchases_salon_idx ON ${s}.education_bundle_purchases(salon_id)`,
+    `CREATE INDEX IF NOT EXISTS education_bundle_purchases_settled_by_idx ON ${s}.education_bundle_purchases(settled_by_user_id)`,
+    `CREATE INDEX IF NOT EXISTS education_bundles_center_published_idx ON ${s}.education_bundles(center_id, published)`,
+    `CREATE INDEX IF NOT EXISTS education_center_subscriptions_pending_plan_idx ON ${s}.education_center_subscriptions(pending_plan_id)`,
+    `CREATE INDEX IF NOT EXISTS education_contact_history_actor_idx ON ${s}.education_contact_history(actor_user_id)`,
+    `CREATE INDEX IF NOT EXISTS education_contact_history_enrollment_idx ON ${s}.education_contact_history(enrollment_id)`,
+    `CREATE INDEX IF NOT EXISTS education_contact_history_learner_idx ON ${s}.education_contact_history(learner_user_id)`,
+    `CREATE INDEX IF NOT EXISTS education_financial_audit_actor_idx ON ${s}.education_financial_audit_log(actor_user_id)`,
+    `CREATE INDEX IF NOT EXISTS education_grace_notes_author_idx ON ${s}.education_grace_notes(author_user_id)`,
+    `CREATE INDEX IF NOT EXISTS education_inventory_center_idx ON ${s}.education_inventory_items(center_id)`,
+    `CREATE INDEX IF NOT EXISTS education_inventory_product_idx ON ${s}.education_inventory_items(product_id)`,
+    `CREATE INDEX IF NOT EXISTS education_inventory_movements_actor_idx ON ${s}.education_inventory_movements(actor_user_id)`,
+    `CREATE INDEX IF NOT EXISTS education_inventory_movements_center_idx ON ${s}.education_inventory_movements(center_id)`,
+    `CREATE INDEX IF NOT EXISTS education_inventory_movements_course_idx ON ${s}.education_inventory_movements(course_id)`,
+    `CREATE INDEX IF NOT EXISTS education_inventory_movements_session_idx ON ${s}.education_inventory_movements(session_id)`,
+    `CREATE INDEX IF NOT EXISTS education_payment_obligations_cancelled_by_idx ON ${s}.education_payment_obligations(cancelled_by_user_id)`,
+    `CREATE INDEX IF NOT EXISTS education_payment_obligations_confirmed_by_idx ON ${s}.education_payment_obligations(confirmed_by_user_id)`,
+    `CREATE INDEX IF NOT EXISTS education_payment_obligations_enrollment_idx ON ${s}.education_payment_obligations(enrollment_id)`,
+    `CREATE INDEX IF NOT EXISTS education_payment_obligations_salon_idx ON ${s}.education_payment_obligations(salon_id)`,
+    `CREATE INDEX IF NOT EXISTS education_payment_obligations_subscription_idx ON ${s}.education_payment_obligations(subscription_id)`,
+    `CREATE INDEX IF NOT EXISTS education_session_resources_session_idx ON ${s}.education_session_resources(session_id)`,
+    `CREATE INDEX IF NOT EXISTS education_trial_claims_center_idx ON ${s}.education_trial_claims(center_id)`,
+    `CREATE INDEX IF NOT EXISTS education_trial_claims_user_idx ON ${s}.education_trial_claims(user_id)`,
     // v74 — every aftercare FK gets a leading index so deletes/updates on its
     // parent cannot force scans as recommendation and delivery history grows.
   ];
