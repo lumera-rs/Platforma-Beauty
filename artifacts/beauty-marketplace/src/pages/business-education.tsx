@@ -1596,7 +1596,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                               </SelectContent>
                             </Select>
                             <EducationFieldHelp id="education-learner-help" label="Polaznik" text="Izaberite zaposlenog za kog rezervišete mesto na edukaciji." />
-                            <p className="text-xs text-muted-foreground">{isSalonOwner ? "Vlasnik salona kupuje mesto za tačno jednog zaposlenog." : "Izabrani zaposleni koristi svoj poslovni nalog za LMS; vlasnik u ovom prostoru prati prijavu i napredak tima."}</p>
+                            <p className="text-xs text-muted-foreground">{isSalonOwner ? "Vlasnik salona kupuje mesto za tačno jednog zaposlenog." : "Izabrani zaposleni koristi svoj poslovni nalog za Sistem za učenje; vlasnik u ovom prostoru prati prijavu i napredak tima."}</p>
                           </div>
                         ) : null}
                         {(course.format === "in-person" || course.format === "hybrid") && course.sessions?.length > 0 && (
@@ -1970,7 +1970,7 @@ function LmsView({ enrollmentId }: { enrollmentId: string }) {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (err) {
-      toast.error("ICS nije preuzet", { description: err instanceof Error ? err.message : undefined });
+      toast.error("Kalendarski fajl nije preuzet", { description: err instanceof Error ? err.message : undefined });
     } finally {
       setIcsDownloading(false);
     }
@@ -2011,7 +2011,7 @@ function LmsView({ enrollmentId }: { enrollmentId: string }) {
               {hasSession && (
                 <Button variant="outline" size="sm" className="w-full gap-2 text-xs bg-sidebar-accent/30 border-sidebar-border hover:bg-sidebar-accent" onClick={() => void handleDownloadIcs()} disabled={icsDownloading}>
                   {icsDownloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CalendarPlus className="w-3.5 h-3.5" />}
-                  Dodaj termin u kalendar (.ics)
+                  Izvezi termin u kalendar
                 </Button>
               )}
             </div>
@@ -2673,7 +2673,7 @@ function CreateLessonDialog({ moduleId, courseId, open, onOpenChange }: { module
           <div className="space-y-2">
             <Label className="flex items-center gap-2" aria-describedby="help-Sadržaj-(Tekst-ili-HTML)">Sadržaj (Tekst ili HTML) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Sadržaj-(Tekst-ili-HTML)">Pomoć za polje: Sadržaj (Tekst ili HTML)</TooltipContent></Tooltip></Label>
             <Textarea aria-describedby="education-lesson-content-help" className="font-mono text-sm" rows={8} placeholder="<p>Dobrodošli u prvu lekciju...</p>" {...register("content")} />
-            <EducationFieldHelp id="education-lesson-content-help" label="Sadržaj lekcije" text="Unesite tekst ili bezbedan HTML koji će polaznici čitati u LMS lekciji." />
+            <EducationFieldHelp id="education-lesson-content-help" label="Sadržaj lekcije" text="Unesite tekst ili bezbedan HTML koji će polaznici čitati u lekciji Sistema za učenje." />
           </div>
           <DialogFooter className="pt-4">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Odustani</Button>

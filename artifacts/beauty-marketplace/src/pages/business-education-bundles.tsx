@@ -209,7 +209,7 @@ export default function BusinessEducationBundles() {
                   {!courses.length && <p className="text-sm text-muted-foreground">Prvo kreirajte aktivan kurs ovog centra.</p>}
                 </div>
               </div>
-              <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" aria-describedby="bundle-published-help" checked={formData.published} onChange={e => setFormData({ ...formData, published: e.target.checked })} /> Objavi paket u marketplace-u <EducationFieldHelp id="bundle-published-help" label="Objava paketa" text="Uključite tek kada su naziv, cena i izbor kurseva spremni; paket tada postaje vidljiv kupcima na marketplace-u." /></label>
+              <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" aria-describedby="bundle-published-help" checked={formData.published} onChange={e => setFormData({ ...formData, published: e.target.checked })} /> Objavi paket u ponudi edukacija <EducationFieldHelp id="bundle-published-help" label="Objava paketa" text="Uključite tek kada su naziv, cena i izbor kurseva spremni; paket tada postaje vidljiv kupcima u ponudi edukacija." /></label>
             </div>
             <DialogFooter className="mt-6">
               <Button variant="outline" onClick={() => setIsOpen(false)}>Otkaži</Button>

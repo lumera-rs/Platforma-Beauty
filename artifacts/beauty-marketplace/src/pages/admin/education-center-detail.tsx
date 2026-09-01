@@ -258,7 +258,7 @@ export default function AdminEducationCenterDetail() {
     commissionPercent: { title: "Provizija", suffix: "%", desc: "Zadržano od svake transakcije." },
     reservePercent: { title: "Rezerva", suffix: "%", desc: "Zadržano do isteka perioda oslobađanja." },
     onlineRefundDays: { title: "Rok za online povraćaj", suffix: " dana", desc: "Period za prigovor na online sadržaj." },
-    liveAppealDays: { title: "Rok za live žalbu", suffix: " dana", desc: "Period nakon događaja za prigovor." },
+    liveAppealDays: { title: "Rok za žalbu nakon događaja uživo", suffix: " dana", desc: "Period nakon događaja za prigovor." },
     featuredCoursePrice: { title: "Isticanje kursa", suffix: " RSD", desc: "Cena za isticanje edukacije." }
   };
 

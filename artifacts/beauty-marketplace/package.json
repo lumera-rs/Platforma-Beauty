@@ -11,7 +11,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "bundle:report": "node scripts/bundle-report.mjs",
     "bundle:check": "vite build --config vite.config.ts && node scripts/bundle-report.mjs",
-    "test:seo": "NODE_ENV=test node --test seo-server.test.mjs"
+    "test:seo": "NODE_ENV=test node --test seo-server.test.mjs",
+    "test:education-language-audit": "pnpm --filter @workspace/scripts exec tsx ../artifacts/beauty-marketplace/src/lib/education-language-audit.test.ts"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",

@@ -553,7 +553,7 @@ export default function EducationMarketplace({
                 Evolucija vašeg <span className="text-primary italic">zanata</span>
               </h1>
               <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground leading-relaxed">
-                Zvanični registar verifikovanih kurseva, masterclass-ova i sertifikovanih obuka za profesionalce u industriji lepote.
+                Zvanični registar verifikovanih kurseva, majstorskih radionica i sertifikovanih obuka za profesionalce u industriji lepote.
               </p>
             </>
           )}
@@ -1316,7 +1316,7 @@ function VoucherPurchaseForm({ courseId }: { courseId: string }) {
   const handlePurchase = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!recipientEmail || !isValidEmail(recipientEmail)) {
-      toast.error("Neispravan unos", { description: "Unesite validnu email adresu primaoca." });
+      toast.error("Neispravan unos", { description: "Unesite ispravnu adresu e-pošte primaoca." });
       return;
     }
     mut.mutate({
@@ -1362,7 +1362,7 @@ function VoucherPurchaseForm({ courseId }: { courseId: string }) {
         </div>
         <div className="bg-muted p-5 rounded-xl text-sm space-y-3 border border-border/50">
           <p className="font-semibold text-base border-b border-border/50 pb-2">Uputstvo za plaćanje</p>
-          <p>Uplatite iznos edukacije na račun platforme (ili preuzmite predračun na email-u).</p>
+          <p>Uplatite iznos edukacije na račun platforme (ili preuzmite predračun putem e-pošte).</p>
           <p className="flex items-center gap-2">
             <span>Poziv na broj:</span>
             <strong className="text-foreground text-base bg-background px-2 py-1 rounded">{paymentReference}</strong>
@@ -1376,7 +1376,7 @@ function VoucherPurchaseForm({ courseId }: { courseId: string }) {
   return (
     <form onSubmit={handlePurchase} className="space-y-4 pt-4">
       <div className="space-y-2">
-        <Label htmlFor="recipient-email" className="flex items-center gap-2">Email primaoca <span className="text-destructive">*</span> <EducationFieldHelp id="education-voucher-recipient-email-help" label="Email primaoca" text="Unesite tačnu email adresu osobe kojoj je vaučer namenjen i na koju mogu stići informacije o poklonu." /></Label>
+        <Label htmlFor="recipient-email" className="flex items-center gap-2">E-pošta primaoca <span className="text-destructive">*</span> <EducationFieldHelp id="education-voucher-recipient-email-help" label="E-pošta primaoca" text="Unesite tačnu adresu e-pošte osobe kojoj je vaučer namenjen i na koju mogu stići informacije o poklonu." /></Label>
         <Input id="recipient-email" aria-describedby="education-voucher-recipient-email-help" type="email" required value={recipientEmail} onChange={e => setRecipientEmail(e.target.value)} placeholder="Npr. ana@example.com" maxLength={320} aria-required="true" />
       </div>
       <div className="space-y-2">
@@ -1692,7 +1692,7 @@ export function EducationVouchersPage() {
                           <span className="text-foreground">{voucher.paymentReference}</span>
                         </div>
                         {voucher.recipientName && <div className="border-t border-border/40 pt-2 mt-2"><p><strong>Za:</strong> {voucher.recipientName}</p></div>}
-                        {voucher.recipientEmail && <p><strong>Email:</strong> {voucher.recipientEmail}</p>}
+                        {voucher.recipientEmail && <p><strong>E-pošta:</strong> {voucher.recipientEmail}</p>}
                         {voucher.giftMessage && <p className="italic">"{voucher.giftMessage}"</p>}
                       </div>
                     </CardContent>

@@ -21,7 +21,7 @@ export default function BusinessEducationAiAssistant() {
 
   const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant', text: string }>>([
-    { role: 'assistant', text: 'Pozdrav! Ja sam AI asistent edukativnog centra. Kako vam mogu pomoći oko rasporeda, analize kurseva ili administracije?' }
+    { role: 'assistant', text: 'Pozdrav! Ja sam pametni pomoćnik edukativnog centra. Kako vam mogu pomoći oko rasporeda, analize kurseva ili administracije?' }
   ]);
 
   const handleSend = () => {
@@ -40,7 +40,7 @@ export default function BusinessEducationAiAssistant() {
       },
       onError: () => {
         toast.error("Greška u komunikaciji");
-        setMessages(prev => [...prev, { role: 'assistant', text: "Došlo je do greške u povezivanju sa asistentom. Molim pokušajte ponovo." }]);
+        setMessages(prev => [...prev, { role: 'assistant', text: "Došlo je do greške u povezivanju sa pomoćnikom. Pokušajte ponovo." }]);
       }
     });
   };
@@ -57,7 +57,7 @@ export default function BusinessEducationAiAssistant() {
             <Bot className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-2xl font-serif font-bold text-foreground">AI asistent</h1>
+            <h1 className="text-2xl font-serif font-bold text-foreground">Pametni pomoćnik</h1>
             <p className="text-muted-foreground text-sm">Pametno upravljanje centrom zasnovano na vašim podacima</p>
           </div>
         </div>
@@ -93,8 +93,8 @@ export default function BusinessEducationAiAssistant() {
             <form onSubmit={(e) => { e.preventDefault(); handleSend(); }} className="flex items-end gap-3">
               <div className="flex-1">
                 <Label htmlFor="education-assistant-question" className="mb-1 flex items-center gap-2">
-                  Pitanje asistentu
-                  <EducationFieldHelp id="education-assistant-question-help" label="Pitanje asistentu" text="Opišite konkretno šta želite da proverite o rasporedu, kursevima ili administraciji centra. Ne unosite osetljive lične podatke." />
+                  Pitanje pomoćniku
+                  <EducationFieldHelp id="education-assistant-question-help" label="Pitanje pomoćniku" text="Opišite konkretno šta želite da proverite o rasporedu, kursevima ili administraciji centra. Ne unosite osetljive lične podatke." />
                 </Label>
                 <Input
                   id="education-assistant-question"
@@ -106,7 +106,7 @@ export default function BusinessEducationAiAssistant() {
                   disabled={assistantMut.isPending}
                 />
               </div>
-              <Button type="submit" aria-label="Pošalji pitanje asistentu" disabled={!prompt.trim() || assistantMut.isPending} className="px-6">
+              <Button type="submit" aria-label="Pošalji pitanje pomoćniku" disabled={!prompt.trim() || assistantMut.isPending} className="px-6">
                 <Send className="w-4 h-4" />
               </Button>
             </form>

@@ -56,7 +56,7 @@ export const educationCenterNavSections: EducationCenterNavSection[] = [
       { href: "/biznis/resursi", label: "Resursi", guideId: "edu-resursi", icon: LayoutGrid },
       { href: "/biznis/zalihe", label: "Zalihe", guideId: "edu-zalihe", icon: Package },
       { href: "/biznis/polaznici", label: "Polaznici", guideId: "edu-polaznici", icon: Users },
-      { href: "/biznis/ai-asistent", label: "AI asistent", guideId: "edu-ai", icon: Bot },
+      { href: "/biznis/ai-asistent", label: "Pametni pomoćnik", guideId: "edu-ai", icon: Bot },
     ],
   },
   {

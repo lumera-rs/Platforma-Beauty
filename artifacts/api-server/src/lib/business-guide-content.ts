@@ -82,7 +82,7 @@ export const businessGuide: BusinessGuide = {
           purpose:
             "Platforma razdvaja mogućnosti prema ulozi naloga: vlasnik salona upravlja celim salonom, a zaposleni radi samo sa svojim terminima i evidencijama.",
           notes: [
-            "Vlasnik salona (SALON_OWNER): pun pristup owner modulima — kalendar, usluge, zaposleni, CRM, inventar, B2B shop, porudžbine, automatizacije, paketi, loyalty, performanse, AI asistent, profil salona i resursi.",
+            "Vlasnik salona (SALON_OWNER): pun pristup vlasničkim modulima — kalendar, usluge, zaposleni, CRM, inventar, B2B prodavnica, porudžbine, automatizacije, paketi, program lojalnosti, performanse, pametni pomoćnik, profil salona i resursi.",
             "Zaposleni (SALON_EMPLOYEE): pristupa samo svom portalu (Moj portal) i poslovnim edukacijama; nema pristup owner modulima.",
             "Ako pokušate da otvorite stranicu koja nije za vašu ulogu, sistem vas preusmerava na vašu početnu stranicu.",
           ],
@@ -97,7 +97,7 @@ export const businessGuide: BusinessGuide = {
             "Zaposleni u traci vidi: Moj portal i Edukacije.",
             "Stavka Pomoć otvara ovaj vodič u aplikaciji, sa dugmetom za preuzimanje PDF verzije.",
             "Na manjim ekranima meni se otvara dugmetom sa tri linije u gornjem desnom uglu.",
-            "Unutar owner dashboarda postoji i bočni meni (sidebar) sa svim owner modulima: Dashboard, Kalendar, Usluge, Resursi, Profil salona, Zaposleni, CRM & Retencija, Automatizacije, Paketi tretmana, Performanse tima, AI Asistent, B2B Oprema, Porudžbine, Obaveštenja, Loyalty Program, Edukacije.",
+            "Na vlasničkoj kontrolnoj tabli postoji i bočni meni sa svim vlasničkim modulima: Kontrolna tabla, Kalendar, Usluge, Resursi, Profil salona, Zaposleni, CRM i zadržavanje klijenata, Automatizacije, Paketi tretmana, Performanse tima, Pametni pomoćnik, B2B oprema, Porudžbine, Obaveštenja, Program lojalnosti i Edukacije.",
           ],
         },
         {
@@ -392,7 +392,7 @@ export const businessGuide: BusinessGuide = {
         },
         {
           id: "vl-ai",
-          title: "AI asistent",
+          title: "Pametni pomoćnik",
           route: "/vlasnik/ai-asistent",
           purpose:
             "Poslovni asistent koji odgovara na pitanja o vašem salonu (promet, klijenti, trendovi) i pomaže u sastavljanju predloga.",
@@ -410,10 +410,10 @@ export const businessGuide: BusinessGuide = {
           title: "Edukacije (poslovne obuke)",
           route: "/biznis/edukacije",
           purpose:
-            "Pregled i pohađanje stručnih edukacija; upis kursa i praćenje lekcija kroz LMS.",
+            "Pregled i pohađanje stručnih edukacija; upis kursa i praćenje lekcija kroz Sistem za učenje.",
           steps: [
             "Pregledajte ponudu edukacija i otvorite detalje kursa.",
-            "Nakon upisa, kurs pratite kroz LMS (lekcije, materijali, napredak).",
+            "Nakon upisa, kurs pratite kroz Sistem za učenje (lekcije, materijali, napredak).",
           ],
           notes: [
             "Edukacije su dostupne i vašim zaposlenima; detalji pojedinačnog kursa pre upisa vidljivi su vlasniku.",
@@ -581,7 +581,7 @@ export const businessGuide: BusinessGuide = {
           notes: [
             "Obaveštenja: novi dodeljeni termini i podsetnici za sutra; kada nema novih, piše \"Nemate nova obaveštenja.\"",
             "Moje usluge: lista usluga koje su vam dodeljene sa trajanjem; dodelu menja vlasnik.",
-            "Edukacije: preko stavke Edukacije u gornjoj traci pristupate poslovnim obukama i LMS-u za kurseve na koje ste upisani.",
+            "Edukacije: preko stavke Edukacije u gornjoj traci pristupate poslovnim obukama i Sistemu za učenje za kurseve na koje ste upisani.",
             "Nalog: odjava je u meniju sa inicijalima u gornjem desnom uglu.",
           ],
         },
@@ -591,7 +591,7 @@ export const businessGuide: BusinessGuide = {
           purpose:
             "Jasne granice pristupa za nalog zaposlenog — ovo nije kvar, već pravilo platforme.",
           notes: [
-            "Nema pristup owner modulima: CRM & Retencija, Inventar, B2B Shop i B2B korpa/porudžbine, Automatizacije, Paketi tretmana, Loyalty podešavanja, Performanse tima, AI asistent, Resursi, Profil salona, Upravljanje zaposlenima.",
+            "Nema pristup vlasničkim modulima: CRM i zadržavanje klijenata, Inventar, B2B prodavnica i B2B korpa/porudžbine, Automatizacije, Paketi tretmana, podešavanja programa lojalnosti, Performanse tima, pametni pomoćnik, Resursi, Profil salona i Upravljanje zaposlenima.",
             "Ne vidi raspored ni performanse kolega, niti kompletnu bazu klijenata salona.",
             "Ne može da otkazuje ili pomera termine kroz portal (samo Završen/No-show na svojim terminima).",
             "Ne odobrava odsustva, zamene smena (finalno odobrenje) niti koriguje evidenciju radnog vremena.",
@@ -619,7 +619,7 @@ export const businessGuide: BusinessGuide = {
     { module: "Loyalty program", route: "/vlasnik/loyalty", roles: "Vlasnik" },
     { module: "Automatizacije", route: "/vlasnik/automatizacije", roles: "Vlasnik" },
     { module: "Performanse tima", route: "/vlasnik/performanse", roles: "Vlasnik" },
-    { module: "AI asistent", route: "/vlasnik/ai-asistent", roles: "Vlasnik" },
+    { module: "Pametni pomoćnik", route: "/vlasnik/ai-asistent", roles: "Vlasnik" },
     { module: "Moj portal", route: "/zaposleni", roles: "Zaposleni" },
     { module: "Edukacije", route: "/biznis/edukacije", roles: "Vlasnik i zaposleni" },
     { module: "Vodič (Pomoć)", route: "/biznis/vodic", roles: "Vlasnik i zaposleni" },

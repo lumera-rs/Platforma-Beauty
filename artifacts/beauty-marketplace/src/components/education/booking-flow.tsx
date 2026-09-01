@@ -198,8 +198,8 @@ export function EducationOperationalBookingFlow({
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                     <Label className="flex items-center gap-2">Email <EducationFieldHelp id={`education-booking-participant-email-${idx}-help`} label="Email učesnika" text="Unesite adresu na koju učesnik može da primi informacije o terminu i edukaciji." /></Label>
-                     <Input aria-describedby={`education-booking-participant-email-${idx}-help`} type="email" value={p.email} onChange={(e) => updateParticipant(idx, "email", e.target.value)} placeholder="Email adresa" />
+                     <Label className="flex items-center gap-2">E-pošta <EducationFieldHelp id={`education-booking-participant-email-${idx}-help`} label="E-pošta učesnika" text="Unesite adresu na koju učesnik može da primi informacije o terminu i edukaciji." /></Label>
+                     <Input aria-describedby={`education-booking-participant-email-${idx}-help`} type="email" value={p.email} onChange={(e) => updateParticipant(idx, "email", e.target.value)} placeholder="Adresa e-pošte" />
                   </div>
                   <div className="space-y-2">
                      <Label className="flex items-center gap-2">Telefon <EducationFieldHelp id={`education-booking-participant-phone-${idx}-help`} label="Telefon učesnika" text="Unesite broj na koji centar može da kontaktira učesnika zbog važnih promena termina." /></Label>

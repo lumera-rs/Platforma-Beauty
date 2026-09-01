@@ -21,7 +21,7 @@ export default function BusinessLandingEducation() {
               <span>B2B Usavršavanje tima</span>
             </div>
             <h1 className="text-5xl md:text-7xl font-serif font-bold text-white leading-[1.1] mb-8">
-              Marketplace znanja za one koji kreiraju i one koji uče.
+              Ponuda znanja za one koji stvaraju i one koji uče.
             </h1>
             <p className="text-lg md:text-xl text-primary-foreground/80 mb-12 max-w-2xl mx-auto font-light leading-relaxed">
               Edukativni centri kreiraju i prodaju programe, dok saloni, zaposleni i JOBSEEKER profesionalci pronalaze obuke za sledeći korak u karijeri.
@@ -49,7 +49,7 @@ export default function BusinessLandingEducation() {
               <div>
                 <h3 className="text-xl font-serif font-bold mb-3">Specijalizovani programi</h3>
                 <p className="text-muted-foreground leading-relaxed">
-                  Pristupite masterclass obukama koje nude priznati edukativni centri i renomirani stručnjaci. Bilo da se radi o novim tehnikama ili biznis veštinama.
+                  Pristupite majstorskim radionicama koje nude priznati edukativni centri i renomirani stručnjaci, bilo da je reč o novim tehnikama ili poslovnim veštinama.
                 </p>
               </div>
             </div>
@@ -61,7 +61,7 @@ export default function BusinessLandingEducation() {
               <div>
                 <h3 className="text-xl font-serif font-bold mb-3">Praćenje napretka tima</h3>
                 <p className="text-muted-foreground leading-relaxed">
-                  Kupite pristup LMS platformi za vaše zaposlene. Pratite koje lekcije su završili, kakve rezultate ostvaruju i u kom pravcu se usavršavaju.
+                  Kupite pristup Sistemu za učenje za svoje zaposlene. Pratite koje lekcije su završili, kakve rezultate ostvaruju i u kom pravcu se usavršavaju.
                 </p>
               </div>
             </div>

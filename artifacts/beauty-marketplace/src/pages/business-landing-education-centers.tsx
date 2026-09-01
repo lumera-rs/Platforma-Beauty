@@ -29,7 +29,7 @@ export default function BusinessLandingEducationCenters() {
               Prenesite svoje znanje. Kreirajte autoritet.
             </h1>
             <p className="text-lg md:text-xl text-primary-foreground/80 mb-12 max-w-2xl mx-auto font-light leading-relaxed">
-              Organizujte obuke, masterclass programe i sertifikacije, objavite ih u javnom katalogu i vodite svakodnevne operacije centra iz jednog naloga.
+              Organizujte obuke, majstorske radionice i sertifikacije, objavite ih u javnom katalogu i vodite svakodnevne operacije centra iz jednog naloga.
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -67,7 +67,7 @@ export default function BusinessLandingEducationCenters() {
               </div>
               <div>
                 <h3 className="text-2xl font-serif font-bold mb-3">Uživo i online formati</h3>
-                <p className="text-muted-foreground leading-relaxed">Prodajte karte za fizičke događaje (masterclass, praktične obuke) ili postavite pre-recorded video lekcije (LMS) koje polaznici mogu gledati svojim tempom.</p>
+                <p className="text-muted-foreground leading-relaxed">Prodajte karte za događaje uživo (majstorske radionice i praktične obuke) ili postavite unapred snimljene video-lekcije u Sistem za učenje, koje polaznici mogu gledati svojim tempom.</p>
               </div>
             </div>
 

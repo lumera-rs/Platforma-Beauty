@@ -22,7 +22,7 @@ import { EducationFieldHelp } from "@/components/education/education-field-help"
 const eduRegistrationSchema = z.object({
   firstName: z.string().min(1, "Ime je obavezno."),
   lastName: z.string().min(1, "Prezime je obavezno."),
-  email: z.string().email("Unesite validnu email adresu."),
+  email: z.string().email("Unesite ispravnu adresu e-pošte."),
   password: z.string().min(8, "Lozinka mora imati najmanje 8 karaktera."),
   phone: z.string().min(6, "Unesite kontakt telefon."),
   businessName: z.string().min(2, "Naziv edukativnog centra je obavezan."),
@@ -88,7 +88,7 @@ export default function EducationCenterRegistration() {
         toast.error("Registracija nije uspela", {
           description: getApiErrorMessage(
             error,
-            "Proverite podatke ili pokušajte sa drugom email adresom.",
+            "Proverite podatke ili pokušajte sa drugom adresom e-pošte.",
           ),
         });
       },
@@ -133,8 +133,8 @@ export default function EducationCenterRegistration() {
               <li className="flex items-start gap-4">
                 <CheckCircle2 className="w-6 h-6 text-accent shrink-0 mt-0.5" />
                 <div>
-                  <h4 className="font-medium text-lg">LMS i Live programi</h4>
-                  <p className="text-primary-foreground/70 text-sm mt-1">Podrška za video kurseve i rezervaciju mesta na fizičkim masterclass događajima.</p>
+                  <h4 className="font-medium text-lg">Sistem za učenje i programi uživo</h4>
+                  <p className="text-primary-foreground/70 text-sm mt-1">Podrška za video-kurseve i rezervaciju mesta na majstorskim radionicama uživo.</p>
                 </div>
               </li>
               <li className="flex items-start gap-4">
@@ -200,7 +200,7 @@ export default function EducationCenterRegistration() {
                       name="email"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="flex items-center gap-2">Poslovni email <EducationFieldHelp id="edu-registration-email-help" label="Poslovni email" text="Unesite aktivnu poslovnu email adresu na koju ćete primati obaveštenja o centru i registraciji." /></FormLabel>
+                          <FormLabel className="flex items-center gap-2">Poslovna e-pošta <EducationFieldHelp id="edu-registration-email-help" label="Poslovna e-pošta" text="Unesite aktivnu poslovnu adresu e-pošte na koju ćete primati obaveštenja o centru i registraciji." /></FormLabel>
                           <FormControl><Input aria-describedby="edu-registration-email-help" type="email" autoComplete="email" placeholder="kontakt@akademija.rs" {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>

@@ -2649,7 +2649,7 @@ async function requireLmsAccess(req: Request, res: Response): Promise<LmsAccess 
   await ensureDemoData();
   const user = await getCurrentUser(req);
   if (!user) {
-    res.status(403).json({ error: "LMS je dostupan samo upisanim poslovnim korisnicima." });
+    res.status(403).json({ error: "Sistem za učenje je dostupan samo upisanim poslovnim korisnicima." });
     return null;
   }
   if (["SALON_OWNER", "EDUKATIVNI_CENTAR", "ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -2660,7 +2660,7 @@ async function requireLmsAccess(req: Request, res: Response): Promise<LmsAccess 
     return { access: { user, salon: null, centers: [], admin: false }, learnerEmployeeId: null };
   }
   if (user.role !== "SALON_EMPLOYEE") {
-    res.status(403).json({ error: "LMS je dostupan samo upisanim poslovnim korisnicima." });
+    res.status(403).json({ error: "Sistem za učenje je dostupan samo upisanim poslovnim korisnicima." });
     return null;
   }
   const [employee] = await db.select().from(employeesTable)
@@ -19730,7 +19730,7 @@ router.get("/education/enrollments/:enrollmentId/lms", async (req, res): Promise
   const parsed = GetEducationLmsParams.safeParse(req.params);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const [enrollment] = await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, parsed.data.enrollmentId)).limit(1);
-  if (!enrollment) { res.status(403).json({ error: "Nemate pristup ovom LMS sadržaju." }); return; }
+  if (!enrollment) { res.status(403).json({ error: "Nemate pristup ovom sadržaju Sistema za učenje." }); return; }
   const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, enrollment.courseId)).limit(1);
   if (!course) { res.status(404).json({ error: "Kurs nije pronađen." }); return; }
   const assignedEmployee = Boolean(
@@ -19743,7 +19743,7 @@ router.get("/education/enrollments/:enrollmentId/lms", async (req, res): Promise
     ? enrollment.userId === lmsAccess.access.user.id
     : lmsAccess.access.admin || enrollment.purchaserId === lmsAccess.access.user.id || assignedEmployee || isCourseOwner(lmsAccess.access, course);
   if (!mayReadLms) {
-    res.status(403).json({ error: "Nemate pristup ovom LMS sadržaju." });
+    res.status(403).json({ error: "Nemate pristup ovom sadržaju Sistema za učenje." });
     return;
   }
   if ((!lmsAccess.access.admin || operationalLearner) && (enrollment.status !== "active" && enrollment.status !== "completed" || enrollment.paymentStatus !== "paid")) {

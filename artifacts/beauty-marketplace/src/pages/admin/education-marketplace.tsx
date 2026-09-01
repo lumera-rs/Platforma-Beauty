@@ -156,7 +156,7 @@ export default function AdminEducationMarketplace() {
     if (!resParsed.ok) { toast.error("Greška", { description: resParsed.message }); return; }
     const onlineParsed = parseStrictInt(settingsRaw.onlineRefundDays, { label: "Online povraćaj (dani)", allowNegative: false, allowZero: true });
     if (!onlineParsed.ok) { toast.error("Greška", { description: onlineParsed.message }); return; }
-    const liveParsed = parseStrictInt(settingsRaw.liveAppealDays, { label: "Live žalba (dani)", allowNegative: false, allowZero: true });
+    const liveParsed = parseStrictInt(settingsRaw.liveAppealDays, { label: "Žalba nakon događaja uživo (dani)", allowNegative: false, allowZero: true });
     if (!liveParsed.ok) { toast.error("Greška", { description: liveParsed.message }); return; }
     const featuredParsed = parseStrictInt(settingsRaw.featuredCoursePrice, { label: "Istaknuti kurs (RSD)", allowNegative: false, allowZero: true });
     if (!featuredParsed.ok) { toast.error("Greška", { description: featuredParsed.message }); return; }
@@ -673,7 +673,7 @@ export default function AdminEducationMarketplace() {
             <CardHeader><CardTitle className="flex gap-2"><Banknote className="h-5 w-5 text-primary" />Pravila obračuna i cene pozicija</CardTitle></CardHeader>
             <CardContent className="space-y-6">
               <div className="grid gap-4 sm:grid-cols-2">
-                {([["Provizija %", "commissionPercent"], ["Rezerva %", "reservePercent"], ["Online povraćaj (dani)", "onlineRefundDays"], ["Live žalba (dani)", "liveAppealDays"], ["Istaknuti kurs (RSD)", "featuredCoursePrice"]] as [string, string][]).map(([label, key]) => (
+                {([["Provizija %", "commissionPercent"], ["Rezerva %", "reservePercent"], ["Povraćaj za onlajn kurs (dani)", "onlineRefundDays"], ["Žalba nakon događaja uživo (dani)", "liveAppealDays"], ["Istaknuti kurs (RSD)", "featuredCoursePrice"]] as [string, string][]).map(([label, key]) => (
                   <div key={key as string} className="space-y-2 text-sm font-medium">
                     <div className="flex items-center gap-1">
                       <Label>{label}</Label>

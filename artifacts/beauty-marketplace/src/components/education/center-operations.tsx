@@ -332,7 +332,7 @@ function SessionDetailDialog({ session, centerId, permissions, onClose }: { sess
   const handleAddGuest = () => {
     const fullName = window.prompt("Ime i prezime gosta:");
     if (!fullName) return;
-    const email = window.prompt("Email gosta:");
+    const email = window.prompt("E-pošta gosta:");
     if (!email) return;
     
     addGuestMut.mutate({

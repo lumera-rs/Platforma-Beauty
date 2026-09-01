@@ -29,7 +29,7 @@ function LMSStatus({ enrollmentId }: { enrollmentId: string }) {
   return (
     <div className="mt-2 text-xs border rounded-lg p-3 bg-muted/20">
       <div className="flex justify-between items-center mb-2">
-        <span className="font-semibold flex items-center gap-1"><BookOpen className="w-3 h-3"/> LMS Napredak</span>
+        <span className="font-semibold flex items-center gap-1"><BookOpen className="w-3 h-3"/> Napredak u učenju</span>
         <Badge variant={lms.eligibility.certificateEligible ? "default" : "secondary"}>
           {lms.eligibility.percent}% završen
         </Badge>
