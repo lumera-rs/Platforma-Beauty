@@ -245,6 +245,7 @@ router.post("/admin/education/b2b-orders/:orderId/settle", async (req, res) => {
         .where(eq(educationB2bOrdersTable.id, req.params.orderId)).for("update").limit(1);
       if (!locked) throw new Error("NOT_FOUND");
       if (locked.paymentStatus !== "pending") throw new Error("ALREADY_RECORDED");
+      if (body.data.confirmedAmountRsd !== locked.totalRsd) throw new Error("AMOUNT_MISMATCH");
       const [updated] = await tx.update(educationB2bOrdersTable).set({
         paymentStatus: "paid", settledAt: new Date(), settledByUserId: actor.id,
       }).where(and(eq(educationB2bOrdersTable.id, locked.id), eq(educationB2bOrdersTable.paymentStatus, "pending"))).returning();
@@ -261,7 +262,9 @@ router.post("/admin/education/b2b-orders/:orderId/settle", async (req, res) => {
     res.json(order);
   } catch (error) {
     const code = error instanceof Error ? error.message : "FAILED";
-    res.status(code === "NOT_FOUND" ? 404 : 409).json({ error: code === "ALREADY_RECORDED" ? "Uplata je već evidentirana." : "Porudžbina nije pronađena." });
+    res.status(code === "NOT_FOUND" ? 404 : 409).json({ error: code === "AMOUNT_MISMATCH"
+      ? "Potvrđeni iznos mora biti jednak očekivanom iznosu."
+      : code === "ALREADY_RECORDED" ? "Uplata je već evidentirana." : "Porudžbina nije pronađena." });
   }
 });
 

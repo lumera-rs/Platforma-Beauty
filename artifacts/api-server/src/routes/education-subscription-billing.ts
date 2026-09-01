@@ -168,6 +168,15 @@ router.post("/education/enrollments/:enrollmentId/extension", async (req, res) =
     if (price == null) throw new Error("PRICE");
     const extended = addMonths(enrollment.enrollment.accessExpiresAt, parsed.data.months);
     const obligation = await tx.insert(educationPaymentObligationsTable).values({ centerId: enrollment.center.id, enrollmentId: enrollment.enrollment.id, kind: "course_extension", expectedAmount: price, recipientNameSnapshot: enrollment.center.name, recipientAccountSnapshot: enrollment.center.bankAccount, paymentCodeSnapshot: enrollment.center.legalEntityType === "individual" ? "289" : "221", purposeSnapshot: "Produženje pristupa online kursu", referenceSnapshot: reference("EXT", req.params.enrollmentId), ipsPayloadSnapshot: JSON.stringify(educationIpsQrPayload({ recipientName: enrollment.center.name, recipientAccount: enrollment.center.bankAccount, purpose: "Produženje pristupa online kursu", amount: price, reference: reference("EXT", req.params.enrollmentId) })) }).returning();
+    await tx.insert(educationAccessExtensionsTable).values({
+      enrollmentId: enrollment.enrollment.id,
+      purchaserId: access.id,
+      months: parsed.data.months,
+      amount: price,
+      previousAccessExpiresAt: enrollment.enrollment.accessExpiresAt,
+      extendedAccessExpiresAt: extended,
+      paymentObligationId: obligation[0]!.id,
+    });
     res.json({ extension: { months: parsed.data.months, amount: price, previousAccessExpiresAt: enrollment.enrollment.accessExpiresAt, extendedAccessExpiresAt: extended }, payment: obligation[0] });
     return true;
   }).catch((error) => { if (error instanceof Error && error.message === "NOT_FOUND") return false; if (error instanceof Error && error.message === "PRICE") return null; throw error; });

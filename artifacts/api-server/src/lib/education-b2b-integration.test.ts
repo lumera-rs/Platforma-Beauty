@@ -8,7 +8,8 @@ import { createSession, hashPassword, sessionCookieName } from "./auth";
 import {
   coursesTable, db, educationB2bDiscountAuditsTable, educationB2bDiscountSettingsTable,
   educationB2bDiscountTiersTable, educationB2bOrderItemsTable, educationB2bOrdersTable,
-  educationCentersTable, educationFeaturedChargesTable, productsTable, usersTable,
+  educationCentersTable, educationFinancialAuditLogTable,
+  productsTable, usersTable,
 } from "@workspace/db";
 import { previousBelgradeCalendarMonth } from "../routes/education-b2b-discounts";
 
@@ -25,7 +26,7 @@ const call = async (cookie: string, path: string, method = "GET", body?: unknown
 let userIds: string[] = []; let centerId: string | undefined; let courseId: string | undefined; let productId: string | undefined;
 try {
   const [admin, owner, salon] = await db.insert(usersTable).values([
-    { firstName:"Admin",lastName:marker,email:`a-${marker}@x.test`,passwordHash,passwordSetAt:new Date(),role:"ADMIN" },
+    { firstName:"Admin",lastName:marker,email:`a-${marker}@x.test`,passwordHash,passwordSetAt:new Date(),role:"SUPER_ADMIN" },
     { firstName:"Center",lastName:marker,email:`e-${marker}@x.test`,passwordHash,passwordSetAt:new Date(),role:"EDUKATIVNI_CENTAR" },
     { firstName:"Salon",lastName:marker,email:`s-${marker}@x.test`,passwordHash,passwordSetAt:new Date(),role:"SALON_OWNER" },
   ]).returning(); userIds=[admin!.id,owner!.id,salon!.id];
@@ -33,7 +34,11 @@ try {
   const [course]=await db.insert(coursesTable).values({centerId,title:marker,category:"Test",format:"online",price:1000,duration:"1h",imageUrl:"/test.jpg"}).returning(); courseId=course!.id;
   const [product]=await db.insert(productsTable).values({categoryName:"Test",name:marker,description:marker,imageUrl:"/test.jpg",price:1000,publicPrice:777,retailEnabled:true,stock:10,sku:marker,unit:"kom",professionalEnabled:true}).returning(); productId=product!.id;
   const period=previousBelgradeCalendarMonth(new Date());
-  await db.insert(educationFeaturedChargesTable).values({courseId,centerId,amount:1500,status:"paid",settledAt:new Date((period.start.getTime()+period.end.getTime())/2)});
+  await db.insert(educationB2bOrdersTable).values({
+    centerId, purchaserUserId:owner!.id, linesSnapshot:[], subtotalRsd:1500, discountRsd:0,
+    totalRsd:1500, benefitSnapshot:{}, paymentStatus:"paid", fulfillmentStatus:"COMPLETED",
+    completedAt:new Date((period.start.getTime()+period.end.getTime())/2),
+  });
   const adminCookie=`${sessionCookieName}=${await createSession(admin!.id)}`, ownerCookie=`${sessionCookieName}=${await createSession(owner!.id)}`, salonCookie=`${sessionCookieName}=${await createSession(salon!.id)}`;
   const version=oldSettings[0]?.version??1;
   const replaced=await call(adminCookie,"/admin/education/b2b-discount-tiers","PUT",{expectedVersion:version,tiers:[
@@ -52,6 +57,12 @@ try {
   assert.equal((await call(ownerCookie,"/education/b2b/checkout","POST",{lines:[{productId,quantity:2}],expectedTotalRsd:1800})).status,409);
   const quote2=await call(ownerCookie,"/education/b2b/quote","POST",{lines:[{productId,quantity:2}]});
   const checkout=await call(ownerCookie,"/education/b2b/checkout","POST",{lines:[{productId,quantity:2}],expectedTotalRsd:quote2.body.payableTotalRsd}); assert.equal(checkout.status,201);
+  assert.equal((await call(adminCookie,`/admin/education/b2b-orders/${checkout.body.id}/settle`,"POST",{confirmedAmountRsd:quote2.body.payableTotalRsd-1,reason:"Pogrešan iznos"})).status,409);
+  assert.equal((await call(adminCookie,`/admin/education/b2b-orders/${checkout.body.id}/settle`,"POST",{confirmedAmountRsd:quote2.body.payableTotalRsd,reason:"Uplata potvrđena"})).status,200);
+  assert.equal((await call(adminCookie,`/admin/education/b2b-orders/${checkout.body.id}/settle`,"POST",{confirmedAmountRsd:quote2.body.payableTotalRsd,reason:"Dupli pokušaj"})).status,409);
+  assert.equal((await call(adminCookie,`/admin/education/b2b-orders/${checkout.body.id}/refund`,"POST",{confirmedAmountRsd:quote2.body.payableTotalRsd+1,reason:"Prevelika refundacija"})).status,409);
+  const refund=await call(adminCookie,`/admin/education/b2b-orders/${checkout.body.id}/refund`,"POST",{confirmedAmountRsd:quote2.body.payableTotalRsd,reason:"Puna refundacija"});
+  assert.equal(refund.status,200); assert.equal(refund.body.paymentStatus,"refunded");
   assert.equal((await db.select().from(productsTable).where(eq(productsTable.id,productId))).at(0)?.stock,8);
   const [order]=await db.select().from(educationB2bOrdersTable).where(eq(educationB2bOrdersTable.id,checkout.body.id)); assert.equal(order?.centerId,centerId); assert.equal((order?.benefitSnapshot as any).discountPercent,5);
   assert.equal((await db.select().from(educationB2bOrderItemsTable).where(eq(educationB2bOrderItemsTable.orderId,checkout.body.id))).length,1);
@@ -70,5 +81,6 @@ try {
   await db.delete(educationB2bDiscountAuditsTable).where(inArray(educationB2bDiscountAuditsTable.actorUserId,userIds));
   await db.delete(educationB2bDiscountTiersTable); if(oldTiers.length)await db.insert(educationB2bDiscountTiersTable).values(oldTiers);
   if(oldSettings[0])await db.update(educationB2bDiscountSettingsTable).set(oldSettings[0]).where(eq(educationB2bDiscountSettingsTable.id,true));
+  if(userIds.length)await db.delete(educationFinancialAuditLogTable).where(inArray(educationFinancialAuditLogTable.actorUserId,userIds));
   if(userIds.length)await db.delete(usersTable).where(inArray(usersTable.id,userIds));
 }
