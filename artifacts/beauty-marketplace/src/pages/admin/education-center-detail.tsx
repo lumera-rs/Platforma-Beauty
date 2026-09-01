@@ -18,6 +18,7 @@ import {
   type AdminListEducationCenterReviewsStatus
 } from "@workspace/api-client-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EducationFieldHelp } from "@/components/education/education-field-help";
 
 // Types
 type BillingSetting = {
@@ -307,8 +308,12 @@ export default function AdminEducationCenterDetail() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-foreground">PIB (Poreski identifikacioni broj)</label>
+                    <div className="flex items-center gap-1">
+                      <label className="text-sm font-medium text-foreground">PIB (Poreski identifikacioni broj)</label>
+                      <EducationFieldHelp id="center-pib-help" label="PIB centra" text="Unesite poreski identifikacioni broj centra koji će biti sačuvan u administrativnoj evidenciji." />
+                    </div>
                     <Input
+                      aria-describedby="center-pib-help"
                       value={pib}
                       onChange={(e) => setPib(e.target.value)}
                        maxLength={50}
@@ -416,30 +421,36 @@ export default function AdminEducationCenterDetail() {
 
                             <div className="flex items-center gap-4 shrink-0 bg-background rounded-lg border border-border p-2 shadow-sm">
                               <div className="flex items-center gap-2 min-w-[120px]">
+                                 <EducationFieldHelp id={`center-override-toggle-help-${key}`} label={`Prilagođeno pravilo za ${label.title}`} text="Uključite da ovaj centar koristi sopstvenu vrednost umesto trenutno važećeg globalnog pravila." />
                                 <Switch
                                   checked={isCustom}
                                   onCheckedChange={(c) => toggleOverride(key, c)}
                                   aria-label={`Prilagođeno pravilo za ${label.title}`}
+                                   aria-describedby={`center-override-toggle-help-${key}`}
                                 />
                                 <span className="text-sm font-medium text-muted-foreground">
                                   {isCustom ? "Zameni" : "Nasledi"}
                                 </span>
                               </div>
 
-                              <div className="w-[100px] relative">
-                                <Input
-                                  type="number"
-                                  min="0"
-                                 max={overrideLimits[key]}
-                                 step="1"
-                                  disabled={!isCustom}
-                                  value={overrides[key].value}
-                                  onChange={(e) => updateOverrideValue(key, e.target.value)}
-                                  className={`text-right pr-8 font-mono ${!isCustom ? "opacity-60 bg-muted" : "border-primary/50 focus-visible:ring-primary/30"}`}
-                                />
-                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">
-                                  {label.suffix.trim()}
-                                </span>
+                              <div className="flex items-center gap-1">
+                                 <EducationFieldHelp id={`center-override-value-help-${key}`} label={`Vrednost za ${label.title}`} text={`Unesite prilagođenu celobrojnu vrednost za pravilo „${label.title}”; dozvoljeni opseg je od 0 do ${overrideLimits[key]}.`} />
+                                 <div className="w-[100px] relative">
+                                   <Input
+                                     type="number"
+                                     aria-describedby={`center-override-value-help-${key}`}
+                                     min="0"
+                                     max={overrideLimits[key]}
+                                     step="1"
+                                     disabled={!isCustom}
+                                     value={overrides[key].value}
+                                     onChange={(e) => updateOverrideValue(key, e.target.value)}
+                                     className={`text-right pr-8 font-mono ${!isCustom ? "opacity-60 bg-muted" : "border-primary/50 focus-visible:ring-primary/30"}`}
+                                   />
+                                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">
+                                     {label.suffix.trim()}
+                                   </span>
+                                 </div>
                               </div>
                             </div>
 

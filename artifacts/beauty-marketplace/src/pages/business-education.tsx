@@ -36,6 +36,7 @@ import { QRCodeSVG } from "qrcode.react";
 
 import { BusinessLayout } from "@/components/business-layout";
 import { CenterOperationsView } from "@/components/education/center-operations";
+import { EducationFieldHelp } from "@/components/education/education-field-help";
 import { Layout } from "@/components/layout";
 import { SalonGallery } from "@/components/salon-gallery";
 import { Button } from "@/components/ui/button";
@@ -200,9 +201,10 @@ export default function BusinessEducation({ hideLayout = false }: { hideLayout?:
           <div className="mb-4 max-w-sm">
             <Label className="flex items-center gap-2" aria-describedby="help-Centar-za-operacije">Centar za operacije <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Centar-za-operacije">Pomoć za polje: Centar za operacije</TooltipContent></Tooltip></Label>
             <Select value={operationsCenterId} onValueChange={setSelectedOperationsCenterId}>
-              <SelectTrigger data-testid="education-center-selector"><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-describedby="education-operations-center-help" data-testid="education-center-selector"><SelectValue /></SelectTrigger>
               <SelectContent>{statusList.map((center) => <SelectItem key={center.id} value={center.id}>{center.name}</SelectItem>)}</SelectContent>
             </Select>
+            <EducationFieldHelp id="education-operations-center-help" label="Centar za operacije" text="Izaberite edukativni centar čijim kursevima, terminima i prijavama želite da upravljate." />
           </div>
         ) : null}
         <Tabs defaultValue="catalog" className="space-y-6">
@@ -444,51 +446,55 @@ function MyPlacementsView() {
             <div className="space-y-2">
               <Label className="flex items-center gap-2" aria-describedby="help-Tip-pozicije">Tip pozicije <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Tip-pozicije">Pomoć za polje: Tip pozicije</TooltipContent></Tooltip></Label>
               <Select value={kind} onValueChange={(val: any) => setKind(val)}>
-                <SelectTrigger data-testid="placement-kind-select"><SelectValue/></SelectTrigger>
+                <SelectTrigger aria-describedby="education-placement-kind-help" data-testid="placement-kind-select"><SelectValue/></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="featured_center">Istaknuti centar</SelectItem>
                   <SelectItem value="special_offer">Specijalna ponuda (Kurs)</SelectItem>
                 </SelectContent>
               </Select>
+              <EducationFieldHelp id="education-placement-kind-help" label="Tip pozicije" text="Odaberite da li promovišete ceo edukativni centar ili jednu konkretnu edukaciju." />
             </div>
 
             {kind === "special_offer" && (
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Izaberite-edukaciju">Izaberite edukaciju <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Izaberite-edukaciju">Pomoć za polje: Izaberite edukaciju</TooltipContent></Tooltip></Label>
                 <Select value={courseId} onValueChange={setCourseId}>
-                  <SelectTrigger data-testid="placement-course-select"><SelectValue placeholder="Izaberite kurs..." /></SelectTrigger>
+                  <SelectTrigger aria-describedby="education-placement-course-help" data-testid="placement-course-select"><SelectValue placeholder="Izaberite kurs..." /></SelectTrigger>
                   <SelectContent>
                     {courses?.map((c: any) => (
                       <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                <EducationFieldHelp id="education-placement-course-help" label="Edukacija za promociju" text="Izaberite objavljenu edukaciju koja će biti prikazana kao specijalna ponuda." />
               </div>
             )}
 
             <div className="space-y-2">
               <Label className="flex items-center gap-2" aria-describedby="help-Obim">Obim <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Obim">Pomoć za polje: Obim</TooltipContent></Tooltip></Label>
               <Select value={scope} onValueChange={(val: any) => { setScope(val); setScopeId(""); }}>
-                <SelectTrigger data-testid="placement-scope-select"><SelectValue/></SelectTrigger>
+                <SelectTrigger aria-describedby="education-placement-scope-help" data-testid="placement-scope-select"><SelectValue/></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="home">Početna (Home)</SelectItem>
                   <SelectItem value="category">Kategorija</SelectItem>
                   <SelectItem value="subcategory">Potkategorija</SelectItem>
                 </SelectContent>
               </Select>
+              <EducationFieldHelp id="education-placement-scope-help" label="Obim pozicije" text="Odredite na kom delu kataloga će se prikazivati sponzorisana pozicija." />
             </div>
 
             {scope === "category" && (
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Izaberite-kategoriju">Izaberite kategoriju <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Izaberite-kategoriju">Pomoć za polje: Izaberite kategoriju</TooltipContent></Tooltip></Label>
                 <Select value={scopeId} onValueChange={setScopeId}>
-                  <SelectTrigger data-testid="placement-category-select"><SelectValue placeholder="Izaberite kategoriju..." /></SelectTrigger>
+                  <SelectTrigger aria-describedby="education-placement-category-help" data-testid="placement-category-select"><SelectValue placeholder="Izaberite kategoriju..." /></SelectTrigger>
                   <SelectContent>
                     {categories.map((c: any) => (
                       <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                <EducationFieldHelp id="education-placement-category-help" label="Kategorija pozicije" text="Izaberite kategoriju u kojoj želite da se sponzorisana pozicija prikazuje." />
               </div>
             )}
 
@@ -496,13 +502,14 @@ function MyPlacementsView() {
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Izaberite-potkategoriju">Izaberite potkategoriju <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Izaberite-potkategoriju">Pomoć za polje: Izaberite potkategoriju</TooltipContent></Tooltip></Label>
                 <Select value={scopeId} onValueChange={setScopeId}>
-                  <SelectTrigger data-testid="placement-subcategory-select"><SelectValue placeholder="Izaberite potkategoriju..." /></SelectTrigger>
+                  <SelectTrigger aria-describedby="education-placement-subcategory-help" data-testid="placement-subcategory-select"><SelectValue placeholder="Izaberite potkategoriju..." /></SelectTrigger>
                   <SelectContent>
                     {subcategories.map((c: any) => (
                       <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                <EducationFieldHelp id="education-placement-subcategory-help" label="Potkategorija pozicije" text="Izaberite užu oblast kataloga kojoj je promocija najrelevantnija." />
               </div>
             )}
 
@@ -832,13 +839,14 @@ function CatalogView() {
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Kategorija">Kategorija <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Kategorija">Uža kategorija edukacije</TooltipContent></Tooltip></Label>
-                <Input placeholder="Npr. Manikir, Masaža..." value={filters.category || ""} onChange={e => handleFilterChange("category", e.target.value)} />
+                <Input aria-describedby="education-filter-category-help" placeholder="Npr. Manikir, Masaža..." value={filters.category || ""} onChange={e => handleFilterChange("category", e.target.value)} />
+                <EducationFieldHelp id="education-filter-category-help" label="Kategorija pretrage" text="Unesite oblast edukacije koju tražite, na primer manikir, masaža ili šminkanje." />
               </div>
 
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Format-nastave">Format nastave <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Format-nastave">Pomoć za polje: Format nastave</TooltipContent></Tooltip></Label>
                 <Select value={filters.format || ""} onValueChange={v => handleFilterChange("format", v === "all" ? undefined : v)}>
-                  <SelectTrigger><SelectValue placeholder="Svi formati" /></SelectTrigger>
+                  <SelectTrigger aria-describedby="education-filter-format-help"><SelectValue placeholder="Svi formati" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Svi formati</SelectItem>
                     <SelectItem value="online">Online</SelectItem>
@@ -846,36 +854,42 @@ function CatalogView() {
                     <SelectItem value="hybrid">Hibridno</SelectItem>
                   </SelectContent>
                 </Select>
+                <EducationFieldHelp id="education-filter-format-help" label="Format nastave" text="Ograničite rezultate na onlajn, nastavu uživo ili hibridne edukacije." />
               </div>
 
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Grad">Grad <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Grad">Grad u kom se održava edukacija</TooltipContent></Tooltip></Label>
-                <Input placeholder="Npr. Beograd" value={filters.city || ""} onChange={e => handleFilterChange("city", e.target.value)} />
+                <Input aria-describedby="education-filter-city-help" placeholder="Npr. Beograd" value={filters.city || ""} onChange={e => handleFilterChange("city", e.target.value)} />
+                <EducationFieldHelp id="education-filter-city-help" label="Grad pretrage" text="Unesite grad u kojem želite da pohađate edukaciju uživo." />
               </div>
 
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Edukativni-centar">Edukativni centar <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Edukativni-centar">Pomoć za polje: Edukativni centar</TooltipContent></Tooltip></Label>
-                <Input placeholder="Naziv organizatora" value={filters.center || ""} onChange={e => handleFilterChange("center", e.target.value)} />
+                <Input aria-describedby="education-filter-center-help" placeholder="Naziv organizatora" value={filters.center || ""} onChange={e => handleFilterChange("center", e.target.value)} />
+                <EducationFieldHelp id="education-filter-center-help" label="Edukativni centar" text="Unesite naziv organizatora čije edukacije želite da pronađete." />
               </div>
 
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Raspon-cene-(RSD)">Raspon cene (RSD) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Raspon-cene-(RSD)">Pomoć za polje: Raspon cene (RSD)</TooltipContent></Tooltip></Label>
                 <div className="flex items-center gap-2">
-                  <Input type="number" placeholder="Od" min="0" value={filters.minPrice || ""} onChange={e => handleFilterChange("minPrice", e.target.value ? Number(e.target.value) : undefined)} />
+                  <Input aria-describedby="education-filter-min-price-help" type="number" placeholder="Od" min="0" value={filters.minPrice || ""} onChange={e => handleFilterChange("minPrice", e.target.value ? Number(e.target.value) : undefined)} />
+                  <EducationFieldHelp id="education-filter-min-price-help" label="Minimalna cena" text="Unesite najnižu cenu edukacije koju želite da vidite, u dinarima." />
                   <span className="text-muted-foreground">-</span>
-                  <Input type="number" placeholder="Do" min="0" value={filters.maxPrice || ""} onChange={e => handleFilterChange("maxPrice", e.target.value ? Number(e.target.value) : undefined)} />
+                  <Input aria-describedby="education-filter-max-price-help" type="number" placeholder="Do" min="0" value={filters.maxPrice || ""} onChange={e => handleFilterChange("maxPrice", e.target.value ? Number(e.target.value) : undefined)} />
+                  <EducationFieldHelp id="education-filter-max-price-help" label="Maksimalna cena" text="Unesite najvišu cenu edukacije koju želite da vidite, u dinarima." />
                 </div>
               </div>
 
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Početak-nakon">Početak nakon <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Početak-nakon">Pomoć za polje: Početak nakon</TooltipContent></Tooltip></Label>
-                <Input type="date" value={filters.startDate ?? ""} onChange={e => handleFilterChange("startDate", e.target.value || undefined)} />
+                <Input aria-describedby="education-filter-start-date-help" type="date" value={filters.startDate ?? ""} onChange={e => handleFilterChange("startDate", e.target.value || undefined)} />
+                <EducationFieldHelp id="education-filter-start-date-help" label="Početak nakon" text="Prikažite samo edukacije čiji prvi termin počinje na ovaj datum ili kasnije." />
               </div>
 
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Minimalna-ocena">Minimalna ocena <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Minimalna-ocena">Pomoć za polje: Minimalna ocena</TooltipContent></Tooltip></Label>
                 <Select value={filters.minRating?.toString() || ""} onValueChange={v => handleFilterChange("minRating", v ? Number(v) : undefined)}>
-                  <SelectTrigger><SelectValue placeholder="Bilo koja ocena" /></SelectTrigger>
+                  <SelectTrigger aria-describedby="education-filter-rating-help"><SelectValue placeholder="Bilo koja ocena" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="0">Bilo koja ocena</SelectItem>
                     <SelectItem value="3">3+ Zvezdice</SelectItem>
@@ -883,6 +897,7 @@ function CatalogView() {
                     <SelectItem value="4.5">4.5+ Zvezdice</SelectItem>
                   </SelectContent>
                 </Select>
+                <EducationFieldHelp id="education-filter-rating-help" label="Minimalna ocena" text="Izaberite najnižu prosečnu ocenu koju edukacija mora da ima." />
               </div>
 
               <div className="pt-2 border-t flex items-center justify-between">
@@ -1418,7 +1433,8 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                   <div className="space-y-3 bg-muted/30 p-4 rounded-lg border border-border/50">
                     <h4 className="font-medium text-xs text-muted-foreground uppercase tracking-wider mb-3">Upravljanje sadržajem</h4>
                     <div className="flex gap-2">
-                      <Input aria-label="Cena edukacije" type="number" min="0" value={priceEdit} onChange={(event) => setPriceEdit(event.target.value)} />
+                      <Input aria-label="Cena edukacije" aria-describedby="education-edit-price-help" type="number" min="0" value={priceEdit} onChange={(event) => setPriceEdit(event.target.value)} />
+                      <EducationFieldHelp id="education-edit-price-help" label="Cena edukacije" text="Unesite novu redovnu cenu edukacije u dinarima, bez negativnih vrednosti." />
                       <Button variant="outline" size="sm" onClick={() => update.mutate({ courseId, data: { price: Number(priceEdit) } }, { onSuccess: () => { toast.success("Cena je ažurirana"); queryClient.invalidateQueries({ queryKey: getGetEducationCourseQueryKey(courseId) }); }, onError: () => toast.error("Cena nije ažurirana") })} disabled={update.isPending || !priceEdit}>
                         Sačuvaj cenu
                       </Button>
@@ -1433,12 +1449,13 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                             onError: () => toast.error("Instruktor nije ažuriran"),
                           })}
                         >
-                          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Bez instruktora" /></SelectTrigger>
+                          <SelectTrigger aria-describedby="education-course-instructor-help" className="h-8 text-xs"><SelectValue placeholder="Bez instruktora" /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="none">Bez instruktora</SelectItem>
                             {instructors.map((inst) => <SelectItem key={inst.id} value={inst.id}>{inst.fullName}</SelectItem>)}
                           </SelectContent>
                         </Select>
+                        <EducationFieldHelp id="education-course-instructor-help" label="Instruktor kursa" text="Povežite edukaciju sa instruktorom koji će biti prikazan polaznicima." />
                       </div>
                     )}
                     {featuredStatus && (
@@ -1543,7 +1560,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                           <div className="space-y-1.5">
                             <Label className="text-xs">Termin (opciono)</Label>
                             <Select value={groupSessionId || "auto"} onValueChange={(v) => setGroupSessionId(v === "auto" ? "" : v)}>
-                              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Automatski" /></SelectTrigger>
+                              <SelectTrigger aria-describedby="education-group-session-help" className="h-8 text-xs"><SelectValue placeholder="Automatski" /></SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="auto">Automatski</SelectItem>
                                 {course.sessions.filter((s: any) => s.availableSeats > 0).map((s: any) => (
@@ -1553,6 +1570,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                                 ))}
                               </SelectContent>
                             </Select>
+                            <EducationFieldHelp id="education-group-session-help" label="Termin grupne prijave" text="Izaberite isti raspoloživ termin za sve označene polaznike ili prepustite automatski izbor." />
                           </div>
                         )}
                         <div className="text-xs text-muted-foreground">
@@ -1571,12 +1589,13 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                           <div className="space-y-1.5">
                             <Label htmlFor="education-learner">Polaznik</Label>
                             <Select value={isSalonOwner ? learnerId : learnerId || "self"} onValueChange={(value) => setLearnerId(value === "self" ? "" : value)}>
-                              <SelectTrigger id="education-learner"><SelectValue placeholder="Izaberite polaznika" /></SelectTrigger>
+                              <SelectTrigger id="education-learner" aria-describedby="education-learner-help"><SelectValue placeholder="Izaberite polaznika" /></SelectTrigger>
                               <SelectContent>
                                 {!isSalonOwner && <SelectItem value="self">Ja lično</SelectItem>}
                                 {employees.map((employee) => <SelectItem key={employee.id} value={employee.id}>{employee.name}</SelectItem>)}
                               </SelectContent>
                             </Select>
+                            <EducationFieldHelp id="education-learner-help" label="Polaznik" text="Izaberite zaposlenog za kog rezervišete mesto na edukaciji." />
                             <p className="text-xs text-muted-foreground">{isSalonOwner ? "Vlasnik salona kupuje mesto za tačno jednog zaposlenog." : "Izabrani zaposleni koristi svoj poslovni nalog za LMS; vlasnik u ovom prostoru prati prijavu i napredak tima."}</p>
                           </div>
                         ) : null}
@@ -1584,7 +1603,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                           <div className="space-y-1.5">
                             <Label htmlFor="education-session">Termin</Label>
                             <Select value={sessionId || "auto"} onValueChange={(value) => setSessionId(value === "auto" ? "" : value)}>
-                              <SelectTrigger id="education-session" data-testid="select-enrollment-session"><SelectValue placeholder="Automatski prvi slobodan termin" /></SelectTrigger>
+                              <SelectTrigger id="education-session" aria-describedby="education-enrollment-session-help" data-testid="select-enrollment-session"><SelectValue placeholder="Automatski prvi slobodan termin" /></SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="auto">Automatski prvi slobodan termin</SelectItem>
                                 {course.sessions.filter((session: any) => session.availableSeats > 0).map((session: any) => (
@@ -1592,18 +1611,20 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                                 ))}
                               </SelectContent>
                             </Select>
+                            <EducationFieldHelp id="education-enrollment-session-help" label="Termin prijave" text="Izaberite željeni raspoloživ termin ili dozvolite sistemu da dodeli prvi slobodan." />
                           </div>
                         )}
                         <div className="space-y-1.5">
                           <Label htmlFor="education-payment-mode">Način plaćanja</Label>
                           <Select value={paymentMode} onValueChange={(value) => setPaymentMode(value as typeof paymentMode)}>
-                            <SelectTrigger id="education-payment-mode" data-testid="select-enrollment-payment-mode"><SelectValue /></SelectTrigger>
+                            <SelectTrigger id="education-payment-mode" aria-describedby="education-enrollment-payment-help" data-testid="select-enrollment-payment-mode"><SelectValue /></SelectTrigger>
                             <SelectContent>
                               {course.paymentMode === "online_full" && <SelectItem value="online_full">Puna uplata putem IPS-a</SelectItem>}
                               {course.paymentMode === "live_deposit" && <SelectItem value="live_deposit">Depozit putem IPS-a</SelectItem>}
                               {course.paymentMode === "live_off_platform" && <SelectItem value="live_off_platform">Plaćanje direktno organizatoru</SelectItem>}
                             </SelectContent>
                           </Select>
+                          <EducationFieldHelp id="education-enrollment-payment-help" label="Način plaćanja prijave" text="Proverite način plaćanja koji je organizator omogućio za ovu edukaciju." />
                         </div>
                         <Button data-testid="button-submit-employee-enrollment" className="w-full text-base h-12 shadow-md hover:shadow-lg transition-shadow" size="lg" onClick={handleEnroll} disabled={enroll.isPending || (isSalonOwner && !learnerId)}>
                           {enroll.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Rezervacija...</> : 'Rezerviši mesto'}
@@ -1746,20 +1767,24 @@ function CourseGalleryEditor({ courseId, gallery: initialGallery }: { courseId: 
           <h2 className="flex items-center gap-2 font-serif text-xl font-semibold"><ImagePlus className="h-5 w-5 text-primary" /> Fotografije galerije</h2>
           <p className="mt-1 text-sm text-muted-foreground">Dodajte do 20 fotografija. Možete promeniti redosled i opis svake slike.</p>
         </div>
-        <Button asChild variant="outline" disabled={uploading || gallery.length >= 20}>
-          <label className="cursor-pointer">
-            {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImagePlus className="mr-2 h-4 w-4" />}
-            {uploading ? "Otpremanje..." : "Dodaj fotografiju"}
-            <input
-              aria-label="Dodaj fotografiju u galeriju"
-              className="sr-only"
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/avif"
-              disabled={uploading || gallery.length >= 20}
-              onChange={(event) => void uploadImage(event)}
-            />
-          </label>
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button asChild variant="outline" disabled={uploading || gallery.length >= 20}>
+            <label className="cursor-pointer">
+              {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImagePlus className="mr-2 h-4 w-4" />}
+              {uploading ? "Otpremanje..." : "Dodaj fotografiju"}
+              <input
+                aria-label="Dodaj fotografiju u galeriju"
+                aria-describedby="education-gallery-upload-help"
+                className="sr-only"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/avif"
+                disabled={uploading || gallery.length >= 20}
+                onChange={(event) => void uploadImage(event)}
+              />
+            </label>
+          </Button>
+          <EducationFieldHelp id="education-gallery-upload-help" label="Fotografija galerije" text="Otpremite JPG, PNG, WebP ili AVIF fotografiju koja verno prikazuje edukaciju." />
+        </div>
       </div>
       {uploadError ? (
         <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
@@ -1785,6 +1810,7 @@ function CourseGalleryEditor({ courseId, gallery: initialGallery }: { courseId: 
                   <Label htmlFor={`gallery-alt-${media.id}`} className="text-xs">Opis slike (opciono)</Label>
                   <Input
                     id={`gallery-alt-${media.id}`}
+                    aria-describedby={`education-gallery-alt-help-${media.id}`}
                     value={media.altText}
                     maxLength={240}
                     placeholder="Npr. Praktični rad na radionici"
@@ -1792,6 +1818,7 @@ function CourseGalleryEditor({ courseId, gallery: initialGallery }: { courseId: 
                     onBlur={(event) => updateAltText(media.id, event.target.value)}
                     disabled={reorder.isPending}
                   />
+                  <EducationFieldHelp id={`education-gallery-alt-help-${media.id}`} label={`Opis fotografije ${index + 1}`} text="Ukratko opišite sadržaj fotografije radi pristupačnosti i boljeg razumevanja galerije." />
                 </div>
               </div>
             </div>
@@ -1841,10 +1868,10 @@ function CourseProgramEditor({ courseId, days: initialDays }: { courseId: string
     <CardHeader><CardTitle className="font-serif text-xl">Javni dnevni program</CardTitle><p className="text-sm text-muted-foreground">Prikazuje se na stranici edukacije, bez detaljne lokacije ili privatne logistike.</p></CardHeader>
     <CardContent className="space-y-3">
       {days.map((day, index) => <div key={`${day.dayNumber}-${index}`} className="grid gap-3 rounded-lg border p-3 md:grid-cols-[80px_1fr_1fr_120px]">
-        <Input aria-label={`Dan ${index + 1}`} type="number" min="1" value={day.dayNumber} onChange={(event) => updateDay(index, "dayNumber", event.target.value)} />
-        <Input aria-label={`Naslov dana ${index + 1}`} placeholder="Naslov dana" value={day.title} onChange={(event) => updateDay(index, "title", event.target.value)} />
-        <Input aria-label={`Opis dana ${index + 1}`} placeholder="Kratak opis" value={day.description} onChange={(event) => updateDay(index, "description", event.target.value)} />
-        <Input aria-label={`Trajanje dana ${index + 1}`} type="number" min="0" placeholder="min" value={day.durationMinutes} onChange={(event) => updateDay(index, "durationMinutes", event.target.value)} />
+        <div><Input aria-label={`Dan ${index + 1}`} aria-describedby={`education-program-day-number-help-${index}`} type="number" min="1" value={day.dayNumber} onChange={(event) => updateDay(index, "dayNumber", event.target.value)} /><EducationFieldHelp id={`education-program-day-number-help-${index}`} label={`Redni broj dana ${index + 1}`} text="Unesite redni broj dana kojim određujete poredak u javnom programu." /></div>
+        <div><Input aria-label={`Naslov dana ${index + 1}`} aria-describedby={`education-program-day-title-help-${index}`} placeholder="Naslov dana" value={day.title} onChange={(event) => updateDay(index, "title", event.target.value)} /><EducationFieldHelp id={`education-program-day-title-help-${index}`} label={`Naslov dana ${index + 1}`} text="Navedite jasan naziv teme ili celine koja se obrađuje tog dana." /></div>
+        <div><Input aria-label={`Opis dana ${index + 1}`} aria-describedby={`education-program-day-description-help-${index}`} placeholder="Kratak opis" value={day.description} onChange={(event) => updateDay(index, "description", event.target.value)} /><EducationFieldHelp id={`education-program-day-description-help-${index}`} label={`Opis dana ${index + 1}`} text="Sažeto objasnite šta će polaznici raditi i naučiti tog dana." /></div>
+        <div><Input aria-label={`Trajanje dana ${index + 1}`} aria-describedby={`education-program-day-duration-help-${index}`} type="number" min="0" placeholder="min" value={day.durationMinutes} onChange={(event) => updateDay(index, "durationMinutes", event.target.value)} /><EducationFieldHelp id={`education-program-day-duration-help-${index}`} label={`Trajanje dana ${index + 1}`} text="Unesite planirano trajanje programa tog dana u minutima." /></div>
       </div>)}
       <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => setDays((current) => [...current, { dayNumber: current.length + 1, title: "", description: "", durationMinutes: "" }])}><Plus className="mr-2 h-4 w-4" /> Dodaj dan</Button><Button type="button" onClick={save} disabled={replaceProgram.isPending}>{replaceProgram.isPending ? "Čuvanje..." : "Sačuvaj dnevni program"}</Button></div>
     </CardContent>
@@ -2265,7 +2292,8 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Naziv-edukacije">Naziv edukacije <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Naziv-edukacije">Zvaničan komercijalni naziv kurseva</TooltipContent></Tooltip></Label>
-                <Input {...register("title")} />
+                <Input aria-describedby="education-course-title-help" {...register("title")} />
+                <EducationFieldHelp id="education-course-title-help" label="Naziv edukacije" text="Unesite prepoznatljiv zvaničan naziv koji jasno opisuje temu edukacije." />
                 {errors.title && <p className="text-xs text-destructive">{errors.title.message as string}</p>}
               </div>
 
@@ -2273,36 +2301,39 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
                 <Label className="flex items-center gap-2" aria-describedby="help-Oblast-(Sekcija)">Oblast (Sekcija) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Oblast-(Sekcija)">Šira oblast kojoj edukacija pripada</TooltipContent></Tooltip></Label>
                 <Controller control={control} name="sectionId" render={({ field }) => (
                   <Select value={field.value} onValueChange={(val) => { field.onChange(val); setValue("categoryId", ""); setValue("subcategoryId", ""); setValue("courseTypeId", ""); }}>
-                    <SelectTrigger><SelectValue placeholder="Izaberite sekciju" /></SelectTrigger>
+                    <SelectTrigger aria-describedby="education-course-section-help"><SelectValue placeholder="Izaberite sekciju" /></SelectTrigger>
                     <SelectContent>
                       {sections.map((s: any) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 )} />
+                <EducationFieldHelp id="education-course-section-help" label="Oblast edukacije" text="Izaberite najširu oblast kojoj pripada sadržaj edukacije." />
               </div>
 
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Kategorija">Kategorija <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Kategorija">Uža kategorija edukacije</TooltipContent></Tooltip></Label>
                 <Controller control={control} name="categoryId" render={({ field }) => (
                   <Select value={field.value} onValueChange={(val) => { field.onChange(val); setValue("subcategoryId", ""); setValue("courseTypeId", ""); }} disabled={!watchSectionId}>
-                    <SelectTrigger><SelectValue placeholder="Izaberite kategoriju" /></SelectTrigger>
+                    <SelectTrigger aria-describedby="education-course-category-id-help"><SelectValue placeholder="Izaberite kategoriju" /></SelectTrigger>
                     <SelectContent>
                       {categories.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 )} />
+                <EducationFieldHelp id="education-course-category-id-help" label="Kategorija edukacije" text="Izaberite kategoriju unutar oblasti koja najbolje opisuje edukaciju." />
               </div>
 
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Potkategorija">Potkategorija <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Potkategorija">Specifična potkategorija</TooltipContent></Tooltip></Label>
                 <Controller control={control} name="subcategoryId" render={({ field }) => (
                   <Select value={field.value} onValueChange={(val) => { field.onChange(val); setValue("courseTypeId", ""); }} disabled={!watchCategoryId}>
-                    <SelectTrigger><SelectValue placeholder="Izaberite potkategoriju" /></SelectTrigger>
+                    <SelectTrigger aria-describedby="education-course-subcategory-help"><SelectValue placeholder="Izaberite potkategoriju" /></SelectTrigger>
                     <SelectContent>
                       {subcategories.map((s: any) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 )} />
+                <EducationFieldHelp id="education-course-subcategory-help" label="Potkategorija edukacije" text="Izaberite precizniju potkategoriju kako bi polaznici lakše pronašli edukaciju." />
                 {errors.subcategoryId && <p className="text-xs text-destructive">{errors.subcategoryId.message as string}</p>}
               </div>
 
@@ -2310,35 +2341,39 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
                 <Label className="flex items-center gap-2" aria-describedby="help-Tip-obuke">Tip obuke <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Tip-obuke">Format i nivo obuke</TooltipContent></Tooltip></Label>
                 <Controller control={control} name="courseTypeId" render={({ field }) => (
                   <Select value={field.value} onValueChange={field.onChange} disabled={!watchSubcategoryId}>
-                    <SelectTrigger><SelectValue placeholder="Izaberite tip" /></SelectTrigger>
+                    <SelectTrigger aria-describedby="education-course-type-help"><SelectValue placeholder="Izaberite tip" /></SelectTrigger>
                     <SelectContent>
                       {courseTypes.map((t: any) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 )} />
+                <EducationFieldHelp id="education-course-type-help" label="Tip obuke" text="Izaberite konkretan tip obuke koji odgovara sadržaju i nameni programa." />
                 {errors.courseTypeId && <p className="text-xs text-destructive">{errors.courseTypeId.message as string}</p>}
                 <Button type="button" variant="link" size="sm" className="px-0 h-auto text-xs" onClick={proposeType} disabled={!watchSubcategoryId || proposeMut.isPending}>Nema vašeg tipa? Predložite novi</Button>
               </div>
 
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Stara-kategorija-(ili-izaberite-iznad)">Stara kategorija (ili izaberite iznad) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Stara-kategorija-(ili-izaberite-iznad)">Unos stare kategorije ukoliko nova nije odabrana</TooltipContent></Tooltip></Label>
-                <Input {...register("category")} placeholder="Ako ne izaberete potkategoriju, unesite ručno" />
+                <Input aria-describedby="education-course-legacy-category-help" {...register("category")} placeholder="Ako ne izaberete potkategoriju, unesite ručno" />
+                <EducationFieldHelp id="education-course-legacy-category-help" label="Ručni naziv kategorije" text="Unesite naziv kategorije samo kada odgovarajuća potkategorija nije dostupna iznad." />
               </div>
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Opis">Opis <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Opis">Detaljan opis edukacije i šta polaznici dobijaju</TooltipContent></Tooltip></Label>
-                <Textarea {...register("description")} rows={4} />
+                <Textarea aria-describedby="education-course-description-help" {...register("description")} rows={4} />
+                <EducationFieldHelp id="education-course-description-help" label="Opis edukacije" text="Objasnite sadržaj, način rada i koristi koje polaznik dobija završetkom edukacije." />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label className="flex items-center gap-2" aria-describedby="help-Cena-(RSD)">Cena (RSD) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Cena-(RSD)">Konačna cena edukacije za polaznike</TooltipContent></Tooltip></Label>
-                  <Input type="number" {...register("price")} />
+                  <Input aria-describedby="education-course-price-help" type="number" {...register("price")} />
+                  <EducationFieldHelp id="education-course-price-help" label="Cena edukacije" text="Unesite punu redovnu cenu jednog mesta na edukaciji u dinarima." />
                 </div>
                 <div className="space-y-2">
                   <Label className="flex items-center gap-2" aria-describedby="help-Način-plaćanja">Način plaćanja <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Način-plaćanja">Kako polaznici mogu platiti edukaciju</TooltipContent></Tooltip></Label>
                   <Controller control={control} name="paymentMode" render={({ field }) => (
                     <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectTrigger aria-describedby="education-course-payment-mode-help"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="online_full">Onlajn (celokupan iznos)</SelectItem>
                         {watchFormat !== 'online' && <SelectItem value="live_deposit">Depozit + Uživo</SelectItem>}
@@ -2346,20 +2381,23 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
                       </SelectContent>
                     </Select>
                   )} />
+                  <EducationFieldHelp id="education-course-payment-mode-help" label="Način plaćanja" text="Odredite da li polaznik plaća ceo iznos onlajn, depozit ili direktno organizatoru." />
                 </div>
               </div>
 
               {watchPaymentMode === "live_deposit" && (
                 <div className="space-y-2">
                   <Label className="flex items-center gap-2" aria-describedby="help-Iznos-depozita-(RSD)">Iznos depozita (RSD) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Iznos-depozita-(RSD)">Pomoć za polje: Iznos depozita (RSD)</TooltipContent></Tooltip></Label>
-                  <Input type="number" {...register("depositAmount")} />
+                  <Input aria-describedby="education-course-deposit-help" type="number" {...register("depositAmount")} />
+                  <EducationFieldHelp id="education-course-deposit-help" label="Iznos depozita" text="Unesite iznos depozita u dinarima; mora biti veći od nule i manji od pune cene." />
                   {errors.depositAmount && <p className="text-xs text-destructive">{errors.depositAmount.message as string}</p>}
                 </div>
               )}
 
               <div className="space-y-2 pt-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Politika-povraćaja">Politika povraćaja <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Politika-povraćaja">Pomoć za polje: Politika povraćaja</TooltipContent></Tooltip></Label>
-                <Textarea {...register("refundPolicy")} placeholder="Opišite uslove povraćaja novca..." />
+                <Textarea aria-describedby="education-course-refund-help" {...register("refundPolicy")} placeholder="Opišite uslove povraćaja novca..." />
+                <EducationFieldHelp id="education-course-refund-help" label="Politika povraćaja" text="Jasno navedite rokove i uslove pod kojima polaznik može dobiti povraćaj uplate." />
                 {errors.refundPolicy && <p className="text-xs text-destructive">{errors.refundPolicy.message as string}</p>}
               </div>
 
@@ -2381,8 +2419,9 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
                       {uploadingCover ? <Loader2 className="h-4 w-4 animate-spin" /> : "Promeni sliku"}
                     </Button>
                   </div>
-                  <input id="cover-upload" type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={uploadCover} />
+                  <input id="cover-upload" aria-describedby="education-course-cover-help" type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={uploadCover} />
                 </div>
+                <EducationFieldHelp id="education-course-cover-help" label="Naslovna fotografija" text="Otpremite jasnu JPG, PNG ili WebP fotografiju koja predstavlja edukaciju u katalogu." />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -2390,7 +2429,7 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
                   <Label className="flex items-center gap-2" aria-describedby="help-Format">Format <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Format">Način održavanja edukacije</TooltipContent></Tooltip></Label>
                   <Controller control={control} name="format" render={({ field }) => (
                     <Select value={field.value} onValueChange={(v) => { field.onChange(v); if(v==='online') setValue('paymentMode', 'online_full'); }}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectTrigger aria-describedby="education-course-format-help"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="online">Online</SelectItem>
                         <SelectItem value="in-person">Uživo</SelectItem>
@@ -2398,27 +2437,32 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
                       </SelectContent>
                     </Select>
                   )} />
+                  <EducationFieldHelp id="education-course-format-help" label="Format edukacije" text="Odredite da li se edukacija održava onlajn, uživo ili kombinovano." />
                 </div>
                 {watchFormat !== 'online' && (
                   <div className="space-y-2">
                     <Label className="flex items-center gap-2" aria-describedby="help-Grad">Grad <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Grad">Grad u kom se održava edukacija</TooltipContent></Tooltip></Label>
-                    <Input {...register("city")} placeholder="Npr. Beograd" />
+                    <Input aria-describedby="education-course-city-help" {...register("city")} placeholder="Npr. Beograd" />
+                    <EducationFieldHelp id="education-course-city-help" label="Grad održavanja" text="Unesite grad u kojem se održava deo edukacije uživo." />
                   </div>
                 )}
               </div>
 
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Česta-pitanja-(Najčešća-pitanja)">Česta pitanja (Najčešća pitanja) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Česta-pitanja-(Najčešća-pitanja)">Pomoć za polje: Česta pitanja (Najčešća pitanja)</TooltipContent></Tooltip></Label>
-                <Textarea {...register("faqText")} placeholder="P: Pitanje\nO: Odgovor\n\n(odvojite praznim redom)" rows={4} />
+                <Textarea aria-describedby="education-course-faq-help" {...register("faqText")} placeholder="P: Pitanje\nO: Odgovor\n\n(odvojite praznim redom)" rows={4} />
+                <EducationFieldHelp id="education-course-faq-help" label="Česta pitanja" text="Unesite parove pitanja i odgovora, a svaki par odvojite praznim redom." />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label className="flex items-center gap-2" aria-describedby="help-Trajanje">Trajanje <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Trajanje">Ukupno trajanje u danima ili nedeljama</TooltipContent></Tooltip></Label>
-                  <Input {...register("duration")} placeholder="Npr. 2 dana, 6 modula" />
+                  <Input aria-describedby="education-course-duration-help" {...register("duration")} placeholder="Npr. 2 dana, 6 modula" />
+                  <EducationFieldHelp id="education-course-duration-help" label="Opis trajanja" text="Opišite trajanje razumljivim izrazom, na primer broj dana, nedelja ili modula." />
                 </div>
                 <div className="space-y-2">
                   <Label className="flex items-center gap-2" aria-describedby="help-Trajanje-(minuti,-opciono)">Trajanje (minuti, opciono) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Trajanje-(minuti,-opciono)">Pomoć za polje: Trajanje (minuti, opciono)</TooltipContent></Tooltip></Label>
-                  <Input type="number" {...register("durationMinutes")} placeholder="Npr. 120" />
+                  <Input aria-describedby="education-course-duration-minutes-help" type="number" {...register("durationMinutes")} placeholder="Npr. 120" />
+                  <EducationFieldHelp id="education-course-duration-minutes-help" label="Trajanje u minutima" text="Po želji unesite precizno ukupno trajanje edukacije u minutima." />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4 mt-4">
@@ -2426,7 +2470,7 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
                   <Label className="flex items-center gap-2" aria-describedby="help-Nivo">Nivo <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Nivo">Nivo predznanja koji je potreban</TooltipContent></Tooltip></Label>
                   <Controller control={control} name="level" render={({ field }) => (
                     <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectTrigger aria-describedby="education-course-level-help"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all-levels">Svi nivoi</SelectItem>
                         <SelectItem value="beginner">Početni</SelectItem>
@@ -2435,17 +2479,20 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
                       </SelectContent>
                     </Select>
                   )} />
+                  <EducationFieldHelp id="education-course-level-help" label="Nivo predznanja" text="Izaberite nivo iskustva koji polaznik treba da ima pre početka edukacije." />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label className="flex items-center gap-2" aria-describedby="help-Teorija-(sati)">Teorija (sati) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Teorija-(sati)">Pomoć za polje: Teorija (sati)</TooltipContent></Tooltip></Label>
-                  <Input type="number" {...register("theoryHours")} placeholder="Opciono" />
+                  <Input aria-describedby="education-course-theory-hours-help" type="number" {...register("theoryHours")} placeholder="Opciono" />
+                  <EducationFieldHelp id="education-course-theory-hours-help" label="Sati teorije" text="Unesite koliko sati programa je namenjeno teorijskoj nastavi." />
                 </div>
                 <div className="space-y-2">
                   <Label className="flex items-center gap-2" aria-describedby="help-Praksa-(sati)">Praksa (sati) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Praksa-(sati)">Pomoć za polje: Praksa (sati)</TooltipContent></Tooltip></Label>
-                  <Input type="number" {...register("practicalHours")} placeholder="Opciono" />
+                  <Input aria-describedby="education-course-practical-hours-help" type="number" {...register("practicalHours")} placeholder="Opciono" />
+                  <EducationFieldHelp id="education-course-practical-hours-help" label="Sati prakse" text="Unesite koliko sati programa je namenjeno praktičnim vežbama." />
                 </div>
               </div>
 
@@ -2460,7 +2507,8 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="flex items-center gap-2" aria-describedby="help-Naziv-sertifikata">Naziv sertifikata <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Naziv-sertifikata">Tačan naziv dokumenta koji se izdaje</TooltipContent></Tooltip></Label>
-                    <Input {...register("certificateName")} placeholder="Npr. PMU Master" />
+                    <Input aria-describedby="education-course-certificate-name-help" {...register("certificateName")} placeholder="Npr. PMU Master" />
+                    <EducationFieldHelp id="education-course-certificate-name-help" label="Naziv sertifikata" text="Unesite tačan naziv koji će biti odštampan na sertifikatu polaznika." />
                   </div>
                   <div className="flex items-center space-x-2 pt-8">
                     <Controller control={control} name="accredited" render={({ field: { value, onChange } }) => (
@@ -2479,31 +2527,38 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
             <div className="grid md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Režim-zakazivanja">Režim zakazivanja <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Režim-zakazivanja">Način na koji se formiraju grupe</TooltipContent></Tooltip></Label>
-                <Controller control={control} name="schedulingMode" render={({ field }) => <Select value={field.value} onValueChange={field.onChange}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="fixed_group">Fiksna grupna sesija</SelectItem><SelectItem value="individual_calendar">Individualni termini / kalendar</SelectItem></SelectContent></Select>} />
+                <Controller control={control} name="schedulingMode" render={({ field }) => <Select value={field.value} onValueChange={field.onChange}><SelectTrigger aria-describedby="education-course-scheduling-help"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="fixed_group">Fiksna grupna sesija</SelectItem><SelectItem value="individual_calendar">Individualni termini / kalendar</SelectItem></SelectContent></Select>} />
+                <EducationFieldHelp id="education-course-scheduling-help" label="Režim zakazivanja" text="Izaberite da li svi polaznici pohađaju fiksne grupe ili rezervišu individualne termine." />
               </div>
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Broj-rata">Broj rata <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Broj-rata">Mogućnost plaćanja na više rata</TooltipContent></Tooltip></Label>
-                <Controller control={control} name="installmentCount" render={({ field }) => <Select value={String(field.value)} onValueChange={(value) => field.onChange(Number(value))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="1">1 rata</SelectItem><SelectItem value="2">2 rate</SelectItem><SelectItem value="3">3 rate</SelectItem></SelectContent></Select>} />
+                <Controller control={control} name="installmentCount" render={({ field }) => <Select value={String(field.value)} onValueChange={(value) => field.onChange(Number(value))}><SelectTrigger aria-describedby="education-course-installments-help"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="1">1 rata</SelectItem><SelectItem value="2">2 rate</SelectItem><SelectItem value="3">3 rate</SelectItem></SelectContent></Select>} />
+                <EducationFieldHelp id="education-course-installments-help" label="Broj rata" text="Izaberite na koliko rata polaznik može da plati cenu edukacije." />
               </div>
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Rok-za-otkazivanje-(sati)">Rok za otkazivanje (sati) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Rok-za-otkazivanje-(sati)">Rok do kad je dozvoljeno besplatno otkazivanje</TooltipContent></Tooltip></Label>
-                <Input type="number" min="0" max="8760" {...register("cancellationCutoffHours")} />
+                <Input aria-describedby="education-course-cancellation-hours-help" type="number" min="0" max="8760" {...register("cancellationCutoffHours")} />
+                <EducationFieldHelp id="education-course-cancellation-hours-help" label="Rok za otkazivanje" text="Unesite broj sati pre termina do kada je polazniku dozvoljeno otkazivanje." />
               </div>
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Postupanje-sa-depozitom">Postupanje sa depozitom <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Postupanje-sa-depozitom">Šta se dešava sa depozitom u slučaju otkazivanja</TooltipContent></Tooltip></Label>
-                <Controller control={control} name="depositDisposition" render={({ field }) => <Select value={field.value} onValueChange={field.onChange}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="refund">Povraćaj</SelectItem><SelectItem value="forfeit">Zadržava se</SelectItem><SelectItem value="transfer">Prenos na drugi termin</SelectItem></SelectContent></Select>} />
+                <Controller control={control} name="depositDisposition" render={({ field }) => <Select value={field.value} onValueChange={field.onChange}><SelectTrigger aria-describedby="education-course-deposit-disposition-help"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="refund">Povraćaj</SelectItem><SelectItem value="forfeit">Zadržava se</SelectItem><SelectItem value="transfer">Prenos na drugi termin</SelectItem></SelectContent></Select>} />
+                <EducationFieldHelp id="education-course-deposit-disposition-help" label="Postupanje sa depozitom" text="Odredite da li se depozit vraća, zadržava ili prenosi kada polaznik otkaže." />
               </div>
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Rana-prijava-cena-(RSD)">Rana prijava cena (RSD) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Rana-prijava-cena-(RSD)">Niža cena za prijave pre zadatog roka</TooltipContent></Tooltip></Label>
-                <Input type="number" min="0" {...register("earlyBirdPrice")} placeholder="Npr. 15000" />
+                <Input aria-describedby="education-course-early-price-help" type="number" min="0" {...register("earlyBirdPrice")} placeholder="Npr. 15000" />
+                <EducationFieldHelp id="education-course-early-price-help" label="Cena rane prijave" text="Unesite sniženu cenu u dinarima koja važi samo do roka za ranu prijavu." />
               </div>
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Rana-prijava-rok">Rana prijava rok <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Rana-prijava-rok">Datum do kog važi niža cena</TooltipContent></Tooltip></Label>
-                <Input type="datetime-local" {...register("earlyBirdCutoff")} />
+                <Input aria-describedby="education-course-early-cutoff-help" type="datetime-local" {...register("earlyBirdCutoff")} />
+                <EducationFieldHelp id="education-course-early-cutoff-help" label="Rok rane prijave" text="Izaberite datum i vreme do kada polaznici mogu ostvariti cenu rane prijave." />
               </div>
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Rok-rizika-minimalnog-broja-polaznika">Rok rizika minimalnog broja polaznika <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Rok-rizika-minimalnog-broja-polaznika">Krajnji rok za potvrdu održavanja edukacije</TooltipContent></Tooltip></Label>
-                <Input type="datetime-local" {...register("minimumEnrollmentRiskDeadline")} />
+                <Input aria-describedby="education-course-risk-deadline-help" type="datetime-local" {...register("minimumEnrollmentRiskDeadline")} />
+                <EducationFieldHelp id="education-course-risk-deadline-help" label="Rok potvrde održavanja" text="Izaberite krajnji trenutak kada odlučujete da li ima dovoljno prijava za održavanje edukacije." />
               </div>
             </div>
           </div>
@@ -2551,12 +2606,14 @@ function CreateModuleDialog({ courseId, open, onOpenChange }: { courseId: string
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-4">
           <div className="space-y-2">
             <Label className="flex items-center gap-2" aria-describedby="help-Naziv-modula-*">Naziv modula * <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Naziv-modula-*">Pomoć za polje: Naziv modula *</TooltipContent></Tooltip></Label>
-            <Input placeholder="Npr. Uvod u teoriju..." {...register("title")} />
+            <Input aria-describedby="education-module-title-help" placeholder="Npr. Uvod u teoriju..." {...register("title")} />
+            <EducationFieldHelp id="education-module-title-help" label="Naziv modula" text="Unesite kratak naziv tematske celine koja grupiše povezane lekcije." />
             {errors.title && <p className="text-sm text-destructive">{errors.title.message as string}</p>}
           </div>
           <div className="space-y-2">
             <Label className="flex items-center gap-2" aria-describedby="help-Opis-(opciono)">Opis (opciono) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Opis-(opciono)">Pomoć za polje: Opis (opciono)</TooltipContent></Tooltip></Label>
-            <Textarea placeholder="Kratak opis sadržaja modula..." rows={3} {...register("description")} />
+            <Textarea aria-describedby="education-module-description-help" placeholder="Kratak opis sadržaja modula..." rows={3} {...register("description")} />
+            <EducationFieldHelp id="education-module-description-help" label="Opis modula" text="Sažeto objasnite koje teme i veštine obuhvata ovaj modul." />
           </div>
           <DialogFooter className="pt-4">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Odustani</Button>
@@ -2603,17 +2660,20 @@ function CreateLessonDialog({ moduleId, courseId, open, onOpenChange }: { module
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
             <div className="space-y-2 sm:col-span-3">
               <Label className="flex items-center gap-2" aria-describedby="help-Naslov-lekcije-*">Naslov lekcije * <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Naslov-lekcije-*">Pomoć za polje: Naslov lekcije *</TooltipContent></Tooltip></Label>
-              <Input placeholder="Npr. Priprema radnog mesta" {...register("title")} />
+              <Input aria-describedby="education-lesson-title-help" placeholder="Npr. Priprema radnog mesta" {...register("title")} />
+              <EducationFieldHelp id="education-lesson-title-help" label="Naslov lekcije" text="Unesite jasan naslov pojedinačne lekcije koji opisuje njen glavni sadržaj." />
               {errors.title && <p className="text-sm text-destructive">{errors.title.message as string}</p>}
             </div>
             <div className="space-y-2 sm:col-span-1">
               <Label className="flex items-center gap-2" aria-describedby="help-Trajanje-(min)-*">Trajanje (min) * <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Trajanje-(min)-*">Pomoć za polje: Trajanje (min) *</TooltipContent></Tooltip></Label>
-              <Input type="number" min="1" {...register("durationMinutes")} />
+              <Input aria-describedby="education-lesson-duration-help" type="number" min="1" {...register("durationMinutes")} />
+              <EducationFieldHelp id="education-lesson-duration-help" label="Trajanje lekcije" text="Unesite očekivano vreme potrebno za završetak lekcije, u minutima." />
             </div>
           </div>
           <div className="space-y-2">
             <Label className="flex items-center gap-2" aria-describedby="help-Sadržaj-(Tekst-ili-HTML)">Sadržaj (Tekst ili HTML) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Sadržaj-(Tekst-ili-HTML)">Pomoć za polje: Sadržaj (Tekst ili HTML)</TooltipContent></Tooltip></Label>
-            <Textarea className="font-mono text-sm" rows={8} placeholder="<p>Dobrodošli u prvu lekciju...</p>" {...register("content")} />
+            <Textarea aria-describedby="education-lesson-content-help" className="font-mono text-sm" rows={8} placeholder="<p>Dobrodošli u prvu lekciju...</p>" {...register("content")} />
+            <EducationFieldHelp id="education-lesson-content-help" label="Sadržaj lekcije" text="Unesite tekst ili bezbedan HTML koji će polaznici čitati u LMS lekciji." />
           </div>
           <DialogFooter className="pt-4">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Odustani</Button>
@@ -2668,27 +2728,32 @@ function CreateSessionDialog({ courseId, open, onOpenChange }: { courseId: strin
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="flex items-center gap-2" aria-describedby="help-Početak-*">Početak * <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Početak-*">Pomoć za polje: Početak *</TooltipContent></Tooltip></Label>
-              <Input type="datetime-local" {...register("startsAt")} />
+              <Input aria-describedby="education-session-start-help" type="datetime-local" {...register("startsAt")} />
+              <EducationFieldHelp id="education-session-start-help" label="Početak termina" text="Izaberite lokalni datum i vreme početka termina prema vremenskoj zoni Beograda." />
               {errors.startsAt && <p className="text-sm text-destructive">{errors.startsAt.message as string}</p>}
             </div>
             <div className="space-y-2">
               <Label className="flex items-center gap-2" aria-describedby="help-Kraj-*">Kraj * <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Kraj-*">Pomoć za polje: Kraj *</TooltipContent></Tooltip></Label>
-              <Input type="datetime-local" {...register("endsAt")} />
+              <Input aria-describedby="education-session-end-help" type="datetime-local" {...register("endsAt")} />
+              <EducationFieldHelp id="education-session-end-help" label="Kraj termina" text="Izaberite lokalni datum i vreme završetka termina, nakon vremena početka." />
               {errors.endsAt && <p className="text-sm text-destructive">{errors.endsAt.message as string}</p>}
             </div>
           </div>
           <div className="space-y-2">
             <Label className="flex items-center gap-2" aria-describedby="help-Tačna-lokacija-(adresa-ili-link)">Tačna lokacija (adresa ili link) <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Tačna-lokacija-(adresa-ili-link)">Pomoć za polje: Tačna lokacija (adresa ili link)</TooltipContent></Tooltip></Label>
-            <Input placeholder="Npr. Resavska 10, Novi Sad" {...register("location")} />
+            <Input aria-describedby="education-session-location-help" placeholder="Npr. Resavska 10, Novi Sad" {...register("location")} />
+            <EducationFieldHelp id="education-session-location-help" label="Lokacija termina" text="Unesite tačnu adresu održavanja ili pristupni link za hibridni termin." />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="flex items-center gap-2" aria-describedby="help-Kapacitet-polaznika-*">Kapacitet polaznika * <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Kapacitet-polaznika-*">Pomoć za polje: Kapacitet polaznika *</TooltipContent></Tooltip></Label>
-              <Input type="number" min="1" {...register("capacity")} />
+              <Input aria-describedby="education-session-capacity-help" type="number" min="1" {...register("capacity")} />
+              <EducationFieldHelp id="education-session-capacity-help" label="Kapacitet termina" text="Unesite najveći broj polaznika koji mogu rezervisati ovaj termin." />
             </div>
             <div className="space-y-2">
               <Label className="flex items-center gap-2" aria-describedby="help-Minimalan-broj-prijava">Minimalan broj prijava <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Minimalan-broj-prijava">Pomoć za polje: Minimalan broj prijava</TooltipContent></Tooltip></Label>
-              <Input type="number" min="0" max="9999" placeholder="Opciono" {...register("minimumEnrollments")} />
+              <Input aria-describedby="education-session-minimum-help" type="number" min="0" max="9999" placeholder="Opciono" {...register("minimumEnrollments")} />
+              <EducationFieldHelp id="education-session-minimum-help" label="Minimalan broj prijava" text="Unesite prag prijava ispod kojeg organizator može odlučiti da otkaže termin." />
               <p className="text-xs text-muted-foreground">Prag ispod kojeg se termin može otkazati.</p>
             </div>
           </div>
@@ -2815,39 +2880,47 @@ function InstructorsDialog({ open, onOpenChange }: { open: boolean; onOpenChange
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs">Puno ime *</Label>
-                  <Input placeholder="Ime i prezime" {...register("fullName")} />
+                  <Input aria-describedby="education-instructor-name-help" placeholder="Ime i prezime" {...register("fullName")} />
+                  <EducationFieldHelp id="education-instructor-name-help" label="Puno ime instruktora" text="Unesite ime i prezime instruktora onako kako treba da se prikaže polaznicima." />
                   {errors.fullName && <p className="text-xs text-destructive">{errors.fullName.message}</p>}
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs">URL fotografije</Label>
-                  <Input placeholder="https://..." {...register("photoUrl")} />
+                  <Input aria-describedby="education-instructor-photo-help" placeholder="https://..." {...register("photoUrl")} />
+                  <EducationFieldHelp id="education-instructor-photo-help" label="Fotografija instruktora" text="Unesite javno dostupan HTTPS link do profesionalne fotografije instruktora." />
                 </div>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Biografija</Label>
-                <Textarea placeholder="Kratka biografija instruktora..." rows={3} {...register("biography")} />
+                <Textarea aria-describedby="education-instructor-biography-help" placeholder="Kratka biografija instruktora..." rows={3} {...register("biography")} />
+                <EducationFieldHelp id="education-instructor-biography-help" label="Biografija instruktora" text="Sažeto predstavite iskustvo, stručnost i profesionalni rad instruktora." />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs">Godine u industriji</Label>
-                  <Input type="number" min="0" {...register("industryYears")} />
+                  <Input aria-describedby="education-instructor-industry-years-help" type="number" min="0" {...register("industryYears")} />
+                  <EducationFieldHelp id="education-instructor-industry-years-help" label="Godine u industriji" text="Unesite broj punih godina profesionalnog rada instruktora u beauty ili wellness industriji." />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs">Godine poučavanja</Label>
-                  <Input type="number" min="0" {...register("experienceYears")} />
+                  <Input aria-describedby="education-instructor-teaching-years-help" type="number" min="0" {...register("experienceYears")} />
+                  <EducationFieldHelp id="education-instructor-teaching-years-help" label="Godine poučavanja" text="Unesite broj punih godina iskustva instruktora u izvođenju obuka." />
                 </div>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Specijalizacije (zarezom odvojeno)</Label>
-                <Input placeholder="Npr. Manikir, Gelovi, Akrilne nokte" {...register("specializations")} />
+                <Input aria-describedby="education-instructor-specializations-help" placeholder="Npr. Manikir, Gelovi, Akrilne nokte" {...register("specializations")} />
+                <EducationFieldHelp id="education-instructor-specializations-help" label="Specijalizacije instruktora" text="Navedite stručne oblasti instruktora odvojene zarezima." />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Kvalifikacije i sertifikati (zarezom odvojeno)</Label>
-                <Input placeholder="Npr. OPI sertifikat, Ombre majstor" {...register("qualifications")} />
+                <Input aria-describedby="education-instructor-qualifications-help" placeholder="Npr. OPI sertifikat, Ombre majstor" {...register("qualifications")} />
+                <EducationFieldHelp id="education-instructor-qualifications-help" label="Kvalifikacije instruktora" text="Navedite relevantne diplome, sertifikate i stručna zvanja odvojena zarezima." />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Portfolio linkovi (HTTPS, 1 po redu, maks 12)</Label>
-                <Textarea placeholder="https://instagram.com/..." rows={3} {...register("portfolioMediaText")} />
+                <Textarea aria-describedby="education-instructor-portfolio-help" placeholder="https://instagram.com/..." rows={3} {...register("portfolioMediaText")} />
+                <EducationFieldHelp id="education-instructor-portfolio-help" label="Portfolio instruktora" text="Unesite do 12 HTTPS linkova ka radovima instruktora, svaki u posebnom redu." />
               </div>
               <div className="flex gap-2 pt-1">
                 {editingId && <Button type="button" variant="ghost" size="sm" onClick={() => { setEditingId(null); reset({}); }}>Odustani</Button>}

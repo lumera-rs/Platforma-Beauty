@@ -47,6 +47,7 @@ import { Loader2, Calendar as CalendarIcon, Users, UserCog, CalendarClock, Chevr
 import { useToast } from "@/hooks/use-toast";
 import { trackEvent } from "@/lib/analytics";
 import { educationBelgradeDateKey, educationBelgradeDateLabel, educationBelgradeTime } from "@/lib/education-operational-time";
+import { EducationFieldHelp } from "@/components/education/education-field-help";
 
 // ==========================================
 // MAIN COMPONENT
@@ -181,8 +182,15 @@ function StaffManager({ centerId }: { centerId: string }) {
                   <p className="font-semibold">{member.userId} {member.instructorProfileId && <span className="text-xs font-normal text-muted-foreground bg-secondary px-2 py-0.5 rounded-full ml-2">Instruktor povezan</span>}</p>
                   <p className="text-sm text-muted-foreground">Uloga: {member.role}</p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex items-center gap-2">
+                  <EducationFieldHelp
+                    id={`staff-role-help-${member.id}`}
+                    label="Uloga člana osoblja"
+                    text="Uloga određuje dozvole člana: vlasnik upravlja centrom, menadžer vodi operacije, a edukator pristupa svojim terminima."
+                  />
                   <select 
+                    aria-label={`Uloga člana osoblja ${member.userId}`}
+                    aria-describedby={`staff-role-help-${member.id}`}
                     className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm"
                     value={member.role}
                     onChange={(e) => handleUpdateRole(member.id, e.target.value as any)}
@@ -249,8 +257,9 @@ function OperationsCalendar({ centerId, permissions }: { centerId: string, permi
         {staff && staff.length > 0 && (
           <div className="flex items-center gap-2">
             <Label>Edukator:</Label>
+             <EducationFieldHelp id="operations-calendar-educator-filter-help" label="Filter edukatora u kalendaru" text="Izaberite edukatora čije termine želite da vidite ili prikažite termine svih edukatora centra." />
             <Select value={selectedStaffId} onValueChange={setSelectedStaffId}>
-              <SelectTrigger className="w-[200px]"><SelectValue placeholder="Svi edukatori" /></SelectTrigger>
+               <SelectTrigger className="w-[200px]" aria-describedby="operations-calendar-educator-filter-help"><SelectValue placeholder="Svi edukatori" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Svi edukatori</SelectItem>
                 {staff.filter(s => s.role === "educator").map(s => (
@@ -490,42 +499,42 @@ function RecurrenceManager({ centerId }: { centerId: string }) {
       <CardContent className="space-y-6">
         <div className="grid md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label>Edukacija / Kurs</Label>
+            <div className="flex items-center gap-1"><Label>Edukacija / Kurs</Label><EducationFieldHelp id="recurrence-course-help" label="Edukacija ili kurs" text="Izaberite kurs za koji će sistem napraviti novu seriju termina." /></div>
             <Select value={courseId} onValueChange={setCourseId}>
-              <SelectTrigger><SelectValue placeholder="Izaberite kurs..." /></SelectTrigger>
+              <SelectTrigger aria-describedby="recurrence-course-help"><SelectValue placeholder="Izaberite kurs..." /></SelectTrigger>
               <SelectContent>
                 {courses?.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Edukator</Label>
+            <div className="flex items-center gap-1"><Label>Edukator</Label><EducationFieldHelp id="recurrence-educator-help" label="Edukator" text="Izabrani edukator biće dodeljen svim terminima u ovoj seriji." /></div>
             <Select value={educatorStaffId} onValueChange={setEducatorStaffId}>
-              <SelectTrigger><SelectValue placeholder="Izaberite edukatora..." /></SelectTrigger>
+              <SelectTrigger aria-describedby="recurrence-educator-help"><SelectValue placeholder="Izaberite edukatora..." /></SelectTrigger>
               <SelectContent>
                 {staff?.filter(s => s.role === "educator").map((s: any) => <SelectItem key={s.id} value={s.id}>{s.userId}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Datum početka</Label>
-            <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+            <div className="flex items-center gap-1"><Label>Datum početka</Label><EducationFieldHelp id="recurrence-start-date-help" label="Datum početka" text="Prvi datum perioda u kojem se generišu termini za izabrane dane u nedelji." /></div>
+            <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} aria-describedby="recurrence-start-date-help" />
           </div>
           <div className="space-y-2">
-            <Label>Datum kraja</Label>
-            <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+            <div className="flex items-center gap-1"><Label>Datum kraja</Label><EducationFieldHelp id="recurrence-end-date-help" label="Datum kraja" text="Poslednji datum perioda u kojem sistem sme da napravi termine." /></div>
+            <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} aria-describedby="recurrence-end-date-help" />
           </div>
           <div className="space-y-2">
-            <Label>Radno vreme od</Label>
-            <Input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} />
+            <div className="flex items-center gap-1"><Label>Radno vreme od</Label><EducationFieldHelp id="recurrence-start-time-help" label="Početak radnog vremena" text="Vreme od kojeg mogu počinjati generisani termini svakog izabranog dana." /></div>
+            <Input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} aria-describedby="recurrence-start-time-help" />
           </div>
           <div className="space-y-2">
-            <Label>Radno vreme do</Label>
-            <Input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} />
+            <div className="flex items-center gap-1"><Label>Radno vreme do</Label><EducationFieldHelp id="recurrence-end-time-help" label="Kraj radnog vremena" text="Krajnja granica radnog vremena; generisani termin mora da se završi do ovog vremena." /></div>
+            <Input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} aria-describedby="recurrence-end-time-help" />
           </div>
           <div className="space-y-2">
-            <Label>Trajanje termina (minuta)</Label>
-            <Input type="number" min={5} value={durationMinutes} onChange={e => setDurationMinutes(parseInt(e.target.value))} />
+            <div className="flex items-center gap-1"><Label>Trajanje termina (minuta)</Label><EducationFieldHelp id="recurrence-duration-help" label="Trajanje termina" text="Broj minuta svakog pojedinačnog termina; najmanja dozvoljena vrednost je 5 minuta." /></div>
+            <Input type="number" min={5} value={durationMinutes} onChange={e => setDurationMinutes(parseInt(e.target.value))} aria-describedby="recurrence-duration-help" />
           </div>
         </div>
         
@@ -700,11 +709,12 @@ function EducatorSchedule({ centerId, permissions }: { centerId: string, permiss
         <Card>
           <CardContent className="p-4 flex items-center gap-4">
             <Label className="whitespace-nowrap">Izaberite edukatora:</Label>
+             <EducationFieldHelp id="operations-schedule-educator-picker-help" label="Edukator za pregled rasporeda" text="Izaberite edukatora čiji nedeljni raspored i evidentirana odsustva želite da pregledate ili uređujete." />
             <Select value={selectedStaffId} onValueChange={(staffId) => {
               setSelectedStaffId(staffId);
               previewAbsenceMut.reset();
             }}>
-              <SelectTrigger className="max-w-xs"><SelectValue placeholder="Izaberite edukatora..." /></SelectTrigger>
+               <SelectTrigger className="max-w-xs" aria-describedby="operations-schedule-educator-picker-help"><SelectValue placeholder="Izaberite edukatora..." /></SelectTrigger>
               <SelectContent>
                 {staff?.filter(s => s.role === "educator").map(s => (
                   <SelectItem key={s.id} value={s.id}>{s.userId}</SelectItem>
@@ -785,9 +795,10 @@ function EducatorSchedule({ centerId, permissions }: { centerId: string, permiss
           </DialogHeader>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="absence-start-date">Početak</Label>
+              <div className="flex items-center gap-1"><Label htmlFor="absence-start-date">Početak</Label><EducationFieldHelp id="absence-start-date-help" label="Početak odsustva" text="Prvi kalendarski dan tokom kojeg edukator neće biti dostupan." /></div>
               <Input
                 id="absence-start-date"
+                aria-describedby="absence-start-date-help"
                 type="date"
                 value={absenceDraft.startDate}
                 onChange={(event) => {
@@ -797,9 +808,10 @@ function EducatorSchedule({ centerId, permissions }: { centerId: string, permiss
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="absence-end-date">Kraj</Label>
+              <div className="flex items-center gap-1"><Label htmlFor="absence-end-date">Kraj</Label><EducationFieldHelp id="absence-end-date-help" label="Kraj odsustva" text="Poslednji kalendarski dan odsustva; datum mora biti isti ili posle početka." /></div>
               <Input
                 id="absence-end-date"
+                aria-describedby="absence-end-date-help"
                 type="date"
                 value={absenceDraft.endDate}
                 onChange={(event) => {
@@ -809,9 +821,10 @@ function EducatorSchedule({ centerId, permissions }: { centerId: string, permiss
               />
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="absence-reason">Razlog (opciono)</Label>
+              <div className="flex items-center gap-1"><Label htmlFor="absence-reason">Razlog (opciono)</Label><EducationFieldHelp id="absence-reason-help" label="Razlog odsustva" text="Interno obrazloženje odsustva, na primer godišnji odmor; polje nije obavezno." /></div>
               <Input
                 id="absence-reason"
+                aria-describedby="absence-reason-help"
                 value={absenceDraft.reason}
                 onChange={(event) => setAbsenceDraft((draft) => ({ ...draft, reason: event.target.value }))}
                 placeholder="Na primer: godišnji odmor"
@@ -841,19 +854,22 @@ function EducatorSchedule({ centerId, permissions }: { centerId: string, permiss
                         {" · "}{conflict.reservedSeats} rezervisanih mesta
                       </p>
                       <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                        <Select
-                          value={replacementBySession[conflict.sessionId] ?? ""}
-                          onValueChange={(staffId) => setReplacementBySession((current) => ({ ...current, [conflict.sessionId]: staffId }))}
-                        >
-                          <SelectTrigger aria-label={`Zamenski edukator za ${conflict.courseTitle}`}>
-                            <SelectValue placeholder="Izaberite zamenskog edukatora" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {staff?.filter((member) => member.role === "educator" && member.active && member.id !== activeStaffId).map((member) => (
-                              <SelectItem key={member.id} value={member.id}>{member.userId}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <div className="flex items-center gap-1">
+                          <EducationFieldHelp id={`absence-replacement-help-${conflict.sessionId}`} label={`Zamenski edukator za ${conflict.courseTitle}`} text="Izaberite aktivnog edukatora koji će preuzeti ovaj konfliktni termin pre potvrde odsustva." />
+                          <Select
+                            value={replacementBySession[conflict.sessionId] ?? ""}
+                            onValueChange={(staffId) => setReplacementBySession((current) => ({ ...current, [conflict.sessionId]: staffId }))}
+                          >
+                            <SelectTrigger aria-label={`Zamenski edukator za ${conflict.courseTitle}`} aria-describedby={`absence-replacement-help-${conflict.sessionId}`}>
+                              <SelectValue placeholder="Izaberite zamenskog edukatora" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {staff?.filter((member) => member.role === "educator" && member.active && member.id !== activeStaffId).map((member) => (
+                                <SelectItem key={member.id} value={member.id}>{member.userId}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                         <Button
                           type="button"
                           variant="outline"

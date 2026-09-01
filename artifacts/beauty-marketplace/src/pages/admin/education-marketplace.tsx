@@ -15,6 +15,7 @@ import { parseStrictDecimal, parseStrictInt } from "@/lib/admin-form-utils";
 import { trackFeaturedPlacementPaid } from "@/lib/analytics";
 import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
 import { useQueryClient } from "@tanstack/react-query";
+import { EducationFieldHelp } from "@/components/education/education-field-help";
 import {
   useGetAdminEducationSettings,
   useUpdateAdminEducationSettings,
@@ -553,9 +554,13 @@ export default function AdminEducationMarketplace() {
             <CardContent className="space-y-3">
               <div className="flex flex-col gap-3 border-b pb-3 sm:flex-row sm:items-end sm:justify-between">
                 <div className="space-y-1">
-                  <Label htmlFor="installment-status">Status rate</Label>
+                  <div className="flex items-center gap-1">
+                    <Label htmlFor="installment-status">Status rate</Label>
+                    <EducationFieldHelp id="installment-status-filter-help" label="Status rate" text="Izaberite status da biste suzili administrativni pregled rata na neplaćene, plaćene, otkazane ili sve rate." />
+                  </div>
                   <select
                     id="installment-status"
+                    aria-describedby="installment-status-filter-help"
                     value={installmentStatus}
                     onChange={(e: any) => setInstallmentStatus(e.target.value)}
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm sm:w-52"
@@ -593,9 +598,13 @@ export default function AdminEducationMarketplace() {
             <CardContent className="space-y-3">
               <div className="flex flex-col gap-3 border-b pb-3 sm:flex-row sm:items-end sm:justify-between">
                 <div className="space-y-1">
-                  <Label htmlFor="voucher-status">Status vaučera</Label>
+                  <div className="flex items-center gap-1">
+                    <Label htmlFor="voucher-status">Status vaučera</Label>
+                    <EducationFieldHelp id="voucher-status-filter-help" label="Status vaučera" text="Izaberite status da biste prikazali samo vaučere u odgovarajućoj fazi plaćanja, korišćenja ili refundacije." />
+                  </div>
                   <select
                     id="voucher-status"
+                    aria-describedby="voucher-status-filter-help"
                     value={voucherStatus}
                     onChange={(event) => {
                       const nextStatus = VOUCHER_STATUS_OPTIONS.find((option) => option.value === event.target.value)?.value;
@@ -664,11 +673,14 @@ export default function AdminEducationMarketplace() {
             <CardHeader><CardTitle className="flex gap-2"><Banknote className="h-5 w-5 text-primary" />Pravila obračuna i cene pozicija</CardTitle></CardHeader>
             <CardContent className="space-y-6">
               <div className="grid gap-4 sm:grid-cols-2">
-                {([["Provizija %", "commissionPercent"], ["Rezerva %", "reservePercent"], ["Online povraćaj (dani)", "onlineRefundDays"], ["Live žalba (dani)", "liveAppealDays"], ["Istaknuti kurs (RSD)", "featuredCoursePrice"]] as [string, keyof any][]).map(([label, key]) => (
-                  <label key={key as string} className="space-y-2 text-sm font-medium">
-                    {label}
-                    <Input type="number" min="0" value={settingsRaw[key]} onChange={(e) => setSettingsRaw({ ...settingsRaw, [key]: e.target.value })} />
-                  </label>
+                {([["Provizija %", "commissionPercent"], ["Rezerva %", "reservePercent"], ["Online povraćaj (dani)", "onlineRefundDays"], ["Live žalba (dani)", "liveAppealDays"], ["Istaknuti kurs (RSD)", "featuredCoursePrice"]] as [string, string][]).map(([label, key]) => (
+                  <div key={key as string} className="space-y-2 text-sm font-medium">
+                    <div className="flex items-center gap-1">
+                      <Label>{label}</Label>
+                      <EducationFieldHelp id={`marketplace-setting-help-${key}`} label={label} text={`Ova vrednost određuje globalno pravilo „${label}” koje se primenjuje kada centar nema posebno podešavanje.`} />
+                    </div>
+                    <Input type="number" min="0" value={settingsRaw[key]} onChange={(e) => setSettingsRaw({ ...settingsRaw, [key]: e.target.value })} aria-describedby={`marketplace-setting-help-${key}`} />
+                  </div>
                 ))}
               </div>
               <Button onClick={saveSettings} disabled={updateSettingsMut.isPending} className="w-full">Sačuvaj pravila</Button>
@@ -687,9 +699,18 @@ export default function AdminEducationMarketplace() {
                     const slotsId = `ps-slots-${rowKey}`;
                     return (
                       <div key={scope} className="grid grid-cols-3 gap-2 items-end bg-muted/30 p-2 rounded-md border">
-                        <div><Label htmlFor={priceId} className="text-xs text-muted-foreground">{scope} - Cena</Label><Input id={priceId} data-testid={priceId} size={1} type="number" min="1" value={row.price} onChange={e => updatePS(kind, scope, "price", e.target.value)} /></div>
-                        <div><Label htmlFor={durationId} className="text-xs text-muted-foreground">Dani</Label><Input id={durationId} data-testid={durationId} size={1} type="number" min="1" value={row.durationDays} onChange={e => updatePS(kind, scope, "durationDays", e.target.value)} /></div>
-                        <div><Label htmlFor={slotsId} className="text-xs text-muted-foreground">Slotovi</Label><Input id={slotsId} data-testid={slotsId} size={1} type="number" min="1" value={row.slotCount} onChange={e => updatePS(kind, scope, "slotCount", e.target.value)} /></div>
+                        <div>
+                          <div className="flex items-center gap-1"><Label htmlFor={priceId} className="text-xs text-muted-foreground">{scope} - Cena</Label><EducationFieldHelp id={`ps-price-help-${rowKey}`} label={`Cena pozicije ${scope}`} text="Cena u dinarima koju centar plaća za ovu vrstu i obim sponzorisane pozicije." /></div>
+                          <Input id={priceId} data-testid={priceId} size={1} type="number" min="1" value={row.price} onChange={e => updatePS(kind, scope, "price", e.target.value)} aria-describedby={`ps-price-help-${rowKey}`} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1"><Label htmlFor={durationId} className="text-xs text-muted-foreground">Dani</Label><EducationFieldHelp id={`ps-duration-help-${rowKey}`} label={`Trajanje pozicije ${scope}`} text="Broj dana tokom kojih kupljena sponzorisana pozicija ostaje aktivna." /></div>
+                          <Input id={durationId} data-testid={durationId} size={1} type="number" min="1" value={row.durationDays} onChange={e => updatePS(kind, scope, "durationDays", e.target.value)} aria-describedby={`ps-duration-help-${rowKey}`} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1"><Label htmlFor={slotsId} className="text-xs text-muted-foreground">Slotovi</Label><EducationFieldHelp id={`ps-slots-help-${rowKey}`} label={`Broj slotova ${scope}`} text="Maksimalan broj istovremeno dostupnih sponzorisanih mesta za ovu poziciju." /></div>
+                          <Input id={slotsId} data-testid={slotsId} size={1} type="number" min="1" value={row.slotCount} onChange={e => updatePS(kind, scope, "slotCount", e.target.value)} aria-describedby={`ps-slots-help-${rowKey}`} />
+                        </div>
                       </div>
                     );
                   })}
@@ -748,8 +769,9 @@ export default function AdminEducationMarketplace() {
         <div className="py-4 space-y-4">
           {selectedVoucher && <p className="font-medium text-sm text-muted-foreground mb-4">Referenca: {selectedVoucher.paymentReference}</p>}
           <div className="space-y-2">
-            <Label>Razlog za refundaciju *</Label>
+            <div className="flex items-center gap-1"><Label>Razlog za refundaciju *</Label><EducationFieldHelp id="voucher-refund-note-help" label="Razlog za refundaciju vaučera" text="Unesite obavezno kratko obrazloženje koje će biti evidentirano uz refundaciju vaučera." /></div>
             <Textarea
+              aria-describedby="voucher-refund-note-help"
               value={voucherRefundNote}
               onChange={(e) => setVoucherRefundNote(e.target.value)}
               placeholder="Kratko obrazloženje..."
@@ -757,8 +779,9 @@ export default function AdminEducationMarketplace() {
             />
           </div>
           <div className="space-y-2">
-            <Label>ID spora (opciono)</Label>
+            <div className="flex items-center gap-1"><Label>ID spora (opciono)</Label><EducationFieldHelp id="voucher-refund-dispute-help" label="ID spora za refundaciju" text="Ako je refundacija posledica otvorenog spora, unesite njegov tačan sistemski identifikator radi povezivanja evidencije." /></div>
             <Input
+              aria-describedby="voucher-refund-dispute-help"
               value={voucherRefundDisputeId}
               onChange={(e) => setVoucherRefundDisputeId(e.target.value)}
               placeholder="Ako postoji otvoren spor..."

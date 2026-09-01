@@ -8,9 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Loader2, LayoutGrid, Plus, Info } from "lucide-react";
+import { Loader2, LayoutGrid, Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { EducationFieldHelp } from "@/components/education/education-field-help";
 
 export default function BusinessEducationResources() {
   const { data: userResp } = useGetCurrentUser();
@@ -101,19 +102,19 @@ export default function BusinessEducationResources() {
             </DialogHeader>
             <div className="space-y-4 pt-4">
               <div className="space-y-2">
-                <Label className="flex items-center gap-2">
+                <Label htmlFor="resource-name" className="flex items-center gap-2">
                   Naziv resursa
-                  <Tooltip><TooltipTrigger><Info className="w-4 h-4 text-muted-foreground" /></TooltipTrigger><TooltipContent>Interni naziv prostorije ili opreme</TooltipContent></Tooltip>
+                  <EducationFieldHelp id="resource-name-help" label="Naziv resursa" text="Unesite interni, prepoznatljiv naziv prostorije ili opreme koji će osoblje videti pri planiranju termina." />
                 </Label>
-                <Input value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} placeholder="Npr. Sala A" />
+                <Input id="resource-name" aria-describedby="resource-name-help" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} placeholder="Npr. Sala A" />
               </div>
               <div className="space-y-2">
-                <Label className="flex items-center gap-2">
+                <Label htmlFor="resource-type" className="flex items-center gap-2">
                   Tip
-                  <Tooltip><TooltipTrigger><Info className="w-4 h-4 text-muted-foreground" /></TooltipTrigger><TooltipContent>Da li je u pitanju sala za predavanja ili specifična oprema</TooltipContent></Tooltip>
+                  <EducationFieldHelp id="resource-type-help" label="Tip resursa" text="Izaberite prostoriju za sale i kabinete, a opremu za uređaje i druga sredstva koja se rezervišu." />
                 </Label>
                 <Select value={formData.type} onValueChange={(val) => setFormData({...formData, type: val})}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger id="resource-type" aria-describedby="resource-type-help"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="room">Prostorija</SelectItem>
                     <SelectItem value="equipment">Oprema</SelectItem>
@@ -121,11 +122,11 @@ export default function BusinessEducationResources() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="flex items-center gap-2">
+                <Label htmlFor="resource-capacity" className="flex items-center gap-2">
                   Kapacitet
-                  <Tooltip><TooltipTrigger><Info className="w-4 h-4 text-muted-foreground" /></TooltipTrigger><TooltipContent>Maksimalan broj polaznika</TooltipContent></Tooltip>
+                  <EducationFieldHelp id="resource-capacity-help" label="Kapacitet" text="Unesite najveći broj polaznika koji resurs bezbedno podržava; vrednost se koristi pri planiranju grupa." />
                 </Label>
-                <Input type="number" value={formData.capacity} onChange={(e) => setFormData({...formData, capacity: e.target.value})} placeholder="Npr. 20" />
+                <Input id="resource-capacity" aria-describedby="resource-capacity-help" type="number" min="0" value={formData.capacity} onChange={(e) => setFormData({...formData, capacity: e.target.value})} placeholder="Npr. 20" />
               </div>
             </div>
             <DialogFooter className="mt-6">

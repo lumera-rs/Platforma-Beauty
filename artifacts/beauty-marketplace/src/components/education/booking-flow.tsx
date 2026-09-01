@@ -11,6 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { educationBelgradeDateKey } from "@/lib/education-operational-time";
 import { getApiErrorDetails, useGetEducationOperationalInstallmentIpsQr } from "@workspace/api-client-react";
+import { EducationFieldHelp } from "@/components/education/education-field-help";
 
 // Use proper types from API when available
 export function EducationOperationalBookingFlow({ 
@@ -192,17 +193,17 @@ export function EducationOperationalBookingFlow({
               )}
               <CardContent className="p-4 space-y-4 pt-6">
                 <div className="space-y-2">
-                  <Label>Ime i prezime *</Label>
-                  <Input value={p.fullName} onChange={(e) => updateParticipant(idx, "fullName", e.target.value)} placeholder="Unesite puno ime" required />
+                   <Label className="flex items-center gap-2">Ime i prezime * <EducationFieldHelp id={`education-booking-participant-name-${idx}-help`} label="Ime i prezime učesnika" text="Unesite puno ime polaznika kako treba da bude evidentirano na rezervaciji i eventualnom sertifikatu." /></Label>
+                   <Input aria-describedby={`education-booking-participant-name-${idx}-help`} value={p.fullName} onChange={(e) => updateParticipant(idx, "fullName", e.target.value)} placeholder="Unesite puno ime" required />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Email</Label>
-                    <Input type="email" value={p.email} onChange={(e) => updateParticipant(idx, "email", e.target.value)} placeholder="Email adresa" />
+                     <Label className="flex items-center gap-2">Email <EducationFieldHelp id={`education-booking-participant-email-${idx}-help`} label="Email učesnika" text="Unesite adresu na koju učesnik može da primi informacije o terminu i edukaciji." /></Label>
+                     <Input aria-describedby={`education-booking-participant-email-${idx}-help`} type="email" value={p.email} onChange={(e) => updateParticipant(idx, "email", e.target.value)} placeholder="Email adresa" />
                   </div>
                   <div className="space-y-2">
-                    <Label>Telefon</Label>
-                    <Input type="tel" value={p.phone} onChange={(e) => updateParticipant(idx, "phone", e.target.value)} placeholder="Broj telefona" />
+                     <Label className="flex items-center gap-2">Telefon <EducationFieldHelp id={`education-booking-participant-phone-${idx}-help`} label="Telefon učesnika" text="Unesite broj na koji centar može da kontaktira učesnika zbog važnih promena termina." /></Label>
+                     <Input aria-describedby={`education-booking-participant-phone-${idx}-help`} type="tel" value={p.phone} onChange={(e) => updateParticipant(idx, "phone", e.target.value)} placeholder="Broj telefona" />
                   </div>
                 </div>
               </CardContent>
@@ -253,9 +254,9 @@ export function EducationOperationalBookingFlow({
             
             {course.price > 0 && course.paymentMode === "online_full" && (
               <div className="space-y-2">
-                <Label>Način plaćanja</Label>
+                 <Label className="flex items-center gap-2">Način plaćanja <EducationFieldHelp id="education-booking-installment-count-help" label="Način plaćanja" text="Izaberite da li ukupan iznos plaćate odjednom ili u ponuđenom broju rata; prikazan je iznos svake rate." /></Label>
                 <Select value={installmentCount} onValueChange={setInstallmentCount}>
-                  <SelectTrigger>
+                   <SelectTrigger aria-describedby="education-booking-installment-count-help">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

@@ -60,6 +60,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Textarea } from "@/components/ui/textarea";
 import { EducationOperationalBookingFlow } from "@/components/education/booking-flow";
 import { educationBookingCtaVisible } from "@/lib/education-operational-time";
+import { EducationFieldHelp } from "@/components/education/education-field-help";
 
 const money = (value: number) => new Intl.NumberFormat("sr-RS", {
   style: "currency", currency: "RSD", maximumFractionDigits: 0,
@@ -223,13 +224,13 @@ function CourseFilters({
   return (
     <div className="space-y-5 filter-component">
       <div className="space-y-2">
-        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Pretraga</Label>
-        <Input placeholder="Pretraži..." value={q || ""} onChange={e => setFilter('q', e.target.value)} className="bg-background border-border/50" />
+        <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">Pretraga <EducationFieldHelp id="education-catalog-query-help" label="Pretraga kataloga" text="Unesite naziv edukacije, tehniku ili drugu ključnu reč da biste suzili prikazane rezultate." /></Label>
+        <Input aria-describedby="education-catalog-query-help" placeholder="Pretraži..." value={q || ""} onChange={e => setFilter('q', e.target.value)} className="bg-background border-border/50" />
       </div>
       <div className="space-y-2">
-        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Tip obuke</Label>
+        <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">Tip obuke <EducationFieldHelp id="education-catalog-course-type-help" label="Tip obuke" text="Izaberite konkretnu vrstu beauty obuke koju želite da vidite u rezultatima." /></Label>
         <Select value={courseTypeId || ""} onValueChange={v => setFilter("courseTypeId", v === "all" ? undefined : v)}>
-          <SelectTrigger className="bg-background border-border/50"><SelectValue placeholder="Svi tipovi" /></SelectTrigger>
+          <SelectTrigger aria-describedby="education-catalog-course-type-help" className="bg-background border-border/50"><SelectValue placeholder="Svi tipovi" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Svi tipovi</SelectItem>
             {courseTypes.map(ct => <SelectItem key={ct.id} value={ct.id}>{ct.name}</SelectItem>)}
@@ -237,9 +238,9 @@ function CourseFilters({
         </Select>
       </div>
       <div className="space-y-2">
-        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Format</Label>
+        <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">Format <EducationFieldHelp id="education-catalog-format-help" label="Format edukacije" text="Izaberite da li tražite online edukaciju, nastavu uživo ili program koji kombinuje oba formata." /></Label>
         <Select value={formatFilter || ""} onValueChange={v => setFilter("format", v === "all" ? undefined : v)}>
-          <SelectTrigger className="bg-background border-border/50"><SelectValue placeholder="Svi formati" /></SelectTrigger>
+          <SelectTrigger aria-describedby="education-catalog-format-help" className="bg-background border-border/50"><SelectValue placeholder="Svi formati" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Svi formati</SelectItem>
             <SelectItem value="online">Online</SelectItem>
@@ -249,9 +250,9 @@ function CourseFilters({
         </Select>
       </div>
       <div className="space-y-2">
-        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Nivo</Label>
+        <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">Nivo <EducationFieldHelp id="education-catalog-level-help" label="Nivo edukacije" text="Izaberite nivo koji odgovara vašem trenutnom iskustvu i predznanju." /></Label>
         <Select value={levelFilter || ""} onValueChange={v => setFilter("level", v === "all" ? undefined : v)}>
-          <SelectTrigger className="bg-background border-border/50"><SelectValue placeholder="Svi nivoi" /></SelectTrigger>
+          <SelectTrigger aria-describedby="education-catalog-level-help" className="bg-background border-border/50"><SelectValue placeholder="Svi nivoi" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Svi nivoi</SelectItem>
             <SelectItem value="beginner">Početni</SelectItem>
@@ -261,9 +262,9 @@ function CourseFilters({
         </Select>
       </div>
       <div className="space-y-2">
-        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Jezik</Label>
+        <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">Jezik <EducationFieldHelp id="education-catalog-language-help" label="Jezik edukacije" text="Izaberite jezik na kojem želite da pratite predavanja i nastavne materijale." /></Label>
         <Select value={languageFilter || ""} onValueChange={v => setFilter("language", v === "all" ? undefined : v)}>
-          <SelectTrigger className="bg-background border-border/50"><SelectValue placeholder="Svi jezici" /></SelectTrigger>
+          <SelectTrigger aria-describedby="education-catalog-language-help" className="bg-background border-border/50"><SelectValue placeholder="Svi jezici" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Svi jezici</SelectItem>
             <SelectItem value="sr">Srpski</SelectItem>
@@ -272,27 +273,39 @@ function CourseFilters({
         </Select>
       </div>
       <div className="space-y-2">
-        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Grad</Label>
-        <Input placeholder="Npr. Beograd" value={cityFilter || ""} onChange={e => setFilter("city", e.target.value)} className="bg-background border-border/50" />
+        <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">Grad <EducationFieldHelp id="education-catalog-city-help" label="Grad održavanja" text="Unesite grad u kojem želite da pohađate edukacije koje se održavaju uživo." /></Label>
+        <Input aria-describedby="education-catalog-city-help" placeholder="Npr. Beograd" value={cityFilter || ""} onChange={e => setFilter("city", e.target.value)} className="bg-background border-border/50" />
       </div>
       <div className="space-y-2">
         <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Cena (RSD)</Label>
         <div className="flex gap-2">
-          <Input placeholder="Od" type="number" value={minPrice || ""} onChange={e => setFilter('minPrice', e.target.value)} />
-          <Input placeholder="Do" type="number" value={maxPrice || ""} onChange={e => setFilter('maxPrice', e.target.value)} />
+          <div className="min-w-0 flex-1 space-y-1">
+            <Label className="flex items-center gap-1 text-xs">Najniža <EducationFieldHelp id="education-catalog-min-price-help" label="Najniža cena" text="Unesite najmanju cenu edukacije u dinarima koju želite da uključite u rezultate." /></Label>
+            <Input aria-describedby="education-catalog-min-price-help" placeholder="Od" type="number" value={minPrice || ""} onChange={e => setFilter('minPrice', e.target.value)} />
+          </div>
+          <div className="min-w-0 flex-1 space-y-1">
+            <Label className="flex items-center gap-1 text-xs">Najviša <EducationFieldHelp id="education-catalog-max-price-help" label="Najviša cena" text="Unesite najveću cenu edukacije u dinarima koju ste spremni da razmotrite." /></Label>
+            <Input aria-describedby="education-catalog-max-price-help" placeholder="Do" type="number" value={maxPrice || ""} onChange={e => setFilter('maxPrice', e.target.value)} />
+          </div>
         </div>
       </div>
       <div className="space-y-2">
         <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Trajanje (minuti)</Label>
         <div className="flex gap-2">
-          <Input placeholder="Od" type="number" value={minDurationMinutes || ""} onChange={e => setFilter('minDurationMinutes', e.target.value)} />
-          <Input placeholder="Do" type="number" value={maxDurationMinutes || ""} onChange={e => setFilter('maxDurationMinutes', e.target.value)} />
+          <div className="min-w-0 flex-1 space-y-1">
+            <Label className="flex items-center gap-1 text-xs">Najkraće <EducationFieldHelp id="education-catalog-min-duration-help" label="Najkraće trajanje" text="Unesite minimalno prihvatljivo trajanje edukacije izraženo u minutima." /></Label>
+            <Input aria-describedby="education-catalog-min-duration-help" placeholder="Od" type="number" value={minDurationMinutes || ""} onChange={e => setFilter('minDurationMinutes', e.target.value)} />
+          </div>
+          <div className="min-w-0 flex-1 space-y-1">
+            <Label className="flex items-center gap-1 text-xs">Najduže <EducationFieldHelp id="education-catalog-max-duration-help" label="Najduže trajanje" text="Unesite maksimalno trajanje edukacije u minutima koje odgovara vašem raspoloživom vremenu." /></Label>
+            <Input aria-describedby="education-catalog-max-duration-help" placeholder="Do" type="number" value={maxDurationMinutes || ""} onChange={e => setFilter('maxDurationMinutes', e.target.value)} />
+          </div>
         </div>
       </div>
       <div className="space-y-2">
-        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Minimalna ocena</Label>
+        <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">Minimalna ocena <EducationFieldHelp id="education-catalog-min-rating-help" label="Minimalna ocena" text="Izaberite najnižu prosečnu ocenu koju edukacija mora da ima da bi bila prikazana." /></Label>
         <Select value={minRating ? String(minRating) : ""} onValueChange={v => setFilter("minRating", v === "all" ? undefined : v)}>
-          <SelectTrigger className="bg-background border-border/50"><SelectValue placeholder="Bilo koja ocena" /></SelectTrigger>
+          <SelectTrigger aria-describedby="education-catalog-min-rating-help" className="bg-background border-border/50"><SelectValue placeholder="Bilo koja ocena" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Bilo koja ocena</SelectItem>
             <SelectItem value="4.5">Od 4.5</SelectItem>
@@ -303,16 +316,16 @@ function CourseFilters({
       </div>
       <div className="flex flex-col gap-2 pt-2">
         <div className="flex items-center gap-2">
-          <Checkbox id="free-only" checked={maxPrice === 0} onCheckedChange={c => setFilter('maxPrice', c ? '0' : undefined)} />
-          <Label htmlFor="free-only">Samo besplatno</Label>
+          <Checkbox id="free-only" aria-describedby="education-catalog-free-only-help" checked={maxPrice === 0} onCheckedChange={c => setFilter('maxPrice', c ? '0' : undefined)} />
+          <Label htmlFor="free-only" className="flex items-center gap-2">Samo besplatno <EducationFieldHelp id="education-catalog-free-only-help" label="Samo besplatne edukacije" text="Uključite da biste prikazali isključivo edukacije bez naknade." /></Label>
         </div>
         <div className="flex items-center gap-2">
-          <Checkbox id="accr-filter" checked={!!accreditedFilter} onCheckedChange={c => setFilter('accredited', c ? 'true' : undefined)} />
-          <Label htmlFor="accr-filter">Akreditovano</Label>
+          <Checkbox id="accr-filter" aria-describedby="education-catalog-accredited-help" checked={!!accreditedFilter} onCheckedChange={c => setFilter('accredited', c ? 'true' : undefined)} />
+          <Label htmlFor="accr-filter" className="flex items-center gap-2">Akreditovano <EducationFieldHelp id="education-catalog-accredited-help" label="Akreditovane edukacije" text="Uključite da biste videli samo programe koji su označeni kao akreditovani." /></Label>
         </div>
         <div className="flex items-center gap-2">
-          <Checkbox id="cert-filter" checked={!!certificationFilter} onCheckedChange={c => setFilter('certification', c ? 'true' : undefined)} />
-          <Label htmlFor="cert-filter">Sertifikat uključen</Label>
+          <Checkbox id="cert-filter" aria-describedby="education-catalog-certification-help" checked={!!certificationFilter} onCheckedChange={c => setFilter('certification', c ? 'true' : undefined)} />
+          <Label htmlFor="cert-filter" className="flex items-center gap-2">Sertifikat uključen <EducationFieldHelp id="education-catalog-certification-help" label="Sertifikat uključen" text="Uključite da biste prikazali edukacije koje po završetku obezbeđuju sertifikat." /></Label>
         </div>
       </div>
       <Button variant="secondary" className="w-full mt-4" onClick={onClear}>Obriši filtere</Button>
@@ -344,9 +357,14 @@ function AutocompleteSearch({ onSelect }: { onSelect: (id: string, type: string)
 
   return (
     <div className="relative w-full max-w-2xl mx-auto z-50">
+      <Label className="mb-2 flex items-center justify-center gap-2 text-primary-foreground">
+        Brza pretraga edukacija
+        <EducationFieldHelp id="education-autocomplete-search-help" label="Brza pretraga edukacija" text="Počnite da kucate naziv kursa, tehniku ili ime edukatora, pa izaberite odgovarajući predlog sa liste." />
+      </Label>
       <div className="relative flex items-center">
         <Search className="absolute left-4 h-5 w-5 text-muted-foreground" />
         <Input
+          aria-describedby="education-autocomplete-search-help"
           className="h-14 pl-12 pr-4 rounded-full border-border/60 shadow-lg text-lg bg-background/95 backdrop-blur focus-visible:ring-primary/20"
           placeholder="Pretraži kurseve, tehnike, edukatore..."
           value={query}
@@ -897,7 +915,55 @@ export function EducationBundleDetail() {
   };
   if (bundle === false) return <Layout><main className="container mx-auto px-4 py-16">Paket nije pronađen.</main></Layout>;
   if (!bundle) return <Layout><main className="container mx-auto px-4 py-16"><Loader2 className="animate-spin" /></main></Layout>;
-  return <Layout><main className="container mx-auto max-w-3xl px-4 py-10"><Link href="/edukacije" className="text-sm text-primary">← Sve edukacije</Link><Card className="mt-4"><CardHeader><CardTitle className="text-3xl">{bundle.name}</CardTitle><CardDescription>{bundle.description}</CardDescription></CardHeader><CardContent className="space-y-5"><div><strong>{money(bundle.price)}</strong><p className="text-sm text-muted-foreground">Jedna roditeljska kupovina pokriva sve navedene kurseve.</p></div><ul className="space-y-2">{bundle.courses?.map((course: any) => <li key={course.courseId} className="rounded border p-3">{course.title} <span className="text-sm text-muted-foreground">· {course.duration}</span></li>)}</ul>{current?.user?.role === "SALON_OWNER" && <div><Label>Polaznik iz salona</Label><Select value={employeeId} onValueChange={setEmployeeId}><SelectTrigger><SelectValue placeholder="Izaberite zaposlenog" /></SelectTrigger><SelectContent>{employees.map(employee => <SelectItem key={employee.id} value={employee.id}>{employee.name}</SelectItem>)}</SelectContent></Select></div>}<Button onClick={submit} disabled={pending}>{pending ? "Slanje…" : "Kupi paket"}</Button>{purchase && <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm"><strong>Čeka potvrdu uplate.</strong> IPS instrukcije su pripremljene, ali pristup kursevima će biti aktiviran tek nakon pouzdane administrativne potvrde. {purchase.paymentInstructions?.payload && <code className="mt-2 block break-all text-xs">{purchase.paymentInstructions.payload}</code>}</div>}</CardContent></Card></main></Layout>;
+  return (
+    <Layout>
+      <main className="container mx-auto max-w-3xl px-4 py-10">
+        <Link href="/edukacije" className="text-sm text-primary">← Sve edukacije</Link>
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle className="text-3xl">{bundle.name}</CardTitle>
+            <CardDescription>{bundle.description}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div>
+              <strong>{money(bundle.price)}</strong>
+              <p className="text-sm text-muted-foreground">Jedna roditeljska kupovina pokriva sve navedene kurseve.</p>
+            </div>
+            <ul className="space-y-2">
+              {bundle.courses?.map((course: any) => (
+                <li key={course.courseId} className="rounded border p-3">
+                  {course.title} <span className="text-sm text-muted-foreground">· {course.duration}</span>
+                </li>
+              ))}
+            </ul>
+            {current?.user?.role === "SALON_OWNER" && (
+              <div>
+                <Label className="flex items-center gap-2">
+                  Polaznik iz salona
+                  <EducationFieldHelp id="education-bundle-employee-help" label="Polaznik iz salona" text="Izaberite zaposlenog kome će nakon potvrđene uplate biti dodeljen pristup svim kursevima iz paketa." />
+                </Label>
+                <Select value={employeeId} onValueChange={setEmployeeId}>
+                  <SelectTrigger aria-describedby="education-bundle-employee-help">
+                    <SelectValue placeholder="Izaberite zaposlenog" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {employees.map(employee => <SelectItem key={employee.id} value={employee.id}>{employee.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <Button onClick={submit} disabled={pending}>{pending ? "Slanje…" : "Kupi paket"}</Button>
+            {purchase && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm">
+                <strong>Čeka potvrdu uplate.</strong> IPS instrukcije su pripremljene, ali pristup kursevima će biti aktiviran tek nakon pouzdane administrativne potvrde.
+                {purchase.paymentInstructions?.payload && <code className="mt-2 block break-all text-xs">{purchase.paymentInstructions.payload}</code>}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </main>
+    </Layout>
+  );
 }
 
 export function EducationBundlePurchasesPage() {
@@ -1199,8 +1265,8 @@ export function EducationPublicCourseDetail() {
                   <DialogHeader><DialogTitle>Pošalji upit centru</DialogTitle></DialogHeader>
                   <div className="space-y-4 pt-4">
                     <div className="space-y-2">
-                      <Label>Vaša poruka (do 2000 karaktera)</Label>
-                      <Textarea value={inquiryMsg} onChange={e => setInquiryMsg(e.target.value)} placeholder="Postavite pitanje u vezi edukacije..." className="min-h-[120px]" maxLength={2000} />
+                      <Label className="flex items-center gap-2">Vaša poruka (do 2000 karaktera) <EducationFieldHelp id="education-course-inquiry-help" label="Poruka centru" text="Napišite konkretno pitanje o programu, uslovima, terminu ili organizaciji edukacije; ne unosite osetljive lične podatke." /></Label>
+                      <Textarea aria-describedby="education-course-inquiry-help" value={inquiryMsg} onChange={e => setInquiryMsg(e.target.value)} placeholder="Postavite pitanje u vezi edukacije..." className="min-h-[120px]" maxLength={2000} />
                     </div>
                     <Button data-testid="submit-inquiry-btn" className="w-full" onClick={sendInquiry} disabled={inquiryMut.isPending}>Pošalji upit</Button>
                 </div>
@@ -1310,16 +1376,16 @@ function VoucherPurchaseForm({ courseId }: { courseId: string }) {
   return (
     <form onSubmit={handlePurchase} className="space-y-4 pt-4">
       <div className="space-y-2">
-        <Label htmlFor="recipient-email">Email primaoca <span className="text-destructive">*</span></Label>
-        <Input id="recipient-email" type="email" required value={recipientEmail} onChange={e => setRecipientEmail(e.target.value)} placeholder="Npr. ana@example.com" maxLength={320} aria-required="true" />
+        <Label htmlFor="recipient-email" className="flex items-center gap-2">Email primaoca <span className="text-destructive">*</span> <EducationFieldHelp id="education-voucher-recipient-email-help" label="Email primaoca" text="Unesite tačnu email adresu osobe kojoj je vaučer namenjen i na koju mogu stići informacije o poklonu." /></Label>
+        <Input id="recipient-email" aria-describedby="education-voucher-recipient-email-help" type="email" required value={recipientEmail} onChange={e => setRecipientEmail(e.target.value)} placeholder="Npr. ana@example.com" maxLength={320} aria-required="true" />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="recipient-name">Ime primaoca (opciono)</Label>
-        <Input id="recipient-name" value={recipientName} onChange={e => setRecipientName(e.target.value)} placeholder="Npr. Ana Jovanović" maxLength={160} />
+        <Label htmlFor="recipient-name" className="flex items-center gap-2">Ime primaoca (opciono) <EducationFieldHelp id="education-voucher-recipient-name-help" label="Ime primaoca" text="Unesite ime i prezime osobe kojoj poklanjate edukaciju, kako bi poklon bio lično označen." /></Label>
+        <Input id="recipient-name" aria-describedby="education-voucher-recipient-name-help" value={recipientName} onChange={e => setRecipientName(e.target.value)} placeholder="Npr. Ana Jovanović" maxLength={160} />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="gift-message">Poruka za poklon (opciono)</Label>
-        <Textarea id="gift-message" value={giftMessage} onChange={e => setGiftMessage(e.target.value)} placeholder="Srećan rođendan i uspešan rad!" maxLength={1000} className="min-h-[100px]" />
+        <Label htmlFor="gift-message" className="flex items-center gap-2">Poruka za poklon (opciono) <EducationFieldHelp id="education-voucher-gift-message-help" label="Poruka za poklon" text="Dodajte kratku ličnu poruku koja će biti sačuvana uz vaučer i prikazana primaocu." /></Label>
+        <Textarea id="gift-message" aria-describedby="education-voucher-gift-message-help" value={giftMessage} onChange={e => setGiftMessage(e.target.value)} placeholder="Srećan rođendan i uspešan rad!" maxLength={1000} className="min-h-[100px]" />
       </div>
       <Button type="submit" className="w-full mt-4" size="lg" disabled={mut.isPending || !recipientEmail || !isValidEmail(recipientEmail)}>
         {mut.isPending ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : "Generiši vaučer"}
@@ -1462,18 +1528,18 @@ function CenterReviewForm({ centerId, enrollmentId }: { centerId: string, enroll
       </CardHeader>
       <CardContent className="space-y-4">
         <div>
-          <Label className="mb-2 block">Vaša ocena</Label>
+          <Label className="mb-2 flex items-center gap-2">Vaša ocena <EducationFieldHelp id="education-center-review-rating-help" label="Ocena centra" text="Izaberite od jedne do pet zvezdica prema ukupnom iskustvu sa edukacijom i centrom." /></Label>
           <div className="flex gap-1">
             {[1,2,3,4,5].map(star => (
-              <button key={star} onClick={() => setRating(star)} className="focus:outline-none transition-transform hover:scale-110">
+              <button key={star} type="button" aria-describedby="education-center-review-rating-help" onClick={() => setRating(star)} className="focus:outline-none transition-transform hover:scale-110">
                 <Star className={`w-8 h-8 ${star <= rating ? "fill-amber-500 text-amber-500" : "text-muted"}`} />
               </button>
             ))}
           </div>
         </div>
         <div>
-          <Label>Komentar (opciono)</Label>
-          <Textarea placeholder="Kako vam se svideo kurs?" value={comment} onChange={e => setComment(e.target.value)} className="mt-1" />
+          <Label className="flex items-center gap-2">Komentar (opciono) <EducationFieldHelp id="education-center-review-comment-help" label="Komentar recenzije" text="Opišite korisno i pristojno svoje iskustvo sa programom, edukatorima i organizacijom centra." /></Label>
+          <Textarea aria-describedby="education-center-review-comment-help" placeholder="Kako vam se svideo kurs?" value={comment} onChange={e => setComment(e.target.value)} className="mt-1" />
         </div>
         <Button onClick={handleSubmit} disabled={mut.isPending || rating === 0}>
           {mut.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : "Objavi recenziju"}
@@ -1643,7 +1709,8 @@ export function EducationVouchersPage() {
                 <CardDescription>Unesite kod koji ste dobili kako biste preuzeli vaučer.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Input placeholder="Unesite kod vaučera" value={code} onChange={e => setCode(e.target.value)} />
+                <Label className="flex items-center gap-2">Kod vaučera <EducationFieldHelp id="education-voucher-redemption-code-help" label="Kod vaučera" text="Unesite ceo kod koji ste dobili od kupca poklona, uključujući sva slova, brojeve i crtice." /></Label>
+                <Input aria-describedby="education-voucher-redemption-code-help" placeholder="Unesite kod vaučera" value={code} onChange={e => setCode(e.target.value)} />
                 <Button className="w-full" onClick={handleRedeem} disabled={redeemMut.isPending || !code.trim()}>
                   {redeemMut.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                   Iskoristi

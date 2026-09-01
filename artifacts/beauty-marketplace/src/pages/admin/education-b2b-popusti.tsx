@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useQueryClient } from "@tanstack/react-query";
+import { EducationFieldHelp } from "@/components/education/education-field-help";
 
 type TierRow = { minSpend: string; maxSpend: string; percent: string };
 
@@ -136,9 +137,11 @@ export default function AdminEducationB2bTiers() {
                     <Label className="flex items-center gap-2">
                       Minimum (RSD)
                       <Tooltip><TooltipTrigger type="button"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent>Donji prag potrošnje za ovaj nivo</TooltipContent></Tooltip>
+                       <EducationFieldHelp id={`b2b-min-spend-help-${index}`} label={`Minimum nivoa ${index + 1}`} text="Najmanja mesečna potrošnja u dinarima potrebna da kupac uđe u ovaj nivo popusta." />
                     </Label>
                     <Input 
                       type="number" 
+                       aria-describedby={`b2b-min-spend-help-${index}`}
                       value={tier.minSpend} 
                       onChange={(e) => handleChange(index, "minSpend", e.target.value)} 
                     />
@@ -147,9 +150,11 @@ export default function AdminEducationB2bTiers() {
                     <Label className="flex items-center gap-2">
                       Maksimum (RSD)
                       <Tooltip><TooltipTrigger type="button"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent>Gornji prag potrošnje (ostavite prazno za poslednji nivo)</TooltipContent></Tooltip>
+                       <EducationFieldHelp id={`b2b-max-spend-help-${index}`} label={`Maksimum nivoa ${index + 1}`} text="Gornja granica mesečne potrošnje; mora odgovarati minimumu sledećeg nivoa, a za poslednji nivo može ostati prazna." />
                     </Label>
                     <Input 
                       type="number" 
+                       aria-describedby={`b2b-max-spend-help-${index}`}
                       value={tier.maxSpend} 
                       placeholder="Neograničeno"
                       onChange={(e) => handleChange(index, "maxSpend", e.target.value)} 
@@ -159,9 +164,11 @@ export default function AdminEducationB2bTiers() {
                     <Label className="flex items-center gap-2">
                       Popust (%)
                       <Tooltip><TooltipTrigger type="button"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent>Procenat popusta koji se odobrava</TooltipContent></Tooltip>
+                       <EducationFieldHelp id={`b2b-percent-help-${index}`} label={`Popust nivoa ${index + 1}`} text="Procenat popusta koji se automatski primenjuje kupcima čija potrošnja pripada ovom nivou." />
                     </Label>
                     <Input 
                       type="number" 
+                       aria-describedby={`b2b-percent-help-${index}`}
                       value={tier.percent} 
                       onChange={(e) => handleChange(index, "percent", e.target.value)} 
                     />

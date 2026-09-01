@@ -8,9 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Loader2, Package, Plus, Info, ArrowRight } from "lucide-react";
+import { Loader2, Package, Plus, ArrowRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { EducationFieldHelp } from "@/components/education/education-field-help";
 
 export default function BusinessEducationInventory() {
   const { data: userResp } = useGetCurrentUser();
@@ -107,20 +108,20 @@ export default function BusinessEducationInventory() {
             </DialogHeader>
             <div className="space-y-4 pt-4">
               <div className="space-y-2">
-                <Label className="flex items-center gap-2">
+                  <Label htmlFor="inventory-name" className="flex items-center gap-2">
                   Naziv materijala
-                  <Tooltip><TooltipTrigger><Info className="w-4 h-4 text-muted-foreground" /></TooltipTrigger><TooltipContent>Npr. Pribor za crtanje, Rukavice</TooltipContent></Tooltip>
+                    <EducationFieldHelp id="inventory-name-help" label="Naziv materijala" text="Unesite naziv potrošnog materijala koji osoblje lako prepoznaje, na primer „Nitrilne rukavice”." />
                 </Label>
-                <Input value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} placeholder="Naziv" />
+                  <Input id="inventory-name" aria-describedby="inventory-name-help" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} placeholder="Naziv" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="flex items-center gap-2">Količina</Label>
-                  <Input type="number" value={formData.quantity} onChange={(e) => setFormData({...formData, quantity: e.target.value})} placeholder="0" />
+                  <Label htmlFor="inventory-quantity" className="flex items-center gap-2">Količina <EducationFieldHelp id="inventory-quantity-help" label="Količina" text="Unesite trenutno raspoloživu količinu u mernoj jedinici navedenoj u sledećem polju." /></Label>
+                  <Input id="inventory-quantity" aria-describedby="inventory-quantity-help" type="number" min="0" value={formData.quantity} onChange={(e) => setFormData({...formData, quantity: e.target.value})} placeholder="0" />
                 </div>
                 <div className="space-y-2">
-                  <Label className="flex items-center gap-2">Merna jedinica</Label>
-                  <Input value={formData.unit} onChange={(e) => setFormData({...formData, unit: e.target.value})} placeholder="kom, ml, g..." />
+                  <Label htmlFor="inventory-unit" className="flex items-center gap-2">Merna jedinica <EducationFieldHelp id="inventory-unit-help" label="Merna jedinica" text="Navedite jedinicu u kojoj pratite zalihu, na primer kom, ml, g ili pakovanje." /></Label>
+                  <Input id="inventory-unit" aria-describedby="inventory-unit-help" value={formData.unit} onChange={(e) => setFormData({...formData, unit: e.target.value})} placeholder="kom, ml, g..." />
                 </div>
               </div>
             </div>

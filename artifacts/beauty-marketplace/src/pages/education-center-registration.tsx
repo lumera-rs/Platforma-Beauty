@@ -17,6 +17,7 @@ import { homeForRole } from "@/lib/role-routing";
 import { useReferralCapture } from "@/hooks/use-referral-capture";
 import { ReferralContextBanner } from "@/components/referral-context-banner";
 import { clearStoredReferralCode } from "@/lib/referral-storage";
+import { EducationFieldHelp } from "@/components/education/education-field-help";
 
 const eduRegistrationSchema = z.object({
   firstName: z.string().min(1, "Ime je obavezno."),
@@ -176,8 +177,8 @@ export default function EducationCenterRegistration() {
                         name="firstName"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Ime vlasnika/menadžera</FormLabel>
-                            <FormControl><Input autoComplete="given-name" {...field} /></FormControl>
+                            <FormLabel className="flex items-center gap-2">Ime vlasnika/menadžera <EducationFieldHelp id="edu-registration-first-name-help" label="Ime vlasnika ili menadžera" text="Unesite lično ime osobe koja će upravljati nalogom edukativnog centra." /></FormLabel>
+                            <FormControl><Input aria-describedby="edu-registration-first-name-help" autoComplete="given-name" {...field} /></FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -187,8 +188,8 @@ export default function EducationCenterRegistration() {
                         name="lastName"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Prezime vlasnika/menadžera</FormLabel>
-                            <FormControl><Input autoComplete="family-name" {...field} /></FormControl>
+                            <FormLabel className="flex items-center gap-2">Prezime vlasnika/menadžera <EducationFieldHelp id="edu-registration-last-name-help" label="Prezime vlasnika ili menadžera" text="Unesite prezime osobe odgovorne za nalog i komunikaciju sa platformom." /></FormLabel>
+                            <FormControl><Input aria-describedby="edu-registration-last-name-help" autoComplete="family-name" {...field} /></FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -199,8 +200,8 @@ export default function EducationCenterRegistration() {
                       name="email"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Poslovni email</FormLabel>
-                          <FormControl><Input type="email" autoComplete="email" placeholder="kontakt@akademija.rs" {...field} /></FormControl>
+                          <FormLabel className="flex items-center gap-2">Poslovni email <EducationFieldHelp id="edu-registration-email-help" label="Poslovni email" text="Unesite aktivnu poslovnu email adresu na koju ćete primati obaveštenja o centru i registraciji." /></FormLabel>
+                          <FormControl><Input aria-describedby="edu-registration-email-help" type="email" autoComplete="email" placeholder="kontakt@akademija.rs" {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -210,8 +211,8 @@ export default function EducationCenterRegistration() {
                       name="phone"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Kontakt telefon</FormLabel>
-                          <FormControl><Input type="tel" autoComplete="tel" placeholder="+381..." {...field} /></FormControl>
+                          <FormLabel className="flex items-center gap-2">Kontakt telefon <EducationFieldHelp id="edu-registration-phone-help" label="Kontakt telefon" text="Unesite broj na koji platforma i zainteresovani polaznici mogu da kontaktiraju odgovornu osobu." /></FormLabel>
+                          <FormControl><Input aria-describedby="edu-registration-phone-help" type="tel" autoComplete="tel" placeholder="+381..." {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -221,8 +222,8 @@ export default function EducationCenterRegistration() {
                       name="password"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Lozinka</FormLabel>
-                          <FormControl><PasswordInput autoComplete="new-password" {...field} /></FormControl>
+                          <FormLabel className="flex items-center gap-2">Lozinka <EducationFieldHelp id="edu-registration-password-help" label="Lozinka" text="Kreirajte jedinstvenu lozinku od najmanje osam karaktera koju ne koristite na drugim nalozima." /></FormLabel>
+                          <FormControl><PasswordInput aria-describedby="edu-registration-password-help" autoComplete="new-password" {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -241,8 +242,8 @@ export default function EducationCenterRegistration() {
                       name="businessName"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Zvanični naziv edukativnog centra</FormLabel>
-                          <FormControl><Input placeholder="Npr. Beauty Akademija Beograd" {...field} /></FormControl>
+                          <FormLabel className="flex items-center gap-2">Zvanični naziv edukativnog centra <EducationFieldHelp id="edu-registration-business-name-help" label="Zvanični naziv edukativnog centra" text="Unesite puni naziv centra pod kojim poslujete i koji će biti prikazan polaznicima." /></FormLabel>
+                          <FormControl><Input aria-describedby="edu-registration-business-name-help" placeholder="Npr. Beauty Akademija Beograd" {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -253,8 +254,8 @@ export default function EducationCenterRegistration() {
                       name="pib"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>PIB (Poreski identifikacioni broj)</FormLabel>
-                          <FormControl><Input placeholder="123456789" {...field} /></FormControl>
+                          <FormLabel className="flex items-center gap-2">PIB (Poreski identifikacioni broj) <EducationFieldHelp id="edu-registration-pib-help" label="PIB" text="Unesite poreski identifikacioni broj pravnog lica ili preduzetnika tačno kako je evidentiran kod nadležnog registra." /></FormLabel>
+                          <FormControl><Input aria-describedby="edu-registration-pib-help" placeholder="123456789" {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -266,8 +267,8 @@ export default function EducationCenterRegistration() {
                         name="city"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Grad</FormLabel>
-                            <FormControl><Input {...field} /></FormControl>
+                            <FormLabel className="flex items-center gap-2">Grad <EducationFieldHelp id="edu-registration-city-help" label="Grad" text="Unesite grad u kojem se nalazi sedište ili glavna lokacija edukativnog centra." /></FormLabel>
+                            <FormControl><Input aria-describedby="edu-registration-city-help" {...field} /></FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -277,8 +278,8 @@ export default function EducationCenterRegistration() {
                         name="municipality"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Opština</FormLabel>
-                            <FormControl><Input {...field} /></FormControl>
+                            <FormLabel className="flex items-center gap-2">Opština <EducationFieldHelp id="edu-registration-municipality-help" label="Opština" text="Unesite opštinu kojoj pripada navedena adresa centra." /></FormLabel>
+                            <FormControl><Input aria-describedby="edu-registration-municipality-help" {...field} /></FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -291,8 +292,8 @@ export default function EducationCenterRegistration() {
                         name="address"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Adresa centra</FormLabel>
-                            <FormControl><Input {...field} /></FormControl>
+                            <FormLabel className="flex items-center gap-2">Adresa centra <EducationFieldHelp id="edu-registration-address-help" label="Adresa centra" text="Unesite ulicu i kućni broj lokacije na kojoj je centar registrovan ili održava edukacije." /></FormLabel>
+                            <FormControl><Input aria-describedby="edu-registration-address-help" {...field} /></FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -302,8 +303,8 @@ export default function EducationCenterRegistration() {
                         name="postalCode"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Poštanski broj</FormLabel>
-                            <FormControl><Input {...field} /></FormControl>
+                            <FormLabel className="flex items-center gap-2">Poštanski broj <EducationFieldHelp id="edu-registration-postal-code-help" label="Poštanski broj" text="Unesite poštanski broj koji odgovara navedenom gradu i adresi centra." /></FormLabel>
+                            <FormControl><Input aria-describedby="edu-registration-postal-code-help" {...field} /></FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -315,8 +316,8 @@ export default function EducationCenterRegistration() {
                       name="websiteUrl"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Veb sajt (opciono)</FormLabel>
-                          <FormControl><Input type="url" placeholder="https://vas-centar.rs" {...field} /></FormControl>
+                          <FormLabel className="flex items-center gap-2">Veb sajt (opciono) <EducationFieldHelp id="edu-registration-website-help" label="Veb sajt" text="Ako centar ima sajt, unesite punu javnu adresu koja počinje sa https://." /></FormLabel>
+                          <FormControl><Input aria-describedby="edu-registration-website-help" type="url" placeholder="https://vas-centar.rs" {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -327,8 +328,8 @@ export default function EducationCenterRegistration() {
                       name="instagramUrl"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Instagram (opciono)</FormLabel>
-                          <FormControl><Input type="url" placeholder="https://instagram.com/vas-centar" {...field} /></FormControl>
+                          <FormLabel className="flex items-center gap-2">Instagram (opciono) <EducationFieldHelp id="edu-registration-instagram-help" label="Instagram" text="Unesite pun link do javnog Instagram profila centra, a ne samo korisničko ime." /></FormLabel>
+                          <FormControl><Input aria-describedby="edu-registration-instagram-help" type="url" placeholder="https://instagram.com/vas-centar" {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -339,9 +340,10 @@ export default function EducationCenterRegistration() {
                       name="description"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Programi i sertifikacije</FormLabel>
+                          <FormLabel className="flex items-center gap-2">Programi i sertifikacije <EducationFieldHelp id="edu-registration-description-help" label="Programi i sertifikacije" text="Opišite glavne oblasti obuke, način izvođenja programa i sertifikate koje polaznici mogu da steknu." /></FormLabel>
                           <FormControl>
                             <Textarea
+                              aria-describedby="edu-registration-description-help"
                               placeholder="Opišite oblasti edukacija, formate programa i sertifikacije koje nudite."
                               className="resize-none h-24"
                               {...field}

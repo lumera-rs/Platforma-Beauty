@@ -16,9 +16,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Loader2, Box, Plus, Info, Pencil, Archive } from "lucide-react";
+import { Loader2, Box, Plus, Pencil, Archive } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { EducationFieldHelp } from "@/components/education/education-field-help";
 
 export default function BusinessEducationBundles() {
   const { data: userResp } = useGetCurrentUser();
@@ -176,39 +177,39 @@ export default function BusinessEducationBundles() {
             </DialogHeader>
             <div className="space-y-4 pt-4">
               <div className="space-y-2">
-                <Label className="flex items-center gap-2">
+                <Label htmlFor="bundle-name" className="flex items-center gap-2">
                   Naziv paketa
-                  <Tooltip><TooltipTrigger><Info className="w-4 h-4 text-muted-foreground" /></TooltipTrigger><TooltipContent>Komercijalni naziv paketa</TooltipContent></Tooltip>
+                  <EducationFieldHelp id="bundle-name-help" label="Naziv paketa" text="Unesite jasan komercijalni naziv po kojem će polaznici prepoznati ovu grupu edukacija." />
                 </Label>
-                <Input value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} placeholder="Npr. Master Klas Paket" />
+                <Input id="bundle-name" aria-describedby="bundle-name-help" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} placeholder="Npr. Master Klas Paket" />
               </div>
               <div className="space-y-2">
-                <Label className="flex items-center gap-2">
+                <Label htmlFor="bundle-description" className="flex items-center gap-2">
                   Opis
-                  <Tooltip><TooltipTrigger><Info className="w-4 h-4 text-muted-foreground" /></TooltipTrigger><TooltipContent>Kratak opis šta paket obuhvata</TooltipContent></Tooltip>
+                  <EducationFieldHelp id="bundle-description-help" label="Opis paketa" text="Ukratko objasnite kome je paket namenjen i koje znanje ili pogodnost objedinjene edukacije pružaju." />
                 </Label>
-                <Input value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} placeholder="Opis paketa..." />
+                <Input id="bundle-description" aria-describedby="bundle-description-help" value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} placeholder="Opis paketa..." />
               </div>
               <div className="space-y-2">
-                <Label className="flex items-center gap-2">
+                <Label htmlFor="bundle-price" className="flex items-center gap-2">
                   Cena (RSD)
-                  <Tooltip><TooltipTrigger><Info className="w-4 h-4 text-muted-foreground" /></TooltipTrigger><TooltipContent>Konačna cena za polaznika</TooltipContent></Tooltip>
+                  <EducationFieldHelp id="bundle-price-help" label="Cena paketa" text="Unesite konačnu cenu celog paketa u dinarima koju polaznik plaća, uključujući sve edukacije u paketu." />
                 </Label>
-                <Input type="number" value={formData.price} onChange={(e) => setFormData({...formData, price: e.target.value})} placeholder="0" />
+                <Input id="bundle-price" aria-describedby="bundle-price-help" type="number" min="0" value={formData.price} onChange={(e) => setFormData({...formData, price: e.target.value})} placeholder="0" />
               </div>
               <div className="space-y-2">
-                <Label>Kur­sevi u paketu</Label>
+                <Label className="flex items-center gap-2">Kur­sevi u paketu <EducationFieldHelp id="bundle-courses-help" label="Kursevi u paketu" text="Označite sve aktivne kurseve koje kupac dobija jednom kupovinom ovog paketa." /></Label>
                 <div className="max-h-40 space-y-2 overflow-y-auto rounded-md border p-3">
                   {(courses as any[]).filter(course => course.centerId === centerId && course.published !== false && !course.archived).map(course => (
                     <label key={course.id} className="flex cursor-pointer items-center gap-2 text-sm">
-                      <input type="checkbox" checked={formData.courseIds.includes(course.id)} onChange={() => setFormData(f => ({ ...f, courseIds: f.courseIds.includes(course.id) ? f.courseIds.filter(id => id !== course.id) : [...f.courseIds, course.id] }))} />
+                      <input type="checkbox" aria-describedby="bundle-courses-help" checked={formData.courseIds.includes(course.id)} onChange={() => setFormData(f => ({ ...f, courseIds: f.courseIds.includes(course.id) ? f.courseIds.filter(id => id !== course.id) : [...f.courseIds, course.id] }))} />
                       <span>{course.title}</span>
                     </label>
                   ))}
                   {!courses.length && <p className="text-sm text-muted-foreground">Prvo kreirajte aktivan kurs ovog centra.</p>}
                 </div>
               </div>
-              <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={formData.published} onChange={e => setFormData({ ...formData, published: e.target.checked })} /> Objavi paket u marketplace-u</label>
+              <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" aria-describedby="bundle-published-help" checked={formData.published} onChange={e => setFormData({ ...formData, published: e.target.checked })} /> Objavi paket u marketplace-u <EducationFieldHelp id="bundle-published-help" label="Objava paketa" text="Uključite tek kada su naziv, cena i izbor kurseva spremni; paket tada postaje vidljiv kupcima na marketplace-u." /></label>
             </div>
             <DialogFooter className="mt-6">
               <Button variant="outline" onClick={() => setIsOpen(false)}>Otkaži</Button>

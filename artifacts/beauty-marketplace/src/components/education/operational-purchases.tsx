@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
+import { EducationFieldHelp } from "@/components/education/education-field-help";
 import {
   useListMyEducationOperationalBookings,
   useGetEducationOperationalPaymentPlan,
@@ -217,9 +218,11 @@ export function OperationalEducationPurchases() {
             </DialogHeader>
             <div className="space-y-4 pt-4">
               <div className="space-y-2">
-                <label htmlFor="operational-cancel-reason" className="text-sm font-medium">Razlog otkazivanja</label>
+                <div className="flex items-center gap-1">
+                  <label htmlFor="operational-cancel-reason" className="text-sm font-medium">Razlog otkazivanja</label>
+                  <EducationFieldHelp id="operational-cancel-reason-help" label="Razlog otkazivanja" text="Opišite razlog otkazivanja sa najmanje 3 znaka; beleži se uz otkazanu rezervaciju." />
+                </div>
                 <Textarea id="operational-cancel-reason" value={cancelReason} onChange={e => setCancelReason(e.target.value)} placeholder="Unesite razlog..." maxLength={1000} aria-describedby="operational-cancel-reason-help" aria-invalid={cancelReason.length > 0 && !cancelReasonIsValid} />
-                <p id="operational-cancel-reason-help" className="text-xs text-muted-foreground">Unesite najmanje 3 znaka.</p>
               </div>
               <Button 
                 variant="destructive" 

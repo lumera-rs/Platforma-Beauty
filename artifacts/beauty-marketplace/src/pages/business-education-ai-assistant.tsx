@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, Bot, Send, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { Label } from "@/components/ui/label";
+import { EducationFieldHelp } from "@/components/education/education-field-help";
 
 export default function BusinessEducationAiAssistant() {
   const { data: userResp } = useGetCurrentUser();
@@ -88,15 +90,23 @@ export default function BusinessEducationAiAssistant() {
             )}
           </CardContent>
           <div className="p-4 border-t bg-card shrink-0">
-            <form onSubmit={(e) => { e.preventDefault(); handleSend(); }} className="flex gap-3">
-              <Input 
-                value={prompt} 
-                onChange={(e) => setPrompt(e.target.value)} 
-                placeholder="Pitaj me o slobodnim salama, predavačima..." 
-                className="flex-1 bg-muted/20"
-                disabled={assistantMut.isPending}
-              />
-              <Button type="submit" disabled={!prompt.trim() || assistantMut.isPending} className="px-6">
+            <form onSubmit={(e) => { e.preventDefault(); handleSend(); }} className="flex items-end gap-3">
+              <div className="flex-1">
+                <Label htmlFor="education-assistant-question" className="mb-1 flex items-center gap-2">
+                  Pitanje asistentu
+                  <EducationFieldHelp id="education-assistant-question-help" label="Pitanje asistentu" text="Opišite konkretno šta želite da proverite o rasporedu, kursevima ili administraciji centra. Ne unosite osetljive lične podatke." />
+                </Label>
+                <Input
+                  id="education-assistant-question"
+                  aria-describedby="education-assistant-question-help"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="Pitaj me o slobodnim salama, predavačima..."
+                  className="bg-muted/20"
+                  disabled={assistantMut.isPending}
+                />
+              </div>
+              <Button type="submit" aria-label="Pošalji pitanje asistentu" disabled={!prompt.trim() || assistantMut.isPending} className="px-6">
                 <Send className="w-4 h-4" />
               </Button>
             </form>

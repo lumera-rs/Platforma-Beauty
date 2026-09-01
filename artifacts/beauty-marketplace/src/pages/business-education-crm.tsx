@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, Users, BookOpen, CheckCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EducationFieldHelp } from "@/components/education/education-field-help";
 
 export default function BusinessEducationCrm() {
   const { data: userResp } = useGetCurrentUser();
@@ -38,16 +39,19 @@ export default function BusinessEducationCrm() {
             <p className="text-muted-foreground mt-1">Evidencija polaznika i ukupna statistika pohađanja</p>
           </div>
           {(statusList?.length ?? 0) > 1 && (
-            <Select value={centerId} onValueChange={setSelectedCenterId}>
-              <SelectTrigger className="w-full sm:w-72" aria-label="Izaberite edukativni centar">
-                <SelectValue placeholder="Izaberite edukativni centar" />
-              </SelectTrigger>
-              <SelectContent>
-                {statusList!.map((center) => (
-                  <SelectItem key={center.id} value={center.id}>{center.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-1">
+              <EducationFieldHelp id="education-crm-center-picker-help" label="Edukativni centar za CRM" text="Izaberite centar čiju evidenciju polaznika i statistiku završenih edukacija želite da pregledate." />
+              <Select value={centerId} onValueChange={setSelectedCenterId}>
+                <SelectTrigger className="w-full sm:w-72" aria-label="Izaberite edukativni centar" aria-describedby="education-crm-center-picker-help">
+                  <SelectValue placeholder="Izaberite edukativni centar" />
+                </SelectTrigger>
+                <SelectContent>
+                  {statusList!.map((center) => (
+                    <SelectItem key={center.id} value={center.id}>{center.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           )}
         </div>
 
