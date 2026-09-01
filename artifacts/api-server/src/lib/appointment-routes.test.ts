@@ -129,14 +129,14 @@ async function assertConfirmedCreationAudit(appointmentId: string, actorId: stri
   assert.ok(Math.abs(history[0]!.occurredAt.getTime() - appointment!.confirmedAt!.getTime()) < 1_000);
 }
 
-async function getPublicSalonCards(baseUrl: string, query: string, requiredFixtureId: string): Promise<PublicSalonCard[]> {
+async function getPublicSalonCards(baseUrl: string, query: string, requiredFixtureId?: string): Promise<PublicSalonCard[]> {
   const accumulated: PublicSalonCard[] = [];
   for (let page = 1; page <= 100; page += 1) {
     const response = await fetch(`${baseUrl}/api/salons?${query}&pageSize=100&page=${page}`);
     assert.equal(response.status, 200, `public salon filter "${query}" must succeed`);
     const cards = await response.json() as PublicSalonCard[];
     accumulated.push(...cards);
-    if (cards.some((item) => item.id === requiredFixtureId) || cards.length < 100) break;
+    if ((requiredFixtureId && cards.some((item) => item.id === requiredFixtureId)) || cards.length < 100) break;
   }
   return accumulated;
 }

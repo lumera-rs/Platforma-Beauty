@@ -404,6 +404,7 @@ import type {
   GetCatalogFeed200,
   GetCommerceSearchSuggestionsParams,
   GetCustomerCartThresholdRewardsParams,
+  GetEducationBundle200,
   GetEducationCenterOperationsCalendarParams,
   GetEducationCourseAvailabilityParams,
   GetMarketplaceHomeDiscoveryParams,
@@ -435,10 +436,15 @@ import type {
   ListAdminEducationInstallmentsParams,
   ListAdminEducationTaxonomyProposalsParams,
   ListAdminFeaturedPlacementsParams,
+  ListAdminPendingEducationBundlePurchases200Item,
   ListBeautyJobsParams,
   ListCommerceBestsellersParams,
   ListCoursesParams,
   ListCustomerNotificationsParams,
+  ListEducationBundleEligibleEmployees200Item,
+  ListEducationBundlePurchases200Item,
+  ListEducationBundles200Item,
+  ListEducationCenterBundlePurchases200Item,
   ListEducationGiftVouchersParams,
   ListEducationWishlistParams,
   ListEnrollmentsParams,
@@ -515,6 +521,8 @@ import type {
   PublicRetailOrderTracking,
   PublicRetailProductReview,
   PublicRetailProductReviewList,
+  PurchaseEducationBundle201,
+  PurchaseEducationBundleBody,
   PurchasePackageBody,
   PushSubscription,
   PushSubscriptionInput,
@@ -597,6 +605,7 @@ import type {
   ServiceTemplate,
   ServiceTemplateBatchInput,
   ServiceTemplateBatchResult,
+  SettleAdminEducationBundlePurchase200,
   ShiftSwapCreate,
   ShiftSwapRequest,
   ShiftSwapRespondBody,
@@ -14539,6 +14548,587 @@ export function useListEducationPurchases<TData = Awaited<ReturnType<typeof list
 
 
 
+
+export const getListEducationBundlesUrl = () => {
+
+
+
+
+  return `/api/education/bundles`
+}
+
+/**
+ * @summary List published education packages
+ */
+export const listEducationBundles = async ( options?: Parameters<typeof customFetch>[1]): Promise<ListEducationBundles200Item[]> => {
+
+  return customFetch<ListEducationBundles200Item[]>(getListEducationBundlesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListEducationBundlesQueryKey = () => {
+    return [
+    `/api/education/bundles`
+    ] as const;
+    }
+
+
+export const getListEducationBundlesQueryOptions = <TData = Awaited<ReturnType<typeof listEducationBundles>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEducationBundles>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListEducationBundlesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listEducationBundles>>> = ({ signal }) => listEducationBundles({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEducationBundles>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListEducationBundlesQueryResult = NonNullable<Awaited<ReturnType<typeof listEducationBundles>>>
+export type ListEducationBundlesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List published education packages
+ */
+
+export function useListEducationBundles<TData = Awaited<ReturnType<typeof listEducationBundles>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEducationBundles>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListEducationBundlesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetEducationBundleUrl = (bundleId: string,) => {
+
+
+
+
+  return `/api/education/bundles/${bundleId}`
+}
+
+export const getEducationBundle = async (bundleId: string, options?: Parameters<typeof customFetch>[1]): Promise<GetEducationBundle200> => {
+
+  return customFetch<GetEducationBundle200>(getGetEducationBundleUrl(bundleId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetEducationBundleQueryKey = (bundleId: string,) => {
+    return [
+    `/api/education/bundles/${bundleId}`
+    ] as const;
+    }
+
+
+export const getGetEducationBundleQueryOptions = <TData = Awaited<ReturnType<typeof getEducationBundle>>, TError = ErrorType<unknown>>(bundleId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEducationBundle>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetEducationBundleQueryKey(bundleId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getEducationBundle>>> = ({ signal }) => getEducationBundle(bundleId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: bundleId !== null && bundleId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEducationBundle>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetEducationBundleQueryResult = NonNullable<Awaited<ReturnType<typeof getEducationBundle>>>
+export type GetEducationBundleQueryError = ErrorType<unknown>
+
+
+
+export function useGetEducationBundle<TData = Awaited<ReturnType<typeof getEducationBundle>>, TError = ErrorType<unknown>>(
+ bundleId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEducationBundle>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetEducationBundleQueryOptions(bundleId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getPurchaseEducationBundleUrl = (bundleId: string,) => {
+
+
+
+
+  return `/api/education/bundles/${bundleId}/purchases`
+}
+
+/**
+ * @summary Request one parent package entitlement
+ */
+export const purchaseEducationBundle = async (bundleId: string,
+    purchaseEducationBundleBody: PurchaseEducationBundleBody, options?: Parameters<typeof customFetch>[1]): Promise<PurchaseEducationBundle201> => {
+
+  return customFetch<PurchaseEducationBundle201>(getPurchaseEducationBundleUrl(bundleId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(purchaseEducationBundleBody)
+  }
+);}
+
+
+
+
+
+export const getPurchaseEducationBundleMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof purchaseEducationBundle>>, TError,{bundleId: string;data: BodyType<PurchaseEducationBundleBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof purchaseEducationBundle>>, TError,{bundleId: string;data: BodyType<PurchaseEducationBundleBody>}, TContext> => {
+
+const mutationKey = ['purchaseEducationBundle'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof purchaseEducationBundle>>, {bundleId: string;data: BodyType<PurchaseEducationBundleBody>}> = (props) => {
+          const {bundleId,data} = props ?? {};
+
+          return  purchaseEducationBundle(bundleId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PurchaseEducationBundleMutationResult = NonNullable<Awaited<ReturnType<typeof purchaseEducationBundle>>>
+    export type PurchaseEducationBundleMutationBody = BodyType<PurchaseEducationBundleBody>
+    export type PurchaseEducationBundleMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Request one parent package entitlement
+ */
+export const usePurchaseEducationBundle = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof purchaseEducationBundle>>, TError,{bundleId: string;data: BodyType<PurchaseEducationBundleBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof purchaseEducationBundle>>,
+        TError,
+        {bundleId: string;data: BodyType<PurchaseEducationBundleBody>},
+        TContext
+      > => {
+      return useMutation(getPurchaseEducationBundleMutationOptions(options));
+    }
+
+export const getListEducationBundlePurchasesUrl = () => {
+
+
+
+
+  return `/api/education/bundle-purchases`
+}
+
+/**
+ * @summary List the current purchaser's package purchases
+ */
+export const listEducationBundlePurchases = async ( options?: Parameters<typeof customFetch>[1]): Promise<ListEducationBundlePurchases200Item[]> => {
+
+  return customFetch<ListEducationBundlePurchases200Item[]>(getListEducationBundlePurchasesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListEducationBundlePurchasesQueryKey = () => {
+    return [
+    `/api/education/bundle-purchases`
+    ] as const;
+    }
+
+
+export const getListEducationBundlePurchasesQueryOptions = <TData = Awaited<ReturnType<typeof listEducationBundlePurchases>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEducationBundlePurchases>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListEducationBundlePurchasesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listEducationBundlePurchases>>> = ({ signal }) => listEducationBundlePurchases({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEducationBundlePurchases>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListEducationBundlePurchasesQueryResult = NonNullable<Awaited<ReturnType<typeof listEducationBundlePurchases>>>
+export type ListEducationBundlePurchasesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List the current purchaser's package purchases
+ */
+
+export function useListEducationBundlePurchases<TData = Awaited<ReturnType<typeof listEducationBundlePurchases>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEducationBundlePurchases>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListEducationBundlePurchasesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListEducationBundleEligibleEmployeesUrl = () => {
+
+
+
+
+  return `/api/education/bundle-purchases/eligible-employees`
+}
+
+/**
+ * @summary List employees eligible for the current salon owner's package purchase
+ */
+export const listEducationBundleEligibleEmployees = async ( options?: Parameters<typeof customFetch>[1]): Promise<ListEducationBundleEligibleEmployees200Item[]> => {
+
+  return customFetch<ListEducationBundleEligibleEmployees200Item[]>(getListEducationBundleEligibleEmployeesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListEducationBundleEligibleEmployeesQueryKey = () => {
+    return [
+    `/api/education/bundle-purchases/eligible-employees`
+    ] as const;
+    }
+
+
+export const getListEducationBundleEligibleEmployeesQueryOptions = <TData = Awaited<ReturnType<typeof listEducationBundleEligibleEmployees>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEducationBundleEligibleEmployees>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListEducationBundleEligibleEmployeesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listEducationBundleEligibleEmployees>>> = ({ signal }) => listEducationBundleEligibleEmployees({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEducationBundleEligibleEmployees>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListEducationBundleEligibleEmployeesQueryResult = NonNullable<Awaited<ReturnType<typeof listEducationBundleEligibleEmployees>>>
+export type ListEducationBundleEligibleEmployeesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List employees eligible for the current salon owner's package purchase
+ */
+
+export function useListEducationBundleEligibleEmployees<TData = Awaited<ReturnType<typeof listEducationBundleEligibleEmployees>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEducationBundleEligibleEmployees>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListEducationBundleEligibleEmployeesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListEducationCenterBundlePurchasesUrl = (centerId: string,) => {
+
+
+
+
+  return `/api/education/centers/${centerId}/bundle-purchases`
+}
+
+export const listEducationCenterBundlePurchases = async (centerId: string, options?: Parameters<typeof customFetch>[1]): Promise<ListEducationCenterBundlePurchases200Item[]> => {
+
+  return customFetch<ListEducationCenterBundlePurchases200Item[]>(getListEducationCenterBundlePurchasesUrl(centerId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListEducationCenterBundlePurchasesQueryKey = (centerId: string,) => {
+    return [
+    `/api/education/centers/${centerId}/bundle-purchases`
+    ] as const;
+    }
+
+
+export const getListEducationCenterBundlePurchasesQueryOptions = <TData = Awaited<ReturnType<typeof listEducationCenterBundlePurchases>>, TError = ErrorType<unknown>>(centerId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEducationCenterBundlePurchases>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListEducationCenterBundlePurchasesQueryKey(centerId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listEducationCenterBundlePurchases>>> = ({ signal }) => listEducationCenterBundlePurchases(centerId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: centerId !== null && centerId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEducationCenterBundlePurchases>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListEducationCenterBundlePurchasesQueryResult = NonNullable<Awaited<ReturnType<typeof listEducationCenterBundlePurchases>>>
+export type ListEducationCenterBundlePurchasesQueryError = ErrorType<unknown>
+
+
+
+export function useListEducationCenterBundlePurchases<TData = Awaited<ReturnType<typeof listEducationCenterBundlePurchases>>, TError = ErrorType<unknown>>(
+ centerId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEducationCenterBundlePurchases>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListEducationCenterBundlePurchasesQueryOptions(centerId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListAdminPendingEducationBundlePurchasesUrl = () => {
+
+
+
+
+  return `/api/admin/education/bundle-purchases/pending`
+}
+
+export const listAdminPendingEducationBundlePurchases = async ( options?: Parameters<typeof customFetch>[1]): Promise<ListAdminPendingEducationBundlePurchases200Item[]> => {
+
+  return customFetch<ListAdminPendingEducationBundlePurchases200Item[]>(getListAdminPendingEducationBundlePurchasesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAdminPendingEducationBundlePurchasesQueryKey = () => {
+    return [
+    `/api/admin/education/bundle-purchases/pending`
+    ] as const;
+    }
+
+
+export const getListAdminPendingEducationBundlePurchasesQueryOptions = <TData = Awaited<ReturnType<typeof listAdminPendingEducationBundlePurchases>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAdminPendingEducationBundlePurchases>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAdminPendingEducationBundlePurchasesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAdminPendingEducationBundlePurchases>>> = ({ signal }) => listAdminPendingEducationBundlePurchases({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAdminPendingEducationBundlePurchases>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAdminPendingEducationBundlePurchasesQueryResult = NonNullable<Awaited<ReturnType<typeof listAdminPendingEducationBundlePurchases>>>
+export type ListAdminPendingEducationBundlePurchasesQueryError = ErrorType<unknown>
+
+
+
+export function useListAdminPendingEducationBundlePurchases<TData = Awaited<ReturnType<typeof listAdminPendingEducationBundlePurchases>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAdminPendingEducationBundlePurchases>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAdminPendingEducationBundlePurchasesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSettleAdminEducationBundlePurchaseUrl = (purchaseId: string,) => {
+
+
+
+
+  return `/api/admin/education/bundle-purchases/${purchaseId}/settle`
+}
+
+export const settleAdminEducationBundlePurchase = async (purchaseId: string, options?: Parameters<typeof customFetch>[1]): Promise<SettleAdminEducationBundlePurchase200> => {
+
+  return customFetch<SettleAdminEducationBundlePurchase200>(getSettleAdminEducationBundlePurchaseUrl(purchaseId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getSettleAdminEducationBundlePurchaseMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof settleAdminEducationBundlePurchase>>, TError,{purchaseId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof settleAdminEducationBundlePurchase>>, TError,{purchaseId: string}, TContext> => {
+
+const mutationKey = ['settleAdminEducationBundlePurchase'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof settleAdminEducationBundlePurchase>>, {purchaseId: string}> = (props) => {
+          const {purchaseId} = props ?? {};
+
+          return  settleAdminEducationBundlePurchase(purchaseId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SettleAdminEducationBundlePurchaseMutationResult = NonNullable<Awaited<ReturnType<typeof settleAdminEducationBundlePurchase>>>
+
+    export type SettleAdminEducationBundlePurchaseMutationError = ErrorType<unknown>
+
+    export const useSettleAdminEducationBundlePurchase = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof settleAdminEducationBundlePurchase>>, TError,{purchaseId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof settleAdminEducationBundlePurchase>>,
+        TError,
+        {purchaseId: string},
+        TContext
+      > => {
+      return useMutation(getSettleAdminEducationBundlePurchaseMutationOptions(options));
+    }
 
 export const getListEducationPurchaseMessagesUrl = (enrollmentId: string,) => {
 

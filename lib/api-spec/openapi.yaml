@@ -3047,6 +3047,80 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/EducationEnrollment" }
+  /education/bundles:
+    get:
+      operationId: listEducationBundles
+      tags: [education]
+      summary: List published education packages
+      responses:
+        "200":
+          description: Published packages
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, additionalProperties: true } }
+  /education/bundles/{bundleId}:
+    get:
+      operationId: getEducationBundle
+      tags: [education]
+      parameters: [{ name: bundleId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200": { description: Published package, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+  /education/bundles/{bundleId}/purchases:
+    post:
+      operationId: purchaseEducationBundle
+      tags: [education]
+      summary: Request one parent package entitlement
+      parameters:
+        - { name: bundleId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetType]
+              properties:
+                targetType: { type: string, enum: [individual, salon_employee] }
+                learnerUserId: { type: string, format: uuid }
+                salonId: { type: string, format: uuid }
+                employeeId: { type: string, format: uuid }
+      responses:
+        "201": { description: Pending parent purchase, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+  /education/bundle-purchases:
+    get:
+      operationId: listEducationBundlePurchases
+      tags: [education]
+      summary: List the current purchaser's package purchases
+      responses:
+        "200": { description: Purchases, content: { application/json: { schema: { type: array, items: { type: object, additionalProperties: true } } } } }
+  /education/bundle-purchases/eligible-employees:
+    get:
+      operationId: listEducationBundleEligibleEmployees
+      tags: [education]
+      summary: List employees eligible for the current salon owner's package purchase
+      responses:
+        "200": { description: Eligible employees, content: { application/json: { schema: { type: array, items: { type: object, additionalProperties: true } } } } }
+  /education/centers/{centerId}/bundle-purchases:
+    get:
+      operationId: listEducationCenterBundlePurchases
+      tags: [education]
+      parameters: [{ name: centerId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200": { description: Center package purchases, content: { application/json: { schema: { type: array, items: { type: object, additionalProperties: true } } } } }
+  /admin/education/bundle-purchases/pending:
+    get:
+      operationId: listAdminPendingEducationBundlePurchases
+      tags: [admin, education]
+      responses:
+        "200": { description: Pending package purchases, content: { application/json: { schema: { type: array, items: { type: object, additionalProperties: true } } } } }
+  /admin/education/bundle-purchases/{purchaseId}/settle:
+    post:
+      operationId: settleAdminEducationBundlePurchase
+      tags: [admin, education]
+      parameters: [{ name: purchaseId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200": { description: Settled parent purchase, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
   /education/purchases/{enrollmentId}/messages:
     get:
       operationId: listEducationPurchaseMessages

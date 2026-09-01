@@ -1,10 +1,12 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { 
   useListEducationCenterBundles, 
   useCreateEducationCenterBundle, 
   useUpdateEducationCenterBundle,
   useArchiveEducationCenterBundle,
+   useListCourses,
+   getListCoursesQueryKey,
   useGetEducationCenterStatus, 
   useGetCurrentUser 
 } from "@workspace/api-client-react";
@@ -38,19 +40,22 @@ export default function BusinessEducationBundles() {
 
   const [isOpen, setIsOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ name: "", price: "", description: "" });
+  const [formData, setFormData] = useState({ name: "", price: "", description: "", courseIds: [] as string[], published: false });
+  const { data: courses = [] } = useListCourses(undefined, { query: { enabled: Boolean(centerId), queryKey: getListCoursesQueryKey() } });
+  const [purchases, setPurchases] = useState<any[]>([]);
+  useEffect(() => { if (centerId) void fetch(`/api/education/centers/${centerId}/bundle-purchases`, { credentials: "include" }).then(r => r.ok ? r.json() : []).then(setPurchases); }, [centerId]);
 
   const items = bundlesResp || [];
 
   const handleOpenCreate = () => {
     setEditingId(null);
-    setFormData({ name: "", price: "", description: "" });
+    setFormData({ name: "", price: "", description: "", courseIds: [], published: false });
     setIsOpen(true);
   };
 
   const handleOpenEdit = (item: any) => {
     setEditingId(item.id);
-    setFormData({ name: item.name, price: String(item.price), description: item.description || "" });
+    setFormData({ name: item.name, price: String(item.price), description: item.description || "", courseIds: item.courseIds || [], published: Boolean(item.published) });
     setIsOpen(true);
   };
 
@@ -61,7 +66,8 @@ export default function BusinessEducationBundles() {
       name: formData.name,
       price: Number(formData.price) || 0,
       description: formData.description,
-      courseIds: [] // Moguće dodavanje kurseva u budućnosti
+      courseIds: formData.courseIds,
+      published: formData.published,
     };
 
     if (editingId) {
@@ -139,6 +145,7 @@ export default function BusinessEducationBundles() {
                     <span className="text-muted-foreground">Cena paketa</span>
                     <span className="font-bold text-xl text-primary">{formatMoney(item.price)}</span>
                   </div>
+                  {purchases.filter(purchase => purchase.bundleId === item.id).map(purchase => <p key={purchase.id} className="mt-2 text-sm text-muted-foreground">Polaznik: <span className="font-medium text-foreground">{purchase.participantName ?? "Nije dostupan"}</span> · {purchase.status === "settled" ? "aktivan" : "čeka uplatu"}</p>)}
                 </CardContent>
                 <CardFooter className="bg-muted/30 pt-4 flex gap-2">
                   <Button variant="outline" size="sm" className="flex-1" onClick={() => handleOpenEdit(item)}>
@@ -189,10 +196,23 @@ export default function BusinessEducationBundles() {
                 </Label>
                 <Input type="number" value={formData.price} onChange={(e) => setFormData({...formData, price: e.target.value})} placeholder="0" />
               </div>
+              <div className="space-y-2">
+                <Label>Kur­sevi u paketu</Label>
+                <div className="max-h-40 space-y-2 overflow-y-auto rounded-md border p-3">
+                  {(courses as any[]).filter(course => course.centerId === centerId && course.published !== false && !course.archived).map(course => (
+                    <label key={course.id} className="flex cursor-pointer items-center gap-2 text-sm">
+                      <input type="checkbox" checked={formData.courseIds.includes(course.id)} onChange={() => setFormData(f => ({ ...f, courseIds: f.courseIds.includes(course.id) ? f.courseIds.filter(id => id !== course.id) : [...f.courseIds, course.id] }))} />
+                      <span>{course.title}</span>
+                    </label>
+                  ))}
+                  {!courses.length && <p className="text-sm text-muted-foreground">Prvo kreirajte aktivan kurs ovog centra.</p>}
+                </div>
+              </div>
+              <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={formData.published} onChange={e => setFormData({ ...formData, published: e.target.checked })} /> Objavi paket u marketplace-u</label>
             </div>
             <DialogFooter className="mt-6">
               <Button variant="outline" onClick={() => setIsOpen(false)}>Otkaži</Button>
-              <Button onClick={handleSave} disabled={createMut.isPending || updateMut.isPending || !formData.name}>Sačuvaj</Button>
+              <Button onClick={handleSave} disabled={createMut.isPending || updateMut.isPending || !formData.name || (formData.published && !formData.courseIds.length)}>Sačuvaj</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

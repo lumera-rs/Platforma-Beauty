@@ -38,6 +38,8 @@ const InstructorPublicProfilePage = lazy(() => import('./pages/business-educatio
 const EducationMarketplace = lazy(() => import('./pages/education-marketplace'));
 const EducationPublicCenterPage = lazy(() => import('./pages/education-marketplace').then((module) => ({ default: module.EducationPublicCenterPage })));
 const EducationPublicCourseDetail = lazy(() => import('./pages/education-marketplace').then((module) => ({ default: module.EducationPublicCourseDetail })));
+const EducationBundleDetail = lazy(() => import('./pages/education-marketplace').then((module) => ({ default: module.EducationBundleDetail })));
+const EducationBundlePurchasesPage = lazy(() => import('./pages/education-marketplace').then((module) => ({ default: module.EducationBundlePurchasesPage })));
 const EducationTaxonomyPage = lazy(() => import('./pages/education-marketplace').then((module) => ({ default: module.EducationTaxonomyPage })));
 const EducationWishlistPage = lazy(() => import('./pages/education-marketplace').then((module) => ({ default: module.EducationWishlistPage })));
 const EducationVouchersPage = lazy(() => import('./pages/education-marketplace').then((module) => ({ default: module.EducationVouchersPage })));
@@ -430,6 +432,8 @@ function Router() {
         <Route path="/edukacije/sekcije/:sectionSlug/:categorySlug" component={EducationTaxonomyPage} />
         <Route path="/edukacije/sekcije/:sectionSlug" component={EducationTaxonomyPage} />
         <Route path="/edukacije/centri/:centerId" component={EducationPublicCenterPage} />
+        <Route path="/edukacije/paketi/:bundleId" component={EducationBundleDetail} />
+        <Route path="/edukacije/moji-paketi"><RoleGuard allowedRoles={['CUSTOMER', 'SALON_OWNER', 'STUDENT', 'JOBSEEKER']} loginPath="/prijava"><EducationBundlePurchasesPage /></RoleGuard></Route>
         <Route path="/edukacije/:courseId" component={EducationPublicCourseDetail} />
         <Route path="/edukacije"><EducationMarketplace /></Route>
 

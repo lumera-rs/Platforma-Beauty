@@ -18,6 +18,7 @@ import deoG2Router from "./deo-g2";
 import educationOperationsRouter from "./education-operations";
 import educationB2bDiscountsRouter from "./education-b2b-discounts";
 import educationCenterOperationsRouter from "./education-center-operations";
+import educationBundlePurchasesRouter from "./education-bundle-purchases";
 
 const router: IRouter = Router();
 
@@ -36,6 +37,7 @@ router.use(deoG2Router);
 router.use(educationOperationsRouter);
 router.use(educationB2bDiscountsRouter);
 router.use(educationCenterOperationsRouter);
+router.use(educationBundlePurchasesRouter);
 router.use(marketplaceRouter);
 router.use(retailSubscriptionsRouter);
 router.use(growthRouter);

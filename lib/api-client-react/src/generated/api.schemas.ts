@@ -14081,6 +14081,37 @@ export const AdminListOrdersDeliveryMethod = {
   personal_belgrade: 'personal_belgrade',
 } as const;
 
+export type ListEducationBundles200Item = { [key: string]: unknown };
+
+export type GetEducationBundle200 = { [key: string]: unknown };
+
+export type PurchaseEducationBundleBodyTargetType = typeof PurchaseEducationBundleBodyTargetType[keyof typeof PurchaseEducationBundleBodyTargetType];
+
+
+export const PurchaseEducationBundleBodyTargetType = {
+  individual: 'individual',
+  salon_employee: 'salon_employee',
+} as const;
+
+export type PurchaseEducationBundleBody = {
+  targetType: PurchaseEducationBundleBodyTargetType;
+  learnerUserId?: string;
+  salonId?: string;
+  employeeId?: string;
+};
+
+export type PurchaseEducationBundle201 = { [key: string]: unknown };
+
+export type ListEducationBundlePurchases200Item = { [key: string]: unknown };
+
+export type ListEducationBundleEligibleEmployees200Item = { [key: string]: unknown };
+
+export type ListEducationCenterBundlePurchases200Item = { [key: string]: unknown };
+
+export type ListAdminPendingEducationBundlePurchases200Item = { [key: string]: unknown };
+
+export type SettleAdminEducationBundlePurchase200 = { [key: string]: unknown };
+
 export type CreateEducationPurchaseMessageBody = {
   /**
      * @minLength 1

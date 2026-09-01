@@ -110,6 +110,14 @@ export default function AdminEducationMarketplace() {
 
   const [settingsRaw, setSettingsRaw] = useState<any>({ commissionPercent: "0", reservePercent: "0", onlineRefundDays: "0", liveAppealDays: "0", featuredCoursePrice: "0" });
   const [placementSettingsRaw, setPlacementSettingsRaw] = useState<Record<string, { price: string, durationDays: string, slotCount: string }>>({});
+  const [pendingBundlePurchases, setPendingBundlePurchases] = useState<any[]>([]);
+  const loadPendingBundles = () => void fetch("/api/admin/education/bundle-purchases/pending", { credentials: "include" }).then(r => r.ok ? r.json() : []).then(setPendingBundlePurchases);
+  useEffect(() => { loadPendingBundles(); }, []);
+  const settleBundlePurchase = async (id: string) => {
+    const response = await fetch(`/api/admin/education/bundle-purchases/${id}/settle`, { method: "POST", credentials: "include" });
+    if (!response.ok) { const body = await response.json(); toast.error("Greška", { description: body.error }); return; }
+    toast.success("Paket i pristup kursevima su aktivirani."); loadPendingBundles();
+  };
 
   const [settleVoucherOpen, setSettleVoucherOpen] = useState(false);
   const [refundVoucherOpen, setRefundVoucherOpen] = useState(false);
@@ -406,6 +414,10 @@ export default function AdminEducationMarketplace() {
         <h1 className="mt-1 font-serif text-3xl font-bold">Zaštita kupovina i obračun</h1>
         <p className="mt-2 text-muted-foreground">Upravljanje edukativnim centrima, taksonomijom, isticanjem i finansijama.</p>
       </div>
+      <Card>
+        <CardHeader><CardTitle>Paketi edukacija na čekanju</CardTitle><CardDescription>Potvrda kreira jednu roditeljsku finansijsku evidenciju i tek tada aktivira pristup svim kursevima.</CardDescription></CardHeader>
+        <CardContent className="space-y-3">{pendingBundlePurchases.length === 0 ? <p className="text-sm text-muted-foreground">Nema paketa na čekanju.</p> : pendingBundlePurchases.map(purchase => <div key={purchase.id} className="flex flex-col gap-2 rounded border p-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium">{money(purchase.amount)} · {purchase.targetType === "salon_employee" ? "zaposleni salona" : "individualni polaznik"}</p><p className="text-xs text-muted-foreground">{purchase.id}</p></div><Button size="sm" onClick={() => settleBundlePurchase(purchase.id)}>Potvrdi uplatu</Button></div>)}</CardContent>
+      </Card>
 
       {/* Finance Summary */}
       {finance && (

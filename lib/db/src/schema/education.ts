@@ -44,6 +44,10 @@ export const educationParticipantStatusEnum = pgEnum("education_participant_stat
 export const educationAttendanceStatusEnum = pgEnum("education_attendance_status", ["present", "absent", "excused"]);
 export const educationInstallmentStatusEnum = pgEnum("education_installment_status", ["pending", "settled", "refunded", "cancelled"]);
 export const educationOutboxStatusEnum = pgEnum("education_outbox_status", ["pending", "processing", "sent", "failed"]);
+// A bundle is paid once.  Its individual course rows are access projections,
+// never independently billable enrollments.
+export const educationBundlePurchaseStatusEnum = pgEnum("education_bundle_purchase_status", ["pending_payment", "settled", "cancelled", "refunded"]);
+export const educationBundlePurchaseTargetEnum = pgEnum("education_bundle_purchase_target", ["individual", "salon_employee"]);
 
 export const educationCentersTable = pgTable("education_centers", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -565,6 +569,9 @@ export const courseEnrollmentsTable = pgTable("course_enrollments", {
   auditData: jsonb("audit_data").$type<Record<string, unknown>>().notNull().default({}),
   idempotencyKey: text("idempotency_key"),
   idempotencyFingerprint: text("idempotency_fingerprint"),
+  // Set only by the bundle settlement transaction.  A non-null value means
+  // financial responsibility belongs exclusively to education_bundle_purchases.
+  bundlePurchaseId: uuid("bundle_purchase_id").references((): any => educationBundlePurchasesTable.id, { onDelete: "restrict" }),
   bookingGroupId: uuid("booking_group_id").references((): any => educationBookingGroupsTable.id, { onDelete: "set null" }),
   participantId: uuid("participant_id").references((): any => educationBookingParticipantsTable.id, { onDelete: "set null" }),
   participantKey: text("participant_key").generatedAlwaysAs(
@@ -587,6 +594,7 @@ export const courseEnrollmentsTable = pgTable("course_enrollments", {
   index("course_enrollments_salon_idx").on(table.salonId),
   index("course_enrollments_employee_idx").on(table.employeeId),
   index("course_enrollments_booking_group_idx").on(table.bookingGroupId),
+  index("course_enrollments_bundle_purchase_idx").on(table.bundlePurchaseId),
   uniqueIndex("course_enrollments_participant_active_unique").on(table.participantId).where(sql`${table.participantId} is not null and ${table.status} <> 'cancelled'`),
   check("course_enrollments_operational_user_check", sql`${table.userId} is not null or ${table.participantId} is not null`),
 ]);
@@ -1092,6 +1100,90 @@ export const educationBundlesTable = pgTable("education_bundles", {
 export const educationBundleCoursesTable = pgTable("education_bundle_courses", {
   bundleId: uuid("bundle_id").notNull().references(() => educationBundlesTable.id, { onDelete: "cascade" }), courseId: uuid("course_id").notNull().references(() => coursesTable.id, { onDelete: "restrict" }), sortOrder: integer("sort_order").notNull(),
 }, (t) => [uniqueIndex("education_bundle_courses_unique").on(t.bundleId, t.courseId), uniqueIndex("education_bundle_courses_order_unique").on(t.bundleId, t.sortOrder)]);
+
+/**
+ * Immutable commercial boundary for an education package.  Do not add an
+ * enrollment-level escrow for rows linked to this record: settlement creates
+ * one parent escrow and its ledger entries, then materializes child access.
+ */
+export const educationBundlePurchasesTable = pgTable("education_bundle_purchases", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  bundleId: uuid("bundle_id").notNull().references(() => educationBundlesTable.id, { onDelete: "restrict" }),
+  centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "restrict" }),
+  purchaserId: uuid("purchaser_id").notNull().references(() => usersTable.id, { onDelete: "restrict" }),
+  targetType: educationBundlePurchaseTargetEnum("target_type").notNull(),
+  learnerUserId: uuid("learner_user_id").references(() => usersTable.id, { onDelete: "restrict" }),
+  salonId: uuid("salon_id").references(() => salonsTable.id, { onDelete: "restrict" }),
+  employeeId: uuid("employee_id").references(() => employeesTable.id, { onDelete: "restrict" }),
+  amount: integer("amount").notNull(),
+  currency: text("currency").notNull().default("RSD"),
+  status: educationBundlePurchaseStatusEnum("status").notNull().default("pending_payment"),
+  paymentMethod: paymentMethodEnum("payment_method"),
+  paymentInstructions: jsonb("payment_instructions").$type<Record<string, unknown>>().notNull().default({}),
+  idempotencyKey: text("idempotency_key").notNull(),
+  idempotencyFingerprint: text("idempotency_fingerprint").notNull(),
+  requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+  settledAt: timestamp("settled_at", { withTimezone: true }),
+  settledByUserId: uuid("settled_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  refundedAt: timestamp("refunded_at", { withTimezone: true }),
+  auditData: jsonb("audit_data").$type<Record<string, unknown>>().notNull().default({}),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("education_bundle_purchases_purchaser_idempotency_unique").on(t.purchaserId, t.idempotencyKey),
+  index("education_bundle_purchases_center_status_idx").on(t.centerId, t.status),
+  index("education_bundle_purchases_purchaser_requested_idx").on(t.purchaserId, t.requestedAt),
+  index("education_bundle_purchases_employee_idx").on(t.employeeId),
+  check("education_bundle_purchases_amount_check", sql`${t.amount} >= 0`),
+  check("education_bundle_purchases_target_check", sql`(${t.targetType} = 'individual' and ${t.learnerUserId} is not null and ${t.salonId} is null and ${t.employeeId} is null) or (${t.targetType} = 'salon_employee' and ${t.learnerUserId} is not null and ${t.salonId} is not null and ${t.employeeId} is not null)`),
+]);
+
+/** Course and terms as they were when the parent purchase was requested. */
+export const educationBundlePurchaseItemsTable = pgTable("education_bundle_purchase_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  purchaseId: uuid("purchase_id").notNull().references(() => educationBundlePurchasesTable.id, { onDelete: "cascade" }),
+  courseId: uuid("course_id").notNull().references(() => coursesTable.id, { onDelete: "restrict" }),
+  courseTitle: text("course_title").notNull(),
+  courseTerms: jsonb("course_terms").$type<Record<string, unknown>>().notNull().default({}),
+  sortOrder: integer("sort_order").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("education_bundle_purchase_items_course_unique").on(t.purchaseId, t.courseId),
+  uniqueIndex("education_bundle_purchase_items_order_unique").on(t.purchaseId, t.sortOrder),
+]);
+
+/** One and only one escrow for the bundle purchase's full financial amount. */
+export const educationBundlePurchaseEscrowsTable = pgTable("education_bundle_purchase_escrows", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  purchaseId: uuid("purchase_id").notNull().unique().references(() => educationBundlePurchasesTable.id, { onDelete: "cascade" }),
+  centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "restrict" }),
+  grossAmount: integer("gross_amount").notNull(),
+  platformFeeAmount: integer("platform_fee_amount").notNull().default(0),
+  reserveAmount: integer("reserve_amount").notNull().default(0),
+  netAmount: integer("net_amount").notNull(),
+  status: educationEscrowStatusEnum("status").notNull().default("held"),
+  releaseAt: timestamp("release_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("education_bundle_purchase_escrows_center_status_idx").on(t.centerId, t.status),
+  check("education_bundle_purchase_escrows_amounts_check", sql`${t.grossAmount} >= 0 and ${t.platformFeeAmount} >= 0 and ${t.reserveAmount} >= 0 and ${t.netAmount} >= 0 and ${t.platformFeeAmount} + ${t.reserveAmount} <= ${t.grossAmount} and ${t.netAmount} = ${t.grossAmount} - ${t.platformFeeAmount} - ${t.reserveAmount}`),
+]);
+
+/** Parent-only accounting entries.  Child enrollment projections have none. */
+export const educationBundlePurchaseLedgerEntriesTable = pgTable("education_bundle_purchase_ledger_entries", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  escrowId: uuid("escrow_id").notNull().references(() => educationBundlePurchaseEscrowsTable.id, { onDelete: "cascade" }),
+  entryType: educationLedgerEntryTypeEnum("entry_type").notNull(),
+  amount: integer("amount").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+}, (t) => [
+  index("education_bundle_purchase_ledger_escrow_created_idx").on(t.escrowId, t.createdAt),
+  uniqueIndex("education_bundle_purchase_ledger_charge_unique").on(t.escrowId).where(sql`${t.entryType} = 'charge'`),
+  uniqueIndex("education_bundle_purchase_ledger_fee_unique").on(t.escrowId).where(sql`${t.entryType} = 'platform_fee'`),
+  uniqueIndex("education_bundle_purchase_ledger_reserve_unique").on(t.escrowId).where(sql`${t.entryType} = 'reserve_hold'`),
+]);
 export const educationContactHistoryTable = pgTable("education_contact_history", {
   id: uuid("id").defaultRandom().primaryKey(), centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "cascade" }),
   learnerUserId: uuid("learner_user_id").references(() => usersTable.id, { onDelete: "set null" }), enrollmentId: uuid("enrollment_id").references(() => courseEnrollmentsTable.id, { onDelete: "set null" }),

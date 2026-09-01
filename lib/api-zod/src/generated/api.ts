@@ -9994,6 +9994,74 @@ export const ListEducationPurchasesResponseItem = zod.object({
 export const ListEducationPurchasesResponse = zod.array(ListEducationPurchasesResponseItem)
 
 
+/**
+ * @summary List published education packages
+ */
+export const ListEducationBundlesResponseItem = zod.record(zod.string(), zod.unknown())
+export const ListEducationBundlesResponse = zod.array(ListEducationBundlesResponseItem)
+
+
+export const GetEducationBundleParams = zod.object({
+  "bundleId": zod.string().uuid()
+})
+
+export const GetEducationBundleResponse = zod.record(zod.string(), zod.unknown())
+
+
+/**
+ * @summary Request one parent package entitlement
+ */
+export const PurchaseEducationBundleParams = zod.object({
+  "bundleId": zod.string().uuid()
+})
+
+export const PurchaseEducationBundleHeader = zod.object({
+  "Idempotency-Key": zod.string()
+})
+
+export const PurchaseEducationBundleBody = zod.object({
+  "targetType": zod.enum(['individual', 'salon_employee']),
+  "learnerUserId": zod.string().uuid().optional(),
+  "salonId": zod.string().uuid().optional(),
+  "employeeId": zod.string().uuid().optional()
+})
+
+export const PurchaseEducationBundleResponse = zod.record(zod.string(), zod.unknown())
+
+
+/**
+ * @summary List the current purchaser's package purchases
+ */
+export const ListEducationBundlePurchasesResponseItem = zod.record(zod.string(), zod.unknown())
+export const ListEducationBundlePurchasesResponse = zod.array(ListEducationBundlePurchasesResponseItem)
+
+
+/**
+ * @summary List employees eligible for the current salon owner's package purchase
+ */
+export const ListEducationBundleEligibleEmployeesResponseItem = zod.record(zod.string(), zod.unknown())
+export const ListEducationBundleEligibleEmployeesResponse = zod.array(ListEducationBundleEligibleEmployeesResponseItem)
+
+
+export const ListEducationCenterBundlePurchasesParams = zod.object({
+  "centerId": zod.string().uuid()
+})
+
+export const ListEducationCenterBundlePurchasesResponseItem = zod.record(zod.string(), zod.unknown())
+export const ListEducationCenterBundlePurchasesResponse = zod.array(ListEducationCenterBundlePurchasesResponseItem)
+
+
+export const ListAdminPendingEducationBundlePurchasesResponseItem = zod.record(zod.string(), zod.unknown())
+export const ListAdminPendingEducationBundlePurchasesResponse = zod.array(ListAdminPendingEducationBundlePurchasesResponseItem)
+
+
+export const SettleAdminEducationBundlePurchaseParams = zod.object({
+  "purchaseId": zod.string().uuid()
+})
+
+export const SettleAdminEducationBundlePurchaseResponse = zod.record(zod.string(), zod.unknown())
+
+
 export const ListEducationPurchaseMessagesParams = zod.object({
   "enrollmentId": zod.coerce.string()
 })

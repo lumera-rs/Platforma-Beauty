@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import {
   useGetCurrentUser,
+   useListEducationBundles,
   useGetPublicEducationCenter,
   useGetPublicEducationCourse,
   useListPublicEducationCourses, ListPublicEducationCoursesParams, ListPublicEducationPlacementsParams,
@@ -429,6 +430,7 @@ export default function EducationMarketplace({
 
   const clearFilters = () => setLocation(basePath);
   const { data: taxonomy } = useGetPublicEducationTaxonomy({ query: { queryKey: getGetPublicEducationTaxonomyQueryKey() } });
+  const { data: educationBundles } = useListEducationBundles();
   const { data: rankings } = useGetPublicEducationRankings({ query: { queryKey: getGetPublicEducationRankingsQueryKey() } });
 
   const placementScopeStr = taxonomyScope?.subcategory ? 'subcategory' : taxonomyScope?.category ? 'category' : taxonomyScope?.section ? null : 'home';
@@ -582,6 +584,27 @@ export default function EducationMarketplace({
             </div>
           </div>
         </div>
+      )}
+
+      {!taxonomyScope && educationBundles && educationBundles.length > 0 && (
+        <section className="container mx-auto px-4 py-10" aria-label="Paketi edukacija">
+          <div className="mb-5 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div><p className="text-sm font-medium text-primary">Uštedite uz paket</p><h2 className="font-serif text-3xl font-bold">Paketi edukacija</h2></div>
+            <div className="flex items-center gap-3"><p className="text-sm text-muted-foreground">Jedna kupovina, pristup svim kursevima u paketu.</p><Link className="text-sm font-medium text-primary" href="/edukacije/moji-paketi">Moji paketi</Link></div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {educationBundles.map((bundle: any) => (
+              <Card key={bundle.id} className="flex flex-col border-primary/20">
+                <CardHeader><CardTitle>{bundle.name}</CardTitle><CardDescription>{bundle.centerName}</CardDescription></CardHeader>
+                <CardContent className="flex flex-1 flex-col gap-3">
+                  <p className="text-sm text-muted-foreground">{bundle.description}</p>
+                  <p className="text-sm">{bundle.courses?.length ?? 0} kurs{(bundle.courses?.length ?? 0) === 1 ? "" : "a"} u paketu</p>
+                  <div className="mt-auto flex items-center justify-between gap-3"><strong className="text-lg text-primary">{money(bundle.price)}</strong><Link href={`/edukacije/paketi/${bundle.id}`}><Button size="sm">Pogledaj paket</Button></Link></div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </section>
       )}
 
       <div className="container mx-auto px-4 py-12">
@@ -846,6 +869,41 @@ export default function EducationMarketplace({
       </div>
     </Layout>
   );
+}
+
+/** Purchase page keeps IPS explicitly pending; the server grants no access until admin settlement. */
+export function EducationBundleDetail() {
+  const [, params] = useRoute("/edukacije/paketi/:bundleId");
+  const bundleId = params?.bundleId ?? "";
+  const { data: current } = useGetCurrentUser();
+  const { toast } = useToast();
+  const [bundle, setBundle] = useState<any>(null);
+  const [employees, setEmployees] = useState<Array<{ id: string; salonId: string; name: string }>>([]);
+  const [employeeId, setEmployeeId] = useState("");
+  const [pending, setPending] = useState(false);
+  const [purchase, setPurchase] = useState<any>(null);
+  useEffect(() => { void fetch(`/api/education/bundles/${bundleId}`).then(r => r.ok ? r.json() : Promise.reject()).then(setBundle).catch(() => setBundle(false)); }, [bundleId]);
+  useEffect(() => { if (current?.user?.role === "SALON_OWNER") void fetch("/api/education/bundle-purchases/eligible-employees", { credentials: "include" }).then(r => r.json()).then(setEmployees); }, [current?.user?.role]);
+  const submit = async () => {
+    const employee = employees.find(item => item.id === employeeId);
+    if (current?.user?.role === "SALON_OWNER" && !employee) { toast.error("Izaberite zaposlenog"); return; }
+    setPending(true);
+    try {
+      const body = employee ? { targetType: "salon_employee", salonId: employee.salonId, employeeId: employee.id } : { targetType: "individual" };
+      const response = await fetch(`/api/education/bundles/${bundleId}/purchases`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(body) });
+      const result = await response.json(); if (!response.ok) throw new Error(result.error);
+      setPurchase(result); toast.success("Zahtev za paket je evidentiran");
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Kupovina nije uspela"); } finally { setPending(false); }
+  };
+  if (bundle === false) return <Layout><main className="container mx-auto px-4 py-16">Paket nije pronađen.</main></Layout>;
+  if (!bundle) return <Layout><main className="container mx-auto px-4 py-16"><Loader2 className="animate-spin" /></main></Layout>;
+  return <Layout><main className="container mx-auto max-w-3xl px-4 py-10"><Link href="/edukacije" className="text-sm text-primary">← Sve edukacije</Link><Card className="mt-4"><CardHeader><CardTitle className="text-3xl">{bundle.name}</CardTitle><CardDescription>{bundle.description}</CardDescription></CardHeader><CardContent className="space-y-5"><div><strong>{money(bundle.price)}</strong><p className="text-sm text-muted-foreground">Jedna roditeljska kupovina pokriva sve navedene kurseve.</p></div><ul className="space-y-2">{bundle.courses?.map((course: any) => <li key={course.courseId} className="rounded border p-3">{course.title} <span className="text-sm text-muted-foreground">· {course.duration}</span></li>)}</ul>{current?.user?.role === "SALON_OWNER" && <div><Label>Polaznik iz salona</Label><Select value={employeeId} onValueChange={setEmployeeId}><SelectTrigger><SelectValue placeholder="Izaberite zaposlenog" /></SelectTrigger><SelectContent>{employees.map(employee => <SelectItem key={employee.id} value={employee.id}>{employee.name}</SelectItem>)}</SelectContent></Select></div>}<Button onClick={submit} disabled={pending}>{pending ? "Slanje…" : "Kupi paket"}</Button>{purchase && <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm"><strong>Čeka potvrdu uplate.</strong> IPS instrukcije su pripremljene, ali pristup kursevima će biti aktiviran tek nakon pouzdane administrativne potvrde. {purchase.paymentInstructions?.payload && <code className="mt-2 block break-all text-xs">{purchase.paymentInstructions.payload}</code>}</div>}</CardContent></Card></main></Layout>;
+}
+
+export function EducationBundlePurchasesPage() {
+  const [purchases, setPurchases] = useState<any[] | null>(null);
+  useEffect(() => { void fetch("/api/education/bundle-purchases", { credentials: "include" }).then(r => r.ok ? r.json() : Promise.reject()).then(setPurchases).catch(() => setPurchases([])); }, []);
+  return <Layout><main className="container mx-auto max-w-4xl px-4 py-10"><h1 className="font-serif text-3xl font-bold">Moji paketi edukacija</h1><p className="mt-2 text-muted-foreground">Pregled kupovina za vas ili vaše zaposlene.</p><div className="mt-6 grid gap-3">{purchases === null ? <Loader2 className="animate-spin" /> : purchases.length === 0 ? <Card><CardContent className="p-6 text-muted-foreground">Još nemate kupljenih paketa.</CardContent></Card> : purchases.map(purchase => <Card key={purchase.id}><CardContent className="flex flex-col gap-2 p-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium">{money(purchase.amount)} · {purchase.targetType === "salon_employee" ? "Zaposleni salona" : "Lični paket"}</p><p className="text-sm text-muted-foreground">{purchase.status === "pending_payment" ? "Čeka potvrdu uplate — pristup još nije aktivan." : "Pristup kursevima je aktivan."}</p></div><Badge variant={purchase.status === "settled" ? "default" : "secondary"}>{purchase.status === "settled" ? "Aktivan" : "Na čekanju"}</Badge></CardContent></Card>)}</div></main></Layout>;
 }
 function useEducationPurchase() {
   const [, setLocation] = useLocation();

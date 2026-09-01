@@ -34,6 +34,7 @@ import { runReferralMaintenance } from "./lib/referral-service";
 import { ensureReferralSchema } from "./lib/referral-schema";
 import { ensureWebPushSchema } from "./lib/web-push-schema";
 import { ensureBookingCommandSchema } from "./lib/booking-command-schema";
+import { ensureEducationBundlePurchaseSchema } from "./lib/education-bundle-purchase-schema";
 import { runSystemPushWorker } from "./lib/web-push";
 import { drainSmsOutbox } from "./lib/sms";
 import { runProductWaitlistNotificationWorker } from "./lib/product-waitlist-worker";
@@ -72,6 +73,7 @@ await ensureMarketplacePerformanceIndexes();
 await ensureReferralSchema();
 await ensureWebPushSchema();
 await ensureBookingCommandSchema();
+await ensureEducationBundlePurchaseSchema();
 await reconcileKnownTestListings();
 if (process.env.NODE_ENV === "production") {
   await seedProductionMarketplaceDemoContent();
