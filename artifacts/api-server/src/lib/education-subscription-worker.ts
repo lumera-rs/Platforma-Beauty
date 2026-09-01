@@ -57,8 +57,9 @@ export async function runEducationSubscriptionLifecycle() {
         if (prepaidRenewal?.servicePeriodStart && prepaidRenewal.servicePeriodEnd) {
           const applyPendingPlan = Boolean(locked.pendingPlanId && locked.pendingPlanEffectiveAt && locked.pendingPlanEffectiveAt <= prepaidRenewal.servicePeriodStart);
           await tx.update(educationCenterSubscriptionsTable).set({
+            planId: prepaidRenewal.planIdSnapshot ?? locked.planId,
+            billingCycle: prepaidRenewal.billingCycleSnapshot ?? locked.billingCycle,
             ...(applyPendingPlan ? {
-              planId: locked.pendingPlanId!, billingCycle: locked.pendingBillingCycle ?? locked.billingCycle,
               pendingPlanId: null, pendingBillingCycle: null, pendingPlanEffectiveAt: null,
             } : {}),
             status: "active", currentPeriodStart: prepaidRenewal.servicePeriodStart,
@@ -96,6 +97,7 @@ export async function runEducationSubscriptionLifecycle() {
             const purpose = "Pretplata za Education centar";
             await tx.insert(educationPaymentObligationsTable).values({
               id: obligationId, centerId: locked.centerId, subscriptionId: locked.id, kind: "subscription_renewal",
+               planIdSnapshot: nextPlanId,
               expectedAmount: amount, recipientNameSnapshot: settings.ipsRecipientName, recipientAccountSnapshot: settings.ipsRecipientAccount,
               paymentCodeSnapshot: "221", purposeSnapshot: purpose, referenceSnapshot: reference,
               billingCycleSnapshot: nextCycle, servicePeriodStart: periodStart, servicePeriodEnd: periodEnd,

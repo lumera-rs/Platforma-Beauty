@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 106;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 107;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -4583,6 +4583,12 @@ function tableStatements(s: string): string[] {
     `CREATE UNIQUE INDEX education_payment_obligations_pending_subscription_kind_uniq
        ON ${s}.education_payment_obligations(subscription_id)
        WHERE status = 'pending' AND subscription_id IS NOT NULL AND kind IN ('subscription_renewal','subscription_upgrade')`,
+    // v107 — immutable renewal plan terms and one payable obligation per service period.
+    `ALTER TABLE ${s}.education_payment_obligations ADD COLUMN IF NOT EXISTS plan_id_snapshot uuid REFERENCES ${s}.subscription_plans(id) ON DELETE RESTRICT`,
+    `CREATE INDEX IF NOT EXISTS education_payment_obligations_plan_snapshot_idx ON ${s}.education_payment_obligations(plan_id_snapshot)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS education_payment_obligations_renewal_period_uniq
+       ON ${s}.education_payment_obligations(subscription_id, service_period_start)
+       WHERE kind = 'subscription_renewal' AND status IN ('pending','paid') AND subscription_id IS NOT NULL AND service_period_start IS NOT NULL`,
     // v74 — every aftercare FK gets a leading index so deletes/updates on its
     // parent cannot force scans as recommendation and delivery history grows.
   ];

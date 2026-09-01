@@ -136,6 +136,9 @@ try {
   await call(base, `/admin/education/payment-obligations/${prepaidHigh!.id}/settle`, "POST", {
     confirmedAmountRsd: prepaidHigh!.expectedAmount, reason: "Viši plan plaćen unapred",
   }, adminCookie);
+  const repeatedPrepaidHigh = await call(base, "/education/subscription/renewal-instructions", "POST", undefined, secondOwnerCookie);
+  assert.equal(repeatedPrepaidHigh.body.reference, prepaidHigh!.referenceSnapshot, "A paid future renewal must remain idempotent for its service period.");
+  assert.equal(prepaidHigh!.planIdSnapshot, high!.id, "The purchased plan must be immutable on the renewal obligation.");
   const reverseOrderDowngrade = await call(base, "/education/subscription/select-plan", "POST", { planId: low!.id, billingCycle: "yearly" }, secondOwnerCookie);
   assert.equal(new Date(reverseOrderDowngrade.body.pendingPlanEffectiveAt).getTime(), prepaidHigh!.servicePeriodEnd!.getTime(), "Downgrade after prepayment must wait until the paid future period ends.");
   await db.update(educationPaymentObligationsTable).set({
@@ -158,6 +161,7 @@ try {
   assert.equal(downgradeRenewal.body.amount, low!.price * 12, "Early renewal must quote the pending lower yearly plan.");
   const [downgradeObligation] = await db.select().from(educationPaymentObligationsTable).where(eq(educationPaymentObligationsTable.referenceSnapshot, downgradeRenewal.body.reference));
   assert.equal(downgradeObligation!.billingCycleSnapshot, "yearly");
+  assert.equal(downgradeObligation!.planIdSnapshot, low!.id);
   await call(base, `/admin/education/payment-obligations/${downgradeObligation!.id}/settle`, "POST", {
     confirmedAmountRsd: downgradeObligation!.expectedAmount, reason: "Niži godišnji plan plaćen unapred",
   }, adminCookie);
