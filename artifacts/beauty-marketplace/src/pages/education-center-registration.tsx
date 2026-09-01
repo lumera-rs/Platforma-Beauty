@@ -228,7 +228,7 @@ export default function EducationCenterRegistration() {
                               >
                                 <option value="">{plansLoading ? "Učitavanje planova…" : "Izaberite plan"}</option>
                                 {plans.map((plan) => (
-                                  <option key={plan.id} value={plan.id}>{plan.name} — {(plan.price / 100).toLocaleString("sr-RS")} RSD mesečno</option>
+                                  <option key={plan.id} value={plan.id}>{plan.name} — {plan.price.toLocaleString("sr-RS")} RSD mesečno</option>
                                 ))}
                               </select>
                             </FormControl>

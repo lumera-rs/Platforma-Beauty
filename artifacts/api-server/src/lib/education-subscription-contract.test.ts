@@ -230,7 +230,8 @@ try {
     pendingPlanId: null, pendingBillingCycle: null, pendingPlanEffectiveAt: null,
   }).where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
   const expiringUpgrade = await call(base, "/education/subscription/select-plan", "POST", { planId: high!.id, billingCycle: "monthly" }, ownerCookie);
-  await db.update(educationCenterSubscriptionsTable).set({ currentPeriodEnd: new Date(Date.now() - 1_000) }).where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
+  const delayedWorkerAt = Date.now();
+  await db.update(educationCenterSubscriptionsTable).set({ currentPeriodEnd: new Date(delayedWorkerAt - 50 * 86_400_000) }).where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
   await runEducationSubscriptionLifecycle();
   [subscription] = await db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
   assert.equal(subscription!.planId, low!.id, "Period expiry must not apply an unpaid upgrade.");
@@ -239,6 +240,8 @@ try {
   assert.equal(expiredUpgrade!.status, "cancelled");
   const pendingRenewals = (await db.select().from(educationPaymentObligationsTable).where(eq(educationPaymentObligationsTable.subscriptionId, subscription!.id))).filter((row) => row.status === "pending" && row.kind === "subscription_renewal");
   assert.equal(pendingRenewals.length, 1);
+  assert.ok(Math.abs(pendingRenewals[0]!.servicePeriodStart!.getTime() - delayedWorkerAt) < 10_000, "A delayed worker must start the unpaid renewal period when it issues the obligation.");
+  assert.ok(pendingRenewals[0]!.servicePeriodEnd!.getTime() - pendingRenewals[0]!.servicePeriodStart!.getTime() > 27 * 86_400_000, "A delayed worker must still issue a full monthly service period.");
   const contractEnd = new Date(Date.now() + 200 * 86_400_000);
   const custom = await call(base, `/admin/education/centers/${centerA.id}/custom-contract`, "POST", {
     amountRsd: 222_222, billingCycle: "yearly", contractEndsAt: contractEnd.toISOString(), reason: "Poseban godišnji ugovor",

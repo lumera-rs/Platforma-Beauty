@@ -80,7 +80,7 @@ export async function runEducationSubscriptionLifecycle() {
         const [nextPlan] = nextPlanId === row.plan.id ? [row.plan] : await tx.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, nextPlanId)).limit(1);
         if (!nextPlan) return;
         const amount = locked.contractKind === "custom" ? locked.dueAmount : educationCycleAmount(nextPlan.price, nextCycle);
-        const periodStart = locked.currentPeriodEnd ?? now;
+        const periodStart = locked.currentPeriodEnd && locked.currentPeriodEnd > now ? locked.currentPeriodEnd : now;
         const periodEnd = locked.contractKind === "custom" && locked.contractEndsAt ? locked.contractEndsAt : addEducationBillingPeriod(periodStart, nextCycle);
         await tx.update(educationCenterSubscriptionsTable).set({
           planId: nextPlanId, billingCycle: nextCycle, status: "past_due", dueAmount: amount,
