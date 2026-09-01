@@ -254,6 +254,17 @@ try {
   assert.equal(customInstructions.body.amount, 222_222);
   const [customObligation] = await db.select().from(educationPaymentObligationsTable).where(eq(educationPaymentObligationsTable.referenceSnapshot, customInstructions.body.reference));
   assert.equal(customObligation!.servicePeriodEnd!.getTime(), contractEnd.getTime());
+  assert.equal((await call(base, `/admin/education/payment-obligations/${customObligation!.id}/settle`, "POST", {
+    confirmedAmountRsd: customObligation!.expectedAmount, reason: "Poseban ugovor plaćen",
+  }, adminCookie)).status, 200);
+  const repeatedCustomInstructions = await call(base, "/education/subscription/renewal-instructions", "POST", undefined, ownerCookie);
+  assert.equal(repeatedCustomInstructions.body.reference, customObligation!.referenceSnapshot, "A paid custom-contract term must not produce another payable obligation.");
+  const sameCustomTerm = (await db.select().from(educationPaymentObligationsTable).where(and(
+    eq(educationPaymentObligationsTable.subscriptionId, subscription!.id),
+    eq(educationPaymentObligationsTable.kind, "subscription_renewal"),
+    eq(educationPaymentObligationsTable.servicePeriodEnd, contractEnd),
+  ))).filter((row) => row.status === "pending" || row.status === "paid");
+  assert.equal(sameCustomTerm.length, 1);
 
   console.log("education subscription contract tests passed");
 } finally {

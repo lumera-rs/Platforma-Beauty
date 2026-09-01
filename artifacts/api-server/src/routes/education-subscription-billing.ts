@@ -222,7 +222,7 @@ router.post("/education/subscription/renewal-instructions", async (req, res) => 
     if (pendingRenewal) return { obligation: pendingRenewal };
     const now = new Date();
     const periodStart = subscriptionRow.contractKind === "custom"
-      ? now
+      ? subscriptionRow.currentPeriodStart ?? now
       : subscriptionRow.currentPeriodEnd && subscriptionRow.currentPeriodEnd > now ? subscriptionRow.currentPeriodEnd : now;
     const [existing] = await tx.select().from(educationPaymentObligationsTable).where(and(
       eq(educationPaymentObligationsTable.subscriptionId, subscriptionRow.id),
