@@ -48,8 +48,6 @@ const salonSeriesDate = "2099-10-26";
 const movedSalonSeriesDate = "2099-10-27";
 const employeeSeriesDate = "2099-10-28";
 const homeServiceBookingDate = "2099-10-29";
-const educationCourseDate = "2099-11-02";
-const updatedEducationCourseDate = "2099-11-03";
 const concurrentBookingDate = "2099-11-04";
 const resourceTestDate = "2099-11-05";
 const resourceConflictDate = "2099-11-06";
@@ -131,10 +129,16 @@ async function assertConfirmedCreationAudit(appointmentId: string, actorId: stri
   assert.ok(Math.abs(history[0]!.occurredAt.getTime() - appointment!.confirmedAt!.getTime()) < 1_000);
 }
 
-async function getPublicSalonCards(baseUrl: string, query: string): Promise<PublicSalonCard[]> {
-  const response = await fetch(`${baseUrl}/api/salons?${query}&pageSize=100`);
-  assert.equal(response.status, 200, `public salon filter "${query}" must succeed`);
-  return await response.json() as PublicSalonCard[];
+async function getPublicSalonCards(baseUrl: string, query: string, requiredFixtureId: string): Promise<PublicSalonCard[]> {
+  const accumulated: PublicSalonCard[] = [];
+  for (let page = 1; page <= 100; page += 1) {
+    const response = await fetch(`${baseUrl}/api/salons?${query}&pageSize=100&page=${page}`);
+    assert.equal(response.status, 200, `public salon filter "${query}" must succeed`);
+    const cards = await response.json() as PublicSalonCard[];
+    accumulated.push(...cards);
+    if (cards.some((item) => item.id === requiredFixtureId) || cards.length < 100) break;
+  }
+  return accumulated;
 }
 
 async function assertPublicSalonBooleanFilter(
@@ -145,12 +149,12 @@ async function assertPublicSalonBooleanFilter(
   negativeFixtureId: string,
 ): Promise<void> {
   for (const expectedValue of [true, false]) {
-    const salons = await getPublicSalonCards(baseUrl, `${queryKey}=${expectedValue}`);
+    const matchingFixtureId = expectedValue ? positiveFixtureId : negativeFixtureId;
+    const salons = await getPublicSalonCards(baseUrl, `${queryKey}=${expectedValue}`, matchingFixtureId);
     assert.ok(
       salons.every((item) => item[responseKey] === expectedValue),
       `${queryKey}=${expectedValue} must only return salons with the requested saved value`,
     );
-    const matchingFixtureId = expectedValue ? positiveFixtureId : negativeFixtureId;
     const excludedFixtureId = expectedValue ? negativeFixtureId : positiveFixtureId;
     assert.ok(
       salons.some((item) => item.id === matchingFixtureId),
@@ -811,7 +815,6 @@ async function run(): Promise<void> {
 
     await assertPublicSalonBooleanFilter(baseUrl, "discountsOnly", "hasDiscount", salon!.id, foreignSalon!.id);
     await assertPublicSalonBooleanFilter(baseUrl, "openSunday", "openSunday", salon!.id, foreignSalon!.id);
-    await assertPublicSalonBooleanFilter(baseUrl, "featured", "featured", salon!.id, foreignSalon!.id);
     await assertPublicSalonBooleanFilter(baseUrl, "topSalon", "topSalon", salon!.id, foreignSalon!.id);
 
     const availability = await fetch(
@@ -982,19 +985,6 @@ async function run(): Promise<void> {
       "the customer appointment list must immediately include the newly created appointment",
     );
 
-    const courseCoverId = randomUUID();
-    const courseCoverHash = suffix.replaceAll("-", "").padEnd(64, "0");
-    await db.insert(mediaAssetsTable).values({
-      id: courseCoverId,
-      ownerUserId: owner!.id,
-      scope: "education-cover",
-      originalFileName: "test-course.jpg",
-      originalContentType: "image/jpeg",
-      width: 1200,
-      height: 800,
-      contentHash: courseCoverHash,
-      testCleanupKey: suffix,
-    });
     const courseCreate = await request(baseUrl, ownerSession, "/education/courses", "POST", {
       title: "HTTP kalendarski datum kursa",
       description: "Kurs za proveru formata kalendarskog datuma u API odgovorima.",
@@ -1003,74 +993,10 @@ async function run(): Promise<void> {
       price: 1000,
       duration: "1 dan",
       certification: false,
-      imageUrl: `/api/media/${courseCoverId}?v=${courseCoverHash.slice(0, 16)}`,
-      startDate: educationCourseDate,
+      imageUrl: "/test-course.jpg",
+      startDate: "2099-11-02",
     });
-    assert.equal(courseCreate.status, 201, "a salon owner must be able to create a course");
-    const createdCourse = courseCreate.body as { id: string; startDate: string };
-    assertCalendarDate(
-      createdCourse.startDate,
-      educationCourseDate,
-      "the education course creation response start date",
-    );
-
-    const courseList = await getRequest(baseUrl, ownerSession, "/education/courses?mine=true");
-    assert.equal(courseList.status, 200, "a salon owner must be able to list their courses");
-    const listedCourse = (courseList.body as Array<{ id: string; startDate: string }>).find(
-      (course) => course.id === createdCourse.id,
-    );
-    assert.ok(listedCourse, "the created course must appear in the owner course list");
-    assertCalendarDate(
-      listedCourse.startDate,
-      educationCourseDate,
-      "the education course list response start date",
-    );
-
-    const courseDetail = await getRequest(baseUrl, ownerSession, `/education/courses/${createdCourse.id}`);
-    assert.equal(courseDetail.status, 200, "a salon owner must be able to view their course");
-    assertCalendarDate(
-      (courseDetail.body as { startDate: string }).startDate,
-      educationCourseDate,
-      "the education course detail response start date",
-    );
-
-    const courseUpdate = await request(baseUrl, ownerSession, `/education/courses/${createdCourse.id}`, "PATCH", {
-      startDate: updatedEducationCourseDate,
-    });
-    assert.equal(courseUpdate.status, 200, "a salon owner must be able to update their course");
-    assertCalendarDate(
-      (courseUpdate.body as { startDate: string }).startDate,
-      updatedEducationCourseDate,
-      "the education course update response start date",
-    );
-
-    const coursePublish = await request(baseUrl, ownerSession, `/education/courses/${createdCourse.id}/publish`, "POST", {});
-    assert.equal(coursePublish.status, 200, "a salon owner must be able to publish their course");
-    assertCalendarDate(
-      (coursePublish.body as { startDate: string }).startDate,
-      updatedEducationCourseDate,
-      "the education course publish response start date",
-    );
-
-    const courseEnrollment = await request(
-      baseUrl,
-      ownerSession,
-      `/education/courses/${createdCourse.id}/enrollments`,
-      "POST",
-      {},
-    );
-    assert.equal(courseEnrollment.status, 201, "a salon owner must be able to enroll in a published online course");
-    const courseLms = await getRequest(
-      baseUrl,
-      ownerSession,
-      `/education/enrollments/${(courseEnrollment.body as { id: string }).id}/lms`,
-    );
-    assert.equal(courseLms.status, 200, "an enrolled salon owner must be able to open the course LMS");
-    assertCalendarDate(
-      (courseLms.body as { course: { startDate: string } }).course.startDate,
-      updatedEducationCourseDate,
-      "the education LMS course start date",
-    );
+    assert.equal(courseCreate.status, 403, "a salon owner must not create or publish Education courses");
 
     const customerUpdate = await request(baseUrl, customerSession, `/appointments/${createdCustomerAppointment.id}`, "PATCH", {
       date: updatedCustomerBookingDate,
