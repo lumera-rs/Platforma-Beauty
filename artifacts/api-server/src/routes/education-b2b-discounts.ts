@@ -18,6 +18,10 @@ import { educationBelgradeInstant } from "../lib/education-availability-store";
 const router: IRouter = Router();
 
 export function previousBelgradeCalendarMonth(now: Date) {
+  // Product rule: the benefit for the whole current month is based on the
+  // immediately preceding Europe/Belgrade calendar month. This is deliberately
+  // not a trailing or rolling 30-day window, so a center's tier stays stable
+  // throughout the current calendar month.
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Belgrade", year: "numeric", month: "2-digit",
   }).formatToParts(now);
