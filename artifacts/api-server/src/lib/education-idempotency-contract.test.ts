@@ -4,8 +4,10 @@ import test from "node:test";
 import type { ZodType } from "zod";
 import {
   CommitEducationCourseRecurrenceHeader,
+  CreateEducationGroupEnrollmentsHeader,
   CreateEducationOperationalBookingHeader,
   EnrollInEducationCourseHeader,
+  PurchaseEducationBundleHeader,
   PurchaseEducationGiftVoucherHeader,
   RescheduleEducationOperationalBookingHeader,
 } from "@workspace/api-zod";
@@ -22,7 +24,9 @@ const documentedOperations: ReadonlyArray<{
   { operationId: "createEducationOperationalBooking", headerSchema: CreateEducationOperationalBookingHeader },
   { operationId: "rescheduleEducationOperationalBooking", headerSchema: RescheduleEducationOperationalBookingHeader },
   { operationId: "commitEducationCourseRecurrence", headerSchema: CommitEducationCourseRecurrenceHeader },
+  { operationId: "createEducationGroupEnrollments", headerSchema: CreateEducationGroupEnrollmentsHeader },
   { operationId: "enrollInEducationCourse", headerSchema: EnrollInEducationCourseHeader },
+  { operationId: "purchaseEducationBundle", headerSchema: PurchaseEducationBundleHeader },
   { operationId: "purchaseEducationGiftVoucher", headerSchema: PurchaseEducationGiftVoucherHeader },
 ];
 

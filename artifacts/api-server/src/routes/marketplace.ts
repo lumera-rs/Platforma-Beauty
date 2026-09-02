@@ -22484,10 +22484,11 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
   }
   const effectiveDiscountPercent = (minGroup !== null && employeeIds.length >= minGroup) ? discountPercent : 0;
   const unitPrice = Math.max(0, Math.round(course.price * (1 - effectiveDiscountPercent / 100)));
-  const idempotencyKey = req.get("idempotency-key")?.trim() || null;
-  if (idempotencyKey && idempotencyKey.length > 200) {
-    res.status(400).json({ error: "Idempotency ključ je predugačak." }); return;
+  const parsedKey = parseEducationIdempotencyKey("createEducationGroupEnrollments", req.headers["idempotency-key"]);
+  if (!parsedKey.success) {
+    res.status(400).json({ error: "Ispravan Idempotency-Key je obavezan." }); return;
   }
+  const idempotencyKey = parsedKey.key;
 
   let enrollments: (typeof courseEnrollmentsTable.$inferSelect)[];
   try {
@@ -22572,7 +22573,7 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
           unitPrice,
           idempotencyKey,
         },
-        idempotencyKey: idempotencyKey ? `${idempotencyKey}:${emp.id}` : null,
+        idempotencyKey: `${idempotencyKey}:${emp.id}`,
         idempotencyFingerprint: `${course.id}:${emp.id}:group:${sessionId ?? "auto"}`,
         paymentInstructionsSnapshot: paymentInstructions.get(emp.id),
       }));
@@ -22600,7 +22601,7 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
 
   // Send notification email to the purchaser
   await sendTransactionalEmail({
-    eventKey: `group-enrollment:${salon.id}:${course.id}:${idempotencyKey ?? Date.now()}`,
+    eventKey: `group-enrollment:${salon.id}:${course.id}:${idempotencyKey}`,
     emailType: "course_enrollment_requested",
     to: { email: user.email, name: `${user.firstName} ${user.lastName}` },
     subject: "LUMERA Edukacije — grupna prijava je primljena",

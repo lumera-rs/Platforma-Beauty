@@ -3340,7 +3340,7 @@ paths:
       summary: Request one parent package entitlement
       parameters:
         - { name: bundleId, in: path, required: true, schema: { type: string, format: uuid } }
-        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -4653,11 +4653,7 @@ paths:
       summary: Request one course purchase per selected salon employee in a single transaction
       parameters:
         - $ref: "#/components/parameters/CourseId"
-        - name: Idempotency-Key
-          in: header
-          required: false
-          description: Optional client-generated command identifier recorded on each created enrollment.
-          schema: { type: string, minLength: 1, maxLength: 200 }
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:

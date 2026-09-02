@@ -10849,8 +10849,14 @@ export const PurchaseEducationBundleParams = zod.object({
   "bundleId": zod.string().uuid()
 })
 
+export const purchaseEducationBundleHeaderIdempotencyKeyMax = 200;
+
+
+export const purchaseEducationBundleHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
+
 export const PurchaseEducationBundleHeader = zod.object({
-  "Idempotency-Key": zod.string()
+  "Idempotency-Key": zod.string().min(1).max(purchaseEducationBundleHeaderIdempotencyKeyMax).regex(purchaseEducationBundleHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const PurchaseEducationBundleBody = zod.object({
@@ -15016,9 +15022,11 @@ export const CreateEducationGroupEnrollmentsParams = zod.object({
 export const createEducationGroupEnrollmentsHeaderIdempotencyKeyMax = 200;
 
 
+export const createEducationGroupEnrollmentsHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateEducationGroupEnrollmentsHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createEducationGroupEnrollmentsHeaderIdempotencyKeyMax).optional().describe('Optional client-generated command identifier recorded on each created enrollment.')
+  "Idempotency-Key": zod.string().min(1).max(createEducationGroupEnrollmentsHeaderIdempotencyKeyMax).regex(createEducationGroupEnrollmentsHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 

@@ -1,7 +1,9 @@
 import {
   CommitEducationCourseRecurrenceHeader,
   CreateEducationOperationalBookingHeader,
+  CreateEducationGroupEnrollmentsHeader,
   EnrollInEducationCourseHeader,
+  PurchaseEducationBundleHeader,
   PurchaseEducationGiftVoucherHeader,
   RescheduleEducationOperationalBookingHeader,
 } from "@workspace/api-zod";
@@ -9,8 +11,10 @@ import type { ZodType } from "zod";
 
 export const educationIdempotencyOperations = {
   commitEducationCourseRecurrence: CommitEducationCourseRecurrenceHeader,
+  createEducationGroupEnrollments: CreateEducationGroupEnrollmentsHeader,
   createEducationOperationalBooking: CreateEducationOperationalBookingHeader,
   enrollInEducationCourse: EnrollInEducationCourseHeader,
+  purchaseEducationBundle: PurchaseEducationBundleHeader,
   purchaseEducationGiftVoucher: PurchaseEducationGiftVoucherHeader,
   rescheduleEducationOperationalBooking: RescheduleEducationOperationalBookingHeader,
 } satisfies Record<string, ZodType>;
