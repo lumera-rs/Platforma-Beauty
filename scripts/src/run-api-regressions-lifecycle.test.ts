@@ -81,15 +81,26 @@ const releaseGateCommands = [
   "test:supplier-catalog-api",
   "test:education-placement-lifecycle",
   "test:education-extras",
+  "test:education-gift-refunds",
   "test:admin-form-resilience",
   "test:salon-notifications:release",
   "test:beauty-jobs-browser",
+  "test:education-group-online-consent-browser",
+  "test:education-dispute-browser",
   "test:retention-settings",
   "test:webhook-repair-selection",
   "test:sms-fallback-phone-notice",
   "test:booking-settings",
   "test:seo",
 ] as const;
+
+const requiredIsolatedBrowserGateScripts = [
+  "test:beauty-jobs-browser",
+  "test:education-group-online-consent-browser",
+  "test:education-dispute-browser",
+] as const;
+
+const requiredIsolatedBrowserGatePhase = "validate:release:4-isolated";
 
 type ChildExit = {
   code: number | null;
@@ -567,6 +578,40 @@ test("release validation phases preserve the full gate and print safe continuati
   });
 
   assert.deepEqual(phasedGateCommands, releaseGateCommands);
+});
+
+test("required isolated browser checks remain wired into the release gate", async () => {
+  const [rootPackageJson, scriptsPackageJson] = await Promise.all([
+    readFile(path.join(workspaceRoot, "package.json"), "utf8"),
+    readFile(path.join(workspaceRoot, "scripts", "package.json"), "utf8"),
+  ]);
+  const rootScripts = (JSON.parse(rootPackageJson) as { scripts?: Record<string, string> }).scripts ?? {};
+  const packageScripts = (JSON.parse(scriptsPackageJson) as { scripts?: Record<string, string> }).scripts ?? {};
+  const releaseCommand = rootScripts["validate:release"];
+  const isolatedPhaseCommand = rootScripts[requiredIsolatedBrowserGatePhase];
+
+  assert.ok(releaseCommand, "validate:release must be defined.");
+  assert.match(
+    releaseCommand,
+    new RegExp(`(?:^| && )pnpm run ${requiredIsolatedBrowserGatePhase}(?: && |$)`),
+    `validate:release must invoke ${requiredIsolatedBrowserGatePhase}.`,
+  );
+  assert.ok(isolatedPhaseCommand, `${requiredIsolatedBrowserGatePhase} must be defined.`);
+
+  for (const scriptName of requiredIsolatedBrowserGateScripts) {
+    assert.ok(rootScripts[scriptName], `Root script ${scriptName} must be defined.`);
+    assert.match(
+      rootScripts[scriptName],
+      new RegExp(`(?:^| )run ${scriptName}(?: |$)`),
+      `Root script ${scriptName} must delegate to the scripts package.`,
+    );
+    assert.ok(packageScripts[scriptName], `Scripts package command ${scriptName} must be defined.`);
+    assert.match(
+      isolatedPhaseCommand,
+      new RegExp(`(?:^| && )pnpm run ${scriptName}(?: && |$)`),
+      `${requiredIsolatedBrowserGatePhase} must invoke ${scriptName}.`,
+    );
+  }
 });
 
 test("recovery dispatch sends each wrapper's originating suite label", async () => {
