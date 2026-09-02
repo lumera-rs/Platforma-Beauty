@@ -110,6 +110,21 @@ export type EducationIpsPaymentInstructions = {
   purpose: string | null;
 };
 
+export const EDUCATION_ENROLLMENT_SETTLEMENT_NOTICE =
+  "Uplata i pristup kursu biće evidentirani tek nakon ručne potvrde LUMERA administracije.";
+
+export function publicEducationEnrollmentPaymentInstructions(
+  enrollmentId: string,
+  snapshot: Record<string, unknown>,
+) {
+  return {
+    enrollmentId,
+    ...snapshot,
+    paymentStatus: "pending" as const,
+    settlementNotice: EDUCATION_ENROLLMENT_SETTLEMENT_NOTICE,
+  };
+}
+
 export type EducationIpsRecipientType =
   | "platform"
   | "education_center_individual"

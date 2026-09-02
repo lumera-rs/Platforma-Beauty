@@ -199,6 +199,25 @@ async function run(): Promise<void> {
     assert.equal(group.status, 201);
     assert.equal(group.body.enrollments.length, 2, "Every selected group member receives a separate enrollment.");
     const groupEnrollmentIds = group.body.enrollments.map((item: { id: string }) => item.id);
+    const groupedInstructions = group.body.paymentInstructions.find(
+      (item: { enrollmentId: string }) => item.enrollmentId === groupEnrollmentIds[0],
+    );
+    const individualInstructions = await request(
+      base,
+      ownerCookie,
+      `/education/enrollments/${groupEnrollmentIds[0]}/payment-instructions`,
+      "GET",
+    );
+    assert.equal(individualInstructions.status, 200);
+    assert.deepEqual(
+      individualInstructions.body,
+      groupedInstructions,
+      "Group and individual flows expose the same IPS snapshot structure and settlement notice.",
+    );
+    assert.equal(
+      groupedInstructions.settlementNotice,
+      "Uplata i pristup kursu biće evidentirani tek nakon ručne potvrde LUMERA administracije.",
+    );
     const pendingGroups = await db.select().from(courseEnrollmentsTable)
       .where(inArray(courseEnrollmentsTable.id, groupEnrollmentIds));
     assert.equal(pendingGroups.length, 2);

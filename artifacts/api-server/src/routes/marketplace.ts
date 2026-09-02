@@ -253,8 +253,9 @@ import {
   educationPaymentModeError,
   educationGiftVoucherRecipientMatches,
   educationIpsQrPayload,
-   educationIpsRuntimeEnvironment,
+  educationIpsRuntimeEnvironment,
   educationEnrollmentPaymentReference,
+  publicEducationEnrollmentPaymentInstructions,
   EDUCATION_PAYMENT_UNAVAILABLE_ERROR,
   isEducationPaymentConfigurationError,
   educationRelatedCourseTier,
@@ -19558,12 +19559,9 @@ router.get("/education/enrollments/:enrollmentId/payment-instructions", async (r
   try {
     const ips = enrollment.paymentInstructionsSnapshot as Record<string, unknown> | null;
     if (!ips) throw new Error("IPS_PAYMENT_SNAPSHOT_MISSING");
-    res.json(GetEducationEnrollmentPaymentInstructionsResponse.parse({
-      enrollmentId: enrollment.id,
-      ...ips,
-      paymentStatus: "pending",
-      settlementNotice: "Uplata i pristup kursu biće evidentirani tek nakon ručne potvrde LUMERA administracije.",
-    }));
+    res.json(GetEducationEnrollmentPaymentInstructionsResponse.parse(
+      publicEducationEnrollmentPaymentInstructions(enrollment.id, ips),
+    ));
   } catch (error) {
     const message = error instanceof Error && error.message.startsWith("IPS_PAYMENT_")
       ? "Instrukcije za IPS uplatu trenutno nisu podešene."
@@ -22612,12 +22610,9 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
     enrollments: await batchEducationEnrollmentViews(enrollments),
     paymentInstructions: enrollments.flatMap((enrollment) => {
       const instructions = enrollment.paymentInstructionsSnapshot as Record<string, unknown> | null;
-      return instructions ? [{
-        enrollmentId: enrollment.id,
-        ...instructions,
-        paymentStatus: "pending" as const,
-        settlementNotice: "Uplata i pristup kursu biće evidentirani tek nakon ručne potvrde LUMERA administracije.",
-      }] : [];
+      return instructions
+        ? [publicEducationEnrollmentPaymentInstructions(enrollment.id, instructions)]
+        : [];
     }),
     discountPercent: effectiveDiscountPercent,
     unitPrice,
