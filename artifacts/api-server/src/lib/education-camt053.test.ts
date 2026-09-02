@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   normalizedTransactionsFromCamt053,
@@ -11,6 +12,66 @@ const wrap = (entry: string, namespace = "urn:iso:std:iso:20022:tech:xsd:camt.05
     <Stmt><Id>statement-1</Id>${entry}</Stmt>
   </BkToCstmrStmt>
 </Document>`;
+
+const anonymizedRaiffeisenFixture = readFileSync(
+  new URL("./fixtures/raiffeisen-camt053-anonymized.xml", import.meta.url),
+  "utf8",
+);
+
+test("parses an anonymized Raiffeisen export without crossing grouped or duplicate payments", () => {
+  const preview = parseEducationCamt053(anonymizedRaiffeisenFixture);
+
+  assert.equal(preview.namespace, "urn:iso:std:iso:20022:tech:xsd:camt.053.001.08");
+  assert.equal(preview.statementCount, 1);
+  assert.equal(preview.entryCount, 4);
+  assert.equal(preview.readyCount, 4);
+  assert.equal(preview.invalidCount, 0);
+
+  const transactions = normalizedTransactionsFromCamt053(preview);
+  assert.deepEqual(transactions, [
+    {
+      source: "raiffeisen_camt053",
+      sourceItemId: "ANON-RFB-TX-000001",
+      reference: "EDU-AUTO-ANON-0001",
+      amountRsd: 12500,
+      receivedAt: new Date("2026-09-01T00:00:00.000Z"),
+    },
+    {
+      source: "raiffeisen_camt053",
+      sourceItemId: "ANON-RFB-TX-000002",
+      reference: "EDU-AUTO-ANON-0002",
+      amountRsd: 5000,
+      receivedAt: new Date("2026-09-01T00:00:00.000Z"),
+    },
+    {
+      source: "raiffeisen_camt053",
+      sourceItemId: "ANON-RFB-ASR-000003",
+      reference: "EDU-AUTO-ANON-0003",
+      amountRsd: 12500,
+      receivedAt: new Date("2026-09-01T00:00:00.000Z"),
+    },
+    {
+      source: "raiffeisen_camt053",
+      sourceItemId: "ANON-RFB-ASR-000003",
+      reference: "EDU-AUTO-ANON-0003",
+      amountRsd: 12500,
+      receivedAt: new Date("2026-09-01T00:00:00.000Z"),
+    },
+  ]);
+
+  assert.deepEqual(
+    transactions.slice(0, 2).map(({ sourceItemId, reference, amountRsd }) => ({
+      sourceItemId,
+      reference,
+      amountRsd,
+    })),
+    [
+      { sourceItemId: "ANON-RFB-TX-000001", reference: "EDU-AUTO-ANON-0001", amountRsd: 12500 },
+      { sourceItemId: "ANON-RFB-TX-000002", reference: "EDU-AUTO-ANON-0002", amountRsd: 5000 },
+    ],
+  );
+  assert.deepEqual(transactions[3], transactions[2]);
+});
 
 test("maps a Raiffeisen CAMT.053 credit to the normalized reconciliation boundary", () => {
   const preview = parseEducationCamt053(wrap(`
