@@ -72,7 +72,7 @@
     "test:loyalty-status": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/loyalty-status.test.ts",
     "test:admin-order-search": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/admin-order-search.test.ts",
     "test:admin-list-pagination": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/admin-list-pagination.test.ts",
-    "test:admin-summary": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/admin-summary.test.ts",
+    "test:admin-summary": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/timestamp-age.test.ts && NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/admin-summary.test.ts",
     "test:booking-journey": "pnpm --filter @workspace/scripts run test:booking-journey",
     "test:browser": "pnpm --filter @workspace/scripts run test:browser",
     "test:retention-identical-save": "pnpm --filter @workspace/scripts run test:retention-identical-save",

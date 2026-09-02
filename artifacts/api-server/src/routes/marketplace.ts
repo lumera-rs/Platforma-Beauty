@@ -783,6 +783,7 @@ from "../lib/appointment-locks"
 import { canonicalAvailability, preloadCanonicalAvailability } from "../lib/availability-store";
 import { admitBookingRequest } from "../lib/booking-admission";
 import { notifyCustomer } from "../lib/customer-notifications";
+import { timestampAgeMinutes } from "../lib/timestamp-age";
 import { educationCertificateEligibility, reconcileOperationalEducationEnrollmentInTx } from "../lib/education-certificate-eligibility";
 import {
   publicWebPushConfiguration,
@@ -22900,19 +22901,10 @@ router.get("/admin/summary", async (req, res): Promise<void> => {
   const newSalonsThisMonth = Number(aggregateSummary.newSalonsThisMonth ?? 0);
   const hiddenReviews = Number(aggregateSummary.hiddenReviews ?? 0);
   const activeSubscriptions = Number(aggregateSummary.activeSubscriptions ?? 0);
-  const oldestEligibleGalleryUploadTicketValue = aggregateSummary.galleryCleanupOldestEligibleAt;
-  const parsedOldestEligibleGalleryUploadTicket = oldestEligibleGalleryUploadTicketValue instanceof Date
-    ? oldestEligibleGalleryUploadTicketValue
-    : oldestEligibleGalleryUploadTicketValue
-      ? new Date(oldestEligibleGalleryUploadTicketValue)
-      : null;
-  const oldestEligibleGalleryUploadTicket = parsedOldestEligibleGalleryUploadTicket
-    && Number.isFinite(parsedOldestEligibleGalleryUploadTicket.getTime())
-    ? parsedOldestEligibleGalleryUploadTicket
-    : null;
-  const galleryCleanupOldestEligibleTicketAgeMinutes = oldestEligibleGalleryUploadTicket
-    ? Math.max(0, Math.floor((now.getTime() - oldestEligibleGalleryUploadTicket.getTime()) / 60_000))
-    : null;
+  const galleryCleanupOldestEligibleTicketAgeMinutes = timestampAgeMinutes(
+    aggregateSummary.galleryCleanupOldestEligibleAt,
+    now,
+  );
   const schedulerJobs = schedulerHealthSnapshot();
   const schedulerDatabaseCapacity = schedulerDatabaseCapacitySnapshot();
 
