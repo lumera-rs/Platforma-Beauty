@@ -73,7 +73,7 @@ for (const viewport of ["mobile", "desktop"]) {
     assert.match(html, /flex-col items-start justify-between gap-3 sm:flex-row/);
   });
 
-  test(`salon rental inbox disables only the request being saved on ${viewport}`, () => {
+  test(`salon rental inbox disables every response while one request is being saved on ${viewport}`, () => {
     const html = renderToStaticMarkup(
       <RentalRequestList
         requests={[
@@ -93,7 +93,8 @@ for (const viewport of ["mobile", "desktop"]) {
     const otherCard = html.slice(otherCardStart);
     assert.equal((savingCard.match(/disabled=""/g) ?? []).length, 2);
     assert.equal((savingCard.match(/Čuvanje\.\.\./g) ?? []).length, 2);
-    assert.equal((otherCard.match(/disabled=""/g) ?? []).length, 0);
+    assert.equal((otherCard.match(/disabled=""/g) ?? []).length, 2);
+    assert.equal((otherCard.match(/Čuvanje\.\.\./g) ?? []).length, 0);
     assert.match(otherCard, />Odbij</);
     assert.match(otherCard, />Prihvati termin</);
   });

@@ -26,6 +26,8 @@ export function RentalRequestList({ requests, isLoading, incoming, pendingReques
   if (!requests?.length) {
     return <div className="rounded-xl border border-dashed bg-muted/20 py-10 text-center text-sm text-muted-foreground">Nema zahteva u ovoj grupi.</div>;
   }
+  const isResponsePending = pendingRequestId !== undefined;
+
   return (
     <div className="space-y-3">
       {requests.map((request) => (
@@ -53,8 +55,8 @@ export function RentalRequestList({ requests, isLoading, incoming, pendingReques
           {request.message && <p className="mt-3 whitespace-pre-wrap text-sm text-foreground/80">{request.message}</p>}
           {incoming && request.status === "pending" && onRespond && (
             <div className="mt-4 flex justify-end gap-2">
-              <Button size="sm" variant="outline" disabled={isSaving} onClick={() => onRespond(request.id, "declined")}>{isSaving ? "Čuvanje..." : "Odbij"}</Button>
-              <Button size="sm" disabled={isSaving} onClick={() => onRespond(request.id, "accepted")}>{isSaving ? "Čuvanje..." : "Prihvati termin"}</Button>
+              <Button size="sm" variant="outline" disabled={isResponsePending} onClick={() => onRespond(request.id, "declined")}>{isSaving ? "Čuvanje..." : "Odbij"}</Button>
+              <Button size="sm" disabled={isResponsePending} onClick={() => onRespond(request.id, "accepted")}>{isSaving ? "Čuvanje..." : "Prihvati termin"}</Button>
             </div>
           )}
         </div>
