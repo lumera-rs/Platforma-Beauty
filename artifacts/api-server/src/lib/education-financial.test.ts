@@ -274,6 +274,10 @@ async function run(): Promise<void> {
         certification: true,
         imageUrl: "/test-education-finance.jpg",
         published: true,
+        onlineAccessDays: 30,
+        extensionPrice1Month: 1000,
+        extensionPrice3Months: 2500,
+        extensionPrice6Months: 4500,
       },
       {
         centerId: center.id,
@@ -287,6 +291,10 @@ async function run(): Promise<void> {
         certification: true,
         imageUrl: "/test-education-finance.jpg",
         published: true,
+        onlineAccessDays: 30,
+        extensionPrice1Month: 1000,
+        extensionPrice3Months: 2500,
+        extensionPrice6Months: 4500,
       },
       {
         centerId: center.id,
@@ -301,6 +309,10 @@ async function run(): Promise<void> {
         certification: true,
         imageUrl: "/test-education-finance.jpg",
         published: true,
+        onlineAccessDays: 30,
+        extensionPrice1Month: 1000,
+        extensionPrice3Months: 2500,
+        extensionPrice6Months: 4500,
       },
       {
         centerId: center.id,
@@ -314,6 +326,10 @@ async function run(): Promise<void> {
         certification: true,
         imageUrl: "/test-education-finance.jpg",
         published: true,
+        onlineAccessDays: 30,
+        extensionPrice1Month: 1000,
+        extensionPrice3Months: 2500,
+        extensionPrice6Months: 4500,
       },
       {
         centerId: center.id,
@@ -327,6 +343,10 @@ async function run(): Promise<void> {
         certification: true,
         imageUrl: "/test-education-finance.jpg",
         published: true,
+        onlineAccessDays: 30,
+        extensionPrice1Month: 1000,
+        extensionPrice3Months: 2500,
+        extensionPrice6Months: 4500,
       },
     ]).returning();
     for (const course of [onlineCourse, liveCourse, refundCourse, rejectCourse, revokedCourse]) {
@@ -346,6 +366,10 @@ async function run(): Promise<void> {
         certification: true,
         imageUrl: "/test-education-finance.jpg",
         published: true,
+        onlineAccessDays: 30,
+        extensionPrice1Month: 1000,
+        extensionPrice3Months: 2500,
+        extensionPrice6Months: 4500,
       },
       {
         centerId: payoutRaceCenter.id,
@@ -359,6 +383,10 @@ async function run(): Promise<void> {
         certification: true,
         imageUrl: "/test-education-finance.jpg",
         published: true,
+        onlineAccessDays: 30,
+        extensionPrice1Month: 1000,
+        extensionPrice3Months: 2500,
+        extensionPrice6Months: 4500,
       },
       {
         centerId: payoutRaceCenter.id,
@@ -372,6 +400,10 @@ async function run(): Promise<void> {
         certification: true,
         imageUrl: "/test-education-finance.jpg",
         published: true,
+        onlineAccessDays: 30,
+        extensionPrice1Month: 1000,
+        extensionPrice3Months: 2500,
+        extensionPrice6Months: 4500,
       },
       {
         centerId: payoutRaceCenter.id,
@@ -385,6 +417,10 @@ async function run(): Promise<void> {
         certification: true,
         imageUrl: "/test-education-finance.jpg",
         published: true,
+        onlineAccessDays: 30,
+        extensionPrice1Month: 1000,
+        extensionPrice3Months: 2500,
+        extensionPrice6Months: 4500,
       },
     ]).returning();
     assert.ok(payoutRaceCourse);
@@ -727,7 +763,7 @@ async function run(): Promise<void> {
         method: "POST",
         cookie: buyerCookie,
         headers: { "idempotency-key": key },
-        body: {},
+        body: { digitalContentConsent: true },
       });
       assert.equal(enrollmentResponse.status, 201, "Buyer enrollment must be recorded as pending.");
       const pending = await json<{ id: string; status: string; paymentStatus: string }>(enrollmentResponse);
@@ -755,7 +791,7 @@ async function run(): Promise<void> {
       method: "POST",
       cookie: buyerCookie,
       headers: { "idempotency-key": `revoked-${suffix}` },
-      body: {},
+      body: { digitalContentConsent: true },
     });
     assert.equal(revokedEnrollmentResponse.status, 201, "A verified center must accept a pending marketplace enrollment.");
     const revokedEnrollment = await json<{ id: string; status: string; paymentStatus: string }>(revokedEnrollmentResponse);
@@ -830,7 +866,7 @@ async function run(): Promise<void> {
       method: "POST",
       cookie: outsiderCookie,
       headers: { "idempotency-key": `enrollment-revocation-race-${suffix}` },
-      body: {},
+      body: { digitalContentConsent: true },
     });
     await waitForAdvisoryLockWaiters(enrollmentRaceLockKey, 2);
     const releaseEnrollmentRaceLock = releaseRaceLock as (() => void) | undefined;
@@ -866,7 +902,7 @@ async function run(): Promise<void> {
       method: "POST",
       cookie: outsiderCookie,
       headers: { "idempotency-key": `revoked-race-${suffix}` },
-      body: {},
+      body: { digitalContentConsent: true },
     });
     assert.equal(concurrentRevocationEnrollmentResponse.status, 201, "A verified center must accept the concurrent-race enrollment.");
     const concurrentRevocationEnrollment = await json<{ id: string; status: string; paymentStatus: string }>(concurrentRevocationEnrollmentResponse);
@@ -999,7 +1035,7 @@ async function run(): Promise<void> {
       method: "POST",
       cookie: outsiderCookie,
       headers: { "idempotency-key": `pending-outsider-${suffix}` },
-      body: {},
+      body: { digitalContentConsent: true },
     });
     assert.equal(pendingResponse.status, 201);
     const pendingEnrollment = await json<{ id: string }>(pendingResponse);
