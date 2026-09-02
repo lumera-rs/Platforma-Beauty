@@ -859,10 +859,15 @@ async function run(): Promise<void> {
     assert.equal((await request(base, "/beauty-jobs/inbox", customer.token)).body.contacts.some((x: any) => x.id === contact.body.id), true);
     assert.equal((await request(base, `/beauty-jobs/contacts/${contact.body.id}`, otherOwner.token, "PATCH", { authorReply: "Neovlašćeno" })).status, 404);
     const concurrentReplies = await Promise.all([
-      request(base, `/beauty-jobs/contacts/${contact.body.id}`, customer.token, "PATCH", { authorReply: "Hvala" }),
+      request(base, `/beauty-jobs/contacts/${contact.body.id}`, customer.token, "PATCH", { authorReply: "Javljamo se uskoro" }),
       request(base, `/beauty-jobs/contacts/${contact.body.id}`, customer.token, "PATCH", { authorReply: "Javljamo se uskoro" }),
     ]);
     assert.deepEqual(concurrentReplies.map((result) => result.status), [200, 200]);
+    assert.equal(
+      concurrentReplies[0]!.body.updatedAt,
+      concurrentReplies[1]!.body.updatedAt,
+      "an identical concurrent retry returns the first result without a second contact write",
+    );
     assert.equal((await request(base, `/beauty-jobs/contacts/${contact.body.id}`, customer.token, "PATCH", { authorReply: "Dopuna" })).status, 200);
     const replyEmails = sentEmails.filter((email) => email.subject.includes("Dobili ste odgovor"));
     assert.equal(replyEmails.length, 1, "editing an existing reply does not duplicate the reply email");

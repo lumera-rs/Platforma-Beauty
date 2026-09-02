@@ -888,11 +888,21 @@ router.patch("/beauty-jobs/contacts/:contactId", async (req, res, next) => { try
     }
     const nextAuthorStatus = b.data.authorStatus
       ?? (b.data.authorReply && !existingIsDecision ? "replied" : fresh.contact.authorStatus);
+    const requestedAuthorReply = b.data.authorReply ?? fresh.contact.authorReply;
+    // The canonical contact id + requested final state is the command's stable
+    // idempotency identity. Re-check it under the contact lock so a transport
+    // retry or another browser returns the first result without another write.
+    if (
+      requestedAuthorReply === fresh.contact.authorReply
+      && nextAuthorStatus === fresh.contact.authorStatus
+    ) {
+      return { kind: "ok" as const, updated: fresh.contact, eventKey: null };
+    }
     const isDecision = nextAuthorStatus === "accepted" || nextAuthorStatus === "declined";
     const decisionChanged = isDecision && fresh.contact.authorStatus !== nextAuthorStatus;
     const decisionAt = decisionChanged ? new Date() : fresh.contact.decisionAt;
     const [updated] = await tx.update(beautyJobContactsTable).set({
-      authorReply: b.data.authorReply ?? fresh.contact.authorReply,
+      authorReply: requestedAuthorReply,
       authorStatus: nextAuthorStatus,
       rejectionNote: decisionChanged ? null : fresh.contact.rejectionNote,
       decisionActorUserId: decisionChanged ? user.id : fresh.contact.decisionActorUserId,
