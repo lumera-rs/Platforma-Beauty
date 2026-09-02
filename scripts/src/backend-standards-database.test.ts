@@ -244,3 +244,102 @@ test("database-only release command exits nonzero and identifies an invalid isol
     }
   }
 });
+
+test("database-only release command exits nonzero and identifies an unvalidated isolated constraint", {
+  timeout: 120_000,
+}, async () => {
+  const developmentDatabaseUrl = requireDisposableDevelopmentDatabaseUrl();
+  const developmentDatabaseName = decodeURIComponent(
+    new URL(developmentDatabaseUrl).pathname.slice(1),
+  );
+  const databaseName =
+    `backend_standards_constraint_gate_${process.pid}_${randomUUID().replaceAll("-", "")}`;
+  assert.notEqual(databaseName, developmentDatabaseName);
+  const isolatedDatabaseUrl = databaseUrlFor(developmentDatabaseUrl, databaseName);
+  const isolatedEnvironment = {
+    ...process.env,
+    DATABASE_URL: isolatedDatabaseUrl,
+    NODE_ENV: "test",
+    REPLIT_DEPLOYMENT: "0",
+    REPL_DEPLOYMENT: "0",
+  };
+  let databaseMayExist = false;
+
+  try {
+    databaseMayExist = true;
+    await execFileAsync(
+      "createdb",
+      ["--maintenance-db", developmentDatabaseUrl, databaseName],
+      { cwd: workspaceRoot },
+    );
+    await execFileAsync(
+      "pnpm",
+      ["--filter", "@workspace/db", "run", "push-force"],
+      { cwd: workspaceRoot, env: isolatedEnvironment, maxBuffer: 10 * 1024 * 1024 },
+    );
+    await execFileAsync(
+      "psql",
+      [
+        isolatedDatabaseUrl,
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-c",
+        [
+          "CREATE TABLE public.release_constraint_gate_fixture (id integer NOT NULL)",
+          [
+            "ALTER TABLE public.release_constraint_gate_fixture",
+            "ADD CONSTRAINT release_constraint_gate_positive_check",
+            "CHECK (id > 0) NOT VALID",
+          ].join(" "),
+        ].join("; "),
+      ],
+      { cwd: workspaceRoot },
+    );
+
+    let commandFailure: unknown;
+    try {
+      await execFileAsync(
+        "pnpm",
+        ["--filter", "@workspace/scripts", "run", "test:backend-standards:database"],
+        {
+          cwd: workspaceRoot,
+          env: isolatedEnvironment,
+          maxBuffer: 10 * 1024 * 1024,
+        },
+      );
+    } catch (error) {
+      commandFailure = error;
+    }
+
+    assert.ok(
+      commandFailure,
+      "The database-only command must reject an unvalidated constraint.",
+    );
+    assert.equal(
+      (commandFailure as { code?: number }).code,
+      1,
+      "The database-only command must use its documented failure exit code.",
+    );
+    const output = [
+      (commandFailure as { stdout?: string }).stdout ?? "",
+      (commandFailure as { stderr?: string }).stderr ?? "",
+    ].join("\n");
+    assert.match(output, /public\.release_constraint_gate_fixture/);
+    assert.match(output, /release_constraint_gate_positive_check/);
+    assert.match(output, /\(CHECK\)/);
+  } finally {
+    if (databaseMayExist) {
+      await execFileAsync(
+        "dropdb",
+        [
+          "--force",
+          "--if-exists",
+          "--maintenance-db",
+          developmentDatabaseUrl,
+          databaseName,
+        ],
+        { cwd: workspaceRoot },
+      );
+    }
+  }
+});
