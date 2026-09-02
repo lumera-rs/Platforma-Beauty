@@ -36,6 +36,7 @@ import
  from "../lib/salon-notification-events"
 ;
 import { expireFeaturedPlacementPaymentInTx } from "../lib/featured-placement-payment-reminders";
+import { safeIsoTimestamp } from "../lib/date-serialization";
 import {
   allocateReferralCreditInTx,
   bindLegalEntityBusinessInTx,
@@ -20597,8 +20598,8 @@ async function featuredPlacementView(row: typeof educationPlacementsTable.$infer
       paymentReference: ipsSafePlacementReference(row), ipsPayload: null,
       recipientName: null, recipientAccount: null, purpose: null, currency: null,
       paymentInstructionsAvailable: false,
-      startsAt: row.startsAt?.toISOString() ?? null, endsAt: row.endsAt?.toISOString() ?? null,
-      settledAt: row.settledAt?.toISOString() ?? null, createdAt: row.createdAt.toISOString(),
+      startsAt: safeIsoTimestamp(row.startsAt), endsAt: safeIsoTimestamp(row.endsAt),
+      settledAt: safeIsoTimestamp(row.settledAt), createdAt: safeIsoTimestamp(row.createdAt),
     };
   }
   return {
@@ -20620,10 +20621,10 @@ async function featuredPlacementView(row: typeof educationPlacementsTable.$infer
     purpose: row.paymentPurposeSnapshot!,
     currency: "RSD" as const,
     paymentInstructionsAvailable: true,
-    startsAt: row.startsAt?.toISOString() ?? null,
-    endsAt: row.endsAt?.toISOString() ?? null,
-    settledAt: row.settledAt?.toISOString() ?? null,
-    createdAt: row.createdAt.toISOString(),
+    startsAt: safeIsoTimestamp(row.startsAt),
+    endsAt: safeIsoTimestamp(row.endsAt),
+    settledAt: safeIsoTimestamp(row.settledAt),
+    createdAt: safeIsoTimestamp(row.createdAt),
   };
 }
 
@@ -20678,8 +20679,8 @@ function educationPlacementView(row: typeof educationPlacementsTable.$inferSelec
     id: row.id, centerId: row.centerId, kind: row.kind, label: educationPlacementLabel(row.kind),
     scope: row.scope, scopeId: row.scopeCategoryId ?? row.scopeSubcategoryId, courseId: row.courseId,
     status: row.status, price: row.priceSnapshot, paymentReference: row.paymentReference ?? "",
-    startsAt: row.startsAt?.toISOString() ?? null, endsAt: row.endsAt?.toISOString() ?? null,
-    createdAt: row.createdAt.toISOString(),
+    startsAt: safeIsoTimestamp(row.startsAt), endsAt: safeIsoTimestamp(row.endsAt),
+    createdAt: safeIsoTimestamp(row.createdAt),
   };
 }
 
@@ -21353,7 +21354,7 @@ router.get("/education/public/centers/:centerId", async (req, res): Promise<void
 function educationCenterReviewView(row: typeof educationCenterReviewsTable.$inferSelect) {
   return {
     id: row.id, centerId: row.centerId, enrollmentId: row.enrollmentId, rating: row.rating,
-    comment: row.comment, status: row.status, createdAt: row.createdAt.toISOString(),
+    comment: row.comment, status: row.status, createdAt: safeIsoTimestamp(row.createdAt),
   };
 }
 
@@ -21362,8 +21363,8 @@ function adminEducationCenterReviewView(row: typeof educationCenterReviewsTable.
     id: row.id, centerId: row.centerId, enrollmentId: row.enrollmentId,
     rating: row.rating, comment: row.comment, status: row.status,
     adminNote: row.adminNote ?? null,
-    moderatedAt: row.moderatedAt?.toISOString() ?? null,
-    createdAt: row.createdAt.toISOString(),
+    moderatedAt: safeIsoTimestamp(row.moderatedAt),
+    createdAt: safeIsoTimestamp(row.createdAt),
   };
 }
 
@@ -21529,7 +21530,7 @@ function educationGiftVoucherView(row: typeof educationGiftVouchersTable.$inferS
     courseTitle: row.courseTitleSnapshot, courseImageUrl: row.courseImageUrlSnapshot,
     amount: row.amountSnapshot, currency: row.currencySnapshot, codeLast4: row.codeLast4,
     status: row.status, paymentReference: row.paymentReference,
-    redeemedEnrollmentId: row.redeemedEnrollmentId, createdAt: row.createdAt.toISOString(),
+    redeemedEnrollmentId: row.redeemedEnrollmentId, createdAt: safeIsoTimestamp(row.createdAt),
   };
 }
 
@@ -21537,10 +21538,10 @@ function adminEducationGiftVoucherView(row: typeof educationGiftVouchersTable.$i
   return {
     ...educationGiftVoucherView(row),
     maskedCode: `••••${row.codeLast4}`,
-    settledByUserId: row.settledByUserId, settledAt: row.settledAt?.toISOString() ?? null,
-    redeemedByUserId: row.redeemedByUserId, redeemedAt: row.redeemedAt?.toISOString() ?? null,
-    refundedByUserId: row.refundedByUserId, refundedAt: row.refundedAt?.toISOString() ?? null,
-    refundNote: row.refundNote, disputeId: row.disputeId, updatedAt: row.updatedAt.toISOString(),
+    settledByUserId: row.settledByUserId, settledAt: safeIsoTimestamp(row.settledAt),
+    redeemedByUserId: row.redeemedByUserId, redeemedAt: safeIsoTimestamp(row.redeemedAt),
+    refundedByUserId: row.refundedByUserId, refundedAt: safeIsoTimestamp(row.refundedAt),
+    refundNote: row.refundNote, disputeId: row.disputeId, updatedAt: safeIsoTimestamp(row.updatedAt),
   };
 }
 
@@ -23365,9 +23366,9 @@ router.get("/admin/education/centers", async (req, res): Promise<void> => {
       id: center.id, name: center.name, city: center.city, description: center.description, imageUrl: center.imageUrl,
       pib: center.pib,
       verificationStatus: center.verificationStatus, verificationNote: center.verificationNote,
-      verifiedAt: center.verifiedAt?.toISOString() ?? null, subscriptionStatus: subscription?.status ?? null,
+      verifiedAt: safeIsoTimestamp(center.verifiedAt), subscriptionStatus: subscription?.status ?? null,
       subscriptionPlanId: subscription?.planId ?? null, subscriptionPlan: plan?.name ?? null, heldAmount: held,
-      createdAt: center.createdAt.toISOString(),
+      createdAt: safeIsoTimestamp(center.createdAt),
     };
   }));
 });
@@ -23624,8 +23625,8 @@ router.get("/admin/education/finance", async (req, res): Promise<void> => {
       id: escrow.id, enrollmentId: escrow.enrollmentId, centerId: escrow.centerId, centerName: center?.name ?? "Obrisan centar",
       courseTitle: course?.title ?? "Arhivirana edukacija", grossAmount: escrow.grossAmount, platformFee: escrow.platformFee,
       reserveAmount: escrow.reserveAmount, netAmount: escrow.netAmount, status: escrow.status,
-      releaseAt: escrow.releaseAt.toISOString(), netPaidAt: escrow.netPaidAt?.toISOString() ?? null,
-      reservePaidAt: escrow.reservePaidAt?.toISOString() ?? null, disputeOpen: Boolean(dispute), createdAt: escrow.createdAt.toISOString(),
+      releaseAt: safeIsoTimestamp(escrow.releaseAt), netPaidAt: safeIsoTimestamp(escrow.netPaidAt),
+      reservePaidAt: safeIsoTimestamp(escrow.reservePaidAt), disputeOpen: Boolean(dispute), createdAt: safeIsoTimestamp(escrow.createdAt),
     };
   });
   res.json({
@@ -23638,9 +23639,9 @@ router.get("/admin/education/finance", async (req, res): Promise<void> => {
     escrows: rows,
     pendingEnrollments: enrollments.filter((enrollment) => enrollment.status === "pending" && enrollment.paymentStatus === "pending").map((enrollment) => {
       const course = courses.find((item) => item.id === enrollment.courseId);
-      return { id: enrollment.id, courseTitle: course?.title ?? "Arhivirana edukacija", purchaserId: enrollment.purchaserId, amount: course?.price ?? 0, createdAt: enrollment.purchasedAt.toISOString() };
+      return { id: enrollment.id, courseTitle: course?.title ?? "Arhivirana edukacija", purchaserId: enrollment.purchaserId, amount: course?.price ?? 0, createdAt: safeIsoTimestamp(enrollment.purchasedAt) };
     }),
-    payouts: payouts.map((payout) => ({ ...payout, paidAt: payout.paidAt?.toISOString() ?? null, createdAt: payout.createdAt.toISOString() })),
+    payouts: payouts.map((payout) => ({ ...payout, paidAt: safeIsoTimestamp(payout.paidAt), createdAt: safeIsoTimestamp(payout.createdAt) })),
     featuredCharges: featuredCharges
       .filter((charge) => !centerId || charge.centerId === centerId)
       .map((charge) => {
@@ -23649,8 +23650,8 @@ router.get("/admin/education/finance", async (req, res): Promise<void> => {
         return {
           id: charge.id, courseId: charge.courseId, courseTitle: course?.title ?? "Arhivirana edukacija",
           centerName: center?.name ?? null, amount: charge.amount, status: charge.status,
-          paymentReference: charge.paymentReference, activatedAt: charge.activatedAt.toISOString(),
-          settledAt: charge.settledAt?.toISOString() ?? null,
+          paymentReference: charge.paymentReference, activatedAt: safeIsoTimestamp(charge.activatedAt),
+          settledAt: safeIsoTimestamp(charge.settledAt),
         };
       }),
   });
@@ -23962,7 +23963,7 @@ router.get("/admin/salons", async (req, res): Promise<void> => {
       subscriptionPlan: sub?.subscription_plans.name ?? null,
       loyaltyTier: tier?.name ?? null,
       loyaltySpend: loyalty?.currentPeriodSpend ?? 0,
-      createdAt: s.createdAt.toISOString(),
+      createdAt: safeIsoTimestamp(s.createdAt),
     };
   });
 
@@ -24215,8 +24216,8 @@ router.get("/admin/users", async (req, res): Promise<void> => {
     phone: u.phone,
     role: u.role,
     active: u.active,
-    passwordSetAt: u.passwordSetAt?.toISOString() ?? null,
-    createdAt: u.createdAt.toISOString(),
+    passwordSetAt: safeIsoTimestamp(u.passwordSetAt),
+    createdAt: safeIsoTimestamp(u.createdAt),
   })));
 });
 
@@ -25527,7 +25528,7 @@ router.get("/admin/reviews", async (req, res): Promise<void> => {
       rating: r.rating,
       text: r.text,
       visible: r.visible,
-      date: r.createdAt.toISOString(),
+      date: safeIsoTimestamp(r.createdAt),
     };
   }));
 });
@@ -26073,7 +26074,7 @@ router.get("/admin/product-waitlist", async (req, res): Promise<void> => {
   res.json({
     items: rows.map((row) => ({
       id: row.id, audience: row.audience, status: row.status,
-      notifiedAt: row.notifiedAt?.toISOString() ?? null, createdAt: row.createdAt.toISOString(),
+      notifiedAt: safeIsoTimestamp(row.notifiedAt), createdAt: safeIsoTimestamp(row.createdAt),
       product: row.product,
       salon: row.salon?.id ? row.salon : null,
       customer: row.customer?.id ? row.customer : null,
@@ -27515,10 +27516,10 @@ router.delete("/admin/courier-services/:courierServiceId", async (req, res): Pro
 function couponDto(coupon: typeof couponsTable.$inferSelect) {
   return {
     ...coupon,
-    startsAt: coupon.startsAt?.toISOString() ?? null,
-    endsAt: coupon.endsAt?.toISOString() ?? null,
-    createdAt: coupon.createdAt.toISOString(),
-    updatedAt: coupon.updatedAt.toISOString(),
+    startsAt: safeIsoTimestamp(coupon.startsAt),
+    endsAt: safeIsoTimestamp(coupon.endsAt),
+    createdAt: safeIsoTimestamp(coupon.createdAt),
+    updatedAt: safeIsoTimestamp(coupon.updatedAt),
   };
 }
 
