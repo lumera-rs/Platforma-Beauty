@@ -35,7 +35,7 @@ async function hashPassword(password: string): Promise<string> {
   return `${salt}:${derived.toString("hex")}`;
 }
 
-async function createEducationDisputeFixture(): Promise<EducationDisputeFixture> {
+async function createEducationDisputeFixture(withExistingDispute = true): Promise<EducationDisputeFixture> {
   const suffix = randomUUID();
   const customerPassword = "browser-education-dispute-password";
   const customerEmail = `browser-education-dispute-customer-${suffix}@example.test`;
@@ -120,23 +120,25 @@ async function createEducationDisputeFixture(): Promise<EducationDisputeFixture>
       platformFee: 2700,
       reserveAmount: 1800,
       netAmount: 13500,
-      releaseAt: new Date("2026-09-03T12:34:00.000Z"),
-      status: "frozen",
+      releaseAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      status: withExistingDispute ? "frozen" : "held",
       paymentReference: `browser-dispute-${suffix}`,
-      frozenAt: reportedAt,
+      frozenAt: withExistingDispute ? reportedAt : null,
     }).returning();
     if (!escrow) throw new Error("Education dispute browser fixture could not create its frozen escrow.");
 
-    const [dispute] = await db.insert(educationDisputesTable).values({
-      enrollmentId: enrollment.id,
-      openedByUserId: customer.id,
-      reason,
-      details,
-      status: "open",
-      createdAt: reportedAt,
-      updatedAt: reportedAt,
-    }).returning();
-    if (!dispute) throw new Error("Education dispute browser fixture could not create its dispute.");
+    const dispute = withExistingDispute
+      ? (await db.insert(educationDisputesTable).values({
+          enrollmentId: enrollment.id,
+          openedByUserId: customer.id,
+          reason,
+          details,
+          status: "open",
+          createdAt: reportedAt,
+          updatedAt: reportedAt,
+        }).returning())[0]
+      : null;
+    if (withExistingDispute && !dispute) throw new Error("Education dispute browser fixture could not create its dispute.");
 
     return {
       customerEmail,
@@ -146,7 +148,7 @@ async function createEducationDisputeFixture(): Promise<EducationDisputeFixture>
       centerId: center.id,
       courseId: course.id,
       enrollmentId: enrollment.id,
-      disputeId: dispute.id,
+      disputeId: dispute?.id ?? "",
       reportedAt,
       reason,
       details,
@@ -173,6 +175,41 @@ async function signInAsFixtureCustomer(page: Page, fixture: EducationDisputeFixt
   });
   expect(response, "The education dispute fixture customer must be able to sign in.").toBeOK();
 }
+
+test("student reports a problem from an education card and sees it immediately", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const fixture = await createEducationDisputeFixture(false);
+  const reason = "Nedostaje deo materijala";
+  const details = "Treći modul nema obećani radni materijal. Molim da sadržaj bude dopunjen.";
+
+  try {
+    await signInAsFixtureCustomer(page, fixture);
+    await page.goto("/student/edukacije");
+    await expect(page.getByRole("heading", { name: /^Browser kurs sa otvorenim sporom/ })).toBeVisible();
+
+    await page.getByRole("button", { name: "Prijavi problem" }).click();
+    const dialog = page.getByRole("dialog", { name: "Prijavi problem" });
+    await dialog.getByLabel("Razlog").fill(reason);
+    await dialog.getByLabel("Opis").fill(details);
+    await dialog.getByRole("button", { name: "Pošalji prijavu" }).click();
+
+    await expect(dialog).toBeHidden();
+    const disputeCard = page.getByTestId(`student-enrollment-dispute-${fixture.enrollmentId}`);
+    await expect(disputeCard).toBeVisible();
+    await expect(disputeCard).toHaveAttribute("data-dispute-id", /.+/);
+    await expect(disputeCard.getByText("Otvoren", { exact: true })).toBeVisible();
+    await expect(disputeCard.getByText(`Razlog: ${reason}`, { exact: true })).toBeVisible();
+    await expect(disputeCard).toContainText("Prijavljeno");
+    await expect(page.getByRole("button", { name: "Prijavi problem" })).toHaveCount(0);
+
+    const disputes = await db.select().from(educationDisputesTable)
+      .where(eq(educationDisputesTable.enrollmentId, fixture.enrollmentId));
+    expect(disputes).toHaveLength(1);
+    expect(disputes[0]).toMatchObject({ reason, details, status: "open" });
+  } finally {
+    await cleanUpEducationDisputeFixture(fixture);
+  }
+});
 
 test("student keeps the original dispute after retrying a duplicate submission", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });

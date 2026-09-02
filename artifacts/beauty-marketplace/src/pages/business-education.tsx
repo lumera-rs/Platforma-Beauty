@@ -59,6 +59,7 @@ import { EDUCATION_NOTIFICATION_MUTATION_KEY, educationNotificationMutationQueue
 import { OptimizedImage } from "@/components/optimized-image";
 import { uploadOptimizedImage } from "@/lib/media-upload";
 import { trackEvent } from "@/lib/analytics";
+import { fetchNativeJson, NativeFetchError } from "@/lib/native-fetch";
 import { DIGITAL_CONTENT_CONSENT_TEXT } from "@/lib/education-consent";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -719,10 +720,71 @@ function StudentEducationInbox() {
 
 const ENROLLMENTS_PAGE_SIZE = 20;
 
+type StudentEnrollmentDispute = {
+  id: string;
+  enrollmentId?: string;
+  reason: string;
+  details: string;
+  status: "open" | "under_review";
+  createdAt: string | Date;
+};
+
+type StudentDisputeErrorData = {
+  error?: string;
+  dispute?: StudentEnrollmentDispute;
+};
+
 function StudentLearningView({ jobseeker = false }: { jobseeker?: boolean }) {
   const [page, setPage] = useState(1);
+  const [disputeOverrides, setDisputeOverrides] = useState<Record<string, StudentEnrollmentDispute>>({});
+  const [reportingEnrollment, setReportingEnrollment] = useState<{ id: string; courseTitle: string } | null>(null);
+  const [disputeReason, setDisputeReason] = useState("");
+  const [disputeDetails, setDisputeDetails] = useState("");
+  const [isReporting, setIsReporting] = useState(false);
   const { data: enrollments, isLoading, isError } = useListEnrollments({ page, pageSize: ENROLLMENTS_PAGE_SIZE });
+  const { toast } = useToast();
   const hasNext = (enrollments?.length ?? 0) === ENROLLMENTS_PAGE_SIZE;
+  const closeReportDialog = () => {
+    if (isReporting) return;
+    setReportingEnrollment(null);
+    setDisputeReason("");
+    setDisputeDetails("");
+  };
+  const submitDispute = async () => {
+    if (!reportingEnrollment || !disputeReason.trim() || !disputeDetails.trim()) return;
+    try {
+      setIsReporting(true);
+      const dispute = await fetchNativeJson<StudentEnrollmentDispute>(
+        `/api/education/purchases/${reportingEnrollment.id}/disputes`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ reason: disputeReason.trim(), details: disputeDetails.trim() }),
+        },
+        { httpErrorMessage: "Problem nije prijavljen. Pokušajte ponovo." },
+      );
+      setDisputeOverrides((current) => ({ ...current, [reportingEnrollment.id]: dispute }));
+      toast.success("Problem je prijavljen", { description: "Escrow je zamrznut dok se spor obrađuje." });
+      setReportingEnrollment(null);
+      setDisputeReason("");
+      setDisputeDetails("");
+    } catch (error) {
+      const existingDispute = error instanceof NativeFetchError
+        ? (error.data as StudentDisputeErrorData | undefined)?.dispute
+        : undefined;
+      if (error instanceof NativeFetchError && error.status === 409 && existingDispute) {
+        setDisputeOverrides((current) => ({ ...current, [reportingEnrollment.id]: existingDispute }));
+        toast.info("Problem je već prijavljen", { description: "Prikazujemo postojeći spor; nije kreiran novi zahtev." });
+        setReportingEnrollment(null);
+        setDisputeReason("");
+        setDisputeDetails("");
+      } else {
+        toast.error("Problem nije prijavljen", { description: error instanceof Error ? error.message : undefined });
+      }
+    } finally {
+      setIsReporting(false);
+    }
+  };
   return <div className="container mx-auto max-w-5xl px-4 py-10">
     <Badge variant="secondary" className="mb-3 gap-1.5"><GraduationCap className="h-3.5 w-3.5" /> {jobseeker ? "PROFESIONALAC" : "STUDENT"}</Badge>
     <h1 className="font-serif text-3xl font-bold">Moje edukacije</h1>
@@ -730,9 +792,38 @@ function StudentLearningView({ jobseeker = false }: { jobseeker?: boolean }) {
     <StudentEducationInbox />
     {isLoading ? <div className="mt-8 grid gap-4 md:grid-cols-2">{[1, 2].map((item) => <Skeleton key={item} className="h-44 rounded-xl" />)}</div>
       : isError ? <Card className="mt-8"><CardContent className="py-10 text-center">Edukacije trenutno nisu dostupne.</CardContent></Card>
-        : enrollments?.length ? <><div className="mt-8 grid gap-5 md:grid-cols-2">{enrollments.map((enrollment) => <Card key={enrollment.id}><CardHeader><CardTitle>{enrollment.courseTitle}</CardTitle><p className="text-sm text-muted-foreground">Napredak: {enrollment.progress}%</p></CardHeader><CardContent className="space-y-4"><Progress value={enrollment.progress} />{enrollment.dispute ? <div data-testid={`student-enrollment-dispute-${enrollment.id}`} data-dispute-id={enrollment.dispute.id} className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><p className="flex items-center gap-2 font-semibold"><ShieldAlert className="h-4 w-4 text-destructive" /> Prijavljeni problem</p><Badge variant={enrollment.dispute.status === "under_review" ? "secondary" : "destructive"}>{enrollment.dispute.status === "under_review" ? "U obradi" : "Otvoren"}</Badge></div><p className="mt-2"><span className="font-medium">Razlog:</span> {enrollment.dispute.reason}</p><p className="mt-2 text-xs text-muted-foreground">Prijavljeno {new Date(enrollment.dispute.createdAt).toLocaleString("sr-RS")}. Escrow je zamrznut dok se spor obrađuje.</p></div> : null}</CardContent><CardFooter><Button className="w-full" asChild><Link href={jobseeker ? `/poslovi/nalog/edukacije/lms/${enrollment.id}` : `/student/edukacije/lms/${enrollment.id}`}>{enrollment.status === "completed" ? "Pregledaj program" : "Nastavi učenje"} <ArrowRight className="ml-2 h-4 w-4" /></Link></Button></CardFooter></Card>)}</div><EnrollmentsPager page={page} hasNext={hasNext} onChange={setPage} /></>
+        : enrollments?.length ? <><div className="mt-8 grid gap-5 md:grid-cols-2">{enrollments.map((enrollment) => {
+          const dispute = disputeOverrides[enrollment.id] ?? enrollment.dispute;
+          const protectionActive = !!enrollment.escrowReleaseAt && new Date(enrollment.escrowReleaseAt).getTime() > Date.now();
+          return <Card key={enrollment.id}><CardHeader><CardTitle>{enrollment.courseTitle}</CardTitle><p className="text-sm text-muted-foreground">Napredak: {enrollment.progress}%</p></CardHeader><CardContent className="space-y-4"><Progress value={enrollment.progress} />{dispute ? <div data-testid={`student-enrollment-dispute-${enrollment.id}`} data-dispute-id={dispute.id} className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><p className="flex items-center gap-2 font-semibold"><ShieldAlert className="h-4 w-4 text-destructive" /> Prijavljeni problem</p><Badge variant={dispute.status === "under_review" ? "secondary" : "destructive"}>{dispute.status === "under_review" ? "U obradi" : "Otvoren"}</Badge></div><p className="mt-2"><span className="font-medium">Razlog:</span> {dispute.reason}</p><p className="mt-2 text-xs text-muted-foreground">Prijavljeno {new Date(dispute.createdAt).toLocaleString("sr-RS")}. Escrow je zamrznut dok se spor obrađuje.</p></div> : protectionActive ? <Button type="button" variant="outline" className="w-full text-destructive hover:text-destructive" onClick={() => setReportingEnrollment({ id: enrollment.id, courseTitle: enrollment.courseTitle })}><ShieldAlert className="mr-2 h-4 w-4" />Prijavi problem</Button> : null}</CardContent><CardFooter><Button className="w-full" asChild><Link href={jobseeker ? `/poslovi/nalog/edukacije/lms/${enrollment.id}` : `/student/edukacije/lms/${enrollment.id}`}>{enrollment.status === "completed" ? "Pregledaj program" : "Nastavi učenje"} <ArrowRight className="ml-2 h-4 w-4" /></Link></Button></CardFooter></Card>;
+        })}</div><EnrollmentsPager page={page} hasNext={hasNext} onChange={setPage} /></>
           : page > 1 ? <Card className="mt-8"><CardContent className="py-10 text-center"><p className="text-sm text-muted-foreground">Nema više edukacija.</p><Button variant="outline" className="mt-4" onClick={() => setPage((p) => Math.max(1, p - 1))}>Nazad</Button></CardContent></Card>
             : <Card className="mt-8"><CardContent className="py-14 text-center"><GraduationCap className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" /><h2 className="font-serif text-xl font-semibold">Još nemate edukacija</h2><p className="mt-2 text-sm text-muted-foreground">Kada administrator potvrdi vašu kupovinu, kurs će se pojaviti ovde.</p></CardContent></Card>}
+    <Dialog open={!!reportingEnrollment} onOpenChange={(open) => { if (!open) closeReportDialog(); }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Prijavi problem</DialogTitle>
+          <p className="text-sm text-muted-foreground">{reportingEnrollment?.courseTitle}</p>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="student-dispute-reason">Razlog</Label>
+            <Input id="student-dispute-reason" maxLength={160} value={disputeReason} onChange={(event) => setDisputeReason(event.target.value)} placeholder="Kratko navedite problem" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="student-dispute-details">Opis</Label>
+            <Textarea id="student-dispute-details" maxLength={4000} rows={5} value={disputeDetails} onChange={(event) => setDisputeDetails(event.target.value)} placeholder="Opišite problem i očekivano rešenje" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" disabled={isReporting} onClick={closeReportDialog}>Odustani</Button>
+          <Button type="button" disabled={isReporting || !disputeReason.trim() || !disputeDetails.trim()} onClick={() => void submitDispute()}>
+            {isReporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldAlert className="mr-2 h-4 w-4" />}
+            Pošalji prijavu
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>;
 }
 
