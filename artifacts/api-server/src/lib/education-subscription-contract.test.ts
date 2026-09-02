@@ -202,8 +202,43 @@ try {
   const [yearlyObligation] = await db.select().from(educationPaymentObligationsTable).where(eq(educationPaymentObligationsTable.referenceSnapshot, yearlyInstructions.body.reference));
   assert.equal(yearlyObligation!.billingCycleSnapshot, "yearly");
   assert.equal((await call(base, `/admin/education/payment-obligations/${yearlyObligation!.id}/settle`, "POST", {
-    confirmedAmountRsd: yearlyObligation!.expectedAmount, reason: "Godišnja uplata potvrđena",
-  }, adminCookie)).status, 200);
+    confirmedAmountRsd: yearlyObligation!.expectedAmount, reason: "x",
+  }, adminCookie)).status, 400, "A meaningful settlement reason remains mandatory.");
+  assert.equal((await call(base, `/admin/education/payment-obligations/${yearlyObligation!.id}/settle`, "POST", {
+    confirmedAmountRsd: yearlyObligation!.expectedAmount - 1, reason: "Iznos se ne poklapa",
+  }, adminCookie)).status, 409, "A received amount mismatch must not settle the obligation.");
+  const [stillPendingObligation] = await db.select().from(educationPaymentObligationsTable)
+    .where(eq(educationPaymentObligationsTable.id, yearlyObligation!.id));
+  assert.equal(stillPendingObligation!.status, "pending");
+  assert.equal(stillPendingObligation!.confirmedAmount, null);
+  const settlementReasons = ["Godišnja uplata potvrđena A", "Godišnja uplata potvrđena B"];
+  const concurrentSettlements = await Promise.all(settlementReasons.map(reason => call(
+    base,
+    `/admin/education/payment-obligations/${yearlyObligation!.id}/settle`,
+    "POST",
+    { confirmedAmountRsd: yearlyObligation!.expectedAmount, reason },
+    adminCookie,
+  )));
+  assert.deepEqual(concurrentSettlements.map(result => result.status).sort(), [200, 409],
+    "Concurrent manual confirmations must process the obligation exactly once.");
+  const [paidObligation] = await db.select().from(educationPaymentObligationsTable)
+    .where(eq(educationPaymentObligationsTable.id, yearlyObligation!.id));
+  assert.equal(paidObligation!.status, "paid");
+  assert.equal(paidObligation!.confirmedAmount, yearlyObligation!.expectedAmount);
+  const settlementAudits = await db.select().from(educationFinancialAuditLogTable).where(and(
+    eq(educationFinancialAuditLogTable.entityId, yearlyObligation!.id),
+    eq(educationFinancialAuditLogTable.action, "education_payment_obligation_settled"),
+  ));
+  assert.equal(settlementAudits.length, 1, "Only the winning settlement writes an audit row.");
+  assert.ok(settlementAudits[0]!.reason && settlementReasons.includes(settlementAudits[0]!.reason));
+  assert.deepEqual(settlementAudits[0]!.oldValue, {
+    status: "pending",
+    expectedAmount: yearlyObligation!.expectedAmount,
+  });
+  assert.deepEqual(settlementAudits[0]!.newValue, {
+    status: "paid",
+    confirmedAmount: yearlyObligation!.expectedAmount,
+  });
   [subscription] = await db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
   assert.equal(subscription!.status, "active");
   assert.ok(subscription!.currentPeriodEnd!.getTime() - subscription!.currentPeriodStart!.getTime() > 360 * 86_400_000);

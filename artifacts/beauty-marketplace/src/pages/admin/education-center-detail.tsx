@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
 import { Link, useRoute, useSearch } from "wouter";
-import { ArrowLeft, BadgeCheck, Building2, Save, Loader2, Landmark, Settings2, FileText, Ban, RefreshCw } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BadgeCheck, Building2, Save, Loader2, Landmark, Settings2, FileText, Ban, RefreshCw } from "lucide-react";
 import { AdminLayout } from "./layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
+import { extractApiError, parseStrictInt } from "@/lib/admin-form-utils";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useAdminListEducationCenterReviews,
@@ -18,6 +21,7 @@ import {
   useConfigureEducationCustomContract,
   useGetCurrentUser,
   useReactivateEducationCenter,
+  useSettleEducationPaymentObligation,
   getListAdminEducationCustomPlanRequestsQueryKey,
   type AdminListEducationCenterReviewsStatus
 } from "@workspace/api-client-react";
@@ -119,6 +123,8 @@ export default function AdminEducationCenterDetail() {
   const [customLimit, setCustomLimit] = useState(initialLimit);
   const [customAutoRenew, setCustomAutoRenew] = useState(false);
   const [obligations, setObligations] = useState<PaymentObligation[]>([]);
+  const [selectedObligation, setSelectedObligation] = useState<PaymentObligation | null>(null);
+  const [receivedAmount, setReceivedAmount] = useState("");
   const [settlementReason, setSettlementReason] = useState("");
   const [reactivationReason, setReactivationReason] = useState("");
   const [overrides, setOverrides] = useState<Record<OverrideKey, { enabled: boolean; value: string }>>({
@@ -183,6 +189,7 @@ export default function AdminEducationCenterDetail() {
 
   const configureContractMut = useConfigureEducationCustomContract();
   const reactivateMut = useReactivateEducationCenter();
+  const settleObligationMut = useSettleEducationPaymentObligation();
 
   const configureCustomContract = async () => {
     const amountRsd = Number(customAmount);
@@ -214,20 +221,71 @@ export default function AdminEducationCenterDetail() {
     } finally { actionGuard.end(actionKey); }
   };
 
-  const settleObligation = async (obligation: PaymentObligation) => {
-    if (settlementReason.trim().length < 3) { toast.error("Unesite razlog ručne potvrde uplate."); return; }
+  const openSettlementDialog = (obligation: PaymentObligation) => {
+    setSelectedObligation(obligation);
+    setReceivedAmount("");
+    setSettlementReason("");
+  };
+
+  const closeSettlementDialog = () => {
+    if (settleObligationMut.isPending) return;
+    setSelectedObligation(null);
+    setReceivedAmount("");
+    setSettlementReason("");
+  };
+
+  const receivedAmountResult = parseStrictInt(receivedAmount, {
+    label: "Primljeni iznos",
+    allowNegative: false,
+    allowZero: true,
+  });
+  const amountMatches = Boolean(
+    selectedObligation
+    && receivedAmountResult.ok
+    && receivedAmountResult.value === selectedObligation.expectedAmount,
+  );
+  const amountDifference = selectedObligation && receivedAmountResult.ok
+    ? receivedAmountResult.value - selectedObligation.expectedAmount
+    : null;
+  const settlementReasonValid = settlementReason.trim().length >= 3;
+
+  const settleObligation = async () => {
+    const obligation = selectedObligation;
+    if (!obligation) return;
+    if (!receivedAmountResult.ok) {
+      toast.error("Primljeni iznos nije ispravan", { description: receivedAmountResult.message });
+      return;
+    }
+    if (!amountMatches) {
+      toast.error("Iznosi se ne poklapaju", { description: "Settlement je dozvoljen samo kada je primljeni iznos jednak očekivanom." });
+      return;
+    }
+    if (!settlementReasonValid) { toast.error("Unesite razlog ručne potvrde uplate."); return; }
     const actionKey = `settle:${obligation.id}`;
     if (!actionGuard.begin(actionKey)) return;
     try {
-      await api(`/api/admin/education/payment-obligations/${obligation.id}/settle`, {
-        method: "POST", body: JSON.stringify({ confirmedAmountRsd: obligation.expectedAmount, reason: settlementReason }),
+      await settleObligationMut.mutateAsync({
+        obligationId: obligation.id,
+        data: {
+          confirmedAmountRsd: receivedAmountResult.value,
+          reason: settlementReason.trim(),
+        },
       });
       toast.success(center?.subscriptionStatus === "suspended"
         ? "Uplata je evidentirana. Reaktivacija ostaje zaključana do završne provere."
         : "Uplata je evidentirana i primenjena.");
+      setSelectedObligation(null);
+      setReceivedAmount("");
+      setSettlementReason("");
       await load();
     } catch (error) {
-      toast.error("Uplata nije evidentirana", { description: error instanceof Error ? error.message : undefined });
+      toast.error("Uplata nije evidentirana", { description: extractApiError(error) });
+      if ((error as { status?: number } | null)?.status === 409) {
+        setSelectedObligation(null);
+        setReceivedAmount("");
+        setSettlementReason("");
+        await load();
+      }
     } finally { actionGuard.end(actionKey); }
   };
 
@@ -553,14 +611,10 @@ export default function AdminEducationCenterDetail() {
                   <Button onClick={configureCustomContract} disabled={actionGuard.isActive(`custom-contract:${centerId}`)}>Sačuvaj ugovorene uslove</Button>
                   {obligations.some((row) => row.status === "pending") ? (
                     <div className="space-y-3 border-t pt-5">
-                      <label className="block space-y-2 text-sm font-medium">
-                        <span className="flex items-center gap-2">Razlog ručne potvrde <EducationFieldHelp id="manual-settlement-reason-help" label="Razlog potvrde uplate" text="Ova napomena ulazi u finansijski audit. Sistem sam proverava tačan očekivani iznos i sprečava duplo evidentiranje." /></span>
-                        <Input aria-describedby="manual-settlement-reason-help" value={settlementReason} onChange={(event) => setSettlementReason(event.target.value)} />
-                      </label>
                       {obligations.filter((row) => row.status === "pending").map((row) => (
                         <div key={row.id} className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
-                          <div><p className="font-medium">{row.expectedAmount.toLocaleString("sr-RS")} RSD</p><p className="text-xs text-muted-foreground">{row.referenceSnapshot} · {row.kind}</p></div>
-                          <Button size="sm" onClick={() => settleObligation(row)} disabled={actionGuard.isActive(`settle:${row.id}`)}>Evidentiraj tačan iznos</Button>
+                          <div><p className="font-medium">Očekivano: {row.expectedAmount.toLocaleString("sr-RS")} RSD</p><p className="text-xs text-muted-foreground">{row.referenceSnapshot} · {row.kind}</p></div>
+                          <Button size="sm" onClick={() => openSettlementDialog(row)} disabled={actionGuard.isActive(`settle:${row.id}`)}>Proveri i evidentiraj</Button>
                         </div>
                       ))}
                     </div>
@@ -748,6 +802,92 @@ export default function AdminEducationCenterDetail() {
             </Card>
           </div>
         )}
+        <Dialog open={Boolean(selectedObligation)} onOpenChange={(open) => { if (!open) closeSettlementDialog(); }}>
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Provera primljene uplate</DialogTitle>
+              <DialogDescription>
+                Uporedite iznos sa bankovnim prometom. Uplata se ne može evidentirati dok se obe vrednosti ne poklope.
+              </DialogDescription>
+            </DialogHeader>
+            {selectedObligation && (
+              <div className="space-y-5">
+                <div className="rounded-lg border bg-muted/40 p-4">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Očekivani iznos</p>
+                  <p className="mt-1 text-2xl font-bold">{selectedObligation.expectedAmount.toLocaleString("sr-RS")} RSD</p>
+                  <p className="mt-2 break-all text-xs text-muted-foreground">
+                    {selectedObligation.referenceSnapshot} · {selectedObligation.kind}
+                  </p>
+                </div>
+                <label className="block space-y-2 text-sm font-medium">
+                  <span>Stvarno primljeni iznos (RSD)</span>
+                  <Input
+                    autoFocus
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={receivedAmount}
+                    onChange={(event) => setReceivedAmount(event.target.value)}
+                    placeholder="Unesite iznos sa izvoda"
+                    aria-invalid={receivedAmount.trim() !== "" && (!receivedAmountResult.ok || !amountMatches)}
+                    aria-describedby="received-amount-status"
+                  />
+                </label>
+                <div id="received-amount-status" aria-live="polite">
+                  {receivedAmount.trim() !== "" && !receivedAmountResult.ok && (
+                    <div role="alert" className="flex gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <span>{receivedAmountResult.message}</span>
+                    </div>
+                  )}
+                  {amountDifference !== null && amountDifference !== 0 && (
+                    <div role="alert" className="flex gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <span>
+                        Primljeni iznos je {amountDifference < 0 ? "manji" : "veći"} za {Math.abs(amountDifference).toLocaleString("sr-RS")} RSD.
+                        Settlement je blokiran.
+                      </span>
+                    </div>
+                  )}
+                  {amountMatches && (
+                    <div className="rounded-lg border border-emerald-600/30 bg-emerald-600/10 p-3 text-sm text-emerald-700 dark:text-emerald-300">
+                      Iznosi se poklapaju.
+                    </div>
+                  )}
+                </div>
+                <label className="block space-y-2 text-sm font-medium">
+                  <span className="flex items-center gap-2">
+                    Obavezan razlog potvrde
+                    <EducationFieldHelp id="manual-settlement-reason-help" label="Razlog potvrde uplate" text="Ova napomena ulazi u finansijski audit. Sistem ponovo proverava iznos i zaključava uplatu kako se ne bi evidentirala dvaput." />
+                  </span>
+                  <Textarea
+                    aria-describedby="manual-settlement-reason-help"
+                    value={settlementReason}
+                    onChange={(event) => setSettlementReason(event.target.value)}
+                    maxLength={1000}
+                    placeholder="Npr. uplata proverena na bankovnom izvodu"
+                    rows={3}
+                  />
+                  {settlementReason.length > 0 && !settlementReasonValid && (
+                    <span className="text-xs text-destructive">Razlog mora imati najmanje 3 znaka.</span>
+                  )}
+                </label>
+              </div>
+            )}
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button type="button" variant="outline" onClick={closeSettlementDialog} disabled={settleObligationMut.isPending}>
+                Otkaži
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void settleObligation()}
+                disabled={!selectedObligation || !amountMatches || !settlementReasonValid || settleObligationMut.isPending || actionGuard.isActive(`settle:${selectedObligation?.id ?? ""}`)}
+              >
+                {settleObligationMut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Potvrdi settlement
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </AdminLayout>
   );
