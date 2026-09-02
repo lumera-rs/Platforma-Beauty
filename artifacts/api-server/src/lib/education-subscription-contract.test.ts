@@ -270,6 +270,48 @@ try {
     initialReconciliationStatus.body.accessMethods.map((method: { id: string }) => method.id),
     ["camt053", "csv", "raiffeisen_open_banking", "aggregator"],
   );
+  const previewSourceId = `${marker}:preview-only`;
+  const camtXml = `<?xml version="1.0"?>
+    <Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.08">
+      <BkToCstmrStmt><Stmt><Id>${marker}</Id><Ntry>
+        <Amt Ccy="RSD">1000.00</Amt><CdtDbtInd>CRDT</CdtDbtInd>
+        <BookgDt><Dt>2026-09-01</Dt></BookgDt>
+        <NtryDtls><TxDtls><Refs><AcctSvcrRef>${previewSourceId}</AcctSvcrRef><EndToEndId>UNKNOWN-${marker}</EndToEndId></Refs></TxDtls></NtryDtls>
+      </Ntry></Stmt></BkToCstmrStmt>
+    </Document>`;
+  const camtPreview = await call(
+    base,
+    "/admin/education/bank-reconciliation/camt053/preview",
+    "POST",
+    { xml: camtXml },
+    adminCookie,
+  );
+  assert.equal(camtPreview.status, 200);
+  assert.equal(camtPreview.body.readyCount, 1);
+  assert.equal(camtPreview.body.items[0].sourceItemId, previewSourceId);
+  const previewWrites = await db.select({ id: educationBankTransactionsTable.id })
+    .from(educationBankTransactionsTable)
+    .where(and(
+      eq(educationBankTransactionsTable.source, "raiffeisen_camt053"),
+      eq(educationBankTransactionsTable.sourceItemId, previewSourceId),
+    ));
+  assert.equal(previewWrites.length, 0, "CAMT preview must not persist or reconcile the raw statement.");
+  const disabledCamtImport = await call(
+    base,
+    "/admin/education/bank-reconciliation/camt053/import",
+    "POST",
+    { xml: camtXml },
+    adminCookie,
+  );
+  assert.equal(disabledCamtImport.status, 409);
+  const unsafeCamtPreview = await call(
+    base,
+    "/admin/education/bank-reconciliation/camt053/preview",
+    "POST",
+    { xml: `<!DOCTYPE Document [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>${camtXml}` },
+    adminCookie,
+  );
+  assert.equal(unsafeCamtPreview.status, 400);
 
   const disabledBankItem = await processNormalizedEducationBankTransaction({
     source: "contract-fixture",

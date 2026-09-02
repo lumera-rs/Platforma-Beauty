@@ -136,3 +136,4 @@
 - [Education explicit reactivation](education-explicit-reactivation-boundary.md) — payment or contract changes never bypass owner course choice and audited super-admin reactivation.
 - [Education finance admin boundary](education-finance-admin-boundary.md) — administrative Education money mutations are SUPER_ADMIN-only before input or entity inspection.
 - [Radix checkbox browser tests](radix-checkbox-browser-tests.md) — exercise role=checkbox buttons with click plus state assertions, not native-input check helpers.
+- [Grouped CAMT transaction identity](grouped-camt-transaction-identity.md) — grouped entries resolve IDs and amounts per transaction detail, never from a shared batch identifier.

@@ -11135,6 +11135,85 @@ export const UpdateAdminEducationBankReconciliationResponse = zod.object({
 })
 
 
+/**
+ * @summary Parse a CAMT.053 statement without persisting or booking it
+ */
+export const previewAdminEducationCamt053BodyXmlMax = 2097152;
+
+
+
+export const PreviewAdminEducationCamt053Body = zod.object({
+  "xml": zod.string().min(1).max(previewAdminEducationCamt053BodyXmlMax)
+}).strict()
+
+
+export const previewAdminEducationCamt053ResponseEntryCountMin = 0;
+
+export const previewAdminEducationCamt053ResponseReadyCountMin = 0;
+
+export const previewAdminEducationCamt053ResponseInvalidCountMin = 0;
+
+
+export const previewAdminEducationCamt053ResponseItemsItemSourceItemIdMax = 255;
+
+export const previewAdminEducationCamt053ResponseItemsItemReferenceMax = 140;
+
+
+
+
+export const PreviewAdminEducationCamt053Response = zod.object({
+  "namespace": zod.string(),
+  "statementCount": zod.number().int().min(1),
+  "entryCount": zod.number().int().min(previewAdminEducationCamt053ResponseEntryCountMin),
+  "readyCount": zod.number().int().min(previewAdminEducationCamt053ResponseReadyCountMin),
+  "invalidCount": zod.number().int().min(previewAdminEducationCamt053ResponseInvalidCountMin),
+  "items": zod.array(zod.object({
+  "index": zod.number().int().min(1),
+  "sourceItemId": zod.string().max(previewAdminEducationCamt053ResponseItemsItemSourceItemIdMax).nullable(),
+  "reference": zod.string().max(previewAdminEducationCamt053ResponseItemsItemReferenceMax).nullable(),
+  "amountRsd": zod.number().int().min(1).nullable(),
+  "receivedAt": zod.coerce.date().nullable(),
+  "status": zod.enum(['ready', 'invalid']),
+  "errors": zod.array(zod.string())
+}))
+})
+
+
+/**
+ * @summary Parse and process a CAMT.053 statement through the reconciliation boundary
+ */
+export const importAdminEducationCamt053BodyXmlMax = 2097152;
+
+
+
+export const ImportAdminEducationCamt053Body = zod.object({
+  "xml": zod.string().min(1).max(importAdminEducationCamt053BodyXmlMax)
+}).strict()
+
+export const importAdminEducationCamt053ResponseProcessedCountMin = 0;
+
+export const importAdminEducationCamt053ResponseDuplicateCountMin = 0;
+
+export const importAdminEducationCamt053ResponseSettledCountMin = 0;
+
+export const importAdminEducationCamt053ResponseRejectedCountMin = 0;
+
+
+
+export const ImportAdminEducationCamt053Response = zod.object({
+  "processedCount": zod.number().int().min(importAdminEducationCamt053ResponseProcessedCountMin),
+  "duplicateCount": zod.number().int().min(importAdminEducationCamt053ResponseDuplicateCountMin),
+  "settledCount": zod.number().int().min(importAdminEducationCamt053ResponseSettledCountMin),
+  "rejectedCount": zod.number().int().min(importAdminEducationCamt053ResponseRejectedCountMin),
+  "items": zod.array(zod.object({
+  "sourceItemId": zod.string(),
+  "duplicate": zod.boolean(),
+  "result": zod.enum(['settled', 'rejected']),
+  "rejectionReason": zod.string().nullable()
+}))
+})
+
+
 export const ListAdminEducationCentersResponseItem = zod.object({
   "id": zod.string(),
   "name": zod.string(),

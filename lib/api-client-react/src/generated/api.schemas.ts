@@ -8260,6 +8260,87 @@ export interface EducationBankReconciliationStatus {
   lastRejectionReason: string | null;
 }
 
+export type EducationCamt053PreviewItemStatus = typeof EducationCamt053PreviewItemStatus[keyof typeof EducationCamt053PreviewItemStatus];
+
+
+export const EducationCamt053PreviewItemStatus = {
+  ready: 'ready',
+  invalid: 'invalid',
+} as const;
+
+export interface EducationCamt053PreviewItem {
+  /** @minimum 1 */
+  index: number;
+  /**
+     * @maxLength 255
+     * @nullable
+     */
+  sourceItemId: string | null;
+  /**
+     * @maxLength 140
+     * @nullable
+     */
+  reference: string | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  amountRsd: number | null;
+  /** @nullable */
+  receivedAt: string | null;
+  status: EducationCamt053PreviewItemStatus;
+  errors: string[];
+}
+
+export interface EducationCamt053Upload {
+  /**
+     * @minLength 1
+     * @maxLength 2097152
+     */
+  xml: string;
+}
+
+export interface EducationCamt053Preview {
+  namespace: string;
+  /** @minimum 1 */
+  statementCount: number;
+  /** @minimum 0 */
+  entryCount: number;
+  /** @minimum 0 */
+  readyCount: number;
+  /** @minimum 0 */
+  invalidCount: number;
+  items: EducationCamt053PreviewItem[];
+}
+
+export type EducationCamt053ImportItemResult = typeof EducationCamt053ImportItemResult[keyof typeof EducationCamt053ImportItemResult];
+
+
+export const EducationCamt053ImportItemResult = {
+  settled: 'settled',
+  rejected: 'rejected',
+} as const;
+
+export interface EducationCamt053ImportItem {
+  sourceItemId: string;
+  duplicate: boolean;
+  result: EducationCamt053ImportItemResult;
+  /** @nullable */
+  rejectionReason: string | null;
+}
+
+export interface EducationCamt053ImportResult {
+  /** @minimum 0 */
+  processedCount: number;
+  /** @minimum 0 */
+  duplicateCount: number;
+  /** @minimum 0 */
+  settledCount: number;
+  /** @minimum 0 */
+  rejectedCount: number;
+  items: EducationCamt053ImportItem[];
+}
+
 export interface EducationInstructorProfile {
   id: string;
   centerId: string;

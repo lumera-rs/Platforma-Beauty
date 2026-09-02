@@ -3503,6 +3503,43 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/EducationBankReconciliationStatus" }
+  /admin/education/bank-reconciliation/camt053/preview:
+    post:
+      operationId: previewAdminEducationCamt053
+      tags: [admin, education]
+      summary: Parse a CAMT.053 statement without persisting or booking it
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationCamt053Upload" }
+      responses:
+        "200":
+          description: Ephemeral parsed statement preview
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationCamt053Preview" }
+        "400": { description: Invalid or unsupported CAMT.053 XML }
+        "413": { description: Statement exceeds the upload limit }
+  /admin/education/bank-reconciliation/camt053/import:
+    post:
+      operationId: importAdminEducationCamt053
+      tags: [admin, education]
+      summary: Parse and process a CAMT.053 statement through the reconciliation boundary
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationCamt053Upload" }
+      responses:
+        "200":
+          description: Ephemeral import result; raw XML is not retained
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationCamt053ImportResult" }
+        "400": { description: "Invalid, unsupported, or partially invalid CAMT.053 XML" }
+        "409": { description: CAMT.053 reconciliation is not enabled }
+        "413": { description: Statement exceeds the upload limit }
   /admin/education/centers:
     get:
       operationId: listAdminEducationCenters
@@ -14767,6 +14804,58 @@ components:
         lastResult: { type: ["string", "null"], enum: [settled, rejected, null] }
         lastRejectionReason: { type: ["string", "null"] }
       required: [enabled, engineState, bankConnectionConfigured, accessMethod, accessConfirmed, accessConfirmedAt, accessMethods, lastProcessedAt, lastResult, lastRejectionReason]
+    EducationCamt053PreviewItem:
+      type: object
+      additionalProperties: false
+      properties:
+        index: { type: integer, minimum: 1 }
+        sourceItemId: { type: ["string", "null"], maxLength: 255 }
+        reference: { type: ["string", "null"], maxLength: 140 }
+        amountRsd: { type: ["integer", "null"], minimum: 1 }
+        receivedAt: { type: ["string", "null"], format: date-time }
+        status: { type: string, enum: [ready, invalid] }
+        errors: { type: array, items: { type: string } }
+      required: [index, sourceItemId, reference, amountRsd, receivedAt, status, errors]
+    EducationCamt053Upload:
+      type: object
+      additionalProperties: false
+      properties:
+        xml: { type: string, minLength: 1, maxLength: 2097152 }
+      required: [xml]
+    EducationCamt053Preview:
+      type: object
+      additionalProperties: false
+      properties:
+        namespace: { type: string }
+        statementCount: { type: integer, minimum: 1 }
+        entryCount: { type: integer, minimum: 0 }
+        readyCount: { type: integer, minimum: 0 }
+        invalidCount: { type: integer, minimum: 0 }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/EducationCamt053PreviewItem" }
+      required: [namespace, statementCount, entryCount, readyCount, invalidCount, items]
+    EducationCamt053ImportItem:
+      type: object
+      additionalProperties: false
+      properties:
+        sourceItemId: { type: string }
+        duplicate: { type: boolean }
+        result: { type: string, enum: [settled, rejected] }
+        rejectionReason: { type: ["string", "null"] }
+      required: [sourceItemId, duplicate, result, rejectionReason]
+    EducationCamt053ImportResult:
+      type: object
+      additionalProperties: false
+      properties:
+        processedCount: { type: integer, minimum: 0 }
+        duplicateCount: { type: integer, minimum: 0 }
+        settledCount: { type: integer, minimum: 0 }
+        rejectedCount: { type: integer, minimum: 0 }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/EducationCamt053ImportItem" }
+      required: [processedCount, duplicateCount, settledCount, rejectedCount, items]
     EducationInstructorProfile:
       type: object
       properties:

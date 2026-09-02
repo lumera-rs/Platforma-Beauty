@@ -100,6 +100,26 @@ app.use(makeSlowRequestMiddleware(slowRequestThresholdMs, logger));
 // same-origin through the path-routing proxy; only the public booking-widget
 // routes opt into cross-origin access (see routes/widget.ts).
 app.use(cookieParser());
+// CAMT files are parsed ephemerally and are capped separately from ordinary
+// JSON requests. This route-specific parser runs before the 100 KB default.
+// JSON escaping can nearly double quote/backslash-heavy XML. Keep the
+// transport envelope above that worst case; parseEducationCamt053 still
+// enforces the authoritative 2 MiB limit on decoded XML bytes.
+const camt053JsonBody = express.json({ limit: "6mb" });
+app.use(
+  "/api/admin/education/bank-reconciliation/camt053",
+  (req, res, next) => camt053JsonBody(req, res, (error) => {
+    if (!error) {
+      next();
+      return;
+    }
+    if ((error as { type?: string }).type === "entity.too.large") {
+      res.status(413).json({ error: "CAMT.053 izvod ne sme biti veći od 2 MB.", code: "CAMT_XML_TOO_LARGE" });
+      return;
+    }
+    next(error);
+  }),
+);
 // Providers may replay thousands of delivery events in one request. This
 // parser must run before the general JSON parser below, whose 100 KB default
 // would reject those authenticated webhook batches before state handling.

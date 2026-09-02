@@ -265,6 +265,9 @@ import type {
   EducationBundle,
   EducationBundleCreate,
   EducationBundleUpdate,
+  EducationCamt053ImportResult,
+  EducationCamt053Preview,
+  EducationCamt053Upload,
   EducationCategory,
   EducationCenterAssistantRequest,
   EducationCenterAssistantResponse,
@@ -17346,6 +17349,148 @@ export const useUpdateAdminEducationBankReconciliation = <TError = ErrorType<unk
         TContext
       > => {
       return useMutation(getUpdateAdminEducationBankReconciliationMutationOptions(options));
+    }
+
+export const getPreviewAdminEducationCamt053Url = () => {
+
+
+
+
+  return `/api/admin/education/bank-reconciliation/camt053/preview`
+}
+
+/**
+ * @summary Parse a CAMT.053 statement without persisting or booking it
+ */
+export const previewAdminEducationCamt053 = async (educationCamt053Upload: EducationCamt053Upload, options?: Parameters<typeof customFetch>[1]): Promise<EducationCamt053Preview> => {
+
+  return customFetch<EducationCamt053Preview>(getPreviewAdminEducationCamt053Url(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(educationCamt053Upload)
+  }
+);}
+
+
+
+
+
+export const getPreviewAdminEducationCamt053MutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewAdminEducationCamt053>>, TError,{data: BodyType<EducationCamt053Upload>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof previewAdminEducationCamt053>>, TError,{data: BodyType<EducationCamt053Upload>}, TContext> => {
+
+const mutationKey = ['previewAdminEducationCamt053'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof previewAdminEducationCamt053>>, {data: BodyType<EducationCamt053Upload>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  previewAdminEducationCamt053(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PreviewAdminEducationCamt053MutationResult = NonNullable<Awaited<ReturnType<typeof previewAdminEducationCamt053>>>
+    export type PreviewAdminEducationCamt053MutationBody = BodyType<EducationCamt053Upload>
+    export type PreviewAdminEducationCamt053MutationError = ErrorType<void>
+
+    /**
+ * @summary Parse a CAMT.053 statement without persisting or booking it
+ */
+export const usePreviewAdminEducationCamt053 = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewAdminEducationCamt053>>, TError,{data: BodyType<EducationCamt053Upload>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof previewAdminEducationCamt053>>,
+        TError,
+        {data: BodyType<EducationCamt053Upload>},
+        TContext
+      > => {
+      return useMutation(getPreviewAdminEducationCamt053MutationOptions(options));
+    }
+
+export const getImportAdminEducationCamt053Url = () => {
+
+
+
+
+  return `/api/admin/education/bank-reconciliation/camt053/import`
+}
+
+/**
+ * @summary Parse and process a CAMT.053 statement through the reconciliation boundary
+ */
+export const importAdminEducationCamt053 = async (educationCamt053Upload: EducationCamt053Upload, options?: Parameters<typeof customFetch>[1]): Promise<EducationCamt053ImportResult> => {
+
+  return customFetch<EducationCamt053ImportResult>(getImportAdminEducationCamt053Url(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(educationCamt053Upload)
+  }
+);}
+
+
+
+
+
+export const getImportAdminEducationCamt053MutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importAdminEducationCamt053>>, TError,{data: BodyType<EducationCamt053Upload>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof importAdminEducationCamt053>>, TError,{data: BodyType<EducationCamt053Upload>}, TContext> => {
+
+const mutationKey = ['importAdminEducationCamt053'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof importAdminEducationCamt053>>, {data: BodyType<EducationCamt053Upload>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  importAdminEducationCamt053(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ImportAdminEducationCamt053MutationResult = NonNullable<Awaited<ReturnType<typeof importAdminEducationCamt053>>>
+    export type ImportAdminEducationCamt053MutationBody = BodyType<EducationCamt053Upload>
+    export type ImportAdminEducationCamt053MutationError = ErrorType<void>
+
+    /**
+ * @summary Parse and process a CAMT.053 statement through the reconciliation boundary
+ */
+export const useImportAdminEducationCamt053 = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importAdminEducationCamt053>>, TError,{data: BodyType<EducationCamt053Upload>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof importAdminEducationCamt053>>,
+        TError,
+        {data: BodyType<EducationCamt053Upload>},
+        TContext
+      > => {
+      return useMutation(getImportAdminEducationCamt053MutationOptions(options));
     }
 
 export const getListAdminEducationCentersUrl = () => {

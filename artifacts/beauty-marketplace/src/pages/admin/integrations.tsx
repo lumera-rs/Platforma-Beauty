@@ -13,6 +13,8 @@ import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
 import type {
   AdminBrevoWebhookIntegrationCard,
   AdminDeliveryReportStatus,
+  EducationCamt053ImportResult,
+  EducationCamt053Preview,
   EducationBankReconciliationStatus,
   AdminGetIntegrationsResponse,
   AdminGetWebhookFreshnessResponse,
@@ -26,6 +28,8 @@ import {
   AdminGetWebhookFreshnessResponse as AdminGetWebhookFreshnessResponseSchema,
   AdminGetWebPushDeliveryMetricsResponse as AdminWebPushDeliveryMetricsSchema,
   GetAdminEducationBankReconciliationResponse as GetAdminEducationBankReconciliationResponseSchema,
+  ImportAdminEducationCamt053Response as ImportAdminEducationCamt053ResponseSchema,
+  PreviewAdminEducationCamt053Response as PreviewAdminEducationCamt053ResponseSchema,
   UpdateAdminEducationBankReconciliationResponse as UpdateAdminEducationBankReconciliationResponseSchema,
 } from "@workspace/api-zod";
 import {
@@ -73,6 +77,11 @@ export default function AdminIntegrations() {
   const [reconciliationLoading, setReconciliationLoading] = useState(true);
   const [reconciliationError, setReconciliationError] = useState(false);
   const [savingReconciliation, setSavingReconciliation] = useState(false);
+  const [camtFile, setCamtFile] = useState<File | null>(null);
+  const [camtInputKey, setCamtInputKey] = useState(0);
+  const [camtPreview, setCamtPreview] = useState<EducationCamt053Preview | null>(null);
+  const [previewingCamt, setPreviewingCamt] = useState(false);
+  const [importingCamt, setImportingCamt] = useState(false);
   const actionGuard = useImmediateActionGuard();
   const [smsRegistrationRefreshFailed, setSmsRegistrationRefreshFailed] = useState(false);
   const [retryingSmsRegistrationRefresh, setRetryingSmsRegistrationRefresh] = useState(false);
@@ -155,6 +164,66 @@ export default function AdminIntegrations() {
       toast.error(error instanceof Error ? error.message : "Status reconciliation engine-a nije sačuvan.");
     } finally {
       setSavingReconciliation(false);
+      actionGuard.end(key);
+    }
+  };
+  const readCamtFile = async () => {
+    if (!camtFile) throw new Error("Izaberite CAMT.053 XML fajl.");
+    if (camtFile.size > 2 * 1024 * 1024) throw new Error("CAMT.053 izvod ne sme biti veći od 2 MB.");
+    return camtFile.text();
+  };
+  const previewCamt = async () => {
+    setPreviewingCamt(true);
+    try {
+      const xml = await readCamtFile();
+      const body = await fetchNativeJson<unknown>("/api/admin/education/bank-reconciliation/camt053/preview", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ xml }),
+      }, {
+        httpErrorMessage: "CAMT.053 pregled nije uspeo.",
+        invalidResponseMessage: "Odgovor CAMT.053 pregleda nije validan JSON.",
+      });
+      const parsed = PreviewAdminEducationCamt053ResponseSchema.safeParse(body);
+      if (!parsed.success) throw new Error(integrationResponseError(parsed.error.issues));
+      setCamtPreview(body as EducationCamt053Preview);
+      toast.success("CAMT.053 izvod je analiziran bez knjiženja.");
+    } catch (error) {
+      setCamtPreview(null);
+      toast.error(error instanceof Error ? error.message : "CAMT.053 pregled nije uspeo.");
+    } finally {
+      setPreviewingCamt(false);
+    }
+  };
+  const importCamt = async () => {
+    if (!camtPreview || camtPreview.invalidCount > 0) return;
+    const key = "import:education-camt053";
+    if (!actionGuard.begin(key)) return;
+    setImportingCamt(true);
+    try {
+      const xml = await readCamtFile();
+      const body = await fetchNativeJson<unknown>("/api/admin/education/bank-reconciliation/camt053/import", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ xml }),
+      }, {
+        httpErrorMessage: "CAMT.053 uvoz nije uspeo.",
+        invalidResponseMessage: "Odgovor CAMT.053 uvoza nije validan JSON.",
+      });
+      const parsed = ImportAdminEducationCamt053ResponseSchema.safeParse(body);
+      if (!parsed.success) throw new Error(integrationResponseError(parsed.error.issues));
+      const result = body as EducationCamt053ImportResult;
+      toast.success(`Obrađeno ${result.processedCount} stavki: ${result.settledCount} upareno, ${result.rejectedCount} odbijeno, ${result.duplicateCount} duplikata.`);
+      setCamtFile(null);
+      setCamtInputKey((value) => value + 1);
+      setCamtPreview(null);
+      await loadReconciliation();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "CAMT.053 uvoz nije uspeo.");
+    } finally {
+      setImportingCamt(false);
       actionGuard.end(key);
     }
   };
@@ -706,6 +775,88 @@ export default function AdminIntegrations() {
                   {reconciliation.lastResult === "settled" ? " · Uparena" : reconciliation.lastResult === "rejected" ? ` · Odbijena (${reconciliation.lastRejectionReason ?? "bez razloga"})` : ""}
                 </p>
               </div>
+            </div>
+            <div className="mt-4 rounded-lg border p-3 sm:p-4" data-testid="education-camt053-import">
+              <div className="flex flex-col gap-1">
+                <p className="text-sm font-semibold">CAMT.053 XML pregled i uvoz</p>
+                <p className="text-xs text-muted-foreground">
+                  Fajl se obrađuje samo u memoriji zahteva i ne čuva se u bazi. Pregled nikada ne knjiži stavke.
+                </p>
+              </div>
+              <Input
+                key={camtInputKey}
+                className="mt-3 h-auto py-2"
+                type="file"
+                accept=".xml,application/xml,text/xml"
+                disabled={previewingCamt || importingCamt}
+                data-testid="education-camt053-file"
+                onChange={(event) => {
+                  setCamtFile(event.target.files?.[0] ?? null);
+                  setCamtPreview(null);
+                }}
+              />
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full sm:w-auto"
+                  disabled={!camtFile || previewingCamt || importingCamt}
+                  onClick={() => void previewCamt()}
+                  data-testid="preview-education-camt053"
+                >
+                  {previewingCamt ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                  Pregledaj bez knjiženja
+                </Button>
+                <Button
+                  type="button"
+                  className="w-full sm:w-auto"
+                  disabled={
+                    !camtPreview
+                    || camtPreview.invalidCount > 0
+                    || !reconciliation.enabled
+                    || !reconciliation.accessConfirmed
+                    || reconciliation.accessMethod !== "camt053"
+                    || importingCamt
+                    || previewingCamt
+                    || actionGuard.isActive("import:education-camt053")
+                  }
+                  onClick={() => void importCamt()}
+                  data-testid="import-education-camt053"
+                >
+                  {importingCamt ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Landmark className="mr-2 h-4 w-4" />}
+                  Uvezi i knjiži
+                </Button>
+              </div>
+              {camtPreview && (
+                <div className="mt-3 space-y-3" aria-live="polite" data-testid="education-camt053-preview">
+                  <div className={`rounded-md border p-3 text-xs ${camtPreview.invalidCount ? "border-amber-300 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>
+                    <p className="font-semibold">
+                      {camtPreview.entryCount} stavki · {camtPreview.readyCount} spremno · {camtPreview.invalidCount} neispravno
+                    </p>
+                    <p className="mt-1 break-all">Namespace: {camtPreview.namespace}</p>
+                    {!reconciliation.enabled && <p className="mt-1 font-medium">Automatsko knjiženje je isključeno; pregled ostaje dostupan.</p>}
+                  </div>
+                  <div className="max-h-64 overflow-auto rounded-md border">
+                    <table className="w-full min-w-[640px] text-left text-xs">
+                      <thead className="sticky top-0 bg-muted">
+                        <tr><th className="p-2">#</th><th className="p-2">ID stavke</th><th className="p-2">Referenca</th><th className="p-2">Iznos</th><th className="p-2">Datum</th><th className="p-2">Status</th></tr>
+                      </thead>
+                      <tbody>
+                        {camtPreview.items.map((item) => (
+                          <tr key={item.index} className="border-t align-top">
+                            <td className="p-2">{item.index}</td>
+                            <td className="max-w-40 break-all p-2">{item.sourceItemId ?? "—"}</td>
+                            <td className="max-w-40 break-all p-2">{item.reference ?? "—"}</td>
+                            <td className="whitespace-nowrap p-2">{item.amountRsd === null ? "—" : `${item.amountRsd.toLocaleString("sr-RS")} RSD`}</td>
+                            <td className="whitespace-nowrap p-2">{item.receivedAt ? new Date(item.receivedAt).toLocaleDateString("sr-RS") : "—"}</td>
+                            <td className="p-2">{item.status === "ready" ? "Spremno" : item.errors.join(" ")}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
             <Button
               className="mt-4 w-full sm:w-auto"

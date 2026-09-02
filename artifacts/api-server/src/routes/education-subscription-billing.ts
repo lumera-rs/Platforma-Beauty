@@ -26,7 +26,12 @@ import {
 import {
   educationBankAccessMethodSchema,
   getEducationBankReconciliationStatus,
+  processNormalizedEducationBankTransaction,
 } from "../lib/education-bank-reconciliation";
+import {
+  normalizedTransactionsFromCamt053,
+  parseEducationCamt053,
+} from "../lib/education-camt053";
 import { lockEducationBillingRules } from "../lib/education-billing";
 import { settleEducationPaymentObligationInTransaction } from "../lib/education-payment-obligation-settlement";
 import {
@@ -1109,6 +1114,76 @@ router.patch("/admin/education/bank-reconciliation", async (req, res) => {
     }
   });
   res.json(await getEducationBankReconciliationStatus());
+});
+
+const camtErrorResponse = (error: unknown, res: any) => {
+  const code = error instanceof Error ? error.message : "CAMT_XML_INVALID";
+  const tooLarge = code === "CAMT_XML_TOO_LARGE" || code === "entity.too.large";
+  res.status(tooLarge ? 413 : 400).json({
+    error: tooLarge
+      ? "CAMT.053 izvod ne sme biti veći od 2 MB."
+      : "XML nije podržan CAMT.053 izvod ili sadrži nebezbednu/neispravnu strukturu.",
+    code,
+  });
+};
+
+router.post("/admin/education/bank-reconciliation/camt053/preview", async (req, res) => {
+  const actor = await superAdmin(req, res); if (!actor) return;
+  if (typeof req.body?.xml !== "string") {
+    res.status(400).json({ error: "Pošaljite CAMT.053 XML sadržaj." });
+    return;
+  }
+  try {
+    res.json(parseEducationCamt053(req.body.xml));
+  } catch (error) {
+    camtErrorResponse(error, res);
+  }
+});
+
+router.post("/admin/education/bank-reconciliation/camt053/import", async (req, res) => {
+  const actor = await superAdmin(req, res); if (!actor) return;
+  if (typeof req.body?.xml !== "string") {
+    res.status(400).json({ error: "Pošaljite CAMT.053 XML sadržaj." });
+    return;
+  }
+  const status = await getEducationBankReconciliationStatus();
+  if (!status.enabled || !status.accessConfirmed || status.accessMethod !== "camt053") {
+    res.status(409).json({ error: "Najpre potvrdite CAMT.053 pristup i uključite automatsko knjiženje." });
+    return;
+  }
+  try {
+    const preview = parseEducationCamt053(req.body.xml);
+    if (preview.entryCount === 0) {
+      res.status(400).json({ error: "CAMT.053 izvod ne sadrži nijednu bankovnu stavku.", code: "CAMT_XML_NO_ENTRIES" });
+      return;
+    }
+    if (preview.invalidCount > 0) {
+      res.status(400).json({
+        error: "Izvod sadrži neispravne stavke. Pregledajte i ispravite izvod pre uvoza.",
+        code: "CAMT_XML_INVALID_ENTRIES",
+      });
+      return;
+    }
+    const results = [];
+    for (const transaction of normalizedTransactionsFromCamt053(preview)) {
+      results.push(await processNormalizedEducationBankTransaction(transaction));
+    }
+    const items = results.map(({ transaction, duplicate }) => ({
+      sourceItemId: transaction.sourceItemId,
+      duplicate,
+      result: transaction.result,
+      rejectionReason: transaction.rejectionReason,
+    }));
+    res.json({
+      processedCount: items.length,
+      duplicateCount: items.filter((item) => item.duplicate).length,
+      settledCount: items.filter((item) => item.result === "settled").length,
+      rejectedCount: items.filter((item) => item.result === "rejected").length,
+      items,
+    });
+  } catch (error) {
+    camtErrorResponse(error, res);
+  }
 });
 
 export default router;
