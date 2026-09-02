@@ -5,7 +5,7 @@
   "scripts": {
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
-    "validate:publish": "export CI=true && pnpm run build && pnpm run test:beauty-marketplace-typecheck && pnpm run test:frontend-generated-typecheck && pnpm run test:api-server-typecheck && pnpm run test:browser-fixtures && pnpm run test:bundle-budget && pnpm run test:frontend-standards && pnpm run test:frontend-interactions && pnpm run test:monitoring && pnpm run test:backend-standards:static && pnpm run test:backend-standards:database",
+    "validate:publish": "export CI=true && pnpm run build && pnpm run test:beauty-marketplace-typecheck && pnpm run test:frontend-generated-typecheck && pnpm run test:api-server-typecheck && pnpm run test:release-chain && pnpm run test:browser-fixtures && pnpm run test:bundle-budget && pnpm run test:frontend-standards && pnpm run test:frontend-interactions && pnpm run test:monitoring && pnpm run test:backend-standards:static && pnpm run test:backend-standards:database",
     "validate:release": "export CI=true && pnpm run validate:release:1-publish && pnpm run validate:release:2-backend && pnpm run validate:release:3-api && pnpm run validate:release:4-isolated && pnpm run validate:release:5-final",
     "validate:release:1-publish": "export CI=true && echo 'Release phase 1/5: publish checks' && pnpm run validate:publish && echo 'Release phase 1/5 complete. Continue with: pnpm run validate:release:2-backend'",
     "validate:release:2-backend": "export CI=true && echo 'Release phase 2/5: backend and database checks' && pnpm run test:backend-standards:database && pnpm run test:business-growth-schema && pnpm run test:referral-lifecycle && pnpm run test:attributed-appointments-returning && pnpm run test:business-guide-pdf && pnpm run test:business-guide-links && pnpm run test:automation-provider-events && pnpm run test:scheduler-resilience && pnpm run test:scheduler-affected-jobs && pnpm run test:sms-webhook-registration && pnpm run test:webhook-secret-reconfirmation && pnpm run test:attributed-appointments-pagination && pnpm run test:campaign-attributed-appointments-window && pnpm run test:stats-compare-window-boundaries && pnpm run test:social-oauth-domain-change && pnpm run test:social-oauth-return-to && pnpm run test:social-oauth-referral-context && echo 'Release phase 2/5 complete. Continue with: pnpm run validate:release:3-api'",
@@ -25,6 +25,7 @@
     "test:attributed-appointments-returning": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/attributed-appointments-returning.test.ts",
     "test:api-regressions": "pnpm --filter @workspace/scripts run test:api-regressions",
     "test:api-regressions-lifecycle": "pnpm --filter @workspace/scripts run test:api-regressions-lifecycle",
+    "test:release-chain": "pnpm --filter @workspace/scripts run test:release-chain",
     "test:education-authz": "bash scripts/test-education-authorization.sh",
     "test:education-gift-refunds": "pnpm --filter @workspace/api-server run test:education-gift-refunds",
     "test:education-role-routing": "pnpm --filter @workspace/scripts exec tsx ../artifacts/beauty-marketplace/src/lib/role-routing.test.ts",

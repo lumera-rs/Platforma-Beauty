@@ -76,6 +76,7 @@
     "test:education-placement-lifecycle": "tsx ./src/run-education-placement-lifecycle.ts",
     "test:api-regressions": "tsx ./src/run-api-regressions.ts",
     "test:api-regressions-lifecycle": "tsx --test ./src/run-api-regressions-lifecycle.test.ts",
+    "test:release-chain": "tsx --test ./src/release-chain.test.ts",
     "cleanup:api-regressions": "tsx ./src/run-api-regressions.ts --recover-interrupted-databases",
     "test:retail-checkout": "tsx ./src/run-retail-checkout.ts",
     "test:shipping-config": "tsx ../artifacts/api-server/src/lib/shipping-config.test.ts",
