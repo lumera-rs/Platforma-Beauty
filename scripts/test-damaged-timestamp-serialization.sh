@@ -23,6 +23,8 @@ demo_password="${LUMERA_DEMO_PASSWORD:-LumeraDemo2026!}"
 cleanup() {
   local cleanup_failed=false
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v marker="$fixture_marker" -v slug="$fixture_slug" >/dev/null <<'SQL' || cleanup_failed=true
+delete from beauty_job_application_actions
+where listing_id in (select id from beauty_job_listings where description = :'marker');
 delete from beauty_job_listings where description = :'marker';
 delete from beauty_job_categories where slug = :'slug';
 SQL
@@ -34,7 +36,7 @@ SQL
 }
 trap cleanup EXIT
 
-read -r damaged_id valid_id damaged_slot_id valid_slot_id damaged_request_id valid_request_id < <(
+read -r damaged_id valid_id damaged_slot_id valid_slot_id damaged_request_id valid_request_id applicant_listing_id applicant_contact_id damaged_action_id valid_action_id < <(
   psql "$DATABASE_URL" -AtF ' ' -v ON_ERROR_STOP=1 -v marker="$fixture_marker" -v slug="$fixture_slug" <<'SQL'
 with fixture_user as (
   select id from users where email = 'admin@lumera.local'
@@ -46,10 +48,10 @@ fixture_category as (
 ),
 fixture_listings as (
   insert into beauty_job_listings (
-    category_id, user_id, posted_by_type, type, intent, title, description,
+    category_id, salon_id, user_id, posted_by_type, type, intent, title, description,
     city, region, status, moderation_status, expires_at, created_at, updated_at
   )
-  select category.id, fixture_user.id,
+  select category.id, null::uuid, fixture_user.id,
     'user'::beauty_job_posted_by_type,
     'equipment_rental'::beauty_job_listing_type,
     'offering'::beauty_job_listing_intent,
@@ -59,7 +61,7 @@ fixture_listings as (
     now() + interval '30 days', '-infinity'::timestamptz, now()
   from fixture_category category cross join fixture_user
   union all
-  select category.id, fixture_user.id,
+  select category.id, null::uuid, fixture_user.id,
     'user'::beauty_job_posted_by_type,
     'job'::beauty_job_listing_type,
     'offering'::beauty_job_listing_intent,
@@ -68,6 +70,20 @@ fixture_listings as (
     'approved'::beauty_job_moderation_status,
     now() + interval '30 days', now(), now()
   from fixture_category category cross join fixture_user
+  union all
+  select category.id, owner.active_salon_id, null::uuid,
+    'salon'::beauty_job_posted_by_type,
+    'job'::beauty_job_listing_type,
+    'offering'::beauty_job_listing_intent,
+    :'marker' || '-applicants', :'marker', 'Niš', 'Južna Srbija',
+    'active'::beauty_job_listing_status,
+    'approved'::beauty_job_moderation_status,
+    now() + interval '30 days', now(), now()
+  from fixture_category category
+  cross join lateral (
+    select active_salon_id from users
+    where email = 'salon@lumera.local' and active_salon_id is not null
+  ) owner
   returning id, title
 ),
 fixture_availability as (
@@ -105,6 +121,36 @@ fixture_requests as (
   cross join lateral (select id from users where email = 'kupac@lumera.local') applicant
   where listing.title = :'marker' || '-damaged'
   returning id, message
+),
+fixture_contact as (
+  insert into beauty_job_contacts (
+    listing_id, applicant_user_id, applicant_message, applicant_status, author_status,
+    author_reply, created_at, updated_at
+  )
+  select listing.id, applicant.id, :'marker' || '-application',
+    'pending'::beauty_job_contact_status, 'viewed'::beauty_job_contact_status,
+    :'marker' || '-reply', now(), now()
+  from fixture_listings listing
+  cross join lateral (select id from users where email = 'kupac@lumera.local') applicant
+  where listing.title = :'marker' || '-applicants'
+  returning id, listing_id
+),
+fixture_actions as (
+  insert into beauty_job_application_actions (
+    contact_id, listing_id, from_status, to_status, private_note, actor_user_id, created_at
+  )
+  select contact.id, contact.listing_id,
+    'pending'::beauty_job_contact_status, 'viewed'::beauty_job_contact_status,
+    :'marker' || '-damaged-action', owner.id, '-infinity'::timestamptz
+  from fixture_contact contact
+  cross join lateral (select id from users where email = 'salon@lumera.local') owner
+  union all
+  select contact.id, contact.listing_id,
+    'viewed'::beauty_job_contact_status, 'replied'::beauty_job_contact_status,
+    :'marker' || '-valid-action', owner.id, now()
+  from fixture_contact contact
+  cross join lateral (select id from users where email = 'salon@lumera.local') owner
+  returning id, private_note
 )
 select
   (select max(id::text) filter (where title = :'marker' || '-damaged') from fixture_listings),
@@ -112,11 +158,15 @@ select
   (select max(id::text) filter (where starts_at = '-infinity'::timestamptz) from fixture_slots),
   (select max(id::text) filter (where starts_at <> '-infinity'::timestamptz) from fixture_slots),
   (select max(id::text) filter (where message = :'marker' || '-damaged-request') from fixture_requests),
-  (select max(id::text) filter (where message = :'marker' || '-valid-request') from fixture_requests);
+  (select max(id::text) filter (where message = :'marker' || '-valid-request') from fixture_requests),
+  (select max(id::text) filter (where title = :'marker' || '-applicants') from fixture_listings),
+  (select max(id::text) from fixture_contact),
+  (select max(id::text) filter (where private_note = :'marker' || '-damaged-action') from fixture_actions),
+  (select max(id::text) filter (where private_note = :'marker' || '-valid-action') from fixture_actions);
 SQL
 )
 
-if [[ -z "$damaged_id" || -z "$valid_id" || -z "$damaged_slot_id" || -z "$valid_slot_id" || -z "$damaged_request_id" || -z "$valid_request_id" ]]; then
+if [[ -z "$damaged_id" || -z "$valid_id" || -z "$damaged_slot_id" || -z "$valid_slot_id" || -z "$damaged_request_id" || -z "$valid_request_id" || -z "$applicant_listing_id" || -z "$applicant_contact_id" || -z "$damaged_action_id" || -z "$valid_action_id" ]]; then
   echo "Failed to create damaged timestamp fixtures." >&2
   exit 1
 fi
@@ -188,6 +238,45 @@ if (damaged.message !== `${process.env.DETAIL_MARKER}-damaged-request` || typeof
 }
 if (valid.message !== `${process.env.DETAIL_MARKER}-valid-request` || typeof valid.createdAt !== "string" || typeof valid.updatedAt !== "string") {
   throw new Error("Valid neighboring rental-request row was not preserved.");
+}
+NODE
+
+status="$(curl -sS -o "$body" -w "%{http_code}" -c "$cookie" \
+  -H "Content-Type: application/json" \
+  --data "{\"email\":\"salon@lumera.local\",\"password\":\"$demo_password\"}" \
+  "$BASE_URL/auth/login")"
+if [[ "$status" != "200" ]]; then
+  echo "FAIL: salon login expected 200, got $status: $(cat "$body")" >&2
+  exit 1
+fi
+
+status="$(curl -sS -o "$body" -w "%{http_code}" -b "$cookie" "$BASE_URL/beauty-jobs/$applicant_listing_id/applicants")"
+if [[ "$status" != "200" ]]; then
+  echo "FAIL: authenticated applicant history expected 200, got $status: $(cat "$body")" >&2
+  exit 1
+fi
+APPLICANTS_BODY="$(cat "$body")" DETAIL_MARKER="$fixture_marker" CONTACT_ID="$applicant_contact_id" DAMAGED_ACTION_ID="$damaged_action_id" VALID_ACTION_ID="$valid_action_id" node <<'NODE'
+const response = JSON.parse(process.env.APPLICANTS_BODY);
+if (!Array.isArray(response.applicants)) throw new Error("Applicant history response has no applicants.");
+const applicant = response.applicants.find((item) => item.id === process.env.CONTACT_ID);
+if (!applicant) throw new Error("Applicant history omitted the fixture applicant.");
+if (applicant.applicantMessage !== `${process.env.DETAIL_MARKER}-application`
+  || applicant.authorReply !== `${process.env.DETAIL_MARKER}-reply`
+  || typeof applicant.applicantDisplayName !== "string") {
+  throw new Error("Unrelated applicant fields were not preserved.");
+}
+const damaged = applicant.actions.find((action) => action.id === process.env.DAMAGED_ACTION_ID);
+const valid = applicant.actions.find((action) => action.id === process.env.VALID_ACTION_ID);
+if (!damaged || !valid) throw new Error("Applicant history omitted a neighboring action.");
+if (damaged.createdAt !== null) throw new Error(`Damaged applicant action timestamp was not null: ${damaged.createdAt}`);
+if (damaged.privateNote !== `${process.env.DETAIL_MARKER}-damaged-action`
+  || damaged.fromStatus !== "pending" || damaged.toStatus !== "viewed") {
+  throw new Error("Unrelated fields on the damaged applicant action were not preserved.");
+}
+if (valid.privateNote !== `${process.env.DETAIL_MARKER}-valid-action`
+  || typeof valid.createdAt !== "string"
+  || valid.fromStatus !== "viewed" || valid.toStatus !== "replied") {
+  throw new Error("Valid neighboring applicant action was not preserved.");
 }
 NODE
 
