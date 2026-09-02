@@ -10887,6 +10887,36 @@ export const UpdateAdminEducationSettingsResponse = zod.object({
 }))
 
 
+/**
+ * @summary Read the internal Education reconciliation engine status
+ */
+export const GetAdminEducationBankReconciliationResponse = zod.object({
+  "enabled": zod.boolean(),
+  "engineState": zod.enum(['disabled', 'ready_for_import']),
+  "bankConnectionConfigured": zod.boolean(),
+  "lastProcessedAt": zod.coerce.date().nullable(),
+  "lastResult": zod.union([zod.literal('settled'),zod.literal('rejected'),zod.literal(null)]).nullable(),
+  "lastRejectionReason": zod.string().nullable()
+})
+
+
+/**
+ * @summary Enable or disable normalized Education bank-item processing
+ */
+export const UpdateAdminEducationBankReconciliationBody = zod.object({
+  "enabled": zod.boolean()
+}).strict()
+
+export const UpdateAdminEducationBankReconciliationResponse = zod.object({
+  "enabled": zod.boolean(),
+  "engineState": zod.enum(['disabled', 'ready_for_import']),
+  "bankConnectionConfigured": zod.boolean(),
+  "lastProcessedAt": zod.coerce.date().nullable(),
+  "lastResult": zod.union([zod.literal('settled'),zod.literal('rejected'),zod.literal(null)]).nullable(),
+  "lastRejectionReason": zod.string().nullable()
+})
+
+
 export const ListAdminEducationCentersResponseItem = zod.object({
   "id": zod.string(),
   "name": zod.string(),

@@ -7997,6 +7997,41 @@ export type EducationMarketplaceSettings = EducationMarketplaceSettingsInput & {
   updatedAt: string;
 };
 
+export interface EducationBankReconciliationInput {
+  enabled: boolean;
+}
+
+export type EducationBankReconciliationStatusEngineState = typeof EducationBankReconciliationStatusEngineState[keyof typeof EducationBankReconciliationStatusEngineState];
+
+
+export const EducationBankReconciliationStatusEngineState = {
+  disabled: 'disabled',
+  ready_for_import: 'ready_for_import',
+} as const;
+
+/**
+ * @nullable
+ */
+export type EducationBankReconciliationStatusLastResult = typeof EducationBankReconciliationStatusLastResult[keyof typeof EducationBankReconciliationStatusLastResult] | null;
+
+
+export const EducationBankReconciliationStatusLastResult = {
+  settled: 'settled',
+  rejected: 'rejected',
+} as const;
+
+export interface EducationBankReconciliationStatus {
+  enabled: boolean;
+  engineState: EducationBankReconciliationStatusEngineState;
+  bankConnectionConfigured: boolean;
+  /** @nullable */
+  lastProcessedAt: string | null;
+  /** @nullable */
+  lastResult: EducationBankReconciliationStatusLastResult;
+  /** @nullable */
+  lastRejectionReason: string | null;
+}
+
 export interface EducationInstructorProfile {
   id: string;
   centerId: string;

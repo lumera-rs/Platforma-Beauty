@@ -242,6 +242,40 @@ export const educationPaymentObligationsTable = pgTable("education_payment_oblig
   check("education_payment_obligations_cycle_check", sql`${table.billingCycleSnapshot} is null or ${table.billingCycleSnapshot} in ('monthly','yearly')`),
 ]);
 
+/**
+ * Durable normalized bank-item receipts. Adapters live outside this boundary:
+ * this table records only a stable source identity and normalized matching data.
+ */
+export const educationBankTransactionsTable = pgTable("education_bank_transactions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  source: text("source").notNull(),
+  sourceItemId: text("source_item_id").notNull(),
+  normalizedReference: text("normalized_reference").notNull(),
+  normalizedAmount: integer("normalized_amount").notNull(),
+  result: text("result").notNull(),
+  rejectionReason: text("rejection_reason"),
+  obligationId: uuid("obligation_id").references(() => educationPaymentObligationsTable.id, { onDelete: "restrict" }),
+  receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
+  processedAt: timestamp("processed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("education_bank_transactions_source_item_unique").on(table.source, table.sourceItemId),
+  uniqueIndex("education_bank_transactions_settled_obligation_unique")
+    .on(table.obligationId)
+    .where(sql`${table.result} = 'settled' and ${table.obligationId} is not null`),
+  index("education_bank_transactions_obligation_idx").on(table.obligationId),
+  index("education_bank_transactions_result_received_idx").on(table.result, table.receivedAt),
+  check("education_bank_transactions_source_check", sql`length(btrim(${table.source})) > 0 and length(btrim(${table.sourceItemId})) > 0`),
+  check("education_bank_transactions_reference_check", sql`length(btrim(${table.normalizedReference})) > 0`),
+  check("education_bank_transactions_amount_check", sql`${table.normalizedAmount} > 0`),
+  check("education_bank_transactions_result_check", sql`${table.result} in ('processing','settled','rejected')`),
+  check("education_bank_transactions_decision_check", sql`
+    (${table.result} = 'processing' and ${table.obligationId} is null and ${table.rejectionReason} is null and ${table.processedAt} is null)
+    or (${table.result} = 'settled' and ${table.obligationId} is not null and ${table.rejectionReason} is null and ${table.processedAt} is not null)
+    or (${table.result} = 'rejected' and length(btrim(${table.rejectionReason})) > 0 and ${table.processedAt} is not null)
+  `),
+]);
+
 export const educationGraceNotesTable = pgTable("education_grace_notes", {
   id: uuid("id").defaultRandom().primaryKey(),
   centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "cascade" }),

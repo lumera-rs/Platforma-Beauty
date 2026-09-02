@@ -3426,6 +3426,32 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/EducationMarketplaceSettings" }
+  /admin/education/bank-reconciliation:
+    get:
+      operationId: getAdminEducationBankReconciliation
+      tags: [admin, education]
+      summary: Read the internal Education reconciliation engine status
+      responses:
+        "200":
+          description: Reconciliation engine status without any bank connection claim
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationBankReconciliationStatus" }
+    patch:
+      operationId: updateAdminEducationBankReconciliation
+      tags: [admin, education]
+      summary: Enable or disable normalized Education bank-item processing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationBankReconciliationInput" }
+      responses:
+        "200":
+          description: Updated reconciliation engine status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationBankReconciliationStatus" }
   /admin/education/centers:
     get:
       operationId: listAdminEducationCenters
@@ -14485,6 +14511,23 @@ components:
             id: { type: string }
             updatedAt: { type: string, format: date-time }
           required: [id, updatedAt]
+    EducationBankReconciliationInput:
+      type: object
+      additionalProperties: false
+      properties:
+        enabled: { type: boolean }
+      required: [enabled]
+    EducationBankReconciliationStatus:
+      type: object
+      additionalProperties: false
+      properties:
+        enabled: { type: boolean }
+        engineState: { type: string, enum: [disabled, ready_for_import] }
+        bankConnectionConfigured: { type: boolean }
+        lastProcessedAt: { type: ["string", "null"], format: date-time }
+        lastResult: { type: ["string", "null"], enum: [settled, rejected, null] }
+        lastRejectionReason: { type: ["string", "null"] }
+      required: [enabled, engineState, bankConnectionConfigured, lastProcessedAt, lastResult, lastRejectionReason]
     EducationInstructorProfile:
       type: object
       properties:

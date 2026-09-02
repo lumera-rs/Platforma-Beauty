@@ -4,14 +4,16 @@ import { AdminLayout } from "./layout";
 import { armHistoryTraversalGuard } from "@/lib/unsaved-changes-guard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { PasswordInput } from "@/components/password-input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { AlertTriangle, CheckCircle2, Copy, KeyRound, Loader2, PlugZap, RefreshCw, Send, ShieldCheck, Smartphone, UsersRound, Webhook } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, KeyRound, Landmark, Loader2, PlugZap, RefreshCw, Send, ShieldCheck, Smartphone, UsersRound, Webhook } from "lucide-react";
 import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
 import type {
   AdminBrevoWebhookIntegrationCard,
   AdminDeliveryReportStatus,
+  EducationBankReconciliationStatus,
   AdminGetIntegrationsResponse,
   AdminGetWebhookFreshnessResponse,
   AdminIntegrationCard,
@@ -23,6 +25,8 @@ import {
   AdminGetIntegrationsResponse as AdminGetIntegrationsResponseSchema,
   AdminGetWebhookFreshnessResponse as AdminGetWebhookFreshnessResponseSchema,
   AdminGetWebPushDeliveryMetricsResponse as AdminWebPushDeliveryMetricsSchema,
+  GetAdminEducationBankReconciliationResponse as GetAdminEducationBankReconciliationResponseSchema,
+  UpdateAdminEducationBankReconciliationResponse as UpdateAdminEducationBankReconciliationResponseSchema,
 } from "@workspace/api-zod";
 import {
   assertNativeFetchSuccess,
@@ -63,6 +67,11 @@ export default function AdminIntegrations() {
   const [form, setForm] = useState<Record<Integration, Record<string, string>>>({ sms: {}, brevo: {}, google_oauth: {}, facebook_oauth: {}, cloudflare: {}, web_push: {} });
   const [testRecipient, setTestRecipient] = useState<Record<Integration, string>>({ sms: "", brevo: "", google_oauth: "", facebook_oauth: "", cloudflare: "", web_push: "" });
   const [savedEnabled, setSavedEnabled] = useState<Record<Integration, boolean> | null>(null);
+  const [reconciliation, setReconciliation] = useState<EducationBankReconciliationStatus | null>(null);
+  const [reconciliationEnabledDraft, setReconciliationEnabledDraft] = useState<boolean | null>(null);
+  const [reconciliationLoading, setReconciliationLoading] = useState(true);
+  const [reconciliationError, setReconciliationError] = useState(false);
+  const [savingReconciliation, setSavingReconciliation] = useState(false);
   const actionGuard = useImmediateActionGuard();
   const [smsRegistrationRefreshFailed, setSmsRegistrationRefreshFailed] = useState(false);
   const [retryingSmsRegistrationRefresh, setRetryingSmsRegistrationRefresh] = useState(false);
@@ -92,6 +101,56 @@ export default function AdminIntegrations() {
     const payload = body as Data;
     setData(payload);
     setSavedEnabled({ sms: payload.integrations.sms.enabled, brevo: payload.integrations.brevo.enabled, google_oauth: payload.integrations.google_oauth.enabled, facebook_oauth: payload.integrations.facebook_oauth.enabled, cloudflare: payload.integrations.cloudflare.enabled, web_push: payload.integrations.web_push.enabled });
+  };
+  const loadReconciliation = async () => {
+    setReconciliationLoading(true);
+    try {
+      const body = await fetchNativeJson<unknown>("/api/admin/education/bank-reconciliation", { credentials: "include" }, {
+        httpErrorMessage: "Status reconciliation engine-a nije učitan.",
+        invalidResponseMessage: "Odgovor servera za reconciliation engine nije validan JSON.",
+      });
+      const parsed = GetAdminEducationBankReconciliationResponseSchema.safeParse(body);
+      if (!parsed.success) throw new Error(integrationResponseError(parsed.error.issues));
+      const payload = body as EducationBankReconciliationStatus;
+      setReconciliation(payload);
+      setReconciliationEnabledDraft(payload.enabled);
+      setReconciliationError(false);
+    } catch {
+      setReconciliationError(true);
+    } finally {
+      setReconciliationLoading(false);
+    }
+  };
+  const saveReconciliation = async () => {
+    if (reconciliationEnabledDraft === null) return;
+    const key = "save:education-bank-reconciliation";
+    if (!actionGuard.begin(key)) return;
+    setSavingReconciliation(true);
+    try {
+      const body = await fetchNativeJson<unknown>("/api/admin/education/bank-reconciliation", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled: reconciliationEnabledDraft }),
+      }, {
+        httpErrorMessage: "Status reconciliation engine-a nije sačuvan.",
+        invalidResponseMessage: "Odgovor servera za reconciliation engine nije validan JSON.",
+      });
+      const parsed = UpdateAdminEducationBankReconciliationResponseSchema.safeParse(body);
+      if (!parsed.success) throw new Error(integrationResponseError(parsed.error.issues));
+      const payload = body as EducationBankReconciliationStatus;
+      setReconciliation(payload);
+      setReconciliationEnabledDraft(payload.enabled);
+      setReconciliationError(false);
+      toast.success(payload.enabled
+        ? "Reconciliation engine prihvata normalizovane interne stavke."
+        : "Reconciliation engine je isključen.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Status reconciliation engine-a nije sačuvan.");
+    } finally {
+      setSavingReconciliation(false);
+      actionGuard.end(key);
+    }
   };
   const refreshWebhookFreshness = async () => {
     const sequence = ++freshnessRefreshSequence.current;
@@ -170,9 +229,10 @@ export default function AdminIntegrations() {
   // form fields and re-baselines its enabled flag, which removes the guard.
   const hasUnsavedChanges = useMemo(() => {
     if (Object.values(form).some((values) => Object.values(values).some((value) => value.trim() !== ""))) return true;
+    if (reconciliation && reconciliationEnabledDraft !== null && reconciliation.enabled !== reconciliationEnabledDraft) return true;
     if (!data || !savedEnabled) return false;
     return (Object.keys(savedEnabled) as Integration[]).some((integration) => data.integrations[integration].enabled !== savedEnabled[integration]);
-  }, [form, data, savedEnabled]);
+  }, [form, data, savedEnabled, reconciliation, reconciliationEnabledDraft]);
   useEffect(() => {
     if (!hasUnsavedChanges) return;
     const message = "Imate nesačuvane izmene u podešavanjima integracija (npr. generisanu webhook tajnu ili promenjen prekidač). One važe tek kada kliknete „Sačuvaj“. Da li ipak želite da napustite stranicu?";
@@ -400,6 +460,7 @@ export default function AdminIntegrations() {
         loadWebPushMetrics(webPushPeriodDays),
       ]))
       .catch((error) => toast.error(error instanceof Error ? error.message : "Podešavanja integracija nisu učitana."));
+    void loadReconciliation();
   }, []);
   useEffect(() => {
     const refreshWhenVisible = () => {
@@ -517,6 +578,84 @@ export default function AdminIntegrations() {
         </div>
      </div>}
     {!data ? <p className="text-muted-foreground">Učitavanje integracija…</p> : <>
+      <section className="rounded-xl border bg-card p-4 shadow-sm sm:p-6" data-testid="education-bank-reconciliation-card">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Landmark className="h-5 w-5 shrink-0 text-primary" />
+              <h2 className="text-xl font-semibold">Education · bankovna rekoncilijacija</h2>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Interni engine uparuje samo već normalizovane stavke po tačnoj referenci i iznosu.
+            </p>
+          </div>
+          <span
+            className={`w-fit shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${
+              reconciliation?.enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"
+            }`}
+            data-testid="education-bank-reconciliation-status"
+          >
+            {reconciliation?.enabled ? "Spreman za interne stavke" : "Isključen"}
+          </span>
+        </div>
+
+        <div className="mt-4 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900" role="status" data-testid="education-bank-reconciliation-connection-note">
+          <p className="font-semibold">Banka nije povezana</p>
+          <p className="mt-1 text-xs">
+            Ovaj prekidač ne uspostavlja vezu sa bankom i ne preuzima izvode. Bank API, scraping, OAuth i automatsko preuzimanje nisu konfigurisani.
+          </p>
+        </div>
+
+        {reconciliationError ? (
+          <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3" role="alert" data-testid="education-bank-reconciliation-error">
+            <p className="text-sm font-semibold text-amber-800">Status engine-a trenutno nije dostupan.</p>
+            <Button variant="outline" size="sm" className="mt-2" disabled={reconciliationLoading} onClick={loadReconciliation}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${reconciliationLoading ? "animate-spin" : ""}`} />
+              Pokušaj ponovo
+            </Button>
+          </div>
+        ) : reconciliationLoading && !reconciliation ? (
+          <p className="mt-4 text-sm text-muted-foreground"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Učitavanje statusa…</p>
+        ) : reconciliation ? (
+          <>
+            <label className="mt-4 flex items-center justify-between gap-4 rounded-lg bg-muted/50 p-3 text-sm font-medium">
+              <span>
+                Prihvataj normalizovane stavke
+                <span className="mt-0.5 block text-xs font-normal text-muted-foreground">Podrazumevano je isključeno; promena važi tek nakon čuvanja.</span>
+              </span>
+              <Switch
+                checked={reconciliationEnabledDraft ?? false}
+                onCheckedChange={setReconciliationEnabledDraft}
+                disabled={savingReconciliation}
+                data-testid="education-bank-reconciliation-toggle"
+                aria-label="Prihvataj normalizovane bankovne stavke"
+              />
+            </label>
+            <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <p className="font-semibold text-foreground">Stanje engine-a</p>
+                <p className="mt-1 text-muted-foreground">{reconciliation.engineState === "ready_for_import" ? "Čeka stavke preko interne granice." : "Sve primljene stavke biće odbijene i evidentirane."}</p>
+              </div>
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <p className="font-semibold text-foreground">Poslednja obrada</p>
+                <p className="mt-1 text-muted-foreground">
+                  {formatTimestamp(reconciliation.lastProcessedAt) ?? "Nijedna stavka još nije obrađena."}
+                  {reconciliation.lastResult === "settled" ? " · Uparena" : reconciliation.lastResult === "rejected" ? ` · Odbijena (${reconciliation.lastRejectionReason ?? "bez razloga"})` : ""}
+                </p>
+              </div>
+            </div>
+            <Button
+              className="mt-4 w-full sm:w-auto"
+              onClick={() => void saveReconciliation()}
+              disabled={savingReconciliation || reconciliationEnabledDraft === reconciliation.enabled || actionGuard.isActive("save:education-bank-reconciliation")}
+              data-testid="save-education-bank-reconciliation"
+            >
+              {savingReconciliation ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+              Sačuvaj status engine-a
+            </Button>
+          </>
+        ) : null}
+      </section>
       {data.smsFallback?.reachableAdminCount === 0 && <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4" role="alert" data-testid="sms-fallback-no-admin-phone">
         <p className="font-semibold text-destructive"><AlertTriangle className="mr-1.5 inline h-4 w-4" />Hitna SMS upozorenja trenutno ne mogu nikoga da dosegnu</p>
         <p className="mt-1 text-sm text-destructive">Nijedan aktivan administrator nema broj telefona na nalogu. Ako slanje e-pošte potpuno otkaže, rezervni SMS je jedini kanal kojim biste saznali za prekid — bez broja telefona upozorenje završava samo u logovima servera.</p>

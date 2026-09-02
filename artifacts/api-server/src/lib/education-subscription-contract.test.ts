@@ -6,12 +6,16 @@ import { and, eq, inArray } from "drizzle-orm";
 import app from "../app";
 import { createSession, sessionCookieName } from "./auth";
 import {
-  coursesTable, db, educationCenterSubscriptionsTable, educationCentersTable, educationFinancialAuditLogTable,
+  coursesTable, db, educationBankTransactionsTable, educationCenterSubscriptionsTable, educationCentersTable, educationFinancialAuditLogTable,
   educationPaymentObligationsTable, educationPlatformSettingsTable, educationTrialClaimsTable,
   salonsTable, sessionsTable, subscriptionPlansTable, usersTable,
 } from "@workspace/db";
 import { addEducationBillingPeriod } from "./education-subscription-domain";
 import { runEducationSubscriptionLifecycle } from "./education-subscription-worker";
+import {
+  educationBankRejectionReasons,
+  processNormalizedEducationBankTransaction,
+} from "./education-bank-reconciliation";
 
 const marker = `edu-contract-${randomUUID()}`;
 const emails = [`owner-a-${marker}@example.test`, `owner-b-${marker}@example.test`];
@@ -19,6 +23,8 @@ const userIds: string[] = [];
 const centerIds: string[] = [];
 const planIds: string[] = [];
 const detachedClaimIds: string[] = [];
+const reconciliationObligationIds: string[] = [];
+const reconciliationTransactionIds: string[] = [];
 let adminId: string | undefined;
 let server: ReturnType<typeof app.listen> | undefined;
 let settingsRestore: typeof educationPlatformSettingsTable.$inferSelect | null = null;
@@ -70,10 +76,12 @@ try {
     settingsRestore = currentSettings;
     await db.update(educationPlatformSettingsTable).set({
       ipsRecipientName: `LUMERA ${marker}`, ipsRecipientAccount: "840000000000000000", ipsPurpose: "Education pretplata", ipsAccountEnvironment: "test",
+      bankReconciliationEnabled: false,
     }).where(eq(educationPlatformSettingsTable.id, currentSettings.id));
   } else {
     const [created] = await db.insert(educationPlatformSettingsTable).values({
       ipsRecipientName: `LUMERA ${marker}`, ipsRecipientAccount: "840000000000000000", ipsPurpose: "Education pretplata", ipsAccountEnvironment: "test",
+      bankReconciliationEnabled: false,
     }).returning();
     insertedSettingsId = created!.id;
   }
@@ -239,6 +247,188 @@ try {
     status: "paid",
     confirmedAmount: yearlyObligation!.expectedAmount,
   });
+
+  const initialReconciliationStatus = await call(base, "/admin/education/bank-reconciliation", "GET", undefined, adminCookie);
+  assert.equal(initialReconciliationStatus.status, 200);
+  assert.deepEqual({
+    enabled: initialReconciliationStatus.body.enabled,
+    engineState: initialReconciliationStatus.body.engineState,
+    bankConnectionConfigured: initialReconciliationStatus.body.bankConnectionConfigured,
+  }, {
+    enabled: false,
+    engineState: "disabled",
+    bankConnectionConfigured: false,
+  }, "The reconciliation engine defaults to disabled and never claims a configured bank connection.");
+
+  const disabledBankItem = await processNormalizedEducationBankTransaction({
+    source: "contract-fixture",
+    sourceItemId: `${marker}:disabled`,
+    reference: `UNKNOWN-${marker}`,
+    amountRsd: 1_000,
+    receivedAt: new Date(),
+  });
+  reconciliationTransactionIds.push(disabledBankItem.transaction.id);
+  assert.equal(disabledBankItem.transaction.result, "rejected");
+  assert.equal(disabledBankItem.transaction.rejectionReason, educationBankRejectionReasons.engineDisabled);
+
+  const enabledReconciliationStatus = await call(
+    base,
+    "/admin/education/bank-reconciliation",
+    "PATCH",
+    { enabled: true },
+    adminCookie,
+  );
+  assert.equal(enabledReconciliationStatus.status, 200);
+  assert.equal(enabledReconciliationStatus.body.engineState, "ready_for_import");
+  assert.equal(enabledReconciliationStatus.body.bankConnectionConfigured, false);
+
+  const unknownBankItem = await processNormalizedEducationBankTransaction({
+    source: "contract-fixture",
+    sourceItemId: `${marker}:unknown`,
+    reference: `UNKNOWN-ENABLED-${marker}`,
+    amountRsd: 1_000,
+    receivedAt: new Date(),
+  });
+  reconciliationTransactionIds.push(unknownBankItem.transaction.id);
+  assert.equal(unknownBankItem.transaction.result, "rejected");
+  assert.equal(unknownBankItem.transaction.rejectionReason, educationBankRejectionReasons.referenceNotFound);
+
+  const [amountObligation, automatedObligation, raceObligation] = await db.insert(educationPaymentObligationsTable).values([
+    {
+      centerId: centerA.id,
+      kind: "reconciliation_contract_fixture",
+      expectedAmount: 22_222,
+      recipientNameSnapshot: `LUMERA ${marker}`,
+      recipientAccountSnapshot: "840000000000000000",
+      paymentCodeSnapshot: "221",
+      purposeSnapshot: "Reconciliation automated fixture",
+      referenceSnapshot: `EDU-AUTO-${marker}`,
+    },
+    {
+      centerId: centerA.id,
+      kind: "reconciliation_contract_fixture",
+      expectedAmount: 12_345,
+      recipientNameSnapshot: `LUMERA ${marker}`,
+      recipientAccountSnapshot: "840000000000000000",
+      paymentCodeSnapshot: "221",
+      purposeSnapshot: "Reconciliation amount fixture",
+      referenceSnapshot: `EDU-AMOUNT-${marker}`,
+    },
+    {
+      centerId: centerA.id,
+      kind: "reconciliation_contract_fixture",
+      expectedAmount: 23_456,
+      recipientNameSnapshot: `LUMERA ${marker}`,
+      recipientAccountSnapshot: "840000000000000000",
+      paymentCodeSnapshot: "221",
+      purposeSnapshot: "Reconciliation race fixture",
+      referenceSnapshot: `EDU-RACE-${marker}`,
+    },
+  ]).returning();
+  reconciliationObligationIds.push(amountObligation!.id, automatedObligation!.id, raceObligation!.id);
+
+  const amountMismatch = await processNormalizedEducationBankTransaction({
+    source: "contract-fixture",
+    sourceItemId: `${marker}:amount`,
+    reference: amountObligation!.referenceSnapshot,
+    amountRsd: amountObligation!.expectedAmount - 1,
+    receivedAt: new Date(),
+  });
+  reconciliationTransactionIds.push(amountMismatch.transaction.id);
+  assert.equal(amountMismatch.transaction.result, "rejected");
+  assert.equal(amountMismatch.transaction.rejectionReason, educationBankRejectionReasons.amountMismatch);
+  assert.equal(amountMismatch.transaction.obligationId, amountObligation!.id);
+  const duplicateAmountMismatch = await processNormalizedEducationBankTransaction({
+    source: "contract-fixture",
+    sourceItemId: `${marker}:amount`,
+    reference: amountObligation!.referenceSnapshot,
+    amountRsd: amountObligation!.expectedAmount - 1,
+    receivedAt: new Date(),
+  });
+  assert.equal(duplicateAmountMismatch.duplicate, true);
+  assert.equal(duplicateAmountMismatch.transaction.id, amountMismatch.transaction.id);
+
+  const automatedInput = {
+    source: "contract-fixture",
+    sourceItemId: `${marker}:automated`,
+    reference: automatedObligation!.referenceSnapshot,
+    amountRsd: automatedObligation!.expectedAmount,
+    receivedAt: new Date(),
+  };
+  const concurrentSameSource = await Promise.all([
+    processNormalizedEducationBankTransaction(automatedInput),
+    processNormalizedEducationBankTransaction(automatedInput),
+  ]);
+  assert.deepEqual(concurrentSameSource.map((result) => result.duplicate).sort(), [false, true],
+    "Concurrent delivery of one source item must claim and process it once.");
+  assert.equal(concurrentSameSource[0]!.transaction.id, concurrentSameSource[1]!.transaction.id);
+  const automatedResult = concurrentSameSource[0]!.duplicate ? concurrentSameSource[1]! : concurrentSameSource[0]!;
+  reconciliationTransactionIds.push(automatedResult.transaction.id);
+  assert.equal(automatedResult.transaction.result, "settled");
+  assert.equal(automatedResult.transaction.obligationId, automatedObligation!.id);
+  const [automaticallyPaid] = await db.select().from(educationPaymentObligationsTable)
+    .where(eq(educationPaymentObligationsTable.id, automatedObligation!.id));
+  assert.equal(automaticallyPaid!.status, "paid");
+  assert.equal(automaticallyPaid!.confirmedAmount, automatedObligation!.expectedAmount);
+  assert.equal(automaticallyPaid!.confirmedByUserId, null, "Automated settlement must not impersonate an administrator.");
+  const automatedSettlementAudits = await db.select().from(educationFinancialAuditLogTable).where(and(
+    eq(educationFinancialAuditLogTable.entityId, automatedObligation!.id),
+    eq(educationFinancialAuditLogTable.action, "education_payment_obligation_settled"),
+  ));
+  assert.equal(automatedSettlementAudits.length, 1);
+  assert.equal(automatedSettlementAudits[0]!.actorUserId, null);
+  assert.deepEqual(automatedSettlementAudits[0]!.newValue, {
+    status: "paid",
+    confirmedAmount: automatedObligation!.expectedAmount,
+    settlementSource: "bank_reconciliation",
+    bankTransactionId: automatedResult.transaction.id,
+  });
+
+  const [automatedRace, manualRace] = await Promise.all([
+    processNormalizedEducationBankTransaction({
+      source: "contract-fixture",
+      sourceItemId: `${marker}:race`,
+      reference: raceObligation!.referenceSnapshot,
+      amountRsd: raceObligation!.expectedAmount,
+      receivedAt: new Date(),
+    }),
+    call(base, `/admin/education/payment-obligations/${raceObligation!.id}/settle`, "POST", {
+      confirmedAmountRsd: raceObligation!.expectedAmount,
+      reason: "Konkurentna ručna potvrda",
+    }, adminCookie),
+  ]);
+  reconciliationTransactionIds.push(automatedRace.transaction.id);
+  assert.ok(
+    (automatedRace.transaction.result === "settled" && manualRace.status === 409)
+    || (
+      automatedRace.transaction.result === "rejected"
+      && automatedRace.transaction.rejectionReason === educationBankRejectionReasons.obligationNotPending
+      && manualRace.status === 200
+    ),
+    "Automated and manual settlement must produce exactly one winner.",
+  );
+  const secondRaceItem = await processNormalizedEducationBankTransaction({
+    source: "contract-fixture",
+    sourceItemId: `${marker}:race-second`,
+    reference: raceObligation!.referenceSnapshot,
+    amountRsd: raceObligation!.expectedAmount,
+    receivedAt: new Date(),
+  });
+  reconciliationTransactionIds.push(secondRaceItem.transaction.id);
+  assert.equal(secondRaceItem.transaction.result, "rejected");
+  assert.equal(secondRaceItem.transaction.rejectionReason, educationBankRejectionReasons.obligationNotPending);
+
+  const raceSettlementAudits = await db.select().from(educationFinancialAuditLogTable).where(and(
+    eq(educationFinancialAuditLogTable.entityId, raceObligation!.id),
+    eq(educationFinancialAuditLogTable.action, "education_payment_obligation_settled"),
+  ));
+  assert.equal(raceSettlementAudits.length, 1, "The auto/manual race writes one canonical settlement audit.");
+  const processingAudits = await db.select().from(educationFinancialAuditLogTable).where(and(
+    inArray(educationFinancialAuditLogTable.entityId, reconciliationTransactionIds),
+    eq(educationFinancialAuditLogTable.action, "education_bank_transaction_processed"),
+  ));
+  assert.equal(processingAudits.length, reconciliationTransactionIds.length,
+    "Every unique normalized bank item writes one processing audit; the duplicate writes none.");
   [subscription] = await db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
   assert.equal(subscription!.status, "active");
   assert.ok(subscription!.currentPeriodEnd!.getTime() - subscription!.currentPeriodStart!.getTime() > 360 * 86_400_000);
@@ -458,6 +648,14 @@ try {
   console.log("education subscription contract tests passed");
 } finally {
   if (server) { server.close(); await once(server, "close"); }
+  if (reconciliationTransactionIds.length) {
+    await db.delete(educationFinancialAuditLogTable).where(inArray(educationFinancialAuditLogTable.entityId, reconciliationTransactionIds));
+    await db.delete(educationBankTransactionsTable).where(inArray(educationBankTransactionsTable.id, reconciliationTransactionIds));
+  }
+  if (reconciliationObligationIds.length) {
+    await db.delete(educationFinancialAuditLogTable).where(inArray(educationFinancialAuditLogTable.entityId, reconciliationObligationIds));
+    await db.delete(educationPaymentObligationsTable).where(inArray(educationPaymentObligationsTable.id, reconciliationObligationIds));
+  }
   if (centerIds.length) {
     const subscriptions = await db.select().from(educationCenterSubscriptionsTable).where(inArray(educationCenterSubscriptionsTable.centerId, centerIds));
     if (subscriptions.length) {
@@ -479,6 +677,7 @@ try {
     await db.update(educationPlatformSettingsTable).set({
       ipsRecipientName: settingsRestore.ipsRecipientName, ipsRecipientAccount: settingsRestore.ipsRecipientAccount,
       ipsPurpose: settingsRestore.ipsPurpose, ipsAccountEnvironment: settingsRestore.ipsAccountEnvironment, updatedAt: settingsRestore.updatedAt,
+      bankReconciliationEnabled: settingsRestore.bankReconciliationEnabled,
     }).where(eq(educationPlatformSettingsTable.id, settingsRestore.id));
   } else if (insertedSettingsId) {
     await db.delete(educationPlatformSettingsTable).where(eq(educationPlatformSettingsTable.id, insertedSettingsId));

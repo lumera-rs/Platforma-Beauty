@@ -372,7 +372,7 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
-    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 115, "v115 is the current production schema rollout");
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 116, "v116 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
     const sharedPlan = await q<{ id: string }>(`INSERT INTO "${s}".subscription_plans DEFAULT VALUES RETURNING id`);
     const sharedPlanId = sharedPlan.rows[0]!.id;
@@ -399,6 +399,10 @@ async function run() {
         "v115 adds a durable hashed bank-account trial identity");
       assert.ok(await columnExists("education_centers", "registration_number"),
         "v115 retains the center registration number for later trial checks");
+      assert.ok(await objectExists(
+        `SELECT to_regclass($1) IS NOT NULL AS exists`,
+        [`${s}.education_bank_transactions`],
+      ), "v116 adds durable normalized Education bank transaction receipts");
       const splitPlans = await q<{ salon_audience: string; education_audience: string; education_plan_id: string }>(
         `SELECT salon_plan.audience AS salon_audience, education_plan.audience AS education_audience, education_subscription.plan_id AS education_plan_id
          FROM "${s}".subscription_plans salon_plan
@@ -428,6 +432,55 @@ async function run() {
       const [platformSettings] = (await q<{ id: string }>(
         `INSERT INTO "${s}".education_platform_settings DEFAULT VALUES RETURNING id`,
       )).rows;
+      const [reconciliationDefault] = (await q<{ enabled: boolean }>(
+        `SELECT bank_reconciliation_enabled AS enabled FROM "${s}".education_platform_settings WHERE id=$1`,
+        [platformSettings!.id],
+      )).rows;
+      assert.equal(reconciliationDefault!.enabled, false, "v116 keeps bank reconciliation disabled by default");
+      await assert.rejects(
+        q(`UPDATE "${s}".education_platform_settings SET bank_reconciliation_enabled=NULL WHERE id=$1`, [platformSettings!.id]),
+        /not-null constraint/,
+      );
+      const [reconciliationObligation] = (await q<{ id: string }>(
+        `INSERT INTO "${s}".education_payment_obligations
+           (center_id, kind, expected_amount, recipient_name_snapshot, recipient_account_snapshot,
+            payment_code_snapshot, purpose_snapshot, reference_snapshot)
+         VALUES ($1, 'reconciliation_schema_fixture', 1000, 'LUMERA', '840000000000000000',
+                 '221', 'Schema fixture', 'EDU-RECON-SCHEMA') RETURNING id`,
+        [fixtures.legacyEducationCenter.id],
+      )).rows;
+      await assert.rejects(
+        q(`INSERT INTO "${s}".education_bank_transactions
+           (source, source_item_id, normalized_reference, normalized_amount, result, received_at)
+           VALUES ('schema-test', 'bad-amount', 'EDU-RECON-SCHEMA', 0, 'processing', now())`),
+        /education_bank_transactions_amount_check/,
+      );
+      await assert.rejects(
+        q(`INSERT INTO "${s}".education_bank_transactions
+           (source, source_item_id, normalized_reference, normalized_amount, result, received_at, processed_at)
+           VALUES ('schema-test', 'bad-state', 'EDU-RECON-SCHEMA', 1000, 'processing', now(), now())`),
+        /education_bank_transactions_decision_check/,
+      );
+      await q(`INSERT INTO "${s}".education_bank_transactions
+        (source, source_item_id, normalized_reference, normalized_amount, result, received_at)
+        VALUES ('schema-test', 'same-source', 'EDU-RECON-SCHEMA', 1000, 'processing', now())`);
+      await assert.rejects(
+        q(`INSERT INTO "${s}".education_bank_transactions
+           (source, source_item_id, normalized_reference, normalized_amount, result, received_at)
+           VALUES ('schema-test', 'same-source', 'EDU-RECON-SCHEMA', 1000, 'processing', now())`),
+        /education_bank_transactions_source_item_unique/,
+      );
+      await q(`INSERT INTO "${s}".education_bank_transactions
+        (source, source_item_id, normalized_reference, normalized_amount, result, obligation_id, received_at, processed_at)
+        VALUES ('schema-test', 'settled-one', 'EDU-RECON-SCHEMA', 1000, 'settled', $1, now(), now())`,
+      [reconciliationObligation!.id]);
+      await assert.rejects(
+        q(`INSERT INTO "${s}".education_bank_transactions
+           (source, source_item_id, normalized_reference, normalized_amount, result, obligation_id, received_at, processed_at)
+           VALUES ('schema-test', 'settled-two', 'EDU-RECON-SCHEMA', 1000, 'settled', $1, now(), now())`,
+        [reconciliationObligation!.id]),
+        /education_bank_transactions_settled_obligation_unique/,
+      );
       await assert.rejects(
         q(`UPDATE "${s}".education_platform_settings SET ips_account_environment='invalid' WHERE id=$1`,
           [platformSettings!.id]),
@@ -1192,6 +1245,10 @@ async function run() {
       "beauty_job_notifications_expiry_warning_unique",
       "appointments_salon_customer_completed_date_idx",
       "salon_customers_salon_id_idx",
+      "education_bank_transactions_source_item_unique",
+      "education_bank_transactions_settled_obligation_unique",
+      "education_bank_transactions_obligation_idx",
+      "education_bank_transactions_result_received_idx",
     ]) {
       assert.ok(await indexExists(idx), `index ${idx} exists`);
     }
@@ -1427,6 +1484,7 @@ async function run() {
       ["education_gift_vouchers_refunded_by_idx", "refunded_by_user_id"],
       ["education_gift_vouchers_dispute_idx", "dispute_id"],
       ["education_installments_settled_by_idx", "settled_by_user_id"],
+      ["education_bank_transactions_obligation_idx", "obligation_id"],
       ["education_outbox_center_idx", "center_id"],
       ["education_outbox_session_idx", "session_id"],
       ["education_outbox_participant_idx", "participant_id"],

@@ -23,6 +23,9 @@ import {
   educationGraceDaysRemaining,
   educationReactivationState,
 } from "../lib/education-subscription-reactivation";
+import { getEducationBankReconciliationStatus } from "../lib/education-bank-reconciliation";
+import { lockEducationBillingRules } from "../lib/education-billing";
+import { settleEducationPaymentObligationInTransaction } from "../lib/education-payment-obligation-settlement";
 
 const router: IRouter = Router();
 const planBody = z.object({
@@ -733,127 +736,70 @@ router.post("/admin/education/payment-obligations/:obligationId/settle", async (
   const parsed = z.object({ confirmedAmountRsd: z.number().int().nonnegative(), reason: z.string().trim().min(3).max(1000) }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "Potvrđeni iznos i razlog su obavezni." }); return; }
   try {
-    const settled = await db.transaction(async (tx) => {
-      const [obligationPreview] = await tx.select({
-        id: educationPaymentObligationsTable.id,
-        subscriptionId: educationPaymentObligationsTable.subscriptionId,
-      }).from(educationPaymentObligationsTable)
-        .where(eq(educationPaymentObligationsTable.id, req.params.obligationId)).limit(1);
-      if (!obligationPreview) throw new Error("NOT_FOUND");
-      const [lockedSubscription] = obligationPreview.subscriptionId
-        ? await tx.select().from(educationCenterSubscriptionsTable)
-          .where(eq(educationCenterSubscriptionsTable.id, obligationPreview.subscriptionId)).for("update").limit(1)
-        : [];
-      if (obligationPreview.subscriptionId && !lockedSubscription) throw new Error("NOT_FOUND");
-      const [obligation] = await tx.select().from(educationPaymentObligationsTable)
-        .where(eq(educationPaymentObligationsTable.id, req.params.obligationId)).for("update").limit(1);
-      if (!obligation) throw new Error("NOT_FOUND");
-      if (obligation.status !== "pending") throw new Error("ALREADY_SETTLED");
-      if (parsed.data.confirmedAmountRsd !== obligation.expectedAmount) throw new Error("AMOUNT_MISMATCH");
-      const [saved] = await tx.update(educationPaymentObligationsTable).set({
-        status: "paid", confirmedAmount: parsed.data.confirmedAmountRsd,
-        confirmedAt: new Date(), confirmedByUserId: actor.id,
-      }).where(and(eq(educationPaymentObligationsTable.id, obligation.id), eq(educationPaymentObligationsTable.status, "pending"))).returning();
-      if (!saved) throw new Error("ALREADY_SETTLED");
-      if (obligation.enrollmentId) {
-        const [extension] = await tx.select().from(educationAccessExtensionsTable)
-          .where(eq(educationAccessExtensionsTable.paymentObligationId, obligation.id)).for("update").limit(1);
-        if (extension) {
-          const settledAt = new Date();
-          const [enrollment] = await tx.select().from(courseEnrollmentsTable)
-            .where(eq(courseEnrollmentsTable.id, obligation.enrollmentId)).for("update").limit(1);
-          if (!enrollment) throw new Error("NOT_FOUND");
-          const base = enrollment.accessExpiresAt && enrollment.accessExpiresAt > settledAt ? enrollment.accessExpiresAt : settledAt;
-          const extendedAccessExpiresAt = addMonths(base, extension.months);
-          await tx.update(educationAccessExtensionsTable).set({ status: "settled", settledAt, previousAccessExpiresAt: base, extendedAccessExpiresAt }).where(and(eq(educationAccessExtensionsTable.id, extension.id), eq(educationAccessExtensionsTable.status, "pending")));
-          await tx.update(courseEnrollmentsTable).set({ accessExpiresAt: extendedAccessExpiresAt, updatedAt: settledAt }).where(eq(courseEnrollmentsTable.id, obligation.enrollmentId));
-        }
-      }
-      if (obligation.subscriptionId) {
-        const subscription = lockedSubscription;
-        if (!subscription) throw new Error("NOT_FOUND");
-        const upgrade = obligation.kind === "subscription_upgrade";
-        const now = new Date();
-        const prepaidRenewal = obligation.kind === "subscription_renewal"
-          && Boolean(obligation.servicePeriodStart && obligation.servicePeriodStart > now);
-        const scheduledPlanPaidByRenewal = obligation.kind === "subscription_renewal"
-          && Boolean(subscription.pendingPlanId && subscription.pendingPlanEffectiveAt && obligation.servicePeriodStart
-            && subscription.pendingPlanEffectiveAt <= obligation.servicePeriodStart);
-        const snapshotPlanId = obligation.planIdSnapshot ?? subscription.planId;
-        const snapshotCycle = (obligation.billingCycleSnapshot ?? subscription.billingCycle) as EducationBillingCycle;
-        const [snapshotPlan] = await tx.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, snapshotPlanId)).limit(1);
-        const payableCourseLimit = obligation.courseLimitSnapshot
-          ?? (subscription.contractKind === "custom" ? subscription.courseLimitOverride ?? 0 : snapshotPlan?.courseLimit ?? snapshotPlan?.limits["courses"] ?? 0);
-        const deferredUpgradeCycle = upgrade
-          && Boolean(subscription.pendingBillingCycle && subscription.pendingBillingCycle !== snapshotCycle
-            && subscription.pendingPlanEffectiveAt && subscription.pendingPlanEffectiveAt > now);
-        const applyUpgradeNow = upgrade && !deferredUpgradeCycle;
-        const requiresManualReactivation = subscription.status === "suspended" || Boolean(subscription.deactivatedAt);
-        await tx.update(educationCenterSubscriptionsTable).set(prepaidRenewal ? {
-          paidAt: now, updatedAt: now,
-        } : {
-          ...(applyUpgradeNow || obligation.kind === "subscription_renewal"
-            ? { planId: snapshotPlanId, billingCycle: snapshotCycle }
-            : {}),
-          ...(subscription.pendingPlanId && ((upgrade && !deferredUpgradeCycle) || scheduledPlanPaidByRenewal)
-            ? { pendingPlanId: null, pendingBillingCycle: null, pendingPlanEffectiveAt: null }
-            : {}),
-          status: requiresManualReactivation ? "suspended" : "active", paidAt: now,
-          ...(!deferredUpgradeCycle ? {
-            currentPriceSnapshot: obligation.planMonthlyPriceSnapshot ?? snapshotPlan?.price ?? subscription.currentPriceSnapshot,
-            currentCourseLimitSnapshot: payableCourseLimit,
-          } : {}),
-          currentPeriodStart: upgrade ? subscription.currentPeriodStart : obligation.servicePeriodStart ?? now,
-          currentPeriodEnd: upgrade ? subscription.currentPeriodEnd : obligation.servicePeriodEnd ?? addEducationBillingPeriod(now, snapshotCycle),
-          graceEndsAt: null,
-          deactivatedAt: requiresManualReactivation ? subscription.deactivatedAt ?? now : null,
-          ...(requiresManualReactivation ? { pendingKeepCourseIds: null } : {}),
-          updatedAt: now,
-        }).where(eq(educationCenterSubscriptionsTable.id, obligation.subscriptionId));
-        if (!requiresManualReactivation && !prepaidRenewal && !deferredUpgradeCycle && (obligation.kind === "subscription_renewal" || obligation.kind === "subscription_upgrade")) {
-          const publishedCourses = await tx.select({ id: coursesTable.id }).from(coursesTable)
-            .where(and(eq(coursesTable.centerId, subscription.centerId), eq(coursesTable.published, true), eq(coursesTable.archived, false)))
-            .orderBy(asc(coursesTable.createdAt)).for("update");
-          const selected = new Set(subscription.pendingKeepCourseIds ?? publishedCourses.slice(0, payableCourseLimit).map((row) => row.id));
-          const extras = publishedCourses.filter((row) => !selected.has(row.id) || selected.size > payableCourseLimit).map((row) => row.id);
-          if (extras.length) await tx.update(coursesTable).set({ published: false, subscriptionSuspended: true, updatedAt: now }).where(inArray(coursesTable.id, extras));
-          const remaining = Math.max(0, payableCourseLimit - (publishedCourses.length - extras.length));
-          if (remaining > 0) {
-            const eligible = await tx.select({ id: coursesTable.id }).from(coursesTable)
-              .where(and(eq(coursesTable.centerId, subscription.centerId), eq(coursesTable.published, false), eq(coursesTable.subscriptionSuspended, true), eq(coursesTable.archived, false)))
-              .orderBy(asc(coursesTable.createdAt)).limit(remaining).for("update");
-            if (eligible.length) await tx.update(coursesTable).set({ published: true, subscriptionSuspended: false, updatedAt: now }).where(inArray(coursesTable.id, eligible.map((row) => row.id)));
-          }
-          await tx.update(educationCenterSubscriptionsTable).set({ pendingKeepCourseIds: null }).where(eq(educationCenterSubscriptionsTable.id, subscription.id));
-        }
-      }
-      await tx.insert(educationFinancialAuditLogTable).values({
-        actorUserId: actor.id, action: "education_payment_obligation_settled",
-        entityType: "education_payment_obligation", entityId: obligation.id,
-        oldValue: { status: obligation.status, expectedAmount: obligation.expectedAmount },
-        newValue: { status: "paid", confirmedAmount: parsed.data.confirmedAmountRsd },
-        reason: parsed.data.reason,
+    const settlement = await db.transaction((tx) => settleEducationPaymentObligationInTransaction(tx, {
+      obligationId: req.params.obligationId,
+      confirmedAmountRsd: parsed.data.confirmedAmountRsd,
+      actorUserId: actor.id,
+      reason: parsed.data.reason,
+      source: "manual",
+    }));
+    if (!settlement.ok) {
+      const status = settlement.code === "NOT_FOUND" ? 404 : 409;
+      res.status(status).json({
+        error: settlement.code === "AMOUNT_MISMATCH"
+          ? "Potvrđeni iznos mora biti jednak očekivanom iznosu."
+          : settlement.code === "ALREADY_SETTLED"
+            ? "Ova uplata je već evidentirana."
+            : "Obaveza nije pronađena.",
       });
-      return saved;
-    });
-    res.json(settled);
+      return;
+    }
+    res.json(settlement.obligation);
   } catch (error) {
-    const code = error instanceof Error ? error.message : "FAILED";
-    const status = code === "NOT_FOUND" ? 404 : 409;
-    res.status(status).json({ error: code === "AMOUNT_MISMATCH" ? "Potvrđeni iznos mora biti jednak očekivanom iznosu." : code === "ALREADY_SETTLED" ? "Ova uplata je već evidentirana." : "Obaveza nije pronađena." });
+    req.log?.error({ err: error }, "Education payment-obligation settlement failed");
+    res.status(500).json({ error: "Uplata trenutno nije mogla biti evidentirana." });
   }
+});
+
+router.get("/admin/education/bank-reconciliation", async (req, res) => {
+  const actor = await superAdmin(req, res); if (!actor) return;
+  res.json(await getEducationBankReconciliationStatus());
 });
 
 router.patch("/admin/education/bank-reconciliation", async (req, res) => {
   const actor = await superAdmin(req, res); if (!actor) return;
   const enabled = req.body?.enabled;
   if (typeof enabled !== "boolean") { res.status(400).json({ error: "Vrednost prekidača mora biti true ili false." }); return; }
-  const [settings] = await db.select().from(educationPlatformSettingsTable).orderBy(asc(educationPlatformSettingsTable.createdAt)).limit(1);
-  const saved = settings
-    ? (await db.update(educationPlatformSettingsTable).set({ bankReconciliationEnabled: enabled, updatedByUserId: actor.id, updatedAt: new Date() }).where(eq(educationPlatformSettingsTable.id, settings.id)).returning())[0]
-    : (await db.insert(educationPlatformSettingsTable).values({ bankReconciliationEnabled: enabled, updatedByUserId: actor.id }).returning())[0];
-  await db.insert(educationFinancialAuditLogTable).values({ actorUserId: actor.id, action: "bank_reconciliation_toggled", entityType: "education_platform_settings", entityId: saved!.id, oldValue: { enabled: !enabled }, newValue: { enabled }, reason: "Ručno uključivanje ili isključivanje buduće bankovne integracije." });
-  res.json({ enabled: saved!.bankReconciliationEnabled });
+  await db.transaction(async (tx) => {
+    await lockEducationBillingRules(tx, "exclusive");
+    const [settings] = await tx.select().from(educationPlatformSettingsTable)
+      .orderBy(asc(educationPlatformSettingsTable.createdAt), asc(educationPlatformSettingsTable.id))
+      .for("update")
+      .limit(1);
+    const saved = settings
+      ? (await tx.update(educationPlatformSettingsTable).set({
+        bankReconciliationEnabled: enabled,
+        updatedByUserId: actor.id,
+        updatedAt: new Date(),
+      }).where(eq(educationPlatformSettingsTable.id, settings.id)).returning())[0]
+      : (await tx.insert(educationPlatformSettingsTable).values({
+        bankReconciliationEnabled: enabled,
+        updatedByUserId: actor.id,
+      }).returning())[0];
+    if (!saved) throw new Error("Education reconciliation settings were not saved.");
+    if (settings?.bankReconciliationEnabled !== enabled) {
+      await tx.insert(educationFinancialAuditLogTable).values({
+        actorUserId: actor.id,
+        action: "bank_reconciliation_toggled",
+        entityType: "education_platform_settings",
+        entityId: saved.id,
+        oldValue: { enabled: settings?.bankReconciliationEnabled ?? false },
+        newValue: { enabled },
+        reason: "Administrator je promenio status internog reconciliation engine-a; bankovna veza nije konfigurisana.",
+      });
+    }
+  });
+  res.json(await getEducationBankReconciliationStatus());
 });
 
 export default router;

@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 115;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 116;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -4671,6 +4671,33 @@ function tableStatements(s: string): string[] {
     `ALTER TABLE ${s}.education_payment_obligations ADD COLUMN IF NOT EXISTS plan_monthly_price_snapshot integer`,
     `ALTER TABLE ${s}.education_payment_obligations ADD COLUMN IF NOT EXISTS course_limit_snapshot integer`,
     `CREATE INDEX IF NOT EXISTS education_payment_obligations_center_status_idx ON ${s}.education_payment_obligations(center_id, status, due_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_bank_transactions (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       source text NOT NULL,
+       source_item_id text NOT NULL,
+       normalized_reference text NOT NULL,
+       normalized_amount integer NOT NULL,
+       result text NOT NULL,
+       rejection_reason text,
+       obligation_id uuid REFERENCES ${s}.education_payment_obligations(id) ON DELETE RESTRICT,
+       received_at timestamptz NOT NULL,
+       processed_at timestamptz,
+       created_at timestamptz NOT NULL DEFAULT now(),
+       CONSTRAINT education_bank_transactions_source_check CHECK(length(btrim(source)) > 0 and length(btrim(source_item_id)) > 0),
+       CONSTRAINT education_bank_transactions_reference_check CHECK(length(btrim(normalized_reference)) > 0),
+       CONSTRAINT education_bank_transactions_amount_check CHECK(normalized_amount > 0),
+       CONSTRAINT education_bank_transactions_result_check CHECK(result in ('processing','settled','rejected')),
+       CONSTRAINT education_bank_transactions_decision_check CHECK(
+         (result = 'processing' and obligation_id is null and rejection_reason is null and processed_at is null)
+         or (result = 'settled' and obligation_id is not null and rejection_reason is null and processed_at is not null)
+         or (result = 'rejected' and length(btrim(rejection_reason)) > 0 and processed_at is not null)
+       ),
+       CONSTRAINT education_bank_transactions_source_item_unique UNIQUE(source, source_item_id)
+     )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS education_bank_transactions_settled_obligation_unique
+       ON ${s}.education_bank_transactions(obligation_id) WHERE result = 'settled' and obligation_id is not null`,
+    `CREATE INDEX IF NOT EXISTS education_bank_transactions_obligation_idx ON ${s}.education_bank_transactions(obligation_id)`,
+    `CREATE INDEX IF NOT EXISTS education_bank_transactions_result_received_idx ON ${s}.education_bank_transactions(result, received_at)`,
     `CREATE TABLE IF NOT EXISTS ${s}.education_grace_notes (
        id uuid PRIMARY KEY DEFAULT gen_random_uuid(), center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE CASCADE,
        author_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE RESTRICT, note text NOT NULL,

@@ -260,6 +260,8 @@ import type {
   EducationB2bQuote,
   EducationB2bTierSettings,
   EducationB2bTierSettingsInput,
+  EducationBankReconciliationInput,
+  EducationBankReconciliationStatus,
   EducationBundle,
   EducationBundleCreate,
   EducationBundleUpdate,
@@ -16810,6 +16812,154 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getUpdateAdminEducationSettingsMutationOptions(options));
+    }
+
+export const getGetAdminEducationBankReconciliationUrl = () => {
+
+
+
+
+  return `/api/admin/education/bank-reconciliation`
+}
+
+/**
+ * @summary Read the internal Education reconciliation engine status
+ */
+export const getAdminEducationBankReconciliation = async ( options?: Parameters<typeof customFetch>[1]): Promise<EducationBankReconciliationStatus> => {
+
+  return customFetch<EducationBankReconciliationStatus>(getGetAdminEducationBankReconciliationUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAdminEducationBankReconciliationQueryKey = () => {
+    return [
+    `/api/admin/education/bank-reconciliation`
+    ] as const;
+    }
+
+
+export const getGetAdminEducationBankReconciliationQueryOptions = <TData = Awaited<ReturnType<typeof getAdminEducationBankReconciliation>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAdminEducationBankReconciliation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAdminEducationBankReconciliationQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminEducationBankReconciliation>>> = ({ signal }) => getAdminEducationBankReconciliation({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAdminEducationBankReconciliation>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAdminEducationBankReconciliationQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminEducationBankReconciliation>>>
+export type GetAdminEducationBankReconciliationQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Read the internal Education reconciliation engine status
+ */
+
+export function useGetAdminEducationBankReconciliation<TData = Awaited<ReturnType<typeof getAdminEducationBankReconciliation>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAdminEducationBankReconciliation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAdminEducationBankReconciliationQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateAdminEducationBankReconciliationUrl = () => {
+
+
+
+
+  return `/api/admin/education/bank-reconciliation`
+}
+
+/**
+ * @summary Enable or disable normalized Education bank-item processing
+ */
+export const updateAdminEducationBankReconciliation = async (educationBankReconciliationInput: EducationBankReconciliationInput, options?: Parameters<typeof customFetch>[1]): Promise<EducationBankReconciliationStatus> => {
+
+  return customFetch<EducationBankReconciliationStatus>(getUpdateAdminEducationBankReconciliationUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(educationBankReconciliationInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateAdminEducationBankReconciliationMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAdminEducationBankReconciliation>>, TError,{data: BodyType<EducationBankReconciliationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAdminEducationBankReconciliation>>, TError,{data: BodyType<EducationBankReconciliationInput>}, TContext> => {
+
+const mutationKey = ['updateAdminEducationBankReconciliation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAdminEducationBankReconciliation>>, {data: BodyType<EducationBankReconciliationInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateAdminEducationBankReconciliation(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAdminEducationBankReconciliationMutationResult = NonNullable<Awaited<ReturnType<typeof updateAdminEducationBankReconciliation>>>
+    export type UpdateAdminEducationBankReconciliationMutationBody = BodyType<EducationBankReconciliationInput>
+    export type UpdateAdminEducationBankReconciliationMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Enable or disable normalized Education bank-item processing
+ */
+export const useUpdateAdminEducationBankReconciliation = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAdminEducationBankReconciliation>>, TError,{data: BodyType<EducationBankReconciliationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAdminEducationBankReconciliation>>,
+        TError,
+        {data: BodyType<EducationBankReconciliationInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateAdminEducationBankReconciliationMutationOptions(options));
     }
 
 export const getListAdminEducationCentersUrl = () => {
