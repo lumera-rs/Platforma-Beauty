@@ -51,15 +51,19 @@ fixture_listings as (
     category_id, salon_id, user_id, posted_by_type, type, intent, title, description,
     city, region, status, moderation_status, expires_at, created_at, updated_at
   )
-  select category.id, null::uuid, fixture_user.id,
-    'user'::beauty_job_posted_by_type,
+  select category.id, owner.active_salon_id, null::uuid,
+    'salon'::beauty_job_posted_by_type,
     'equipment_rental'::beauty_job_listing_type,
     'offering'::beauty_job_listing_intent,
     :'marker' || '-damaged', :'marker', 'Beograd', 'Beograd',
     'active'::beauty_job_listing_status,
     'approved'::beauty_job_moderation_status,
     now() + interval '30 days', '-infinity'::timestamptz, now()
-  from fixture_category category cross join fixture_user
+  from fixture_category category
+  cross join lateral (
+    select active_salon_id from users
+    where email = 'salon@lumera.local' and active_salon_id is not null
+  ) owner
   union all
   select category.id, null::uuid, fixture_user.id,
     'user'::beauty_job_posted_by_type,
@@ -329,6 +333,39 @@ if [[ "$status" != "200" ]]; then
   echo "FAIL: salon login expected 200, got $status: $(cat "$body")" >&2
   exit 1
 fi
+
+status="$(curl -sS -o "$body" -w "%{http_code}" -b "$cookie" "$BASE_URL/beauty-jobs/rental-requests/inbox")"
+if [[ "$status" != "200" ]]; then
+  echo "FAIL: authenticated rental-request inbox with damaged responded_at expected 200, got $status: $(cat "$body")" >&2
+  exit 1
+fi
+REQUESTS_BODY="$(cat "$body")" DETAIL_MARKER="$fixture_marker" DAMAGED_REQUEST_ID="$damaged_request_id" VALID_REQUEST_ID="$valid_request_id" node <<'NODE'
+const response = JSON.parse(process.env.REQUESTS_BODY);
+if (!Array.isArray(response.requests)) throw new Error("Rental-request inbox response has no requests.");
+const damaged = response.requests.find((request) => request.id === process.env.DAMAGED_REQUEST_ID);
+const valid = response.requests.find((request) => request.id === process.env.VALID_REQUEST_ID);
+if (!damaged || !valid) throw new Error("Rental-request inbox omitted a fixture row beside damaged respondedAt.");
+if (damaged.respondedAt !== null) {
+  throw new Error(`Damaged inbox rental-request respondedAt was not null: ${damaged.respondedAt}`);
+}
+if (typeof damaged.createdAt !== "string"
+  || typeof damaged.updatedAt !== "string"
+  || damaged.message !== `${process.env.DETAIL_MARKER}-damaged-request`
+  || damaged.status !== "pending"
+  || typeof damaged.listingTitle !== "string"
+  || typeof damaged.applicantDisplayName !== "string") {
+  throw new Error("Unrelated fields on the inbox rental request with damaged respondedAt were not preserved.");
+}
+if (valid.message !== `${process.env.DETAIL_MARKER}-valid-request`
+  || valid.status !== "pending"
+  || typeof valid.respondedAt !== "string"
+  || typeof valid.createdAt !== "string"
+  || typeof valid.updatedAt !== "string"
+  || typeof valid.listingTitle !== "string"
+  || typeof valid.applicantDisplayName !== "string") {
+  throw new Error("Valid neighboring rental request was not preserved in the inbox beside damaged respondedAt.");
+}
+NODE
 
 status="$(curl -sS -o "$body" -w "%{http_code}" -b "$cookie" "$BASE_URL/beauty-jobs/$applicant_listing_id/applicants")"
 if [[ "$status" != "200" ]]; then
