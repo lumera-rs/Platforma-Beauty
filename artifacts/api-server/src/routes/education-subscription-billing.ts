@@ -14,7 +14,8 @@ import { addEducationBelgradeCalendarDays, educationBelgradeDateKey, educationIp
 import {
   addEducationBillingPeriod, educationCycleAmount, educationPaymentReference,
   educationUpgradeProrationQuote, hashTrialIdentifier, normalizeTrialEmail,
-  normalizeTrialPhone, normalizeTrialPib, type EducationBillingCycle,
+  normalizeTrialBankAccount, normalizeTrialPhone, normalizeTrialPib,
+  normalizeTrialRegistrationNumber, type EducationBillingCycle,
 } from "../lib/education-subscription-domain";
 import { isOnlineEnrollmentSnapshot } from "../lib/education-entitlement";
 
@@ -195,6 +196,8 @@ router.post("/education/subscription/select-plan", async (req, res) => {
         normalizedEmailHash: hashTrialIdentifier(normalizeTrialEmail(access.current.email))!,
         normalizedPhoneHash: hashTrialIdentifier(normalizeTrialPhone(access.current.phone)),
         normalizedPibHash: hashTrialIdentifier(normalizeTrialPib(access.center.pib)),
+        normalizedRegistrationNumberHash: hashTrialIdentifier(normalizeTrialRegistrationNumber(access.center.registrationNumber)),
+        normalizedBankAccountHash: hashTrialIdentifier(normalizeTrialBankAccount(access.center.bankAccount)),
         userId: access.current.id, centerId: access.center.id,
       }).onConflictDoNothing().returning();
       const trial = !existing && trialClaim.length > 0;

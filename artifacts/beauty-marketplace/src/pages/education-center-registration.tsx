@@ -27,6 +27,8 @@ const eduRegistrationSchema = z.object({
   phone: z.string().min(6, "Unesite kontakt telefon."),
   businessName: z.string().min(2, "Naziv edukativnog centra je obavezan."),
   pib: z.string().trim().min(1, "PIB je obavezan.").max(50, "PIB može imati najviše 50 karaktera."),
+  registrationNumber: z.string().refine((value) => value.replace(/\D/g, "").length === 8, "Matični broj mora imati tačno 8 cifara."),
+  bankAccount: z.string().refine((value) => value.replace(/\D/g, "").length === 18, "Poslovni račun mora imati tačno 18 cifara."),
   city: z.string().min(2, "Grad je obavezan."),
   municipality: z.string().min(2, "Opština je obavezna."),
   address: z.string().min(3, "Adresa je obavezna."),
@@ -58,6 +60,8 @@ export default function EducationCenterRegistration() {
       phone: "",
       businessName: "",
       pib: "",
+      registrationNumber: "",
+      bankAccount: "",
       city: "",
       municipality: "",
       address: "",
@@ -75,6 +79,8 @@ export default function EducationCenterRegistration() {
       data: {
         ...values,
         pib: values.pib.trim(),
+        registrationNumber: values.registrationNumber.replace(/\D/g, ""),
+        bankAccount: values.bankAccount.replace(/\D/g, ""),
         businessType: "EDUCATION_CENTER",
         contactEmail: values.email,
         contactPhone: values.phone,
@@ -238,6 +244,7 @@ export default function EducationCenterRegistration() {
                           </FormItem>
                         )}
                       />
+
                       <FormField
                         control={form.control}
                         name="billingCycle"
@@ -309,6 +316,31 @@ export default function EducationCenterRegistration() {
                         </FormItem>
                       )}
                     />
+
+                    <div className="grid gap-5 sm:grid-cols-2">
+                      <FormField
+                        control={form.control}
+                        name="registrationNumber"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="flex items-center gap-2">Matični broj <EducationFieldHelp id="edu-registration-registration-number-help" label="Matični broj" text="Unesite osmocifreni matični broj centra. Koristi se za proveru da je probni period iskorišćen samo jednom." /></FormLabel>
+                            <FormControl><Input aria-describedby="edu-registration-registration-number-help" inputMode="numeric" autoComplete="off" placeholder="12345678" {...field} /></FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="bankAccount"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="flex items-center gap-2">Poslovni račun <EducationFieldHelp id="edu-registration-bank-account-help" label="Poslovni račun" text="Unesite osamnaestocifreni poslovni račun centra. Broj se koristi za sprečavanje ponovnog korišćenja probnog perioda." /></FormLabel>
+                            <FormControl><Input aria-describedby="edu-registration-bank-account-help" inputMode="numeric" autoComplete="off" placeholder="840000000000000000" {...field} /></FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
 
                     <div className="grid gap-5 sm:grid-cols-2">
                       <FormField

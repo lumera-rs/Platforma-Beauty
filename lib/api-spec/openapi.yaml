@@ -10004,6 +10004,8 @@ components:
         contactPhone: { type: string, minLength: 6 }
         contactAddress: { type: string, minLength: 3 }
         pib: { type: string, minLength: 8, maxLength: 50 }
+        registrationNumber: { type: string, minLength: 8, maxLength: 30, pattern: '^(?:\D*\d){8}\D*$' }
+        bankAccount: { type: string, minLength: 18, maxLength: 50, pattern: '^(?:\D*\d){18}\D*$' }
         websiteUrl: { type: string, format: uri }
         instagramUrl: { type: string, format: uri }
         description: { type: string, minLength: 20, maxLength: 2000 }
@@ -10019,7 +10021,7 @@ components:
               businessType: { const: EDUCATION_CENTER }
             required: [businessType]
           then:
-            required: [planId, billingCycle]
+            required: [planId, billingCycle, registrationNumber, bankAccount]
     LoginInput:
       type: object
       properties:

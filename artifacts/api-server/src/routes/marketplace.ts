@@ -265,7 +265,8 @@ import {
 } from "../lib/education-center-eligibility";
 import {
   educationCycleAmount, educationPaymentReference, hashTrialIdentifier,
-  normalizeTrialEmail, normalizeTrialPhone, normalizeTrialPib,
+  normalizeTrialBankAccount, normalizeTrialEmail, normalizeTrialPhone, normalizeTrialPib,
+  normalizeTrialRegistrationNumber,
 } from "../lib/education-subscription-domain";
 
 import 
@@ -5701,6 +5702,10 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Izbor aktivnog Education plana i ciklusa naplate je obavezan." });
     return;
   }
+  if (input.businessType === "EDUCATION_CENTER" && (!input.registrationNumber?.trim() || !input.bankAccount?.trim())) {
+    res.status(400).json({ error: "Matični broj i poslovni račun edukativnog centra su obavezni." });
+    return;
+  }
   const [educationPlan] = input.businessType === "EDUCATION_CENTER"
     ? await db.select().from(subscriptionPlansTable).where(and(eq(subscriptionPlansTable.id, input.planId!), eq(subscriptionPlansTable.active, true), eq(subscriptionPlansTable.audience, "education"), gt(subscriptionPlansTable.price, 0))).limit(1)
     : [];
@@ -5774,6 +5779,8 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
           contactPhone: input.contactPhone?.trim() || input.phone,
           contactAddress: input.contactAddress?.trim() || input.address,
           pib: input.pib,
+           registrationNumber: normalizeTrialRegistrationNumber(input.registrationNumber),
+           bankAccount: normalizeTrialBankAccount(input.bankAccount),
            paymentReferenceNumber: educationPaymentReference("EDU", centerId),
           websiteUrl: input.websiteUrl?.trim() || undefined,
           instagramUrl: input.instagramUrl?.trim() || undefined,
@@ -5784,6 +5791,8 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
           normalizedEmailHash: hashTrialIdentifier(normalizeTrialEmail(email))!,
           normalizedPhoneHash: hashTrialIdentifier(normalizeTrialPhone(input.phone)),
           normalizedPibHash: hashTrialIdentifier(normalizeTrialPib(input.pib)),
+          normalizedRegistrationNumberHash: hashTrialIdentifier(normalizeTrialRegistrationNumber(input.registrationNumber)),
+          normalizedBankAccountHash: hashTrialIdentifier(normalizeTrialBankAccount(input.bankAccount)),
           userId: created.id,
           centerId: center!.id,
         }).onConflictDoNothing().returning({ id: educationTrialClaimsTable.id });

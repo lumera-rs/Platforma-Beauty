@@ -372,7 +372,7 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
-    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 114, "v114 is the current production schema rollout");
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 115, "v115 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
     const sharedPlan = await q<{ id: string }>(`INSERT INTO "${s}".subscription_plans DEFAULT VALUES RETURNING id`);
     const sharedPlanId = sharedPlan.rows[0]!.id;
@@ -393,6 +393,12 @@ async function run() {
         "v112 freezes the paid-period Education course limit");
       assert.ok(await columnExists("courses", "subscription_suspended"),
         "v112 identifies drafts suspended by subscription enforcement");
+      assert.ok(await columnExists("education_trial_claims", "normalized_registration_number_hash"),
+        "v115 adds a durable hashed registration-number trial identity");
+      assert.ok(await columnExists("education_trial_claims", "normalized_bank_account_hash"),
+        "v115 adds a durable hashed bank-account trial identity");
+      assert.ok(await columnExists("education_centers", "registration_number"),
+        "v115 retains the center registration number for later trial checks");
       const splitPlans = await q<{ salon_audience: string; education_audience: string; education_plan_id: string }>(
         `SELECT salon_plan.audience AS salon_audience, education_plan.audience AS education_audience, education_subscription.plan_id AS education_plan_id
          FROM "${s}".subscription_plans salon_plan

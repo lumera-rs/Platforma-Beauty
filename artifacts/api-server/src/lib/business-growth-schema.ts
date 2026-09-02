@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 114;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 115;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -4631,6 +4631,7 @@ function tableStatements(s: string): string[] {
     `CREATE TABLE IF NOT EXISTS ${s}.education_trial_claims (
        id uuid PRIMARY KEY DEFAULT gen_random_uuid(), normalized_email_hash text NOT NULL,
        normalized_phone_hash text, normalized_pib_hash text,
+       normalized_registration_number_hash text, normalized_bank_account_hash text,
        user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
        center_id uuid REFERENCES ${s}.education_centers(id) ON DELETE SET NULL,
        claimed_at timestamptz NOT NULL DEFAULT now()
@@ -4638,6 +4639,11 @@ function tableStatements(s: string): string[] {
     `CREATE UNIQUE INDEX IF NOT EXISTS education_trial_claims_email_unique ON ${s}.education_trial_claims(normalized_email_hash)`,
     `CREATE UNIQUE INDEX IF NOT EXISTS education_trial_claims_phone_unique ON ${s}.education_trial_claims(normalized_phone_hash) WHERE normalized_phone_hash IS NOT NULL`,
     `CREATE UNIQUE INDEX IF NOT EXISTS education_trial_claims_pib_unique ON ${s}.education_trial_claims(normalized_pib_hash) WHERE normalized_pib_hash IS NOT NULL`,
+    `ALTER TABLE ${s}.education_trial_claims ADD COLUMN IF NOT EXISTS normalized_registration_number_hash text`,
+    `ALTER TABLE ${s}.education_trial_claims ADD COLUMN IF NOT EXISTS normalized_bank_account_hash text`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS education_trial_claims_registration_number_unique ON ${s}.education_trial_claims(normalized_registration_number_hash) WHERE normalized_registration_number_hash IS NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS education_trial_claims_bank_account_unique ON ${s}.education_trial_claims(normalized_bank_account_hash) WHERE normalized_bank_account_hash IS NOT NULL`,
+    `ALTER TABLE ${s}.education_centers ADD COLUMN IF NOT EXISTS registration_number text`,
     `CREATE TABLE IF NOT EXISTS ${s}.education_financial_audit_log (
        id uuid PRIMARY KEY DEFAULT gen_random_uuid(), actor_user_id uuid REFERENCES ${s}.users(id) ON DELETE RESTRICT,
        action text NOT NULL, entity_type text NOT NULL, entity_id text NOT NULL,

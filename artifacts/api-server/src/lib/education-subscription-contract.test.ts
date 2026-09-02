@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { and, eq, inArray } from "drizzle-orm";
@@ -18,6 +18,7 @@ const emails = [`owner-a-${marker}@example.test`, `owner-b-${marker}@example.tes
 const userIds: string[] = [];
 const centerIds: string[] = [];
 const planIds: string[] = [];
+const detachedClaimIds: string[] = [];
 let adminId: string | undefined;
 let server: ReturnType<typeof app.listen> | undefined;
 let settingsRestore: typeof educationPlatformSettingsTable.$inferSelect | null = null;
@@ -32,10 +33,15 @@ const call = async (base: string, path: string, method = "GET", body?: unknown, 
   return { status: response.status, body: await response.json() as any };
 };
 
+const numericIdentity = (value: string, length: number) => BigInt(`0x${createHash("sha256").update(value).digest("hex")}`)
+  .toString().padStart(length, "0").slice(0, length);
 const registration = (email: string, planId?: string) => ({
   firstName: "Education", lastName: marker, email, password: "StrongPass123!",
-  phone: "+381 64 111 22 33", businessType: "EDUCATION_CENTER", businessName: `Centar ${email}`,
-  pib: `${Math.abs(email.length * 7919)}12345`.slice(0, 9), city: "Beograd", municipality: "Vračar",
+  phone: `+3816${numericIdentity(`${email}:phone`, 8)}`, businessType: "EDUCATION_CENTER", businessName: `Centar ${email}`,
+  pib: numericIdentity(`${email}:pib`, 9),
+  registrationNumber: numericIdentity(`${email}:registration`, 8),
+  bankAccount: numericIdentity(`${email}:bank`, 18),
+  city: "Beograd", municipality: "Vračar",
   address: "Test 1", postalCode: "11000", description: `Programi i sertifikacije ${marker}`,
   planId, billingCycle: "monthly",
 });
@@ -81,7 +87,8 @@ try {
   assert.equal(missingPlan.status, 400);
   assert.equal((await db.select().from(usersTable).where(eq(usersTable.email, `missing-${marker}@example.test`))).length, 0);
 
-  const firstRegistration = await call(base, "/auth/business-register", "POST", registration(emails[0]!, low!.id));
+  const firstInput = registration(emails[0]!, low!.id);
+  const firstRegistration = await call(base, "/auth/business-register", "POST", firstInput);
   assert.equal(firstRegistration.status, 201);
   const [ownerA] = await db.select().from(usersTable).where(eq(usersTable.email, emails[0]!));
   assert.ok(ownerA); userIds.push(ownerA.id);
@@ -93,9 +100,14 @@ try {
   assert.equal(subscription!.billingCycle, "monthly");
   const [claim] = await db.select().from(educationTrialClaimsTable).where(eq(educationTrialClaimsTable.centerId, centerA.id));
   assert.ok(claim?.normalizedEmailHash && claim.normalizedPhoneHash && claim.normalizedPibHash);
+  assert.equal(claim.normalizedRegistrationNumberHash?.length, 64);
+  assert.equal(claim.normalizedBankAccountHash?.length, 64);
+  assert.ok(!JSON.stringify(claim).includes(firstInput.registrationNumber));
+  assert.ok(!JSON.stringify(claim).includes(firstInput.bankAccount));
 
   const secondInput = registration(emails[1]!, low!.id);
   secondInput.pib = "987654321";
+  secondInput.phone = firstInput.phone;
   const secondRegistration = await call(base, "/auth/business-register", "POST", secondInput);
   assert.equal(secondRegistration.status, 201);
   const [ownerB] = await db.select().from(usersTable).where(eq(usersTable.email, emails[1]!));
@@ -104,6 +116,63 @@ try {
   assert.ok(centerB); centerIds.push(centerB.id);
   const [secondSubscription] = await db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, centerB.id));
   assert.equal(secondSubscription!.status, "past_due", "Reusing a durable phone identity must not grant another trial.");
+
+  const deletedInput = registration(`deleted-${marker}@example.test`, low!.id);
+  deletedInput.registrationNumber = "12-345 678";
+  deletedInput.bankAccount = "840-0000000000000-00";
+  const deletedRegistration = await call(base, "/auth/business-register", "POST", deletedInput);
+  assert.equal(deletedRegistration.status, 201);
+  const [deletedOwner] = await db.select().from(usersTable).where(eq(usersTable.email, deletedInput.email));
+  const [deletedCenter] = await db.select().from(educationCentersTable).where(eq(educationCentersTable.ownerId, deletedOwner!.id));
+  const [durableClaim] = await db.select().from(educationTrialClaimsTable).where(eq(educationTrialClaimsTable.centerId, deletedCenter!.id));
+  assert.ok(durableClaim);
+  detachedClaimIds.push(durableClaim.id);
+  await db.delete(educationFinancialAuditLogTable).where(eq(educationFinancialAuditLogTable.actorUserId, deletedOwner!.id));
+  await db.delete(sessionsTable).where(eq(sessionsTable.userId, deletedOwner!.id));
+  await db.delete(educationCentersTable).where(eq(educationCentersTable.id, deletedCenter!.id));
+  await db.delete(usersTable).where(eq(usersTable.id, deletedOwner!.id));
+  const [claimAfterDeletion] = await db.select().from(educationTrialClaimsTable).where(eq(educationTrialClaimsTable.id, durableClaim.id));
+  assert.ok(claimAfterDeletion, "Deleting the original account and center must retain the trial claim.");
+  assert.equal(claimAfterDeletion.userId, null);
+  assert.equal(claimAfterDeletion.centerId, null);
+
+  const [directOwner] = await db.insert(usersTable).values({
+    firstName: "Direct", lastName: marker, email: `direct-${marker}@example.test`,
+    passwordHash: "fixture", passwordSetAt: new Date(), role: "EDUKATIVNI_CENTAR",
+    phone: `+3816${numericIdentity(`${marker}:direct-phone`, 8)}`,
+  }).returning();
+  userIds.push(directOwner!.id);
+  const [directCenter] = await db.insert(educationCentersTable).values({
+    ownerId: directOwner!.id, name: `Direct ${marker}`, city: "Beograd",
+    description: marker, imageUrl: "/test.jpg", pib: deletedInput.pib,
+    registrationNumber: numericIdentity(`${marker}:direct-registration`, 8),
+    bankAccount: numericIdentity(`${marker}:direct-bank`, 18),
+  }).returning();
+  centerIds.push(directCenter!.id);
+  const directCookie = `${sessionCookieName}=${await createSession(directOwner!.id)}`;
+  const directSelection = await call(base, "/education/subscription/select-plan", "POST", {
+    planId: low!.id, billingCycle: "monthly",
+  }, directCookie);
+  assert.equal(directSelection.status, 201);
+  assert.equal(directSelection.body.status, "past_due",
+    "Plan selection must atomically deny a trial when the deleted center's PIB claim is reused.");
+
+  for (const [kind, mutate] of [
+    ["PIB", (input: ReturnType<typeof registration>) => { input.pib = deletedInput.pib; }],
+    ["registration number", (input: ReturnType<typeof registration>) => { input.registrationNumber = "12345678"; }],
+    ["bank account", (input: ReturnType<typeof registration>) => { input.bankAccount = "840 0000000000000 00"; }],
+  ] as const) {
+    const duplicateInput = registration(`duplicate-${kind.toLowerCase().replaceAll(" ", "-")}-${marker}@example.test`, low!.id);
+    mutate(duplicateInput);
+    const duplicate = await call(base, "/auth/business-register", "POST", duplicateInput);
+    assert.equal(duplicate.status, 201);
+    const [duplicateOwner] = await db.select().from(usersTable).where(eq(usersTable.email, duplicateInput.email));
+    userIds.push(duplicateOwner!.id);
+    const [duplicateCenter] = await db.select().from(educationCentersTable).where(eq(educationCentersTable.ownerId, duplicateOwner!.id));
+    centerIds.push(duplicateCenter!.id);
+    const [duplicateSubscription] = await db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, duplicateCenter!.id));
+    assert.equal(duplicateSubscription!.status, "past_due", `Reusing a deleted account's ${kind} must not grant another trial.`);
+  }
 
   const ownerCookie = `${sessionCookieName}=${await createSession(ownerA.id)}`;
   const secondOwnerCookie = `${sessionCookieName}=${await createSession(ownerB.id)}`;
@@ -351,6 +420,7 @@ try {
     await db.delete(educationCenterSubscriptionsTable).where(inArray(educationCenterSubscriptionsTable.centerId, centerIds));
     await db.delete(educationCentersTable).where(inArray(educationCentersTable.id, centerIds));
   }
+  if (detachedClaimIds.length) await db.delete(educationTrialClaimsTable).where(inArray(educationTrialClaimsTable.id, detachedClaimIds));
   if (userIds.length) {
     await db.delete(educationFinancialAuditLogTable).where(inArray(educationFinancialAuditLogTable.actorUserId, userIds));
     await db.delete(sessionsTable).where(inArray(sessionsTable.userId, userIds));

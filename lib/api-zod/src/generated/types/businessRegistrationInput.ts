@@ -39,6 +39,18 @@ export type BusinessRegistrationInput = unknown & {
      * @maxLength 50
      */
   pib: string;
+  /**
+     * @minLength 8
+     * @maxLength 30
+     * @pattern ^(?:\D*\d){8}\D*$
+     */
+  registrationNumber?: string;
+  /**
+     * @minLength 18
+     * @maxLength 50
+     * @pattern ^(?:\D*\d){18}\D*$
+     */
+  bankAccount?: string;
   websiteUrl?: string;
   instagramUrl?: string;
   /**

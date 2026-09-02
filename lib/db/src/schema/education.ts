@@ -60,6 +60,7 @@ export const educationCentersTable = pgTable("education_centers", {
   contactPhone: text("contact_phone"),
   contactAddress: text("contact_address"),
   pib: text("pib"),
+  registrationNumber: text("registration_number"),
   websiteUrl: text("website_url"),
   instagramUrl: text("instagram_url"),
   paymentReferenceNumber: text("payment_reference_number").unique(),
@@ -154,6 +155,8 @@ export const educationTrialClaimsTable = pgTable("education_trial_claims", {
   normalizedEmailHash: text("normalized_email_hash").notNull(),
   normalizedPhoneHash: text("normalized_phone_hash"),
   normalizedPibHash: text("normalized_pib_hash"),
+  normalizedRegistrationNumberHash: text("normalized_registration_number_hash"),
+  normalizedBankAccountHash: text("normalized_bank_account_hash"),
   userId: uuid("user_id").references(() => usersTable.id, { onDelete: "set null" }),
   centerId: uuid("center_id").references(() => educationCentersTable.id, { onDelete: "set null" }),
   claimedAt: timestamp("claimed_at", { withTimezone: true }).notNull().defaultNow(),
@@ -163,6 +166,8 @@ export const educationTrialClaimsTable = pgTable("education_trial_claims", {
   uniqueIndex("education_trial_claims_email_unique").on(table.normalizedEmailHash),
   uniqueIndex("education_trial_claims_phone_unique").on(table.normalizedPhoneHash).where(sql`${table.normalizedPhoneHash} is not null`),
   uniqueIndex("education_trial_claims_pib_unique").on(table.normalizedPibHash).where(sql`${table.normalizedPibHash} is not null`),
+  uniqueIndex("education_trial_claims_registration_number_unique").on(table.normalizedRegistrationNumberHash).where(sql`${table.normalizedRegistrationNumberHash} is not null`),
+  uniqueIndex("education_trial_claims_bank_account_unique").on(table.normalizedBankAccountHash).where(sql`${table.normalizedBankAccountHash} is not null`),
 ]);
 
 export const educationFinancialAuditLogTable = pgTable("education_financial_audit_log", {

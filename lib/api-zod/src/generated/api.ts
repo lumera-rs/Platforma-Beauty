@@ -123,6 +123,16 @@ export const registerBusinessBodyTwoContactAddressMin = 3;
 export const registerBusinessBodyTwoPibMin = 8;
 export const registerBusinessBodyTwoPibMax = 50;
 
+export const registerBusinessBodyTwoRegistrationNumberMin = 8;
+export const registerBusinessBodyTwoRegistrationNumberMax = 30;
+
+
+export const registerBusinessBodyTwoRegistrationNumberRegExp = new RegExp('^(?:\\D*\\d){8}\\D*$');
+export const registerBusinessBodyTwoBankAccountMin = 18;
+export const registerBusinessBodyTwoBankAccountMax = 50;
+
+
+export const registerBusinessBodyTwoBankAccountRegExp = new RegExp('^(?:\\D*\\d){18}\\D*$');
 export const registerBusinessBodyTwoDescriptionMin = 20;
 export const registerBusinessBodyTwoDescriptionMax = 2000;
 
@@ -147,6 +157,8 @@ export const RegisterBusinessBody = zod.unknown().and(zod.object({
   "contactPhone": zod.string().min(registerBusinessBodyTwoContactPhoneMin).optional(),
   "contactAddress": zod.string().min(registerBusinessBodyTwoContactAddressMin).optional(),
   "pib": zod.string().min(registerBusinessBodyTwoPibMin).max(registerBusinessBodyTwoPibMax),
+  "registrationNumber": zod.string().min(registerBusinessBodyTwoRegistrationNumberMin).max(registerBusinessBodyTwoRegistrationNumberMax).regex(registerBusinessBodyTwoRegistrationNumberRegExp).optional(),
+  "bankAccount": zod.string().min(registerBusinessBodyTwoBankAccountMin).max(registerBusinessBodyTwoBankAccountMax).regex(registerBusinessBodyTwoBankAccountRegExp).optional(),
   "websiteUrl": zod.string().url().optional(),
   "instagramUrl": zod.string().url().optional(),
   "description": zod.string().min(registerBusinessBodyTwoDescriptionMin).max(registerBusinessBodyTwoDescriptionMax).optional(),

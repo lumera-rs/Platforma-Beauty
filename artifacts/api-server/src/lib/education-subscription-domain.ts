@@ -108,6 +108,18 @@ export function normalizeTrialPib(value: string | null | undefined) {
   return normalized || null;
 }
 
+export function normalizeTrialRegistrationNumber(value: string | null | undefined) {
+  if (!value) return null;
+  const digits = value.replace(/\D/g, "");
+  return digits || null;
+}
+
+export function normalizeTrialBankAccount(value: string | null | undefined) {
+  if (!value) return null;
+  const digits = value.replace(/\D/g, "");
+  return digits || null;
+}
+
 export function hashTrialIdentifier(value: string | null) {
   return value ? createHash("sha256").update(value).digest("hex") : null;
 }
