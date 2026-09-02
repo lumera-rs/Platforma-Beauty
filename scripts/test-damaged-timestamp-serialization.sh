@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/src/api-preflight.sh"
+resolve_api_base_url
+check_api_server
+
+if [[ -z "${DATABASE_URL:-}" ]]; then
+  echo "DATABASE_URL is required so damaged timestamp fixtures can be created and removed." >&2
+  exit 1
+fi
+if ! command -v psql >/dev/null; then
+  echo "psql is required so damaged timestamp fixtures can be created and removed." >&2
+  exit 1
+fi
+
+fixture_marker="damaged-timestamp-${$}-${RANDOM}"
+fixture_slug="${fixture_marker}-category"
+body="$(mktemp)"
+
+cleanup() {
+  local cleanup_failed=false
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v marker="$fixture_marker" -v slug="$fixture_slug" >/dev/null <<'SQL' || cleanup_failed=true
+delete from beauty_job_listings where description = :'marker';
+delete from beauty_job_categories where slug = :'slug';
+SQL
+  rm -f "$body"
+  if [[ "$cleanup_failed" == true ]]; then
+    echo "Failed to remove damaged timestamp fixtures." >&2
+    return 1
+  fi
+}
+trap cleanup EXIT
+
+read -r damaged_id valid_id < <(
+  psql "$DATABASE_URL" -AtF ' ' -v ON_ERROR_STOP=1 -v marker="$fixture_marker" -v slug="$fixture_slug" <<'SQL'
+with fixture_user as (
+  select id from users where email = 'admin@lumera.local'
+),
+fixture_category as (
+  insert into beauty_job_categories (slug, name)
+  values (:'slug', :'marker')
+  returning id
+),
+fixture_listings as (
+  insert into beauty_job_listings (
+    category_id, user_id, posted_by_type, type, intent, title, description,
+    city, region, status, moderation_status, expires_at, created_at, updated_at
+  )
+  select category.id, fixture_user.id,
+    'user'::beauty_job_posted_by_type,
+    'job'::beauty_job_listing_type,
+    'offering'::beauty_job_listing_intent,
+    :'marker' || '-damaged', :'marker', 'Beograd', 'Beograd',
+    'active'::beauty_job_listing_status,
+    'approved'::beauty_job_moderation_status,
+    now() + interval '30 days', '-infinity'::timestamptz, now()
+  from fixture_category category cross join fixture_user
+  union all
+  select category.id, fixture_user.id,
+    'user'::beauty_job_posted_by_type,
+    'job'::beauty_job_listing_type,
+    'offering'::beauty_job_listing_intent,
+    :'marker' || '-valid', :'marker', 'Novi Sad', 'Vojvodina',
+    'active'::beauty_job_listing_status,
+    'approved'::beauty_job_moderation_status,
+    now() + interval '30 days', now(), now()
+  from fixture_category category cross join fixture_user
+  returning id, title
+)
+select
+  max(id::text) filter (where title = :'marker' || '-damaged'),
+  max(id::text) filter (where title = :'marker' || '-valid')
+from fixture_listings;
+SQL
+)
+
+if [[ -z "$damaged_id" || -z "$valid_id" ]]; then
+  echo "Failed to create damaged timestamp fixtures." >&2
+  exit 1
+fi
+
+request_and_expect_200() {
+  local endpoint="$1"
+  local label="$2"
+  local status
+  status="$(curl -sS -o "$body" -w "%{http_code}" "$BASE_URL$endpoint")"
+  if [[ "$status" != "200" ]]; then
+    echo "FAIL: $label expected 200, got $status: $(cat "$body")" >&2
+    exit 1
+  fi
+}
+
+request_and_expect_200 "/beauty-jobs?category=$fixture_slug&sort=oldest" "beauty job list with damaged timestamp"
+LIST_BODY="$(cat "$body")" DAMAGED_ID="$damaged_id" VALID_ID="$valid_id" node <<'NODE'
+const response = JSON.parse(process.env.LIST_BODY);
+if (!Array.isArray(response.items)) throw new Error("Beauty job list response has no items.");
+const damaged = response.items.find((item) => item.id === process.env.DAMAGED_ID);
+const valid = response.items.find((item) => item.id === process.env.VALID_ID);
+if (!damaged || !valid) throw new Error("Beauty job list omitted a fixture row.");
+if (damaged.createdAt !== null) throw new Error(`Damaged list timestamp was not null: ${damaged.createdAt}`);
+if (damaged.city !== "Beograd" || valid.city !== "Novi Sad") throw new Error("Unrelated fixture fields were not preserved.");
+if (typeof valid.createdAt !== "string") throw new Error("Valid neighboring list timestamp was not preserved.");
+NODE
+
+request_and_expect_200 "/beauty-jobs/$damaged_id" "beauty job detail with damaged timestamp"
+DETAIL_BODY="$(cat "$body")" DETAIL_MARKER="$fixture_marker" DAMAGED_ID="$damaged_id" node <<'NODE'
+const response = JSON.parse(process.env.DETAIL_BODY);
+if (response.id !== process.env.DAMAGED_ID) throw new Error("Beauty job detail returned the wrong row.");
+if (response.createdAt !== null) throw new Error(`Damaged detail timestamp was not null: ${response.createdAt}`);
+if (response.city !== "Beograd" || response.description !== process.env.DETAIL_MARKER) {
+  throw new Error("Unrelated beauty job detail fields were not preserved.");
+}
+NODE
+
+echo "Damaged timestamp HTTP serialization checks passed."

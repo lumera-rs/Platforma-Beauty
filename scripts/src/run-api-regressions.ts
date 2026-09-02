@@ -12,6 +12,7 @@ const configuration: IsolatedApiRegressionSuiteConfiguration = {
     "scripts/test-admin-authorization.sh",
     "scripts/test-admin-input-validation.sh",
     "scripts/test-b2b-catalog.sh",
+    "scripts/test-damaged-timestamp-serialization.sh",
     "scripts/test-education-authorization.sh",
     "scripts/test-marketplace-discovery.sh",
   ],
