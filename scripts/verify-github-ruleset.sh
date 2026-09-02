@@ -8,6 +8,23 @@ set -euo pipefail
 api_url="${GITHUB_API_URL:-https://api.github.com}"
 ruleset_name="${GITHUB_RULESET_NAME:-Protect default branch CI}"
 required_context="GitHub Actions syntax and expressions"
+workflow_file="workflow-lint.yml"
+
+repository="$(
+  curl --fail-with-body --silent --show-error \
+    --header "Accept: application/vnd.github+json" \
+    --header "Authorization: Bearer ${GITHUB_TOKEN}" \
+    --header "X-GitHub-Api-Version: 2022-11-28" \
+    "${api_url}/repos/${GITHUB_REPOSITORY}"
+)"
+
+if ! jq -e '
+  (.owner.type == "Organization")
+  and (.visibility == "public")
+' <<<"$repository" >/dev/null; then
+  echo "Merge queue audit requires a public organization-owned repository." >&2
+  exit 1
+fi
 
 rulesets="$(
   curl --fail-with-body --silent --show-error \
@@ -48,6 +65,11 @@ if ! jq -e \
     and ((.bypass_actors // []) | length == 0)
     and any(.rules[]?; .type == "pull_request")
     and any(.rules[]?;
+      .type == "merge_queue"
+      and (.parameters.merge_method | IN("MERGE", "SQUASH", "REBASE"))
+      and (.parameters.min_entries_to_merge >= 1)
+    )
+    and any(.rules[]?;
       .type == "required_status_checks"
       and (.parameters.strict_required_status_checks_policy == true)
       and (.parameters.do_not_enforce_on_create == true)
@@ -58,4 +80,40 @@ if ! jq -e \
   exit 1
 fi
 
-echo "GitHub default-branch CI ruleset is active and requires ${required_context}."
+merge_group_runs="$(
+  curl --fail-with-body --silent --show-error \
+    --header "Accept: application/vnd.github+json" \
+    --header "Authorization: Bearer ${GITHUB_TOKEN}" \
+    --header "X-GitHub-Api-Version: 2022-11-28" \
+    "${api_url}/repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_file}/runs?event=merge_group&status=success&per_page=20"
+)"
+
+if ! jq -e '
+  any(.workflow_runs[]?;
+    .event == "merge_group"
+    and .status == "completed"
+    and .conclusion == "success"
+    and (.head_branch | startswith("gh-readonly-queue/"))
+  )
+' <<<"$merge_group_runs" >/dev/null; then
+  echo "No successful Workflow syntax run on a merge-group ref was found." >&2
+  exit 1
+fi
+
+latest_merge_group_url="$(
+  jq -r '
+    [.workflow_runs[]?
+      | select(
+          .event == "merge_group"
+          and .status == "completed"
+          and .conclusion == "success"
+          and (.head_branch | startswith("gh-readonly-queue/"))
+        )
+    ]
+    | sort_by(.created_at)
+    | last
+    | .html_url
+  ' <<<"$merge_group_runs"
+)"
+
+echo "GitHub merge queue is active, requires ${required_context}, and has a successful merge-group run: ${latest_merge_group_url}"

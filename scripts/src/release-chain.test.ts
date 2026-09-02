@@ -19,6 +19,11 @@ const workflowLintPath = path.join(
   "workflows",
   "workflow-lint.yml",
 );
+const rulesetAuditScriptPath = path.join(
+  workspaceRoot,
+  "scripts",
+  "verify-github-ruleset.sh",
+);
 
 function chainedPnpmScripts(command: string): string[] {
   return command.split(" && ").flatMap((step) => {
@@ -106,6 +111,36 @@ test("workflow syntax lint runs locally and in an independent database-free CI j
     workflow,
     /playwright|postgres|validate:release|validate:publish|test:browser|drizzle|\$\{\{\s*secrets\./i,
     "Workflow lint must remain independent of databases, browsers, release checks, and repository secrets.",
+  );
+});
+
+test("repository ruleset audit proves organization merge queue configuration and a live merge-group run", async () => {
+  const auditScript = await readFile(rulesetAuditScriptPath, "utf8");
+
+  assert.match(
+    auditScript,
+    /\.owner\.type == "Organization"/,
+    "The audit must reject repositories that are not organization-owned.",
+  );
+  assert.match(
+    auditScript,
+    /\.visibility == "public"/,
+    "The audit must verify the repository is eligible for merge queue on the current plan.",
+  );
+  assert.match(
+    auditScript,
+    /\.type == "merge_queue"/,
+    "The audit must require an active merge queue rule.",
+  );
+  assert.match(
+    auditScript,
+    /actions\/workflows\/\$\{workflow_file\}\/runs\?event=merge_group&status=success/,
+    "The audit must query successful merge-group workflow runs.",
+  );
+  assert.match(
+    auditScript,
+    /\.head_branch \| startswith\("gh-readonly-queue\/"\)/,
+    "The audit must prove the workflow ran on a GitHub merge queue ref.",
   );
 });
 

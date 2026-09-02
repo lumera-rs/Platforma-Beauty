@@ -14,3 +14,9 @@ GitHub merge queues require an organization-owned repository; a public repositor
 **Why:** GitHub exposes merge queues for public organization repositories and for private Enterprise Cloud organization repositories, not repositories owned by personal accounts. The ruleset API reports the otherwise valid rule as invalid.
 
 **How to apply:** Before planning a live `merge_group` trial, verify repository ownership. For a personal-account repository, preserve the `merge_group` workflow trigger but defer the live queue test until the repository is transferred to an eligible organization.
+
+After a transfer, verify both repository visibility and organization OAuth-app access before treating API failures as ruleset errors.
+
+**Why:** A transferred repository can be private on a free organization, which makes repository rulesets unavailable, and an organization with restricted third-party access returns 403 until the connected OAuth app is granted access.
+
+**How to apply:** Confirm the destination URL and admin access, grant the existing GitHub OAuth app access to the organization, and verify that the repository is public or the organization plan supports private-repository rulesets before updating the merge queue rule.
