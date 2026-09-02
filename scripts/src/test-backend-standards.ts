@@ -22,6 +22,10 @@ import {
   checkCacheInvariants,
   checkUnboundedSelects,
 } from "./test-backend-static-checks.js";
+import {
+  auditUnvalidatedConstraints,
+  formatUnvalidatedConstraintReport,
+} from "./backend-standards-database.js";
 
 // ─── pretty printing ───────────────────────────────────────────────────────
 
@@ -322,7 +326,24 @@ async function runDatabaseChecks(): Promise<void> {
   try {
     client = await pool.connect();
 
-    // ── 1. FK index audit ────────────────────────────────────────────────
+    // ── 1. Publish-safe constraint validation ────────────────────────────
+    try {
+      const unvalidated = await auditUnvalidatedConstraints(client);
+      if (unvalidated.length === 0) {
+        pass(
+          "Publish constraint audit: all public CHECK/FK constraints are validated",
+        );
+      } else {
+        fail(
+          `Publish constraint audit: ${unvalidated.length} unvalidated CHECK/FK constraint(s)`,
+          formatUnvalidatedConstraintReport(unvalidated),
+        );
+      }
+    } catch (err) {
+      fail("Publish constraint audit", String(err));
+    }
+
+    // ── 2. FK index audit ────────────────────────────────────────────────
     try {
       const unindexed = await auditForeignKeyIndexes(client);
 
@@ -345,7 +366,7 @@ async function runDatabaseChecks(): Promise<void> {
       fail("FK-index audit", String(err));
     }
 
-    // ── 2. Named index presence ──────────────────────────────────────────
+    // ── 3. Named index presence ──────────────────────────────────────────
     try {
       const { missing, found } = await auditNamedIndexes(client);
       if (missing.length === 0) {
@@ -362,7 +383,7 @@ async function runDatabaseChecks(): Promise<void> {
       fail("Named-index check", String(err));
     }
 
-    // ── 3. EXPLAIN probes ─────────────────────────────────────────────────
+    // ── 4. EXPLAIN probes ─────────────────────────────────────────────────
     for (const check of EXPLAIN_CHECKS) {
       try {
         const plan = await explainWithNoSeqScan(client, check.sql);
