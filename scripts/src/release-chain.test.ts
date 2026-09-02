@@ -91,7 +91,11 @@ test("workflow syntax lint runs locally and in an independent database-free CI j
     "bash scripts/lint-github-workflows.sh",
     "Workflow lint must be directly runnable without database access.",
   );
-  assert.match(workflow, /^on:\n  pull_request:\n  push:/m);
+  assert.match(
+    workflow,
+    /^on:\n  pull_request:\n  merge_group:\n  push:/m,
+    "Workflow lint must report its required status for pull requests and merge queue groups.",
+  );
   assert.match(workflow, /DATABASE_URL: ""/);
   assert.match(
     workflow,
