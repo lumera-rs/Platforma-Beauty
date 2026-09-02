@@ -373,7 +373,7 @@ function Router() {
           </RoleGuard>
         </Route>
         <Route path="/biznis/edukacije/:courseId">
-          <RoleGuard allowedRoles={['SALON_OWNER', 'EDUKATIVNI_CENTAR', 'ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava">
+          <RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava">
             <BusinessEducation />
           </RoleGuard>
         </Route>

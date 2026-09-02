@@ -9,7 +9,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetCurrentUser, useGetPublicEducationTaxonomy, getGetPublicEducationTaxonomyQueryKey, useListCourses, useGetEducationCourse,
   useListEnrollments, useGetEducationLms,
-  useListSalonEmployees,
+  useListSalonEmployees, useListEmployeeShiftSwaps,
   useListMyFeaturedPlacements, getListMyFeaturedPlacementsQueryKey, useCreateFeaturedPlacement, useProposeEducationCourseType,
   useCreateEducationCourse, useUpdateEducationCourse,
   usePublishEducationCourse, useArchiveEducationCourse,
@@ -26,7 +26,7 @@ import {
   useListEducationNotifications, useAcceptEducationWaitlistOffer, useMarkEducationNotificationRead,
   useGetEducationCenterStatus,
   getListCoursesQueryKey, getGetEducationCourseQueryKey,
-  getListEnrollmentsQueryKey, getGetEducationLmsQueryKey, getListSalonEmployeesQueryKey,
+  getListEnrollmentsQueryKey, getGetEducationLmsQueryKey, getListSalonEmployeesQueryKey, getListEmployeeShiftSwapsQueryKey,
   getListEducationInstructorsQueryKey, getGetEducationCourseFeaturedStatusQueryKey,
   getListEducationNotificationsQueryKey,
   getApiErrorMessage,
@@ -1062,7 +1062,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
   const { data: userResponse } = useGetCurrentUser();
   const user = userResponse?.user;
   const canCreate = user?.role === 'EDUKATIVNI_CENTAR';
-  const isSalonOperator = user?.role === "SALON_OWNER" || user?.role === "EDUKATIVNI_CENTAR";
+  const isSalonOperator = user?.role === "SALON_OWNER" || user?.role === "SALON_EMPLOYEE";
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -1075,14 +1075,22 @@ function CourseDetailView({ courseId }: { courseId: string }) {
 
   const isEducationCenter = user?.role === "EDUKATIVNI_CENTAR";
   const isSalonOwner = user?.role === "SALON_OWNER";
+  const isSalonEmployee = user?.role === "SALON_EMPLOYEE";
 
   const { data: enrollments } = useListEnrollments(undefined, { query: { enabled: !!course?.enrollmentStatus, queryKey: getListEnrollmentsQueryKey() } });
-  const { data: employees } = useListSalonEmployees({
+  const { data: ownerEmployees } = useListSalonEmployees({
     query: {
-      enabled: isSalonOperator,
+      enabled: isSalonOwner,
       queryKey: getListSalonEmployeesQueryKey(),
     },
   });
+  const { data: employeeShiftSwaps } = useListEmployeeShiftSwaps({
+    query: {
+      enabled: isSalonEmployee,
+      queryKey: getListEmployeeShiftSwapsQueryKey(),
+    },
+  });
+  const employees = isSalonEmployee ? employeeShiftSwaps?.colleagues : ownerEmployees;
   const { data: instructors } = useListEducationInstructors({
     query: { enabled: isMyCourse && isEducationCenter, queryKey: getListEducationInstructorsQueryKey() },
   });

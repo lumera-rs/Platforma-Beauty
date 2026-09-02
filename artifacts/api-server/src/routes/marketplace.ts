@@ -18376,7 +18376,14 @@ router.post("/education/courses", async (req, res): Promise<void> => {
 });
 
 router.get("/education/courses/:courseId", async (req, res): Promise<void> => {
-  const access = await requireEducationAccess(req, res); if (!access) return;
+  const requestingUser = await getCurrentUser(req);
+  const access = requestingUser?.role === "SALON_EMPLOYEE"
+    ? await requireSalonEmployee(req, res)
+      .then((employeeAccess) => employeeAccess
+        ? { user: employeeAccess.user, salon: employeeAccess.salon, centers: [], admin: false }
+        : null)
+    : await requireEducationAccess(req, res);
+  if (!access) return;
   const parsed = GetEducationCourseParams.safeParse(req.params);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, parsed.data.courseId)).limit(1);
@@ -19259,15 +19266,20 @@ router.post("/education/courses/:courseId/sessions", async (req, res): Promise<v
 
 router.post("/education/courses/:courseId/enrollments", async (req, res): Promise<void> => {
   const user = await current(req, res); if (!user) return;
-  if (!["SALON_OWNER", "EDUKATIVNI_CENTAR", "JOBSEEKER", "STUDENT"].includes(user.role)) {
+  if (!["SALON_OWNER", "SALON_EMPLOYEE", "EDUKATIVNI_CENTAR", "JOBSEEKER", "STUDENT"].includes(user.role)) {
     res.status(403).json({ error: "Kupovina edukacija je dostupna polaznicima i vlasnicima salona." });
     return;
   }
   const [params, body] = [EnrollInEducationCourseParams.safeParse(req.params), EnrollInEducationCourseBody.safeParse(req.body ?? {})];
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci prijave nisu ispravni." }); return; }
   const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, params.data.courseId)).limit(1);
-  const access = ["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(user.role) ? await requireEducationAccess(req, res) : null;
-  if (["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(user.role) && !access) return;
+  const employeeAccess = user.role === "SALON_EMPLOYEE" ? await requireSalonEmployee(req, res) : null;
+  const access = ["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(user.role)
+    ? await requireEducationAccess(req, res)
+    : employeeAccess
+      ? { user: employeeAccess.user, salon: employeeAccess.salon, centers: [], admin: false }
+      : null;
+  if (["SALON_OWNER", "SALON_EMPLOYEE", "EDUKATIVNI_CENTAR"].includes(user.role) && !access) return;
   if (!course) { res.status(404).json({ error: "Kurs nije dostupan za prijavu." }); return; }
   const isSalonInternalEnrollment = Boolean(
     access?.salon

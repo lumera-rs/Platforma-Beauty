@@ -7,6 +7,7 @@ import {
   db,
   educationCenterSubscriptionsTable,
   educationCentersTable,
+  educationPaymentObligationsTable,
   employeeLocationAssignmentsTable,
   employeesTable,
   salonsTable,
@@ -24,6 +25,7 @@ type Fixture = {
   ownerEmail: string;
   ownerPassword: string;
   employeeUserIds: [string, string];
+  employeeEmails: [string, string];
   employeeIds: [string, string];
   employeeNames: [string, string];
   salonId: string;
@@ -124,6 +126,8 @@ async function createFixture(): Promise<Fixture> {
     isDefault: index === 0,
   })));
   await db.update(usersTable).set({ activeSalonId: salon.id }).where(eq(usersTable.id, owner.id));
+  await db.update(usersTable).set({ activeSalonId: salon.id }).where(eq(usersTable.id, firstEmployeeUser.id));
+  await db.update(usersTable).set({ activeSalonId: salon.id }).where(eq(usersTable.id, secondEmployeeUser.id));
 
   const [center] = await db.insert(educationCentersTable).values({
     ownerId: centerOwner.id,
@@ -193,6 +197,7 @@ async function createFixture(): Promise<Fixture> {
     ownerEmail: owner.email,
     ownerPassword,
     employeeUserIds: [firstEmployeeUser.id, secondEmployeeUser.id],
+    employeeEmails: [firstEmployeeUser.email, secondEmployeeUser.email],
     employeeIds: [employees[0].id, employees[1].id],
     employeeNames,
     salonId: salon.id,
@@ -204,6 +209,7 @@ async function createFixture(): Promise<Fixture> {
     secondCourseId: secondCourse.id,
   };
 }
+
 
 
 async function cleanupFixture(fixture: Fixture) {
@@ -388,6 +394,44 @@ for (const viewport of [
         .from(courseEnrollmentsTable)
         .where(eq(courseEnrollmentsTable.purchaserId, fixture.ownerId));
       expect(enrollments).toHaveLength(0);
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
+  test(`employee online consent resets from self to a colleague on ${viewport.name}`, async ({ page }) => {
+    test.setTimeout(60_000);
+    const fixture = await createFixture();
+    try {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      expect((await page.request.post("/api/auth/login", {
+        data: { email: fixture.employeeEmails[0], password: fixture.ownerPassword },
+      })).ok()).toBeTruthy();
+      await page.goto(`/biznis/edukacije/${fixture.courseId}`);
+
+      const learner = page.getByRole("combobox", { name: "Polaznik" });
+      const consent = page.getByRole("checkbox", { name: DIGITAL_CONTENT_CONSENT_TEXT });
+      const submit = page.getByRole("button", { name: "Rezerviši mesto" });
+
+      await expect(learner).toContainText("Ja lično");
+      await consent.click();
+      await expect(consent).toBeChecked();
+      await expect(submit).toBeEnabled();
+
+      await learner.click();
+      await page.getByRole("option", { name: fixture.employeeNames[1], exact: true }).click();
+      await expect(consent).not.toBeChecked();
+      await expect(submit).toBeDisabled();
+
+      const enrollments = await db.select({ id: courseEnrollmentsTable.id })
+        .from(courseEnrollmentsTable)
+        .where(eq(courseEnrollmentsTable.purchaserId, fixture.employeeUserIds[0]));
+      expect(enrollments).toHaveLength(0);
+
+      const paymentObligations = await db.select({ id: educationPaymentObligationsTable.id })
+        .from(educationPaymentObligationsTable)
+        .where(eq(educationPaymentObligationsTable.centerId, fixture.centerId));
+      expect(paymentObligations).toHaveLength(0);
     } finally {
       await cleanupFixture(fixture);
     }
