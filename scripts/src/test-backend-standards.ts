@@ -23,7 +23,9 @@ import {
   checkUnboundedSelects,
 } from "./test-backend-static-checks.js";
 import {
+  auditInvalidIndexes,
   auditUnvalidatedConstraints,
+  formatInvalidIndexReport,
   formatUnvalidatedConstraintReport,
 } from "./backend-standards-database.js";
 
@@ -343,7 +345,22 @@ async function runDatabaseChecks(): Promise<void> {
       fail("Publish constraint audit", String(err));
     }
 
-    // ── 2. FK index audit ────────────────────────────────────────────────
+    // ── 2. Publish-safe index validation ────────────────────────────────
+    try {
+      const invalidIndexes = await auditInvalidIndexes(client);
+      if (invalidIndexes.length === 0) {
+        pass("Publish index audit: all public indexes are valid");
+      } else {
+        fail(
+          `Publish index audit: ${invalidIndexes.length} invalid index(es)`,
+          formatInvalidIndexReport(invalidIndexes),
+        );
+      }
+    } catch (err) {
+      fail("Publish index audit", String(err));
+    }
+
+    // ── 3. FK index audit ────────────────────────────────────────────────
     try {
       const unindexed = await auditForeignKeyIndexes(client);
 
@@ -366,7 +383,7 @@ async function runDatabaseChecks(): Promise<void> {
       fail("FK-index audit", String(err));
     }
 
-    // ── 3. Named index presence ──────────────────────────────────────────
+    // ── 4. Named index presence ──────────────────────────────────────────
     try {
       const { missing, found } = await auditNamedIndexes(client);
       if (missing.length === 0) {
@@ -383,7 +400,7 @@ async function runDatabaseChecks(): Promise<void> {
       fail("Named-index check", String(err));
     }
 
-    // ── 4. EXPLAIN probes ─────────────────────────────────────────────────
+    // ── 5. EXPLAIN probes ─────────────────────────────────────────────────
     for (const check of EXPLAIN_CHECKS) {
       try {
         const plan = await explainWithNoSeqScan(client, check.sql);

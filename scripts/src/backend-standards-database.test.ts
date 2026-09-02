@@ -3,7 +3,9 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  auditInvalidIndexes,
   auditUnvalidatedConstraints,
+  formatInvalidIndexReport,
   formatUnvalidatedConstraintReport,
   type DatabaseClient,
 } from "./backend-standards-database.js";
@@ -61,6 +63,45 @@ test("reports NOT VALID public CHECK and FK constraints with a safe remediation"
     /public\.release_gate_fixture — release_gate_fixture_parent_fk \(FOREIGN KEY\)/,
   );
   assert.match(report, /ALTER TABLE \.\.\. VALIDATE CONSTRAINT/);
+  assert.match(report, /Do not apply this repair directly to production/);
+});
+
+test("reports invalid public indexes with a safe development-only remediation", async () => {
+  let capturedSql = "";
+  const client: DatabaseClient = {
+    async query(sql) {
+      capturedSql = sql;
+      return {
+        rows: [
+          {
+            schema_name: "public",
+            table_name: "release_gate_fixture",
+            index_name: "release_gate_fixture_invalid_idx",
+          },
+        ],
+      };
+    },
+  };
+
+  const indexes = await auditInvalidIndexes(client);
+  const report = formatInvalidIndexReport(indexes);
+
+  assert.match(capturedSql, /FROM pg_index/);
+  assert.match(capturedSql, /index_record\.indisvalid = false/);
+  assert.match(capturedSql, /namespace\.nspname = 'public'/);
+  assert.deepEqual(indexes, [
+    {
+      schemaName: "public",
+      tableName: "release_gate_fixture",
+      indexName: "release_gate_fixture_invalid_idx",
+    },
+  ]);
+  assert.match(
+    report,
+    /public\.release_gate_fixture — release_gate_fixture_invalid_idx \(INVALID INDEX\)/,
+  );
+  assert.match(report, /development database/);
+  assert.match(report, /drop and recreate it from the canonical schema declaration/);
   assert.match(report, /Do not apply this repair directly to production/);
 });
 
