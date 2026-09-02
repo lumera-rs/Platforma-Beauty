@@ -20,6 +20,25 @@ function chainedPnpmScripts(command: string): string[] {
   });
 }
 
+test("publish validation checks the release chain first without database access", async () => {
+  const packageJson = JSON.parse(
+    await readFile(path.join(workspaceRoot, "package.json"), "utf8"),
+  ) as { scripts?: Record<string, string> };
+  const publishCommand = packageJson.scripts?.["validate:publish"];
+
+  assert.ok(publishCommand, "validate:publish must be defined.");
+  assert.match(
+    publishCommand,
+    /^export CI=true && env -u DATABASE_URL pnpm run test:release-chain && /,
+    "validate:publish must fail on an invalid release chain before build, database, or browser work and without DATABASE_URL.",
+  );
+  assert.equal(
+    publishCommand.match(/(?:^| )pnpm run test:release-chain(?: |$)/g)?.length,
+    1,
+    "validate:publish must run the early release-chain gate exactly once.",
+  );
+});
+
 test("release validation phases preserve the full gate and print safe continuation commands", async () => {
   const packageJson = JSON.parse(
     await readFile(path.join(workspaceRoot, "package.json"), "utf8"),
