@@ -254,6 +254,8 @@ import {
   educationGiftVoucherRecipientMatches,
   educationIpsQrPayload,
    educationIpsRuntimeEnvironment,
+  EDUCATION_PAYMENT_UNAVAILABLE_ERROR,
+  isEducationPaymentConfigurationError,
   educationRelatedCourseTier,
   qualifiesAsMostRequestedEducationCenter,
   qualifiesAsTopRatedEducationCenter,
@@ -19506,6 +19508,9 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
         return;
       }
     }
+    if (isEducationPaymentConfigurationError(error)) {
+      res.status(503).json(EDUCATION_PAYMENT_UNAVAILABLE_ERROR); return;
+    }
     if (message === "ONLINE_CONTENT_CONSENT_REQUIRED") {
       res.status(409).json({ error: "Za online kurs potrebna je izričita saglasnost za digitalni sadržaj." }); return;
     }
@@ -22480,6 +22485,21 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
 
   let enrollments: (typeof courseEnrollmentsTable.$inferSelect)[];
   try {
+    const isSalonInternal = course.salonId === salon.id && !course.centerId;
+    if (!isSalonInternal && unitPrice > 0) {
+      const paymentSettings = await getEducationPlatformSettings();
+      educationIpsQrPayload({
+        recipientName: paymentSettings.ipsRecipientName,
+        recipientAccount: paymentSettings.ipsRecipientAccount,
+        purpose: paymentSettings.ipsPurpose,
+        amount: unitPrice * employeeIds.length,
+        reference: `EDUG${randomUUID().replace(/-/g, "")}`,
+        recipientType: "platform",
+        transactionType: "course_enrollment",
+        accountEnvironment: paymentSettings.ipsAccountEnvironment as "production" | "test",
+        runtimeEnvironment: educationIpsRuntimeEnvironment(),
+      });
+    }
     enrollments = await db.transaction(async (tx) => {
       if (course.centerId) {
         await lockEducationCenterFinancials(tx, course.centerId);
@@ -22553,6 +22573,9 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
     const errorCode = typeof error === "object" && error
       ? (error as { code?: string; cause?: { code?: string } }).code ?? (error as { cause?: { code?: string } }).cause?.code
       : undefined;
+    if (isEducationPaymentConfigurationError(error)) {
+      res.status(503).json(EDUCATION_PAYMENT_UNAVAILABLE_ERROR); return;
+    }
     if (errorCode === "23505") {
       res.status(409).json({ error: "Jedan ili više zaposlenih je već prijavljen na ovaj kurs." }); return;
     }

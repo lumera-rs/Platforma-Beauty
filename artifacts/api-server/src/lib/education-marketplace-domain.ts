@@ -149,6 +149,19 @@ export function educationIpsRuntimeEnvironment(): EducationIpsAccountEnvironment
     : "test";
 }
 
+export const EDUCATION_PAYMENT_UNAVAILABLE_ERROR = {
+  code: "EDUCATION_PAYMENT_UNAVAILABLE",
+  error: "Uplata za Education prijavu trenutno nije dostupna. Pokušajte ponovo kasnije ili kontaktirajte podršku.",
+} as const;
+
+export function isEducationPaymentConfigurationError(error: unknown): boolean {
+  return error instanceof Error && [
+    "IPS_PAYMENT_ACCOUNT_NOT_CONFIGURED",
+    "IPS_PAYMENT_ACCOUNT_INVALID",
+    "IPS_PAYMENT_PRODUCTION_ACCOUNT_BLOCKED",
+  ].includes(error.message);
+}
+
 /**
  * NBS IPS "S" payload. This is deliberately only a deterministic rendering of
  * an already due obligation: it performs no provider call and has no payment

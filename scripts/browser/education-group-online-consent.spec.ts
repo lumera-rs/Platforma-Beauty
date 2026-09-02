@@ -1,16 +1,19 @@
 import { expect, test } from "@playwright/test";
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import {
   courseEnrollmentsTable,
   coursesTable,
+  customerNotificationsTable,
   db,
   educationCenterSubscriptionsTable,
   educationCentersTable,
   educationPaymentObligationsTable,
+  educationPlatformSettingsTable,
   employeeLocationAssignmentsTable,
   employeesTable,
   salonsTable,
+  pool,
   subscriptionPlansTable,
   usersTable,
 } from "@workspace/db";
@@ -19,6 +22,24 @@ import { DIGITAL_CONTENT_CONSENT_TEXT } from "../../artifacts/beauty-marketplace
 
 const GROUP_CONSENT_HELP =
   "Jedna potvrda kupca čuva se kao zaseban dokaz uz prijavu svakog označenog polaznika.";
+const SETTINGS_LOCK = "browser-salon-owner-education-ips-settings";
+
+async function lockIpsSettings(): Promise<() => Promise<void>> {
+  const client = await pool.connect();
+  try {
+    await client.query("select pg_advisory_lock(hashtext($1))", [SETTINGS_LOCK]);
+  } catch (error) {
+    client.release();
+    throw error;
+  }
+  return async () => {
+    try {
+      await client.query("select pg_advisory_unlock(hashtext($1))", [SETTINGS_LOCK]);
+    } finally {
+      client.release();
+    }
+  };
+}
 
 type Fixture = {
   ownerId: string;
@@ -339,6 +360,94 @@ async function cleanupFixture(fixture: Fixture) {
   await db.delete(usersTable).where(eq(usersTable.id, fixture.centerOwnerId));
   await db.delete(usersTable).where(eq(usersTable.id, fixture.adminId));
 }
+
+test("paid Education enrollment returns a safe unavailable response when IPS settings are missing", async ({ page }) => {
+  test.setTimeout(60_000);
+  const releaseLock = await lockIpsSettings();
+  let fixture: Fixture | undefined;
+  let settingsSnapshot: typeof educationPlatformSettingsTable.$inferSelect | undefined;
+  let createdSettingsId: string | undefined;
+  try {
+    const [existing] = await db.select().from(educationPlatformSettingsTable)
+      .orderBy(asc(educationPlatformSettingsTable.createdAt)).limit(1);
+    if (existing) {
+      settingsSnapshot = existing;
+      await db.update(educationPlatformSettingsTable).set({
+        ipsRecipientName: "LUMERA Browser IPS",
+        ipsRecipientAccount: "160000000000000000",
+        ipsPurpose: "Edukacija",
+        ipsAccountEnvironment: "test",
+      }).where(eq(educationPlatformSettingsTable.id, existing.id));
+    } else {
+      const [created] = await db.insert(educationPlatformSettingsTable).values({
+        commissionPercent: 15,
+        reservePercent: 5,
+        ipsRecipientName: "LUMERA Browser IPS",
+        ipsRecipientAccount: "160000000000000000",
+        ipsPurpose: "Edukacija",
+        ipsAccountEnvironment: "test",
+      }).returning();
+      if (!created) throw new Error("Could not create Education IPS settings.");
+      createdSettingsId = created.id;
+    }
+
+    fixture = await createFixture();
+    expect((await page.request.post("/api/auth/login", {
+      data: { email: fixture.ownerEmail, password: fixture.ownerPassword },
+    })).ok()).toBeTruthy();
+
+    const configuredResponse = await page.request.post(`/api/education/courses/${fixture.courseId}/enrollments`, {
+      headers: { "idempotency-key": randomUUID() },
+      data: { employeeId: fixture.employeeIds[0], digitalContentConsent: true },
+    });
+    expect(configuredResponse.status()).toBe(201);
+    await db.delete(courseEnrollmentsTable).where(and(
+      eq(courseEnrollmentsTable.courseId, fixture.courseId),
+      eq(courseEnrollmentsTable.purchaserId, fixture.ownerId),
+    ));
+    const notificationsBeforeUnavailableRequest = await db.select({ id: customerNotificationsTable.id })
+      .from(customerNotificationsTable)
+      .where(eq(customerNotificationsTable.userId, fixture.ownerId));
+
+    const settingsId = existing?.id ?? createdSettingsId!;
+    await db.update(educationPlatformSettingsTable).set({
+      ipsRecipientName: null,
+      ipsRecipientAccount: null,
+      ipsPurpose: null,
+    }).where(eq(educationPlatformSettingsTable.id, settingsId));
+
+    const unavailableResponse = await page.request.post(`/api/education/courses/${fixture.courseId}/enrollments`, {
+      headers: { "idempotency-key": randomUUID() },
+      data: { employeeId: fixture.employeeIds[0], digitalContentConsent: true },
+    });
+    expect(unavailableResponse.status()).toBe(503);
+    expect(await unavailableResponse.json()).toEqual({
+      code: "EDUCATION_PAYMENT_UNAVAILABLE",
+      error: "Uplata za Education prijavu trenutno nije dostupna. Pokušajte ponovo kasnije ili kontaktirajte podršku.",
+    });
+
+    expect(await db.select({ id: courseEnrollmentsTable.id }).from(courseEnrollmentsTable).where(and(
+      eq(courseEnrollmentsTable.courseId, fixture.courseId),
+      eq(courseEnrollmentsTable.purchaserId, fixture.ownerId),
+    ))).toHaveLength(0);
+    expect(await db.select({ id: educationPaymentObligationsTable.id }).from(educationPaymentObligationsTable)
+      .where(eq(educationPaymentObligationsTable.centerId, fixture.centerId))).toHaveLength(0);
+    expect(await db.select({ id: customerNotificationsTable.id }).from(customerNotificationsTable)
+      .where(eq(customerNotificationsTable.userId, fixture.ownerId))).toHaveLength(notificationsBeforeUnavailableRequest.length);
+  } finally {
+    try {
+      if (fixture) await cleanupFixture(fixture);
+    } finally {
+      try {
+        if (createdSettingsId) await db.delete(educationPlatformSettingsTable).where(eq(educationPlatformSettingsTable.id, createdSettingsId));
+        if (settingsSnapshot) await db.update(educationPlatformSettingsTable).set(settingsSnapshot)
+          .where(eq(educationPlatformSettingsTable.id, settingsSnapshot.id));
+      } finally {
+        await releaseLock();
+      }
+    }
+  }
+});
 
 for (const viewport of [
   { name: "desktop", width: 1440, height: 1000 },
