@@ -325,6 +325,74 @@ if (valid.message !== `${process.env.DETAIL_MARKER}-valid-request`
 }
 NODE
 
+for damaged_slot_field in starts_at ends_at; do
+  if [[ "$damaged_slot_field" == "starts_at" ]]; then
+    damaged_slot_value="'-infinity'::timestamptz"
+  else
+    damaged_slot_value="'infinity'::timestamptz"
+  fi
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v slot_id="$damaged_slot_id" >/dev/null <<SQL
+update beauty_job_rental_slots
+set starts_at = now() + interval '1 day',
+    ends_at = now() + interval '2 days'
+where id = :'slot_id'::uuid;
+update beauty_job_rental_slots
+set ${damaged_slot_field} = ${damaged_slot_value}
+where id = :'slot_id'::uuid;
+SQL
+
+  status="$(curl -sS -o "$body" -w "%{http_code}" -b "$cookie" "$BASE_URL/beauty-jobs/rental-requests/mine")"
+  if [[ "$status" != "200" ]]; then
+    echo "FAIL: authenticated rental-request history with damaged slot $damaged_slot_field expected 200, got $status: $(cat "$body")" >&2
+    exit 1
+  fi
+
+  REQUESTS_BODY="$(cat "$body")" \
+  DETAIL_MARKER="$fixture_marker" \
+  DAMAGED_REQUEST_ID="$damaged_request_id" \
+  VALID_REQUEST_ID="$valid_request_id" \
+  DAMAGED_SLOT_FIELD="$damaged_slot_field" node <<'NODE'
+const response = JSON.parse(process.env.REQUESTS_BODY);
+if (!Array.isArray(response.requests)) throw new Error("Rental-request history response has no requests.");
+const damaged = response.requests.find((request) => request.id === process.env.DAMAGED_REQUEST_ID);
+const valid = response.requests.find((request) => request.id === process.env.VALID_REQUEST_ID);
+if (!damaged || !valid) {
+  throw new Error(`Rental-request history omitted a fixture row beside damaged slot ${process.env.DAMAGED_SLOT_FIELD}.`);
+}
+
+const responseField = {
+  starts_at: "startsAt",
+  ends_at: "endsAt",
+}[process.env.DAMAGED_SLOT_FIELD];
+if (!responseField) throw new Error(`Unknown damaged slot field: ${process.env.DAMAGED_SLOT_FIELD}`);
+const neighboringSlotField = responseField === "startsAt" ? "endsAt" : "startsAt";
+if (damaged[responseField] !== null) {
+  throw new Error(`Damaged history slot ${responseField} was not null: ${damaged[responseField]}`);
+}
+if (typeof damaged[neighboringSlotField] !== "string"
+  || typeof damaged.createdAt !== "string"
+  || typeof damaged.updatedAt !== "string"
+  || damaged.respondedAt !== null
+  || damaged.message !== `${process.env.DETAIL_MARKER}-damaged-request`
+  || damaged.status !== "pending"
+  || typeof damaged.listingTitle !== "string"
+  || typeof damaged.applicantDisplayName !== "string") {
+  throw new Error(`Unrelated fields on the history request with damaged slot ${responseField} were not preserved.`);
+}
+if (valid.message !== `${process.env.DETAIL_MARKER}-valid-request`
+  || valid.status !== "pending"
+  || typeof valid.startsAt !== "string"
+  || typeof valid.endsAt !== "string"
+  || typeof valid.respondedAt !== "string"
+  || typeof valid.createdAt !== "string"
+  || typeof valid.updatedAt !== "string"
+  || typeof valid.listingTitle !== "string"
+  || typeof valid.applicantDisplayName !== "string") {
+  throw new Error(`Valid neighboring history request was not preserved beside damaged slot ${responseField}.`);
+}
+NODE
+done
+
 status="$(curl -sS -o "$body" -w "%{http_code}" -c "$cookie" \
   -H "Content-Type: application/json" \
   --data "{\"email\":\"salon@lumera.local\",\"password\":\"$demo_password\"}" \
