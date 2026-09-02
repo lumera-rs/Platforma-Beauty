@@ -140,3 +140,4 @@
 - [Bank API legal-entity scope](bank-api-legal-entity-scope.md) — never infer a Serbian bank API contract from group-level or another country’s developer portal.
 - [User-facing timestamp serialization](user-facing-timestamp-serialization.md) — audit both single and batch list DTOs; one invalid database date must degrade only its field.
 - [pnpm workspace config preservation](pnpm-workspace-config-preservation.md) — project-level pnpm config commands can rewrite the workspace manifest and invalidate lockfile catalogs.
+- [GitHub default-branch rulesets](github-default-branch-ruleset.md) — target `~DEFAULT_BRANCH` with an active required-check ruleset when classic protection cannot cover an uncreated branch.
