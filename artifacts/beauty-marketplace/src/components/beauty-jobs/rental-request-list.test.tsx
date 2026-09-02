@@ -46,4 +46,30 @@ for (const viewport of ["mobile", "desktop"]) {
     assert.match(html, /p-4 shadow-sm sm:p-5/);
     assert.match(html, /flex-col items-start justify-between gap-3 sm:flex-row/);
   });
+
+  test(`salon rental inbox keeps null slot dates and response controls usable on ${viewport}`, () => {
+    const html = renderToStaticMarkup(
+      <RentalRequestList
+        requests={[
+          request("incoming-missing-start", null, "2026-09-03T11:00:00.000Z"),
+          request("incoming-missing-end", "2026-09-04T10:00:00.000Z", null),
+        ]}
+        isLoading={false}
+        incoming
+        onRespond={() => undefined}
+      />,
+    );
+
+    assert.match(html, /rental-request-incoming-missing-start/);
+    assert.match(html, /rental-request-incoming-missing-end/);
+    assert.equal((html.match(/Datum termina nije dostupan/g) ?? []).length, 2);
+    assert.equal((html.match(/Korisnik: Milica/g) ?? []).length, 2);
+    assert.equal((html.match(/Profesionalni sto za masažu/g) ?? []).length, 2);
+    assert.equal((html.match(/Molim vas javite/g) ?? []).length, 2);
+    assert.equal((html.match(/Na čekanju/g) ?? []).length, 2);
+    assert.equal((html.match(/>Odbij</g) ?? []).length, 2);
+    assert.equal((html.match(/>Prihvati termin</g) ?? []).length, 2);
+    assert.match(html, /p-4 shadow-sm sm:p-5/);
+    assert.match(html, /flex-col items-start justify-between gap-3 sm:flex-row/);
+  });
 }
