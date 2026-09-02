@@ -29,6 +29,48 @@ type EducationDisputeFixture = {
   details: string;
 };
 
+type AnalyticsEvent = {
+  name: string;
+  data?: Record<string, unknown>;
+};
+
+async function captureAnalytics(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const events: AnalyticsEvent[] = [];
+    Object.defineProperty(window, "__educationDisputeAnalytics", {
+      configurable: true,
+      value: events,
+    });
+    Object.defineProperty(window, "umami", {
+      configurable: true,
+      value: {
+        track(name: string, data?: Record<string, unknown>) {
+          events.push(data === undefined ? { name } : { name, data });
+        },
+      },
+    });
+  });
+}
+
+async function expectDisputeAnalytics(
+  page: Page,
+  outcome: "created" | "existing" | "error",
+): Promise<void> {
+  await expect.poll(() => page.evaluate(() => (
+    (window as Window & { __educationDisputeAnalytics?: AnalyticsEvent[] })
+      .__educationDisputeAnalytics ?? []
+  ))).toEqual([
+    { name: "education_dispute_form_opened" },
+    { name: "education_dispute_submitted", data: { outcome } },
+  ]);
+
+  const serializedPayloads = await page.evaluate(() => JSON.stringify(
+    ((window as Window & { __educationDisputeAnalytics?: AnalyticsEvent[] })
+      .__educationDisputeAnalytics ?? []).map((event) => event.data ?? {}),
+  ));
+  expect(serializedPayloads).not.toMatch(/reason|details|description|enrollment|identifier|(^|["_])id(["_]|$)/i);
+}
+
 async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
   const derived = await scrypt(password, salt, 64) as Buffer;
@@ -183,6 +225,7 @@ test("student reports a problem from an education card and sees it immediately",
   const details = "Treći modul nema obećani radni materijal. Molim da sadržaj bude dopunjen.";
 
   try {
+    await captureAnalytics(page);
     await signInAsFixtureCustomer(page, fixture);
     await page.goto("/student/edukacije");
     await expect(page.getByRole("heading", { name: /^Browser kurs sa otvorenim sporom/ })).toBeVisible();
@@ -206,6 +249,83 @@ test("student reports a problem from an education card and sees it immediately",
       .where(eq(educationDisputesTable.enrollmentId, fixture.enrollmentId));
     expect(disputes).toHaveLength(1);
     expect(disputes[0]).toMatchObject({ reason, details, status: "open" });
+    await expectDisputeAnalytics(page, "created");
+  } finally {
+    await cleanUpEducationDisputeFixture(fixture);
+  }
+});
+
+test("student duplicate response records only the existing outcome", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const fixture = await createEducationDisputeFixture(false);
+  const existingDispute = {
+    id: randomUUID(),
+    enrollmentId: fixture.enrollmentId,
+    reason: "Već prijavljen razlog",
+    details: "Opis postojećeg spora koji server vraća uz konflikt.",
+    status: "open",
+    createdAt: new Date("2026-08-21T09:15:00.000Z").toISOString(),
+  };
+
+  try {
+    await captureAnalytics(page);
+    await signInAsFixtureCustomer(page, fixture);
+    await page.route(`**/api/education/purchases/${fixture.enrollmentId}/disputes`, async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Dispute already exists", dispute: existingDispute }),
+      });
+    });
+    await page.goto("/student/edukacije");
+
+    await page.getByRole("button", { name: "Prijavi problem" }).click();
+    const dialog = page.getByRole("dialog", { name: "Prijavi problem" });
+    await dialog.getByLabel("Razlog").fill("Ponovljeni privatni razlog");
+    await dialog.getByLabel("Opis").fill("Ponovljeni privatni opis koji ne sme u analitiku.");
+    await dialog.getByRole("button", { name: "Pošalji prijavu" }).click();
+
+    await expect(dialog).toBeHidden();
+    const disputeCard = page.getByTestId(`student-enrollment-dispute-${fixture.enrollmentId}`);
+    await expect(disputeCard).toHaveAttribute("data-dispute-id", existingDispute.id);
+    await expect(disputeCard.getByText(`Razlog: ${existingDispute.reason}`, { exact: true })).toBeVisible();
+    await expect(page.getByText("Problem je već prijavljen", { exact: true })).toBeVisible();
+    await expectDisputeAnalytics(page, "existing");
+  } finally {
+    await cleanUpEducationDisputeFixture(fixture);
+  }
+});
+
+test("student server failure records only the error outcome and keeps the form open", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const fixture = await createEducationDisputeFixture(false);
+
+  try {
+    await captureAnalytics(page);
+    await signInAsFixtureCustomer(page, fixture);
+    await page.route(`**/api/education/purchases/${fixture.enrollmentId}/disputes`, async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Privatna serverska greška" }),
+      });
+    });
+    await page.goto("/student/edukacije");
+
+    await page.getByRole("button", { name: "Prijavi problem" }).click();
+    const dialog = page.getByRole("dialog", { name: "Prijavi problem" });
+    await dialog.getByLabel("Razlog").fill("Privatni razlog neuspele prijave");
+    await dialog.getByLabel("Opis").fill("Privatni opis neuspele prijave koji ne sme u analitiku.");
+    await dialog.getByRole("button", { name: "Pošalji prijavu" }).click();
+
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("Razlog")).toHaveValue("Privatni razlog neuspele prijave");
+    await expect(dialog.getByLabel("Opis")).toHaveValue("Privatni opis neuspele prijave koji ne sme u analitiku.");
+    await expect(page.getByText("Problem nije prijavljen", { exact: true })).toBeVisible();
+    await expect(page.getByTestId(`student-enrollment-dispute-${fixture.enrollmentId}`)).toHaveCount(0);
+    await expectDisputeAnalytics(page, "error");
   } finally {
     await cleanUpEducationDisputeFixture(fixture);
   }
