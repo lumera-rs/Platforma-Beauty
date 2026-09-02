@@ -7,5 +7,9 @@ assert.equal(timestampAgeMinutes(new Date("2026-09-02T11:45:00.000Z"), now), 15)
 assert.equal(timestampAgeMinutes("2026-09-02T11:30:00.000Z", now), 30);
 assert.equal(timestampAgeMinutes(null, now), null);
 assert.equal(timestampAgeMinutes("not-a-timestamp", now), null);
+assert.equal(timestampAgeMinutes(new Date("not-a-timestamp"), now), null);
+assert.equal(timestampAgeMinutes(0, now), null);
+assert.equal(timestampAgeMinutes({}, now), null);
+assert.equal(timestampAgeMinutes(undefined, now), null);
 
 process.stdout.write("✓ timestamp age normalization regression passed\n");
