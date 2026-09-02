@@ -1,0 +1,47 @@
+name: Workflow syntax
+
+on:
+  pull_request:
+  merge_group:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: GitHub Actions syntax and expressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CI: "true"
+      DATABASE_URL: ""
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect full repository checkout
+        id: repository
+        shell: bash
+        run: |
+          if [[ -f package.json && -f pnpm-lock.yaml ]]; then
+            echo "full=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "full=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Confirm bootstrap workflow
+        if: steps.repository.outputs.full != 'true'
+        run: test -f .github/workflows/workflow-lint.yml
+      - uses: pnpm/action-setup@v4
+        if: steps.repository.outputs.full == 'true'
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        if: steps.repository.outputs.full == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+      - if: steps.repository.outputs.full == 'true'
+        run: pnpm install --frozen-lockfile
+      - name: Lint GitHub Actions workflows
+        if: steps.repository.outputs.full == 'true'
+        run: env -u DATABASE_URL pnpm run test:github-workflows
