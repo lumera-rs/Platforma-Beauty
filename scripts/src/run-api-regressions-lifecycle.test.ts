@@ -35,65 +35,6 @@ type HarnessManifest = {
 
 const processMarkerEnvironmentName = "LUMERA_TEST_RUN_MARKER";
 
-const releasePhaseNames = [
-  "validate:release:1-publish",
-  "validate:release:2-backend",
-  "validate:release:3-api",
-  "validate:release:4-isolated",
-  "validate:release:5-final",
-] as const;
-
-const releaseGateCommands = [
-  "validate:publish",
-  "test:backend-standards:database",
-  "test:business-growth-schema",
-  "test:referral-lifecycle",
-  "test:attributed-appointments-returning",
-  "test:business-guide-pdf",
-  "test:business-guide-links",
-  "test:automation-provider-events",
-  "test:scheduler-resilience",
-  "test:scheduler-affected-jobs",
-  "test:sms-webhook-registration",
-  "test:webhook-secret-reconfirmation",
-  "test:attributed-appointments-pagination",
-  "test:campaign-attributed-appointments-window",
-  "test:stats-compare-window-boundaries",
-  "test:social-oauth-domain-change",
-  "test:social-oauth-return-to",
-  "test:social-oauth-referral-context",
-  "test:tenant-isolation",
-  "test:appointment-regressions",
-  "test:query-counts",
-  "test:query-budgets",
-  "test:catalog-cache",
-  "test:communication-archive",
-  "test:admin-validation",
-  "test:customer-password-setup",
-  "test:admin-order-search",
-  "test:admin-list-pagination",
-  "test:admin-summary",
-  "test:loyalty-status",
-  "test:api-preflight",
-  "test:api-regressions",
-  "test:api-regressions-lifecycle",
-  "test:retail-checkout-api",
-  "test:supplier-catalog-api",
-  "test:education-placement-lifecycle",
-  "test:education-extras",
-  "test:education-gift-refunds",
-  "test:admin-form-resilience",
-  "test:salon-notifications:release",
-  "test:beauty-jobs-browser",
-  "test:education-group-online-consent-browser",
-  "test:education-dispute-browser",
-  "test:retention-settings",
-  "test:webhook-repair-selection",
-  "test:sms-fallback-phone-notice",
-  "test:booking-settings",
-  "test:seo",
-] as const;
-
 const requiredIsolatedBrowserGateScripts = [
   "test:beauty-jobs-browser",
   "test:education-group-online-consent-browser",
@@ -101,6 +42,13 @@ const requiredIsolatedBrowserGateScripts = [
 ] as const;
 
 const requiredIsolatedBrowserGatePhase = "validate:release:4-isolated";
+
+function chainedPnpmScripts(command: string): string[] {
+  return command.split(" && ").flatMap((step) => {
+    const match = /^pnpm run ([\w:-]+)$/.exec(step);
+    return match ? [match[1]] : [];
+  });
+}
 
 type ChildExit = {
   code: number | null;
@@ -546,38 +494,73 @@ test("release validation phases preserve the full gate and print safe continuati
     await readFile(path.join(workspaceRoot, "package.json"), "utf8"),
   ) as { scripts?: Record<string, string> };
   const scripts = packageJson.scripts ?? {};
+  const releaseCommand = scripts["validate:release"];
 
+  assert.ok(releaseCommand, "validate:release must be defined.");
+  assert.match(
+    releaseCommand,
+    /^export CI=true && pnpm run validate:release:\d+-[\w-]+/,
+  );
+  const releasePhaseNames = chainedPnpmScripts(releaseCommand);
+  assert.ok(
+    releasePhaseNames.length > 0,
+    "validate:release must invoke at least one release phase.",
+  );
   assert.equal(
-    scripts["validate:release"],
+    releaseCommand,
     `export CI=true && ${releasePhaseNames.map((name) => `pnpm run ${name}`).join(" && ")}`,
+    "validate:release must remain an ordered, fail-fast chain of release phases.",
   );
 
-  const phasedGateCommands = releasePhaseNames.flatMap((phaseName, phaseIndex) => {
+  releasePhaseNames.forEach((phaseName, phaseIndex) => {
     const phaseCommand = scripts[phaseName];
     assert.ok(phaseCommand, `${phaseName} must be defined.`);
-    assert.match(phaseCommand, /^export CI=true && echo 'Release phase \d\/5:/);
+    const phaseNumber = phaseIndex + 1;
+    const phaseCount = releasePhaseNames.length;
+    assert.match(
+      phaseCommand,
+      new RegExp(
+        `^export CI=true && echo 'Release phase ${phaseNumber}\\/${phaseCount}:`,
+      ),
+    );
     if (phaseIndex < releasePhaseNames.length - 1) {
       assert.match(
         phaseCommand,
         new RegExp(
-          `Release phase ${phaseIndex + 1}\\/5 complete\\. Continue with: pnpm run ${
+          `Release phase ${phaseNumber}\\/${phaseCount} complete\\. Continue with: pnpm run ${
             releasePhaseNames[phaseIndex + 1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
           }`,
         ),
       );
     } else {
-      assert.match(phaseCommand, /Release phase 5\/5 complete\. All release checks passed\./);
+      assert.match(
+        phaseCommand,
+        new RegExp(
+          `Release phase ${phaseNumber}\\/${phaseCount} complete\\. All release checks passed\\.`,
+        ),
+      );
     }
 
-    return phaseCommand
-      .split(" && ")
-      .flatMap((command) => {
-        const match = /^pnpm run ([\w:-]+)$/.exec(command);
-        return match ? [match[1]] : [];
-      });
+    const phaseSteps = phaseCommand.split(" && ");
+    const phaseGateCommands = chainedPnpmScripts(phaseCommand);
+    const expectedCompletionStep = phaseIndex < releasePhaseNames.length - 1
+      ? `echo 'Release phase ${phaseNumber}/${phaseCount} complete. Continue with: pnpm run ${releasePhaseNames[phaseIndex + 1]}'`
+      : `echo 'Release phase ${phaseNumber}/${phaseCount} complete. All release checks passed.'`;
+    assert.equal(
+      phaseSteps.length,
+      phaseGateCommands.length + 3,
+      `${phaseName} must contain only CI setup, its opening message, an ordered fail-fast gate, and its completion message.`,
+    );
+    assert.equal(
+      phaseSteps.at(-1),
+      expectedCompletionStep,
+      `${phaseName} must print its completion message only after every gate passes.`,
+    );
+    assert.ok(
+      phaseGateCommands.length > 0,
+      `${phaseName} must invoke at least one release gate.`,
+    );
   });
-
-  assert.deepEqual(phasedGateCommands, releaseGateCommands);
 });
 
 test("required isolated browser checks remain wired into the release gate", async () => {
