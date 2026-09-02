@@ -17,6 +17,8 @@ fi
 fixture_marker="damaged-timestamp-${$}-${RANDOM}"
 fixture_slug="${fixture_marker}-category"
 body="$(mktemp)"
+cookie="$(mktemp)"
+demo_password="${LUMERA_DEMO_PASSWORD:-LumeraDemo2026!}"
 
 cleanup() {
   local cleanup_failed=false
@@ -24,7 +26,7 @@ cleanup() {
 delete from beauty_job_listings where description = :'marker';
 delete from beauty_job_categories where slug = :'slug';
 SQL
-  rm -f "$body"
+  rm -f "$body" "$cookie"
   if [[ "$cleanup_failed" == true ]]; then
     echo "Failed to remove damaged timestamp fixtures." >&2
     return 1
@@ -32,7 +34,7 @@ SQL
 }
 trap cleanup EXIT
 
-read -r damaged_id valid_id damaged_slot_id valid_slot_id < <(
+read -r damaged_id valid_id damaged_slot_id valid_slot_id damaged_request_id valid_request_id < <(
   psql "$DATABASE_URL" -AtF ' ' -v ON_ERROR_STOP=1 -v marker="$fixture_marker" -v slug="$fixture_slug" <<'SQL'
 with fixture_user as (
   select id from users where email = 'admin@lumera.local'
@@ -84,16 +86,37 @@ fixture_slots as (
   from fixture_listings
   where title = :'marker' || '-damaged'
   returning id, starts_at
+),
+fixture_requests as (
+  insert into beauty_job_rental_requests (
+    listing_id, slot_id, applicant_user_id, message, status, created_at, updated_at
+  )
+  select listing.id, slot.id, applicant.id, :'marker' || '-damaged-request',
+    'pending'::beauty_job_rental_request_status, '-infinity'::timestamptz, now()
+  from fixture_listings listing
+  join fixture_slots slot on slot.starts_at = '-infinity'::timestamptz
+  cross join lateral (select id from users where email = 'kupac@lumera.local') applicant
+  where listing.title = :'marker' || '-damaged'
+  union all
+  select listing.id, slot.id, applicant.id, :'marker' || '-valid-request',
+    'pending'::beauty_job_rental_request_status, now(), now()
+  from fixture_listings listing
+  join fixture_slots slot on slot.starts_at <> '-infinity'::timestamptz
+  cross join lateral (select id from users where email = 'kupac@lumera.local') applicant
+  where listing.title = :'marker' || '-damaged'
+  returning id, message
 )
 select
   (select max(id::text) filter (where title = :'marker' || '-damaged') from fixture_listings),
   (select max(id::text) filter (where title = :'marker' || '-valid') from fixture_listings),
   (select max(id::text) filter (where starts_at = '-infinity'::timestamptz) from fixture_slots),
-  (select max(id::text) filter (where starts_at <> '-infinity'::timestamptz) from fixture_slots);
+  (select max(id::text) filter (where starts_at <> '-infinity'::timestamptz) from fixture_slots),
+  (select max(id::text) filter (where message = :'marker' || '-damaged-request') from fixture_requests),
+  (select max(id::text) filter (where message = :'marker' || '-valid-request') from fixture_requests);
 SQL
 )
 
-if [[ -z "$damaged_id" || -z "$valid_id" || -z "$damaged_slot_id" || -z "$valid_slot_id" ]]; then
+if [[ -z "$damaged_id" || -z "$valid_id" || -z "$damaged_slot_id" || -z "$valid_slot_id" || -z "$damaged_request_id" || -z "$valid_request_id" ]]; then
   echo "Failed to create damaged timestamp fixtures." >&2
   exit 1
 fi
@@ -108,6 +131,15 @@ request_and_expect_200() {
     exit 1
   fi
 }
+
+status="$(curl -sS -o "$body" -w "%{http_code}" -c "$cookie" \
+  -H "Content-Type: application/json" \
+  --data "{\"email\":\"kupac@lumera.local\",\"password\":\"$demo_password\"}" \
+  "$BASE_URL/auth/login")"
+if [[ "$status" != "200" ]]; then
+  echo "FAIL: customer login expected 200, got $status: $(cat "$body")" >&2
+  exit 1
+fi
 
 request_and_expect_200 "/beauty-jobs?category=$fixture_slug&sort=oldest" "beauty job list with damaged timestamp"
 LIST_BODY="$(cat "$body")" DAMAGED_ID="$damaged_id" VALID_ID="$valid_id" node <<'NODE'
@@ -136,6 +168,26 @@ if (damagedSlot.startsAt !== null) throw new Error(`Damaged nested detail timest
 if (typeof damagedSlot.endsAt !== "string") throw new Error("Unrelated field on the damaged nested detail row was not preserved.");
 if (typeof validSlot.startsAt !== "string" || typeof validSlot.endsAt !== "string") {
   throw new Error("Valid neighboring nested detail row was not preserved.");
+}
+NODE
+
+status="$(curl -sS -o "$body" -w "%{http_code}" -b "$cookie" "$BASE_URL/beauty-jobs/rental-requests/mine")"
+if [[ "$status" != "200" ]]; then
+  echo "FAIL: authenticated rental-request history expected 200, got $status: $(cat "$body")" >&2
+  exit 1
+fi
+REQUESTS_BODY="$(cat "$body")" DETAIL_MARKER="$fixture_marker" DAMAGED_REQUEST_ID="$damaged_request_id" VALID_REQUEST_ID="$valid_request_id" node <<'NODE'
+const response = JSON.parse(process.env.REQUESTS_BODY);
+if (!Array.isArray(response.requests)) throw new Error("Rental-request history response has no requests.");
+const damaged = response.requests.find((request) => request.id === process.env.DAMAGED_REQUEST_ID);
+const valid = response.requests.find((request) => request.id === process.env.VALID_REQUEST_ID);
+if (!damaged || !valid) throw new Error("Rental-request history omitted a nested fixture row.");
+if (damaged.createdAt !== null) throw new Error(`Damaged rental-request timestamp was not null: ${damaged.createdAt}`);
+if (damaged.message !== `${process.env.DETAIL_MARKER}-damaged-request` || typeof damaged.updatedAt !== "string") {
+  throw new Error("Unrelated fields on the damaged rental-request row were not preserved.");
+}
+if (valid.message !== `${process.env.DETAIL_MARKER}-valid-request` || typeof valid.createdAt !== "string" || typeof valid.updatedAt !== "string") {
+  throw new Error("Valid neighboring rental-request row was not preserved.");
 }
 NODE
 
