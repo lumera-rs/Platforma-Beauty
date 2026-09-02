@@ -6,9 +6,15 @@ set -euo pipefail
 : "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY must be owner/repository}"
 
 api_url="${GITHUB_API_URL:-https://api.github.com}"
+expected_repository="lumera-rs/Platforma-Beauty"
 ruleset_name="${GITHUB_RULESET_NAME:-Protect default branch CI}"
 required_context="GitHub Actions syntax and expressions"
 workflow_file="workflow-lint.yml"
+
+if [[ "$GITHUB_REPOSITORY" != "$expected_repository" ]]; then
+  echo "Refusing to audit unexpected repository ${GITHUB_REPOSITORY}; expected ${expected_repository}." >&2
+  exit 1
+fi
 
 repository="$(
   curl --fail-with-body --silent --show-error \
@@ -17,6 +23,11 @@ repository="$(
     --header "X-GitHub-Api-Version: 2022-11-28" \
     "${api_url}/repos/${GITHUB_REPOSITORY}"
 )"
+
+if ! jq -e '.delete_branch_on_merge == true' <<<"$repository" >/dev/null; then
+  echo "Automatic deletion of merged branches is disabled for ${GITHUB_REPOSITORY}; enable delete_branch_on_merge." >&2
+  exit 1
+fi
 
 if ! jq -e '
   (.owner.type == "Organization")
@@ -116,4 +127,4 @@ latest_merge_group_url="$(
   ' <<<"$merge_group_runs"
 )"
 
-echo "GitHub merge queue is active, requires ${required_context}, and has a successful merge-group run: ${latest_merge_group_url}"
+echo "Automatic merged-branch deletion is enabled. GitHub merge queue is active, requires ${required_context}, and has a successful merge-group run: ${latest_merge_group_url}"

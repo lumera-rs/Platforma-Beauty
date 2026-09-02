@@ -114,9 +114,24 @@ test("workflow syntax lint runs locally and in an independent database-free CI j
   );
 });
 
-test("repository ruleset audit proves organization merge queue configuration and a live merge-group run", async () => {
+test("repository audit verifies branch cleanup, merge queue configuration, and a live merge-group run", async () => {
   const auditScript = await readFile(rulesetAuditScriptPath, "utf8");
 
+  assert.match(
+    auditScript,
+    /expected_repository="lumera-rs\/Platforma-Beauty"/,
+    "The audit must be pinned to the intended repository.",
+  );
+  assert.match(
+    auditScript,
+    /\.delete_branch_on_merge == true/,
+    "The audit must fail unless automatic merged-branch deletion is enabled.",
+  );
+  assert.doesNotMatch(
+    auditScript,
+    /curl[\s\S]*?--request\s+(?:POST|PUT|PATCH|DELETE)|curl[\s\S]*?\s-X\s*(?:POST|PUT|PATCH|DELETE)/i,
+    "The repository audit must remain read-only.",
+  );
   assert.match(
     auditScript,
     /\.owner\.type == "Organization"/,

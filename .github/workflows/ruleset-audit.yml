@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   verify:
-    name: Default branch protection configuration
+    name: Branch cleanup and protection configuration
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
