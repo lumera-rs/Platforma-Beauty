@@ -452,7 +452,12 @@ async function run(): Promise<void> {
     if (employeeIds.length) await db.delete(employeesTable).where(inArray(employeesTable.id, employeeIds));
     if (salonId) await db.delete(salonsTable).where(eq(salonsTable.id, salonId));
     if (foreignSalonId) await db.delete(salonsTable).where(eq(salonsTable.id, foreignSalonId));
-    if (userIds.length) { await db.delete(sessionsTable).where(inArray(sessionsTable.userId, userIds)); await db.delete(usersTable).where(inArray(usersTable.id, userIds)); }
+    if (userIds.length) {
+      await db.delete(educationFinancialAuditLogTable)
+        .where(inArray(educationFinancialAuditLogTable.actorUserId, userIds));
+      await db.delete(sessionsTable).where(inArray(sessionsTable.userId, userIds));
+      await db.delete(usersTable).where(inArray(usersTable.id, userIds));
+    }
     if (planId) await db.delete(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, planId));
     if (settingsSnapshot) await db.update(educationPlatformSettingsTable).set(settingsSnapshot).where(eq(educationPlatformSettingsTable.id, settingsSnapshot.id));
     await unlock();
