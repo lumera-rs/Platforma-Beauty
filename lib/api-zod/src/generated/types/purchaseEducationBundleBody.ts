@@ -12,4 +12,6 @@ export type PurchaseEducationBundleBody = {
   learnerUserId?: string;
   salonId?: string;
   employeeId?: string;
+  /** Explicit purchaser consent required when the bundle contains an online course. */
+  digitalContentConsent?: boolean;
 };

@@ -14,7 +14,7 @@ import {
   useCreateEducationCourse, useUpdateEducationCourse,
   usePublishEducationCourse, useArchiveEducationCourse,
   useCreateEducationModule, useCreateEducationLesson,
-  useCreateEducationSession, useEnrollInEducationCourse, useCreateEducationEnrollmentExtension,
+  useCreateEducationSession, useEnrollInEducationCourse, createEducationGroupEnrollments, useCreateEducationEnrollmentExtension,
   useGetEducationEnrollmentPaymentInstructions, getGetEducationEnrollmentPaymentInstructionsQueryKey,
   useCompleteEducationLesson,
   useListEducationInstructors, useCreateEducationInstructor, useUpdateEducationInstructor, useDeleteEducationInstructor,
@@ -58,6 +58,7 @@ import { EDUCATION_NOTIFICATION_MUTATION_KEY, educationNotificationMutationQueue
 import { OptimizedImage } from "@/components/optimized-image";
 import { uploadOptimizedImage } from "@/lib/media-upload";
 import { trackEvent } from "@/lib/analytics";
+import { DIGITAL_CONTENT_CONSENT_TEXT } from "@/lib/education-consent";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
@@ -1108,7 +1109,9 @@ function CourseDetailView({ courseId }: { courseId: string }) {
   const [groupSelectedIds, setGroupSelectedIds] = useState<string[]>([]);
   const [groupEnrolling, setGroupEnrolling] = useState(false);
   const [groupSessionId, setGroupSessionId] = useState("");
+  const [groupDigitalContentConsent, setGroupDigitalContentConsent] = useState(false);
   const [sessionId, setSessionId] = useState("");
+  const [digitalContentConsent, setDigitalContentConsent] = useState(false);
   const [paymentMode, setPaymentMode] = useState<"online_full" | "live_deposit" | "live_off_platform">("online_full");
   const [createdEnrollmentId, setCreatedEnrollmentId] = useState<string | null>(null);
   const enrollmentIdempotencyKey = useMemo(
@@ -1131,6 +1134,8 @@ function CourseDetailView({ courseId }: { courseId: string }) {
   useEffect(() => {
     if (course?.paymentMode) setPaymentMode(course.paymentMode);
     setSessionId("");
+    setDigitalContentConsent(false);
+    setGroupDigitalContentConsent(false);
     setCreatedEnrollmentId(null);
   }, [course?.id, course?.paymentMode]);
 
@@ -1139,9 +1144,19 @@ function CourseDetailView({ courseId }: { courseId: string }) {
       toast.error("Izaberite jednog zaposlenog pre slanja prijave.");
       return;
     }
-    enroll.mutate({ courseId, data: { employeeId: learnerId || null, sessionId: sessionId || null, paymentMode } }, {
+    if (course?.format === "online" && !digitalContentConsent) {
+      toast.error("Potvrdite saglasnost za digitalni sadržaj pre slanja prijave.");
+      return;
+    }
+    enroll.mutate({ courseId, data: {
+      employeeId: learnerId || null,
+      sessionId: sessionId || null,
+      paymentMode,
+      ...(course?.format === "online" ? { digitalContentConsent } : {}),
+    } }, {
       onSuccess: (res: any) => {
         setCreatedEnrollmentId(res.id);
+        setDigitalContentConsent(false);
         toast.success("Zahtev za upis je primljen. Pratite instrukcije za uplatu.");
         queryClient.invalidateQueries({ queryKey: getGetEducationCourseQueryKey(courseId) });
         queryClient.invalidateQueries({ queryKey: getListEnrollmentsQueryKey() });
@@ -1152,27 +1167,30 @@ function CourseDetailView({ courseId }: { courseId: string }) {
 
   const handleGroupEnroll = async () => {
     if (groupSelectedIds.length === 0) { toast.error("Izaberite bar jednog zaposlenog."); return; }
+    if (course?.format === "online" && !groupDigitalContentConsent) {
+      toast.error("Potvrdite saglasnost za digitalni sadržaj pre grupne prijave.");
+      return;
+    }
     setGroupEnrolling(true);
     try {
-      const body: Record<string, unknown> = { employeeIds: groupSelectedIds };
-      if (groupSessionId) body.sessionId = groupSessionId;
-      const response = await fetch(`/api/education/courses/${courseId}/group-enrollments`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
-        body: JSON.stringify(body),
+      const data = await createEducationGroupEnrollments(courseId, {
+        employeeIds: groupSelectedIds,
+        ...(groupSessionId ? { sessionId: groupSessionId } : {}),
+        ...(course?.format === "online" ? { digitalContentConsent: groupDigitalContentConsent } : {}),
+      }, {
+        headers: { "Idempotency-Key": crypto.randomUUID() },
       });
-      const data = await response.json() as { error?: string; discountPercent?: number; unitPrice?: number; totalPrice?: number; enrollments?: unknown[] };
-      if (!response.ok) throw new Error(data.error ?? "Grupna prijava nije uspela.");
-      const discountMsg = (data.discountPercent ?? 0) > 0
-        ? ` Primenjen je popust od ${data.discountPercent}%. Cena po polazniku: ${data.unitPrice?.toLocaleString("sr-RS")} RSD.`
+      const discountMsg = data.discountPercent > 0
+        ? ` Primenjen je popust od ${data.discountPercent}%. Cena po polazniku: ${data.unitPrice.toLocaleString("sr-RS")} RSD.`
         : "";
-      toast.success(`Grupna prijava za ${data.enrollments?.length ?? 0} polaznika je primljena.${discountMsg}`);
+      toast.success(`Grupna prijava za ${data.enrollments.length} polaznika je primljena.${discountMsg}`);
       queryClient.invalidateQueries({ queryKey: getGetEducationCourseQueryKey(courseId) });
       queryClient.invalidateQueries({ queryKey: getListEnrollmentsQueryKey() });
       setGroupMode(false);
       setGroupSelectedIds([]);
+      setGroupDigitalContentConsent(false);
     } catch (err) {
-      toast.error("Grupna prijava nije uspela", { description: err instanceof Error ? err.message : undefined });
+      toast.error("Grupna prijava nije uspela", { description: getApiErrorMessage(err, "Proverite izabrane polaznike i uslove kursa.") });
     } finally {
       setGroupEnrolling(false);
     }
@@ -1551,7 +1569,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                       <div className="space-y-3 border rounded-lg p-4 bg-muted/10">
                         <div className="flex items-center justify-between">
                           <h4 className="font-medium text-sm">Izaberite polaznike</h4>
-                          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setGroupMode(false); setGroupSelectedIds([]); }}>Odustani</Button>
+                          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setGroupMode(false); setGroupSelectedIds([]); setGroupDigitalContentConsent(false); }}>Odustani</Button>
                         </div>
                         {(course.groupDiscountMinimum ?? 0) > 0 && (
                           <Alert className="py-2 px-3">
@@ -1595,7 +1613,23 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                             <span className="text-emerald-600 font-medium"> · Cena po polazniku: {Math.round(course.price * (1 - (course.groupDiscountPercent ?? 0) / 100)).toLocaleString("sr-RS")} RSD</span>
                           )}
                         </div>
-                        <Button className="w-full" onClick={() => void handleGroupEnroll()} disabled={groupEnrolling || groupSelectedIds.length === 0}>
+                        {course.format === "online" && (
+                          <div className="min-w-0 rounded-lg border bg-background p-3">
+                            <div className="flex min-w-0 items-start gap-3">
+                              <Checkbox
+                                id="education-group-digital-consent"
+                                aria-describedby="education-group-digital-consent-help"
+                                checked={groupDigitalContentConsent}
+                                onCheckedChange={(checked) => setGroupDigitalContentConsent(checked === true)}
+                              />
+                              <Label htmlFor="education-group-digital-consent" className="min-w-0 cursor-pointer text-sm leading-relaxed [overflow-wrap:anywhere]">
+                                {DIGITAL_CONTENT_CONSENT_TEXT}
+                              </Label>
+                            </div>
+                            <EducationFieldHelp id="education-group-digital-consent-help" label="Saglasnost za digitalni sadržaj" text="Jedna potvrda kupca čuva se kao zaseban dokaz uz prijavu svakog označenog polaznika." />
+                          </div>
+                        )}
+                        <Button className="w-full" onClick={() => void handleGroupEnroll()} disabled={groupEnrolling || groupSelectedIds.length === 0 || (course.format === "online" && !groupDigitalContentConsent)}>
                           {groupEnrolling ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Prijavljujem...</> : `Prijavi ${groupSelectedIds.length} polaznika`}
                         </Button>
                       </div>
@@ -1642,7 +1676,23 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                           </Select>
                           <EducationFieldHelp id="education-enrollment-payment-help" label="Način plaćanja prijave" text="Proverite način plaćanja koji je organizator omogućio za ovu edukaciju." />
                         </div>
-                        <Button data-testid="button-submit-employee-enrollment" className="w-full text-base h-12 shadow-md hover:shadow-lg transition-shadow" size="lg" onClick={handleEnroll} disabled={enroll.isPending || (isSalonOwner && !learnerId)}>
+                        {course.format === "online" && (
+                          <div className="min-w-0 rounded-lg border p-3">
+                            <div className="flex min-w-0 items-start gap-3">
+                              <Checkbox
+                                id="education-enrollment-digital-consent"
+                                aria-describedby="education-enrollment-digital-consent-help"
+                                checked={digitalContentConsent}
+                                onCheckedChange={(checked) => setDigitalContentConsent(checked === true)}
+                              />
+                              <Label htmlFor="education-enrollment-digital-consent" className="min-w-0 cursor-pointer text-sm leading-relaxed [overflow-wrap:anywhere]">
+                                {DIGITAL_CONTENT_CONSENT_TEXT}
+                              </Label>
+                            </div>
+                            <EducationFieldHelp id="education-enrollment-digital-consent-help" label="Saglasnost za digitalni sadržaj" text="Potvrda je obavezna samo za online kurs i čuva se kao dokaz uz ovu prijavu." />
+                          </div>
+                        )}
+                        <Button data-testid="button-submit-employee-enrollment" className="w-full text-base h-12 shadow-md hover:shadow-lg transition-shadow" size="lg" onClick={handleEnroll} disabled={enroll.isPending || (isSalonOwner && !learnerId) || (course.format === "online" && !digitalContentConsent)}>
                           {enroll.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Rezervacija...</> : 'Rezerviši mesto'}
                         </Button>
                         {pendingEnrollmentId && (

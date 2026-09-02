@@ -653,6 +653,8 @@ export * from './educationGiftVoucherPurchaseInput';
 export * from './educationGiftVoucherRedeemInput';
 export * from './educationGiftVoucherRefundInput';
 export * from './educationGiftVoucherStatus';
+export * from './educationGroupEnrollmentInput';
+export * from './educationGroupEnrollmentResponse';
 export * from './educationInquiry';
 export * from './educationInstallmentPayment';
 export * from './educationInstallmentPaymentStatus';

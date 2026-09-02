@@ -471,6 +471,9 @@ import
   CreateEducationSessionBody,
   CreateEducationSessionParams,
   CreateEducationSessionResponse,
+  CreateEducationGroupEnrollmentsBody,
+  CreateEducationGroupEnrollmentsParams,
+  CreateEducationGroupEnrollmentsResponse,
   EnrollInEducationCourseBody,
   EnrollInEducationCourseParams,
   EnrollInEducationCourseResponse,
@@ -22284,26 +22287,26 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
   if (user.role !== "SALON_OWNER") {
     res.status(403).json({ error: "Grupna prijava je dostupna samo vlasnicima salona." }); return;
   }
-  const courseId = String(req.params.courseId ?? "");
+  const [params, body] = [
+    CreateEducationGroupEnrollmentsParams.safeParse(req.params),
+    CreateEducationGroupEnrollmentsBody.safeParse(req.body ?? {}),
+  ];
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Podaci grupne prijave nisu ispravni." }); return;
+  }
+  const courseId = params.data.courseId;
   const access = await requireEducationAccess(req, res); if (!access) return;
   const salon = access.salon;
   if (!salon) { res.status(403).json({ error: "Nalog nije povezan sa salonom." }); return; }
 
-  const rawIds = req.body?.employeeIds;
-  if (!Array.isArray(rawIds) || rawIds.length === 0) {
-    res.status(400).json({ error: "Navedite bar jednog zaposlenog (employeeIds)." }); return;
-  }
-  const employeeIds: string[] = rawIds.filter((id): id is string => typeof id === "string" && /^[0-9a-f-]{36}$/i.test(id));
-  if (employeeIds.length !== rawIds.length || employeeIds.length === 0) {
-    res.status(400).json({ error: "Jedan ili više ID-jeva zaposlenih nije ispravno." }); return;
-  }
-  const sessionId: string | null = typeof req.body?.sessionId === "string" && /^[0-9a-f-]{36}$/i.test(req.body.sessionId) ? req.body.sessionId : null;
+  const employeeIds = body.data.employeeIds;
+  const sessionId = body.data.sessionId ?? null;
 
   const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, courseId)).limit(1);
   if (!course || !(await isPublicEducationCourse(course)) && !(course.salonId === salon.id && course.published && !course.archived)) {
     res.status(404).json({ error: "Kurs nije dostupan za grupnu prijavu." }); return;
   }
-  if (course.format === "online" && req.body?.digitalContentConsent !== true) {
+  if (course.format === "online" && body.data.digitalContentConsent !== true) {
     res.status(400).json({ error: "Za online kurs potrebna je izričita saglasnost za digitalni sadržaj." }); return;
   }
   if (course.format === "online" && sessionId) {
@@ -22342,6 +22345,9 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
   const effectiveDiscountPercent = (minGroup !== null && employeeIds.length >= minGroup) ? discountPercent : 0;
   const unitPrice = Math.max(0, Math.round(course.price * (1 - effectiveDiscountPercent / 100)));
   const idempotencyKey = req.get("idempotency-key")?.trim() || null;
+  if (idempotencyKey && idempotencyKey.length > 200) {
+    res.status(400).json({ error: "Idempotency ključ je predugačak." }); return;
+  }
 
   let enrollments: (typeof courseEnrollmentsTable.$inferSelect)[];
   try {
@@ -22359,7 +22365,7 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
       const [lockedCourse] = await tx.select().from(coursesTable)
         .where(eq(coursesTable.id, course.id)).for("update").limit(1);
       if (!lockedCourse) throw new Error("Kurs više nije dostupan.");
-      assertOnlineEnrollmentRequest(lockedCourse, req.body?.digitalContentConsent);
+      assertOnlineEnrollmentRequest(lockedCourse, body.data.digitalContentConsent);
       if (sessionId && lockedCourse.format === "online") {
         throw new Error("Online kurs ne može koristiti termin uživo.");
       }
@@ -22445,12 +22451,12 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
     metadata: { courseId: course.id, salonId: salon.id, groupSize: enrollments.length },
   });
 
-  res.status(201).json({
+  res.status(201).json(CreateEducationGroupEnrollmentsResponse.parse({
     enrollments: await batchEducationEnrollmentViews(enrollments),
     discountPercent: effectiveDiscountPercent,
     unitPrice,
     totalPrice: unitPrice * enrollments.length,
-  });
+  }));
 });
 
 async function enrollmentAccessForUser(user: typeof usersTable.$inferSelect, enrollmentId: string) {

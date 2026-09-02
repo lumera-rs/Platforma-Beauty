@@ -10632,7 +10632,8 @@ export const PurchaseEducationBundleBody = zod.object({
   "targetType": zod.enum(['individual', 'salon_employee']),
   "learnerUserId": zod.string().uuid().optional(),
   "salonId": zod.string().uuid().optional(),
-  "employeeId": zod.string().uuid().optional()
+  "employeeId": zod.string().uuid().optional(),
+  "digitalContentConsent": zod.boolean().optional().describe('Explicit purchaser consent required when the bundle contains an online course.')
 })
 
 export const PurchaseEducationBundleResponse = zod.record(zod.string(), zod.unknown())
@@ -14654,6 +14655,71 @@ export const EnrollInEducationCourseResponse = zod.object({
   "digitalContentConsentVersionSnapshot": zod.string().nullish(),
   "escrowStatus": zod.union([zod.literal('held'),zod.literal('ready_for_payout'),zod.literal('frozen'),zod.literal('paid_out'),zod.literal('refunded'),zod.literal('partially_refunded'),zod.literal(null)]).nullish(),
   "escrowReleaseAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Request one course purchase per selected salon employee in a single transaction
+ */
+export const createEducationGroupEnrollmentsPathCourseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const CreateEducationGroupEnrollmentsParams = zod.object({
+  "courseId": zod.coerce.string().regex(createEducationGroupEnrollmentsPathCourseIdRegExp)
+})
+
+export const createEducationGroupEnrollmentsHeaderIdempotencyKeyMax = 200;
+
+
+
+export const CreateEducationGroupEnrollmentsHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(createEducationGroupEnrollmentsHeaderIdempotencyKeyMax).optional().describe('Optional client-generated command identifier recorded on each created enrollment.')
+})
+
+
+
+
+export const CreateEducationGroupEnrollmentsBody = zod.object({
+  "employeeIds": zod.array(zod.string().uuid()).min(1),
+  "sessionId": zod.string().uuid().nullish(),
+  "digitalContentConsent": zod.boolean().optional().describe('Explicit purchaser consent applied as server-owned evidence to every online enrollment in the group.')
+})
+
+
+export const createEducationGroupEnrollmentsResponseDiscountPercentMin = 0;
+export const createEducationGroupEnrollmentsResponseDiscountPercentMax = 100;
+
+export const createEducationGroupEnrollmentsResponseUnitPriceMin = 0;
+
+export const createEducationGroupEnrollmentsResponseTotalPriceMin = 0;
+
+
+
+export const CreateEducationGroupEnrollmentsResponse = zod.object({
+  "enrollments": zod.array(zod.object({
+  "id": zod.string(),
+  "courseId": zod.string(),
+  "courseTitle": zod.string(),
+  "learnerName": zod.string(),
+  "employeeId": zod.string().nullish(),
+  "status": zod.enum(['pending', 'active', 'completed', 'cancelled']),
+  "paymentStatus": zod.enum(['pending', 'paid', 'failed', 'refunded']),
+  "progress": zod.number(),
+  "nextLesson": zod.string().nullish(),
+  "purchasedAt": zod.coerce.date(),
+  "accessExpiresAt": zod.coerce.date().nullish(),
+  "coursePriceSnapshot": zod.number().int().nullish(),
+  "durationSnapshot": zod.string().nullish(),
+  "accessDaysSnapshot": zod.number().int().nullish(),
+  "extensionPricesSnapshot": zod.record(zod.string(), zod.unknown()).nullish(),
+  "digitalContentConsentAt": zod.coerce.date().nullish(),
+  "digitalContentConsentVersionSnapshot": zod.string().nullish(),
+  "escrowStatus": zod.union([zod.literal('held'),zod.literal('ready_for_payout'),zod.literal('frozen'),zod.literal('paid_out'),zod.literal('refunded'),zod.literal('partially_refunded'),zod.literal(null)]).nullish(),
+  "escrowReleaseAt": zod.coerce.date().nullish()
+})).min(1),
+  "discountPercent": zod.number().int().min(createEducationGroupEnrollmentsResponseDiscountPercentMin).max(createEducationGroupEnrollmentsResponseDiscountPercentMax),
+  "unitPrice": zod.number().int().min(createEducationGroupEnrollmentsResponseUnitPriceMin),
+  "totalPrice": zod.number().int().min(createEducationGroupEnrollmentsResponseTotalPriceMin)
 })
 
 

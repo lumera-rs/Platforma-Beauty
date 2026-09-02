@@ -61,6 +61,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { EducationOperationalBookingFlow } from "@/components/education/booking-flow";
 import { educationBookingCtaVisible } from "@/lib/education-operational-time";
 import { EducationFieldHelp } from "@/components/education/education-field-help";
+import { DIGITAL_CONTENT_CONSENT_TEXT } from "@/lib/education-consent";
 
 const money = (value: number) => new Intl.NumberFormat("sr-RS", {
   style: "currency", currency: "RSD", maximumFractionDigits: 0,
@@ -900,17 +901,28 @@ export function EducationBundleDetail() {
   const [employeeId, setEmployeeId] = useState("");
   const [pending, setPending] = useState(false);
   const [purchase, setPurchase] = useState<any>(null);
+  const [digitalContentConsent, setDigitalContentConsent] = useState(false);
   useEffect(() => { void fetch(`/api/education/bundles/${bundleId}`).then(r => r.ok ? r.json() : Promise.reject()).then(setBundle).catch(() => setBundle(false)); }, [bundleId]);
   useEffect(() => { if (current?.user?.role === "SALON_OWNER") void fetch("/api/education/bundle-purchases/eligible-employees", { credentials: "include" }).then(r => r.json()).then(setEmployees); }, [current?.user?.role]);
+  useEffect(() => { setDigitalContentConsent(false); }, [bundleId]);
+  const hasOnlineCourse = Boolean(bundle?.courses?.some((course: any) => course.format === "online"));
   const submit = async () => {
     const employee = employees.find(item => item.id === employeeId);
     if (current?.user?.role === "SALON_OWNER" && !employee) { toast.error("Izaberite zaposlenog"); return; }
+    if (hasOnlineCourse && !digitalContentConsent) {
+      toast.error("Potvrdite saglasnost za digitalni sadržaj pre kupovine paketa.");
+      return;
+    }
     setPending(true);
     try {
-      const body = employee ? { targetType: "salon_employee", salonId: employee.salonId, employeeId: employee.id } : { targetType: "individual" };
+      const body = employee
+        ? { targetType: "salon_employee", salonId: employee.salonId, employeeId: employee.id, ...(hasOnlineCourse ? { digitalContentConsent } : {}) }
+        : { targetType: "individual", ...(hasOnlineCourse ? { digitalContentConsent } : {}) };
       const response = await fetch(`/api/education/bundles/${bundleId}/purchases`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(body) });
       const result = await response.json(); if (!response.ok) throw new Error(result.error);
-      setPurchase(result); toast.success("Zahtev za paket je evidentiran");
+      setPurchase(result);
+      setDigitalContentConsent(false);
+      toast.success("Zahtev za paket je evidentiran");
     } catch (error) { toast.error(error instanceof Error ? error.message : "Kupovina nije uspela"); } finally { setPending(false); }
   };
   if (bundle === false) return <Layout><main className="container mx-auto px-4 py-16">Paket nije pronađen.</main></Layout>;
@@ -942,7 +954,7 @@ export function EducationBundleDetail() {
                   Polaznik iz salona
                   <EducationFieldHelp id="education-bundle-employee-help" label="Polaznik iz salona" text="Izaberite zaposlenog kome će nakon potvrđene uplate biti dodeljen pristup svim kursevima iz paketa." />
                 </Label>
-                <Select value={employeeId} onValueChange={setEmployeeId}>
+                <Select value={employeeId} onValueChange={(value) => { setEmployeeId(value); setDigitalContentConsent(false); }}>
                   <SelectTrigger aria-describedby="education-bundle-employee-help">
                     <SelectValue placeholder="Izaberite zaposlenog" />
                   </SelectTrigger>
@@ -952,7 +964,25 @@ export function EducationBundleDetail() {
                 </Select>
               </div>
             )}
-            <Button onClick={submit} disabled={pending}>{pending ? "Slanje…" : "Kupi paket"}</Button>
+            {hasOnlineCourse && (
+              <div className="min-w-0 rounded-lg border p-4">
+                <div className="flex min-w-0 items-start gap-3">
+                  <Checkbox
+                    id="education-bundle-digital-consent"
+                    aria-describedby="education-bundle-digital-consent-help"
+                    checked={digitalContentConsent}
+                    onCheckedChange={(checked) => setDigitalContentConsent(checked === true)}
+                  />
+                  <Label htmlFor="education-bundle-digital-consent" className="min-w-0 cursor-pointer text-sm leading-relaxed [overflow-wrap:anywhere]">
+                    {DIGITAL_CONTENT_CONSENT_TEXT}
+                  </Label>
+                </div>
+                <EducationFieldHelp id="education-bundle-digital-consent-help" label="Saglasnost za digitalni sadržaj u paketu" text="Potvrda je obavezna jer ovaj paket sadrži najmanje jedan online kurs i čuva se uz svaku online stavku paketa." />
+              </div>
+            )}
+            <Button className="w-full sm:w-auto" onClick={submit} disabled={pending || (hasOnlineCourse && !digitalContentConsent)}>
+              {pending ? "Slanje…" : "Kupi paket"}
+            </Button>
             {purchase && (
               <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm">
                 <strong>Čeka potvrdu uplate.</strong> IPS instrukcije su pripremljene, ali pristup kursevima će biti aktiviran tek nakon pouzdane administrativne potvrde.
@@ -976,6 +1006,40 @@ function useEducationPurchase() {
   const { toast } = useToast();
   const { data: currentUser } = useGetCurrentUser();
   const [buying, setBuying] = useState<string | null>(null);
+  const [consentCourse, setConsentCourse] = useState<any | null>(null);
+  const [digitalContentConsent, setDigitalContentConsent] = useState(false);
+
+  const purchase = async (course: any, consent: boolean) => {
+    setBuying(course.id);
+    try {
+      const session = courseSession(course);
+      if (course.format !== "online" && session && session.availableSeats <= 0) {
+        const response = await fetch(`/api/education/courses/${course.id}/sessions/${session.id}/waitlist`, { method: "POST" });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error ?? "Dodavanje na listu čekanja nije uspelo.");
+        toast.success("Dodati ste na listu čekanja", { description: `Vaša pozicija u redu je ${body.position}.` });
+        return true;
+      }
+      const response = await fetch(`/api/education/courses/${course.id}/enrollments`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
+        body: JSON.stringify({
+          ...(session ? { sessionId: session.id } : {}),
+          ...(course.format === "online" ? { digitalContentConsent: consent } : {}),
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Zahtev za kupovinu nije uspeo.");
+      toast.success("Zahtev je poslat", { description: "Administrator potvrđuje uplatu. Pristup se aktivira nakon potvrde." });
+      setLocation(currentUser!.user!.role === "STUDENT" ? "/student/edukacije" : currentUser!.user!.role === "JOBSEEKER" ? "/poslovi/nalog/edukacije" : "/biznis/edukacije");
+      return true;
+    } catch (error) {
+      toast.error("Zahtev nije poslat", { description: error instanceof Error ? error.message : undefined });
+      return false;
+    } finally {
+      setBuying(null);
+    }
+  };
 
   const buy = async (course: any) => {
     if (!currentUser?.user) {
@@ -986,32 +1050,66 @@ function useEducationPurchase() {
       toast.error("Nije dozvoljeno", { description: "Samo poslovni korisnici i studenti mogu da kupuju edukacije." });
       return;
     }
-    setBuying(course.id);
-    try {
-      const session = courseSession(course);
-      if (course.format !== "online" && session && session.availableSeats <= 0) {
-        const response = await fetch(`/api/education/courses/${course.id}/sessions/${session.id}/waitlist`, { method: "POST" });
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.error ?? "Dodavanje na listu čekanja nije uspelo.");
-        toast.success("Dodati ste na listu čekanja", { description: `Vaša pozicija u redu je ${body.position}.` });
-        return;
-      }
-      const response = await fetch(`/api/education/courses/${course.id}/enrollments`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
-        body: JSON.stringify(session ? { sessionId: session.id } : {}),
-      });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error ?? "Zahtev za kupovinu nije uspeo.");
-      toast.success("Zahtev je poslat", { description: "Administrator potvrđuje uplatu. Pristup se aktivira nakon potvrde." });
-      setLocation(currentUser.user.role === "STUDENT" ? "/student/edukacije" : currentUser.user.role === "JOBSEEKER" ? "/poslovi/nalog/edukacije" : "/biznis/edukacije");
-    } catch (error) {
-      toast.error("Zahtev nije poslat", { description: error instanceof Error ? error.message : undefined });
-    } finally {
-      setBuying(null);
+    if (course.format === "online") {
+      setDigitalContentConsent(false);
+      setConsentCourse(course);
+      return;
     }
+    await purchase(course, false);
   };
-  return { buy, buying };
+
+  const closeConsent = () => {
+    if (buying) return;
+    setConsentCourse(null);
+    setDigitalContentConsent(false);
+  };
+
+  const confirmConsent = async () => {
+    if (!consentCourse || !digitalContentConsent) return;
+    if (await purchase(consentCourse, true)) closeConsent();
+  };
+
+  const purchaseConsentDialog = (
+    <Dialog open={Boolean(consentCourse)} onOpenChange={(open) => { if (!open) closeConsent(); }}>
+      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Saglasnost za online kurs</DialogTitle>
+          <DialogDescription>
+            Potvrdite uslove neposredno pre slanja zahteva za kupovinu.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="min-w-0 rounded-lg border p-4">
+          <div className="flex min-w-0 items-start gap-3">
+            <Checkbox
+              id="education-purchase-digital-consent"
+              aria-describedby="education-purchase-digital-consent-help"
+              checked={digitalContentConsent}
+              onCheckedChange={(checked) => setDigitalContentConsent(checked === true)}
+            />
+            <Label
+              htmlFor="education-purchase-digital-consent"
+              className="min-w-0 cursor-pointer text-sm leading-relaxed [overflow-wrap:anywhere]"
+            >
+              {DIGITAL_CONTENT_CONSENT_TEXT}
+            </Label>
+          </div>
+          <EducationFieldHelp
+            id="education-purchase-digital-consent-help"
+            label="Saglasnost za digitalni sadržaj"
+            text="Ova potvrda je obavezna samo za online kurs i čuva se kao dokaz uz kupovinu."
+          />
+        </div>
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button type="button" variant="outline" onClick={closeConsent} disabled={Boolean(buying)}>Odustani</Button>
+          <Button type="button" onClick={() => void confirmConsent()} disabled={!digitalContentConsent || Boolean(buying)}>
+            {buying ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Šaljem zahtev…</> : "Potvrdi i pošalji zahtev"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
+  return { buy, buying, purchaseConsentDialog };
 }
 
 function SafeVideoEmbed({ url }: { url: string }) {
@@ -1063,7 +1161,7 @@ export function EducationPublicCourseDetail() {
       queryKey: ["educationViewerCenters", currentUser?.user?.id],
     },
   });
-  const { buy, buying } = useEducationPurchase();
+  const { buy, buying, purchaseConsentDialog } = useEducationPurchase();
   const session = course ? courseSession(course) : null;
   const { data: relatedCourses } = useListRelatedEducationCourses(courseId, { limit: 3 }, {
     query: { enabled: !!courseId, queryKey: getListRelatedEducationCoursesQueryKey(courseId, { limit: 3 }) }
@@ -1291,7 +1389,7 @@ export function EducationPublicCourseDetail() {
         </div>
       )}
 
-  </main></Layout>;
+  </main>{purchaseConsentDialog}</Layout>;
 }
 
 function InfoCard({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
@@ -1398,7 +1496,7 @@ export function EducationPublicCenterPage() {
   const [, params] = useRoute("/edukacije/centri/:centerId");
   const centerId = params?.centerId ?? "";
   const { data: center, isLoading, isError } = useGetPublicEducationCenter(centerId);
-  const { buy, buying } = useEducationPurchase();
+  const { buy, buying, purchaseConsentDialog } = useEducationPurchase();
   if (isLoading) return <Layout><div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div></Layout>;
   if (isError || !center) return <Layout><div className="container mx-auto px-4 py-20 text-center"><h1 className="font-serif text-3xl font-bold">Centar nije dostupan</h1><Button className="mt-6" asChild><Link href="/edukacije">Nazad na katalog</Link></Button></div></Layout>;
   const gallery = [{ type: "image" as const, url: center.imageUrl }, ...center.gallery.map((media) => ({ type: "image" as const, url: media.url }))];
@@ -1491,7 +1589,7 @@ export function EducationPublicCenterPage() {
         )}
       </section>
     )}
-  </main></Layout>;
+  </main>{purchaseConsentDialog}</Layout>;
 }
 
 function CenterReviewForm({ centerId, enrollmentId }: { centerId: string, enrollmentId: string }) {

@@ -10,7 +10,7 @@ import {
   educationPlatformSettingsTable, educationGiftVouchersTable, employeeLocationAssignmentsTable, employeesTable,
   lessonProgressTable, pool, salonsTable, sessionsTable, subscriptionPlansTable, usersTable,
 } from "@workspace/db";
-import { RedeemEducationGiftVoucherBody } from "@workspace/api-zod";
+import { CreateEducationGroupEnrollmentsBody, RedeemEducationGiftVoucherBody } from "@workspace/api-zod";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { DIGITAL_CONTENT_CONSENT_TEXT, DIGITAL_CONTENT_CONSENT_VERSION } from "./education-entitlement";
@@ -85,15 +85,17 @@ async function run(): Promise<void> {
       { salonId, userId: sourceUser!.id, name: "Source", role: "Test", bio: "", avatarUrl: "" },
       { salonId, userId: targetUser!.id, name: "Target", role: "Test", bio: "", avatarUrl: "" },
       { salonId, userId: groupUser!.id, name: "Group", role: "Test", bio: "", avatarUrl: "" },
+      { salonId, name: "Group Two", role: "Test", bio: "", avatarUrl: "" },
       { salonId, userId: inactiveUser!.id, name: "Inactive", role: "Test", bio: "", avatarUrl: "", active: false },
       { salonId, userId: unlinkedUser!.id, name: "Unlinked", role: "Test", bio: "", avatarUrl: "" },
     ]).returning();
     employeeIds.push(...workers.map((worker) => worker.id));
-    const [source, target, groupWorker, inactive, unlinked] = workers;
+    const [source, target, groupWorker, groupWorkerTwo, inactive, unlinked] = workers;
     await db.insert(employeeLocationAssignmentsTable).values([
       { employeeId: source!.id, salonId, active: true, isDefault: true },
       { employeeId: target!.id, salonId, active: true, isDefault: true },
       { employeeId: groupWorker!.id, salonId, active: true, isDefault: true },
+      { employeeId: groupWorkerTwo!.id, salonId, active: true, isDefault: true },
       { employeeId: inactive!.id, salonId, active: true, isDefault: true },
     ]);
     const [center] = await db.insert(educationCentersTable).values({
@@ -160,17 +162,53 @@ async function run(): Promise<void> {
     assert.equal((await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.courseId, raceCourseId!))).length, 0,
       "Group consent race creates no enrollment or consent evidence.");
 
+    await db.update(coursesTable).set({ format: "hybrid" }).where(eq(coursesTable.id, raceCourseId));
+    assert.equal((await request(base, outsiderCookie, `/education/courses/${raceCourseId}/enrollments`, "POST", {
+      paymentMode: "online_full",
+    })).status, 201, "Non-online individual enrollment must not require digital-content consent.");
+    assert.equal((await request(base, ownerCookie, `/education/courses/${raceCourseId}/group-enrollments`, "POST", {
+      employeeIds: [groupWorker!.id, groupWorkerTwo!.id],
+    })).status, 201, "Non-online group enrollment must not require digital-content consent.");
+
     assert.equal((await request(base, outsiderCookie, `/education/courses/${courseId}/enrollments`, "POST", { paymentMode: "online_full" })).status, 400,
       "Ordinary online enrollment requires explicit consent.");
     assert.equal((await request(base, ownerCookie, `/education/courses/${courseId}/group-enrollments`, "POST", {
       employeeIds: [groupWorker!.id],
     })).status, 400, "Online group enrollment requires explicit consent.");
+    assert.deepEqual(
+      CreateEducationGroupEnrollmentsBody.parse({
+        employeeIds: [groupWorker!.id, groupWorkerTwo!.id],
+        digitalContentConsent: true,
+      }),
+      {
+        employeeIds: [groupWorker!.id, groupWorkerTwo!.id],
+        digitalContentConsent: true,
+      },
+      "Generated group-enrollment contract accepts employee IDs and explicit digital-content consent.",
+    );
     const group = await request(base, ownerCookie, `/education/courses/${courseId}/group-enrollments`, "POST", {
-      employeeIds: [groupWorker!.id], digitalContentConsent: true,
+      employeeIds: [groupWorker!.id, groupWorkerTwo!.id], digitalContentConsent: true,
     });
     assert.equal(group.status, 201);
-    const groupEnrollmentId = group.body.enrollments[0].id as string;
-    const [pendingGroup] = await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, groupEnrollmentId));
+    assert.equal(group.body.enrollments.length, 2, "Every selected group member receives a separate enrollment.");
+    const groupEnrollmentIds = group.body.enrollments.map((item: { id: string }) => item.id);
+    const pendingGroups = await db.select().from(courseEnrollmentsTable)
+      .where(inArray(courseEnrollmentsTable.id, groupEnrollmentIds));
+    assert.equal(pendingGroups.length, 2);
+    for (const pendingGroup of pendingGroups) {
+      assert.equal(pendingGroup.accessExpiresAt, null, "Pending online group access has no expiry before settlement.");
+      assert.equal(pendingGroup.digitalContentConsentUserId, owner!.id);
+      assert.ok(pendingGroup.digitalContentConsentAt, "Every grouped enrollment has a server-owned consent time.");
+      assert.equal(pendingGroup.digitalContentConsentTextSnapshot, DIGITAL_CONTENT_CONSENT_TEXT);
+      assert.equal(pendingGroup.digitalContentConsentVersionSnapshot, DIGITAL_CONTENT_CONSENT_VERSION);
+    }
+    assert.equal(
+      new Set(pendingGroups.map((item) => item.id)).size,
+      2,
+      "Grouped consent evidence is persisted on two distinct enrollment rows.",
+    );
+    const groupEnrollmentId = groupEnrollmentIds[0]!;
+    const pendingGroup = pendingGroups.find((item) => item.id === groupEnrollmentId)!;
     assert.equal(pendingGroup!.accessExpiresAt, null, "Pending online group access has no expiry before settlement.");
     assert.equal(pendingGroup!.digitalContentConsentUserId, owner!.id);
     assert.equal((await request(base, adminCookie, `/admin/education/enrollments/${groupEnrollmentId}/settle`, "POST")).status, 200);
@@ -280,10 +318,10 @@ async function run(): Promise<void> {
     console.log("education online access transfer tests passed");
   } finally {
     if (server) { server.close(); await once(server, "close"); }
-    if (courseId) {
-      const ids = (await db.select({ id: courseEnrollmentsTable.id }).from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.courseId, courseId))).map((row) => row.id);
+    for (const cleanupCourseId of [courseId, raceCourseId].filter((id): id is string => Boolean(id))) {
+      const ids = (await db.select({ id: courseEnrollmentsTable.id }).from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.courseId, cleanupCourseId))).map((row) => row.id);
       if (ids.length) {
-        await db.delete(educationGiftVouchersTable).where(eq(educationGiftVouchersTable.courseId, courseId));
+        await db.delete(educationGiftVouchersTable).where(eq(educationGiftVouchersTable.courseId, cleanupCourseId));
         await db.delete(educationFinancialAuditLogTable).where(inArray(educationFinancialAuditLogTable.entityId, ids));
         await db.delete(educationLedgerEntriesTable).where(inArray(educationLedgerEntriesTable.enrollmentId, ids));
         await db.delete(educationFinancialEventsTable).where(inArray(educationFinancialEventsTable.enrollmentId, ids));
@@ -291,9 +329,8 @@ async function run(): Promise<void> {
         await db.delete(educationPaymentObligationsTable).where(inArray(educationPaymentObligationsTable.enrollmentId, ids));
         await db.delete(courseEnrollmentsTable).where(inArray(courseEnrollmentsTable.id, ids));
       }
-      await db.delete(coursesTable).where(eq(coursesTable.id, courseId));
+      await db.delete(coursesTable).where(eq(coursesTable.id, cleanupCourseId));
     }
-    if (raceCourseId) await db.delete(coursesTable).where(eq(coursesTable.id, raceCourseId));
     if (centerId) await db.delete(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, centerId));
     if (centerId) await db.delete(educationCentersTable).where(eq(educationCentersTable.id, centerId));
     if (employeeIds.length) await db.delete(employeesTable).where(inArray(employeesTable.id, employeeIds));

@@ -10,6 +10,7 @@ import {
   educationBundlesTable, educationCentersTable, educationCenterSubscriptionsTable, educationEscrowsTable,
   educationPlatformSettingsTable, employeesTable, salonsTable, subscriptionPlansTable, usersTable,
 } from "@workspace/db";
+import { PurchaseEducationBundleBody } from "@workspace/api-zod";
 import app from "../app";
 import { hashPassword, sessionCookieName } from "./auth";
 import { lockEducationCenterFinancials } from "./education-billing";
@@ -203,6 +204,11 @@ async function run() {
 
     assert.equal((await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, body: { targetType: "individual" } })).status, 400, "Idempotency-Key is required.");
     assert.equal((await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": `missing-consent-${suffix}` }, body: { targetType: "individual" } })).status, 400, "Online bundle purchase requires explicit digital-content consent.");
+    assert.deepEqual(
+      PurchaseEducationBundleBody.parse({ targetType: "individual", digitalContentConsent: true }),
+      { targetType: "individual", digitalContentConsent: true },
+      "Generated bundle purchase contract carries explicit online-content consent.",
+    );
     const key = `individual-${suffix}`;
     const created = await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": key }, body: { targetType: "individual", digitalContentConsent: true } });
     assert.equal(created.status, 201);

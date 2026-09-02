@@ -6707,6 +6707,102 @@ export interface EducationEnrollmentInput {
   digitalContentConsent?: boolean;
 }
 
+export interface EducationGroupEnrollmentInput {
+  /** @minItems 1 */
+  employeeIds: string[];
+  /** @nullable */
+  sessionId?: string | null;
+  /** Explicit purchaser consent applied as server-owned evidence to every online enrollment in the group. */
+  digitalContentConsent?: boolean;
+}
+
+export type EducationEnrollmentStatus = typeof EducationEnrollmentStatus[keyof typeof EducationEnrollmentStatus];
+
+
+export const EducationEnrollmentStatus = {
+  pending: 'pending',
+  active: 'active',
+  completed: 'completed',
+  cancelled: 'cancelled',
+} as const;
+
+export type EducationEnrollmentPaymentStatus = typeof EducationEnrollmentPaymentStatus[keyof typeof EducationEnrollmentPaymentStatus];
+
+
+export const EducationEnrollmentPaymentStatus = {
+  pending: 'pending',
+  paid: 'paid',
+  failed: 'failed',
+  refunded: 'refunded',
+} as const;
+
+/**
+ * @nullable
+ */
+export type EducationEnrollmentEscrowStatus = typeof EducationEnrollmentEscrowStatus[keyof typeof EducationEnrollmentEscrowStatus] | null;
+
+
+export const EducationEnrollmentEscrowStatus = {
+  held: 'held',
+  ready_for_payout: 'ready_for_payout',
+  frozen: 'frozen',
+  paid_out: 'paid_out',
+  refunded: 'refunded',
+  partially_refunded: 'partially_refunded',
+} as const;
+
+/**
+ * @nullable
+ */
+export type EducationEnrollmentExtensionPricesSnapshot = { [key: string]: unknown } | null;
+
+export interface EducationEnrollment {
+  id: string;
+  courseId: string;
+  courseTitle: string;
+  learnerName: string;
+  /** @nullable */
+  employeeId?: string | null;
+  status: EducationEnrollmentStatus;
+  paymentStatus: EducationEnrollmentPaymentStatus;
+  progress: number;
+  /** @nullable */
+  nextLesson?: string | null;
+  purchasedAt: string;
+  /** @nullable */
+  accessExpiresAt?: string | null;
+  /** @nullable */
+  coursePriceSnapshot?: number | null;
+  /** @nullable */
+  durationSnapshot?: string | null;
+  /** @nullable */
+  accessDaysSnapshot?: number | null;
+  /** @nullable */
+  extensionPricesSnapshot?: EducationEnrollmentExtensionPricesSnapshot;
+  /** @nullable */
+  digitalContentConsentAt?: string | null;
+  /** @nullable */
+  digitalContentConsentVersionSnapshot?: string | null;
+  /** @nullable */
+  escrowStatus?: EducationEnrollmentEscrowStatus;
+  /** @nullable */
+  escrowReleaseAt?: string | null;
+}
+
+export interface EducationGroupEnrollmentResponse {
+  /** @minItems 1 */
+  enrollments: EducationEnrollment[];
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  discountPercent: number;
+  /** @minimum 0 */
+  unitPrice: number;
+  /** @minimum 0 */
+  totalPrice: number;
+}
+
 export interface EducationTaxonomyItem {
   id: string;
   name: string;
@@ -7314,79 +7410,6 @@ export interface EducationPublicPlacement {
   courseImageUrl: string | null;
   /** @nullable */
   coursePrice: number | null;
-}
-
-export type EducationEnrollmentStatus = typeof EducationEnrollmentStatus[keyof typeof EducationEnrollmentStatus];
-
-
-export const EducationEnrollmentStatus = {
-  pending: 'pending',
-  active: 'active',
-  completed: 'completed',
-  cancelled: 'cancelled',
-} as const;
-
-export type EducationEnrollmentPaymentStatus = typeof EducationEnrollmentPaymentStatus[keyof typeof EducationEnrollmentPaymentStatus];
-
-
-export const EducationEnrollmentPaymentStatus = {
-  pending: 'pending',
-  paid: 'paid',
-  failed: 'failed',
-  refunded: 'refunded',
-} as const;
-
-/**
- * @nullable
- */
-export type EducationEnrollmentExtensionPricesSnapshot = { [key: string]: unknown } | null;
-
-/**
- * @nullable
- */
-export type EducationEnrollmentEscrowStatus = typeof EducationEnrollmentEscrowStatus[keyof typeof EducationEnrollmentEscrowStatus] | null;
-
-
-export const EducationEnrollmentEscrowStatus = {
-  held: 'held',
-  ready_for_payout: 'ready_for_payout',
-  frozen: 'frozen',
-  paid_out: 'paid_out',
-  refunded: 'refunded',
-  partially_refunded: 'partially_refunded',
-} as const;
-
-export interface EducationEnrollment {
-  id: string;
-  courseId: string;
-  courseTitle: string;
-  learnerName: string;
-  /** @nullable */
-  employeeId?: string | null;
-  status: EducationEnrollmentStatus;
-  paymentStatus: EducationEnrollmentPaymentStatus;
-  progress: number;
-  /** @nullable */
-  nextLesson?: string | null;
-  purchasedAt: string;
-  /** @nullable */
-  accessExpiresAt?: string | null;
-  /** @nullable */
-  coursePriceSnapshot?: number | null;
-  /** @nullable */
-  durationSnapshot?: string | null;
-  /** @nullable */
-  accessDaysSnapshot?: number | null;
-  /** @nullable */
-  extensionPricesSnapshot?: EducationEnrollmentExtensionPricesSnapshot;
-  /** @nullable */
-  digitalContentConsentAt?: string | null;
-  /** @nullable */
-  digitalContentConsentVersionSnapshot?: string | null;
-  /** @nullable */
-  escrowStatus?: EducationEnrollmentEscrowStatus;
-  /** @nullable */
-  escrowReleaseAt?: string | null;
 }
 
 export type EducationEnrollmentPaymentInstructionsPaymentStatus = typeof EducationEnrollmentPaymentInstructionsPaymentStatus[keyof typeof EducationEnrollmentPaymentInstructionsPaymentStatus];
@@ -14684,6 +14707,8 @@ export type PurchaseEducationBundleBody = {
   learnerUserId?: string;
   salonId?: string;
   employeeId?: string;
+  /** Explicit purchaser consent required when the bundle contains an online course. */
+  digitalContentConsent?: boolean;
 };
 
 export type PurchaseEducationBundle201 = { [key: string]: unknown };

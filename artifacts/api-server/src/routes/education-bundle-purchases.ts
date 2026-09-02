@@ -154,7 +154,13 @@ router.get("/education/bundles/:bundleId", async (req, res) => {
     eq(educationBundlesTable.active, true), eq(educationBundlesTable.published, true),
     eligibleEducationCenterSql(educationBundlesTable.centerId))).limit(1);
   if (!bundle) { res.status(404).json({ error: "Paket nije pronađen." }); return; }
-  const courses = await db.select({ courseId: coursesTable.id, title: coursesTable.title, description: coursesTable.description, duration: coursesTable.duration })
+  const courses = await db.select({
+    courseId: coursesTable.id,
+    title: coursesTable.title,
+    description: coursesTable.description,
+    duration: coursesTable.duration,
+    format: coursesTable.format,
+  })
     .from(educationBundleCoursesTable).innerJoin(coursesTable, eq(coursesTable.id, educationBundleCoursesTable.courseId)).where(and(eq(educationBundleCoursesTable.bundleId, bundle.id), eq(coursesTable.centerId, bundle.centerId), eq(coursesTable.published, true), eq(coursesTable.archived, false)));
   const links = await db.select({ courseId: educationBundleCoursesTable.courseId }).from(educationBundleCoursesTable).where(eq(educationBundleCoursesTable.bundleId, bundle.id));
   if (!courses.length || courses.length !== links.length) { res.status(409).json({ error: "Paket nema dosledan skup aktivnih kurseva." }); return; }

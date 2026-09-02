@@ -321,6 +321,8 @@ import type {
   EducationGiftVoucherPurchaseInput,
   EducationGiftVoucherRedeemInput,
   EducationGiftVoucherRefundInput,
+  EducationGroupEnrollmentInput,
+  EducationGroupEnrollmentResponse,
   EducationInquiry,
   EducationInstallmentSettlement,
   EducationInstructorInput,
@@ -21859,6 +21861,78 @@ export const useEnrollInEducationCourse = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getEnrollInEducationCourseMutationOptions(options));
+    }
+
+export const getCreateEducationGroupEnrollmentsUrl = (courseId: string,) => {
+
+
+
+
+  return `/api/education/courses/${courseId}/group-enrollments`
+}
+
+/**
+ * @summary Request one course purchase per selected salon employee in a single transaction
+ */
+export const createEducationGroupEnrollments = async (courseId: string,
+    educationGroupEnrollmentInput: EducationGroupEnrollmentInput, options?: Parameters<typeof customFetch>[1]): Promise<EducationGroupEnrollmentResponse> => {
+
+  return customFetch<EducationGroupEnrollmentResponse>(getCreateEducationGroupEnrollmentsUrl(courseId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(educationGroupEnrollmentInput)
+  }
+);}
+
+
+
+
+
+export const getCreateEducationGroupEnrollmentsMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEducationGroupEnrollments>>, TError,{courseId: string;data: BodyType<EducationGroupEnrollmentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createEducationGroupEnrollments>>, TError,{courseId: string;data: BodyType<EducationGroupEnrollmentInput>}, TContext> => {
+
+const mutationKey = ['createEducationGroupEnrollments'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createEducationGroupEnrollments>>, {courseId: string;data: BodyType<EducationGroupEnrollmentInput>}> = (props) => {
+          const {courseId,data} = props ?? {};
+
+          return  createEducationGroupEnrollments(courseId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateEducationGroupEnrollmentsMutationResult = NonNullable<Awaited<ReturnType<typeof createEducationGroupEnrollments>>>
+    export type CreateEducationGroupEnrollmentsMutationBody = BodyType<EducationGroupEnrollmentInput>
+    export type CreateEducationGroupEnrollmentsMutationError = ErrorType<void>
+
+    /**
+ * @summary Request one course purchase per selected salon employee in a single transaction
+ */
+export const useCreateEducationGroupEnrollments = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEducationGroupEnrollments>>, TError,{courseId: string;data: BodyType<EducationGroupEnrollmentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createEducationGroupEnrollments>>,
+        TError,
+        {courseId: string;data: BodyType<EducationGroupEnrollmentInput>},
+        TContext
+      > => {
+      return useMutation(getCreateEducationGroupEnrollmentsMutationOptions(options));
     }
 
 export const getGetEducationEnrollmentPaymentInstructionsUrl = (enrollmentId: string,) => {

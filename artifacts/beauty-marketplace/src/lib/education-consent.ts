@@ -1,0 +1,2 @@
+export const DIGITAL_CONTENT_CONSENT_TEXT =
+  "Saglasan/saglasna sam da pristup digitalnom sadržaju online kursa počne odmah po potvrdi uplate i potvrđujem da zbog početka isporuke gubim zakonsko pravo na odustanak od ugovora.";

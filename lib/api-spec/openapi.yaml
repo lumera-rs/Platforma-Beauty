@@ -3303,6 +3303,7 @@ paths:
                 learnerUserId: { type: string, format: uuid }
                 salonId: { type: string, format: uuid }
                 employeeId: { type: string, format: uuid }
+                digitalContentConsent: { type: boolean, description: Explicit purchaser consent required when the bundle contains an online course. }
       responses:
         "201": { description: Pending parent purchase, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
   /education/bundle-purchases:
@@ -4556,6 +4557,33 @@ paths:
               schema: { $ref: "#/components/schemas/EducationEnrollment" }
         "403": { description: Business access required }
         "409": { description: Course is full or already enrolled }
+  /education/courses/{courseId}/group-enrollments:
+    post:
+      operationId: createEducationGroupEnrollments
+      tags: [education]
+      summary: Request one course purchase per selected salon employee in a single transaction
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Optional client-generated command identifier recorded on each created enrollment.
+          schema: { type: string, minLength: 1, maxLength: 200 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationGroupEnrollmentInput" }
+      responses:
+        "201":
+          description: Group enrollment requests created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationGroupEnrollmentResponse" }
+        "400": { description: Invalid employee selection or missing online-content consent }
+        "403": { description: Salon owner access required }
+        "404": { description: Course not available }
+        "409": { description: Enrollment conflict or course terms changed }
   /education/enrollments/{enrollmentId}/payment-instructions:
     get:
       operationId: getEducationEnrollmentPaymentInstructions
@@ -13745,6 +13773,28 @@ components:
         sessionId: { type: ["string", "null"] }
         paymentMode: { type: string, enum: [online_full, live_deposit, live_off_platform] }
         digitalContentConsent: { type: boolean, description: Explicit purchaser consent to immediate supply of online digital content. }
+    EducationGroupEnrollmentInput:
+      type: object
+      additionalProperties: false
+      properties:
+        employeeIds:
+          type: array
+          minItems: 1
+          items: { type: string, format: uuid }
+        sessionId: { type: ["string", "null"], format: uuid }
+        digitalContentConsent: { type: boolean, description: Explicit purchaser consent applied as server-owned evidence to every online enrollment in the group. }
+      required: [employeeIds]
+    EducationGroupEnrollmentResponse:
+      type: object
+      properties:
+        enrollments:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/EducationEnrollment" }
+        discountPercent: { type: integer, minimum: 0, maximum: 100 }
+        unitPrice: { type: integer, minimum: 0 }
+        totalPrice: { type: integer, minimum: 0 }
+      required: [enrollments, discountPercent, unitPrice, totalPrice]
     EducationTaxonomyItem:
       type: object
       properties:
