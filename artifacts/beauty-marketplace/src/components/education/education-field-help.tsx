@@ -18,13 +18,15 @@ export function EducationFieldHelp({ id, text, label }: EducationFieldHelpProps)
   const [pinned, setPinned] = useState(false);
 
   return (
-    <Popover
-      open={open}
-      onOpenChange={(nextOpen) => {
-        setOpen(nextOpen);
-        if (!nextOpen) setPinned(false);
-      }}
-    >
+    <span className="inline-flex">
+      <span id={id} className="sr-only">{text}</span>
+      <Popover
+        open={open}
+        onOpenChange={(nextOpen) => {
+          setOpen(nextOpen);
+          if (!nextOpen) setPinned(false);
+        }}
+      >
         <PopoverAnchor asChild>
           <button
             type="button"
@@ -54,7 +56,6 @@ export function EducationFieldHelp({ id, text, label }: EducationFieldHelpProps)
           </button>
         </PopoverAnchor>
         <PopoverContent
-          id={id}
           role="tooltip"
           className="w-auto max-w-xs p-3 text-sm"
           onOpenAutoFocus={(event) => event.preventDefault()}
@@ -62,6 +63,7 @@ export function EducationFieldHelp({ id, text, label }: EducationFieldHelpProps)
         >
           {text}
         </PopoverContent>
-    </Popover>
+      </Popover>
+    </span>
   );
 }

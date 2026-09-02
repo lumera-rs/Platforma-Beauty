@@ -1584,7 +1584,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                         )}
                         <div className="space-y-2 max-h-48 overflow-y-auto">
                           {employees?.map((emp) => (
-                            <div key={emp.id} className="flex items-center gap-2 p-2 rounded hover:bg-muted/40 cursor-pointer" onClick={() => toggleGroupEmployee(emp.id)}>
+                            <div key={emp.id} className="flex items-center gap-2 rounded p-2 hover:bg-muted/40">
                               <Checkbox checked={groupSelectedIds.includes(emp.id)} onCheckedChange={() => toggleGroupEmployee(emp.id)} id={`emp-${emp.id}`} />
                               <label htmlFor={`emp-${emp.id}`} className="text-sm cursor-pointer flex-1">{emp.name}</label>
                             </div>

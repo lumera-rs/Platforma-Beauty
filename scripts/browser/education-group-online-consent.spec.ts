@@ -1,0 +1,285 @@
+import { expect, test } from "@playwright/test";
+import { randomUUID } from "node:crypto";
+import { and, eq } from "drizzle-orm";
+import {
+  courseEnrollmentsTable,
+  coursesTable,
+  db,
+  educationCenterSubscriptionsTable,
+  educationCentersTable,
+  employeeLocationAssignmentsTable,
+  employeesTable,
+  salonsTable,
+  subscriptionPlansTable,
+  usersTable,
+} from "@workspace/db";
+import { hashPassword } from "../../artifacts/api-server/src/lib/auth";
+import { DIGITAL_CONTENT_CONSENT_TEXT } from "../../artifacts/beauty-marketplace/src/lib/education-consent";
+
+const GROUP_CONSENT_HELP =
+  "Jedna potvrda kupca čuva se kao zaseban dokaz uz prijavu svakog označenog polaznika.";
+
+type Fixture = {
+  ownerId: string;
+  ownerEmail: string;
+  ownerPassword: string;
+  employeeUserIds: [string, string];
+  employeeIds: [string, string];
+  employeeNames: [string, string];
+  salonId: string;
+  centerId: string;
+  centerOwnerId: string;
+  adminId: string;
+  planId: string;
+  courseId: string;
+};
+
+async function createFixture(): Promise<Fixture> {
+  const suffix = randomUUID();
+  const ownerPassword = "browser-group-consent-password";
+  const passwordHash = await hashPassword(ownerPassword);
+  const employeeNames: [string, string] = [
+    `Browser polaznik A ${suffix}`,
+    `Browser polaznik B ${suffix}`,
+  ];
+  const [owner, firstEmployeeUser, secondEmployeeUser, centerOwner, admin] = await db.insert(usersTable).values([
+    {
+      firstName: "Browser",
+      lastName: "Group owner",
+      email: `browser-group-owner-${suffix}@example.test`,
+      passwordHash,
+      passwordSetAt: new Date(),
+      role: "SALON_OWNER",
+    },
+    {
+      firstName: "Browser",
+      lastName: "Group employee A",
+      email: `browser-group-employee-a-${suffix}@example.test`,
+      passwordHash,
+      passwordSetAt: new Date(),
+      role: "SALON_EMPLOYEE",
+    },
+    {
+      firstName: "Browser",
+      lastName: "Group employee B",
+      email: `browser-group-employee-b-${suffix}@example.test`,
+      passwordHash,
+      passwordSetAt: new Date(),
+      role: "SALON_EMPLOYEE",
+    },
+    {
+      firstName: "Browser",
+      lastName: "Group center",
+      email: `browser-group-center-${suffix}@example.test`,
+      passwordHash,
+      passwordSetAt: new Date(),
+      role: "EDUKATIVNI_CENTAR",
+    },
+    {
+      firstName: "Browser",
+      lastName: "Group admin",
+      email: `browser-group-admin-${suffix}@example.test`,
+      passwordHash,
+      passwordSetAt: new Date(),
+      role: "ADMIN",
+    },
+  ]).returning();
+  if (!owner || !firstEmployeeUser || !secondEmployeeUser || !centerOwner || !admin) {
+    throw new Error("Could not create group consent users.");
+  }
+
+  const [salon] = await db.insert(salonsTable).values({
+    ownerId: owner.id,
+    name: `Browser group salon ${suffix}`,
+    slug: `browser-group-salon-${suffix}`,
+    city: "Beograd",
+    municipality: "Vračar",
+    address: "Test 1",
+    postalCode: "11000",
+    phone: "+381601234567",
+    email: `browser-group-salon-${suffix}@example.test`,
+    shortDescription: "Group consent fixture.",
+    description: "Isolated browser fixture for group online consent.",
+    imageUrl: "/browser-test.jpg",
+  }).returning();
+  if (!salon) throw new Error("Could not create group consent salon.");
+
+  const employeeUsers = [firstEmployeeUser, secondEmployeeUser];
+  const employees = await db.insert(employeesTable).values(employeeNames.map((name, index) => ({
+    salonId: salon.id,
+    userId: employeeUsers[index]!.id,
+    name,
+    role: "Stilist",
+    bio: "Active employee for group consent browser fixture.",
+    avatarUrl: "/browser-employee.jpg",
+  }))).returning();
+  if (employees.length !== 2 || !employees[0] || !employees[1]) {
+    throw new Error("Could not create two group consent employees.");
+  }
+  await db.insert(employeeLocationAssignmentsTable).values(employees.map((employee, index) => ({
+    employeeId: employee.id,
+    salonId: salon.id,
+    active: true,
+    isDefault: index === 0,
+  })));
+  await db.update(usersTable).set({ activeSalonId: salon.id }).where(eq(usersTable.id, owner.id));
+
+  const [center] = await db.insert(educationCentersTable).values({
+    ownerId: centerOwner.id,
+    name: `Browser group center ${suffix}`,
+    city: "Beograd",
+    description: "Verified group consent browser fixture.",
+    imageUrl: "/browser-center.jpg",
+    verificationStatus: "verified",
+    verifiedAt: new Date(),
+    verifiedByUserId: admin.id,
+  }).returning();
+  if (!center) throw new Error("Could not create group consent education center.");
+  const [plan] = await db.insert(subscriptionPlansTable).values({
+    name: `Browser group plan ${suffix}`,
+    price: 0,
+    features: [],
+    limits: {},
+  }).returning();
+  if (!plan) throw new Error("Could not create group consent subscription plan.");
+  await db.insert(educationCenterSubscriptionsTable).values({
+    centerId: center.id,
+    planId: plan.id,
+    status: "active",
+    dueAmount: 0,
+    currentPeriodEnd: new Date(Date.now() + 86_400_000),
+  });
+  const [course] = await db.insert(coursesTable).values({
+    centerId: center.id,
+    title: `Browser online group course ${suffix}`,
+    description: "Published online course for group consent browser coverage.",
+    category: "Browser test",
+    format: "online",
+    city: "Beograd",
+    price: 12_000,
+    duration: "4 nedelje",
+    certification: true,
+    imageUrl: "/browser-course.jpg",
+    published: true,
+    onlineAccessDays: 45,
+    extensionPrice1Month: 1_000,
+    extensionPrice3Months: 2_500,
+    extensionPrice6Months: 4_000,
+    groupDiscountMinimum: 2,
+    groupDiscountPercent: 10,
+  }).returning();
+  if (!course) throw new Error("Could not create published online group course.");
+
+  return {
+    ownerId: owner.id,
+    ownerEmail: owner.email,
+    ownerPassword,
+    employeeUserIds: [firstEmployeeUser.id, secondEmployeeUser.id],
+    employeeIds: [employees[0].id, employees[1].id],
+    employeeNames,
+    salonId: salon.id,
+    centerId: center.id,
+    centerOwnerId: centerOwner.id,
+    adminId: admin.id,
+    planId: plan.id,
+    courseId: course.id,
+  };
+}
+
+async function cleanupFixture(fixture: Fixture) {
+  await db.delete(coursesTable).where(eq(coursesTable.id, fixture.courseId));
+  await db.delete(educationCenterSubscriptionsTable)
+    .where(eq(educationCenterSubscriptionsTable.centerId, fixture.centerId));
+  await db.delete(educationCentersTable).where(eq(educationCentersTable.id, fixture.centerId));
+  await db.delete(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, fixture.planId));
+  await db.delete(salonsTable).where(eq(salonsTable.id, fixture.salonId));
+  await db.delete(usersTable).where(eq(usersTable.id, fixture.employeeUserIds[0]));
+  await db.delete(usersTable).where(eq(usersTable.id, fixture.employeeUserIds[1]));
+  await db.delete(usersTable).where(eq(usersTable.id, fixture.ownerId));
+  await db.delete(usersTable).where(eq(usersTable.id, fixture.centerOwnerId));
+  await db.delete(usersTable).where(eq(usersTable.id, fixture.adminId));
+}
+
+for (const viewport of [
+  { name: "desktop", width: 1440, height: 1000 },
+  { name: "mobile", width: 390, height: 844 },
+]) {
+  test(`online group consent gates enrollment and remains accessible on ${viewport.name}`, async ({ page }) => {
+    test.setTimeout(60_000);
+    const fixture = await createFixture();
+    try {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      expect((await page.request.post("/api/auth/login", {
+        data: { email: fixture.ownerEmail, password: fixture.ownerPassword },
+      })).ok()).toBeTruthy();
+      await page.goto(`/biznis/edukacije/${fixture.courseId}`);
+
+      await page.getByRole("button", { name: "Grupna prijava" }).click();
+      const firstEmployee = page.getByRole("checkbox", { name: fixture.employeeNames[0], exact: true });
+      const secondEmployee = page.getByRole("checkbox", { name: fixture.employeeNames[1], exact: true });
+      await firstEmployee.click();
+      await secondEmployee.click();
+      await expect(firstEmployee).toBeChecked();
+      await expect(secondEmployee).toBeChecked();
+
+      const submit = page.getByRole("button", { name: "Prijavi 2 polaznika" });
+      const consent = page.getByRole("checkbox", { name: DIGITAL_CONTENT_CONSENT_TEXT });
+      const help = page.locator("#education-group-digital-consent-help");
+      await expect(submit).toBeDisabled();
+      await expect(consent).toHaveAttribute("aria-describedby", "education-group-digital-consent-help");
+      await expect(page.getByText(DIGITAL_CONTENT_CONSENT_TEXT, { exact: true })).toBeVisible();
+      await expect(help).toContainText(GROUP_CONSENT_HELP);
+
+      await page.getByText(DIGITAL_CONTENT_CONSENT_TEXT, { exact: true }).click();
+      await expect(consent).toBeChecked();
+      await expect(submit).toBeEnabled();
+
+      const dimensions = await page.evaluate(() => ({
+        clientWidth: document.documentElement.clientWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+      }));
+      expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
+
+      await submit.click();
+      await expect(page.getByText(/Grupna prijava za 2 polaznika je primljena\./)).toBeVisible();
+
+      const enrollments = await db.select({ id: courseEnrollmentsTable.id })
+        .from(courseEnrollmentsTable)
+        .where(and(
+          eq(courseEnrollmentsTable.courseId, fixture.courseId),
+          eq(courseEnrollmentsTable.purchaserId, fixture.ownerId),
+        ));
+      expect(enrollments).toHaveLength(2);
+
+      const persisted = await db.select().from(courseEnrollmentsTable)
+        .where(and(
+          eq(courseEnrollmentsTable.courseId, fixture.courseId),
+          eq(courseEnrollmentsTable.purchaserId, fixture.ownerId),
+        ));
+      expect(persisted.map((enrollment) => enrollment.employeeId).sort())
+        .toEqual([...fixture.employeeIds].sort());
+      for (const enrollment of persisted) {
+        expect(enrollment).toMatchObject({
+          purchaserId: fixture.ownerId,
+          salonId: fixture.salonId,
+          status: "pending",
+          paymentStatus: "pending",
+          accessGrantedAt: null,
+          accessExpiresAt: null,
+          accessDaysSnapshot: 45,
+          digitalContentConsentUserId: fixture.ownerId,
+          digitalContentConsentTextSnapshot: DIGITAL_CONTENT_CONSENT_TEXT,
+          extensionPricesSnapshot: {
+            oneMonth: 1_000,
+            threeMonths: 2_500,
+            sixMonths: 4_000,
+          },
+        });
+        expect(enrollment.digitalContentConsentAt).toBeInstanceOf(Date);
+        expect(enrollment.digitalContentConsentVersionSnapshot).toBeTruthy();
+      }
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+}

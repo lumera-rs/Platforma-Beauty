@@ -135,3 +135,4 @@
 - [Education trial identity claims](education-trial-identity-claims.md) — trial evidence is append-only and survives account deletion; duplicate signup may continue only without a new trial.
 - [Education explicit reactivation](education-explicit-reactivation-boundary.md) — payment or contract changes never bypass owner course choice and audited super-admin reactivation.
 - [Education finance admin boundary](education-finance-admin-boundary.md) — administrative Education money mutations are SUPER_ADMIN-only before input or entity inspection.
+- [Radix checkbox browser tests](radix-checkbox-browser-tests.md) — exercise role=checkbox buttons with click plus state assertions, not native-input check helpers.
