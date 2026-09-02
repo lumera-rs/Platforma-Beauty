@@ -63,7 +63,7 @@ import {
   trackEducationDisputeSubmission,
   trackEvent,
 } from "@/lib/analytics";
-import { fetchNativeJson, NativeFetchError } from "@/lib/native-fetch";
+import { fetchNativeJson, getNativeFetchErrorData, NativeFetchError } from "@/lib/native-fetch";
 import { DIGITAL_CONTENT_CONSENT_TEXT } from "@/lib/education-consent";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -778,9 +778,7 @@ function StudentLearningView({ jobseeker = false }: { jobseeker?: boolean }) {
       setDisputeReason("");
       setDisputeDetails("");
     } catch (error) {
-      const existingDispute = error instanceof NativeFetchError
-        ? (error.data as StudentDisputeErrorData | undefined)?.dispute
-        : undefined;
+      const existingDispute = getNativeFetchErrorData<StudentDisputeErrorData>(error)?.dispute;
       if (error instanceof NativeFetchError && error.status === 409 && existingDispute) {
         setDisputeOverrides((current) => ({ ...current, [reportingEnrollment.id]: existingDispute }));
         trackEducationDisputeSubmission("existing");

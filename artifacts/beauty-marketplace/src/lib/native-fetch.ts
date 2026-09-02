@@ -24,6 +24,10 @@ export class NativeFetchError<T = unknown> extends Error {
   }
 }
 
+export function getNativeFetchErrorData<T>(error: unknown): T | undefined {
+  return error instanceof NativeFetchError ? error.data as T | undefined : undefined;
+}
+
 function errorMessageFromPayload(payload: unknown, fallback: string): string {
   if (!payload || typeof payload !== "object") return fallback;
   const error = (payload as { error?: unknown }).error;
