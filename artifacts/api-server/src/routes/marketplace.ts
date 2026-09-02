@@ -22900,7 +22900,16 @@ router.get("/admin/summary", async (req, res): Promise<void> => {
   const newSalonsThisMonth = Number(aggregateSummary.newSalonsThisMonth ?? 0);
   const hiddenReviews = Number(aggregateSummary.hiddenReviews ?? 0);
   const activeSubscriptions = Number(aggregateSummary.activeSubscriptions ?? 0);
-  const oldestEligibleGalleryUploadTicket = aggregateSummary.galleryCleanupOldestEligibleAt;
+  const oldestEligibleGalleryUploadTicketValue = aggregateSummary.galleryCleanupOldestEligibleAt;
+  const parsedOldestEligibleGalleryUploadTicket = oldestEligibleGalleryUploadTicketValue instanceof Date
+    ? oldestEligibleGalleryUploadTicketValue
+    : oldestEligibleGalleryUploadTicketValue
+      ? new Date(oldestEligibleGalleryUploadTicketValue)
+      : null;
+  const oldestEligibleGalleryUploadTicket = parsedOldestEligibleGalleryUploadTicket
+    && Number.isFinite(parsedOldestEligibleGalleryUploadTicket.getTime())
+    ? parsedOldestEligibleGalleryUploadTicket
+    : null;
   const galleryCleanupOldestEligibleTicketAgeMinutes = oldestEligibleGalleryUploadTicket
     ? Math.max(0, Math.floor((now.getTime() - oldestEligibleGalleryUploadTicket.getTime()) / 60_000))
     : null;
@@ -22968,7 +22977,7 @@ type AdminSummaryAggregateRow = {
   activeSubscriptions: number;
   galleryCleanupFailedTickets: number;
   galleryCleanupFailureAttempts: number;
-  galleryCleanupOldestEligibleAt: Date | null;
+  galleryCleanupOldestEligibleAt: Date | string | null;
   galleryCleanupHasRepeatedFailures: boolean;
   smsFallbackReachableAdminCount: number;
 };
