@@ -13,6 +13,12 @@ const requiredIsolatedBrowserGateScripts = [
 
 const requiredIsolatedBrowserGatePhase = "validate:release:4-isolated";
 const branchCiPath = path.join(workspaceRoot, ".github", "workflows", "ci.yml");
+const workflowLintPath = path.join(
+  workspaceRoot,
+  ".github",
+  "workflows",
+  "workflow-lint.yml",
+);
 
 function chainedPnpmScripts(command: string): string[] {
   return command.split(" && ").flatMap((step) => {
@@ -68,6 +74,34 @@ test("branch CI runs the database-free release-chain gate before slower work", a
     workflow,
     /\n  build:\n {4}name: .*\n {4}needs: release-chain\n/,
     "Slower CI work must depend on the release-chain job.",
+  );
+});
+
+test("workflow syntax lint runs locally and in an independent database-free CI job", async () => {
+  const [workflow, packageJsonSource] = await Promise.all([
+    readFile(workflowLintPath, "utf8"),
+    readFile(path.join(workspaceRoot, "package.json"), "utf8"),
+  ]);
+  const scripts =
+    (JSON.parse(packageJsonSource) as { scripts?: Record<string, string> })
+      .scripts ?? {};
+
+  assert.equal(
+    scripts["test:github-workflows"],
+    "bash scripts/lint-github-workflows.sh",
+    "Workflow lint must be directly runnable without database access.",
+  );
+  assert.match(workflow, /^on:\n  pull_request:\n  push:/m);
+  assert.match(workflow, /DATABASE_URL: ""/);
+  assert.match(
+    workflow,
+    /run: env -u DATABASE_URL pnpm run test:github-workflows/,
+    "The independent CI job must lint workflows with DATABASE_URL removed.",
+  );
+  assert.doesNotMatch(
+    workflow,
+    /playwright|postgres|validate:release|validate:publish|test:browser|drizzle|\$\{\{\s*secrets\./i,
+    "Workflow lint must remain independent of databases, browsers, release checks, and repository secrets.",
   );
 });
 

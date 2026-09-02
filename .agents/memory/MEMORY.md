@@ -139,3 +139,4 @@
 - [Grouped CAMT transaction identity](grouped-camt-transaction-identity.md) — grouped entries resolve IDs and amounts per transaction detail, never from a shared batch identifier.
 - [Bank API legal-entity scope](bank-api-legal-entity-scope.md) — never infer a Serbian bank API contract from group-level or another country’s developer portal.
 - [User-facing timestamp serialization](user-facing-timestamp-serialization.md) — audit both single and batch list DTOs; one invalid database date must degrade only its field.
+- [pnpm workspace config preservation](pnpm-workspace-config-preservation.md) — project-level pnpm config commands can rewrite the workspace manifest and invalidate lockfile catalogs.

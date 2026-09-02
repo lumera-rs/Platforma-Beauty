@@ -30,6 +30,7 @@
     "test:api-regressions-lifecycle": "pnpm --filter @workspace/scripts run test:api-regressions-lifecycle",
     "test:date-serialization": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/date-serialization.test.ts",
     "test:release-chain": "pnpm --filter @workspace/scripts run test:release-chain",
+    "test:github-workflows": "bash scripts/lint-github-workflows.sh",
     "test:education-authz": "bash scripts/test-education-authorization.sh",
     "test:education-gift-refunds": "pnpm --filter @workspace/api-server run test:education-gift-refunds",
     "test:education-role-routing": "pnpm --filter @workspace/scripts exec tsx ../artifacts/beauty-marketplace/src/lib/role-routing.test.ts",
@@ -134,6 +135,7 @@
     "@replit/connectors-sdk": "^0.4.1"
   },
   "devDependencies": {
+    "github-actionlint": "1.7.12",
     "prettier": "^3.9.6",
     "typescript": "~5.9.3"
   }
