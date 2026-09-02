@@ -179,6 +179,23 @@ for (const [name, source] of [
   ["education wishlist mutations", sourceBetween("router.post(\"/education/wishlist\"", "router.delete(\"/education/wishlist/:courseId\"")],
   ["education message mutations", sourceBetween("router.post(\"/education/purchases/:enrollmentId/messages\"", "router.post(\"/education/purchases/:enrollmentId/disputes\"")],
   ["education dispute mutations", sourceBetween("router.post(\"/education/purchases/:enrollmentId/disputes\"", "router.get(\"/education/disputes\"")],
+  ["admin integration delivery detail", sourceBetween("router.get(\"/admin/sms-deliveries\"", "router.get(\"/admin/integrations\"")],
+  ["admin integration verification mutation", sourceBetween("router.post(\"/admin/integrations/:integration/verify-webhook\"", "router.get(\"/admin/integrations/:integration/webhook-url\"")],
+  ["admin Brevo webhook registration mutation", sourceBetween("router.post(\"/admin/integrations/brevo/register-webhook\"", "router.post(\"/admin/integrations/brevo/cleanup-webhooks\"")],
+  ["admin education settings detail", sourceBetween("function educationSettingsView(", "router.get(\"/admin/education/taxonomy/proposals\"")],
+  ["admin education center detail", sourceBetween("async function adminEducationCenterDetail(", "router.get(\"/admin/education/centers/:centerId\"")],
+  ["admin featured charge mutation", sourceBetween("router.post(\"/admin/education/featured-charges/:chargeId/settle\"", "router.post(\"/admin/education/payouts\"")],
+  ["admin payout mutation response", sourceBetween("res.status(201).json({ id: payout.id", "\n});\n\nrouter.patch(\"/admin/education/disputes")],
+  ["admin dispute mutation response", sourceBetween("res.json({ id: resolution.result.id", "\n});\n\n// Admin: cancel any session")],
+  ["admin salon detail and mutation", sourceBetween("router.get(\"/admin/salons/:salonId\"", "// ── Admin Users")],
+  ["admin account responses", sourceBetween("router.post(\"/admin/customers/setup\"", "router.post(\"/admin/users/:userId/business-conversion\"")],
+  ["admin business conversion mutation", sourceBetween("router.post(\"/admin/users/:userId/business-conversion\"", "type BusinessTransitionRows")],
+  ["admin business transition detail", sourceBetween("function adminBusinessTransitionView(", "router.get(\"/admin/users/:userId/business-role-transition\"")],
+  ["admin user mutation", sourceBetween("router.patch(\"/admin/users/:userId\"", "// ── Admin Loyalty Tiers")],
+  ["admin review mutation", sourceBetween("router.patch(\"/admin/reviews/:reviewId\"", "router.delete(\"/admin/reviews/:reviewId\"")],
+  ["admin product detail", sourceBetween("function adminProductDto(", "async function productTreatmentIds")],
+  ["admin shop settings detail and mutation", sourceBetween("function shopSettingsDto(", "router.get(\"/admin/shipping\"")],
+  ["admin shipping detail and mutation", sourceBetween("router.get(\"/admin/shipping\"", "// ── Admin Courier Service Catalog")],
 ]) {
   assert.doesNotMatch(source, /\.toISOString\(\)/, `${name} must not directly serialize selected timestamps`);
 }

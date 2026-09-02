@@ -4802,7 +4802,7 @@ function integrationName(value: string): value is IntegrationName {
 async function webhookConfirmationMetadata(integration: "sms" | "brevo") {
   const verifiedAt = await webhookVerifiedAt(integration);
   return {
-    webhookVerifiedAt: verifiedAt?.toISOString() ?? null,
+    webhookVerifiedAt: safeIsoTimestamp(verifiedAt),
     webhookVerificationStale: webhookVerificationIsStale(verifiedAt),
     webhookConfirmationMaxAgeDays: WEBHOOK_CONFIRMATION_MAX_AGE_DAYS,
     ...(integration === "brevo" ? { brevoRegistrationMissingEvents: await brevoRegistrationMissingEvents() } : {}),
@@ -5117,7 +5117,7 @@ router.post("/admin/integrations/:integration/verify-webhook", async (req, res):
     message: integration === "sms"
       ? "Infobip webhook radi: sačuvana tajna se poklapa i endpoint prihvata izveštaje o isporuci. Probni događaj nije promenio nijednu isporuku."
       : "Brevo webhook radi: sačuvana tajna se poklapa i endpoint prihvata događaje. Probni događaj nije promenio nijednu isporuku.",
-    webhookVerifiedAt: confirmedAt?.toISOString() ?? null,
+    webhookVerifiedAt: safeIsoTimestamp(confirmedAt),
     webhookVerificationStale: false,
     webhookConfirmationMaxAgeDays: WEBHOOK_CONFIRMATION_MAX_AGE_DAYS,
   });
@@ -5616,7 +5616,7 @@ router.post("/admin/integrations/brevo/register-webhook", async (req, res): Prom
     res.json({
       message: `Webhook je ${action} na Brevo sa URL-om ove aplikacije i sačuvanom tajnom, uz pretplatu na događaje isporuke, otvaranja, bounce-ova, blokada i grešaka. Ponovna provera je potvrdila registraciju.${staleNote}`,
       staleWebhooks,
-      webhookVerifiedAt: confirmedAt?.toISOString() ?? null,
+      webhookVerifiedAt: safeIsoTimestamp(confirmedAt),
       webhookVerificationStale: false,
       webhookConfirmationMaxAgeDays: WEBHOOK_CONFIRMATION_MAX_AGE_DAYS,
     }); return;
@@ -22987,7 +22987,7 @@ function educationSettingsView(settings: typeof educationPlatformSettingsTable.$
     ipsRecipientAccount: settings.ipsRecipientAccount,
     ipsAccountEnvironment: settings.ipsAccountEnvironment,
     ipsPurpose: settings.ipsPurpose,
-    updatedAt: settings.updatedAt.toISOString(),
+    updatedAt: safeIsoTimestamp(settings.updatedAt),
   };
 }
 
@@ -23410,11 +23410,11 @@ async function adminEducationCenterDetail(centerId: string) {
     contactPhone: center.contactPhone,
     verificationStatus: center.verificationStatus,
     verificationNote: center.verificationNote,
-    verifiedAt: center.verifiedAt?.toISOString() ?? null,
+    verifiedAt: safeIsoTimestamp(center.verifiedAt),
     subscriptionStatus: subscription?.status ?? null,
     subscriptionPlanId: subscription?.planId ?? null,
     subscriptionPlan: plan?.name ?? null,
-    deactivatedAt: subscription?.deactivatedAt?.toISOString() ?? null,
+    deactivatedAt: safeIsoTimestamp(subscription?.deactivatedAt),
     reactivation,
     heldAmount,
     billingSettings: resolved.billingSettings,
@@ -23688,8 +23688,8 @@ router.post("/admin/education/featured-charges/:chargeId/settle", async (req, re
   if (!updated) { res.status(409).json({ error: "Ova naplata isticanja je već obrađena." }); return; }
   res.json({
     id: updated.id, courseId: updated.courseId, amount: updated.amount, status: updated.status,
-    paymentReference: updated.paymentReference, activatedAt: updated.activatedAt.toISOString(),
-    settledAt: updated.settledAt?.toISOString() ?? null,
+    paymentReference: updated.paymentReference, activatedAt: safeIsoTimestamp(updated.activatedAt),
+    settledAt: safeIsoTimestamp(updated.settledAt),
   });
 });
 
@@ -23757,7 +23757,7 @@ router.post("/admin/education/payouts", async (req, res): Promise<void> => {
     res.status(409).json({ error: error instanceof Error ? error.message : "Isplata nije moguća." });
     return;
   }
-  res.status(201).json({ id: payout.id, centerId: payout.centerId, amount: payout.amount, status: payout.status, paidAt: payout.paidAt?.toISOString() ?? null });
+  res.status(201).json({ id: payout.id, centerId: payout.centerId, amount: payout.amount, status: payout.status, paidAt: safeIsoTimestamp(payout.paidAt) });
 });
 
 router.patch("/admin/education/disputes/:disputeId", async (req, res): Promise<void> => {
@@ -23857,7 +23857,7 @@ router.patch("/admin/education/disputes/:disputeId", async (req, res): Promise<v
     const [promotedCourse] = await db.select().from(coursesTable).where(eq(coursesTable.id, resolution.enrollment.courseId)).limit(1);
     if (promotedCourse) await notifyPromotedWaiter(promoted, promotedCourse);
   }
-  res.json({ id: resolution.result.id, status: resolution.result.status, resolutionNote: resolution.result.resolutionNote, resolvedAt: resolution.result.resolvedAt?.toISOString() ?? null });
+  res.json({ id: resolution.result.id, status: resolution.result.status, resolutionNote: resolution.result.resolutionNote, resolvedAt: safeIsoTimestamp(resolution.result.resolvedAt) });
 });
 
 // Admin: cancel any session with full escrow refund and notifications.
@@ -24002,7 +24002,7 @@ router.get("/admin/salons/:salonId", async (req, res): Promise<void> => {
   const itemCountByOrder = new Map(itemCounts.map((item) => [item.orderId, Number(item.itemCount)]));
   const orderSummaries = orders.map((order) => ({
     id: order.id,
-    createdAt: order.createdAt.toISOString(),
+    createdAt: safeIsoTimestamp(order.createdAt),
     status: order.status,
     paymentStatus: order.paymentStatus,
     deliveryMethod: order.deliveryMethod,
@@ -24030,7 +24030,7 @@ router.get("/admin/salons/:salonId", async (req, res): Promise<void> => {
     subscriptionPlan: subscription?.subscription_plans.name ?? null,
     loyaltyTier: tier?.name ?? null,
     loyaltySpend: loyalty?.currentPeriodSpend ?? 0,
-    createdAt: profile.createdAt.toISOString(),
+    createdAt: safeIsoTimestamp(profile.createdAt),
     orderCount: orders.length,
     orderTotal: orders.reduce((sum, order) => sum + order.total, 0),
     orders: orderSummaries,
@@ -24173,7 +24173,7 @@ router.patch("/admin/salons/:salonId", async (req, res): Promise<void> => {
     subscriptionPlan: sub?.subscription_plans.name ?? null,
     loyaltyTier: tier?.name ?? null,
     loyaltySpend: loyalty?.currentPeriodSpend ?? 0,
-    createdAt: updated!.createdAt.toISOString(),
+    createdAt: safeIsoTimestamp(updated!.createdAt),
   });
 });
 
@@ -24302,11 +24302,11 @@ router.post("/admin/customers/setup", async (req, res): Promise<void> => {
         phone: customer.phone,
         role: customer.role,
         active: customer.active,
-        passwordSetAt: customer.passwordSetAt?.toISOString() ?? null,
-        createdAt: customer.createdAt.toISOString(),
+        passwordSetAt: safeIsoTimestamp(customer.passwordSetAt),
+        createdAt: safeIsoTimestamp(customer.createdAt),
       },
       setupUrl,
-      expiresAt: expiresAt.toISOString(),
+      expiresAt: safeIsoTimestamp(expiresAt),
     });
   } catch (error) {
     if ((error as { code?: string }).code === "23505") {
@@ -24634,8 +24634,8 @@ router.post("/admin/accounts/setup", async (req, res): Promise<void> => {
     });
     if (!account) { res.status(409).json({ error: "Korisnik sa ovom e-mail adresom već postoji." }); return; }
     res.status(201).json({
-      user: { id: account.id, firstName: account.firstName, lastName: account.lastName, email: account.email, phone: account.phone, role: account.role, active: account.active, passwordSetAt: account.passwordSetAt?.toISOString() ?? null, createdAt: account.createdAt.toISOString() },
-      setupUrl: `${setupBaseUrl}/postavi-lozinku#token=${encodeURIComponent(rawToken)}`, expiresAt: expiresAt.toISOString(),
+      user: { id: account.id, firstName: account.firstName, lastName: account.lastName, email: account.email, phone: account.phone, role: account.role, active: account.active, passwordSetAt: safeIsoTimestamp(account.passwordSetAt), createdAt: safeIsoTimestamp(account.createdAt) },
+      setupUrl: `${setupBaseUrl}/postavi-lozinku#token=${encodeURIComponent(rawToken)}`, expiresAt: safeIsoTimestamp(expiresAt),
     });
   } catch (error) {
     if (["40001", "40P01"].includes((error as { code?: string }).code ?? "")) {
@@ -24691,9 +24691,9 @@ router.post(["/admin/customers/:userId/setup", "/admin/accounts/:userId/setup"],
   });
   if (!customer) { res.status(404).json({ error: "Korisnik nije pronađen." }); return; }
   res.status(201).json({
-    user: { id: customer.id, firstName: customer.firstName, lastName: customer.lastName, email: customer.email, phone: customer.phone, role: customer.role, active: customer.active, passwordSetAt: customer.passwordSetAt?.toISOString() ?? null, createdAt: customer.createdAt.toISOString() },
+    user: { id: customer.id, firstName: customer.firstName, lastName: customer.lastName, email: customer.email, phone: customer.phone, role: customer.role, active: customer.active, passwordSetAt: safeIsoTimestamp(customer.passwordSetAt), createdAt: safeIsoTimestamp(customer.createdAt) },
     setupUrl: `${setupBaseUrl}/postavi-lozinku#token=${encodeURIComponent(rawToken)}`,
-    expiresAt: expiresAt.toISOString(),
+    expiresAt: safeIsoTimestamp(expiresAt),
   });
 });
 
@@ -24856,8 +24856,8 @@ router.post("/admin/users/:userId/business-conversion", async (req, res): Promis
     res.json(AdminConvertUserToBusinessAccountResponse.parse({
       id: updated.id, firstName: updated.firstName, lastName: updated.lastName,
       email: updated.email, phone: updated.phone, role: updated.role, active: updated.active,
-      passwordSetAt: updated.passwordSetAt?.toISOString() ?? null,
-      createdAt: updated.createdAt.toISOString(),
+      passwordSetAt: safeIsoTimestamp(updated.passwordSetAt),
+      createdAt: safeIsoTimestamp(updated.createdAt),
     }));
   } catch (error) {
     if (error instanceof LegalEntityOwnerConflictError) {
@@ -24894,8 +24894,8 @@ function adminBusinessTransitionView(
     user: {
       id: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email,
       phone: user.phone, role: user.role, active: user.active,
-      passwordSetAt: user.passwordSetAt?.toISOString() ?? null,
-      createdAt: user.createdAt.toISOString(),
+      passwordSetAt: safeIsoTimestamp(user.passwordSetAt),
+      createdAt: safeIsoTimestamp(user.createdAt),
     },
     salonOwnerships: rows.salons.map((row) => ({
       id: row.id, name: row.name, active: row.active,
@@ -25293,8 +25293,8 @@ router.patch("/admin/users/:userId", async (req, res): Promise<void> => {
     phone: updated!.phone,
     role: updated!.role,
     active: updated!.active,
-    passwordSetAt: updated!.passwordSetAt?.toISOString() ?? null,
-    createdAt: updated!.createdAt.toISOString(),
+    passwordSetAt: safeIsoTimestamp(updated!.passwordSetAt),
+    createdAt: safeIsoTimestamp(updated!.createdAt),
   });
 });
 
@@ -25585,7 +25585,7 @@ router.patch("/admin/reviews/:reviewId", async (req, res): Promise<void> => {
     rating: updated.rating,
     text: updated.text,
     visible: updated.visible,
-    date: updated.createdAt.toISOString(),
+    date: safeIsoTimestamp(updated.createdAt),
   });
 });
 
@@ -25864,7 +25864,7 @@ function adminProductDto(item: typeof productsTable.$inferSelect, treatmentTaxon
     characteristics: item.characteristics,
     searchSynonyms: item.searchSynonyms,
     active: item.active,
-    createdAt: item.createdAt.toISOString(),
+    createdAt: safeIsoTimestamp(item.createdAt),
   };
 }
 
@@ -27327,7 +27327,7 @@ function shopSettingsDto(settings: typeof shopSettingsTable.$inferSelect, freeSh
     retailCartReminderBrevoTemplateId: settings.retailCartReminderBrevoTemplateId,
     freeShippingThreshold,
     version: settings.version,
-    updatedAt: settings.updatedAt.toISOString(),
+    updatedAt: safeIsoTimestamp(settings.updatedAt),
     seller: {
       companyName: settings.sellerCompanyName ?? "", taxId: settings.sellerTaxId ?? "",
       registrationNumber: settings.sellerRegistrationNumber ?? "", address: settings.sellerAddress ?? "",
@@ -27414,7 +27414,7 @@ router.get("/admin/shipping", async (req, res): Promise<void> => {
     freeShippingThreshold: config.freeShippingThreshold, tiers: config.tiers,
     personalDeliveryEnabled: config.personalDeliveryEnabled, personalDeliveryName: config.personalDeliveryName,
     personalDeliveryPrice: config.personalDeliveryPrice, personalDeliveryDescription: config.personalDeliveryDescription,
-    updatedAt: config.updatedAt.toISOString(),
+    updatedAt: safeIsoTimestamp(config.updatedAt),
   });
 });
 
@@ -27446,7 +27446,7 @@ router.put("/admin/shipping", async (req, res): Promise<void> => {
     freeShippingThreshold: config!.freeShippingThreshold, tiers: config!.tiers,
     personalDeliveryEnabled: config!.personalDeliveryEnabled, personalDeliveryName: config!.personalDeliveryName,
     personalDeliveryPrice: config!.personalDeliveryPrice, personalDeliveryDescription: config!.personalDeliveryDescription,
-    updatedAt: config!.updatedAt.toISOString(),
+    updatedAt: safeIsoTimestamp(config!.updatedAt),
   });
 });
 
