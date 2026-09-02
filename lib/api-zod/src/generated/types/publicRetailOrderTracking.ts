@@ -11,8 +11,10 @@ export interface PublicRetailOrderTracking {
   orderNumber: string;
   status: PublicRetailOrderTrackingStatus;
   statusLabel: string;
-  createdAt: Date;
-  statusUpdatedAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
+  /** @nullable */
+  statusUpdatedAt: Date | null;
   /**
      * @minimum 0
      * @maximum 5

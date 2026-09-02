@@ -3793,8 +3793,10 @@ export interface PublicRetailOrderTracking {
   orderNumber: string;
   status: PublicRetailOrderTrackingStatus;
   statusLabel: string;
-  createdAt: string;
-  statusUpdatedAt: string;
+  /** @nullable */
+  createdAt: string | null;
+  /** @nullable */
+  statusUpdatedAt: string | null;
   /**
      * @minimum 0
      * @maximum 5
@@ -5779,8 +5781,10 @@ export interface CourierService {
   /** @nullable */
   trackingUrlTemplate: string | null;
   active: boolean;
-  createdAt: string;
-  updatedAt: string;
+  /** @nullable */
+  createdAt: string | null;
+  /** @nullable */
+  updatedAt: string | null;
 }
 
 export interface CourierServiceInput {
@@ -6944,7 +6948,8 @@ export interface EducationInquiry {
   id: string;
   courseId: string;
   status: string;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
 }
 
 export interface EducationRankedCategory {
@@ -8475,7 +8480,8 @@ export interface EducationCourseFeaturedCharge {
   status: EducationCourseFeaturedChargeStatus;
   /** @nullable */
   paymentReference?: string | null;
-  activatedAt: string;
+  /** @nullable */
+  activatedAt: string | null;
   /** @nullable */
   settledAt?: string | null;
 }

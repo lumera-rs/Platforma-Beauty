@@ -10,5 +10,6 @@ export interface EducationInquiry {
   id: string;
   courseId: string;
   status: string;
-  createdAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
 }

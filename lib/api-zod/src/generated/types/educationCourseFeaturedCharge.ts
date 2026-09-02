@@ -13,7 +13,8 @@ export interface EducationCourseFeaturedCharge {
   status: EducationCourseFeaturedChargeStatus;
   /** @nullable */
   paymentReference?: string | null;
-  activatedAt: Date;
+  /** @nullable */
+  activatedAt: Date | null;
   /** @nullable */
   settledAt?: Date | null;
 }

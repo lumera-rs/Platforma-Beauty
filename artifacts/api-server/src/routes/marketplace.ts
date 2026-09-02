@@ -13320,8 +13320,8 @@ function publicTrackingDto(order: typeof retailOrdersTable.$inferSelect) {
     orderNumber: order.orderNumber,
     status: order.fulfillmentStatus,
     statusLabel: label,
-    createdAt: order.createdAt.toISOString(),
-    statusUpdatedAt: order.updatedAt.toISOString(),
+    createdAt: safeIsoTimestamp(order.createdAt),
+    statusUpdatedAt: safeIsoTimestamp(order.updatedAt),
     progressStage: stage,
     trackingNumber: order.trackingNumber ?? null,
     courierUrl: order.trackingUrl ?? null,
@@ -15385,7 +15385,7 @@ async function productWaitlistStatus(req: Request, res: Response, audience: "B2B
     ? and(eq(productWaitlistTable.productId, productId), eq(productWaitlistTable.salonId, access.salonId!))
     : and(eq(productWaitlistTable.productId, productId), eq(productWaitlistTable.userId, access.userId!));
   const [entry] = await db.select().from(productWaitlistTable).where(rowWhere).orderBy(desc(productWaitlistTable.updatedAt)).limit(1);
-  res.json({ subscribed: entry?.status === "ACTIVE", status: entry?.status ?? null, notifiedAt: entry?.notifiedAt?.toISOString() ?? null });
+  res.json({ subscribed: entry?.status === "ACTIVE", status: entry?.status ?? null, notifiedAt: safeIsoTimestamp(entry?.notifiedAt) });
 }
 
 async function unsubscribeProductWaitlist(req: Request, res: Response, audience: "B2B" | "B2C"): Promise<void> {
@@ -15440,7 +15440,7 @@ router.post("/shop/products/:productId/reviews", async (req, res): Promise<void>
     salonName: access.salon.name,
     rating: saved!.rating,
     comment: saved!.comment,
-    createdAt: saved!.updatedAt.toISOString(),
+    createdAt: safeIsoTimestamp(saved!.updatedAt),
     mine: true,
   }));
 });
@@ -15503,8 +15503,8 @@ function courierServiceDto(service: typeof courierServicesTable.$inferSelect) {
     name: service.name,
     trackingUrlTemplate: service.trackingUrlTemplate ?? null,
     active: service.active,
-    createdAt: service.createdAt.toISOString(),
-    updatedAt: service.updatedAt.toISOString(),
+    createdAt: safeIsoTimestamp(service.createdAt),
+    updatedAt: safeIsoTimestamp(service.updatedAt),
   };
 }
 
@@ -18421,9 +18421,9 @@ router.patch("/education/courses/:courseId", async (req, res): Promise<void> => 
   const commercialPolicyError = await educationCommercialPolicyError({
     price: data.price ?? course.price,
     earlyBirdPrice: data.earlyBirdPrice === undefined ? course.earlyBirdPrice : data.earlyBirdPrice,
-    earlyBirdCutoff: data.earlyBirdCutoff === undefined ? (course.earlyBirdCutoff?.toISOString() ?? null) : data.earlyBirdCutoff,
+    earlyBirdCutoff: data.earlyBirdCutoff === undefined ? safeIsoTimestamp(course.earlyBirdCutoff) : data.earlyBirdCutoff,
     minimumEnrollmentRiskDeadline: data.minimumEnrollmentRiskDeadline === undefined
-      ? (course.minimumEnrollmentRiskDeadline?.toISOString() ?? null) : data.minimumEnrollmentRiskDeadline,
+      ? safeIsoTimestamp(course.minimumEnrollmentRiskDeadline) : data.minimumEnrollmentRiskDeadline,
     courseId: course.id,
   });
   if (commercialPolicyError) { res.status(400).json({ error: commercialPolicyError }); return; }
@@ -18923,8 +18923,8 @@ function featuredChargeView(charge: typeof educationFeaturedChargesTable.$inferS
     amount: charge.amount,
     status: charge.status,
     paymentReference: charge.paymentReference,
-    activatedAt: charge.activatedAt.toISOString(),
-    settledAt: charge.settledAt?.toISOString() ?? null,
+    activatedAt: safeIsoTimestamp(charge.activatedAt),
+    settledAt: safeIsoTimestamp(charge.settledAt),
   };
 }
 
@@ -18944,7 +18944,7 @@ router.get("/education/courses/:courseId/featured", async (req, res): Promise<vo
   const isActive = course.isFeatured && (!course.featuredUntil || course.featuredUntil > new Date());
   res.json({
     courseId: course.id, isFeatured: isActive,
-    featuredUntil: course.featuredUntil?.toISOString() ?? null,
+    featuredUntil: safeIsoTimestamp(course.featuredUntil),
     featuredFee: course.featuredFee, featuredCoursePrice: settings.effective.featuredCoursePrice,
     charge: featuredChargeView(await latestFeaturedCharge(course.id)),
   });
@@ -19015,7 +19015,7 @@ router.patch("/education/courses/:courseId/featured", async (req, res): Promise<
   });
   res.json({
     courseId: updated.id, isFeatured: updated.isFeatured && (!updated.featuredUntil || updated.featuredUntil > new Date()),
-    featuredUntil: updated.featuredUntil?.toISOString() ?? null,
+    featuredUntil: safeIsoTimestamp(updated.featuredUntil),
     featuredFee: updated.featuredFee, featuredCoursePrice,
     charge: featuredChargeView(charge),
   });
@@ -19267,7 +19267,7 @@ router.post("/education/courses/:courseId/sessions", async (req, res): Promise<v
     if (error instanceof Error && error.message === "ONLINE_SESSION_UNAVAILABLE") { res.status(409).json({ error: "Online kurs ne može imati termine uživo." }); return; }
     throw error;
   }
-  res.status(201).json(CreateEducationSessionResponse.parse({ id: session!.id, startsAt: session!.startsAt.toISOString(), endsAt: session!.endsAt.toISOString(), location: session!.location, capacity: session!.capacity, reservedSeats: session!.reservedSeats, availableSeats: session!.capacity, minimumEnrollments: session!.minimumEnrollments, cancelledAt: session!.cancelledAt?.toISOString() ?? null, educatorStaffId }));
+  res.status(201).json(CreateEducationSessionResponse.parse({ id: session!.id, startsAt: safeIsoTimestamp(session!.startsAt), endsAt: safeIsoTimestamp(session!.endsAt), location: session!.location, capacity: session!.capacity, reservedSeats: session!.reservedSeats, availableSeats: session!.capacity, minimumEnrollments: session!.minimumEnrollments, cancelledAt: safeIsoTimestamp(session!.cancelledAt), educatorStaffId }));
 });
 
 router.post("/education/courses/:courseId/enrollments", async (req, res): Promise<void> => {
@@ -19986,14 +19986,14 @@ router.patch("/education/sessions/:sessionId", async (req, res): Promise<void> =
   if (updated === false) { res.status(409).json({ error: "Kapacitet ne može biti manji od postojećih rezervacija." }); return; }
   res.json(UpdateEducationSessionResponse.parse({
     id: updated.id,
-    startsAt: updated.startsAt.toISOString(),
-    endsAt: updated.endsAt.toISOString(),
+    startsAt: safeIsoTimestamp(updated.startsAt),
+    endsAt: safeIsoTimestamp(updated.endsAt),
     location: updated.location,
     capacity: updated.capacity,
     reservedSeats: updated.reservedSeats,
     availableSeats: Math.max(0, updated.capacity - updated.reservedSeats),
     minimumEnrollments: updated.minimumEnrollments,
-    cancelledAt: updated.cancelledAt?.toISOString() ?? null,
+    cancelledAt: safeIsoTimestamp(updated.cancelledAt),
   }));
 });
 
@@ -21290,7 +21290,7 @@ router.post("/education/public/courses/:courseId/inquiries", async (req, res): P
       });
       return created!;
     });
-    res.status(201).json({ id: inquiry.id, courseId: inquiry.courseId, status: inquiry.status, createdAt: inquiry.createdAt.toISOString() });
+    res.status(201).json({ id: inquiry.id, courseId: inquiry.courseId, status: inquiry.status, createdAt: safeIsoTimestamp(inquiry.createdAt) });
   } catch (error) {
     res.status(409).json({ error: error instanceof Error ? error.message : "Upit nije sačuvan." });
   }
@@ -21501,13 +21501,13 @@ router.post("/education/wishlist", async (req, res): Promise<void> => {
   const [existing] = await db.select().from(educationWishlistsTable)
     .where(and(eq(educationWishlistsTable.userId, user.id), eq(educationWishlistsTable.courseId, course.id))).limit(1);
   if (existing) {
-    res.json({ id: existing.id, createdAt: existing.createdAt.toISOString(), course: publicEducationCourseView(await educationCourseView(course)) }); return;
+    res.json({ id: existing.id, createdAt: safeIsoTimestamp(existing.createdAt), course: publicEducationCourseView(await educationCourseView(course)) }); return;
   }
   const [created] = await db.insert(educationWishlistsTable).values({ userId: user.id, courseId: course.id })
     .onConflictDoNothing().returning();
   const row = created ?? (await db.select().from(educationWishlistsTable)
     .where(and(eq(educationWishlistsTable.userId, user.id), eq(educationWishlistsTable.courseId, course.id))).limit(1))[0]!;
-  res.status(created ? 201 : 200).json({ id: row.id, createdAt: row.createdAt.toISOString(), course: publicEducationCourseView(await educationCourseView(course)) });
+  res.status(created ? 201 : 200).json({ id: row.id, createdAt: safeIsoTimestamp(row.createdAt), course: publicEducationCourseView(await educationCourseView(course)) });
 });
 
 router.delete("/education/wishlist/:courseId", async (req, res): Promise<void> => {
@@ -22683,7 +22683,7 @@ router.post("/education/purchases/:enrollmentId/messages", async (req, res): Pro
   if (thread!.status !== "open") { res.status(409).json({ error: "Ova konverzacija je zatvorena." }); return; }
   const [message] = await db.insert(educationMessagesTable).values({ threadId: thread!.id, senderId: user.id, body }).returning();
   await db.update(educationThreadsTable).set({ updatedAt: new Date() }).where(eq(educationThreadsTable.id, thread!.id));
-  res.status(201).json({ id: message!.id, body: message!.body, senderId: message!.senderId, senderName: `${user.firstName} ${user.lastName}`, createdAt: message!.createdAt.toISOString(), readAt: null });
+  res.status(201).json({ id: message!.id, body: message!.body, senderId: message!.senderId, senderName: `${user.firstName} ${user.lastName}`, createdAt: safeIsoTimestamp(message!.createdAt), readAt: null });
 });
 
 router.post("/education/purchases/:enrollmentId/disputes", async (req, res): Promise<void> => {
@@ -22728,7 +22728,7 @@ router.post("/education/purchases/:enrollmentId/disputes", async (req, res): Pro
     reason: result.dispute.reason,
     details: result.dispute.details,
     status: result.dispute.status,
-    createdAt: result.dispute.createdAt.toISOString(),
+    createdAt: safeIsoTimestamp(result.dispute.createdAt),
   };
   if (result.duplicate) {
     res.status(409).json({ error: "Za ovu kupovinu već postoji otvoren spor.", dispute });

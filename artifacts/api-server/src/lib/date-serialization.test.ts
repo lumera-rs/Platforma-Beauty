@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import {
+  AdminCreateCourierServiceResponse,
+  CreatePublicEducationCourseInquiryResponse,
+  GetEducationCourseFeaturedStatusResponse,
+  TrackRetailOrderResponse,
+} from "@workspace/api-zod";
 import { safeIsoTimestamp } from "./date-serialization";
 
 assert.equal(safeIsoTimestamp(new Date("2026-09-02T10:15:30.000Z")), "2026-09-02T10:15:30.000Z");
@@ -58,6 +64,83 @@ assert.deepEqual(response, [
   },
 ]);
 
+const mutationRow = {
+  id: "saved",
+  createdAt: new Date(Number.NaN),
+  updatedAt: new Date("2026-09-02T13:15:30.000Z"),
+  status: "active",
+};
+assert.deepEqual({
+  id: mutationRow.id,
+  createdAt: safeIsoTimestamp(mutationRow.createdAt),
+  updatedAt: safeIsoTimestamp(mutationRow.updatedAt),
+  status: mutationRow.status,
+}, {
+  id: "saved",
+  createdAt: null,
+  updatedAt: "2026-09-02T13:15:30.000Z",
+  status: "active",
+});
+
+const trackingResponse = TrackRetailOrderResponse.parse({
+  orderNumber: "LMR-100",
+  status: "RECEIVED",
+  statusLabel: "Porudžbina primljena",
+  createdAt: safeIsoTimestamp(new Date(Number.NaN)),
+  statusUpdatedAt: safeIsoTimestamp(new Date("2026-09-02T14:15:30.000Z")),
+  progressStage: 1,
+  trackingNumber: null,
+  courierUrl: null,
+});
+assert.equal(trackingResponse.createdAt, null);
+assert.equal(trackingResponse.statusUpdatedAt?.toISOString(), "2026-09-02T14:15:30.000Z");
+assert.equal(trackingResponse.orderNumber, "LMR-100");
+
+const inquiryResponse = CreatePublicEducationCourseInquiryResponse.parse({
+  id: "inquiry",
+  courseId: "course",
+  status: "new",
+  createdAt: safeIsoTimestamp(new Date(Number.NaN)),
+});
+assert.deepEqual(inquiryResponse, {
+  id: "inquiry",
+  courseId: "course",
+  status: "new",
+  createdAt: null,
+});
+
+const courierResponse = AdminCreateCourierServiceResponse.parse({
+  id: "courier",
+  code: "courier-code",
+  name: "Kurirska služba",
+  trackingUrlTemplate: null,
+  active: true,
+  createdAt: safeIsoTimestamp(new Date(Number.NaN)),
+  updatedAt: safeIsoTimestamp(new Date("2026-09-02T15:15:30.000Z")),
+});
+assert.equal(courierResponse.createdAt, null);
+assert.equal(courierResponse.updatedAt?.toISOString(), "2026-09-02T15:15:30.000Z");
+assert.equal(courierResponse.active, true);
+
+const featuredResponse = GetEducationCourseFeaturedStatusResponse.parse({
+  courseId: "course",
+  isFeatured: true,
+  featuredUntil: null,
+  featuredFee: 1000,
+  featuredCoursePrice: 1000,
+  charge: {
+    id: "charge",
+    amount: 1000,
+    status: "pending",
+    paymentReference: null,
+    activatedAt: safeIsoTimestamp(new Date(Number.NaN)),
+    settledAt: safeIsoTimestamp(new Date("2026-09-02T16:15:30.000Z")),
+  },
+});
+assert.equal(featuredResponse.charge?.activatedAt, null);
+assert.equal(featuredResponse.charge?.settledAt?.toISOString(), "2026-09-02T16:15:30.000Z");
+assert.equal(featuredResponse.courseId, "course");
+
 const marketplaceSource = readFileSync(new URL("../routes/marketplace.ts", import.meta.url), "utf8");
 function sourceBetween(start: string, end: string): string {
   const startIndex = marketplaceSource.indexOf(start);
@@ -84,6 +167,18 @@ for (const [name, source] of [
   ["instructor lists", sourceBetween("function instructorProfileView(", "function instructorProfileSummary")],
   ["education dispute lists", sourceBetween("router.get(\"/education/disputes\"", "router.get(\"/admin/summary\"")],
   ["education purchase message lists", sourceBetween("router.get(\"/education/purchases/:enrollmentId/messages\"", "router.post(\"/education/purchases/:enrollmentId/messages\"")],
+  ["public retail tracking detail", sourceBetween("function publicTrackingDto(", "async function retailLookupRateLimited")],
+  ["product waitlist detail", sourceBetween("async function productWaitlistStatus(", "async function unsubscribeProductWaitlist")],
+  ["product review mutations", sourceBetween("router.post(\"/shop/products/:productId/reviews\"", "// ── Shipping calculation")],
+  ["courier service detail", sourceBetween("function courierServiceDto(", "function trackingUrlFor")],
+  ["education course mutations", sourceBetween("router.patch(\"/education/courses/:courseId\"", "router.post(\"/education/courses/:courseId/publish\"")],
+  ["education featured detail and mutations", sourceBetween("function featuredChargeView(", "router.patch(\"/education/courses/:courseId/instructor\"")],
+  ["education session creation", sourceBetween("router.post(\"/education/courses/:courseId/sessions\"", "router.post(\"/education/courses/:courseId/enrollments\"")],
+  ["education session updates", sourceBetween("router.patch(\"/education/sessions/:sessionId\"", "router.delete(\"/education/sessions/:sessionId\"")],
+  ["education inquiry mutations", sourceBetween("router.post(\"/education/public/courses/:courseId/inquiries\"", "router.get(\"/education/public/categories\"")],
+  ["education wishlist mutations", sourceBetween("router.post(\"/education/wishlist\"", "router.delete(\"/education/wishlist/:courseId\"")],
+  ["education message mutations", sourceBetween("router.post(\"/education/purchases/:enrollmentId/messages\"", "router.post(\"/education/purchases/:enrollmentId/disputes\"")],
+  ["education dispute mutations", sourceBetween("router.post(\"/education/purchases/:enrollmentId/disputes\"", "router.get(\"/education/disputes\"")],
 ]) {
   assert.doesNotMatch(source, /\.toISOString\(\)/, `${name} must not directly serialize selected timestamps`);
 }

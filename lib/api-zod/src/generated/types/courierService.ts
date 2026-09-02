@@ -13,6 +13,8 @@ export interface CourierService {
   /** @nullable */
   trackingUrlTemplate: string | null;
   active: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
+  /** @nullable */
+  updatedAt: Date | null;
 }

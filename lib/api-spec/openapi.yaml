@@ -12130,8 +12130,8 @@ components:
         orderNumber: { type: string }
         status: { type: string, enum: [RECEIVED, PREPARING, PACKING, SHIPPED, COMPLETED, CANCELLED] }
         statusLabel: { type: string }
-        createdAt: { type: string, format: date-time }
-        statusUpdatedAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
+        statusUpdatedAt: { type: ["string", "null"], format: date-time }
         progressStage: { type: integer, minimum: 0, maximum: 5 }
         trackingNumber: { type: ["string", "null"] }
         courierUrl: { type: ["string", "null"] }
@@ -13410,8 +13410,8 @@ components:
         name: { type: string }
         trackingUrlTemplate: { type: ["string", "null"] }
         active: { type: boolean }
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
+        updatedAt: { type: ["string", "null"], format: date-time }
       required: [id, code, name, trackingUrlTemplate, active, createdAt, updatedAt]
     CourierServiceInput:
       type: object
@@ -13966,7 +13966,7 @@ components:
         id: { type: string }
         courseId: { type: string }
         status: { type: string }
-        createdAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
       required: [id, courseId, status, createdAt]
     EducationRankedCategory:
       type: object
@@ -14936,7 +14936,7 @@ components:
         amount: { type: number }
         status: { type: string, enum: [pending, paid, cancelled, refunded] }
         paymentReference: { type: ["string", "null"] }
-        activatedAt: { type: string, format: date-time }
+        activatedAt: { type: ["string", "null"], format: date-time }
         settledAt: { type: ["string", "null"], format: date-time }
       required: [id, amount, status, activatedAt]
     EducationFeaturedChargeSettlementInput:

@@ -11513,7 +11513,7 @@ export const SettleAdminEducationFeaturedChargeResponse = zod.object({
   "amount": zod.number(),
   "status": zod.enum(['pending', 'paid', 'cancelled', 'refunded']),
   "paymentReference": zod.string().nullish(),
-  "activatedAt": zod.coerce.date(),
+  "activatedAt": zod.coerce.date().nullable(),
   "settledAt": zod.coerce.date().nullish()
 }).and(zod.object({
   "courseId": zod.string()
@@ -16181,7 +16181,7 @@ export const GetEducationCourseFeaturedStatusResponse = zod.object({
   "amount": zod.number(),
   "status": zod.enum(['pending', 'paid', 'cancelled', 'refunded']),
   "paymentReference": zod.string().nullish(),
-  "activatedAt": zod.coerce.date(),
+  "activatedAt": zod.coerce.date().nullable(),
   "settledAt": zod.coerce.date().nullish()
 })]).optional()
 })
@@ -16217,7 +16217,7 @@ export const UpdateEducationCourseFeaturedResponse = zod.object({
   "amount": zod.number(),
   "status": zod.enum(['pending', 'paid', 'cancelled', 'refunded']),
   "paymentReference": zod.string().nullish(),
-  "activatedAt": zod.coerce.date(),
+  "activatedAt": zod.coerce.date().nullable(),
   "settledAt": zod.coerce.date().nullish()
 })]).optional()
 })
@@ -18009,7 +18009,7 @@ export const CreatePublicEducationCourseInquiryResponse = zod.object({
   "id": zod.string(),
   "courseId": zod.string(),
   "status": zod.string(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 })
 
 
@@ -25068,8 +25068,8 @@ export const AdminListCourierServicesResponseItem = zod.object({
   "name": zod.string(),
   "trackingUrlTemplate": zod.string().nullable(),
   "active": zod.boolean(),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable()
 })
 export const AdminListCourierServicesResponse = zod.array(AdminListCourierServicesResponseItem)
 
@@ -25095,8 +25095,8 @@ export const AdminCreateCourierServiceResponse = zod.object({
   "name": zod.string(),
   "trackingUrlTemplate": zod.string().nullable(),
   "active": zod.boolean(),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable()
 })
 
 
@@ -25125,8 +25125,8 @@ export const AdminUpdateCourierServiceResponse = zod.object({
   "name": zod.string(),
   "trackingUrlTemplate": zod.string().nullable(),
   "active": zod.boolean(),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable()
 })
 
 
@@ -28995,8 +28995,8 @@ export const TrackRetailOrderResponse = zod.object({
   "orderNumber": zod.string(),
   "status": zod.enum(['RECEIVED', 'PREPARING', 'PACKING', 'SHIPPED', 'COMPLETED', 'CANCELLED']),
   "statusLabel": zod.string(),
-  "createdAt": zod.coerce.date(),
-  "statusUpdatedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
+  "statusUpdatedAt": zod.coerce.date().nullable(),
   "progressStage": zod.number().int().min(trackRetailOrderResponseProgressStageMin).max(trackRetailOrderResponseProgressStageMax),
   "trackingNumber": zod.string().nullable(),
   "courierUrl": zod.string().nullable()
@@ -29029,8 +29029,8 @@ export const LookupRetailOrderTrackingResponse = zod.object({
   "orderNumber": zod.string(),
   "status": zod.enum(['RECEIVED', 'PREPARING', 'PACKING', 'SHIPPED', 'COMPLETED', 'CANCELLED']),
   "statusLabel": zod.string(),
-  "createdAt": zod.coerce.date(),
-  "statusUpdatedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
+  "statusUpdatedAt": zod.coerce.date().nullable(),
   "progressStage": zod.number().int().min(lookupRetailOrderTrackingResponseProgressStageMin).max(lookupRetailOrderTrackingResponseProgressStageMax),
   "trackingNumber": zod.string().nullable(),
   "courierUrl": zod.string().nullable()
