@@ -63,7 +63,7 @@
     "test:monitoring": "pnpm --filter @workspace/scripts run test:monitoring",
     "test:backend-standards": "pnpm --filter @workspace/scripts run test:backend-standards",
     "test:backend-standards:static": "pnpm --filter @workspace/scripts run test:backend-standards -- --static-only",
-    "test:backend-standards:database": "pnpm --filter @workspace/scripts run test:backend-standards -- --database-only",
+    "test:backend-standards:database": "pnpm --filter @workspace/scripts run test:backend-standards:database",
     "test:query-counts": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/query-count.test.ts",
     "test:catalog-cache": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/catalog-cache.test.ts",
     "test:communication-archive": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/communication-archive.test.ts",
