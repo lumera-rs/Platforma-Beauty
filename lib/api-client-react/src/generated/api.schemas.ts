@@ -6751,6 +6751,22 @@ export const EducationEnrollmentEscrowStatus = {
   partially_refunded: 'partially_refunded',
 } as const;
 
+export type EducationEnrollmentDisputeStatus = typeof EducationEnrollmentDisputeStatus[keyof typeof EducationEnrollmentDisputeStatus];
+
+
+export const EducationEnrollmentDisputeStatus = {
+  open: 'open',
+  under_review: 'under_review',
+} as const;
+
+export interface EducationEnrollmentDispute {
+  id: string;
+  reason: string;
+  details: string;
+  status: EducationEnrollmentDisputeStatus;
+  createdAt: string;
+}
+
 /**
  * @nullable
  */
@@ -6787,6 +6803,7 @@ export interface EducationEnrollment {
   escrowStatus?: EducationEnrollmentEscrowStatus;
   /** @nullable */
   escrowReleaseAt?: string | null;
+  dispute?: EducationEnrollmentDispute | null;
 }
 
 export type EducationEnrollmentPaymentInstructionsPaymentStatus = typeof EducationEnrollmentPaymentInstructionsPaymentStatus[keyof typeof EducationEnrollmentPaymentInstructionsPaymentStatus];

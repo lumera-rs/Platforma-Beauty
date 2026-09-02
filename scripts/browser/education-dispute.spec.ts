@@ -193,6 +193,12 @@ test("student keeps the original dispute after retrying a duplicate submission",
     await page.goto("/student/edukacije");
     await expect(page.getByRole("heading", { name: "Moje edukacije" })).toBeVisible();
     await expect(page.getByRole("heading", { name: /^Browser kurs sa otvorenim sporom/ })).toBeVisible();
+    const disputeCard = page.getByTestId(`student-enrollment-dispute-${fixture.enrollmentId}`);
+    await expect(disputeCard).toHaveAttribute("data-dispute-id", fixture.disputeId);
+    await expect(disputeCard.getByText("Otvoren", { exact: true })).toBeVisible();
+    await expect(disputeCard.getByText(`Razlog: ${fixture.reason}`, { exact: true })).toBeVisible();
+    await expect(disputeCard).toContainText("20. 8. 2026.");
+    await expect(disputeCard).toContainText("Escrow je zamrznut dok se spor obrađuje.");
 
     const duplicateResponse = await page.request.post(
       `/api/education/purchases/${fixture.enrollmentId}/disputes`,
@@ -224,6 +230,15 @@ test("student keeps the original dispute after retrying a duplicate submission",
       details: fixture.details,
       createdAt: fixture.reportedAt.toISOString(),
     });
+
+    await page.reload();
+    await expect(page.getByRole("heading", { name: /^Browser kurs sa otvorenim sporom/ })).toBeVisible();
+    const recoveredDisputeCard = page.getByTestId(`student-enrollment-dispute-${fixture.enrollmentId}`);
+    await expect(recoveredDisputeCard).toHaveAttribute("data-dispute-id", fixture.disputeId);
+    await expect(recoveredDisputeCard.getByText("Otvoren", { exact: true })).toBeVisible();
+    await expect(recoveredDisputeCard.getByText(`Razlog: ${fixture.reason}`, { exact: true })).toBeVisible();
+    await expect(recoveredDisputeCard).toContainText("20. 8. 2026.");
+    await expect(recoveredDisputeCard).toContainText("Escrow je zamrznut dok se spor obrađuje.");
   } finally {
     await cleanUpEducationDisputeFixture(fixture);
   }

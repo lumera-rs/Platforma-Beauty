@@ -14309,7 +14309,20 @@ components:
         digitalContentConsentVersionSnapshot: { type: ["string", "null"] }
         escrowStatus: { type: ["string", "null"], enum: [held, ready_for_payout, frozen, paid_out, refunded, partially_refunded, null] }
         escrowReleaseAt: { type: ["string", "null"], format: date-time }
+        dispute:
+          oneOf:
+            - $ref: "#/components/schemas/EducationEnrollmentDispute"
+            - type: "null"
       required: [id, courseId, courseTitle, learnerName, status, paymentStatus, progress, purchasedAt]
+    EducationEnrollmentDispute:
+      type: object
+      properties:
+        id: { type: string }
+        reason: { type: string }
+        details: { type: string }
+        status: { type: string, enum: [open, under_review] }
+        createdAt: { type: string, format: date-time }
+      required: [id, reason, details, status, createdAt]
     EducationEnrollmentPaymentInstructions:
       type: object
       description: Server-owned IPS instructions for a pending marketplace enrollment. Rendering these instructions has no settlement or access side effect.

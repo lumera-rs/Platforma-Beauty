@@ -633,6 +633,8 @@ export * from './educationEducatorAbsencePreview';
 export * from './educationEducatorWeeklyAvailability';
 export * from './educationEducatorWeeklyAvailabilityInput';
 export * from './educationEnrollment';
+export * from './educationEnrollmentDispute';
+export * from './educationEnrollmentDisputeStatus';
 export * from './educationEnrollmentEscrowStatus';
 export * from './educationEnrollmentExtension';
 export * from './educationEnrollmentExtensionInput';

@@ -10798,7 +10798,14 @@ export const ListEducationPurchasesResponseItem = zod.object({
   "digitalContentConsentAt": zod.coerce.date().nullish(),
   "digitalContentConsentVersionSnapshot": zod.string().nullish(),
   "escrowStatus": zod.union([zod.literal('held'),zod.literal('ready_for_payout'),zod.literal('frozen'),zod.literal('paid_out'),zod.literal('refunded'),zod.literal('partially_refunded'),zod.literal(null)]).nullish(),
-  "escrowReleaseAt": zod.coerce.date().nullish()
+  "escrowReleaseAt": zod.coerce.date().nullish(),
+  "dispute": zod.union([zod.object({
+  "id": zod.string(),
+  "reason": zod.string(),
+  "details": zod.string(),
+  "status": zod.enum(['open', 'under_review']),
+  "createdAt": zod.coerce.date()
+}),zod.null()]).optional()
 })
 export const ListEducationPurchasesResponse = zod.array(ListEducationPurchasesResponseItem)
 
@@ -11475,7 +11482,14 @@ export const SettleAdminEducationEnrollmentResponse = zod.object({
   "digitalContentConsentAt": zod.coerce.date().nullish(),
   "digitalContentConsentVersionSnapshot": zod.string().nullish(),
   "escrowStatus": zod.union([zod.literal('held'),zod.literal('ready_for_payout'),zod.literal('frozen'),zod.literal('paid_out'),zod.literal('refunded'),zod.literal('partially_refunded'),zod.literal(null)]).nullish(),
-  "escrowReleaseAt": zod.coerce.date().nullish()
+  "escrowReleaseAt": zod.coerce.date().nullish(),
+  "dispute": zod.union([zod.object({
+  "id": zod.string(),
+  "reason": zod.string(),
+  "details": zod.string(),
+  "status": zod.enum(['open', 'under_review']),
+  "createdAt": zod.coerce.date()
+}),zod.null()]).optional()
 })
 
 
@@ -14950,7 +14964,14 @@ export const EnrollInEducationCourseResponse = zod.object({
   "digitalContentConsentAt": zod.coerce.date().nullish(),
   "digitalContentConsentVersionSnapshot": zod.string().nullish(),
   "escrowStatus": zod.union([zod.literal('held'),zod.literal('ready_for_payout'),zod.literal('frozen'),zod.literal('paid_out'),zod.literal('refunded'),zod.literal('partially_refunded'),zod.literal(null)]).nullish(),
-  "escrowReleaseAt": zod.coerce.date().nullish()
+  "escrowReleaseAt": zod.coerce.date().nullish(),
+  "dispute": zod.union([zod.object({
+  "id": zod.string(),
+  "reason": zod.string(),
+  "details": zod.string(),
+  "status": zod.enum(['open', 'under_review']),
+  "createdAt": zod.coerce.date()
+}),zod.null()]).optional()
 })
 
 
@@ -15012,7 +15033,14 @@ export const CreateEducationGroupEnrollmentsResponse = zod.object({
   "digitalContentConsentAt": zod.coerce.date().nullish(),
   "digitalContentConsentVersionSnapshot": zod.string().nullish(),
   "escrowStatus": zod.union([zod.literal('held'),zod.literal('ready_for_payout'),zod.literal('frozen'),zod.literal('paid_out'),zod.literal('refunded'),zod.literal('partially_refunded'),zod.literal(null)]).nullish(),
-  "escrowReleaseAt": zod.coerce.date().nullish()
+  "escrowReleaseAt": zod.coerce.date().nullish(),
+  "dispute": zod.union([zod.object({
+  "id": zod.string(),
+  "reason": zod.string(),
+  "details": zod.string(),
+  "status": zod.enum(['open', 'under_review']),
+  "createdAt": zod.coerce.date()
+}),zod.null()]).optional()
 })).min(1),
   "paymentInstructions": zod.array(zod.object({
   "enrollmentId": zod.string(),
@@ -15121,7 +15149,14 @@ export const TransferEducationOnlineEnrollmentResponse = zod.object({
   "digitalContentConsentAt": zod.coerce.date().nullish(),
   "digitalContentConsentVersionSnapshot": zod.string().nullish(),
   "escrowStatus": zod.union([zod.literal('held'),zod.literal('ready_for_payout'),zod.literal('frozen'),zod.literal('paid_out'),zod.literal('refunded'),zod.literal('partially_refunded'),zod.literal(null)]).nullish(),
-  "escrowReleaseAt": zod.coerce.date().nullish()
+  "escrowReleaseAt": zod.coerce.date().nullish(),
+  "dispute": zod.union([zod.object({
+  "id": zod.string(),
+  "reason": zod.string(),
+  "details": zod.string(),
+  "status": zod.enum(['open', 'under_review']),
+  "createdAt": zod.coerce.date()
+}),zod.null()]).optional()
 })
 
 
@@ -15314,7 +15349,14 @@ export const ListEnrollmentsResponseItem = zod.object({
   "digitalContentConsentAt": zod.coerce.date().nullish(),
   "digitalContentConsentVersionSnapshot": zod.string().nullish(),
   "escrowStatus": zod.union([zod.literal('held'),zod.literal('ready_for_payout'),zod.literal('frozen'),zod.literal('paid_out'),zod.literal('refunded'),zod.literal('partially_refunded'),zod.literal(null)]).nullish(),
-  "escrowReleaseAt": zod.coerce.date().nullish()
+  "escrowReleaseAt": zod.coerce.date().nullish(),
+  "dispute": zod.union([zod.object({
+  "id": zod.string(),
+  "reason": zod.string(),
+  "details": zod.string(),
+  "status": zod.enum(['open', 'under_review']),
+  "createdAt": zod.coerce.date()
+}),zod.null()]).optional()
 })
 export const ListEnrollmentsResponse = zod.array(ListEnrollmentsResponseItem)
 
@@ -15346,7 +15388,14 @@ export const AcceptEducationWaitlistOfferResponse = zod.object({
   "digitalContentConsentAt": zod.coerce.date().nullish(),
   "digitalContentConsentVersionSnapshot": zod.string().nullish(),
   "escrowStatus": zod.union([zod.literal('held'),zod.literal('ready_for_payout'),zod.literal('frozen'),zod.literal('paid_out'),zod.literal('refunded'),zod.literal('partially_refunded'),zod.literal(null)]).nullish(),
-  "escrowReleaseAt": zod.coerce.date().nullish()
+  "escrowReleaseAt": zod.coerce.date().nullish(),
+  "dispute": zod.union([zod.object({
+  "id": zod.string(),
+  "reason": zod.string(),
+  "details": zod.string(),
+  "status": zod.enum(['open', 'under_review']),
+  "createdAt": zod.coerce.date()
+}),zod.null()]).optional()
 })
 
 
@@ -15522,7 +15571,14 @@ export const GetEducationLmsResponse = zod.object({
   "digitalContentConsentAt": zod.coerce.date().nullish(),
   "digitalContentConsentVersionSnapshot": zod.string().nullish(),
   "escrowStatus": zod.union([zod.literal('held'),zod.literal('ready_for_payout'),zod.literal('frozen'),zod.literal('paid_out'),zod.literal('refunded'),zod.literal('partially_refunded'),zod.literal(null)]).nullish(),
-  "escrowReleaseAt": zod.coerce.date().nullish()
+  "escrowReleaseAt": zod.coerce.date().nullish(),
+  "dispute": zod.union([zod.object({
+  "id": zod.string(),
+  "reason": zod.string(),
+  "details": zod.string(),
+  "status": zod.enum(['open', 'under_review']),
+  "createdAt": zod.coerce.date()
+}),zod.null()]).optional()
 }),
   "course": zod.object({
   "id": zod.string(),
@@ -15823,7 +15879,14 @@ export const CompleteEducationLessonResponse = zod.object({
   "digitalContentConsentAt": zod.coerce.date().nullish(),
   "digitalContentConsentVersionSnapshot": zod.string().nullish(),
   "escrowStatus": zod.union([zod.literal('held'),zod.literal('ready_for_payout'),zod.literal('frozen'),zod.literal('paid_out'),zod.literal('refunded'),zod.literal('partially_refunded'),zod.literal(null)]).nullish(),
-  "escrowReleaseAt": zod.coerce.date().nullish()
+  "escrowReleaseAt": zod.coerce.date().nullish(),
+  "dispute": zod.union([zod.object({
+  "id": zod.string(),
+  "reason": zod.string(),
+  "details": zod.string(),
+  "status": zod.enum(['open', 'under_review']),
+  "createdAt": zod.coerce.date()
+}),zod.null()]).optional()
 })
 
 
@@ -19569,7 +19632,14 @@ export const RedeemEducationGiftVoucherResponse = zod.object({
   "digitalContentConsentAt": zod.coerce.date().nullish(),
   "digitalContentConsentVersionSnapshot": zod.string().nullish(),
   "escrowStatus": zod.union([zod.literal('held'),zod.literal('ready_for_payout'),zod.literal('frozen'),zod.literal('paid_out'),zod.literal('refunded'),zod.literal('partially_refunded'),zod.literal(null)]).nullish(),
-  "escrowReleaseAt": zod.coerce.date().nullish()
+  "escrowReleaseAt": zod.coerce.date().nullish(),
+  "dispute": zod.union([zod.object({
+  "id": zod.string(),
+  "reason": zod.string(),
+  "details": zod.string(),
+  "status": zod.enum(['open', 'under_review']),
+  "createdAt": zod.coerce.date()
+}),zod.null()]).optional()
 })
 
 
