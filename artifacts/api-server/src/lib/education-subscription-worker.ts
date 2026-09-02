@@ -1,16 +1,21 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gt, inArray, isNotNull, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, lte, or, sql } from "drizzle-orm";
 import {
   coursesTable, db, educationCenterSubscriptionsTable, educationCentersTable,
   educationPaymentObligationsTable, educationPlatformSettingsTable, subscriptionPlansTable, usersTable,
 } from "@workspace/db";
 import { enqueueTransactionalEmail, lumeraEmailHtml } from "./brevo";
-import { addEducationBelgradeCalendarDays, educationIpsPaymentCode, educationIpsQrPayload, educationIpsRuntimeEnvironment } from "./education-marketplace-domain";
+import { educationIpsPaymentCode, educationIpsQrPayload, educationIpsRuntimeEnvironment } from "./education-marketplace-domain";
 import { addEducationBillingPeriod, educationCycleAmount, educationPaymentReference, type EducationBillingCycle } from "./education-subscription-domain";
+import {
+  addEducationBelgradeCalendarDays,
+  educationBelgradeCalendarDayDifference,
+  educationBelgradeDateKey,
+} from "./education-belgrade-calendar";
 
-const DAY = 24 * 60 * 60 * 1000;
-
-export async function runEducationSubscriptionLifecycle() {
+export async function runEducationSubscriptionLifecycle(options?: {
+  afterCandidatesLoaded?: (subscriptionIds: string[]) => Promise<void> | void;
+}) {
   const now = new Date();
   const rows = await db.select({ subscription: educationCenterSubscriptionsTable, center: educationCentersTable, plan: subscriptionPlansTable, owner: usersTable })
     .from(educationCenterSubscriptionsTable)
@@ -18,11 +23,12 @@ export async function runEducationSubscriptionLifecycle() {
     .innerJoin(subscriptionPlansTable, eq(subscriptionPlansTable.id, educationCenterSubscriptionsTable.planId))
     .innerJoin(usersTable, eq(usersTable.id, educationCentersTable.ownerId))
     .where(or(
-      and(eq(educationCenterSubscriptionsTable.status, "trial"), isNotNull(educationCenterSubscriptionsTable.trialEndsAt), lte(educationCenterSubscriptionsTable.trialEndsAt, new Date(now.getTime() + 7 * DAY))),
-      and(eq(educationCenterSubscriptionsTable.status, "active"), isNotNull(educationCenterSubscriptionsTable.currentPeriodEnd), lte(educationCenterSubscriptionsTable.currentPeriodEnd, new Date(now.getTime() + 7 * DAY))),
-      and(eq(educationCenterSubscriptionsTable.status, "active"), eq(educationCenterSubscriptionsTable.contractKind, "custom"), isNotNull(educationCenterSubscriptionsTable.contractEndsAt), lte(educationCenterSubscriptionsTable.contractEndsAt, new Date(now.getTime() + 14 * DAY))),
+      and(eq(educationCenterSubscriptionsTable.status, "trial"), isNotNull(educationCenterSubscriptionsTable.trialEndsAt), lte(educationCenterSubscriptionsTable.trialEndsAt, addEducationBelgradeCalendarDays(now, 7))),
+      and(eq(educationCenterSubscriptionsTable.status, "active"), isNotNull(educationCenterSubscriptionsTable.currentPeriodEnd), lte(educationCenterSubscriptionsTable.currentPeriodEnd, addEducationBelgradeCalendarDays(now, 7))),
+      and(eq(educationCenterSubscriptionsTable.status, "active"), eq(educationCenterSubscriptionsTable.contractKind, "custom"), isNotNull(educationCenterSubscriptionsTable.contractEndsAt), lte(educationCenterSubscriptionsTable.contractEndsAt, addEducationBelgradeCalendarDays(now, 14))),
       and(eq(educationCenterSubscriptionsTable.status, "past_due"), isNotNull(educationCenterSubscriptionsTable.graceEndsAt), lte(educationCenterSubscriptionsTable.graceEndsAt, now)),
     ));
+  await options?.afterCandidatesLoaded?.(rows.map((row) => row.subscription.id));
   let reminders = 0;
   let transitioned = 0;
   for (const row of rows) {
@@ -30,17 +36,20 @@ export async function runEducationSubscriptionLifecycle() {
       ? row.subscription.contractEndsAt ?? row.subscription.currentPeriodEnd
       : row.subscription.trialEndsAt ?? row.subscription.currentPeriodEnd;
     if (due && due > now) {
-      const days = Math.ceil((due.getTime() - now.getTime()) / DAY);
+      const days = educationBelgradeCalendarDayDifference(
+        educationBelgradeDateKey(now),
+        educationBelgradeDateKey(due),
+      );
       const buckets = row.subscription.contractKind === "custom" ? [2, 5, 7, 14] : [2, 5, 7];
       const bucket = buckets.find((value) => days <= value && days > value - 1);
       if (bucket && row.owner.email) {
         const delivery = await enqueueTransactionalEmail(db, {
-          eventKey: `education-subscription-expiry:${row.subscription.id}:${educationDateKey(due)}:${bucket}`,
+          eventKey: `education-subscription-expiry:${row.subscription.id}:${educationBelgradeDateKey(due)}:${bucket}`,
           emailType: "education_subscription_expiry",
           to: { email: row.owner.email, name: `${row.owner.firstName} ${row.owner.lastName}` },
           subject: `Pretplata Education centra ističe za ${bucket} dana`,
           htmlContent: lumeraEmailHtml("Podsetnik za pretplatu", `<p>Vaš plan „${row.plan.name}” ističe za ${bucket} dana.</p><p>Obnovite pretplatu na vreme da bi kursevi ostali javno dostupni.</p>`),
-          metadata: { centerId: row.center.id, daysRemaining: bucket },
+          metadata: { centerId: row.center.id, subscriptionId: row.subscription.id, daysRemaining: bucket },
         });
         if (delivery) reminders += 1;
       }
@@ -50,14 +59,16 @@ export async function runEducationSubscriptionLifecycle() {
       const [locked] = await tx.select().from(educationCenterSubscriptionsTable)
         .where(eq(educationCenterSubscriptionsTable.id, row.subscription.id)).for("update").limit(1);
       if (!locked) return;
+      const lockedClock = await tx.execute<{ now: Date }>(sql`select clock_timestamp() as now`);
+      const lockedNow = new Date(lockedClock.rows[0]!.now);
       const lockedDue = locked.contractKind === "custom"
         ? locked.contractEndsAt ?? locked.currentPeriodEnd
         : locked.trialEndsAt ?? locked.currentPeriodEnd;
-      if ((locked.status === "trial" || locked.status === "active") && lockedDue && lockedDue.getTime() <= now.getTime()) {
+      if ((locked.status === "trial" || locked.status === "active") && lockedDue && lockedDue.getTime() <= lockedNow.getTime()) {
         if (!locked.autoRenew) {
           // Cancellation disables charging, not the existing grace/deactivation
           // safety path. No renewal is issued; access then follows grace.
-          await tx.update(educationCenterSubscriptionsTable).set({ status: "past_due", graceEndsAt: addEducationBelgradeCalendarDays(now, 5), updatedAt: now })
+          await tx.update(educationCenterSubscriptionsTable).set({ status: "past_due", graceEndsAt: addEducationBelgradeCalendarDays(lockedNow, 5), updatedAt: lockedNow })
             .where(eq(educationCenterSubscriptionsTable.id, locked.id));
           transitioned += 1;
           return;
@@ -65,7 +76,7 @@ export async function runEducationSubscriptionLifecycle() {
         const pendingChangeDue = Boolean(
           locked.pendingPlanId
           && locked.pendingPlanEffectiveAt
-          && locked.pendingPlanEffectiveAt <= now,
+          && locked.pendingPlanEffectiveAt <= lockedNow,
         );
         const [settledPendingUpgrade] = pendingChangeDue ? await tx.select().from(educationPaymentObligationsTable).where(and(
           eq(educationPaymentObligationsTable.subscriptionId, locked.id),
@@ -77,8 +88,8 @@ export async function runEducationSubscriptionLifecycle() {
           eq(educationPaymentObligationsTable.subscriptionId, locked.id),
           eq(educationPaymentObligationsTable.kind, "subscription_renewal"),
           eq(educationPaymentObligationsTable.status, "paid"),
-          lte(educationPaymentObligationsTable.servicePeriodStart, now),
-          gt(educationPaymentObligationsTable.servicePeriodEnd, now),
+          lte(educationPaymentObligationsTable.servicePeriodStart, lockedNow),
+          gt(educationPaymentObligationsTable.servicePeriodEnd, lockedNow),
         )).limit(1);
         if (prepaidRenewal?.servicePeriodStart && prepaidRenewal.servicePeriodEnd) {
           const applyPendingPlan = Boolean(locked.pendingPlanId && locked.pendingPlanEffectiveAt && locked.pendingPlanEffectiveAt <= prepaidRenewal.servicePeriodStart);
@@ -94,7 +105,7 @@ export async function runEducationSubscriptionLifecycle() {
               pendingPlanId: null, pendingBillingCycle: null, pendingPlanEffectiveAt: null,
             } : {}),
             status: "active", currentPeriodStart: prepaidRenewal.servicePeriodStart,
-            currentPeriodEnd: prepaidRenewal.servicePeriodEnd, graceEndsAt: null, deactivatedAt: null, updatedAt: now,
+            currentPeriodEnd: prepaidRenewal.servicePeriodEnd, graceEndsAt: null, deactivatedAt: null, updatedAt: lockedNow,
             currentPriceSnapshot: appliedSnapshot.planMonthlyPriceSnapshot ?? locked.currentPriceSnapshot,
           }).where(eq(educationCenterSubscriptionsTable.id, locked.id));
           const [paidPlan] = await tx.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, appliedPlanId)).limit(1);
@@ -105,22 +116,22 @@ export async function runEducationSubscriptionLifecycle() {
             .orderBy(coursesTable.createdAt).for("update");
           const keep = new Set(applyPendingPlan ? locked.pendingKeepCourseIds ?? published.slice(0, courseLimit).map((course) => course.id) : published.slice(0, courseLimit).map((course) => course.id));
           const extras = published.filter((course) => !keep.has(course.id)).map((course) => course.id);
-          if (extras.length) await tx.update(coursesTable).set({ published: false, subscriptionSuspended: true, updatedAt: now }).where(inArray(coursesTable.id, extras));
+          if (extras.length) await tx.update(coursesTable).set({ published: false, subscriptionSuspended: true, updatedAt: lockedNow }).where(inArray(coursesTable.id, extras));
           const available = Math.max(0, courseLimit - (published.length - extras.length));
           if (available) {
             const drafts = await tx.select({ id: coursesTable.id }).from(coursesTable)
               .where(and(eq(coursesTable.centerId, locked.centerId), eq(coursesTable.published, false), eq(coursesTable.subscriptionSuspended, true), eq(coursesTable.archived, false)))
               .orderBy(coursesTable.createdAt).limit(available).for("update");
-            if (drafts.length) await tx.update(coursesTable).set({ published: true, subscriptionSuspended: false, updatedAt: now }).where(inArray(coursesTable.id, drafts.map((course) => course.id)));
+            if (drafts.length) await tx.update(coursesTable).set({ published: true, subscriptionSuspended: false, updatedAt: lockedNow }).where(inArray(coursesTable.id, drafts.map((course) => course.id)));
           }
           transitioned += 1;
           return;
         }
-        const graceEndsAt = addEducationBelgradeCalendarDays(now, 5);
+        const graceEndsAt = addEducationBelgradeCalendarDays(lockedNow, 5);
          const [pendingUpgrade] = await tx.select({ id: educationPaymentObligationsTable.id }).from(educationPaymentObligationsTable)
            .where(and(eq(educationPaymentObligationsTable.subscriptionId, locked.id), eq(educationPaymentObligationsTable.kind, "subscription_upgrade"), eq(educationPaymentObligationsTable.status, "pending"))).limit(1);
          if (pendingUpgrade) {
-           await tx.update(educationPaymentObligationsTable).set({ status: "cancelled", cancelledAt: now })
+            await tx.update(educationPaymentObligationsTable).set({ status: "cancelled", cancelledAt: lockedNow })
              .where(eq(educationPaymentObligationsTable.id, pendingUpgrade.id));
          }
           const nextPlanId = pendingUpgrade ? locked.planId : (locked.pendingPlanId ?? locked.planId);
@@ -130,7 +141,7 @@ export async function runEducationSubscriptionLifecycle() {
         const amount = locked.contractKind === "custom" ? locked.dueAmount : educationCycleAmount(nextPlan.price, nextCycle);
          const effectiveCourseLimit = settledPendingUpgrade?.courseLimitSnapshot
            ?? (locked.contractKind === "custom" ? locked.courseLimitOverride ?? 0 : nextPlan.courseLimit ?? nextPlan.limits["courses"] ?? 0);
-        const periodStart = locked.currentPeriodEnd && locked.currentPeriodEnd > now ? locked.currentPeriodEnd : now;
+         const periodStart = locked.currentPeriodEnd && locked.currentPeriodEnd > lockedNow ? locked.currentPeriodEnd : lockedNow;
         const periodEnd = locked.contractKind === "custom" && locked.contractEndsAt ? locked.contractEndsAt : addEducationBillingPeriod(periodStart, nextCycle);
         await tx.update(educationCenterSubscriptionsTable).set({
           planId: nextPlanId, billingCycle: nextCycle, status: "past_due", dueAmount: amount,
@@ -139,7 +150,7 @@ export async function runEducationSubscriptionLifecycle() {
              currentPriceSnapshot: settledPendingUpgrade.planMonthlyPriceSnapshot ?? nextPlan.price,
              currentCourseLimitSnapshot: effectiveCourseLimit,
            } : {}),
-          graceEndsAt, updatedAt: now,
+           graceEndsAt, updatedAt: lockedNow,
         }).where(eq(educationCenterSubscriptionsTable.id, locked.id));
          if (pendingChangeDue && settledPendingUpgrade) {
            const published = await tx.select({ id: coursesTable.id }).from(coursesTable)
@@ -147,13 +158,13 @@ export async function runEducationSubscriptionLifecycle() {
              .orderBy(asc(coursesTable.createdAt)).for("update");
            const keep = new Set(locked.pendingKeepCourseIds ?? published.slice(0, effectiveCourseLimit).map((course) => course.id));
            const extras = published.filter((course) => !keep.has(course.id)).map((course) => course.id);
-           if (extras.length) await tx.update(coursesTable).set({ published: false, subscriptionSuspended: true, updatedAt: now }).where(inArray(coursesTable.id, extras));
+            if (extras.length) await tx.update(coursesTable).set({ published: false, subscriptionSuspended: true, updatedAt: lockedNow }).where(inArray(coursesTable.id, extras));
            const available = Math.max(0, effectiveCourseLimit - (published.length - extras.length));
            if (available) {
              const drafts = await tx.select({ id: coursesTable.id }).from(coursesTable)
                .where(and(eq(coursesTable.centerId, locked.centerId), eq(coursesTable.published, false), eq(coursesTable.subscriptionSuspended, true), eq(coursesTable.archived, false)))
                .orderBy(asc(coursesTable.createdAt)).limit(available).for("update");
-             if (drafts.length) await tx.update(coursesTable).set({ published: true, subscriptionSuspended: false, updatedAt: now }).where(inArray(coursesTable.id, drafts.map((course) => course.id)));
+              if (drafts.length) await tx.update(coursesTable).set({ published: true, subscriptionSuspended: false, updatedAt: lockedNow }).where(inArray(coursesTable.id, drafts.map((course) => course.id)));
            }
          }
         const [existingPayment] = await tx.select({ id: educationPaymentObligationsTable.id }).from(educationPaymentObligationsTable)
@@ -178,16 +189,21 @@ export async function runEducationSubscriptionLifecycle() {
           }
         }
         transitioned += 1;
-      } else if (locked.status === "past_due" && locked.graceEndsAt && locked.graceEndsAt <= now) {
-        await tx.update(educationCenterSubscriptionsTable).set({ status: "suspended", deactivatedAt: now, updatedAt: now }).where(eq(educationCenterSubscriptionsTable.id, locked.id));
-        await tx.update(coursesTable).set({ published: false, subscriptionSuspended: true, updatedAt: now }).where(and(eq(coursesTable.centerId, locked.centerId), eq(coursesTable.published, true)));
-        transitioned += 1;
+       } else if (locked.status === "past_due") {
+         await tx.select({ id: coursesTable.id }).from(coursesTable)
+           .where(eq(coursesTable.centerId, locked.centerId))
+           .orderBy(asc(coursesTable.id)).for("update");
+         const [latest] = await tx.select().from(educationCenterSubscriptionsTable)
+           .where(eq(educationCenterSubscriptionsTable.id, locked.id)).limit(1);
+         const deactivationClock = await tx.execute<{ now: Date }>(sql`select clock_timestamp() as now`);
+         const deactivationNow = new Date(deactivationClock.rows[0]!.now);
+         if (latest?.status === "past_due" && latest.graceEndsAt && latest.graceEndsAt <= deactivationNow) {
+           await tx.update(educationCenterSubscriptionsTable).set({ status: "suspended", deactivatedAt: deactivationNow, updatedAt: deactivationNow }).where(eq(educationCenterSubscriptionsTable.id, locked.id));
+           await tx.update(coursesTable).set({ published: false, subscriptionSuspended: true, updatedAt: deactivationNow }).where(and(eq(coursesTable.centerId, locked.centerId), eq(coursesTable.published, true)));
+           transitioned += 1;
+         }
       }
     });
   }
   return { reminders, transitioned };
-}
-
-function educationDateKey(date: Date) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Belgrade", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }

@@ -7692,6 +7692,164 @@ export interface EducationAutoRenewInput {
   autoRenew: boolean;
 }
 
+export interface EducationGraceNoteInput {
+  /**
+     * @minLength 3
+     * @maxLength 2000
+     */
+  note: string;
+}
+
+export interface EducationGraceExtensionInput {
+  /**
+     * @minimum 1
+     * @maximum 30
+     */
+  days: number;
+  /**
+     * @minLength 3
+     * @maxLength 1000
+     */
+  reason: string;
+}
+
+export interface EducationGraceNote {
+  id: string;
+  centerId: string;
+  note: string;
+  authorUserId: string;
+  /** @nullable */
+  authorFirstName?: string | null;
+  /** @nullable */
+  authorLastName?: string | null;
+  createdAt: string;
+}
+
+export interface EducationGraceEmailStatus {
+  subscriptionId: string;
+  status: string;
+  createdAt: string;
+  /** @nullable */
+  sentAt: string | null;
+}
+
+export interface EducationGraceCenterSummary {
+  id: string;
+  name: string;
+  city: string;
+  /** @nullable */
+  contactPhone: string | null;
+}
+
+export type EducationGraceSubscriptionSummaryStatus = typeof EducationGraceSubscriptionSummaryStatus[keyof typeof EducationGraceSubscriptionSummaryStatus];
+
+
+export const EducationGraceSubscriptionSummaryStatus = {
+  past_due: 'past_due',
+} as const;
+
+export interface EducationGraceSubscriptionSummary {
+  id: string;
+  centerId: string;
+  status: EducationGraceSubscriptionSummaryStatus;
+  /** @minimum 0 */
+  dueAmount: number;
+  graceEndsAt: string;
+}
+
+export type EducationGraceCenterOwner = {
+  /** @nullable */
+  firstName: string | null;
+  /** @nullable */
+  lastName: string | null;
+  /** @nullable */
+  email: string | null;
+};
+
+export interface EducationGraceCenter {
+  center: EducationGraceCenterSummary;
+  subscription: EducationGraceSubscriptionSummary;
+  owner: EducationGraceCenterOwner;
+  /** @minimum 0 */
+  daysRemaining: number;
+  /** @minimum 0 */
+  debtRsd: number;
+  latestEmail: null | EducationGraceEmailStatus;
+  latestNote: null | EducationGraceNote;
+  /** @minimum 0 */
+  noteCount: number;
+}
+
+export interface EducationGraceCenterList {
+  items: EducationGraceCenter[];
+  generatedAt: string;
+  truncated: boolean;
+}
+
+export interface EducationGraceExtensionResult {
+  subscription: EducationGraceSubscriptionSummary;
+  previousGraceEndsAt: string;
+  /**
+     * @minimum 1
+     * @maximum 30
+     */
+  extensionDays: number;
+  /** @minimum 0 */
+  relatedObligationsUpdated: number;
+  note: EducationGraceNote;
+}
+
+export interface EducationFinancialAuditActor {
+  id: string;
+  /** @nullable */
+  firstName: string | null;
+  /** @nullable */
+  lastName: string | null;
+  /** @nullable */
+  email: string | null;
+}
+
+/**
+ * @nullable
+ */
+export type EducationFinancialAuditEntryOldValue = { [key: string]: unknown } | null;
+
+/**
+ * @nullable
+ */
+export type EducationFinancialAuditEntryNewValue = { [key: string]: unknown } | null;
+
+export type EducationFinancialAuditEntryTimeZone = typeof EducationFinancialAuditEntryTimeZone[keyof typeof EducationFinancialAuditEntryTimeZone];
+
+
+export const EducationFinancialAuditEntryTimeZone = {
+  'Europe/Belgrade': 'Europe/Belgrade',
+} as const;
+
+export interface EducationFinancialAuditEntry {
+  id: string;
+  /** @nullable */
+  actorUserId: string | null;
+  action: string;
+  entityType: string;
+  entityId: string;
+  /** @nullable */
+  oldValue: EducationFinancialAuditEntryOldValue;
+  /** @nullable */
+  newValue: EducationFinancialAuditEntryNewValue;
+  /** @nullable */
+  reason: string | null;
+  occurredAt: string;
+  timeZone: EducationFinancialAuditEntryTimeZone;
+  actor: null | EducationFinancialAuditActor;
+}
+
+export interface EducationFinancialAuditPage {
+  items: EducationFinancialAuditEntry[];
+  /** @nullable */
+  nextCursor: string | null;
+}
+
 export interface EducationCustomPlanRequestInput {
   /**
      * @minimum 1
@@ -14655,6 +14813,37 @@ export type SettleEducationPaymentObligationBody = {
 };
 
 export type SettleEducationPaymentObligation200 = { [key: string]: unknown };
+
+export type ListAdminEducationFinancialAuditParams = {
+/**
+ * @maxLength 160
+ */
+action?: string;
+/**
+ * @maxLength 120
+ */
+entityType?: string;
+actorUserId?: string;
+from?: string;
+to?: string;
+/**
+ * @maxLength 500
+ */
+cursor?: string;
+/**
+ * @minimum 1
+ * @maximum 200
+ */
+limit?: number;
+};
+
+export type ListAdminEducationGraceNotesParams = {
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+};
 
 export type ConfigureEducationCustomContractBodyBillingCycle = typeof ConfigureEducationCustomContractBodyBillingCycle[keyof typeof ConfigureEducationCustomContractBodyBillingCycle];
 

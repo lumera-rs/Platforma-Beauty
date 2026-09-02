@@ -13,6 +13,13 @@ import {
   type EducationIpsTransactionType,
 } from "./education-marketplace-domain";
 import { educationGraceDaysRemaining } from "./education-subscription-reactivation";
+import {
+  addEducationBelgradeCalendarMonths,
+  addEducationBelgradeDateDays,
+  assertEducationBelgradeDate,
+  educationBelgradeCalendarDayDifference,
+  educationBelgradeWallClockInstant,
+} from "./education-belgrade-calendar";
 
 assert.equal(educationPaymentModeError({
   format: "online", paymentMode: "online_full", depositAmount: null, price: 10_000,
@@ -91,6 +98,19 @@ assert.equal(
   ),
   5,
   "grace warnings count Belgrade calendar dates across fall-back rather than elapsed 24-hour blocks",
+);
+assert.equal(addEducationBelgradeDateDays("2025-12-31", 1), "2026-01-01", "date-key arithmetic crosses a year boundary");
+assert.equal(educationBelgradeCalendarDayDifference("2025-12-31", "2026-01-01"), 1);
+assert.equal(
+  educationBelgradeDateKey(addEducationBelgradeCalendarMonths(new Date("2025-01-30T11:00:00Z"), 1)),
+  "2025-02-28",
+  "month-end billing dates clamp to the destination calendar month",
+);
+assert.throws(() => assertEducationBelgradeDate("2026-02-29"), /ne postoji/);
+assert.throws(
+  () => educationBelgradeWallClockInstant("2026-03-29", "02:30"),
+  /ne postoji u vremenskoj zoni/,
+  "the spring-forward gap cannot silently become another wall-clock time",
 );
 
 assert.equal(qualifiesAsMostRequestedEducationCenter(9), false);

@@ -8,7 +8,7 @@ import {
   educationAttendanceTable,
   educationBookingGroupsTable, educationBookingParticipantsTable,
   educationCenterStaffTable, educationCentersTable, educationEducatorAbsencesTable, educationEducatorWeeklyAvailabilityTable, educationInstallmentsTable,
-  educationEscrowsTable, educationFinancialEventsTable, educationLedgerEntriesTable, educationNotificationsTable, educationOutboxTable, educationPlatformSettingsTable, educationPriceSnapshotsTable, educationSessionEducatorsTable,
+  educationEscrowsTable, educationFinancialAuditLogTable, educationFinancialEventsTable, educationLedgerEntriesTable, educationNotificationsTable, educationOutboxTable, educationPlatformSettingsTable, educationPriceSnapshotsTable, educationSessionEducatorsTable,
   referralQualificationEvidenceTable,
   sessionsTable, usersTable,
 } from "@workspace/db";
@@ -45,6 +45,7 @@ async function cleanupFixtureUsers(userIds: string[]) {
     await db.delete(educationCentersTable).where(inArray(educationCentersTable.id, centerIds));
   }
   await db.delete(sessionsTable).where(inArray(sessionsTable.userId, userIds));
+  await db.delete(educationFinancialAuditLogTable).where(inArray(educationFinancialAuditLogTable.actorUserId, userIds));
   await db.delete(usersTable).where(inArray(usersTable.id, userIds));
 }
 

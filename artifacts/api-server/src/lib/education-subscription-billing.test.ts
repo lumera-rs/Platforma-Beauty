@@ -8,6 +8,10 @@ import { createSession, sessionCookieName } from "./auth";
 import { runEducationSubscriptionLifecycle } from "./education-subscription-worker";
 import { getEducationPlatformSettings } from "./education-billing";
 import {
+  educationBelgradeCalendarDayDifference,
+  educationBelgradeDateKey,
+} from "./education-belgrade-calendar";
+import {
   courseEnrollmentsTable, coursesTable, db, educationAccessExtensionsTable,
   educationCenterSubscriptionsTable, educationCentersTable, educationFinancialAuditLogTable,
   educationPaymentObligationsTable, educationPlatformSettingsTable, educationTrialClaimsTable, emailDeliveriesTable,
@@ -38,15 +42,16 @@ try {
   const platformSettings = await getEducationPlatformSettings();
   settingsEnvironmentRestore = platformSettings.ipsAccountEnvironment;
   await db.update(educationPlatformSettingsTable).set({ ipsAccountEnvironment: "test" }).where(eq(educationPlatformSettingsTable.id, platformSettings.id));
-  const [owner, learner1, learner2, learner3, observer, admin] = await db.insert(usersTable).values([
+  const [owner, learner1, learner2, learner3, observer, admin, regularAdmin] = await db.insert(usersTable).values([
     { firstName: "Owner", lastName: marker, email: `owner-${marker}@example.test`, passwordHash: "fixture", passwordSetAt: new Date(), role: "EDUKATIVNI_CENTAR" },
     { firstName: "Learner1", lastName: marker, email: `learner1-${marker}@example.test`, passwordHash: "fixture", passwordSetAt: new Date(), role: "STUDENT" },
     { firstName: "Learner2", lastName: marker, email: `learner2-${marker}@example.test`, passwordHash: "fixture", passwordSetAt: new Date(), role: "STUDENT" },
     { firstName: "Learner3", lastName: marker, email: `learner3-${marker}@example.test`, passwordHash: "fixture", passwordSetAt: new Date(), role: "STUDENT" },
     { firstName: "Observer", lastName: marker, email: `observer-${marker}@example.test`, passwordHash: "fixture", passwordSetAt: new Date(), role: "EDUKATIVNI_CENTAR" },
     { firstName: "Admin", lastName: marker, email: `admin-${marker}@example.test`, passwordHash: "fixture", passwordSetAt: new Date(), role: "SUPER_ADMIN" },
+    { firstName: "RegularAdmin", lastName: marker, email: `regular-admin-${marker}@example.test`, passwordHash: "fixture", passwordSetAt: new Date(), role: "ADMIN" },
   ]).returning();
-  userIds.push(owner!.id, learner1!.id, learner2!.id, learner3!.id, observer!.id, admin!.id);
+  userIds.push(owner!.id, learner1!.id, learner2!.id, learner3!.id, observer!.id, admin!.id, regularAdmin!.id);
   const [plan] = await db.insert(subscriptionPlansTable).values({
     name: marker, price: 12_345, trialDays: 30, audience: "education", courseLimit: 5,
     vatIncluded: true, priceCopy: "Cena uključuje PDV.", limits: { courses: 5 }, active: true,
@@ -54,7 +59,8 @@ try {
   planId = plan!.id;
   const [center] = await db.insert(educationCentersTable).values({
     ownerId: owner!.id, name: marker, city: "Beograd", description: marker,
-    imageUrl: "/test.jpg", verificationStatus: "verified", bankAccount: "840000000000000000", bankAccountEnvironment: "test",
+    imageUrl: "/test.jpg", contactPhone: "+381641234567", verificationStatus: "verified",
+    bankAccount: "840000000000000000", bankAccountEnvironment: "test",
   }).returning();
   centerId = center!.id;
   const [observerCenter] = await db.insert(educationCentersTable).values({
@@ -85,6 +91,28 @@ try {
   const learnerCookies = await Promise.all(learners.map(async (learner) => `${sessionCookieName}=${await createSession(learner.id)}`));
   const observerCookie = `${sessionCookieName}=${await createSession(observer!.id)}`;
   const adminCookie = `${sessionCookieName}=${await createSession(admin!.id)}`;
+  const regularAdminCookie = `${sessionCookieName}=${await createSession(regularAdmin!.id)}`;
+
+  const superAdminOnlyFinancialMutations = [
+    ["POST", `/admin/education/enrollments/${randomUUID()}/settle`],
+    ["POST", `/admin/education/gift-vouchers/${randomUUID()}/settle`],
+    ["POST", `/admin/education/gift-vouchers/${randomUUID()}/refund`],
+    ["PATCH", "/admin/education/placement-settings"],
+    ["POST", "/admin/education/placements/TEST-REFERENCE/settle"],
+    ["POST", `/admin/featured-placements/${randomUUID()}/confirm`],
+    ["PATCH", "/admin/education/settings"],
+    ["PATCH", `/admin/education/centers/${randomUUID()}`],
+    ["POST", `/admin/education/featured-charges/${randomUUID()}/settle`],
+    ["POST", "/admin/education/payouts"],
+    ["PATCH", `/admin/education/disputes/${randomUUID()}`],
+    ["POST", `/admin/education/installments/${randomUUID()}/settle`],
+    ["POST", `/admin/education/bundle-purchases/${randomUUID()}/settle`],
+    ["POST", `/admin/education/sessions/${randomUUID()}/cancel`],
+  ] as const;
+  for (const [method, path] of superAdminOnlyFinancialMutations) {
+    const denied = await call(base, regularAdminCookie, path, method, {});
+    assert.equal(denied.status, 403, `${method} ${path} rejects a regular ADMIN before inspecting mutation input`);
+  }
 
   const selected = await call(base, ownerCookie, "/education/subscription/select-plan", "POST", { planId, billingCycle: "monthly" });
   assert.equal(selected.status, 201);
@@ -137,6 +165,77 @@ try {
   assert.equal(graceStatus.status, 200);
   assert.equal(graceStatus.body.inGrace, true);
   assert.equal(graceStatus.body.graceDaysRemaining, 5, "Every status fetch must report server-derived Belgrade calendar days.");
+  assert.equal((await db.select().from(coursesTable).where(eq(coursesTable.id, courseId)))[0]!.published, true);
+
+  const graceList = await call(base, adminCookie, "/admin/education/grace-centers");
+  assert.equal(graceList.status, 200);
+  const graceItem = graceList.body.items.find((item: any) => item.center.id === centerId);
+  assert.ok(graceItem);
+  assert.equal(graceItem.center.contactPhone, "+381641234567");
+  assert.equal(graceItem.debtRsd, 12_345);
+  assert.ok(graceItem.latestEmail?.status, "Grace queue must report the latest real email delivery status.");
+  assert.equal(graceItem.noteCount, 0);
+
+  const addedNote = await call(base, adminCookie, `/admin/education/grace-centers/${centerId}/notes`, "POST", {
+    note: "Poziv sa centrom je zakazan za sutra.",
+  });
+  assert.equal(addedNote.status, 201);
+  const listedNotes = await call(base, adminCookie, `/admin/education/grace-centers/${centerId}/notes?limit=10`);
+  assert.equal(listedNotes.status, 200);
+  assert.equal(listedNotes.body[0].note, "Poziv sa centrom je zakazan za sutra.");
+
+  const [pendingBeforeExtension] = await db.select().from(educationPaymentObligationsTable).where(and(
+    eq(educationPaymentObligationsTable.subscriptionId, subscription.id),
+    eq(educationPaymentObligationsTable.kind, "subscription_renewal"),
+    eq(educationPaymentObligationsTable.status, "pending"),
+  )).limit(1);
+  assert.ok(pendingBeforeExtension);
+  const originalGraceEndsAt = lifecycle!.graceEndsAt!;
+  const extended = await call(base, adminCookie, `/admin/education/centers/${centerId}/extend-grace`, "POST", {
+    days: 3,
+    reason: "Centar je poslao dokaz o uplati na proveru.",
+  });
+  assert.equal(extended.status, 200);
+  assert.equal(extended.body.extensionDays, 3);
+  assert.equal(educationBelgradeCalendarDayDifference(
+    educationBelgradeDateKey(originalGraceEndsAt),
+    educationBelgradeDateKey(new Date(extended.body.subscription.graceEndsAt)),
+  ), 3);
+  const [movedObligation] = await db.select().from(educationPaymentObligationsTable)
+    .where(eq(educationPaymentObligationsTable.id, pendingBeforeExtension!.id));
+  assert.equal(movedObligation!.dueAt!.getTime(), new Date(extended.body.subscription.graceEndsAt).getTime(),
+    "Grace extension must move the payable subscription deadline.");
+
+  const auditPage = await call(base, adminCookie, "/admin/education/financial-audit?action=education_grace_extended&limit=1");
+  assert.equal(auditPage.status, 200);
+  assert.equal(auditPage.body.items[0].entityId, subscription.id);
+  assert.equal(auditPage.body.items[0].action, "education_grace_extended");
+
+  const staleCandidateGrace = new Date(Date.now() - 1_000);
+  await db.update(educationCenterSubscriptionsTable).set({ graceEndsAt: staleCandidateGrace })
+    .where(eq(educationCenterSubscriptionsTable.id, subscription.id));
+  let releaseWorker!: () => void;
+  let reportCandidateLoaded!: () => void;
+  const candidateLoaded = new Promise<void>((resolve) => { reportCandidateLoaded = resolve; });
+  const allowWorkerToContinue = new Promise<void>((resolve) => { releaseWorker = resolve; });
+  const staleWorker = runEducationSubscriptionLifecycle({
+    afterCandidatesLoaded: async (ids) => {
+      if (!ids.includes(subscription.id)) return;
+      reportCandidateLoaded();
+      await allowWorkerToContinue;
+    },
+  });
+  await candidateLoaded;
+  const wonExtension = await call(base, adminCookie, `/admin/education/centers/${centerId}/extend-grace`, "POST", {
+    days: 2,
+    reason: "Produženje je potvrđeno dok je worker imao zastareo kandidat snapshot.",
+  });
+  assert.equal(wonExtension.status, 200);
+  releaseWorker();
+  await staleWorker;
+  [lifecycle] = await db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.id, subscription.id));
+  assert.equal(lifecycle!.status, "past_due");
+  assert.ok(lifecycle!.graceEndsAt! > new Date(), "Worker must re-read the extended deadline under lock.");
   assert.equal((await db.select().from(coursesTable).where(eq(coursesTable.id, courseId)))[0]!.published, true);
 
   await db.update(educationCenterSubscriptionsTable).set({ graceEndsAt: new Date(Date.now() - DAY) })

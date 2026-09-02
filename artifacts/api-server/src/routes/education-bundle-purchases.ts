@@ -20,6 +20,7 @@ import {
 import { educationIpsQrPayload, educationIpsRuntimeEnvironment } from "../lib/education-marketplace-domain";
 import { assertOnlineEnrollmentRequest, DIGITAL_CONTENT_CONSENT_TEXT, DIGITAL_CONTENT_CONSENT_VERSION, issueOnlineEnrollmentFields } from "../lib/education-entitlement";
 import { eligibleEducationCenterSql, hasActiveEducationSubscription } from "../lib/education-center-eligibility";
+import { writeEducationFinancialAuditInTx } from "../lib/education-financial-audit";
 
 const router: IRouter = Router();
 const purchaseBody = z.object({
@@ -313,7 +314,12 @@ router.get("/admin/education/bundle-purchases/pending", async (req, res) => {
   res.json((await db.select().from(educationBundlePurchasesTable).where(eq(educationBundlePurchasesTable.status, "pending_payment")).orderBy(desc(educationBundlePurchasesTable.requestedAt))).map(row => view(row)));
 });
 router.post("/admin/education/bundle-purchases/:purchaseId/settle", async (req, res) => {
-  const admin = await user(req, res); if (!admin || !isAdmin(admin)) { if (admin) res.status(403).json({ error: "Samo administrator." }); return; }
+  const admin = await user(req, res);
+  if (!admin) return;
+  if (admin.role !== "SUPER_ADMIN") {
+    res.status(403).json({ error: "Ova promena je dozvoljena samo super administratorima." });
+    return;
+  }
   try {
     const result = await db.transaction(async tx => {
       const [purchase] = await tx.select().from(educationBundlePurchasesTable).where(eq(educationBundlePurchasesTable.id, req.params.purchaseId)).for("update").limit(1);
@@ -364,6 +370,24 @@ router.post("/admin/education/bundle-purchases/:purchaseId/settle", async (req, 
         };
       }));
       const [settled] = await tx.update(educationBundlePurchasesTable).set({ status: "settled", settledAt: new Date(), settledByUserId: admin.id, updatedAt: new Date() }).where(eq(educationBundlePurchasesTable.id, purchase.id)).returning();
+       await writeEducationFinancialAuditInTx(tx, {
+         actorUserId: admin.id,
+         action: "education_bundle_purchase_settled",
+         entityType: "education_bundle_purchase",
+         entityId: purchase.id,
+         oldValue: { status: purchase.status, amount: purchase.amount, centerId: purchase.centerId },
+         newValue: {
+           status: settled.status,
+           amount: settled.amount,
+           centerId: settled.centerId,
+           escrow: {
+             grossAmount: escrow.grossAmount,
+             platformFeeAmount: escrow.platformFeeAmount,
+             reserveAmount: escrow.reserveAmount,
+             netAmount: escrow.netAmount,
+           },
+         },
+       });
       return settled;
     });
     res.json(view(result));

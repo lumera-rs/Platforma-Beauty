@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 116;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 117;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -4651,6 +4651,8 @@ function tableStatements(s: string): string[] {
        occurred_at timestamptz NOT NULL DEFAULT now(), time_zone text NOT NULL DEFAULT 'Europe/Belgrade' CHECK(time_zone='Europe/Belgrade')
      )`,
     `CREATE INDEX IF NOT EXISTS education_financial_audit_entity_idx ON ${s}.education_financial_audit_log(entity_type, entity_id, occurred_at)`,
+    `CREATE INDEX IF NOT EXISTS education_financial_audit_occurred_id_idx ON ${s}.education_financial_audit_log(occurred_at, id)`,
+    `CREATE INDEX IF NOT EXISTS education_financial_audit_actor_occurred_idx ON ${s}.education_financial_audit_log(actor_user_id, occurred_at)`,
     `CREATE TABLE IF NOT EXISTS ${s}.education_payment_obligations (
        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
        center_id uuid REFERENCES ${s}.education_centers(id) ON DELETE RESTRICT,

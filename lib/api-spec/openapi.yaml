@@ -3204,6 +3204,56 @@ paths:
               required: [confirmedAmountRsd, reason]
       responses:
         "200": { description: Settled obligation, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+  /admin/education/financial-audit:
+    get:
+      operationId: listAdminEducationFinancialAudit
+      tags: [admin, education]
+      summary: List bounded Education financial audit entries
+      parameters:
+        - { name: action, in: query, schema: { type: string, maxLength: 160 } }
+        - { name: entityType, in: query, schema: { type: string, maxLength: 120 } }
+        - { name: actorUserId, in: query, schema: { type: string, format: uuid } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: cursor, in: query, schema: { type: string, maxLength: 500 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200": { description: Audit page, content: { application/json: { schema: { $ref: "#/components/schemas/EducationFinancialAuditPage" } } } }
+  /admin/education/grace-centers:
+    get:
+      operationId: listAdminEducationGraceCenters
+      tags: [admin, education]
+      summary: List Education centers currently in grace
+      responses:
+        "200": { description: Grace queue, content: { application/json: { schema: { $ref: "#/components/schemas/EducationGraceCenterList" } } } }
+  /admin/education/grace-centers/{centerId}/notes:
+    get:
+      operationId: listAdminEducationGraceNotes
+      tags: [admin, education]
+      parameters:
+        - { name: centerId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        "200": { description: Grace notes, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/EducationGraceNote" } } } } }
+    post:
+      operationId: createAdminEducationGraceNote
+      tags: [admin, education]
+      parameters: [{ name: centerId, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EducationGraceNoteInput" } } }
+      responses:
+        "201": { description: Grace note added, content: { application/json: { schema: { $ref: "#/components/schemas/EducationGraceNote" } } } }
+  /admin/education/centers/{centerId}/extend-grace:
+    post:
+      operationId: extendAdminEducationGrace
+      tags: [admin, education]
+      parameters: [{ name: centerId, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EducationGraceExtensionInput" } } }
+      responses:
+        "200": { description: Grace deadline extended, content: { application/json: { schema: { $ref: "#/components/schemas/EducationGraceExtensionResult" } } } }
   /admin/education/centers/{centerId}/custom-contract:
     post:
       operationId: configureEducationCustomContract
@@ -14372,6 +14422,129 @@ components:
       properties:
         autoRenew: { type: boolean }
       required: [autoRenew]
+    EducationGraceNoteInput:
+      type: object
+      additionalProperties: false
+      properties:
+        note: { type: string, minLength: 3, maxLength: 2000 }
+      required: [note]
+    EducationGraceExtensionInput:
+      type: object
+      additionalProperties: false
+      properties:
+        days: { type: integer, minimum: 1, maximum: 30 }
+        reason: { type: string, minLength: 3, maxLength: 1000 }
+      required: [days, reason]
+    EducationGraceNote:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        centerId: { type: string, format: uuid }
+        note: { type: string }
+        authorUserId: { type: string, format: uuid }
+        authorFirstName: { type: ["string", "null"] }
+        authorLastName: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+      required: [id, centerId, note, authorUserId, createdAt]
+    EducationGraceEmailStatus:
+      type: object
+      properties:
+        subscriptionId: { type: string, format: uuid }
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
+        sentAt: { type: ["string", "null"], format: date-time }
+      required: [subscriptionId, status, createdAt, sentAt]
+    EducationGraceCenterSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        city: { type: string }
+        contactPhone: { type: ["string", "null"] }
+      required: [id, name, city, contactPhone]
+    EducationGraceSubscriptionSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        centerId: { type: string, format: uuid }
+        status: { type: string, enum: [past_due] }
+        dueAmount: { type: integer, minimum: 0 }
+        graceEndsAt: { type: string, format: date-time }
+      required: [id, centerId, status, dueAmount, graceEndsAt]
+    EducationGraceCenter:
+      type: object
+      properties:
+        center: { $ref: "#/components/schemas/EducationGraceCenterSummary" }
+        subscription: { $ref: "#/components/schemas/EducationGraceSubscriptionSummary" }
+        owner:
+          type: object
+          properties:
+            firstName: { type: ["string", "null"] }
+            lastName: { type: ["string", "null"] }
+            email: { type: ["string", "null"] }
+          required: [firstName, lastName, email]
+        daysRemaining: { type: integer, minimum: 0 }
+        debtRsd: { type: integer, minimum: 0 }
+        latestEmail:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/EducationGraceEmailStatus"
+        latestNote:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/EducationGraceNote"
+        noteCount: { type: integer, minimum: 0 }
+      required: [center, subscription, owner, daysRemaining, debtRsd, latestEmail, latestNote, noteCount]
+    EducationGraceCenterList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/EducationGraceCenter" } }
+        generatedAt: { type: string, format: date-time }
+        truncated: { type: boolean }
+      required: [items, generatedAt, truncated]
+    EducationGraceExtensionResult:
+      type: object
+      properties:
+        subscription: { $ref: "#/components/schemas/EducationGraceSubscriptionSummary" }
+        previousGraceEndsAt: { type: string, format: date-time }
+        extensionDays: { type: integer, minimum: 1, maximum: 30 }
+        relatedObligationsUpdated: { type: integer, minimum: 0 }
+        note: { $ref: "#/components/schemas/EducationGraceNote" }
+      required: [subscription, previousGraceEndsAt, extensionDays, relatedObligationsUpdated, note]
+    EducationFinancialAuditActor:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        firstName: { type: ["string", "null"] }
+        lastName: { type: ["string", "null"] }
+        email: { type: ["string", "null"] }
+      required: [id, firstName, lastName, email]
+    EducationFinancialAuditEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        actorUserId: { type: ["string", "null"], format: uuid }
+        action: { type: string }
+        entityType: { type: string }
+        entityId: { type: string }
+        oldValue: { type: ["object", "null"], additionalProperties: true }
+        newValue: { type: ["object", "null"], additionalProperties: true }
+        reason: { type: ["string", "null"] }
+        occurredAt: { type: string, format: date-time }
+        timeZone: { type: string, enum: [Europe/Belgrade] }
+        actor:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/EducationFinancialAuditActor"
+      required: [id, actorUserId, action, entityType, entityId, oldValue, newValue, reason, occurredAt, timeZone, actor]
+    EducationFinancialAuditPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/EducationFinancialAuditEntry" } }
+        nextCursor: { type: ["string", "null"] }
+      required: [items, nextCursor]
     EducationCustomPlanRequestInput:
       type: object
       additionalProperties: false

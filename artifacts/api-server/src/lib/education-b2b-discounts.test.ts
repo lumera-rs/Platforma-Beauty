@@ -9,6 +9,10 @@ const dst = previousBelgradeCalendarMonth(new Date("2025-04-15T12:00:00Z"));
 assert.equal(dst.start.toISOString(), "2025-02-28T23:00:00.000Z");
 assert.equal(dst.end.toISOString(), "2025-03-31T22:00:00.000Z");
 
+const yearBoundary = previousBelgradeCalendarMonth(new Date("2026-01-15T12:00:00Z"));
+assert.equal(yearBoundary.start.toISOString(), "2025-11-30T23:00:00.000Z");
+assert.equal(yearBoundary.end.toISOString(), "2025-12-31T23:00:00.000Z");
+
 const tiers = [
   { id: "a", name: "A", discountPercent: 1, minSpendRsd: 0, maxSpendRsd: 9999 },
   { id: "b", name: "B", discountPercent: 2, minSpendRsd: 10000, maxSpendRsd: 19999 },

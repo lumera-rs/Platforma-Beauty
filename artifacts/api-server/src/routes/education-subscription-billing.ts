@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { and, asc, desc, eq, gt, inArray, isNotNull, lt, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, lt, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   courseEnrollmentsTable, coursesTable, db, educationCenterSubscriptionsTable,
   educationCustomPlanRequestsTable, educationOutboxTable,
   educationCentersTable, educationFinancialAuditLogTable, educationGraceNotesTable,
   educationPaymentObligationsTable, educationTrialClaimsTable, educationAccessExtensionsTable,
-  educationPlatformSettingsTable, subscriptionPlansTable,
+  educationPlatformSettingsTable, emailDeliveriesTable, subscriptionPlansTable, usersTable,
 } from "@workspace/db";
 import { getCurrentUser } from "../lib/auth";
 import { addEducationBelgradeCalendarDays, educationBelgradeDateKey, educationIpsPaymentCode, educationIpsQrPayload, educationIpsRuntimeEnvironment } from "../lib/education-marketplace-domain";
@@ -26,6 +26,10 @@ import {
 import { getEducationBankReconciliationStatus } from "../lib/education-bank-reconciliation";
 import { lockEducationBillingRules } from "../lib/education-billing";
 import { settleEducationPaymentObligationInTransaction } from "../lib/education-payment-obligation-settlement";
+import {
+  redactEducationFinancialAuditSnapshot,
+  writeEducationFinancialAuditInTx,
+} from "../lib/education-financial-audit";
 
 const router: IRouter = Router();
 const planBody = z.object({
@@ -34,6 +38,25 @@ const planBody = z.object({
   keepCourseIds: z.array(z.string().uuid()).max(1000).optional(),
 });
 const reasonBody = z.object({ reason: z.string().trim().min(3).max(1000) });
+const graceExtensionBody = reasonBody.extend({
+  days: z.number().int().min(1).max(30),
+});
+const graceNoteBody = z.object({
+  note: z.string().trim().min(3).max(2000),
+});
+const financialAuditQuery = z.object({
+  action: z.string().trim().min(1).max(160).optional(),
+  entityType: z.string().trim().min(1).max(120).optional(),
+  actorUserId: z.string().uuid().optional(),
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+  cursor: z.string().max(500).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+const financialAuditCursor = z.object({
+  occurredAt: z.string().datetime(),
+  id: z.string().uuid(),
+});
 const reactivationSelectionBody = z.object({
   keepCourseIds: z.array(z.string().uuid()).max(1000),
 }).refine((body) => new Set(body.keepCourseIds).size === body.keepCourseIds.length, {
@@ -97,8 +120,11 @@ router.post("/admin/education/subscription-plans", async (req, res) => {
   const actor = await superAdmin(req, res); if (!actor) return;
   const parsed = educationPlanInput.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "Education plan mora imati naziv, celobrojnu RSD cenu, limit kurseva, 30 dana trial-a i VAT copy." }); return; }
-  const [saved] = await db.insert(subscriptionPlansTable).values({ ...parsed.data, audience: "education", limits: { courses: parsed.data.courseLimit } }).returning();
-  await db.insert(educationFinancialAuditLogTable).values({ actorUserId: actor.id, action: "education_plan_created", entityType: "subscription_plan", entityId: saved!.id, newValue: saved!, reason: "Education plan CRUD" });
+  const saved = await db.transaction(async (tx) => {
+    const [created] = await tx.insert(subscriptionPlansTable).values({ ...parsed.data, audience: "education", limits: { courses: parsed.data.courseLimit } }).returning();
+    await writeEducationFinancialAuditInTx(tx, { actorUserId: actor.id, action: "education_plan_created", entityType: "subscription_plan", entityId: created!.id, newValue: created!, reason: "Education plan CRUD" });
+    return created;
+  });
   res.status(201).json(saved);
 });
 
@@ -111,11 +137,14 @@ router.patch("/admin/education/subscription-plans/:planId", async (req, res) => 
   if ((parsed.data.active ?? existing.active) && (parsed.data.price ?? existing.price) <= 0) {
     res.status(400).json({ error: "Aktivan Education plan mora imati pozitivnu cenu." }); return;
   }
-  const [saved] = await db.update(subscriptionPlansTable).set({
-    ...parsed.data,
-    ...(parsed.data.courseLimit ? { limits: { ...existing.limits, courses: parsed.data.courseLimit } } : {}),
-  }).where(eq(subscriptionPlansTable.id, existing.id)).returning();
-  await db.insert(educationFinancialAuditLogTable).values({ actorUserId: actor.id, action: "education_plan_updated", entityType: "subscription_plan", entityId: existing.id, oldValue: existing, newValue: saved!, reason: "Education plan CRUD" });
+  const saved = await db.transaction(async (tx) => {
+    const [updated] = await tx.update(subscriptionPlansTable).set({
+      ...parsed.data,
+      ...(parsed.data.courseLimit ? { limits: { ...existing.limits, courses: parsed.data.courseLimit } } : {}),
+    }).where(eq(subscriptionPlansTable.id, existing.id)).returning();
+    await writeEducationFinancialAuditInTx(tx, { actorUserId: actor.id, action: "education_plan_updated", entityType: "subscription_plan", entityId: existing.id, oldValue: existing, newValue: updated!, reason: "Education plan CRUD" });
+    return updated;
+  });
   res.json(saved);
 });
 
@@ -123,8 +152,11 @@ router.delete("/admin/education/subscription-plans/:planId", async (req, res) =>
   const actor = await superAdmin(req, res); if (!actor) return;
   const [existing] = await db.select().from(subscriptionPlansTable).where(and(eq(subscriptionPlansTable.id, req.params.planId), eq(subscriptionPlansTable.audience, "education"))).limit(1);
   if (!existing) { res.status(404).json({ error: "Education plan nije pronađen." }); return; }
-  const [saved] = await db.update(subscriptionPlansTable).set({ active: false }).where(eq(subscriptionPlansTable.id, existing.id)).returning();
-  await db.insert(educationFinancialAuditLogTable).values({ actorUserId: actor.id, action: "education_plan_archived", entityType: "subscription_plan", entityId: existing.id, oldValue: existing, newValue: saved!, reason: "Plan history is retained" });
+  const saved = await db.transaction(async (tx) => {
+    const [updated] = await tx.update(subscriptionPlansTable).set({ active: false }).where(eq(subscriptionPlansTable.id, existing.id)).returning();
+    await writeEducationFinancialAuditInTx(tx, { actorUserId: actor.id, action: "education_plan_archived", entityType: "subscription_plan", entityId: existing.id, oldValue: existing, newValue: updated!, reason: "Plan history is retained" });
+    return updated;
+  });
   res.json(saved);
 });
 
@@ -135,7 +167,7 @@ router.post("/education/subscription/custom-plan-request", async (req, res) => {
   const created = await db.transaction(async (tx) => {
     const [request] = await tx.insert(educationCustomPlanRequestsTable).values({ centerId: access.center.id, requestedByUserId: access.current.id, ...parsed.data }).returning();
     await tx.insert(educationOutboxTable).values({ centerId: access.center.id, eventType: "education_custom_plan_requested", dedupeKey: `education-custom-plan-request:${request!.id}`, payload: { requestId: request!.id, centerId: access.center.id, requestedCourseLimit: parsed.data.requestedCourseLimit } });
-    await tx.insert(educationFinancialAuditLogTable).values({ actorUserId: access.current.id, action: "education_custom_plan_requested", entityType: "education_custom_plan_request", entityId: request!.id, newValue: request!, reason: parsed.data.message });
+    await writeEducationFinancialAuditInTx(tx, { actorUserId: access.current.id, action: "education_custom_plan_requested", entityType: "education_custom_plan_request", entityId: request!.id, newValue: request!, reason: parsed.data.message });
     return request!;
   });
   res.status(201).json(created);
@@ -150,10 +182,13 @@ router.patch("/admin/education/custom-plan-requests/:requestId", async (req, res
   const actor = await superAdmin(req, res); if (!actor) return;
   const parsed = z.object({ status: z.literal("rejected"), reason: z.string().trim().min(3).max(1000) }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "Razlog odbijanja je obavezan." }); return; }
-  const [saved] = await db.update(educationCustomPlanRequestsTable).set({ status: "rejected", resolvedByUserId: actor.id, resolvedAt: new Date() })
-    .where(and(eq(educationCustomPlanRequestsTable.id, req.params.requestId), eq(educationCustomPlanRequestsTable.status, "pending"))).returning();
+  const saved = await db.transaction(async (tx) => {
+    const [updated] = await tx.update(educationCustomPlanRequestsTable).set({ status: "rejected", resolvedByUserId: actor.id, resolvedAt: new Date() })
+      .where(and(eq(educationCustomPlanRequestsTable.id, req.params.requestId), eq(educationCustomPlanRequestsTable.status, "pending"))).returning();
+    if (updated) await writeEducationFinancialAuditInTx(tx, { actorUserId: actor.id, action: "education_custom_plan_request_rejected", entityType: "education_custom_plan_request", entityId: updated.id, oldValue: { status: "pending" }, newValue: { status: "rejected" }, reason: parsed.data.reason });
+    return updated;
+  });
   if (!saved) { res.status(404).json({ error: "Otvoren zahtev nije pronađen." }); return; }
-  await db.insert(educationFinancialAuditLogTable).values({ actorUserId: actor.id, action: "education_custom_plan_request_rejected", entityType: "education_custom_plan_request", entityId: saved.id, oldValue: { status: "pending" }, newValue: { status: "rejected" }, reason: parsed.data.reason });
   res.json(saved);
 });
 
@@ -218,7 +253,7 @@ router.post("/education/subscription/reactivation-selection", async (req, res) =
       const [saved] = await tx.update(educationCenterSubscriptionsTable)
         .set({ pendingKeepCourseIds: parsed.data.keepCourseIds, updatedAt: now })
         .where(eq(educationCenterSubscriptionsTable.id, subscription.id)).returning();
-      await tx.insert(educationFinancialAuditLogTable).values({
+      await writeEducationFinancialAuditInTx(tx, {
         actorUserId: access.current.id,
         action: "education_reactivation_courses_selected",
         entityType: "education_center_subscription",
@@ -255,16 +290,19 @@ router.patch("/education/subscription/auto-renew", async (req, res) => {
   const access = await ownerCenter(req, res); if (!access) return;
   const parsed = z.object({ autoRenew: z.boolean() }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "autoRenew mora biti boolean." }); return; }
-  const [saved] = await db.update(educationCenterSubscriptionsTable)
-    .set({ autoRenew: parsed.data.autoRenew, updatedAt: new Date() })
-    .where(eq(educationCenterSubscriptionsTable.centerId, access.center.id)).returning();
-  if (!saved) { res.status(404).json({ error: "Pretplata nije pronađena." }); return; }
-  await db.insert(educationFinancialAuditLogTable).values({
-    actorUserId: access.current.id, action: "education_subscription_auto_renew_changed",
-    entityType: "education_center_subscription", entityId: saved.id,
-    newValue: { autoRenew: parsed.data.autoRenew, refundCreated: false },
-    reason: parsed.data.autoRenew ? "Automatska obnova uključena" : "Automatska obnova isključena; tekući plaćeni period ostaje nepromenjen i nema refundacije",
+  const saved = await db.transaction(async (tx) => {
+    const [updated] = await tx.update(educationCenterSubscriptionsTable)
+      .set({ autoRenew: parsed.data.autoRenew, updatedAt: new Date() })
+      .where(eq(educationCenterSubscriptionsTable.centerId, access.center.id)).returning();
+    if (updated) await writeEducationFinancialAuditInTx(tx, {
+      actorUserId: access.current.id, action: "education_subscription_auto_renew_changed",
+      entityType: "education_center_subscription", entityId: updated.id,
+      newValue: { autoRenew: parsed.data.autoRenew, refundCreated: false },
+      reason: parsed.data.autoRenew ? "Automatska obnova uključena" : "Automatska obnova isključena; tekući plaćeni period ostaje nepromenjen i nema refundacije",
+    });
+    return updated;
   });
+  if (!saved) { res.status(404).json({ error: "Pretplata nije pronađena." }); return; }
   res.json(saved);
 });
 
@@ -424,7 +462,7 @@ router.post("/education/subscription/select-plan", async (req, res) => {
       const [saved] = existing
         ? await tx.update(educationCenterSubscriptionsTable).set(next).where(eq(educationCenterSubscriptionsTable.id, existing.id)).returning()
         : await tx.insert(educationCenterSubscriptionsTable).values({ centerId: access.center.id, paymentMethod: "BANK_TRANSFER", ...next }).returning();
-      await tx.insert(educationFinancialAuditLogTable).values({
+      await writeEducationFinancialAuditInTx(tx, {
         actorUserId: access.current.id, action: "education_subscription_plan_selected",
         entityType: "education_center_subscription", entityId: saved!.id,
         oldValue: existing ? { planId: existing.planId, status: existing.status } : null,
@@ -506,37 +544,272 @@ router.post("/education/subscription/renewal-instructions", async (req, res) => 
   res.json({ amount: obligation.expectedAmount, reference: obligation.referenceSnapshot, paymentCode: obligation.paymentCodeSnapshot, ips: obligation.ipsPayloadSnapshot ? JSON.parse(obligation.ipsPayloadSnapshot) : null });
 });
 
+router.get("/admin/education/financial-audit", async (req, res) => {
+  const actor = await superAdmin(req, res); if (!actor) return;
+  const parsed = financialAuditQuery.safeParse(req.query);
+  if (!parsed.success) { res.status(400).json({ error: "Filter audit evidencije nije ispravan." }); return; }
+  let cursor: z.infer<typeof financialAuditCursor> | undefined;
+  if (parsed.data.cursor) {
+    try {
+      const decoded = JSON.parse(Buffer.from(parsed.data.cursor, "base64url").toString("utf8"));
+      const cursorResult = financialAuditCursor.safeParse(decoded);
+      if (!cursorResult.success) throw new Error("INVALID_CURSOR");
+      cursor = cursorResult.data;
+    } catch {
+      res.status(400).json({ error: "Kursor audit evidencije nije ispravan." });
+      return;
+    }
+  }
+  const conditions = [
+    parsed.data.action ? eq(educationFinancialAuditLogTable.action, parsed.data.action) : undefined,
+    parsed.data.entityType ? eq(educationFinancialAuditLogTable.entityType, parsed.data.entityType) : undefined,
+    parsed.data.actorUserId ? eq(educationFinancialAuditLogTable.actorUserId, parsed.data.actorUserId) : undefined,
+    parsed.data.from ? gt(educationFinancialAuditLogTable.occurredAt, new Date(parsed.data.from)) : undefined,
+    parsed.data.to ? lte(educationFinancialAuditLogTable.occurredAt, new Date(parsed.data.to)) : undefined,
+    cursor ? or(
+      lt(educationFinancialAuditLogTable.occurredAt, new Date(cursor.occurredAt)),
+      and(
+        eq(educationFinancialAuditLogTable.occurredAt, new Date(cursor.occurredAt)),
+        lt(educationFinancialAuditLogTable.id, cursor.id),
+      ),
+    ) : undefined,
+  ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+  const rows = await db.select({
+    audit: educationFinancialAuditLogTable,
+    actorFirstName: usersTable.firstName,
+    actorLastName: usersTable.lastName,
+    actorEmail: usersTable.email,
+  }).from(educationFinancialAuditLogTable)
+    .leftJoin(usersTable, eq(usersTable.id, educationFinancialAuditLogTable.actorUserId))
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(educationFinancialAuditLogTable.occurredAt), desc(educationFinancialAuditLogTable.id))
+    .limit(parsed.data.limit + 1);
+  const hasMore = rows.length > parsed.data.limit;
+  const visible = rows.slice(0, parsed.data.limit);
+  const last = visible.at(-1)?.audit;
+  res.json({
+    items: visible.map((row) => ({
+      ...row.audit,
+      oldValue: redactEducationFinancialAuditSnapshot(row.audit.oldValue),
+      newValue: redactEducationFinancialAuditSnapshot(row.audit.newValue),
+      actor: row.audit.actorUserId ? {
+        id: row.audit.actorUserId,
+        firstName: row.actorFirstName,
+        lastName: row.actorLastName,
+        email: row.actorEmail,
+      } : null,
+    })),
+    nextCursor: hasMore && last
+      ? Buffer.from(JSON.stringify({ occurredAt: last.occurredAt.toISOString(), id: last.id }), "utf8").toString("base64url")
+      : null,
+  });
+});
+
 router.get("/admin/education/grace-centers", async (req, res) => {
   const actor = await superAdmin(req, res); if (!actor) return;
-  const rows = await db.select({ center: educationCentersTable, subscription: educationCenterSubscriptionsTable })
-    .from(educationCenterSubscriptionsTable).innerJoin(educationCentersTable, eq(educationCentersTable.id, educationCenterSubscriptionsTable.centerId))
-    .where(and(isNotNull(educationCenterSubscriptionsTable.graceEndsAt), gt(educationCenterSubscriptionsTable.graceEndsAt, new Date())))
-    .orderBy(asc(educationCenterSubscriptionsTable.graceEndsAt));
-  const now = new Date();
-  res.json(rows.map((row) => ({ ...row, daysRemaining: educationGraceDaysRemaining(now, row.subscription.graceEndsAt) ?? 0 })));
+  const clockResult = await db.execute<{ now: Date }>(sql`select clock_timestamp() as now`);
+  const now = new Date(clockResult.rows[0]!.now);
+  const rows = await db.select({
+    center: {
+      id: educationCentersTable.id,
+      name: educationCentersTable.name,
+      city: educationCentersTable.city,
+      contactPhone: educationCentersTable.contactPhone,
+    },
+    subscription: {
+      id: educationCenterSubscriptionsTable.id,
+      centerId: educationCenterSubscriptionsTable.centerId,
+      status: educationCenterSubscriptionsTable.status,
+      dueAmount: educationCenterSubscriptionsTable.dueAmount,
+      graceEndsAt: educationCenterSubscriptionsTable.graceEndsAt,
+    },
+    ownerFirstName: usersTable.firstName,
+    ownerLastName: usersTable.lastName,
+    ownerEmail: usersTable.email,
+  }).from(educationCenterSubscriptionsTable)
+    .innerJoin(educationCentersTable, eq(educationCentersTable.id, educationCenterSubscriptionsTable.centerId))
+    .innerJoin(usersTable, eq(usersTable.id, educationCentersTable.ownerId))
+    .where(and(
+      eq(educationCenterSubscriptionsTable.status, "past_due"),
+      isNotNull(educationCenterSubscriptionsTable.graceEndsAt),
+      gt(educationCenterSubscriptionsTable.graceEndsAt, sql`clock_timestamp()`),
+    ))
+    .orderBy(asc(educationCenterSubscriptionsTable.graceEndsAt), asc(educationCentersTable.name))
+    .limit(101);
+  const visible = rows.slice(0, 100);
+  const centerIds = visible.map((row) => row.center.id);
+  const subscriptionIds = visible.map((row) => row.subscription.id);
+  if (!centerIds.length) {
+    res.json({ items: [], generatedAt: now, truncated: false });
+    return;
+  }
+  const [debtRows, noteCountRows, latestNotes, latestEmails] = await Promise.all([
+    db.select({
+      centerId: educationPaymentObligationsTable.centerId,
+      amountRsd: sql<number>`coalesce(sum(${educationPaymentObligationsTable.expectedAmount}), 0)::int`,
+    }).from(educationPaymentObligationsTable).where(and(
+      inArray(educationPaymentObligationsTable.centerId, centerIds),
+      eq(educationPaymentObligationsTable.status, "pending"),
+    )).groupBy(educationPaymentObligationsTable.centerId),
+    db.select({
+      centerId: educationGraceNotesTable.centerId,
+      count: sql<number>`count(*)::int`,
+    }).from(educationGraceNotesTable)
+      .where(inArray(educationGraceNotesTable.centerId, centerIds))
+      .groupBy(educationGraceNotesTable.centerId),
+    db.selectDistinctOn([educationGraceNotesTable.centerId], {
+      id: educationGraceNotesTable.id,
+      centerId: educationGraceNotesTable.centerId,
+      note: educationGraceNotesTable.note,
+      authorUserId: educationGraceNotesTable.authorUserId,
+      createdAt: educationGraceNotesTable.createdAt,
+    }).from(educationGraceNotesTable)
+      .where(inArray(educationGraceNotesTable.centerId, centerIds))
+      .orderBy(educationGraceNotesTable.centerId, desc(educationGraceNotesTable.createdAt), desc(educationGraceNotesTable.id)),
+    db.selectDistinctOn([sql<string>`coalesce(${emailDeliveriesTable.metadata}->>'subscriptionId', split_part(${emailDeliveriesTable.eventKey}, ':', 2))`], {
+      subscriptionId: sql<string>`coalesce(${emailDeliveriesTable.metadata}->>'subscriptionId', split_part(${emailDeliveriesTable.eventKey}, ':', 2))`,
+      status: emailDeliveriesTable.status,
+      createdAt: emailDeliveriesTable.createdAt,
+      sentAt: emailDeliveriesTable.sentAt,
+    }).from(emailDeliveriesTable).where(and(
+      eq(emailDeliveriesTable.emailType, "education_subscription_expiry"),
+      inArray(sql<string>`coalesce(${emailDeliveriesTable.metadata}->>'subscriptionId', split_part(${emailDeliveriesTable.eventKey}, ':', 2))`, subscriptionIds),
+    )).orderBy(
+      sql`coalesce(${emailDeliveriesTable.metadata}->>'subscriptionId', split_part(${emailDeliveriesTable.eventKey}, ':', 2))`,
+      desc(emailDeliveriesTable.createdAt),
+      desc(emailDeliveriesTable.id),
+    ),
+  ]);
+  const debtByCenter = new Map(debtRows.map((row) => [row.centerId, Number(row.amountRsd)]));
+  const noteCountByCenter = new Map(noteCountRows.map((row) => [row.centerId, Number(row.count)]));
+  const latestNoteByCenter = new Map(latestNotes.map((row) => [row.centerId, row]));
+  const latestEmailBySubscription = new Map(latestEmails.map((row) => [row.subscriptionId, row]));
+  res.json({
+    items: visible.map((row) => ({
+      center: row.center,
+      subscription: row.subscription,
+      owner: {
+        firstName: row.ownerFirstName,
+        lastName: row.ownerLastName,
+        email: row.ownerEmail,
+      },
+      daysRemaining: educationGraceDaysRemaining(now, row.subscription.graceEndsAt) ?? 0,
+      debtRsd: debtByCenter.get(row.center.id) ?? 0,
+      latestEmail: latestEmailBySubscription.get(row.subscription.id) ?? null,
+      latestNote: latestNoteByCenter.get(row.center.id) ?? null,
+      noteCount: noteCountByCenter.get(row.center.id) ?? 0,
+    })),
+    generatedAt: now,
+    truncated: rows.length > 100,
+  });
+});
+
+router.get("/admin/education/grace-centers/:centerId/notes", async (req, res) => {
+  const actor = await superAdmin(req, res); if (!actor) return;
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+  const rows = await db.select({
+    id: educationGraceNotesTable.id,
+    centerId: educationGraceNotesTable.centerId,
+    note: educationGraceNotesTable.note,
+    authorUserId: educationGraceNotesTable.authorUserId,
+    createdAt: educationGraceNotesTable.createdAt,
+    authorFirstName: usersTable.firstName,
+    authorLastName: usersTable.lastName,
+  }).from(educationGraceNotesTable)
+    .innerJoin(usersTable, eq(usersTable.id, educationGraceNotesTable.authorUserId))
+    .where(eq(educationGraceNotesTable.centerId, req.params.centerId))
+    .orderBy(desc(educationGraceNotesTable.createdAt), desc(educationGraceNotesTable.id))
+    .limit(limit);
+  res.json(rows);
+});
+
+router.post("/admin/education/grace-centers/:centerId/notes", async (req, res) => {
+  const actor = await superAdmin(req, res); if (!actor) return;
+  const parsed = graceNoteBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Beleška mora imati između 3 i 2000 znakova." }); return; }
+  const note = await db.transaction(async (tx) => {
+    const [subscription] = await tx.select({ id: educationCenterSubscriptionsTable.id })
+      .from(educationCenterSubscriptionsTable)
+      .where(and(
+        eq(educationCenterSubscriptionsTable.centerId, req.params.centerId),
+        eq(educationCenterSubscriptionsTable.status, "past_due"),
+        isNotNull(educationCenterSubscriptionsTable.graceEndsAt),
+      )).for("update").limit(1);
+    if (!subscription) return null;
+    const [created] = await tx.insert(educationGraceNotesTable).values({
+      centerId: req.params.centerId,
+      authorUserId: actor.id,
+      note: parsed.data.note,
+    }).returning();
+    await tx.update(educationCenterSubscriptionsTable).set({
+      graceExtensionNote: parsed.data.note,
+      updatedAt: sql`clock_timestamp()`,
+    }).where(eq(educationCenterSubscriptionsTable.id, subscription.id));
+    return created;
+  });
+  if (!note) { res.status(409).json({ error: "Centar trenutno nije u grace periodu." }); return; }
+  res.status(201).json({
+    ...note,
+    authorFirstName: actor.firstName,
+    authorLastName: actor.lastName,
+  });
 });
 
 router.post("/admin/education/centers/:centerId/extend-grace", async (req, res) => {
   const actor = await superAdmin(req, res); if (!actor) return;
-  const parsed = reasonBody.safeParse(req.body); if (!parsed.success) { res.status(400).json({ error: "Razlog je obavezan." }); return; }
-  const updated = await db.transaction(async (tx) => {
-    const [subscription] = await tx.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, req.params.centerId)).for("update").limit(1);
-    if (!subscription) throw new Error("NOT_FOUND");
-    if (subscription.status === "suspended") throw new Error("REACTIVATION_REQUIRED");
-    const now = new Date(); const base = subscription.graceEndsAt && subscription.graceEndsAt > now ? subscription.graceEndsAt : now;
-    const graceEndsAt = addEducationBelgradeCalendarDays(base, 5);
-    const [saved] = await tx.update(educationCenterSubscriptionsTable).set({ status: "past_due", graceEndsAt, graceExtensionNote: parsed.data.reason, deactivatedAt: null, updatedAt: now }).where(eq(educationCenterSubscriptionsTable.id, subscription.id)).returning();
-    await tx.insert(educationGraceNotesTable).values({ centerId: req.params.centerId, authorUserId: actor.id, note: parsed.data.reason });
-    await tx.insert(educationFinancialAuditLogTable).values({ actorUserId: actor.id, action: "education_grace_extended", entityType: "education_center_subscription", entityId: subscription.id, oldValue: { graceEndsAt: subscription.graceEndsAt }, newValue: { graceEndsAt }, reason: parsed.data.reason });
-    return saved;
-  }).catch((error) => {
-    if (error instanceof Error && error.message === "NOT_FOUND") return null;
-    if (error instanceof Error && error.message === "REACTIVATION_REQUIRED") return false;
-    throw error;
+  const parsed = graceExtensionBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Broj dana i razlog su obavezni." }); return; }
+  const result = await db.transaction(async (tx) => {
+    const [subscription] = await tx.select().from(educationCenterSubscriptionsTable)
+      .where(eq(educationCenterSubscriptionsTable.centerId, req.params.centerId))
+      .for("update").limit(1);
+    if (!subscription) return { error: "NOT_FOUND" as const };
+    if (subscription.status === "suspended") return { error: "REACTIVATION_REQUIRED" as const };
+    if (subscription.status !== "past_due" || !subscription.graceEndsAt) return { error: "NOT_IN_GRACE" as const };
+    const clockResult = await tx.execute<{ now: Date }>(sql`select clock_timestamp() as now`);
+    const now = new Date(clockResult.rows[0]!.now);
+    const base = subscription.graceEndsAt > now ? subscription.graceEndsAt : now;
+    const graceEndsAt = addEducationBelgradeCalendarDays(base, parsed.data.days);
+    const [saved] = await tx.update(educationCenterSubscriptionsTable).set({
+      graceEndsAt,
+      graceExtensionNote: parsed.data.reason,
+      deactivatedAt: null,
+      updatedAt: now,
+    }).where(eq(educationCenterSubscriptionsTable.id, subscription.id)).returning();
+    const movedObligations = await tx.update(educationPaymentObligationsTable).set({ dueAt: graceEndsAt }).where(and(
+      eq(educationPaymentObligationsTable.subscriptionId, subscription.id),
+      eq(educationPaymentObligationsTable.status, "pending"),
+      inArray(educationPaymentObligationsTable.kind, ["subscription_renewal", "subscription_upgrade"]),
+    )).returning({ id: educationPaymentObligationsTable.id });
+    const [note] = await tx.insert(educationGraceNotesTable).values({
+      centerId: req.params.centerId,
+      authorUserId: actor.id,
+      note: parsed.data.reason,
+    }).returning();
+    await writeEducationFinancialAuditInTx(tx, {
+      actorUserId: actor.id,
+      action: "education_grace_extended",
+      entityType: "education_center_subscription",
+      entityId: subscription.id,
+      oldValue: { graceEndsAt: subscription.graceEndsAt },
+      newValue: { graceEndsAt, extensionDays: parsed.data.days, relatedObligationsUpdated: movedObligations.length },
+      reason: parsed.data.reason,
+    });
+    return {
+      subscription: saved!,
+      previousGraceEndsAt: subscription.graceEndsAt,
+      extensionDays: parsed.data.days,
+      relatedObligationsUpdated: movedObligations.length,
+      note: note!,
+    };
   });
-  if (updated === false) { res.status(409).json({ error: "Deaktiviran centar mora proći kontrolisanu reaktivaciju; grace period se ne može ponovo otvoriti." }); return; }
-  if (updated === null) { res.status(404).json({ error: "Pretplata nije pronađena." }); return; }
-  res.json(updated);
+  if ("error" in result) {
+    if (result.error === "NOT_FOUND") { res.status(404).json({ error: "Pretplata nije pronađena." }); return; }
+    if (result.error === "REACTIVATION_REQUIRED") { res.status(409).json({ error: "Deaktiviran centar mora proći kontrolisanu reaktivaciju; grace period se ne može ponovo otvoriti." }); return; }
+    res.status(409).json({ error: "Centar trenutno nije u grace periodu." });
+    return;
+  }
+  res.json(result);
 });
 
 router.post("/admin/education/centers/:centerId/reactivate", async (req, res) => {
@@ -590,7 +863,7 @@ router.post("/admin/education/centers/:centerId/reactivate", async (req, res) =>
         eq(educationCenterSubscriptionsTable.status, "suspended"),
       )).returning();
       if (!saved) throw new Error("STALE_STATE");
-      await tx.insert(educationFinancialAuditLogTable).values({
+      await writeEducationFinancialAuditInTx(tx, {
         actorUserId: actor.id,
         action: "education_center_reactivated",
         entityType: "education_center",
@@ -667,7 +940,7 @@ router.post("/admin/education/centers/:centerId/custom-contract", async (req, re
       pendingKeepCourseIds: null,
       updatedAt: now,
     }).where(eq(educationCenterSubscriptionsTable.id, subscription.id)).returning();
-    await tx.insert(educationFinancialAuditLogTable).values({
+    await writeEducationFinancialAuditInTx(tx, {
       actorUserId: actor.id, action: "education_custom_contract_configured",
       entityType: "education_center_subscription", entityId: subscription.id,
       oldValue: { contractKind: subscription.contractKind, contractEndsAt: subscription.contractEndsAt, dueAmount: subscription.dueAmount },
@@ -788,7 +1061,7 @@ router.patch("/admin/education/bank-reconciliation", async (req, res) => {
       }).returning())[0];
     if (!saved) throw new Error("Education reconciliation settings were not saved.");
     if (settings?.bankReconciliationEnabled !== enabled) {
-      await tx.insert(educationFinancialAuditLogTable).values({
+      await writeEducationFinancialAuditInTx(tx, {
         actorUserId: actor.id,
         action: "bank_reconciliation_toggled",
         entityType: "education_platform_settings",

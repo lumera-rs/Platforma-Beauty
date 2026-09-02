@@ -4,7 +4,7 @@ import { z } from "zod";
 import {
   coursesTable, db, educationB2bDiscountAuditsTable, educationB2bDiscountSettingsTable,
   educationB2bDiscountTiersTable, educationB2bOrderItemsTable, educationB2bOrdersTable,
-  educationCenterStaffTable, educationCentersTable, educationFinancialAuditLogTable,
+  educationCenterStaffTable, educationCentersTable,
   productsTable,
 } from "@workspace/db";
 import {
@@ -15,6 +15,11 @@ import {
 } from "@workspace/api-zod";
 import { getCurrentUser } from "../lib/auth";
 import { educationBelgradeInstant } from "../lib/education-availability-store";
+import {
+  addEducationBelgradeDateMonths,
+  educationBelgradeDateKey,
+} from "../lib/education-belgrade-calendar";
+import { writeEducationFinancialAuditInTx } from "../lib/education-financial-audit";
 
 const router: IRouter = Router();
 
@@ -23,14 +28,8 @@ export function previousBelgradeCalendarMonth(now: Date) {
   // immediately preceding Europe/Belgrade calendar month. This is deliberately
   // not a trailing or rolling 30-day window, so a center's tier stays stable
   // throughout the current calendar month.
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Belgrade", year: "numeric", month: "2-digit",
-  }).formatToParts(now);
-  const year = Number(parts.find((part) => part.type === "year")!.value);
-  const month = Number(parts.find((part) => part.type === "month")!.value);
-  const current = `${year}-${String(month).padStart(2, "0")}-01`;
-  const previousDate = new Date(Date.UTC(year, month - 2, 1));
-  const previous = `${previousDate.getUTCFullYear()}-${String(previousDate.getUTCMonth() + 1).padStart(2, "0")}-01`;
+  const current = `${educationBelgradeDateKey(now).slice(0, 7)}-01`;
+  const previous = addEducationBelgradeDateMonths(current, -1);
   return {
     start: educationBelgradeInstant(previous, "00:00"),
     end: educationBelgradeInstant(current, "00:00"),
@@ -215,7 +214,7 @@ router.put("/admin/education/b2b-discount-tiers", async (req, res) => {
     await tx.insert(educationB2bDiscountAuditsTable).values({
       version: version + 1, actorUserId: user.id, tiersSnapshot: body.data.tiers,
     });
-    await tx.insert(educationFinancialAuditLogTable).values({
+    await writeEducationFinancialAuditInTx(tx, {
       actorUserId: user.id, action: "b2b_discount_tiers_changed",
       entityType: "education_b2b_discount_settings", entityId: "global",
       oldValue: { version, tiers: oldTiers },
@@ -250,7 +249,7 @@ router.post("/admin/education/b2b-orders/:orderId/settle", async (req, res) => {
         paymentStatus: "paid", settledAt: new Date(), settledByUserId: actor.id,
       }).where(and(eq(educationB2bOrdersTable.id, locked.id), eq(educationB2bOrdersTable.paymentStatus, "pending"))).returning();
       if (!updated) throw new Error("ALREADY_RECORDED");
-      await tx.insert(educationFinancialAuditLogTable).values({
+      await writeEducationFinancialAuditInTx(tx, {
         actorUserId: actor.id, action: "education_b2b_order_settled",
         entityType: "education_b2b_order", entityId: locked.id,
         oldValue: { paymentStatus: locked.paymentStatus, expectedAmountRsd: locked.totalRsd },
@@ -285,7 +284,7 @@ router.post("/admin/education/b2b-orders/:orderId/refund", async (req, res) => {
         refundedAmountRsd,
         paymentStatus: refundedAmountRsd === locked.totalRsd ? "refunded" : "paid",
       }).where(eq(educationB2bOrdersTable.id, locked.id)).returning();
-      await tx.insert(educationFinancialAuditLogTable).values({
+      await writeEducationFinancialAuditInTx(tx, {
         actorUserId: actor.id, action: "education_b2b_order_refunded",
         entityType: "education_b2b_order", entityId: locked.id,
         oldValue: { refundedAmountRsd: locked.refundedAmountRsd, paymentStatus: locked.paymentStatus },

@@ -14,50 +14,32 @@ import {
   type BusyAppointment,
   wallClockNowInTimeZone,
 } from "./availability-engine";
+import {
+  EDUCATION_BELGRADE_TIME_ZONE,
+  addEducationBelgradeDateDays,
+  assertEducationBelgradeDate,
+  educationBelgradeDateKey,
+  educationBelgradeDateTimeParts,
+  educationBelgradeWallClockInstant,
+} from "./education-belgrade-calendar";
 
-export const EDUCATION_TIME_ZONE = "Europe/Belgrade";
+export const EDUCATION_TIME_ZONE = EDUCATION_BELGRADE_TIME_ZONE;
 
 /** Reject Date's rollover behaviour (2026-02-31 must never become March). */
 export function assertBelgradeDate(value: string): string {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error("Datum mora biti YYYY-MM-DD.");
-  const [year, month, day] = value.split("-").map(Number);
-  const test = new Date(Date.UTC(year!, month! - 1, day!));
-  if (test.getUTCFullYear() !== year || test.getUTCMonth() !== month! - 1 || test.getUTCDate() !== day) {
-    throw new Error("Datum ne postoji u kalendaru Europe/Belgrade.");
-  }
-  return value;
+  return assertEducationBelgradeDate(value);
 }
 
 export function educationBelgradeInstant(date: string, time: string): Date {
-  assertBelgradeDate(date);
-  const [year, month, day] = date.split("-").map(Number);
-  const [hour, minute] = time.split(":").map(Number);
-  const target = Date.UTC(year!, month! - 1, day!, hour!, minute!);
-  let candidate = target - 3 * 3_600_000;
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: EDUCATION_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
-  });
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const parts = formatter.formatToParts(new Date(candidate));
-    const value = (kind: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === kind)?.value);
-    const observed = Date.UTC(value("year"), value("month") - 1, value("day"), value("hour"), value("minute"));
-    if (observed === target) return new Date(candidate);
-    candidate += target - observed;
-  }
-  throw new Error("Izabrano vreme ne postoji u vremenskoj zoni Europe/Belgrade.");
+  return educationBelgradeWallClockInstant(date, time);
 }
 
 function belgradeDateTime(value: Date) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: EDUCATION_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
-  }).formatToParts(value);
-  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value;
-  const year = part("year"); const month = part("month"); const day = part("day");
-  const hour = part("hour"); const minute = part("minute");
-  if (!year || !month || !day || !hour || !minute) throw new Error("Belgrade wall-clock conversion failed.");
-  return { date: `${year}-${month}-${day}`, time: `${hour}:${minute}` };
+  const parts = educationBelgradeDateTimeParts(value);
+  return {
+    date: educationBelgradeDateKey(value),
+    time: `${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}`,
+  };
 }
 
 /** Europe/Belgrade calendar dates intersected by the half-open instant range. */
@@ -67,8 +49,7 @@ export function educationLocalDatesTouched(startsAt: Date, endsAt: Date): string
   // A session ending exactly at local midnight does not occupy the new day.
   const last = belgradeDateTime(new Date(endsAt.getTime() - 1)).date;
   const result: string[] = [];
-  for (let cursor = new Date(`${first}T12:00:00.000Z`);; cursor = new Date(cursor.getTime() + 86_400_000)) {
-    const date = cursor.toISOString().slice(0, 10);
+  for (let date = first;; date = addEducationBelgradeDateDays(date, 1)) {
     result.push(date);
     if (date === last) return result;
     if (result.length > 370) throw new Error("Session date range is unbounded.");
@@ -99,7 +80,7 @@ export type EducationAbsenceConflict = {
 };
 
 function nextEducationDate(date: string): string {
-  return new Date(new Date(`${date}T12:00:00.000Z`).getTime() + 86_400_000).toISOString().slice(0, 10);
+  return addEducationBelgradeDateDays(date, 1);
 }
 
 export function educationAbsenceOverlapsSession(

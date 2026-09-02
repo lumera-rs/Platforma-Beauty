@@ -3,12 +3,12 @@ import { z } from "zod";
 import {
   db,
   educationBankTransactionsTable,
-  educationFinancialAuditLogTable,
   educationPaymentObligationsTable,
   educationPlatformSettingsTable,
 } from "@workspace/db";
 import { lockEducationBillingRules } from "./education-billing";
 import { settleEducationPaymentObligationInTransaction } from "./education-payment-obligation-settlement";
+import { writeEducationFinancialAuditInTx } from "./education-financial-audit";
 
 export const normalizedEducationBankTransactionSchema = z.object({
   source: z.string().trim().min(1).max(100),
@@ -43,7 +43,7 @@ const recordDecisionAudit = async (
   tx: ReconciliationTransaction,
   transaction: EducationBankTransaction,
 ) => {
-  await tx.insert(educationFinancialAuditLogTable).values({
+  await writeEducationFinancialAuditInTx(tx, {
     actorUserId: null,
     action: "education_bank_transaction_processed",
     entityType: "education_bank_transaction",

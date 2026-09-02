@@ -53,27 +53,35 @@ import {
 import { lockEducationScheduleResources } from "../lib/education-locks";
 import { cancelEducationSession, releaseSeatAndPromoteWaiter } from "../lib/education-sessions";
 import { educationIpsQrPayload, educationIpsRuntimeEnvironment, educationOperationalPriceQuote } from "../lib/education-marketplace-domain";
+import {
+  addEducationBelgradeCalendarDays,
+  addEducationBelgradeCalendarMonths,
+  addEducationBelgradeDateDays,
+  educationBelgradeCalendarDayDifference,
+  educationBelgradeDateKey,
+  educationBelgradeDateParts,
+  educationBelgradeDateTimeParts,
+} from "../lib/education-belgrade-calendar";
 import { getEducationPlatformSettings, lockEducationBillingRules, resolveEducationBillingSettings } from "../lib/education-billing";
-import { operationalCancellationDisposition, operationalPaymentTotals, operationalRescheduleAllowed } from "../lib/education-operational-policy";
+import {
+  operationalCancellationDisposition,
+  operationalEscrowReleaseAt,
+  operationalPaymentTotals,
+  operationalRescheduleAllowed,
+} from "../lib/education-operational-policy";
 import { reconcileOperationalEducationEnrollmentInTx } from "../lib/education-certificate-eligibility";
+import { writeEducationFinancialAuditInTx } from "../lib/education-financial-audit";
 
 const router: IRouter = Router();
 
 function invalid(res: Response, message: string) { res.status(400).json({ error: message }); }
 function requestValue(value: string | string[] | undefined) { return Array.isArray(value) ? value[0] : value; }
 function sessionDay(value: Date) {
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Belgrade", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(value);
-  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value;
-  const year = get("year"); const month = get("month"); const day = get("day");
-  if (!year || !month || !day) throw new Error("Cannot resolve Europe/Belgrade session day.");
-  return `${year}-${month}-${day}`;
+  return educationBelgradeDateKey(value);
 }
 function sessionTime(value: Date) {
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Belgrade", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(value);
-  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value;
-  const hour = get("hour"); const minute = get("minute");
-  if (!hour || !minute) throw new Error("Cannot resolve Europe/Belgrade session time.");
-  return `${hour}:${minute}`;
+  const parts = educationBelgradeDateTimeParts(value);
+  return `${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}`;
 }
 function sessionLockResources(centerId: string, startsAt: Date, endsAt: Date, educatorStaffId?: string | null) {
   return educationLocalDatesTouched(startsAt, endsAt).map((date) => ({ centerId, date, educatorStaffId }));
@@ -180,13 +188,14 @@ function selectedOperationalParticipants(
 function recurrenceDates(startDate: string, endDate: string, weekdays: number[]) {
   assertBelgradeDate(startDate); assertBelgradeDate(endDate);
   if (endDate < startDate) throw new Error("Datum završetka mora biti nakon datuma početka.");
-  const start = new Date(`${startDate}T12:00:00Z`); const end = new Date(`${endDate}T12:00:00Z`);
-  if ((end.getTime() - start.getTime()) / 86_400_000 > 366) throw new Error("Opseg može trajati najviše 366 dana.");
+  if (educationBelgradeCalendarDayDifference(startDate, endDate) > 366) throw new Error("Opseg može trajati najviše 366 dana.");
   const selected = new Set(weekdays);
   const dates: string[] = [];
-  for (let day = start; day <= end; day = new Date(day.getTime() + 86_400_000)) {
+  for (let date = startDate; date <= endDate; date = addEducationBelgradeDateDays(date, 1)) {
+    const parts = educationBelgradeDateParts(date);
+    const day = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
     const isoWeekday = ((day.getUTCDay() + 6) % 7) + 1;
-    if (selected.has(isoWeekday)) dates.push(day.toISOString().slice(0, 10));
+    if (selected.has(isoWeekday)) dates.push(date);
   }
   return dates;
 }
@@ -230,7 +239,7 @@ router.get("/education/operations/centers/:centerId/calendar", async (req, res):
   try {
     assertBelgradeDate(query.data.startDate); assertBelgradeDate(query.data.endDate);
     if (query.data.endDate < query.data.startDate) throw new Error("Datum završetka mora biti nakon datuma početka.");
-    if ((new Date(`${query.data.endDate}T12:00:00Z`).getTime() - new Date(`${query.data.startDate}T12:00:00Z`).getTime()) / 86_400_000 > 366) throw new Error("Opseg može trajati najviše 366 dana.");
+    if (educationBelgradeCalendarDayDifference(query.data.startDate, query.data.endDate) > 366) throw new Error("Opseg može trajati najviše 366 dana.");
   } catch (error) { invalid(res, error instanceof Error ? error.message : "Opseg datuma nije ispravan."); return; }
   const access = await centerRole(req, params.data.centerId);
   if (!access.user) { res.status(401).json({ error: "Prijava je obavezna." }); return; }
@@ -929,12 +938,15 @@ router.get("/admin/education/installments", async (req, res): Promise<void> => {
 });
 
 router.post("/admin/education/installments/:installmentId/settle", async (req, res): Promise<void> => {
+  const admin = await getCurrentUser(req);
+  if (!admin) { res.status(401).json({ error: "Prijava je obavezna." }); return; }
+  if (admin.role !== "SUPER_ADMIN") {
+    res.status(403).json({ error: "Ova promena je dozvoljena samo super administratorima." });
+    return;
+  }
   const params = SettleAdminEducationInstallmentParams.safeParse(req.params);
   const header = SettleAdminEducationInstallmentHeader.safeParse({ "Idempotency-Key": requestValue(req.headers["idempotency-key"]) });
   if (!params.success || !header.success) { invalid(res, (!params.success ? params.error : header.error!).message); return; }
-  const admin = await getCurrentUser(req);
-  if (!admin) { res.status(401).json({ error: "Prijava je obavezna." }); return; }
-  if (!isAdmin(admin)) { res.status(403).json({ error: "Administratorski pristup je obavezan." }); return; }
   const fingerprint = operationFingerprint({ installmentId: params.data.installmentId });
   try {
     const settled = await db.transaction(async (tx) => {
@@ -1016,7 +1028,7 @@ router.post("/admin/education/installments/:installmentId/settle", async (req, r
               }).where(eq(educationEscrowsTable.id, existingEscrow.id)).returning())[0]!
             : (await tx.insert(educationEscrowsTable).values({
                 enrollmentId: row.enrollment.id, centerId: preview.centerId, grossAmount: gross, platformFee: fee,
-                reserveAmount: reserve, netAmount: net, releaseAt: new Date(now.getTime() + 7 * 86_400_000),
+                reserveAmount: reserve, netAmount: net, releaseAt: operationalEscrowReleaseAt(now),
                 paymentReference: installment.paymentReference,
               }).returning())[0]!;
           await tx.insert(educationLedgerEntriesTable).values([
@@ -1036,6 +1048,15 @@ router.post("/admin/education/installments/:installmentId/settle", async (req, r
       await tx.insert(educationInstallmentSettlementCommandsTable).values({
         installmentId: installment.id, actorUserId: admin.id, idempotencyKey: header.data["Idempotency-Key"],
         requestFingerprint: fingerprint, responseSnapshot: response,
+      });
+      await writeEducationFinancialAuditInTx(tx, {
+        actorUserId: admin.id,
+        action: "education_installment_settled",
+        entityType: "education_installment",
+        entityId: installment.id,
+        oldValue: { status: installment.status, amount: installment.amount, capturedAmount: previouslyCaptured },
+        newValue: { status: "settled", amount: installment.amount, capturedAmount, paymentStatus },
+        reason: "Administrator je ručno evidentirao uplatu rate.",
       });
       return { ...response, replayed: false };
     });
@@ -1385,7 +1406,9 @@ router.post("/education/operations/bookings", async (req, res): Promise<void> =>
           accountEnvironment: paymentSettings.ipsAccountEnvironment as "production" | "test",
           runtimeEnvironment: educationIpsRuntimeEnvironment(),
         }),
-        dueAt: index === 0 ? group!.createdAt : new Date(lockedSession.startsAt.getTime() - (quote.installments.length - index - 1) * 30 * 86_400_000),
+        dueAt: index === 0 ? group!.createdAt : addEducationBelgradeCalendarMonths(
+          lockedSession.startsAt, -(quote.installments.length - index - 1),
+        ),
       })));
     }
     // A group is the commercial parent; every named seat gets one durable

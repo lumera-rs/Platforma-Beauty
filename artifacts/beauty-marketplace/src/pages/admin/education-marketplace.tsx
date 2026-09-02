@@ -16,6 +16,7 @@ import { trackFeaturedPlacementPaid } from "@/lib/analytics";
 import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
 import { useQueryClient } from "@tanstack/react-query";
 import { EducationFieldHelp } from "@/components/education/education-field-help";
+import { EducationGraceAudit } from "@/components/admin/education-grace-audit";
 import {
   useGetAdminEducationSettings,
   useUpdateAdminEducationSettings,
@@ -759,6 +760,8 @@ export default function AdminEducationMarketplace() {
           </Card>
         </div>
       </div>
+
+      <EducationGraceAudit />
     </div>
 
     <Dialog open={settleVoucherOpen} onOpenChange={setSettleVoucherOpen}>

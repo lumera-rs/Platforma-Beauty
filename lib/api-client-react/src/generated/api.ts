@@ -311,6 +311,7 @@ import type {
   EducationFeaturedChargeSettlement,
   EducationFeaturedChargeSettlementInput,
   EducationFinanceOverview,
+  EducationFinancialAuditPage,
   EducationGalleryMediaInput,
   EducationGalleryReorderInput,
   EducationGalleryUpload,
@@ -321,6 +322,11 @@ import type {
   EducationGiftVoucherPurchaseInput,
   EducationGiftVoucherRedeemInput,
   EducationGiftVoucherRefundInput,
+  EducationGraceCenterList,
+  EducationGraceExtensionInput,
+  EducationGraceExtensionResult,
+  EducationGraceNote,
+  EducationGraceNoteInput,
   EducationGroupEnrollmentInput,
   EducationGroupEnrollmentResponse,
   EducationInquiry,
@@ -453,6 +459,8 @@ import type {
   LeaveRequestReviewBody,
   LeaveRequestReviewResult,
   LinkEducationCourseInstructorBody,
+  ListAdminEducationFinancialAuditParams,
+  ListAdminEducationGraceNotesParams,
   ListAdminEducationInstallmentsParams,
   ListAdminEducationTaxonomyProposalsParams,
   ListAdminFeaturedPlacementsParams,
@@ -15596,6 +15604,382 @@ export const useSettleEducationPaymentObligation = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getSettleEducationPaymentObligationMutationOptions(options));
+    }
+
+export const getListAdminEducationFinancialAuditUrl = (params?: ListAdminEducationFinancialAuditParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/education/financial-audit?${stringifiedParams}` : `/api/admin/education/financial-audit`
+}
+
+/**
+ * @summary List bounded Education financial audit entries
+ */
+export const listAdminEducationFinancialAudit = async (params?: ListAdminEducationFinancialAuditParams, options?: Parameters<typeof customFetch>[1]): Promise<EducationFinancialAuditPage> => {
+
+  return customFetch<EducationFinancialAuditPage>(getListAdminEducationFinancialAuditUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAdminEducationFinancialAuditQueryKey = (params?: ListAdminEducationFinancialAuditParams,) => {
+    return [
+    `/api/admin/education/financial-audit`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListAdminEducationFinancialAuditQueryOptions = <TData = Awaited<ReturnType<typeof listAdminEducationFinancialAudit>>, TError = ErrorType<unknown>>(params?: ListAdminEducationFinancialAuditParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAdminEducationFinancialAudit>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAdminEducationFinancialAuditQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAdminEducationFinancialAudit>>> = ({ signal }) => listAdminEducationFinancialAudit(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAdminEducationFinancialAudit>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAdminEducationFinancialAuditQueryResult = NonNullable<Awaited<ReturnType<typeof listAdminEducationFinancialAudit>>>
+export type ListAdminEducationFinancialAuditQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List bounded Education financial audit entries
+ */
+
+export function useListAdminEducationFinancialAudit<TData = Awaited<ReturnType<typeof listAdminEducationFinancialAudit>>, TError = ErrorType<unknown>>(
+ params?: ListAdminEducationFinancialAuditParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAdminEducationFinancialAudit>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAdminEducationFinancialAuditQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListAdminEducationGraceCentersUrl = () => {
+
+
+
+
+  return `/api/admin/education/grace-centers`
+}
+
+/**
+ * @summary List Education centers currently in grace
+ */
+export const listAdminEducationGraceCenters = async ( options?: Parameters<typeof customFetch>[1]): Promise<EducationGraceCenterList> => {
+
+  return customFetch<EducationGraceCenterList>(getListAdminEducationGraceCentersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAdminEducationGraceCentersQueryKey = () => {
+    return [
+    `/api/admin/education/grace-centers`
+    ] as const;
+    }
+
+
+export const getListAdminEducationGraceCentersQueryOptions = <TData = Awaited<ReturnType<typeof listAdminEducationGraceCenters>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAdminEducationGraceCenters>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAdminEducationGraceCentersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAdminEducationGraceCenters>>> = ({ signal }) => listAdminEducationGraceCenters({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAdminEducationGraceCenters>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAdminEducationGraceCentersQueryResult = NonNullable<Awaited<ReturnType<typeof listAdminEducationGraceCenters>>>
+export type ListAdminEducationGraceCentersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List Education centers currently in grace
+ */
+
+export function useListAdminEducationGraceCenters<TData = Awaited<ReturnType<typeof listAdminEducationGraceCenters>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAdminEducationGraceCenters>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAdminEducationGraceCentersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListAdminEducationGraceNotesUrl = (centerId: string,
+    params?: ListAdminEducationGraceNotesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/education/grace-centers/${centerId}/notes?${stringifiedParams}` : `/api/admin/education/grace-centers/${centerId}/notes`
+}
+
+export const listAdminEducationGraceNotes = async (centerId: string,
+    params?: ListAdminEducationGraceNotesParams, options?: Parameters<typeof customFetch>[1]): Promise<EducationGraceNote[]> => {
+
+  return customFetch<EducationGraceNote[]>(getListAdminEducationGraceNotesUrl(centerId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAdminEducationGraceNotesQueryKey = (centerId: string,
+    params?: ListAdminEducationGraceNotesParams,) => {
+    return [
+    `/api/admin/education/grace-centers/${centerId}/notes`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListAdminEducationGraceNotesQueryOptions = <TData = Awaited<ReturnType<typeof listAdminEducationGraceNotes>>, TError = ErrorType<unknown>>(centerId: string,
+    params?: ListAdminEducationGraceNotesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAdminEducationGraceNotes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAdminEducationGraceNotesQueryKey(centerId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAdminEducationGraceNotes>>> = ({ signal }) => listAdminEducationGraceNotes(centerId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: centerId !== null && centerId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAdminEducationGraceNotes>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAdminEducationGraceNotesQueryResult = NonNullable<Awaited<ReturnType<typeof listAdminEducationGraceNotes>>>
+export type ListAdminEducationGraceNotesQueryError = ErrorType<unknown>
+
+
+
+export function useListAdminEducationGraceNotes<TData = Awaited<ReturnType<typeof listAdminEducationGraceNotes>>, TError = ErrorType<unknown>>(
+ centerId: string,
+    params?: ListAdminEducationGraceNotesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAdminEducationGraceNotes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAdminEducationGraceNotesQueryOptions(centerId,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateAdminEducationGraceNoteUrl = (centerId: string,) => {
+
+
+
+
+  return `/api/admin/education/grace-centers/${centerId}/notes`
+}
+
+export const createAdminEducationGraceNote = async (centerId: string,
+    educationGraceNoteInput: EducationGraceNoteInput, options?: Parameters<typeof customFetch>[1]): Promise<EducationGraceNote> => {
+
+  return customFetch<EducationGraceNote>(getCreateAdminEducationGraceNoteUrl(centerId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(educationGraceNoteInput)
+  }
+);}
+
+
+
+
+
+export const getCreateAdminEducationGraceNoteMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAdminEducationGraceNote>>, TError,{centerId: string;data: BodyType<EducationGraceNoteInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createAdminEducationGraceNote>>, TError,{centerId: string;data: BodyType<EducationGraceNoteInput>}, TContext> => {
+
+const mutationKey = ['createAdminEducationGraceNote'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createAdminEducationGraceNote>>, {centerId: string;data: BodyType<EducationGraceNoteInput>}> = (props) => {
+          const {centerId,data} = props ?? {};
+
+          return  createAdminEducationGraceNote(centerId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateAdminEducationGraceNoteMutationResult = NonNullable<Awaited<ReturnType<typeof createAdminEducationGraceNote>>>
+    export type CreateAdminEducationGraceNoteMutationBody = BodyType<EducationGraceNoteInput>
+    export type CreateAdminEducationGraceNoteMutationError = ErrorType<unknown>
+
+    export const useCreateAdminEducationGraceNote = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAdminEducationGraceNote>>, TError,{centerId: string;data: BodyType<EducationGraceNoteInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createAdminEducationGraceNote>>,
+        TError,
+        {centerId: string;data: BodyType<EducationGraceNoteInput>},
+        TContext
+      > => {
+      return useMutation(getCreateAdminEducationGraceNoteMutationOptions(options));
+    }
+
+export const getExtendAdminEducationGraceUrl = (centerId: string,) => {
+
+
+
+
+  return `/api/admin/education/centers/${centerId}/extend-grace`
+}
+
+export const extendAdminEducationGrace = async (centerId: string,
+    educationGraceExtensionInput: EducationGraceExtensionInput, options?: Parameters<typeof customFetch>[1]): Promise<EducationGraceExtensionResult> => {
+
+  return customFetch<EducationGraceExtensionResult>(getExtendAdminEducationGraceUrl(centerId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(educationGraceExtensionInput)
+  }
+);}
+
+
+
+
+
+export const getExtendAdminEducationGraceMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof extendAdminEducationGrace>>, TError,{centerId: string;data: BodyType<EducationGraceExtensionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof extendAdminEducationGrace>>, TError,{centerId: string;data: BodyType<EducationGraceExtensionInput>}, TContext> => {
+
+const mutationKey = ['extendAdminEducationGrace'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof extendAdminEducationGrace>>, {centerId: string;data: BodyType<EducationGraceExtensionInput>}> = (props) => {
+          const {centerId,data} = props ?? {};
+
+          return  extendAdminEducationGrace(centerId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ExtendAdminEducationGraceMutationResult = NonNullable<Awaited<ReturnType<typeof extendAdminEducationGrace>>>
+    export type ExtendAdminEducationGraceMutationBody = BodyType<EducationGraceExtensionInput>
+    export type ExtendAdminEducationGraceMutationError = ErrorType<unknown>
+
+    export const useExtendAdminEducationGrace = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof extendAdminEducationGrace>>, TError,{centerId: string;data: BodyType<EducationGraceExtensionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof extendAdminEducationGrace>>,
+        TError,
+        {centerId: string;data: BodyType<EducationGraceExtensionInput>},
+        TContext
+      > => {
+      return useMutation(getExtendAdminEducationGraceMutationOptions(options));
     }
 
 export const getConfigureEducationCustomContractUrl = (centerId: string,) => {

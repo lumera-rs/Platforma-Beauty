@@ -47,6 +47,7 @@ import {
 import { lumeraEmailHtml, sendTransactionalEmail } from "./brevo";
 import { logger } from "./logger";
 import { recordEducationEnrollmentReferralTransitionInTx } from "./referral-service";
+import { writeEducationFinancialAuditInTx } from "./education-financial-audit";
 import { notifyCustomer } from "./customer-notifications";
 import { educationLocalDatesTouched } from "./education-availability-store";
 import { lockEducationScheduleResources } from "./education-locks";
@@ -467,6 +468,29 @@ export async function cancelEducationSession(
           },
         }).onConflictDoNothing();
       }
+      // Keep one aggregate audit inside the same transaction as the escrow,
+      // ledger and enrollment changes. This is deliberately not emitted for
+      // an allowAlreadyCancelled replay because that branch returns above.
+      await writeEducationFinancialAuditInTx(tx, {
+        actorUserId,
+        action: "education_session_cancelled_financial",
+        entityType: "education_session",
+        entityId: locked.id,
+        oldValue: {
+          cancelledAt: locked.cancelledAt,
+          reservedSeats: locked.reservedSeats,
+          activeEnrollmentCount: enrollments.length,
+        },
+        newValue: {
+          cancelled: true,
+          refundedEnrollmentCount: refundedEnrollmentIds.length,
+          refundAmount,
+          cancelledWaitlistCount: cancelledWaitlistIds.length,
+          cancelledParticipantCount: operationalParticipantIds.length,
+          source: options.source ?? "marketplace",
+        },
+        reason,
+      });
 
       return {
         refundedEnrollmentIds,

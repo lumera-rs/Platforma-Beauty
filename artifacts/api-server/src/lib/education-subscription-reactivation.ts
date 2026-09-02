@@ -1,4 +1,4 @@
-import { educationBelgradeDateKey } from "./education-marketplace-domain";
+import { educationBelgradeCalendarDayDifference, educationBelgradeDateKey } from "./education-belgrade-calendar";
 
 type SubscriptionLike = {
   status: string;
@@ -24,11 +24,9 @@ type CourseLike = {
 
 export function educationGraceDaysRemaining(now: Date, graceEndsAt: Date | null): number | null {
   if (!graceEndsAt || graceEndsAt <= now) return null;
-  const [nowYear, nowMonth, nowDay] = educationBelgradeDateKey(now).split("-").map(Number);
-  const [endYear, endMonth, endDay] = educationBelgradeDateKey(graceEndsAt).split("-").map(Number);
-  const nowOrdinal = Date.UTC(nowYear!, nowMonth! - 1, nowDay!);
-  const endOrdinal = Date.UTC(endYear!, endMonth! - 1, endDay!);
-  return Math.max(0, Math.round((endOrdinal - nowOrdinal) / 86_400_000));
+  return Math.max(0, educationBelgradeCalendarDayDifference(
+    educationBelgradeDateKey(now), educationBelgradeDateKey(graceEndsAt),
+  ));
 }
 
 export function educationCurrentCourseLimit(subscription: SubscriptionLike, plan: PlanLike): number {

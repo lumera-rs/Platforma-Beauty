@@ -110,7 +110,6 @@ import
   educationPlacementSettingsTable,
   educationPlacementsTable,
   educationCenterSubscriptionsTable,
-  educationFinancialAuditLogTable,
   educationTrialClaimsTable,
   educationDisputesTable,
   educationEscrowsTable,
@@ -247,6 +246,7 @@ import {
   resolveEducationBillingSettingsForChargeInTx,
   type EducationBillingKey,
 } from "../lib/education-billing";
+import { writeEducationFinancialAuditInTx as recordEducationFinancialAudit } from "../lib/education-financial-audit";
 import {
   addEducationBelgradeCalendarDays,
   educationBelgradeDateKey,
@@ -5857,7 +5857,7 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
           trialStartedAt: trial ? now : null,
           trialEndsAt,
         }).returning({ id: educationCenterSubscriptionsTable.id });
-        await tx.insert(educationFinancialAuditLogTable).values({
+        await recordEducationFinancialAudit(tx, {
           actorUserId: created.id,
           action: "education_subscription_created_at_registration",
           entityType: "education_center_subscription",
@@ -19793,7 +19793,7 @@ router.patch("/education/notifications/:notificationId/read", async (req, res): 
 });
 
 router.post("/admin/education/enrollments/:enrollmentId/settle", async (req, res): Promise<void> => {
-  const admin = await requireAdmin(req, res); if (!admin) return;
+  const admin = await requireSuperAdmin(req, res); if (!admin) return;
   const enrollmentId = String(req.params.enrollmentId);
   const [preview] = await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, enrollmentId)).limit(1);
   if (!preview) { res.status(404).json({ error: "Zahtev za kupovinu nije pronađen." }); return; }
@@ -19860,6 +19860,13 @@ router.post("/admin/education/enrollments/:enrollmentId/settle", async (req, res
         await tx.insert(educationThreadsTable).values({
           enrollmentId: confirmed.id, purchaserId: confirmed.purchaserId, centerId: course.centerId,
         });
+        await recordEducationFinancialAudit(tx, {
+          actorUserId: admin.id, action: "education_enrollment_settled_manual",
+          entityType: "course_enrollment", entityId: confirmed.id,
+          oldValue: { status: enrollment.status, paymentStatus: enrollment.paymentStatus, chargedAmount: enrollment.chargedAmount },
+          newValue: { status: confirmed.status, paymentStatus: confirmed.paymentStatus, settlement: "live_off_platform" },
+          reason: "Ručna potvrda vanplatformske kupovine edukacije.",
+        });
         return confirmed;
       }
       const settings = await resolveEducationBillingSettingsForChargeInTx(course.centerId, tx, center);
@@ -19892,6 +19899,16 @@ router.post("/admin/education/enrollments/:enrollmentId/settle", async (req, res
         },
       });
       await tx.insert(educationThreadsTable).values({ enrollmentId: confirmed.id, purchaserId: confirmed.purchaserId, centerId: course.centerId });
+      await recordEducationFinancialAudit(tx, {
+        actorUserId: admin.id, action: "education_enrollment_settled_manual",
+        entityType: "course_enrollment", entityId: confirmed.id,
+        oldValue: { status: enrollment.status, paymentStatus: enrollment.paymentStatus, chargedAmount: enrollment.chargedAmount },
+        newValue: {
+          status: confirmed.status, paymentStatus: confirmed.paymentStatus, escrowId: escrow.id,
+          grossAmount, platformFee, reserveAmount, netAmount,
+        },
+        reason: "Ručna potvrda kupovine edukacije.",
+      });
       return confirmed;
     });
   } catch (error) {
@@ -20129,7 +20146,7 @@ router.post("/education/enrollments/:enrollmentId/transfer", async (req, res): P
       const [updated] = await tx.update(courseEnrollmentsTable).set({ employeeId: target.id, userId: target.userId, updatedAt: new Date() })
         .where(and(eq(courseEnrollmentsTable.id, enrollment.id), eq(courseEnrollmentsTable.employeeId, source.id))).returning();
       if (!updated) throw new Error("REPLAY");
-      await tx.insert(educationFinancialAuditLogTable).values({
+      await recordEducationFinancialAudit(tx, {
         actorUserId: actor.id, action: "education_online_access_transferred", entityType: "course_enrollment", entityId: enrollment.id,
         oldValue: { employeeId: source.id, userId: source.userId }, newValue: { employeeId: target.id, userId: target.userId },
         reason: "Prenos preostalog pristupa online kursu između zaposlenih istog salona.",
@@ -21618,14 +21635,29 @@ router.get("/admin/education/gift-vouchers", async (req, res): Promise<void> => 
 });
 
 router.post("/admin/education/gift-vouchers/:voucherId/settle", async (req, res): Promise<void> => {
-  const admin = await requireAdmin(req, res); if (!admin) return;
+  const admin = await requireSuperAdmin(req, res); if (!admin) return;
   const voucherId = String(req.params.voucherId ?? "");
-  const [updated] = await db.update(educationGiftVouchersTable).set({
-    status: "active", settledByUserId: admin.id, settledAt: new Date(), updatedAt: new Date(),
-  }).where(and(
-    eq(educationGiftVouchersTable.id, voucherId),
-    eq(educationGiftVouchersTable.status, "pending_payment"),
-  )).returning();
+  const updated = await db.transaction(async (tx) => {
+    const [voucher] = await tx.select().from(educationGiftVouchersTable)
+      .where(eq(educationGiftVouchersTable.id, voucherId)).for("update").limit(1);
+    if (!voucher || voucher.status !== "pending_payment") return null;
+    const now = new Date();
+    const [settled] = await tx.update(educationGiftVouchersTable).set({
+      status: "active", settledByUserId: admin.id, settledAt: now, updatedAt: now,
+    }).where(and(
+      eq(educationGiftVouchersTable.id, voucher.id),
+      eq(educationGiftVouchersTable.status, "pending_payment"),
+    )).returning();
+    if (!settled) throw new Error("Vaučer je izmenjen u drugoj operaciji.");
+    await recordEducationFinancialAudit(tx, {
+      actorUserId: admin.id, action: "education_gift_voucher_settled",
+      entityType: "education_gift_voucher", entityId: voucher.id,
+      oldValue: { status: voucher.status, amount: voucher.amountSnapshot, centerId: voucher.centerId },
+      newValue: { status: settled.status, amount: settled.amountSnapshot, centerId: settled.centerId },
+      reason: "Ručna potvrda uplate poklon vaučera.",
+    });
+    return settled;
+  });
   if (updated) { res.json(educationGiftVoucherView(updated)); return; }
   // A retry after a successful manual settlement is intentionally a no-op.
   // The conditional update above is still the state transition and remains atomic.
@@ -21716,7 +21748,7 @@ router.post("/education/gift-vouchers/redeem", async (req, res): Promise<void> =
 });
 
 router.post("/admin/education/gift-vouchers/:voucherId/refund", async (req, res): Promise<void> => {
-  const admin = await requireAdmin(req, res); if (!admin) return;
+  const admin = await requireSuperAdmin(req, res); if (!admin) return;
   const parsed = AdminRefundEducationGiftVoucherBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   try {
@@ -21786,6 +21818,16 @@ router.post("/admin/education/gift-vouchers/:voucherId/refund", async (req, res)
         status: "refunded", refundedByUserId: admin.id, refundedAt: new Date(),
         refundNote: parsed.data.note, disputeId: parsed.data.disputeId ?? null, updatedAt: new Date(),
       }).where(eq(educationGiftVouchersTable.id, row.id)).returning();
+      await recordEducationFinancialAudit(tx, {
+        actorUserId: admin.id, action: "education_gift_voucher_refunded",
+        entityType: "education_gift_voucher", entityId: row.id,
+        oldValue: { status: row.status, amount: row.amountSnapshot, redeemedEnrollmentId: row.redeemedEnrollmentId },
+        newValue: {
+          status: updated!.status, amount: updated!.amountSnapshot,
+          escrowRefunded: Boolean(row.redeemedEnrollmentId), disputeId: parsed.data.disputeId ?? null,
+        },
+        reason: parsed.data.note,
+      });
       return { voucher: updated!, promoted, promotedCourse };
     });
     if (result.promoted && result.promotedCourse) {
@@ -22972,7 +23014,7 @@ router.get("/admin/education/placement-settings", async (req, res): Promise<void
 });
 
 router.patch("/admin/education/placement-settings", async (req, res): Promise<void> => {
-  const admin = await requireAdmin(req, res); if (!admin) return;
+  const admin = await requireSuperAdmin(req, res); if (!admin) return;
   if (!Array.isArray(req.body) || !req.body.length) { res.status(400).json({ error: "Podešavanja nisu ispravna." }); return; }
   try {
     const rows = await db.transaction(async (tx) => {
@@ -22990,6 +23032,16 @@ router.patch("/admin/education/placement-settings", async (req, res): Promise<vo
         }).returning();
         output.push(row!);
       }
+      await recordEducationFinancialAudit(tx, {
+        actorUserId: admin.id, action: "admin_education_placement_settings_changed",
+        entityType: "education_placement_settings_batch",
+        entityId: output.map((row) => row.id).join(","),
+        newValue: { settings: output.map((row) => ({
+          id: row.id, kind: row.kind, scope: row.scope, price: row.price,
+          slotCount: row.slotCount, durationDays: row.durationDays,
+        })) },
+        reason: "Administratorska promena cena i kapaciteta plasmana.",
+      });
       return output;
     });
     res.json(rows);
@@ -23005,7 +23057,7 @@ router.get("/admin/education/placements", async (req, res): Promise<void> => {
 });
 
 router.post("/admin/education/placements/:paymentReference/settle", async (req, res): Promise<void> => {
-  const admin = await requireAdmin(req, res); if (!admin) return;
+  const admin = await requireSuperAdmin(req, res); if (!admin) return;
   const paymentReference = decodeURIComponent(String(req.params.paymentReference));
   const [preview] = await db.select().from(educationPlacementsTable).where(eq(educationPlacementsTable.paymentReference, paymentReference)).limit(1);
   if (!preview) { res.status(404).json({ error: "Plasman nije pronađen." }); return; }
@@ -23024,6 +23076,13 @@ router.post("/admin/education/placements/:paymentReference/settle", async (req, 
       if (row.createdAt.getTime() + EDUCATION_PLACEMENT_PAYMENT_WINDOW_MS <= now.getTime()) {
         const expired = await expireFeaturedPlacementPaymentInTx(tx, row, now);
         if (!expired.placement) throw new Error("Plasman je istovremeno izmenjen.");
+        await recordEducationFinancialAudit(tx, {
+          actorUserId: admin.id, action: "education_placement_payment_expired",
+          entityType: "education_placement", entityId: row.id,
+          oldValue: { status: row.status, priceSnapshot: row.priceSnapshot },
+          newValue: { status: expired.placement.status, priceSnapshot: expired.placement.priceSnapshot },
+          reason: "Rok za ručnu uplatu plasmana je istekao.",
+        });
         return { placement: expired.placement, expired: true };
       }
       await lockEducationPlacementResource(tx, row.kind, row.scope, row.scopeCategoryId ?? row.scopeSubcategoryId);
@@ -23062,6 +23121,14 @@ router.post("/admin/education/placements/:paymentReference/settle", async (req, 
       const [updated] = await tx.update(educationPlacementsTable).set({
         status: "active", startsAt, endsAt, settledAt: startsAt, settledByUserId: admin.id, updatedAt: startsAt,
       }).where(and(eq(educationPlacementsTable.id, row.id), eq(educationPlacementsTable.status, "pending_payment"))).returning();
+      if (!updated) throw new Error("Plasman je istovremeno izmenjen.");
+      await recordEducationFinancialAudit(tx, {
+        actorUserId: admin.id, action: "education_placement_settled",
+        entityType: "education_placement", entityId: row.id,
+        oldValue: { status: row.status, priceSnapshot: row.priceSnapshot, paymentReference: row.paymentReference },
+        newValue: { status: updated.status, priceSnapshot: updated.priceSnapshot, startsAt, endsAt },
+        reason: "Ručna potvrda uplate plasmana.",
+      });
       return { placement: updated!, expired: false };
     });
     if (settlement.expired) {
@@ -23100,7 +23167,7 @@ router.get("/admin/featured-placements", async (req, res): Promise<void> => {
 });
 
 router.post("/admin/featured-placements/:placementId/confirm", async (req, res): Promise<void> => {
-  const admin = await requireAdmin(req, res); if (!admin) return;
+  const admin = await requireSuperAdmin(req, res); if (!admin) return;
   const parsed = ConfirmAdminFeaturedPlacementParams.safeParse(req.params);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   try {
@@ -23118,6 +23185,13 @@ router.post("/admin/featured-placements/:placementId/confirm", async (req, res):
       if (row.createdAt.getTime() + EDUCATION_PLACEMENT_PAYMENT_WINDOW_MS <= now.getTime()) {
         const expired = await expireFeaturedPlacementPaymentInTx(tx, row, now);
         if (!expired.placement) throw new Error("Plasman je istovremeno izmenjen.");
+        await recordEducationFinancialAudit(tx, {
+          actorUserId: admin.id, action: "education_placement_payment_expired",
+          entityType: "education_placement", entityId: row.id,
+          oldValue: { status: row.status, priceSnapshot: row.priceSnapshot },
+          newValue: { status: expired.placement.status, priceSnapshot: expired.placement.priceSnapshot },
+          reason: "Rok za ručnu uplatu plasmana je istekao.",
+        });
         return { placement: expired.placement, activated: false, expired: true };
       }
       await validateSharedPlacementScope(row.kind, row.scope, row.scopeCategoryId ?? row.scopeSubcategoryId, row.courseId);
@@ -23139,6 +23213,13 @@ router.post("/admin/featured-placements/:placementId/confirm", async (req, res):
         eq(educationPlacementsTable.status, "pending_payment"),
       )).returning();
       if (!updated) throw new Error("Plasman je istovremeno izmenjen.");
+      await recordEducationFinancialAudit(tx, {
+        actorUserId: admin.id, action: "education_placement_settled",
+        entityType: "education_placement", entityId: row.id,
+        oldValue: { status: row.status, priceSnapshot: row.priceSnapshot, paymentReference: row.paymentReference },
+        newValue: { status: updated.status, priceSnapshot: updated.priceSnapshot, startsAt: now, endsAt },
+        reason: "Ručna potvrda uplate plasmana.",
+      });
       return { placement: updated, activated: true, expired: false };
     });
     if (settlement.expired) {
@@ -23167,7 +23248,7 @@ router.get("/admin/education/settings", async (req, res): Promise<void> => {
 });
 
 router.patch("/admin/education/settings", async (req, res): Promise<void> => {
-  const user = await requireAdmin(req, res); if (!user) return;
+  const user = await requireSuperAdmin(req, res); if (!user) return;
   const parseNumericInput = (value: unknown) =>
     typeof value === "string" && !value.trim() ? Number.NaN : Number(value);
   const featuredCoursePriceRaw = parseNumericInput(req.body?.featuredCoursePrice);
@@ -23207,6 +23288,13 @@ router.patch("/admin/education/settings", async (req, res): Promise<void> => {
       const [saved] = await tx.update(educationPlatformSettingsTable).set({
         ...candidate, updatedByUserId: user.id, updatedAt: new Date(),
       }).where(eq(educationPlatformSettingsTable.id, currentSettings.id)).returning();
+      await recordEducationFinancialAudit(tx, {
+        actorUserId: user.id, action: "admin_education_platform_settings_changed",
+        entityType: "education_platform_settings", entityId: currentSettings.id,
+        oldValue: currentSettings,
+        newValue: saved!,
+        reason: "Administratorska promena globalnih Education finansijskih pravila.",
+      });
       return saved!;
     });
     res.json(educationSettingsView(settings));
@@ -23295,7 +23383,7 @@ router.get("/admin/education/centers/:centerId", async (req, res): Promise<void>
 });
 
 router.patch("/admin/education/centers/:centerId", async (req, res): Promise<void> => {
-  const user = await requireAdmin(req, res); if (!user) return;
+  const user = await requireSuperAdmin(req, res); if (!user) return;
   const centerId = String(req.params.centerId);
   const [center] = await db.select().from(educationCentersTable).where(eq(educationCentersTable.id, centerId)).limit(1);
   if (!center) { res.status(404).json({ error: "Edukativni centar nije pronađen." }); return; }
@@ -23403,6 +23491,27 @@ router.patch("/admin/education/centers/:centerId", async (req, res): Promise<voi
         ...overrideUpdates,
         updatedAt: new Date(),
       }).where(eq(educationCentersTable.id, currentCenter.id)).returning();
+      await recordEducationFinancialAudit(tx, {
+        actorUserId: user.id, action: "admin_education_center_financial_settings_changed",
+        entityType: "education_center", entityId: currentCenter.id,
+        oldValue: {
+          verificationStatus: currentCenter.verificationStatus,
+          commissionPercentOverride: currentCenter.commissionPercentOverride,
+          reservePercentOverride: currentCenter.reservePercentOverride,
+          onlineRefundDaysOverride: currentCenter.onlineRefundDaysOverride,
+          liveAppealDaysOverride: currentCenter.liveAppealDaysOverride,
+          featuredCoursePriceOverride: currentCenter.featuredCoursePriceOverride,
+        },
+        newValue: {
+          verificationStatus: updated!.verificationStatus,
+          commissionPercentOverride: updated!.commissionPercentOverride,
+          reservePercentOverride: updated!.reservePercentOverride,
+          onlineRefundDaysOverride: updated!.onlineRefundDaysOverride,
+          liveAppealDaysOverride: updated!.liveAppealDaysOverride,
+          featuredCoursePriceOverride: updated!.featuredCoursePriceOverride,
+        },
+        reason: typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 1000) : "Administratorska promena centra i njegovih finansijskih pravila.",
+      });
       if (subscriptionStatus) {
         const [existing] = await tx.select().from(educationCenterSubscriptionsTable)
           .where(eq(educationCenterSubscriptionsTable.centerId, currentCenter.id))
@@ -23415,7 +23524,7 @@ router.patch("/admin/education/centers/:centerId", async (req, res): Promise<voi
             currentPeriodEnd: subscriptionStatus === "active" ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : existing.currentPeriodEnd,
             updatedAt: new Date(),
           }).where(eq(educationCenterSubscriptionsTable.id, existing.id));
-          await tx.insert(educationFinancialAuditLogTable).values({
+          await recordEducationFinancialAudit(tx, {
             actorUserId: user.id, action: "admin_education_subscription_status_changed",
             entityType: "education_center_subscription", entityId: existing.id,
             oldValue: { status: existing.status, planId: existing.planId, currentPeriodEnd: existing.currentPeriodEnd },
@@ -23503,7 +23612,7 @@ router.get("/admin/education/finance", async (req, res): Promise<void> => {
 });
 
 router.post("/admin/education/featured-charges/:chargeId/settle", async (req, res): Promise<void> => {
-  const user = await requireAdmin(req, res); if (!user) return;
+  const user = await requireSuperAdmin(req, res); if (!user) return;
   const chargeId = String(req.params.chargeId ?? "");
   const paymentReference = typeof req.body?.paymentReference === "string" && req.body.paymentReference.trim().length > 0
     ? req.body.paymentReference.trim().slice(0, 200)
@@ -23511,10 +23620,25 @@ router.post("/admin/education/featured-charges/:chargeId/settle", async (req, re
   const [charge] = await db.select().from(educationFeaturedChargesTable).where(eq(educationFeaturedChargesTable.id, chargeId)).limit(1);
   if (!charge) { res.status(404).json({ error: "Naplata isticanja nije pronađena." }); return; }
   if (charge.status !== "pending") { res.status(409).json({ error: "Ova naplata isticanja je već obrađena." }); return; }
-  const [updated] = await db.update(educationFeaturedChargesTable).set({
-    status: "paid", settledByUserId: user.id, settledAt: new Date(),
-    paymentReference: paymentReference ?? charge.paymentReference, updatedAt: new Date(),
-  }).where(and(eq(educationFeaturedChargesTable.id, charge.id), eq(educationFeaturedChargesTable.status, "pending"))).returning();
+  const updated = await db.transaction(async (tx) => {
+    const [lockedCharge] = await tx.select().from(educationFeaturedChargesTable)
+      .where(eq(educationFeaturedChargesTable.id, charge.id)).for("update").limit(1);
+    if (!lockedCharge || lockedCharge.status !== "pending") return null;
+    const now = new Date();
+    const [settled] = await tx.update(educationFeaturedChargesTable).set({
+      status: "paid", settledByUserId: user.id, settledAt: now,
+      paymentReference: paymentReference ?? lockedCharge.paymentReference, updatedAt: now,
+    }).where(and(eq(educationFeaturedChargesTable.id, lockedCharge.id), eq(educationFeaturedChargesTable.status, "pending"))).returning();
+    if (!settled) throw new Error("Ova naplata isticanja je već obrađena.");
+    await recordEducationFinancialAudit(tx, {
+      actorUserId: user.id, action: "education_featured_charge_settled",
+      entityType: "education_featured_charge", entityId: lockedCharge.id,
+      oldValue: { status: lockedCharge.status, amount: lockedCharge.amount, centerId: lockedCharge.centerId },
+      newValue: { status: settled.status, amount: settled.amount, centerId: settled.centerId },
+      reason: "Ručna potvrda naplate isticanja.",
+    });
+    return settled;
+  });
   if (!updated) { res.status(409).json({ error: "Ova naplata isticanja je već obrađena." }); return; }
   res.json({
     id: updated.id, courseId: updated.courseId, amount: updated.amount, status: updated.status,
@@ -23524,7 +23648,7 @@ router.post("/admin/education/featured-charges/:chargeId/settle", async (req, re
 });
 
 router.post("/admin/education/payouts", async (req, res): Promise<void> => {
-  const user = await requireAdmin(req, res); if (!user) return;
+  const user = await requireSuperAdmin(req, res); if (!user) return;
   await refreshMatureEducationEscrows();
   const centerId = typeof req.body?.centerId === "string" ? req.body.centerId : "";
   const includeReserve = req.body?.includeReserve === true;
@@ -23572,6 +23696,15 @@ router.post("/admin/education/payouts", async (req, res): Promise<void> => {
       if (!claimed) throw new Error("Rezerva više nije podobna za isplatu.");
       await tx.insert(educationLedgerEntriesTable).values({ escrowId: escrow.id, enrollmentId: escrow.enrollmentId, centerId, type: "payout", amount: -escrow.reserveAmount, note: "Kvartalna isplata rezerve.", actorUserId: user.id, metadata: { payoutId: created!.id, reserve: true } });
     }
+    await recordEducationFinancialAudit(tx, {
+      actorUserId: user.id, action: "education_payout_created",
+      entityType: "education_payout", entityId: created!.id,
+      newValue: {
+        centerId, amount: created!.amount, includeReserve,
+        netEscrowCount: netEscrows.length, reserveEscrowCount: reserveEscrows.length,
+      },
+      reason: created!.note ?? "Ručna isplata Education sredstava.",
+    });
     return created!;
     });
   } catch (error) {
@@ -23582,7 +23715,7 @@ router.post("/admin/education/payouts", async (req, res): Promise<void> => {
 });
 
 router.patch("/admin/education/disputes/:disputeId", async (req, res): Promise<void> => {
-  const user = await requireAdmin(req, res); if (!user) return;
+  const user = await requireSuperAdmin(req, res); if (!user) return;
   const action = typeof req.body?.action === "string" ? req.body.action : "";
   const resolutionNote = typeof req.body?.resolutionNote === "string" ? req.body.resolutionNote.trim().slice(0, 4000) : "";
   if (!["refund", "release", "reject"].includes(action) || !resolutionNote) { res.status(400).json({ error: "Izaberite odluku i unesite obrazloženje." }); return; }
@@ -23612,6 +23745,13 @@ router.patch("/admin/education/disputes/:disputeId", async (req, res): Promise<v
       await tx.insert(educationFinancialEventsTable).values({
         escrowId: escrow.id, enrollmentId: dispute.enrollmentId, actorUserId: user.id,
         eventType: "dispute_rejected_after_payout", previousStatus: escrow.status, nextStatus: reconciledStatus, note: resolutionNote,
+      });
+      await recordEducationFinancialAudit(tx, {
+        actorUserId: user.id, action: "education_dispute_rejected",
+        entityType: "education_dispute", entityId: dispute.id,
+        oldValue: { status: dispute.status, escrowStatus: escrow.status },
+        newValue: { status: rejected.status, escrowStatus: reconciledStatus },
+        reason: resolutionNote,
       });
       return { result: rejected, enrollment };
     }
@@ -23643,6 +23783,13 @@ router.patch("/admin/education/disputes/:disputeId", async (req, res): Promise<v
           if (refundCourse) promotedWaiter = await releaseSeatAndPromoteWaiter(tx, enrollment.sessionId, refundCourse);
         }
       }
+    await recordEducationFinancialAudit(tx, {
+      actorUserId: user.id, action: `education_dispute_${action}`,
+      entityType: "education_dispute", entityId: dispute.id,
+      oldValue: { status: dispute.status, escrowStatus: escrow.status, grossAmount: escrow.grossAmount },
+      newValue: { status: updatedDispute.status, escrowStatus: nextStatus, refunded: action === "refund" },
+      reason: resolutionNote,
+    });
     return { result: updatedDispute, enrollment };
     });
   } catch (error) {
@@ -23669,7 +23816,7 @@ router.patch("/admin/education/disputes/:disputeId", async (req, res): Promise<v
 
 // Admin: cancel any session with full escrow refund and notifications.
 router.post("/admin/education/sessions/:sessionId/cancel", async (req, res): Promise<void> => {
-  const user = await requireAdmin(req, res); if (!user) return;
+  const user = await requireSuperAdmin(req, res); if (!user) return;
   const sessionId = String(req.params.sessionId ?? "");
   const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 500) : "";
   if (!reason) { res.status(400).json({ error: "Unesite razlog otkazivanja termina." }); return; }

@@ -184,6 +184,8 @@ export const educationFinancialAuditLogTable = pgTable("education_financial_audi
 }, (table) => [
   index("education_financial_audit_actor_idx").on(table.actorUserId),
   index("education_financial_audit_entity_idx").on(table.entityType, table.entityId, table.occurredAt),
+  index("education_financial_audit_occurred_id_idx").on(table.occurredAt, table.id),
+  index("education_financial_audit_actor_occurred_idx").on(table.actorUserId, table.occurredAt),
   check("education_financial_audit_timezone_check", sql`${table.timeZone} = 'Europe/Belgrade'`),
 ]);
 

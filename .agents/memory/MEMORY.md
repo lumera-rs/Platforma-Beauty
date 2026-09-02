@@ -134,3 +134,4 @@
 - [Subscription tier snapshot integrity](subscription-tier-snapshot-integrity.md) — classify and price plan changes from frozen subscriber terms; split shared legacy plans before audience relabeling.
 - [Education trial identity claims](education-trial-identity-claims.md) — trial evidence is append-only and survives account deletion; duplicate signup may continue only without a new trial.
 - [Education explicit reactivation](education-explicit-reactivation-boundary.md) — payment or contract changes never bypass owner course choice and audited super-admin reactivation.
+- [Education finance admin boundary](education-finance-admin-boundary.md) — administrative Education money mutations are SUPER_ADMIN-only before input or entity inspection.

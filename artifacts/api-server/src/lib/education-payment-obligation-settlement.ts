@@ -5,11 +5,11 @@ import {
   db,
   educationAccessExtensionsTable,
   educationCenterSubscriptionsTable,
-  educationFinancialAuditLogTable,
   educationPaymentObligationsTable,
   subscriptionPlansTable,
 } from "@workspace/db";
 import { addEducationBillingPeriod, type EducationBillingCycle } from "./education-subscription-domain";
+import { writeEducationFinancialAuditInTx } from "./education-financial-audit";
 
 type EducationSettlementTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -224,7 +224,7 @@ export async function settleEducationPaymentObligationInTransaction(
     }
   }
 
-  await tx.insert(educationFinancialAuditLogTable).values({
+  await writeEducationFinancialAuditInTx(tx, {
     actorUserId: input.actorUserId,
     action: "education_payment_obligation_settled",
     entityType: "education_payment_obligation",

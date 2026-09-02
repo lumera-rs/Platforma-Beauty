@@ -3,6 +3,7 @@ import test from "node:test";
 import { educationLocalDatesTouched } from "./education-availability-store";
 import {
   operationalCancellationDisposition,
+  operationalEscrowReleaseAt,
   operationalRescheduleAllowed,
   operationalPaymentTotals,
 } from "./education-operational-policy";
@@ -17,6 +18,17 @@ test("cancellation snapshot honors the exact inclusive boundary and ignores late
   assert.equal(operationalRescheduleAllowed(deadline, new Date(deadline.getTime() + 1), false), false);
   assert.equal(operationalRescheduleAllowed(deadline, new Date(deadline.getTime() + 1), true), true);
   assert.equal(operationalCancellationDisposition("refund", null, new Date("2030-01-01T00:00:00Z")), "refund");
+});
+
+test("installment escrow release keeps the Belgrade wall clock across DST", () => {
+  assert.equal(
+    operationalEscrowReleaseAt(new Date("2026-03-28T11:00:00.000Z")).toISOString(),
+    "2026-04-04T10:00:00.000Z",
+  );
+  assert.equal(
+    operationalEscrowReleaseAt(new Date("2026-10-24T10:00:00.000Z")).toISOString(),
+    "2026-10-31T11:00:00.000Z",
+  );
 });
 
 test("payment totals do not subtract refunds from remaining capture twice", () => {

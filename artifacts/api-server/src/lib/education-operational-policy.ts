@@ -1,4 +1,10 @@
+import { addEducationBelgradeCalendarDays } from "./education-belgrade-calendar";
+
 export type EducationDepositDisposition = "refund" | "forfeit" | "transfer";
+
+export function operationalEscrowReleaseAt(settledAt: Date): Date {
+  return addEducationBelgradeCalendarDays(settledAt, 7);
+}
 
 /**
  * Resolve an existing booking strictly from its immutable snapshot. A null

@@ -10475,6 +10475,206 @@ export const SettleEducationPaymentObligationResponse = zod.record(zod.string(),
 
 
 /**
+ * @summary List bounded Education financial audit entries
+ */
+export const listAdminEducationFinancialAuditQueryActionMax = 160;
+
+export const listAdminEducationFinancialAuditQueryEntityTypeMax = 120;
+
+export const listAdminEducationFinancialAuditQueryCursorMax = 500;
+
+export const listAdminEducationFinancialAuditQueryLimitDefault = 50;
+export const listAdminEducationFinancialAuditQueryLimitMax = 200;
+
+
+
+export const ListAdminEducationFinancialAuditQueryParams = zod.object({
+  "action": zod.coerce.string().max(listAdminEducationFinancialAuditQueryActionMax).optional(),
+  "entityType": zod.coerce.string().max(listAdminEducationFinancialAuditQueryEntityTypeMax).optional(),
+  "actorUserId": zod.string().uuid().optional(),
+  "from": zod.date().optional(),
+  "to": zod.date().optional(),
+  "cursor": zod.coerce.string().max(listAdminEducationFinancialAuditQueryCursorMax).optional(),
+  "limit": zod.coerce.number().int().min(1).max(listAdminEducationFinancialAuditQueryLimitMax).default(listAdminEducationFinancialAuditQueryLimitDefault)
+})
+
+export const ListAdminEducationFinancialAuditResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "actorUserId": zod.string().uuid().nullable(),
+  "action": zod.string(),
+  "entityType": zod.string(),
+  "entityId": zod.string(),
+  "oldValue": zod.record(zod.string(), zod.unknown()).nullable(),
+  "newValue": zod.record(zod.string(), zod.unknown()).nullable(),
+  "reason": zod.string().nullable(),
+  "occurredAt": zod.coerce.date(),
+  "timeZone": zod.enum(['Europe/Belgrade']),
+  "actor": zod.union([zod.null(),zod.object({
+  "id": zod.string().uuid(),
+  "firstName": zod.string().nullable(),
+  "lastName": zod.string().nullable(),
+  "email": zod.string().nullable()
+})])
+})),
+  "nextCursor": zod.string().nullable()
+})
+
+
+/**
+ * @summary List Education centers currently in grace
+ */
+export const listAdminEducationGraceCentersResponseItemsItemSubscriptionDueAmountMin = 0;
+
+export const listAdminEducationGraceCentersResponseItemsItemDaysRemainingMin = 0;
+
+export const listAdminEducationGraceCentersResponseItemsItemDebtRsdMin = 0;
+
+export const listAdminEducationGraceCentersResponseItemsItemNoteCountMin = 0;
+
+
+
+export const ListAdminEducationGraceCentersResponse = zod.object({
+  "items": zod.array(zod.object({
+  "center": zod.object({
+  "id": zod.string().uuid(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "contactPhone": zod.string().nullable()
+}),
+  "subscription": zod.object({
+  "id": zod.string().uuid(),
+  "centerId": zod.string().uuid(),
+  "status": zod.enum(['past_due']),
+  "dueAmount": zod.number().int().min(listAdminEducationGraceCentersResponseItemsItemSubscriptionDueAmountMin),
+  "graceEndsAt": zod.coerce.date()
+}),
+  "owner": zod.object({
+  "firstName": zod.string().nullable(),
+  "lastName": zod.string().nullable(),
+  "email": zod.string().nullable()
+}),
+  "daysRemaining": zod.number().int().min(listAdminEducationGraceCentersResponseItemsItemDaysRemainingMin),
+  "debtRsd": zod.number().int().min(listAdminEducationGraceCentersResponseItemsItemDebtRsdMin),
+  "latestEmail": zod.union([zod.null(),zod.object({
+  "subscriptionId": zod.string().uuid(),
+  "status": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "sentAt": zod.coerce.date().nullable()
+})]),
+  "latestNote": zod.union([zod.null(),zod.object({
+  "id": zod.string().uuid(),
+  "centerId": zod.string().uuid(),
+  "note": zod.string(),
+  "authorUserId": zod.string().uuid(),
+  "authorFirstName": zod.string().nullish(),
+  "authorLastName": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})]),
+  "noteCount": zod.number().int().min(listAdminEducationGraceCentersResponseItemsItemNoteCountMin)
+})),
+  "generatedAt": zod.coerce.date(),
+  "truncated": zod.boolean()
+})
+
+
+export const ListAdminEducationGraceNotesParams = zod.object({
+  "centerId": zod.string().uuid()
+})
+
+export const listAdminEducationGraceNotesQueryLimitDefault = 50;
+export const listAdminEducationGraceNotesQueryLimitMax = 100;
+
+
+
+export const ListAdminEducationGraceNotesQueryParams = zod.object({
+  "limit": zod.coerce.number().int().min(1).max(listAdminEducationGraceNotesQueryLimitMax).default(listAdminEducationGraceNotesQueryLimitDefault)
+})
+
+export const ListAdminEducationGraceNotesResponseItem = zod.object({
+  "id": zod.string().uuid(),
+  "centerId": zod.string().uuid(),
+  "note": zod.string(),
+  "authorUserId": zod.string().uuid(),
+  "authorFirstName": zod.string().nullish(),
+  "authorLastName": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})
+export const ListAdminEducationGraceNotesResponse = zod.array(ListAdminEducationGraceNotesResponseItem)
+
+
+export const CreateAdminEducationGraceNoteParams = zod.object({
+  "centerId": zod.string().uuid()
+})
+
+export const createAdminEducationGraceNoteBodyNoteMin = 3;
+export const createAdminEducationGraceNoteBodyNoteMax = 2000;
+
+
+
+export const CreateAdminEducationGraceNoteBody = zod.object({
+  "note": zod.string().min(createAdminEducationGraceNoteBodyNoteMin).max(createAdminEducationGraceNoteBodyNoteMax)
+}).strict()
+
+export const CreateAdminEducationGraceNoteResponse = zod.object({
+  "id": zod.string().uuid(),
+  "centerId": zod.string().uuid(),
+  "note": zod.string(),
+  "authorUserId": zod.string().uuid(),
+  "authorFirstName": zod.string().nullish(),
+  "authorLastName": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})
+
+
+export const ExtendAdminEducationGraceParams = zod.object({
+  "centerId": zod.string().uuid()
+})
+
+export const extendAdminEducationGraceBodyDaysMax = 30;
+
+export const extendAdminEducationGraceBodyReasonMin = 3;
+export const extendAdminEducationGraceBodyReasonMax = 1000;
+
+
+
+export const ExtendAdminEducationGraceBody = zod.object({
+  "days": zod.number().int().min(1).max(extendAdminEducationGraceBodyDaysMax),
+  "reason": zod.string().min(extendAdminEducationGraceBodyReasonMin).max(extendAdminEducationGraceBodyReasonMax)
+}).strict()
+
+export const extendAdminEducationGraceResponseSubscriptionDueAmountMin = 0;
+
+export const extendAdminEducationGraceResponseExtensionDaysMax = 30;
+
+export const extendAdminEducationGraceResponseRelatedObligationsUpdatedMin = 0;
+
+
+
+export const ExtendAdminEducationGraceResponse = zod.object({
+  "subscription": zod.object({
+  "id": zod.string().uuid(),
+  "centerId": zod.string().uuid(),
+  "status": zod.enum(['past_due']),
+  "dueAmount": zod.number().int().min(extendAdminEducationGraceResponseSubscriptionDueAmountMin),
+  "graceEndsAt": zod.coerce.date()
+}),
+  "previousGraceEndsAt": zod.coerce.date(),
+  "extensionDays": zod.number().int().min(1).max(extendAdminEducationGraceResponseExtensionDaysMax),
+  "relatedObligationsUpdated": zod.number().int().min(extendAdminEducationGraceResponseRelatedObligationsUpdatedMin),
+  "note": zod.object({
+  "id": zod.string().uuid(),
+  "centerId": zod.string().uuid(),
+  "note": zod.string(),
+  "authorUserId": zod.string().uuid(),
+  "authorFirstName": zod.string().nullish(),
+  "authorLastName": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})
+})
+
+
+/**
  * @summary Configure a negotiated Education subscription contract
  */
 export const ConfigureEducationCustomContractParams = zod.object({
