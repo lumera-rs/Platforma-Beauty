@@ -30,7 +30,10 @@ const isolatedInfobipRegistrationBrowserTest =
 const isolatedBeautyJobsBrowserTest =
   process.env.LUMERA_ISOLATED_BEAUTY_JOBS_BROWSER_TEST === "1";
 const isolatedEducationGroupOnlineConsentBrowserTest =
-  process.env.LUMERA_ISOLATED_EDUCATION_GROUP_ONLINE_CONSENT_BROWSER_TEST === "1";
+  process.env.LUMERA_ISOLATED_EDUCATION_GROUP_ONLINE_CONSENT_BROWSER_TEST ===
+  "1";
+const isolatedBookingSettingsBrowserTest =
+  process.env.LUMERA_ISOLATED_BOOKING_SETTINGS_BROWSER_TEST === "1";
 const releaseBrowserTest = process.env.LUMERA_RELEASE_BROWSER_TEST === "1";
 
 function isHarnessDatabaseUrl(databaseUrl: string, databaseNamePattern: RegExp): boolean {
@@ -56,14 +59,15 @@ function isHarnessWebUrl(webUrl: string): boolean {
 }
 
 const isolatedBrowserTest =
-  isolatedAdminBrowserTest
-  || isolatedAdminFormResilienceBrowserTest
-  || isolatedSalonNotificationBrowserTest
-  || isolatedRetailCheckoutBrowserTest
-  || isolatedRetentionPreviewBrowserTest
-  || isolatedInfobipRegistrationBrowserTest
-  || isolatedBeautyJobsBrowserTest
-  || isolatedEducationGroupOnlineConsentBrowserTest;
+  isolatedAdminBrowserTest ||
+  isolatedAdminFormResilienceBrowserTest ||
+  isolatedSalonNotificationBrowserTest ||
+  isolatedRetailCheckoutBrowserTest ||
+  isolatedRetentionPreviewBrowserTest ||
+  isolatedInfobipRegistrationBrowserTest ||
+  isolatedBeautyJobsBrowserTest ||
+  isolatedEducationGroupOnlineConsentBrowserTest ||
+  isolatedBookingSettingsBrowserTest;
 
 if (
   [
@@ -75,6 +79,7 @@ if (
     isolatedInfobipRegistrationBrowserTest,
     isolatedBeautyJobsBrowserTest,
     isolatedEducationGroupOnlineConsentBrowserTest,
+    isolatedBookingSettingsBrowserTest,
   ].filter(Boolean).length > 1
 ) {
   throw new Error("Only one isolated browser suite may run in a harness process.");
@@ -96,7 +101,9 @@ if (isolatedBrowserTest) {
               ? /^lumera_infobip_registration_browser_\d+_[a-f0-9]{32}$/
               : isolatedBeautyJobsBrowserTest
                 ? /^lumera_bjobs_\d+_[a-f0-9]{32}$/
-                : /^lumera_education_group_browser_\d+_[a-f0-9]{32}$/;
+                : isolatedEducationGroupOnlineConsentBrowserTest
+                  ? /^lumera_education_group_browser_\d+_[a-f0-9]{32}$/
+                  : /^lumera_booking_settings_browser_\d+_[a-f0-9]{32}$/;
   if (
     !testDatabaseUrl
     || process.env.DATABASE_URL !== testDatabaseUrl

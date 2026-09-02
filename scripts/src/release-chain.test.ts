@@ -71,6 +71,92 @@ test("branch CI runs the database-free release-chain gate before slower work", a
   );
 });
 
+test("branch CI isolates database checks and orders browser journeys after every prerequisite", async () => {
+  const [workflow, packageJsonSource] = await Promise.all([
+    readFile(branchCiPath, "utf8"),
+    readFile(path.join(workspaceRoot, "package.json"), "utf8"),
+  ]);
+  const scripts =
+    (JSON.parse(packageJsonSource) as { scripts?: Record<string, string> })
+      .scripts ?? {};
+
+  assert.equal(
+    scripts["validate:ci:build"],
+    "export CI=true && pnpm run build && pnpm run test:beauty-marketplace-typecheck && pnpm run test:frontend-generated-typecheck && pnpm run test:api-server-typecheck && pnpm run test:browser-fixtures && pnpm run test:bundle-budget && pnpm run test:frontend-standards && pnpm run test:frontend-interactions",
+    "The build CI command must preserve every genuinely database-free phase-one publish check.",
+  );
+  assert.equal(
+    scripts["validate:ci:database"],
+    "export CI=true && pnpm run test:monitoring && pnpm run test:backend-standards:static && pnpm run validate:release:2-backend && pnpm run validate:release:3-api",
+    "The database CI command must preserve every phase-one database check plus ordered backend and API release phases.",
+  );
+  assert.equal(
+    scripts["validate:ci:browser"],
+    "export CI=true && pnpm run validate:release:4-isolated && pnpm run validate:release:5-final",
+    "The browser CI command must preserve the remaining user-journey and final release phases.",
+  );
+
+  const buildJob = workflow.slice(
+    workflow.indexOf("  build:"),
+    workflow.indexOf("\n  database:"),
+  );
+  assert.match(buildJob, /needs: release-chain/);
+  assert.match(
+    buildJob,
+    /run: env -u DATABASE_URL pnpm run validate:ci:build/,
+    "Build and static checks must run without database access.",
+  );
+  assert.doesNotMatch(buildJob, /\$\{\{\s*secrets\./);
+
+  const databaseJob = workflow.slice(
+    workflow.indexOf("  database:"),
+    workflow.indexOf("\n  browser:"),
+  );
+  assert.match(databaseJob, /needs: release-chain/);
+  assert.match(databaseJob, /image: postgres:16/);
+  assert.match(databaseJob, /POSTGRES_DB: lumera_ci_database/);
+  assert.match(
+    databaseJob,
+    /DATABASE_URL: postgres:\/\/lumera_ci:lumera_ci@localhost:5432\/lumera_ci_database/,
+  );
+  assert.match(databaseJob, /run: pnpm --filter @workspace\/db run push-force/);
+  assert.match(databaseJob, /run: pnpm run validate:ci:database/);
+  assert.doesNotMatch(
+    databaseJob,
+    /\$\{\{\s*secrets\./,
+    "Database checks must not consume repository secrets.",
+  );
+
+  const browserJob = workflow.slice(workflow.indexOf("  browser:"));
+  assert.match(
+    browserJob,
+    /needs:\n {6}- release-chain\n {6}- build\n {6}- database/,
+    "Browser journeys must wait for the early gate, build, and database checks.",
+  );
+  assert.match(browserJob, /image: postgres:16/);
+  assert.match(browserJob, /POSTGRES_DB: lumera_ci_browser/);
+  assert.match(browserJob, /playwright install --with-deps chromium/);
+  assert.match(browserJob, /run: pnpm run validate:ci:browser/);
+  assert.doesNotMatch(
+    browserJob,
+    /\$\{\{\s*secrets\./,
+    "Browser checks must use CI-only local values instead of repository secrets.",
+  );
+});
+
+test("booking-settings browser checks use a disposable database harness", async () => {
+  const scriptsPackageJson = JSON.parse(
+    await readFile(path.join(workspaceRoot, "scripts", "package.json"), "utf8"),
+  ) as { scripts?: Record<string, string> };
+  const command = scriptsPackageJson.scripts?.["test:booking-settings"];
+
+  assert.equal(
+    command,
+    "tsx ./src/run-booking-settings-browser.ts",
+    "Booking-settings must use the isolated browser harness instead of requiring a shared CI web server.",
+  );
+});
+
 test("release validation phases preserve the full gate and print safe continuation commands", async () => {
   const packageJson = JSON.parse(
     await readFile(path.join(workspaceRoot, "package.json"), "utf8"),
