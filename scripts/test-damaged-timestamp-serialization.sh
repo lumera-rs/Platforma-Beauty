@@ -32,7 +32,7 @@ SQL
 }
 trap cleanup EXIT
 
-read -r damaged_id valid_id < <(
+read -r damaged_id valid_id damaged_slot_id valid_slot_id < <(
   psql "$DATABASE_URL" -AtF ' ' -v ON_ERROR_STOP=1 -v marker="$fixture_marker" -v slug="$fixture_slug" <<'SQL'
 with fixture_user as (
   select id from users where email = 'admin@lumera.local'
@@ -49,7 +49,7 @@ fixture_listings as (
   )
   select category.id, fixture_user.id,
     'user'::beauty_job_posted_by_type,
-    'job'::beauty_job_listing_type,
+    'equipment_rental'::beauty_job_listing_type,
     'offering'::beauty_job_listing_intent,
     :'marker' || '-damaged', :'marker', 'Beograd', 'Beograd',
     'active'::beauty_job_listing_status,
@@ -67,15 +67,33 @@ fixture_listings as (
     now() + interval '30 days', now(), now()
   from fixture_category category cross join fixture_user
   returning id, title
+),
+fixture_availability as (
+  insert into beauty_job_listing_availability (listing_id, availability_pattern, day_labels)
+  select id, 'Po dogovoru', '["Ponedeljak", "Utorak"]'::jsonb
+  from fixture_listings
+  where title = :'marker' || '-damaged'
+),
+fixture_slots as (
+  insert into beauty_job_rental_slots (listing_id, starts_at, ends_at)
+  select id, '-infinity'::timestamptz, now() + interval '2 days'
+  from fixture_listings
+  where title = :'marker' || '-damaged'
+  union all
+  select id, now() + interval '3 days', now() + interval '4 days'
+  from fixture_listings
+  where title = :'marker' || '-damaged'
+  returning id, starts_at
 )
 select
-  max(id::text) filter (where title = :'marker' || '-damaged'),
-  max(id::text) filter (where title = :'marker' || '-valid')
-from fixture_listings;
+  (select max(id::text) filter (where title = :'marker' || '-damaged') from fixture_listings),
+  (select max(id::text) filter (where title = :'marker' || '-valid') from fixture_listings),
+  (select max(id::text) filter (where starts_at = '-infinity'::timestamptz) from fixture_slots),
+  (select max(id::text) filter (where starts_at <> '-infinity'::timestamptz) from fixture_slots);
 SQL
 )
 
-if [[ -z "$damaged_id" || -z "$valid_id" ]]; then
+if [[ -z "$damaged_id" || -z "$valid_id" || -z "$damaged_slot_id" || -z "$valid_slot_id" ]]; then
   echo "Failed to create damaged timestamp fixtures." >&2
   exit 1
 fi
@@ -104,12 +122,20 @@ if (typeof valid.createdAt !== "string") throw new Error("Valid neighboring list
 NODE
 
 request_and_expect_200 "/beauty-jobs/$damaged_id" "beauty job detail with damaged timestamp"
-DETAIL_BODY="$(cat "$body")" DETAIL_MARKER="$fixture_marker" DAMAGED_ID="$damaged_id" node <<'NODE'
+DETAIL_BODY="$(cat "$body")" DETAIL_MARKER="$fixture_marker" DAMAGED_ID="$damaged_id" DAMAGED_SLOT_ID="$damaged_slot_id" VALID_SLOT_ID="$valid_slot_id" node <<'NODE'
 const response = JSON.parse(process.env.DETAIL_BODY);
 if (response.id !== process.env.DAMAGED_ID) throw new Error("Beauty job detail returned the wrong row.");
 if (response.createdAt !== null) throw new Error(`Damaged detail timestamp was not null: ${response.createdAt}`);
 if (response.city !== "Beograd" || response.description !== process.env.DETAIL_MARKER) {
   throw new Error("Unrelated beauty job detail fields were not preserved.");
+}
+const damagedSlot = response.availableSlots.find((slot) => slot.id === process.env.DAMAGED_SLOT_ID);
+const validSlot = response.availableSlots.find((slot) => slot.id === process.env.VALID_SLOT_ID);
+if (!damagedSlot || !validSlot) throw new Error("Beauty job detail omitted a nested slot fixture.");
+if (damagedSlot.startsAt !== null) throw new Error(`Damaged nested detail timestamp was not null: ${damagedSlot.startsAt}`);
+if (typeof damagedSlot.endsAt !== "string") throw new Error("Unrelated field on the damaged nested detail row was not preserved.");
+if (typeof validSlot.startsAt !== "string" || typeof validSlot.endsAt !== "string") {
+  throw new Error("Valid neighboring nested detail row was not preserved.");
 }
 NODE
 
