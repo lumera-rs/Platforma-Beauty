@@ -3,6 +3,13 @@ name: Branch CI
 on:
   pull_request:
   push:
+  workflow_dispatch:
+    inputs:
+      run_failure_diagnostics_probe:
+        description: "Intentionally fail one isolated Playwright test and verify the uploaded diagnostics"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -137,3 +144,65 @@ jobs:
             scripts/test-results/
           if-no-files-found: warn
           retention-days: 7
+
+  # Safe repeat procedure:
+  # Actions → Branch CI → Run workflow → enable run_failure_diagnostics_probe.
+  # The run is expected to finish red after it verifies and uploads
+  # failure-diagnostics-probe-<attempt> with index.html, a PNG, and trace.zip.
+  # This dispatch-only job never runs for pull_request events. The regular browser
+  # upload above separately rejects fork PRs by comparing the head repository.
+  failure-diagnostics-probe:
+    name: Failure diagnostics artifact probe
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_failure_diagnostics_probe && github.repository == github.event.repository.full_name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CI: "true"
+      NODE_ENV: test
+      LUMERA_CI_DIAGNOSTICS_PROBE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm --filter @workspace/scripts exec playwright install --with-deps chromium
+      - name: Run the controlled Playwright failure
+        id: probe
+        continue-on-error: true
+        run: pnpm --filter @workspace/scripts exec playwright test
+      - name: Verify diagnostics before upload
+        if: ${{ steps.probe.outcome == 'failure' }}
+        run: |
+          test -f scripts/playwright-report/index.html
+          find scripts/test-results -type f -name '*.png' -print -quit | grep -q .
+          find scripts/test-results -type f -name 'trace.zip' -print -quit | grep -q .
+          {
+            echo '### Failure diagnostics probe'
+            echo 'Verified the controlled failure produced an HTML report, screenshot, and trace.'
+            echo 'The artifact upload below is intentionally unavailable to fork pull requests.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload verified failure diagnostics
+        if: ${{ steps.probe.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-diagnostics-probe-${{ github.run_attempt }}
+          path: |
+            scripts/playwright-report/
+            scripts/test-results/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Confirm the probe failed as designed
+        if: ${{ always() }}
+        run: |
+          if [ "${{ steps.probe.outcome }}" != "failure" ]; then
+            echo "The controlled Playwright test unexpectedly passed or did not run." >&2
+            exit 1
+          fi
+          echo "Controlled failure and diagnostic artifact verification completed."
+          exit 1

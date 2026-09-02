@@ -154,6 +154,49 @@ test("branch CI isolates database checks and orders browser journeys after every
   );
 });
 
+test("manual CI probe verifies complete Playwright diagnostics without exposing fork pull requests", async () => {
+  const [workflow, playwrightConfig] = await Promise.all([
+    readFile(branchCiPath, "utf8"),
+    readFile(path.join(workspaceRoot, "scripts", "playwright.config.ts"), "utf8"),
+  ]);
+
+  assert.match(
+    workflow,
+    /workflow_dispatch:\n {4}inputs:\n {6}run_failure_diagnostics_probe:/,
+    "The controlled failure must be opt-in and manually dispatched.",
+  );
+  const probeJob = workflow.slice(workflow.indexOf("  failure-diagnostics-probe:"));
+  assert.match(
+    workflow,
+    /Actions → Branch CI → Run workflow → enable run_failure_diagnostics_probe/,
+    "The workflow must document how to repeat the controlled probe safely.",
+  );
+  assert.match(
+    workflow,
+    /expected to finish red after it verifies and uploads/,
+    "The workflow must document the expected controlled-failure result.",
+  );
+  assert.match(
+    probeJob,
+    /if: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.run_failure_diagnostics_probe && github\.repository == github\.event\.repository\.full_name \}\}/,
+    "The diagnostics probe must not run for pull requests, including fork pull requests.",
+  );
+  assert.match(probeJob, /LUMERA_CI_DIAGNOSTICS_PROBE: "1"/);
+  assert.match(probeJob, /id: probe\n {8}continue-on-error: true/);
+  assert.match(probeJob, /test -f scripts\/playwright-report\/index\.html/);
+  assert.match(probeJob, /find scripts\/test-results -type f -name '\*\.png'/);
+  assert.match(probeJob, /find scripts\/test-results -type f -name 'trace\.zip'/);
+  assert.match(probeJob, /uses: actions\/upload-artifact@v4/);
+  assert.match(probeJob, /if-no-files-found: error/);
+  assert.match(
+    playwrightConfig,
+    /testMatch: ciDiagnosticsProbe \? "ci-failure-diagnostics-probe\.spec\.ts" : undefined/,
+  );
+  assert.match(playwrightConfig, /globalSetup: ciDiagnosticsProbe \? undefined :/);
+  assert.match(playwrightConfig, /trace: "retain-on-failure"/);
+  assert.match(playwrightConfig, /screenshot: "only-on-failure"/);
+});
+
 test("booking-settings browser checks use a disposable database harness", async () => {
   const scriptsPackageJson = JSON.parse(
     await readFile(path.join(workspaceRoot, "scripts", "package.json"), "utf8"),

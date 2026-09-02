@@ -35,6 +35,7 @@ const isolatedEducationGroupOnlineConsentBrowserTest =
 const isolatedBookingSettingsBrowserTest =
   process.env.LUMERA_ISOLATED_BOOKING_SETTINGS_BROWSER_TEST === "1";
 const releaseBrowserTest = process.env.LUMERA_RELEASE_BROWSER_TEST === "1";
+const ciDiagnosticsProbe = process.env.LUMERA_CI_DIAGNOSTICS_PROBE === "1";
 
 function isHarnessDatabaseUrl(databaseUrl: string, databaseNamePattern: RegExp): boolean {
   try {
@@ -118,10 +119,11 @@ if (isolatedBrowserTest) {
 
 export default defineConfig({
   testDir: "./browser",
-  globalSetup: "./src/browser-preflight.ts",
+  testMatch: ciDiagnosticsProbe ? "ci-failure-diagnostics-probe.spec.ts" : undefined,
+  globalSetup: ciDiagnosticsProbe ? undefined : "./src/browser-preflight.ts",
   fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
-  retries: releaseBrowserTest ? 0 : process.env.CI ? 2 : 0,
+  retries: releaseBrowserTest || ciDiagnosticsProbe ? 0 : process.env.CI ? 2 : 0,
   reporter: [
     ["list"],
     ["html", { outputFolder: "playwright-report", open: "never" }],
