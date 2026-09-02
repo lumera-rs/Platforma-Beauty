@@ -18,6 +18,16 @@ export function trackEvent(name: string, data?: AnalyticsData): void {
   }
 }
 
+export type EducationDisputeSubmissionOutcome = "created" | "existing" | "error";
+
+export function trackEducationDisputeFormOpened(): void {
+  trackEvent("education_dispute_form_opened");
+}
+
+export function trackEducationDisputeSubmission(outcome: EducationDisputeSubmissionOutcome): void {
+  trackEvent("education_dispute_submitted", { outcome });
+}
+
 type FeaturedPlacementConfirmation = {
   activated: boolean;
   kind: string;

@@ -58,7 +58,11 @@ import { rollbackQueries, updateQueryOptimistically } from "@/lib/optimistic-que
 import { EDUCATION_NOTIFICATION_MUTATION_KEY, educationNotificationMutationQueue, useMutationQueueBusy } from "@/lib/optimistic-mutation-queue";
 import { OptimizedImage } from "@/components/optimized-image";
 import { uploadOptimizedImage } from "@/lib/media-upload";
-import { trackEvent } from "@/lib/analytics";
+import {
+  trackEducationDisputeFormOpened,
+  trackEducationDisputeSubmission,
+  trackEvent,
+} from "@/lib/analytics";
 import { fetchNativeJson, NativeFetchError } from "@/lib/native-fetch";
 import { DIGITAL_CONTENT_CONSENT_TEXT } from "@/lib/education-consent";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -750,6 +754,10 @@ function StudentLearningView({ jobseeker = false }: { jobseeker?: boolean }) {
     setDisputeReason("");
     setDisputeDetails("");
   };
+  const openReportDialog = (enrollment: { id: string; courseTitle: string }) => {
+    setReportingEnrollment(enrollment);
+    trackEducationDisputeFormOpened();
+  };
   const submitDispute = async () => {
     if (!reportingEnrollment || !disputeReason.trim() || !disputeDetails.trim()) return;
     try {
@@ -764,6 +772,7 @@ function StudentLearningView({ jobseeker = false }: { jobseeker?: boolean }) {
         { httpErrorMessage: "Problem nije prijavljen. Pokušajte ponovo." },
       );
       setDisputeOverrides((current) => ({ ...current, [reportingEnrollment.id]: dispute }));
+      trackEducationDisputeSubmission("created");
       toast.success("Problem je prijavljen", { description: "Escrow je zamrznut dok se spor obrađuje." });
       setReportingEnrollment(null);
       setDisputeReason("");
@@ -774,11 +783,13 @@ function StudentLearningView({ jobseeker = false }: { jobseeker?: boolean }) {
         : undefined;
       if (error instanceof NativeFetchError && error.status === 409 && existingDispute) {
         setDisputeOverrides((current) => ({ ...current, [reportingEnrollment.id]: existingDispute }));
+        trackEducationDisputeSubmission("existing");
         toast.info("Problem je već prijavljen", { description: "Prikazujemo postojeći spor; nije kreiran novi zahtev." });
         setReportingEnrollment(null);
         setDisputeReason("");
         setDisputeDetails("");
       } else {
+        trackEducationDisputeSubmission("error");
         toast.error("Problem nije prijavljen", { description: error instanceof Error ? error.message : undefined });
       }
     } finally {
@@ -795,7 +806,7 @@ function StudentLearningView({ jobseeker = false }: { jobseeker?: boolean }) {
         : enrollments?.length ? <><div className="mt-8 grid gap-5 md:grid-cols-2">{enrollments.map((enrollment) => {
           const dispute = disputeOverrides[enrollment.id] ?? enrollment.dispute;
           const protectionActive = !!enrollment.escrowReleaseAt && new Date(enrollment.escrowReleaseAt).getTime() > Date.now();
-          return <Card key={enrollment.id}><CardHeader><CardTitle>{enrollment.courseTitle}</CardTitle><p className="text-sm text-muted-foreground">Napredak: {enrollment.progress}%</p></CardHeader><CardContent className="space-y-4"><Progress value={enrollment.progress} />{dispute ? <div data-testid={`student-enrollment-dispute-${enrollment.id}`} data-dispute-id={dispute.id} className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><p className="flex items-center gap-2 font-semibold"><ShieldAlert className="h-4 w-4 text-destructive" /> Prijavljeni problem</p><Badge variant={dispute.status === "under_review" ? "secondary" : "destructive"}>{dispute.status === "under_review" ? "U obradi" : "Otvoren"}</Badge></div><p className="mt-2"><span className="font-medium">Razlog:</span> {dispute.reason}</p><p className="mt-2 text-xs text-muted-foreground">Prijavljeno {new Date(dispute.createdAt).toLocaleString("sr-RS")}. Escrow je zamrznut dok se spor obrađuje.</p></div> : protectionActive ? <Button type="button" variant="outline" className="w-full text-destructive hover:text-destructive" onClick={() => setReportingEnrollment({ id: enrollment.id, courseTitle: enrollment.courseTitle })}><ShieldAlert className="mr-2 h-4 w-4" />Prijavi problem</Button> : null}</CardContent><CardFooter><Button className="w-full" asChild><Link href={jobseeker ? `/poslovi/nalog/edukacije/lms/${enrollment.id}` : `/student/edukacije/lms/${enrollment.id}`}>{enrollment.status === "completed" ? "Pregledaj program" : "Nastavi učenje"} <ArrowRight className="ml-2 h-4 w-4" /></Link></Button></CardFooter></Card>;
+          return <Card key={enrollment.id}><CardHeader><CardTitle>{enrollment.courseTitle}</CardTitle><p className="text-sm text-muted-foreground">Napredak: {enrollment.progress}%</p></CardHeader><CardContent className="space-y-4"><Progress value={enrollment.progress} />{dispute ? <div data-testid={`student-enrollment-dispute-${enrollment.id}`} data-dispute-id={dispute.id} className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><p className="flex items-center gap-2 font-semibold"><ShieldAlert className="h-4 w-4 text-destructive" /> Prijavljeni problem</p><Badge variant={dispute.status === "under_review" ? "secondary" : "destructive"}>{dispute.status === "under_review" ? "U obradi" : "Otvoren"}</Badge></div><p className="mt-2"><span className="font-medium">Razlog:</span> {dispute.reason}</p><p className="mt-2 text-xs text-muted-foreground">Prijavljeno {new Date(dispute.createdAt).toLocaleString("sr-RS")}. Escrow je zamrznut dok se spor obrađuje.</p></div> : protectionActive ? <Button type="button" variant="outline" className="w-full text-destructive hover:text-destructive" onClick={() => openReportDialog({ id: enrollment.id, courseTitle: enrollment.courseTitle })}><ShieldAlert className="mr-2 h-4 w-4" />Prijavi problem</Button> : null}</CardContent><CardFooter><Button className="w-full" asChild><Link href={jobseeker ? `/poslovi/nalog/edukacije/lms/${enrollment.id}` : `/student/edukacije/lms/${enrollment.id}`}>{enrollment.status === "completed" ? "Pregledaj program" : "Nastavi učenje"} <ArrowRight className="ml-2 h-4 w-4" /></Link></Button></CardFooter></Card>;
         })}</div><EnrollmentsPager page={page} hasNext={hasNext} onChange={setPage} /></>
           : page > 1 ? <Card className="mt-8"><CardContent className="py-10 text-center"><p className="text-sm text-muted-foreground">Nema više edukacija.</p><Button variant="outline" className="mt-4" onClick={() => setPage((p) => Math.max(1, p - 1))}>Nazad</Button></CardContent></Card>
             : <Card className="mt-8"><CardContent className="py-14 text-center"><GraduationCap className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" /><h2 className="font-serif text-xl font-semibold">Još nemate edukacija</h2><p className="mt-2 text-sm text-muted-foreground">Kada administrator potvrdi vašu kupovinu, kurs će se pojaviti ovde.</p></CardContent></Card>}
