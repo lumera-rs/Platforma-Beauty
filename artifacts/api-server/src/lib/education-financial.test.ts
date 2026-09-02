@@ -14,6 +14,7 @@ import {
   educationCenterSubscriptionsTable,
   educationDisputesTable,
   educationEscrowsTable,
+  educationFinancialAuditLogTable,
   educationFinancialEventsTable,
   educationLedgerEntriesTable,
   educationPayoutsTable,
@@ -1621,6 +1622,8 @@ async function run(): Promise<void> {
       }).where(eq(educationPlatformSettingsTable.id, ipsSettingsSnapshot.id));
     }
     if (createdUserIds.length) {
+      await db.delete(educationFinancialAuditLogTable)
+        .where(inArray(educationFinancialAuditLogTable.actorUserId, createdUserIds));
       await db.delete(usersTable).where(inArray(usersTable.id, createdUserIds));
     }
   }

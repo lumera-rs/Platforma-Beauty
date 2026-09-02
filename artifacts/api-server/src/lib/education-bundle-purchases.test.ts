@@ -8,7 +8,7 @@ import {
   educationBundlePurchaseEscrowsTable, educationBundlePurchaseItemsTable,
   educationBundlePurchaseLedgerEntriesTable, educationBundlePurchasesTable,
   educationBundlesTable, educationCentersTable, educationCenterSubscriptionsTable, educationEscrowsTable,
-  educationPlatformSettingsTable, employeesTable, salonsTable, subscriptionPlansTable, usersTable,
+  educationFinancialAuditLogTable, educationPlatformSettingsTable, employeesTable, salonsTable, subscriptionPlansTable, usersTable,
 } from "@workspace/db";
 import { PurchaseEducationBundleBody } from "@workspace/api-zod";
 import app from "../app";
@@ -373,7 +373,10 @@ async function run() {
     if (centerId) await db.delete(educationCentersTable).where(eq(educationCentersTable.id, centerId));
     if (planId) await db.delete(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, planId));
     if (financeSettings) await db.update(educationPlatformSettingsTable).set({ commissionPercent: financeSettings.commissionPercent, reservePercent: financeSettings.reservePercent }).where(eq(educationPlatformSettingsTable.id, financeSettings.id));
-    if (userIds.length) await db.delete(usersTable).where(inArray(usersTable.id, userIds));
+    if (userIds.length) {
+      await db.delete(educationFinancialAuditLogTable).where(inArray(educationFinancialAuditLogTable.actorUserId, userIds));
+      await db.delete(usersTable).where(inArray(usersTable.id, userIds));
+    }
   }
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

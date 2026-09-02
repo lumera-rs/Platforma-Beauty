@@ -9,6 +9,7 @@ import {
   courseCategoriesTable,
   educationCentersTable,
   educationCenterSubscriptionsTable,
+  educationFinancialAuditLogTable,
   educationNotificationsTable,
   educationPlatformSettingsTable,
   educationPlacementSettingsTable,
@@ -586,6 +587,8 @@ async function run(): Promise<void> {
       await db.delete(educationSectionsTable).where(eq(educationSectionsTable.id, sectionId));
     }
     if (userIds.length) {
+      await db.delete(educationFinancialAuditLogTable)
+        .where(inArray(educationFinancialAuditLogTable.actorUserId, userIds));
       await db.delete(usersTable).where(inArray(usersTable.id, userIds));
     }
   }
