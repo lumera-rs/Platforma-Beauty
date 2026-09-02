@@ -14523,6 +14523,11 @@ export type BookingCapacityReachedResponse = BookingCapacityError;
  */
 export type IdempotencyKeyParameter = string;
 
+/**
+ * Required client-generated widget booking identifier; reuse it only to retry the identical payload.
+ */
+export type WidgetBookingIdempotencyKeyParameter = string;
+
 export type CityQueryParameter = string;
 
 export type CategoryQueryParameter = string;

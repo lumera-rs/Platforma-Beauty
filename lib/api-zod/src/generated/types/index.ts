@@ -1375,6 +1375,7 @@ export * from './widgetAppointmentCreate';
 export * from './widgetAppointmentCreated';
 export * from './widgetBookingGroupCreate';
 export * from './widgetBookingGroupCreateTreatmentsItem';
+export * from './widgetBookingIdempotencyKeyParameter';
 export * from './widgetSalon';
 export * from './widgetSalonEmployeesItem';
 export * from './widgetSalonServicesItem';

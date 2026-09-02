@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useSearch } from "wouter";
 import {
   useGetWidgetSalon,
-  useCreateWidgetBookingGroup,
+  useCreateWidgetBookingGroupCommand,
   useGetGroupedBookingAvailability,
   useGetSalonFirstAvailable,
   getGetSalonFirstAvailableQueryKey,
@@ -69,6 +69,7 @@ export default function WidgetBooking() {
   const [selectedCandidate, setSelectedCandidate] = useState<GroupedAvailabilityCandidate | null>(null);
   const [completedAppointments, setCompletedAppointments] = useState<Appointment[]>([]);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const bookingCommandRef = useRef<{ payload: string; key: string } | null>(null);
 
   const [contact, setContact] = useState({
     firstName: "",
@@ -85,17 +86,16 @@ export default function WidgetBooking() {
     booking_surface: "booking_widget",
   });
 
-  const createMutation = useCreateWidgetBookingGroup({
-    mutation: {
-      onSuccess: (data) => {
-        setCompletedAppointments(data.appointments);
-        setStep("SUCCESS");
-        trackEvent("grouped_booking_completed", analyticsDimensions());
-      },
-      onError: (err: unknown) => {
-        const { message } = getApiErrorDetails(err);
-        toast.error("Greška pri zakazivanju", { description: message });
-      }
+  const createMutation = useCreateWidgetBookingGroupCommand({
+    onSuccess: (data) => {
+      bookingCommandRef.current = null;
+      setCompletedAppointments(data.appointments);
+      setStep("SUCCESS");
+      trackEvent("grouped_booking_completed", analyticsDimensions());
+    },
+    onError: (err: unknown) => {
+      const { message } = getApiErrorDetails(err);
+      toast.error("Greška pri zakazivanju", { description: message });
     }
   });
 
@@ -209,21 +209,27 @@ export default function WidgetBooking() {
     e.preventDefault();
     if (!salon || !selectedCandidate || cart.length === 0) return;
 
+    const data = {
+      firstName: contact.firstName,
+      lastName: contact.lastName,
+      phone: contact.phone,
+      email: contact.email || null,
+      note: contact.note || null,
+      treatments: selectedCandidate.treatments.map((t) => ({
+        serviceId: t.serviceId,
+        employeeId: t.employeeId,
+        date: t.date,
+        startTime: t.startTime
+      }))
+    };
+    const payload = JSON.stringify(data);
+    if (bookingCommandRef.current?.payload !== payload) {
+      bookingCommandRef.current = { payload, key: crypto.randomUUID() };
+    }
     createMutation.mutate({
       slug: salon.slug,
-      data: {
-        firstName: contact.firstName,
-        lastName: contact.lastName,
-        phone: contact.phone,
-        email: contact.email || null,
-        note: contact.note || null,
-        treatments: selectedCandidate.treatments.map((t, i) => ({
-          serviceId: t.serviceId,
-          employeeId: t.employeeId,
-          date: t.date,
-          startTime: t.startTime
-        }))
-      }
+      data,
+      idempotencyKey: bookingCommandRef.current.key,
     });
   };
 

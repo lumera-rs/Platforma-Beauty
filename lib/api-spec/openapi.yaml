@@ -8232,7 +8232,7 @@ paths:
       summary: Public widget booking — creates a pending appointment for the salon
       parameters:
         - { name: slug, in: path, required: true, schema: { type: string } }
-        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/WidgetBookingIdempotencyKey"
       requestBody:
         required: true
         content:
@@ -8268,7 +8268,7 @@ paths:
       summary: Public rate-limited grouped booking for an anonymous salon customer
       parameters:
         - { name: slug, in: path, required: true, schema: { type: string } }
-        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/WidgetBookingIdempotencyKey"
       requestBody:
         required: true
         content:
@@ -9643,6 +9643,12 @@ components:
       required: true
       description: Client-generated command identifier; reuse it only to retry the identical booking payload.
       schema: { type: string, minLength: 1, maxLength: 200 }
+    WidgetBookingIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Required client-generated widget booking identifier; reuse it only to retry the identical payload.
+      schema: { type: string, minLength: 1, maxLength: 200, pattern: '^[!-~]+$' }
     CityQuery:
       name: city
       in: query

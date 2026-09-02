@@ -35,9 +35,11 @@ async function request(
   path: string,
   method: "GET" | "PATCH" | "POST" | "PUT",
   body?: Record<string, unknown>,
-  idempotencyKey?: string,
+  idempotencyKey?: string | null,
 ): Promise<HttpResult> {
-  const commandKey = idempotencyKey ?? (method === "POST" ? randomUUID() : undefined);
+  const commandKey = idempotencyKey === null
+    ? undefined
+    : idempotencyKey ?? (method === "POST" ? randomUUID() : undefined);
   const response = await fetch(`${baseUrl}/api${path}`, {
     method,
     headers: {
@@ -276,6 +278,15 @@ async function run(): Promise<void> {
       serviceId: serviceA!.id, employeeId: employeeA!.id,
       date: "2099-12-21", startTime: "12:00",
     };
+    const widgetWithoutKey = await request(
+      baseUrl, "", `/widget/salons/${salonA!.slug}/appointments`,
+      "POST", widgetBody, null,
+    );
+    assert.equal(widgetWithoutKey.status, 400);
+    assert.deepEqual(widgetWithoutKey.body, {
+      code: "IDEMPOTENCY_KEY_REQUIRED",
+      error: "Pošaljite važeći Idempotency-Key za zahtev zakazivanja.",
+    });
     const widgetCreated = await request(
       baseUrl, "", `/widget/salons/${salonA!.slug}/appointments`,
       "POST", widgetBody, widgetKey,

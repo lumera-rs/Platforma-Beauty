@@ -27249,9 +27249,11 @@ export const CreateWidgetAppointmentParams = zod.object({
 export const createWidgetAppointmentHeaderIdempotencyKeyMax = 200;
 
 
+export const createWidgetAppointmentHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateWidgetAppointmentHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createWidgetAppointmentHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createWidgetAppointmentHeaderIdempotencyKeyMax).regex(createWidgetAppointmentHeaderIdempotencyKeyRegExp).describe('Required client-generated widget booking identifier; reuse it only to retry the identical payload.')
 })
 
 export const createWidgetAppointmentBodyFirstNameMax = 80;
@@ -27301,9 +27303,11 @@ export const CreateWidgetBookingGroupParams = zod.object({
 export const createWidgetBookingGroupHeaderIdempotencyKeyMax = 200;
 
 
+export const createWidgetBookingGroupHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateWidgetBookingGroupHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createWidgetBookingGroupHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createWidgetBookingGroupHeaderIdempotencyKeyMax).regex(createWidgetBookingGroupHeaderIdempotencyKeyRegExp).describe('Required client-generated widget booking identifier; reuse it only to retry the identical payload.')
 })
 
 export const createWidgetBookingGroupBodyFirstNameMax = 80;
