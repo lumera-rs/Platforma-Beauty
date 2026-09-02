@@ -1,0 +1,120 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+// Node's built-in TypeScript test runner requires the source extension.
+// @ts-expect-error TS does not allow TypeScript extensions in emitted imports.
+import {
+  trackEducationDisputeFormOpened,
+  trackEducationDisputeSubmission,
+  trackEvent,
+  trackFeaturedPlacementPaid,
+} from "./analytics.ts";
+
+test("forwards privacy-safe custom events to the Replit-injected tracker", () => {
+  const calls: Array<{ name: string; data: Record<string, string | number | boolean> | undefined }> = [];
+  const originalWindow = globalThis.window;
+
+  globalThis.window = {
+    umami: {
+      track(name, data) {
+        calls.push({ name, data });
+      },
+    },
+  } as Window & typeof globalThis;
+
+  try {
+    trackEvent("treatment_cart_continued", {
+      treatment_count: 2,
+      customer_type: "guest",
+      day_choice: "same_day",
+      booking_surface: "booking_widget",
+    });
+
+    assert.deepEqual(calls, [{
+      name: "treatment_cart_continued",
+      data: {
+        treatment_count: 2,
+        customer_type: "guest",
+        day_choice: "same_day",
+        booking_surface: "booking_widget",
+      },
+    }]);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("never lets tracker failures interrupt booking", () => {
+  const originalWindow = globalThis.window;
+
+  globalThis.window = {
+    umami: {
+      track() {
+        throw new Error("analytics unavailable");
+      },
+    },
+  } as Window & typeof globalThis;
+
+  try {
+    assert.doesNotThrow(() => trackEvent("grouped_booking_completed"));
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("education dispute analytics contain only the privacy-safe submission outcome", () => {
+  const calls: Array<{ name: string; data: Record<string, string | number | boolean> | undefined }> = [];
+  const originalWindow = globalThis.window;
+
+  globalThis.window = {
+    umami: {
+      track(name, data) {
+        calls.push({ name, data });
+      },
+    },
+  } as Window & typeof globalThis;
+
+  try {
+    trackEducationDisputeFormOpened();
+    trackEducationDisputeSubmission("created");
+    trackEducationDisputeSubmission("existing");
+    trackEducationDisputeSubmission("error");
+
+    assert.deepEqual(calls, [
+      { name: "education_dispute_form_opened", data: undefined },
+      { name: "education_dispute_submitted", data: { outcome: "created" } },
+      { name: "education_dispute_submitted", data: { outcome: "existing" } },
+      { name: "education_dispute_submitted", data: { outcome: "error" } },
+    ]);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("records a paid placement only for the first server-confirmed activation", () => {
+  const calls: Array<{ name: string; data: Record<string, string | number | boolean> | undefined }> = [];
+  const originalWindow = globalThis.window;
+
+  globalThis.window = {
+    umami: {
+      track(name, data) {
+        calls.push({ name, data });
+      },
+    },
+  } as Window & typeof globalThis;
+
+  try {
+    trackFeaturedPlacementPaid({ activated: true, kind: "featured_salon", scope: "home" });
+    trackFeaturedPlacementPaid({ activated: false, kind: "featured_salon", scope: "home" });
+
+    assert.deepEqual(calls, [{
+      name: "featured_placement_paid",
+      data: {
+        placement_kind: "featured_salon",
+        placement_scope: "home",
+      },
+    }]);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});

@@ -1,0 +1,216 @@
+{
+  "environment": "Development/test-only measurement on one disposable database and two loopback API processes; fixture/bootstrap time is excluded and results are not production capacity planning.",
+  "requestTimeoutMs": 30000,
+  "configuration": {
+    "apiProcesses": 2,
+    "poolMaxPerProcess": 10,
+    "dbConnectionTimeoutMs": 5000
+  },
+  "marker": "booking-load-16079",
+  "scenarios": [
+    {
+      "name": "same-slot",
+      "count": 200,
+      "throughputPerSecond": 79.78989323173161,
+      "statuses": {
+        "201": 1,
+        "409": 199
+      },
+      "codes": {},
+      "timeouts": 0,
+      "unexpectedErrors": 0,
+      "unexpectedSamples": [],
+      "latency": {
+        "average": 1580.93174392,
+        "p50": 1699.4450980000001,
+        "p95": 2315.5302329999995,
+        "p99": 2369.3170950000003,
+        "max": 2386.9831310000004
+      },
+      "dbActivity": {
+        "sampleCount": 22,
+        "samplingErrors": 0,
+        "pg": {
+          "scope": "All connections and locks for the disposable database, including the harness sampler.",
+          "activityStateTelemetry": "unavailable: managed PostgreSQL reported state tracking as disabled",
+          "statePeaks": {
+            "disabled": 30
+          },
+          "lockPeaks": {
+            "AccessShareLock": 158,
+            "ExclusiveLock": 36,
+            "RowExclusiveLock": 18,
+            "RowShareLock": 95
+          }
+        },
+        "apiPools": [
+          {
+            "observedSamples": 22,
+            "configuredMax": 10,
+            "peakTotal": 10,
+            "peakWaiting": 92,
+            "minimumIdle": 0
+          },
+          {
+            "observedSamples": 22,
+            "configuredMax": 10,
+            "peakTotal": 10,
+            "peakWaiting": 91,
+            "minimumIdle": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "1000-distinct",
+      "count": 1000,
+      "throughputPerSecond": 75.03645019190624,
+      "statuses": {
+        "201": 968,
+        "500": 32
+      },
+      "codes": {
+        "INTERNAL_ERROR": 32
+      },
+      "timeouts": 0,
+      "unexpectedErrors": 32,
+      "unexpectedSamples": [
+        {
+          "status": 500,
+          "code": "INTERNAL_ERROR",
+          "body": {
+            "error": "Došlo je do neočekivane greške. Pokušajte ponovo.",
+            "code": "INTERNAL_ERROR"
+          },
+          "server": 1
+        },
+        {
+          "status": 500,
+          "code": "INTERNAL_ERROR",
+          "body": {
+            "error": "Došlo je do neočekivane greške. Pokušajte ponovo.",
+            "code": "INTERNAL_ERROR"
+          },
+          "server": 1
+        },
+        {
+          "status": 500,
+          "code": "INTERNAL_ERROR",
+          "body": {
+            "error": "Došlo je do neočekivane greške. Pokušajte ponovo.",
+            "code": "INTERNAL_ERROR"
+          },
+          "server": 1
+        },
+        {
+          "status": 500,
+          "code": "INTERNAL_ERROR",
+          "body": {
+            "error": "Došlo je do neočekivane greške. Pokušajte ponovo.",
+            "code": "INTERNAL_ERROR"
+          },
+          "server": 1
+        },
+        {
+          "status": 500,
+          "code": "INTERNAL_ERROR",
+          "body": {
+            "error": "Došlo je do neočekivane greške. Pokušajte ponovo.",
+            "code": "INTERNAL_ERROR"
+          },
+          "server": 1
+        },
+        {
+          "status": 500,
+          "code": "INTERNAL_ERROR",
+          "body": {
+            "error": "Došlo je do neočekivane greške. Pokušajte ponovo.",
+            "code": "INTERNAL_ERROR"
+          },
+          "server": 1
+        },
+        {
+          "status": 500,
+          "code": "INTERNAL_ERROR",
+          "body": {
+            "error": "Došlo je do neočekivane greške. Pokušajte ponovo.",
+            "code": "INTERNAL_ERROR"
+          },
+          "server": 1
+        },
+        {
+          "status": 500,
+          "code": "INTERNAL_ERROR",
+          "body": {
+            "error": "Došlo je do neočekivane greške. Pokušajte ponovo.",
+            "code": "INTERNAL_ERROR"
+          },
+          "server": 1
+        },
+        {
+          "status": 500,
+          "code": "INTERNAL_ERROR",
+          "body": {
+            "error": "Došlo je do neočekivane greške. Pokušajte ponovo.",
+            "code": "INTERNAL_ERROR"
+          },
+          "server": 1
+        },
+        {
+          "status": 500,
+          "code": "INTERNAL_ERROR",
+          "body": {
+            "error": "Došlo je do neočekivane greške. Pokušajte ponovo.",
+            "code": "INTERNAL_ERROR"
+          },
+          "server": 1
+        }
+      ],
+      "latency": {
+        "average": 12465.691398919009,
+        "p50": 12447.890666000001,
+        "p95": 13160.626509000002,
+        "p99": 13163.431152999998,
+        "max": 13164.276280000002
+      },
+      "dbActivity": {
+        "sampleCount": 126,
+        "samplingErrors": 0,
+        "pg": {
+          "scope": "All connections and locks for the disposable database, including the harness sampler.",
+          "activityStateTelemetry": "unavailable: managed PostgreSQL reported state tracking as disabled",
+          "statePeaks": {
+            "disabled": 30
+          },
+          "lockPeaks": {
+            "AccessShareLock": 368,
+            "ExclusiveLock": 52,
+            "RowExclusiveLock": 180,
+            "RowShareLock": 76
+          }
+        },
+        "apiPools": [
+          {
+            "observedSamples": 126,
+            "configuredMax": 10,
+            "peakTotal": 10,
+            "peakWaiting": 900,
+            "minimumIdle": 0
+          },
+          {
+            "observedSamples": 126,
+            "configuredMax": 10,
+            "peakTotal": 10,
+            "peakWaiting": 815,
+            "minimumIdle": 0
+          }
+        ]
+      }
+    }
+  ],
+  "integrity": {},
+  "plans": [],
+  "optimization": null,
+  "optimizationDecision": "No production optimization applied because the baseline did not complete; correctness assertions were not weakened.",
+  "failure": "Expected values to be strictly equal:\n\n968 !== 1000\n"
+}

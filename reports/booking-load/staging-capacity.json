@@ -1,0 +1,794 @@
+{
+  "environment": "Isolated staging capacity measurement on one disposable database and the configured deployment-like API process topology; fixture/bootstrap time is excluded. Never point this destructive harness at live customer data.",
+  "requestTimeoutMs": 30000,
+  "configuration": {
+    "profile": "staging",
+    "serverMode": "isolated Express app without unrelated schedulers/workers",
+    "apiProcesses": 2,
+    "expectedDeploymentProcesses": 2,
+    "topologyMatched": true,
+    "poolMaxPerProcess": 10,
+    "harnessPoolMax": 10,
+    "connectionReserve": 5,
+    "databaseConnectionBudget": 35,
+    "databaseMaxConnections": 112,
+    "plannedConnections": 35,
+    "dbConnectionTimeoutMs": 15000,
+    "bookingAdmissionPerProcess": 10000,
+    "productionAdmissionDefaultPerProcess": 0,
+    "activityStateTelemetrySetup": "enabled"
+  },
+  "objectives": {
+    "rationale": "Peak-spike objectives cap both p95 and p99 at 10 seconds across 1,000 simultaneous distinct booking arrivals, with no approved capacity-rejection budget. BOOKING_CAPACITY responses count against the error objective. Production admission remains disabled by default.",
+    "scenarios": {
+      "same-slot": {
+        "p95Ms": 5000,
+        "p99Ms": 5000,
+        "maxUnexpectedErrorRate": 0
+      },
+      "1000-distinct": {
+        "p95Ms": 10000,
+        "p99Ms": 10000,
+        "maxUnexpectedErrorRate": 0.001
+      },
+      "250-groups": {
+        "p95Ms": 5000,
+        "p99Ms": 5000,
+        "maxUnexpectedErrorRate": 0
+      },
+      "mixed-1000": {
+        "p95Ms": 10000,
+        "p99Ms": 10000,
+        "maxUnexpectedErrorRate": 0.001
+      }
+    },
+    "operationalScenarios": {
+      "same-slot": {
+        "minimumThroughputPerSecond": 50,
+        "maximumPeakWaitingPerProcess": 150,
+        "maximumPeakLocks": 500
+      },
+      "1000-distinct": {
+        "minimumThroughputPerSecond": 60,
+        "maximumPeakWaitingPerProcess": 1000,
+        "maximumPeakLocks": 1000
+      },
+      "250-groups": {
+        "minimumThroughputPerSecond": 50,
+        "maximumPeakWaitingPerProcess": 250,
+        "maximumPeakLocks": 1200
+      },
+      "mixed-1000": {
+        "minimumThroughputPerSecond": 100,
+        "maximumPeakWaitingPerProcess": 1250,
+        "maximumPeakLocks": 1000
+      }
+    }
+  },
+  "marker": "booking-load-38466",
+  "scenarios": [
+    {
+      "name": "same-slot",
+      "count": 200,
+      "throughputPerSecond": 77.55107427767173,
+      "statuses": {
+        "201": 1,
+        "409": 199
+      },
+      "codes": {},
+      "timeouts": 0,
+      "unexpectedErrors": 0,
+      "unexpectedSamples": [],
+      "latency": {
+        "average": 1596.1565013900004,
+        "p50": 1283.925037,
+        "p95": 2356.754405,
+        "p99": 2396.7682029999996,
+        "max": 2407.2479340000004
+      },
+      "databaseStatements": {
+        "scope": "Drizzle-logged database round trips executed by the isolated API processes during this scenario, including transaction BEGIN/COMMIT/ROLLBACK statements.",
+        "perProcess": [
+          1841,
+          2130
+        ],
+        "total": 3971,
+        "perRequest": 19.855
+      },
+      "dbActivity": {
+        "sampleCount": 21,
+        "samplingErrors": 0,
+        "samplingFailures": [],
+        "pg": {
+          "scope": "All connections and locks for the disposable database, including the harness sampler.",
+          "activityStateTelemetry": "available",
+          "activityStateEvidence": {
+            "available": true,
+            "observedSamples": 21
+          },
+          "lockTelemetry": "available",
+          "lockEvidence": {
+            "available": true,
+            "observedSamples": 21
+          },
+          "statePeaks": {
+            "active": 12,
+            "idle": 28,
+            "idle in transaction": 7
+          },
+          "lockPeaks": {
+            "AccessShareLock": 184,
+            "ExclusiveLock": 30,
+            "RowExclusiveLock": 18,
+            "RowShareLock": 138,
+            "ShareLock": 1
+          }
+        },
+        "apiPools": [
+          {
+            "observedSamples": 21,
+            "configuredMax": 10,
+            "peakTotal": 10,
+            "peakWaiting": 91,
+            "minimumIdle": 0
+          },
+          {
+            "observedSamples": 21,
+            "configuredMax": 10,
+            "peakTotal": 10,
+            "peakWaiting": 91,
+            "minimumIdle": 0
+          }
+        ]
+      },
+      "objective": {
+        "targets": {
+          "p95Ms": 5000,
+          "p99Ms": 5000,
+          "maxUnexpectedErrorRate": 0
+        },
+        "observed": {
+          "p95Ms": 2356.754405,
+          "p99Ms": 2396.7682029999996,
+          "unexpectedErrorRate": 0
+        },
+        "checks": {
+          "p95": true,
+          "p99": true,
+          "unexpectedErrorRate": true
+        },
+        "passed": true
+      },
+      "operationalObjective": {
+        "targets": {
+          "minimumThroughputPerSecond": 50,
+          "maximumPeakWaitingPerProcess": 150,
+          "maximumPeakLocks": 500
+        },
+        "observed": {
+          "throughputPerSecond": 77.55107427767173,
+          "peakWaitingPerProcess": [
+            91,
+            91
+          ],
+          "peakLocks": 371
+        },
+        "checks": {
+          "throughput": true,
+          "poolWaiting": true,
+          "locks": true
+        },
+        "passed": true
+      }
+    },
+    {
+      "name": "1000-distinct",
+      "count": 1000,
+      "throughputPerSecond": 109.41348917291499,
+      "statuses": {
+        "201": 1000
+      },
+      "codes": {},
+      "timeouts": 0,
+      "unexpectedErrors": 0,
+      "unexpectedSamples": [],
+      "latency": {
+        "average": 5205.339977006007,
+        "p50": 5400.705269000001,
+        "p95": 8673.220349000001,
+        "p99": 8956.298625,
+        "max": 9030.631703
+      },
+      "databaseStatements": {
+        "scope": "Drizzle-logged database round trips executed by the isolated API processes during this scenario, including transaction BEGIN/COMMIT/ROLLBACK statements.",
+        "perProcess": [
+          10520,
+          10520
+        ],
+        "total": 21040,
+        "perRequest": 21.04
+      },
+      "dbActivity": {
+        "sampleCount": 86,
+        "samplingErrors": 0,
+        "samplingFailures": [],
+        "pg": {
+          "scope": "All connections and locks for the disposable database, including the harness sampler.",
+          "activityStateTelemetry": "available",
+          "activityStateEvidence": {
+            "available": true,
+            "observedSamples": 86
+          },
+          "lockTelemetry": "available",
+          "lockEvidence": {
+            "available": true,
+            "observedSamples": 86
+          },
+          "statePeaks": {
+            "active": 20,
+            "idle": 28,
+            "idle in transaction": 9
+          },
+          "lockPeaks": {
+            "AccessShareLock": 452,
+            "ExclusiveLock": 71,
+            "RowExclusiveLock": 27,
+            "RowShareLock": 166
+          }
+        },
+        "apiPools": [
+          {
+            "observedSamples": 86,
+            "configuredMax": 10,
+            "peakTotal": 10,
+            "peakWaiting": 488,
+            "minimumIdle": 0
+          },
+          {
+            "observedSamples": 86,
+            "configuredMax": 10,
+            "peakTotal": 10,
+            "peakWaiting": 480,
+            "minimumIdle": 0
+          }
+        ]
+      },
+      "objective": {
+        "targets": {
+          "p95Ms": 10000,
+          "p99Ms": 10000,
+          "maxUnexpectedErrorRate": 0.001
+        },
+        "observed": {
+          "p95Ms": 8673.220349000001,
+          "p99Ms": 8956.298625,
+          "unexpectedErrorRate": 0
+        },
+        "checks": {
+          "p95": true,
+          "p99": true,
+          "unexpectedErrorRate": true
+        },
+        "passed": true
+      },
+      "operationalObjective": {
+        "targets": {
+          "minimumThroughputPerSecond": 60,
+          "maximumPeakWaitingPerProcess": 1000,
+          "maximumPeakLocks": 1000
+        },
+        "observed": {
+          "throughputPerSecond": 109.41348917291499,
+          "peakWaitingPerProcess": [
+            488,
+            480
+          ],
+          "peakLocks": 716
+        },
+        "checks": {
+          "throughput": true,
+          "poolWaiting": true,
+          "locks": true
+        },
+        "passed": true
+      }
+    },
+    {
+      "name": "250-groups",
+      "count": 250,
+      "throughputPerSecond": 72.1623555158499,
+      "statuses": {
+        "201": 125,
+        "409": 125
+      },
+      "codes": {},
+      "timeouts": 0,
+      "unexpectedErrors": 0,
+      "unexpectedSamples": [],
+      "latency": {
+        "average": 2828.9145453040014,
+        "p50": 3054.342867999998,
+        "p95": 3342.7888189999994,
+        "p99": 3369.70564,
+        "max": 3380.519548
+      },
+      "databaseStatements": {
+        "scope": "Drizzle-logged database round trips executed by the isolated API processes during this scenario, including transaction BEGIN/COMMIT/ROLLBACK statements.",
+        "perProcess": [
+          4908,
+          4867
+        ],
+        "total": 9775,
+        "perRequest": 39.1
+      },
+      "dbActivity": {
+        "sampleCount": 33,
+        "samplingErrors": 0,
+        "samplingFailures": [],
+        "pg": {
+          "scope": "All connections and locks for the disposable database, including the harness sampler.",
+          "activityStateTelemetry": "available",
+          "activityStateEvidence": {
+            "available": true,
+            "observedSamples": 33
+          },
+          "lockTelemetry": "available",
+          "lockEvidence": {
+            "available": true,
+            "observedSamples": 33
+          },
+          "statePeaks": {
+            "active": 19,
+            "idle": 21,
+            "idle in transaction": 9
+          },
+          "lockPeaks": {
+            "AccessShareLock": 611,
+            "ExclusiveLock": 71,
+            "RowExclusiveLock": 34,
+            "RowShareLock": 275
+          }
+        },
+        "apiPools": [
+          {
+            "observedSamples": 33,
+            "configuredMax": 10,
+            "peakTotal": 10,
+            "peakWaiting": 116,
+            "minimumIdle": 0
+          },
+          {
+            "observedSamples": 33,
+            "configuredMax": 10,
+            "peakTotal": 10,
+            "peakWaiting": 116,
+            "minimumIdle": 0
+          }
+        ]
+      },
+      "objective": {
+        "targets": {
+          "p95Ms": 5000,
+          "p99Ms": 5000,
+          "maxUnexpectedErrorRate": 0
+        },
+        "observed": {
+          "p95Ms": 3342.7888189999994,
+          "p99Ms": 3369.70564,
+          "unexpectedErrorRate": 0
+        },
+        "checks": {
+          "p95": true,
+          "p99": true,
+          "unexpectedErrorRate": true
+        },
+        "passed": true
+      },
+      "operationalObjective": {
+        "targets": {
+          "minimumThroughputPerSecond": 50,
+          "maximumPeakWaitingPerProcess": 250,
+          "maximumPeakLocks": 1200
+        },
+        "observed": {
+          "throughputPerSecond": 72.1623555158499,
+          "peakWaitingPerProcess": [
+            116,
+            116
+          ],
+          "peakLocks": 991
+        },
+        "checks": {
+          "throughput": true,
+          "poolWaiting": true,
+          "locks": true
+        },
+        "passed": true
+      }
+    },
+    {
+      "name": "mixed-1000",
+      "count": 1000,
+      "throughputPerSecond": 154.40497447692107,
+      "statuses": {
+        "200": 500,
+        "201": 255,
+        "409": 245
+      },
+      "codes": {},
+      "timeouts": 0,
+      "unexpectedErrors": 0,
+      "unexpectedSamples": [],
+      "latency": {
+        "average": 4255.714650732,
+        "p50": 4427.621186,
+        "p95": 6146.306949999998,
+        "p99": 6304.873004000001,
+        "max": 6320.012369
+      },
+      "databaseStatements": {
+        "scope": "Drizzle-logged database round trips executed by the isolated API processes during this scenario, including transaction BEGIN/COMMIT/ROLLBACK statements.",
+        "perProcess": [
+          11500,
+          8705
+        ],
+        "total": 20205,
+        "perRequest": 20.205
+      },
+      "dbActivity": {
+        "sampleCount": 59,
+        "samplingErrors": 0,
+        "samplingFailures": [],
+        "pg": {
+          "scope": "All connections and locks for the disposable database, including the harness sampler.",
+          "activityStateTelemetry": "available",
+          "activityStateEvidence": {
+            "available": true,
+            "observedSamples": 59
+          },
+          "lockTelemetry": "available",
+          "lockEvidence": {
+            "available": true,
+            "observedSamples": 59
+          },
+          "statePeaks": {
+            "active": 19,
+            "idle": 20,
+            "idle in transaction": 8
+          },
+          "lockPeaks": {
+            "AccessShareLock": 497,
+            "ExclusiveLock": 68,
+            "RowExclusiveLock": 100,
+            "RowShareLock": 180
+          }
+        },
+        "apiPools": [
+          {
+            "observedSamples": 59,
+            "configuredMax": 10,
+            "peakTotal": 10,
+            "peakWaiting": 1037,
+            "minimumIdle": 0
+          },
+          {
+            "observedSamples": 59,
+            "configuredMax": 10,
+            "peakTotal": 10,
+            "peakWaiting": 1115,
+            "minimumIdle": 0
+          }
+        ]
+      },
+      "objective": {
+        "targets": {
+          "p95Ms": 10000,
+          "p99Ms": 10000,
+          "maxUnexpectedErrorRate": 0.001
+        },
+        "observed": {
+          "p95Ms": 6146.306949999998,
+          "p99Ms": 6304.873004000001,
+          "unexpectedErrorRate": 0
+        },
+        "checks": {
+          "p95": true,
+          "p99": true,
+          "unexpectedErrorRate": true
+        },
+        "passed": true
+      },
+      "operationalObjective": {
+        "targets": {
+          "minimumThroughputPerSecond": 100,
+          "maximumPeakWaitingPerProcess": 1250,
+          "maximumPeakLocks": 1000
+        },
+        "observed": {
+          "throughputPerSecond": 154.40497447692107,
+          "peakWaitingPerProcess": [
+            1037,
+            1115
+          ],
+          "peakLocks": 845
+        },
+        "checks": {
+          "throughput": true,
+          "poolWaiting": true,
+          "locks": true
+        },
+        "passed": true
+      }
+    }
+  ],
+  "integrity": {
+    "sameSlotActive": 1,
+    "distinctAppointments": 1000,
+    "distinctCustomers": 1000,
+    "cancelledAppointments": 250,
+    "mixedSingleAppointments": 250,
+    "successfulBookingGroups": 131,
+    "partialGroups": 0,
+    "crossCustomerRows": 0,
+    "activeOverlaps": 0,
+    "markerOwned": true
+  },
+  "plans": [
+    {
+      "query": "appointment overlap",
+      "summary": {
+        "planningMs": 0.082,
+        "executionMs": 0.02,
+        "node": "Index Scan",
+        "index": "appointments_employee_date_status_idx",
+        "nodes": [
+          "Index Scan"
+        ],
+        "indexes": [
+          "appointments_employee_date_status_idx"
+        ],
+        "actualRows": 0,
+        "sharedHitBlocks": 12,
+        "sharedReadBlocks": 0
+      },
+      "raw": {
+        "QUERY PLAN": [
+          {
+            "Plan": {
+              "Node Type": "Index Scan",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Scan Direction": "Forward",
+              "Index Name": "appointments_employee_date_status_idx",
+              "Relation Name": "appointments",
+              "Alias": "appointments",
+              "Startup Cost": 0.28,
+              "Total Cost": 2.51,
+              "Plan Rows": 1,
+              "Plan Width": 688,
+              "Actual Startup Time": 0.012,
+              "Actual Total Time": 0.012,
+              "Actual Rows": 0,
+              "Actual Loops": 1,
+              "Index Cond": "((employee_id = 'e798231c-24e4-47d8-a4e5-44b45a394aa2'::uuid) AND (appointment_date = '2099-06-02'::date))",
+              "Rows Removed by Index Recheck": 0,
+              "Filter": "((status = ANY ('{pending,confirmed}'::appointment_status[])) AND (start_time < '10:00'::text) AND (end_time > '09:00'::text) AND (salon_id = '2bd166b4-60bf-4d81-9763-336395be8dca'::uuid))",
+              "Rows Removed by Filter": 12,
+              "Shared Hit Blocks": 12,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning": {
+              "Shared Hit Blocks": 1,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning Time": 0.082,
+            "Triggers": [],
+            "Execution Time": 0.02
+          }
+        ]
+      }
+    },
+    {
+      "query": "availability loaded appointments",
+      "summary": {
+        "planningMs": 0.084,
+        "executionMs": 0.136,
+        "node": "Sort",
+        "index": null,
+        "nodes": [
+          "Sort",
+          "Index Scan"
+        ],
+        "indexes": [
+          "appointments_schedule_lookup_index"
+        ],
+        "actualRows": 110,
+        "sharedHitBlocks": 185,
+        "sharedReadBlocks": 0
+      },
+      "raw": {
+        "QUERY PLAN": [
+          {
+            "Plan": {
+              "Node Type": "Sort",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Startup Cost": 2.52,
+              "Total Cost": 2.52,
+              "Plan Rows": 1,
+              "Plan Width": 84,
+              "Actual Startup Time": 0.118,
+              "Actual Total Time": 0.122,
+              "Actual Rows": 110,
+              "Actual Loops": 1,
+              "Sort Key": [
+                "employee_id",
+                "appointment_date"
+              ],
+              "Sort Method": "quicksort",
+              "Sort Space Used": 31,
+              "Sort Space Type": "Memory",
+              "Shared Hit Blocks": 185,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Plans": [
+                {
+                  "Node Type": "Index Scan",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Scan Direction": "Forward",
+                  "Index Name": "appointments_schedule_lookup_index",
+                  "Relation Name": "appointments",
+                  "Alias": "appointments",
+                  "Startup Cost": 0.28,
+                  "Total Cost": 2.51,
+                  "Plan Rows": 1,
+                  "Plan Width": 84,
+                  "Actual Startup Time": 0.036,
+                  "Actual Total Time": 0.082,
+                  "Actual Rows": 110,
+                  "Actual Loops": 1,
+                  "Index Cond": "((salon_id = '2bd166b4-60bf-4d81-9763-336395be8dca'::uuid) AND (appointment_date >= '2099-06-02'::date) AND (appointment_date <= '2099-06-05'::date))",
+                  "Rows Removed by Index Recheck": 0,
+                  "Filter": "(status = ANY ('{pending,confirmed}'::appointment_status[]))",
+                  "Rows Removed by Filter": 50,
+                  "Shared Hit Blocks": 182,
+                  "Shared Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Local Dirtied Blocks": 0,
+                  "Local Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                }
+              ]
+            },
+            "Planning": {
+              "Shared Hit Blocks": 6,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            },
+            "Planning Time": 0.084,
+            "Triggers": [],
+            "Execution Time": 0.136
+          }
+        ]
+      }
+    }
+  ],
+  "optimization": {
+    "change": "Reduced the all-admitted booking path by reusing locked facts, combining eligibility/policy reads, skipping irrelevant resource queries, returning known allocations, and transactionally batching durable communication outbox writes before worker-based delivery.",
+    "evidenceBefore": {
+      "report": "staging-capacity.json (previous verified profile)",
+      "scenario": "1000-distinct",
+      "databaseStatementsPerRequest": 43.94,
+      "throughputPerSecond": 64.77178448584051,
+      "p95Ms": 15342.842133000002,
+      "p99Ms": 15345.600534999998,
+      "unexpectedErrors": 0
+    },
+    "motivation": "Both API pools saturated while individually indexed queries remained below 50 ms. The successful path repeated transaction-scoped locks and configuration reads, while synchronous provider delivery consumed response-path capacity. Required outbox records now commit atomically with each booking and provider delivery runs asynchronously. The salon-wide lock remains mandatory because resource configuration writes use it as their synchronization boundary.",
+    "evidenceAfter": {
+      "report": "staging-capacity.json",
+      "marker": "booking-load-38466",
+      "configuration": {
+        "profile": "staging",
+        "serverMode": "isolated Express app without unrelated schedulers/workers",
+        "apiProcesses": 2,
+        "expectedDeploymentProcesses": 2,
+        "topologyMatched": true,
+        "poolMaxPerProcess": 10,
+        "harnessPoolMax": 10,
+        "connectionReserve": 5,
+        "databaseConnectionBudget": 35,
+        "databaseMaxConnections": 112,
+        "plannedConnections": 35,
+        "dbConnectionTimeoutMs": 15000,
+        "bookingAdmissionPerProcess": 10000,
+        "productionAdmissionDefaultPerProcess": 0,
+        "activityStateTelemetrySetup": "enabled"
+      },
+      "scenario": "1000-distinct",
+      "statuses": {
+        "201": 1000
+      },
+      "codes": {},
+      "timeouts": 0,
+      "unexpectedErrors": 0,
+      "latency": {
+        "average": 5205.339977006007,
+        "p50": 5400.705269000001,
+        "p95": 8673.220349000001,
+        "p99": 8956.298625,
+        "max": 9030.631703
+      },
+      "poolPeaks": [
+        {
+          "observedSamples": 86,
+          "configuredMax": 10,
+          "peakTotal": 10,
+          "peakWaiting": 488,
+          "minimumIdle": 0
+        },
+        {
+          "observedSamples": 86,
+          "configuredMax": 10,
+          "peakTotal": 10,
+          "peakWaiting": 480,
+          "minimumIdle": 0
+        }
+      ]
+    }
+  },
+  "optimizationDecision": "The optimized all-admitted path completed every arrival below the p95/p99 limits with zero unexpected errors and no increase to the 35-connection budget. Admission remains disabled by default.",
+  "planAssessment": {
+    "target": "Both booking overlap and availability reads use an index-backed plan with execution time <= 50 ms.",
+    "passed": true
+  },
+  "bottleneckAssessments": [],
+  "admissionAssessment": {
+    "configuredMaximumInFlightPerProcess": 10000,
+    "admitted": 1000,
+    "rejected": 0,
+    "overloadStatus": 429,
+    "overloadCode": "BOOKING_CAPACITY",
+    "approvedMaximumRejections": 0,
+    "productionEnabledByDefault": false,
+    "availabilityCheckPassed": true,
+    "admittedDatabaseStatementsPerBooking": 21.04,
+    "conclusion": "All 1,000 arrivals were admitted and completed within the latency and error objectives; production admission remains disabled because it is no longer required for this profile."
+  }
+}

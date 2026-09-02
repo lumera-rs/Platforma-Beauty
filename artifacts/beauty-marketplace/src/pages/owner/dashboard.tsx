@@ -1,0 +1,230 @@
+import { BusinessLayout } from "@/components/business-layout";
+import { Link, useLocation } from "wouter";
+import { useGetSalonDashboard, useGetCurrentUser, getGetSalonDashboardQueryKey, useGetReferralDashboard, getGetReferralDashboardQueryKey } from "@workspace/api-client-react";
+import { useEffect, useState } from "react";
+import { Calendar, DollarSign, Loader2, Star, Users, Gift, ChevronRight } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { SalonOwnerNavigation } from "@/components/salon-owner-navigation";
+
+export function OwnerSidebar({ current: _current }: { current: string }) {
+  const { data: userResp } = useGetCurrentUser();
+  return (
+    <aside
+      className="sticky top-20 hidden h-[calc(100vh-6rem)] w-64 shrink-0 overflow-hidden rounded-xl border bg-background md:block"
+      data-testid="owner-sidebar"
+    >
+      <SalonOwnerNavigation showNotifications={userResp?.user?.role === "SALON_OWNER"} />
+    </aside>
+  );
+}
+
+export default function OwnerDashboard() {
+  const [location, setLocation] = useLocation();
+  const { data: userResp, isLoading: isUserLoading } = useGetCurrentUser();
+  const [scope, setScope] = useState<"location" | "all">("location");
+  const isSalonOperator = userResp?.user?.role === "SALON_OWNER" || userResp?.user?.role === "EDUKATIVNI_CENTAR";
+  
+  useEffect(() => {
+    if (!isUserLoading) {
+      if (!userResp?.user) setLocation("/prijava");
+      else if (!["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(userResp.user.role)) setLocation("/");
+    }
+  }, [userResp, isUserLoading, setLocation]);
+
+  const dashboardParams = scope === "all" ? { scope } : undefined;
+  const { data: dash, isLoading } = useGetSalonDashboard(
+    dashboardParams,
+    { query: {
+      enabled: isSalonOperator,
+      queryKey: getGetSalonDashboardQueryKey(dashboardParams),
+    } },
+  );
+
+  const { data: refDash } = useGetReferralDashboard({
+    query: { enabled: isSalonOperator, queryKey: getGetReferralDashboardQueryKey() }
+  });
+
+  const refChannelA = refDash?.channels.find(c => c.channel === "A");
+  const refChannelD = refDash?.channels.find(c => c.channel === "D");
+
+  if (isUserLoading || isLoading) return <BusinessLayout><div className="flex justify-center p-20"><Loader2 className="w-8 h-8 animate-spin" /></div></BusinessLayout>;
+  if (!dash) return null;
+
+  return (
+    <BusinessLayout>
+      <div className="container mx-auto px-4 py-8 flex flex-col md:flex-row gap-8 items-start">
+        <OwnerSidebar current="/vlasnik" />
+        
+        <div className="flex-1 space-y-6 w-full">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h1 className="text-3xl font-serif font-bold mb-2">{scope === "all" ? "Pregled poslovanja" : "Dashboard salona"}</h1>
+              <p className="text-muted-foreground">
+                {scope === "all"
+                  ? `Zbirni pregled za svih ${dash.locations.length} ${dash.locations.length === 1 ? "lokaciju" : "lokacija"}`
+                  : `${dash.salon.name} - Pregled poslovanja`}
+              </p>
+            </div>
+            <div className="inline-flex w-full rounded-lg border bg-muted/40 p-1 sm:w-auto" aria-label="Opseg dashboarda">
+              <Button
+                type="button"
+                size="sm"
+                variant={scope === "location" ? "default" : "ghost"}
+                className="flex-1 sm:flex-none"
+                aria-pressed={scope === "location"}
+                onClick={() => setScope("location")}
+              >
+                Aktivna lokacija
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={scope === "all" ? "default" : "ghost"}
+                className="flex-1 sm:flex-none"
+                aria-pressed={scope === "all"}
+                onClick={() => setScope("all")}
+              >
+                Sve lokacije
+              </Button>
+            </div>
+          </div>
+
+          {(refChannelA || refChannelD) && (
+            <div className="grid sm:grid-cols-2 gap-4">
+              {refChannelD && (
+                <Link href="/preporuke">
+                  <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 flex items-center justify-between hover:bg-primary/10 transition-colors cursor-pointer group">
+                    <div className="flex items-center gap-4">
+                      <div className="bg-primary text-primary-foreground p-3 rounded-full">
+                        <Gift className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-primary">Preporuke Klijenata (D)</p>
+                        <p className="text-sm text-muted-foreground">{refChannelD.qualified} uspesnih, {refChannelD.pending} na čekanju</p>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-primary group-hover:translate-x-1 transition-transform" />
+                  </div>
+                </Link>
+              )}
+              {refChannelA && (
+                <Link href="/preporuke">
+                  <div className="bg-accent/5 border border-accent/20 rounded-xl p-4 flex items-center justify-between hover:bg-accent/10 transition-colors cursor-pointer group">
+                    <div className="flex items-center gap-4">
+                      <div className="bg-accent text-accent-foreground p-3 rounded-full">
+                        <Star className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-accent">Preporuke Biznisa (A)</p>
+                        <p className="text-sm text-muted-foreground">{refChannelA.qualified} uspesnih, {refChannelA.pending} na čekanju</p>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-accent group-hover:translate-x-1 transition-transform" />
+                  </div>
+                </Link>
+              )}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex justify-between items-start mb-2">
+                  <p className="text-sm font-medium text-muted-foreground">Prihod (Ovaj mesec)</p>
+                  <DollarSign className="w-4 h-4 text-muted-foreground" />
+                </div>
+                <h3 className="text-2xl font-bold">{dash.revenueThisMonth.toLocaleString()} RSD</h3>
+                <p className={`text-xs mt-2 font-medium ${dash.revenueChange > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {dash.revenueChange > 0 ? '+' : ''}{dash.revenueChange}% u odnosu na prošli mesec
+                </p>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex justify-between items-start mb-2">
+                  <p className="text-sm font-medium text-muted-foreground">Zakazivanja (Ovaj mesec)</p>
+                  <Calendar className="w-4 h-4 text-muted-foreground" />
+                </div>
+                <h3 className="text-2xl font-bold">{dash.bookingsThisMonth}</h3>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex justify-between items-start mb-2">
+                  <p className="text-sm font-medium text-muted-foreground">Novi klijenti</p>
+                  <Users className="w-4 h-4 text-muted-foreground" />
+                </div>
+                <h3 className="text-2xl font-bold">{dash.newCustomers}</h3>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-primary/5 border-primary/20">
+              <CardContent className="p-6">
+                <div className="flex justify-between items-start mb-2">
+                  <p className="text-sm font-medium text-primary">Loyalty za sve lokacije</p>
+                  <Star className="w-4 h-4 text-primary" />
+                </div>
+                <h3 className="text-xl font-bold text-primary">{dash.loyalty.currentTier}</h3>
+                <p className="text-xs mt-2 text-primary/80">
+                  {dash.loyalty.freeSubscription ? 'Besplatna pretplata aktivna' : `Sledeći nivo: još ${dash.loyalty.amountToNextTier} RSD`}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {scope === "all" && (
+            <Card>
+              <CardHeader className="border-b pb-4">
+                <CardTitle className="text-lg">Učinak po lokaciji</CardTitle>
+              </CardHeader>
+              <CardContent className="divide-y p-0">
+                {dash.locations.map((salon) => (
+                  <div key={salon.id} className="grid gap-3 p-4 text-sm sm:grid-cols-[1fr_auto_auto_auto] sm:items-center sm:gap-8">
+                    <p className="font-semibold">{salon.name}</p>
+                    <p><span className="text-muted-foreground">Prihod: </span><strong>{salon.revenueThisMonth.toLocaleString()} RSD</strong></p>
+                    <p><span className="text-muted-foreground">Termini: </span><strong>{salon.bookingsThisMonth}</strong></p>
+                    <p><span className="text-muted-foreground">Klijenti: </span><strong>{salon.newCustomers}</strong></p>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
+              <CardTitle className="text-lg">Današnji termini</CardTitle>
+              <Button variant="outline" size="sm" asChild><Link href="/vlasnik/kalendar">Vidi kalendar</Link></Button>
+            </CardHeader>
+            <CardContent className="p-0">
+              {dash.todayAppointments.length === 0 ? (
+                <div className="p-8 text-center text-muted-foreground">Nema zakazanih termina za danas.</div>
+              ) : (
+                <div className="divide-y">
+                  {dash.todayAppointments.map(appt => (
+                    <div key={appt.id} className="p-4 flex items-center justify-between hover:bg-muted/30">
+                      <div className="flex items-center gap-4">
+                        <div className="w-14 h-14 rounded-xl bg-secondary flex flex-col items-center justify-center font-bold text-secondary-foreground">
+                          {appt.startTime}
+                        </div>
+                        <div>
+                          <p className="font-bold">{appt.customerName}</p>
+                          <p className="text-sm text-muted-foreground">{appt.serviceName} • {appt.employeeName}{scope === "all" ? ` • ${appt.salonName}` : ""}</p>
+                        </div>
+                      </div>
+                      <Badge variant={appt.status === 'confirmed' ? 'default' : 'secondary'}>{appt.status}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+          
+        </div>
+      </div>
+    </BusinessLayout>
+  );
+}

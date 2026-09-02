@@ -1,0 +1,24 @@
+export type Coupon = {
+  id: string;
+  code: string;
+  active: boolean;
+  audience: "B2B" | "B2C" | null;
+  discountType: "PERCENTAGE" | "FIXED_RSD";
+  discountValue: number;
+  startsAt: string | null;
+  endsAt: string | null;
+  minimumSpendRsd: number;
+  maximumSpendRsd: number | null;
+  freeShipping: boolean;
+  includeProductIds: string[];
+  excludeProductIds: string[];
+  includeCategoryIds: string[];
+  excludeCategoryIds: string[];
+  includeBundleIds: string[];
+  excludeBundleIds: string[];
+  usageLimit: number | null;
+  perCustomerUsageLimit: number | null;
+  usageCount: number;
+  createdAt: string;
+  updatedAt: string;
+};

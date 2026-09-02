@@ -1,0 +1,36 @@
+modules = ["nodejs-24", "python-base-3.13", "postgresql-16"]
+
+[deployment]
+router = "application"
+deploymentTarget = "autoscale"
+build = ["pnpm", "run", "validate:publish"]
+
+[deployment.postBuild]
+args = ["pnpm", "store", "prune"]
+env = { "CI" = "true" }
+
+[workflows]
+runButton = "Project"
+
+[agent]
+stack = "PNPM_WORKSPACE"
+expertMode = true
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 180000
+
+[nix]
+channel = "stable-25_05"
+packages = ["glib", "nss", "nspr", "atk", "at-spi2-atk", "cups", "dbus", "expat", "libdrm", "mesa", "pango", "cairo", "alsa-lib", "fontconfig", "freetype", "gtk3", "xorg.libX11", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXext", "xorg.libXfixes", "xorg.libXrandr", "libgbm", "libxkbcommon"]
+
+[userenv]
+
+[userenv.production]
+APP_BASE_URL = "https://beauty-partner-hub.replit.app"
+
+[userenv.development]
+APP_BASE_URL = "https://6b6c8a4c-09a1-427b-b1ad-9e4e1d89549a-00-1j27uqb8wl0i8.archer.replit.dev"
+
+[objectStorage]
+defaultBucketID = "replit-objstore-1658e3b9-848e-43b6-bbee-7ce5c9d63aab"

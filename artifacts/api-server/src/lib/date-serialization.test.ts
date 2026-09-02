@@ -1,0 +1,313 @@
+import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import {
+  AdminCreateCourierServiceResponse,
+  AdminGetRetentionSettingsHistoryResponse,
+  AdminListReferralApprovalsResponse,
+  AdminListReferralReviewsResponse,
+  CheckoutEducationB2bOrderResponse,
+  CreatePublicEducationCourseInquiryResponse,
+  CreateEmployeeTreatmentPhotoResponse,
+  GetBeautyJobAdminPreviewResponse,
+  GetBeautyJobDeliveryIssuesResponse,
+  GetBeautyJobModerationQueueResponse,
+  GetBeautyJobResponse,
+  GetBeautyJobSettingsResponse,
+  GetEducationCenterOperationsCalendarResponse,
+  GetEducationCourseFeaturedStatusResponse,
+  GetEducationOperationalAttendanceResponse,
+  GetEmployeeClockResponse,
+  GetMyEducationOperationalBookingResponse,
+  GetReferralDashboardResponse,
+  ListBeautyJobApplicantsResponse,
+  ListBeautyJobNotificationsResponse,
+  ListEmployeeShiftSwapsResponse,
+  ListMyBeautyJobRentalRequestsResponse,
+  ReplyToBeautyJobContactResponse,
+  TrackRetailOrderResponse,
+} from "@workspace/api-zod";
+import { safeIsoTimestamp } from "./date-serialization";
+
+assert.equal(safeIsoTimestamp(new Date("2026-09-02T10:15:30.000Z")), "2026-09-02T10:15:30.000Z");
+assert.equal(safeIsoTimestamp("2026-09-02T10:15:30.000Z"), "2026-09-02T10:15:30.000Z");
+assert.equal(safeIsoTimestamp(null), null);
+assert.equal(safeIsoTimestamp(undefined), null);
+assert.equal(safeIsoTimestamp(new Date(Number.NaN)), null);
+assert.equal(safeIsoTimestamp("not-a-timestamp"), null);
+assert.equal(safeIsoTimestamp({}), null);
+
+const rows = [
+  {
+    id: "damaged",
+    createdAt: new Date(Number.NaN),
+    updatedAt: new Date("2026-09-02T11:15:30.000Z"),
+    nested: {
+      startsAt: new Date(Number.NaN),
+      endsAt: new Date("2026-09-02T12:15:30.000Z"),
+    },
+  },
+  {
+    id: "valid",
+    createdAt: new Date("2026-09-02T10:15:30.000Z"),
+    updatedAt: new Date("2026-09-02T11:15:30.000Z"),
+    nested: {
+      startsAt: new Date("2026-09-02T11:30:30.000Z"),
+      endsAt: new Date("2026-09-02T12:30:30.000Z"),
+    },
+  },
+];
+const response = rows.map((row) => ({
+  id: row.id,
+  createdAt: safeIsoTimestamp(row.createdAt),
+  updatedAt: safeIsoTimestamp(row.updatedAt),
+  nested: {
+    startsAt: safeIsoTimestamp(row.nested.startsAt),
+    endsAt: safeIsoTimestamp(row.nested.endsAt),
+  },
+}));
+
+assert.deepEqual(response, [
+  {
+    id: "damaged",
+    createdAt: null,
+    updatedAt: "2026-09-02T11:15:30.000Z",
+    nested: { startsAt: null, endsAt: "2026-09-02T12:15:30.000Z" },
+  },
+  {
+    id: "valid",
+    createdAt: "2026-09-02T10:15:30.000Z",
+    updatedAt: "2026-09-02T11:15:30.000Z",
+    nested: {
+      startsAt: "2026-09-02T11:30:30.000Z",
+      endsAt: "2026-09-02T12:30:30.000Z",
+    },
+  },
+]);
+
+const mutationRow = {
+  id: "saved",
+  createdAt: new Date(Number.NaN),
+  updatedAt: new Date("2026-09-02T13:15:30.000Z"),
+  status: "active",
+};
+assert.deepEqual({
+  id: mutationRow.id,
+  createdAt: safeIsoTimestamp(mutationRow.createdAt),
+  updatedAt: safeIsoTimestamp(mutationRow.updatedAt),
+  status: mutationRow.status,
+}, {
+  id: "saved",
+  createdAt: null,
+  updatedAt: "2026-09-02T13:15:30.000Z",
+  status: "active",
+});
+
+const trackingResponse = TrackRetailOrderResponse.parse({
+  orderNumber: "LMR-100",
+  status: "RECEIVED",
+  statusLabel: "Porudžbina primljena",
+  createdAt: safeIsoTimestamp(new Date(Number.NaN)),
+  statusUpdatedAt: safeIsoTimestamp(new Date("2026-09-02T14:15:30.000Z")),
+  progressStage: 1,
+  trackingNumber: null,
+  courierUrl: null,
+});
+assert.equal(trackingResponse.createdAt, null);
+assert.equal(trackingResponse.statusUpdatedAt?.toISOString(), "2026-09-02T14:15:30.000Z");
+assert.equal(trackingResponse.orderNumber, "LMR-100");
+
+const inquiryResponse = CreatePublicEducationCourseInquiryResponse.parse({
+  id: "inquiry",
+  courseId: "course",
+  status: "new",
+  createdAt: safeIsoTimestamp(new Date(Number.NaN)),
+});
+assert.deepEqual(inquiryResponse, {
+  id: "inquiry",
+  courseId: "course",
+  status: "new",
+  createdAt: null,
+});
+
+const courierResponse = AdminCreateCourierServiceResponse.parse({
+  id: "courier",
+  code: "courier-code",
+  name: "Kurirska služba",
+  trackingUrlTemplate: null,
+  active: true,
+  createdAt: safeIsoTimestamp(new Date(Number.NaN)),
+  updatedAt: safeIsoTimestamp(new Date("2026-09-02T15:15:30.000Z")),
+});
+assert.equal(courierResponse.createdAt, null);
+assert.equal(courierResponse.updatedAt?.toISOString(), "2026-09-02T15:15:30.000Z");
+assert.equal(courierResponse.active, true);
+
+const featuredResponse = GetEducationCourseFeaturedStatusResponse.parse({
+  courseId: "course",
+  isFeatured: true,
+  featuredUntil: null,
+  featuredFee: 1000,
+  featuredCoursePrice: 1000,
+  charge: {
+    id: "charge",
+    amount: 1000,
+    status: "pending",
+    paymentReference: null,
+    activatedAt: safeIsoTimestamp(new Date(Number.NaN)),
+    settledAt: safeIsoTimestamp(new Date("2026-09-02T16:15:30.000Z")),
+  },
+});
+assert.equal(featuredResponse.charge?.activatedAt, null);
+assert.equal(featuredResponse.charge?.settledAt?.toISOString(), "2026-09-02T16:15:30.000Z");
+assert.equal(featuredResponse.courseId, "course");
+
+function assertParsesNullTimestamp(schema: { parse: (value: unknown) => unknown }, label: string): void {
+  const parsed = schema.parse(null);
+  assert.equal(parsed, null, `${label} must preserve null instead of coercing it to an epoch date`);
+  assert.notEqual(parsed, "1970-01-01T00:00:00.000Z", `${label} must never fabricate the Unix epoch`);
+}
+
+for (const [label, schema] of [
+  ["referral ledger effectiveAt", GetReferralDashboardResponse.shape.ledger.element.shape.effectiveAt],
+  ["referral approval createdAt", AdminListReferralApprovalsResponse.element.shape.createdAt],
+  ["referral review createdAt", AdminListReferralReviewsResponse.element.shape.createdAt],
+  ["retention history changedAt", AdminGetRetentionSettingsHistoryResponse.element.shape.changedAt],
+  ["education attendance recordedAt", GetEducationOperationalAttendanceResponse.shape.recordedAt],
+  ["education calendar startsAt", GetEducationCenterOperationsCalendarResponse.element.shape.startsAt],
+  ["education calendar endsAt", GetEducationCenterOperationsCalendarResponse.element.shape.endsAt],
+  ["education booking createdAt", GetMyEducationOperationalBookingResponse.shape.createdAt],
+  ["education booking updatedAt", GetMyEducationOperationalBookingResponse.shape.updatedAt],
+  ["education booking session startsAt", GetMyEducationOperationalBookingResponse.shape.session.unwrap().shape.startsAt],
+  ["education booking session endsAt", GetMyEducationOperationalBookingResponse.shape.session.unwrap().shape.endsAt],
+  ["beauty job createdAt", GetBeautyJobResponse.shape.createdAt],
+  ["beauty job expiresAt", GetBeautyJobResponse.shape.expiresAt],
+  ["beauty job slot startsAt", GetBeautyJobResponse.shape.availableSlots.element.shape.startsAt],
+  ["beauty job slot endsAt", GetBeautyJobResponse.shape.availableSlots.element.shape.endsAt],
+  ["beauty job applicant createdAt", ListBeautyJobApplicantsResponse.shape.applicants.element.shape.createdAt],
+  ["beauty job applicant action createdAt", ListBeautyJobApplicantsResponse.shape.applicants.element.shape.actions.element.shape.createdAt],
+  ["beauty job contact createdAt", ReplyToBeautyJobContactResponse.shape.createdAt],
+  ["beauty job rental request createdAt", ListMyBeautyJobRentalRequestsResponse.shape.requests.element.shape.createdAt],
+  ["beauty job notification createdAt", ListBeautyJobNotificationsResponse.shape.notifications.element.shape.createdAt],
+  ["beauty job report createdAt", GetBeautyJobModerationQueueResponse.shape.reports.element.shape.createdAt],
+  ["beauty job settings updatedAt", GetBeautyJobSettingsResponse.shape.updatedAt],
+  ["beauty job moderation event createdAt", GetBeautyJobAdminPreviewResponse.shape.moderationHistory.element.shape.createdAt],
+  ["beauty job delivery issue createdAt", GetBeautyJobDeliveryIssuesResponse.shape.deliveries.element.shape.createdAt],
+  ["treatment photo createdAt", CreateEmployeeTreatmentPhotoResponse.shape.createdAt],
+  ["employee clockInAt", GetEmployeeClockResponse.shape.entries.element.shape.clockInAt],
+  ["shift swap createdAt", ListEmployeeShiftSwapsResponse.shape.outgoing.element.shape.createdAt],
+] as const) {
+  assertParsesNullTimestamp(schema, label);
+}
+
+const educationB2bOrder = CheckoutEducationB2bOrderResponse.parse({
+  lines: [],
+  subtotalRsd: 0,
+  educationCenterDiscountRsd: 0,
+  payableTotalRsd: 0,
+  benefit: {
+    periodStart: "2026-08-01T00:00:00.000Z",
+    periodEnd: "2026-09-01T00:00:00.000Z",
+    priorMonthSpendRsd: 0,
+    discountPercent: 0,
+    discountReason: "none",
+    amountToNextTierRsd: null,
+    tierId: null,
+    settingsVersion: 1,
+  },
+  id: "order",
+  createdAt: null,
+});
+assert.equal(educationB2bOrder.createdAt, null);
+
+const marketplaceSource = readFileSync(new URL("../routes/marketplace.ts", import.meta.url), "utf8");
+function sourceBetween(start: string, end: string): string {
+  const startIndex = marketplaceSource.indexOf(start);
+  const endIndex = marketplaceSource.indexOf(end, startIndex + start.length);
+  assert.ok(startIndex >= 0 && endIndex > startIndex, `Expected marketplace source bounds: ${start} → ${end}`);
+  return marketplaceSource.slice(startIndex, endIndex);
+}
+
+for (const [name, source] of [
+  ["salon cards", sourceBetween("function card(", "async function salonHasActiveHomeService")],
+  ["public salon review lists", sourceBetween("reviews: reviews.map((item) => {", "router.get(\"/inspiracija\"")],
+  ["education session lists", sourceBetween("async function sessionsForCourse(", "function educationMediaRouteUrl")],
+  ["education review lists", sourceBetween("async function courseReviewViews(", "async function centerPublicView")],
+  ["education course view", sourceBetween("async function educationCourseView(", "async function educationEnrollmentView")],
+  ["education enrollment lists", sourceBetween("async function batchEducationEnrollmentViews(", "async function requireCustomer")],
+  ["retail order lists", sourceBetween("function retailOrderDto(", "async function adminRetailOrderDetail")],
+  ["retail review lists", sourceBetween("async function productReviewViews(", "router.get(\"/shop/public/products\"")],
+  ["retail wishlist", sourceBetween("async function wishlistItemDto(", "router.get(\"/retail/wishlist\"")],
+  ["approval request lists", sourceBetween("function approvalRequestDto(", "router.post(\"/shop/approval-requests\"")],
+  ["owner order lists", sourceBetween("function orderDto(", "function adminOrderDto")],
+  ["education notification lists", sourceBetween("router.get(\"/education/notifications\"", "router.patch(\"/education/notifications/")],
+  ["batch education course lists", sourceBetween("export async function batchEducationCourseViews(", "async function publicCourseCard")],
+  ["education wishlist", sourceBetween("router.get(\"/education/wishlist\"", "router.post(\"/education/wishlist\"")],
+  ["instructor lists", sourceBetween("function instructorProfileView(", "function instructorProfileSummary")],
+  ["education dispute lists", sourceBetween("router.get(\"/education/disputes\"", "router.get(\"/admin/summary\"")],
+  ["education purchase message lists", sourceBetween("router.get(\"/education/purchases/:enrollmentId/messages\"", "router.post(\"/education/purchases/:enrollmentId/messages\"")],
+  ["public retail tracking detail", sourceBetween("function publicTrackingDto(", "async function retailLookupRateLimited")],
+  ["product waitlist detail", sourceBetween("async function productWaitlistStatus(", "async function unsubscribeProductWaitlist")],
+  ["product review mutations", sourceBetween("router.post(\"/shop/products/:productId/reviews\"", "// ── Shipping calculation")],
+  ["courier service detail", sourceBetween("function courierServiceDto(", "function trackingUrlFor")],
+  ["education course mutations", sourceBetween("router.patch(\"/education/courses/:courseId\"", "router.post(\"/education/courses/:courseId/publish\"")],
+  ["education featured detail and mutations", sourceBetween("function featuredChargeView(", "router.patch(\"/education/courses/:courseId/instructor\"")],
+  ["education session creation", sourceBetween("router.post(\"/education/courses/:courseId/sessions\"", "router.post(\"/education/courses/:courseId/enrollments\"")],
+  ["education session updates", sourceBetween("router.patch(\"/education/sessions/:sessionId\"", "router.delete(\"/education/sessions/:sessionId\"")],
+  ["education inquiry mutations", sourceBetween("router.post(\"/education/public/courses/:courseId/inquiries\"", "router.get(\"/education/public/categories\"")],
+  ["education wishlist mutations", sourceBetween("router.post(\"/education/wishlist\"", "router.delete(\"/education/wishlist/:courseId\"")],
+  ["education message mutations", sourceBetween("router.post(\"/education/purchases/:enrollmentId/messages\"", "router.post(\"/education/purchases/:enrollmentId/disputes\"")],
+  ["education dispute mutations", sourceBetween("router.post(\"/education/purchases/:enrollmentId/disputes\"", "router.get(\"/education/disputes\"")],
+  ["admin integration delivery detail", sourceBetween("router.get(\"/admin/sms-deliveries\"", "router.get(\"/admin/integrations\"")],
+  ["admin integration verification mutation", sourceBetween("router.post(\"/admin/integrations/:integration/verify-webhook\"", "router.get(\"/admin/integrations/:integration/webhook-url\"")],
+  ["admin Brevo webhook registration mutation", sourceBetween("router.post(\"/admin/integrations/brevo/register-webhook\"", "router.post(\"/admin/integrations/brevo/cleanup-webhooks\"")],
+  ["admin education settings detail", sourceBetween("function educationSettingsView(", "router.get(\"/admin/education/taxonomy/proposals\"")],
+  ["admin education center detail", sourceBetween("async function adminEducationCenterDetail(", "router.get(\"/admin/education/centers/:centerId\"")],
+  ["admin featured charge mutation", sourceBetween("router.post(\"/admin/education/featured-charges/:chargeId/settle\"", "router.post(\"/admin/education/payouts\"")],
+  ["admin payout mutation response", sourceBetween("res.status(201).json({ id: payout.id", "\n});\n\nrouter.patch(\"/admin/education/disputes")],
+  ["admin dispute mutation response", sourceBetween("res.json({ id: resolution.result.id", "\n});\n\n// Admin: cancel any session")],
+  ["admin salon detail and mutation", sourceBetween("router.get(\"/admin/salons/:salonId\"", "// ── Admin Users")],
+  ["admin account responses", sourceBetween("router.post(\"/admin/customers/setup\"", "router.post(\"/admin/users/:userId/business-conversion\"")],
+  ["admin business conversion mutation", sourceBetween("router.post(\"/admin/users/:userId/business-conversion\"", "type BusinessTransitionRows")],
+  ["admin business transition detail", sourceBetween("function adminBusinessTransitionView(", "router.get(\"/admin/users/:userId/business-role-transition\"")],
+  ["admin user mutation", sourceBetween("router.patch(\"/admin/users/:userId\"", "// ── Admin Loyalty Tiers")],
+  ["admin review mutation", sourceBetween("router.patch(\"/admin/reviews/:reviewId\"", "router.delete(\"/admin/reviews/:reviewId\"")],
+  ["admin product detail", sourceBetween("function adminProductDto(", "async function productTreatmentIds")],
+  ["admin shop settings detail and mutation", sourceBetween("function shopSettingsDto(", "router.get(\"/admin/shipping\"")],
+  ["admin shipping detail and mutation", sourceBetween("router.get(\"/admin/shipping\"", "// ── Admin Courier Service Catalog")],
+]) {
+  assert.doesNotMatch(source, /\.toISOString\(\)/, `${name} must not directly serialize selected timestamps`);
+}
+
+// Route files are the HTTP serialization boundary. Keep every remaining raw
+// toISOString call explicit and reviewed: these are internal date validation,
+// persistence, cursor/key, or document-formatting uses rather than response DTO
+// serialization. Any new call in any route fails until it is replaced with
+// safeIsoTimestamp or deliberately added here after review.
+const approvedInternalIsoReceivers: Record<string, string[]> = {
+  "commerce-ef.ts": ["quote.validUntil"],
+  "education-b2b-discounts.ts": ["period.end", "period.start"],
+  "education-bundle-purchases.ts": ["consentAt", "consentAt"],
+  "education-subscription-billing.ts": ["last.occurredAt"],
+  "growth.ts": ["date"],
+  "marketplace.ts": [
+    "bd", "cancelledAt", "cart.updatedAt", "cart.updatedAt", "d", "d", "date",
+    "fromInstant", "input.occurredAt", "input.occurredAt", "issuedAt",
+    "now", "now", "now", "now", "now", "occurredAt", "occurredAt",
+    "order.invoiceIssuedAt", "parsed", "releaseAt", "result", "toInstant",
+    "updated.updatedAt", "value", "value", "value", "value",
+  ],
+  "media.ts": ["expiresAt"],
+  "phase3.ts": ["parsed"],
+};
+const routesDirectory = new URL("../routes/", import.meta.url);
+for (const fileName of readdirSync(routesDirectory).filter((name) => name.endsWith(".ts")).sort()) {
+  const source = readFileSync(new URL(fileName, routesDirectory), "utf8");
+  const directIsoReceivers = Array.from(source.matchAll(/([\w!.?]+)\.toISOString\(\)/g), (match) => match[1]!).sort();
+  assert.deepEqual(
+    directIsoReceivers,
+    approvedInternalIsoReceivers[fileName] ?? [],
+    `${fileName} introduced or changed a direct toISOString call; response timestamps must use safeIsoTimestamp`,
+  );
+}
+
+process.stdout.write("✓ safe list timestamp serialization regression suite passed\n");

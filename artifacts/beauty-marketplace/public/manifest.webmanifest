@@ -1,0 +1,20 @@
+{
+  "name": "LUMERA — Beauty & Wellness Marketplace",
+  "short_name": "LUMERA",
+  "description": "Termini, saloni, tretmani i edukacije na jednom mestu.",
+  "id": ".",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#8b5e54",
+  "lang": "sr",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

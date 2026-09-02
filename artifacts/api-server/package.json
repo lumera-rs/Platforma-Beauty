@@ -1,0 +1,46 @@
+{
+  "name": "@workspace/api-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
+    "build": "node ./build.mjs",
+    "start": "node --enable-source-maps ./dist/index.mjs",
+    "test:education-gift-refunds": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-sessions.test.ts",
+    "test:education-operational-policy": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-operational-policy.test.ts",
+    "test:education-operational-ui": "pnpm --filter @workspace/scripts exec tsx ../artifacts/beauty-marketplace/src/lib/education-operational-time.test.ts",
+    "test:education-operational-routes": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-operational-routes.test.ts",
+    "test:education-subscription-billing": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-subscription-billing.test.ts",
+    "test:education-online-access-transfer": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-online-access-transfer.test.ts",
+    "typecheck": "tsc --build --force ../../lib/db ../../lib/api-zod && tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@workspace/api-zod": "workspace:*",
+    "@workspace/db": "workspace:*",
+    "@workspace/integrations-anthropic-ai": "workspace:*",
+    "zod": "catalog:",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "drizzle-orm": "catalog:",
+    "express": "^5.2.1",
+    "pdfkit": "^0.19.1",
+    "pino": "^9.14.0",
+    "pino-http": "^10.5.0",
+    "saxes": "^6.0.0",
+    "sharp": "^0.35.3",
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "catalog:",
+    "@types/pdfkit": "^0.17.6",
+    "@types/web-push": "^3.6.4",
+    "esbuild": "0.27.3",
+    "esbuild-plugin-pino": "^2.3.3",
+    "pino-pretty": "^13.1.3",
+    "thread-stream": "3.1.0"
+  }
+}

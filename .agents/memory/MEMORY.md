@@ -1,0 +1,143 @@
+- [Retail cart live announcements](retail-cart-live-announcements.md) — carry server-confirmed counts through a persistent app-shell announcer and cancel stale summary loads first.
+- [Orval and Zod compatibility](orval-zod-compatibility.md) — shared API generation needs Zod v3-safe OpenAPI schemas and a duplicate-export check.
+- [Variant inventory model](variant-inventory-model.md) — variants use either shared product stock or complete, sum-validated per-variant stock.
+- [Social sign-in safety](social-signin-safety.md) — safe provider removal and initiator-bound OAuth linking prevent account loss or switching.
+- [OAuth domain regression fixtures](oauth-domain-regression-fixtures.md) — persisted disabled settings can suppress env fallbacks; isolate and restore rows in domain-change tests.
+- [Integration configuration security](integration-configuration-security.md) — credentials in database settings require deployment-held encryption and approved provider origins.
+- [Employee booking integrity](employee-booking-integrity.md) — service assignments are owner-managed; booking allocation serializes each salon-day to prevent overlapping load-balanced bookings.
+- [Appointment lifecycle integrity](appointment-lifecycle-integrity.md) — one canonical transition layer owns status writes, audit, reversals, notifications, and completion effects.
+- [Generated client declarations](generated-client-declarations.md) — rebuild composite API client declarations before diagnosing missing generated hooks in leaf type checks.
+- [Production API binding](production-api-binding.md) — artifact API servers must bind 0.0.0.0 so deployment health checks can detect their configured port.
+- [Review photo privacy](review-photo-privacy.md) — review avatars stay private by default and reviewers must retain a way to revoke public-photo consent.
+- [Review history freshness](review-history-freshness.md) — browser history and BFCache restoration must revalidate public reviews and customer review eligibility.
+- [Moderated review aggregates](moderated-review-aggregates.md) — every moderator removal must refresh the salon’s public rating and review count atomically.
+- [Discovery ranking consistency](discovery-ranking-consistency.md) — homepage shelves and their directory links must share the same filter, window, and ranking semantics.
+- [Salon audience inference](salon-audience-inference.md) — men’s-service discovery is inferred until the owner sets an explicit audience choice.
+- [Home-service discovery](home-service-discovery.md) — public home-service cards and filters must derive from active service availability, not a redundant salon flag.
+- [Category image delivery](category-image-delivery.md) — client-facing category image references must stay stable while storage access remains short-lived and private.
+- [Carousel breakpoint overrides](carousel-breakpoint-overrides.md) — caller widths must override every shared rail breakpoint to preserve intentional desktop overflow.
+- [Booking calendar mobile sizing](booking-calendar-mobile-sizing.md) — booking-specific DayPicker overrides must preserve its full flex layout before sizing day cells.
+- [Education financial serialization](education-financial-serialization.md) — payouts, disputes, and dispute resolutions must serialize by education center before changing escrow.
+- [Database-clock test boundaries](database-clock-test-boundaries.md) — SQL deadline tests must share PostgreSQL’s clock when JavaScript time is overridden.
+- [Appointment contact privacy](appointment-contact-privacy.md) — exact salon details require ownership of a pending, confirmed, or completed appointment.
+- [Partial expression index publishing](partial-expression-index-publishing.md) — use a generated normalized column for nullable participant keys before partial unique indexing.
+- [Immutable gallery media](immutable-gallery-media.md) — browser uploads must land in staging and be promoted before attachment; private media must disable shared caching.
+- [Managed image attachment](managed-image-attachment.md) — claim leased image assets in the same transaction as the business reference, using only newly supplied fields.
+- [Active salon media publishing](active-salon-media-publishing.md) — only matching owner-uploaded salon media becomes public, and activation must reconcile it transactionally.
+- [EventSource reconnect recovery](eventsource-reconnect-recovery.md) — explicitly reconnect browser streams and rehydrate state after network restoration.
+- [Cache invalidation generations](cache-invalidation-generations.md) — detach pending loads on invalidation so stale in-flight results cannot refill catalog caches.
+- [Cross-process salon alerts](cross-process-salon-alerts.md) — PostgreSQL broadcasts are non-durable wakeups; authenticated refetch and polling remain the source of truth.
+- [Artifact release gates](artifact-release-gates.md) — validation workflows do not block publishing; artifact-mode release checks belong in the root deployment pre-build hook.
+- [Canonical availability ordering](canonical-availability-ordering.md) — rank paginated salon results with the exact availability value shown on each card.
+- [Development schema release gates](development-schema-release-gates.md) — source declarations are insufficient when release checks depend on the live development schema.
+- [Drizzle development schema scope](drizzle-development-schema-scope.md) — keep non-interactive development pushes explicitly limited to the app-owned public schema.
+- [Overlapping optimistic mutations](overlapping-optimistic-mutations.md) — independent snapshots are unsafe for shared caches; serialize operations or maintain a rebaseable operation log.
+- [Multi-location owner billing](multi-location-owner-billing.md) — legacy location loyalty and subscriptions roll up safely while the canonical subscription is pinned per owner.
+- [Tenant isolation proof fixtures](tenant-isolation-proof-fixtures.md) — isolation gates need adversarial cross-relations, same-owner locations, and cleanup assertions.
+- [Sold package entitlement integrity](sold-package-entitlement-integrity.md) — purchased coverage is immutable; booking and cancellation must move sessions atomically.
+- [Automation delivery crash recovery](automation-delivery-crash-recovery.md) — provider sends need leased claims and event-key reconciliation so crashes cannot lose messages.
+- [Provider webhook delivery state](provider-webhook-delivery-state.md) — capability-token webhooks apply monotonic timestamp updates and never touch the worker-owned status column.
+- [Provider coverage observation ordering](provider-coverage-observation-ordering.md) — background coverage checks must apply only their newest successful provider observation.
+- [Production bootstrap schema parity](production-bootstrap-schema-parity.md) — a bootstrap version bump must mirror every merged drizzle column, with legacy ALTERs and rollout-test asserts.
+- [Webhook self-check semantics](webhook-self-check-semantics.md) — synthetic verification events stay unmatched and never count toward delivery-report freshness.
+- [Retention settings write preconditions](retention-settings-write-preconditions.md) — restore truthfulness → 409 version conflict → no-op guard; stale pages must see the conflict first.
+- [Webhook registration verification](webhook-registration-verification.md) — provider-side listing proves registration; compare secrets timing-safe server-side and echo only masked URLs.
+- [Calendar date validation](calendar-date-validation.md) — V8 rolls over impossible ISO dates (2026-02-30 → March 2); YYYY-MM-DD inputs need a round-trip check to reject them explicitly.
+- [DST date-only serialization](dst-date-only-serialization.md) — test positive-offset local dates near spring-forward midnight; UTC serialization can shift the selected day backward.
+- [Campaign attribution buckets](campaign-attribution-buckets.md) — status splits need explicit buckets per status; complement buckets silently misclassify no-shows as upcoming money.
+- [Alert fallback channels](alert-fallback-channels.md) — fallbacks fire only when every attempted primary send failed/skipped, and dedup by embedding the primary alert sequence in the outbox key.
+- [Platform-wide preview guards](platform-wide-preview-guards.md) — admin dry-runs over all tenants must bound rows in memory and enforce the time budget on every step, database-side included.
+- [Versioned form staleness polling](versioned-form-staleness-polling.md) — version polls must never reset in-progress edits, and saves must send the form’s loaded base version, not the live polled one.
+- [Conflict cancellation freshness](conflict-cancellation-freshness.md) — a conflict dialog must not close until cancelled edits are rebased on a confirmed active version.
+- [Compare-window attribution parity](compare-window-attribution-parity.md) — previous-window trend queries must mirror the current-window attribution join exactly, in every endpoint that duplicates it.
+- [Wouter query-string reactivity](wouter-query-string-reactivity.md) — useLocation() tracks only the pathname; query-driven UI must subscribe via useSearch() or same-path ?param navigation never re-renders.
+- [Salon-switch URL continuity](salon-switch-url-continuity.md) — reloads after active-salon changes must preserve browser search and hash, not router pathname alone.
+- [History URL state rehydration](history-url-state-rehydration.md) — restore every query-backed local state field before the URL mirror runs on Back/Forward.
+- [URL-selected entity freshness](history-entity-freshness.md) — revalidate cached details before opening them from shared links or browser history.
+- [Provider repair write selection](provider-repair-write-selection.md) — one-click repair write paths need stateful-fake coverage of which record gets overwritten; verdict softening never guards writes.
+- [Integration settings marker rows](integration-settings-markers.md) — metadata timestamps live in integration_settings but must stay excluded from values/configuredInDatabase.
+- [SPA unsaved-navigation guard](spa-unsaved-navigation-guard.md) — Back/Forward guards must hook history ahead of the router; page-local popstate listeners are removed mid-dispatch on unmount.
+- [SMS fallback audience parity](sms-fallback-audience-parity.md) — reachability warnings must reuse the send path’s exact audience and phone predicate, never a re-derived query.
+- [Retention preview estimate mode](retention-preview-estimate-mode.md) — above the cap the preview extrapolates a flagged sample; never render estimates as exact or extrapolate per-salon numbers.
+- [Stale provider webhook cleanup](stale-provider-webhook-cleanup.md) — deletable sets must be re-derived from a fresh provider listing server-side and refused from dev origins whose secret differs from production.
+- [Admin 4xx error normalization](admin-error-normalizer.md) — admin-route 4xx JSON bodies lose every extra field unless the body already sets a string code itself.
+- [Batched provider event matching](batched-provider-event-matching.md) — batch only the reference→key lookup per webhook batch; state application stays per-event guarded and monotonic.
+- [URL restore picker parity](url-restore-picker-parity.md) — state restored from shared links must obey the same constraints the UI picker enforces; clamp to the reachable boundary or fall back.
+- [Retail checkout quote refresh](retail-checkout-quote-refresh.md) — one stable conflict code covers price, delivery, and availability changes so clients can safely replace stale totals.
+- [Shipping rule row order](shipping-rule-row-order.md) — the retail shipping config is an unordered first-row read; extra shipping_rules rows make checkout and its browser fixtures order-dependent.
+- [PDFKit footer pagination](pdfkit-footer-pagination.md) — writing buffered-page footers below PDFKit’s active margin can create blank pages and false page totals.
+- [Retail cart summary safety](retail-cart-summary-safety.md) — passive cart indicators must never create empty carts or poll them globally.
+- [Drizzle expression indexes](drizzle-expression-indexes.md) — raw expression indexes need their own parentheses, and disposable schema setup must reject reported SQL errors.
+- [Drizzle unique-index parity](drizzle-unique-index-parity.md) — align named unique indexes with ORM declarations to avoid destructive push proposals.
+- [Background scheduler recovery](background-scheduler-recovery.md) — retry stays process-local and bounded; job-level leases and idempotency remain the durable source of truth.
+- [Admin summary snapshot consistency](admin-summary-snapshot-consistency.md) — aggregate dashboards need one repeatable-read transaction and a post-snapshot barrier for deterministic race coverage.
+- [Admin aggregate scan budgets](admin-aggregate-scan-budgets.md) — query-count reductions must not rescan one growing table per metric; budget relation scans too.
+- [DayPicker initial range semantics](daypicker-initial-range-semantics.md) — range mode emits a same-day complete range on first click unless the application preserves it as an in-progress start.
+- [Integration settings concurrency](integration-settings-concurrency.md) — return each provider’s values and version from one snapshot, then serialize first and later saves by provider.
+- [Isolated process recovery](isolated-process-recovery.md) — target marker-owned child groups and report malformed manifests after valid sibling cleanup.
+- [Index-first exact searches](index-first-exact-searches.md) — split canonical exact terms from broad OR searches so the indexed relation drives the normal plan.
+- [URL numeric filter absence](url-numeric-filter-absence.md) — missing numeric query parameters must stay absent instead of silently becoming zero.
+- [Rental booking serialization](rental-booking-serialization.md) — derive slot invariants from listing state reread under listing→slot locks.
+- [Production demo content isolation](production-demo-content-isolation.md) — production demos must be dedicated, marker-owned records seeded atomically under a cross-instance lock.
+- [Listing audience enforcement](listing-audience-enforcement.md) — audience restrictions must cover discovery, detail, saved retrieval, and every interaction-by-ID path.
+- [Terminal detail query deduplication](terminal-detail-query-deduplication.md) — metadata fetches and auth-gated query enablement must reuse terminal 4xx state.
+- [Applicant decision path integrity](applicant-decision-path-integrity.md) — terminal candidate decisions stay immutable and auditable through every legacy and current write path.
+- [Private routes and public SEO matchers](private-route-seo-matchers.md) — exclude private namespaces before broad public-detail metadata patterns run.
+- [Published enum renames](published-enum-renames.md) — live enum labels need an additive compatibility publish before the obsolete label can be removed safely.
+- [Vite unknown runtime overlays](vite-unknown-runtime-overlays.md) — first distinguish resource-style window errors from real JavaScript exceptions before changing app code.
+- [Referral compensation accounting](referral-compensation-accounting.md) — fraud reversal targets consumed, unrestored value; expired or unused entitlement must never become debt.
+- [Supplier catalog write serialization](supplier-catalog-write-serialization.md) — supplier scope, product channels, merchandising links, and checkout eligibility share lock boundaries.
+- [Replay-safe additive DDL](replay-safe-additive-ddl.md) — historical guards must accept the final schema’s newer nullable/discriminated rows on every startup replay.
+- [Generated API error guard coverage](generated-api-error-guard-coverage.md) — discover production client imports dynamically and keep native Response handling outside generated-error paths.
+- [Referral discount stacking](referral-discount-stacking.md) — referral credit applies only to clean full-price lines; any other positive discount blocks the whole line.
+- [Deterministic FK default seeds](deterministic-fk-default-seeds.md) — fixed parent UUID defaults need recoverable seeds and explicit tenant-scoped child IDs.
+- [Public commerce route parity](public-commerce-route-parity.md) — shadow handlers and nested cards must share canonical eligibility, POR, inventory, and response semantics.
+- [Bundle shipping weight parity](bundle-shipping-weight-parity.md) — preview and locked checkout must derive bundle weight from components without expanding public cart DTOs.
+- [Loyalty settled-spend eligibility](loyalty-settled-spend-eligibility.md) — count paid delivered orders and delivered unpaid COD only; B2B qualification rolls up per owner.
+- [Aftercare attribution evidence](aftercare-attribution-evidence.md) — conversion needs immutable order-item evidence; zero-discount premade offers remain attributable.
+- [Per-table immutable triggers](per-table-immutable-triggers.md) — different table shapes need separate trigger functions; recorded bad rollouts need a new repair version.
+- [Employee location context](employee-location-context.md) — every employee portal and commerce flow resolves location from the same active assignment, never the legacy profile salon.
+- [Availability branch preloading](availability-branch-preloading.md) — combinatorial previews reuse one request-scoped data snapshot while rerunning the canonical engine per branch.
+- [Availability window completeness](availability-window-completeness.md) — an empty calendar day is authoritative only when the server response cannot truncate earlier in the window.
+- [Employee schedule weekdays](employee-schedule-weekdays.md) — location schedule fixtures use ISO weekdays 1–7; zero-based days silently trigger fallback availability.
+- [Grouped booking mutation boundary](grouped-booking-mutation-boundary.md) — every legacy single-item mutation must defer to the canonical group layout boundary.
+- [Web Push trust boundaries](web-push-trust-boundaries.md) — validate provider endpoints, VAPID key pairs, source freshness, and scope-relative links before offline delivery.
+- [pg-pool acquisition deadlines](pg-pool-acquisition-deadlines.md) — connectionTimeoutMillis also limits queued checkout of existing clients, not just new connections.
+- [Deployment runtime detection](deployment-runtime-detection.md) — destructive harnesses need layered deployment guards; REPLIT_ENVIRONMENT alone is not authoritative.
+- [Capacity harness serving boundary](capacity-harness-serving-boundary.md) — measure real request routes without unrelated production schedulers or startup seeders.
+- [Booking overload admission](booking-overload-admission.md) — bound every booking creator as one workload; capacity 429s belong in the full-arrival latency objective.
+- [Booking response outbox](booking-response-outbox.md) — persist required communication rows in the booking transaction, then deliver asynchronously off the response path.
+- [Durable booking command replay](durable-booking-command-replay.md) — receipt, booking, and required outbox share one transaction; load arrivals use unique keys unless testing replay.
+- [Product demo identity isolation](product-demo-identity-isolation.md) — authorization regressions use exact-ID marker fixtures and never borrow product-facing demo accounts.
+- [OpenAPI closed-object runtime](openapi-closed-object-runtime.md) — exact request shapes need raw-input checks when generated validators strip unknown keys.
+- [Business relation mutation locks](business-relation-mutation-locks.md) — lock shared resources before participating accounts, and keep read-only planning snapshots free of row locks.
+- [Education placement lifecycle](education-placement-lifecycle.md) — paid slots use scoped targets, bounded holds, immutable terms, and Belgrade calendar-day activation.
+- [Education related-course normalization](education-related-course-normalization.md) — canonical Unicode tag matching must run before global ranking and limiting.
+- [Education course review aggregates](education-course-review-aggregates.md) — single and batch course serializers must share published-review enrichment before contract parsing.
+- [SSR API response shape parity](ssr-api-response-shape-parity.md) — untyped server renderers and fixtures must consume the exact OpenAPI response shape.
+- [Education learner identity boundary](education-learner-identity-boundary.md) — booking purchasers manage seats and payments but never impersonate named learners.
+- [Education group mutation invariant](education-group-reschedule-invariant.md) — reschedule or cancel a multi-seat group together unless finances split atomically per seat.
+- [Education fixed-session compatibility](education-fixed-session-compatibility.md) — legacy fixed sessions remain bookable before educator assignments are backfilled.
+- [Education waitlist payment promotion](education-waitlist-payment-promotion.md) — settled waitlisted seats carry money state but gain learner access only on promotion.
+- [Education completion gate ordering](education-completion-gate-ordering.md) — lessons and attendance reconcile one live completion state regardless of arrival order.
+- [Education recurrence semantics](education-recurrence-semantics.md) — availability grid starts are alternatives; recurrence commits only fixed non-overlapping occurrences.
+- [Education minimum-enrollment scheduler](education-minimum-enrollment-scheduler.md) — recheck future-session eligibility under lock with the database clock before auto-cancellation.
+- [Featured placement payment](featured-placement-payment.md) — salon IPS QR was never historical; future paid placements share one pending-charge/manual-confirmation flow.
+- [Instructor public rating semantics](instructor-public-rating-semantics.md) — instructor ratings are weighted across published reviews of eligible public courses, never averaged course averages.
+- [Education absence assignment invariant](education-absence-assignment-invariant.md) — absences and educator assignments must reject each other under one schedule-lock protocol.
+- [Idempotent outcome analytics](idempotent-outcome-analytics.md) — count an outcome only when the server confirms that request performed the state transition.
+- [Capability-scoped background requests](capability-scoped-background-requests.md) — gate polling, realtime streams, links, and direct routes by the server capability they consume.
+- [Cross-role auth cache replacement](cross-role-auth-cache-replacement.md) — replace cached current-user data before redirecting after login or registration.
+- [Education bundle purchase boundary](education-bundle-purchase-boundary.md) — one immutable parent charge owns bundle finance; course enrollments only project access.
+- [Payment account environments](payment-account-environments.md) — account classification is explicit; production accounts work only in a confirmed published production runtime.
+- [Online education entitlement boundaries](online-education-entitlement-boundaries.md) — snapshot every issuance path and enforce expiry on every private read, write, transfer, and certificate path.
+- [Subscription tier snapshot integrity](subscription-tier-snapshot-integrity.md) — classify and price plan changes from frozen subscriber terms; split shared legacy plans before audience relabeling.
+- [Education trial identity claims](education-trial-identity-claims.md) — trial evidence is append-only and survives account deletion; duplicate signup may continue only without a new trial.
+- [Education explicit reactivation](education-explicit-reactivation-boundary.md) — payment or contract changes never bypass owner course choice and audited super-admin reactivation.
+- [Education finance admin boundary](education-finance-admin-boundary.md) — administrative Education money mutations are SUPER_ADMIN-only before input or entity inspection.
+- [Radix checkbox browser tests](radix-checkbox-browser-tests.md) — exercise role=checkbox buttons with click plus state assertions, not native-input check helpers.
+- [Grouped CAMT transaction identity](grouped-camt-transaction-identity.md) — grouped entries resolve IDs and amounts per transaction detail, never from a shared batch identifier.
+- [Bank API legal-entity scope](bank-api-legal-entity-scope.md) — never infer a Serbian bank API contract from group-level or another country’s developer portal.
+- [User-facing timestamp serialization](user-facing-timestamp-serialization.md) — audit both single and batch list DTOs; one invalid database date must degrade only its field.
+- [pnpm workspace config preservation](pnpm-workspace-config-preservation.md) — project-level pnpm config commands can rewrite the workspace manifest and invalidate lockfile catalogs.
+- [GitHub default-branch rulesets](github-default-branch-ruleset.md) — target `~DEFAULT_BRANCH` with an active required-check ruleset when classic protection cannot cover an uncreated branch.

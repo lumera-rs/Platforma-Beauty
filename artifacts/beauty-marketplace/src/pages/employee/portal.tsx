@@ -1,0 +1,1245 @@
+import { type ComponentProps, type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { useLocation, Link } from "wouter";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
+import { BusinessLayout } from "@/components/business-layout";
+import { GuideHelpLink } from "@/components/guide-help-link";
+import { PasswordInput } from "@/components/password-input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Calendar, CalendarDayButton } from "@/components/ui/calendar";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
+import {
+  CalendarDays,
+  CheckCircle2,
+  Clock3,
+  ImagePlus,
+  Loader2,
+  Pencil,
+  Plus,
+  Repeat2,
+  Trash2,
+  UserRound,
+  XCircle,
+  TrendingUp,
+  DollarSign,
+  Star,
+  ShoppingBag,
+} from "lucide-react";
+import { toast } from "sonner";
+import {
+  getGetCurrentUserQueryKey,
+  getGetEmployeeClockQueryKey,
+  getApiErrorDetails,
+  getApiErrorMessage,
+  customFetch,
+  getListEmployeeAppointmentTreatmentPhotosQueryKey,
+  getListEmployeeShiftSwapsQueryKey,
+  useCancelEmployeeShiftSwap,
+  useCancelBookingGroup,
+  useCreateEmployeeShiftSwap,
+  useCreateEmployeeTreatmentPhoto,
+  useEmployeeClockIn,
+  useEmployeeClockOut,
+  useEmployeeGetMyPerformance,
+  useGetCurrentUser,
+  useGetEmployeeClock,
+  useListEmployeeAppointmentTreatmentPhotos,
+  useListEmployeeShiftSwaps,
+  useRespondEmployeeShiftSwap,
+  useListEmployeeAssignedLocations,
+  useSelectEmployeeActiveLocation,
+  getListEmployeeAssignedLocationsQueryKey,
+  useCreateEmployeeBookingGroup,
+  useSearchEmployeeAvailability,
+  getSearchEmployeeAvailabilityQueryKey,
+  type SearchEmployeeAvailabilityParams,
+} from "@workspace/api-client-react";
+import { AvatarImage } from "@/components/optimized-image";
+import { AppointmentGeneralNote, AppointmentLifecyclePanel, AppointmentTimingNotice, NoShowNotice } from "@/components/appointment-lifecycle-panel";
+import { InternalStaffAvailabilityPicker } from "@/components/booking/internal-staff-availability-picker";
+import {
+  createEmployeeLeaveDraft,
+  formatEmployeeLeaveRequestSummary,
+  type EmployeeLeaveRequest,
+} from "@/lib/employee-leave";
+import { uploadOptimizedImage } from "@/lib/media-upload";
+import { format, subDays, startOfMonth, endOfMonth, endOfDay } from "date-fns";
+
+type Appointment = {
+  id: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  bookingGroupId: string | null;
+  seriesId: string | null;
+  status: "pending" | "confirmed" | "completed" | "cancelled" | "no-show";
+  notes: string | null;
+  serviceName: string;
+  customerName: string;
+  customerPhone: string | null;
+  allocatedResources?: { resourceId: string; resourceName: string; quantity: number }[];
+  plannedEndTime?: string | null;
+  arrivedAt?: string | null;
+  actualStartedAt?: string | null;
+  actualCompletedAt?: string | null;
+  confirmedAt?: string | null;
+  cancelledAt?: string | null;
+  completedAt?: string | null;
+  noShowAt?: string | null;
+};
+
+type Portal = {
+  salon: { name: string };
+  employee: { id: string; name: string; role: string; bio: string; avatarUrl: string; email: string; phone: string | null };
+  appointments: Appointment[];
+  clients: { id: string; firstName: string; lastName: string; phone: string | null }[];
+  services: { id: string; name: string; durationMinutes: number }[];
+  schedule: { id: string; weekday: number; startTime: string; endTime: string; breakStart: string | null; breakEnd: string | null }[];
+  timeOff: { id: string; from: string; to: string; reason: string }[];
+  leaveRequests: EmployeeLeaveRequest[];
+  notifications: { id: string; title: string; date: string; createdAt: string }[];
+  stats: { week: number; month: number; completed: number; noShow: number };
+};
+
+type Slot = { date: string; startTime: string };
+
+type GroupTreatment = Slot & { serviceId: string };
+const weekdays = ["Ponedeljak", "Utorak", "Sreda", "Četvrtak", "Petak", "Subota", "Nedelja"];
+const statusLabel: Record<Appointment["status"], string> = {
+  pending: "Na čekanju",
+  confirmed: "Potvrđen",
+  completed: "Završen",
+  cancelled: "Otkazan",
+  "no-show": "Nije došao",
+};
+const statusClasses: Record<Appointment["status"], string> = {
+  pending: "border-amber-200 bg-amber-50 text-amber-800",
+  confirmed: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  completed: "border-slate-200 bg-slate-100 text-slate-700",
+  cancelled: "border-rose-200 bg-rose-50 text-rose-800",
+  "no-show": "border-red-200 bg-red-50 text-red-800",
+};
+
+function dateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function dateAtUtcNoon(value: string) {
+  return new Date(`${value}T12:00:00.000Z`);
+}
+
+function appointmentDateKey(value: string) {
+  return value.slice(0, 10);
+}
+
+function shortDateLabel(value: string) {
+  return dateAtUtcNoon(value).toLocaleDateString("sr-RS", { day: "numeric", month: "short" });
+}
+
+function dateLabel(value: string) {
+  return dateAtUtcNoon(value).toLocaleDateString("sr-RS", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function today() {
+  return dateKey(new Date());
+}
+
+function recurringSlots(first: Slot, rule: string, count: number): Slot[] {
+  const start = new Date(`${first.date}T12:00:00Z`);
+  return Array.from({ length: Math.max(1, Math.min(24, count)) }, (_, index) => {
+    const date = new Date(start);
+    if (rule === "weekly") date.setUTCDate(date.getUTCDate() + index * 7);
+    else if (rule === "biweekly") date.setUTCDate(date.getUTCDate() + index * 14);
+    else if (rule === "monthly") date.setUTCMonth(date.getUTCMonth() + index);
+    else date.setUTCDate(date.getUTCDate() + index * (rule === "every-2-days" ? 2 : rule === "every-3-days" ? 3 : 1));
+    return { date: date.toISOString().slice(0, 10), startTime: first.startTime };
+  });
+}
+
+function AppointmentDayButton({ day, modifiers, className, ...props }: ComponentProps<typeof CalendarDayButton>) {
+  const hasAppointments = Boolean(modifiers.hasAppointments);
+  return (
+    <CalendarDayButton
+      {...props}
+      day={day}
+      modifiers={modifiers}
+      className={cn(
+        "min-h-[--cell-size] rounded-xl border border-transparent py-1.5 transition-all hover:border-primary/30 hover:bg-primary/5",
+        modifiers.today && "border-primary/40 bg-primary/5",
+        className,
+      )}
+    >
+      <span className="!text-base !font-semibold !opacity-100">{day.date.getDate()}</span>
+      <span
+        aria-hidden="true"
+        className={cn(
+          "mt-1 h-1.5 w-1.5 rounded-full bg-transparent",
+          hasAppointments && "bg-primary",
+          modifiers.selected && hasAppointments && "bg-primary-foreground",
+        )}
+      />
+    </CalendarDayButton>
+  );
+}
+
+async function api<T>(url: string, init?: RequestInit): Promise<T> {
+  try {
+    return await customFetch<T>(url, {
+      credentials: "include",
+      responseType: "json",
+      ...init,
+      headers: { "content-type": "application/json", ...init?.headers },
+    });
+  } catch (error) {
+    throw new Error(getApiErrorMessage(
+      error,
+      error instanceof Error ? error.message : "Radnja nije uspela.",
+    ));
+  }
+}
+
+export function EmployeePasswordChange() {
+  const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const save = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (password.length < 8) {
+      toast.error("Lozinka mora imati najmanje 8 karaktera.");
+      return;
+    }
+    if (password !== confirm) {
+      toast.error("Lozinke se ne podudaraju.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api("/api/auth/change-password", { method: "POST", body: JSON.stringify({ newPassword: password }) });
+      await queryClient.refetchQueries({ queryKey: getGetCurrentUserQueryKey() });
+      toast.success("Lozinka je promenjena.");
+      setLocation("/zaposleni");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Promena lozinke nije uspela.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <BusinessLayout>
+      <div className="container mx-auto flex max-w-lg flex-1 items-center px-4 py-12">
+        <Card className="w-full">
+          <CardHeader>
+            <CardTitle>Postavite svoju lozinku</CardTitle>
+            <p className="text-sm text-muted-foreground">Radi bezbednosti, privremenu lozinku morate promeniti pre pristupa portalu.</p>
+          </CardHeader>
+          <CardContent>
+            <form className="space-y-4" onSubmit={save}>
+              <div>
+                <Label>Nova lozinka</Label>
+                <PasswordInput className="mt-1" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} />
+              </div>
+              <div>
+                <Label>Ponovite lozinku</Label>
+                <PasswordInput className="mt-1" autoComplete="new-password" value={confirm} onChange={(event) => setConfirm(event.target.value)} />
+              </div>
+              <Button className="w-full" type="submit" disabled={saving}>
+                {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Sačuvaj novu lozinku
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    </BusinessLayout>
+  );
+}
+
+function EmployeePerformanceTab() {
+  const { data: userResp } = useGetCurrentUser();
+  const [dateRange, setDateRange] = useState<"this_month" | "last_month" | "last_30">("this_month");
+
+  const rangeParams = useMemo(() => {
+    const today = new Date();
+    let startDate, endDate;
+
+    if (dateRange === "this_month") {
+      startDate = startOfMonth(today);
+      endDate = endOfDay(today);
+    } else if (dateRange === "last_month") {
+      const lastMonth = subDays(startOfMonth(today), 1);
+      startDate = startOfMonth(lastMonth);
+      endDate = endOfMonth(lastMonth);
+    } else {
+      startDate = subDays(today, 30);
+      endDate = endOfDay(today);
+    }
+
+    return {
+      from: format(startDate, 'yyyy-MM-dd'),
+      to: format(endDate, 'yyyy-MM-dd')
+    };
+  }, [dateRange]);
+
+  const { data: perf, isLoading } = useEmployeeGetMyPerformance(
+    rangeParams,
+    {
+      query: {
+        enabled: !!userResp?.user,
+        queryKey: ['employee-my-performance', rangeParams.from, rangeParams.to]
+      }
+    }
+  );
+
+  if (isLoading) return <div className="p-12 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
+  if (!perf) return null;
+
+  return (
+    <Card className="overflow-hidden border-primary/10 shadow-md h-full flex flex-col">
+      <CardHeader className="border-b bg-card px-5 py-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-primary" /> Moje Performanse
+            <GuideHelpLink sectionId="za-performanse" label="Moje performanse" />
+          </CardTitle>
+          <select
+            className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground"
+            value={dateRange}
+            onChange={e => setDateRange(e.target.value as any)}
+          >
+            <option value="this_month">Ovaj mesec</option>
+            <option value="last_month">Prošli mesec</option>
+            <option value="last_30">Poslednjih 30 dana</option>
+          </select>
+        </div>
+      </CardHeader>
+      <CardContent className="p-5 space-y-6 flex-1 bg-muted/10">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="bg-background border p-4 rounded-xl shadow-sm text-center">
+            <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Odrađeno tretmana</p>
+            <p className="text-3xl font-bold mt-2">{perf.completedAppointments}</p>
+          </div>
+          <div className="bg-background border p-4 rounded-xl shadow-sm text-center">
+            <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider flex items-center justify-center gap-1"><Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" /> Prosečna ocena</p>
+            <p className="text-3xl font-bold mt-2">
+              {perf.reviewCount > 0 ? (perf.averageRating / 10).toFixed(1) : "Nema"}
+            </p>
+            {perf.reviewCount > 0 && <p className="text-[10px] text-muted-foreground mt-1">na osnovu {perf.reviewCount} recenzija</p>}
+          </div>
+        </div>
+
+        <div className="bg-orange-50 border border-orange-200 p-5 rounded-xl shadow-sm">
+          <div className="flex items-center gap-2 text-sm font-semibold text-orange-800 mb-2">
+            <DollarSign className="w-4 h-4" /> Procenjena provizija
+          </div>
+          <p className="text-4xl font-bold text-orange-900">{perf.estimatedCommission.toLocaleString()} RSD</p>
+          <p className="text-xs text-orange-700/80 mt-2">
+            Na osnovu pravila: {perf.commissionType === 'percent_of_revenue' ? `${perf.commissionPercent}% od prihoda` : `${perf.fixedAmountInDinars} RSD po tretmanu`}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 bg-background border p-4 rounded-xl shadow-sm">
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Ukupan prihod od termina</p>
+            <p className="font-bold">{perf.totalRevenue.toLocaleString()} RSD</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Rebooking rate</p>
+            <p className="font-bold">{Math.round(perf.rebookingRate * 100)}%</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+const swapStatusLabel: Record<string, string> = {
+  pending_colleague: "Čeka kolegu",
+  colleague_declined: "Kolega je odbio",
+  pending_owner: "Čeka odobrenje vlasnika",
+  owner_declined: "Vlasnik je odbio",
+  approved: "Odobreno",
+  cancelled: "Otkazano",
+};
+
+function EmployeeOperations() {
+  const queryClient = useQueryClient();
+  const clock = useGetEmployeeClock({ query: { queryKey: getGetEmployeeClockQueryKey(), refetchInterval: 60_000 } });
+  const swaps = useListEmployeeShiftSwaps({ query: { queryKey: getListEmployeeShiftSwapsQueryKey() } });
+  const clockIn = useEmployeeClockIn();
+  const clockOut = useEmployeeClockOut();
+  const createSwap = useCreateEmployeeShiftSwap();
+  const respondSwap = useRespondEmployeeShiftSwap();
+  const cancelSwap = useCancelEmployeeShiftSwap();
+  const [targetEmployeeId, setTargetEmployeeId] = useState("");
+  const [swapDate, setSwapDate] = useState(today());
+  const [swapNote, setSwapNote] = useState("");
+  const visibleSwaps = [
+    ...(swaps.data?.incoming ?? []).map((request) => ({ request, incoming: true })),
+    ...(swaps.data?.outgoing ?? []).map((request) => ({ request, incoming: false })),
+  ];
+  const refreshClock = () => queryClient.invalidateQueries({ queryKey: getGetEmployeeClockQueryKey() });
+  const refreshSwaps = () => queryClient.invalidateQueries({ queryKey: getListEmployeeShiftSwapsQueryKey() });
+  const actClock = (clockInNow: boolean) => {
+    (clockInNow ? clockIn : clockOut).mutate(undefined, {
+      onSuccess: () => { toast.success(clockInNow ? "Smena je započeta." : "Smena je završena."); void refreshClock(); },
+      onError: (error) => toast.error(error instanceof Error ? error.message : "Akcija nije uspela."),
+    });
+  };
+  const submitSwap = (event: FormEvent) => {
+    event.preventDefault();
+    if (!targetEmployeeId) return;
+    createSwap.mutate({ data: { targetEmployeeId, swapDate, note: swapNote.trim() || null } }, {
+      onSuccess: () => { toast.success("Predlog za zamenu je poslat kolegi."); setTargetEmployeeId(""); setSwapNote(""); void refreshSwaps(); },
+      onError: (error) => toast.error(error instanceof Error ? error.message : "Predlog nije poslat."),
+    });
+  };
+  return (
+    <div className="grid gap-6 lg:grid-cols-2" data-testid="employee-operations">
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Clock3 className="h-5 w-5 text-primary" />Evidencija radnog vremena <GuideHelpLink sectionId="za-radno-vreme" label="Evidencija radnog vremena" /></CardTitle><CardDescription>{clock.data?.openEntry ? "Smena je trenutno otvorena." : "Počnite smenu kada započnete rad."}</CardDescription></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg bg-muted/50 p-3"><p className="text-xs text-muted-foreground">Ove nedelje</p><p className="mt-1 text-xl font-bold">{Math.floor((clock.data?.weekMinutes ?? 0) / 60)} h {(clock.data?.weekMinutes ?? 0) % 60} min</p></div>
+            <div className="rounded-lg bg-muted/50 p-3"><p className="text-xs text-muted-foreground">Ovog meseca</p><p className="mt-1 text-xl font-bold">{Math.floor((clock.data?.monthMinutes ?? 0) / 60)} h {(clock.data?.monthMinutes ?? 0) % 60} min</p></div>
+          </div>
+          <Button className="w-full" onClick={() => actClock(!clock.data?.openEntry)} disabled={clockIn.isPending || clockOut.isPending} data-testid="employee-clock-action">
+            {(clockIn.isPending || clockOut.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{clock.data?.openEntry ? "Završi smenu" : "Započni smenu"}
+          </Button>
+          <div className="space-y-2">
+            {(clock.data?.entries ?? []).slice(0, 4).map((entry) => <div key={entry.id} className="flex justify-between border-t pt-2 text-xs"><span>{entry.clockInAt ? <>{format(new Date(entry.clockInAt), "d. MMM · HH:mm")}–{entry.clockOutAt ? format(new Date(entry.clockOutAt), "HH:mm") : "u toku"}</> : "—"}</span><span className="text-muted-foreground">{entry.editedByOwner ? "korigovao vlasnik" : entry.durationMinutes == null ? "" : `${entry.durationMinutes} min`}</span></div>)}
+          </div>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2 text-lg">Zamena smene <GuideHelpLink sectionId="za-zamene" label="Zamena smene" /></CardTitle><CardDescription>Predložite kolegi; salon odobrava tek po prihvatanju kolege.</CardDescription></CardHeader>
+        <CardContent className="space-y-4">
+          <form onSubmit={submitSwap} className="grid gap-2 sm:grid-cols-[1fr_150px_auto]">
+            <select value={targetEmployeeId} onChange={(event) => setTargetEmployeeId(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm" required data-testid="swap-colleague-select"><option value="">Izaberite kolegu</option>{swaps.data?.colleagues.map((colleague) => <option key={colleague.id} value={colleague.id}>{colleague.name}</option>)}</select>
+            <Input type="date" min={today()} value={swapDate} onChange={(event) => setSwapDate(event.target.value)} data-testid="swap-date" />
+            <Button type="submit" disabled={createSwap.isPending} data-testid="swap-create">Predloži</Button>
+            <Input className="sm:col-span-3" placeholder="Napomena (opciono)" value={swapNote} onChange={(event) => setSwapNote(event.target.value)} data-testid="swap-note" />
+          </form>
+          <div className="space-y-2">
+            {visibleSwaps.slice(0, 5).map(({ request, incoming }) => <div key={request.id} className="rounded-lg border p-3 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">{request.requesterName} ↔ {request.targetName} · {request.swapDate}</span><Badge variant={request.status === "pending_owner" ? "default" : "secondary"}>{swapStatusLabel[request.status]}</Badge></div>{request.note && <p className="mt-1 text-xs text-muted-foreground">{request.note}</p>}{incoming && request.status === "pending_colleague" && <div className="mt-2 flex gap-2"><Button size="sm" onClick={() => respondSwap.mutate({ requestId: request.id, data: { accept: true } }, { onSuccess: refreshSwaps, onError: () => toast.error("Odgovor nije sačuvan.") })} data-testid={`swap-accept-${request.id}`}>Prihvati</Button><Button size="sm" variant="outline" onClick={() => respondSwap.mutate({ requestId: request.id, data: { accept: false } }, { onSuccess: refreshSwaps, onError: () => toast.error("Odgovor nije sačuvan.") })} data-testid={`swap-decline-${request.id}`}>Odbij</Button></div>}{!incoming && request.status === "pending_colleague" && <Button size="sm" variant="ghost" className="mt-2" onClick={() => cancelSwap.mutate({ requestId: request.id }, { onSuccess: refreshSwaps, onError: () => toast.error("Zahtev nije otkazan.") })} data-testid={`swap-cancel-${request.id}`}>Otkaži moj zahtev</Button>}</div>)}
+            {!swaps.data?.incoming.length && !swaps.data?.outgoing.length && <p className="text-sm text-muted-foreground">Još nema zahteva za zamenu.</p>}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function EmployeeShopping() {
+  const queryClient = useQueryClient();
+  const { data: requests, isLoading } = useQuery({
+    queryKey: ["employee-approval-requests"],
+    queryFn: async () => {
+      const res = await fetch("/api/shop/approval-requests/mine", { credentials: "include" });
+      if (!res.ok) throw new Error("Neuspešno učitavanje zahteva");
+      return res.json() as Promise<any[]>;
+    }
+  });
+
+  return (
+    <Card className="h-full">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <ShoppingBag className="h-5 w-5 text-primary" /> Prodavnica i nabavka
+        </CardTitle>
+        <CardDescription>Pristupite B2B prodavnici i pratite status zahteva za kupovinu koje ste poslali vlasniku.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Button asChild className="w-full">
+          <Link href="/vlasnik/shop">Otvori B2B prodavnicu</Link>
+        </Button>
+        <div className="space-y-3 pt-2">
+          <h3 className="font-semibold text-sm border-b pb-2">Vaši zahtevi za kupovinu</h3>
+          {isLoading ? (
+            <Loader2 className="animate-spin w-5 h-5 mx-auto mt-4 text-primary" />
+          ) : requests?.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4 bg-muted/20 rounded-md">Nemate nedavnih zahteva.</p>
+          ) : (
+            <div className="space-y-3 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
+              {requests?.map((req: any) => (
+                <div key={req.id} className="text-sm p-3 border rounded-lg hover:bg-muted/10 transition-colors">
+                  <div className="flex justify-between items-center mb-1.5">
+                    <span className="font-semibold">Zahtev #{req.id.slice(0, 8)}</span>
+                    <Badge variant={req.status === 'PENDING' ? 'secondary' : req.status === 'APPROVED' ? 'default' : 'destructive'}>
+                      {req.status === 'PENDING' ? 'Na čekanju' : req.status === 'APPROVED' ? 'Odobreno' : req.status === 'REJECTED' ? 'Odbijeno' : 'Isteklo'}
+                    </Badge>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground text-xs">
+                    <span>{req.lines?.length || 0} stavki</span>
+                    <span>{new Date(req.createdAt).toLocaleDateString('sr-RS')}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CompletedAppointmentPhotos({ appointmentId }: { appointmentId: string }) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [kind, setKind] = useState<"before" | "after">("before");
+  const [consent, setConsent] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const photos = useListEmployeeAppointmentTreatmentPhotos(appointmentId, { query: { enabled: open, queryKey: getListEmployeeAppointmentTreatmentPhotosQueryKey(appointmentId) } });
+  const createPhoto = useCreateEmployeeTreatmentPhoto();
+  const submit = async () => {
+    if (!file || !consent) return;
+    try {
+      const asset = await uploadOptimizedImage(file, "treatment-photo");
+      createPhoto.mutate({ appointmentId, data: { kind, url: asset.imageUrl, consentConfirmed: true } }, {
+        onSuccess: () => { toast.success("Fotografija je sačuvana u CRM profilu klijenta."); setFile(null); setConsent(false); void queryClient.invalidateQueries({ queryKey: getListEmployeeAppointmentTreatmentPhotosQueryKey(appointmentId) }); },
+        onError: (error) => toast.error(error instanceof Error ? error.message : "Fotografija nije sačuvana."),
+      });
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Otpremanje nije uspelo."); }
+  };
+  return <div className="mt-3"><Button size="sm" variant="outline" onClick={() => setOpen(true)} data-testid={`treatment-photos-${appointmentId}`}><ImagePlus className="mr-1 h-3.5 w-3.5" />Pre/posle fotografije</Button><Dialog open={open} onOpenChange={setOpen}><DialogContent><DialogHeader><DialogTitle>Fotografije tretmana</DialogTitle></DialogHeader><div className="space-y-4"><div className="grid grid-cols-2 gap-3">{photos.data?.map((photo) => <img key={photo.id} className="aspect-square w-full rounded-md object-cover" src={photo.url} alt={photo.kind === "before" ? "Pre tretmana" : "Posle tretmana"} />)}</div><div><Label>Vrsta</Label><select className="mt-1 h-10 w-full rounded-md border bg-background px-3" value={kind} onChange={(event) => setKind(event.target.value as "before" | "after")}><option value="before">Pre tretmana</option><option value="after">Posle tretmana</option></select></div><Input type="file" accept="image/jpeg,image/png,image/webp,image/avif" onChange={(event) => setFile(event.target.files?.[0] ?? null)} data-testid={`treatment-photo-file-${appointmentId}`} /><label className="flex gap-2 rounded-md border p-3 text-sm"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} data-testid={`treatment-photo-consent-${appointmentId}`} /><span>Klijent je saglasan sa fotografisanjem i čuvanjem fotografija.</span></label><p className="text-xs text-muted-foreground">Bez potvrđene saglasnosti dugme za čuvanje ostaje nedostupno.</p><Button className="w-full" disabled={!file || !consent || createPhoto.isPending} onClick={submit} data-testid={`treatment-photo-save-${appointmentId}`}>{createPhoto.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Sačuvaj fotografiju</Button></div></DialogContent></Dialog></div>;
+}
+
+export default function EmployeePortal() {
+  const queryClient = useQueryClient();
+  const [portal, setPortal] = useState<Portal | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [date, setDate] = useState(today());
+  const [visibleMonth, setVisibleMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [editing, setEditing] = useState<Appointment | null>(null);
+  const [groupCancellationIds, setGroupCancellationIds] = useState<string[]>([]);
+  const [groupCancellationReason, setGroupCancellationReason] = useState("");
+  const [bookingOpen, setBookingOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const [booking, setBooking] = useState({
+    serviceId: "",
+    salonCustomerId: "",
+    firstName: "",
+    lastName: "",
+    phone: "",
+    email: "",
+    slots: [{ date: today(), startTime: "10:00" }] as Slot[],
+  });
+  const [seriesMode, setSeriesMode] = useState(false);
+  const [groupMode, setGroupMode] = useState(false);
+  const [groupTreatments, setGroupTreatments] = useState<GroupTreatment[]>([]);
+  const [createdBookingGroup, setCreatedBookingGroup] = useState<{
+    appointments: Array<{ id: string; serviceName: string; date: string; startTime: string; endTime: string; employeeName: string }>;
+  } | null>(null);
+  const [employeeAvailabilityStart, setEmployeeAvailabilityStart] = useState(today());
+  const [seriesRule, setSeriesRule] = useState("weekly");
+  const [seriesCount, setSeriesCount] = useState("5");
+  const [seriesPreview, setSeriesPreview] = useState<{
+    slots: Array<{ date: string; startTime: string; available: boolean; reason: string | null }>;
+    allAvailable: boolean;
+  } | null>(null);
+  const [profile, setProfile] = useState({ bio: "", avatarUrl: "", phone: "" });
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [leave, setLeave] = useState(() => createEmployeeLeaveDraft(today()));
+  const locationsQuery = useListEmployeeAssignedLocations({
+    query: { queryKey: getListEmployeeAssignedLocationsQueryKey() },
+  });
+  const selectLocationMutation = useSelectEmployeeActiveLocation();
+  const createBookingGroup = useCreateEmployeeBookingGroup();
+  const cancelBookingGroup = useCancelBookingGroup();
+  const employeeAvailabilityParams = useMemo<SearchEmployeeAvailabilityParams>(() => ({
+    serviceId: booking.serviceId,
+    startDate: employeeAvailabilityStart,
+  }), [booking.serviceId, employeeAvailabilityStart]);
+  const { data: employeeAvailabilitySlots, isFetching: employeeAvailabilityFetching, error: employeeAvailabilityError, refetch: refetchEmployeeAvailability } = useSearchEmployeeAvailability(
+    employeeAvailabilityParams,
+    { query: { enabled: bookingOpen && !seriesMode && !groupMode && !!booking.serviceId, queryKey: getSearchEmployeeAvailabilityQueryKey(employeeAvailabilityParams) } },
+  );
+
+  const handleLocationChange = (salonId: string) => {
+    if (!salonId || salonId === locationsQuery.data?.activeSalonId) return;
+    setBookingOpen(false);
+    setSeriesMode(false);
+    setGroupMode(false);
+    setGroupTreatments([]);
+    setSeriesPreview(null);
+    setEmployeeAvailabilityStart(today());
+    setBooking((current) => ({ ...current, serviceId: "", salonCustomerId: "", firstName: "", lastName: "", phone: "", email: "", slots: [{ date: today(), startTime: "" }] }));
+
+    selectLocationMutation.mutate(
+      { data: { salonId } },
+      {
+        onSuccess: () => {
+          toast.success("Lokacija je uspešno promenjena.");
+          queryClient.invalidateQueries();
+          void load(false);
+        },
+        onError: (err) => {
+          toast.error(err instanceof Error ? err.message : "Greška pri promeni lokacije.");
+        }
+      }
+    );
+  };
+
+  const load = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
+    try {
+      const data = await api<Portal>("/api/employee/portal");
+      setPortal(data);
+      setProfile({ bio: data.employee.bio, avatarUrl: data.employee.avatarUrl, phone: data.employee.phone ?? "" });
+      setBooking((current) => ({
+        ...current,
+        serviceId: data.services.some((service) => service.id === current.serviceId) ? current.serviceId : data.services[0]?.id || "",
+      }));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Portal nije učitan.");
+    } finally {
+      if (showLoading) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void load(true);
+  }, []);
+  useEffect(() => {
+    setGroupCancellationIds(editing?.bookingGroupId ? [editing.id] : []);
+    setGroupCancellationReason("");
+  }, [editing?.id, editing?.bookingGroupId]);
+  useEffect(() => {
+    if (!bookingOpen || seriesMode || groupMode || booking.slots.length !== 1 || !booking.slots[0]?.startTime) return;
+    const selected = booking.slots[0];
+    if (!employeeAvailabilitySlots?.some((slot) => slot.date === selected.date && slot.startTime === selected.startTime)) {
+      setBooking((current) => ({ ...current, slots: [{ date: employeeAvailabilityStart, startTime: "" }] }));
+    }
+  }, [booking.slots, bookingOpen, employeeAvailabilitySlots, employeeAvailabilityStart, groupMode, seriesMode]);
+  useEffect(() => {
+    if (bookingOpen && !seriesMode && !groupMode && booking.serviceId) void refetchEmployeeAvailability();
+  }, [booking.serviceId, bookingOpen, employeeAvailabilityStart, groupMode, refetchEmployeeAvailability, seriesMode]);
+
+  const appointments = useMemo(
+    () => (portal?.appointments ?? [])
+      .filter((appointment) => appointmentDateKey(appointment.date) === date)
+      .sort((a, b) => a.startTime.localeCompare(b.startTime)),
+    [date, portal],
+  );
+  const editableGroupAppointments = useMemo(
+    () => editing?.bookingGroupId
+      ? (portal?.appointments ?? []).filter((appointment) =>
+        appointment.bookingGroupId === editing.bookingGroupId
+        && ["pending", "confirmed"].includes(appointment.status))
+      : [],
+    [editing?.bookingGroupId, portal?.appointments],
+  );
+
+  const cancelSelectedGroupTreatments = () => {
+    if (!editing?.bookingGroupId || !groupCancellationIds.length) return;
+    if (!window.confirm(`Otkazati ${groupCancellationIds.length === 1 ? "izabrani tretman" : `${groupCancellationIds.length} izabrana tretmana`} iz grupne rezervacije?`)) return;
+    cancelBookingGroup.mutate({
+      bookingGroupId: editing.bookingGroupId,
+      data: {
+        appointmentIds: groupCancellationIds,
+        ...(groupCancellationReason.trim() ? { reason: groupCancellationReason.trim() } : {}),
+      },
+    }, {
+      onSuccess: async () => {
+        toast.success(groupCancellationIds.length === editableGroupAppointments.length
+          ? "Vaši tretmani iz grupne rezervacije su otkazani."
+          : "Izabrani tretmani su otkazani, a preostali raspored je potvrđen.");
+        setEditing(null);
+        await load(false);
+      },
+      onError: (error) => {
+        toast.error("Grupna rezervacija nije otkazana.", {
+          description: getApiErrorMessage(error, "Izbor bi ostavio nekoherentan raspored. Izaberite drugi skup tretmana."),
+        });
+      },
+    });
+  };
+  const appointmentDateKeys = useMemo(
+    () => new Set((portal?.appointments ?? []).map((appointment) => appointmentDateKey(appointment.date))),
+    [portal],
+  );
+  const quickDates = useMemo(() => {
+    const base = new Date();
+    return [
+      { label: "Danas", value: dateKey(base) },
+      { label: "Sutra", value: dateKey(new Date(base.getFullYear(), base.getMonth(), base.getDate() + 1)) },
+      { label: "Prekosutra", value: dateKey(new Date(base.getFullYear(), base.getMonth(), base.getDate() + 2)) },
+    ];
+  }, []);
+
+  const selectDate = (value: string) => {
+    setDate(value);
+    const selected = dateAtUtcNoon(value);
+    setVisibleMonth(new Date(selected.getUTCFullYear(), selected.getUTCMonth(), 1));
+  };
+
+  const saveProfile = async () => {
+    try {
+      await api("/api/employee/profile", { method: "PUT", body: JSON.stringify(profile) });
+      toast.success("Profil je sačuvan.");
+      setProfileOpen(false);
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Profil nije sačuvan.");
+    }
+  };
+  const uploadAvatar = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !portal) return;
+    setUploadingAvatar(true);
+    try {
+      const asset = await uploadOptimizedImage(file, "employee-avatar", portal.employee.id);
+      setProfile((current) => ({ ...current, avatarUrl: asset.imageUrl }));
+      toast.success("Fotografija profila je obrađena.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Upload fotografije nije uspeo.");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const requestLeave = async () => {
+    try {
+      await api("/api/employee/leave-requests", { method: "POST", body: JSON.stringify(leave) });
+      toast.success("Zahtev je poslat salonu.");
+      setLeaveOpen(false);
+      setLeave(createEmployeeLeaveDraft(today()));
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Zahtev nije poslat.");
+    }
+  };
+
+  const book = async () => {
+    try {
+      if (groupMode) {
+        if (groupTreatments.length < 2 || groupTreatments.some((treatment) => !treatment.serviceId || !treatment.date || !treatment.startTime)) {
+          toast.error("Dodajte najmanje dva tretmana sa uslugom, datumom i vremenom.");
+          return;
+        }
+        if (!booking.salonCustomerId && (!booking.firstName.trim() || !booking.phone.trim())) {
+          toast.error("Unesite ime i telefon klijenta.");
+          return;
+        }
+        const group = await createBookingGroup.mutateAsync({
+          data: {
+            salonCustomerId: booking.salonCustomerId || undefined,
+            guest: booking.salonCustomerId ? undefined : {
+              firstName: booking.firstName.trim(),
+              lastName: booking.lastName.trim() || undefined,
+              phone: booking.phone.trim(),
+              email: booking.email.trim() || undefined,
+            },
+            treatments: groupTreatments.map(({ serviceId, date, startTime }) => ({ serviceId, date, startTime })),
+          },
+        });
+        setCreatedBookingGroup({
+          appointments: group.appointments.map(({ id, serviceName, date, startTime, endTime, employeeName }) => ({ id, serviceName, date, startTime, endTime, employeeName })),
+        });
+        queryClient.invalidateQueries({ queryKey: getSearchEmployeeAvailabilityQueryKey() });
+        toast.success("Grupna rezervacija je uspešno zakazana.");
+        setBookingOpen(false);
+        setGroupMode(false);
+        setGroupTreatments([]);
+        setBooking((current) => ({ ...current, salonCustomerId: "", firstName: "", lastName: "", phone: "", email: "", slots: [{ date: today(), startTime: "10:00" }] }));
+        await load();
+        return;
+      }
+      if (seriesMode && !seriesPreview?.allAvailable) {
+        toast.error("Prvo proverite da su svi termini iz serije slobodni.");
+        return;
+      }
+      if (!seriesMode && (employeeAvailabilityFetching || employeeAvailabilityError || booking.slots.length !== 1 || !employeeAvailabilitySlots?.some((slot) => slot.date === booking.slots[0]?.date && slot.startTime === booking.slots[0]?.startTime))) {
+        toast.error("Izaberite slobodan termin iz rasporeda.");
+        return;
+      }
+      await api(seriesMode ? "/api/employee/appointment-series" : "/api/employee/appointments", {
+        method: "POST",
+        body: JSON.stringify({
+          serviceId: booking.serviceId,
+          salonCustomerId: booking.salonCustomerId || undefined,
+          guest: booking.salonCustomerId ? undefined : {
+            firstName: booking.firstName,
+            lastName: booking.lastName,
+            phone: booking.phone,
+            email: booking.email,
+          },
+          slots: booking.slots,
+        }),
+      });
+      queryClient.invalidateQueries({ queryKey: getSearchEmployeeAvailabilityQueryKey(employeeAvailabilityParams) });
+      toast.success(booking.slots.length > 1 ? "Termini su zakazani i potvrde poslate." : "Termin je zakazan i potvrda poslata.");
+      setBookingOpen(false);
+      setSeriesMode(false);
+      setSeriesPreview(null);
+      setBooking((current) => ({
+        ...current,
+        salonCustomerId: "",
+        firstName: "",
+        lastName: "",
+        phone: "",
+        email: "",
+        slots: [{ date: today(), startTime: "10:00" }],
+      }));
+      await load();
+    } catch (error) {
+      const isLayoutConflict = getApiErrorDetails(error).status === 409;
+      toast.error(isLayoutConflict
+        ? "Raspored ove grupne rezervacije više nije slobodan. Proverite datume i vremena tretmana, pa pokušajte ponovo."
+        : error instanceof Error ? error.message : "Zakazivanje nije uspelo.");
+    }
+  };
+
+  const previewEmployeeSeries = async () => {
+    try {
+      const preview = await api<{
+        slots: Array<{ date: string; startTime: string; available: boolean; reason: string | null }>;
+        allAvailable: boolean;
+      }>("/api/employee/appointment-series/preview", {
+        method: "POST",
+        body: JSON.stringify({ serviceId: booking.serviceId, slots: booking.slots }),
+      });
+      setSeriesPreview(preview);
+      if (preview.allAvailable) toast.success("Svi termini u seriji su slobodni.");
+      else toast.error("Neki termini nisu dostupni. Pomerite ili uklonite označeni slot.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Dostupnost nije proverena.");
+    }
+  };
+
+  if (loading || !portal) {
+    return <BusinessLayout><div className="flex justify-center p-20"><Loader2 className="h-8 w-8 animate-spin" /></div></BusinessLayout>;
+  }
+
+  const locations = locationsQuery.data?.locations ?? [];
+  const activeSalonId = locationsQuery.data?.activeSalonId ?? "";
+  const isMultiLocation = locations.length > 1;
+
+  return (
+    <BusinessLayout>
+      <div className="container mx-auto space-y-6 px-4 py-8">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            {isMultiLocation ? (
+              <div className="mb-1 flex items-center gap-2">
+                <Label htmlFor="location-switcher" className="sr-only">Izaberite lokaciju</Label>
+                <div className="relative w-full sm:w-auto min-w-[240px]">
+                  <select
+                    id="location-switcher"
+                    className="h-8 w-full appearance-none rounded-md border border-primary/20 bg-primary/5 py-1 pl-3 pr-8 text-sm font-medium text-primary ring-offset-background transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    value={activeSalonId}
+                    onChange={(e) => handleLocationChange(e.target.value)}
+                    disabled={selectLocationMutation.isPending}
+                  >
+                    {locations.map((loc) => (
+                      <option key={loc.salonId} value={loc.salonId}>
+                        {loc.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+                    {selectLocationMutation.isPending ? (
+                      <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                    ) : (
+                      <svg className="h-4 w-4 text-primary opacity-70" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="mb-1 text-sm font-medium text-primary">{portal.salon.name}</p>
+            )}
+            <h1 className="font-serif text-3xl font-bold">Portal zaposlenog</h1>
+            <p className="text-muted-foreground">Dobro došli, {portal.employee.name}.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+             <Button variant="outline" onClick={() => setProfileOpen(true)}><UserRound className="mr-2 h-4 w-4" />Moj profil</Button>
+             <GuideHelpLink sectionId="za-profil" label="Moj profil" />
+             <Button onClick={() => setBookingOpen(true)}><Plus className="mr-2 h-4 w-4" />Zakaži termin</Button>
+             <GuideHelpLink sectionId="za-zakazivanje" label="Zakazivanje termina i serija" />
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Metric title="Ove nedelje" value={portal.stats.week} icon={<CalendarDays className="h-5 w-5" />} />
+          <Metric title="Ovog meseca" value={portal.stats.month} icon={<Clock3 className="h-5 w-5" />} />
+          <Metric title="Završeni" value={portal.stats.completed} icon={<CheckCircle2 className="h-5 w-5" />} />
+          <Metric title="No-show" value={portal.stats.noShow} icon={<XCircle className="h-5 w-5" />} />
+        </div>
+
+        <div className="grid gap-7 xl:grid-cols-[minmax(370px,.82fr)_minmax(0,1.7fr)]" data-testid="employee-calendar">
+          <Card className="h-fit overflow-hidden border-primary/10 shadow-md">
+            <CardHeader className="border-b bg-primary/[0.035] px-5 py-5 sm:px-7">
+              <CardTitle className="flex items-center gap-3 text-xl">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><CalendarDays className="h-5 w-5" /></span>
+                <span>Izaberite datum</span>
+                <GuideHelpLink sectionId="za-portal" label="Moj portal" />
+              </CardTitle>
+              <p className="pl-[52px] text-sm text-muted-foreground">Prikazani su samo termini koji su dodeljeni vama.</p>
+            </CardHeader>
+            <CardContent className="space-y-6 px-4 py-5 sm:px-6 sm:py-7">
+              <div className="rounded-2xl border bg-background p-2 shadow-sm sm:p-4">
+                <Calendar
+                  mode="single"
+                  selected={dateAtUtcNoon(date)}
+                  onSelect={(selected) => selected && selectDate(dateKey(selected))}
+                  month={visibleMonth}
+                  onMonthChange={setVisibleMonth}
+                  modifiers={{ hasAppointments: [...appointmentDateKeys].map(dateAtUtcNoon) }}
+                  components={{ DayButton: AppointmentDayButton }}
+                  className="mx-auto w-full [--cell-size:2.65rem] sm:[--cell-size:3.4rem]"
+                />
+              </div>
+              <div className="space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Brzi izbor</p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
+                  {quickDates.map((quickDate) => (
+                    <Button
+                      key={quickDate.label}
+                      type="button"
+                      variant={date === quickDate.value ? "default" : "outline"}
+                      className={cn(
+                        "h-auto min-h-[72px] flex-col items-start justify-center gap-1 rounded-xl px-4 py-3 text-left transition-all",
+                        date === quickDate.value
+                          ? "shadow-md shadow-primary/20"
+                          : "hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/[0.04]",
+                      )}
+                      aria-pressed={date === quickDate.value}
+                      onClick={() => selectDate(quickDate.value)}
+                    >
+                      <span className="text-sm font-semibold">{quickDate.label}</span>
+                      <span className={cn("text-xs font-normal", date === quickDate.value ? "text-primary-foreground/75" : "text-muted-foreground")}>
+                        {shortDateLabel(quickDate.value)}
+                      </span>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="overflow-hidden border-primary/10 shadow-md">
+            <CardHeader className="border-b bg-card px-5 py-5 sm:px-7">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <CardTitle className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xl sm:text-2xl">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><Clock3 className="h-5 w-5" /></span>
+                    <span>Moji termini · {dateLabel(date)}</span>
+                    <GuideHelpLink sectionId="za-termini" label="Moji termini" />
+                  </CardTitle>
+                  <p className="mt-2 pl-[52px] text-sm text-muted-foreground">Raspored za izabrani dan, poređan po vremenu.</p>
+                </div>
+                {appointments.length > 0 && <Badge variant="outline" className="w-fit rounded-full px-3 py-1 text-sm">{appointments.length} {appointments.length === 1 ? "termin" : "termina"}</Badge>}
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {appointments.length ? (
+                <div className="space-y-3 bg-muted/[0.18] p-4 sm:p-5">
+                  {appointments.map((appointment) => (
+                     <div className={cn("group flex flex-col gap-4 rounded-2xl border bg-card p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md sm:flex-row sm:items-center sm:justify-between sm:p-5", appointment.status === "no-show" && "border-red-200 bg-red-50/30")} key={appointment.id}>
+                      <div className="flex min-w-0 items-start gap-4">
+                        <div className="flex h-[60px] w-[78px] shrink-0 flex-col items-center justify-center rounded-xl bg-primary/10 text-primary">
+                          <span className="text-xl font-bold tracking-tight">{appointment.startTime}</span>
+                          <span className="text-[10px] font-medium uppercase tracking-wider text-primary/70">početak</span>
+                        </div>
+                        <div className="min-w-0 pt-0.5">
+                          <p className="truncate text-base font-bold">{appointment.customerName}</p>
+                          <p className="mt-1 truncate text-sm font-medium text-foreground/80">{appointment.serviceName}</p>
+                          <p className="mt-1 text-sm text-muted-foreground">{appointment.customerPhone ?? "Telefon nije dostupan"}</p>
+                          {appointment.seriesId && <Badge variant="secondary" className="mt-2 gap-1"><Repeat2 className="h-3 w-3" />Serija</Badge>}
+                          <AppointmentTimingNotice appointment={appointment} compact />
+                          {appointment.status === "no-show" && <NoShowNotice appointmentId={appointment.id} />}
+                          {appointment.notes && <AppointmentGeneralNote>{appointment.notes}</AppointmentGeneralNote>}
+                          {appointment.allocatedResources && appointment.allocatedResources.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {appointment.allocatedResources.map((alloc, i) => (
+                                <Badge key={i} variant="secondary" className="text-[10px] font-medium opacity-80 bg-background">{alloc.resourceName} x{alloc.quantity}</Badge>
+                              ))}
+                            </div>
+                          )}
+                           {appointment.status === "completed" && <CompletedAppointmentPhotos appointmentId={appointment.id} />}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end">
+                        <Badge variant="outline" className={cn("rounded-full px-3 py-1 text-xs font-semibold", statusClasses[appointment.status])}>{statusLabel[appointment.status]}</Badge>
+                        {!["completed", "no-show", "cancelled"].includes(appointment.status) && (
+                          <Button size="sm" variant="outline" className="gap-1.5 opacity-90 transition-opacity group-hover:opacity-100" onClick={() => setEditing({ ...appointment })}>
+                            <Pencil className="h-3.5 w-3.5" />Upravljaj tokom
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex min-h-80 flex-col items-center justify-center p-8 text-center">
+                  <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary"><CalendarDays className="h-8 w-8" /></div>
+                  <p className="text-lg font-semibold">Nema vaših termina za {dateLabel(date)}</p>
+                  <p className="mt-2 max-w-sm text-sm text-muted-foreground">Kada vam salon dodeli termin za ovaj dan, pojaviće se ovde.</p>
+                  <Button variant="outline" className="mt-5" onClick={() => setBookingOpen(true)}><Plus className="mr-2 h-4 w-4" />Dodaj termin</Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <EmployeeOperations />
+
+        <div className="grid gap-6 lg:grid-cols-3">
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2 text-lg">Moje radno vreme <GuideHelpLink sectionId="za-odsustva" label="Moje radno vreme i zahtevi za odsustvo" /></CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              {portal.schedule.length ? portal.schedule.map((item) => <div key={item.id} className="flex justify-between text-sm"><span>{weekdays[item.weekday - 1]}</span><span>{item.startTime}–{item.endTime}{item.breakStart && ` · pauza ${item.breakStart}–${item.breakEnd}`}</span></div>) : <p className="text-sm text-muted-foreground">Salon još nije uneo posebno radno vreme.</p>}
+              <Button className="mt-2 w-full" variant="outline" onClick={() => setLeaveOpen(true)}>Pošalji zahtev za odsustvo</Button>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2 text-lg">Obaveštenja <GuideHelpLink sectionId="za-ostalo" label="Obaveštenja, moje usluge i edukacije" /></CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              {portal.notifications.length ? portal.notifications.map((notification) => <div key={notification.id} className="border-b pb-2 last:border-0"><p className="text-sm font-medium">{notification.title}</p><p className="text-xs text-muted-foreground">{new Date(notification.date).toLocaleDateString("sr-RS")}</p></div>) : <p className="text-sm text-muted-foreground">Nemate nova obaveštenja.</p>}
+            </CardContent>
+          </Card>
+          <EmployeeShopping />
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2 text-lg">Moje usluge <GuideHelpLink sectionId="za-ostalo" label="Obaveštenja, moje usluge i edukacije" /></CardTitle></CardHeader>
+            <CardContent className="flex flex-wrap gap-2">
+              {portal.services.length ? portal.services.map((service) => <Badge key={service.id} variant="secondary">{service.name} · {service.durationMinutes} min</Badge>) : <p className="text-sm text-muted-foreground">Salon vam još nije dodelio usluge.</p>}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2 text-lg">Odsustva i zahtevi <GuideHelpLink sectionId="za-odsustva" label="Moje radno vreme i zahtevi za odsustvo" /></CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              {portal.leaveRequests.length ? portal.leaveRequests.map((item) => <div key={item.id} className="flex items-center justify-between rounded-md border p-3 text-sm"><span>{formatEmployeeLeaveRequestSummary(item)}</span><Badge variant={item.status === "approved" ? "secondary" : item.status === "rejected" ? "destructive" : "default"}>{item.status === "pending" ? "Na čekanju" : item.status === "approved" ? "Odobreno" : "Odbijeno"}</Badge></div>) : <p className="text-sm text-muted-foreground">Nema poslatih zahteva.</p>}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-1">
+          <EmployeePerformanceTab />
+        </div>
+
+        <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
+          <DialogContent className="max-h-[90dvh] w-[calc(100vw-1rem)] max-w-lg overflow-y-auto">
+            <DialogHeader><DialogTitle>Tok termina</DialogTitle></DialogHeader>
+            {editing && <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">{editing.customerName} · {editing.serviceName}</p>
+              {editing.bookingGroupId && (
+                <section className="space-y-3 rounded-xl border border-primary/20 bg-primary/[0.03] p-4" data-testid={`employee-group-cancellation-${editing.bookingGroupId}`}>
+                  <div>
+                    <h3 className="font-semibold">Otkazivanje grupne rezervacije</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">Izaberite jedan ili više tretmana koji su dodeljeni vama. Promena će biti sačuvana samo ako preostali raspored ostaje povezan i smislen.</p>
+                  </div>
+                  <div className="space-y-2">
+                    {editableGroupAppointments.map((appointment) => (
+                      <label key={appointment.id} className="flex items-start gap-3 rounded-lg border bg-background p-3 text-sm">
+                        <input
+                          className="mt-1"
+                          type="checkbox"
+                          checked={groupCancellationIds.includes(appointment.id)}
+                          onChange={(event) => setGroupCancellationIds((current) =>
+                            event.target.checked
+                              ? [...new Set([...current, appointment.id])]
+                              : current.filter((id) => id !== appointment.id))}
+                          data-testid={`employee-group-cancel-select-${appointment.id}`}
+                        />
+                        <span><strong>{appointment.serviceName}</strong><br /><span className="text-muted-foreground">{dateLabel(appointment.date)} · {appointment.startTime}–{appointment.endTime}</span></span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor={`employee-group-cancel-reason-${editing.bookingGroupId}`} className="text-xs">Razlog otkazivanja (opciono)</Label>
+                    <Textarea
+                      id={`employee-group-cancel-reason-${editing.bookingGroupId}`}
+                      value={groupCancellationReason}
+                      onChange={(event) => setGroupCancellationReason(event.target.value)}
+                      maxLength={1000}
+                      placeholder="Unesite razlog za audit zapis"
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    className="w-full"
+                    disabled={!groupCancellationIds.length || cancelBookingGroup.isPending}
+                    onClick={cancelSelectedGroupTreatments}
+                    data-testid={`employee-group-cancel-submit-${editing.bookingGroupId}`}
+                  >
+                    {cancelBookingGroup.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Otkaži izabrane tretmane
+                  </Button>
+                </section>
+              )}
+              <AppointmentLifecyclePanel
+                appointment={editing}
+                allowCancel={!editing.bookingGroupId}
+                onUpdated={async (updated) => {
+                  setEditing((current) => current ? { ...current, ...updated, customerPhone: current.customerPhone } : null);
+                  setPortal((current) => current ? {
+                    ...current,
+                    appointments: current.appointments.map((item) => item.id === updated.id ? { ...item, ...updated, customerPhone: item.customerPhone } : item),
+                  } : null);
+                  await load(false);
+                }}
+              />
+            </div>}
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={bookingOpen} onOpenChange={setBookingOpen}>
+          <DialogContent className="max-h-[90dvh] w-[calc(100vw-1rem)] min-w-0 max-w-xl overflow-x-hidden overflow-y-auto">
+            <DialogHeader><DialogTitle>Zakaži termin za svog klijenta</DialogTitle></DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Usluga</Label>
+                <select className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm" value={booking.serviceId} onChange={(event) => setBooking({ ...booking, serviceId: event.target.value, slots: [{ date: employeeAvailabilityStart, startTime: "" }] })}>
+                  {portal.services.map((service) => <option key={service.id} value={service.id}>{service.name} · {service.durationMinutes} min</option>)}
+                </select>
+              </div>
+              <div>
+                <Label>Klijent kog ste ranije uslužili</Label>
+                <select className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm" value={booking.salonCustomerId} onChange={(event) => setBooking({ ...booking, salonCustomerId: event.target.value })}>
+                  <option value="">Brzi unos novog klijenta</option>
+                  {portal.clients.map((client) => <option key={client.id} value={client.id}>{client.firstName} {client.lastName} · {client.phone ?? "bez telefona"}</option>)}
+                </select>
+              </div>
+              {!booking.salonCustomerId && <div className="grid gap-3 sm:grid-cols-2">
+                <div><Label>Ime</Label><Input className="mt-1" value={booking.firstName} onChange={(event) => setBooking({ ...booking, firstName: event.target.value })} /></div>
+                <div><Label>Prezime</Label><Input className="mt-1" value={booking.lastName} onChange={(event) => setBooking({ ...booking, lastName: event.target.value })} /></div>
+                <div><Label>Telefon</Label><Input className="mt-1" value={booking.phone} onChange={(event) => setBooking({ ...booking, phone: event.target.value })} /></div>
+                <div><Label>Email (opciono)</Label><Input className="mt-1" type="email" value={booking.email} onChange={(event) => setBooking({ ...booking, email: event.target.value })} /></div>
+              </div>}
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <div className="flex flex-wrap gap-x-5 gap-y-3">
+                  <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={seriesMode} onChange={(event) => { const nextSeriesMode = event.target.checked; setSeriesMode(nextSeriesMode); setGroupMode(false); setGroupTreatments([]); setSeriesPreview(null); if (!nextSeriesMode) setBooking((current) => ({ ...current, slots: [{ date: employeeAvailabilityStart, startTime: "" }] })); }} /><Repeat2 className="h-4 w-4 text-primary" />Zakaži seriju termina</label>
+                  <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={groupMode} onChange={(event) => { const nextGroupMode = event.target.checked; setGroupMode(nextGroupMode); setSeriesMode(false); setSeriesPreview(null); if (nextGroupMode) setGroupTreatments([{ serviceId: booking.serviceId, date: employeeAvailabilityStart, startTime: "10:00" }, { serviceId: booking.serviceId, date: employeeAvailabilityStart, startTime: "11:00" }]); }} /><CalendarDays className="h-4 w-4 text-primary" />Grupa različitih tretmana</label>
+                </div>
+                {groupMode && <p className="mt-3 text-xs text-muted-foreground">Ovo nije ponavljajuća serija: svaki red je zaseban tretman u jednoj grupnoj rezervaciji i dodeljuje se vama.</p>}
+                {seriesMode && <div className="mt-3 flex flex-wrap gap-2">
+                  <select className="h-9 rounded-md border bg-background px-2 text-sm" value={seriesRule} onChange={(event) => setSeriesRule(event.target.value)}>
+                    <option value="daily">Svaki dan</option>
+                    <option value="every-2-days">Svaka 2 dana</option>
+                    <option value="every-3-days">Svaka 3 dana</option>
+                    <option value="weekly">Nedeljno</option>
+                    <option value="biweekly">Na 2 nedelje</option>
+                    <option value="monthly">Mesečno</option>
+                  </select>
+                  <Input className="h-9 w-20" type="number" min="1" max="24" value={seriesCount} onChange={(event) => setSeriesCount(event.target.value)} />
+                  <Button type="button" size="sm" variant="outline" onClick={() => { setBooking({ ...booking, slots: recurringSlots(booking.slots[0]!, seriesRule, Number(seriesCount) || 1) }); setSeriesPreview(null); }}>Primeni</Button>
+                  <Button type="button" size="sm" variant="outline" onClick={previewEmployeeSeries}>Proveri</Button>
+                </div>}
+              </div>
+              {!seriesMode && !groupMode && <div className="space-y-2">
+                <Label>Početak perioda</Label>
+                <Input type="date" min={today()} value={employeeAvailabilityStart} data-testid="employee-availability-start-date" onChange={(event) => { setEmployeeAvailabilityStart(event.target.value); setBooking((current) => ({ ...current, slots: [{ date: event.target.value, startTime: "" }] })); }} />
+                <InternalStaffAvailabilityPicker startDate={employeeAvailabilityStart} slots={employeeAvailabilitySlots} isLoading={employeeAvailabilityFetching} error={employeeAvailabilityError} selectedSlot={booking.slots[0]?.startTime ? { date: booking.slots[0].date, startTime: booking.slots[0].startTime, employeeId: employeeAvailabilitySlots?.find((slot) => slot.date === booking.slots[0]?.date && slot.startTime === booking.slots[0]?.startTime)?.employeeId ?? "" } : null} onSelectSlot={(slot) => setBooking((current) => ({ ...current, slots: [{ date: slot.date, startTime: slot.startTime }] }))} testId="employee-appointment-availability" />
+              </div>}
+              {seriesMode && <div className="space-y-2">
+                <Label>Termini</Label>
+                {booking.slots.map((slot, index) => {
+                  const state = seriesPreview?.slots.find((item) => item.date.slice(0, 10) === slot.date && item.startTime === slot.startTime);
+                  return <div className="flex items-center gap-2" key={index}>
+                    <Input type="date" value={slot.date} onChange={(event) => { setBooking({ ...booking, slots: booking.slots.map((item, itemIndex) => itemIndex === index ? { ...item, date: event.target.value } : item) }); setSeriesPreview(null); }} />
+                    <Input type="time" value={slot.startTime} onChange={(event) => { setBooking({ ...booking, slots: booking.slots.map((item, itemIndex) => itemIndex === index ? { ...item, startTime: event.target.value } : item) }); setSeriesPreview(null); }} />
+                    {state && <span className={state.available ? "text-xs text-emerald-700" : "text-xs text-destructive"}>{state.available ? "Slobodno" : "Konflikt"}</span>}
+                    {booking.slots.length > 1 && <Button type="button" variant="outline" size="icon" aria-label="Ukloni termin" onClick={() => { setBooking({ ...booking, slots: booking.slots.filter((_, itemIndex) => itemIndex !== index) }); setSeriesPreview(null); }}><Trash2 className="h-4 w-4" /></Button>}
+                  </div>;
+                })}
+                <Button type="button" size="sm" variant="outline" onClick={() => { setBooking({ ...booking, slots: [...booking.slots, { date: booking.slots.at(-1)?.date ?? today(), startTime: "10:00" }] }); setSeriesPreview(null); }}><Plus className="mr-1 h-3.5 w-3.5" />Zakaži još jedan termin</Button>
+              </div>}
+              {groupMode && <div className="space-y-3">
+                <Label>Tretmani u grupi</Label>
+                {groupTreatments.map((treatment, index) => (
+                  <div className="grid gap-2 rounded-lg border bg-background p-3 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]" key={index}>
+                    <select aria-label={`Usluga tretmana ${index + 1}`} className="h-10 min-w-0 rounded-md border bg-background px-3 text-sm" value={treatment.serviceId} onChange={(event) => setGroupTreatments((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, serviceId: event.target.value } : item))}>
+                      <option value="">Izaberite uslugu</option>
+                      {portal.services.map((service) => <option key={service.id} value={service.id}>{service.name} · {service.durationMinutes} min</option>)}
+                    </select>
+                    <Input aria-label={`Datum tretmana ${index + 1}`} type="date" min={today()} value={treatment.date} onChange={(event) => setGroupTreatments((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, date: event.target.value } : item))} />
+                    <Input aria-label={`Vreme tretmana ${index + 1}`} type="time" value={treatment.startTime} onChange={(event) => setGroupTreatments((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, startTime: event.target.value } : item))} />
+                    <Button type="button" variant="outline" size="icon" aria-label={`Ukloni tretman ${index + 1}`} disabled={groupTreatments.length <= 2} onClick={() => setGroupTreatments((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 className="h-4 w-4" /></Button>
+                  </div>
+                ))}
+                <Button type="button" size="sm" variant="outline" disabled={groupTreatments.length >= 5} onClick={() => setGroupTreatments((current) => [...current, { serviceId: booking.serviceId, date: current.at(-1)?.date ?? today(), startTime: current.at(-1)?.startTime ?? "10:00" }])}><Plus className="mr-1 h-3.5 w-3.5" />Dodaj tretman</Button>
+              </div>}
+              <Button className="w-full" onClick={book} disabled={createBookingGroup.isPending || (!seriesMode && !groupMode && (employeeAvailabilityFetching || !!employeeAvailabilityError || booking.slots.length !== 1 || !employeeAvailabilitySlots?.some((slot) => slot.date === booking.slots[0]?.date && slot.startTime === booking.slots[0]?.startTime)))}>{createBookingGroup.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Zakaži {groupMode ? "grupu tretmana" : seriesMode ? "seriju" : "termin"}</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={!!createdBookingGroup} onOpenChange={(open) => !open && setCreatedBookingGroup(null)}>
+          <DialogContent className="max-h-[90dvh] w-[calc(100vw-1rem)] max-w-2xl overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5 text-emerald-600" />Grupna rezervacija je zakazana</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">Svi tretmani su sačuvani kao jedna rezervacija i dodeljeni su zaposlenom koji je prijavljen.</p>
+              <div className="overflow-hidden rounded-lg border">
+                <div className="hidden grid-cols-[minmax(0,1fr)_auto_auto] gap-3 bg-muted/50 px-4 py-2 text-xs font-semibold text-muted-foreground sm:grid">
+                  <span>Usluga i zaposleni</span><span>Datum</span><span>Vreme</span>
+                </div>
+                <div className="divide-y">
+                  {createdBookingGroup?.appointments.map((appointment) => (
+                    <div className="grid gap-1 px-4 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center sm:gap-3" key={appointment.id}>
+                      <div><p className="font-medium">{appointment.serviceName}</p><p className="text-xs text-muted-foreground">{appointment.employeeName}</p></div>
+                      <span className="text-muted-foreground">{shortDateLabel(appointment.date)}</span>
+                      <span className="font-medium">{appointment.startTime}–{appointment.endTime}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <Button className="w-full" onClick={() => setCreatedBookingGroup(null)}>U redu</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Moj profil</DialogTitle></DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2"><Label>Fotografija profila</Label><div className="flex items-center gap-3">{profile.avatarUrl ? <AvatarImage src={profile.avatarUrl} alt="Pregled fotografije profila" size={128} responsiveSizes="64px" className="h-16 w-16" /> : null}<Button asChild type="button" variant="outline" disabled={uploadingAvatar}><label className="cursor-pointer">{uploadingAvatar ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImagePlus className="mr-2 h-4 w-4" />}Izaberi fotografiju<input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/avif" onChange={(event) => void uploadAvatar(event)} disabled={uploadingAvatar} /></label></Button></div></div>
+              <div><Label>Opis</Label><Textarea className="mt-1" value={profile.bio} onChange={(event) => setProfile({ ...profile, bio: event.target.value })} /></div>
+              <div><Label>Kontakt telefon</Label><Input className="mt-1" value={profile.phone} onChange={(event) => setProfile({ ...profile, phone: event.target.value })} /></div>
+              <Button className="w-full" onClick={saveProfile} disabled={uploadingAvatar}>Sačuvaj profil</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={leaveOpen} onOpenChange={setLeaveOpen}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Zahtev za odsustvo</DialogTitle></DialogHeader>
+            <div className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div><Label>Od</Label><Input className="mt-1" type="date" value={leave.startDate} onChange={(event) => setLeave({ ...leave, startDate: event.target.value })} /></div>
+                <div><Label>Do</Label><Input className="mt-1" type="date" value={leave.endDate} onChange={(event) => setLeave({ ...leave, endDate: event.target.value })} /></div>
+              </div>
+              <div><Label>Razlog</Label><Textarea className="mt-1" value={leave.reason} onChange={(event) => setLeave({ ...leave, reason: event.target.value })} /></div>
+              <Button className="w-full" onClick={requestLeave}>Pošalji zahtev</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </BusinessLayout>
+  );
+}
+
+function Metric({ title, value, icon }: { title: string; value: number; icon: ReactNode }) {
+  return <Card><CardContent className="flex items-center justify-between p-5"><div><p className="text-sm text-muted-foreground">{title}</p><p className="text-2xl font-bold">{value}</p></div><div className="text-primary">{icon}</div></CardContent></Card>;
+}

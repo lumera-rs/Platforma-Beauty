@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Anonymized from the structure of a Raiffeisen CAMT.053 export.
+  All identifiers, references, amounts and dates below are synthetic.
+  Account, customer, counterparty and credential fields are intentionally omitted.
+-->
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.08">
+  <BkToCstmrStmt>
+    <GrpHdr>
+      <MsgId>ANON-RS-20260902-001</MsgId>
+      <CreDtTm>2026-09-02T06:30:00Z</CreDtTm>
+    </GrpHdr>
+    <Stmt>
+      <Id>ANON-STATEMENT-20260902</Id>
+      <CreDtTm>2026-09-02T06:30:00Z</CreDtTm>
+      <Ntry>
+        <Amt Ccy="RSD">17500.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <BookgDt><Dt>2026-09-01</Dt></BookgDt>
+        <ValDt><Dt>2026-09-01</Dt></ValDt>
+        <AcctSvcrRef>ANON-GROUP-SHARED-001</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <Amt Ccy="RSD">12500.00</Amt>
+            <Refs>
+              <TxId>ANON-RFB-TX-000001</TxId>
+              <EndToEndId>NOTPROVIDED</EndToEndId>
+            </Refs>
+            <RmtInf><Ustrd>EDU-AUTO-ANON-0001</Ustrd></RmtInf>
+          </TxDtls>
+          <TxDtls>
+            <Amt Ccy="RSD">5000.00</Amt>
+            <Refs>
+              <TxId>ANON-RFB-TX-000002</TxId>
+              <EndToEndId>NOTPROVIDED</EndToEndId>
+            </Refs>
+            <RmtInf><Ustrd>EDU-AUTO-ANON-0002</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="RSD">12500.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <BookgDt><Dt>2026-09-01</Dt></BookgDt>
+        <NtryDtls>
+          <TxDtls>
+            <Refs>
+              <AcctSvcrRef>ANON-RFB-ASR-000003</AcctSvcrRef>
+              <TxId>ANON-RFB-TX-FALLBACK-003</TxId>
+              <EndToEndId>NOTPROVIDED</EndToEndId>
+            </Refs>
+            <RmtInf><Ustrd>EDU-AUTO-ANON-0003</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="RSD">12500.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <BookgDt><Dt>2026-09-01</Dt></BookgDt>
+        <NtryDtls>
+          <TxDtls>
+            <Refs>
+              <AcctSvcrRef>ANON-RFB-ASR-000003</AcctSvcrRef>
+              <TxId>ANON-RFB-TX-FALLBACK-003</TxId>
+              <EndToEndId>NOTPROVIDED</EndToEndId>
+            </Refs>
+            <RmtInf><Ustrd>EDU-AUTO-ANON-0003</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>
