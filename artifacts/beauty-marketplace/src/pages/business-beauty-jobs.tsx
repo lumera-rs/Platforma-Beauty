@@ -31,6 +31,7 @@ import { BeautyJobCard } from "@/components/beauty-jobs/beauty-job-card";
 import { BeautyJobForm } from "@/components/beauty-jobs/beauty-job-form";
 import { RentalRequestList } from "@/components/beauty-jobs/rental-request-list";
 import { createRentalResponseHandler } from "@/components/beauty-jobs/rental-response";
+import { createCandidateReplyHandler } from "@/components/beauty-jobs/candidate-reply";
 import { BusinessJobsTab } from "@/components/beauty-jobs/business-jobs-tab";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -79,6 +80,7 @@ export default function BusinessBeautyJobsPage() {
 
   const toggleSaved = useToggleSavedBeautyJob();
   const replyMutation = useReplyToBeautyJobContact();
+  const replyPendingRef = useRef(false);
   const markReadMutation = useMarkBeautyJobNotificationRead();
   const respondRentalMutation = useRespondToBeautyJobRentalRequest();
   const rentalResponsePendingRef = useRef(false);
@@ -126,14 +128,19 @@ export default function BusinessBeautyJobsPage() {
   const handleReply = (e: React.FormEvent) => {
     e.preventDefault();
     if (!replyContact) return;
-    replyMutation.mutate({ contactId: replyContact.id as string, data: { authorReply: replyMessage, authorStatus } }, {
+    createCandidateReplyHandler({
+      mutation: replyMutation,
+      replyPendingRef,
       onSuccess: () => {
-        toast.success("Odgovor uspešno poslat.");
-        setReplyContact(null);
-        setReplyMessage("");
-        queryClient.invalidateQueries({ queryKey: getListBeautyJobInboxQueryKey() });
+          toast.success("Odgovor uspešno poslat.");
+          setReplyContact(null);
+          setReplyMessage("");
+          queryClient.invalidateQueries({ queryKey: getListBeautyJobInboxQueryKey() });
       },
-      onError: () => toast.error("Greška prilikom slanja odgovora.")
+      onError: () => toast.error("Greška prilikom slanja odgovora."),
+    })({
+      contactId: replyContact.id as string,
+      data: { authorReply: replyMessage, authorStatus },
     });
   };
 
