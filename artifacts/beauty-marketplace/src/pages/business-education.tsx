@@ -1638,7 +1638,13 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                         {isSalonOperator && employees?.length ? (
                           <div className="space-y-1.5">
                             <Label htmlFor="education-learner">Polaznik</Label>
-                            <Select value={isSalonOwner ? learnerId : learnerId || "self"} onValueChange={(value) => setLearnerId(value === "self" ? "" : value)}>
+                            <Select
+                              value={isSalonOwner ? learnerId : learnerId || "self"}
+                              onValueChange={(value) => {
+                                setLearnerId(value === "self" ? "" : value);
+                                setDigitalContentConsent(false);
+                              }}
+                            >
                               <SelectTrigger id="education-learner" aria-describedby="education-learner-help"><SelectValue placeholder="Izaberite polaznika" /></SelectTrigger>
                               <SelectContent>
                                 {!isSalonOwner && <SelectItem value="self">Ja lično</SelectItem>}

@@ -349,4 +349,47 @@ for (const viewport of [
       await cleanupFixture(fixture);
     }
   });
+
+  test(`individual online consent resets across learners and courses on ${viewport.name}`, async ({ page }) => {
+    test.setTimeout(60_000);
+    const fixture = await createFixture();
+    try {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      expect((await page.request.post("/api/auth/login", {
+        data: { email: fixture.ownerEmail, password: fixture.ownerPassword },
+      })).ok()).toBeTruthy();
+      await page.goto(`/biznis/edukacije/${fixture.courseId}`);
+
+      const learner = page.getByRole("combobox", { name: "Polaznik" });
+      const consent = page.getByRole("checkbox", { name: DIGITAL_CONTENT_CONSENT_TEXT });
+      const submit = page.getByRole("button", { name: "Rezerviši mesto" });
+
+      await learner.click();
+      await page.getByRole("option", { name: fixture.employeeNames[0], exact: true }).click();
+      await consent.click();
+      await expect(consent).toBeChecked();
+      await expect(submit).toBeEnabled();
+
+      await learner.click();
+      await page.getByRole("option", { name: fixture.employeeNames[1], exact: true }).click();
+      await expect(consent).not.toBeChecked();
+      await expect(submit).toBeDisabled();
+
+      await consent.click();
+      await expect(consent).toBeChecked();
+      await expect(submit).toBeEnabled();
+
+      await page.getByRole("link", { name: "Nazad na katalog" }).click();
+      await page.locator(`a[href="/biznis/edukacije/${fixture.secondCourseId}"]`).click();
+      await expect(page.getByRole("checkbox", { name: DIGITAL_CONTENT_CONSENT_TEXT })).not.toBeChecked();
+      await expect(page.getByRole("button", { name: "Rezerviši mesto" })).toBeDisabled();
+
+      const enrollments = await db.select({ id: courseEnrollmentsTable.id })
+        .from(courseEnrollmentsTable)
+        .where(eq(courseEnrollmentsTable.purchaserId, fixture.ownerId));
+      expect(enrollments).toHaveLength(0);
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
 }
