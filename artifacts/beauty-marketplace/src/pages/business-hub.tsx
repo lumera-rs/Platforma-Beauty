@@ -238,23 +238,6 @@ export default function BusinessHub() {
         </div>
 
         <div className="container mx-auto px-4 max-w-6xl -mt-12 relative z-10">
-          {subStatus?.inGrace && (
-            <div role="status" className="mb-8 rounded-xl border border-amber-300 bg-amber-50 p-5 text-amber-950 shadow-sm">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-                <div>
-                  <h2 className="font-semibold">Pretplata je u grace periodu</h2>
-                  <p className="mt-1 text-sm">
-                    {subStatus.graceDaysRemaining === 0
-                      ? "Grace period ističe danas po vremenu u Beogradu."
-                      : `Preostalo je ${subStatus.graceDaysRemaining} ${subStatus.graceDaysRemaining === 1 ? "beogradski kalendarski dan" : "beogradskih kalendarskih dana"}.`}
-                    {" "}Evidentirajte uplatu pre isteka da kursevi ne bi bili povučeni iz javne ponude.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
           {subStatus?.subscription?.status === "suspended" && subStatus.reactivation && (
             <Card className="mb-8 border-destructive/30 shadow-sm">
               <CardHeader>

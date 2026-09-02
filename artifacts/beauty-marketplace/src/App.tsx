@@ -20,6 +20,7 @@ import { loginPathWithReturnTo } from './lib/auth-return';
 const Home = lazy(() => import('./pages/home'));
 const ClientSeoMetadata = lazy(() => import('./components/client-seo-metadata').then((module) => ({ default: module.ClientSeoMetadata })));
 const RetailCartStatus = lazy(() => import('./components/retail-cart-status').then((module) => ({ default: module.RetailCartStatus })));
+const EducationGraceBanner = lazy(() => import('./components/education-grace-banner').then((module) => ({ default: module.EducationGraceBanner })));
 const Toaster = lazy(() => import('./components/ui/toaster').then((module) => ({ default: module.Toaster })));
 const TooltipProvider = lazy(() => import('./components/ui/tooltip').then((module) => ({ default: module.TooltipProvider })));
 const Layout = lazy(() => import('./components/layout').then((module) => ({ default: module.Layout })));
@@ -528,6 +529,7 @@ function App() {
             <Suspense fallback={null}>
               <ClientSeoMetadata />
               <CustomerAppShellActivity />
+              <EducationGraceBanner />
             </Suspense>
             <Router />
           </WouterRouter>
