@@ -23,6 +23,7 @@ import {
   useReactivateEducationCenter,
   useSettleEducationPaymentObligation,
   getListAdminEducationCustomPlanRequestsQueryKey,
+  getApiErrorDetails,
   type AdminListEducationCenterReviewsStatus
 } from "@workspace/api-client-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -280,7 +281,7 @@ export default function AdminEducationCenterDetail() {
       await load();
     } catch (error) {
       toast.error("Uplata nije evidentirana", { description: extractApiError(error) });
-      if ((error as { status?: number } | null)?.status === 409) {
+      if (getApiErrorDetails(error).status === 409) {
         setSelectedObligation(null);
         setReceivedAmount("");
         setSettlementReason("");
