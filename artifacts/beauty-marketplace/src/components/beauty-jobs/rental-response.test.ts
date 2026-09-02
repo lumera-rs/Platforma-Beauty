@@ -21,6 +21,7 @@ for (const status of ["accepted", "declined"] as const) {
     } | undefined;
 
     const respond = createRentalResponseHandler({
+      responsePendingRef: { current: false },
       mutation: {
         mutate: (variables, callbacks) => {
           mutationVariables = variables;
@@ -59,6 +60,7 @@ test("a failed response keeps owner feedback visible until the next user action"
   } | undefined;
 
   const respond = createRentalResponseHandler({
+    responsePendingRef: { current: false },
     mutation: {
       mutate: (_variables, callbacks) => {
         mutationCallbacks = callbacks;
@@ -76,3 +78,45 @@ test("a failed response keeps owner feedback visible until the next user action"
   assert.deepEqual(pendingStates, ["request-failure", undefined]);
   assert.deepEqual(visibleErrors, ["Zahtev je već obrađen ili termin više nije dostupan."]);
 });
+
+for (const outcome of ["success", "error"] as const) {
+  test(`rejects a second response before settle and unlocks after ${outcome}`, () => {
+    const responsePendingRef = { current: false };
+    const mutationVariables: unknown[] = [];
+    const mutationCallbacks: Array<{
+      onSuccess: () => void;
+      onError: () => void;
+      onSettled: () => void;
+    }> = [];
+
+    const createHandler = () =>
+      createRentalResponseHandler({
+        responsePendingRef,
+        mutation: {
+          mutate: (variables, callbacks) => {
+            mutationVariables.push(variables);
+            mutationCallbacks.push(callbacks);
+          },
+        },
+        setPendingRequestId: () => undefined,
+        onSuccess: () => undefined,
+        onError: () => undefined,
+      });
+
+    createHandler()("request-first", "accepted");
+    createHandler()("request-second", "declined");
+
+    assert.deepEqual(mutationVariables, [
+      { requestId: "request-first", data: { status: "accepted" } },
+    ]);
+
+    mutationCallbacks[0]?.[outcome === "success" ? "onSuccess" : "onError"]();
+    mutationCallbacks[0]?.onSettled();
+    createHandler()("request-after-settle", "declined");
+
+    assert.deepEqual(mutationVariables, [
+      { requestId: "request-first", data: { status: "accepted" } },
+      { requestId: "request-after-settle", data: { status: "declined" } },
+    ]);
+  });
+}

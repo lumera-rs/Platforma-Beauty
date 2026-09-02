@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, useSearch } from "wouter";
 import { format } from "date-fns";
 import { srLatn } from "date-fns/locale";
@@ -81,6 +81,7 @@ export default function BusinessBeautyJobsPage() {
   const replyMutation = useReplyToBeautyJobContact();
   const markReadMutation = useMarkBeautyJobNotificationRead();
   const respondRentalMutation = useRespondToBeautyJobRentalRequest();
+  const rentalResponsePendingRef = useRef(false);
   const [respondingRequestId, setRespondingRequestId] = useState<string>();
 
   useEffect(() => {
@@ -144,6 +145,7 @@ export default function BusinessBeautyJobsPage() {
 
   const handleRentalResponse = createRentalResponseHandler({
     mutation: respondRentalMutation,
+    responsePendingRef: rentalResponsePendingRef,
     setPendingRequestId: setRespondingRequestId,
     onSuccess: (status) => {
         toast.success(status === "accepted" ? "Termin je potvrđen." : "Zahtev je odbijen.");

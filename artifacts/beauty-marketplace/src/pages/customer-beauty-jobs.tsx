@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearch } from "wouter";
 import { format } from "date-fns";
 import { srLatn } from "date-fns/locale";
@@ -30,6 +30,7 @@ import { Layout } from "@/components/layout";
 import { BeautyJobCard } from "@/components/beauty-jobs/beauty-job-card";
 import { BeautyJobForm } from "@/components/beauty-jobs/beauty-job-form";
 import { RentalRequestList } from "@/components/beauty-jobs/rental-request-list";
+import { createRentalResponseHandler } from "@/components/beauty-jobs/rental-response";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
@@ -71,6 +72,7 @@ export default function CustomerBeautyJobsPage({ hideLayout = false }: { hideLay
   const replyMutation = useReplyToBeautyJobContact();
   const markReadMutation = useMarkBeautyJobNotificationRead();
   const respondRentalMutation = useRespondToBeautyJobRentalRequest();
+  const rentalResponsePendingRef = useRef(false);
   const [respondingRequestId, setRespondingRequestId] = useState<string>();
 
   useEffect(() => {
@@ -138,20 +140,19 @@ export default function CustomerBeautyJobsPage({ hideLayout = false }: { hideLay
     });
   };
 
-  const handleRentalResponse = (requestId: string, status: "accepted" | "declined") => {
-    setRespondingRequestId(requestId);
-    respondRentalMutation.mutate({ requestId, data: { status } }, {
-      onSuccess: () => {
+  const handleRentalResponse = createRentalResponseHandler({
+    mutation: respondRentalMutation,
+    responsePendingRef: rentalResponsePendingRef,
+    setPendingRequestId: setRespondingRequestId,
+    onSuccess: (status) => {
         toast.success(status === "accepted" ? "Termin je potvrđen." : "Zahtev je odbijen.");
         queryClient.invalidateQueries({ queryKey: getListBeautyJobRentalRequestInboxQueryKey() });
         queryClient.invalidateQueries({ queryKey: getListMyBeautyJobRentalRequestsQueryKey() });
         queryClient.invalidateQueries({ queryKey: getListBeautyJobNotificationsQueryKey() });
         queryClient.invalidateQueries({ queryKey: getListMyBeautyJobsQueryKey() });
-      },
-      onError: () => toast.error("Zahtev je već obrađen ili termin više nije dostupan."),
-      onSettled: () => setRespondingRequestId(undefined),
-    });
-  };
+    },
+    onError: () => toast.error("Zahtev je već obrađen ili termin više nije dostupan."),
+  });
 
   const content = (
     <>
