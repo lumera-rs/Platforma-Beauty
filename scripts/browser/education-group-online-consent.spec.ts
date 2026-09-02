@@ -32,6 +32,7 @@ type Fixture = {
   adminId: string;
   planId: string;
   courseId: string;
+  secondCourseId: string;
 };
 
 async function createFixture(): Promise<Fixture> {
@@ -169,6 +170,23 @@ async function createFixture(): Promise<Fixture> {
     groupDiscountPercent: 10,
   }).returning();
   if (!course) throw new Error("Could not create published online group course.");
+  const [secondCourse] = await db.insert(coursesTable).values({
+    centerId: center.id,
+    title: `Browser second online group course ${suffix}`,
+    description: "Second published online course for stale consent regression coverage.",
+    category: "Browser test",
+    format: "online",
+    city: "Beograd",
+    price: 15_000,
+    duration: "6 nedelja",
+    certification: true,
+    imageUrl: "/browser-course.jpg",
+    published: true,
+    onlineAccessDays: 60,
+    groupDiscountMinimum: 2,
+    groupDiscountPercent: 5,
+  }).returning();
+  if (!secondCourse) throw new Error("Could not create second published online group course.");
 
   return {
     ownerId: owner.id,
@@ -183,11 +201,18 @@ async function createFixture(): Promise<Fixture> {
     adminId: admin.id,
     planId: plan.id,
     courseId: course.id,
+    secondCourseId: secondCourse.id,
   };
 }
 
+
 async function cleanupFixture(fixture: Fixture) {
-  await db.delete(coursesTable).where(eq(coursesTable.id, fixture.courseId));
+  await db.delete(coursesTable).where(
+    and(
+      eq(coursesTable.centerId, fixture.centerId),
+      eq(coursesTable.category, "Browser test"),
+    ),
+  );
   await db.delete(educationCenterSubscriptionsTable)
     .where(eq(educationCenterSubscriptionsTable.centerId, fixture.centerId));
   await db.delete(educationCentersTable).where(eq(educationCentersTable.id, fixture.centerId));
@@ -278,6 +303,48 @@ for (const viewport of [
         expect(enrollment.digitalContentConsentAt).toBeInstanceOf(Date);
         expect(enrollment.digitalContentConsentVersionSnapshot).toBeTruthy();
       }
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
+  test(`online group consent resets across courses and group-mode reopening on ${viewport.name}`, async ({ page }) => {
+    test.setTimeout(60_000);
+    const fixture = await createFixture();
+    try {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      expect((await page.request.post("/api/auth/login", {
+        data: { email: fixture.ownerEmail, password: fixture.ownerPassword },
+      })).ok()).toBeTruthy();
+      await page.goto(`/biznis/edukacije/${fixture.courseId}`);
+
+      await page.getByRole("button", { name: "Grupna prijava" }).click();
+      await page.getByRole("checkbox", { name: fixture.employeeNames[0], exact: true }).click();
+      await page.getByRole("checkbox", { name: fixture.employeeNames[1], exact: true }).click();
+      const consent = page.getByRole("checkbox", { name: DIGITAL_CONTENT_CONSENT_TEXT });
+      await consent.click();
+      await expect(consent).toBeChecked();
+      await expect(page.getByRole("button", { name: "Prijavi 2 polaznika" })).toBeEnabled();
+
+      await page.getByRole("link", { name: "Nazad na katalog" }).click();
+      await page.locator(`a[href="/biznis/edukacije/${fixture.secondCourseId}"]`).click();
+      await page.getByRole("button", { name: "Grupna prijava" }).click();
+      await page.getByRole("checkbox", { name: fixture.employeeNames[0], exact: true }).click();
+      await page.getByRole("checkbox", { name: fixture.employeeNames[1], exact: true }).click();
+      await expect(page.getByRole("checkbox", { name: DIGITAL_CONTENT_CONSENT_TEXT })).not.toBeChecked();
+      await expect(page.getByRole("button", { name: "Prijavi 2 polaznika" })).toBeDisabled();
+
+      await page.getByRole("button", { name: "Odustani" }).click();
+      await page.getByRole("button", { name: "Grupna prijava" }).click();
+      await page.getByRole("checkbox", { name: fixture.employeeNames[0], exact: true }).click();
+      await page.getByRole("checkbox", { name: fixture.employeeNames[1], exact: true }).click();
+      await expect(page.getByRole("checkbox", { name: DIGITAL_CONTENT_CONSENT_TEXT })).not.toBeChecked();
+      await expect(page.getByRole("button", { name: "Prijavi 2 polaznika" })).toBeDisabled();
+
+      const enrollments = await db.select({ id: courseEnrollmentsTable.id })
+        .from(courseEnrollmentsTable)
+        .where(eq(courseEnrollmentsTable.purchaserId, fixture.ownerId));
+      expect(enrollments).toHaveLength(0);
     } finally {
       await cleanupFixture(fixture);
     }
