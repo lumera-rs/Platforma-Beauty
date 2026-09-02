@@ -29,6 +29,7 @@ import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureDemoData, ensureSeedEducationEscrowSnapshot } from "./seed";
 import {
+  buildValidOnlineEducationCourse,
   buildValidOnlineEducationEnrollmentRequest,
   installTemporaryEducationIpsSettings,
 } from "./education-test-fixtures";
@@ -269,7 +270,7 @@ async function run(): Promise<void> {
     courseIds.push(unverifiedCourse.id);
 
     const [onlineCourse, liveCourse, refundCourse, rejectCourse, revokedCourse] = await db.insert(coursesTable).values([
-      {
+      buildValidOnlineEducationCourse({
         centerId: center.id,
         title: `Online financial course ${suffix}`,
         description: "Online kurs za proveru refund roka.",
@@ -285,7 +286,7 @@ async function run(): Promise<void> {
         extensionPrice1Month: 1000,
         extensionPrice3Months: 2500,
         extensionPrice6Months: 4500,
-      },
+      }),
       {
         centerId: center.id,
         title: `Live financial course ${suffix}`,
@@ -321,7 +322,7 @@ async function run(): Promise<void> {
         extensionPrice3Months: 2500,
         extensionPrice6Months: 4500,
       },
-      {
+      buildValidOnlineEducationCourse({
         centerId: center.id,
         title: `Reject financial course ${suffix}`,
         description: "Kurs za proveru odbijanja spora.",
@@ -337,8 +338,8 @@ async function run(): Promise<void> {
         extensionPrice1Month: 1000,
         extensionPrice3Months: 2500,
         extensionPrice6Months: 4500,
-      },
-      {
+      }),
+      buildValidOnlineEducationCourse({
         centerId: center.id,
         title: `Revoked center course ${suffix}`,
         description: "Kurs za proveru opoziva verifikacije centra.",
@@ -354,14 +355,14 @@ async function run(): Promise<void> {
         extensionPrice1Month: 1000,
         extensionPrice3Months: 2500,
         extensionPrice6Months: 4500,
-      },
+      }),
     ]).returning();
     for (const course of [onlineCourse, liveCourse, refundCourse, rejectCourse, revokedCourse]) {
       assert.ok(course);
       courseIds.push(course.id);
     }
     const [payoutRaceCourse, disputeRaceCourse, maturityRaceCourse, duplicateDisputeCourse] = await db.insert(coursesTable).values([
-      {
+      buildValidOnlineEducationCourse({
         centerId: payoutRaceCenter.id,
         title: `Payout race course ${suffix}`,
         description: "Kurs za proveru konkurentne isplate i spora.",
@@ -377,8 +378,8 @@ async function run(): Promise<void> {
         extensionPrice1Month: 1000,
         extensionPrice3Months: 2500,
         extensionPrice6Months: 4500,
-      },
-      {
+      }),
+      buildValidOnlineEducationCourse({
         centerId: payoutRaceCenter.id,
         title: `Dispute race course ${suffix}`,
         description: "Kurs za proveru konkurentnog spora i isplate.",
@@ -394,8 +395,8 @@ async function run(): Promise<void> {
         extensionPrice1Month: 1000,
         extensionPrice3Months: 2500,
         extensionPrice6Months: 4500,
-      },
-      {
+      }),
+      buildValidOnlineEducationCourse({
         centerId: payoutRaceCenter.id,
         title: `Maturity race course ${suffix}`,
         description: "Kurs za proveru dospeća i konkurentnog spora.",
@@ -411,8 +412,8 @@ async function run(): Promise<void> {
         extensionPrice1Month: 1000,
         extensionPrice3Months: 2500,
         extensionPrice6Months: 4500,
-      },
-      {
+      }),
+      buildValidOnlineEducationCourse({
         centerId: payoutRaceCenter.id,
         title: `Duplicate dispute course ${suffix}`,
         description: "Kurs za proveru ponovljenog spora pri isteku roka.",
@@ -428,7 +429,7 @@ async function run(): Promise<void> {
         extensionPrice1Month: 1000,
         extensionPrice3Months: 2500,
         extensionPrice6Months: 4500,
-      },
+      }),
     ]).returning();
     assert.ok(payoutRaceCourse);
     assert.ok(disputeRaceCourse);
@@ -752,6 +753,7 @@ async function run(): Promise<void> {
       method: "POST",
       cookie: buyerCookie,
       headers: { "idempotency-key": `unverified-${suffix}` },
+      // Consent is intentionally omitted because center eligibility must reject first.
       body: {},
     });
     assert.equal(blockedEnrollmentResponse.status, 404, "Unverified center courses must reject public enrollment.");

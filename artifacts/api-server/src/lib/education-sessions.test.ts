@@ -46,6 +46,10 @@ import {
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureDemoData } from "./seed";
+import {
+  buildValidOnlineEducationCourse,
+  buildValidOnlineEducationEnrollmentRequest,
+} from "./education-test-fixtures";
 
 const suffix = randomUUID();
 const password = "education-sessions-test-password";
@@ -950,18 +954,16 @@ async function run(): Promise<void> {
 
     // ── 7e. Gift refund payout boundary + one-transaction seat lifecycle ─────
     async function redeemedGiftFixture(format: "online" | "in-person", withWaiter = false) {
-      const [giftCourse] = await db.insert(coursesTable).values({
+      const sharedCourse = {
         centerId: center!.id, title: `Gift refund ${format} ${randomUUID()}`,
-        description: "Izolovani refund fixture.", category: "Stilizovanje", format,
-        city: format === "online" ? null : "Beograd", price: 5000, duration: "1 dan",
+        description: "Izolovani refund fixture.", category: "Stilizovanje",
+        price: 5000, duration: "1 dan",
         imageUrl: "/gift-refund.jpg", published: true, giftVoucherEligible: true,
-        ...(format === "online" ? {
-          onlineAccessDays: 30,
-          extensionPrice1Month: 1000,
-          extensionPrice3Months: 2500,
-          extensionPrice6Months: 4000,
-        } : {}),
-      }).returning();
+      };
+      const courseValues = format === "online"
+        ? buildValidOnlineEducationCourse({ ...sharedCourse, format, city: null })
+        : { ...sharedCourse, format, city: "Beograd" };
+      const [giftCourse] = await db.insert(coursesTable).values(courseValues).returning();
       courseIds.push(giftCourse!.id);
       let giftSession: typeof courseSessionsTable.$inferSelect | undefined;
       if (format === "in-person") {
@@ -982,7 +984,9 @@ async function run(): Promise<void> {
       })).status, 200);
       const redeemed = await request(baseUrl, "/education/gift-vouchers/redeem", {
         method: "POST", cookie: buyerCookie,
-        body: { code: purchased.redemptionCode, ...(format === "online" ? { digitalContentConsent: true } : {}) },
+        body: format === "online"
+          ? buildValidOnlineEducationEnrollmentRequest({ code: purchased.redemptionCode })
+          : { code: purchased.redemptionCode },
       });
       assert.equal(redeemed.status, 201);
       const enrollment = await json<{ id: string }>(redeemed);

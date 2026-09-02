@@ -16,6 +16,7 @@ import {
   educationBankRejectionReasons,
   processNormalizedEducationBankTransaction,
 } from "./education-bank-reconciliation";
+import { buildValidOnlineEducationCourse } from "./education-test-fixtures";
 
 const marker = `edu-contract-${randomUUID()}`;
 const emails = [`owner-a-${marker}@example.test`, `owner-b-${marker}@example.test`];
@@ -669,8 +670,8 @@ try {
     graceEndsAt: null,
   }).where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
   const published = await db.insert(coursesTable).values([
-    { centerId: centerA.id, title: `Zadrži ${marker}`, category: "Test", format: "online", price: 1000, duration: "1h", imageUrl: "/test-course-1.jpg", published: true },
-    { centerId: centerA.id, title: `Suspenduj ${marker}`, category: "Test", format: "online", price: 1000, duration: "1h", imageUrl: "/test-course-2.jpg", published: true },
+    buildValidOnlineEducationCourse({ centerId: centerA.id, title: `Zadrži ${marker}`, category: "Test", format: "online", price: 1000, duration: "1h", imageUrl: "/test-course-1.jpg", published: true }),
+    buildValidOnlineEducationCourse({ centerId: centerA.id, title: `Suspenduj ${marker}`, category: "Test", format: "online", price: 1000, duration: "1h", imageUrl: "/test-course-2.jpg", published: true }),
   ]).returning();
   [subscription] = await db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
   assert.equal(subscription!.currentCourseLimitSnapshot, high!.courseLimit,

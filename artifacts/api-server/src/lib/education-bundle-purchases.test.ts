@@ -15,6 +15,10 @@ import app from "../app";
 import { hashPassword, sessionCookieName } from "./auth";
 import { lockEducationCenterFinancials } from "./education-billing";
 import { educationIpsQrPayload, educationIpsRuntimeEnvironment } from "./education-marketplace-domain";
+import {
+  buildValidOnlineEducationCourse,
+  buildValidOnlineEducationEnrollmentRequest,
+} from "./education-test-fixtures";
 
 const suffix = randomUUID();
 const password = "bundle-purchase-test-password";
@@ -87,8 +91,8 @@ async function run() {
       centerId, planId, status: "active", dueAmount: 1, currentPeriodEnd: new Date(Date.now() + 86_400_000),
     });
     const courses = await db.insert(coursesTable).values([
-      { centerId, title: "Bundle course one", description: "Test", category: "Test", format: "online", city: "Beograd", price: 12000, duration: "2 weeks", certification: true, imageUrl: "/test.jpg", published: true, onlineAccessDays: 30, extensionPrice1Month: 1000, extensionPrice3Months: 2500, extensionPrice6Months: 4500 },
-      { centerId, title: "Bundle course two", description: "Test", category: "Test", format: "online", city: "Beograd", price: 14000, duration: "3 weeks", certification: true, imageUrl: "/test.jpg", published: true, onlineAccessDays: 60, extensionPrice1Month: 1100, extensionPrice3Months: 2600, extensionPrice6Months: 4600 },
+      buildValidOnlineEducationCourse({ centerId, title: "Bundle course one", description: "Test", category: "Test", format: "online", city: "Beograd", price: 12000, duration: "2 weeks", certification: true, imageUrl: "/test.jpg", published: true, onlineAccessDays: 30, extensionPrice1Month: 1000, extensionPrice3Months: 2500, extensionPrice6Months: 4500 }),
+      buildValidOnlineEducationCourse({ centerId, title: "Bundle course two", description: "Test", category: "Test", format: "online", city: "Beograd", price: 14000, duration: "3 weeks", certification: true, imageUrl: "/test.jpg", published: true, onlineAccessDays: 60, extensionPrice1Month: 1100, extensionPrice3Months: 2600, extensionPrice6Months: 4600 }),
     ]).returning();
     courseIds.push(...courses.map(course => course.id));
     const [bundle] = await db.insert(educationBundlesTable).values({ centerId, title: "Published bundle", description: "Test bundle", price: 21000, active: true, published: true }).returning();
@@ -144,7 +148,7 @@ async function run() {
     const suspendedKey = `suspended-${suffix}`;
     assert.ok([404, 409].includes((await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, {
       method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": suspendedKey },
-      body: { targetType: "individual", digitalContentConsent: true },
+      body: buildValidOnlineEducationEnrollmentRequest({ targetType: "individual" }),
     })).status), "A suspended center cannot issue a bundle purchase.");
     assert.equal((await db.select().from(educationBundlePurchasesTable)
       .where(eq(educationBundlePurchasesTable.idempotencyKey, suspendedKey))).length, 0,
@@ -159,7 +163,7 @@ async function run() {
       await lockEducationCenterFinancials(tx, centerId!);
       racingPurchase = request(baseUrl, `/education/bundles/${testBundleId}/purchases`, {
         method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": racingKey },
-        body: { targetType: "individual", digitalContentConsent: true },
+        body: buildValidOnlineEducationEnrollmentRequest({ targetType: "individual" }),
       });
       // Let the request pass its public precheck and block on the same
       // deterministic center lock before committing the suspension.
@@ -181,6 +185,7 @@ async function run() {
       await lockEducationCenterFinancials(tx, centerId!);
       consentRacePurchase = request(baseUrl, `/education/bundles/${testBundleId}/purchases`, {
         method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": consentRaceKey },
+        // Consent is intentionally omitted to exercise locked online-term revalidation.
         body: { targetType: "individual" },
       });
       // The public read observes hybrid terms, then checkout blocks on the
@@ -199,10 +204,11 @@ async function run() {
     assert.equal((await (await request(baseUrl, "/education/bundles")).json() as Array<{ id: string }>).some(row => row.id === testBundleId), false,
       "A bundle with an inconsistent linked course set is not publicly listed.");
     assert.equal((await request(baseUrl, `/education/bundles/${testBundleId}`)).status, 409);
-    assert.equal((await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": `inconsistent-${suffix}` }, body: { targetType: "individual" } })).status, 409);
+    assert.equal((await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": `inconsistent-${suffix}` }, body: buildValidOnlineEducationEnrollmentRequest({ targetType: "individual" }) })).status, 409);
     await db.update(coursesTable).set({ published: true }).where(eq(coursesTable.id, courses[1].id));
 
-    assert.equal((await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, body: { targetType: "individual" } })).status, 400, "Idempotency-Key is required.");
+    assert.equal((await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, body: buildValidOnlineEducationEnrollmentRequest({ targetType: "individual" }) })).status, 400, "Idempotency-Key is required.");
+    // Consent is intentionally omitted to verify the online bundle requirement.
     assert.equal((await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": `missing-consent-${suffix}` }, body: { targetType: "individual" } })).status, 400, "Online bundle purchase requires explicit digital-content consent.");
     assert.deepEqual(
       PurchaseEducationBundleBody.parse({ targetType: "individual", digitalContentConsent: true }),
@@ -210,7 +216,7 @@ async function run() {
       "Generated bundle purchase contract carries explicit online-content consent.",
     );
     const key = `individual-${suffix}`;
-    const created = await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": key }, body: { targetType: "individual", digitalContentConsent: true } });
+    const created = await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": key }, body: buildValidOnlineEducationEnrollmentRequest({ targetType: "individual" }) });
     assert.equal(created.status, 201);
     const purchase = await created.json() as { id: string; amount: number; paymentInstructions: { reference: string; recipientAccount: string; payload: string } };
     purchaseId = purchase.id; assert.equal(purchase.amount, 21000); assert.ok(purchase.paymentInstructions);
@@ -220,7 +226,7 @@ async function run() {
     const secondPurchaseKey = `individual-second-${suffix}`;
     const secondPurchaseResponse = await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, {
       method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": secondPurchaseKey },
-      body: { targetType: "individual", digitalContentConsent: true },
+      body: buildValidOnlineEducationEnrollmentRequest({ targetType: "individual" }),
     });
     assert.equal(secondPurchaseResponse.status, 201, "The same bundle can issue a separate purchase reference.");
     const secondPurchase = await secondPurchaseResponse.json() as { id: string; paymentInstructions: { reference: string; payload: string } };
@@ -260,13 +266,13 @@ async function run() {
     assert.doesNotMatch(pdfText, /(?:32){18}/, "PDF never regenerates from current platform settings.");
     assert.deepEqual((await db.select().from(educationBundlePurchaseItemsTable).where(eq(educationBundlePurchaseItemsTable.purchaseId, purchaseId))).map(item => item.courseId).sort(), qualifyingCourseIds,
       "Purchase snapshots exactly the same qualifying course set shown publicly.");
-    const replay = await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": key }, body: { targetType: "individual", digitalContentConsent: true } });
+    const replay = await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": key }, body: buildValidOnlineEducationEnrollmentRequest({ targetType: "individual" }) });
     assert.equal(replay.status, 200); assert.equal((await replay.json() as { id: string }).id, purchaseId);
-    assert.equal((await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": key }, body: { targetType: "salon_employee", salonId: salons[0].id, employeeId: employees[0].id } })).status, 409);
+    assert.equal((await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": key }, body: buildValidOnlineEducationEnrollmentRequest({ targetType: "salon_employee", salonId: salons[0].id, employeeId: employees[0].id }) })).status, 409);
     assert.equal((await db.select().from(educationBundlePurchasesTable).where(eq(educationBundlePurchasesTable.id, purchaseId))).length, 1);
 
-    assert.equal((await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: ownerCookie, headers: { "Idempotency-Key": `foreign-${suffix}` }, body: { targetType: "salon_employee", salonId: salons[1].id, employeeId: employees[1].id, digitalContentConsent: true } })).status, 403);
-    const employeePurchaseResponse = await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: ownerCookie, headers: { "Idempotency-Key": `employee-${suffix}` }, body: { targetType: "salon_employee", salonId: salons[0].id, employeeId: employees[0].id, digitalContentConsent: true } });
+    assert.equal((await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: ownerCookie, headers: { "Idempotency-Key": `foreign-${suffix}` }, body: buildValidOnlineEducationEnrollmentRequest({ targetType: "salon_employee", salonId: salons[1].id, employeeId: employees[1].id }) })).status, 403);
+    const employeePurchaseResponse = await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: ownerCookie, headers: { "Idempotency-Key": `employee-${suffix}` }, body: buildValidOnlineEducationEnrollmentRequest({ targetType: "salon_employee", salonId: salons[0].id, employeeId: employees[0].id }) });
     assert.equal(employeePurchaseResponse.status, 201, "Salon owner may buy for their active employee.");
     const employeePurchaseId = (await employeePurchaseResponse.json() as { id: string }).id;
     assert.equal((await db.select().from(educationBundlePurchasesTable).where(eq(educationBundlePurchasesTable.id, employeePurchaseId)))[0]?.learnerUserId, employeeUser.id,

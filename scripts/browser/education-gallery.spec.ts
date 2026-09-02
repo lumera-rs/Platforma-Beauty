@@ -21,6 +21,7 @@ import {
   cleanupEducationMediaUpload,
   runEducationGalleryCleanup,
 } from "../../artifacts/api-server/src/routes/marketplace";
+import { buildValidOnlineEducationCourse } from "../../artifacts/api-server/src/lib/education-test-fixtures";
 import { eq, inArray, like, or, sql } from "drizzle-orm";
 
 const tinyPng = Buffer.from(
@@ -120,7 +121,7 @@ async function createGalleryFixture(): Promise<GalleryFixture> {
       dueAmount: 0,
       currentPeriodEnd: new Date(Date.now() + 24 * 60 * 60 * 1000),
     });
-    const [course] = await db.insert(coursesTable).values({
+    const [course] = await db.insert(coursesTable).values(buildValidOnlineEducationCourse({
       centerId: center.id,
       title: `Gallery course ${suffix}`,
       description: "Isolated course for direct gallery upload testing.",
@@ -132,7 +133,7 @@ async function createGalleryFixture(): Promise<GalleryFixture> {
       certification: false,
       imageUrl: "/gallery-test-course.jpg",
       published: true,
-    }).returning();
+    })).returning();
     if (!course) throw new Error("Could not create gallery course fixture.");
     courseId = course.id;
     return {

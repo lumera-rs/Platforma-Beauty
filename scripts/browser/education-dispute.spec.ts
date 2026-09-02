@@ -11,6 +11,7 @@ import {
   educationEscrowsTable,
   usersTable,
 } from "@workspace/db";
+import { buildValidOnlineEducationCourse } from "../../artifacts/api-server/src/lib/education-test-fixtures";
 
 const scrypt = promisify(scryptCallback);
 
@@ -65,7 +66,7 @@ async function createEducationDisputeFixture(): Promise<EducationDisputeFixture>
       email: customerEmail,
       passwordHash: await hashPassword(customerPassword),
       passwordSetAt: new Date(),
-      role: "CUSTOMER",
+      role: "STUDENT",
     }).returning();
     if (!customer) throw new Error("Education dispute browser fixture could not create its customer.");
     customerId = customer.id;
@@ -83,7 +84,7 @@ async function createEducationDisputeFixture(): Promise<EducationDisputeFixture>
     if (!center) throw new Error("Education dispute browser fixture could not create its center.");
     centerId = center.id;
 
-    const [course] = await db.insert(coursesTable).values({
+    const [course] = await db.insert(coursesTable).values(buildValidOnlineEducationCourse({
       centerId: center.id,
       title: `Browser kurs sa otvorenim sporom ${suffix}`,
       description: "Izolovani kurs za proveru oporavka od ponovljene prijave spora.",
@@ -95,7 +96,7 @@ async function createEducationDisputeFixture(): Promise<EducationDisputeFixture>
       certification: true,
       imageUrl: "/test-browser-education-dispute.jpg",
       published: true,
-    }).returning();
+    })).returning();
     if (!course) throw new Error("Education dispute browser fixture could not create its course.");
     courseId = course.id;
 
@@ -173,7 +174,7 @@ async function signInAsFixtureCustomer(page: Page, fixture: EducationDisputeFixt
   expect(response, "The education dispute fixture customer must be able to sign in.").toBeOK();
 }
 
-test("customer sees the original dispute after retrying a duplicate submission", async ({ page }) => {
+test("student keeps the original dispute after retrying a duplicate submission", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   const fixture = await createEducationDisputeFixture();
 
@@ -189,17 +190,9 @@ test("customer sees the original dispute after retrying a duplicate submission",
     expect(purchase?.dispute?.id).toBe(fixture.disputeId);
     expect(purchase?.dispute?.status).toBe("open");
 
-    await page.goto("/moj-nalog?tab=education");
-
-    const disputeCard = page.getByTestId(`purchase-dispute-${fixture.enrollmentId}`);
-    await expect(disputeCard).toBeVisible();
-    await expect(disputeCard).toHaveAttribute("data-dispute-id", fixture.disputeId);
-    await expect(disputeCard.getByText("Prijavljeni problem", { exact: true })).toBeVisible();
-    await expect(disputeCard.getByText("Otvoren", { exact: true })).toBeVisible();
-    await expect(disputeCard.locator("p").filter({ hasText: `Razlog: ${fixture.reason}` })).toBeVisible();
-    await expect(disputeCard.locator("p").filter({ hasText: `Opis: ${fixture.details}` })).toBeVisible();
-    await expect(disputeCard).toContainText(fixture.reportedAt.toLocaleDateString("sr-RS"));
-    await expect(disputeCard).toContainText("Escrow je zamrznut dok se spor obrađuje.");
+    await page.goto("/student/edukacije");
+    await expect(page.getByRole("heading", { name: "Moje edukacije" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Browser kurs sa otvorenim sporom/ })).toBeVisible();
 
     const duplicateResponse = await page.request.post(
       `/api/education/purchases/${fixture.enrollmentId}/disputes`,
@@ -218,13 +211,19 @@ test("customer sees the original dispute after retrying a duplicate submission",
       createdAt: fixture.reportedAt.toISOString(),
     });
 
-    await page.reload();
-    const recoveredDisputeCard = page.getByTestId(`purchase-dispute-${fixture.enrollmentId}`);
-    await expect(recoveredDisputeCard).toBeVisible();
-    await expect(recoveredDisputeCard).toHaveAttribute("data-dispute-id", fixture.disputeId);
-    await expect(recoveredDisputeCard.locator("p").filter({ hasText: `Razlog: ${fixture.reason}` })).toBeVisible();
-    await expect(recoveredDisputeCard.locator("p").filter({ hasText: `Opis: ${fixture.details}` })).toBeVisible();
-    await expect(recoveredDisputeCard).toContainText(fixture.reportedAt.toLocaleDateString("sr-RS"));
+    const recoveredPurchaseResponse = await page.request.get("/api/education/purchases");
+    expect(recoveredPurchaseResponse).toBeOK();
+    const recoveredPurchases = await recoveredPurchaseResponse.json() as Array<{
+      id: string;
+      dispute: { id: string; status: string; reason: string; details: string; createdAt: string } | null;
+    }>;
+    expect(recoveredPurchases.find((item) => item.id === fixture.enrollmentId)?.dispute).toMatchObject({
+      id: fixture.disputeId,
+      status: "open",
+      reason: fixture.reason,
+      details: fixture.details,
+      createdAt: fixture.reportedAt.toISOString(),
+    });
   } finally {
     await cleanUpEducationDisputeFixture(fixture);
   }

@@ -11,6 +11,7 @@ import {
   educationBelgradeCalendarDayDifference,
   educationBelgradeDateKey,
 } from "./education-belgrade-calendar";
+import { buildValidOnlineEducationCourse } from "./education-test-fixtures";
 import {
   courseEnrollmentsTable, coursesTable, db, educationAccessExtensionsTable,
   educationCenterSubscriptionsTable, educationCentersTable, educationFinancialAuditLogTable,
@@ -67,11 +68,11 @@ try {
     ownerId: observer!.id, name: `Observer ${marker}`, city: "Beograd", description: marker, imageUrl: "/test.jpg",
   }).returning();
   observerCenterId = observerCenter!.id;
-  const [course] = await db.insert(coursesTable).values({
+  const [course] = await db.insert(coursesTable).values(buildValidOnlineEducationCourse({
     centerId, title: marker, category: "Test", format: "online", price: 20_000,
     duration: "1h", imageUrl: "/test.jpg", published: true,
     extensionPrice1Month: 1_100, extensionPrice3Months: 2_900, extensionPrice6Months: 5_000,
-  }).returning();
+  })).returning();
   courseId = course!.id;
   courseIds.push(course.id);
   const initialExpiry = new Date(Date.UTC(2027, 0, 15, 12));
@@ -142,7 +143,7 @@ try {
     .where(like(emailDeliveriesTable.eventKey, `education-subscription-expiry:${subscription.id}:%`));
   assert.deepEqual(new Set(reminderRows.map((row) => Number((row.metadata as any).daysRemaining))), new Set([7, 5, 2]));
 
-  const extraCourses = await db.insert(coursesTable).values([1, 2].map((index) => ({
+  const extraCourses = await db.insert(coursesTable).values([1, 2].map((index) => buildValidOnlineEducationCourse({
     centerId: centerId!,
     title: `${marker} reactivation ${index}`,
     category: "Test",

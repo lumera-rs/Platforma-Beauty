@@ -25,6 +25,7 @@ import app from "../app";
 import { hashPassword, sessionCookieName } from "./auth";
 import { ensureDemoData } from "./seed";
 import { runFeaturedPlacementPaymentReminderSweep } from "./featured-placement-payment-reminders";
+import { buildValidOnlineEducationCourse } from "./education-test-fixtures";
 
 const suffix = randomUUID();
 const password = "education-placement-test-password";
@@ -286,7 +287,7 @@ async function run(): Promise<void> {
     assert.equal(subcategories.length, 2);
     subcategoryIds.push(...subcategories.map((subcategory) => subcategory.id));
     const courses = await db.insert(coursesTable).values([
-      {
+      buildValidOnlineEducationCourse({
         centerId,
         categoryId: categories[0]!.id,
         subcategoryId: subcategories[0]!.id,
@@ -299,8 +300,8 @@ async function run(): Promise<void> {
         duration: "3 dana",
         imageUrl: "/test-education-placement.jpg",
         published: true,
-      },
-      {
+      }),
+      buildValidOnlineEducationCourse({
         centerId,
         categoryId: categories[1]!.id,
         subcategoryId: subcategories[1]!.id,
@@ -313,7 +314,7 @@ async function run(): Promise<void> {
         duration: "3 dana",
         imageUrl: "/test-education-placement.jpg",
         published: true,
-      },
+      }),
     ]).returning();
     assert.equal(courses.length, 2);
     courseIds.push(...courses.map((course) => course.id));

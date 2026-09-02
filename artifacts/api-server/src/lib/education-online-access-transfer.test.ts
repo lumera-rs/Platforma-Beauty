@@ -129,6 +129,7 @@ async function run(): Promise<void> {
     await db.transaction(async (tx) => {
       await tx.select({ id: coursesTable.id }).from(coursesTable)
         .where(eq(coursesTable.id, raceCourseId!)).for("update");
+      // Consent is intentionally omitted before the hybrid course becomes online.
       directConsentRace = request(base, outsiderCookie, `/education/courses/${raceCourseId}/enrollments`, "POST", {
         paymentMode: "online_full",
       });
@@ -145,6 +146,7 @@ async function run(): Promise<void> {
     await db.transaction(async (tx) => {
       await tx.select({ id: coursesTable.id }).from(coursesTable)
         .where(eq(coursesTable.id, raceCourseId!)).for("update");
+      // Consent is intentionally omitted before the hybrid course becomes online.
       groupConsentRace = request(base, ownerCookie, `/education/courses/${raceCourseId}/group-enrollments`, "POST", {
         employeeIds: [groupWorker!.id],
       });
@@ -164,8 +166,10 @@ async function run(): Promise<void> {
       employeeIds: [groupWorker!.id, groupWorkerTwo!.id],
     })).status, 201, "Non-online group enrollment must not require digital-content consent.");
 
+    // Consent is intentionally omitted to verify individual online enrollment validation.
     assert.equal((await request(base, outsiderCookie, `/education/courses/${courseId}/enrollments`, "POST", { paymentMode: "online_full" })).status, 400,
       "Ordinary online enrollment requires explicit consent.");
+    // Consent is intentionally omitted to verify group online enrollment validation.
     assert.equal((await request(base, ownerCookie, `/education/courses/${courseId}/group-enrollments`, "POST", {
       employeeIds: [groupWorker!.id],
     })).status, 400, "Online group enrollment requires explicit consent.");
@@ -180,9 +184,8 @@ async function run(): Promise<void> {
       },
       "Generated group-enrollment contract accepts employee IDs and explicit digital-content consent.",
     );
-    const group = await request(base, ownerCookie, `/education/courses/${courseId}/group-enrollments`, "POST", {
-      ...buildValidOnlineEducationEnrollmentRequest({ employeeIds: [groupWorker!.id, groupWorkerTwo!.id] }),
-    });
+    const group = await request(base, ownerCookie, `/education/courses/${courseId}/group-enrollments`, "POST",
+      buildValidOnlineEducationEnrollmentRequest({ employeeIds: [groupWorker!.id, groupWorkerTwo!.id] }));
     assert.equal(group.status, 201);
     assert.equal(group.body.enrollments.length, 2, "Every selected group member receives a separate enrollment.");
     const groupEnrollmentIds = group.body.enrollments.map((item: { id: string }) => item.id);
@@ -240,11 +243,11 @@ async function run(): Promise<void> {
     assert.equal(voucherCreated.status, 201);
     const voucher = await voucherCreated.json() as { id: string; redemptionCode: string };
     assert.equal((await request(base, adminCookie, `/admin/education/gift-vouchers/${voucher.id}/settle`, "POST")).status, 200);
+    // Consent is intentionally omitted to verify online voucher redemption validation.
     assert.equal((await request(base, outsiderCookie, "/education/gift-vouchers/redeem", "POST", { code: voucher.redemptionCode })).status, 409,
       "Online voucher redemption requires explicit consent.");
-    const redemption = await request(base, outsiderCookie, "/education/gift-vouchers/redeem", "POST", {
-      ...buildValidOnlineEducationEnrollmentRequest({ code: voucher.redemptionCode }),
-    });
+    const redemption = await request(base, outsiderCookie, "/education/gift-vouchers/redeem", "POST",
+      buildValidOnlineEducationEnrollmentRequest({ code: voucher.redemptionCode }));
     assert.deepEqual(
       RedeemEducationGiftVoucherBody.parse({ code: voucher.redemptionCode, digitalContentConsent: true }),
       { code: voucher.redemptionCode, digitalContentConsent: true },
@@ -256,9 +259,8 @@ async function run(): Promise<void> {
     assert.ok(voucherEnrollment!.accessGrantedAt && voucherEnrollment!.accessExpiresAt);
     assert.equal(voucherEnrollment!.accessExpiresAt!.getTime() - voucherEnrollment!.accessGrantedAt!.getTime(), 45 * 86_400_000);
 
-    const pending = await request(base, ownerCookie, `/education/courses/${courseId}/enrollments`, "POST", {
-      ...buildValidOnlineEducationEnrollmentRequest({ employeeId: source!.id, paymentMode: "online_full" }),
-    });
+    const pending = await request(base, ownerCookie, `/education/courses/${courseId}/enrollments`, "POST",
+      buildValidOnlineEducationEnrollmentRequest({ employeeId: source!.id, paymentMode: "online_full" }));
     assert.equal(pending.status, 201);
     const enrollmentId = pending.body.id as string;
     const [beforeSettlement] = await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, enrollmentId));

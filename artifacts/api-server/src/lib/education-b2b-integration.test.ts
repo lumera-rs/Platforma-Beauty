@@ -12,6 +12,7 @@ import {
   productsTable, usersTable,
 } from "@workspace/db";
 import { previousBelgradeCalendarMonth } from "../routes/education-b2b-discounts";
+import { buildValidOnlineEducationCourse } from "./education-test-fixtures";
 
 const marker = `edu-b2b-it-${randomUUID()}`;
 const oldSettings = await db.select().from(educationB2bDiscountSettingsTable);
@@ -31,7 +32,7 @@ try {
     { firstName:"Salon",lastName:marker,email:`s-${marker}@x.test`,passwordHash,passwordSetAt:new Date(),role:"SALON_OWNER" },
   ]).returning(); userIds=[admin!.id,owner!.id,salon!.id];
   const [center]=await db.insert(educationCentersTable).values({ownerId:owner!.id,name:marker,city:"Beograd",description:marker,imageUrl:"/test.jpg"}).returning(); centerId=center!.id;
-  const [course]=await db.insert(coursesTable).values({centerId,title:marker,category:"Test",format:"online",price:1000,duration:"1h",imageUrl:"/test.jpg"}).returning(); courseId=course!.id;
+  const [course]=await db.insert(coursesTable).values(buildValidOnlineEducationCourse({centerId,title:marker,category:"Test",format:"online",price:1000,duration:"1h",imageUrl:"/test.jpg"})).returning(); courseId=course!.id;
   const [product]=await db.insert(productsTable).values({categoryName:"Test",name:marker,description:marker,imageUrl:"/test.jpg",price:1000,publicPrice:777,retailEnabled:true,stock:10,sku:marker,unit:"kom",professionalEnabled:true}).returning(); productId=product!.id;
   const period=previousBelgradeCalendarMonth(new Date());
   await db.insert(educationB2bOrdersTable).values({

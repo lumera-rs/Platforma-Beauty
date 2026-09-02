@@ -622,7 +622,7 @@ async function run(): Promise<void> {
       await db.update(coursesTable)
         .set({ instructorProfileId: instructor.id })
         .where(eq(coursesTable.id, certCourse.id));
-      const [precisionCourse] = await db.insert(coursesTable).values({
+      const [precisionCourse] = await db.insert(coursesTable).values(buildValidOnlineEducationCourse({
         centerId: center.id,
         instructorProfileId: instructor.id,
         title: `Precizan prosek instruktora ${suffix}`,
@@ -634,7 +634,7 @@ async function run(): Promise<void> {
         duration: "1 sat",
         imageUrl: "/instructor-rating-precision.jpg",
         published: true,
-      }).returning();
+      })).returning();
       assert.ok(precisionCourse);
       courseIds.push(precisionCourse.id);
       const precisionReviewers = [admin, centerOwner, salonOwner, empUser1];
@@ -742,11 +742,11 @@ async function run(): Promise<void> {
       assert.equal(privateDetail.reviewCount, 2);
       assert.ok(Array.isArray(privateDetail.modules), "Owner detail retains protected LMS modules.");
 
-      const [zeroReviewCourse] = await db.insert(coursesTable).values({
+      const [zeroReviewCourse] = await db.insert(coursesTable).values(buildValidOnlineEducationCourse({
         centerId: center.id, title: `Zero review detail ${suffix}`, description: "Bez objavljenih utisaka.",
         category: "Drugo", format: "online", city: "Novi Sad", price: 1000, duration: "1 sat",
         imageUrl: "/zero-review.jpg", published: true,
-      }).returning();
+      })).returning();
       assert.ok(zeroReviewCourse);
       courseIds.push(zeroReviewCourse.id);
       const zeroPublicResponse = await request(baseUrl, `/education/public/courses/${zeroReviewCourse.id}`);
@@ -766,22 +766,22 @@ async function run(): Promise<void> {
       // have no shared subcategory, so the match is tier 1 tag-only.
       await db.update(coursesTable).set({ tags: [" Nail   Art "] }).where(eq(coursesTable.id, certCourse.id));
       const [normalizedTagMatch, nearMiss] = await db.insert(coursesTable).values([
-        {
+        buildValidOnlineEducationCourse({
           centerId: center.id, title: `Normalized related ${suffix}`, description: "Tag normalizacija.",
           category: "Drugo", format: "online", city: "Novi Sad", price: 1000, duration: "1 sat",
           imageUrl: "/related.jpg", published: true, tags: ["ＮＡＩＬ\tＡＲＴ"], rating: 48,
-        },
-        {
+        }),
+        buildValidOnlineEducationCourse({
           centerId: center.id, title: `Near miss related ${suffix}`, description: "Ne sme da se poklopi.",
           category: "Drugo", format: "online", city: "Novi Sad", price: 1000, duration: "1 sat",
           imageUrl: "/related.jpg", published: true, tags: ["nail arts"], rating: 50,
-        },
+        }),
       ]).returning();
       courseIds.push(normalizedTagMatch!.id, nearMiss!.id);
       // Push the normalized match beyond the related endpoint's 200-row scan
       // page. The implementation must continue paging before applying limit.
       const unrelatedRelatedFillers = await db.insert(coursesTable).values(
-        Array.from({ length: 200 }, (_, index) => ({
+        Array.from({ length: 200 }, (_, index) => buildValidOnlineEducationCourse({
           centerId: center.id, title: `Related filler ${suffix}-${index}`, description: "Nepovezan kandidat.",
           category: "Drugo", format: "online" as const, city: "Novi Sad", price: 1000, duration: "1 sat",
           imageUrl: "/related.jpg", published: true, tags: ["masaža"],
@@ -1130,7 +1130,7 @@ async function run(): Promise<void> {
       // category so the scalar filter isolates this test's rows from any others.
       const listCategory = `PagerCat-${suffix}`;
       const listCourses = await db.insert(coursesTable).values(
-        Array.from({ length: listCourseCount }, (_, i) => ({
+        Array.from({ length: listCourseCount }, (_, i) => buildValidOnlineEducationCourse({
           centerId: center.id,
           title: `List Pager Course ${i} ${suffix}`,
           description: "Kurs za proveru paginacije liste.",
@@ -1247,7 +1247,7 @@ async function run(): Promise<void> {
       const otherCenterId = otherCenter!.id;
       extraCenterIds.push(otherCenterId);
 
-      const [otherCourse] = await db.insert(coursesTable).values({
+      const [otherCourse] = await db.insert(coursesTable).values(buildValidOnlineEducationCourse({
         centerId: otherCenterId,
         title: `Other Center Course ${suffix}`,
         description: "Kurs drugog centra.",
@@ -1260,7 +1260,7 @@ async function run(): Promise<void> {
         imageUrl: "/test-other.jpg",
         published: true,
         refundPolicy: "Bez povraćaja.",
-      }).returning();
+      })).returning();
       courseIds.push(otherCourse!.id);
 
       // Enrollment on the OTHER center's course, purchased by a different user.
@@ -1283,7 +1283,7 @@ async function run(): Promise<void> {
       const pageSize = 5;
       const ownerEnrollmentCount = pageSize + 2; // 7 → 2 pages (5 + 2)
       const paginationCourses = await db.insert(coursesTable).values(
-        Array.from({ length: ownerEnrollmentCount }, (_, i) => ({
+        Array.from({ length: ownerEnrollmentCount }, (_, i) => buildValidOnlineEducationCourse({
           centerId: center.id,
           title: `Pagination Course ${i} ${suffix}`,
           description: "Kurs za proveru paginacije prijava.",
