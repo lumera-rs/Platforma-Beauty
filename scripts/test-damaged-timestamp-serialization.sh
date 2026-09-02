@@ -36,7 +36,7 @@ SQL
 }
 trap cleanup EXIT
 
-read -r damaged_id valid_id damaged_slot_id valid_slot_id damaged_request_id valid_request_id applicant_listing_id applicant_contact_id damaged_action_id valid_action_id < <(
+read -r damaged_id valid_id damaged_slot_id valid_slot_id damaged_request_id valid_request_id applicant_listing_id damaged_contact_id valid_contact_id < <(
   psql "$DATABASE_URL" -AtF ' ' -v ON_ERROR_STOP=1 -v marker="$fixture_marker" -v slug="$fixture_slug" <<'SQL'
 with fixture_user as (
   select id from users where email = 'admin@lumera.local'
@@ -125,15 +125,22 @@ fixture_requests as (
 fixture_contact as (
   insert into beauty_job_contacts (
     listing_id, applicant_user_id, applicant_message, applicant_status, author_status,
-    author_reply, created_at, updated_at
+    author_reply, decision_at, replied_at, created_at, updated_at
   )
-  select listing.id, applicant.id, :'marker' || '-application',
-    'pending'::beauty_job_contact_status, 'viewed'::beauty_job_contact_status,
-    :'marker' || '-reply', now(), now()
+  select listing.id, applicant.id, :'marker' || '-damaged-application',
+    'pending'::beauty_job_contact_status, 'replied'::beauty_job_contact_status,
+    :'marker' || '-damaged-reply', now(), now(), '-infinity'::timestamptz, now()
   from fixture_listings listing
   cross join lateral (select id from users where email = 'kupac@lumera.local') applicant
   where listing.title = :'marker' || '-applicants'
-  returning id, listing_id
+  union all
+  select listing.id, applicant.id, :'marker' || '-valid-application',
+    'pending'::beauty_job_contact_status, 'replied'::beauty_job_contact_status,
+    :'marker' || '-valid-reply', now(), now(), now(), now()
+  from fixture_listings listing
+  cross join lateral (select id from users where email = 'admin@lumera.local') applicant
+  where listing.title = :'marker' || '-applicants'
+  returning id, listing_id, applicant_message
 ),
 fixture_actions as (
   insert into beauty_job_application_actions (
@@ -141,16 +148,16 @@ fixture_actions as (
   )
   select contact.id, contact.listing_id,
     'pending'::beauty_job_contact_status, 'viewed'::beauty_job_contact_status,
-    :'marker' || '-damaged-action', owner.id, '-infinity'::timestamptz
+    contact.applicant_message || '-damaged-action', owner.id, '-infinity'::timestamptz
   from fixture_contact contact
   cross join lateral (select id from users where email = 'salon@lumera.local') owner
   union all
   select contact.id, contact.listing_id,
     'viewed'::beauty_job_contact_status, 'replied'::beauty_job_contact_status,
-    :'marker' || '-valid-action', owner.id, now()
+    contact.applicant_message || '-valid-action', owner.id, now()
   from fixture_contact contact
   cross join lateral (select id from users where email = 'salon@lumera.local') owner
-  returning id, private_note
+  returning id
 )
 select
   (select max(id::text) filter (where title = :'marker' || '-damaged') from fixture_listings),
@@ -160,13 +167,12 @@ select
   (select max(id::text) filter (where message = :'marker' || '-damaged-request') from fixture_requests),
   (select max(id::text) filter (where message = :'marker' || '-valid-request') from fixture_requests),
   (select max(id::text) filter (where title = :'marker' || '-applicants') from fixture_listings),
-  (select max(id::text) from fixture_contact),
-  (select max(id::text) filter (where private_note = :'marker' || '-damaged-action') from fixture_actions),
-  (select max(id::text) filter (where private_note = :'marker' || '-valid-action') from fixture_actions);
+  (select max(id::text) filter (where applicant_message = :'marker' || '-damaged-application') from fixture_contact),
+  (select max(id::text) filter (where applicant_message = :'marker' || '-valid-application') from fixture_contact);
 SQL
 )
 
-if [[ -z "$damaged_id" || -z "$valid_id" || -z "$damaged_slot_id" || -z "$valid_slot_id" || -z "$damaged_request_id" || -z "$valid_request_id" || -z "$applicant_listing_id" || -z "$applicant_contact_id" || -z "$damaged_action_id" || -z "$valid_action_id" ]]; then
+if [[ -z "$damaged_id" || -z "$valid_id" || -z "$damaged_slot_id" || -z "$valid_slot_id" || -z "$damaged_request_id" || -z "$valid_request_id" || -z "$applicant_listing_id" || -z "$damaged_contact_id" || -z "$valid_contact_id" ]]; then
   echo "Failed to create damaged timestamp fixtures." >&2
   exit 1
 fi
@@ -255,28 +261,49 @@ if [[ "$status" != "200" ]]; then
   echo "FAIL: authenticated applicant history expected 200, got $status: $(cat "$body")" >&2
   exit 1
 fi
-APPLICANTS_BODY="$(cat "$body")" DETAIL_MARKER="$fixture_marker" CONTACT_ID="$applicant_contact_id" DAMAGED_ACTION_ID="$damaged_action_id" VALID_ACTION_ID="$valid_action_id" node <<'NODE'
+APPLICANTS_BODY="$(cat "$body")" DETAIL_MARKER="$fixture_marker" DAMAGED_CONTACT_ID="$damaged_contact_id" VALID_CONTACT_ID="$valid_contact_id" node <<'NODE'
 const response = JSON.parse(process.env.APPLICANTS_BODY);
 if (!Array.isArray(response.applicants)) throw new Error("Applicant history response has no applicants.");
-const applicant = response.applicants.find((item) => item.id === process.env.CONTACT_ID);
-if (!applicant) throw new Error("Applicant history omitted the fixture applicant.");
-if (applicant.applicantMessage !== `${process.env.DETAIL_MARKER}-application`
-  || applicant.authorReply !== `${process.env.DETAIL_MARKER}-reply`
-  || typeof applicant.applicantDisplayName !== "string") {
+const damagedApplicant = response.applicants.find((item) => item.id === process.env.DAMAGED_CONTACT_ID);
+const validApplicant = response.applicants.find((item) => item.id === process.env.VALID_CONTACT_ID);
+if (!damagedApplicant || !validApplicant) throw new Error("Applicant history omitted a fixture applicant.");
+if (damagedApplicant.createdAt !== null) {
+  throw new Error(`Damaged top-level applicant timestamp was not null: ${damagedApplicant.createdAt}`);
+}
+if (damagedApplicant.applicantMessage !== `${process.env.DETAIL_MARKER}-damaged-application`
+  || damagedApplicant.authorReply !== `${process.env.DETAIL_MARKER}-damaged-reply`
+  || typeof damagedApplicant.applicantDisplayName !== "string"
+  || typeof damagedApplicant.decisionAt !== "string"
+  || typeof damagedApplicant.repliedAt !== "string"
+  || typeof damagedApplicant.updatedAt !== "string") {
   throw new Error("Unrelated applicant fields were not preserved.");
 }
-const damaged = applicant.actions.find((action) => action.id === process.env.DAMAGED_ACTION_ID);
-const valid = applicant.actions.find((action) => action.id === process.env.VALID_ACTION_ID);
-if (!damaged || !valid) throw new Error("Applicant history omitted a neighboring action.");
-if (damaged.createdAt !== null) throw new Error(`Damaged applicant action timestamp was not null: ${damaged.createdAt}`);
-if (damaged.privateNote !== `${process.env.DETAIL_MARKER}-damaged-action`
-  || damaged.fromStatus !== "pending" || damaged.toStatus !== "viewed") {
-  throw new Error("Unrelated fields on the damaged applicant action were not preserved.");
+if (validApplicant.applicantMessage !== `${process.env.DETAIL_MARKER}-valid-application`
+  || validApplicant.authorReply !== `${process.env.DETAIL_MARKER}-valid-reply`
+  || typeof validApplicant.applicantDisplayName !== "string"
+  || typeof validApplicant.decisionAt !== "string"
+  || typeof validApplicant.repliedAt !== "string"
+  || typeof validApplicant.createdAt !== "string"
+  || typeof validApplicant.updatedAt !== "string") {
+  throw new Error("Valid neighboring applicant was not preserved.");
 }
-if (valid.privateNote !== `${process.env.DETAIL_MARKER}-valid-action`
+for (const [applicant, label] of [[damagedApplicant, "damaged"], [validApplicant, "valid"]]) {
+  if (!Array.isArray(applicant.actions) || applicant.actions.length !== 2) {
+    throw new Error(`${label} applicant action history was not preserved.`);
+  }
+  const damaged = applicant.actions.find((action) => action.privateNote === `${applicant.applicantMessage}-damaged-action`);
+  const valid = applicant.actions.find((action) => action.privateNote === `${applicant.applicantMessage}-valid-action`);
+  if (!damaged || !valid) throw new Error(`${label} applicant history omitted a neighboring action.`);
+  if (damaged.createdAt !== null) throw new Error(`Damaged applicant action timestamp was not null: ${damaged.createdAt}`);
+  if (damaged.privateNote !== `${applicant.applicantMessage}-damaged-action`
+  || damaged.fromStatus !== "pending" || damaged.toStatus !== "viewed") {
+    throw new Error(`Unrelated fields on the ${label} applicant's damaged action were not preserved.`);
+  }
+  if (valid.privateNote !== `${applicant.applicantMessage}-valid-action`
   || typeof valid.createdAt !== "string"
   || valid.fromStatus !== "viewed" || valid.toStatus !== "replied") {
-  throw new Error("Valid neighboring applicant action was not preserved.");
+    throw new Error(`Valid neighboring action for the ${label} applicant was not preserved.`);
+  }
 }
 NODE
 
