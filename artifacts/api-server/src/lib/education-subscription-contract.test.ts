@@ -353,6 +353,44 @@ try {
   );
   assert.equal(invalidReconciliationMethod.status, 400);
 
+  const unconfirmedRaiffeisenApiMethod = await call(
+    base,
+    "/admin/education/bank-reconciliation",
+    "PATCH",
+    { enabled: true, accessMethod: "raiffeisen_open_banking" },
+    adminCookie,
+  );
+  assert.equal(unconfirmedRaiffeisenApiMethod.status, 409);
+  assert.equal(unconfirmedRaiffeisenApiMethod.body.code, "RAIFFEISEN_API_CONTRACT_UNCONFIRMED");
+
+  await db.update(educationPlatformSettingsTable).set({
+    bankReconciliationEnabled: true,
+    bankReconciliationAccessMethod: "raiffeisen_open_banking",
+    bankReconciliationAccessConfirmedAt: new Date(),
+    bankReconciliationAccessConfirmedByUserId: admin.id,
+  }).where(eq(educationPlatformSettingsTable.id, platformSettingsId));
+  const legacyRaiffeisenApiStatus = await call(
+    base,
+    "/admin/education/bank-reconciliation",
+    "GET",
+    undefined,
+    adminCookie,
+  );
+  assert.equal(legacyRaiffeisenApiStatus.status, 200);
+  assert.equal(legacyRaiffeisenApiStatus.body.accessConfirmed, false);
+  assert.equal(legacyRaiffeisenApiStatus.body.accessMethod, null);
+  assert.equal(legacyRaiffeisenApiStatus.body.engineState, "awaiting_access_confirmation");
+  const legacyRaiffeisenApiItem = await processNormalizedEducationBankTransaction({
+    source: "contract-fixture",
+    sourceItemId: `${marker}:legacy-raiffeisen-api`,
+    reference: `UNKNOWN-LEGACY-RAIFFEISEN-${marker}`,
+    amountRsd: 1_000,
+    receivedAt: new Date(),
+  });
+  reconciliationTransactionIds.push(legacyRaiffeisenApiItem.transaction.id);
+  assert.equal(legacyRaiffeisenApiItem.transaction.result, "rejected");
+  assert.equal(legacyRaiffeisenApiItem.transaction.rejectionReason, educationBankRejectionReasons.accessUnconfirmed);
+
   const enabledReconciliationStatus = await call(
     base,
     "/admin/education/bank-reconciliation",

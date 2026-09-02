@@ -1056,6 +1056,13 @@ router.patch("/admin/education/bank-reconciliation", async (req, res) => {
     res.status(400).json({ error: "Izaberite jedan od podržanih pristupa Raiffeisen transakcijama." });
     return;
   }
+  if (parsedAccessMethod.data === "raiffeisen_open_banking") {
+    res.status(409).json({
+      error: "Raiffeisen Srbija API pristup ne može biti potvrđen bez zvanične specifikacije za ugovoreni proizvod.",
+      code: "RAIFFEISEN_API_CONTRACT_UNCONFIRMED",
+    });
+    return;
+  }
   await db.transaction(async (tx) => {
     await lockEducationBillingRules(tx, "exclusive");
     const [settings] = await tx.select().from(educationPlatformSettingsTable)

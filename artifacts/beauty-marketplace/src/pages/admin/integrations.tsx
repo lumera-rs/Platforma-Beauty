@@ -713,11 +713,16 @@ export default function AdminIntegrations() {
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 {reconciliation.accessMethods.map((method) => {
                   const selected = reconciliationAccessMethodDraft === method.id;
+                  const contractUnconfirmed = method.id === "raiffeisen_open_banking";
                   return (
                     <label
                       key={method.id}
-                      className={`cursor-pointer rounded-lg border p-3 transition-colors ${
-                        selected ? "border-primary bg-primary/5 ring-1 ring-primary" : "bg-muted/20 hover:bg-muted/40"
+                      className={`rounded-lg border p-3 transition-colors ${
+                        contractUnconfirmed
+                          ? "cursor-not-allowed border-amber-200 bg-amber-50/70"
+                          : selected
+                            ? "cursor-pointer border-primary bg-primary/5 ring-1 ring-primary"
+                            : "cursor-pointer bg-muted/20 hover:bg-muted/40"
                       }`}
                       data-testid={`education-bank-access-method-${method.id}`}
                     >
@@ -728,15 +733,21 @@ export default function AdminIntegrations() {
                           value={method.id}
                           checked={selected}
                           onChange={() => setReconciliationAccessMethodDraft(method.id)}
-                          disabled={savingReconciliation}
+                          disabled={savingReconciliation || contractUnconfirmed}
                           className="mt-1 h-4 w-4 accent-primary"
                         />
                         <span className="min-w-0">
                           <span className="flex flex-wrap items-center gap-2 text-sm font-semibold">
                             {method.label}
                             {selected && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">Izabrano</span>}
+                            {contractUnconfirmed && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] text-amber-800">Ugovor nije potvrđen</span>}
                           </span>
                           <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">{method.description}</span>
+                          {contractUnconfirmed && (
+                            <span className="mt-1 block text-xs leading-relaxed text-amber-800">
+                              Zvanični javni izvori ne navode auth grant, token i statement endpoint-e, scope-ove, paginaciju, vremenski opseg ni stabilni ID transakcije za konkretan proizvod Raiffeisen Srbija. Automatski sync ostaje nedostupan.
+                            </span>
+                          )}
                         </span>
                       </span>
                     </label>

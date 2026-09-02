@@ -159,6 +159,7 @@ export async function processNormalizedEducationBankTransaction(
       !settings.bankReconciliationAccessMethod
       || !settings.bankReconciliationAccessConfirmedAt
       || !settings.bankReconciliationAccessConfirmedByUserId
+      || settings.bankReconciliationAccessMethod === "raiffeisen_open_banking"
     ) {
       return {
         transaction: await rejectClaim(tx, claim, educationBankRejectionReasons.accessUnconfirmed),
@@ -228,7 +229,8 @@ export async function getEducationBankReconciliationStatus() {
   const accessConfirmed = Boolean(
     settings?.bankReconciliationAccessMethod
     && settings.bankReconciliationAccessConfirmedAt
-    && settings.bankReconciliationAccessConfirmedByUserId,
+    && settings.bankReconciliationAccessConfirmedByUserId
+    && settings.bankReconciliationAccessMethod !== "raiffeisen_open_banking",
   );
   return {
     enabled,
