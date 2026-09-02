@@ -7,7 +7,9 @@ import {
   beautyJobApplicationActionsTable, beautyJobCategoriesTable, beautyJobContactsTable, beautyJobListingAvailabilityTable, beautyJobListingsTable,
   beautyJobModerationAuditTable, beautyJobNotificationsTable, beautyJobPlatformSettingsTable,
   beautyJobReportsTable, beautyJobSavedListingsTable, db, emailDeliveriesTable, jobseekerProfilesTable,
-  educationCentersTable, employeeServicesTable, employeesTable, pool, salonsTable, servicesTable, smsDeliveriesTable, usersTable,
+  educationCentersTable, educationFinancialAuditLogTable, educationTrialClaimsTable, employeeLocationAssignmentsTable,
+  employeeLocationSchedulesTable, employeeSchedulesTable, employeeServicesTable, employeesTable,
+  pool, salonsTable, servicesTable, smsDeliveriesTable, subscriptionPlansTable, usersTable,
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
@@ -29,13 +31,21 @@ import type { SmsProvider } from "./sms";
 const suffix = randomUUID();
 const createdUsers: string[] = [];
 const createdListingIds: string[] = [];
+let educationPlanId: string | undefined;
 let server: ReturnType<typeof app.listen> | undefined;
 
 type Result = { status: number; body: any };
 const cookie = (token?: string) => token ? { cookie: `${sessionCookieName}=${token}` } : {};
-async function request(base: string, path: string, token?: string, method = "GET", body?: unknown): Promise<Result> {
+async function request(
+  base: string,
+  path: string,
+  token?: string,
+  method = "GET",
+  body?: unknown,
+  headers: Record<string, string> = {},
+): Promise<Result> {
   const response = await fetch(`${base}/api${path}`, {
-    method, headers: { ...(body ? { "content-type": "application/json" } : {}), ...cookie(token) },
+    method, headers: { ...(body ? { "content-type": "application/json" } : {}), ...cookie(token), ...headers },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   return { status: response.status, body: await response.json() };
@@ -128,6 +138,19 @@ async function run(): Promise<void> {
 
     const publicListing = await insertApproved(hairCategory.id, customer.user.id, `Employee visible ${suffix}`);
     await db.update(beautyJobPlatformSettingsTable).set({ hourlyPostingLimit: 30 }).where(eq(beautyJobPlatformSettingsTable.id, originalSettings!.id));
+    const [educationPlan] = await db.insert(subscriptionPlansTable).values({
+      name: `Beauty jobs education fixture ${suffix}`,
+      price: 10_000,
+      trialDays: 0,
+      audience: "education",
+      courseLimit: 5,
+      vatIncluded: true,
+      priceCopy: "Cena uključuje PDV.",
+      limits: { courses: 5 },
+      active: true,
+    }).returning({ id: subscriptionPlansTable.id });
+    assert.ok(educationPlan);
+    educationPlanId = educationPlan.id;
     server = app.listen(0);
     await once(server, "listening");
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -184,6 +207,10 @@ async function run(): Promise<void> {
       businessType: "EDUCATION_CENTER",
       businessName: `Akademija ${suffix.slice(0, 8)}`,
       pib: "109876543",
+      registrationNumber: suffix.replace(/\D/g, "").slice(0, 8).padEnd(8, "7"),
+      bankAccount: suffix.replace(/\D/g, "").slice(0, 18).padEnd(18, "8"),
+      planId: educationPlanId,
+      billingCycle: "monthly",
       city: "Beograd",
       municipality: "Vračar",
       address: "Njegoševa 10",
@@ -280,9 +307,11 @@ async function run(): Promise<void> {
     assert.deepEqual((await request(base, "/jobseeker/salon-interests", jobseeker.token)).body, [salonOwner.salon.id], "JOBSEEKER reads only own salon interests");
     assert.deepEqual((await request(base, "/jobseeker/salon-interests", otherJobseeker.token)).body, [], "salon interests are isolated between JOBSEEKER accounts");
     assert.equal((await request(base, "/jobseeker/salon-interests", blockedCustomer.token)).status, 403, "CUSTOMER cannot use JOBSEEKER salon interests");
-    for (const path of ["/customer/favorites", `/customer/reviews/${salonOwner.salon.id}`, "/loyalty/status", "/retail/cart", "/retail/cart-summary"]) {
+    for (const path of ["/customer/favorites", `/customer/reviews/${salonOwner.salon.id}`, "/loyalty/status"]) {
       assert.equal((await request(base, path, jobseeker.token)).status, 403, `JOBSEEKER is blocked from ${path}`);
     }
+    assert.equal((await request(base, "/retail/cart", jobseeker.token)).status, 200, "JOBSEEKER may use the role-neutral retail cart");
+    assert.equal((await request(base, "/retail/cart-summary", jobseeker.token)).status, 200, "JOBSEEKER may read the role-neutral retail cart summary");
 
     // Widget bookings remain guest/customer-only even though the widget itself
     // is publicly embedded.  A real eligible employee/service pair keeps this
@@ -298,23 +327,44 @@ async function run(): Promise<void> {
     }).returning();
     assert.ok(widgetEmployee && widgetService);
     await db.insert(employeeServicesTable).values({ employeeId: widgetEmployee.id, serviceId: widgetService.id });
-    const widgetDate = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+    await db.insert(employeeLocationAssignmentsTable).values({
+      employeeId: widgetEmployee.id, salonId: salonOwner.salon.id, active: true, isDefault: true,
+    });
+    const widgetDateValue = new Date();
+    widgetDateValue.setUTCDate(widgetDateValue.getUTCDate() + ((8 - widgetDateValue.getUTCDay()) % 7 || 7));
+    const widgetDate = widgetDateValue.toISOString().slice(0, 10);
+    await db.insert(employeeSchedulesTable).values({
+      employeeId: widgetEmployee.id, weekday: 1, startTime: "09:00", endTime: "12:00",
+    });
+    await db.insert(employeeLocationSchedulesTable).values({
+      employeeId: widgetEmployee.id, salonId: salonOwner.salon.id, weekday: 1, startTime: "09:00", endTime: "12:00",
+    });
     const widgetBooking = (startTime: string) => ({
       serviceId: widgetService.id, date: widgetDate, startTime,
       firstName: "Widget", lastName: "Booking", phone: "+381641234567",
     });
-    assert.equal(
-      (await request(base, `/widget/salons/${salonOwner.salon.slug}/appointments`, undefined, "POST", widgetBooking("09:00"))).status,
-      201,
-      "guest widget booking remains available",
+    const guestWidgetBooking = await request(
+      base, `/widget/salons/${salonOwner.salon.slug}/appointments`, undefined, "POST", widgetBooking("09:00"),
+      { "idempotency-key": `beauty-widget-guest-${suffix}` },
     );
     assert.equal(
-      (await request(base, `/widget/salons/${salonOwner.salon.slug}/appointments`, blockedCustomer.token, "POST", widgetBooking("10:00"))).status,
+      guestWidgetBooking.status,
+      201,
+      `guest widget booking remains available: ${JSON.stringify(guestWidgetBooking.body)}`,
+    );
+    assert.equal(
+      (await request(
+        base, `/widget/salons/${salonOwner.salon.slug}/appointments`, blockedCustomer.token, "POST", widgetBooking("10:00"),
+        { "idempotency-key": `beauty-widget-customer-${suffix}` },
+      )).status,
       201,
       "CUSTOMER widget booking remains available",
     );
     assert.equal(
-      (await request(base, `/widget/salons/${salonOwner.salon.slug}/appointments`, jobseeker.token, "POST", widgetBooking("11:00"))).status,
+      (await request(
+        base, `/widget/salons/${salonOwner.salon.slug}/appointments`, jobseeker.token, "POST", widgetBooking("11:00"),
+        { "idempotency-key": `beauty-widget-jobseeker-${suffix}` },
+      )).status,
       403,
       "authenticated JOBSEEKER is blocked from widget booking",
     );
@@ -1377,9 +1427,14 @@ async function run(): Promise<void> {
       await db.delete(smsDeliveriesTable).where(inArray(smsDeliveriesTable.eventKey, monitorSmsEventKeys));
     }
     await db.delete(emailDeliveriesTable).where(like(emailDeliveriesTable.recipientEmail, `%${suffix}%`));
+    if (createdUsers.length) {
+      await db.delete(educationFinancialAuditLogTable).where(inArray(educationFinancialAuditLogTable.actorUserId, createdUsers));
+      await db.delete(educationTrialClaimsTable).where(inArray(educationTrialClaimsTable.userId, createdUsers));
+    }
     await db.delete(educationCentersTable).where(inArray(educationCentersTable.ownerId, createdUsers));
     await db.delete(salonsTable).where(inArray(salonsTable.ownerId, createdUsers));
     if (createdUsers.length) await db.delete(usersTable).where(inArray(usersTable.id, createdUsers));
+    if (educationPlanId) await db.delete(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, educationPlanId));
   }
 }
 

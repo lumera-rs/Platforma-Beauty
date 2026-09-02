@@ -141,3 +141,4 @@
 - [User-facing timestamp serialization](user-facing-timestamp-serialization.md) — audit both single and batch list DTOs; one invalid database date must degrade only its field.
 - [pnpm workspace config preservation](pnpm-workspace-config-preservation.md) — project-level pnpm config commands can rewrite the workspace manifest and invalidate lockfile catalogs.
 - [GitHub default-branch rulesets](github-default-branch-ruleset.md) — target `~DEFAULT_BRANCH`; merge queue additionally requires an organization-owned repository.
+- [Cross-domain booking fixtures](cross-domain-booking-fixtures.md) — broad HTTP suites must satisfy booking idempotency and canonical location availability, not legacy setup alone.
