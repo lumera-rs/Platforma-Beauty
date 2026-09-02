@@ -17,16 +17,18 @@ import {
 const execFileAsync = promisify(execFile);
 const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
 
-function requireDisposableDevelopmentDatabaseUrl(): string {
+function requireDisposableDevelopmentDatabaseUrl(
+  environment: NodeJS.ProcessEnv = process.env,
+): string {
   if (
-    process.env.NODE_ENV === "production"
-    || process.env.REPLIT_DEPLOYMENT === "1"
-    || process.env.REPL_DEPLOYMENT === "1"
+    environment.NODE_ENV === "production"
+    || environment.REPLIT_DEPLOYMENT === "1"
+    || environment.REPL_DEPLOYMENT === "1"
   ) {
     throw new Error("Backend standards process tests refuse production or deployment runtimes.");
   }
 
-  const databaseUrl = process.env.DATABASE_URL;
+  const databaseUrl = environment.DATABASE_URL;
   assert.ok(databaseUrl, "DATABASE_URL is required for the backend standards process test.");
   const parsed = new URL(databaseUrl);
   assert.ok(parsed.pathname && parsed.pathname !== "/", "DATABASE_URL must include a database name.");
@@ -38,6 +40,53 @@ function databaseUrlFor(databaseUrl: string, databaseName: string): string {
   isolatedUrl.pathname = `/${databaseName}`;
   return isolatedUrl.toString();
 }
+
+test("refuses destructive database fixtures before commands in production and deployment runtimes", () => {
+  const guardedEnvironments: Array<{
+    name: string;
+    environment: NodeJS.ProcessEnv;
+  }> = [
+    {
+      name: "NODE_ENV=production",
+      environment: { DATABASE_URL: "postgresql://localhost/development", NODE_ENV: "production" },
+    },
+    {
+      name: "REPLIT_DEPLOYMENT=1",
+      environment: { DATABASE_URL: "postgresql://localhost/development", REPLIT_DEPLOYMENT: "1" },
+    },
+    {
+      name: "REPL_DEPLOYMENT=1",
+      environment: { DATABASE_URL: "postgresql://localhost/development", REPL_DEPLOYMENT: "1" },
+    },
+  ];
+
+  for (const { name, environment } of guardedEnvironments) {
+    const invokedCommands: string[] = [];
+    const attemptFixtureCommands = () => {
+      requireDisposableDevelopmentDatabaseUrl(environment);
+      invokedCommands.push("createdb", "dropdb");
+    };
+
+    assert.throws(
+      attemptFixtureCommands,
+      /refuse production or deployment runtimes/,
+      `${name} must refuse the isolated database fixture`,
+    );
+    assert.deepEqual(
+      invokedCommands,
+      [],
+      `${name} must be rejected before createdb or dropdb`,
+    );
+  }
+
+  const developmentDatabaseUrl = requireDisposableDevelopmentDatabaseUrl({
+    DATABASE_URL: "postgresql://localhost/development",
+    NODE_ENV: "test",
+    REPLIT_DEPLOYMENT: "0",
+    REPL_DEPLOYMENT: "0",
+  });
+  assert.equal(developmentDatabaseUrl, "postgresql://localhost/development");
+});
 
 test("reports NOT VALID public CHECK and FK constraints with a safe remediation", async () => {
   let capturedSql = "";
