@@ -129,6 +129,12 @@ export function educationIpsPaymentCode(recipientType: EducationIpsRecipientType
   return recipientType === "education_center_individual" ? "289" : "221";
 }
 
+export function educationEnrollmentPaymentReference(enrollmentId: string): string {
+  const normalizedId = enrollmentId.replace(/-/g, "");
+  if (!/^[0-9a-f]{32}$/i.test(normalizedId)) throw new Error("IPS_PAYMENT_REFERENCE_INVALID");
+  return `EDU${normalizedId}`;
+}
+
 /** NBS IPS amount field: currency prefix, no grouping, and a decimal comma. */
 export function formatEducationIpsAmount(amount: number): string {
   const minorUnits = Math.round(amount * 100);

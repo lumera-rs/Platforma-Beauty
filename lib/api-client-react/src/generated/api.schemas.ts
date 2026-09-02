@@ -6789,9 +6789,35 @@ export interface EducationEnrollment {
   escrowReleaseAt?: string | null;
 }
 
+export type EducationEnrollmentPaymentInstructionsPaymentStatus = typeof EducationEnrollmentPaymentInstructionsPaymentStatus[keyof typeof EducationEnrollmentPaymentInstructionsPaymentStatus];
+
+
+export const EducationEnrollmentPaymentInstructionsPaymentStatus = {
+  pending: 'pending',
+} as const;
+
+/**
+ * Server-owned IPS instructions for a pending marketplace enrollment. Rendering these instructions has no settlement or access side effect.
+ */
+export interface EducationEnrollmentPaymentInstructions {
+  enrollmentId: string;
+  /** @minimum 1 */
+  amount: number;
+  currency: 'RSD';
+  reference: string;
+  recipientName: string;
+  recipientAccount: string;
+  purpose: string;
+  payload: string;
+  paymentStatus: EducationEnrollmentPaymentInstructionsPaymentStatus;
+  settlementNotice: string;
+}
+
 export interface EducationGroupEnrollmentResponse {
   /** @minItems 1 */
   enrollments: EducationEnrollment[];
+  /** Immutable per-enrollment IPS instruction snapshots for paid group seats. Empty for enrollments without a platform payment. */
+  paymentInstructions: EducationEnrollmentPaymentInstructions[];
   /**
      * @minimum 0
      * @maximum 100
@@ -7410,30 +7436,6 @@ export interface EducationPublicPlacement {
   courseImageUrl: string | null;
   /** @nullable */
   coursePrice: number | null;
-}
-
-export type EducationEnrollmentPaymentInstructionsPaymentStatus = typeof EducationEnrollmentPaymentInstructionsPaymentStatus[keyof typeof EducationEnrollmentPaymentInstructionsPaymentStatus];
-
-
-export const EducationEnrollmentPaymentInstructionsPaymentStatus = {
-  pending: 'pending',
-} as const;
-
-/**
- * Server-owned IPS instructions for a pending marketplace enrollment. Rendering these instructions has no settlement or access side effect.
- */
-export interface EducationEnrollmentPaymentInstructions {
-  enrollmentId: string;
-  /** @minimum 1 */
-  amount: number;
-  currency: 'RSD';
-  reference: string;
-  recipientName: string;
-  recipientAccount: string;
-  purpose: string;
-  payload: string;
-  paymentStatus: EducationEnrollmentPaymentInstructionsPaymentStatus;
-  settlementNotice: string;
 }
 
 export type EducationEnrollmentExtensionInputMonths = typeof EducationEnrollmentExtensionInputMonths[keyof typeof EducationEnrollmentExtensionInputMonths];

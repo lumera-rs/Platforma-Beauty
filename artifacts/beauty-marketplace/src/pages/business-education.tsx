@@ -15,7 +15,7 @@ import {
   usePublishEducationCourse, useArchiveEducationCourse,
   useCreateEducationModule, useCreateEducationLesson,
   useCreateEducationSession, useEnrollInEducationCourse, createEducationGroupEnrollments, useCreateEducationEnrollmentExtension,
-  useGetEducationEnrollmentPaymentInstructions, getGetEducationEnrollmentPaymentInstructionsQueryKey,
+  useGetEducationEnrollmentPaymentInstructions, getEducationEnrollmentPaymentInstructions, getGetEducationEnrollmentPaymentInstructionsQueryKey,
   useCompleteEducationLesson,
   useListEducationInstructors, useCreateEducationInstructor, useUpdateEducationInstructor, useDeleteEducationInstructor,
   useGetEducationCourseFeaturedStatus, useUpdateEducationCourseFeatured, useLinkEducationCourseInstructor,
@@ -31,6 +31,7 @@ import {
   getListEducationNotificationsQueryKey,
   getApiErrorMessage,
   type EducationNotificationList,
+  type EducationEnrollmentPaymentInstructions,
 } from "@workspace/api-client-react";
 import { QRCodeSVG } from "qrcode.react";
 
@@ -1098,6 +1099,12 @@ function CourseDetailView({ courseId }: { courseId: string }) {
     query: { enabled: isMyCourse, queryKey: getGetEducationCourseFeaturedStatusQueryKey(courseId) },
   });
   const myEnrollment = enrollments?.find((e: any) => e.courseId === courseId);
+  const pendingCourseEnrollmentIds = useMemo(
+    () => enrollments
+      ?.filter((enrollment: any) => enrollment.courseId === courseId && enrollment.status === "pending" && enrollment.paymentStatus === "pending")
+      .map((enrollment: any) => enrollment.id) ?? [],
+    [courseId, enrollments],
+  );
 
   const update = useUpdateEducationCourse();
   const publish = usePublishEducationCourse();
@@ -1122,6 +1129,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
   const [digitalContentConsent, setDigitalContentConsent] = useState(false);
   const [paymentMode, setPaymentMode] = useState<"online_full" | "live_deposit" | "live_off_platform">("online_full");
   const [createdEnrollmentId, setCreatedEnrollmentId] = useState<string | null>(null);
+  const [groupPaymentInstructions, setGroupPaymentInstructions] = useState<EducationEnrollmentPaymentInstructions[]>([]);
   const enrollmentIdempotencyKey = useMemo(
     () => crypto.randomUUID(),
     [courseId, learnerId, sessionId, paymentMode],
@@ -1130,7 +1138,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
     request: { headers: { "Idempotency-Key": enrollmentIdempotencyKey } },
   });
   const pendingEnrollmentId = createdEnrollmentId
-    ?? (isSalonOwner && myEnrollment?.status === "pending" && myEnrollment?.paymentStatus === "pending" ? myEnrollment.id : null);
+    ?? (isSalonOwner && pendingCourseEnrollmentIds.length === 1 ? pendingCourseEnrollmentIds[0] : null);
   const { data: paymentInstructions, isLoading: paymentInstructionsLoading, isError: paymentInstructionsError } = useGetEducationEnrollmentPaymentInstructions(
     pendingEnrollmentId ?? "",
     { query: { enabled: Boolean(pendingEnrollmentId), queryKey: getGetEducationEnrollmentPaymentInstructionsQueryKey(pendingEnrollmentId ?? "") } },
@@ -1145,7 +1153,19 @@ function CourseDetailView({ courseId }: { courseId: string }) {
     setDigitalContentConsent(false);
     setGroupDigitalContentConsent(false);
     setCreatedEnrollmentId(null);
+    setGroupPaymentInstructions([]);
   }, [course?.id, course?.paymentMode]);
+  useEffect(() => {
+    if (!isSalonOwner || pendingCourseEnrollmentIds.length < 2) return;
+    let cancelled = false;
+    void Promise.allSettled(
+      pendingCourseEnrollmentIds.map((enrollmentId) => getEducationEnrollmentPaymentInstructions(enrollmentId)),
+    ).then((results) => {
+      if (cancelled) return;
+      setGroupPaymentInstructions(results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []));
+    });
+    return () => { cancelled = true; };
+  }, [isSalonOwner, pendingCourseEnrollmentIds.join(":")]);
 
   const handleEnroll = () => {
     if (isSalonOwner && !learnerId) {
@@ -1191,6 +1211,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
       const discountMsg = data.discountPercent > 0
         ? ` Primenjen je popust od ${data.discountPercent}%. Cena po polazniku: ${data.unitPrice.toLocaleString("sr-RS")} RSD.`
         : "";
+      setGroupPaymentInstructions(data.paymentInstructions);
       toast.success(`Grupna prijava za ${data.enrollments.length} polaznika je primljena.${discountMsg}`);
       queryClient.invalidateQueries({ queryKey: getGetEducationCourseQueryKey(courseId) });
       queryClient.invalidateQueries({ queryKey: getListEnrollmentsQueryKey() });
@@ -1643,6 +1664,25 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                       </div>
                     ) : (
                       <>
+                        {groupPaymentInstructions.length > 0 && (
+                          <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/20" data-testid="group-payment-instructions">
+                            <p className="font-semibold text-amber-900 dark:text-amber-200">IPS instrukcije za grupnu prijavu</p>
+                            <p className="mt-1 text-xs text-amber-950 dark:text-amber-100">
+                              Ukupno: {groupPaymentInstructions.reduce((sum, item) => sum + item.amount, 0).toLocaleString("sr-RS")} RSD. Uplatite svaku obavezu zasebno uz njen poziv na broj.
+                            </p>
+                            <div className="mt-3 space-y-3">
+                              {groupPaymentInstructions.map((instructions, index) => (
+                                <div key={instructions.enrollmentId} className="rounded-md border border-amber-200 bg-white/70 p-3 text-xs text-amber-950 dark:border-amber-900 dark:bg-background/50 dark:text-amber-100">
+                                  <p className="font-semibold">Prijava {index + 1}</p>
+                                  <p><strong>Iznos:</strong> {instructions.amount.toLocaleString("sr-RS")} {instructions.currency}</p>
+                                  <p className="[overflow-wrap:anywhere]"><strong>Poziv na broj:</strong> {instructions.reference}</p>
+                                  <p><strong>Račun:</strong> {instructions.recipientAccount}</p>
+                                  <QRCodeSVG value={instructions.payload} size={104} className="mt-2 rounded bg-white p-1" />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                         {isSalonOperator && employees?.length ? (
                           <div className="space-y-1.5">
                             <Label htmlFor="education-learner">Polaznik</Label>

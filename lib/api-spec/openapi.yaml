@@ -13880,10 +13880,14 @@ components:
           type: array
           minItems: 1
           items: { $ref: "#/components/schemas/EducationEnrollment" }
+        paymentInstructions:
+          type: array
+          description: Immutable per-enrollment IPS instruction snapshots for paid group seats. Empty for enrollments without a platform payment.
+          items: { $ref: "#/components/schemas/EducationEnrollmentPaymentInstructions" }
         discountPercent: { type: integer, minimum: 0, maximum: 100 }
         unitPrice: { type: integer, minimum: 0 }
         totalPrice: { type: integer, minimum: 0 }
-      required: [enrollments, discountPercent, unitPrice, totalPrice]
+      required: [enrollments, paymentInstructions, discountPercent, unitPrice, totalPrice]
     EducationTaxonomyItem:
       type: object
       properties:

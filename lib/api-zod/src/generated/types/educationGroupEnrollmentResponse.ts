@@ -6,10 +6,13 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { EducationEnrollment } from './educationEnrollment';
+import type { EducationEnrollmentPaymentInstructions } from './educationEnrollmentPaymentInstructions';
 
 export interface EducationGroupEnrollmentResponse {
   /** @minItems 1 */
   enrollments: EducationEnrollment[];
+  /** Immutable per-enrollment IPS instruction snapshots for paid group seats. Empty for enrollments without a platform payment. */
+  paymentInstructions: EducationEnrollmentPaymentInstructions[];
   /**
      * @minimum 0
      * @maximum 100

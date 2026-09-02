@@ -14982,6 +14982,7 @@ export const CreateEducationGroupEnrollmentsBody = zod.object({
 })
 
 
+
 export const createEducationGroupEnrollmentsResponseDiscountPercentMin = 0;
 export const createEducationGroupEnrollmentsResponseDiscountPercentMax = 100;
 
@@ -15013,6 +15014,18 @@ export const CreateEducationGroupEnrollmentsResponse = zod.object({
   "escrowStatus": zod.union([zod.literal('held'),zod.literal('ready_for_payout'),zod.literal('frozen'),zod.literal('paid_out'),zod.literal('refunded'),zod.literal('partially_refunded'),zod.literal(null)]).nullish(),
   "escrowReleaseAt": zod.coerce.date().nullish()
 })).min(1),
+  "paymentInstructions": zod.array(zod.object({
+  "enrollmentId": zod.string(),
+  "amount": zod.number().int().min(1),
+  "currency": zod.literal("RSD"),
+  "reference": zod.string(),
+  "recipientName": zod.string(),
+  "recipientAccount": zod.string(),
+  "purpose": zod.string(),
+  "payload": zod.string(),
+  "paymentStatus": zod.enum(['pending']),
+  "settlementNotice": zod.string()
+}).describe('Server-owned IPS instructions for a pending marketplace enrollment. Rendering these instructions has no settlement or access side effect.')).describe('Immutable per-enrollment IPS instruction snapshots for paid group seats. Empty for enrollments without a platform payment.'),
   "discountPercent": zod.number().int().min(createEducationGroupEnrollmentsResponseDiscountPercentMin).max(createEducationGroupEnrollmentsResponseDiscountPercentMax),
   "unitPrice": zod.number().int().min(createEducationGroupEnrollmentsResponseUnitPriceMin),
   "totalPrice": zod.number().int().min(createEducationGroupEnrollmentsResponseTotalPriceMin)

@@ -254,6 +254,7 @@ import {
   educationGiftVoucherRecipientMatches,
   educationIpsQrPayload,
    educationIpsRuntimeEnvironment,
+  educationEnrollmentPaymentReference,
   EDUCATION_PAYMENT_UNAVAILABLE_ERROR,
   isEducationPaymentConfigurationError,
   educationRelatedCourseTier,
@@ -19427,7 +19428,7 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
         recipientAccount: paymentSettings!.ipsRecipientAccount,
         purpose: paymentSettings!.ipsPurpose,
         amount: chargedAmount,
-        reference: `EDU${enrollmentId.replace(/-/g, "")}`,
+        reference: educationEnrollmentPaymentReference(enrollmentId),
         recipientType: "platform",
         transactionType: "course_enrollment",
         accountEnvironment: paymentSettings!.ipsAccountEnvironment as "production" | "test",
@@ -22486,20 +22487,22 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
   let enrollments: (typeof courseEnrollmentsTable.$inferSelect)[];
   try {
     const isSalonInternal = course.salonId === salon.id && !course.centerId;
-    if (!isSalonInternal && unitPrice > 0) {
-      const paymentSettings = await getEducationPlatformSettings();
-      educationIpsQrPayload({
+    const paymentSettings = !isSalonInternal && unitPrice > 0 ? await getEducationPlatformSettings() : null;
+    const enrollmentIds = new Map(employees.map((employee) => [employee.id, randomUUID()]));
+    const paymentInstructions = new Map(employees.map((employee) => {
+      const enrollmentId = enrollmentIds.get(employee.id)!;
+      return [employee.id, paymentSettings ? educationIpsQrPayload({
         recipientName: paymentSettings.ipsRecipientName,
         recipientAccount: paymentSettings.ipsRecipientAccount,
         purpose: paymentSettings.ipsPurpose,
-        amount: unitPrice * employeeIds.length,
-        reference: `EDUG${randomUUID().replace(/-/g, "")}`,
+        amount: unitPrice,
+        reference: educationEnrollmentPaymentReference(enrollmentId),
         recipientType: "platform",
         transactionType: "course_enrollment",
         accountEnvironment: paymentSettings.ipsAccountEnvironment as "production" | "test",
         runtimeEnvironment: educationIpsRuntimeEnvironment(),
-      });
-    }
+      }) : null] as const;
+    }));
     enrollments = await db.transaction(async (tx) => {
       if (course.centerId) {
         await lockEducationCenterFinancials(tx, course.centerId);
@@ -22543,6 +22546,7 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
       }
       const accessGrantedAt = new Date();
       const values = employees.map((emp) => ({
+        id: enrollmentIds.get(emp.id)!,
         courseId: course.id,
         userId: emp.userId ?? user.id,
         salonId: salon.id,
@@ -22565,6 +22569,7 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
         },
         idempotencyKey: idempotencyKey ? `${idempotencyKey}:${emp.id}` : null,
         idempotencyFingerprint: `${course.id}:${emp.id}:group:${sessionId ?? "auto"}`,
+        paymentInstructionsSnapshot: paymentInstructions.get(emp.id),
       }));
       const created = await tx.insert(courseEnrollmentsTable).values(values).returning();
       return created;
@@ -22605,6 +22610,15 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
 
   res.status(201).json(CreateEducationGroupEnrollmentsResponse.parse({
     enrollments: await batchEducationEnrollmentViews(enrollments),
+    paymentInstructions: enrollments.flatMap((enrollment) => {
+      const instructions = enrollment.paymentInstructionsSnapshot as Record<string, unknown> | null;
+      return instructions ? [{
+        enrollmentId: enrollment.id,
+        ...instructions,
+        paymentStatus: "pending" as const,
+        settlementNotice: "Uplata i pristup kursu biće evidentirani tek nakon ručne potvrde LUMERA administracije.",
+      }] : [];
+    }),
     discountPercent: effectiveDiscountPercent,
     unitPrice,
     totalPrice: unitPrice * enrollments.length,

@@ -491,6 +491,9 @@ for (const viewport of [
 
       await submit.click();
       await expect(page.getByText(/Grupna prijava za 2 polaznika je primljena\./)).toBeVisible();
+      const instructionPanel = page.getByTestId("group-payment-instructions");
+      await expect(instructionPanel).toContainText("Ukupno: 21.600 RSD");
+      await expect(instructionPanel.getByText("Iznos: 10.800 RSD", { exact: false })).toHaveCount(2);
 
       const enrollments = await db.select({ id: courseEnrollmentsTable.id })
         .from(courseEnrollmentsTable)
@@ -507,6 +510,51 @@ for (const viewport of [
         ));
       expect(persisted.map((enrollment) => enrollment.employeeId).sort())
         .toEqual([...fixture.employeeIds].sort());
+      const instructionSnapshots = persisted.map((enrollment) => enrollment.paymentInstructionsSnapshot as {
+        amount: number;
+        reference: string;
+        recipientName: string;
+        recipientAccount: string;
+        purpose: string;
+      });
+      expect(instructionSnapshots.reduce((sum, snapshot) => sum + snapshot.amount, 0)).toBe(21_600);
+      expect(instructionSnapshots.map((snapshot) => snapshot.amount)).toEqual([10_800, 10_800]);
+      expect(new Set(instructionSnapshots.map((snapshot) => snapshot.reference)).size).toBe(2);
+      for (const snapshot of instructionSnapshots) {
+        expect(snapshot.reference).toMatch(/^EDU[0-9a-f]{32}$/i);
+        await expect(instructionPanel).toContainText(snapshot.reference);
+      }
+      await page.reload();
+      const reloadedInstructionPanel = page.getByTestId("group-payment-instructions");
+      await expect(reloadedInstructionPanel).toContainText("Ukupno: 21.600 RSD");
+      for (const snapshot of instructionSnapshots) {
+        await expect(reloadedInstructionPanel).toContainText(snapshot.reference);
+      }
+      const [settings] = await db.select().from(educationPlatformSettingsTable)
+        .orderBy(asc(educationPlatformSettingsTable.createdAt)).limit(1);
+      expect(settings).toBeTruthy();
+      try {
+        await db.update(educationPlatformSettingsTable).set({
+          ipsRecipientName: "Promenjeni primalac",
+          ipsRecipientAccount: "265000000000000000",
+          ipsPurpose: "Promenjena svrha",
+        }).where(eq(educationPlatformSettingsTable.id, settings!.id));
+        const unchanged = await db.select({
+          paymentInstructionsSnapshot: courseEnrollmentsTable.paymentInstructionsSnapshot,
+        }).from(courseEnrollmentsTable).where(and(
+          eq(courseEnrollmentsTable.courseId, fixture.courseId),
+          eq(courseEnrollmentsTable.purchaserId, fixture.ownerId),
+        ));
+        expect(unchanged.map((row) => row.paymentInstructionsSnapshot)).toEqual(
+          persisted.map((row) => row.paymentInstructionsSnapshot),
+        );
+      } finally {
+        await db.update(educationPlatformSettingsTable).set({
+          ipsRecipientName: settings!.ipsRecipientName,
+          ipsRecipientAccount: settings!.ipsRecipientAccount,
+          ipsPurpose: settings!.ipsPurpose,
+        }).where(eq(educationPlatformSettingsTable.id, settings!.id));
+      }
       for (const enrollment of persisted) {
         expect(enrollment).toMatchObject({
           purchaserId: fixture.ownerId,
