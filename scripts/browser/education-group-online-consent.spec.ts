@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { randomUUID } from "node:crypto";
-import { and, asc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   courseEnrollmentsTable,
   coursesTable,
@@ -13,34 +13,19 @@ import {
   employeeLocationAssignmentsTable,
   employeesTable,
   salonsTable,
-  pool,
   subscriptionPlansTable,
   usersTable,
 } from "@workspace/db";
 import { hashPassword } from "../../artifacts/api-server/src/lib/auth";
 import { DIGITAL_CONTENT_CONSENT_TEXT } from "../../artifacts/beauty-marketplace/src/lib/education-consent";
+import {
+  buildValidOnlineEducationCourse,
+  buildValidOnlineEducationEnrollmentRequest,
+  installTemporaryEducationIpsSettings,
+} from "../../artifacts/api-server/src/lib/education-test-fixtures";
 
 const GROUP_CONSENT_HELP =
   "Jedna potvrda kupca čuva se kao zaseban dokaz uz prijavu svakog označenog polaznika.";
-const SETTINGS_LOCK = "browser-salon-owner-education-ips-settings";
-
-async function lockIpsSettings(): Promise<() => Promise<void>> {
-  const client = await pool.connect();
-  try {
-    await client.query("select pg_advisory_lock(hashtext($1))", [SETTINGS_LOCK]);
-  } catch (error) {
-    client.release();
-    throw error;
-  }
-  return async () => {
-    try {
-      await client.query("select pg_advisory_unlock(hashtext($1))", [SETTINGS_LOCK]);
-    } finally {
-      client.release();
-    }
-  };
-}
-
 type Fixture = {
   ownerId: string;
   ownerEmail: string;
@@ -62,9 +47,10 @@ type Fixture = {
   courseId: string;
   secondCourseId: string;
   internalCourseId: string;
+  restoreIpsSettings?: () => Promise<void>;
 };
 
-async function createFixture(): Promise<Fixture> {
+async function createFixture(options: { configureIps?: boolean } = {}): Promise<Fixture> {
   const suffix = randomUUID();
   const ownerPassword = "browser-group-consent-password";
   const passwordHash = await hashPassword(ownerPassword);
@@ -257,7 +243,7 @@ async function createFixture(): Promise<Fixture> {
     dueAmount: 0,
     currentPeriodEnd: new Date(Date.now() + 86_400_000),
   });
-  const [course] = await db.insert(coursesTable).values({
+  const [course] = await db.insert(coursesTable).values(buildValidOnlineEducationCourse({
     centerId: center.id,
     title: `Browser online group course ${suffix}`,
     description: "Published online course for group consent browser coverage.",
@@ -275,9 +261,9 @@ async function createFixture(): Promise<Fixture> {
     extensionPrice6Months: 4_000,
     groupDiscountMinimum: 2,
     groupDiscountPercent: 10,
-  }).returning();
+  })).returning();
   if (!course) throw new Error("Could not create published online group course.");
-  const [secondCourse] = await db.insert(coursesTable).values({
+  const [secondCourse] = await db.insert(coursesTable).values(buildValidOnlineEducationCourse({
     centerId: center.id,
     title: `Browser second online group course ${suffix}`,
     description: "Second published online course for stale consent regression coverage.",
@@ -292,9 +278,9 @@ async function createFixture(): Promise<Fixture> {
     onlineAccessDays: 60,
     groupDiscountMinimum: 2,
     groupDiscountPercent: 5,
-  }).returning();
+  })).returning();
   if (!secondCourse) throw new Error("Could not create second published online group course.");
-  const [internalCourse] = await db.insert(coursesTable).values({
+  const [internalCourse] = await db.insert(coursesTable).values(buildValidOnlineEducationCourse({
     salonId: salon.id,
     title: `Browser internal employee course ${suffix}`,
     description: "Salon-owned online course for positive colleague enrollment coverage.",
@@ -310,8 +296,12 @@ async function createFixture(): Promise<Fixture> {
     extensionPrice1Month: 1_000,
     extensionPrice3Months: 2_500,
     extensionPrice6Months: 4_000,
-  }).returning();
+  })).returning();
   if (!internalCourse) throw new Error("Could not create salon-owned employee course.");
+
+  const ipsSettings = options.configureIps === false
+    ? undefined
+    : await installTemporaryEducationIpsSettings();
 
   return {
     ownerId: owner.id,
@@ -334,71 +324,56 @@ async function createFixture(): Promise<Fixture> {
     courseId: course.id,
     secondCourseId: secondCourse.id,
     internalCourseId: internalCourse.id,
+    restoreIpsSettings: ipsSettings?.restore,
   };
 }
 
 
 
 async function cleanupFixture(fixture: Fixture) {
-  await db.delete(coursesTable).where(
-    and(
-      eq(coursesTable.centerId, fixture.centerId),
-      eq(coursesTable.category, "Browser test"),
-    ),
-  );
-  await db.delete(educationCenterSubscriptionsTable)
-    .where(eq(educationCenterSubscriptionsTable.centerId, fixture.centerId));
-  await db.delete(educationCentersTable).where(eq(educationCentersTable.id, fixture.centerId));
-  await db.delete(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, fixture.planId));
-  await db.delete(salonsTable).where(eq(salonsTable.id, fixture.foreignSalonId));
-  await db.delete(salonsTable).where(eq(salonsTable.id, fixture.salonId));
-  await db.delete(usersTable).where(eq(usersTable.id, fixture.foreignEmployeeUserId));
-  await db.delete(usersTable).where(eq(usersTable.id, fixture.unavailableEmployeeUserId));
-  await db.delete(usersTable).where(eq(usersTable.id, fixture.employeeUserIds[0]));
-  await db.delete(usersTable).where(eq(usersTable.id, fixture.employeeUserIds[1]));
-  await db.delete(usersTable).where(eq(usersTable.id, fixture.ownerId));
-  await db.delete(usersTable).where(eq(usersTable.id, fixture.centerOwnerId));
-  await db.delete(usersTable).where(eq(usersTable.id, fixture.adminId));
+  try {
+    await db.delete(coursesTable).where(
+      and(
+        eq(coursesTable.centerId, fixture.centerId),
+        eq(coursesTable.category, "Browser test"),
+      ),
+    );
+    await db.delete(educationCenterSubscriptionsTable)
+      .where(eq(educationCenterSubscriptionsTable.centerId, fixture.centerId));
+    await db.delete(educationCentersTable).where(eq(educationCentersTable.id, fixture.centerId));
+    await db.delete(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, fixture.planId));
+    await db.delete(salonsTable).where(eq(salonsTable.id, fixture.foreignSalonId));
+    await db.delete(salonsTable).where(eq(salonsTable.id, fixture.salonId));
+    await db.delete(usersTable).where(eq(usersTable.id, fixture.foreignEmployeeUserId));
+    await db.delete(usersTable).where(eq(usersTable.id, fixture.unavailableEmployeeUserId));
+    await db.delete(usersTable).where(eq(usersTable.id, fixture.employeeUserIds[0]));
+    await db.delete(usersTable).where(eq(usersTable.id, fixture.employeeUserIds[1]));
+    await db.delete(usersTable).where(eq(usersTable.id, fixture.ownerId));
+    await db.delete(usersTable).where(eq(usersTable.id, fixture.centerOwnerId));
+    await db.delete(usersTable).where(eq(usersTable.id, fixture.adminId));
+  } finally {
+    await fixture.restoreIpsSettings?.();
+  }
 }
 
 test("paid Education enrollment returns a safe unavailable response when IPS settings are missing", async ({ page }) => {
   test.setTimeout(60_000);
-  const releaseLock = await lockIpsSettings();
+  const ipsSettings = await installTemporaryEducationIpsSettings({
+    ipsRecipientName: "LUMERA Browser IPS",
+    ipsRecipientAccount: "160000000000000000",
+    ipsPurpose: "Edukacija",
+    ipsAccountEnvironment: "test",
+  });
   let fixture: Fixture | undefined;
-  let settingsSnapshot: typeof educationPlatformSettingsTable.$inferSelect | undefined;
-  let createdSettingsId: string | undefined;
   try {
-    const [existing] = await db.select().from(educationPlatformSettingsTable)
-      .orderBy(asc(educationPlatformSettingsTable.createdAt)).limit(1);
-    if (existing) {
-      settingsSnapshot = existing;
-      await db.update(educationPlatformSettingsTable).set({
-        ipsRecipientName: "LUMERA Browser IPS",
-        ipsRecipientAccount: "160000000000000000",
-        ipsPurpose: "Edukacija",
-        ipsAccountEnvironment: "test",
-      }).where(eq(educationPlatformSettingsTable.id, existing.id));
-    } else {
-      const [created] = await db.insert(educationPlatformSettingsTable).values({
-        commissionPercent: 15,
-        reservePercent: 5,
-        ipsRecipientName: "LUMERA Browser IPS",
-        ipsRecipientAccount: "160000000000000000",
-        ipsPurpose: "Edukacija",
-        ipsAccountEnvironment: "test",
-      }).returning();
-      if (!created) throw new Error("Could not create Education IPS settings.");
-      createdSettingsId = created.id;
-    }
-
-    fixture = await createFixture();
+    fixture = await createFixture({ configureIps: false });
     expect((await page.request.post("/api/auth/login", {
       data: { email: fixture.ownerEmail, password: fixture.ownerPassword },
     })).ok()).toBeTruthy();
 
     const configuredResponse = await page.request.post(`/api/education/courses/${fixture.courseId}/enrollments`, {
       headers: { "idempotency-key": randomUUID() },
-      data: { employeeId: fixture.employeeIds[0], digitalContentConsent: true },
+      data: buildValidOnlineEducationEnrollmentRequest({ employeeId: fixture.employeeIds[0] }),
     });
     expect(configuredResponse.status()).toBe(201);
     await db.delete(courseEnrollmentsTable).where(and(
@@ -409,16 +384,15 @@ test("paid Education enrollment returns a safe unavailable response when IPS set
       .from(customerNotificationsTable)
       .where(eq(customerNotificationsTable.userId, fixture.ownerId));
 
-    const settingsId = existing?.id ?? createdSettingsId!;
     await db.update(educationPlatformSettingsTable).set({
       ipsRecipientName: null,
       ipsRecipientAccount: null,
       ipsPurpose: null,
-    }).where(eq(educationPlatformSettingsTable.id, settingsId));
+    }).where(eq(educationPlatformSettingsTable.id, ipsSettings.settingsId));
 
     const unavailableResponse = await page.request.post(`/api/education/courses/${fixture.courseId}/enrollments`, {
       headers: { "idempotency-key": randomUUID() },
-      data: { employeeId: fixture.employeeIds[0], digitalContentConsent: true },
+      data: buildValidOnlineEducationEnrollmentRequest({ employeeId: fixture.employeeIds[0] }),
     });
     expect(unavailableResponse.status()).toBe(503);
     expect(await unavailableResponse.json()).toEqual({
@@ -438,13 +412,7 @@ test("paid Education enrollment returns a safe unavailable response when IPS set
     try {
       if (fixture) await cleanupFixture(fixture);
     } finally {
-      try {
-        if (createdSettingsId) await db.delete(educationPlatformSettingsTable).where(eq(educationPlatformSettingsTable.id, createdSettingsId));
-        if (settingsSnapshot) await db.update(educationPlatformSettingsTable).set(settingsSnapshot)
-          .where(eq(educationPlatformSettingsTable.id, settingsSnapshot.id));
-      } finally {
-        await releaseLock();
-      }
+      await ipsSettings.restore();
     }
   }
 });
@@ -692,7 +660,7 @@ for (const viewport of [
       for (const employeeId of [fixture.foreignEmployeeId, fixture.unavailableEmployeeId]) {
         const response = await page.request.post(`/api/education/courses/${fixture.courseId}/enrollments`, {
           headers: { "idempotency-key": randomUUID() },
-          data: { employeeId, digitalContentConsent: true },
+          data: buildValidOnlineEducationEnrollmentRequest({ employeeId }),
         });
         expect(response.status()).toBe(403);
 
@@ -712,7 +680,7 @@ for (const viewport of [
 
       const validResponse = await page.request.post(`/api/education/courses/${fixture.internalCourseId}/enrollments`, {
         headers: { "idempotency-key": randomUUID() },
-        data: { employeeId: fixture.employeeIds[1], digitalContentConsent: true },
+        data: buildValidOnlineEducationEnrollmentRequest({ employeeId: fixture.employeeIds[1] }),
       });
       expect(validResponse.status()).toBe(201);
 

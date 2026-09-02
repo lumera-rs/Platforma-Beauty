@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { type AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   courseEnrollmentsTable,
   courseSessionsTable,
@@ -27,6 +27,10 @@ import {
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureDemoData, ensureSeedEducationEscrowSnapshot } from "./seed";
+import {
+  buildValidOnlineEducationEnrollmentRequest,
+  installTemporaryEducationIpsSettings,
+} from "./education-test-fixtures";
 
 const suffix = randomUUID();
 const password = "education-finance-test-password";
@@ -115,7 +119,7 @@ async function run(): Promise<void> {
   const enrollmentIds: string[] = [];
   const salonIds: string[] = [];
   const createdUserIds: string[] = [];
-  let ipsSettingsSnapshot: { id: string; ipsRecipientName: string | null; ipsRecipientAccount: string | null; ipsPurpose: string | null; ipsAccountEnvironment: string } | undefined;
+  let restoreIpsSettings: (() => Promise<void>) | undefined;
   let releaseRaceLock: (() => void) | undefined;
   let raceLockHolder: Promise<void> | undefined;
 
@@ -469,15 +473,9 @@ async function run(): Promise<void> {
     const buyerCookie = await login(baseUrl, buyer.email);
     const outsiderCookie = await login(baseUrl, outsider.email);
     const salonOwnerCookie = await login(baseUrl, salonOwner.email);
-    const [settings] = await db.select().from(educationPlatformSettingsTable).orderBy(asc(educationPlatformSettingsTable.createdAt)).limit(1);
+    const [settings] = await db.select().from(educationPlatformSettingsTable).limit(1);
     assert.ok(settings);
-    ipsSettingsSnapshot = {
-      id: settings.id,
-      ipsRecipientName: settings.ipsRecipientName,
-      ipsRecipientAccount: settings.ipsRecipientAccount,
-      ipsPurpose: settings.ipsPurpose,
-      ipsAccountEnvironment: settings.ipsAccountEnvironment,
-    };
+    ({ restore: restoreIpsSettings } = await installTemporaryEducationIpsSettings());
     const configureIpsResponse = await request(baseUrl, "/admin/education/settings", {
       method: "PATCH",
       cookie: adminCookie,
@@ -763,7 +761,7 @@ async function run(): Promise<void> {
         method: "POST",
         cookie: buyerCookie,
         headers: { "idempotency-key": key },
-        body: { digitalContentConsent: true },
+        body: buildValidOnlineEducationEnrollmentRequest(),
       });
       assert.equal(enrollmentResponse.status, 201, "Buyer enrollment must be recorded as pending.");
       const pending = await json<{ id: string; status: string; paymentStatus: string }>(enrollmentResponse);
@@ -791,7 +789,7 @@ async function run(): Promise<void> {
       method: "POST",
       cookie: buyerCookie,
       headers: { "idempotency-key": `revoked-${suffix}` },
-      body: { digitalContentConsent: true },
+      body: buildValidOnlineEducationEnrollmentRequest(),
     });
     assert.equal(revokedEnrollmentResponse.status, 201, "A verified center must accept a pending marketplace enrollment.");
     const revokedEnrollment = await json<{ id: string; status: string; paymentStatus: string }>(revokedEnrollmentResponse);
@@ -866,7 +864,7 @@ async function run(): Promise<void> {
       method: "POST",
       cookie: outsiderCookie,
       headers: { "idempotency-key": `enrollment-revocation-race-${suffix}` },
-      body: { digitalContentConsent: true },
+      body: buildValidOnlineEducationEnrollmentRequest(),
     });
     await waitForAdvisoryLockWaiters(enrollmentRaceLockKey, 2);
     const releaseEnrollmentRaceLock = releaseRaceLock as (() => void) | undefined;
@@ -902,7 +900,7 @@ async function run(): Promise<void> {
       method: "POST",
       cookie: outsiderCookie,
       headers: { "idempotency-key": `revoked-race-${suffix}` },
-      body: { digitalContentConsent: true },
+      body: buildValidOnlineEducationEnrollmentRequest(),
     });
     assert.equal(concurrentRevocationEnrollmentResponse.status, 201, "A verified center must accept the concurrent-race enrollment.");
     const concurrentRevocationEnrollment = await json<{ id: string; status: string; paymentStatus: string }>(concurrentRevocationEnrollmentResponse);
@@ -1035,7 +1033,7 @@ async function run(): Promise<void> {
       method: "POST",
       cookie: outsiderCookie,
       headers: { "idempotency-key": `pending-outsider-${suffix}` },
-      body: { digitalContentConsent: true },
+      body: buildValidOnlineEducationEnrollmentRequest(),
     });
     assert.equal(pendingResponse.status, 201);
     const pendingEnrollment = await json<{ id: string }>(pendingResponse);
@@ -1648,15 +1646,7 @@ async function run(): Promise<void> {
     if (salonIds.length) {
       await db.delete(salonsTable).where(inArray(salonsTable.id, salonIds));
     }
-    if (ipsSettingsSnapshot) {
-      await db.update(educationPlatformSettingsTable).set({
-        ipsRecipientName: ipsSettingsSnapshot.ipsRecipientName,
-        ipsRecipientAccount: ipsSettingsSnapshot.ipsRecipientAccount,
-        ipsPurpose: ipsSettingsSnapshot.ipsPurpose,
-        ipsAccountEnvironment: ipsSettingsSnapshot.ipsAccountEnvironment,
-        updatedAt: new Date(),
-      }).where(eq(educationPlatformSettingsTable.id, ipsSettingsSnapshot.id));
-    }
+    await restoreIpsSettings?.();
     if (createdUserIds.length) {
       await db.delete(educationFinancialAuditLogTable)
         .where(inArray(educationFinancialAuditLogTable.actorUserId, createdUserIds));

@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   courseEnrollmentsTable, courseLessonsTable, courseModulesTable, coursesTable, db, educationCenterSubscriptionsTable,
   educationCentersTable, educationEscrowsTable, educationFinancialAuditLogTable,
   educationFinancialEventsTable, educationLedgerEntriesTable, educationPaymentObligationsTable,
-  educationPlatformSettingsTable, educationGiftVouchersTable, employeeLocationAssignmentsTable, employeesTable,
+  educationGiftVouchersTable, employeeLocationAssignmentsTable, employeesTable,
   lessonProgressTable, pool, salonsTable, sessionsTable, subscriptionPlansTable, usersTable,
 } from "@workspace/db";
 import { CreateEducationGroupEnrollmentsBody, RedeemEducationGiftVoucherBody } from "@workspace/api-zod";
@@ -15,19 +15,13 @@ import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { DIGITAL_CONTENT_CONSENT_TEXT, DIGITAL_CONTENT_CONSENT_VERSION } from "./education-entitlement";
 import { ensureDemoData } from "./seed";
+import {
+  buildValidOnlineEducationCourse,
+  buildValidOnlineEducationEnrollmentRequest,
+  installTemporaryEducationIpsSettings,
+} from "./education-test-fixtures";
 
 const marker = `online-access-${randomUUID()}`;
-const SETTINGS_LOCK = "education-online-access-transfer-settings";
-
-async function lockSettings(): Promise<() => Promise<void>> {
-  const client = await pool.connect();
-  await client.query("select pg_advisory_lock(hashtext($1))", [SETTINGS_LOCK]);
-  return async () => {
-    try { await client.query("select pg_advisory_unlock(hashtext($1))", [SETTINGS_LOCK]); }
-    finally { client.release(); }
-  };
-}
-
 async function request(base: string, cookie: string, path: string, method = "GET", body?: unknown) {
   const response = await fetch(`${base}/api${path}`, {
     method,
@@ -39,7 +33,7 @@ async function request(base: string, cookie: string, path: string, method = "GET
 
 async function run(): Promise<void> {
   await ensureDemoData();
-  const unlock = await lockSettings();
+  const { restore: restoreIpsSettings } = await installTemporaryEducationIpsSettings();
   let server: ReturnType<typeof app.listen> | undefined;
   const userIds: string[] = [];
   const employeeIds: string[] = [];
@@ -49,7 +43,6 @@ async function run(): Promise<void> {
   let courseId: string | undefined;
   let raceCourseId: string | undefined;
   let planId: string | undefined;
-  let settingsSnapshot: typeof educationPlatformSettingsTable.$inferSelect | undefined;
   try {
     const passwordHash = await hashPassword("online-access-test-password");
     const [admin, centerOwner, centerTransferTarget, owner, foreignOwner, sourceUser, targetUser, groupUser, inactiveUser, unlinkedUser, outsider] =
@@ -68,12 +61,6 @@ async function run(): Promise<void> {
       ]).returning();
     userIds.push(...[admin, centerOwner, centerTransferTarget, owner, foreignOwner, sourceUser, targetUser, groupUser, inactiveUser, unlinkedUser, outsider].map((user) => user!.id));
 
-    const [settings] = await db.select().from(educationPlatformSettingsTable).orderBy(asc(educationPlatformSettingsTable.createdAt)).limit(1);
-    assert.ok(settings, "Seeded platform settings are required.");
-    settingsSnapshot = settings;
-    await db.update(educationPlatformSettingsTable).set({
-      ipsRecipientName: "Test", ipsRecipientAccount: "160000000000000000", ipsPurpose: "Test", ipsAccountEnvironment: "test",
-    }).where(eq(educationPlatformSettingsTable.id, settings.id));
     const [plan] = await db.insert(subscriptionPlansTable).values({ name: marker, price: 1, active: true }).returning();
     planId = plan!.id;
     const [salon, foreignSalon] = await db.insert(salonsTable).values([
@@ -106,12 +93,12 @@ async function run(): Promise<void> {
     }).returning();
     centerId = center!.id;
     await db.insert(educationCenterSubscriptionsTable).values({ centerId, planId, status: "active", dueAmount: 1, currentPeriodEnd: new Date(Date.now() + 86_400_000) });
-    const [course] = await db.insert(coursesTable).values({
+    const [course] = await db.insert(coursesTable).values(buildValidOnlineEducationCourse({
       centerId, title: marker, description: marker, category: "Test", format: "online", city: "Beograd",
       price: 12_000, duration: "4 nedelje", imageUrl: "/test.jpg", published: true, onlineAccessDays: 45,
       extensionPrice1Month: 1_000, extensionPrice3Months: 2_500, extensionPrice6Months: 4_000, giftVoucherEligible: true,
       certification: true,
-    }).returning();
+    })).returning();
     courseId = course!.id;
     const [raceCourse] = await db.insert(coursesTable).values({
       centerId, title: `${marker}-consent-race`, description: marker, category: "Test", format: "hybrid", city: "Beograd",
@@ -194,7 +181,7 @@ async function run(): Promise<void> {
       "Generated group-enrollment contract accepts employee IDs and explicit digital-content consent.",
     );
     const group = await request(base, ownerCookie, `/education/courses/${courseId}/group-enrollments`, "POST", {
-      employeeIds: [groupWorker!.id, groupWorkerTwo!.id], digitalContentConsent: true,
+      ...buildValidOnlineEducationEnrollmentRequest({ employeeIds: [groupWorker!.id, groupWorkerTwo!.id] }),
     });
     assert.equal(group.status, 201);
     assert.equal(group.body.enrollments.length, 2, "Every selected group member receives a separate enrollment.");
@@ -256,7 +243,7 @@ async function run(): Promise<void> {
     assert.equal((await request(base, outsiderCookie, "/education/gift-vouchers/redeem", "POST", { code: voucher.redemptionCode })).status, 409,
       "Online voucher redemption requires explicit consent.");
     const redemption = await request(base, outsiderCookie, "/education/gift-vouchers/redeem", "POST", {
-      code: voucher.redemptionCode, digitalContentConsent: true,
+      ...buildValidOnlineEducationEnrollmentRequest({ code: voucher.redemptionCode }),
     });
     assert.deepEqual(
       RedeemEducationGiftVoucherBody.parse({ code: voucher.redemptionCode, digitalContentConsent: true }),
@@ -270,7 +257,7 @@ async function run(): Promise<void> {
     assert.equal(voucherEnrollment!.accessExpiresAt!.getTime() - voucherEnrollment!.accessGrantedAt!.getTime(), 45 * 86_400_000);
 
     const pending = await request(base, ownerCookie, `/education/courses/${courseId}/enrollments`, "POST", {
-      employeeId: source!.id, paymentMode: "online_full", digitalContentConsent: true,
+      ...buildValidOnlineEducationEnrollmentRequest({ employeeId: source!.id, paymentMode: "online_full" }),
     });
     assert.equal(pending.status, 201);
     const enrollmentId = pending.body.id as string;
@@ -459,8 +446,7 @@ async function run(): Promise<void> {
       await db.delete(usersTable).where(inArray(usersTable.id, userIds));
     }
     if (planId) await db.delete(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, planId));
-    if (settingsSnapshot) await db.update(educationPlatformSettingsTable).set(settingsSnapshot).where(eq(educationPlatformSettingsTable.id, settingsSnapshot.id));
-    await unlock();
+    await restoreIpsSettings();
   }
 }
 

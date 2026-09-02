@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   GetEducationCourseResponse,
   GetPublicEducationCourseResponse,
@@ -32,7 +32,6 @@ import {
   educationInquiriesTable,
   educationInstructorsTable,
   educationLedgerEntriesTable,
-  educationPlatformSettingsTable,
   employeeLocationAssignmentsTable,
   employeesTable,
   lessonProgressTable,
@@ -48,6 +47,11 @@ import { batchEducationCourseViews, type EducationAccess } from "../routes/marke
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureBusinessGrowthSchema } from "./business-growth-schema";
 import { ensureDemoData } from "./seed";
+import {
+  buildValidOnlineEducationCourse,
+  buildValidOnlineEducationEnrollmentRequest,
+  installTemporaryEducationIpsSettings,
+} from "./education-test-fixtures";
 
 const suffix = randomUUID();
 const password = "edu-extras-test-password-2025";
@@ -95,13 +99,7 @@ async function run(): Promise<void> {
   let centerId: string | undefined;
   let salonId: string | undefined;
   const extraCenterIds: string[] = [];
-  let ipsSettingsSnapshot: {
-    id: string;
-    ipsRecipientName: string | null;
-    ipsRecipientAccount: string | null;
-    ipsPurpose: string | null;
-    ipsAccountEnvironment: string;
-  } | undefined;
+  let restoreIpsSettings: (() => Promise<void>) | undefined;
 
   try {
     const fixturePasswordHash = await hashPassword(password);
@@ -223,12 +221,11 @@ async function run(): Promise<void> {
     // ── Courses ──────────────────────────────────────────────────────────────
 
     // 1. Online certification course (for PDF certificate test)
-    const [certCourse] = await db.insert(coursesTable).values({
+    const [certCourse] = await db.insert(coursesTable).values(buildValidOnlineEducationCourse({
       centerId: center.id,
       title: `Certificate Course ${suffix}`,
       description: "Kurs sa sertifikatom za proveru PDF preuzimanja.",
       category: "Sertifikacija",
-      format: "online",
       city: "Novi Sad",
       price: 8000,
       duration: "2 nedelje",
@@ -238,11 +235,8 @@ async function run(): Promise<void> {
       refundPolicy: "Povraćaj unutar 14 dana od kupovine.",
       groupDiscountMinimum: 2,
       groupDiscountPercent: 15,
-      onlineAccessDays: 30,
-      extensionPrice1Month: 1000,
-      extensionPrice3Months: 2500,
       extensionPrice6Months: 4500,
-    }).returning();
+    })).returning();
     assert.ok(certCourse);
     courseIds.push(certCourse.id);
 
@@ -301,22 +295,12 @@ async function run(): Promise<void> {
     const adminCookie = await login(baseUrl, admin.email);
     const buyerCookie = await login(baseUrl, buyer.email);
     const salonOwnerCookie = await login(baseUrl, salonOwner.email);
-    const [settings] = await db.select().from(educationPlatformSettingsTable)
-      .orderBy(asc(educationPlatformSettingsTable.createdAt)).limit(1);
-    assert.ok(settings, "Education extras coverage requires platform settings.");
-    ipsSettingsSnapshot = {
-      id: settings.id,
-      ipsRecipientName: settings.ipsRecipientName,
-      ipsRecipientAccount: settings.ipsRecipientAccount,
-      ipsPurpose: settings.ipsPurpose,
-      ipsAccountEnvironment: settings.ipsAccountEnvironment,
-    };
-    await db.update(educationPlatformSettingsTable).set({
+    ({ restore: restoreIpsSettings } = await installTemporaryEducationIpsSettings({
       ipsRecipientName: "LUMERA extras test",
       ipsRecipientAccount: "160000000000000000",
       ipsPurpose: "Edukacija",
       ipsAccountEnvironment: "test",
-    }).where(eq(educationPlatformSettingsTable.id, settings.id));
+    }));
 
     // ═══════════════════════════════════════════════════════════════════════
     // TEST: Public instructor profile rejects a non-UUID path parameter
@@ -499,7 +483,7 @@ async function run(): Promise<void> {
         method: "POST",
         cookie: salonOwnerCookie,
         headers: { "idempotency-key": randomUUID() },
-        body: { employeeIds: [emp1.id], digitalContentConsent: true },
+        body: buildValidOnlineEducationEnrollmentRequest({ employeeIds: [emp1.id] }),
       });
       assert.equal(groupResp1.status, 400, "Group enrollment with fewer than minimum employees must return 400.");
       const groupBody1 = await json<{ error: string; minimumRequired: number }>(groupResp1);
@@ -513,7 +497,7 @@ async function run(): Promise<void> {
         method: "POST",
         cookie: salonOwnerCookie,
         headers: { "idempotency-key": iKey },
-        body: { employeeIds: [emp1.id, emp2.id], digitalContentConsent: true },
+        body: buildValidOnlineEducationEnrollmentRequest({ employeeIds: [emp1.id, emp2.id] }),
       });
       assert.equal(groupResp2.status, 201, "Group enrollment with enough employees must return 201.");
       const groupBody2 = await json<{
@@ -572,7 +556,7 @@ async function run(): Promise<void> {
         method: "POST",
         cookie: salonOwnerCookie,
         headers: { "idempotency-key": randomUUID() }, // different key, but same participants
-        body: { employeeIds: [emp1.id, emp2.id], digitalContentConsent: true },
+        body: buildValidOnlineEducationEnrollmentRequest({ employeeIds: [emp1.id, emp2.id] }),
       });
       assert.equal(groupResp3.status, 409, "Duplicate group enrollment must return 409.");
       console.log("✓ Duplicate group enrollment rejected with 409.");
@@ -582,7 +566,7 @@ async function run(): Promise<void> {
         method: "POST",
         cookie: salonOwnerCookie,
         headers: { "idempotency-key": randomUUID() },
-        body: { employeeIds: [emp1.id, randomUUID()], digitalContentConsent: true }, // second is a fake ID
+        body: buildValidOnlineEducationEnrollmentRequest({ employeeIds: [emp1.id, randomUUID()] }), // second is a fake ID
       });
       assert.equal(groupResp4.status, 403, "Foreign or non-existent employee ID must return 403.");
       console.log("✓ Foreign employee ID rejected in group enrollment.");
@@ -1395,14 +1379,7 @@ async function run(): Promise<void> {
       await db.delete(employeesTable).where(eq(employeesTable.salonId, salonId));
       await db.delete(salonsTable).where(eq(salonsTable.id, salonId));
     }
-    if (ipsSettingsSnapshot) {
-      await db.update(educationPlatformSettingsTable).set({
-        ipsRecipientName: ipsSettingsSnapshot.ipsRecipientName,
-        ipsRecipientAccount: ipsSettingsSnapshot.ipsRecipientAccount,
-        ipsPurpose: ipsSettingsSnapshot.ipsPurpose,
-        ipsAccountEnvironment: ipsSettingsSnapshot.ipsAccountEnvironment,
-      }).where(eq(educationPlatformSettingsTable.id, ipsSettingsSnapshot.id));
-    }
+    await restoreIpsSettings?.();
     if (createdUserIds.length) {
       await db.delete(educationFinancialAuditLogTable)
         .where(inArray(educationFinancialAuditLogTable.actorUserId, createdUserIds));
