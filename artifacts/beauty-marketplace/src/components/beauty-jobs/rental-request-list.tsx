@@ -29,6 +29,9 @@ export function RentalRequestList({ requests, isLoading, incoming, pendingReques
   return (
     <div className="space-y-3">
       {requests.map((request) => (
+        (() => {
+          const isSaving = pendingRequestId === request.id;
+          return (
         <div key={request.id} data-testid={`rental-request-${request.id}`} className="rounded-xl border bg-card p-4 shadow-sm sm:p-5">
           <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
             <div>
@@ -50,11 +53,13 @@ export function RentalRequestList({ requests, isLoading, incoming, pendingReques
           {request.message && <p className="mt-3 whitespace-pre-wrap text-sm text-foreground/80">{request.message}</p>}
           {incoming && request.status === "pending" && onRespond && (
             <div className="mt-4 flex justify-end gap-2">
-              <Button size="sm" variant="outline" disabled={pendingRequestId === request.id} onClick={() => onRespond(request.id, "declined")}>Odbij</Button>
-              <Button size="sm" disabled={pendingRequestId === request.id} onClick={() => onRespond(request.id, "accepted")}>Prihvati termin</Button>
+              <Button size="sm" variant="outline" disabled={isSaving} onClick={() => onRespond(request.id, "declined")}>{isSaving ? "Čuvanje..." : "Odbij"}</Button>
+              <Button size="sm" disabled={isSaving} onClick={() => onRespond(request.id, "accepted")}>{isSaving ? "Čuvanje..." : "Prihvati termin"}</Button>
             </div>
           )}
         </div>
+          );
+        })()
       ))}
     </div>
   );

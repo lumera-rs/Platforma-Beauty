@@ -72,4 +72,29 @@ for (const viewport of ["mobile", "desktop"]) {
     assert.match(html, /p-4 shadow-sm sm:p-5/);
     assert.match(html, /flex-col items-start justify-between gap-3 sm:flex-row/);
   });
+
+  test(`salon rental inbox disables only the request being saved on ${viewport}`, () => {
+    const html = renderToStaticMarkup(
+      <RentalRequestList
+        requests={[
+          request("saving-request", "2026-09-03T10:00:00.000Z", "2026-09-03T11:00:00.000Z"),
+          request("other-request", "2026-09-04T10:00:00.000Z", "2026-09-04T11:00:00.000Z"),
+        ]}
+        isLoading={false}
+        incoming
+        pendingRequestId="saving-request"
+        onRespond={() => undefined}
+      />,
+    );
+
+    const savingCardStart = html.indexOf("rental-request-saving-request");
+    const otherCardStart = html.indexOf("rental-request-other-request");
+    const savingCard = html.slice(savingCardStart, otherCardStart);
+    const otherCard = html.slice(otherCardStart);
+    assert.equal((savingCard.match(/disabled=""/g) ?? []).length, 2);
+    assert.equal((savingCard.match(/Čuvanje\.\.\./g) ?? []).length, 2);
+    assert.equal((otherCard.match(/disabled=""/g) ?? []).length, 0);
+    assert.match(otherCard, />Odbij</);
+    assert.match(otherCard, />Prihvati termin</);
+  });
 }

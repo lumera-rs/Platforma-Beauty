@@ -30,6 +30,7 @@ import { BusinessLayout } from "@/components/business-layout";
 import { BeautyJobCard } from "@/components/beauty-jobs/beauty-job-card";
 import { BeautyJobForm } from "@/components/beauty-jobs/beauty-job-form";
 import { RentalRequestList } from "@/components/beauty-jobs/rental-request-list";
+import { createRentalResponseHandler } from "@/components/beauty-jobs/rental-response";
 import { BusinessJobsTab } from "@/components/beauty-jobs/business-jobs-tab";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -141,20 +142,18 @@ export default function BusinessBeautyJobsPage() {
     });
   };
 
-  const handleRentalResponse = (requestId: string, status: "accepted" | "declined") => {
-    setRespondingRequestId(requestId);
-    respondRentalMutation.mutate({ requestId, data: { status } }, {
-      onSuccess: () => {
+  const handleRentalResponse = createRentalResponseHandler({
+    mutation: respondRentalMutation,
+    setPendingRequestId: setRespondingRequestId,
+    onSuccess: (status) => {
         toast.success(status === "accepted" ? "Termin je potvrđen." : "Zahtev je odbijen.");
         queryClient.invalidateQueries({ queryKey: getListBeautyJobRentalRequestInboxQueryKey() });
         queryClient.invalidateQueries({ queryKey: getListMyBeautyJobRentalRequestsQueryKey() });
         queryClient.invalidateQueries({ queryKey: getListBeautyJobNotificationsQueryKey() });
         queryClient.invalidateQueries({ queryKey: getListMyBeautyJobsQueryKey() });
-      },
-      onError: () => toast.error("Zahtev je već obrađen ili termin više nije dostupan."),
-      onSettled: () => setRespondingRequestId(undefined),
-    });
-  };
+    },
+    onError: () => toast.error("Zahtev je već obrađen ili termin više nije dostupan."),
+  });
 
   return (
     <BusinessLayout>
