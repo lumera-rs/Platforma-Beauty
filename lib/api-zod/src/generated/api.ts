@@ -1268,9 +1268,11 @@ export const GetGroupedBookingAvailabilityResponse = zod.object({
 export const createBookingGroupHeaderIdempotencyKeyMax = 200;
 
 
+export const createBookingGroupHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateBookingGroupHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createBookingGroupHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createBookingGroupHeaderIdempotencyKeyMax).regex(createBookingGroupHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const createBookingGroupBodyTreatmentsMax = 5;
@@ -1382,9 +1384,11 @@ export const CreateBookingGroupResponse = zod.object({
 export const createSalonBookingGroupHeaderIdempotencyKeyMax = 200;
 
 
+export const createSalonBookingGroupHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateSalonBookingGroupHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createSalonBookingGroupHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createSalonBookingGroupHeaderIdempotencyKeyMax).regex(createSalonBookingGroupHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const createSalonBookingGroupBodyGuestFirstNameMax = 100;
@@ -1510,9 +1514,11 @@ export const CreateSalonBookingGroupResponse = zod.object({
 export const createEmployeeBookingGroupHeaderIdempotencyKeyMax = 200;
 
 
+export const createEmployeeBookingGroupHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateEmployeeBookingGroupHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createEmployeeBookingGroupHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createEmployeeBookingGroupHeaderIdempotencyKeyMax).regex(createEmployeeBookingGroupHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const createEmployeeBookingGroupBodyGuestFirstNameMax = 100;
@@ -1975,9 +1981,11 @@ export const ListMyAppointmentsResponse = zod.array(ListMyAppointmentsResponseIt
 export const createAppointmentHeaderIdempotencyKeyMax = 200;
 
 
+export const createAppointmentHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateAppointmentHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createAppointmentHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createAppointmentHeaderIdempotencyKeyMax).regex(createAppointmentHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const createAppointmentBodyStartTimeRegExp = new RegExp('^(?:[01][0-9]|2[0-3]):[0-5][0-9]$');
@@ -3457,9 +3465,11 @@ export const ListSalonAppointmentsResponse = zod.array(ListSalonAppointmentsResp
 export const createSalonAppointmentHeaderIdempotencyKeyMax = 200;
 
 
+export const createSalonAppointmentHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateSalonAppointmentHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createSalonAppointmentHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createSalonAppointmentHeaderIdempotencyKeyMax).regex(createSalonAppointmentHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const createSalonAppointmentBodyStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
@@ -3645,9 +3655,11 @@ export const PreviewSalonPackageAppointmentsResponse = zod.object({
 export const createSalonPackageAppointmentsHeaderIdempotencyKeyMax = 200;
 
 
+export const createSalonPackageAppointmentsHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateSalonPackageAppointmentsHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createSalonPackageAppointmentsHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createSalonPackageAppointmentsHeaderIdempotencyKeyMax).regex(createSalonPackageAppointmentsHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const createSalonPackageAppointmentsBodySlotsItemStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
@@ -3896,9 +3908,11 @@ export const GetSalonCalendarDayResponse = zod.array(GetSalonCalendarDayResponse
 export const createSalonAppointmentSeriesHeaderIdempotencyKeyMax = 200;
 
 
+export const createSalonAppointmentSeriesHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateSalonAppointmentSeriesHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createSalonAppointmentSeriesHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createSalonAppointmentSeriesHeaderIdempotencyKeyMax).regex(createSalonAppointmentSeriesHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const createSalonAppointmentSeriesBodyOneSlotsItemStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
@@ -4283,9 +4297,11 @@ export const PreviewEmployeeAppointmentSeriesResponse = zod.object({
 export const createEmployeeAppointmentSeriesHeaderIdempotencyKeyMax = 200;
 
 
+export const createEmployeeAppointmentSeriesHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateEmployeeAppointmentSeriesHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createEmployeeAppointmentSeriesHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createEmployeeAppointmentSeriesHeaderIdempotencyKeyMax).regex(createEmployeeAppointmentSeriesHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const createEmployeeAppointmentSeriesBodyOneSlotsItemStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
@@ -4406,9 +4422,11 @@ export const CreateEmployeeAppointmentSeriesResponse = zod.object({
 export const createEmployeeAppointmentsHeaderIdempotencyKeyMax = 200;
 
 
+export const createEmployeeAppointmentsHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateEmployeeAppointmentsHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createEmployeeAppointmentsHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createEmployeeAppointmentsHeaderIdempotencyKeyMax).regex(createEmployeeAppointmentsHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 
@@ -14003,9 +14021,11 @@ export const ListMyEducationOperationalBookingsResponse = zod.array(ListMyEducat
 export const createEducationOperationalBookingHeaderIdempotencyKeyMax = 200;
 
 
+export const createEducationOperationalBookingHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateEducationOperationalBookingHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createEducationOperationalBookingHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createEducationOperationalBookingHeaderIdempotencyKeyMax).regex(createEducationOperationalBookingHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const createEducationOperationalBookingBodyInstallmentCountDefault = 1;
@@ -14176,9 +14196,11 @@ export const SettleAdminEducationInstallmentParams = zod.object({
 export const settleAdminEducationInstallmentHeaderIdempotencyKeyMax = 200;
 
 
+export const settleAdminEducationInstallmentHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const SettleAdminEducationInstallmentHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(settleAdminEducationInstallmentHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(settleAdminEducationInstallmentHeaderIdempotencyKeyMax).regex(settleAdminEducationInstallmentHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const SettleAdminEducationInstallmentResponse = zod.object({
@@ -14265,9 +14287,11 @@ export const RescheduleEducationOperationalBookingParams = zod.object({
 export const rescheduleEducationOperationalBookingHeaderIdempotencyKeyMax = 200;
 
 
+export const rescheduleEducationOperationalBookingHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const RescheduleEducationOperationalBookingHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(rescheduleEducationOperationalBookingHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(rescheduleEducationOperationalBookingHeaderIdempotencyKeyMax).regex(rescheduleEducationOperationalBookingHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const rescheduleEducationOperationalBookingBodyParticipantIdsMax = 20;
@@ -14460,9 +14484,11 @@ export const CommitEducationCourseRecurrenceParams = zod.object({
 export const commitEducationCourseRecurrenceHeaderIdempotencyKeyMax = 200;
 
 
+export const commitEducationCourseRecurrenceHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CommitEducationCourseRecurrenceHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(commitEducationCourseRecurrenceHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(commitEducationCourseRecurrenceHeaderIdempotencyKeyMax).regex(commitEducationCourseRecurrenceHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const commitEducationCourseRecurrenceBodyWeekdaysItemMax = 7;
@@ -14933,9 +14959,11 @@ export const EnrollInEducationCourseParams = zod.object({
 export const enrollInEducationCourseHeaderIdempotencyKeyMax = 200;
 
 
+export const enrollInEducationCourseHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const EnrollInEducationCourseHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(enrollInEducationCourseHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(enrollInEducationCourseHeaderIdempotencyKeyMax).regex(enrollInEducationCourseHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const EnrollInEducationCourseBody = zod.object({
@@ -19552,9 +19580,11 @@ export const ListEducationGiftVouchersResponse = zod.object({
 export const purchaseEducationGiftVoucherHeaderIdempotencyKeyMax = 200;
 
 
+export const purchaseEducationGiftVoucherHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const PurchaseEducationGiftVoucherHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(purchaseEducationGiftVoucherHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(purchaseEducationGiftVoucherHeaderIdempotencyKeyMax).regex(purchaseEducationGiftVoucherHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const purchaseEducationGiftVoucherBodyRecipientEmailMax = 320;

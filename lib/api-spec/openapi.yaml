@@ -9642,7 +9642,7 @@ components:
       in: header
       required: true
       description: Client-generated command identifier; reuse it only to retry the identical booking payload.
-      schema: { type: string, minLength: 1, maxLength: 200 }
+      schema: { type: string, minLength: 1, maxLength: 200, pattern: '^[!-~]+$' }
     WidgetBookingIdempotencyKey:
       name: Idempotency-Key
       in: header

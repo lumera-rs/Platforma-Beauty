@@ -5,6 +5,10 @@ import { bookingCommandReceiptsTable, db } from "@workspace/db";
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+export const BOOKING_IDEMPOTENCY_KEY_MIN_LENGTH = 1;
+export const BOOKING_IDEMPOTENCY_KEY_MAX_LENGTH = 200;
+export const BOOKING_IDEMPOTENCY_KEY_PATTERN = /^[\x21-\x7e]+$/;
+
 export const IDEMPOTENCY_MISMATCH_BODY = {
   code: "IDEMPOTENCY_KEY_REUSED",
   error: "Idempotency-Key je već upotrebljen za drugačiji zahtev.",
@@ -36,7 +40,12 @@ export function bookingPayloadFingerprint(value: unknown): string {
 
 export function bookingIdempotencyKey(req: Request, res: Response): string | null {
   const raw = req.get("Idempotency-Key");
-  if (!raw || raw.length > 200 || !/^[\x21-\x7e]+$/.test(raw)) {
+  if (
+    !raw
+    || raw.length < BOOKING_IDEMPOTENCY_KEY_MIN_LENGTH
+    || raw.length > BOOKING_IDEMPOTENCY_KEY_MAX_LENGTH
+    || !BOOKING_IDEMPOTENCY_KEY_PATTERN.test(raw)
+  ) {
     res.status(400).json({
       code: "IDEMPOTENCY_KEY_REQUIRED",
       error: "Pošaljite važeći Idempotency-Key za zahtev zakazivanja.",
