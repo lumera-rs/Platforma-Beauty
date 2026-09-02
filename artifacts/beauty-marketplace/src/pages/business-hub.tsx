@@ -12,11 +12,12 @@ import {
   useSelectEducationSubscriptionPlan,
   useUpdateEducationSubscriptionAutoRenew,
   useRequestEducationCustomPlan,
+  useSaveEducationReactivationCourseSelection,
   getGetEducationSubscriptionStatusQueryKey
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { BusinessLayout } from "@/components/business-layout";
-import { Loader2, BookOpen, ArrowRight, Building2, CheckCircle2, GraduationCap, Gift, ChevronRight, Users, CreditCard, RefreshCw } from "lucide-react";
+import { Loader2, BookOpen, ArrowRight, Building2, CheckCircle2, GraduationCap, Gift, ChevronRight, Users, CreditCard, RefreshCw, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { EducationFieldHelp } from "@/components/education/education-field-help";
@@ -60,12 +61,13 @@ export default function BusinessHub() {
   const { data: centerStatusData, isLoading: centerLoading } = useGetEducationCenterStatus({ query: { enabled: user?.role === "EDUKATIVNI_CENTAR", queryKey: getGetEducationCenterStatusQueryKey() } });
   const centerStatus = centerStatusData?.[0] ?? null;
 
-  const { data: subStatus, isLoading: subLoading } = useGetEducationSubscriptionStatus({ query: { enabled: user?.role === "EDUKATIVNI_CENTAR", queryKey: getGetEducationSubscriptionStatusQueryKey() } });
+  const { data: subStatus, isLoading: subLoading } = useGetEducationSubscriptionStatus({ query: { enabled: user?.role === "EDUKATIVNI_CENTAR", queryKey: getGetEducationSubscriptionStatusQueryKey(), refetchOnMount: "always" } });
   const { data: plans = [], isLoading: plansLoading } = useListEducationSubscriptionPlans({ query: { enabled: user?.role === "EDUKATIVNI_CENTAR", queryKey: getListEducationSubscriptionPlansQueryKey() } });
 
   const selectPlanMut = useSelectEducationSubscriptionPlan();
   const autoRenewMut = useUpdateEducationSubscriptionAutoRenew();
   const requestCustomMut = useRequestEducationCustomPlan();
+  const reactivationSelectionMut = useSaveEducationReactivationCourseSelection();
 
   const [selectedPlanId, setSelectedPlanId] = useState("");
   const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
@@ -80,6 +82,7 @@ export default function BusinessHub() {
   const [targetDowngradeLimit, setTargetDowngradeLimit] = useState(0);
   const [targetKeepCount, setTargetKeepCount] = useState(0);
   const [selectedKeepIds, setSelectedKeepIds] = useState<string[]>([]);
+  const [reactivationKeepIds, setReactivationKeepIds] = useState<string[]>([]);
   const [pendingSelectionArgs, setPendingSelectionArgs] = useState<{ planId: string, billingCycle: "monthly" | "yearly" } | null>(null);
 
   const { data: refDash } = useGetReferralDashboard({
@@ -103,6 +106,10 @@ export default function BusinessHub() {
       setSelectedPlanId(currentPlan || plans[0].id);
     }
   }, [plans, subStatus, selectedPlanId]);
+
+  useEffect(() => {
+    setReactivationKeepIds(subStatus?.reactivation?.selectedKeepCourseIds ?? []);
+  }, [subStatus?.reactivation?.selectedKeepCourseIds]);
 
   if (userLoading || centerLoading || subLoading || plansLoading || !user || user.role !== "EDUKATIVNI_CENTAR") {
     return (
@@ -196,6 +203,28 @@ export default function BusinessHub() {
     }
   };
 
+  const toggleReactivationCourse = (id: string, checked: boolean) => {
+    const required = subStatus?.reactivation?.requiredKeepCount ?? 0;
+    setReactivationKeepIds((current) => checked
+      ? current.includes(id) || current.length >= required ? current : [...current, id]
+      : current.filter((courseId) => courseId !== id));
+  };
+
+  const saveReactivationSelection = () => {
+    const required = subStatus?.reactivation?.requiredKeepCount ?? 0;
+    if (reactivationKeepIds.length !== required) {
+      toast.error(`Izaberite tačno ${required} kurseva.`);
+      return;
+    }
+    reactivationSelectionMut.mutate({ data: { keepCourseIds: reactivationKeepIds } }, {
+      onSuccess: () => {
+        toast.success("Izbor kurseva za reaktivaciju je sačuvan.");
+        queryClient.invalidateQueries({ queryKey: getGetEducationSubscriptionStatusQueryKey() });
+      },
+      onError: (error: any) => toast.error("Izbor nije sačuvan", { description: error.message }),
+    });
+  };
+
   return (
     <BusinessLayout>
       <div className="bg-muted/30 pb-16 min-h-screen">
@@ -209,6 +238,77 @@ export default function BusinessHub() {
         </div>
 
         <div className="container mx-auto px-4 max-w-6xl -mt-12 relative z-10">
+          {subStatus?.inGrace && (
+            <div role="status" className="mb-8 rounded-xl border border-amber-300 bg-amber-50 p-5 text-amber-950 shadow-sm">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+                <div>
+                  <h2 className="font-semibold">Pretplata je u grace periodu</h2>
+                  <p className="mt-1 text-sm">
+                    {subStatus.graceDaysRemaining === 0
+                      ? "Grace period ističe danas po vremenu u Beogradu."
+                      : `Preostalo je ${subStatus.graceDaysRemaining} ${subStatus.graceDaysRemaining === 1 ? "beogradski kalendarski dan" : "beogradskih kalendarskih dana"}.`}
+                    {" "}Evidentirajte uplatu pre isteka da kursevi ne bi bili povučeni iz javne ponude.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {subStatus?.subscription?.status === "suspended" && subStatus.reactivation && (
+            <Card className="mb-8 border-destructive/30 shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-xl">
+                  <AlertTriangle className="h-5 w-5 text-destructive" />
+                  Nalog centra je deaktiviran
+                </CardTitle>
+                <CardDescription>
+                  Kursevi ostaju sačuvani, ali nisu javno dostupni dok se reaktivacija ne završi.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {subStatus.reactivation.state === "payment_required" && (
+                  <p className="text-sm">Najpre je potrebno da super administrator evidentira važeću uplatu za novi period.</p>
+                )}
+                {subStatus.reactivation.selectionRequired && (
+                  <div className="space-y-3">
+                    <p className="text-sm">
+                      Aktuelni plan dozvoljava {subStatus.reactivation.courseLimit} kurseva. Izaberite tačno{" "}
+                      <strong>{subStatus.reactivation.requiredKeepCount}</strong> prethodno objavljenih kurseva koji treba ponovo da postanu aktivni.
+                    </p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {subStatus.reactivation.candidateCourses.map((course) => {
+                        const checked = reactivationKeepIds.includes(course.id);
+                        return (
+                          <label key={course.id} className="flex cursor-pointer items-start gap-3 rounded-lg border bg-background p-3 text-sm">
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={(value) => toggleReactivationCourse(course.id, value === true)}
+                              disabled={!subStatus.reactivation?.paymentReady || (!checked && reactivationKeepIds.length >= subStatus.reactivation.requiredKeepCount)}
+                            />
+                            <span>{course.title}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <Button
+                      onClick={saveReactivationSelection}
+                      disabled={!subStatus.reactivation.paymentReady || reactivationKeepIds.length !== subStatus.reactivation.requiredKeepCount || reactivationSelectionMut.isPending}
+                    >
+                      {reactivationSelectionMut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Sačuvaj izbor za reaktivaciju
+                    </Button>
+                  </div>
+                )}
+                {subStatus.reactivation.state === "ready" && (
+                  <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                    Uplata i izbor kurseva su potvrđeni. Super administrator sada može da završi reaktivaciju naloga.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           <Card className="border-none shadow-md mb-8">
             <CardHeader>
               <CardDescription>Status poslovnog naloga i prodaje</CardDescription>

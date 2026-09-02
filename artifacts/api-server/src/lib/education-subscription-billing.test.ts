@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
-import { eq, inArray, like } from "drizzle-orm";
+import { and, eq, inArray, like } from "drizzle-orm";
 import app from "../app";
 import { createSession, sessionCookieName } from "./auth";
 import { runEducationSubscriptionLifecycle } from "./education-subscription-worker";
@@ -20,6 +20,7 @@ const userIds: string[] = [];
 let centerId: string | undefined;
 let observerCenterId: string | undefined;
 let courseId: string | undefined;
+const courseIds: string[] = [];
 let planId: string | undefined;
 let server: ReturnType<typeof app.listen> | undefined;
 let settingsEnvironmentRestore: string | undefined;
@@ -66,6 +67,7 @@ try {
     extensionPrice1Month: 1_100, extensionPrice3Months: 2_900, extensionPrice6Months: 5_000,
   }).returning();
   courseId = course!.id;
+  courseIds.push(course.id);
   const initialExpiry = new Date(Date.UTC(2027, 0, 15, 12));
   const learners = [learner1!, learner2!, learner3!];
   const enrollments = await db.insert(courseEnrollmentsTable).values(([1, 3, 6] as const).map((_months, index) => ({
@@ -112,6 +114,18 @@ try {
     .where(like(emailDeliveriesTable.eventKey, `education-subscription-expiry:${subscription.id}:%`));
   assert.deepEqual(new Set(reminderRows.map((row) => Number((row.metadata as any).daysRemaining))), new Set([7, 5, 2]));
 
+  const extraCourses = await db.insert(coursesTable).values([1, 2].map((index) => ({
+    centerId: centerId!,
+    title: `${marker} reactivation ${index}`,
+    category: "Test",
+    format: "online" as const,
+    price: 20_000,
+    duration: "1h",
+    imageUrl: "/test.jpg",
+    published: true,
+  }))).returning();
+  courseIds.push(...extraCourses.map((row) => row.id));
+
   await db.update(educationCenterSubscriptionsTable).set({
     status: "trial", trialEndsAt: new Date(Date.now() - DAY), currentPeriodEnd: null, graceEndsAt: null,
   }).where(eq(educationCenterSubscriptionsTable.id, subscription.id));
@@ -119,6 +133,10 @@ try {
   let [lifecycle] = await db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.id, subscription.id));
   assert.equal(lifecycle!.status, "past_due");
   assert.ok(lifecycle!.graceEndsAt && lifecycle!.graceEndsAt > new Date());
+  const graceStatus = await call(base, ownerCookie, "/education/subscription/status");
+  assert.equal(graceStatus.status, 200);
+  assert.equal(graceStatus.body.inGrace, true);
+  assert.equal(graceStatus.body.graceDaysRemaining, 5, "Every status fetch must report server-derived Belgrade calendar days.");
   assert.equal((await db.select().from(coursesTable).where(eq(coursesTable.id, courseId)))[0]!.published, true);
 
   await db.update(educationCenterSubscriptionsTable).set({ graceEndsAt: new Date(Date.now() - DAY) })
@@ -140,6 +158,99 @@ try {
 
   const reactivated = await call(base, adminCookie, `/admin/education/centers/${centerId}/reactivate`, "POST", { reason: "Uplata potvrđena nakon provere" });
   assert.equal(reactivated.status, 409, "Admin reactivation must not create a paid period without settlement.");
+  assert.equal((await call(base, adminCookie, `/admin/education/centers/${centerId}/reactivate`, "POST", { reason: "" })).status, 400,
+    "Admin reactivation must require an audit reason.");
+
+  const [renewal] = await db.select().from(educationPaymentObligationsTable)
+    .where(and(
+      eq(educationPaymentObligationsTable.subscriptionId, subscription.id),
+      eq(educationPaymentObligationsTable.kind, "subscription_renewal"),
+      eq(educationPaymentObligationsTable.status, "pending"),
+    )).limit(1);
+  assert.ok(renewal, "Grace transition must leave a payable renewal obligation.");
+  await db.update(educationPaymentObligationsTable).set({ courseLimitSnapshot: 1 })
+    .where(eq(educationPaymentObligationsTable.id, renewal!.id));
+  const settledRenewal = await call(base, adminCookie, `/admin/education/payment-obligations/${renewal!.id}/settle`, "POST", {
+    confirmedAmountRsd: renewal!.expectedAmount,
+    reason: "Tačna uplata za reaktivaciju",
+  });
+  assert.equal(settledRenewal.status, 200);
+  [lifecycle] = await db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.id, subscription.id));
+  assert.equal(lifecycle!.status, "suspended", "Settlement must not bypass the explicit reactivation boundary.");
+  assert.equal((await db.select().from(coursesTable).where(inArray(coursesTable.id, courseIds))).filter((row) => row.published).length, 0,
+    "Settlement must not republish suspended courses before the center selects and admin reactivates.");
+
+  const selectionStatus = await call(base, ownerCookie, "/education/subscription/status");
+  assert.equal(selectionStatus.body.reactivation.state, "selection_required");
+  assert.equal(selectionStatus.body.reactivation.requiredKeepCount, 1);
+  assert.equal(selectionStatus.body.reactivation.candidateCourses.length, 3);
+  assert.equal((await call(base, adminCookie, `/admin/education/centers/${centerId}/reactivate`, "POST", {
+    reason: "Pokušaj pre izbora",
+  })).status, 409);
+  const chosenCourseId = extraCourses[0]!.id;
+  const savedSelection = await call(base, ownerCookie, "/education/subscription/reactivation-selection", "POST", {
+    keepCourseIds: [chosenCourseId],
+  });
+  assert.equal(savedSelection.status, 200);
+  assert.equal(savedSelection.body.reactivation.state, "ready");
+
+  const concurrentReactivations = await Promise.all([
+    call(base, adminCookie, `/admin/education/centers/${centerId}/reactivate`, "POST", { reason: "Prva završna provera" }),
+    call(base, adminCookie, `/admin/education/centers/${centerId}/reactivate`, "POST", { reason: "Konkurentna završna provera" }),
+  ]);
+  assert.deepEqual(concurrentReactivations.map((result) => result.status).sort(), [200, 409],
+    "Concurrent reactivation attempts must produce one state transition.");
+  const successfulReactivation = concurrentReactivations.find((result) => result.status === 200)!;
+  assert.equal(successfulReactivation.body.subscription.plan.id, planId,
+    "Reactivation response must include the plan required by the published API contract.");
+  [lifecycle] = await db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.id, subscription.id));
+  assert.equal(lifecycle!.status, "active");
+  const reactivationCourses = await db.select().from(coursesTable).where(inArray(coursesTable.id, courseIds));
+  assert.deepEqual(reactivationCourses.filter((row) => row.published).map((row) => row.id), [chosenCourseId],
+    "Only the course selected by the center may be republished.");
+  const reactivationAudits = await db.select().from(educationFinancialAuditLogTable)
+    .where(and(
+      eq(educationFinancialAuditLogTable.entityId, centerId),
+      eq(educationFinancialAuditLogTable.action, "education_center_reactivated"),
+    ));
+  assert.equal(reactivationAudits.length, 1, "One successful reactivation must create exactly one audit row.");
+
+  const expiredPaidPeriod = new Date(Date.now() - 1_000);
+  await db.update(educationCenterSubscriptionsTable).set({
+    status: "suspended",
+    deactivatedAt: new Date(),
+    currentPeriodEnd: expiredPaidPeriod,
+  }).where(eq(educationCenterSubscriptionsTable.id, subscription.id));
+  await db.update(educationPaymentObligationsTable).set({ servicePeriodEnd: expiredPaidPeriod })
+    .where(and(
+      eq(educationPaymentObligationsTable.subscriptionId, subscription.id),
+      eq(educationPaymentObligationsTable.status, "paid"),
+    ));
+  await db.update(coursesTable).set({ published: false, subscriptionSuspended: true })
+    .where(eq(coursesTable.id, chosenCourseId));
+  const customContract = await call(base, adminCookie, `/admin/education/centers/${centerId}/custom-contract`, "POST", {
+    amountRsd: 55_000,
+    billingCycle: "monthly",
+    courseLimit: 1,
+    autoRenew: true,
+    contractEndsAt: new Date(Date.now() + 60 * DAY).toISOString(),
+    reason: "Novi ugovor za deaktiviran centar",
+  });
+  assert.equal(customContract.status, 200);
+  assert.equal(customContract.body.status, "suspended", "A custom contract must preserve the manual reactivation boundary.");
+  assert.ok(customContract.body.deactivatedAt);
+  const customInstructions = await call(base, ownerCookie, "/education/subscription/renewal-instructions", "POST");
+  assert.equal(customInstructions.status, 200);
+  const [customObligation] = await db.select().from(educationPaymentObligationsTable)
+    .where(eq(educationPaymentObligationsTable.referenceSnapshot, customInstructions.body.reference));
+  assert.equal((await call(base, adminCookie, `/admin/education/payment-obligations/${customObligation!.id}/settle`, "POST", {
+    confirmedAmountRsd: customObligation!.expectedAmount,
+    reason: "Uplata posebnog ugovora",
+  })).status, 200);
+  [lifecycle] = await db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.id, subscription.id));
+  assert.equal(lifecycle!.status, "suspended", "Custom-contract settlement must still require explicit admin reactivation.");
+  assert.equal((await db.select().from(coursesTable).where(eq(coursesTable.id, chosenCourseId)))[0]!.published, false,
+    "Custom-contract settlement must not silently republish courses.");
 
   await db.update(coursesTable).set({
     extensionPrice1Month: 9_100, extensionPrice3Months: 9_300, extensionPrice6Months: 9_600,
@@ -205,7 +316,7 @@ try {
     }
     await db.delete(educationTrialClaimsTable).where(eq(educationTrialClaimsTable.centerId, centerId));
     await db.delete(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, centerId));
-    if (courseId) await db.delete(coursesTable).where(eq(coursesTable.id, courseId));
+    if (courseIds.length) await db.delete(coursesTable).where(inArray(coursesTable.id, courseIds));
     await db.delete(educationCentersTable).where(eq(educationCentersTable.id, centerId));
   }
   if (observerCenterId) await db.delete(educationCentersTable).where(eq(educationCentersTable.id, observerCenterId));

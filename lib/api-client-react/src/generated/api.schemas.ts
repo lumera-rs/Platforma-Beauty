@@ -7797,12 +7797,57 @@ export interface EducationPublishedCourse {
   title: string;
 }
 
+export type EducationReactivationStateState = typeof EducationReactivationStateState[keyof typeof EducationReactivationStateState];
+
+
+export const EducationReactivationStateState = {
+  not_needed: 'not_needed',
+  payment_required: 'payment_required',
+  selection_required: 'selection_required',
+  ready: 'ready',
+} as const;
+
+export interface EducationReactivationState {
+  state: EducationReactivationStateState;
+  paymentReady: boolean;
+  /** @minimum 0 */
+  courseLimit: number;
+  /** @minimum 0 */
+  publishedCount: number;
+  /** @minimum 0 */
+  availableCourseSlots: number;
+  candidateCourses: EducationPublishedCourse[];
+  /** @minimum 0 */
+  requiredKeepCount: number;
+  selectionRequired: boolean;
+  selectionComplete: boolean;
+  selectedKeepCourseIds: string[];
+}
+
 export interface EducationSubscriptionStatus {
   center: EducationSubscriptionCenter;
   subscription: null | EducationSubscription;
   publishedCourses: EducationPublishedCourse[];
   inGrace: boolean;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  graceDaysRemaining: number | null;
   operational: boolean;
+  reactivation: null | EducationReactivationState;
+}
+
+export interface EducationReactivationSelectionInput {
+  /** @maxItems 1000 */
+  keepCourseIds: string[];
+}
+
+export interface EducationReactivationResult {
+  subscription: EducationSubscription;
+  reactivatedCourseIds: string[];
+  /** @minimum 0 */
+  courseLimit: number;
 }
 
 /**
@@ -8200,6 +8245,9 @@ export type EducationAdminCenterDetail = EducationAdminCenter & ({
   contactEmail?: string | null;
   /** @nullable */
   contactPhone?: string | null;
+  /** @nullable */
+  deactivatedAt: string | null;
+  reactivation: null | EducationReactivationState;
   billingSettings: EducationResolvedBillingSettings;
 });
 
@@ -14515,6 +14563,8 @@ export const AdminListOrdersDeliveryMethod = {
   personal_belgrade: 'personal_belgrade',
 } as const;
 
+export type SaveEducationReactivationCourseSelection200 = { [key: string]: unknown };
+
 export type SelectEducationSubscriptionPlanBodyBillingCycle = typeof SelectEducationSubscriptionPlanBodyBillingCycle[keyof typeof SelectEducationSubscriptionPlanBodyBillingCycle];
 
 
@@ -14573,6 +14623,14 @@ export type ConfigureEducationCustomContractBody = {
 };
 
 export type ConfigureEducationCustomContract200 = { [key: string]: unknown };
+
+export type ReactivateEducationCenterBody = {
+  /**
+     * @minLength 3
+     * @maxLength 1000
+     */
+  reason: string;
+};
 
 export type ListEducationBundles200Item = { [key: string]: unknown };
 

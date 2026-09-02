@@ -359,6 +359,8 @@ import type {
   EducationPrivateCourseDetail,
   EducationPublicPlacement,
   EducationRankings,
+  EducationReactivationResult,
+  EducationReactivationSelectionInput,
   EducationSearchSuggestion,
   EducationSession,
   EducationSessionCancellation,
@@ -543,6 +545,7 @@ import type {
   PushSubscriptionInput,
   QuickPackagePurchaseInput,
   QuickPackagePurchaseResult,
+  ReactivateEducationCenterBody,
   RedeemSessionBody,
   RedeemSessionResult,
   ReferralApproval,
@@ -609,6 +612,7 @@ import type {
   SalonResourceInput,
   SalonResourceUpdate,
   SalonShiftSwapRequest,
+  SaveEducationReactivationCourseSelection200,
   SearchEmployeeAvailabilityParams,
   SearchProductSuggestion,
   SearchSalonAvailabilityParams,
@@ -14646,6 +14650,77 @@ export function useGetEducationSubscriptionStatus<TData = Awaited<ReturnType<typ
 
 
 
+export const getSaveEducationReactivationCourseSelectionUrl = () => {
+
+
+
+
+  return `/api/education/subscription/reactivation-selection`
+}
+
+/**
+ * @summary Save the suspended center's course choice before reactivation
+ */
+export const saveEducationReactivationCourseSelection = async (educationReactivationSelectionInput: EducationReactivationSelectionInput, options?: Parameters<typeof customFetch>[1]): Promise<SaveEducationReactivationCourseSelection200> => {
+
+  return customFetch<SaveEducationReactivationCourseSelection200>(getSaveEducationReactivationCourseSelectionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(educationReactivationSelectionInput)
+  }
+);}
+
+
+
+
+
+export const getSaveEducationReactivationCourseSelectionMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveEducationReactivationCourseSelection>>, TError,{data: BodyType<EducationReactivationSelectionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveEducationReactivationCourseSelection>>, TError,{data: BodyType<EducationReactivationSelectionInput>}, TContext> => {
+
+const mutationKey = ['saveEducationReactivationCourseSelection'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveEducationReactivationCourseSelection>>, {data: BodyType<EducationReactivationSelectionInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  saveEducationReactivationCourseSelection(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveEducationReactivationCourseSelectionMutationResult = NonNullable<Awaited<ReturnType<typeof saveEducationReactivationCourseSelection>>>
+    export type SaveEducationReactivationCourseSelectionMutationBody = BodyType<EducationReactivationSelectionInput>
+    export type SaveEducationReactivationCourseSelectionMutationError = ErrorType<void>
+
+    /**
+ * @summary Save the suspended center's course choice before reactivation
+ */
+export const useSaveEducationReactivationCourseSelection = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveEducationReactivationCourseSelection>>, TError,{data: BodyType<EducationReactivationSelectionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveEducationReactivationCourseSelection>>,
+        TError,
+        {data: BodyType<EducationReactivationSelectionInput>},
+        TContext
+      > => {
+      return useMutation(getSaveEducationReactivationCourseSelectionMutationOptions(options));
+    }
+
 export const getSelectEducationSubscriptionPlanUrl = () => {
 
 
@@ -15589,6 +15664,78 @@ export const useConfigureEducationCustomContract = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getConfigureEducationCustomContractMutationOptions(options));
+    }
+
+export const getReactivateEducationCenterUrl = (centerId: string,) => {
+
+
+
+
+  return `/api/admin/education/centers/${centerId}/reactivate`
+}
+
+/**
+ * @summary Reactivate a paid suspended Education center after any required course selection
+ */
+export const reactivateEducationCenter = async (centerId: string,
+    reactivateEducationCenterBody: ReactivateEducationCenterBody, options?: Parameters<typeof customFetch>[1]): Promise<EducationReactivationResult> => {
+
+  return customFetch<EducationReactivationResult>(getReactivateEducationCenterUrl(centerId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(reactivateEducationCenterBody)
+  }
+);}
+
+
+
+
+
+export const getReactivateEducationCenterMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reactivateEducationCenter>>, TError,{centerId: string;data: BodyType<ReactivateEducationCenterBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reactivateEducationCenter>>, TError,{centerId: string;data: BodyType<ReactivateEducationCenterBody>}, TContext> => {
+
+const mutationKey = ['reactivateEducationCenter'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reactivateEducationCenter>>, {centerId: string;data: BodyType<ReactivateEducationCenterBody>}> = (props) => {
+          const {centerId,data} = props ?? {};
+
+          return  reactivateEducationCenter(centerId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReactivateEducationCenterMutationResult = NonNullable<Awaited<ReturnType<typeof reactivateEducationCenter>>>
+    export type ReactivateEducationCenterMutationBody = BodyType<ReactivateEducationCenterBody>
+    export type ReactivateEducationCenterMutationError = ErrorType<void>
+
+    /**
+ * @summary Reactivate a paid suspended Education center after any required course selection
+ */
+export const useReactivateEducationCenter = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reactivateEducationCenter>>, TError,{centerId: string;data: BodyType<ReactivateEducationCenterBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reactivateEducationCenter>>,
+        TError,
+        {centerId: string;data: BodyType<ReactivateEducationCenterBody>},
+        TContext
+      > => {
+      return useMutation(getReactivateEducationCenterMutationOptions(options));
     }
 
 export const getListEducationPurchasesUrl = () => {

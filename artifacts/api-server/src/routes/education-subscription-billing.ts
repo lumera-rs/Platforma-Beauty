@@ -18,6 +18,11 @@ import {
   normalizeTrialRegistrationNumber, type EducationBillingCycle,
 } from "../lib/education-subscription-domain";
 import { isOnlineEnrollmentSnapshot } from "../lib/education-entitlement";
+import {
+  educationCurrentCourseLimit,
+  educationGraceDaysRemaining,
+  educationReactivationState,
+} from "../lib/education-subscription-reactivation";
 
 const router: IRouter = Router();
 const planBody = z.object({
@@ -26,6 +31,11 @@ const planBody = z.object({
   keepCourseIds: z.array(z.string().uuid()).max(1000).optional(),
 });
 const reasonBody = z.object({ reason: z.string().trim().min(3).max(1000) });
+const reactivationSelectionBody = z.object({
+  keepCourseIds: z.array(z.string().uuid()).max(1000),
+}).refine((body) => new Set(body.keepCourseIds).size === body.keepCourseIds.length, {
+  message: "Izbor kurseva ne sme sadržati duplikate.",
+});
 const extendBody = z.object({ months: z.union([z.literal(1), z.literal(3), z.literal(6)]) });
 const customContractBody = z.object({
   amountRsd: z.number().int().positive(),
@@ -149,17 +159,93 @@ router.get("/education/subscription/status", async (req, res) => {
   const [subscription] = await db.select({ subscription: educationCenterSubscriptionsTable, plan: subscriptionPlansTable })
     .from(educationCenterSubscriptionsTable).innerJoin(subscriptionPlansTable, eq(subscriptionPlansTable.id, educationCenterSubscriptionsTable.planId))
     .where(eq(educationCenterSubscriptionsTable.centerId, access.center.id)).limit(1);
-  const publishedCourses = await db.select({ id: coursesTable.id, title: coursesTable.title }).from(coursesTable)
-    .where(and(eq(coursesTable.centerId, access.center.id), eq(coursesTable.published, true), eq(coursesTable.archived, false)))
+  const courses = await db.select({
+    id: coursesTable.id,
+    title: coursesTable.title,
+    published: coursesTable.published,
+    subscriptionSuspended: coursesTable.subscriptionSuspended,
+  }).from(coursesTable)
+    .where(and(eq(coursesTable.centerId, access.center.id), eq(coursesTable.archived, false)))
     .orderBy(asc(coursesTable.createdAt));
   const now = new Date();
   const inGrace = subscription?.subscription.graceEndsAt ? subscription.subscription.graceEndsAt > now : false;
   const operational = Boolean(subscription && (subscription.subscription.status === "trial" || subscription.subscription.status === "active" || subscription.subscription.status === "free_via_loyalty" || inGrace));
+  const reactivation = subscription
+    ? educationReactivationState({ subscription: subscription.subscription, plan: subscription.plan, courses, now })
+    : null;
   res.json({
     center: { id: access.center.id, name: access.center.name, paymentReferenceNumber: access.center.paymentReferenceNumber },
     subscription: subscription ? { ...subscription.subscription, plan: subscription.plan } : null,
-    publishedCourses, inGrace, operational,
+    publishedCourses: courses.filter((course) => course.published).map(({ id, title }) => ({ id, title })),
+    inGrace,
+    graceDaysRemaining: educationGraceDaysRemaining(now, subscription?.subscription.graceEndsAt ?? null),
+    operational,
+    reactivation,
   });
+});
+
+router.post("/education/subscription/reactivation-selection", async (req, res) => {
+  const access = await ownerCenter(req, res); if (!access) return;
+  const parsed = reactivationSelectionBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Izbor kurseva nije ispravan." }); return; }
+  try {
+    const result = await db.transaction(async (tx) => {
+      const [subscription] = await tx.select().from(educationCenterSubscriptionsTable)
+        .where(eq(educationCenterSubscriptionsTable.centerId, access.center.id)).for("update").limit(1);
+      if (!subscription) throw new Error("NOT_FOUND");
+      if (subscription.status !== "suspended") throw new Error("INVALID_STATE");
+      const [plan] = await tx.select().from(subscriptionPlansTable)
+        .where(eq(subscriptionPlansTable.id, subscription.planId)).for("update").limit(1);
+      if (!plan) throw new Error("NOT_FOUND");
+      const courses = await tx.select({
+        id: coursesTable.id,
+        title: coursesTable.title,
+        published: coursesTable.published,
+        subscriptionSuspended: coursesTable.subscriptionSuspended,
+      }).from(coursesTable)
+        .where(and(eq(coursesTable.centerId, access.center.id), eq(coursesTable.archived, false)))
+        .orderBy(asc(coursesTable.createdAt)).for("update");
+      const now = new Date();
+      const state = educationReactivationState({ subscription, plan, courses, now });
+      if (!state.paymentReady) throw new Error("PAYMENT_REQUIRED");
+      if (!state.selectionRequired) throw new Error("SELECTION_NOT_REQUIRED");
+      if (parsed.data.keepCourseIds.length !== state.requiredKeepCount) throw new Error("SELECTION_COUNT");
+      const candidateIds = new Set(state.candidateCourses.map((course) => course.id));
+      if (!parsed.data.keepCourseIds.every((id) => candidateIds.has(id))) throw new Error("INVALID_COURSE");
+      const [saved] = await tx.update(educationCenterSubscriptionsTable)
+        .set({ pendingKeepCourseIds: parsed.data.keepCourseIds, updatedAt: now })
+        .where(eq(educationCenterSubscriptionsTable.id, subscription.id)).returning();
+      await tx.insert(educationFinancialAuditLogTable).values({
+        actorUserId: access.current.id,
+        action: "education_reactivation_courses_selected",
+        entityType: "education_center_subscription",
+        entityId: subscription.id,
+        oldValue: { selectedCount: subscription.pendingKeepCourseIds?.length ?? 0 },
+        newValue: { selectedCount: parsed.data.keepCourseIds.length, selectedCourseIds: parsed.data.keepCourseIds, courseLimit: state.courseLimit },
+        reason: "Centar je izabrao kurseve koji ostaju aktivni nakon reaktivacije.",
+      });
+      return {
+        subscription: saved!,
+        reactivation: educationReactivationState({ subscription: saved!, plan, courses, now }),
+      };
+    });
+    res.json(result);
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "FAILED";
+    const status = code === "NOT_FOUND" ? 404 : 409;
+    const message = code === "PAYMENT_REQUIRED"
+      ? "Izbor kurseva je dostupan tek nakon evidentirane uplate."
+      : code === "SELECTION_NOT_REQUIRED"
+        ? "Izbor nije potreban jer svi prethodno objavljeni kursevi staju u aktuelni limit."
+        : code === "SELECTION_COUNT"
+          ? "Izaberite tačan broj kurseva koji staje u aktuelni limit."
+          : code === "INVALID_COURSE"
+            ? "Izbor sadrži kurs koji ne pripada listi za reaktivaciju."
+            : code === "INVALID_STATE"
+              ? "Izbor je dostupan samo za deaktiviran centar."
+              : "Pretplata ili plan nisu pronađeni.";
+    res.status(status).json({ error: message, code });
+  }
 });
 
 router.patch("/education/subscription/auto-renew", async (req, res) => {
@@ -423,7 +509,8 @@ router.get("/admin/education/grace-centers", async (req, res) => {
     .from(educationCenterSubscriptionsTable).innerJoin(educationCentersTable, eq(educationCentersTable.id, educationCenterSubscriptionsTable.centerId))
     .where(and(isNotNull(educationCenterSubscriptionsTable.graceEndsAt), gt(educationCenterSubscriptionsTable.graceEndsAt, new Date())))
     .orderBy(asc(educationCenterSubscriptionsTable.graceEndsAt));
-  res.json(rows.map((row) => ({ ...row, daysRemaining: Math.max(0, Math.ceil((row.subscription.graceEndsAt!.getTime() - Date.now()) / 86400000)) })));
+  const now = new Date();
+  res.json(rows.map((row) => ({ ...row, daysRemaining: educationGraceDaysRemaining(now, row.subscription.graceEndsAt) ?? 0 })));
 });
 
 router.post("/admin/education/centers/:centerId/extend-grace", async (req, res) => {
@@ -432,31 +519,111 @@ router.post("/admin/education/centers/:centerId/extend-grace", async (req, res) 
   const updated = await db.transaction(async (tx) => {
     const [subscription] = await tx.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, req.params.centerId)).for("update").limit(1);
     if (!subscription) throw new Error("NOT_FOUND");
+    if (subscription.status === "suspended") throw new Error("REACTIVATION_REQUIRED");
     const now = new Date(); const base = subscription.graceEndsAt && subscription.graceEndsAt > now ? subscription.graceEndsAt : now;
-    const graceEndsAt = new Date(base); graceEndsAt.setUTCDate(graceEndsAt.getUTCDate() + 5);
+    const graceEndsAt = addEducationBelgradeCalendarDays(base, 5);
     const [saved] = await tx.update(educationCenterSubscriptionsTable).set({ status: "past_due", graceEndsAt, graceExtensionNote: parsed.data.reason, deactivatedAt: null, updatedAt: now }).where(eq(educationCenterSubscriptionsTable.id, subscription.id)).returning();
     await tx.insert(educationGraceNotesTable).values({ centerId: req.params.centerId, authorUserId: actor.id, note: parsed.data.reason });
     await tx.insert(educationFinancialAuditLogTable).values({ actorUserId: actor.id, action: "education_grace_extended", entityType: "education_center_subscription", entityId: subscription.id, oldValue: { graceEndsAt: subscription.graceEndsAt }, newValue: { graceEndsAt }, reason: parsed.data.reason });
     return saved;
-  }).catch((error) => { if (error instanceof Error && error.message === "NOT_FOUND") return null; throw error; });
-  if (!updated) { res.status(404).json({ error: "Pretplata nije pronađena." }); return; }
+  }).catch((error) => {
+    if (error instanceof Error && error.message === "NOT_FOUND") return null;
+    if (error instanceof Error && error.message === "REACTIVATION_REQUIRED") return false;
+    throw error;
+  });
+  if (updated === false) { res.status(409).json({ error: "Deaktiviran centar mora proći kontrolisanu reaktivaciju; grace period se ne može ponovo otvoriti." }); return; }
+  if (updated === null) { res.status(404).json({ error: "Pretplata nije pronađena." }); return; }
   res.json(updated);
 });
 
 router.post("/admin/education/centers/:centerId/reactivate", async (req, res) => {
   const actor = await superAdmin(req, res); if (!actor) return;
   const parsed = reasonBody.safeParse(req.body); if (!parsed.success) { res.status(400).json({ error: "Razlog je obavezan." }); return; }
-  const updated = await db.transaction(async (tx) => {
-    const [sub] = await tx.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, req.params.centerId)).for("update").limit(1);
-    if (!sub) throw new Error("NOT_FOUND");
-    if (!sub.paidAt || !sub.currentPeriodEnd || sub.currentPeriodEnd <= new Date()) throw new Error("PAYMENT_REQUIRED");
-    const [saved] = await tx.update(educationCenterSubscriptionsTable).set({ status: "active", deactivatedAt: null, graceEndsAt: null, updatedAt: new Date() }).where(eq(educationCenterSubscriptionsTable.id, sub.id)).returning();
-    await tx.insert(educationFinancialAuditLogTable).values({ actorUserId: actor.id, action: "education_center_reactivated", entityType: "education_center", entityId: req.params.centerId, oldValue: { status: sub.status }, newValue: { status: "active" }, reason: parsed.data.reason });
-    return saved;
-  }).catch((error) => { if (error instanceof Error && error.message === "NOT_FOUND") return null; if (error instanceof Error && error.message === "PAYMENT_REQUIRED") return false; throw error; });
-  if (updated === null) { res.status(404).json({ error: "Pretplata nije pronađena." }); return; }
-  if (updated === false) { res.status(409).json({ error: "Reaktivacija zahteva evidentiranu uplatu i važeći plaćeni period." }); return; }
-  res.json(updated);
+  try {
+    const result = await db.transaction(async (tx) => {
+      const [subscription] = await tx.select().from(educationCenterSubscriptionsTable)
+        .where(eq(educationCenterSubscriptionsTable.centerId, req.params.centerId)).for("update").limit(1);
+      if (!subscription) throw new Error("NOT_FOUND");
+      if (subscription.status !== "suspended") throw new Error(subscription.status === "active" ? "ALREADY_ACTIVE" : "INVALID_STATE");
+      const [plan] = await tx.select().from(subscriptionPlansTable)
+        .where(eq(subscriptionPlansTable.id, subscription.planId)).for("update").limit(1);
+      if (!plan) throw new Error("NOT_FOUND");
+      const courses = await tx.select({
+        id: coursesTable.id,
+        title: coursesTable.title,
+        published: coursesTable.published,
+        subscriptionSuspended: coursesTable.subscriptionSuspended,
+      }).from(coursesTable)
+        .where(and(eq(coursesTable.centerId, req.params.centerId), eq(coursesTable.archived, false)))
+        .orderBy(asc(coursesTable.createdAt)).for("update");
+      const now = new Date();
+      const state = educationReactivationState({ subscription, plan, courses, now });
+      if (!state.paymentReady) throw new Error("PAYMENT_REQUIRED");
+      if (state.selectionRequired && !state.selectionComplete) throw new Error("COURSE_SELECTION_REQUIRED");
+      const selectedCourseIds = state.selectionRequired
+        ? state.selectedKeepCourseIds
+        : state.candidateCourses.slice(0, state.requiredKeepCount).map((course) => course.id);
+      if (selectedCourseIds.length) {
+        await tx.update(coursesTable).set({
+          published: true,
+          subscriptionSuspended: false,
+          updatedAt: now,
+        }).where(and(
+          eq(coursesTable.centerId, req.params.centerId),
+          eq(coursesTable.archived, false),
+          eq(coursesTable.published, false),
+          eq(coursesTable.subscriptionSuspended, true),
+          inArray(coursesTable.id, selectedCourseIds),
+        ));
+      }
+      const [saved] = await tx.update(educationCenterSubscriptionsTable).set({
+        status: "active",
+        deactivatedAt: null,
+        graceEndsAt: null,
+        pendingKeepCourseIds: null,
+        updatedAt: now,
+      }).where(and(
+        eq(educationCenterSubscriptionsTable.id, subscription.id),
+        eq(educationCenterSubscriptionsTable.status, "suspended"),
+      )).returning();
+      if (!saved) throw new Error("STALE_STATE");
+      await tx.insert(educationFinancialAuditLogTable).values({
+        actorUserId: actor.id,
+        action: "education_center_reactivated",
+        entityType: "education_center",
+        entityId: req.params.centerId,
+        oldValue: {
+          status: subscription.status,
+          deactivatedAt: subscription.deactivatedAt,
+          suspendedCourseCount: state.candidateCourses.length,
+        },
+        newValue: {
+          status: "active",
+          courseLimit: state.courseLimit,
+          reactivatedCourseCount: selectedCourseIds.length,
+          reactivatedCourseIds: selectedCourseIds,
+        },
+        reason: parsed.data.reason,
+      });
+      return { subscription: { ...saved, plan }, reactivatedCourseIds: selectedCourseIds, courseLimit: state.courseLimit };
+    });
+    res.json(result);
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "FAILED";
+    const status = code === "NOT_FOUND" ? 404 : 409;
+    const message = code === "PAYMENT_REQUIRED"
+      ? "Reaktivacija zahteva evidentiranu uplatu i važeći plaćeni period."
+      : code === "COURSE_SELECTION_REQUIRED"
+        ? "Centar mora prvo izabrati kurseve koji ostaju aktivni u okviru aktuelnog limita."
+        : code === "ALREADY_ACTIVE"
+          ? "Centar je već reaktiviran."
+          : code === "INVALID_STATE"
+            ? "Reaktivacija je dostupna samo za deaktiviran centar."
+            : code === "STALE_STATE"
+              ? "Status centra je u međuvremenu promenjen. Osvežite podatke."
+              : "Pretplata ili plan nisu pronađeni.";
+    res.status(status).json({ error: message, code });
+  }
 });
 
 router.post("/admin/education/centers/:centerId/custom-contract", async (req, res) => {
@@ -487,10 +654,15 @@ router.post("/admin/education/centers/:centerId/custom-contract", async (req, re
     const [saved] = await tx.update(educationCenterSubscriptionsTable).set({
       contractKind: "custom", contractEndsAt, billingCycle: parsed.data.billingCycle,
       autoRenew: parsed.data.autoRenew, courseLimitOverride: parsed.data.courseLimit,
-      dueAmount: parsed.data.amountRsd, status: "past_due", graceEndsAt: null, deactivatedAt: null,
+      dueAmount: parsed.data.amountRsd,
+      status: subscription.status === "suspended" ? "suspended" : "past_due",
+      graceEndsAt: null,
+      deactivatedAt: subscription.status === "suspended" ? subscription.deactivatedAt ?? now : null,
       currentPeriodStart: null, currentPeriodEnd: null,
       currentPriceSnapshot: null, currentCourseLimitSnapshot: null,
-      pendingPlanId: null, pendingBillingCycle: null, pendingPlanEffectiveAt: null, updatedAt: now,
+      pendingPlanId: null, pendingBillingCycle: null, pendingPlanEffectiveAt: null,
+      pendingKeepCourseIds: null,
+      updatedAt: now,
     }).where(eq(educationCenterSubscriptionsTable.id, subscription.id)).returning();
     await tx.insert(educationFinancialAuditLogTable).values({
       actorUserId: actor.id, action: "education_custom_contract_configured",
@@ -562,6 +734,17 @@ router.post("/admin/education/payment-obligations/:obligationId/settle", async (
   if (!parsed.success) { res.status(400).json({ error: "Potvrđeni iznos i razlog su obavezni." }); return; }
   try {
     const settled = await db.transaction(async (tx) => {
+      const [obligationPreview] = await tx.select({
+        id: educationPaymentObligationsTable.id,
+        subscriptionId: educationPaymentObligationsTable.subscriptionId,
+      }).from(educationPaymentObligationsTable)
+        .where(eq(educationPaymentObligationsTable.id, req.params.obligationId)).limit(1);
+      if (!obligationPreview) throw new Error("NOT_FOUND");
+      const [lockedSubscription] = obligationPreview.subscriptionId
+        ? await tx.select().from(educationCenterSubscriptionsTable)
+          .where(eq(educationCenterSubscriptionsTable.id, obligationPreview.subscriptionId)).for("update").limit(1)
+        : [];
+      if (obligationPreview.subscriptionId && !lockedSubscription) throw new Error("NOT_FOUND");
       const [obligation] = await tx.select().from(educationPaymentObligationsTable)
         .where(eq(educationPaymentObligationsTable.id, req.params.obligationId)).for("update").limit(1);
       if (!obligation) throw new Error("NOT_FOUND");
@@ -587,7 +770,7 @@ router.post("/admin/education/payment-obligations/:obligationId/settle", async (
         }
       }
       if (obligation.subscriptionId) {
-        const [subscription] = await tx.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.id, obligation.subscriptionId)).for("update").limit(1);
+        const subscription = lockedSubscription;
         if (!subscription) throw new Error("NOT_FOUND");
         const upgrade = obligation.kind === "subscription_upgrade";
         const now = new Date();
@@ -605,6 +788,7 @@ router.post("/admin/education/payment-obligations/:obligationId/settle", async (
           && Boolean(subscription.pendingBillingCycle && subscription.pendingBillingCycle !== snapshotCycle
             && subscription.pendingPlanEffectiveAt && subscription.pendingPlanEffectiveAt > now);
         const applyUpgradeNow = upgrade && !deferredUpgradeCycle;
+        const requiresManualReactivation = subscription.status === "suspended" || Boolean(subscription.deactivatedAt);
         await tx.update(educationCenterSubscriptionsTable).set(prepaidRenewal ? {
           paidAt: now, updatedAt: now,
         } : {
@@ -614,16 +798,19 @@ router.post("/admin/education/payment-obligations/:obligationId/settle", async (
           ...(subscription.pendingPlanId && ((upgrade && !deferredUpgradeCycle) || scheduledPlanPaidByRenewal)
             ? { pendingPlanId: null, pendingBillingCycle: null, pendingPlanEffectiveAt: null }
             : {}),
-          status: "active", paidAt: now,
+          status: requiresManualReactivation ? "suspended" : "active", paidAt: now,
           ...(!deferredUpgradeCycle ? {
             currentPriceSnapshot: obligation.planMonthlyPriceSnapshot ?? snapshotPlan?.price ?? subscription.currentPriceSnapshot,
             currentCourseLimitSnapshot: payableCourseLimit,
           } : {}),
           currentPeriodStart: upgrade ? subscription.currentPeriodStart : obligation.servicePeriodStart ?? now,
           currentPeriodEnd: upgrade ? subscription.currentPeriodEnd : obligation.servicePeriodEnd ?? addEducationBillingPeriod(now, snapshotCycle),
-          graceEndsAt: null, deactivatedAt: null, updatedAt: now,
+          graceEndsAt: null,
+          deactivatedAt: requiresManualReactivation ? subscription.deactivatedAt ?? now : null,
+          ...(requiresManualReactivation ? { pendingKeepCourseIds: null } : {}),
+          updatedAt: now,
         }).where(eq(educationCenterSubscriptionsTable.id, obligation.subscriptionId));
-        if (!prepaidRenewal && !deferredUpgradeCycle && (obligation.kind === "subscription_renewal" || obligation.kind === "subscription_upgrade")) {
+        if (!requiresManualReactivation && !prepaidRenewal && !deferredUpgradeCycle && (obligation.kind === "subscription_renewal" || obligation.kind === "subscription_upgrade")) {
           const publishedCourses = await tx.select({ id: coursesTable.id }).from(coursesTable)
             .where(and(eq(coursesTable.centerId, subscription.centerId), eq(coursesTable.published, true), eq(coursesTable.archived, false)))
             .orderBy(asc(coursesTable.createdAt)).for("update");

@@ -3056,6 +3056,26 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/EducationSubscriptionStatus" }
+  /education/subscription/reactivation-selection:
+    post:
+      operationId: saveEducationReactivationCourseSelection
+      tags: [education]
+      summary: Save the suspended center's course choice before reactivation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationReactivationSelectionInput" }
+      responses:
+        "200":
+          description: Reactivation course selection saved
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "409":
+          description: Payment, state, or course selection conflict
   /education/subscription/select-plan:
     post:
       operationId: selectEducationSubscriptionPlan
@@ -3208,6 +3228,30 @@ paths:
               required: [amountRsd, billingCycle, courseLimit, autoRenew, contractEndsAt, reason]
       responses:
         "200": { description: Contract configured, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+  /admin/education/centers/{centerId}/reactivate:
+    post:
+      operationId: reactivateEducationCenter
+      tags: [admin, education]
+      summary: Reactivate a paid suspended Education center after any required course selection
+      parameters: [{ name: centerId, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason: { type: string, minLength: 3, maxLength: 1000 }
+              required: [reason]
+      responses:
+        "200":
+          description: Center reactivated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationReactivationResult" }
+        "409":
+          description: Payment, course selection, or concurrent state conflict
   /education/purchases:
     get:
       operationId: listEducationPurchases
@@ -14276,8 +14320,50 @@ components:
           type: array
           items: { $ref: "#/components/schemas/EducationPublishedCourse" }
         inGrace: { type: boolean }
+        graceDaysRemaining: { type: ["integer", "null"], minimum: 0 }
         operational: { type: boolean }
-      required: [center, subscription, publishedCourses, inGrace, operational]
+        reactivation:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/EducationReactivationState"
+      required: [center, subscription, publishedCourses, inGrace, graceDaysRemaining, operational, reactivation]
+    EducationReactivationSelectionInput:
+      type: object
+      additionalProperties: false
+      properties:
+        keepCourseIds:
+          type: array
+          maxItems: 1000
+          uniqueItems: true
+          items: { type: string, format: uuid }
+      required: [keepCourseIds]
+    EducationReactivationState:
+      type: object
+      properties:
+        state: { type: string, enum: [not_needed, payment_required, selection_required, ready] }
+        paymentReady: { type: boolean }
+        courseLimit: { type: integer, minimum: 0 }
+        publishedCount: { type: integer, minimum: 0 }
+        availableCourseSlots: { type: integer, minimum: 0 }
+        candidateCourses:
+          type: array
+          items: { $ref: "#/components/schemas/EducationPublishedCourse" }
+        requiredKeepCount: { type: integer, minimum: 0 }
+        selectionRequired: { type: boolean }
+        selectionComplete: { type: boolean }
+        selectedKeepCourseIds:
+          type: array
+          items: { type: string, format: uuid }
+      required: [state, paymentReady, courseLimit, publishedCount, availableCourseSlots, candidateCourses, requiredKeepCount, selectionRequired, selectionComplete, selectedKeepCourseIds]
+    EducationReactivationResult:
+      type: object
+      properties:
+        subscription: { $ref: "#/components/schemas/EducationSubscription" }
+        reactivatedCourseIds:
+          type: array
+          items: { type: string, format: uuid }
+        courseLimit: { type: integer, minimum: 0 }
+      required: [subscription, reactivatedCourseIds, courseLimit]
     EducationSubscriptionCenter:
       type: object
       properties:
@@ -14549,8 +14635,13 @@ components:
             description: { type: string }
             contactEmail: { type: ["string", "null"] }
             contactPhone: { type: ["string", "null"] }
+            deactivatedAt: { type: ["string", "null"], format: date-time }
+            reactivation:
+              oneOf:
+                - type: "null"
+                - $ref: "#/components/schemas/EducationReactivationState"
             billingSettings: { $ref: "#/components/schemas/EducationResolvedBillingSettings" }
-          required: [description, billingSettings]
+          required: [description, deactivatedAt, reactivation, billingSettings]
     EducationFinanceEscrow:
       type: object
       properties:

@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { EducationAdminCenter } from './educationAdminCenter';
+import type { EducationReactivationState } from './educationReactivationState';
 import type { EducationResolvedBillingSettings } from './educationResolvedBillingSettings';
 
 export type EducationAdminCenterDetail = EducationAdminCenter & ({
@@ -14,5 +15,8 @@ export type EducationAdminCenterDetail = EducationAdminCenter & ({
   contactEmail?: string | null;
   /** @nullable */
   contactPhone?: string | null;
+  /** @nullable */
+  deactivatedAt: Date | null;
+  reactivation: null | EducationReactivationState;
   billingSettings: EducationResolvedBillingSettings;
 });

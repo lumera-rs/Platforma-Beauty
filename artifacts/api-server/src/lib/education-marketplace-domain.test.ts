@@ -9,6 +9,7 @@ import {
   qualifiesAsMostRequestedEducationCenter,
   qualifiesAsTopRatedEducationCenter,
 } from "./education-marketplace-domain";
+import { educationGraceDaysRemaining } from "./education-subscription-reactivation";
 
 assert.equal(educationPaymentModeError({
   format: "online", paymentMode: "online_full", depositAmount: null, price: 10_000,
@@ -46,6 +47,22 @@ assert.equal(
   addEducationBelgradeCalendarDays(new Date("2026-10-24T10:00:00.000Z"), 1).toISOString(),
   "2026-10-25T11:00:00.000Z",
   "a Belgrade calendar day across fall-back is 25 elapsed hours",
+);
+assert.equal(
+  educationGraceDaysRemaining(
+    new Date("2026-03-28T11:00:00.000Z"),
+    addEducationBelgradeCalendarDays(new Date("2026-03-28T11:00:00.000Z"), 5),
+  ),
+  5,
+  "grace warnings count Belgrade calendar dates across spring-forward rather than elapsed 24-hour blocks",
+);
+assert.equal(
+  educationGraceDaysRemaining(
+    new Date("2026-10-24T10:00:00.000Z"),
+    addEducationBelgradeCalendarDays(new Date("2026-10-24T10:00:00.000Z"), 5),
+  ),
+  5,
+  "grace warnings count Belgrade calendar dates across fall-back rather than elapsed 24-hour blocks",
 );
 
 assert.equal(qualifiesAsMostRequestedEducationCenter(9), false);

@@ -10030,6 +10030,16 @@ export const getEducationSubscriptionStatusResponseSubscriptionTwoPlanPriceMin =
 export const getEducationSubscriptionStatusResponseSubscriptionTwoPlanTrialDaysMin = 0;
 
 
+export const getEducationSubscriptionStatusResponseGraceDaysRemainingMin = 0;
+
+export const getEducationSubscriptionStatusResponseReactivationTwoCourseLimitMin = 0;
+
+export const getEducationSubscriptionStatusResponseReactivationTwoPublishedCountMin = 0;
+
+export const getEducationSubscriptionStatusResponseReactivationTwoAvailableCourseSlotsMin = 0;
+
+export const getEducationSubscriptionStatusResponseReactivationTwoRequiredKeepCountMin = 0;
+
 
 
 export const GetEducationSubscriptionStatusResponse = zod.object({
@@ -10079,8 +10089,38 @@ export const GetEducationSubscriptionStatusResponse = zod.object({
   "title": zod.string()
 })),
   "inGrace": zod.boolean(),
-  "operational": zod.boolean()
+  "graceDaysRemaining": zod.number().int().min(getEducationSubscriptionStatusResponseGraceDaysRemainingMin).nullable(),
+  "operational": zod.boolean(),
+  "reactivation": zod.union([zod.null(),zod.object({
+  "state": zod.enum(['not_needed', 'payment_required', 'selection_required', 'ready']),
+  "paymentReady": zod.boolean(),
+  "courseLimit": zod.number().int().min(getEducationSubscriptionStatusResponseReactivationTwoCourseLimitMin),
+  "publishedCount": zod.number().int().min(getEducationSubscriptionStatusResponseReactivationTwoPublishedCountMin),
+  "availableCourseSlots": zod.number().int().min(getEducationSubscriptionStatusResponseReactivationTwoAvailableCourseSlotsMin),
+  "candidateCourses": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "title": zod.string()
+})),
+  "requiredKeepCount": zod.number().int().min(getEducationSubscriptionStatusResponseReactivationTwoRequiredKeepCountMin),
+  "selectionRequired": zod.boolean(),
+  "selectionComplete": zod.boolean(),
+  "selectedKeepCourseIds": zod.array(zod.string().uuid())
+})])
 })
+
+
+/**
+ * @summary Save the suspended center's course choice before reactivation
+ */
+export const saveEducationReactivationCourseSelectionBodyKeepCourseIdsMax = 1000;
+
+
+
+export const SaveEducationReactivationCourseSelectionBody = zod.object({
+  "keepCourseIds": zod.array(zod.string().uuid()).max(saveEducationReactivationCourseSelectionBodyKeepCourseIdsMax)
+})
+
+export const SaveEducationReactivationCourseSelectionResponse = zod.record(zod.string(), zod.unknown())
 
 
 /**
@@ -10462,6 +10502,81 @@ export const ConfigureEducationCustomContractResponse = zod.record(zod.string(),
 
 
 /**
+ * @summary Reactivate a paid suspended Education center after any required course selection
+ */
+export const ReactivateEducationCenterParams = zod.object({
+  "centerId": zod.string().uuid()
+})
+
+export const reactivateEducationCenterBodyReasonMin = 3;
+export const reactivateEducationCenterBodyReasonMax = 1000;
+
+
+
+export const ReactivateEducationCenterBody = zod.object({
+  "reason": zod.string().min(reactivateEducationCenterBodyReasonMin).max(reactivateEducationCenterBodyReasonMax)
+}).strict()
+
+export const reactivateEducationCenterResponseSubscriptionDueAmountMin = 0;
+
+export const reactivateEducationCenterResponseSubscriptionCourseLimitOverrideMin = 0;
+
+export const reactivateEducationCenterResponseSubscriptionCurrentPriceSnapshotMin = 0;
+
+export const reactivateEducationCenterResponseSubscriptionCurrentCourseLimitSnapshotMin = 0;
+
+export const reactivateEducationCenterResponseSubscriptionPlanPriceMin = 0;
+
+export const reactivateEducationCenterResponseSubscriptionPlanTrialDaysMin = 0;
+
+
+export const reactivateEducationCenterResponseCourseLimitMin = 0;
+
+
+
+export const ReactivateEducationCenterResponse = zod.object({
+  "subscription": zod.object({
+  "id": zod.string().uuid(),
+  "centerId": zod.string().uuid(),
+  "planId": zod.string().uuid(),
+  "status": zod.enum(['trial', 'active', 'past_due', 'cancelled', 'suspended', 'free_via_loyalty']),
+  "dueAmount": zod.number().int().min(reactivateEducationCenterResponseSubscriptionDueAmountMin),
+  "billingCycle": zod.enum(['monthly', 'yearly']),
+  "currentPeriodStart": zod.coerce.date().nullable(),
+  "currentPeriodEnd": zod.coerce.date().nullable(),
+  "trialStartedAt": zod.coerce.date().nullable(),
+  "trialEndsAt": zod.coerce.date().nullable(),
+  "graceEndsAt": zod.coerce.date().nullable(),
+  "autoRenew": zod.boolean(),
+  "contractKind": zod.enum(['standard', 'custom']),
+  "contractEndsAt": zod.coerce.date().nullable(),
+  "courseLimitOverride": zod.number().int().min(reactivateEducationCenterResponseSubscriptionCourseLimitOverrideMin).nullable(),
+  "currentPriceSnapshot": zod.number().int().min(reactivateEducationCenterResponseSubscriptionCurrentPriceSnapshotMin).nullable(),
+  "currentCourseLimitSnapshot": zod.number().int().min(reactivateEducationCenterResponseSubscriptionCurrentCourseLimitSnapshotMin).nullable(),
+  "pendingPlanId": zod.string().uuid().nullable(),
+  "pendingBillingCycle": zod.union([zod.literal('monthly'),zod.literal('yearly'),zod.literal(null)]).nullable(),
+  "pendingPlanEffectiveAt": zod.coerce.date().nullable(),
+  "pendingKeepCourseIds": zod.array(zod.string().uuid()).nullable(),
+  "plan": zod.object({
+  "id": zod.string().uuid(),
+  "name": zod.string(),
+  "price": zod.number().int().min(reactivateEducationCenterResponseSubscriptionPlanPriceMin),
+  "trialDays": zod.number().int().min(reactivateEducationCenterResponseSubscriptionPlanTrialDaysMin),
+  "features": zod.array(zod.string()),
+  "limits": zod.record(zod.string(), zod.number().int()),
+  "audience": zod.enum(['education']),
+  "courseLimit": zod.number().int().min(1),
+  "vatIncluded": zod.boolean(),
+  "priceCopy": zod.string(),
+  "active": zod.boolean()
+})
+}),
+  "reactivatedCourseIds": zod.array(zod.string().uuid()),
+  "courseLimit": zod.number().int().min(reactivateEducationCenterResponseCourseLimitMin)
+})
+
+
+/**
  * @summary List the current buyer's education purchases
  */
 export const ListEducationPurchasesResponseItem = zod.object({
@@ -10791,6 +10906,16 @@ export const GetAdminEducationCenterParams = zod.object({
   "centerId": zod.coerce.string()
 })
 
+export const getAdminEducationCenterResponseTwoReactivationTwoCourseLimitMin = 0;
+
+export const getAdminEducationCenterResponseTwoReactivationTwoPublishedCountMin = 0;
+
+export const getAdminEducationCenterResponseTwoReactivationTwoAvailableCourseSlotsMin = 0;
+
+export const getAdminEducationCenterResponseTwoReactivationTwoRequiredKeepCountMin = 0;
+
+
+
 export const GetAdminEducationCenterResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -10806,6 +10931,22 @@ export const GetAdminEducationCenterResponse = zod.object({
   "description": zod.string(),
   "contactEmail": zod.string().nullish(),
   "contactPhone": zod.string().nullish(),
+  "deactivatedAt": zod.coerce.date().nullable(),
+  "reactivation": zod.union([zod.null(),zod.object({
+  "state": zod.enum(['not_needed', 'payment_required', 'selection_required', 'ready']),
+  "paymentReady": zod.boolean(),
+  "courseLimit": zod.number().int().min(getAdminEducationCenterResponseTwoReactivationTwoCourseLimitMin),
+  "publishedCount": zod.number().int().min(getAdminEducationCenterResponseTwoReactivationTwoPublishedCountMin),
+  "availableCourseSlots": zod.number().int().min(getAdminEducationCenterResponseTwoReactivationTwoAvailableCourseSlotsMin),
+  "candidateCourses": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "title": zod.string()
+})),
+  "requiredKeepCount": zod.number().int().min(getAdminEducationCenterResponseTwoReactivationTwoRequiredKeepCountMin),
+  "selectionRequired": zod.boolean(),
+  "selectionComplete": zod.boolean(),
+  "selectedKeepCourseIds": zod.array(zod.string().uuid())
+})]),
   "billingSettings": zod.object({
   "commissionPercent": zod.object({
   "override": zod.number().int().nullable(),
@@ -10879,6 +11020,16 @@ export const UpdateAdminEducationCenterBody = zod.object({
 }).optional()
 }).strict()
 
+export const updateAdminEducationCenterResponseTwoReactivationTwoCourseLimitMin = 0;
+
+export const updateAdminEducationCenterResponseTwoReactivationTwoPublishedCountMin = 0;
+
+export const updateAdminEducationCenterResponseTwoReactivationTwoAvailableCourseSlotsMin = 0;
+
+export const updateAdminEducationCenterResponseTwoReactivationTwoRequiredKeepCountMin = 0;
+
+
+
 export const UpdateAdminEducationCenterResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -10894,6 +11045,22 @@ export const UpdateAdminEducationCenterResponse = zod.object({
   "description": zod.string(),
   "contactEmail": zod.string().nullish(),
   "contactPhone": zod.string().nullish(),
+  "deactivatedAt": zod.coerce.date().nullable(),
+  "reactivation": zod.union([zod.null(),zod.object({
+  "state": zod.enum(['not_needed', 'payment_required', 'selection_required', 'ready']),
+  "paymentReady": zod.boolean(),
+  "courseLimit": zod.number().int().min(updateAdminEducationCenterResponseTwoReactivationTwoCourseLimitMin),
+  "publishedCount": zod.number().int().min(updateAdminEducationCenterResponseTwoReactivationTwoPublishedCountMin),
+  "availableCourseSlots": zod.number().int().min(updateAdminEducationCenterResponseTwoReactivationTwoAvailableCourseSlotsMin),
+  "candidateCourses": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "title": zod.string()
+})),
+  "requiredKeepCount": zod.number().int().min(updateAdminEducationCenterResponseTwoReactivationTwoRequiredKeepCountMin),
+  "selectionRequired": zod.boolean(),
+  "selectionComplete": zod.boolean(),
+  "selectedKeepCourseIds": zod.array(zod.string().uuid())
+})]),
   "billingSettings": zod.object({
   "commissionPercent": zod.object({
   "override": zod.number().int().nullable(),

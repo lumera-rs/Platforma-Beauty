@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useRoute, useSearch } from "wouter";
-import { ArrowLeft, BadgeCheck, Building2, Save, Loader2, Landmark, Settings2, FileText, Ban } from "lucide-react";
+import { ArrowLeft, BadgeCheck, Building2, Save, Loader2, Landmark, Settings2, FileText, Ban, RefreshCw } from "lucide-react";
 import { AdminLayout } from "./layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +16,8 @@ import {
   getListPublicEducationCenterReviewsQueryKey,
   useAdminModerateEducationCenterReview,
   useConfigureEducationCustomContract,
+  useGetCurrentUser,
+  useReactivateEducationCenter,
   getListAdminEducationCustomPlanRequestsQueryKey,
   type AdminListEducationCenterReviewsStatus
 } from "@workspace/api-client-react";
@@ -39,6 +41,16 @@ type CenterDetail = {
   verificationNote: string | null;
   subscriptionStatus: string | null;
   subscriptionPlan: string | null;
+  deactivatedAt: string | null;
+  reactivation: {
+    state: "not_needed" | "payment_required" | "selection_required" | "ready";
+    paymentReady: boolean;
+    courseLimit: number;
+    candidateCourses: Array<{ id: string; title: string }>;
+    requiredKeepCount: number;
+    selectionRequired: boolean;
+    selectionComplete: boolean;
+  } | null;
   billingSettings: {
     commissionPercent: BillingSetting;
     reservePercent: BillingSetting;
@@ -81,6 +93,8 @@ export default function AdminEducationCenterDetail() {
   const { toast } = useToast();
   const actionGuard = useImmediateActionGuard();
   const queryClient = useQueryClient();
+  const { data: currentUserResponse } = useGetCurrentUser();
+  const currentUser = currentUserResponse?.user;
 
   const [center, setCenter] = useState<CenterDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -106,6 +120,7 @@ export default function AdminEducationCenterDetail() {
   const [customAutoRenew, setCustomAutoRenew] = useState(false);
   const [obligations, setObligations] = useState<PaymentObligation[]>([]);
   const [settlementReason, setSettlementReason] = useState("");
+  const [reactivationReason, setReactivationReason] = useState("");
   const [overrides, setOverrides] = useState<Record<OverrideKey, { enabled: boolean; value: string }>>({
     commissionPercent: { enabled: false, value: "" },
     reservePercent: { enabled: false, value: "" },
@@ -167,6 +182,7 @@ export default function AdminEducationCenterDetail() {
   };
 
   const configureContractMut = useConfigureEducationCustomContract();
+  const reactivateMut = useReactivateEducationCenter();
 
   const configureCustomContract = async () => {
     const amountRsd = Number(customAmount);
@@ -206,11 +222,33 @@ export default function AdminEducationCenterDetail() {
       await api(`/api/admin/education/payment-obligations/${obligation.id}/settle`, {
         method: "POST", body: JSON.stringify({ confirmedAmountRsd: obligation.expectedAmount, reason: settlementReason }),
       });
-      toast.success("Uplata je evidentirana i primenjena.");
+      toast.success(center?.subscriptionStatus === "suspended"
+        ? "Uplata je evidentirana. Reaktivacija ostaje zaključana do završne provere."
+        : "Uplata je evidentirana i primenjena.");
       await load();
     } catch (error) {
       toast.error("Uplata nije evidentirana", { description: error instanceof Error ? error.message : undefined });
     } finally { actionGuard.end(actionKey); }
+  };
+
+  const reactivateCenter = async () => {
+    if (reactivationReason.trim().length < 3) {
+      toast.error("Unesite obavezan razlog reaktivacije.");
+      return;
+    }
+    const actionKey = `reactivate:${centerId}`;
+    if (!actionGuard.begin(actionKey)) return;
+    try {
+      await reactivateMut.mutateAsync({ centerId, data: { reason: reactivationReason.trim() } });
+      toast.success("Nalog centra je reaktiviran.");
+      setReactivationReason("");
+      await load();
+    } catch (error) {
+      toast.error("Nalog nije reaktiviran", { description: error instanceof Error ? error.message : undefined });
+      await load();
+    } finally {
+      actionGuard.end(actionKey);
+    }
   };
 
   const saveDetails = async () => {
@@ -434,6 +472,44 @@ export default function AdminEducationCenterDetail() {
                   )}
                 </CardContent>
               </Card>
+
+              {currentUser?.role === "SUPER_ADMIN" && center.subscriptionStatus === "suspended" && (
+                <Card className="border-destructive/30 shadow-sm">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <RefreshCw className="h-5 w-5 text-primary" />
+                      Reaktivacija naloga
+                    </CardTitle>
+                    <CardDescription>
+                      Reaktivacija je dozvoljena tek nakon evidentirane uplate i izbora kurseva kada aktuelni limit to zahteva.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="rounded-lg border bg-background p-3 text-sm">
+                      {center.reactivation?.state === "payment_required" && "Nije evidentirana uplata za važeći novi period."}
+                      {center.reactivation?.state === "selection_required" && `Centar još mora da izabere ${center.reactivation.requiredKeepCount} kurseva koji ostaju aktivni.`}
+                      {center.reactivation?.state === "ready" && "Uplata i eventualni izbor kurseva su potvrđeni. Reaktivacija je spremna."}
+                    </div>
+                    <label className="block space-y-2 text-sm font-medium">
+                      <span>Obavezan razlog reaktivacije</span>
+                      <Input
+                        value={reactivationReason}
+                        onChange={(event) => setReactivationReason(event.target.value)}
+                        maxLength={1000}
+                        placeholder="Npr. uplata proverena i uslovi plana potvrđeni"
+                      />
+                    </label>
+                    <Button
+                      className="w-full"
+                      onClick={reactivateCenter}
+                      disabled={reactivationReason.trim().length < 3 || actionGuard.isActive(`reactivate:${centerId}`) || reactivateMut.isPending}
+                    >
+                      {(actionGuard.isActive(`reactivate:${centerId}`) || reactivateMut.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Reaktiviraj nalog
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
             </div>
 
             {/* Right Column: Billing overrides */}

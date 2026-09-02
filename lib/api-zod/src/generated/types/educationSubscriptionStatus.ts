@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { EducationPublishedCourse } from './educationPublishedCourse';
+import type { EducationReactivationState } from './educationReactivationState';
 import type { EducationSubscription } from './educationSubscription';
 import type { EducationSubscriptionCenter } from './educationSubscriptionCenter';
 
@@ -14,5 +15,11 @@ export interface EducationSubscriptionStatus {
   subscription: null | EducationSubscription;
   publishedCourses: EducationPublishedCourse[];
   inGrace: boolean;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  graceDaysRemaining: number | null;
   operational: boolean;
+  reactivation: null | EducationReactivationState;
 }

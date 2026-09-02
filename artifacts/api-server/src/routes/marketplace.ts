@@ -268,6 +268,7 @@ import {
   normalizeTrialBankAccount, normalizeTrialEmail, normalizeTrialPhone, normalizeTrialPib,
   normalizeTrialRegistrationNumber,
 } from "../lib/education-subscription-domain";
+import { educationReactivationState } from "../lib/education-subscription-reactivation";
 
 import 
 {
@@ -23162,14 +23163,25 @@ async function adminEducationCenterDetail(centerId: string) {
     .where(eq(educationCentersTable.id, centerId))
     .limit(1);
   if (!center) return null;
-  const [subscriptions, plans, escrows, resolved] = await Promise.all([
+  const [subscriptions, plans, escrows, resolved, courses] = await Promise.all([
     db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, center.id)).limit(1),
     db.select().from(subscriptionPlansTable),
     db.select().from(educationEscrowsTable).where(eq(educationEscrowsTable.centerId, center.id)),
     resolveEducationBillingSettings(center.id, db, center),
+    db.select({
+      id: coursesTable.id,
+      title: coursesTable.title,
+      published: coursesTable.published,
+      subscriptionSuspended: coursesTable.subscriptionSuspended,
+    }).from(coursesTable)
+      .where(and(eq(coursesTable.centerId, center.id), eq(coursesTable.archived, false)))
+      .orderBy(asc(coursesTable.createdAt)),
   ]);
   const subscription = subscriptions[0];
   const plan = plans.find((item) => item.id === subscription?.planId);
+  const reactivation = subscription && plan
+    ? educationReactivationState({ subscription, plan, courses, now: new Date() })
+    : null;
   const heldAmount = escrows
     .filter((item) => ["held", "frozen"].includes(item.status))
     .reduce((sum, item) => sum + item.netAmount, 0);
@@ -23187,6 +23199,8 @@ async function adminEducationCenterDetail(centerId: string) {
     subscriptionStatus: subscription?.status ?? null,
     subscriptionPlanId: subscription?.planId ?? null,
     subscriptionPlan: plan?.name ?? null,
+    deactivatedAt: subscription?.deactivatedAt?.toISOString() ?? null,
+    reactivation,
     heldAmount,
     billingSettings: resolved.billingSettings,
   };

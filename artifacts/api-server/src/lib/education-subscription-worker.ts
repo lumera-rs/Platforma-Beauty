@@ -5,7 +5,7 @@ import {
   educationPaymentObligationsTable, educationPlatformSettingsTable, subscriptionPlansTable, usersTable,
 } from "@workspace/db";
 import { enqueueTransactionalEmail, lumeraEmailHtml } from "./brevo";
-import { educationIpsPaymentCode, educationIpsQrPayload, educationIpsRuntimeEnvironment } from "./education-marketplace-domain";
+import { addEducationBelgradeCalendarDays, educationIpsPaymentCode, educationIpsQrPayload, educationIpsRuntimeEnvironment } from "./education-marketplace-domain";
 import { addEducationBillingPeriod, educationCycleAmount, educationPaymentReference, type EducationBillingCycle } from "./education-subscription-domain";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -57,7 +57,7 @@ export async function runEducationSubscriptionLifecycle() {
         if (!locked.autoRenew) {
           // Cancellation disables charging, not the existing grace/deactivation
           // safety path. No renewal is issued; access then follows grace.
-          await tx.update(educationCenterSubscriptionsTable).set({ status: "past_due", graceEndsAt: new Date(now.getTime() + 5 * DAY), updatedAt: now })
+          await tx.update(educationCenterSubscriptionsTable).set({ status: "past_due", graceEndsAt: addEducationBelgradeCalendarDays(now, 5), updatedAt: now })
             .where(eq(educationCenterSubscriptionsTable.id, locked.id));
           transitioned += 1;
           return;
@@ -116,7 +116,7 @@ export async function runEducationSubscriptionLifecycle() {
           transitioned += 1;
           return;
         }
-        const graceEndsAt = new Date(now.getTime() + 5 * DAY);
+        const graceEndsAt = addEducationBelgradeCalendarDays(now, 5);
          const [pendingUpgrade] = await tx.select({ id: educationPaymentObligationsTable.id }).from(educationPaymentObligationsTable)
            .where(and(eq(educationPaymentObligationsTable.subscriptionId, locked.id), eq(educationPaymentObligationsTable.kind, "subscription_upgrade"), eq(educationPaymentObligationsTable.status, "pending"))).limit(1);
          if (pendingUpgrade) {
