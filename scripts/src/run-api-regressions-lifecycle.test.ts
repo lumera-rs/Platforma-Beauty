@@ -7,6 +7,7 @@ import { once } from "node:events";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { assertDestructiveTestRuntimeAllowed } from "./destructive-test-runtime";
 import {
   runIsolatedApiRegressionSuiteCommand,
   runIsolatedApiSuiteCommand,
@@ -15,6 +16,7 @@ import {
 
 const execFileAsync = promisify(execFile);
 const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
+assertDestructiveTestRuntimeAllowed(process.env, "API regression lifecycle tests");
 const runnerPath = path.join(workspaceRoot, "scripts", "node_modules", ".bin", "tsx");
 const runnerScriptPath = path.join(workspaceRoot, "scripts", "src", "run-api-regressions.ts");
 const databaseUrl = process.env.DATABASE_URL;
@@ -228,6 +230,172 @@ async function dropDatabase(databaseName: string): Promise<void> {
     databaseName,
   ]);
 }
+
+test("destructive harnesses refuse deployment runtimes before database commands", async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-deployment-guard-"));
+  const binDirectory = path.join(temporaryRoot, "bin");
+  const commandLogPath = path.join(temporaryRoot, "database-commands.log");
+  const isolatedRunnerPath = path.join(temporaryRoot, "run-isolated-harness.ts");
+  const browserPreflightRunnerPath = path.join(temporaryRoot, "run-browser-preflight.ts");
+  const isolatedHarnessPath = path.join(
+    workspaceRoot,
+    "scripts",
+    "src",
+    "run-isolated-browser-suite.ts",
+  );
+  const bookingLoadPath = path.join(workspaceRoot, "scripts", "src", "run-booking-load.ts");
+  const lifecycleTestPath = path.join(
+    workspaceRoot,
+    "scripts",
+    "src",
+    "run-api-regressions-lifecycle.test.ts",
+  );
+  const educationExtrasPath = path.join(
+    workspaceRoot,
+    "artifacts",
+    "api-server",
+    "src",
+    "lib",
+    "education-extras.test.ts",
+  );
+  const educationFinancialPath = path.join(
+    workspaceRoot,
+    "artifacts",
+    "api-server",
+    "src",
+    "lib",
+    "education-financial.test.ts",
+  );
+  const b2bCatalogPath = path.join(workspaceRoot, "scripts", "test-b2b-catalog.sh");
+  const playwrightConfigPath = path.join(workspaceRoot, "scripts", "playwright.config.ts");
+
+  await mkdir(binDirectory, { recursive: true });
+  for (const command of ["createdb", "dropdb"]) {
+    await writeFile(
+      path.join(binDirectory, command),
+      `#!/bin/sh\nprintf '${command}\\n' >> "$LUMERA_DATABASE_COMMAND_LOG"\nexit ${
+        command === "createdb" ? "23" : "0"
+      }\n`,
+      { mode: 0o755 },
+    );
+  }
+  for (const command of ["curl", "psql"]) {
+    await writeFile(
+      path.join(binDirectory, command),
+      `#!/bin/sh\nprintf '${command}\\n' >> "$LUMERA_DATABASE_COMMAND_LOG"\nexit 99\n`,
+      { mode: 0o755 },
+    );
+  }
+  await writeFile(
+    isolatedRunnerPath,
+    `import {
+  runIsolatedApiRegressionSuite,
+  runIsolatedApiSuite,
+  runIsolatedBrowserSuite,
+} from ${JSON.stringify(isolatedHarnessPath)};
+
+const common = {
+  databasePrefix: "lumera_deployment_guard_",
+  manifestDirectoryName: "deployment-guard-" + process.pid,
+  testLabel: "Deployment guard fixture",
+  environment: {},
+};
+async function main() {
+  const mode = process.env.LUMERA_GUARD_HARNESS;
+  if (mode === "browser") await runIsolatedBrowserSuite({ ...common, specPath: "unused.spec.ts" });
+  else if (mode === "api") await runIsolatedApiSuite({ ...common, testFilePath: "unused.test.ts" });
+  else if (mode === "regression") await runIsolatedApiRegressionSuite({ ...common, scriptPaths: [] });
+  else throw new Error("Unknown harness mode.");
+}
+void main();
+`,
+    "utf8",
+  );
+  await writeFile(
+    browserPreflightRunnerPath,
+    `import ${JSON.stringify(playwrightConfigPath)};\n`,
+    "utf8",
+  );
+
+  const harnesses = [
+    { name: "isolated browser", command: runnerPath, scriptPath: isolatedRunnerPath, mode: "browser", verifyAllowed: true },
+    { name: "isolated API", command: runnerPath, scriptPath: isolatedRunnerPath, mode: "api", verifyAllowed: true },
+    { name: "isolated API regression", command: runnerPath, scriptPath: isolatedRunnerPath, mode: "regression", verifyAllowed: true },
+    { name: "booking load", command: runnerPath, scriptPath: bookingLoadPath, mode: undefined, verifyAllowed: true },
+    { name: "API regression lifecycle", command: runnerPath, scriptPath: lifecycleTestPath, mode: undefined, verifyAllowed: false },
+    { name: "Education extras", command: runnerPath, scriptPath: educationExtrasPath, mode: undefined, verifyAllowed: false },
+    { name: "Education financial", command: runnerPath, scriptPath: educationFinancialPath, mode: undefined, verifyAllowed: false },
+    { name: "B2B catalog shell", command: "bash", scriptPath: b2bCatalogPath, mode: undefined, verifyAllowed: false },
+    { name: "browser preflight", command: runnerPath, scriptPath: browserPreflightRunnerPath, mode: undefined, verifyAllowed: false },
+  ] as const;
+  const guardedEnvironments = [
+    { name: "NODE_ENV=production", values: { NODE_ENV: "production" } },
+    { name: "REPLIT_DEPLOYMENT=1", values: { REPLIT_DEPLOYMENT: "1" } },
+    { name: "REPL_DEPLOYMENT=1", values: { REPL_DEPLOYMENT: "1" } },
+  ] as const;
+
+  try {
+    for (const harness of harnesses) {
+      for (const guardedEnvironment of guardedEnvironments) {
+        await unlink(commandLogPath).catch(() => undefined);
+        const result = await execFileAsync(harness.command, [harness.scriptPath], {
+          cwd: workspaceRoot,
+          env: {
+            ...process.env,
+            NODE_ENV: "test",
+            REPLIT_DEPLOYMENT: "0",
+            REPL_DEPLOYMENT: "0",
+            ...guardedEnvironment.values,
+            DATABASE_URL: databaseUrl,
+            LUMERA_BOOKING_LOAD: "1",
+            LUMERA_DATABASE_COMMAND_LOG: commandLogPath,
+            LUMERA_GUARD_HARNESS: harness.mode,
+            PATH: `${binDirectory}:${process.env.PATH ?? ""}`,
+          },
+        }).then(
+          () => assert.fail(`${harness.name} accepted ${guardedEnvironment.name}.`),
+          (error: unknown) => error as { stderr?: string },
+        );
+        assert.match(
+          result.stderr ?? "",
+          /refuse(?:s)? production or deployment runtimes/,
+          `${harness.name} must explain its ${guardedEnvironment.name} refusal`,
+        );
+        await assert.rejects(
+          readFile(commandLogPath),
+          { code: "ENOENT" },
+          `${harness.name} invoked a database command for ${guardedEnvironment.name}`,
+        );
+      }
+
+      if (!harness.verifyAllowed) continue;
+      for (const nodeEnvironment of ["development", "test"]) {
+        await unlink(commandLogPath).catch(() => undefined);
+        await assert.rejects(execFileAsync(harness.command, [harness.scriptPath], {
+          cwd: workspaceRoot,
+          env: {
+            ...process.env,
+            NODE_ENV: nodeEnvironment,
+            REPLIT_DEPLOYMENT: "0",
+            REPL_DEPLOYMENT: "0",
+            DATABASE_URL: databaseUrl,
+            LUMERA_BOOKING_LOAD: "1",
+            LUMERA_DATABASE_COMMAND_LOG: commandLogPath,
+            LUMERA_GUARD_HARNESS: harness.mode,
+            PATH: `${binDirectory}:${process.env.PATH ?? ""}`,
+          },
+        }));
+        assert.match(
+          await readFile(commandLogPath, "utf8"),
+          /^createdb\n/,
+          `${harness.name} must remain available in ${nodeEnvironment}`,
+        );
+      }
+    }
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
 
 async function stopProcessGroup(processId: number): Promise<void> {
   try {

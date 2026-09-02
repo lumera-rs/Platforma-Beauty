@@ -4,6 +4,20 @@ import * as schema from "./schema";
 
 const { Pool } = pg;
 
+function assertDirectDatabaseTestRuntimeAllowed(): void {
+  const entryPoint = process.argv[1] ?? "";
+  if (!/\.test\.[cm]?[jt]sx?$/.test(entryPoint)) return;
+  if (
+    process.env.NODE_ENV === "production"
+    || process.env.REPLIT_DEPLOYMENT === "1"
+    || process.env.REPL_DEPLOYMENT === "1"
+  ) {
+    throw new Error("Direct database tests refuse production or deployment runtimes.");
+  }
+}
+
+assertDirectDatabaseTestRuntimeAllowed();
+
 function parseEnvInt(
   key: string,
   fallback: number,

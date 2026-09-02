@@ -4,6 +4,7 @@ import { mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/pro
 import { createServer } from "node:net";
 import { once } from "node:events";
 import path from "node:path";
+import { assertDestructiveTestRuntimeAllowed } from "./destructive-test-runtime";
 
 const root = path.resolve(import.meta.dirname, "..", "..");
 const state = path.join(root, ".lumera-test-state", "booking-load-databases");
@@ -18,11 +19,11 @@ const parseInteger = (key: string, fallback: number, minimum: number, maximum: n
   return Number(raw);
 };
 const target = () => {
+  assertDestructiveTestRuntimeAllowed(process.env, "Booking load");
   const raw = process.env.DATABASE_URL;
   if (!raw || process.env.LUMERA_BOOKING_LOAD !== "1") throw new Error("Booking load requires LUMERA_BOOKING_LOAD=1 and a named development DATABASE_URL.");
   const url = new URL(raw);
   if (!url.pathname || url.pathname === "/") throw new Error("Booking load requires a named development maintenance database.");
-  if (process.env.NODE_ENV === "production" || process.env.REPLIT_DEPLOYMENT === "1" || process.env.REPL_DEPLOYMENT === "1") throw new Error("Booking load refuses production or deployment runtimes.");
   if (namePattern.test(decodeURIComponent(url.pathname.slice(1)))) throw new Error("Booking load refuses a disposable database as its maintenance target.");
   return raw;
 };

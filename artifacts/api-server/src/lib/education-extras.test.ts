@@ -12,6 +12,7 @@ import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
+import { assertDestructiveTestRuntimeAllowed } from "./destructive-test-runtime";
 import {
   GetEducationCourseResponse,
   GetPublicEducationCourseResponse,
@@ -52,6 +53,8 @@ import {
   buildValidOnlineEducationEnrollmentRequest,
   installTemporaryEducationIpsSettings,
 } from "./education-test-fixtures";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Education extras tests");
 
 const suffix = randomUUID();
 const password = "edu-extras-test-password-2025";

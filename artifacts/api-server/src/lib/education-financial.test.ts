@@ -3,6 +3,7 @@ import { once } from "node:events";
 import { type AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
+import { assertDestructiveTestRuntimeAllowed } from "./destructive-test-runtime";
 import {
   courseEnrollmentsTable,
   courseSessionsTable,
@@ -31,6 +32,8 @@ import {
   buildValidOnlineEducationEnrollmentRequest,
   installTemporaryEducationIpsSettings,
 } from "./education-test-fixtures";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Education financial tests");
 
 const suffix = randomUUID();
 const password = "education-finance-test-password";

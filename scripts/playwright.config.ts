@@ -1,4 +1,7 @@
 import { defineConfig } from "@playwright/test";
+import { assertDestructiveTestRuntimeAllowed } from "./src/destructive-test-runtime";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Browser tests");
 
 const chromiumExecutablePath = process.env.REPLIT_PLAYWRIGHT_CHROMIUM_EXECUTABLE;
 const hostMatrixPublishedHost = "lumera-published.example.test";

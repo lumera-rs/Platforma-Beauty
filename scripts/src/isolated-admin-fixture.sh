@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/destructive-test-runtime.sh"
+
 require_isolated_admin_fixture_dependencies() {
+  assert_destructive_test_runtime_allowed "Isolated administrator fixtures"
   if [[ -z "${DATABASE_URL:-}" ]]; then
     echo "DATABASE_URL is required for the isolated administrator fixture." >&2
     return 1

@@ -13,6 +13,7 @@
  */
 
 import { checkGeneratedApiContracts } from "./generated-api-check";
+import { assertDestructiveTestRuntimeAllowed } from "./destructive-test-runtime";
 
 const ISOLATED_SUITE_ENV_VARS = [
   "LUMERA_ISOLATED_ADMIN_BROWSER_TEST",
@@ -56,6 +57,7 @@ async function probe(target: PreflightTarget): Promise<string | null> {
 }
 
 export default async function browserPreflight(): Promise<void> {
+  assertDestructiveTestRuntimeAllowed(process.env, "Browser tests");
   await checkGeneratedApiContracts();
 
   if (ISOLATED_SUITE_ENV_VARS.some((name) => process.env[name] === "1")) {

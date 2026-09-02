@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/destructive-test-runtime.sh"
+
 resolve_api_base_url() {
+  assert_destructive_test_runtime_allowed "API shell tests"
   if [[ -n "${LUMERA_API_BASE_URL:-}" ]]; then
     BASE_URL="${LUMERA_API_BASE_URL%/}"
   elif [[ -n "${BASE_URL:-}" ]]; then

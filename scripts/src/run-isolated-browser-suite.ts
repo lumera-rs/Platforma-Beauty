@@ -4,6 +4,7 @@ import { once } from "node:events";
 import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
+import { assertDestructiveTestRuntimeAllowed } from "./destructive-test-runtime";
 
 const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
 const stateRoot = path.join(workspaceRoot, ".lumera-test-state");
@@ -39,6 +40,8 @@ interface HarnessDatabaseManifest {
 const processMarkerEnvironmentName = "LUMERA_TEST_RUN_MARKER";
 
 function requireDevelopmentDatabaseUrl(): string {
+  assertDestructiveTestRuntimeAllowed(process.env, "Isolated test harnesses");
+
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is required to manage disposable browser test databases.");
