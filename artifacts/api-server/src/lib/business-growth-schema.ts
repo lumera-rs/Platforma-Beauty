@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 119;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 120;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -4916,6 +4916,20 @@ function tableStatements(s: string): string[] {
     `CREATE TRIGGER education_bundle_purchases_payment_reference_immutable
        BEFORE UPDATE OF payment_reference, payment_instructions ON ${s}.education_bundle_purchases
        FOR EACH ROW EXECUTE FUNCTION ${s}.reject_bundle_payment_reference_change()`,
+    // v120 — an older standalone bundle rollout added this check as NOT VALID.
+    // Drizzle introspection preserves that catalog state and then emits invalid
+    // `CHECK (...) NOT VALID` syntax inside CREATE TABLE during publish.
+    `DO $$ BEGIN
+       IF EXISTS (
+         SELECT 1 FROM pg_constraint
+         WHERE conrelid = '${s}.education_bundle_purchases'::regclass
+           AND conname = 'education_bundle_purchases_target_check'
+           AND NOT convalidated
+       ) THEN
+         ALTER TABLE ${s}.education_bundle_purchases
+           VALIDATE CONSTRAINT education_bundle_purchases_target_check;
+       END IF;
+     END $$`,
     // v74 — every aftercare FK gets a leading index so deletes/updates on its
     // parent cannot force scans as recommendation and delivery history grows.
   ];
@@ -4993,6 +5007,17 @@ export async function runBusinessGrowthSchemaDdl(
         await client.query(`ALTER TABLE IF EXISTS ${quoted}.course_enrollments ADD COLUMN IF NOT EXISTS digital_content_consent_text_snapshot text`);
         await client.query(`ALTER TABLE IF EXISTS ${quoted}.course_enrollments ADD COLUMN IF NOT EXISTS digital_content_consent_version_snapshot text`);
         await client.query(`ALTER TABLE IF EXISTS ${quoted}.education_installments ADD COLUMN IF NOT EXISTS payment_instructions_snapshot jsonb`);
+        await client.query(`DO $$ BEGIN
+          IF EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = '${quoted}.education_bundle_purchases'::regclass
+              AND conname = 'education_bundle_purchases_target_check'
+              AND NOT convalidated
+          ) THEN
+            ALTER TABLE ${quoted}.education_bundle_purchases
+              VALIDATE CONSTRAINT education_bundle_purchases_target_check;
+          END IF;
+        END $$`);
         for (const statement of paymentInstructionSnapshotBackfillStatements(quoted)) await client.query(statement);
         if ((await client.query(`SELECT to_regclass($1) IS NOT NULL AS exists`, [`${schemaName}.education_bundle_purchases`])).rows[0]?.exists) {
           await client.query(`ALTER TABLE ${quoted}.education_bundle_purchases ADD COLUMN IF NOT EXISTS payment_reference text`);

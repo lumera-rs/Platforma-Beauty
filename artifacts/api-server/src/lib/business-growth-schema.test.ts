@@ -372,7 +372,7 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
-    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 119, "v119 is the current production schema rollout");
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 120, "v120 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
     const sharedPlan = await q<{ id: string }>(`INSERT INTO "${s}".subscription_plans DEFAULT VALUES RETURNING id`);
     const sharedPlanId = sharedPlan.rows[0]!.id;
@@ -424,6 +424,40 @@ async function run() {
         "v110 adds the dedicated bundle payment reference");
       assert.ok(await columnExists("education_bundle_purchases", "payment_instructions"),
         "bundle purchases retain their complete instruction snapshot");
+      const installUnvalidatedBundleTargetConstraint = async () => {
+        await q(`ALTER TABLE "${s}".education_bundle_purchases
+          DROP CONSTRAINT IF EXISTS education_bundle_purchases_check,
+          DROP CONSTRAINT IF EXISTS education_bundle_purchases_target_check`);
+        await q(`ALTER TABLE "${s}".education_bundle_purchases
+          ADD CONSTRAINT education_bundle_purchases_target_check
+          CHECK (
+            (target_type='individual' AND learner_user_id IS NOT NULL AND salon_id IS NULL AND employee_id IS NULL)
+            OR
+            (target_type='salon_employee' AND learner_user_id IS NOT NULL AND salon_id IS NOT NULL AND employee_id IS NOT NULL)
+          ) NOT VALID`);
+      };
+      const bundleTargetConstraintValidated = async () => {
+        const result = await q<{ convalidated: boolean }>(
+          `SELECT convalidated
+           FROM pg_constraint
+           WHERE conrelid=$1::regclass
+             AND conname='education_bundle_purchases_target_check'`,
+          [`${s}.education_bundle_purchases`],
+        );
+        assert.equal(result.rows.length, 1);
+        return result.rows[0]!.convalidated;
+      };
+      await installUnvalidatedBundleTargetConstraint();
+      assert.equal(await bundleTargetConstraintValidated(), false,
+        "legacy standalone bundle rollout reproduces the publish-breaking NOT VALID state");
+      await q(`UPDATE "${s}".business_growth_schema_rollout SET version=119 WHERE singleton=true`);
+      await runBusinessGrowthSchemaDdl(client, s);
+      assert.equal(await bundleTargetConstraintValidated(), true,
+        "v120 validates the bundle target constraint for publish introspection");
+      await installUnvalidatedBundleTargetConstraint();
+      await runBusinessGrowthSchemaDdl(client, s);
+      assert.equal(await bundleTargetConstraintValidated(), true,
+        "current-version replay repairs a constraint reintroduced by a concurrent older process");
       await assert.rejects(
         q(`UPDATE "${s}".education_centers SET bank_account_environment='invalid' WHERE id=$1`,
           [fixtures.legacyEducationCenter.id]),

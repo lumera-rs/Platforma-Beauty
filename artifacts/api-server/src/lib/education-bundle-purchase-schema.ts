@@ -59,6 +59,8 @@ export async function ensureEducationBundlePurchaseSchema(schemaName = "public")
     await client.query(`ALTER TABLE ${schema}.education_bundle_purchases ADD CONSTRAINT education_bundle_purchases_target_check
       CHECK ((target_type='individual' AND learner_user_id IS NOT NULL AND salon_id IS NULL AND employee_id IS NULL)
         OR (target_type='salon_employee' AND learner_user_id IS NOT NULL AND salon_id IS NOT NULL AND employee_id IS NOT NULL)) NOT VALID`);
+    await client.query(`ALTER TABLE ${schema}.education_bundle_purchases
+      VALIDATE CONSTRAINT education_bundle_purchases_target_check`);
     await client.query(`ALTER TABLE ${schema}.course_enrollments ADD COLUMN IF NOT EXISTS bundle_purchase_id uuid REFERENCES ${schema}.education_bundle_purchases(id) ON DELETE RESTRICT`);
     await client.query(`CREATE TABLE IF NOT EXISTS ${schema}.education_bundle_purchase_items (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), purchase_id uuid NOT NULL REFERENCES ${schema}.education_bundle_purchases(id) ON DELETE CASCADE,
