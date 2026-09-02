@@ -28,13 +28,19 @@ type Fixture = {
   employeeEmails: [string, string];
   employeeIds: [string, string];
   employeeNames: [string, string];
+  foreignEmployeeUserId: string;
+  foreignEmployeeId: string;
+  unavailableEmployeeUserId: string;
+  unavailableEmployeeId: string;
   salonId: string;
+  foreignSalonId: string;
   centerId: string;
   centerOwnerId: string;
   adminId: string;
   planId: string;
   courseId: string;
   secondCourseId: string;
+  internalCourseId: string;
 };
 
 async function createFixture(): Promise<Fixture> {
@@ -45,7 +51,15 @@ async function createFixture(): Promise<Fixture> {
     `Browser polaznik A ${suffix}`,
     `Browser polaznik B ${suffix}`,
   ];
-  const [owner, firstEmployeeUser, secondEmployeeUser, centerOwner, admin] = await db.insert(usersTable).values([
+  const [
+    owner,
+    firstEmployeeUser,
+    secondEmployeeUser,
+    foreignEmployeeUser,
+    unavailableEmployeeUser,
+    centerOwner,
+    admin,
+  ] = await db.insert(usersTable).values([
     {
       firstName: "Browser",
       lastName: "Group owner",
@@ -72,6 +86,22 @@ async function createFixture(): Promise<Fixture> {
     },
     {
       firstName: "Browser",
+      lastName: "Foreign employee",
+      email: `browser-group-foreign-employee-${suffix}@example.test`,
+      passwordHash,
+      passwordSetAt: new Date(),
+      role: "SALON_EMPLOYEE",
+    },
+    {
+      firstName: "Browser",
+      lastName: "Unavailable employee",
+      email: `browser-group-unavailable-employee-${suffix}@example.test`,
+      passwordHash,
+      passwordSetAt: new Date(),
+      role: "SALON_EMPLOYEE",
+    },
+    {
+      firstName: "Browser",
       lastName: "Group center",
       email: `browser-group-center-${suffix}@example.test`,
       passwordHash,
@@ -87,7 +117,8 @@ async function createFixture(): Promise<Fixture> {
       role: "ADMIN",
     },
   ]).returning();
-  if (!owner || !firstEmployeeUser || !secondEmployeeUser || !centerOwner || !admin) {
+  if (!owner || !firstEmployeeUser || !secondEmployeeUser || !foreignEmployeeUser
+    || !unavailableEmployeeUser || !centerOwner || !admin) {
     throw new Error("Could not create group consent users.");
   }
 
@@ -107,6 +138,22 @@ async function createFixture(): Promise<Fixture> {
   }).returning();
   if (!salon) throw new Error("Could not create group consent salon.");
 
+  const [foreignSalon] = await db.insert(salonsTable).values({
+    ownerId: owner.id,
+    name: `Browser foreign salon ${suffix}`,
+    slug: `browser-foreign-salon-${suffix}`,
+    city: "Beograd",
+    municipality: "Zemun",
+    address: "Test 2",
+    postalCode: "11080",
+    phone: "+381601234568",
+    email: `browser-foreign-salon-${suffix}@example.test`,
+    shortDescription: "Foreign salon fixture.",
+    description: "Second salon context for employee enrollment authorization.",
+    imageUrl: "/browser-test.jpg",
+  }).returning();
+  if (!foreignSalon) throw new Error("Could not create foreign salon context.");
+
   const employeeUsers = [firstEmployeeUser, secondEmployeeUser];
   const employees = await db.insert(employeesTable).values(employeeNames.map((name, index) => ({
     salonId: salon.id,
@@ -125,6 +172,41 @@ async function createFixture(): Promise<Fixture> {
     active: true,
     isDefault: index === 0,
   })));
+  const [foreignEmployee, unavailableEmployee] = await db.insert(employeesTable).values([
+    {
+      salonId: foreignSalon.id,
+      userId: foreignEmployeeUser.id,
+      name: `Browser strani kolega ${suffix}`,
+      role: "Stilist",
+      bio: "Employee assigned to a different salon context.",
+      avatarUrl: "/browser-employee.jpg",
+    },
+    {
+      salonId: salon.id,
+      userId: unavailableEmployeeUser.id,
+      name: `Browser nedostupni kolega ${suffix}`,
+      role: "Stilist",
+      bio: "Employee without an active assignment at the selected salon.",
+      avatarUrl: "/browser-employee.jpg",
+    },
+  ]).returning();
+  if (!foreignEmployee || !unavailableEmployee) {
+    throw new Error("Could not create unauthorized employee fixtures.");
+  }
+  await db.insert(employeeLocationAssignmentsTable).values([
+    {
+      employeeId: foreignEmployee.id,
+      salonId: foreignSalon.id,
+      active: true,
+      isDefault: true,
+    },
+    {
+      employeeId: unavailableEmployee.id,
+      salonId: salon.id,
+      active: false,
+      isDefault: true,
+    },
+  ]);
   await db.update(usersTable).set({ activeSalonId: salon.id }).where(eq(usersTable.id, owner.id));
   await db.update(usersTable).set({ activeSalonId: salon.id }).where(eq(usersTable.id, firstEmployeeUser.id));
   await db.update(usersTable).set({ activeSalonId: salon.id }).where(eq(usersTable.id, secondEmployeeUser.id));
@@ -191,6 +273,24 @@ async function createFixture(): Promise<Fixture> {
     groupDiscountPercent: 5,
   }).returning();
   if (!secondCourse) throw new Error("Could not create second published online group course.");
+  const [internalCourse] = await db.insert(coursesTable).values({
+    salonId: salon.id,
+    title: `Browser internal employee course ${suffix}`,
+    description: "Salon-owned online course for positive colleague enrollment coverage.",
+    category: "Browser test",
+    format: "online",
+    city: "Beograd",
+    price: 0,
+    duration: "1 nedelja",
+    certification: false,
+    imageUrl: "/browser-course.jpg",
+    published: true,
+    onlineAccessDays: 30,
+    extensionPrice1Month: 1_000,
+    extensionPrice3Months: 2_500,
+    extensionPrice6Months: 4_000,
+  }).returning();
+  if (!internalCourse) throw new Error("Could not create salon-owned employee course.");
 
   return {
     ownerId: owner.id,
@@ -200,13 +300,19 @@ async function createFixture(): Promise<Fixture> {
     employeeEmails: [firstEmployeeUser.email, secondEmployeeUser.email],
     employeeIds: [employees[0].id, employees[1].id],
     employeeNames,
+    foreignEmployeeUserId: foreignEmployeeUser.id,
+    foreignEmployeeId: foreignEmployee.id,
+    unavailableEmployeeUserId: unavailableEmployeeUser.id,
+    unavailableEmployeeId: unavailableEmployee.id,
     salonId: salon.id,
+    foreignSalonId: foreignSalon.id,
     centerId: center.id,
     centerOwnerId: centerOwner.id,
     adminId: admin.id,
     planId: plan.id,
     courseId: course.id,
     secondCourseId: secondCourse.id,
+    internalCourseId: internalCourse.id,
   };
 }
 
@@ -223,7 +329,10 @@ async function cleanupFixture(fixture: Fixture) {
     .where(eq(educationCenterSubscriptionsTable.centerId, fixture.centerId));
   await db.delete(educationCentersTable).where(eq(educationCentersTable.id, fixture.centerId));
   await db.delete(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, fixture.planId));
+  await db.delete(salonsTable).where(eq(salonsTable.id, fixture.foreignSalonId));
   await db.delete(salonsTable).where(eq(salonsTable.id, fixture.salonId));
+  await db.delete(usersTable).where(eq(usersTable.id, fixture.foreignEmployeeUserId));
+  await db.delete(usersTable).where(eq(usersTable.id, fixture.unavailableEmployeeUserId));
   await db.delete(usersTable).where(eq(usersTable.id, fixture.employeeUserIds[0]));
   await db.delete(usersTable).where(eq(usersTable.id, fixture.employeeUserIds[1]));
   await db.delete(usersTable).where(eq(usersTable.id, fixture.ownerId));
@@ -399,7 +508,7 @@ for (const viewport of [
     }
   });
 
-  test(`employee online consent resets from self to a colleague on ${viewport.name}`, async ({ page }) => {
+  test(`employee consent and colleague salon guard work on ${viewport.name}`, async ({ page }) => {
     test.setTimeout(60_000);
     const fixture = await createFixture();
     try {
@@ -423,10 +532,45 @@ for (const viewport of [
       await expect(consent).not.toBeChecked();
       await expect(submit).toBeDisabled();
 
-      const enrollments = await db.select({ id: courseEnrollmentsTable.id })
-        .from(courseEnrollmentsTable)
-        .where(eq(courseEnrollmentsTable.purchaserId, fixture.employeeUserIds[0]));
-      expect(enrollments).toHaveLength(0);
+      for (const employeeId of [fixture.foreignEmployeeId, fixture.unavailableEmployeeId]) {
+        const response = await page.request.post(`/api/education/courses/${fixture.courseId}/enrollments`, {
+          headers: { "idempotency-key": randomUUID() },
+          data: { employeeId, digitalContentConsent: true },
+        });
+        expect(response.status()).toBe(403);
+
+        const rejectedEnrollments = await db.select({ id: courseEnrollmentsTable.id })
+          .from(courseEnrollmentsTable)
+          .where(and(
+            eq(courseEnrollmentsTable.courseId, fixture.courseId),
+            eq(courseEnrollmentsTable.purchaserId, fixture.employeeUserIds[0]),
+          ));
+        expect(rejectedEnrollments).toHaveLength(0);
+
+        const rejectedPaymentObligations = await db.select({ id: educationPaymentObligationsTable.id })
+          .from(educationPaymentObligationsTable)
+          .where(eq(educationPaymentObligationsTable.centerId, fixture.centerId));
+        expect(rejectedPaymentObligations).toHaveLength(0);
+      }
+
+      const validResponse = await page.request.post(`/api/education/courses/${fixture.internalCourseId}/enrollments`, {
+        headers: { "idempotency-key": randomUUID() },
+        data: { employeeId: fixture.employeeIds[1], digitalContentConsent: true },
+      });
+      expect(validResponse.status()).toBe(201);
+
+      const enrollments = await db.select().from(courseEnrollmentsTable)
+        .where(and(
+          eq(courseEnrollmentsTable.courseId, fixture.internalCourseId),
+          eq(courseEnrollmentsTable.purchaserId, fixture.employeeUserIds[0]),
+        ));
+      expect(enrollments).toHaveLength(1);
+      expect(enrollments[0]).toMatchObject({
+        employeeId: fixture.employeeIds[1],
+        salonId: fixture.salonId,
+        status: "active",
+        paymentStatus: "paid",
+      });
 
       const paymentObligations = await db.select({ id: educationPaymentObligationsTable.id })
         .from(educationPaymentObligationsTable)
