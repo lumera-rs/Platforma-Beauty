@@ -145,6 +145,8 @@ export const educationCustomPlanRequestsTable = pgTable("education_custom_plan_r
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("education_custom_plan_requests_center_created_idx").on(table.centerId, table.createdAt),
+  index("education_custom_plan_requests_requested_by_idx").on(table.requestedByUserId),
+  index("education_custom_plan_requests_resolved_by_idx").on(table.resolvedByUserId),
   index("education_custom_plan_requests_status_created_idx").on(table.status, table.createdAt),
   check("education_custom_plan_requests_limit_check", sql`${table.requestedCourseLimit} > 0`),
   check("education_custom_plan_requests_status_check", sql`${table.status} in ('pending','approved','rejected')`),

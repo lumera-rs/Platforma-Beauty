@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 117;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 118;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -4623,6 +4623,8 @@ function tableStatements(s: string): string[] {
        resolved_at timestamptz, created_at timestamptz NOT NULL DEFAULT now()
      )`,
     `CREATE INDEX IF NOT EXISTS education_custom_plan_requests_center_created_idx ON ${s}.education_custom_plan_requests(center_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS education_custom_plan_requests_requested_by_idx ON ${s}.education_custom_plan_requests(requested_by_user_id)`,
+    `CREATE INDEX IF NOT EXISTS education_custom_plan_requests_resolved_by_idx ON ${s}.education_custom_plan_requests(resolved_by_user_id)`,
     `CREATE INDEX IF NOT EXISTS education_custom_plan_requests_status_created_idx ON ${s}.education_custom_plan_requests(status, created_at)`,
     `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS pending_plan_id uuid REFERENCES ${s}.subscription_plans(id)`,
     `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS pending_plan_effective_at timestamptz`,
