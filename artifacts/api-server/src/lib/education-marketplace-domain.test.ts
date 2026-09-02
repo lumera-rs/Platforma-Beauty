@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import {
   addEducationBelgradeCalendarDays,
   educationBelgradeDateKey,
+  educationIpsQrPayload,
   educationPaymentModeError,
   educationGiftVoucherRecipientMatches,
   educationRelatedCourseTier,
+  formatEducationIpsAmount,
   normalizedEducationTaxonomyName,
   qualifiesAsMostRequestedEducationCenter,
   qualifiesAsTopRatedEducationCenter,
+  type EducationIpsTransactionType,
 } from "./education-marketplace-domain";
 import { educationGraceDaysRemaining } from "./education-subscription-reactivation";
 
@@ -26,6 +29,31 @@ assert.match(educationPaymentModeError({
 assert.equal(educationPaymentModeError({
   format: "in-person", paymentMode: "live_off_platform", depositAmount: null, price: 10_000,
 }), null);
+
+assert.equal(formatEducationIpsAmount(1500.5), "RSD1500,50");
+assert.equal(formatEducationIpsAmount(1500), "RSD1500,00");
+assert.throws(() => formatEducationIpsAmount(1500.501), /IPS_PAYMENT_AMOUNT_INVALID/);
+for (const transactionType of [
+  "subscription",
+  "course_enrollment",
+  "course_extension",
+  "operational_installment",
+  "bundle_purchase",
+  "placement",
+] satisfies EducationIpsTransactionType[]) {
+  const ips = educationIpsQrPayload({
+    recipientName: "LUMERA",
+    recipientAccount: "111111111111111111",
+    purpose: "Education uplata",
+    amount: 1500.5,
+    reference: `TEST-${transactionType}`,
+    recipientType: "platform",
+    transactionType,
+    accountEnvironment: "test",
+    runtimeEnvironment: "test",
+  });
+  assert.match(ips.payload, /\|I:RSD1500,50\|/, `${transactionType} uses the canonical NBS amount field`);
+}
 
 assert.equal(normalizedEducationTaxonomyName("  Master   KLASA  "), "master klasa");
 assert.equal(

@@ -490,6 +490,8 @@ async function run() {
       )).rows[0]!.snapshot;
       assert.equal(enrollmentSnapshot.reference, `EDU${fixtures.enrollment.id.replace(/-/g, "")}`);
       assert.equal(installmentSnapshot.reference, "EDU-LEGACY-INSTALLMENT");
+      assert.match(String(enrollmentSnapshot.payload), /\|I:RSD\d+,\d{2}\|/);
+      assert.match(String(installmentSnapshot.payload), /\|I:RSD\d+,\d{2}\|/);
       await q(`UPDATE "${s}".education_platform_settings SET ips_recipient_account='222222222222222222' WHERE id=$1`, [platformSettings!.id]);
       assert.deepEqual((await q<{ snapshot: Record<string, unknown> }>(
         `SELECT payment_instructions_snapshot snapshot FROM "${s}".course_enrollments WHERE id=$1`, [fixtures.enrollment.id],

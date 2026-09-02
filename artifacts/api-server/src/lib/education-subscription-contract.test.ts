@@ -196,6 +196,8 @@ try {
   ]);
   assert.equal(yearlyInstructions.status, 200);
   assert.equal(yearlyInstructions.body.amount, low!.price * 12);
+  assert.match(yearlyInstructions.body.ips.payload, /\|I:RSD120000,00\|/,
+    "Standard subscription instructions use the NBS decimal comma.");
   assert.equal(repeatedInstructions.body.reference, yearlyInstructions.body.reference, "Pending renewal instructions must be idempotent.");
   const [yearlyObligation] = await db.select().from(educationPaymentObligationsTable).where(eq(educationPaymentObligationsTable.referenceSnapshot, yearlyInstructions.body.reference));
   assert.equal(yearlyObligation!.billingCycleSnapshot, "yearly");
@@ -393,8 +395,19 @@ try {
   const customInstructions = await call(base, "/education/subscription/renewal-instructions", "POST", undefined, ownerCookie);
   assert.equal(customInstructions.status, 200);
   assert.equal(customInstructions.body.amount, 222_222);
+  assert.match(customInstructions.body.ips.payload, /\|I:RSD222222,00\|/,
+    "Custom-contract instructions use the same NBS amount formatter.");
   const [customObligation] = await db.select().from(educationPaymentObligationsTable).where(eq(educationPaymentObligationsTable.referenceSnapshot, customInstructions.body.reference));
   assert.equal(customObligation!.servicePeriodEnd!.getTime(), contractEnd.getTime());
+  const legacyCustomIps = {
+    ...JSON.parse(customObligation!.ipsPayloadSnapshot!),
+    payload: customInstructions.body.ips.payload.replace("RSD222222,00", "RSD222222.00"),
+  };
+  await db.update(educationPaymentObligationsTable).set({ ipsPayloadSnapshot: JSON.stringify(legacyCustomIps) })
+    .where(eq(educationPaymentObligationsTable.id, customObligation!.id));
+  const legacyCustomInstructions = await call(base, "/education/subscription/renewal-instructions", "POST", undefined, ownerCookie);
+  assert.match(legacyCustomInstructions.body.ips.payload, /\|I:RSD222222\.00\|/,
+    "Previously issued IPS snapshots are returned unchanged rather than reformatted.");
   assert.equal((await call(base, `/admin/education/payment-obligations/${customObligation!.id}/settle`, "POST", {
     confirmedAmountRsd: customObligation!.expectedAmount, reason: "Poseban ugovor plaćen",
   }, adminCookie)).status, 200);

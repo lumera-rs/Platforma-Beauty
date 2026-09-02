@@ -206,18 +206,43 @@ async function run() {
     const key = `individual-${suffix}`;
     const created = await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": key }, body: { targetType: "individual", digitalContentConsent: true } });
     assert.equal(created.status, 201);
-    const purchase = await created.json() as { id: string; amount: number; paymentInstructions: { reference: string; recipientAccount: string } };
+    const purchase = await created.json() as { id: string; amount: number; paymentInstructions: { reference: string; recipientAccount: string; payload: string } };
     purchaseId = purchase.id; assert.equal(purchase.amount, 21000); assert.ok(purchase.paymentInstructions);
     assert.equal(purchase.paymentInstructions.recipientAccount, "111111111111111111");
+    assert.match(purchase.paymentInstructions.payload, /\|I:RSD21000,00\|/,
+      "Bundle purchases use the canonical NBS amount field.");
+    const secondPurchaseKey = `individual-second-${suffix}`;
     const secondPurchaseResponse = await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, {
-      method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": `individual-second-${suffix}` },
+      method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": secondPurchaseKey },
       body: { targetType: "individual", digitalContentConsent: true },
     });
     assert.equal(secondPurchaseResponse.status, 201, "The same bundle can issue a separate purchase reference.");
-    const secondPurchase = await secondPurchaseResponse.json() as { id: string; paymentInstructions: { reference: string } };
+    const secondPurchase = await secondPurchaseResponse.json() as { id: string; paymentInstructions: { reference: string; payload: string } };
     assert.notEqual(secondPurchase.id, purchase.id);
     assert.notEqual(secondPurchase.paymentInstructions.reference, purchase.paymentInstructions.reference,
       "Bundle payment references derive from the purchase UUID, not the bundle UUID.");
+    const legacyPurchaseId = randomUUID();
+    const legacyReference = `BND-${legacyPurchaseId.replace(/-/g, "").slice(0, 30)}`;
+    const legacyBundleInstructions = {
+      ...secondPurchase.paymentInstructions,
+      reference: legacyReference,
+      payload: secondPurchase.paymentInstructions.payload
+        .replace(secondPurchase.paymentInstructions.reference, legacyReference)
+        .replace("RSD21000,00", "RSD21000.00"),
+    };
+    await db.insert(educationBundlePurchasesTable).values({
+      id: legacyPurchaseId,
+      bundleId: testBundleId,
+      centerId,
+      purchaserId: buyer.id,
+      targetType: "individual",
+      learnerUserId: buyer.id,
+      amount: 21_000,
+      paymentReference: legacyReference,
+      paymentInstructions: legacyBundleInstructions,
+      idempotencyKey: `legacy-snapshot-${suffix}`,
+      idempotencyFingerprint: "legacy-issued-before-nbs-comma",
+    });
     await db.update(educationPlatformSettingsTable).set({ ipsRecipientAccount: "222222222222222222" }).where(eq(educationPlatformSettingsTable.id, financeSettings.id));
     const pdfResponse = await request(baseUrl, `/education/payment-slips/bundle/${purchaseId}`, { cookie: buyerCookie });
     assert.equal(pdfResponse.status, 200);
@@ -242,7 +267,10 @@ async function run() {
       "Employee purchase snapshots the employee's linked learner account.");
 
     const purchaserList = await request(baseUrl, "/education/bundle-purchases", { cookie: buyerCookie });
-    assert.ok(Object.hasOwn((await purchaserList.json() as Array<object>)[0]!, "paymentInstructions"), "Only purchaser receives payment instructions.");
+    const purchaserPurchases = await purchaserList.json() as Array<{ id: string; paymentInstructions: { payload: string } }>;
+    assert.ok(Object.hasOwn(purchaserPurchases[0]!, "paymentInstructions"), "Only purchaser receives payment instructions.");
+    assert.match(purchaserPurchases.find(row => row.id === legacyPurchaseId)!.paymentInstructions.payload,
+      /\|I:RSD21000\.00\|/, "Previously issued bundle snapshots are returned unchanged.");
     const centerList = await request(baseUrl, `/education/centers/${centerId}/bundle-purchases`, { cookie: centerCookie });
     assert.equal(centerList.status, 200);
     const centerPurchase = (await centerList.json() as Array<Record<string, unknown>>)[0]!;

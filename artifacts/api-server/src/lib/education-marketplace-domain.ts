@@ -185,6 +185,16 @@ export function educationIpsPaymentCode(recipientType: EducationIpsRecipientType
   return recipientType === "education_center_individual" ? "289" : "221";
 }
 
+/** NBS IPS amount field: currency prefix, no grouping, and a decimal comma. */
+export function formatEducationIpsAmount(amount: number): string {
+  const minorUnits = Math.round(amount * 100);
+  if (!Number.isFinite(amount) || amount <= 0 || !Number.isSafeInteger(minorUnits)
+    || Math.abs(amount * 100 - minorUnits) > 1e-7) {
+    throw new Error("IPS_PAYMENT_AMOUNT_INVALID");
+  }
+  return `RSD${(minorUnits / 100).toFixed(2).replace(".", ",")}`;
+}
+
 /** NODE_ENV is deliberately reduced to the two payment account classifications. */
 export function educationIpsRuntimeEnvironment(): EducationIpsAccountEnvironment {
   const deploymentValue = process.env.REPLIT_DEPLOYMENT ?? process.env.REPL_DEPLOYMENT;
@@ -218,12 +228,12 @@ export function educationIpsQrPayload(input: EducationIpsPaymentInstructions & {
   if (input.accountEnvironment === "production" && input.runtimeEnvironment !== "production") {
     throw new Error("IPS_PAYMENT_PRODUCTION_ACCOUNT_BLOCKED");
   }
-  if (!Number.isInteger(input.amount) || input.amount <= 0) throw new Error("IPS_PAYMENT_AMOUNT_INVALID");
+  const formattedAmount = formatEducationIpsAmount(input.amount);
   if (!input.reference.trim() || input.reference.length > 35) throw new Error("IPS_PAYMENT_REFERENCE_INVALID");
   const paymentCode = educationIpsPaymentCode(input.recipientType);
   const fields = [
     "K:PR", "V:01", "C:1", `R:${account}`, `N:${recipient}`,
-    `I:RSD${input.amount.toFixed(2)}`, `P:${purpose}`, `SF:${paymentCode}`, `S:${input.reference.trim()}`,
+    `I:${formattedAmount}`, `P:${purpose}`, `SF:${paymentCode}`, `S:${input.reference.trim()}`,
   ];
   return {
     payload: fields.join("|"),

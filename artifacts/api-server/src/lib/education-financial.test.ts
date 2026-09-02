@@ -516,6 +516,8 @@ async function run(): Promise<void> {
     assert.equal(instructions.enrollmentId, ownerPending.id);
     assert.equal(instructions.amount, ownerFlowCourse.price);
     assert.equal(instructions.paymentStatus, "pending");
+    assert.match(instructions.payload, /\|I:RSD11100,00\|/,
+      "Course purchases use the canonical NBS amount field.");
     assert.match(instructions.payload, new RegExp(`S:${instructions.reference}`));
     await db.update(educationPlatformSettingsTable).set({ ipsRecipientAccount: "170000000000000000" })
       .where(eq(educationPlatformSettingsTable.id, settings.id));

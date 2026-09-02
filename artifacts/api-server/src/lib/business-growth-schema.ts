@@ -218,7 +218,7 @@ function paymentInstructionSnapshotBackfillStatements(s: string): string[] {
     ORDER BY updated_at DESC, id DESC LIMIT 1)`;
   const payload = (amount: string, reference: string) => `concat(
     'K:PR|V:01|C:1|R:', settings.account, '|N:', settings.ips_recipient_name,
-    '|I:RSD', to_char(${amount}::numeric, 'FM999999999999990.00'),
+    '|I:RSD', replace(to_char(${amount}::numeric, 'FM999999999999990.00'), '.', ','),
     '|P:', settings.ips_purpose, '|SF:221|S:', ${reference})`;
   return [
     `UPDATE ${s}.course_enrollments enrollment

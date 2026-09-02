@@ -273,6 +273,9 @@ try {
     const requested = await call(base, learnerCookies[index]!, `/education/enrollments/${enrollment.id}/extension`, "POST", { months });
     assert.equal(requested.status, 200);
     assert.equal(requested.body.extension.amount, expected[index]);
+    const ips = JSON.parse(requested.body.payment.ipsPayloadSnapshot) as { payload: string };
+    assert.match(ips.payload, new RegExp(`\\|I:RSD${expected[index]},00\\|`),
+      "Access extensions use the canonical NBS amount field.");
     assert.equal(new Date(requested.body.extension.previousAccessExpiresAt).getTime(), initialExpiry.getTime());
     assert.equal((await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, enrollment.id)))[0]!.accessExpiresAt!.getTime(), initialExpiry.getTime());
     const obligationId = requested.body.payment.id as string;
