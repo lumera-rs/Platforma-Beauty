@@ -122,10 +122,14 @@ export default defineConfig({
   fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
   retries: releaseBrowserTest ? 0 : process.env.CI ? 2 : 0,
-  reporter: "list",
+  reporter: [
+    ["list"],
+    ["html", { outputFolder: "playwright-report", open: "never" }],
+  ],
   use: {
     baseURL: webBaseUrl,
     trace: "retain-on-failure",
+    screenshot: "only-on-failure",
     launchOptions: {
       ...(chromiumExecutablePath ? { executablePath: chromiumExecutablePath } : {}),
       // The host-matrix integration check must exercise window.location and

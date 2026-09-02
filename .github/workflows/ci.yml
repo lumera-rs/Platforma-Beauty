@@ -126,3 +126,14 @@ jobs:
         run: pnpm --filter @workspace/db run push-force
       - name: Run browser user journeys
         run: pnpm run validate:ci:browser
+      - name: Upload browser failure diagnostics
+        if: ${{ failure() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failure-diagnostics-${{ github.run_attempt }}
+          path: |
+            scripts/playwright-report/
+            scripts/test-results/
+          if-no-files-found: warn
+          retention-days: 7

@@ -137,6 +137,16 @@ test("branch CI isolates database checks and orders browser journeys after every
   assert.match(browserJob, /POSTGRES_DB: lumera_ci_browser/);
   assert.match(browserJob, /playwright install --with-deps chromium/);
   assert.match(browserJob, /run: pnpm run validate:ci:browser/);
+  assert.match(
+    browserJob,
+    /if: \$\{\{ failure\(\) && \(github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name == github\.repository\) \}\}/,
+    "Browser diagnostics must upload after failures without exposing fork pull requests.",
+  );
+  assert.match(browserJob, /continue-on-error: true/);
+  assert.match(browserJob, /uses: actions\/upload-artifact@v4/);
+  assert.match(browserJob, /scripts\/playwright-report\//);
+  assert.match(browserJob, /scripts\/test-results\//);
+  assert.match(browserJob, /retention-days: 7/);
   assert.doesNotMatch(
     browserJob,
     /\$\{\{\s*secrets\./,
