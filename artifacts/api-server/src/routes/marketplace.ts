@@ -37,6 +37,7 @@ import
 ;
 import { expireFeaturedPlacementPaymentInTx } from "../lib/featured-placement-payment-reminders";
 import { safeIsoTimestamp } from "../lib/date-serialization";
+import { parseEducationIdempotencyKey } from "../lib/education-idempotency";
 import {
   allocateReferralCreditInTx,
   bindLegalEntityBusinessInTx,
@@ -19276,8 +19277,12 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
     res.status(403).json({ error: "Kupovina edukacija je dostupna polaznicima i vlasnicima salona." });
     return;
   }
-  const [params, body] = [EnrollInEducationCourseParams.safeParse(req.params), EnrollInEducationCourseBody.safeParse(req.body ?? {})];
-  if (!params.success || !body.success) { res.status(400).json({ error: "Podaci prijave nisu ispravni." }); return; }
+  const [params, body, headers] = [
+    EnrollInEducationCourseParams.safeParse(req.params),
+    EnrollInEducationCourseBody.safeParse(req.body ?? {}),
+    parseEducationIdempotencyKey("enrollInEducationCourse", req.headers["idempotency-key"]),
+  ];
+  if (!params.success || !body.success || !headers.success) { res.status(400).json({ error: "Podaci prijave nisu ispravni." }); return; }
   const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, params.data.courseId)).limit(1);
   const employeeAccess = user.role === "SALON_EMPLOYEE" ? await requireSalonEmployee(req, res) : null;
   const access = ["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(user.role)
@@ -19304,8 +19309,7 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
     employee = await employeeInSalon(body.data.employeeId, access.salon.id);
     if (!employee) { res.status(403).json({ error: "Izabrani zaposleni ne pripada vašem salonu." }); return; }
   }
-  const idempotencyKey = req.get("idempotency-key")?.trim() || null;
-  if (idempotencyKey && idempotencyKey.length > 200) { res.status(400).json({ error: "Idempotency ključ je predugačak." }); return; }
+  const idempotencyKey = headers.key;
   const requestedSessionId = body.data.sessionId ?? null;
   if (course.format === "online" && requestedSessionId) {
     res.status(409).json({ error: "Online kurs ne može koristiti termin uživo." }); return;
@@ -21575,8 +21579,9 @@ router.post("/education/gift-vouchers", async (req, res): Promise<void> => {
   const user = await current(req, res); if (!user) return;
   const parsed = PurchaseEducationGiftVoucherBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const idempotencyKey = String(req.header("Idempotency-Key") ?? "").trim();
-  if (!idempotencyKey || idempotencyKey.length > 200) { res.status(400).json({ error: "Idempotency-Key je obavezan." }); return; }
+  const headers = parseEducationIdempotencyKey("purchaseEducationGiftVoucher", req.headers["idempotency-key"]);
+  if (!headers.success) { res.status(400).json({ error: headers.error.message }); return; }
+  const idempotencyKey = headers.key;
   const recipientEmail = parsed.data.recipientEmail?.normalize("NFKC").trim().toLowerCase() ?? null;
   const recipientUserId = parsed.data.recipientUserId ?? null;
   const recipientName = parsed.data.recipientName?.normalize("NFKC").trim() || null;
