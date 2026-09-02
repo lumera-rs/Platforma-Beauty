@@ -12,6 +12,7 @@ const requiredIsolatedBrowserGateScripts = [
 ] as const;
 
 const requiredIsolatedBrowserGatePhase = "validate:release:4-isolated";
+const branchCiPath = path.join(workspaceRoot, ".github", "workflows", "ci.yml");
 
 function chainedPnpmScripts(command: string): string[] {
   return command.split(" && ").flatMap((step) => {
@@ -36,6 +37,37 @@ test("publish validation checks the release chain first without database access"
     publishCommand.match(/(?:^| )pnpm run test:release-chain(?: |$)/g)?.length,
     1,
     "validate:publish must run the early release-chain gate exactly once.",
+  );
+});
+
+test("branch CI runs the database-free release-chain gate before slower work", async () => {
+  const workflow = await readFile(branchCiPath, "utf8");
+
+  assert.match(workflow, /^on:\n  pull_request:\n  push:/m);
+  assert.match(
+    workflow,
+    /release-chain:\n(?: {4}.*\n)*? {4}env:\n(?: {6}.*\n)*? {6}DATABASE_URL: ""/,
+    "The early CI job must explicitly clear DATABASE_URL.",
+  );
+  assert.match(
+    workflow,
+    /run: env -u DATABASE_URL pnpm run test:release-chain/,
+    "Branch CI must run the release-chain test with DATABASE_URL removed.",
+  );
+
+  const releaseJob = workflow.slice(
+    workflow.indexOf("  release-chain:"),
+    workflow.indexOf("\n  build:"),
+  );
+  assert.doesNotMatch(
+    releaseJob,
+    /playwright|validate:release|validate:publish|test:browser|drizzle|DATABASE_URL: [^"'\s]/i,
+    "The early gate must not prepare a database, run browser tests, or invoke the slower release lifecycle.",
+  );
+  assert.match(
+    workflow,
+    /\n  build:\n {4}name: .*\n {4}needs: release-chain\n/,
+    "Slower CI work must depend on the release-chain job.",
   );
 });
 

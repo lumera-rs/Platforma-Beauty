@@ -1,0 +1,45 @@
+name: Branch CI
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  release-chain:
+    name: Release chain (database-free)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CI: "true"
+      DATABASE_URL: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Validate release ordering
+        run: env -u DATABASE_URL pnpm run test:release-chain
+
+  build:
+    name: Build and static checks
+    needs: release-chain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
