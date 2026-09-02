@@ -307,4 +307,93 @@ for (const [applicant, label] of [[damagedApplicant, "damaged"], [validApplicant
 }
 NODE
 
+for damaged_field in decision_at replied_at updated_at; do
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v contact_id="$damaged_contact_id" >/dev/null <<SQL
+update beauty_job_contacts
+set created_at = now(),
+    decision_at = now(),
+    replied_at = now(),
+    updated_at = now()
+where id = :'contact_id'::uuid;
+update beauty_job_contacts
+set ${damaged_field} = '-infinity'::timestamptz
+where id = :'contact_id'::uuid;
+SQL
+
+  status="$(curl -sS -o "$body" -w "%{http_code}" -b "$cookie" "$BASE_URL/beauty-jobs/$applicant_listing_id/applicants")"
+  if [[ "$status" != "200" ]]; then
+    echo "FAIL: authenticated applicant history with damaged $damaged_field expected 200, got $status: $(cat "$body")" >&2
+    exit 1
+  fi
+
+  APPLICANTS_BODY="$(cat "$body")" \
+  DETAIL_MARKER="$fixture_marker" \
+  DAMAGED_CONTACT_ID="$damaged_contact_id" \
+  VALID_CONTACT_ID="$valid_contact_id" \
+  DAMAGED_FIELD="$damaged_field" node <<'NODE'
+const response = JSON.parse(process.env.APPLICANTS_BODY);
+if (!Array.isArray(response.applicants)) throw new Error("Applicant history response has no applicants.");
+const damagedApplicant = response.applicants.find((item) => item.id === process.env.DAMAGED_CONTACT_ID);
+const validApplicant = response.applicants.find((item) => item.id === process.env.VALID_CONTACT_ID);
+if (!damagedApplicant || !validApplicant) throw new Error("Applicant history omitted a fixture applicant.");
+
+const responseField = {
+  decision_at: "decisionAt",
+  replied_at: "repliedAt",
+  updated_at: "updatedAt",
+}[process.env.DAMAGED_FIELD];
+if (!responseField) throw new Error(`Unknown damaged applicant field: ${process.env.DAMAGED_FIELD}`);
+
+for (const field of ["decisionAt", "repliedAt", "createdAt", "updatedAt"]) {
+  if (field === responseField) {
+    if (damagedApplicant[field] !== null) {
+      throw new Error(`Damaged applicant ${field} was not null: ${damagedApplicant[field]}`);
+    }
+  } else if (typeof damagedApplicant[field] !== "string") {
+    throw new Error(`Valid applicant ${field} was not preserved beside damaged ${responseField}.`);
+  }
+}
+
+if (damagedApplicant.applicantMessage !== `${process.env.DETAIL_MARKER}-damaged-application`
+  || damagedApplicant.authorReply !== `${process.env.DETAIL_MARKER}-damaged-reply`
+  || typeof damagedApplicant.applicantDisplayName !== "string") {
+  throw new Error(`Unrelated applicant fields were not preserved beside damaged ${responseField}.`);
+}
+if (validApplicant.applicantMessage !== `${process.env.DETAIL_MARKER}-valid-application`
+  || validApplicant.authorReply !== `${process.env.DETAIL_MARKER}-valid-reply`
+  || typeof validApplicant.applicantDisplayName !== "string"
+  || typeof validApplicant.decisionAt !== "string"
+  || typeof validApplicant.repliedAt !== "string"
+  || typeof validApplicant.createdAt !== "string"
+  || typeof validApplicant.updatedAt !== "string") {
+  throw new Error(`Valid neighboring applicant was not preserved beside damaged ${responseField}.`);
+}
+
+for (const [applicant, label] of [[damagedApplicant, "damaged"], [validApplicant, "valid"]]) {
+  if (!Array.isArray(applicant.actions) || applicant.actions.length !== 2) {
+    throw new Error(`${label} applicant action history was not preserved beside damaged ${responseField}.`);
+  }
+  const damagedAction = applicant.actions.find(
+    (action) => action.privateNote === `${applicant.applicantMessage}-damaged-action`,
+  );
+  const validAction = applicant.actions.find(
+    (action) => action.privateNote === `${applicant.applicantMessage}-valid-action`,
+  );
+  if (!damagedAction || !validAction) {
+    throw new Error(`${label} applicant history omitted an action beside damaged ${responseField}.`);
+  }
+  if (damagedAction.createdAt !== null
+    || damagedAction.fromStatus !== "pending"
+    || damagedAction.toStatus !== "viewed") {
+    throw new Error(`${label} applicant's damaged action changed beside damaged ${responseField}.`);
+  }
+  if (typeof validAction.createdAt !== "string"
+    || validAction.fromStatus !== "viewed"
+    || validAction.toStatus !== "replied") {
+    throw new Error(`${label} applicant's valid action changed beside damaged ${responseField}.`);
+  }
+}
+NODE
+done
+
 echo "Damaged timestamp HTTP serialization checks passed."
