@@ -6,7 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-/**
- * @nullable
- */
-export type EducationSubscriptionStatusSubscription = { [key: string]: unknown } | null;
+export interface EducationSubscriptionCenter {
+  id: string;
+  name: string;
+  /** @nullable */
+  paymentReferenceNumber: string | null;
+}

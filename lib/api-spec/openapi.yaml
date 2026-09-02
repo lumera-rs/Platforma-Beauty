@@ -3071,9 +3071,14 @@ paths:
               properties:
                 planId: { type: string, format: uuid }
                 billingCycle: { type: string, enum: [monthly, yearly] }
+                keepCourseIds:
+                  type: array
+                  maxItems: 1000
+                  uniqueItems: true
+                  items: { type: string, format: uuid }
               required: [planId, billingCycle]
       responses:
-        "201": { description: Plan selected, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "201": { description: Plan selected, content: { application/json: { schema: { $ref: "#/components/schemas/EducationSubscriptionSelection" } } } }
   /education/subscription/renewal-instructions:
     post:
       operationId: getEducationSubscriptionRenewalInstructions
@@ -3081,6 +3086,78 @@ paths:
       summary: Create center payment instructions for subscription renewal
       responses:
         "200": { description: IPS instructions, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+  /education/subscription/auto-renew:
+    patch:
+      operationId: updateEducationSubscriptionAutoRenew
+      tags: [education]
+      summary: Enable or disable renewal without refunding the current paid period
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EducationAutoRenewInput" } } }
+      responses:
+        "200": { description: Updated subscription, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+  /education/subscription/custom-plan-request:
+    post:
+      operationId: requestEducationCustomPlan
+      tags: [education]
+      summary: Request a negotiated Education plan and notify super administrators durably
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EducationCustomPlanRequestInput" } } }
+      responses:
+        "201": { description: Request created, content: { application/json: { schema: { $ref: "#/components/schemas/EducationCustomPlanRequest" } } } }
+  /admin/education/subscription-plans:
+    get:
+      operationId: listAdminEducationSubscriptionPlans
+      tags: [admin, education]
+      summary: List only Education subscription plans
+      responses:
+        "200": { description: Education plans, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/EducationSubscriptionPlan" } } } } }
+    post:
+      operationId: createAdminEducationSubscriptionPlan
+      tags: [admin, education]
+      summary: Create an Education subscription plan
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EducationSubscriptionPlanInput" } } }
+      responses:
+        "201": { description: Created Education plan, content: { application/json: { schema: { $ref: "#/components/schemas/EducationSubscriptionPlan" } } } }
+  /admin/education/custom-plan-requests:
+    get:
+      operationId: listAdminEducationCustomPlanRequests
+      tags: [admin, education]
+      summary: List durable Education custom-plan requests
+      responses:
+        "200": { description: Requests, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/EducationCustomPlanRequest" } } } } }
+  /admin/education/custom-plan-requests/{requestId}:
+    patch:
+      operationId: rejectAdminEducationCustomPlanRequest
+      tags: [admin, education]
+      summary: Reject an open custom-plan request
+      parameters: [{ name: requestId, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EducationCustomPlanRequestDecision" } } }
+      responses:
+        "200": { description: Rejected request, content: { application/json: { schema: { $ref: "#/components/schemas/EducationCustomPlanRequest" } } } }
+  /admin/education/subscription-plans/{planId}:
+    patch:
+      operationId: updateAdminEducationSubscriptionPlan
+      tags: [admin, education]
+      summary: Update an Education subscription plan
+      parameters: [{ name: planId, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EducationSubscriptionPlanUpdate" } } }
+      responses:
+        "200": { description: Updated Education plan, content: { application/json: { schema: { $ref: "#/components/schemas/EducationSubscriptionPlan" } } } }
+    delete:
+      operationId: archiveAdminEducationSubscriptionPlan
+      tags: [admin, education]
+      summary: Archive an Education plan while retaining paid-period history
+      parameters: [{ name: planId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200": { description: Archived Education plan, content: { application/json: { schema: { $ref: "#/components/schemas/EducationSubscriptionPlan" } } } }
   /admin/education/payment-obligations:
     get:
       operationId: listEducationPaymentObligations
@@ -3123,9 +3200,12 @@ paths:
               properties:
                 amountRsd: { type: integer, minimum: 1 }
                 billingCycle: { type: string, enum: [monthly, yearly] }
+                courseLimit: { type: integer, minimum: 1 }
+                autoRenew: { type: boolean }
+                requestId: { type: string, format: uuid }
                 contractEndsAt: { type: string, format: date-time }
                 reason: { type: string, minLength: 3, maxLength: 1000 }
-              required: [amountRsd, billingCycle, contractEndsAt, reason]
+              required: [amountRsd, billingCycle, courseLimit, autoRenew, contractEndsAt, reason]
       responses:
         "200": { description: Contract configured, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
   /education/purchases:
@@ -14131,15 +14211,131 @@ components:
         trialDays: { type: integer, minimum: 0 }
         features: { type: array, items: { type: string } }
         limits: { type: object, additionalProperties: { type: integer } }
-      required: [id, name, price, trialDays, features, limits]
+        audience: { type: string, enum: [education] }
+        courseLimit: { type: integer, minimum: 1 }
+        vatIncluded: { type: boolean }
+        priceCopy: { type: string }
+        active: { type: boolean }
+      required: [id, name, price, trialDays, features, limits, audience, courseLimit, vatIncluded, priceCopy, active]
+    EducationSubscriptionPlanInput:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 2, maxLength: 120 }
+        price: { type: integer, minimum: 1, description: Whole RSD. VAT inclusive when vatIncluded is true. }
+        courseLimit: { type: integer, minimum: 1 }
+        trialDays: { type: integer, enum: [30] }
+        features: { type: array, items: { type: string, minLength: 1 } }
+        vatIncluded: { type: boolean }
+        priceCopy: { type: string, minLength: 3, maxLength: 500 }
+        active: { type: boolean }
+      required: [name, price, courseLimit, trialDays, features, vatIncluded, priceCopy, active]
+    EducationSubscriptionPlanUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 2, maxLength: 120 }
+        price: { type: integer, minimum: 1 }
+        courseLimit: { type: integer, minimum: 1 }
+        trialDays: { type: integer, enum: [30] }
+        features: { type: array, items: { type: string, minLength: 1 } }
+        vatIncluded: { type: boolean }
+        priceCopy: { type: string, minLength: 3, maxLength: 500 }
+        active: { type: boolean }
+    EducationAutoRenewInput:
+      type: object
+      additionalProperties: false
+      properties:
+        autoRenew: { type: boolean }
+      required: [autoRenew]
+    EducationCustomPlanRequestInput:
+      type: object
+      additionalProperties: false
+      properties:
+        requestedCourseLimit: { type: integer, minimum: 1, maximum: 100000 }
+        message: { type: string, minLength: 10, maxLength: 2000 }
+      required: [requestedCourseLimit, message]
+    EducationCustomPlanRequestDecision:
+      type: object
+      additionalProperties: false
+      properties:
+        status: { type: string, enum: [rejected] }
+        reason: { type: string, minLength: 3, maxLength: 1000 }
+      required: [status, reason]
     EducationSubscriptionStatus:
       type: object
       properties:
-        center: { type: object, additionalProperties: true }
-        subscription: { type: ["object", "null"], additionalProperties: true }
+        center: { $ref: "#/components/schemas/EducationSubscriptionCenter" }
+        subscription:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/EducationSubscription"
+        publishedCourses:
+          type: array
+          items: { $ref: "#/components/schemas/EducationPublishedCourse" }
         inGrace: { type: boolean }
         operational: { type: boolean }
-      required: [center, subscription, inGrace, operational]
+      required: [center, subscription, publishedCourses, inGrace, operational]
+    EducationSubscriptionCenter:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        paymentReferenceNumber: { type: ["string", "null"] }
+      required: [id, name, paymentReferenceNumber]
+    EducationPublishedCourse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+      required: [id, title]
+    EducationSubscription:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        centerId: { type: string, format: uuid }
+        planId: { type: string, format: uuid }
+        status: { type: string, enum: [trial, active, past_due, cancelled, suspended, free_via_loyalty] }
+        dueAmount: { type: integer, minimum: 0 }
+        billingCycle: { type: string, enum: [monthly, yearly] }
+        currentPeriodStart: { type: ["string", "null"], format: date-time }
+        currentPeriodEnd: { type: ["string", "null"], format: date-time }
+        trialStartedAt: { type: ["string", "null"], format: date-time }
+        trialEndsAt: { type: ["string", "null"], format: date-time }
+        graceEndsAt: { type: ["string", "null"], format: date-time }
+        autoRenew: { type: boolean }
+        contractKind: { type: string, enum: [standard, custom] }
+        contractEndsAt: { type: ["string", "null"], format: date-time }
+        courseLimitOverride: { type: ["integer", "null"], minimum: 0 }
+        currentPriceSnapshot: { type: ["integer", "null"], minimum: 0 }
+        currentCourseLimitSnapshot: { type: ["integer", "null"], minimum: 0 }
+        pendingPlanId: { type: ["string", "null"], format: uuid }
+        pendingBillingCycle: { type: ["string", "null"], enum: [monthly, yearly, null] }
+        pendingPlanEffectiveAt: { type: ["string", "null"], format: date-time }
+        pendingKeepCourseIds: { type: ["array", "null"], items: { type: string, format: uuid } }
+        plan: { $ref: "#/components/schemas/EducationSubscriptionPlan" }
+      required: [id, centerId, planId, status, dueAmount, billingCycle, currentPeriodStart, currentPeriodEnd, trialStartedAt, trialEndsAt, graceEndsAt, autoRenew, contractKind, contractEndsAt, courseLimitOverride, currentPriceSnapshot, currentCourseLimitSnapshot, pendingPlanId, pendingBillingCycle, pendingPlanEffectiveAt, pendingKeepCourseIds, plan]
+    EducationSubscriptionSelection:
+      allOf:
+        - $ref: "#/components/schemas/EducationSubscription"
+        - type: object
+          properties:
+            change: { type: string }
+            payment: { type: ["object", "null"], additionalProperties: true }
+          required: [change, payment]
+    EducationCustomPlanRequest:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        centerId: { type: string, format: uuid }
+        requestedByUserId: { type: string, format: uuid }
+        requestedCourseLimit: { type: integer, minimum: 1 }
+        message: { type: string }
+        status: { type: string, enum: [pending, approved, rejected] }
+        resolvedByUserId: { type: ["string", "null"], format: uuid }
+        resolvedAt: { type: ["string", "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+      required: [id, centerId, requestedByUserId, requestedCourseLimit, message, status, resolvedByUserId, resolvedAt, createdAt]
     EducationMessage:
       type: object
       properties:
@@ -14944,7 +15140,7 @@ components:
           items: { type: string }
         limits:
           type: object
-          additionalProperties: { type: number }
+          additionalProperties: { type: number, minimum: -1, multipleOf: 1 }
         active: { type: boolean }
       required: [id, name, price, trialDays, features, limits, active]
     SubscriptionPlanInput:
@@ -14959,7 +15155,7 @@ components:
           items: { type: string }
         limits:
           type: object
-          additionalProperties: { type: number, minimum: 0, multipleOf: 1 }
+          additionalProperties: { type: number, minimum: -1, multipleOf: 1 }
         active: { type: boolean }
       required: [name, price, trialDays, features, limits, active]
     SubscriptionPlanUpdate:

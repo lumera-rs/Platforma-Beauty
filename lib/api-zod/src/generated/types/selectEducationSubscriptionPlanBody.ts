@@ -10,4 +10,6 @@ import type { SelectEducationSubscriptionPlanBodyBillingCycle } from './selectEd
 export type SelectEducationSubscriptionPlanBody = {
   planId: string;
   billingCycle: SelectEducationSubscriptionPlanBodyBillingCycle;
+  /** @maxItems 1000 */
+  keepCourseIds?: string[];
 };

@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 111;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 114;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -4549,6 +4549,81 @@ function tableStatements(s: string): string[] {
     `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS contract_kind text NOT NULL DEFAULT 'standard'`,
     `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS contract_ends_at timestamptz`,
     `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS course_limit_override integer`,
+    // v114 — Education plans are isolated from salon plans. Existing Education
+    // references are classified before the three standard tiers are completed.
+    `ALTER TABLE ${s}.subscription_plans ADD COLUMN IF NOT EXISTS name text`,
+    `ALTER TABLE ${s}.subscription_plans ADD COLUMN IF NOT EXISTS price integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.subscription_plans ADD COLUMN IF NOT EXISTS trial_days integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.subscription_plans ADD COLUMN IF NOT EXISTS features jsonb NOT NULL DEFAULT '[]'::jsonb`,
+    `ALTER TABLE ${s}.subscription_plans ADD COLUMN IF NOT EXISTS limits jsonb NOT NULL DEFAULT '{}'::jsonb`,
+    `ALTER TABLE ${s}.subscription_plans ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true`,
+    // Very old installations can predate the salon subscription table; create
+    // the minimal compatibility target before checking shared plan references.
+    `CREATE TABLE IF NOT EXISTS ${s}.subscriptions (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       plan_id uuid NOT NULL REFERENCES ${s}.subscription_plans(id)
+     )`,
+    `ALTER TABLE ${s}.subscription_plans ADD COLUMN IF NOT EXISTS audience text NOT NULL DEFAULT 'salon'`,
+    `ALTER TABLE ${s}.subscription_plans ADD COLUMN IF NOT EXISTS course_limit integer`,
+    `ALTER TABLE ${s}.subscription_plans ADD COLUMN IF NOT EXISTS vat_included boolean NOT NULL DEFAULT false`,
+    `ALTER TABLE ${s}.subscription_plans ADD COLUMN IF NOT EXISTS price_copy text`,
+    // A legacy plan can be used by both products. Clone it first and repoint
+    // only Education subscriptions; never relabel the salon plan in place.
+    `INSERT INTO ${s}.subscription_plans (name, price, trial_days, features, limits, audience, course_limit, vat_included, price_copy, active)
+       SELECT 'Education legacy ' || p.id::text, p.price, 30, p.features, p.limits,
+              'education', COALESCE((p.limits->>'courses')::integer, 5), true, 'Cena uključuje PDV.', p.active
+       FROM ${s}.subscription_plans p
+       WHERE EXISTS (SELECT 1 FROM ${s}.education_center_subscriptions e WHERE e.plan_id = p.id)
+         AND EXISTS (SELECT 1 FROM ${s}.subscriptions salon_subscription WHERE salon_subscription.plan_id = p.id)
+         AND NOT EXISTS (SELECT 1 FROM ${s}.subscription_plans clone WHERE clone.name = 'Education legacy ' || p.id::text)`,
+    `UPDATE ${s}.education_center_subscriptions e SET plan_id = clone.id
+       FROM ${s}.subscription_plans legacy
+       JOIN ${s}.subscription_plans clone ON clone.name = 'Education legacy ' || legacy.id::text
+       WHERE e.plan_id = legacy.id
+         AND EXISTS (SELECT 1 FROM ${s}.subscriptions salon_subscription WHERE salon_subscription.plan_id = legacy.id)`,
+    `UPDATE ${s}.subscription_plans p SET audience = 'education'
+       WHERE EXISTS (SELECT 1 FROM ${s}.education_center_subscriptions e WHERE e.plan_id = p.id)
+         AND NOT EXISTS (SELECT 1 FROM ${s}.subscriptions salon_subscription WHERE salon_subscription.plan_id = p.id)`,
+    `WITH ranked AS (
+       SELECT p.id, row_number() over (ORDER BY p.price, p.id) AS tier
+       FROM ${s}.subscription_plans p WHERE p.audience = 'education'
+     ) UPDATE ${s}.subscription_plans p SET
+       course_limit = CASE ranked.tier WHEN 1 THEN 5 WHEN 2 THEN 15 ELSE 30 END,
+       trial_days = 30, vat_included = true,
+       price_copy = COALESCE(p.price_copy, 'Cena uključuje PDV.')
+       FROM ranked WHERE p.id = ranked.id AND ranked.tier <= 3 AND p.course_limit IS NULL`,
+    `INSERT INTO ${s}.subscription_plans (name, price, trial_days, features, limits, audience, course_limit, vat_included, price_copy, active)
+       SELECT seed.name, 0, 30, '[]'::jsonb, jsonb_build_object('courses', seed.course_limit),
+               'education', seed.course_limit, true, 'Cena uključuje PDV.', false
+       FROM (VALUES ('Education Start', 5), ('Education Growth', 15), ('Education Academy', 30)) seed(name, course_limit)
+       WHERE NOT EXISTS (SELECT 1 FROM ${s}.subscription_plans p WHERE p.audience='education' AND p.course_limit=seed.course_limit)`,
+    `UPDATE ${s}.subscription_plans SET active = CASE WHEN price > 0 THEN active ELSE false END, trial_days = 30, vat_included = true,
+       price_copy = 'Cena uključuje PDV.'
+       WHERE audience = 'education' AND name IN ('Education Start', 'Education Growth', 'Education Academy')
+         AND course_limit IN (5,15,30)`,
+    `UPDATE ${s}.subscription_plans SET active = false WHERE audience = 'education' AND price <= 0`,
+    `UPDATE ${s}.subscription_plans SET limits = jsonb_set(COALESCE(limits, '{}'::jsonb), '{courses}', to_jsonb(course_limit))
+       WHERE audience='education' AND course_limit IS NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS subscription_plans_audience_active_price_idx ON ${s}.subscription_plans(audience, active, price)`,
+    `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS current_price_snapshot integer`,
+    `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS current_course_limit_snapshot integer`,
+    `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS pending_keep_course_ids jsonb`,
+    `UPDATE ${s}.education_center_subscriptions e SET
+       current_price_snapshot = COALESCE(e.current_price_snapshot, p.price),
+       current_course_limit_snapshot = COALESCE(e.current_course_limit_snapshot, e.course_limit_override, p.course_limit)
+       FROM ${s}.subscription_plans p WHERE p.id=e.plan_id AND e.status IN ('trial','active','free_via_loyalty')`,
+    `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS subscription_suspended boolean NOT NULL DEFAULT false`,
+    `CREATE TABLE IF NOT EXISTS ${s}.education_custom_plan_requests (
+       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+       center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE CASCADE,
+       requested_by_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE RESTRICT,
+       requested_course_limit integer NOT NULL CHECK(requested_course_limit > 0),
+       message text NOT NULL, status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
+       resolved_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE RESTRICT,
+       resolved_at timestamptz, created_at timestamptz NOT NULL DEFAULT now()
+     )`,
+    `CREATE INDEX IF NOT EXISTS education_custom_plan_requests_center_created_idx ON ${s}.education_custom_plan_requests(center_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS education_custom_plan_requests_status_created_idx ON ${s}.education_custom_plan_requests(status, created_at)`,
     `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS pending_plan_id uuid REFERENCES ${s}.subscription_plans(id)`,
     `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS pending_plan_effective_at timestamptz`,
     `ALTER TABLE ${s}.education_center_subscriptions ADD COLUMN IF NOT EXISTS grace_extension_note text`,
@@ -4586,6 +4661,9 @@ function tableStatements(s: string): string[] {
        cancelled_at timestamptz, cancelled_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE RESTRICT,
        CHECK(num_nonnulls(center_id, salon_id) >= 1)
      )`,
+    `ALTER TABLE ${s}.education_payment_obligations ADD COLUMN IF NOT EXISTS calculation_policy_snapshot jsonb`,
+    `ALTER TABLE ${s}.education_payment_obligations ADD COLUMN IF NOT EXISTS plan_monthly_price_snapshot integer`,
+    `ALTER TABLE ${s}.education_payment_obligations ADD COLUMN IF NOT EXISTS course_limit_snapshot integer`,
     `CREATE INDEX IF NOT EXISTS education_payment_obligations_center_status_idx ON ${s}.education_payment_obligations(center_id, status, due_at)`,
     `CREATE TABLE IF NOT EXISTS ${s}.education_grace_notes (
        id uuid PRIMARY KEY DEFAULT gen_random_uuid(), center_id uuid NOT NULL REFERENCES ${s}.education_centers(id) ON DELETE CASCADE,

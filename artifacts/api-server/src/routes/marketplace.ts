@@ -5702,7 +5702,7 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
     return;
   }
   const [educationPlan] = input.businessType === "EDUCATION_CENTER"
-    ? await db.select().from(subscriptionPlansTable).where(and(eq(subscriptionPlansTable.id, input.planId!), eq(subscriptionPlansTable.active, true))).limit(1)
+    ? await db.select().from(subscriptionPlansTable).where(and(eq(subscriptionPlansTable.id, input.planId!), eq(subscriptionPlansTable.active, true), eq(subscriptionPlansTable.audience, "education"), gt(subscriptionPlansTable.price, 0))).limit(1)
     : [];
   if (input.businessType === "EDUCATION_CENTER" && !educationPlan) {
     res.status(400).json({ error: "Izabrani Education plan nije aktivan." });
@@ -5797,6 +5797,8 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
           billingCycle: input.billingCycle!,
           currentPeriodStart: trial ? now : null,
           currentPeriodEnd: trialEndsAt,
+           currentPriceSnapshot: trial ? educationPlan!.price : null,
+           currentCourseLimitSnapshot: trial ? (educationPlan!.courseLimit ?? educationPlan!.limits["courses"] ?? null) : null,
           trialStartedAt: trial ? now : null,
           trialEndsAt,
         }).returning({ id: educationCenterSubscriptionsTable.id });
@@ -18404,6 +18406,25 @@ router.patch("/education/courses/:courseId", async (req, res): Promise<void> => 
       const [lockedCourse] = await tx.select().from(coursesTable)
         .where(eq(coursesTable.id, course.id)).for("update").limit(1);
       if (!lockedCourse) throw new Error("COURSE_NOT_FOUND");
+      if (data.published === true && !lockedCourse.published && lockedCourse.centerId) {
+        const [lockedCenter] = await tx.select().from(educationCentersTable).where(eq(educationCentersTable.id, lockedCourse.centerId)).for("update").limit(1);
+        const [lockedSubscription] = await tx.select({ subscription: educationCenterSubscriptionsTable, plan: subscriptionPlansTable })
+          .from(educationCenterSubscriptionsTable)
+          .innerJoin(subscriptionPlansTable, eq(subscriptionPlansTable.id, educationCenterSubscriptionsTable.planId))
+          .where(eq(educationCenterSubscriptionsTable.centerId, lockedCourse.centerId)).for("update").limit(1);
+        const operational = lockedSubscription && (lockedSubscription.subscription.status === "trial"
+          || lockedSubscription.subscription.status === "active"
+          || lockedSubscription.subscription.status === "free_via_loyalty"
+          || (lockedSubscription.subscription.status === "past_due" && !!lockedSubscription.subscription.graceEndsAt && lockedSubscription.subscription.graceEndsAt > new Date()));
+        if (lockedCenter?.verificationStatus !== "verified" || !operational) throw new Error("SUBSCRIPTION_NOT_OPERATIONAL");
+        const limit = lockedSubscription?.subscription.currentCourseLimitSnapshot
+          ?? lockedSubscription?.subscription.courseLimitOverride
+          ?? lockedSubscription?.plan.courseLimit
+          ?? lockedSubscription?.plan.limits["courses"] ?? 0;
+        const [usage] = await tx.select({ count: count() }).from(coursesTable)
+          .where(and(eq(coursesTable.centerId, lockedCourse.centerId), eq(coursesTable.published, true), eq(coursesTable.archived, false)));
+        if (!lockedSubscription || (usage?.count ?? 0) >= limit) throw new Error("COURSE_LIMIT");
+      }
       if ((data.format ?? lockedCourse.format) === "online") {
         const [existingSession] = await tx.select({ id: courseSessionsTable.id })
           .from(courseSessionsTable).where(eq(courseSessionsTable.courseId, lockedCourse.id)).limit(1);
@@ -18423,6 +18444,7 @@ router.patch("/education/courses/:courseId", async (req, res): Promise<void> => 
         ...(data.cancellationCutoffHours !== undefined ? { cancellationDeadlineHours: data.cancellationCutoffHours } : {}),
         ...(data.minimumEnrollmentRiskDeadline !== undefined ? { minimumEnrollmentRiskDeadline: data.minimumEnrollmentRiskDeadline ? new Date(data.minimumEnrollmentRiskDeadline) : null } : {}),
         ...(data.earlyBirdCutoff !== undefined ? { earlyBirdCutoff: data.earlyBirdCutoff ? new Date(data.earlyBirdCutoff) : null } : {}),
+        ...(data.published === true ? { subscriptionSuspended: false } : {}),
         startDate: data.startDate === undefined ? course.startDate : data.startDate ? calendarDate(data.startDate) : null,
         updatedAt: new Date(),
       }).where(eq(coursesTable.id, course.id)).returning();
@@ -18442,6 +18464,14 @@ router.patch("/education/courses/:courseId", async (req, res): Promise<void> => 
   } catch (error) {
     if (error instanceof Error && error.message === "ONLINE_COURSE_HAS_SESSIONS") {
       res.status(409).json({ error: "Online kurs ne može imati termine uživo." });
+      return;
+    }
+    if (error instanceof Error && error.message === "COURSE_LIMIT") {
+      res.status(409).json({ error: "Dostignut je limit objavljenih kurseva. Kurs ostaje u draft statusu." });
+      return;
+    }
+    if (error instanceof Error && error.message === "SUBSCRIPTION_NOT_OPERATIONAL") {
+      res.status(403).json({ error: "Kurs ostaje draft dok centar nije verifikovan i pretplata nije operativna." });
       return;
     }
     if (!(error instanceof MediaClaimConflictError)) throw error;
@@ -18476,7 +18506,43 @@ router.post("/education/courses/:courseId/publish", async (req, res): Promise<vo
     || course.extensionPrice6Months == null || course.extensionPrice6Months <= 0)) {
     res.status(400).json({ error: "Online kurs mora imati pozitivan broj dana pristupa i pozitivne cene produženja za 1, 3 i 6 meseci." }); return;
   }
-  const [updated] = await db.update(coursesTable).set({ published: true, archived: false, updatedAt: new Date() }).where(eq(coursesTable.id, course.id)).returning();
+  let updated: typeof coursesTable.$inferSelect | undefined;
+  try {
+    [updated] = await db.transaction(async (tx) => {
+      const [lockedCenter] = course.centerId
+        ? await tx.select().from(educationCentersTable).where(eq(educationCentersTable.id, course.centerId)).for("update").limit(1)
+        : [];
+      const [lockedSubscription] = course.centerId
+        ? await tx.select({ subscription: educationCenterSubscriptionsTable, plan: subscriptionPlansTable })
+          .from(educationCenterSubscriptionsTable)
+          .innerJoin(subscriptionPlansTable, eq(subscriptionPlansTable.id, educationCenterSubscriptionsTable.planId))
+          .where(eq(educationCenterSubscriptionsTable.centerId, course.centerId)).for("update").limit(1)
+        : [];
+      const operational = lockedSubscription && (lockedSubscription.subscription.status === "trial"
+        || lockedSubscription.subscription.status === "active"
+        || lockedSubscription.subscription.status === "free_via_loyalty"
+        || (lockedSubscription.subscription.status === "past_due" && !!lockedSubscription.subscription.graceEndsAt && lockedSubscription.subscription.graceEndsAt > new Date()));
+      const limit = lockedSubscription?.subscription.currentCourseLimitSnapshot
+        ?? lockedSubscription?.subscription.courseLimitOverride
+        ?? lockedSubscription?.plan.courseLimit
+        ?? lockedSubscription?.plan.limits["courses"] ?? 0;
+      const [usage] = course.centerId ? await tx.select({ count: count() }).from(coursesTable)
+        .where(and(eq(coursesTable.centerId, course.centerId), eq(coursesTable.published, true), eq(coursesTable.archived, false))) : [{ count: 0 }];
+      if (course.centerId && (lockedCenter?.verificationStatus !== "verified" || !operational)) throw new Error("SUBSCRIPTION_NOT_OPERATIONAL");
+      if (course.centerId && (!lockedSubscription || (!course.published && (usage?.count ?? 0) >= limit))) throw new Error("COURSE_LIMIT");
+      return tx.update(coursesTable).set({ published: true, subscriptionSuspended: false, archived: false, updatedAt: new Date() }).where(eq(coursesTable.id, course.id)).returning();
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "COURSE_LIMIT") {
+      res.status(409).json({ error: "Dostignut je limit objavljenih kurseva. Kurs ostaje u draft statusu." });
+      return;
+    }
+    if (error instanceof Error && error.message === "SUBSCRIPTION_NOT_OPERATIONAL") {
+      res.status(403).json({ error: "Kurs ostaje draft dok centar nije verifikovan i pretplata nije operativna." });
+      return;
+    }
+    throw error;
+  }
   void publishCatalogInvalidation(["education-categories"]);
   res.json(calendarDateCourseResponse(PublishEducationCourseResponse.parse(await educationCourseView(updated!, access))));
 });
@@ -23145,7 +23211,7 @@ router.patch("/admin/education/centers/:centerId", async (req, res): Promise<voi
   }
   if (planId) {
     const [selectedPlan] = await db.select({ id: subscriptionPlansTable.id }).from(subscriptionPlansTable)
-      .where(and(eq(subscriptionPlansTable.id, planId), eq(subscriptionPlansTable.active, true))).limit(1);
+      .where(and(eq(subscriptionPlansTable.id, planId), eq(subscriptionPlansTable.active, true), eq(subscriptionPlansTable.audience, "education"))).limit(1);
     if (!selectedPlan) { res.status(400).json({ error: "Izabrani plan nije aktivan." }); return; }
   }
   const hasOwn = (key: string) => Object.prototype.hasOwnProperty.call(req.body ?? {}, key);
@@ -23255,7 +23321,7 @@ router.patch("/admin/education/centers/:centerId", async (req, res): Promise<voi
         } else {
           const [fallbackPlan] = planId
             ? await tx.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, planId)).limit(1)
-            : await tx.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.active, true)).limit(1);
+            : await tx.select().from(subscriptionPlansTable).where(and(eq(subscriptionPlansTable.active, true), eq(subscriptionPlansTable.audience, "education"))).limit(1);
           if (!fallbackPlan) throw new Error("Pre aktivacije pretplate mora postojati aktivan plan.");
           await tx.insert(educationCenterSubscriptionsTable).values({
             centerId: currentCenter.id, planId: fallbackPlan.id, status: subscriptionStatus as "trial" | "active" | "past_due" | "cancelled" | "suspended" | "free_via_loyalty",
@@ -25021,7 +25087,7 @@ router.delete("/admin/loyalty-tiers/:tierId", async (req, res): Promise<void> =>
 
 router.get("/admin/subscription-plans", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
-  const plans = await db.select().from(subscriptionPlansTable);
+  const plans = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.audience, "salon"));
   res.json(plans.map((p) => ({
     id: p.id, name: p.name, price: p.price, trialDays: p.trialDays,
     features: p.features, limits: p.limits, active: p.active,
@@ -25043,6 +25109,7 @@ router.post("/admin/subscription-plans", async (req, res): Promise<void> => {
     features: body.features ?? [],
     limits: body.limits ?? {},
     active: body.active ?? true,
+    audience: "salon",
   }).returning();
   res.status(201).json({
     id: plan!.id, name: plan!.name, price: plan!.price, trialDays: plan!.trialDays,
@@ -25055,7 +25122,7 @@ router.patch("/admin/subscription-plans/:planId", async (req, res): Promise<void
   const parsedParams = AdminUpdateSubscriptionPlanParams.safeParse(req.params);
   if (!parsedParams.success) { res.status(400).json({ error: parsedParams.error.message }); return; }
   const { planId } = parsedParams.data;
-  const [existing] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, planId)).limit(1);
+  const [existing] = await db.select().from(subscriptionPlansTable).where(and(eq(subscriptionPlansTable.id, planId), eq(subscriptionPlansTable.audience, "salon"))).limit(1);
   if (!existing) { res.status(404).json({ error: "Plan nije pronađen." }); return; }
   const parsed = AdminUpdateSubscriptionPlanBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
@@ -25080,7 +25147,7 @@ router.delete("/admin/subscription-plans/:planId", async (req, res): Promise<voi
   const parsedParams = AdminDeleteSubscriptionPlanParams.safeParse(req.params);
   if (!parsedParams.success) { res.status(400).json({ error: parsedParams.error.message }); return; }
   const { planId } = parsedParams.data;
-  const [existing] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, planId)).limit(1);
+  const [existing] = await db.select().from(subscriptionPlansTable).where(and(eq(subscriptionPlansTable.id, planId), eq(subscriptionPlansTable.audience, "salon"))).limit(1);
   if (!existing) { res.status(404).json({ error: "Plan nije pronađen." }); return; }
   // Preserve the full subscription history by archiving every referenced plan.
   const [inUse] = await db.select({ count: count() }).from(subscriptionsTable)

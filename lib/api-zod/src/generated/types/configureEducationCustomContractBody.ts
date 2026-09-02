@@ -11,6 +11,10 @@ export type ConfigureEducationCustomContractBody = {
   /** @minimum 1 */
   amountRsd: number;
   billingCycle: ConfigureEducationCustomContractBodyBillingCycle;
+  /** @minimum 1 */
+  courseLimit: number;
+  autoRenew: boolean;
+  requestId?: string;
   contractEndsAt: Date;
   /**
      * @minLength 3

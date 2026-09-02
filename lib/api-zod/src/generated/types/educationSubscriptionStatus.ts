@@ -5,13 +5,14 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
-import type { EducationSubscriptionStatusCenter } from './educationSubscriptionStatusCenter';
-import type { EducationSubscriptionStatusSubscription } from './educationSubscriptionStatusSubscription';
+import type { EducationPublishedCourse } from './educationPublishedCourse';
+import type { EducationSubscription } from './educationSubscription';
+import type { EducationSubscriptionCenter } from './educationSubscriptionCenter';
 
 export interface EducationSubscriptionStatus {
-  center: EducationSubscriptionStatusCenter;
-  /** @nullable */
-  subscription: EducationSubscriptionStatusSubscription;
+  center: EducationSubscriptionCenter;
+  subscription: null | EducationSubscription;
+  publishedCourses: EducationPublishedCourse[];
   inGrace: boolean;
   operational: boolean;
 }

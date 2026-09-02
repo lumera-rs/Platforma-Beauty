@@ -47,7 +47,8 @@ try {
   ]).returning();
   userIds.push(owner!.id, learner1!.id, learner2!.id, learner3!.id, observer!.id, admin!.id);
   const [plan] = await db.insert(subscriptionPlansTable).values({
-    name: marker, price: 12_345, active: true,
+    name: marker, price: 12_345, trialDays: 30, audience: "education", courseLimit: 5,
+    vatIncluded: true, priceCopy: "Cena uključuje PDV.", limits: { courses: 5 }, active: true,
   }).returning();
   planId = plan!.id;
   const [center] = await db.insert(educationCentersTable).values({
@@ -89,10 +90,17 @@ try {
   assert.equal((await db.select().from(educationTrialClaimsTable).where(eq(educationTrialClaimsTable.centerId, centerId))).length, 1);
   const selectedAgain = await call(base, ownerCookie, "/education/subscription/select-plan", "POST", { planId, billingCycle: "monthly" });
   assert.equal(selectedAgain.status, 201);
-  assert.equal(selectedAgain.body.status, "past_due", "The same center must not receive a second trial.");
+  assert.equal(selectedAgain.body.status, "trial", "Repeating the active plan selection must be idempotent.");
+  assert.equal(selectedAgain.body.change, "unchanged");
 
   const [subscription] = await db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, centerId));
   assert.ok(subscription);
+  await db.update(educationCenterSubscriptionsTable).set({
+    status: "cancelled", currentPeriodStart: null, currentPeriodEnd: null,
+  }).where(eq(educationCenterSubscriptionsTable.id, subscription.id));
+  const selectedAfterCancellation = await call(base, ownerCookie, "/education/subscription/select-plan", "POST", { planId, billingCycle: "monthly" });
+  assert.equal(selectedAfterCancellation.status, 201);
+  assert.equal(selectedAfterCancellation.body.status, "past_due", "A consumed trial must not restart after cancellation.");
   for (const days of [7, 5, 2]) {
     await db.update(educationCenterSubscriptionsTable).set({
       status: "trial", trialEndsAt: new Date(Date.now() + (days - 0.25) * DAY),

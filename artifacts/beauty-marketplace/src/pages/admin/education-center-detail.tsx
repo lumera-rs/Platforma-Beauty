@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useRoute } from "wouter";
+import { Link, useRoute, useSearch } from "wouter";
 import { ArrowLeft, BadgeCheck, Building2, Save, Loader2, Landmark, Settings2, FileText, Ban } from "lucide-react";
 import { AdminLayout } from "./layout";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,8 @@ import {
   getAdminListEducationCenterReviewsQueryKey,
   getListPublicEducationCenterReviewsQueryKey,
   useAdminModerateEducationCenterReview,
+  useConfigureEducationCustomContract,
+  getListAdminEducationCustomPlanRequestsQueryKey,
   type AdminListEducationCenterReviewsStatus
 } from "@workspace/api-client-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -71,6 +73,11 @@ export default function AdminEducationCenterDetail() {
   const [, params] = useRoute("/admin/edukacije/centri/:centerId");
   const centerId = params?.centerId ?? "";
 
+  const searchString = useSearch();
+  const searchParams = new URLSearchParams(searchString);
+  const initialRequestId = searchParams.get("requestId") || undefined;
+  const initialLimit = searchParams.get("limit") || "10";
+
   const { toast } = useToast();
   const actionGuard = useImmediateActionGuard();
   const queryClient = useQueryClient();
@@ -95,6 +102,8 @@ export default function AdminEducationCenterDetail() {
   const [customCycle, setCustomCycle] = useState<"monthly" | "yearly">("monthly");
   const [customEndsAt, setCustomEndsAt] = useState("");
   const [customReason, setCustomReason] = useState("");
+  const [customLimit, setCustomLimit] = useState(initialLimit);
+  const [customAutoRenew, setCustomAutoRenew] = useState(false);
   const [obligations, setObligations] = useState<PaymentObligation[]>([]);
   const [settlementReason, setSettlementReason] = useState("");
   const [overrides, setOverrides] = useState<Record<OverrideKey, { enabled: boolean; value: string }>>({
@@ -157,18 +166,31 @@ export default function AdminEducationCenterDetail() {
     }
   };
 
+  const configureContractMut = useConfigureEducationCustomContract();
+
   const configureCustomContract = async () => {
     const amountRsd = Number(customAmount);
-    if (!Number.isInteger(amountRsd) || amountRsd <= 0 || !customEndsAt || customReason.trim().length < 3) {
-      toast.error("Popunite iznos, ciklus, datum isteka i razlog ugovora."); return;
+    const limitNum = Number(customLimit);
+    if (!Number.isInteger(amountRsd) || amountRsd <= 0 || !Number.isInteger(limitNum) || limitNum < 1 || !customEndsAt || customReason.trim().length < 3) {
+      toast.error("Popunite iznos, ciklus, ograničenje, datum isteka i razlog ugovora."); return;
     }
     const actionKey = `custom-contract:${centerId}`;
     if (!actionGuard.begin(actionKey)) return;
+
     try {
-      await api(`/api/admin/education/centers/${centerId}/custom-contract`, {
-        method: "POST",
-        body: JSON.stringify({ amountRsd, billingCycle: customCycle, contractEndsAt: new Date(customEndsAt).toISOString(), reason: customReason }),
+      await configureContractMut.mutateAsync({
+        centerId,
+        data: {
+          amountRsd,
+          billingCycle: customCycle,
+          contractEndsAt: new Date(customEndsAt).toISOString(),
+          reason: customReason,
+          courseLimit: limitNum,
+          autoRenew: customAutoRenew,
+          requestId: initialRequestId
+        }
       });
+      queryClient.invalidateQueries({ queryKey: getListAdminEducationCustomPlanRequestsQueryKey() });
       toast.success("Ugovoreni plan je sačuvan. Aktiviraće se tek nakon evidentirane uplate.");
       await load();
     } catch (error) {
@@ -434,6 +456,10 @@ export default function AdminEducationCenterDetail() {
                       </select>
                     </label>
                     <label className="space-y-2 text-sm font-medium">
+                      <span className="flex items-center gap-2">Ograničenje broja kurseva <EducationFieldHelp id="custom-contract-limit-help" label="Ograničenje kurseva" text="Maksimalan broj edukacija koje centar može da objavi tokom ovog ugovora." /></span>
+                      <Input aria-describedby="custom-contract-limit-help" type="number" min="1" value={customLimit} onChange={(event) => setCustomLimit(event.target.value)} />
+                    </label>
+                    <label className="space-y-2 text-sm font-medium">
                       <span className="flex items-center gap-2">Važi do <EducationFieldHelp id="custom-contract-end-help" label="Datum isteka ugovora" text="Krajnji datum plaćenog ugovornog perioda; mora biti u budućnosti." /></span>
                       <Input aria-describedby="custom-contract-end-help" type="datetime-local" value={customEndsAt} onChange={(event) => setCustomEndsAt(event.target.value)} />
                     </label>
@@ -441,6 +467,12 @@ export default function AdminEducationCenterDetail() {
                       <span className="flex items-center gap-2">Razlog i napomena <EducationFieldHelp id="custom-contract-reason-help" label="Razlog ugovora" text="Unesite osnov za posebne uslove radi finansijskog traga i kasnije kontrole." /></span>
                       <Input aria-describedby="custom-contract-reason-help" value={customReason} onChange={(event) => setCustomReason(event.target.value)} />
                     </label>
+                    <div className="flex items-center justify-between sm:col-span-2 pt-2 pb-1">
+                      <div className="space-y-0.5">
+                        <span className="flex items-center gap-2 font-medium text-sm">Automatsko obnavljanje <EducationFieldHelp id="custom-contract-renew-help" label="Automatsko obnavljanje" text="Da li će se ugovor automatski obnoviti kada istekne period." /></span>
+                      </div>
+                      <Switch checked={customAutoRenew} onCheckedChange={setCustomAutoRenew} aria-describedby="custom-contract-renew-help" />
+                    </div>
                   </div>
                   <Button onClick={configureCustomContract} disabled={actionGuard.isActive(`custom-contract:${centerId}`)}>Sačuvaj ugovorene uslove</Button>
                   {obligations.some((row) => row.status === "pending") ? (

@@ -111,9 +111,12 @@ export const educationCenterSubscriptionsTable = pgTable("education_center_subsc
   contractKind: text("contract_kind").notNull().default("standard"),
   contractEndsAt: timestamp("contract_ends_at", { withTimezone: true }),
   courseLimitOverride: integer("course_limit_override"),
+  currentPriceSnapshot: integer("current_price_snapshot"),
+  currentCourseLimitSnapshot: integer("current_course_limit_snapshot"),
   pendingPlanId: uuid("pending_plan_id").references(() => subscriptionPlansTable.id),
   pendingBillingCycle: text("pending_billing_cycle"),
   pendingPlanEffectiveAt: timestamp("pending_plan_effective_at", { withTimezone: true }),
+  pendingKeepCourseIds: jsonb("pending_keep_course_ids").$type<string[]>(),
   graceExtensionNote: text("grace_extension_note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -126,6 +129,24 @@ export const educationCenterSubscriptionsTable = pgTable("education_center_subsc
   check("education_center_subscriptions_pending_billing_cycle_check", sql`${table.pendingBillingCycle} is null or ${table.pendingBillingCycle} in ('monthly', 'yearly')`),
   check("education_center_subscriptions_contract_kind_check", sql`${table.contractKind} in ('standard','custom')`),
   check("education_center_subscriptions_course_limit_override_check", sql`${table.courseLimitOverride} is null or ${table.courseLimitOverride} >= 0`),
+  check("education_center_subscriptions_current_course_limit_check", sql`${table.currentCourseLimitSnapshot} is null or ${table.currentCourseLimitSnapshot} >= 0`),
+]);
+
+export const educationCustomPlanRequestsTable = pgTable("education_custom_plan_requests", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "cascade" }),
+  requestedByUserId: uuid("requested_by_user_id").notNull().references(() => usersTable.id, { onDelete: "restrict" }),
+  requestedCourseLimit: integer("requested_course_limit").notNull(),
+  message: text("message").notNull(),
+  status: text("status").notNull().default("pending"),
+  resolvedByUserId: uuid("resolved_by_user_id").references(() => usersTable.id, { onDelete: "restrict" }),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("education_custom_plan_requests_center_created_idx").on(table.centerId, table.createdAt),
+  index("education_custom_plan_requests_status_created_idx").on(table.status, table.createdAt),
+  check("education_custom_plan_requests_limit_check", sql`${table.requestedCourseLimit} > 0`),
+  check("education_custom_plan_requests_status_check", sql`${table.status} in ('pending','approved','rejected')`),
 ]);
 
 export const educationTrialClaimsTable = pgTable("education_trial_claims", {
@@ -168,10 +189,17 @@ export const educationPaymentObligationsTable = pgTable("education_payment_oblig
   enrollmentId: uuid("enrollment_id").references((): any => courseEnrollmentsTable.id, { onDelete: "restrict" }),
   subscriptionId: uuid("subscription_id").references(() => educationCenterSubscriptionsTable.id, { onDelete: "restrict" }),
   planIdSnapshot: uuid("plan_id_snapshot").references(() => subscriptionPlansTable.id, { onDelete: "restrict" }),
+  planMonthlyPriceSnapshot: integer("plan_monthly_price_snapshot"),
+  courseLimitSnapshot: integer("course_limit_snapshot"),
   kind: text("kind").notNull(),
   status: text("status").notNull().default("pending"),
   expectedAmount: integer("expected_amount").notNull(),
   confirmedAmount: integer("confirmed_amount"),
+  calculationPolicySnapshot: jsonb("calculation_policy_snapshot").$type<{
+    exactTwoDecimalRsd: number;
+    payableWholeRsd: number;
+    policy: string;
+  }>(),
   recipientNameSnapshot: text("recipient_name_snapshot").notNull(),
   recipientAccountSnapshot: text("recipient_account_snapshot").notNull(),
   paymentCodeSnapshot: text("payment_code_snapshot").notNull(),
@@ -338,6 +366,7 @@ export const coursesTable = pgTable("courses", {
   imageUrl: text("image_url").notNull(),
   isTest: boolean("is_test").notNull().default(false),
   published: boolean("published").notNull().default(true),
+  subscriptionSuspended: boolean("subscription_suspended").notNull().default(false),
   archived: boolean("archived").notNull().default(false),
   isFeatured: boolean("is_featured").notNull().default(false),
   featuredUntil: timestamp("featured_until", { withTimezone: true }),

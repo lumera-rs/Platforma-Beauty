@@ -6,4 +6,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type EducationSubscriptionStatusCenter = { [key: string]: unknown };
+export interface EducationAutoRenewInput {
+  autoRenew: boolean;
+}

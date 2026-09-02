@@ -5,6 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { EducationSubscriptionPlanAudience } from './educationSubscriptionPlanAudience';
 import type { EducationSubscriptionPlanLimits } from './educationSubscriptionPlanLimits';
 
 export interface EducationSubscriptionPlan {
@@ -16,4 +17,10 @@ export interface EducationSubscriptionPlan {
   trialDays: number;
   features: string[];
   limits: EducationSubscriptionPlanLimits;
+  audience: EducationSubscriptionPlanAudience;
+  /** @minimum 1 */
+  courseLimit: number;
+  vatIncluded: boolean;
+  priceCopy: string;
+  active: boolean;
 }

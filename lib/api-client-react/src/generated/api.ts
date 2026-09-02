@@ -251,6 +251,7 @@ import type {
   EducationAdminCenterDetail,
   EducationAdminCenterUpdate,
   EducationAdminInstallment,
+  EducationAutoRenewInput,
   EducationB2bBenefit,
   EducationB2bCheckoutInput,
   EducationB2bOrder,
@@ -290,6 +291,9 @@ import type {
   EducationCourseType,
   EducationCourseUpdate,
   EducationCrmResponse,
+  EducationCustomPlanRequest,
+  EducationCustomPlanRequestDecision,
+  EducationCustomPlanRequestInput,
   EducationDispute,
   EducationDisputeResolutionInput,
   EducationEducatorAbsence,
@@ -365,6 +369,9 @@ import type {
   EducationSessionResource,
   EducationSessionResourceAssign,
   EducationSubscriptionPlan,
+  EducationSubscriptionPlanInput,
+  EducationSubscriptionPlanUpdate,
+  EducationSubscriptionSelection,
   EducationSubscriptionStatus,
   EducationTaxonomyItem,
   EducationTaxonomyPatch,
@@ -605,7 +612,6 @@ import type {
   SearchEmployeeAvailabilityParams,
   SearchProductSuggestion,
   SearchSalonAvailabilityParams,
-  SelectEducationSubscriptionPlan201,
   SelectEducationSubscriptionPlanBody,
   Service,
   ServiceCategoryImageUploadInput,
@@ -651,6 +657,7 @@ import type {
   TreatmentPhotoCreate,
   UpdateAutomationRuleBody,
   UpdateCommissionBody,
+  UpdateEducationSubscriptionAutoRenew200,
   UpdateTreatmentPackageBody,
   UpsellProductInput,
   UpsellProductList,
@@ -14650,9 +14657,9 @@ export const getSelectEducationSubscriptionPlanUrl = () => {
 /**
  * @summary Select or change the Education center subscription plan
  */
-export const selectEducationSubscriptionPlan = async (selectEducationSubscriptionPlanBody: SelectEducationSubscriptionPlanBody, options?: Parameters<typeof customFetch>[1]): Promise<SelectEducationSubscriptionPlan201> => {
+export const selectEducationSubscriptionPlan = async (selectEducationSubscriptionPlanBody: SelectEducationSubscriptionPlanBody, options?: Parameters<typeof customFetch>[1]): Promise<EducationSubscriptionSelection> => {
 
-  return customFetch<SelectEducationSubscriptionPlan201>(getSelectEducationSubscriptionPlanUrl(),
+  return customFetch<EducationSubscriptionSelection>(getSelectEducationSubscriptionPlanUrl(),
   {
     ...options,
     method: 'POST',
@@ -14779,6 +14786,588 @@ export const useGetEducationSubscriptionRenewalInstructions = <TError = ErrorTyp
         TContext
       > => {
       return useMutation(getGetEducationSubscriptionRenewalInstructionsMutationOptions(options));
+    }
+
+export const getUpdateEducationSubscriptionAutoRenewUrl = () => {
+
+
+
+
+  return `/api/education/subscription/auto-renew`
+}
+
+/**
+ * @summary Enable or disable renewal without refunding the current paid period
+ */
+export const updateEducationSubscriptionAutoRenew = async (educationAutoRenewInput: EducationAutoRenewInput, options?: Parameters<typeof customFetch>[1]): Promise<UpdateEducationSubscriptionAutoRenew200> => {
+
+  return customFetch<UpdateEducationSubscriptionAutoRenew200>(getUpdateEducationSubscriptionAutoRenewUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(educationAutoRenewInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateEducationSubscriptionAutoRenewMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateEducationSubscriptionAutoRenew>>, TError,{data: BodyType<EducationAutoRenewInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateEducationSubscriptionAutoRenew>>, TError,{data: BodyType<EducationAutoRenewInput>}, TContext> => {
+
+const mutationKey = ['updateEducationSubscriptionAutoRenew'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateEducationSubscriptionAutoRenew>>, {data: BodyType<EducationAutoRenewInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateEducationSubscriptionAutoRenew(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateEducationSubscriptionAutoRenewMutationResult = NonNullable<Awaited<ReturnType<typeof updateEducationSubscriptionAutoRenew>>>
+    export type UpdateEducationSubscriptionAutoRenewMutationBody = BodyType<EducationAutoRenewInput>
+    export type UpdateEducationSubscriptionAutoRenewMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Enable or disable renewal without refunding the current paid period
+ */
+export const useUpdateEducationSubscriptionAutoRenew = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateEducationSubscriptionAutoRenew>>, TError,{data: BodyType<EducationAutoRenewInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateEducationSubscriptionAutoRenew>>,
+        TError,
+        {data: BodyType<EducationAutoRenewInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateEducationSubscriptionAutoRenewMutationOptions(options));
+    }
+
+export const getRequestEducationCustomPlanUrl = () => {
+
+
+
+
+  return `/api/education/subscription/custom-plan-request`
+}
+
+/**
+ * @summary Request a negotiated Education plan and notify super administrators durably
+ */
+export const requestEducationCustomPlan = async (educationCustomPlanRequestInput: EducationCustomPlanRequestInput, options?: Parameters<typeof customFetch>[1]): Promise<EducationCustomPlanRequest> => {
+
+  return customFetch<EducationCustomPlanRequest>(getRequestEducationCustomPlanUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(educationCustomPlanRequestInput)
+  }
+);}
+
+
+
+
+
+export const getRequestEducationCustomPlanMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestEducationCustomPlan>>, TError,{data: BodyType<EducationCustomPlanRequestInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof requestEducationCustomPlan>>, TError,{data: BodyType<EducationCustomPlanRequestInput>}, TContext> => {
+
+const mutationKey = ['requestEducationCustomPlan'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestEducationCustomPlan>>, {data: BodyType<EducationCustomPlanRequestInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  requestEducationCustomPlan(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RequestEducationCustomPlanMutationResult = NonNullable<Awaited<ReturnType<typeof requestEducationCustomPlan>>>
+    export type RequestEducationCustomPlanMutationBody = BodyType<EducationCustomPlanRequestInput>
+    export type RequestEducationCustomPlanMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Request a negotiated Education plan and notify super administrators durably
+ */
+export const useRequestEducationCustomPlan = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestEducationCustomPlan>>, TError,{data: BodyType<EducationCustomPlanRequestInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof requestEducationCustomPlan>>,
+        TError,
+        {data: BodyType<EducationCustomPlanRequestInput>},
+        TContext
+      > => {
+      return useMutation(getRequestEducationCustomPlanMutationOptions(options));
+    }
+
+export const getListAdminEducationSubscriptionPlansUrl = () => {
+
+
+
+
+  return `/api/admin/education/subscription-plans`
+}
+
+/**
+ * @summary List only Education subscription plans
+ */
+export const listAdminEducationSubscriptionPlans = async ( options?: Parameters<typeof customFetch>[1]): Promise<EducationSubscriptionPlan[]> => {
+
+  return customFetch<EducationSubscriptionPlan[]>(getListAdminEducationSubscriptionPlansUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAdminEducationSubscriptionPlansQueryKey = () => {
+    return [
+    `/api/admin/education/subscription-plans`
+    ] as const;
+    }
+
+
+export const getListAdminEducationSubscriptionPlansQueryOptions = <TData = Awaited<ReturnType<typeof listAdminEducationSubscriptionPlans>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAdminEducationSubscriptionPlans>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAdminEducationSubscriptionPlansQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAdminEducationSubscriptionPlans>>> = ({ signal }) => listAdminEducationSubscriptionPlans({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAdminEducationSubscriptionPlans>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAdminEducationSubscriptionPlansQueryResult = NonNullable<Awaited<ReturnType<typeof listAdminEducationSubscriptionPlans>>>
+export type ListAdminEducationSubscriptionPlansQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List only Education subscription plans
+ */
+
+export function useListAdminEducationSubscriptionPlans<TData = Awaited<ReturnType<typeof listAdminEducationSubscriptionPlans>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAdminEducationSubscriptionPlans>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAdminEducationSubscriptionPlansQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateAdminEducationSubscriptionPlanUrl = () => {
+
+
+
+
+  return `/api/admin/education/subscription-plans`
+}
+
+/**
+ * @summary Create an Education subscription plan
+ */
+export const createAdminEducationSubscriptionPlan = async (educationSubscriptionPlanInput: EducationSubscriptionPlanInput, options?: Parameters<typeof customFetch>[1]): Promise<EducationSubscriptionPlan> => {
+
+  return customFetch<EducationSubscriptionPlan>(getCreateAdminEducationSubscriptionPlanUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(educationSubscriptionPlanInput)
+  }
+);}
+
+
+
+
+
+export const getCreateAdminEducationSubscriptionPlanMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAdminEducationSubscriptionPlan>>, TError,{data: BodyType<EducationSubscriptionPlanInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createAdminEducationSubscriptionPlan>>, TError,{data: BodyType<EducationSubscriptionPlanInput>}, TContext> => {
+
+const mutationKey = ['createAdminEducationSubscriptionPlan'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createAdminEducationSubscriptionPlan>>, {data: BodyType<EducationSubscriptionPlanInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createAdminEducationSubscriptionPlan(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateAdminEducationSubscriptionPlanMutationResult = NonNullable<Awaited<ReturnType<typeof createAdminEducationSubscriptionPlan>>>
+    export type CreateAdminEducationSubscriptionPlanMutationBody = BodyType<EducationSubscriptionPlanInput>
+    export type CreateAdminEducationSubscriptionPlanMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create an Education subscription plan
+ */
+export const useCreateAdminEducationSubscriptionPlan = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAdminEducationSubscriptionPlan>>, TError,{data: BodyType<EducationSubscriptionPlanInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createAdminEducationSubscriptionPlan>>,
+        TError,
+        {data: BodyType<EducationSubscriptionPlanInput>},
+        TContext
+      > => {
+      return useMutation(getCreateAdminEducationSubscriptionPlanMutationOptions(options));
+    }
+
+export const getListAdminEducationCustomPlanRequestsUrl = () => {
+
+
+
+
+  return `/api/admin/education/custom-plan-requests`
+}
+
+/**
+ * @summary List durable Education custom-plan requests
+ */
+export const listAdminEducationCustomPlanRequests = async ( options?: Parameters<typeof customFetch>[1]): Promise<EducationCustomPlanRequest[]> => {
+
+  return customFetch<EducationCustomPlanRequest[]>(getListAdminEducationCustomPlanRequestsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAdminEducationCustomPlanRequestsQueryKey = () => {
+    return [
+    `/api/admin/education/custom-plan-requests`
+    ] as const;
+    }
+
+
+export const getListAdminEducationCustomPlanRequestsQueryOptions = <TData = Awaited<ReturnType<typeof listAdminEducationCustomPlanRequests>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAdminEducationCustomPlanRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAdminEducationCustomPlanRequestsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAdminEducationCustomPlanRequests>>> = ({ signal }) => listAdminEducationCustomPlanRequests({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAdminEducationCustomPlanRequests>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAdminEducationCustomPlanRequestsQueryResult = NonNullable<Awaited<ReturnType<typeof listAdminEducationCustomPlanRequests>>>
+export type ListAdminEducationCustomPlanRequestsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List durable Education custom-plan requests
+ */
+
+export function useListAdminEducationCustomPlanRequests<TData = Awaited<ReturnType<typeof listAdminEducationCustomPlanRequests>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAdminEducationCustomPlanRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAdminEducationCustomPlanRequestsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRejectAdminEducationCustomPlanRequestUrl = (requestId: string,) => {
+
+
+
+
+  return `/api/admin/education/custom-plan-requests/${requestId}`
+}
+
+/**
+ * @summary Reject an open custom-plan request
+ */
+export const rejectAdminEducationCustomPlanRequest = async (requestId: string,
+    educationCustomPlanRequestDecision: EducationCustomPlanRequestDecision, options?: Parameters<typeof customFetch>[1]): Promise<EducationCustomPlanRequest> => {
+
+  return customFetch<EducationCustomPlanRequest>(getRejectAdminEducationCustomPlanRequestUrl(requestId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(educationCustomPlanRequestDecision)
+  }
+);}
+
+
+
+
+
+export const getRejectAdminEducationCustomPlanRequestMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectAdminEducationCustomPlanRequest>>, TError,{requestId: string;data: BodyType<EducationCustomPlanRequestDecision>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof rejectAdminEducationCustomPlanRequest>>, TError,{requestId: string;data: BodyType<EducationCustomPlanRequestDecision>}, TContext> => {
+
+const mutationKey = ['rejectAdminEducationCustomPlanRequest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rejectAdminEducationCustomPlanRequest>>, {requestId: string;data: BodyType<EducationCustomPlanRequestDecision>}> = (props) => {
+          const {requestId,data} = props ?? {};
+
+          return  rejectAdminEducationCustomPlanRequest(requestId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RejectAdminEducationCustomPlanRequestMutationResult = NonNullable<Awaited<ReturnType<typeof rejectAdminEducationCustomPlanRequest>>>
+    export type RejectAdminEducationCustomPlanRequestMutationBody = BodyType<EducationCustomPlanRequestDecision>
+    export type RejectAdminEducationCustomPlanRequestMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Reject an open custom-plan request
+ */
+export const useRejectAdminEducationCustomPlanRequest = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectAdminEducationCustomPlanRequest>>, TError,{requestId: string;data: BodyType<EducationCustomPlanRequestDecision>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof rejectAdminEducationCustomPlanRequest>>,
+        TError,
+        {requestId: string;data: BodyType<EducationCustomPlanRequestDecision>},
+        TContext
+      > => {
+      return useMutation(getRejectAdminEducationCustomPlanRequestMutationOptions(options));
+    }
+
+export const getUpdateAdminEducationSubscriptionPlanUrl = (planId: string,) => {
+
+
+
+
+  return `/api/admin/education/subscription-plans/${planId}`
+}
+
+/**
+ * @summary Update an Education subscription plan
+ */
+export const updateAdminEducationSubscriptionPlan = async (planId: string,
+    educationSubscriptionPlanUpdate: EducationSubscriptionPlanUpdate, options?: Parameters<typeof customFetch>[1]): Promise<EducationSubscriptionPlan> => {
+
+  return customFetch<EducationSubscriptionPlan>(getUpdateAdminEducationSubscriptionPlanUrl(planId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(educationSubscriptionPlanUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateAdminEducationSubscriptionPlanMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAdminEducationSubscriptionPlan>>, TError,{planId: string;data: BodyType<EducationSubscriptionPlanUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAdminEducationSubscriptionPlan>>, TError,{planId: string;data: BodyType<EducationSubscriptionPlanUpdate>}, TContext> => {
+
+const mutationKey = ['updateAdminEducationSubscriptionPlan'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAdminEducationSubscriptionPlan>>, {planId: string;data: BodyType<EducationSubscriptionPlanUpdate>}> = (props) => {
+          const {planId,data} = props ?? {};
+
+          return  updateAdminEducationSubscriptionPlan(planId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAdminEducationSubscriptionPlanMutationResult = NonNullable<Awaited<ReturnType<typeof updateAdminEducationSubscriptionPlan>>>
+    export type UpdateAdminEducationSubscriptionPlanMutationBody = BodyType<EducationSubscriptionPlanUpdate>
+    export type UpdateAdminEducationSubscriptionPlanMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update an Education subscription plan
+ */
+export const useUpdateAdminEducationSubscriptionPlan = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAdminEducationSubscriptionPlan>>, TError,{planId: string;data: BodyType<EducationSubscriptionPlanUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAdminEducationSubscriptionPlan>>,
+        TError,
+        {planId: string;data: BodyType<EducationSubscriptionPlanUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateAdminEducationSubscriptionPlanMutationOptions(options));
+    }
+
+export const getArchiveAdminEducationSubscriptionPlanUrl = (planId: string,) => {
+
+
+
+
+  return `/api/admin/education/subscription-plans/${planId}`
+}
+
+/**
+ * @summary Archive an Education plan while retaining paid-period history
+ */
+export const archiveAdminEducationSubscriptionPlan = async (planId: string, options?: Parameters<typeof customFetch>[1]): Promise<EducationSubscriptionPlan> => {
+
+  return customFetch<EducationSubscriptionPlan>(getArchiveAdminEducationSubscriptionPlanUrl(planId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getArchiveAdminEducationSubscriptionPlanMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveAdminEducationSubscriptionPlan>>, TError,{planId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof archiveAdminEducationSubscriptionPlan>>, TError,{planId: string}, TContext> => {
+
+const mutationKey = ['archiveAdminEducationSubscriptionPlan'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof archiveAdminEducationSubscriptionPlan>>, {planId: string}> = (props) => {
+          const {planId} = props ?? {};
+
+          return  archiveAdminEducationSubscriptionPlan(planId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ArchiveAdminEducationSubscriptionPlanMutationResult = NonNullable<Awaited<ReturnType<typeof archiveAdminEducationSubscriptionPlan>>>
+
+    export type ArchiveAdminEducationSubscriptionPlanMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Archive an Education plan while retaining paid-period history
+ */
+export const useArchiveAdminEducationSubscriptionPlan = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveAdminEducationSubscriptionPlan>>, TError,{planId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof archiveAdminEducationSubscriptionPlan>>,
+        TError,
+        {planId: string},
+        TContext
+      > => {
+      return useMutation(getArchiveAdminEducationSubscriptionPlanMutationOptions(options));
     }
 
 export const getListEducationPaymentObligationsUrl = () => {

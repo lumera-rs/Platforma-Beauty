@@ -7568,6 +7568,13 @@ export interface EducationCenterStatus {
 
 export type EducationSubscriptionPlanLimits = {[key: string]: number};
 
+export type EducationSubscriptionPlanAudience = typeof EducationSubscriptionPlanAudience[keyof typeof EducationSubscriptionPlanAudience];
+
+
+export const EducationSubscriptionPlanAudience = {
+  education: 'education',
+} as const;
+
 export interface EducationSubscriptionPlan {
   id: string;
   name: string;
@@ -7577,21 +7584,248 @@ export interface EducationSubscriptionPlan {
   trialDays: number;
   features: string[];
   limits: EducationSubscriptionPlanLimits;
+  audience: EducationSubscriptionPlanAudience;
+  /** @minimum 1 */
+  courseLimit: number;
+  vatIncluded: boolean;
+  priceCopy: string;
+  active: boolean;
 }
 
-export type EducationSubscriptionStatusCenter = { [key: string]: unknown };
+export type EducationSubscriptionPlanInputTrialDays = typeof EducationSubscriptionPlanInputTrialDays[keyof typeof EducationSubscriptionPlanInputTrialDays];
+
+
+export const EducationSubscriptionPlanInputTrialDays = {
+  NUMBER_30: 30,
+} as const;
+
+export interface EducationSubscriptionPlanInput {
+  /**
+     * @minLength 2
+     * @maxLength 120
+     */
+  name: string;
+  /**
+     * Whole RSD. VAT inclusive when vatIncluded is true.
+     * @minimum 1
+     */
+  price: number;
+  /** @minimum 1 */
+  courseLimit: number;
+  trialDays: EducationSubscriptionPlanInputTrialDays;
+  /** @items.minLength 1 */
+  features: string[];
+  vatIncluded: boolean;
+  /**
+     * @minLength 3
+     * @maxLength 500
+     */
+  priceCopy: string;
+  active: boolean;
+}
+
+export type EducationSubscriptionPlanUpdateTrialDays = typeof EducationSubscriptionPlanUpdateTrialDays[keyof typeof EducationSubscriptionPlanUpdateTrialDays];
+
+
+export const EducationSubscriptionPlanUpdateTrialDays = {
+  NUMBER_30: 30,
+} as const;
+
+export interface EducationSubscriptionPlanUpdate {
+  /**
+     * @minLength 2
+     * @maxLength 120
+     */
+  name?: string;
+  /** @minimum 1 */
+  price?: number;
+  /** @minimum 1 */
+  courseLimit?: number;
+  trialDays?: EducationSubscriptionPlanUpdateTrialDays;
+  /** @items.minLength 1 */
+  features?: string[];
+  vatIncluded?: boolean;
+  /**
+     * @minLength 3
+     * @maxLength 500
+     */
+  priceCopy?: string;
+  active?: boolean;
+}
+
+export interface EducationAutoRenewInput {
+  autoRenew: boolean;
+}
+
+export interface EducationCustomPlanRequestInput {
+  /**
+     * @minimum 1
+     * @maximum 100000
+     */
+  requestedCourseLimit: number;
+  /**
+     * @minLength 10
+     * @maxLength 2000
+     */
+  message: string;
+}
+
+export type EducationCustomPlanRequestDecisionStatus = typeof EducationCustomPlanRequestDecisionStatus[keyof typeof EducationCustomPlanRequestDecisionStatus];
+
+
+export const EducationCustomPlanRequestDecisionStatus = {
+  rejected: 'rejected',
+} as const;
+
+export interface EducationCustomPlanRequestDecision {
+  status: EducationCustomPlanRequestDecisionStatus;
+  /**
+     * @minLength 3
+     * @maxLength 1000
+     */
+  reason: string;
+}
+
+export interface EducationSubscriptionCenter {
+  id: string;
+  name: string;
+  /** @nullable */
+  paymentReferenceNumber: string | null;
+}
+
+export type EducationSubscriptionStatusProperty = typeof EducationSubscriptionStatusProperty[keyof typeof EducationSubscriptionStatusProperty];
+
+
+export const EducationSubscriptionStatusProperty = {
+  trial: 'trial',
+  active: 'active',
+  past_due: 'past_due',
+  cancelled: 'cancelled',
+  suspended: 'suspended',
+  free_via_loyalty: 'free_via_loyalty',
+} as const;
+
+export type EducationSubscriptionBillingCycle = typeof EducationSubscriptionBillingCycle[keyof typeof EducationSubscriptionBillingCycle];
+
+
+export const EducationSubscriptionBillingCycle = {
+  monthly: 'monthly',
+  yearly: 'yearly',
+} as const;
+
+export type EducationSubscriptionContractKind = typeof EducationSubscriptionContractKind[keyof typeof EducationSubscriptionContractKind];
+
+
+export const EducationSubscriptionContractKind = {
+  standard: 'standard',
+  custom: 'custom',
+} as const;
 
 /**
  * @nullable
  */
-export type EducationSubscriptionStatusSubscription = { [key: string]: unknown } | null;
+export type EducationSubscriptionPendingBillingCycle = typeof EducationSubscriptionPendingBillingCycle[keyof typeof EducationSubscriptionPendingBillingCycle] | null;
+
+
+export const EducationSubscriptionPendingBillingCycle = {
+  monthly: 'monthly',
+  yearly: 'yearly',
+} as const;
+
+export interface EducationSubscription {
+  id: string;
+  centerId: string;
+  planId: string;
+  status: EducationSubscriptionStatusProperty;
+  /** @minimum 0 */
+  dueAmount: number;
+  billingCycle: EducationSubscriptionBillingCycle;
+  /** @nullable */
+  currentPeriodStart: string | null;
+  /** @nullable */
+  currentPeriodEnd: string | null;
+  /** @nullable */
+  trialStartedAt: string | null;
+  /** @nullable */
+  trialEndsAt: string | null;
+  /** @nullable */
+  graceEndsAt: string | null;
+  autoRenew: boolean;
+  contractKind: EducationSubscriptionContractKind;
+  /** @nullable */
+  contractEndsAt: string | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  courseLimitOverride: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  currentPriceSnapshot: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  currentCourseLimitSnapshot: number | null;
+  /** @nullable */
+  pendingPlanId: string | null;
+  /** @nullable */
+  pendingBillingCycle: EducationSubscriptionPendingBillingCycle;
+  /** @nullable */
+  pendingPlanEffectiveAt: string | null;
+  /** @nullable */
+  pendingKeepCourseIds: string[] | null;
+  plan: EducationSubscriptionPlan;
+}
+
+export interface EducationPublishedCourse {
+  id: string;
+  title: string;
+}
 
 export interface EducationSubscriptionStatus {
-  center: EducationSubscriptionStatusCenter;
-  /** @nullable */
-  subscription: EducationSubscriptionStatusSubscription;
+  center: EducationSubscriptionCenter;
+  subscription: null | EducationSubscription;
+  publishedCourses: EducationPublishedCourse[];
   inGrace: boolean;
   operational: boolean;
+}
+
+/**
+ * @nullable
+ */
+export type EducationSubscriptionSelectionPayment = { [key: string]: unknown } | null;
+
+export type EducationSubscriptionSelection = EducationSubscription & {
+  change: string;
+  /** @nullable */
+  payment: EducationSubscriptionSelectionPayment;
+};
+
+export type EducationCustomPlanRequestStatus = typeof EducationCustomPlanRequestStatus[keyof typeof EducationCustomPlanRequestStatus];
+
+
+export const EducationCustomPlanRequestStatus = {
+  pending: 'pending',
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export interface EducationCustomPlanRequest {
+  id: string;
+  centerId: string;
+  requestedByUserId: string;
+  /** @minimum 1 */
+  requestedCourseLimit: number;
+  message: string;
+  status: EducationCustomPlanRequestStatus;
+  /** @nullable */
+  resolvedByUserId: string | null;
+  /** @nullable */
+  resolvedAt: string | null;
+  createdAt: string;
 }
 
 export interface EducationMessage {
@@ -14280,11 +14514,13 @@ export const SelectEducationSubscriptionPlanBodyBillingCycle = {
 export type SelectEducationSubscriptionPlanBody = {
   planId: string;
   billingCycle: SelectEducationSubscriptionPlanBodyBillingCycle;
+  /** @maxItems 1000 */
+  keepCourseIds?: string[];
 };
 
-export type SelectEducationSubscriptionPlan201 = { [key: string]: unknown };
-
 export type GetEducationSubscriptionRenewalInstructions200 = { [key: string]: unknown };
+
+export type UpdateEducationSubscriptionAutoRenew200 = { [key: string]: unknown };
 
 export type ListEducationPaymentObligations200Item = { [key: string]: unknown };
 
@@ -14312,6 +14548,10 @@ export type ConfigureEducationCustomContractBody = {
   /** @minimum 1 */
   amountRsd: number;
   billingCycle: ConfigureEducationCustomContractBodyBillingCycle;
+  /** @minimum 1 */
+  courseLimit: number;
+  autoRenew: boolean;
+  requestId?: string;
   contractEndsAt: string;
   /**
      * @minLength 3

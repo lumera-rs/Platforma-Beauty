@@ -375,8 +375,16 @@ export const subscriptionPlansTable = pgTable("subscription_plans", {
   trialDays: integer("trial_days").notNull().default(0),
   features: jsonb("features").$type<string[]>().notNull().default([]),
   limits: jsonb("limits").$type<Record<string, number>>().notNull().default({}),
+  audience: text("audience").notNull().default("salon"),
+  courseLimit: integer("course_limit"),
+  vatIncluded: boolean("vat_included").notNull().default(false),
+  priceCopy: text("price_copy"),
   active: boolean("active").notNull().default(true),
-});
+}, (table) => [
+  index("subscription_plans_audience_active_price_idx").on(table.audience, table.active, table.price),
+  check("subscription_plans_audience_check", sql`${table.audience} in ('salon','education')`),
+  check("subscription_plans_course_limit_check", sql`${table.courseLimit} is null or ${table.courseLimit} > 0`),
+]);
 
 export const subscriptionsTable = pgTable("subscriptions", {
   id: uuid("id").defaultRandom().primaryKey(),

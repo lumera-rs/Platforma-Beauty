@@ -63,10 +63,33 @@ export function educationUpgradeProration(input: {
   periodEnd: Date;
   now: Date;
 }) {
+  return educationUpgradeProrationQuote(input).payableWholeRsd;
+}
+
+/**
+ * Existing payable columns store whole RSD. Proration is therefore computed
+ * deterministically to two decimal RSD (half-up for non-negative amounts), then
+ * rounded half-up to whole RSD exactly once at the immutable obligation boundary.
+ * A positive prorated difference has a 1 RSD minimum because IPS payment
+ * instructions cannot represent a zero-value charge.
+ */
+export function educationUpgradeProrationQuote(input: {
+  currentMonthlyPrice: number;
+  nextMonthlyPrice: number;
+  billingCycle: EducationBillingCycle;
+  periodStart: Date;
+  periodEnd: Date;
+  now: Date;
+}) {
   const full = Math.max(1, input.periodEnd.getTime() - input.periodStart.getTime());
   const remaining = Math.max(0, input.periodEnd.getTime() - input.now.getTime());
   const difference = Math.max(0, educationCycleAmount(input.nextMonthlyPrice - input.currentMonthlyPrice, input.billingCycle));
-  return Math.ceil(difference * Math.min(1, remaining / full));
+  const exactTwoDecimalRsd = Math.round((difference * Math.min(1, remaining / full) + Number.EPSILON) * 100) / 100;
+  return {
+    exactTwoDecimalRsd,
+    payableWholeRsd: difference > 0 && remaining > 0 ? Math.max(1, Math.round(exactTwoDecimalRsd)) : 0,
+    policy: "Proration is rounded half-up to 2 decimal RSD; the immutable payable amount is then rounded half-up to whole RSD with a 1 RSD minimum for a positive difference.",
+  } as const;
 }
 
 export function normalizeTrialEmail(value: string) {

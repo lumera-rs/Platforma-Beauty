@@ -73,6 +73,10 @@ async function seedLegacySchema(schema: string) {
     plan_id uuid NOT NULL REFERENCES "${schema}".subscription_plans(id),
     status text NOT NULL DEFAULT 'trial'
   )`);
+  await q(`CREATE TABLE "${schema}".subscriptions (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    plan_id uuid NOT NULL REFERENCES "${schema}".subscription_plans(id)
+  )`);
   await q(`CREATE TABLE "${schema}".course_categories (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     name text NOT NULL UNIQUE,
@@ -368,8 +372,12 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
-    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 111, "v111 is the current production schema rollout");
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 114, "v114 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
+    const sharedPlan = await q<{ id: string }>(`INSERT INTO "${s}".subscription_plans DEFAULT VALUES RETURNING id`);
+    const sharedPlanId = sharedPlan.rows[0]!.id;
+    await q(`INSERT INTO "${s}".subscriptions (plan_id) VALUES ($1)`, [sharedPlanId]);
+    await q(`INSERT INTO "${s}".education_center_subscriptions (center_id, plan_id) VALUES ($1, $2)`, [fixtures.legacyEducationCenter.id, sharedPlanId]);
     assert.equal(await columnExists("courses", "duration"), false,
       "legacy fixture intentionally predates courses.duration");
 
@@ -379,6 +387,25 @@ async function run() {
       await runBusinessGrowthSchemaDdl(client, s);
       assert.ok(await columnExists("courses", "duration"),
         "v111 adds courses.duration before the entitlement backfill");
+      assert.ok(await columnExists("subscription_plans", "audience"),
+        "v112 isolates Education plans from salon plans");
+      assert.ok(await columnExists("education_center_subscriptions", "current_course_limit_snapshot"),
+        "v112 freezes the paid-period Education course limit");
+      assert.ok(await columnExists("courses", "subscription_suspended"),
+        "v112 identifies drafts suspended by subscription enforcement");
+      const splitPlans = await q<{ salon_audience: string; education_audience: string; education_plan_id: string }>(
+        `SELECT salon_plan.audience AS salon_audience, education_plan.audience AS education_audience, education_subscription.plan_id AS education_plan_id
+         FROM "${s}".subscription_plans salon_plan
+         JOIN "${s}".education_center_subscriptions education_subscription ON education_subscription.center_id = $1
+         JOIN "${s}".subscription_plans education_plan ON education_plan.id = education_subscription.plan_id
+         WHERE salon_plan.id = $2`,
+        [fixtures.legacyEducationCenter.id, sharedPlanId],
+      );
+      assert.equal(splitPlans.rows[0]?.salon_audience, "salon", "A shared legacy plan remains visible to salon administration.");
+      assert.equal(splitPlans.rows[0]?.education_audience, "education", "Only Education subscriptions are repointed to an Education copy.");
+      assert.notEqual(splitPlans.rows[0]?.education_plan_id, sharedPlanId, "Shared plans are cloned rather than relabeled.");
+      const seededPlans = await q<{ count: string }>(`SELECT count(*)::text AS count FROM "${s}".subscription_plans WHERE audience='education' AND price=0 AND active=false AND course_limit IN (5,15,30)`);
+      assert.ok(Number(seededPlans.rows[0]!.count) >= 3, "Zero-price Education defaults remain inactive until an administrator configures approved pricing.");
       assert.ok(await columnExists("course_enrollments", "payment_instructions_snapshot"),
         "v110 adds immutable enrollment payment instructions");
       assert.ok(await columnExists("education_installments", "payment_instructions_snapshot"),

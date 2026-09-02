@@ -6,7 +6,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import app from "../app";
 import { createSession, sessionCookieName } from "./auth";
 import {
-  db, educationCenterSubscriptionsTable, educationCentersTable, educationFinancialAuditLogTable,
+  coursesTable, db, educationCenterSubscriptionsTable, educationCentersTable, educationFinancialAuditLogTable,
   educationPaymentObligationsTable, educationPlatformSettingsTable, educationTrialClaimsTable,
   salonsTable, sessionsTable, subscriptionPlansTable, usersTable,
 } from "@workspace/db";
@@ -46,11 +46,13 @@ try {
   }).format(value);
   const beforeDst = new Date("2026-03-28T13:30:00.000Z");
   assert.equal(belgradeClock(addEducationBillingPeriod(beforeDst, "monthly")), belgradeClock(beforeDst), "Calendar billing must preserve the Belgrade wall-clock time across DST.");
-  const [low, high] = await db.insert(subscriptionPlansTable).values([
-    { name: `Osnovni ${marker}`, price: 10_000, trialDays: 30, active: true },
-    { name: `Napredni ${marker}`, price: 30_000, trialDays: 30, active: true },
+  const [low, high, constrained, zeroPrice] = await db.insert(subscriptionPlansTable).values([
+    { name: `Osnovni ${marker}`, price: 10_000, trialDays: 30, audience: "education", courseLimit: 5, vatIncluded: true, priceCopy: "Cena uključuje PDV.", limits: { courses: 5 }, active: true },
+    { name: `Napredni ${marker}`, price: 30_000, trialDays: 30, audience: "education", courseLimit: 15, vatIncluded: true, priceCopy: "Cena uključuje PDV.", limits: { courses: 15 }, active: true },
+    { name: `Skuplji ograničeni ${marker}`, price: 40_000, trialDays: 30, audience: "education", courseLimit: 1, vatIncluded: true, priceCopy: "Cena uključuje PDV.", limits: { courses: 1 }, active: true },
+    { name: `Bez cene ${marker}`, price: 0, trialDays: 30, audience: "education", courseLimit: 30, vatIncluded: true, priceCopy: "Cena uključuje PDV.", limits: { courses: 30 }, active: false },
   ]).returning();
-  planIds.push(low!.id, high!.id);
+  planIds.push(low!.id, high!.id, constrained!.id, zeroPrice!.id);
   const [admin] = await db.insert(usersTable).values({
     firstName: "Admin", lastName: marker, email: `admin-${marker}@example.test`,
     passwordHash: "fixture", passwordSetAt: new Date(), role: "SUPER_ADMIN",
@@ -72,6 +74,8 @@ try {
 
   server = app.listen(0, "127.0.0.1"); await once(server, "listening");
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const publicPlans = await call(base, "/education/subscription/plans", "GET");
+  assert.ok(!publicPlans.body.some((plan: { id: string }) => plan.id === zeroPrice!.id), "A zero-price seed must remain unlistable.");
 
   const missingPlan = await call(base, "/auth/business-register", "POST", registration(`missing-${marker}@example.test`));
   assert.equal(missingPlan.status, 400);
@@ -104,6 +108,13 @@ try {
   const ownerCookie = `${sessionCookieName}=${await createSession(ownerA.id)}`;
   const secondOwnerCookie = `${sessionCookieName}=${await createSession(ownerB.id)}`;
   const adminCookie = `${sessionCookieName}=${await createSession(admin!.id)}`;
+  assert.equal((await call(base, `/admin/education/subscription-plans/${zeroPrice!.id}`, "PATCH", { active: true }, adminCookie)).status, 400,
+    "Administration must not activate an Education plan before setting a positive price.");
+  assert.equal((await call(base, "/education/subscription/select-plan", "POST", { planId: zeroPrice!.id, billingCycle: "monthly" }, ownerCookie)).status, 404,
+    "Owners cannot select a non-positive plan.");
+  await db.update(educationCenterSubscriptionsTable).set({ planId: zeroPrice!.id, status: "past_due" }).where(eq(educationCenterSubscriptionsTable.id, secondSubscription!.id));
+  assert.equal((await call(base, "/education/subscription/renewal-instructions", "POST", undefined, secondOwnerCookie)).status, 409,
+    "Renewal must not construct IPS instructions for a non-positive plan.");
   assert.equal((await call(base, `/admin/education/centers/${centerA.id}`, "PATCH", { subscriptionStatus: "trial" }, adminCookie)).status, 409);
   const now = new Date();
   await db.update(educationCenterSubscriptionsTable).set({
@@ -126,7 +137,7 @@ try {
   assert.equal(subscription!.status, "active");
   assert.ok(subscription!.currentPeriodEnd!.getTime() - subscription!.currentPeriodStart!.getTime() > 360 * 86_400_000);
   const rejectedCurrentContract = await call(base, `/admin/education/centers/${centerA.id}/custom-contract`, "POST", {
-    amountRsd: 222_222, billingCycle: "yearly", contractEndsAt: new Date(Date.now() + 400 * 86_400_000).toISOString(), reason: "Ne sme prekinuti tekući plaćeni period",
+    amountRsd: 222_222, billingCycle: "yearly", courseLimit: 30, autoRenew: true, contractEndsAt: new Date(Date.now() + 400 * 86_400_000).toISOString(), reason: "Ne sme prekinuti tekući plaćeni period",
   }, adminCookie);
   assert.equal(rejectedCurrentContract.status, 409, "A custom contract must not revoke the current paid period.");
 
@@ -146,7 +157,7 @@ try {
   const reverseOrderDowngrade = await call(base, "/education/subscription/select-plan", "POST", { planId: low!.id, billingCycle: "yearly" }, secondOwnerCookie);
   assert.equal(new Date(reverseOrderDowngrade.body.pendingPlanEffectiveAt).getTime(), prepaidHigh!.servicePeriodEnd!.getTime(), "Downgrade after prepayment must wait until the paid future period ends.");
   const rejectedPaidContract = await call(base, `/admin/education/centers/${centerB.id}/custom-contract`, "POST", {
-    amountRsd: 333_333, billingCycle: "yearly", contractEndsAt: new Date(Date.now() + 400 * 86_400_000).toISOString(), reason: "Ne sme prekinuti plaćeni period",
+    amountRsd: 333_333, billingCycle: "yearly", courseLimit: 30, autoRenew: true, contractEndsAt: new Date(Date.now() + 400 * 86_400_000).toISOString(), reason: "Ne sme prekinuti plaćeni period",
   }, adminCookie);
   assert.equal(rejectedPaidContract.status, 409, "A custom contract must not revoke a current or future paid period.");
   await db.update(educationPaymentObligationsTable).set({
@@ -207,8 +218,10 @@ try {
     confirmedAmountRsd: upgrade.body.payment.expectedAmount, reason: "Doplata potvrđena",
   }, adminCookie)).status, 200);
   [subscription] = await db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
-  assert.equal(subscription!.planId, high!.id);
+  assert.equal(subscription!.planId, low!.id, "A different-cycle upgrade must retain the current plan until the configured boundary.");
   assert.equal(subscription!.billingCycle, "monthly", "Upgrade proration must preserve the paid current cycle.");
+  assert.equal(subscription!.currentPriceSnapshot, low!.price);
+  assert.equal(subscription!.currentCourseLimitSnapshot, low!.courseLimit);
   assert.equal(subscription!.pendingBillingCycle, "yearly", "Requested cycle change must remain scheduled for the next boundary.");
   await db.update(educationPaymentObligationsTable).set({ servicePeriodEnd: new Date(Date.now() - 2_000) })
     .where(and(
@@ -222,14 +235,73 @@ try {
     .where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
   await runEducationSubscriptionLifecycle();
   [subscription] = await db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
+  assert.equal(subscription!.planId, high!.id, "The paid deferred upgrade must apply at its configured service boundary.");
   assert.equal(subscription!.billingCycle, "yearly", "The requested cycle must apply at the next service boundary.");
+  assert.equal(subscription!.currentPriceSnapshot, high!.price);
+  assert.equal(subscription!.currentCourseLimitSnapshot, high!.courseLimit);
+  await db.update(educationCenterSubscriptionsTable).set({
+    status: "active",
+    planId: high!.id,
+    billingCycle: "monthly",
+    currentPriceSnapshot: high!.price,
+    currentCourseLimitSnapshot: high!.courseLimit,
+    currentPeriodStart: new Date(Date.now() - 20 * 86_400_000),
+    currentPeriodEnd: new Date(Date.now() + 10 * 86_400_000),
+    graceEndsAt: null,
+  }).where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
+  const published = await db.insert(coursesTable).values([
+    { centerId: centerA.id, title: `Zadrži ${marker}`, category: "Test", format: "online", price: 1000, duration: "1h", imageUrl: "/test-course-1.jpg", published: true },
+    { centerId: centerA.id, title: `Suspenduj ${marker}`, category: "Test", format: "online", price: 1000, duration: "1h", imageUrl: "/test-course-2.jpg", published: true },
+  ]).returning();
+  [subscription] = await db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
+  assert.equal(subscription!.currentCourseLimitSnapshot, high!.courseLimit,
+    "The paid higher tier must retain its frozen course limit before a later change.");
+  assert.equal(published.filter((course) => course.published).length, 2);
+  const constrainedWithoutKeep = await call(base, "/education/subscription/select-plan", "POST", {
+    planId: constrained!.id, billingCycle: "yearly",
+  }, ownerCookie);
+  assert.equal(constrainedWithoutKeep.status, 409,
+    `A higher-price lower-limit target still requires an exact published-course selection: ${JSON.stringify(constrainedWithoutKeep.body)}`);
+  const constrainedUpgrade = await call(base, "/education/subscription/select-plan", "POST", {
+    planId: constrained!.id, billingCycle: "yearly", keepCourseIds: [published[0]!.id],
+  }, ownerCookie);
+  assert.equal(constrainedUpgrade.status, 201);
+  assert.equal((await call(base, `/admin/education/payment-obligations/${constrainedUpgrade.body.payment.id}/settle`, "POST", {
+    confirmedAmountRsd: constrainedUpgrade.body.payment.expectedAmount, reason: "Skuplji plan sa manjim limitom",
+  }, adminCookie)).status, 200);
+  [subscription] = await db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
+  assert.equal(subscription!.planId, high!.id, "A different-cycle upgrade must retain the current paid-period plan until its effective boundary.");
+  assert.equal(subscription!.currentPriceSnapshot, high!.price);
+  assert.equal(subscription!.currentCourseLimitSnapshot, high!.courseLimit);
+  let reconciled = await db.select().from(coursesTable).where(inArray(coursesTable.id, published.map((course) => course.id)));
+  assert.equal(reconciled.filter((course) => course.published).length, 2,
+    "Deferred upgrade settlement must not reduce the current paid-period entitlement.");
+  await db.update(educationCenterSubscriptionsTable).set({
+    currentPeriodEnd: new Date(Date.now() - 1_000),
+    pendingPlanEffectiveAt: new Date(Date.now() - 1_000),
+  }).where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
+  await runEducationSubscriptionLifecycle();
+  [subscription] = await db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
+  assert.equal(subscription!.planId, constrained!.id);
+  assert.equal(subscription!.currentPriceSnapshot, constrained!.price);
+  assert.equal(subscription!.currentCourseLimitSnapshot, constrained!.courseLimit);
+  reconciled = await db.select().from(coursesTable).where(inArray(coursesTable.id, published.map((course) => course.id)));
+  assert.equal(reconciled.filter((course) => course.published).length, 1, "Upgrade settlement must enforce its lower entitlement.");
+  assert.equal(reconciled.find((course) => course.id === published[0]!.id)?.published, true);
+  assert.equal(reconciled.find((course) => course.id === published[1]!.id)?.subscriptionSuspended, true);
   await db.update(educationCenterSubscriptionsTable).set({
     planId: low!.id, billingCycle: "monthly", status: "active",
+    currentPriceSnapshot: low!.price,
+    currentCourseLimitSnapshot: low!.courseLimit,
     currentPeriodStart: new Date(Date.now() - 20 * 86_400_000),
     currentPeriodEnd: new Date(Date.now() + 10 * 86_400_000),
     pendingPlanId: null, pendingBillingCycle: null, pendingPlanEffectiveAt: null,
   }).where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
+  await db.update(subscriptionPlansTable).set({ price: high!.price + 10_000 }).where(eq(subscriptionPlansTable.id, low!.id));
   const expiringUpgrade = await call(base, "/education/subscription/select-plan", "POST", { planId: high!.id, billingCycle: "monthly" }, ownerCookie);
+  assert.equal(expiringUpgrade.body.change, "upgrade_pending_payment",
+    "Upgrade classification must use the frozen current-period price, not an edited catalog price.");
+  assert.ok(expiringUpgrade.body.payment.expectedAmount > 0);
   const delayedWorkerAt = Date.now();
   await db.update(educationCenterSubscriptionsTable).set({ currentPeriodEnd: new Date(delayedWorkerAt - 50 * 86_400_000) }).where(eq(educationCenterSubscriptionsTable.id, subscription!.id));
   await runEducationSubscriptionLifecycle();
@@ -244,7 +316,7 @@ try {
   assert.ok(pendingRenewals[0]!.servicePeriodEnd!.getTime() - pendingRenewals[0]!.servicePeriodStart!.getTime() > 27 * 86_400_000, "A delayed worker must still issue a full monthly service period.");
   const contractEnd = new Date(Date.now() + 200 * 86_400_000);
   const custom = await call(base, `/admin/education/centers/${centerA.id}/custom-contract`, "POST", {
-    amountRsd: 222_222, billingCycle: "yearly", contractEndsAt: contractEnd.toISOString(), reason: "Poseban godišnji ugovor",
+    amountRsd: 222_222, billingCycle: "yearly", courseLimit: 30, autoRenew: false, contractEndsAt: contractEnd.toISOString(), reason: "Poseban godišnji ugovor",
   }, adminCookie);
   assert.equal(custom.status, 200);
   const [cancelledStale] = await db.select().from(educationPaymentObligationsTable).where(eq(educationPaymentObligationsTable.id, pendingRenewals[0]!.id));
