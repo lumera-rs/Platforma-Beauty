@@ -10,7 +10,9 @@ import { Loader2, Package, ArrowLeft, ExternalLink, Truck, Repeat, Download, Ale
 import { useToast } from "@/hooks/use-toast";
 
 const money = (n: number) => `${n.toLocaleString("sr-RS")} RSD`;
-const date = (d: string) => new Date(d).toLocaleDateString("sr-RS", { dateStyle: "medium" });
+const date = (d: string | null) => d
+  ? new Date(d).toLocaleDateString("sr-RS", { dateStyle: "medium" })
+  : "Datum nije dostupan";
 
 function DeliveryTracking({ order, compact = false }: { order: { deliveryMethod: string; courierService: string | null; trackingNumber: string | null; trackingUrl: string | null }; compact?: boolean }) {
   const personalDelivery = order.deliveryMethod === "personal_belgrade" || order.courierService === "Lična dostava";

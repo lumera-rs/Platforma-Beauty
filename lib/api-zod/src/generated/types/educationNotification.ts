@@ -19,5 +19,6 @@ export interface EducationNotification {
   waitlistId: string | null;
   /** @nullable */
   readAt: Date | null;
-  createdAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
 }

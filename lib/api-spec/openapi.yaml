@@ -10480,7 +10480,7 @@ components:
         hasDiscount: { type: boolean }
         openSunday: { type: boolean }
         lastBookedAt: { type: ["string", "null"], format: date-time }
-        createdAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
       required: [id, slug, name, city, municipality, imageUrl, rating, reviewCount, shortDescription, popularServices, startingPrice, homeService, featured, topSalon, acceptsCards, instantBooking, servesMen, isVerified, hasDiscount, openSunday, createdAt]
     DiscoveryService:
       type: object
@@ -10851,7 +10851,7 @@ components:
         verifiedBooking: { type: boolean }
         rating: { type: number, minimum: 1, maximum: 5, multipleOf: 1 }
         text: { type: string }
-        date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        date: { type: ["string", "null"], pattern: '^\d{4}-\d{2}-\d{2}$' }
         serviceName: { type: string }
       required: [id, authorName, avatarUrl, verifiedBooking, rating, text, date, serviceName]
     CustomerReview:
@@ -11987,7 +11987,7 @@ components:
         couponCode: { type: ["string", "null"], maxLength: 40 }
         referralCreditIntentRsd: { type: integer, minimum: 0 }
         reviewerReason: { type: ["string", "null"] }
-        createdAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
         decidedAt: { type: [string, "null"], format: date-time }
         finalizedOrderId: { type: [string, "null"] }
         lines:
@@ -12101,7 +12101,7 @@ components:
         referralCreditMerchandiseSubtotalRsd: { type: integer, minimum: 0 }
         referralCreditPreCreditPayableTotalRsd: { type: integer, minimum: 0 }
         referralCreditAppliedRsd: { type: integer, minimum: 0 }
-        createdAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
         items:
           type: array
           items:
@@ -12770,7 +12770,7 @@ components:
         salonName: { type: string }
         rating: { type: number, minimum: 1, maximum: 5 }
         comment: { type: string }
-        createdAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
         mine: { type: boolean }
       required: [id, salonName, rating, comment, createdAt, mine]
     ProductReviewInput:
@@ -12918,7 +12918,7 @@ components:
         id: { type: string }
         productId: { type: string }
         variantValue: { type: ["string", "null"] }
-        createdAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
         available: { type: boolean }
         unavailableReason: { type: ["string", "null"], enum: [PRODUCT_INACTIVE, RETAIL_DISABLED, OUT_OF_STOCK, VARIANT_UNAVAILABLE, null] }
         product: { oneOf: [{ $ref: "#/components/schemas/PublicProduct" }, { type: "null" }] }
@@ -13275,11 +13275,11 @@ components:
           type: ["object", "null"]
           properties:
             number: { type: string }
-            issuedAt: { type: string, format: date-time }
+            issuedAt: { type: ["string", "null"], format: date-time }
           required: [number, issuedAt]
         itemCount: { type: number }
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
+        updatedAt: { type: ["string", "null"], format: date-time }
         salon:
           type: object
           properties:
@@ -13648,8 +13648,8 @@ components:
       type: object
       properties:
         id: { type: string }
-        startsAt: { type: string, format: date-time }
-        endsAt: { type: string, format: date-time }
+        startsAt: { type: ["string", "null"], format: date-time }
+        endsAt: { type: ["string", "null"], format: date-time }
         location: { type: ["string", "null"] }
         capacity: { type: number }
         reservedSeats: { type: number }
@@ -13824,7 +13824,7 @@ components:
         id: { type: string }
         rating: { type: number, minimum: 1, maximum: 5 }
         comment: { type: string }
-        createdAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
       required: [id, rating, comment, createdAt]
     EducationCategory:
       type: object
@@ -14076,7 +14076,7 @@ components:
       type: object
       properties:
         id: { type: string }
-        createdAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
         course: { $ref: "#/components/schemas/EducationCourseDetail" }
       required: [id, createdAt, course]
     EducationWishlistPage:
@@ -14299,7 +14299,7 @@ components:
         paymentStatus: { type: string, enum: [pending, paid, failed, refunded] }
         progress: { type: number }
         nextLesson: { type: ["string", "null"] }
-        purchasedAt: { type: string, format: date-time }
+        purchasedAt: { type: ["string", "null"], format: date-time }
         accessExpiresAt: { type: ["string", "null"], format: date-time }
         coursePriceSnapshot: { type: ["integer", "null"] }
         durationSnapshot: { type: ["string", "null"] }
@@ -14321,7 +14321,7 @@ components:
         reason: { type: string }
         details: { type: string }
         status: { type: string, enum: [open, under_review] }
-        createdAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
       required: [id, reason, details, status, createdAt]
     EducationEnrollmentPaymentInstructions:
       type: object
@@ -14381,7 +14381,7 @@ components:
         enrollmentId: { type: ["string", "null"] }
         waitlistId: { type: ["string", "null"] }
         readAt: { type: ["string", "null"], format: date-time }
-        createdAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
       required: [id, type, title, body, actionUrl, enrollmentId, waitlistId, readAt, createdAt]
     EducationWaitlistOffer:
       type: object
@@ -14736,7 +14736,7 @@ components:
         body: { type: string }
         senderId: { type: string }
         senderName: { type: string }
-        createdAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
         readAt: { type: ["string", "null"], format: date-time }
       required: [id, body, senderId, senderName, createdAt]
     EducationMessageThread:
@@ -14765,7 +14765,7 @@ components:
         details: { type: string }
         status: { type: string, enum: [open, under_review, resolved_refund, resolved_payout, rejected, cancelled] }
         resolutionNote: { type: ["string", "null"] }
-        createdAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
         resolvedAt: { type: ["string", "null"], format: date-time }
       required: [id, enrollmentId, reason, details, status, createdAt]
     EducationMarketplaceSettingsInput:
@@ -14887,8 +14887,8 @@ components:
         specializations: { type: array, items: { type: string } }
         qualifications: { type: array, items: { type: string } }
         portfolioMedia: { type: array, items: { type: string, format: uri } }
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
+        updatedAt: { type: ["string", "null"], format: date-time }
       required: [id, centerId, fullName, biography, industryYears, experienceYears, specializations, qualifications, portfolioMedia, createdAt, updatedAt]
     EducationInstructorInput:
       type: object

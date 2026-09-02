@@ -12,5 +12,6 @@ export interface EducationEnrollmentDispute {
   reason: string;
   details: string;
   status: EducationEnrollmentDisputeStatus;
-  createdAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
 }

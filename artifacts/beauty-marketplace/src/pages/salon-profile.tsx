@@ -1101,7 +1101,7 @@ export default function SalonProfile() {
                       <div>
                         <span className="font-bold text-foreground block text-lg">{review.authorName}</span>
                         <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground mt-0.5">
-                          <span>{format(parseISO(review.date), 'dd.MM.yyyy')}</span>
+                          <span>{review.date ? format(parseISO(review.date), 'dd.MM.yyyy') : "Datum nije dostupan"}</span>
                           {review.verifiedBooking && <span className="inline-flex items-center gap-1 font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md"><ShieldCheck className="h-4 w-4" />Proverena poseta</span>}
                         </div>
                       </div>

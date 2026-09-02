@@ -1251,7 +1251,8 @@ export interface SalonCard {
   openSunday: boolean;
   /** @nullable */
   lastBookedAt?: string | null;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
 }
 
 export interface DiscoveryService {
@@ -1381,8 +1382,11 @@ export interface Review {
      */
   rating: number;
   text: string;
-  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
-  date: string;
+  /**
+     * @nullable
+     * @pattern ^\d{4}-\d{2}-\d{2}$
+     */
+  date: string | null;
   serviceName: string;
 }
 
@@ -3414,7 +3418,8 @@ export interface ApprovalRequest {
   referralCreditIntentRsd: number;
   /** @nullable */
   reviewerReason: string | null;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
   /** @nullable */
   decidedAt: string | null;
   /** @nullable */
@@ -3753,7 +3758,8 @@ export interface RetailOrder {
   referralCreditPreCreditPayableTotalRsd: number;
   /** @minimum 0 */
   referralCreditAppliedRsd: number;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
   items: RetailOrderItemsItem[];
 }
 
@@ -4769,7 +4775,8 @@ export interface ProductReview {
      */
   rating: number;
   comment: string;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
   mine: boolean;
 }
 
@@ -4911,7 +4918,8 @@ export interface ProductWishlistItem {
   productId: string;
   /** @nullable */
   variantValue: string | null;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
   available: boolean;
   /** @nullable */
   unavailableReason: ProductWishlistItemUnavailableReason;
@@ -5487,7 +5495,8 @@ export const OrderDeliveryMethod = {
  */
 export type OrderInvoice = {
   number: string;
-  issuedAt: string;
+  /** @nullable */
+  issuedAt: string | null;
 } | null;
 
 export type OrderSalon = {
@@ -5577,8 +5586,10 @@ export interface Order {
   /** @nullable */
   invoice: OrderInvoice;
   itemCount: number;
-  createdAt: string;
-  updatedAt: string;
+  /** @nullable */
+  createdAt: string | null;
+  /** @nullable */
+  updatedAt: string | null;
   salon: OrderSalon;
   delivery: OrderDelivery;
   /** @nullable */
@@ -6460,8 +6471,10 @@ export interface EducationCourseUpdate {
 
 export interface EducationSession {
   id: string;
-  startsAt: string;
-  endsAt: string;
+  /** @nullable */
+  startsAt: string | null;
+  /** @nullable */
+  endsAt: string | null;
   /** @nullable */
   location?: string | null;
   capacity: number;
@@ -6588,7 +6601,8 @@ export interface EducationCourseReview {
      */
   rating: number;
   comment: string;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
 }
 
 export type EducationCourseDetail = Course & ({
@@ -6764,7 +6778,8 @@ export interface EducationEnrollmentDispute {
   reason: string;
   details: string;
   status: EducationEnrollmentDisputeStatus;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
 }
 
 /**
@@ -6784,7 +6799,8 @@ export interface EducationEnrollment {
   progress: number;
   /** @nullable */
   nextLesson?: string | null;
-  purchasedAt: string;
+  /** @nullable */
+  purchasedAt: string | null;
   /** @nullable */
   accessExpiresAt?: string | null;
   /** @nullable */
@@ -7051,7 +7067,8 @@ export interface EducationWishlistInput {
 
 export interface EducationWishlistItem {
   id: string;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
   course: EducationCourseDetail;
 }
 
@@ -7527,7 +7544,8 @@ export interface EducationNotification {
   waitlistId: string | null;
   /** @nullable */
   readAt: string | null;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
 }
 
 export type EducationWaitlistOfferStatus = typeof EducationWaitlistOfferStatus[keyof typeof EducationWaitlistOfferStatus];
@@ -8090,7 +8108,8 @@ export interface EducationMessage {
   body: string;
   senderId: string;
   senderName: string;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
   /** @nullable */
   readAt?: string | null;
 }
@@ -8135,7 +8154,8 @@ export interface EducationDispute {
   status: EducationDisputeStatus;
   /** @nullable */
   resolutionNote?: string | null;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
   /** @nullable */
   resolvedAt?: string | null;
 }
@@ -8374,8 +8394,10 @@ export interface EducationInstructorProfile {
   specializations: string[];
   qualifications: string[];
   portfolioMedia: string[];
-  createdAt: string;
-  updatedAt: string;
+  /** @nullable */
+  createdAt: string | null;
+  /** @nullable */
+  updatedAt: string | null;
 }
 
 export interface EducationInstructorInput {

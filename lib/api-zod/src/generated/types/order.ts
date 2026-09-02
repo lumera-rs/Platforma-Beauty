@@ -47,8 +47,10 @@ export interface Order {
   /** @nullable */
   invoice: OrderInvoice;
   itemCount: number;
-  createdAt: Date;
-  updatedAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
+  /** @nullable */
+  updatedAt: Date | null;
   salon: OrderSalon;
   delivery: OrderDelivery;
   /** @nullable */

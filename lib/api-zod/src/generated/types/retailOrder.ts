@@ -34,6 +34,7 @@ export interface RetailOrder {
   referralCreditPreCreditPayableTotalRsd: number;
   /** @minimum 0 */
   referralCreditAppliedRsd: number;
-  createdAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
   items: RetailOrderItemsItem[];
 }

@@ -138,3 +138,4 @@
 - [Radix checkbox browser tests](radix-checkbox-browser-tests.md) — exercise role=checkbox buttons with click plus state assertions, not native-input check helpers.
 - [Grouped CAMT transaction identity](grouped-camt-transaction-identity.md) — grouped entries resolve IDs and amounts per transaction detail, never from a shared batch identifier.
 - [Bank API legal-entity scope](bank-api-legal-entity-scope.md) — never infer a Serbian bank API contract from group-level or another country’s developer portal.
+- [User-facing timestamp serialization](user-facing-timestamp-serialization.md) — audit both single and batch list DTOs; one invalid database date must degrade only its field.

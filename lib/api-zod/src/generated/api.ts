@@ -807,7 +807,7 @@ export const ListSalonsResponseItem = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 })
 export const ListSalonsResponse = zod.array(ListSalonsResponseItem)
 
@@ -857,7 +857,7 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 })),
   "newSalons": zod.array(zod.object({
   "id": zod.string(),
@@ -882,7 +882,7 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 })),
   "discountedSalons": zod.array(zod.object({
   "id": zod.string(),
@@ -907,7 +907,7 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }).and(zod.object({
   "discount": zod.object({
   "serviceName": zod.string(),
@@ -938,7 +938,7 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 })),
   "topRatedSalons": zod.array(zod.object({
   "id": zod.string(),
@@ -963,7 +963,7 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 })
 
@@ -1057,7 +1057,7 @@ export const GetSalonResponse = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }).and(zod.object({
   "gallery": zod.array(zod.string()),
   "videoUrl": zod.string().nullable(),
@@ -1116,7 +1116,7 @@ export const GetSalonResponse = zod.object({
   "verifiedBooking": zod.boolean(),
   "rating": zod.number().min(1).max(getSalonResponseTwoReviewsItemRatingMax).multipleOf(getSalonResponseTwoReviewsItemRatingMultipleOf),
   "text": zod.string(),
-  "date": zod.string().regex(getSalonResponseTwoReviewsItemDateRegExp),
+  "date": zod.string().regex(getSalonResponseTwoReviewsItemDateRegExp).nullable(),
   "serviceName": zod.string()
 })),
   "returnClientRate": zod.number().min(getSalonResponseTwoReturnClientRateMin).max(getSalonResponseTwoReturnClientRateMax).nullable(),
@@ -2659,7 +2659,7 @@ export const GetCustomerDashboardResponse = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 })),
   "recommendations": zod.array(zod.object({
   "id": zod.string(),
@@ -2684,7 +2684,7 @@ export const GetCustomerDashboardResponse = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 })),
   "favoriteCount": zod.number(),
   "visitCount": zod.number()
@@ -2843,7 +2843,7 @@ export const ListFavoritesResponseItem = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 })
 export const ListFavoritesResponse = zod.array(ListFavoritesResponseItem)
 
@@ -2988,7 +2988,7 @@ export const GetSalonDashboardResponse = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }),
   "locations": zod.array(zod.object({
   "id": zod.string(),
@@ -5124,7 +5124,7 @@ export const CreateSalonLocationResponse = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }).and(zod.object({
   "gallery": zod.array(zod.string()),
   "videoUrl": zod.string().nullable(),
@@ -5183,7 +5183,7 @@ export const CreateSalonLocationResponse = zod.object({
   "verifiedBooking": zod.boolean(),
   "rating": zod.number().min(1).max(createSalonLocationResponseLocationTwoReviewsItemRatingMax).multipleOf(createSalonLocationResponseLocationTwoReviewsItemRatingMultipleOf),
   "text": zod.string(),
-  "date": zod.string().regex(createSalonLocationResponseLocationTwoReviewsItemDateRegExp),
+  "date": zod.string().regex(createSalonLocationResponseLocationTwoReviewsItemDateRegExp).nullable(),
   "serviceName": zod.string()
 })),
   "returnClientRate": zod.number().min(createSalonLocationResponseLocationTwoReturnClientRateMin).max(createSalonLocationResponseLocationTwoReturnClientRateMax).nullable(),
@@ -5212,7 +5212,7 @@ export const CreateSalonLocationResponse = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }).and(zod.object({
   "gallery": zod.array(zod.string()),
   "videoUrl": zod.string().nullable(),
@@ -5271,7 +5271,7 @@ export const CreateSalonLocationResponse = zod.object({
   "verifiedBooking": zod.boolean(),
   "rating": zod.number().min(1).max(createSalonLocationResponseSalonTwoReviewsItemRatingMax).multipleOf(createSalonLocationResponseSalonTwoReviewsItemRatingMultipleOf),
   "text": zod.string(),
-  "date": zod.string().regex(createSalonLocationResponseSalonTwoReviewsItemDateRegExp),
+  "date": zod.string().regex(createSalonLocationResponseSalonTwoReviewsItemDateRegExp).nullable(),
   "serviceName": zod.string()
 })),
   "returnClientRate": zod.number().min(createSalonLocationResponseSalonTwoReturnClientRateMin).max(createSalonLocationResponseSalonTwoReturnClientRateMax).nullable(),
@@ -6040,7 +6040,7 @@ export const GetShopProductResponse = zod.object({
   "salonName": zod.string(),
   "rating": zod.number().min(1).max(getShopProductResponseTwoReviewsItemRatingMax),
   "comment": zod.string(),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "mine": zod.boolean()
 })),
   "relatedProducts": zod.array(zod.object({
@@ -6147,7 +6147,7 @@ export const ListProductReviewsResponseItem = zod.object({
   "salonName": zod.string(),
   "rating": zod.number().min(1).max(listProductReviewsResponseRatingMax),
   "comment": zod.string(),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "mine": zod.boolean()
 })
 export const ListProductReviewsResponse = zod.array(ListProductReviewsResponseItem)
@@ -6181,7 +6181,7 @@ export const UpsertProductReviewResponse = zod.object({
   "salonName": zod.string(),
   "rating": zod.number().min(1).max(upsertProductReviewResponseRatingMax),
   "comment": zod.string(),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "mine": zod.boolean()
 })
 
@@ -8435,7 +8435,7 @@ export const ListShopApprovalRequestsResponseItem = zod.object({
   "couponCode": zod.string().max(listShopApprovalRequestsResponseCouponCodeMax).nullable(),
   "referralCreditIntentRsd": zod.number().int().min(listShopApprovalRequestsResponseReferralCreditIntentRsdMin),
   "reviewerReason": zod.string().nullable(),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "decidedAt": zod.coerce.date().nullable(),
   "finalizedOrderId": zod.string().nullable(),
   "lines": zod.array(zod.object({
@@ -8495,7 +8495,7 @@ export const CreateShopApprovalRequestResponse = zod.object({
   "couponCode": zod.string().max(createShopApprovalRequestResponseCouponCodeMax).nullable(),
   "referralCreditIntentRsd": zod.number().int().min(createShopApprovalRequestResponseReferralCreditIntentRsdMin),
   "reviewerReason": zod.string().nullable(),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "decidedAt": zod.coerce.date().nullable(),
   "finalizedOrderId": zod.string().nullable(),
   "lines": zod.array(zod.object({
@@ -8540,7 +8540,7 @@ export const ListMyShopApprovalRequestsResponseItem = zod.object({
   "couponCode": zod.string().max(listMyShopApprovalRequestsResponseCouponCodeMax).nullable(),
   "referralCreditIntentRsd": zod.number().int().min(listMyShopApprovalRequestsResponseReferralCreditIntentRsdMin),
   "reviewerReason": zod.string().nullable(),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "decidedAt": zod.coerce.date().nullable(),
   "finalizedOrderId": zod.string().nullable(),
   "lines": zod.array(zod.object({
@@ -8596,7 +8596,7 @@ export const GetShopApprovalRequestResponse = zod.object({
   "couponCode": zod.string().max(getShopApprovalRequestResponseCouponCodeMax).nullable(),
   "referralCreditIntentRsd": zod.number().int().min(getShopApprovalRequestResponseReferralCreditIntentRsdMin),
   "reviewerReason": zod.string().nullable(),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "decidedAt": zod.coerce.date().nullable(),
   "finalizedOrderId": zod.string().nullable(),
   "lines": zod.array(zod.object({
@@ -8653,7 +8653,7 @@ export const RejectShopApprovalRequestResponse = zod.object({
   "couponCode": zod.string().max(rejectShopApprovalRequestResponseCouponCodeMax).nullable(),
   "referralCreditIntentRsd": zod.number().int().min(rejectShopApprovalRequestResponseReferralCreditIntentRsdMin),
   "reviewerReason": zod.string().nullable(),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "decidedAt": zod.coerce.date().nullable(),
   "finalizedOrderId": zod.string().nullable(),
   "lines": zod.array(zod.object({
@@ -8724,11 +8724,11 @@ export const ApproveShopApprovalRequestResponse = zod.object({
   "referralCreditAppliedRsd": zod.number().int().min(approveShopApprovalRequestResponseReferralCreditAppliedRsdMin),
   "invoice": zod.object({
   "number": zod.string(),
-  "issuedAt": zod.coerce.date()
+  "issuedAt": zod.coerce.date().nullable()
 }).nullable(),
   "itemCount": zod.number(),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable(),
   "salon": zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -9084,11 +9084,11 @@ export const CheckoutShopCartResponse = zod.object({
   "referralCreditAppliedRsd": zod.number().int().min(checkoutShopCartResponseReferralCreditAppliedRsdMin),
   "invoice": zod.object({
   "number": zod.string(),
-  "issuedAt": zod.coerce.date()
+  "issuedAt": zod.coerce.date().nullable()
 }).nullable(),
   "itemCount": zod.number(),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable(),
   "salon": zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -9233,11 +9233,11 @@ export const ListOrdersResponseItem = zod.object({
   "referralCreditAppliedRsd": zod.number().int().min(listOrdersResponseReferralCreditAppliedRsdMin),
   "invoice": zod.object({
   "number": zod.string(),
-  "issuedAt": zod.coerce.date()
+  "issuedAt": zod.coerce.date().nullable()
 }).nullable(),
   "itemCount": zod.number(),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable(),
   "salon": zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -9339,11 +9339,11 @@ export const GetOrderResponse = zod.object({
   "referralCreditAppliedRsd": zod.number().int().min(getOrderResponseReferralCreditAppliedRsdMin),
   "invoice": zod.object({
   "number": zod.string(),
-  "issuedAt": zod.coerce.date()
+  "issuedAt": zod.coerce.date().nullable()
 }).nullable(),
   "itemCount": zod.number(),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable(),
   "salon": zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -9500,11 +9500,11 @@ export const AdminListOrdersResponseItem = zod.object({
   "referralCreditAppliedRsd": zod.number().int().min(adminListOrdersResponseOneReferralCreditAppliedRsdMin),
   "invoice": zod.object({
   "number": zod.string(),
-  "issuedAt": zod.coerce.date()
+  "issuedAt": zod.coerce.date().nullable()
 }).nullable(),
   "itemCount": zod.number(),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable(),
   "salon": zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -9610,11 +9610,11 @@ export const AdminGetOrderResponse = zod.object({
   "referralCreditAppliedRsd": zod.number().int().min(adminGetOrderResponseOneReferralCreditAppliedRsdMin),
   "invoice": zod.object({
   "number": zod.string(),
-  "issuedAt": zod.coerce.date()
+  "issuedAt": zod.coerce.date().nullable()
 }).nullable(),
   "itemCount": zod.number(),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable(),
   "salon": zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -9737,11 +9737,11 @@ export const AdminUpdateOrderStatusResponse = zod.object({
   "referralCreditAppliedRsd": zod.number().int().min(adminUpdateOrderStatusResponseOneReferralCreditAppliedRsdMin),
   "invoice": zod.object({
   "number": zod.string(),
-  "issuedAt": zod.coerce.date()
+  "issuedAt": zod.coerce.date().nullable()
 }).nullable(),
   "itemCount": zod.number(),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable(),
   "salon": zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -9861,11 +9861,11 @@ export const AdminBulkUpdateOrdersResponseItem = zod.object({
   "referralCreditAppliedRsd": zod.number().int().min(adminBulkUpdateOrdersResponseOneReferralCreditAppliedRsdMin),
   "invoice": zod.object({
   "number": zod.string(),
-  "issuedAt": zod.coerce.date()
+  "issuedAt": zod.coerce.date().nullable()
 }).nullable(),
   "itemCount": zod.number(),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable(),
   "salon": zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -10789,7 +10789,7 @@ export const ListEducationPurchasesResponseItem = zod.object({
   "paymentStatus": zod.enum(['pending', 'paid', 'failed', 'refunded']),
   "progress": zod.number(),
   "nextLesson": zod.string().nullish(),
-  "purchasedAt": zod.coerce.date(),
+  "purchasedAt": zod.coerce.date().nullable(),
   "accessExpiresAt": zod.coerce.date().nullish(),
   "coursePriceSnapshot": zod.number().int().nullish(),
   "durationSnapshot": zod.string().nullish(),
@@ -10804,7 +10804,7 @@ export const ListEducationPurchasesResponseItem = zod.object({
   "reason": zod.string(),
   "details": zod.string(),
   "status": zod.enum(['open', 'under_review']),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }),zod.null()]).optional()
 })
 export const ListEducationPurchasesResponse = zod.array(ListEducationPurchasesResponseItem)
@@ -10894,7 +10894,7 @@ export const ListEducationPurchaseMessagesResponse = zod.object({
   "body": zod.string(),
   "senderId": zod.string(),
   "senderName": zod.string(),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "readAt": zod.coerce.date().nullish()
 }))
 })
@@ -10917,7 +10917,7 @@ export const CreateEducationPurchaseMessageResponse = zod.object({
   "body": zod.string(),
   "senderId": zod.string(),
   "senderName": zod.string(),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "readAt": zod.coerce.date().nullish()
 })
 
@@ -10945,7 +10945,7 @@ export const CreateEducationDisputeResponse = zod.object({
   "details": zod.string(),
   "status": zod.enum(['open', 'under_review', 'resolved_refund', 'resolved_payout', 'rejected', 'cancelled']),
   "resolutionNote": zod.string().nullish(),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "resolvedAt": zod.coerce.date().nullish()
 })
 
@@ -10961,7 +10961,7 @@ export const ListEducationDisputesResponseItem = zod.object({
   "details": zod.string(),
   "status": zod.enum(['open', 'under_review', 'resolved_refund', 'resolved_payout', 'rejected', 'cancelled']),
   "resolutionNote": zod.string().nullish(),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "resolvedAt": zod.coerce.date().nullish()
 })
 export const ListEducationDisputesResponse = zod.array(ListEducationDisputesResponseItem)
@@ -11473,7 +11473,7 @@ export const SettleAdminEducationEnrollmentResponse = zod.object({
   "paymentStatus": zod.enum(['pending', 'paid', 'failed', 'refunded']),
   "progress": zod.number(),
   "nextLesson": zod.string().nullish(),
-  "purchasedAt": zod.coerce.date(),
+  "purchasedAt": zod.coerce.date().nullable(),
   "accessExpiresAt": zod.coerce.date().nullish(),
   "coursePriceSnapshot": zod.number().int().nullish(),
   "durationSnapshot": zod.string().nullish(),
@@ -11488,7 +11488,7 @@ export const SettleAdminEducationEnrollmentResponse = zod.object({
   "reason": zod.string(),
   "details": zod.string(),
   "status": zod.enum(['open', 'under_review']),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }),zod.null()]).optional()
 })
 
@@ -11557,7 +11557,7 @@ export const ResolveAdminEducationDisputeResponse = zod.object({
   "details": zod.string(),
   "status": zod.enum(['open', 'under_review', 'resolved_refund', 'resolved_payout', 'rejected', 'cancelled']),
   "resolutionNote": zod.string().nullish(),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "resolvedAt": zod.coerce.date().nullish()
 })
 
@@ -12279,8 +12279,8 @@ export const CreateEducationCourseResponse = zod.object({
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
@@ -12409,7 +12409,7 @@ export const CreateEducationCourseResponse = zod.object({
   "id": zod.string(),
   "rating": zod.number().min(1).max(createEducationCourseResponseOneTwoReviewsItemRatingMax),
   "comment": zod.string(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 })).and(zod.object({
   "modules": zod.array(zod.object({
@@ -12626,8 +12626,8 @@ export const GetEducationCourseResponse = zod.object({
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
@@ -12756,7 +12756,7 @@ export const GetEducationCourseResponse = zod.object({
   "id": zod.string(),
   "rating": zod.number().min(1).max(getEducationCourseResponseOneTwoReviewsItemRatingMax),
   "comment": zod.string(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 })).and(zod.object({
   "modules": zod.array(zod.object({
@@ -13087,8 +13087,8 @@ export const UpdateEducationCourseResponse = zod.object({
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
@@ -13217,7 +13217,7 @@ export const UpdateEducationCourseResponse = zod.object({
   "id": zod.string(),
   "rating": zod.number().min(1).max(updateEducationCourseResponseOneTwoReviewsItemRatingMax),
   "comment": zod.string(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 })).and(zod.object({
   "modules": zod.array(zod.object({
@@ -13447,8 +13447,8 @@ export const PublishEducationCourseResponse = zod.object({
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
@@ -13577,7 +13577,7 @@ export const PublishEducationCourseResponse = zod.object({
   "id": zod.string(),
   "rating": zod.number().min(1).max(publishEducationCourseResponseOneTwoReviewsItemRatingMax),
   "comment": zod.string(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 })).and(zod.object({
   "modules": zod.array(zod.object({
@@ -14868,8 +14868,8 @@ export const ListEducationSessionsParams = zod.object({
 
 export const ListEducationSessionsResponseItem = zod.object({
   "id": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
@@ -14908,8 +14908,8 @@ export const CreateEducationSessionBody = zod.object({
 
 export const CreateEducationSessionResponse = zod.object({
   "id": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
@@ -14955,7 +14955,7 @@ export const EnrollInEducationCourseResponse = zod.object({
   "paymentStatus": zod.enum(['pending', 'paid', 'failed', 'refunded']),
   "progress": zod.number(),
   "nextLesson": zod.string().nullish(),
-  "purchasedAt": zod.coerce.date(),
+  "purchasedAt": zod.coerce.date().nullable(),
   "accessExpiresAt": zod.coerce.date().nullish(),
   "coursePriceSnapshot": zod.number().int().nullish(),
   "durationSnapshot": zod.string().nullish(),
@@ -14970,7 +14970,7 @@ export const EnrollInEducationCourseResponse = zod.object({
   "reason": zod.string(),
   "details": zod.string(),
   "status": zod.enum(['open', 'under_review']),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }),zod.null()]).optional()
 })
 
@@ -15024,7 +15024,7 @@ export const CreateEducationGroupEnrollmentsResponse = zod.object({
   "paymentStatus": zod.enum(['pending', 'paid', 'failed', 'refunded']),
   "progress": zod.number(),
   "nextLesson": zod.string().nullish(),
-  "purchasedAt": zod.coerce.date(),
+  "purchasedAt": zod.coerce.date().nullable(),
   "accessExpiresAt": zod.coerce.date().nullish(),
   "coursePriceSnapshot": zod.number().int().nullish(),
   "durationSnapshot": zod.string().nullish(),
@@ -15039,7 +15039,7 @@ export const CreateEducationGroupEnrollmentsResponse = zod.object({
   "reason": zod.string(),
   "details": zod.string(),
   "status": zod.enum(['open', 'under_review']),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }),zod.null()]).optional()
 })).min(1),
   "paymentInstructions": zod.array(zod.object({
@@ -15140,7 +15140,7 @@ export const TransferEducationOnlineEnrollmentResponse = zod.object({
   "paymentStatus": zod.enum(['pending', 'paid', 'failed', 'refunded']),
   "progress": zod.number(),
   "nextLesson": zod.string().nullish(),
-  "purchasedAt": zod.coerce.date(),
+  "purchasedAt": zod.coerce.date().nullable(),
   "accessExpiresAt": zod.coerce.date().nullish(),
   "coursePriceSnapshot": zod.number().int().nullish(),
   "durationSnapshot": zod.string().nullish(),
@@ -15155,7 +15155,7 @@ export const TransferEducationOnlineEnrollmentResponse = zod.object({
   "reason": zod.string(),
   "details": zod.string(),
   "status": zod.enum(['open', 'under_review']),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }),zod.null()]).optional()
 })
 
@@ -15293,8 +15293,8 @@ export const UpdateEducationSessionBody = zod.object({
 
 export const UpdateEducationSessionResponse = zod.object({
   "id": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
@@ -15340,7 +15340,7 @@ export const ListEnrollmentsResponseItem = zod.object({
   "paymentStatus": zod.enum(['pending', 'paid', 'failed', 'refunded']),
   "progress": zod.number(),
   "nextLesson": zod.string().nullish(),
-  "purchasedAt": zod.coerce.date(),
+  "purchasedAt": zod.coerce.date().nullable(),
   "accessExpiresAt": zod.coerce.date().nullish(),
   "coursePriceSnapshot": zod.number().int().nullish(),
   "durationSnapshot": zod.string().nullish(),
@@ -15355,7 +15355,7 @@ export const ListEnrollmentsResponseItem = zod.object({
   "reason": zod.string(),
   "details": zod.string(),
   "status": zod.enum(['open', 'under_review']),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }),zod.null()]).optional()
 })
 export const ListEnrollmentsResponse = zod.array(ListEnrollmentsResponseItem)
@@ -15379,7 +15379,7 @@ export const AcceptEducationWaitlistOfferResponse = zod.object({
   "paymentStatus": zod.enum(['pending', 'paid', 'failed', 'refunded']),
   "progress": zod.number(),
   "nextLesson": zod.string().nullish(),
-  "purchasedAt": zod.coerce.date(),
+  "purchasedAt": zod.coerce.date().nullable(),
   "accessExpiresAt": zod.coerce.date().nullish(),
   "coursePriceSnapshot": zod.number().int().nullish(),
   "durationSnapshot": zod.string().nullish(),
@@ -15394,7 +15394,7 @@ export const AcceptEducationWaitlistOfferResponse = zod.object({
   "reason": zod.string(),
   "details": zod.string(),
   "status": zod.enum(['open', 'under_review']),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }),zod.null()]).optional()
 })
 
@@ -15416,7 +15416,7 @@ export const ListEducationNotificationsResponse = zod.object({
   "enrollmentId": zod.string().nullable(),
   "waitlistId": zod.string().nullable(),
   "readAt": zod.coerce.date().nullable(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 })),
   "offers": zod.array(zod.object({
   "id": zod.string(),
@@ -15562,7 +15562,7 @@ export const GetEducationLmsResponse = zod.object({
   "paymentStatus": zod.enum(['pending', 'paid', 'failed', 'refunded']),
   "progress": zod.number(),
   "nextLesson": zod.string().nullish(),
-  "purchasedAt": zod.coerce.date(),
+  "purchasedAt": zod.coerce.date().nullable(),
   "accessExpiresAt": zod.coerce.date().nullish(),
   "coursePriceSnapshot": zod.number().int().nullish(),
   "durationSnapshot": zod.string().nullish(),
@@ -15577,7 +15577,7 @@ export const GetEducationLmsResponse = zod.object({
   "reason": zod.string(),
   "details": zod.string(),
   "status": zod.enum(['open', 'under_review']),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }),zod.null()]).optional()
 }),
   "course": zod.object({
@@ -15673,8 +15673,8 @@ export const GetEducationLmsResponse = zod.object({
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
@@ -15803,7 +15803,7 @@ export const GetEducationLmsResponse = zod.object({
   "id": zod.string(),
   "rating": zod.number().min(1).max(getEducationLmsResponseCourseOneTwoReviewsItemRatingMax),
   "comment": zod.string(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 })).and(zod.object({
   "modules": zod.array(zod.object({
@@ -15870,7 +15870,7 @@ export const CompleteEducationLessonResponse = zod.object({
   "paymentStatus": zod.enum(['pending', 'paid', 'failed', 'refunded']),
   "progress": zod.number(),
   "nextLesson": zod.string().nullish(),
-  "purchasedAt": zod.coerce.date(),
+  "purchasedAt": zod.coerce.date().nullable(),
   "accessExpiresAt": zod.coerce.date().nullish(),
   "coursePriceSnapshot": zod.number().int().nullish(),
   "durationSnapshot": zod.string().nullish(),
@@ -15885,7 +15885,7 @@ export const CompleteEducationLessonResponse = zod.object({
   "reason": zod.string(),
   "details": zod.string(),
   "status": zod.enum(['open', 'under_review']),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }),zod.null()]).optional()
 })
 
@@ -15905,8 +15905,8 @@ export const ListEducationInstructorsResponseItem = zod.object({
   "specializations": zod.array(zod.string()),
   "qualifications": zod.array(zod.string()),
   "portfolioMedia": zod.array(zod.string().url()),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable()
 })
 export const ListEducationInstructorsResponse = zod.array(ListEducationInstructorsResponseItem)
 
@@ -15951,8 +15951,8 @@ export const CreateEducationInstructorResponse = zod.object({
   "specializations": zod.array(zod.string()),
   "qualifications": zod.array(zod.string()),
   "portfolioMedia": zod.array(zod.string().url()),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable()
 })
 
 
@@ -16000,8 +16000,8 @@ export const UpdateEducationInstructorResponse = zod.object({
   "specializations": zod.array(zod.string()),
   "qualifications": zod.array(zod.string()),
   "portfolioMedia": zod.array(zod.string().url()),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable()
 })
 
 
@@ -16423,8 +16423,8 @@ export const LinkEducationCourseInstructorResponse = zod.object({
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
@@ -16553,7 +16553,7 @@ export const LinkEducationCourseInstructorResponse = zod.object({
   "id": zod.string(),
   "rating": zod.number().min(1).max(linkEducationCourseInstructorResponseOneTwoReviewsItemRatingMax),
   "comment": zod.string(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 })).and(zod.object({
   "modules": zod.array(zod.object({
@@ -16795,8 +16795,8 @@ export const ReplaceEducationCourseDaysResponse = zod.object({
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
@@ -16925,7 +16925,7 @@ export const ReplaceEducationCourseDaysResponse = zod.object({
   "id": zod.string(),
   "rating": zod.number().min(1).max(replaceEducationCourseDaysResponseOneTwoReviewsItemRatingMax),
   "comment": zod.string(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 })).and(zod.object({
   "modules": zod.array(zod.object({
@@ -17179,8 +17179,8 @@ export const ListPublicEducationCoursesResponseItem = zod.object({
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
@@ -17309,7 +17309,7 @@ export const ListPublicEducationCoursesResponseItem = zod.object({
   "id": zod.string(),
   "rating": zod.number().min(1).max(listPublicEducationCoursesResponseTwoReviewsItemRatingMax),
   "comment": zod.string(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 }))
 export const ListPublicEducationCoursesResponse = zod.array(ListPublicEducationCoursesResponseItem)
@@ -17511,8 +17511,8 @@ export const GetPublicEducationCourseResponse = zod.object({
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
@@ -17641,7 +17641,7 @@ export const GetPublicEducationCourseResponse = zod.object({
   "id": zod.string(),
   "rating": zod.number().min(1).max(getPublicEducationCourseResponseTwoReviewsItemRatingMax),
   "comment": zod.string(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 }))
 
@@ -17851,8 +17851,8 @@ export const ListRelatedEducationCoursesResponseItem = zod.object({
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
@@ -17981,7 +17981,7 @@ export const ListRelatedEducationCoursesResponseItem = zod.object({
   "id": zod.string(),
   "rating": zod.number().min(1).max(listRelatedEducationCoursesResponseTwoReviewsItemRatingMax),
   "comment": zod.string(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 }))
 export const ListRelatedEducationCoursesResponse = zod.array(ListRelatedEducationCoursesResponseItem)
@@ -18378,8 +18378,8 @@ export const ListPopularEducationCoursesResponseItem = zod.object({
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
@@ -18508,7 +18508,7 @@ export const ListPopularEducationCoursesResponseItem = zod.object({
   "id": zod.string(),
   "rating": zod.number().min(1).max(listPopularEducationCoursesResponseTwoReviewsItemRatingMax),
   "comment": zod.string(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 }))
 export const ListPopularEducationCoursesResponse = zod.array(ListPopularEducationCoursesResponseItem)
@@ -18928,7 +18928,7 @@ export const listEducationWishlistResponseItemsItemCourseTwoReviewsItemRatingMax
 export const ListEducationWishlistResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.string(),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "course": zod.object({
   "id": zod.string(),
   "title": zod.string(),
@@ -19022,8 +19022,8 @@ export const ListEducationWishlistResponse = zod.object({
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
@@ -19152,7 +19152,7 @@ export const ListEducationWishlistResponse = zod.object({
   "id": zod.string(),
   "rating": zod.number().min(1).max(listEducationWishlistResponseItemsItemCourseTwoReviewsItemRatingMax),
   "comment": zod.string(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 }))
 })),
@@ -19261,7 +19261,7 @@ export const addEducationWishlistItemResponseCourseTwoReviewsItemRatingMax = 5;
 
 export const AddEducationWishlistItemResponse = zod.object({
   "id": zod.string(),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "course": zod.object({
   "id": zod.string(),
   "title": zod.string(),
@@ -19355,8 +19355,8 @@ export const AddEducationWishlistItemResponse = zod.object({
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
@@ -19485,7 +19485,7 @@ export const AddEducationWishlistItemResponse = zod.object({
   "id": zod.string(),
   "rating": zod.number().min(1).max(addEducationWishlistItemResponseCourseTwoReviewsItemRatingMax),
   "comment": zod.string(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 }))
 })
@@ -19623,7 +19623,7 @@ export const RedeemEducationGiftVoucherResponse = zod.object({
   "paymentStatus": zod.enum(['pending', 'paid', 'failed', 'refunded']),
   "progress": zod.number(),
   "nextLesson": zod.string().nullish(),
-  "purchasedAt": zod.coerce.date(),
+  "purchasedAt": zod.coerce.date().nullable(),
   "accessExpiresAt": zod.coerce.date().nullish(),
   "coursePriceSnapshot": zod.number().int().nullish(),
   "durationSnapshot": zod.string().nullish(),
@@ -19638,7 +19638,7 @@ export const RedeemEducationGiftVoucherResponse = zod.object({
   "reason": zod.string(),
   "details": zod.string(),
   "status": zod.enum(['open', 'under_review']),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }),zod.null()]).optional()
 })
 
@@ -19962,8 +19962,8 @@ export const ListFeaturedEducationCoursesResponseItem = zod.object({
 })),
   "sessions": zod.array(zod.object({
   "id": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
@@ -20092,7 +20092,7 @@ export const ListFeaturedEducationCoursesResponseItem = zod.object({
   "id": zod.string(),
   "rating": zod.number().min(1).max(listFeaturedEducationCoursesResponseTwoReviewsItemRatingMax),
   "comment": zod.string(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 }))
 export const ListFeaturedEducationCoursesResponse = zod.array(ListFeaturedEducationCoursesResponseItem)
@@ -23669,7 +23669,7 @@ export const GetSupplierProductResponse = zod.object({
   "salonName": zod.string(),
   "rating": zod.number().min(1).max(getSupplierProductResponseTwoReviewsItemRatingMax),
   "comment": zod.string(),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "mine": zod.boolean()
 })),
   "relatedProducts": zod.array(zod.object({
@@ -27448,7 +27448,7 @@ export const ListProductWishlistResponseItem = zod.object({
   "id": zod.string(),
   "productId": zod.string(),
   "variantValue": zod.string().nullable(),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "available": zod.boolean(),
   "unavailableReason": zod.union([zod.literal('PRODUCT_INACTIVE'),zod.literal('RETAIL_DISABLED'),zod.literal('OUT_OF_STOCK'),zod.literal('VARIANT_UNAVAILABLE'),zod.literal(null)]).nullable(),
   "product": zod.union([zod.object({
@@ -27542,7 +27542,7 @@ export const AddProductWishlistItemResponse = zod.object({
   "id": zod.string(),
   "productId": zod.string(),
   "variantValue": zod.string().nullable(),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "available": zod.boolean(),
   "unavailableReason": zod.union([zod.literal('PRODUCT_INACTIVE'),zod.literal('RETAIL_DISABLED'),zod.literal('OUT_OF_STOCK'),zod.literal('VARIANT_UNAVAILABLE'),zod.literal(null)]).nullable(),
   "product": zod.union([zod.object({
@@ -27637,7 +27637,7 @@ export const ToggleProductWishlistItemResponse = zod.object({
   "id": zod.string(),
   "productId": zod.string(),
   "variantValue": zod.string().nullable(),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "available": zod.boolean(),
   "unavailableReason": zod.union([zod.literal('PRODUCT_INACTIVE'),zod.literal('RETAIL_DISABLED'),zod.literal('OUT_OF_STOCK'),zod.literal('VARIANT_UNAVAILABLE'),zod.literal(null)]).nullable(),
   "product": zod.union([zod.object({
@@ -28962,7 +28962,7 @@ export const CheckoutRetailCartResponse = zod.object({
   "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(checkoutRetailCartResponseReferralCreditMerchandiseSubtotalRsdMin),
   "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(checkoutRetailCartResponseReferralCreditPreCreditPayableTotalRsdMin),
   "referralCreditAppliedRsd": zod.number().int().min(checkoutRetailCartResponseReferralCreditAppliedRsdMin),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "items": zod.array(zod.object({
   "id": zod.string(),
   "productId": zod.string(),
@@ -29069,7 +29069,7 @@ export const ListCustomerRetailOrdersResponseItem = zod.object({
   "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(listCustomerRetailOrdersResponseReferralCreditMerchandiseSubtotalRsdMin),
   "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(listCustomerRetailOrdersResponseReferralCreditPreCreditPayableTotalRsdMin),
   "referralCreditAppliedRsd": zod.number().int().min(listCustomerRetailOrdersResponseReferralCreditAppliedRsdMin),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "items": zod.array(zod.object({
   "id": zod.string(),
   "productId": zod.string(),
@@ -29119,7 +29119,7 @@ export const GetCustomerRetailOrderResponse = zod.object({
   "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(getCustomerRetailOrderResponseReferralCreditMerchandiseSubtotalRsdMin),
   "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(getCustomerRetailOrderResponseReferralCreditPreCreditPayableTotalRsdMin),
   "referralCreditAppliedRsd": zod.number().int().min(getCustomerRetailOrderResponseReferralCreditAppliedRsdMin),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "items": zod.array(zod.object({
   "id": zod.string(),
   "productId": zod.string(),
@@ -29173,7 +29173,7 @@ export const AdminListRetailOrdersResponseItem = zod.object({
   "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(adminListRetailOrdersResponseReferralCreditMerchandiseSubtotalRsdMin),
   "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(adminListRetailOrdersResponseReferralCreditPreCreditPayableTotalRsdMin),
   "referralCreditAppliedRsd": zod.number().int().min(adminListRetailOrdersResponseReferralCreditAppliedRsdMin),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "items": zod.array(zod.object({
   "id": zod.string(),
   "productId": zod.string(),
@@ -29223,7 +29223,7 @@ export const AdminGetRetailOrderResponse = zod.object({
   "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(adminGetRetailOrderResponseOneReferralCreditMerchandiseSubtotalRsdMin),
   "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(adminGetRetailOrderResponseOneReferralCreditPreCreditPayableTotalRsdMin),
   "referralCreditAppliedRsd": zod.number().int().min(adminGetRetailOrderResponseOneReferralCreditAppliedRsdMin),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "items": zod.array(zod.object({
   "id": zod.string(),
   "productId": zod.string(),
@@ -29295,7 +29295,7 @@ export const AdminUpdateRetailOrderStatusResponse = zod.object({
   "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(adminUpdateRetailOrderStatusResponseOneReferralCreditMerchandiseSubtotalRsdMin),
   "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(adminUpdateRetailOrderStatusResponseOneReferralCreditPreCreditPayableTotalRsdMin),
   "referralCreditAppliedRsd": zod.number().int().min(adminUpdateRetailOrderStatusResponseOneReferralCreditAppliedRsdMin),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "items": zod.array(zod.object({
   "id": zod.string(),
   "productId": zod.string(),
@@ -29417,7 +29417,7 @@ export const AdminUpdateRetailPaymentStatusResponse = zod.object({
   "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(adminUpdateRetailPaymentStatusResponseReferralCreditMerchandiseSubtotalRsdMin),
   "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(adminUpdateRetailPaymentStatusResponseReferralCreditPreCreditPayableTotalRsdMin),
   "referralCreditAppliedRsd": zod.number().int().min(adminUpdateRetailPaymentStatusResponseReferralCreditAppliedRsdMin),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "items": zod.array(zod.object({
   "id": zod.string(),
   "productId": zod.string(),

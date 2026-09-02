@@ -16,7 +16,8 @@ export interface EducationDispute {
   status: EducationDisputeStatus;
   /** @nullable */
   resolutionNote?: string | null;
-  createdAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
   /** @nullable */
   resolvedAt?: Date | null;
 }

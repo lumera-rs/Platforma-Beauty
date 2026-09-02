@@ -712,7 +712,7 @@ function StudentEducationInbox() {
               >
                 <p className="text-sm font-medium">{item.title}</p>
                 <p className="text-sm text-muted-foreground">{item.body}</p>
-                <p className="mt-1 text-xs text-muted-foreground/70">{new Date(item.createdAt).toLocaleString("sr-RS")}</p>
+                <p className="mt-1 text-xs text-muted-foreground/70">{item.createdAt ? new Date(item.createdAt).toLocaleString("sr-RS") : "Datum nije dostupan"}</p>
               </div>
             ))}
           </CardContent>

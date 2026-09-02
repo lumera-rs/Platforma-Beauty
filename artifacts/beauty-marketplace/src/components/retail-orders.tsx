@@ -70,7 +70,7 @@ export function CustomerRetailOrders() {
             <div>
               <p className="font-semibold">{order.orderNumber}</p>
               <p className="text-sm text-muted-foreground">
-                                {new Date(order.createdAt).toLocaleDateString("sr-RS")}
+                {order.createdAt ? new Date(order.createdAt).toLocaleDateString("sr-RS") : "Datum nije dostupan"}
               </p>
               <div className="mt-2 space-y-2">
                 {order.items.map((item) => (

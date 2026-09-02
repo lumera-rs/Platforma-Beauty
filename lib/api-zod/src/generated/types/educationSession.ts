@@ -8,8 +8,10 @@
 
 export interface EducationSession {
   id: string;
-  startsAt: Date;
-  endsAt: Date;
+  /** @nullable */
+  startsAt: Date | null;
+  /** @nullable */
+  endsAt: Date | null;
   /** @nullable */
   location?: string | null;
   capacity: number;

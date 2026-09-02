@@ -20,6 +20,8 @@ export interface EducationInstructorProfile {
   specializations: string[];
   qualifications: string[];
   portfolioMedia: string[];
-  createdAt: Date;
-  updatedAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
+  /** @nullable */
+  updatedAt: Date | null;
 }

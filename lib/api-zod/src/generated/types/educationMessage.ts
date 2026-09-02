@@ -11,7 +11,8 @@ export interface EducationMessage {
   body: string;
   senderId: string;
   senderName: string;
-  createdAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
   /** @nullable */
   readAt?: Date | null;
 }

@@ -26,7 +26,8 @@ export interface ApprovalRequest {
   referralCreditIntentRsd: number;
   /** @nullable */
   reviewerReason: string | null;
-  createdAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
   /** @nullable */
   decidedAt: Date | null;
   /** @nullable */

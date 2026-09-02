@@ -15,6 +15,7 @@ export interface ProductReview {
      */
   rating: number;
   comment: string;
-  createdAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
   mine: boolean;
 }

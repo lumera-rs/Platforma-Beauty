@@ -2950,14 +2950,14 @@ async function sessionsForCourse(courseId: string, includeLocation = false) {
     .where(eq(courseSessionsTable.courseId, courseId)).orderBy(asc(courseSessionsTable.startsAt));
   return sessions.map(({ session, educatorStaffId }) => ({
     id: session.id,
-    startsAt: session.startsAt.toISOString(),
-    endsAt: session.endsAt.toISOString(),
+    startsAt: safeIsoTimestamp(session.startsAt),
+    endsAt: safeIsoTimestamp(session.endsAt),
     location: includeLocation ? session.location : null,
     capacity: session.capacity,
     reservedSeats: session.reservedSeats,
     availableSeats: Math.max(0, session.capacity - session.reservedSeats),
     minimumEnrollments: session.minimumEnrollments,
-    cancelledAt: session.cancelledAt?.toISOString() ?? null,
+    cancelledAt: safeIsoTimestamp(session.cancelledAt),
     educatorStaffId: educatorStaffId ?? null,
   }));
 }
@@ -3305,7 +3305,7 @@ async function courseReviewViews(courseId: string) {
     id: review.id,
     rating: review.rating,
     comment: review.comment,
-    createdAt: review.createdAt.toISOString(),
+    createdAt: safeIsoTimestamp(review.createdAt),
   }));
 }
 
@@ -3533,12 +3533,12 @@ async function educationCourseView(
     schedulingMode: course.schedulingMode,
     cancellationCutoffHours: course.cancellationDeadlineHours,
     depositDisposition: course.depositDisposition,
-    minimumEnrollmentRiskDeadline: course.minimumEnrollmentRiskDeadline?.toISOString() ?? null,
+    minimumEnrollmentRiskDeadline: safeIsoTimestamp(course.minimumEnrollmentRiskDeadline),
     earlyBirdPrice: course.earlyBirdPrice,
-    earlyBirdCutoff: course.earlyBirdCutoff?.toISOString() ?? null,
+    earlyBirdCutoff: safeIsoTimestamp(course.earlyBirdCutoff),
     installmentCount: course.installmentCount,
     featured: await isPubliclyFeaturedEducationCourse(course),
-    featuredUntil: course.featuredUntil?.toISOString() ?? null,
+    featuredUntil: safeIsoTimestamp(course.featuredUntil),
     refundPolicy: course.refundPolicy,
     groupDiscountMinimum: course.groupDiscountMinimum,
     groupDiscountPercent: course.groupDiscountPercent,
@@ -3613,22 +3613,22 @@ async function educationEnrollmentView(enrollment: typeof courseEnrollmentsTable
     paymentStatus: enrollment.paymentStatus,
     progress: enrollment.progress,
     nextLesson,
-    purchasedAt: enrollment.purchasedAt.toISOString(),
-    accessExpiresAt: enrollment.accessExpiresAt?.toISOString() ?? null,
+    purchasedAt: safeIsoTimestamp(enrollment.purchasedAt),
+    accessExpiresAt: safeIsoTimestamp(enrollment.accessExpiresAt),
     coursePriceSnapshot: enrollment.coursePriceSnapshot,
     durationSnapshot: enrollment.durationSnapshot,
     accessDaysSnapshot: enrollment.accessDaysSnapshot,
     extensionPricesSnapshot: enrollment.extensionPricesSnapshot,
-    digitalContentConsentAt: enrollment.digitalContentConsentAt?.toISOString() ?? null,
+    digitalContentConsentAt: safeIsoTimestamp(enrollment.digitalContentConsentAt),
     digitalContentConsentVersionSnapshot: enrollment.digitalContentConsentVersionSnapshot,
     escrowStatus: escrow[0]?.status ?? null,
-    escrowReleaseAt: escrow[0]?.releaseAt?.toISOString() ?? null,
+    escrowReleaseAt: safeIsoTimestamp(escrow[0]?.releaseAt),
     dispute: disputes[0] ? {
       id: disputes[0].id,
       reason: disputes[0].reason,
       details: disputes[0].details,
       status: disputes[0].status,
-      createdAt: disputes[0].createdAt.toISOString(),
+      createdAt: safeIsoTimestamp(disputes[0].createdAt),
     } : null,
   };
 }
@@ -3712,22 +3712,22 @@ async function batchEducationEnrollmentViews(enrollments: (typeof courseEnrollme
       paymentStatus: enrollment.paymentStatus,
       progress: enrollment.progress,
       nextLesson,
-      purchasedAt: enrollment.purchasedAt.toISOString(),
-      accessExpiresAt: enrollment.accessExpiresAt?.toISOString() ?? null,
+      purchasedAt: safeIsoTimestamp(enrollment.purchasedAt),
+      accessExpiresAt: safeIsoTimestamp(enrollment.accessExpiresAt),
       coursePriceSnapshot: enrollment.coursePriceSnapshot,
       durationSnapshot: enrollment.durationSnapshot,
       accessDaysSnapshot: enrollment.accessDaysSnapshot,
       extensionPricesSnapshot: enrollment.extensionPricesSnapshot,
-      digitalContentConsentAt: enrollment.digitalContentConsentAt?.toISOString() ?? null,
+      digitalContentConsentAt: safeIsoTimestamp(enrollment.digitalContentConsentAt),
       digitalContentConsentVersionSnapshot: enrollment.digitalContentConsentVersionSnapshot,
       escrowStatus: escrow?.status ?? null,
-      escrowReleaseAt: escrow?.releaseAt?.toISOString() ?? null,
+      escrowReleaseAt: safeIsoTimestamp(escrow?.releaseAt),
       dispute: dispute ? {
         id: dispute.id,
         reason: dispute.reason,
         details: dispute.details,
         status: dispute.status,
-        createdAt: dispute.createdAt.toISOString(),
+        createdAt: safeIsoTimestamp(dispute.createdAt),
       } : null,
     };
   });
@@ -3953,8 +3953,8 @@ function card(
     servesMen: salon.servesMen,
     hasDiscount: services.some((item) => item.promoPrice !== null && item.promoPrice < item.price),
     openSunday: hours.some((item) => item.weekday === 7 && !item.closed),
-    lastBookedAt: lastBookedAt?.toISOString() ?? null,
-    createdAt: salon.createdAt.toISOString(),
+    lastBookedAt: safeIsoTimestamp(lastBookedAt),
+    createdAt: safeIsoTimestamp(salon.createdAt),
   };
 }
 
@@ -6842,7 +6842,7 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
         verifiedBooking: !!reviewedService && completedAppointmentKeys.has(`${item.customerId}:${reviewedService.id}`),
         rating: item.rating,
         text: item.text,
-        date: item.createdAt.toISOString().slice(0, 10),
+        date: safeIsoTimestamp(item.createdAt)?.slice(0, 10) ?? null,
         serviceName: item.serviceName,
       };
     }),
@@ -13243,7 +13243,7 @@ function retailOrderDto(
     referralCreditAppliedRsd: order.referralCreditAppliedRsd,
     trackingNumber: order.trackingNumber ?? null,
     estimatedDeliveryDate: order.estimatedDeliveryDate ?? null,
-    createdAt: order.createdAt.toISOString(),
+    createdAt: safeIsoTimestamp(order.createdAt),
     trackingUrl: order.trackingUrl ?? null,
     contact: { name: order.shippingName, email: order.shippingEmail, phone: order.shippingPhone },
     delivery: { address: order.shippingAddress, city: order.shippingCity, postalCode: order.shippingPostalCode, note: order.shippingNote ?? null },
@@ -13401,7 +13401,7 @@ async function productReviewViews(productId: string, currentSalonId?: string) {
     salonName,
     rating: review.rating,
     comment: review.comment,
-    createdAt: review.updatedAt.toISOString(),
+    createdAt: safeIsoTimestamp(review.updatedAt),
     mine: review.salonId === currentSalonId,
   }));
 }
@@ -13492,7 +13492,7 @@ async function wishlistItemDto(entry: typeof productWishlistsTable.$inferSelect)
     : entry.variantValue && !variant ? "VARIANT_UNAVAILABLE"
     : stock < 1 ? "OUT_OF_STOCK" : null;
   return {
-    id: entry.id, productId: entry.productId, variantValue: entry.variantValue, createdAt: entry.createdAt.toISOString(),
+    id: entry.id, productId: entry.productId, variantValue: entry.variantValue, createdAt: safeIsoTimestamp(entry.createdAt),
     available: eligible && !unavailableReason, unavailableReason,
     product: eligible ? publicProductDto(product!) : null,
   };
@@ -14852,7 +14852,7 @@ router.get("/retail/products/:productId/reviews", async (req, res): Promise<void
   res.json(rows.map(({ review, firstName, lastName }) => ({
     id: review.id, rating: review.rating, comment: review.comment, verifiedPurchase: true,
     reviewerName: `${firstName} ${lastName.slice(0, 1)}.`.trim(),
-    createdAt: review.createdAt.toISOString(), updatedAt: review.updatedAt.toISOString(),
+    createdAt: safeIsoTimestamp(review.createdAt), updatedAt: safeIsoTimestamp(review.updatedAt),
   })));
 });
 
@@ -16404,8 +16404,8 @@ function approvalRequestDto(
     couponCode: request.couponCode,
     referralCreditIntentRsd: request.referralCreditIntentRsd,
     reviewerReason: request.reviewerReason,
-    createdAt: request.createdAt.toISOString(),
-    decidedAt: request.decidedAt?.toISOString() ?? null,
+    createdAt: safeIsoTimestamp(request.createdAt),
+    decidedAt: safeIsoTimestamp(request.decidedAt),
     finalizedOrderId: request.finalizedOrderId,
     lines: lines.map((line) => {
       const catalog = line.catalogSnapshot as { unitPrice?: number; variantValue?: string | null };
@@ -17366,7 +17366,7 @@ function orderDto(
     shippingCost: order.shippingCost,
     totalWeightGrams: order.totalWeightGrams,
     invoice: order.invoiceNumber && order.invoiceIssuedAt ? {
-      number: order.invoiceNumber, issuedAt: order.invoiceIssuedAt.toISOString(),
+      number: order.invoiceNumber, issuedAt: safeIsoTimestamp(order.invoiceIssuedAt),
     } : null,
     couponCode: order.couponCodeSnapshot ?? null,
     couponDiscountRsd: order.couponDiscountRsd,
@@ -17375,8 +17375,8 @@ function orderDto(
     referralCreditPreCreditPayableTotalRsd: order.referralCreditPreCreditPayableTotalRsd,
     referralCreditAppliedRsd: order.referralCreditAppliedRsd,
     itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
-    createdAt: order.createdAt.toISOString(),
-    updatedAt: order.updatedAt.toISOString(),
+    createdAt: safeIsoTimestamp(order.createdAt),
+    updatedAt: safeIsoTimestamp(order.updatedAt),
     salon: {
       id: salon.id,
       name: salon.name,
@@ -19784,19 +19784,19 @@ router.get("/education/notifications", async (req, res): Promise<void> => {
       actionUrl: row.actionUrl,
       enrollmentId: row.enrollmentId,
       waitlistId: row.waitlistId,
-      readAt: row.readAt?.toISOString() ?? null,
-      createdAt: row.createdAt.toISOString(),
+      readAt: safeIsoTimestamp(row.readAt),
+      createdAt: safeIsoTimestamp(row.createdAt),
     })),
     offers: offerRows.map((row) => ({
       id: row.id,
       courseId: row.courseId,
       courseTitle: row.courseTitle ?? "Kurs",
       sessionId: row.sessionId,
-      sessionStartsAt: row.sessionStartsAt?.toISOString() ?? null,
+      sessionStartsAt: safeIsoTimestamp(row.sessionStartsAt),
       status: row.status,
       position: row.position,
-      offeredAt: row.offeredAt?.toISOString() ?? null,
-      expiresAt: row.expiresAt?.toISOString() ?? null,
+      offeredAt: safeIsoTimestamp(row.offeredAt),
+      expiresAt: safeIsoTimestamp(row.expiresAt),
     })),
   }));
 });
@@ -20419,14 +20419,14 @@ export async function batchEducationCourseViews(
     const rawSessions = sessionsByCourseId.get(course.id) ?? [];
     const sessions = rawSessions.map((s) => ({
       id: s.id,
-      startsAt: s.startsAt.toISOString(),
-      endsAt: s.endsAt.toISOString(),
+      startsAt: safeIsoTimestamp(s.startsAt),
+      endsAt: safeIsoTimestamp(s.endsAt),
       location: mayReadLogistics ? s.location : null,
       capacity: s.capacity,
       reservedSeats: s.reservedSeats,
       availableSeats: Math.max(0, s.capacity - s.reservedSeats),
       minimumEnrollments: s.minimumEnrollments,
-      cancelledAt: s.cancelledAt?.toISOString() ?? null,
+      cancelledAt: safeIsoTimestamp(s.cancelledAt),
     }));
 
     // Modules + lessons view.
@@ -20468,7 +20468,7 @@ export async function batchEducationCourseViews(
       id: r.id,
       rating: r.rating,
       comment: r.comment,
-      createdAt: r.createdAt.toISOString(),
+      createdAt: safeIsoTimestamp(r.createdAt),
     }));
 
     // Featured: isFeatured flag + not expired + latest charge is "paid".
@@ -20511,7 +20511,7 @@ export async function batchEducationCourseViews(
       paymentMode: course.paymentMode,
       depositAmount: course.depositAmount,
       featured,
-      featuredUntil: course.featuredUntil?.toISOString() ?? null,
+      featuredUntil: safeIsoTimestamp(course.featuredUntil),
       refundPolicy: course.refundPolicy,
       groupDiscountMinimum: course.groupDiscountMinimum,
       groupDiscountPercent: course.groupDiscountPercent,
@@ -21065,7 +21065,7 @@ router.get("/education/public/rankings", async (_req, res): Promise<void> => {
   }
   const rankedCenter = (centerId: string, metric: number, evidenceCount = 0, explanation = "Organski rezultat; plaćeni plasmani ne utiču na rang.") => {
     const center = centerById.get(centerId);
-    return center ? { centerId, name: center.name, city: center.city, metric, evidenceCount, explanation, createdAt: center.createdAt.toISOString() } : null;
+    return center ? { centerId, name: center.name, city: center.city, metric, evidenceCount, explanation, createdAt: safeIsoTimestamp(center.createdAt) } : null;
   };
   res.json({
     popularCategories30d: categoryMetrics.map((row) => ({
@@ -21487,7 +21487,7 @@ router.get("/education/wishlist", async (req, res): Promise<void> => {
   ]);
   const views = (await batchEducationCourseViews(rows.map((row) => row.course))).map(publicEducationCourseView);
   res.json({
-    items: rows.map((row, index) => ({ id: row.wishlist.id, createdAt: row.wishlist.createdAt.toISOString(), course: views[index] })),
+    items: rows.map((row, index) => ({ id: row.wishlist.id, createdAt: safeIsoTimestamp(row.wishlist.createdAt), course: views[index] })),
     page, pageSize, total: Number(totalRows[0]?.value ?? 0),
   });
 });
@@ -21910,7 +21910,7 @@ function instructorProfileView(instructor: typeof educationInstructorsTable.$inf
     fullName: instructor.fullName, photoUrl: instructor.photoUrl ?? null, biography: instructor.biography,
     industryYears: instructor.industryYears, experienceYears: instructor.experienceYears,
     specializations: instructor.specializations, qualifications: instructor.qualifications, portfolioMedia: instructor.portfolioMedia,
-    createdAt: instructor.createdAt.toISOString(), updatedAt: instructor.updatedAt.toISOString(),
+    createdAt: safeIsoTimestamp(instructor.createdAt), updatedAt: safeIsoTimestamp(instructor.updatedAt),
   };
 }
 
@@ -22060,7 +22060,7 @@ router.get("/education/center/status", async (req, res): Promise<void> => {
     const eligible = center.verificationStatus === "verified" && hasActiveEducationSubscription(subscription);
     return {
       id: center.id, name: center.name, verificationStatus: center.verificationStatus, verificationNote: center.verificationNote,
-      subscriptionStatus: subscription?.status ?? null, currentPeriodEnd: subscription?.currentPeriodEnd?.toISOString() ?? null, eligible,
+      subscriptionStatus: subscription?.status ?? null, currentPeriodEnd: safeIsoTimestamp(subscription?.currentPeriodEnd), eligible,
       organicInquiriesAndCompletedEnrollments90d: requestCounts.get(center.id) ?? 0,
       completedLearnerCount: learnerCounts.get(center.id) ?? 0,
       publishedReviewCount: ratings.get(center.id)?.length ?? 0,
@@ -22660,7 +22660,7 @@ router.get("/education/purchases/:enrollmentId/messages", async (req, res): Prom
     thread: { id: thread.id, status: thread.status, enrollmentId: thread.enrollmentId },
     messages: messages.map((message) => {
       const sender = senders.find((item) => item.id === message.senderId);
-      return { id: message.id, body: message.body, senderId: message.senderId, senderName: sender ? `${sender.firstName} ${sender.lastName}` : "LUMERA korisnik", createdAt: message.createdAt.toISOString(), readAt: message.readAt?.toISOString() ?? null };
+      return { id: message.id, body: message.body, senderId: message.senderId, senderName: sender ? `${sender.firstName} ${sender.lastName}` : "LUMERA korisnik", createdAt: safeIsoTimestamp(message.createdAt), readAt: safeIsoTimestamp(message.readAt) };
     }),
   });
 });
@@ -22747,7 +22747,7 @@ router.get("/education/disputes", async (req, res): Promise<void> => {
     visible.push({
       id: dispute.id, enrollmentId: dispute.enrollmentId, courseTitle: access.course?.title ?? "Edukacija",
       reason: dispute.reason, details: dispute.details, status: dispute.status, resolutionNote: dispute.resolutionNote,
-      createdAt: dispute.createdAt.toISOString(), resolvedAt: dispute.resolvedAt?.toISOString() ?? null,
+      createdAt: safeIsoTimestamp(dispute.createdAt), resolvedAt: safeIsoTimestamp(dispute.resolvedAt),
     });
   }
   res.json(visible);

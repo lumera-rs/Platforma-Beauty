@@ -23,7 +23,8 @@ export interface EducationEnrollment {
   progress: number;
   /** @nullable */
   nextLesson?: string | null;
-  purchasedAt: Date;
+  /** @nullable */
+  purchasedAt: Date | null;
   /** @nullable */
   accessExpiresAt?: Date | null;
   /** @nullable */

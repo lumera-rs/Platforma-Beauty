@@ -31,5 +31,6 @@ export interface SalonCard {
   openSunday: boolean;
   /** @nullable */
   lastBookedAt?: Date | null;
-  createdAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
 }

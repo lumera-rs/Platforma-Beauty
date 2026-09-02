@@ -14,5 +14,6 @@ export interface EducationCourseReview {
      */
   rating: number;
   comment: string;
-  createdAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
 }

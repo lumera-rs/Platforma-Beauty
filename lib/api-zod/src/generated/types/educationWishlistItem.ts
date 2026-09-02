@@ -9,6 +9,7 @@ import type { EducationCourseDetail } from './educationCourseDetail';
 
 export interface EducationWishlistItem {
   id: string;
-  createdAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
   course: EducationCourseDetail;
 }

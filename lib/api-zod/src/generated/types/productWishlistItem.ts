@@ -13,7 +13,8 @@ export interface ProductWishlistItem {
   productId: string;
   /** @nullable */
   variantValue: string | null;
-  createdAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
   available: boolean;
   /** @nullable */
   unavailableReason: ProductWishlistItemUnavailableReason;

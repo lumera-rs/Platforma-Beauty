@@ -11,5 +11,6 @@
  */
 export type OrderInvoice = {
   number: string;
-  issuedAt: Date;
+  /** @nullable */
+  issuedAt: Date | null;
 } | null;
