@@ -281,6 +281,46 @@ if (valid.message !== `${process.env.DETAIL_MARKER}-valid-request`
 }
 NODE
 
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v damaged_request_id="$damaged_request_id" -v valid_request_id="$valid_request_id" >/dev/null <<'SQL'
+update beauty_job_rental_requests
+set created_at = now(),
+    updated_at = now(),
+    responded_at = '-infinity'::timestamptz
+where id = :'damaged_request_id'::uuid;
+update beauty_job_rental_requests
+set responded_at = now()
+where id = :'valid_request_id'::uuid;
+SQL
+
+status="$(curl -sS -o "$body" -w "%{http_code}" -b "$cookie" "$BASE_URL/beauty-jobs/rental-requests/mine")"
+if [[ "$status" != "200" ]]; then
+  echo "FAIL: authenticated rental-request history with damaged responded_at expected 200, got $status: $(cat "$body")" >&2
+  exit 1
+fi
+REQUESTS_BODY="$(cat "$body")" DETAIL_MARKER="$fixture_marker" DAMAGED_REQUEST_ID="$damaged_request_id" VALID_REQUEST_ID="$valid_request_id" node <<'NODE'
+const response = JSON.parse(process.env.REQUESTS_BODY);
+if (!Array.isArray(response.requests)) throw new Error("Rental-request history response has no requests.");
+const damaged = response.requests.find((request) => request.id === process.env.DAMAGED_REQUEST_ID);
+const valid = response.requests.find((request) => request.id === process.env.VALID_REQUEST_ID);
+if (!damaged || !valid) throw new Error("Rental-request history omitted a fixture row beside damaged respondedAt.");
+if (damaged.respondedAt !== null) {
+  throw new Error(`Damaged rental-request respondedAt was not null: ${damaged.respondedAt}`);
+}
+if (typeof damaged.createdAt !== "string"
+  || typeof damaged.updatedAt !== "string"
+  || damaged.message !== `${process.env.DETAIL_MARKER}-damaged-request`
+  || damaged.status !== "pending") {
+  throw new Error("Unrelated fields on the rental request with damaged respondedAt were not preserved.");
+}
+if (valid.message !== `${process.env.DETAIL_MARKER}-valid-request`
+  || valid.status !== "pending"
+  || typeof valid.respondedAt !== "string"
+  || typeof valid.createdAt !== "string"
+  || typeof valid.updatedAt !== "string") {
+  throw new Error("Valid neighboring rental request was not preserved beside damaged respondedAt.");
+}
+NODE
+
 status="$(curl -sS -o "$body" -w "%{http_code}" -c "$cookie" \
   -H "Content-Type: application/json" \
   --data "{\"email\":\"salon@lumera.local\",\"password\":\"$demo_password\"}" \
