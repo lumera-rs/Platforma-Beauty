@@ -168,7 +168,7 @@ export function BusinessJobApplicants({ listingId }: { listingId: string }) {
                   </div>
                   <div className="text-xs font-medium text-muted-foreground flex items-center gap-1.5 mb-3">
                     <Clock className="w-3.5 h-3.5" />
-                    {format(new Date(app.createdAt), "dd.MM.yyyy. HH:mm", { locale: srLatn })}
+                    {app.createdAt ? format(new Date(app.createdAt), "dd.MM.yyyy. HH:mm", { locale: srLatn }) : "—"}
                   </div>
                   <p className="text-sm text-foreground/90 bg-muted/30 p-4 rounded-lg border whitespace-pre-wrap">{app.applicantMessage}</p>
 

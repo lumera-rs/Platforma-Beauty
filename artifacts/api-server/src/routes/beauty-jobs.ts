@@ -47,6 +47,7 @@ import {
 } from "../lib/beauty-jobs-email";
 import { listBeautyJobDeliveryIssues } from "../lib/beauty-jobs-delivery-monitor";
 import { notifyCustomer } from "../lib/customer-notifications";
+import { safeIsoTimestamp } from "../lib/date-serialization";
 
 const router = Router();
 type BeautyJobTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -124,8 +125,8 @@ const listingSelect = {
 type RentalSlotView = {
   id: string;
   listingId: string;
-  startsAt: string;
-  endsAt: string;
+  startsAt: string | null;
+  endsAt: string | null;
   available: boolean;
 };
 
@@ -139,8 +140,8 @@ function view(
     authorDisplayName: row.authorDisplayName, isSaved: row.isSaved ?? false, isOwner: row.isOwner ?? false,
     latitude: RENTAL_TYPES.has(row.type) ? null : row.latitude,
     longitude: RENTAL_TYPES.has(row.type) ? null : row.longitude,
-    expiresAt: row.expiresAt.toISOString(), createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(),
-    moderationReason: row.moderationReason ?? null, moderatedAt: row.moderatedAt?.toISOString() ?? null,
+    expiresAt: safeIsoTimestamp(row.expiresAt), createdAt: safeIsoTimestamp(row.createdAt), updatedAt: safeIsoTimestamp(row.updatedAt),
+    moderationReason: row.moderationReason ?? null, moderatedAt: safeIsoTimestamp(row.moderatedAt),
     availableSlots,
   };
 }
@@ -163,8 +164,8 @@ async function rentalSlotsByListing(listingIds: string[]) {
     slots.push({
       id: row.slot.id,
       listingId: row.slot.listingId,
-      startsAt: row.slot.startsAt.toISOString(),
-      endsAt: row.slot.endsAt.toISOString(),
+      startsAt: safeIsoTimestamp(row.slot.startsAt),
+      endsAt: safeIsoTimestamp(row.slot.endsAt),
       available: !row.booked && row.slot.startsAt.getTime() > Date.now(),
     });
     result.set(row.slot.listingId, slots);
@@ -191,13 +192,13 @@ function rentalRequestView(
 ) {
   return {
     ...row,
-    respondedAt: row.respondedAt?.toISOString() ?? null,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
+    respondedAt: safeIsoTimestamp(row.respondedAt),
+    createdAt: safeIsoTimestamp(row.createdAt),
+    updatedAt: safeIsoTimestamp(row.updatedAt),
     listingTitle: context.listingTitle,
     applicantDisplayName: context.applicantDisplayName,
-    startsAt: context.startsAt.toISOString(),
-    endsAt: context.endsAt.toISOString(),
+    startsAt: safeIsoTimestamp(context.startsAt),
+    endsAt: safeIsoTimestamp(context.endsAt),
   };
 }
 function contactView(
@@ -206,9 +207,9 @@ function contactView(
 ) {
   return {
     ...row,
-    repliedAt: row.repliedAt?.toISOString() ?? null,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
+    repliedAt: safeIsoTimestamp(row.repliedAt),
+    createdAt: safeIsoTimestamp(row.createdAt),
+    updatedAt: safeIsoTimestamp(row.updatedAt),
     ...context,
   };
 }
@@ -218,20 +219,20 @@ function reportView(
 ) {
   return {
     ...row,
-    resolvedAt: row.resolvedAt?.toISOString() ?? null,
-    createdAt: row.createdAt.toISOString(),
+    resolvedAt: safeIsoTimestamp(row.resolvedAt),
+    createdAt: safeIsoTimestamp(row.createdAt),
     ...context,
   };
 }
 function notificationView(row: typeof beautyJobNotificationsTable.$inferSelect) {
   return {
     ...row,
-    readAt: row.readAt?.toISOString() ?? null,
-    createdAt: row.createdAt.toISOString(),
+    readAt: safeIsoTimestamp(row.readAt),
+    createdAt: safeIsoTimestamp(row.createdAt),
   };
 }
 function settingsView(row: typeof beautyJobPlatformSettingsTable.$inferSelect) {
-  return { ...row, updatedAt: row.updatedAt.toISOString() };
+  return { ...row, updatedAt: safeIsoTimestamp(row.updatedAt) };
 }
 function listingQuery(viewer?: { id: string; salonId?: string }) {
   const savedUserId = viewer?.id ?? "00000000-0000-0000-0000-000000000000";
@@ -454,12 +455,12 @@ async function applicantViews(listingId: string) {
     ...contact,
     rejectionNote: contact.rejectionNote ?? null,
     decisionActorUserId: contact.decisionActorUserId ?? null,
-    decisionAt: contact.decisionAt?.toISOString() ?? null,
-    repliedAt: contact.repliedAt?.toISOString() ?? null,
-    createdAt: contact.createdAt.toISOString(), updatedAt: contact.updatedAt.toISOString(), applicantDisplayName,
+    decisionAt: safeIsoTimestamp(contact.decisionAt),
+    repliedAt: safeIsoTimestamp(contact.repliedAt),
+    createdAt: safeIsoTimestamp(contact.createdAt), updatedAt: safeIsoTimestamp(contact.updatedAt), applicantDisplayName,
     actions: (byContact.get(contact.id) ?? []).map((action) => ({
       ...action, privateNote: action.privateNote ?? null, actorUserId: action.actorUserId ?? null,
-      createdAt: action.createdAt.toISOString(),
+      createdAt: safeIsoTimestamp(action.createdAt),
     })),
   }));
 }
@@ -1157,7 +1158,7 @@ router.get("/admin/beauty-jobs/:listingId/preview", async (req, res, next) => { 
     listing: view({ ...row.listing, ...row }, slotMap.get(p.data.listingId)),
     moderationHistory: moderationHistory.map((event) => ({
       ...event,
-      createdAt: event.createdAt.toISOString(),
+      createdAt: safeIsoTimestamp(event.createdAt),
     })),
   }));
 } catch (e) { next(e); } });

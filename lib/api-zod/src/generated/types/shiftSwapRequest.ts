@@ -21,5 +21,6 @@ export interface ShiftSwapRequest {
   colleagueRespondedAt?: string | null;
   /** @nullable */
   ownerReviewedAt?: string | null;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
 }

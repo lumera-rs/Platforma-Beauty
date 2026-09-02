@@ -16,5 +16,6 @@ export interface OrderHistoryEvent {
   nextValue: string | null;
   /** @nullable */
   note: string | null;
-  createdAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
 }

@@ -143,7 +143,7 @@ export default function OwnerStaffOps() {
                         {employee.entries.map((entry) => (
                           <div className="flex flex-col gap-3 p-4 text-sm sm:flex-row sm:items-center sm:justify-between" key={entry.id}>
                             <div>
-                              <p className="font-medium">{format(new Date(entry.clockInAt), "d. MMM yyyy. HH:mm", { locale: srLatn })} — {entry.clockOutAt ? format(new Date(entry.clockOutAt), "HH:mm") : "otvorena smena"}</p>
+                              <p className="font-medium">{entry.clockInAt ? <>{format(new Date(entry.clockInAt), "d. MMM yyyy. HH:mm", { locale: srLatn })} — {entry.clockOutAt ? format(new Date(entry.clockOutAt), "HH:mm") : "otvorena smena"}</> : "—"}</p>
                               <p className="mt-1 text-xs text-muted-foreground">{entry.durationMinutes == null ? "Trajanje se računa po zatvaranju" : minutesLabel(entry.durationMinutes)}{entry.note ? ` · ${entry.note}` : ""}</p>
                             </div>
                             <div className="flex items-center gap-2">

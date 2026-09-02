@@ -420,7 +420,7 @@ function EmployeeOperations() {
             {(clockIn.isPending || clockOut.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{clock.data?.openEntry ? "Završi smenu" : "Započni smenu"}
           </Button>
           <div className="space-y-2">
-            {(clock.data?.entries ?? []).slice(0, 4).map((entry) => <div key={entry.id} className="flex justify-between border-t pt-2 text-xs"><span>{format(new Date(entry.clockInAt), "d. MMM · HH:mm")}–{entry.clockOutAt ? format(new Date(entry.clockOutAt), "HH:mm") : "u toku"}</span><span className="text-muted-foreground">{entry.editedByOwner ? "korigovao vlasnik" : entry.durationMinutes == null ? "" : `${entry.durationMinutes} min`}</span></div>)}
+            {(clock.data?.entries ?? []).slice(0, 4).map((entry) => <div key={entry.id} className="flex justify-between border-t pt-2 text-xs"><span>{entry.clockInAt ? <>{format(new Date(entry.clockInAt), "d. MMM · HH:mm")}–{entry.clockOutAt ? format(new Date(entry.clockOutAt), "HH:mm") : "u toku"}</> : "—"}</span><span className="text-muted-foreground">{entry.editedByOwner ? "korigovao vlasnik" : entry.durationMinutes == null ? "" : `${entry.durationMinutes} min`}</span></div>)}
           </div>
         </CardContent>
       </Card>

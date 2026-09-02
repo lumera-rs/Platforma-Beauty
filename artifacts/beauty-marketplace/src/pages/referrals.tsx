@@ -179,7 +179,7 @@ export default function Referrals() {
                       <tbody>
                         {dashboard.ledger.map(entry => (
                           <tr key={entry.id} className="border-b last:border-0 hover:bg-muted/20">
-                            <td className="px-4 py-3">{format(parseISO(entry.effectiveAt), "dd.MM.yyyy HH:mm")}</td>
+                            <td className="px-4 py-3">{entry.effectiveAt ? format(parseISO(entry.effectiveAt), "dd.MM.yyyy HH:mm") : "—"}</td>
                             <td className="px-4 py-3">
                               <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                                 entry.type === 'available' ? 'bg-emerald-100 text-emerald-800' :

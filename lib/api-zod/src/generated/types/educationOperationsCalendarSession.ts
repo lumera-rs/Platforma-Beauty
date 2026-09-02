@@ -11,8 +11,10 @@ export interface EducationOperationsCalendarSession {
   id: string;
   courseId: string;
   educatorStaffId: string;
-  startsAt: Date;
-  endsAt: Date;
+  /** @nullable */
+  startsAt: Date | null;
+  /** @nullable */
+  endsAt: Date | null;
   capacity: number;
   reservedSeats: number;
   participants: EducationOperationsCalendarParticipant[];

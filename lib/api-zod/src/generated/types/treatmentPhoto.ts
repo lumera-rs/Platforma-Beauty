@@ -18,7 +18,8 @@ export interface TreatmentPhoto {
   kind: TreatmentPhotoKind;
   url: string;
   consentConfirmed: boolean;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
   /** @nullable */
   appointmentDate?: string | null;
   /** @nullable */

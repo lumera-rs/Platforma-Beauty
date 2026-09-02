@@ -1,9 +1,29 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import {
   AdminCreateCourierServiceResponse,
+  AdminGetRetentionSettingsHistoryResponse,
+  AdminListReferralApprovalsResponse,
+  AdminListReferralReviewsResponse,
+  CheckoutEducationB2bOrderResponse,
   CreatePublicEducationCourseInquiryResponse,
+  CreateEmployeeTreatmentPhotoResponse,
+  GetBeautyJobAdminPreviewResponse,
+  GetBeautyJobDeliveryIssuesResponse,
+  GetBeautyJobModerationQueueResponse,
+  GetBeautyJobResponse,
+  GetBeautyJobSettingsResponse,
+  GetEducationCenterOperationsCalendarResponse,
   GetEducationCourseFeaturedStatusResponse,
+  GetEducationOperationalAttendanceResponse,
+  GetEmployeeClockResponse,
+  GetMyEducationOperationalBookingResponse,
+  GetReferralDashboardResponse,
+  ListBeautyJobApplicantsResponse,
+  ListBeautyJobNotificationsResponse,
+  ListEmployeeShiftSwapsResponse,
+  ListMyBeautyJobRentalRequestsResponse,
+  ReplyToBeautyJobContactResponse,
   TrackRetailOrderResponse,
 } from "@workspace/api-zod";
 import { safeIsoTimestamp } from "./date-serialization";
@@ -141,6 +161,64 @@ assert.equal(featuredResponse.charge?.activatedAt, null);
 assert.equal(featuredResponse.charge?.settledAt?.toISOString(), "2026-09-02T16:15:30.000Z");
 assert.equal(featuredResponse.courseId, "course");
 
+function assertParsesNullTimestamp(schema: { parse: (value: unknown) => unknown }, label: string): void {
+  const parsed = schema.parse(null);
+  assert.equal(parsed, null, `${label} must preserve null instead of coercing it to an epoch date`);
+  assert.notEqual(parsed, "1970-01-01T00:00:00.000Z", `${label} must never fabricate the Unix epoch`);
+}
+
+for (const [label, schema] of [
+  ["referral ledger effectiveAt", GetReferralDashboardResponse.shape.ledger.element.shape.effectiveAt],
+  ["referral approval createdAt", AdminListReferralApprovalsResponse.element.shape.createdAt],
+  ["referral review createdAt", AdminListReferralReviewsResponse.element.shape.createdAt],
+  ["retention history changedAt", AdminGetRetentionSettingsHistoryResponse.element.shape.changedAt],
+  ["education attendance recordedAt", GetEducationOperationalAttendanceResponse.shape.recordedAt],
+  ["education calendar startsAt", GetEducationCenterOperationsCalendarResponse.element.shape.startsAt],
+  ["education calendar endsAt", GetEducationCenterOperationsCalendarResponse.element.shape.endsAt],
+  ["education booking createdAt", GetMyEducationOperationalBookingResponse.shape.createdAt],
+  ["education booking updatedAt", GetMyEducationOperationalBookingResponse.shape.updatedAt],
+  ["education booking session startsAt", GetMyEducationOperationalBookingResponse.shape.session.unwrap().shape.startsAt],
+  ["education booking session endsAt", GetMyEducationOperationalBookingResponse.shape.session.unwrap().shape.endsAt],
+  ["beauty job createdAt", GetBeautyJobResponse.shape.createdAt],
+  ["beauty job expiresAt", GetBeautyJobResponse.shape.expiresAt],
+  ["beauty job slot startsAt", GetBeautyJobResponse.shape.availableSlots.element.shape.startsAt],
+  ["beauty job slot endsAt", GetBeautyJobResponse.shape.availableSlots.element.shape.endsAt],
+  ["beauty job applicant createdAt", ListBeautyJobApplicantsResponse.shape.applicants.element.shape.createdAt],
+  ["beauty job applicant action createdAt", ListBeautyJobApplicantsResponse.shape.applicants.element.shape.actions.element.shape.createdAt],
+  ["beauty job contact createdAt", ReplyToBeautyJobContactResponse.shape.createdAt],
+  ["beauty job rental request createdAt", ListMyBeautyJobRentalRequestsResponse.shape.requests.element.shape.createdAt],
+  ["beauty job notification createdAt", ListBeautyJobNotificationsResponse.shape.notifications.element.shape.createdAt],
+  ["beauty job report createdAt", GetBeautyJobModerationQueueResponse.shape.reports.element.shape.createdAt],
+  ["beauty job settings updatedAt", GetBeautyJobSettingsResponse.shape.updatedAt],
+  ["beauty job moderation event createdAt", GetBeautyJobAdminPreviewResponse.shape.moderationHistory.element.shape.createdAt],
+  ["beauty job delivery issue createdAt", GetBeautyJobDeliveryIssuesResponse.shape.deliveries.element.shape.createdAt],
+  ["treatment photo createdAt", CreateEmployeeTreatmentPhotoResponse.shape.createdAt],
+  ["employee clockInAt", GetEmployeeClockResponse.shape.entries.element.shape.clockInAt],
+  ["shift swap createdAt", ListEmployeeShiftSwapsResponse.shape.outgoing.element.shape.createdAt],
+] as const) {
+  assertParsesNullTimestamp(schema, label);
+}
+
+const educationB2bOrder = CheckoutEducationB2bOrderResponse.parse({
+  lines: [],
+  subtotalRsd: 0,
+  educationCenterDiscountRsd: 0,
+  payableTotalRsd: 0,
+  benefit: {
+    periodStart: "2026-08-01T00:00:00.000Z",
+    periodEnd: "2026-09-01T00:00:00.000Z",
+    priorMonthSpendRsd: 0,
+    discountPercent: 0,
+    discountReason: "none",
+    amountToNextTierRsd: null,
+    tierId: null,
+    settingsVersion: 1,
+  },
+  id: "order",
+  createdAt: null,
+});
+assert.equal(educationB2bOrder.createdAt, null);
+
 const marketplaceSource = readFileSync(new URL("../routes/marketplace.ts", import.meta.url), "utf8");
 function sourceBetween(start: string, end: string): string {
   const startIndex = marketplaceSource.indexOf(start);
@@ -198,6 +276,38 @@ for (const [name, source] of [
   ["admin shipping detail and mutation", sourceBetween("router.get(\"/admin/shipping\"", "// ── Admin Courier Service Catalog")],
 ]) {
   assert.doesNotMatch(source, /\.toISOString\(\)/, `${name} must not directly serialize selected timestamps`);
+}
+
+// Route files are the HTTP serialization boundary. Keep every remaining raw
+// toISOString call explicit and reviewed: these are internal date validation,
+// persistence, cursor/key, or document-formatting uses rather than response DTO
+// serialization. Any new call in any route fails until it is replaced with
+// safeIsoTimestamp or deliberately added here after review.
+const approvedInternalIsoReceivers: Record<string, string[]> = {
+  "commerce-ef.ts": ["quote.validUntil"],
+  "education-b2b-discounts.ts": ["period.end", "period.start"],
+  "education-bundle-purchases.ts": ["consentAt", "consentAt"],
+  "education-subscription-billing.ts": ["last.occurredAt"],
+  "growth.ts": ["date"],
+  "marketplace.ts": [
+    "bd", "cancelledAt", "cart.updatedAt", "cart.updatedAt", "d", "d", "date",
+    "fromInstant", "input.occurredAt", "input.occurredAt", "issuedAt",
+    "now", "now", "now", "now", "now", "occurredAt", "occurredAt",
+    "order.invoiceIssuedAt", "parsed", "releaseAt", "result", "toInstant",
+    "updated.updatedAt", "value", "value", "value", "value",
+  ],
+  "media.ts": ["expiresAt"],
+  "phase3.ts": ["parsed"],
+};
+const routesDirectory = new URL("../routes/", import.meta.url);
+for (const fileName of readdirSync(routesDirectory).filter((name) => name.endsWith(".ts")).sort()) {
+  const source = readFileSync(new URL(fileName, routesDirectory), "utf8");
+  const directIsoReceivers = Array.from(source.matchAll(/([\w!.?]+)\.toISOString\(\)/g), (match) => match[1]!).sort();
+  assert.deepEqual(
+    directIsoReceivers,
+    approvedInternalIsoReceivers[fileName] ?? [],
+    `${fileName} introduced or changed a direct toISOString call; response timestamps must use safeIsoTimestamp`,
+  );
 }
 
 process.stdout.write("✓ safe list timestamp serialization regression suite passed\n");

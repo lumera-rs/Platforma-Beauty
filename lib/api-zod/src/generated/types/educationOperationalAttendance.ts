@@ -11,7 +11,8 @@ export interface EducationOperationalAttendance {
   participantId: string;
   sessionId: string;
   status: EducationOperationalAttendanceStatus;
-  recordedAt: Date;
+  /** @nullable */
+  recordedAt: Date | null;
   /** @nullable */
   recordedByUserId: string | null;
 }

@@ -21,10 +21,14 @@ export interface BeautyJobRentalRequest {
   status: BeautyJobRentalRequestStatus;
   /** @nullable */
   respondedAt: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
+  /** @nullable */
+  updatedAt: Date | null;
   listingTitle: string;
   applicantDisplayName: string;
-  startsAt: Date;
-  endsAt: Date;
+  /** @nullable */
+  startsAt: Date | null;
+  /** @nullable */
+  endsAt: Date | null;
 }

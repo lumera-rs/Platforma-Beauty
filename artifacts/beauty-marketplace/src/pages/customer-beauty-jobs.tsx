@@ -289,7 +289,7 @@ export default function CustomerBeautyJobsPage({ hideLayout = false }: { hideLay
                         <h4 className="font-medium text-foreground">{isOutgoing ? "Vaš kontakt" : contact.applicantDisplayName}</h4>
                         <p className="text-sm text-muted-foreground">Povodom: {contact.listingTitle}</p>
                       </div>
-                      <div className="text-xs text-muted-foreground">{format(new Date(contact.createdAt), "dd.MM.yyyy. HH:mm", { locale: srLatn })}</div>
+                      <div className="text-xs text-muted-foreground">{contact.createdAt ? format(new Date(contact.createdAt), "dd.MM.yyyy. HH:mm", { locale: srLatn }) : "—"}</div>
                     </div>
                     <div className="bg-muted/50 p-3 rounded-lg text-sm text-foreground/90 whitespace-pre-wrap">
                       {contact.applicantMessage}
@@ -374,7 +374,7 @@ export default function CustomerBeautyJobsPage({ hideLayout = false }: { hideLay
                     <div className="space-y-1">
                       <p className="text-sm font-medium text-foreground">{notif.title}</p>
                       <p className="text-sm text-muted-foreground">{notif.body}</p>
-                      <p className="text-xs text-muted-foreground">{format(new Date(notif.createdAt), "dd.MM.yyyy. HH:mm", { locale: srLatn })}</p>
+                      <p className="text-xs text-muted-foreground">{notif.createdAt ? format(new Date(notif.createdAt), "dd.MM.yyyy. HH:mm", { locale: srLatn }) : "—"}</p>
                     </div>
                     {!notif.readAt && (
                       <Button size="sm" variant="ghost" onClick={() => handleMarkRead(notif.id)} className="h-8 text-xs text-primary">

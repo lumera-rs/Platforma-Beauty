@@ -20,6 +20,7 @@ import {
   educationBelgradeDateKey,
 } from "../lib/education-belgrade-calendar";
 import { writeEducationFinancialAuditInTx } from "../lib/education-financial-audit";
+import { safeIsoTimestamp } from "../lib/date-serialization";
 
 const router: IRouter = Router();
 
@@ -161,7 +162,7 @@ router.post("/education/b2b/checkout", async (req, res) => {
         orderId: order!.id, productId: line.productId, quantity: line.quantity,
         unitPriceRsd: line.unitPriceRsd, lineTotalRsd: line.lineSubtotalRsd,
       })));
-      return { id: order!.id, createdAt: order!.createdAt.toISOString(), ...current };
+      return { id: order!.id, createdAt: safeIsoTimestamp(order!.createdAt), ...current };
     });
     res.status(201).json(CheckoutEducationB2bOrderResponse.parse(result));
   } catch (error) {

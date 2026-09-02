@@ -1006,7 +1006,7 @@ export default function AdminRetentionSettings() {
                           </Badge>
                         )}
                         <span className="text-sm font-medium text-foreground">{entry.changedByName ?? "Nepoznat administrator"}</span>
-                        <span className="text-xs text-muted-foreground">{format(new Date(entry.changedAt), "dd.MM.yyyy. HH:mm")}</span>
+                        <span className="text-xs text-muted-foreground">{entry.changedAt ? format(new Date(entry.changedAt), "dd.MM.yyyy. HH:mm") : "—"}</span>
                         {isActiveVersion ? (
                           <Badge variant="outline" className="ml-auto" data-testid={`retention-active-v${entry.version}`}>
                             Aktivna verzija

@@ -139,12 +139,15 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
         isUrgent: initialData.isUrgent || false,
         availabilityPattern: initialData.availabilityPattern || "",
         dayLabels: initialData.dayLabels || [],
-        availableSlots: (initialData.availableSlots || []).map((slot) => ({
-          id: slot.id,
-          startsAt: toLocalDateTimeInput(slot.startsAt),
-          endsAt: toLocalDateTimeInput(slot.endsAt),
-          available: slot.available,
-        })),
+        availableSlots: (initialData.availableSlots || []).flatMap((slot) => {
+          if (!slot.startsAt || !slot.endsAt) return [];
+          return [{
+            id: slot.id,
+            startsAt: toLocalDateTimeInput(slot.startsAt),
+            endsAt: toLocalDateTimeInput(slot.endsAt),
+            available: slot.available,
+          }];
+        }),
         photos: initialData.photos || []
       });
     } else if (open) {

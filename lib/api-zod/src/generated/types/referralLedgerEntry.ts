@@ -11,7 +11,8 @@ export interface ReferralLedgerEntry {
   id: string;
   type: ReferralLedgerEntryType;
   amountRsd: number;
-  effectiveAt: Date;
+  /** @nullable */
+  effectiveAt: Date | null;
   /** @nullable */
   expiresAt: Date | null;
   reason: string;

@@ -8313,7 +8313,7 @@ export const CheckoutEducationB2bOrderResponse = zod.object({
 })
 }).and(zod.object({
   "id": zod.string(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 
 
@@ -9551,7 +9551,7 @@ export const AdminListOrdersResponseItem = zod.object({
   "previousValue": zod.string().nullable(),
   "nextValue": zod.string().nullable(),
   "note": zod.string().nullable(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 }))
 export const AdminListOrdersResponse = zod.array(AdminListOrdersResponseItem)
@@ -9661,7 +9661,7 @@ export const AdminGetOrderResponse = zod.object({
   "previousValue": zod.string().nullable(),
   "nextValue": zod.string().nullable(),
   "note": zod.string().nullable(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 }))
 
@@ -9788,7 +9788,7 @@ export const AdminUpdateOrderStatusResponse = zod.object({
   "previousValue": zod.string().nullable(),
   "nextValue": zod.string().nullable(),
   "note": zod.string().nullable(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 }))
 
@@ -9912,7 +9912,7 @@ export const AdminBulkUpdateOrdersResponseItem = zod.object({
   "previousValue": zod.string().nullable(),
   "nextValue": zod.string().nullable(),
   "note": zod.string().nullable(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 }))
 export const AdminBulkUpdateOrdersResponse = zod.array(AdminBulkUpdateOrdersResponseItem)
@@ -13975,12 +13975,12 @@ export const ListMyEducationOperationalBookingsResponseItem = zod.object({
   "sessionId": zod.string().nullable(),
   "purchaserId": zod.string().nullable(),
   "status": zod.enum(['pending', 'active', 'waitlisted', 'cancelled']),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable(),
   "session": zod.object({
   "id": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "location": zod.string().nullable(),
   "cancelledAt": zod.coerce.date().nullable()
 }).nullable(),
@@ -14072,12 +14072,12 @@ export const GetMyEducationOperationalBookingResponse = zod.object({
   "sessionId": zod.string().nullable(),
   "purchaserId": zod.string().nullable(),
   "status": zod.enum(['pending', 'active', 'waitlisted', 'cancelled']),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable(),
   "session": zod.object({
   "id": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "location": zod.string().nullable(),
   "cancelledAt": zod.coerce.date().nullable()
 }).nullable(),
@@ -14313,7 +14313,7 @@ export const GetEducationOperationalAttendanceResponse = zod.object({
   "participantId": zod.string(),
   "sessionId": zod.string(),
   "status": zod.enum(['present', 'absent', 'excused']),
-  "recordedAt": zod.coerce.date(),
+  "recordedAt": zod.coerce.date().nullable(),
   "recordedByUserId": zod.string().nullable()
 })
 
@@ -14336,7 +14336,7 @@ export const UpsertEducationOperationalAttendanceResponse = zod.object({
   "participantId": zod.string(),
   "sessionId": zod.string(),
   "status": zod.enum(['present', 'absent', 'excused']),
-  "recordedAt": zod.coerce.date(),
+  "recordedAt": zod.coerce.date().nullable(),
   "recordedByUserId": zod.string().nullable()
 })
 
@@ -14537,8 +14537,8 @@ export const GetEducationCenterOperationsCalendarResponseItem = zod.object({
   "id": zod.string(),
   "courseId": zod.string(),
   "educatorStaffId": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "capacity": zod.number().int(),
   "reservedSeats": zod.number().int(),
   "participants": zod.array(zod.object({
@@ -14799,8 +14799,8 @@ export const PreviewEducationEducatorAbsenceResponse = zod.object({
   "sessionId": zod.string(),
   "courseId": zod.string(),
   "courseTitle": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "reservedSeats": zod.number().int().min(previewEducationEducatorAbsenceResponseConflictsItemReservedSeatsMin)
 }))
 })
@@ -26658,7 +26658,7 @@ export const AdminGetRetentionSettingsHistoryResponseItem = zod.object({
 }),
   "changedByUserId": zod.string().nullable(),
   "changedByName": zod.string().nullable(),
-  "changedAt": zod.string().describe('ISO timestamp of the change'),
+  "changedAt": zod.string().nullable().describe('ISO timestamp of the change'),
   "changeSource": zod.enum(['manual', 'restore_version', 'restore_defaults']).describe('How the version came to be: hand-edited, restored from an earlier version, or restored platform defaults'),
   "restoredFromVersion": zod.number().nullable().describe('Source version when changeSource is restore_version; null otherwise')
 })
@@ -26681,7 +26681,7 @@ export const ListEmployeeAppointmentTreatmentPhotosResponseItem = zod.object({
   "kind": zod.enum(['before', 'after']),
   "url": zod.string(),
   "consentConfirmed": zod.boolean(),
-  "createdAt": zod.string(),
+  "createdAt": zod.string().nullable(),
   "appointmentDate": zod.string().nullish(),
   "serviceName": zod.string().nullish()
 })
@@ -26714,7 +26714,7 @@ export const CreateEmployeeTreatmentPhotoResponse = zod.object({
   "kind": zod.enum(['before', 'after']),
   "url": zod.string(),
   "consentConfirmed": zod.boolean(),
-  "createdAt": zod.string(),
+  "createdAt": zod.string().nullable(),
   "appointmentDate": zod.string().nullish(),
   "serviceName": zod.string().nullish()
 })
@@ -26736,7 +26736,7 @@ export const ListCustomerAppointmentTreatmentPhotosResponseItem = zod.object({
   "kind": zod.enum(['before', 'after']),
   "url": zod.string(),
   "consentConfirmed": zod.boolean(),
-  "createdAt": zod.string(),
+  "createdAt": zod.string().nullable(),
   "appointmentDate": zod.string().nullish(),
   "serviceName": zod.string().nullish()
 })
@@ -26759,7 +26759,7 @@ export const ListSalonCustomerTreatmentPhotosResponseItem = zod.object({
   "kind": zod.enum(['before', 'after']),
   "url": zod.string(),
   "consentConfirmed": zod.boolean(),
-  "createdAt": zod.string(),
+  "createdAt": zod.string().nullable(),
   "appointmentDate": zod.string().nullish(),
   "serviceName": zod.string().nullish()
 })
@@ -26884,7 +26884,7 @@ export const GetEmployeeClockResponse = zod.object({
   "openEntry": zod.union([zod.object({
   "id": zod.string(),
   "employeeId": zod.string(),
-  "clockInAt": zod.string(),
+  "clockInAt": zod.string().nullable(),
   "clockOutAt": zod.string().nullish(),
   "editedByOwner": zod.boolean(),
   "note": zod.string().nullish(),
@@ -26893,7 +26893,7 @@ export const GetEmployeeClockResponse = zod.object({
   "entries": zod.array(zod.object({
   "id": zod.string(),
   "employeeId": zod.string(),
-  "clockInAt": zod.string(),
+  "clockInAt": zod.string().nullable(),
   "clockOutAt": zod.string().nullish(),
   "editedByOwner": zod.boolean(),
   "note": zod.string().nullish(),
@@ -26910,7 +26910,7 @@ export const GetEmployeeClockResponse = zod.object({
 export const EmployeeClockInResponse = zod.object({
   "id": zod.string(),
   "employeeId": zod.string(),
-  "clockInAt": zod.string(),
+  "clockInAt": zod.string().nullable(),
   "clockOutAt": zod.string().nullish(),
   "editedByOwner": zod.boolean(),
   "note": zod.string().nullish(),
@@ -26924,7 +26924,7 @@ export const EmployeeClockInResponse = zod.object({
 export const EmployeeClockOutResponse = zod.object({
   "id": zod.string(),
   "employeeId": zod.string(),
-  "clockInAt": zod.string(),
+  "clockInAt": zod.string().nullable(),
   "clockOutAt": zod.string().nullish(),
   "editedByOwner": zod.boolean(),
   "note": zod.string().nullish(),
@@ -26951,7 +26951,7 @@ export const ListSalonClockEntriesResponseItem = zod.object({
   "entries": zod.array(zod.object({
   "id": zod.string(),
   "employeeId": zod.string(),
-  "clockInAt": zod.string(),
+  "clockInAt": zod.string().nullable(),
   "clockOutAt": zod.string().nullish(),
   "editedByOwner": zod.boolean(),
   "note": zod.string().nullish(),
@@ -26981,7 +26981,7 @@ export const UpdateSalonClockEntryBody = zod.object({
 export const UpdateSalonClockEntryResponse = zod.object({
   "id": zod.string(),
   "employeeId": zod.string(),
-  "clockInAt": zod.string(),
+  "clockInAt": zod.string().nullable(),
   "clockOutAt": zod.string().nullish(),
   "editedByOwner": zod.boolean(),
   "note": zod.string().nullish(),
@@ -27004,7 +27004,7 @@ export const ListEmployeeShiftSwapsResponse = zod.object({
   "status": zod.enum(['pending_colleague', 'colleague_declined', 'pending_owner', 'owner_declined', 'approved', 'cancelled']),
   "colleagueRespondedAt": zod.string().nullish(),
   "ownerReviewedAt": zod.string().nullish(),
-  "createdAt": zod.string()
+  "createdAt": zod.string().nullable()
 })),
   "incoming": zod.array(zod.object({
   "id": zod.string(),
@@ -27017,7 +27017,7 @@ export const ListEmployeeShiftSwapsResponse = zod.object({
   "status": zod.enum(['pending_colleague', 'colleague_declined', 'pending_owner', 'owner_declined', 'approved', 'cancelled']),
   "colleagueRespondedAt": zod.string().nullish(),
   "ownerReviewedAt": zod.string().nullish(),
-  "createdAt": zod.string()
+  "createdAt": zod.string().nullable()
 })),
   "colleagues": zod.array(zod.object({
   "id": zod.string(),
@@ -27050,7 +27050,7 @@ export const CreateEmployeeShiftSwapResponse = zod.object({
   "status": zod.enum(['pending_colleague', 'colleague_declined', 'pending_owner', 'owner_declined', 'approved', 'cancelled']),
   "colleagueRespondedAt": zod.string().nullish(),
   "ownerReviewedAt": zod.string().nullish(),
-  "createdAt": zod.string()
+  "createdAt": zod.string().nullable()
 })
 
 
@@ -27076,7 +27076,7 @@ export const RespondEmployeeShiftSwapResponse = zod.object({
   "status": zod.enum(['pending_colleague', 'colleague_declined', 'pending_owner', 'owner_declined', 'approved', 'cancelled']),
   "colleagueRespondedAt": zod.string().nullish(),
   "ownerReviewedAt": zod.string().nullish(),
-  "createdAt": zod.string()
+  "createdAt": zod.string().nullable()
 })
 
 
@@ -27098,7 +27098,7 @@ export const CancelEmployeeShiftSwapResponse = zod.object({
   "status": zod.enum(['pending_colleague', 'colleague_declined', 'pending_owner', 'owner_declined', 'approved', 'cancelled']),
   "colleagueRespondedAt": zod.string().nullish(),
   "ownerReviewedAt": zod.string().nullish(),
-  "createdAt": zod.string()
+  "createdAt": zod.string().nullable()
 })
 
 
@@ -27117,7 +27117,7 @@ export const ListSalonShiftSwapsResponseItem = zod.object({
   "status": zod.enum(['pending_colleague', 'colleague_declined', 'pending_owner', 'owner_declined', 'approved', 'cancelled']),
   "colleagueRespondedAt": zod.string().nullish(),
   "ownerReviewedAt": zod.string().nullish(),
-  "createdAt": zod.string()
+  "createdAt": zod.string().nullable()
 }),
   "requesterAppointments": zod.array(zod.object({
   "id": zod.string(),
@@ -27164,7 +27164,7 @@ export const ReviewSalonShiftSwapResponse = zod.object({
   "status": zod.enum(['pending_colleague', 'colleague_declined', 'pending_owner', 'owner_declined', 'approved', 'cancelled']),
   "colleagueRespondedAt": zod.string().nullish(),
   "ownerReviewedAt": zod.string().nullish(),
-  "createdAt": zod.string()
+  "createdAt": zod.string().nullable()
 }),
   "requesterAppointments": zod.array(zod.object({
   "id": zod.string(),
@@ -29241,7 +29241,7 @@ export const AdminGetRetailOrderResponse = zod.object({
   "previousValue": zod.string().nullable(),
   "nextValue": zod.string().nullable(),
   "note": zod.string().nullable(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 }))
 
@@ -29313,7 +29313,7 @@ export const AdminUpdateRetailOrderStatusResponse = zod.object({
   "previousValue": zod.string().nullable(),
   "nextValue": zod.string().nullable(),
   "note": zod.string().nullable(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 }))
 
@@ -29795,20 +29795,20 @@ export const ListBeautyJobsResponse = zod.object({
   "moderatedAt": zod.coerce.date().nullable(),
   "contactCount": zod.number().int(),
   "viewCount": zod.number().int(),
-  "expiresAt": zod.coerce.date(),
-  "createdAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date().nullable(),
   "availabilityPattern": zod.string().nullable(),
   "dayLabels": zod.array(zod.string()),
   "authorDisplayName": zod.string(),
   "postedByType": zod.enum(['salon', 'user']),
-  "updatedAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullable(),
   "isSaved": zod.boolean(),
   "isOwner": zod.boolean(),
   "availableSlots": zod.array(zod.object({
   "id": zod.string().regex(listBeautyJobsResponseItemsItemAvailableSlotsItemIdRegExp),
   "listingId": zod.string().regex(listBeautyJobsResponseItemsItemAvailableSlotsItemListingIdRegExp),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "available": zod.boolean()
 }))
 })),
@@ -29905,20 +29905,20 @@ export const CreateBeautyJobResponse = zod.object({
   "moderatedAt": zod.coerce.date().nullable(),
   "contactCount": zod.number().int(),
   "viewCount": zod.number().int(),
-  "expiresAt": zod.coerce.date(),
-  "createdAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date().nullable(),
   "availabilityPattern": zod.string().nullable(),
   "dayLabels": zod.array(zod.string()),
   "authorDisplayName": zod.string(),
   "postedByType": zod.enum(['salon', 'user']),
-  "updatedAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullable(),
   "isSaved": zod.boolean(),
   "isOwner": zod.boolean(),
   "availableSlots": zod.array(zod.object({
   "id": zod.string().regex(createBeautyJobResponseAvailableSlotsItemIdRegExp),
   "listingId": zod.string().regex(createBeautyJobResponseAvailableSlotsItemListingIdRegExp),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "available": zod.boolean()
 }))
 })
@@ -29980,20 +29980,20 @@ export const ListMyBeautyJobsResponse = zod.object({
   "moderatedAt": zod.coerce.date().nullable(),
   "contactCount": zod.number().int(),
   "viewCount": zod.number().int(),
-  "expiresAt": zod.coerce.date(),
-  "createdAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date().nullable(),
   "availabilityPattern": zod.string().nullable(),
   "dayLabels": zod.array(zod.string()),
   "authorDisplayName": zod.string(),
   "postedByType": zod.enum(['salon', 'user']),
-  "updatedAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullable(),
   "isSaved": zod.boolean(),
   "isOwner": zod.boolean(),
   "availableSlots": zod.array(zod.object({
   "id": zod.string().regex(listMyBeautyJobsResponseItemsItemAvailableSlotsItemIdRegExp),
   "listingId": zod.string().regex(listMyBeautyJobsResponseItemsItemAvailableSlotsItemListingIdRegExp),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "available": zod.boolean()
 }))
 })),
@@ -30023,8 +30023,8 @@ export const ListBeautyJobApplicantsResponse = zod.object({
   "decisionActorUserId": zod.string().nullable(),
   "decisionAt": zod.coerce.date().nullable(),
   "repliedAt": zod.coerce.date().nullable(),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable(),
   "applicantDisplayName": zod.string(),
   "actions": zod.array(zod.object({
   "id": zod.string(),
@@ -30034,7 +30034,7 @@ export const ListBeautyJobApplicantsResponse = zod.object({
   "toStatus": zod.string(),
   "privateNote": zod.string().nullable(),
   "actorUserId": zod.string().nullable(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 }))
 })
@@ -30073,8 +30073,8 @@ export const DecideBeautyJobApplicantsResponse = zod.object({
   "decisionActorUserId": zod.string().nullable(),
   "decisionAt": zod.coerce.date().nullable(),
   "repliedAt": zod.coerce.date().nullable(),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable(),
   "applicantDisplayName": zod.string(),
   "actions": zod.array(zod.object({
   "id": zod.string(),
@@ -30084,7 +30084,7 @@ export const DecideBeautyJobApplicantsResponse = zod.object({
   "toStatus": zod.string(),
   "privateNote": zod.string().nullable(),
   "actorUserId": zod.string().nullable(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 }))
 })
@@ -30121,20 +30121,20 @@ export const ListSavedBeautyJobsResponse = zod.object({
   "moderatedAt": zod.coerce.date().nullable(),
   "contactCount": zod.number().int(),
   "viewCount": zod.number().int(),
-  "expiresAt": zod.coerce.date(),
-  "createdAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date().nullable(),
   "availabilityPattern": zod.string().nullable(),
   "dayLabels": zod.array(zod.string()),
   "authorDisplayName": zod.string(),
   "postedByType": zod.enum(['salon', 'user']),
-  "updatedAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullable(),
   "isSaved": zod.boolean(),
   "isOwner": zod.boolean(),
   "availableSlots": zod.array(zod.object({
   "id": zod.string().regex(listSavedBeautyJobsResponseItemsItemAvailableSlotsItemIdRegExp),
   "listingId": zod.string().regex(listSavedBeautyJobsResponseItemsItemAvailableSlotsItemListingIdRegExp),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "available": zod.boolean()
 }))
 })),
@@ -30158,7 +30158,7 @@ export const ListBeautyJobNotificationsResponse = zod.object({
   "title": zod.string(),
   "body": zod.string(),
   "readAt": zod.coerce.date().nullable(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 })
 
@@ -30183,7 +30183,7 @@ export const MarkBeautyJobNotificationReadResponse = zod.object({
   "title": zod.string(),
   "body": zod.string(),
   "readAt": zod.coerce.date().nullable(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 })
 
 
@@ -30202,12 +30202,12 @@ export const ListMyBeautyJobRentalRequestsResponse = zod.object({
   "message": zod.string().nullable(),
   "status": zod.enum(['pending', 'accepted', 'declined']),
   "respondedAt": zod.coerce.date().nullable(),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable(),
   "listingTitle": zod.string(),
   "applicantDisplayName": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date()
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable()
 }))
 })
 
@@ -30227,12 +30227,12 @@ export const ListBeautyJobRentalRequestInboxResponse = zod.object({
   "message": zod.string().nullable(),
   "status": zod.enum(['pending', 'accepted', 'declined']),
   "respondedAt": zod.coerce.date().nullable(),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable(),
   "listingTitle": zod.string(),
   "applicantDisplayName": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date()
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable()
 }))
 })
 
@@ -30262,12 +30262,12 @@ export const RespondToBeautyJobRentalRequestResponse = zod.object({
   "message": zod.string().nullable(),
   "status": zod.enum(['pending', 'accepted', 'declined']),
   "respondedAt": zod.coerce.date().nullable(),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable(),
   "listingTitle": zod.string(),
   "applicantDisplayName": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date()
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable()
 })
 
 
@@ -30308,20 +30308,20 @@ export const GetBeautyJobResponse = zod.object({
   "moderatedAt": zod.coerce.date().nullable(),
   "contactCount": zod.number().int(),
   "viewCount": zod.number().int(),
-  "expiresAt": zod.coerce.date(),
-  "createdAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date().nullable(),
   "availabilityPattern": zod.string().nullable(),
   "dayLabels": zod.array(zod.string()),
   "authorDisplayName": zod.string(),
   "postedByType": zod.enum(['salon', 'user']),
-  "updatedAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullable(),
   "isSaved": zod.boolean(),
   "isOwner": zod.boolean(),
   "availableSlots": zod.array(zod.object({
   "id": zod.string().regex(getBeautyJobResponseAvailableSlotsItemIdRegExp),
   "listingId": zod.string().regex(getBeautyJobResponseAvailableSlotsItemListingIdRegExp),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "available": zod.boolean()
 }))
 })
@@ -30421,20 +30421,20 @@ export const UpdateBeautyJobResponse = zod.object({
   "moderatedAt": zod.coerce.date().nullable(),
   "contactCount": zod.number().int(),
   "viewCount": zod.number().int(),
-  "expiresAt": zod.coerce.date(),
-  "createdAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date().nullable(),
   "availabilityPattern": zod.string().nullable(),
   "dayLabels": zod.array(zod.string()),
   "authorDisplayName": zod.string(),
   "postedByType": zod.enum(['salon', 'user']),
-  "updatedAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullable(),
   "isSaved": zod.boolean(),
   "isOwner": zod.boolean(),
   "availableSlots": zod.array(zod.object({
   "id": zod.string().regex(updateBeautyJobResponseAvailableSlotsItemIdRegExp),
   "listingId": zod.string().regex(updateBeautyJobResponseAvailableSlotsItemListingIdRegExp),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "available": zod.boolean()
 }))
 })
@@ -30477,20 +30477,20 @@ export const RenewBeautyJobResponse = zod.object({
   "moderatedAt": zod.coerce.date().nullable(),
   "contactCount": zod.number().int(),
   "viewCount": zod.number().int(),
-  "expiresAt": zod.coerce.date(),
-  "createdAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date().nullable(),
   "availabilityPattern": zod.string().nullable(),
   "dayLabels": zod.array(zod.string()),
   "authorDisplayName": zod.string(),
   "postedByType": zod.enum(['salon', 'user']),
-  "updatedAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullable(),
   "isSaved": zod.boolean(),
   "isOwner": zod.boolean(),
   "availableSlots": zod.array(zod.object({
   "id": zod.string().regex(renewBeautyJobResponseAvailableSlotsItemIdRegExp),
   "listingId": zod.string().regex(renewBeautyJobResponseAvailableSlotsItemListingIdRegExp),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "available": zod.boolean()
 }))
 })
@@ -30533,20 +30533,20 @@ export const CloseBeautyJobResponse = zod.object({
   "moderatedAt": zod.coerce.date().nullable(),
   "contactCount": zod.number().int(),
   "viewCount": zod.number().int(),
-  "expiresAt": zod.coerce.date(),
-  "createdAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date().nullable(),
   "availabilityPattern": zod.string().nullable(),
   "dayLabels": zod.array(zod.string()),
   "authorDisplayName": zod.string(),
   "postedByType": zod.enum(['salon', 'user']),
-  "updatedAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullable(),
   "isSaved": zod.boolean(),
   "isOwner": zod.boolean(),
   "availableSlots": zod.array(zod.object({
   "id": zod.string().regex(closeBeautyJobResponseAvailableSlotsItemIdRegExp),
   "listingId": zod.string().regex(closeBeautyJobResponseAvailableSlotsItemListingIdRegExp),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "available": zod.boolean()
 }))
 })
@@ -30588,8 +30588,8 @@ export const ContactBeautyJobAuthorResponse = zod.object({
   "authorReply": zod.string().nullable(),
   "authorStatus": zod.string(),
   "repliedAt": zod.coerce.date().nullable(),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable(),
   "listingTitle": zod.string().optional(),
   "applicantDisplayName": zod.string().optional()
 })
@@ -30626,12 +30626,12 @@ export const CreateBeautyJobRentalRequestResponse = zod.object({
   "message": zod.string().nullable(),
   "status": zod.enum(['pending', 'accepted', 'declined']),
   "respondedAt": zod.coerce.date().nullable(),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable(),
   "listingTitle": zod.string(),
   "applicantDisplayName": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date()
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable()
 })
 
 
@@ -30660,7 +30660,7 @@ export const ReportBeautyJobResponse = zod.object({
   "resolvedByUserId": zod.string().nullable(),
   "resolutionNote": zod.string().nullable(),
   "resolvedAt": zod.coerce.date().nullable(),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "listingTitle": zod.string().optional(),
   "authorSalonId": zod.string().nullish(),
   "authorUserId": zod.string().nullish()
@@ -30677,8 +30677,8 @@ export const ListBeautyJobInboxResponse = zod.object({
   "authorReply": zod.string().nullable(),
   "authorStatus": zod.string(),
   "repliedAt": zod.coerce.date().nullable(),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable(),
   "listingTitle": zod.string().optional(),
   "applicantDisplayName": zod.string().optional()
 }))
@@ -30710,8 +30710,8 @@ export const ReplyToBeautyJobContactResponse = zod.object({
   "authorReply": zod.string().nullable(),
   "authorStatus": zod.string(),
   "repliedAt": zod.coerce.date().nullable(),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable(),
   "listingTitle": zod.string().optional(),
   "applicantDisplayName": zod.string().optional()
 })
@@ -30725,7 +30725,7 @@ export const GetBeautyJobSettingsResponse = zod.object({
   "listingExpiryDays": zod.number().int(),
   "hourlyPostingLimit": zod.number().int(),
   "updatedByUserId": zod.string().nullable(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date().nullable()
 })
 
 
@@ -30748,7 +30748,7 @@ export const UpdateBeautyJobSettingsResponse = zod.object({
   "listingExpiryDays": zod.number().int(),
   "hourlyPostingLimit": zod.number().int(),
   "updatedByUserId": zod.string().nullable(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date().nullable()
 })
 
 
@@ -30795,7 +30795,7 @@ export const GetBeautyJobDeliveryIssuesResponse = zod.object({
   "retryCount": zod.number().int().min(getBeautyJobDeliveryIssuesResponseDeliveriesItemRetryCountMin),
   "retryAvailable": zod.boolean(),
   "nextRetryAt": zod.coerce.date().nullable(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }))
 })
 
@@ -30880,20 +30880,20 @@ export const GetBeautyJobModerationQueueResponse = zod.object({
   "moderatedAt": zod.coerce.date().nullable(),
   "contactCount": zod.number().int(),
   "viewCount": zod.number().int(),
-  "expiresAt": zod.coerce.date(),
-  "createdAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date().nullable(),
   "availabilityPattern": zod.string().nullable(),
   "dayLabels": zod.array(zod.string()),
   "authorDisplayName": zod.string(),
   "postedByType": zod.enum(['salon', 'user']),
-  "updatedAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullable(),
   "isSaved": zod.boolean(),
   "isOwner": zod.boolean(),
   "availableSlots": zod.array(zod.object({
   "id": zod.string().regex(getBeautyJobModerationQueueResponseListingsItemOneAvailableSlotsItemIdRegExp),
   "listingId": zod.string().regex(getBeautyJobModerationQueueResponseListingsItemOneAvailableSlotsItemListingIdRegExp),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "available": zod.boolean()
 }))
 }).and(zod.object({
@@ -30909,7 +30909,7 @@ export const GetBeautyJobModerationQueueResponse = zod.object({
   "resolvedByUserId": zod.string().nullable(),
   "resolutionNote": zod.string().nullable(),
   "resolvedAt": zod.coerce.date().nullable(),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "listingTitle": zod.string().optional(),
   "authorSalonId": zod.string().nullish(),
   "authorUserId": zod.string().nullish()
@@ -30998,20 +30998,20 @@ export const ListRejectedBeautyJobsResponse = zod.object({
   "moderatedAt": zod.coerce.date().nullable(),
   "contactCount": zod.number().int(),
   "viewCount": zod.number().int(),
-  "expiresAt": zod.coerce.date(),
-  "createdAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date().nullable(),
   "availabilityPattern": zod.string().nullable(),
   "dayLabels": zod.array(zod.string()),
   "authorDisplayName": zod.string(),
   "postedByType": zod.enum(['salon', 'user']),
-  "updatedAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullable(),
   "isSaved": zod.boolean(),
   "isOwner": zod.boolean(),
   "availableSlots": zod.array(zod.object({
   "id": zod.string().regex(listRejectedBeautyJobsResponseItemsItemOneAvailableSlotsItemIdRegExp),
   "listingId": zod.string().regex(listRejectedBeautyJobsResponseItemsItemOneAvailableSlotsItemListingIdRegExp),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "available": zod.boolean()
 }))
 }).and(zod.object({
@@ -31066,20 +31066,20 @@ export const GetBeautyJobAdminPreviewResponse = zod.object({
   "moderatedAt": zod.coerce.date().nullable(),
   "contactCount": zod.number().int(),
   "viewCount": zod.number().int(),
-  "expiresAt": zod.coerce.date(),
-  "createdAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date().nullable(),
   "availabilityPattern": zod.string().nullable(),
   "dayLabels": zod.array(zod.string()),
   "authorDisplayName": zod.string(),
   "postedByType": zod.enum(['salon', 'user']),
-  "updatedAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullable(),
   "isSaved": zod.boolean(),
   "isOwner": zod.boolean(),
   "availableSlots": zod.array(zod.object({
   "id": zod.string().regex(getBeautyJobAdminPreviewResponseListingAvailableSlotsItemIdRegExp),
   "listingId": zod.string().regex(getBeautyJobAdminPreviewResponseListingAvailableSlotsItemListingIdRegExp),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "available": zod.boolean()
 }))
 }),
@@ -31090,7 +31090,7 @@ export const GetBeautyJobAdminPreviewResponse = zod.object({
   "administratorDisplayName": zod.string(),
   "publicReason": zod.string().nullable(),
   "internalNote": zod.string().nullable(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 }).describe('Administrator-only immutable moderation event. Public reasons may be shown to the listing author elsewhere; internal notes must remain admin-only.'))
 })
 
@@ -31144,20 +31144,20 @@ export const ModerateBeautyJobResponse = zod.object({
   "moderatedAt": zod.coerce.date().nullable(),
   "contactCount": zod.number().int(),
   "viewCount": zod.number().int(),
-  "expiresAt": zod.coerce.date(),
-  "createdAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date().nullable(),
   "availabilityPattern": zod.string().nullable(),
   "dayLabels": zod.array(zod.string()),
   "authorDisplayName": zod.string(),
   "postedByType": zod.enum(['salon', 'user']),
-  "updatedAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullable(),
   "isSaved": zod.boolean(),
   "isOwner": zod.boolean(),
   "availableSlots": zod.array(zod.object({
   "id": zod.string().regex(moderateBeautyJobResponseAvailableSlotsItemIdRegExp),
   "listingId": zod.string().regex(moderateBeautyJobResponseAvailableSlotsItemListingIdRegExp),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
+  "startsAt": zod.coerce.date().nullable(),
+  "endsAt": zod.coerce.date().nullable(),
   "available": zod.boolean()
 }))
 })
@@ -31188,7 +31188,7 @@ export const ResolveBeautyJobReportResponse = zod.object({
   "resolvedByUserId": zod.string().nullable(),
   "resolutionNote": zod.string().nullable(),
   "resolvedAt": zod.coerce.date().nullable(),
-  "createdAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().nullable(),
   "listingTitle": zod.string().optional(),
   "authorSalonId": zod.string().nullish(),
   "authorUserId": zod.string().nullish()
@@ -31250,7 +31250,7 @@ export const GetReferralDashboardResponse = zod.object({
   "id": zod.string(),
   "type": zod.enum(['held', 'available', 'redeemed', 'expired', 'reversed', 'negative_offset', 'restored']),
   "amountRsd": zod.number().int(),
-  "effectiveAt": zod.coerce.date(),
+  "effectiveAt": zod.coerce.date().nullable(),
   "expiresAt": zod.coerce.date().nullable(),
   "reason": zod.string()
 }))
@@ -31265,7 +31265,7 @@ export const AdminListReferralApprovalsResponseItem = zod.object({
   "channel": zod.enum(['A', 'B1']),
   "businessKind": zod.enum(['salon', 'education_center']),
   "status": zod.string(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 })
 export const AdminListReferralApprovalsResponse = zod.array(AdminListReferralApprovalsResponseItem)
 
@@ -31305,7 +31305,7 @@ export const AdminListReferralReviewsResponseItem = zod.object({
   "reasonCode": zod.string(),
   "detail": zod.string().nullable(),
   "score": zod.number().int().nullable(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 })
 export const AdminListReferralReviewsResponse = zod.array(AdminListReferralReviewsResponseItem)
 
@@ -31335,7 +31335,7 @@ export const AdminReviewReferralResponse = zod.object({
   "reasonCode": zod.string(),
   "detail": zod.string().nullable(),
   "score": zod.number().int().nullable(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date().nullable()
 })
 
 

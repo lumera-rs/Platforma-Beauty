@@ -15,5 +15,6 @@ export interface ReferralReview {
   detail: string | null;
   /** @nullable */
   score: number | null;
-  createdAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
 }

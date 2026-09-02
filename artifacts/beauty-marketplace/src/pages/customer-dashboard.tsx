@@ -166,7 +166,7 @@ function AppointmentPhotos({ appointmentId }: { appointmentId: string }) {
                     {photo.kind === 'before' ? 'Pre' : 'Posle'}
                   </Badge>
                   <span className="text-[10px] text-muted-foreground">
-                    {format(parseISO(photo.createdAt), 'dd.MM.yyyy')}
+                    {photo.createdAt ? format(parseISO(photo.createdAt), 'dd.MM.yyyy') : '—'}
                   </span>
                 </div>
               </div>

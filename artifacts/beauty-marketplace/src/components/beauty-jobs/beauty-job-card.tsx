@@ -53,7 +53,8 @@ function getCategoryIcon(type: string, categorySlug: string) {
   return Briefcase;
 }
 
-function formatCompactDate(dateString: string) {
+function formatCompactDate(dateString: string | null) {
+  if (!dateString) return "—";
   try {
     const date = new Date(dateString);
     const calendarDays = differenceInCalendarDays(new Date(), date);
@@ -66,7 +67,7 @@ function formatCompactDate(dateString: string) {
     const distance = formatDistanceToNowStrict(date, { locale: srLatn, addSuffix: true });
     return distance;
   } catch {
-    return "";
+    return "—";
   }
 }
 

@@ -20,5 +20,6 @@ export interface BeautyJobNotification {
   body: string;
   /** @nullable */
   readAt: Date | null;
-  createdAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
 }

@@ -7,7 +7,8 @@
  */
 import type { EducationB2bQuote } from './educationB2bQuote';
 
-export type EducationB2bOrder = EducationB2bQuote & {
+export type EducationB2bOrder = EducationB2bQuote & ({
   id: string;
-  createdAt: Date;
-};
+  /** @nullable */
+  createdAt: Date | null;
+});

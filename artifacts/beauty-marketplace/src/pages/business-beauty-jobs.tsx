@@ -249,7 +249,7 @@ export default function BusinessBeautyJobsPage() {
                             <p className="text-sm font-medium text-primary">Oglas: {contact.listingTitle}</p>
                           </div>
                           <div className="text-xs font-medium text-muted-foreground bg-muted px-2 py-1 rounded-md shrink-0">
-                            {format(new Date(contact.createdAt), "dd.MM.yyyy. HH:mm", { locale: srLatn })}
+                            {contact.createdAt ? format(new Date(contact.createdAt), "dd.MM.yyyy. HH:mm", { locale: srLatn }) : "—"}
                           </div>
                         </div>
                         <div className="bg-muted/30 p-4 rounded-lg text-sm text-foreground/90 whitespace-pre-wrap border border-muted">
@@ -337,7 +337,7 @@ export default function BusinessBeautyJobsPage() {
                         <div className="space-y-1.5">
                           <p className={`text-sm ${notif.readAt ? 'text-foreground/80' : 'text-foreground font-medium'}`}>{notif.title}</p>
                           <p className="text-sm text-muted-foreground">{notif.body}</p>
-                          <p className="text-xs text-muted-foreground">{format(new Date(notif.createdAt), "dd.MM.yyyy. HH:mm", { locale: srLatn })}</p>
+                          <p className="text-xs text-muted-foreground">{notif.createdAt ? format(new Date(notif.createdAt), "dd.MM.yyyy. HH:mm", { locale: srLatn }) : "—"}</p>
                         </div>
                         {!notif.readAt && (
                           <Button size="sm" variant="ghost" onClick={() => handleMarkRead(notif.id)} className="h-8 text-xs text-primary hover:bg-primary/10 hover:text-primary">

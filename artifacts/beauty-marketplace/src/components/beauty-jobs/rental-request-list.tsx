@@ -33,7 +33,7 @@ export function RentalRequestList({ requests, isLoading, incoming, pendingReques
             <div>
               <p className="font-medium text-foreground">{request.listingTitle}</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                {incoming ? `Korisnik: ${request.applicantDisplayName}` : `Termin: ${format(new Date(request.startsAt), "dd.MM.yyyy. HH:mm", { locale: srLatn })}`}
+                {incoming ? `Korisnik: ${request.applicantDisplayName}` : `Termin: ${formatRequestDate(request.startsAt, "dd.MM.yyyy. HH:mm")}`}
               </p>
             </div>
             <Badge variant={request.status === "accepted" ? "default" : request.status === "declined" ? "destructive" : "secondary"}>
@@ -43,7 +43,7 @@ export function RentalRequestList({ requests, isLoading, incoming, pendingReques
           {incoming && (
             <div className="mt-4 flex items-center gap-2 rounded-lg bg-muted/40 p-3 text-sm">
               <CalendarClock className="h-4 w-4 text-primary" />
-              {format(new Date(request.startsAt), "EEEE, dd.MM.yyyy. HH:mm", { locale: srLatn })}–{format(new Date(request.endsAt), "HH:mm", { locale: srLatn })}
+              {formatRequestDate(request.startsAt, "EEEE, dd.MM.yyyy. HH:mm")}–{formatRequestDate(request.endsAt, "HH:mm")}
             </div>
           )}
           {request.message && <p className="mt-3 whitespace-pre-wrap text-sm text-foreground/80">{request.message}</p>}
@@ -57,4 +57,8 @@ export function RentalRequestList({ requests, isLoading, incoming, pendingReques
       ))}
     </div>
   );
+}
+
+function formatRequestDate(value: string | null, formatString: string) {
+  return value ? format(new Date(value), formatString, { locale: srLatn }) : "—";
 }

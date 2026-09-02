@@ -20,5 +20,6 @@ export interface BeautyJobDeliveryIssue {
   retryAvailable: boolean;
   /** @nullable */
   nextRetryAt: Date | null;
-  createdAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
 }

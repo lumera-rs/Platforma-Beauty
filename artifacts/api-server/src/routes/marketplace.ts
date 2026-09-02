@@ -5975,7 +5975,7 @@ router.post("/auth/customer-password-setup/validate", async (req, res): Promise<
     res.status(400).json({ error: CUSTOMER_SETUP_INVALID_MESSAGE });
     return;
   }
-  res.json({ valid: true, expiresAt: result.expiresAt.toISOString() });
+  res.json({ valid: true, expiresAt: safeIsoTimestamp(result.expiresAt) });
 });
 
 router.post("/auth/customer-password-setup/complete", async (req, res): Promise<void> => {
@@ -13278,7 +13278,7 @@ async function adminRetailOrderDetail(order: typeof retailOrdersTable.$inferSele
     fulfillmentHistory: history.map((event) => ({
       id: event.id, actorName: event.actorName, field: event.field,
       previousValue: event.previousValue ?? null, nextValue: event.nextValue ?? null,
-      note: event.note ?? null, createdAt: event.createdAt.toISOString(),
+      note: event.note ?? null, createdAt: safeIsoTimestamp(event.createdAt),
     })),
   };
 }
@@ -17427,7 +17427,7 @@ function adminOrderDto(
       previousValue: event.previousValue ?? null,
       nextValue: event.nextValue ?? null,
       note: event.note ?? null,
-      createdAt: event.createdAt.toISOString(),
+      createdAt: safeIsoTimestamp(event.createdAt),
     })),
   };
 }

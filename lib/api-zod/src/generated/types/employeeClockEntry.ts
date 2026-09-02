@@ -9,7 +9,8 @@
 export interface EmployeeClockEntry {
   id: string;
   employeeId: string;
-  clockInAt: string;
+  /** @nullable */
+  clockInAt: string | null;
   /** @nullable */
   clockOutAt?: string | null;
   editedByOwner: boolean;

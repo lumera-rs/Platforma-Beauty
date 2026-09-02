@@ -277,7 +277,10 @@ function OperationsCalendar({ centerId, permissions }: { centerId: string, permi
         <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
           {days.map(day => {
             const dayKey = day.toISOString().slice(0, 10);
-            const daySessions = sessions?.filter(s => educationBelgradeDateKey(new Date(s.startsAt)) === dayKey) || [];
+            const daySessions = sessions?.flatMap(session => {
+              if (!session.startsAt || !session.endsAt || educationBelgradeDateKey(new Date(session.startsAt)) !== dayKey) return [];
+              return [{ session, startsAt: session.startsAt, endsAt: session.endsAt }];
+            }) || [];
             return (
               <div key={day.toISOString()} className="border rounded-xl bg-card overflow-hidden">
                 <div className="bg-muted/50 p-2 text-center border-b">
@@ -285,13 +288,13 @@ function OperationsCalendar({ centerId, permissions }: { centerId: string, permi
                   <p className="text-xs text-muted-foreground">{educationBelgradeDateLabel(day, { day: "2-digit", month: "short" })}</p>
                 </div>
                 <div className="p-2 space-y-2 min-h-[150px]">
-                  {daySessions.map(session => (
+                  {daySessions.map(({ session, startsAt, endsAt }) => (
                     <div 
                       key={session.id} 
                       className="text-xs p-2 rounded-md bg-primary/10 border border-primary/20 cursor-pointer hover:bg-primary/20 transition-colors"
                       onClick={() => setSelectedSession(session)}
                     >
-                      <p className="font-bold text-primary">{educationBelgradeTime(new Date(session.startsAt))} - {educationBelgradeTime(new Date(session.endsAt))}</p>
+                      <p className="font-bold text-primary">{educationBelgradeTime(new Date(startsAt))} - {educationBelgradeTime(new Date(endsAt))}</p>
                       <p className="truncate font-medium">{session.courseId}</p>
                       <p className="text-[10px] mt-1 text-muted-foreground">{session.reservedSeats}/{session.capacity} mesta</p>
                     </div>
@@ -378,8 +381,10 @@ function SessionDetailDialog({ session, centerId, permissions, onClose }: { sess
         <DialogHeader>
           <DialogTitle>Detalji termina</DialogTitle>
           <DialogDescription>
-            {educationBelgradeDateLabel(new Date(session.startsAt), { day: "2-digit", month: "2-digit", year: "numeric" })}{" "}
-            {educationBelgradeTime(new Date(session.startsAt))} - {educationBelgradeTime(new Date(session.endsAt))}
+            {session.startsAt && session.endsAt ? (
+              <>{educationBelgradeDateLabel(new Date(session.startsAt), { day: "2-digit", month: "2-digit", year: "numeric" })}{" "}
+              {educationBelgradeTime(new Date(session.startsAt))} - {educationBelgradeTime(new Date(session.endsAt))}</>
+            ) : "Vreme termina nije dostupno"}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -849,8 +854,8 @@ function EducatorSchedule({ centerId, permissions }: { centerId: string, permiss
                     <div key={conflict.sessionId} className="space-y-3 rounded-md border border-amber-200 bg-background p-3 text-sm" data-testid={`absence-conflict-${conflict.sessionId}`}>
                       <p className="font-medium">{conflict.courseTitle}</p>
                       <p className="text-muted-foreground">
-                        {educationBelgradeDateLabel(new Date(conflict.startsAt), { day: "2-digit", month: "2-digit", year: "numeric" })},{" "}
-                        {educationBelgradeTime(new Date(conflict.startsAt))}–{educationBelgradeTime(new Date(conflict.endsAt))}
+                        {conflict.startsAt && conflict.endsAt ? <>{educationBelgradeDateLabel(new Date(conflict.startsAt), { day: "2-digit", month: "2-digit", year: "numeric" })},{" "}
+                        {educationBelgradeTime(new Date(conflict.startsAt))}–{educationBelgradeTime(new Date(conflict.endsAt))}</> : "Vreme termina nije dostupno"}
                         {" · "}{conflict.reservedSeats} rezervisanih mesta
                       </p>
                       <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">

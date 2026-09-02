@@ -19,8 +19,10 @@ export interface EducationOperationalBookingDetail {
   /** @nullable */
   purchaserId: string | null;
   status: EducationOperationalBookingDetailStatus;
-  createdAt: Date;
-  updatedAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
+  /** @nullable */
+  updatedAt: Date | null;
   /** @nullable */
   session: EducationOperationalBookingDetailSession;
   participants: EducationOperationalBookingParticipant[];

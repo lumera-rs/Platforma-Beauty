@@ -13,5 +13,6 @@ export interface BeautyJobSettings {
   hourlyPostingLimit: number;
   /** @nullable */
   updatedByUserId: string | null;
-  updatedAt: Date;
+  /** @nullable */
+  updatedAt: Date | null;
 }

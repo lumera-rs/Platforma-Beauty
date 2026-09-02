@@ -10014,7 +10014,7 @@ components:
         id: { type: string }
         type: { type: string, enum: [held, available, redeemed, expired, reversed, negative_offset, restored] }
         amountRsd: { type: integer }
-        effectiveAt: { type: string, format: date-time }
+        effectiveAt: { type: ["string", "null"], format: date-time }
         expiresAt: { type: ["string", "null"], format: date-time }
         reason: { type: string }
       required: [id, type, amountRsd, effectiveAt, expiresAt, reason]
@@ -10033,7 +10033,7 @@ components:
         channel: { type: string, enum: [A, B1] }
         businessKind: { type: string, enum: [salon, education_center] }
         status: { type: string }
-        createdAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
       required: [attributionId, channel, businessKind, status, createdAt]
     ReferralApprovalDecision:
       type: object
@@ -10056,7 +10056,7 @@ components:
         reasonCode: { type: string }
         detail: { type: ["string", "null"] }
         score: { type: ["integer", "null"] }
-        createdAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
       required: [id, status, reasonCode, detail, score, createdAt]
     ReferralReviewUpdate:
       type: object
@@ -12157,7 +12157,7 @@ components:
         previousValue: { type: ["string", "null"] }
         nextValue: { type: ["string", "null"] }
         note: { type: ["string", "null"] }
-        createdAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
       required: [id, actorName, field, previousValue, nextValue, note, createdAt]
     AdminRetailOrder:
       allOf:
@@ -13162,7 +13162,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/EducationB2bQuote"
         - type: object
-          properties: { id: { type: string }, createdAt: { type: string, format: date-time } }
+          properties: { id: { type: string }, createdAt: { type: ["string", "null"], format: date-time } }
           required: [id, createdAt]
     ShopCheckoutProfile:
       type: object
@@ -13437,7 +13437,7 @@ components:
         previousValue: { type: ["string", "null"] }
         nextValue: { type: ["string", "null"] }
         note: { type: ["string", "null"] }
-        createdAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
       required: [id, actorName, field, previousValue, nextValue, note, createdAt]
     LoyaltyStatus:
       type: object
@@ -17042,7 +17042,7 @@ components:
         previousThresholds: { $ref: "#/components/schemas/RetentionThresholds" }
         changedByUserId: { type: ["string", "null"] }
         changedByName: { type: ["string", "null"] }
-        changedAt: { type: string, description: "ISO timestamp of the change" }
+        changedAt: { type: ["string", "null"], description: "ISO timestamp of the change" }
         changeSource: { type: string, enum: [manual, restore_version, restore_defaults], description: "How the version came to be: hand-edited, restored from an earlier version, or restored platform defaults" }
         restoredFromVersion: { type: ["number", "null"], description: "Source version when changeSource is restore_version; null otherwise" }
       required: [version, thresholds, previousThresholds, changedByUserId, changedByName, changedAt, changeSource, restoredFromVersion]
@@ -17086,7 +17086,7 @@ components:
         kind: { type: string, enum: [before, after] }
         url: { type: string }
         consentConfirmed: { type: boolean }
-        createdAt: { type: string }
+        createdAt: { type: ["string", "null"] }
         appointmentDate: { type: ["string", "null"] }
         serviceName: { type: ["string", "null"] }
       required: [id, appointmentId, salonCustomerId, kind, url, consentConfirmed, createdAt]
@@ -17147,7 +17147,7 @@ components:
       properties:
         id: { type: string }
         employeeId: { type: string }
-        clockInAt: { type: string }
+        clockInAt: { type: ["string", "null"] }
         clockOutAt: { type: ["string", "null"] }
         editedByOwner: { type: boolean }
         note: { type: ["string", "null"] }
@@ -17198,7 +17198,7 @@ components:
         status: { type: string, enum: [pending_colleague, colleague_declined, pending_owner, owner_declined, approved, cancelled] }
         colleagueRespondedAt: { type: ["string", "null"] }
         ownerReviewedAt: { type: ["string", "null"] }
-        createdAt: { type: string }
+        createdAt: { type: ["string", "null"] }
       required: [id, requesterEmployeeId, requesterName, targetEmployeeId, targetName, swapDate, status, createdAt]
     EmployeeShiftSwapOverview:
       type: object
@@ -17489,13 +17489,13 @@ components:
         moderatedAt: { type: [string, "null"], format: date-time }
         contactCount: { type: integer }
         viewCount: { type: integer }
-        expiresAt: { type: string, format: date-time }
-        createdAt: { type: string, format: date-time }
+        expiresAt: { type: ["string", "null"], format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
         availabilityPattern: { type: [string, "null"] }
         dayLabels: { type: array, items: { type: string } }
         authorDisplayName: { type: string }
         postedByType: { type: string, enum: [salon, user] }
-        updatedAt: { type: string, format: date-time }
+        updatedAt: { type: ["string", "null"], format: date-time }
         isSaved: { type: boolean }
         isOwner: { type: boolean }
         availableSlots: { type: array, items: { $ref: "#/components/schemas/BeautyJobRentalSlot" } }
@@ -17510,7 +17510,7 @@ components:
         administratorDisplayName: { type: string }
         publicReason: { type: [string, "null"] }
         internalNote: { type: [string, "null"] }
-        createdAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
       required: [id, action, actingAdminUserId, administratorDisplayName, publicReason, internalNote, createdAt]
     BeautyJobAdminPreview:
       type: object
@@ -17573,8 +17573,8 @@ components:
       properties:
         id: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
         listingId: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
-        startsAt: { type: string, format: date-time }
-        endsAt: { type: string, format: date-time }
+        startsAt: { type: ["string", "null"], format: date-time }
+        endsAt: { type: ["string", "null"], format: date-time }
         available: { type: boolean }
       required: [id, listingId, startsAt, endsAt, available]
     BeautyJobRentalRequestCreateInput:
@@ -17598,12 +17598,12 @@ components:
         message: { type: [string, "null"] }
         status: { type: string, enum: [pending, accepted, declined] }
         respondedAt: { type: [string, "null"], format: date-time }
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
+        updatedAt: { type: ["string", "null"], format: date-time }
         listingTitle: { type: string }
         applicantDisplayName: { type: string }
-        startsAt: { type: string, format: date-time }
-        endsAt: { type: string, format: date-time }
+        startsAt: { type: ["string", "null"], format: date-time }
+        endsAt: { type: ["string", "null"], format: date-time }
       required: [id, listingId, slotId, applicantUserId, message, status, respondedAt, createdAt, updatedAt, listingTitle, applicantDisplayName, startsAt, endsAt]
     BeautyJobContactCreateInput:
       type: object
@@ -17669,8 +17669,8 @@ components:
         authorReply: { type: [string, "null"] }
         authorStatus: { type: string }
         repliedAt: { type: [string, "null"], format: date-time }
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
+        updatedAt: { type: ["string", "null"], format: date-time }
         listingTitle: { type: string }
         applicantDisplayName: { type: string }
       required: [id, listingId, applicantUserId, applicantMessage, applicantStatus, authorReply, authorStatus, repliedAt, createdAt, updatedAt]
@@ -17688,8 +17688,8 @@ components:
         decisionActorUserId: { type: [string, "null"] }
         decisionAt: { type: [string, "null"], format: date-time }
         repliedAt: { type: [string, "null"], format: date-time }
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
+        updatedAt: { type: ["string", "null"], format: date-time }
         applicantDisplayName: { type: string }
         actions:
           type: array
@@ -17705,7 +17705,7 @@ components:
         toStatus: { type: string }
         privateNote: { type: [string, "null"] }
         actorUserId: { type: [string, "null"] }
-        createdAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
       required: [id, contactId, listingId, fromStatus, toStatus, privateNote, actorUserId, createdAt]
     BeautyJobReport:
       type: object
@@ -17718,7 +17718,7 @@ components:
         resolvedByUserId: { type: [string, "null"] }
         resolutionNote: { type: [string, "null"] }
         resolvedAt: { type: [string, "null"], format: date-time }
-        createdAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
         listingTitle: { type: string }
         authorSalonId: { type: [string, "null"] }
         authorUserId: { type: [string, "null"] }
@@ -17734,7 +17734,7 @@ components:
         title: { type: string }
         body: { type: string }
         readAt: { type: [string, "null"], format: date-time }
-        createdAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
       required: [id, recipientUserId, listingId, contactId, type, title, body, readAt, createdAt]
     BeautyJobSettings:
       type: object
@@ -17743,7 +17743,7 @@ components:
         listingExpiryDays: { type: integer }
         hourlyPostingLimit: { type: integer }
         updatedByUserId: { type: [string, "null"] }
-        updatedAt: { type: string, format: date-time }
+        updatedAt: { type: ["string", "null"], format: date-time }
       required: [id, listingExpiryDays, hourlyPostingLimit, updatedByUserId, updatedAt]
     BeautyJobDeliveryIssue:
       type: object
@@ -17757,7 +17757,7 @@ components:
         retryCount: { type: integer, minimum: 0 }
         retryAvailable: { type: boolean }
         nextRetryAt: { type: ["string", "null"], format: date-time }
-        createdAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
       required: [id, emailType, status, issueKind, retryCount, retryAvailable, nextRetryAt, createdAt]
     BeautyJobDeliveryIssueSummary:
       type: object
@@ -18540,15 +18540,15 @@ components:
         sessionId: { type: ["string", "null"] }
         purchaserId: { type: ["string", "null"] }
         status: { type: string, enum: [pending, active, waitlisted, cancelled] }
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
+        createdAt: { type: ["string", "null"], format: date-time }
+        updatedAt: { type: ["string", "null"], format: date-time }
         session:
           type: ["object", "null"]
           required: [id, startsAt, endsAt, location, cancelledAt]
           properties:
             id: { type: string }
-            startsAt: { type: string, format: date-time }
-            endsAt: { type: string, format: date-time }
+            startsAt: { type: ["string", "null"], format: date-time }
+            endsAt: { type: ["string", "null"], format: date-time }
             location: { type: ["string", "null"] }
             cancelledAt: { type: ["string", "null"], format: date-time }
         participants:
@@ -18605,7 +18605,7 @@ components:
         participantId: { type: string }
         sessionId: { type: string }
         status: { type: string, enum: [present, absent, excused] }
-        recordedAt: { type: string, format: date-time }
+        recordedAt: { type: ["string", "null"], format: date-time }
         recordedByUserId: { type: ["string", "null"] }
     EducationSessionEducatorSubstitutionInput:
       type: object
@@ -18715,8 +18715,8 @@ components:
         id: { type: string }
         courseId: { type: string }
         educatorStaffId: { type: string }
-        startsAt: { type: string, format: date-time }
-        endsAt: { type: string, format: date-time }
+        startsAt: { type: ["string", "null"], format: date-time }
+        endsAt: { type: ["string", "null"], format: date-time }
         capacity: { type: integer }
         reservedSeats: { type: integer }
         participants: { type: array, items: { $ref: "#/components/schemas/EducationOperationsCalendarParticipant" } }
@@ -18801,8 +18801,8 @@ components:
         sessionId: { type: string }
         courseId: { type: string }
         courseTitle: { type: string }
-        startsAt: { type: string, format: date-time }
-        endsAt: { type: string, format: date-time }
+        startsAt: { type: ["string", "null"], format: date-time }
+        endsAt: { type: ["string", "null"], format: date-time }
         reservedSeats: { type: integer, minimum: 0 }
     EducationEducatorAbsencePreview:
       type: object

@@ -66,6 +66,13 @@ const periods = [
 
 const adminTabs = ["queue", "reports", "email-deliveries", "settings"] as const;
 
+function formatNullableDate(value: string | null | undefined, formatString: string, includeLocale = false) {
+  if (!value) return "—";
+  return includeLocale
+    ? format(new Date(value), formatString, { locale: srLatn })
+    : format(new Date(value), formatString);
+}
+
 function isEnumValue<const T extends Record<string, string>>(
   options: T,
   value: string | null,
@@ -601,9 +608,9 @@ export default function AdminBeautyJobsPage() {
                               <span className="hidden sm:inline">•</span>
                               <span>Kontakti: {job.contactCount}</span>
                               <span className="hidden sm:inline">•</span>
-                              <span>Kreirano: {format(new Date(job.createdAt), "dd.MM.yyyy.")}</span>
+                              <span>Kreirano: {formatNullableDate(job.createdAt, "dd.MM.yyyy.")}</span>
                               <span className="hidden sm:inline">•</span>
-                              <span>Ističe: {format(new Date(job.expiresAt), "dd.MM.yyyy.")}</span>
+                              <span>Ističe: {formatNullableDate(job.expiresAt, "dd.MM.yyyy.")}</span>
                             </div>
                           </div>
 
@@ -742,7 +749,7 @@ export default function AdminBeautyJobsPage() {
                     <div>
                       <div className="flex items-center gap-2 mb-1.5">
                         <Badge variant="destructive" className="gap-1"><Flag className="w-3 h-3" /> Prijava</Badge>
-                        <span className="text-xs font-medium text-muted-foreground">{format(new Date(report.createdAt), "dd.MM.yyyy. HH:mm", { locale: srLatn })}</span>
+                        <span className="text-xs font-medium text-muted-foreground">{formatNullableDate(report.createdAt, "dd.MM.yyyy. HH:mm", true)}</span>
                       </div>
                       <h4 className="font-bold">Oglas ID: {report.listingId}</h4>
                       <p className="text-sm text-muted-foreground">Prijavio korisnik ID: {report.reporterUserId}</p>
@@ -841,7 +848,7 @@ export default function AdminBeautyJobsPage() {
                           <div>
                             <p className="font-medium">{deliveryTypeLabels[delivery.emailType]}</p>
                             <p className="mt-1 text-xs text-muted-foreground">
-                              Kreirano {format(new Date(delivery.createdAt), "dd.MM.yyyy. HH:mm", { locale: srLatn })}
+                              Kreirano {formatNullableDate(delivery.createdAt, "dd.MM.yyyy. HH:mm", true)}
                             </p>
                           </div>
                           <div>
@@ -852,7 +859,7 @@ export default function AdminBeautyJobsPage() {
                           </div>
                           <p className="text-xs text-muted-foreground">
                             {delivery.nextRetryAt
-                              ? `Sledeći automatski pokušaj: ${format(new Date(delivery.nextRetryAt), "dd.MM. HH:mm", { locale: srLatn })}`
+                              ? `Sledeći automatski pokušaj: ${formatNullableDate(delivery.nextRetryAt, "dd.MM. HH:mm", true)}`
                               : delivery.retryAvailable
                                 ? "Automatski pokušaji su iscrpljeni."
                                 : "Ručni retry nije dozvoljen za ovo stanje."}

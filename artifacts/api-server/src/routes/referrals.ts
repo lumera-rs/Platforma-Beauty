@@ -19,6 +19,7 @@ import {
 } from "../lib/referral-service";
 import { REFERRAL_POLICY, type ReferralChannel } from "../lib/referral-domain";
 import { publishCatalogInvalidation } from "../lib/catalog-cache";
+import { safeIsoTimestamp } from "../lib/date-serialization";
 
 const router: IRouter = Router();
 
@@ -156,7 +157,7 @@ router.get("/referrals/dashboard", async (req: Request, res: Response): Promise<
     }),
     ledger: ledger.map((entry) => ({
       id: entry.id, type: entry.type, amountRsd: entry.amountRsd,
-      effectiveAt: entry.effectiveAt.toISOString(), expiresAt: entry.expiresAt?.toISOString() ?? null, reason: entry.reason,
+      effectiveAt: safeIsoTimestamp(entry.effectiveAt), expiresAt: safeIsoTimestamp(entry.expiresAt), reason: entry.reason,
     })),
   };
   res.json(GetReferralDashboardResponse.parse(response));
@@ -171,7 +172,7 @@ router.get("/admin/referrals/approvals", async (req: Request, res: Response): Pr
   res.json(AdminListReferralApprovalsResponse.parse(rows.map((row) => ({
     attributionId: row.referral_attributions.id, channel: row.referral_attributions.channel,
     businessKind: row.referral_attributions.referredSalonId ? "salon" : "education_center",
-    status: row.referral_qualifications.status, createdAt: row.referral_attributions.createdAt.toISOString(),
+    status: row.referral_qualifications.status, createdAt: safeIsoTimestamp(row.referral_attributions.createdAt),
   }))));
 });
 
@@ -193,7 +194,7 @@ router.get("/admin/referrals/reviews", async (req: Request, res: Response): Prom
   if (!user || !isAdmin(user)) { res.status(user ? 403 : 401).json({ error: "Administratorski pristup je obavezan." }); return; }
   const rows = await db.select().from(referralReviewsTable).where(eq(referralReviewsTable.status, "open")).orderBy(desc(referralReviewsTable.createdAt));
   res.json(AdminListReferralReviewsResponse.parse(rows.map((row) => ({
-    id: row.id, status: row.status, reasonCode: row.reasonCode, detail: row.detail, score: row.score, createdAt: row.createdAt.toISOString(),
+    id: row.id, status: row.status, reasonCode: row.reasonCode, detail: row.detail, score: row.score, createdAt: safeIsoTimestamp(row.createdAt),
   }))));
 });
 
@@ -219,7 +220,7 @@ router.patch("/admin/referrals/reviews/:reviewId", async (req: Request, res: Res
   }
   if (!saved) { res.status(404).json({ error: "Zapis za pregled nije pronađen." }); return; }
   res.json(AdminReviewReferralResponse.parse({
-    id: saved.id, status: saved.status, reasonCode: saved.reasonCode, detail: saved.detail, score: saved.score, createdAt: saved.createdAt.toISOString(),
+    id: saved.id, status: saved.status, reasonCode: saved.reasonCode, detail: saved.detail, score: saved.score, createdAt: safeIsoTimestamp(saved.createdAt),
   }));
 });
 

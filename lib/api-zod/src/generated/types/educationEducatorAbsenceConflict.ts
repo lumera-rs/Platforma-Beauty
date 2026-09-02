@@ -10,8 +10,10 @@ export interface EducationEducatorAbsenceConflict {
   sessionId: string;
   courseId: string;
   courseTitle: string;
-  startsAt: Date;
-  endsAt: Date;
+  /** @nullable */
+  startsAt: Date | null;
+  /** @nullable */
+  endsAt: Date | null;
   /** @minimum 0 */
   reservedSeats: number;
 }

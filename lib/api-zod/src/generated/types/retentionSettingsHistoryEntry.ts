@@ -16,8 +16,11 @@ export interface RetentionSettingsHistoryEntry {
   changedByUserId: string | null;
   /** @nullable */
   changedByName: string | null;
-  /** ISO timestamp of the change */
-  changedAt: string;
+  /**
+     * ISO timestamp of the change
+     * @nullable
+     */
+  changedAt: string | null;
   /** How the version came to be: hand-edited, restored from an earlier version, or restored platform defaults */
   changeSource: RetentionSettingsHistoryEntryChangeSource;
   /**

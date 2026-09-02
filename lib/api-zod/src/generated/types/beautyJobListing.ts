@@ -42,14 +42,17 @@ export interface BeautyJobListing {
   moderatedAt: Date | null;
   contactCount: number;
   viewCount: number;
-  expiresAt: Date;
-  createdAt: Date;
+  /** @nullable */
+  expiresAt: Date | null;
+  /** @nullable */
+  createdAt: Date | null;
   /** @nullable */
   availabilityPattern: string | null;
   dayLabels: string[];
   authorDisplayName: string;
   postedByType: BeautyJobListingPostedByType;
-  updatedAt: Date;
+  /** @nullable */
+  updatedAt: Date | null;
   isSaved: boolean;
   isOwner: boolean;
   availableSlots: BeautyJobRentalSlot[];

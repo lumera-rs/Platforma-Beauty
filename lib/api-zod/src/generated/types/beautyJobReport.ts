@@ -19,7 +19,8 @@ export interface BeautyJobReport {
   resolutionNote: string | null;
   /** @nullable */
   resolvedAt: Date | null;
-  createdAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
   listingTitle?: string;
   /** @nullable */
   authorSalonId?: string | null;

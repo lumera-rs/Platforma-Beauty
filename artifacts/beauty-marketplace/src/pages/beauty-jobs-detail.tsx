@@ -249,7 +249,7 @@ export default function BeautyJobDetailPage() {
             
             <div className="flex items-center gap-1.5">
               <Clock className="w-4 h-4 text-primary" />
-              <span>Objavljeno: {format(new Date(job.createdAt), "dd.MM.yyyy.", { locale: srLatn })}</span>
+              <span>Objavljeno: {formatBeautyJobDate(job.createdAt, "dd.MM.yyyy.")}</span>
             </div>
 
             <div className="flex items-center gap-1.5">
@@ -367,8 +367,8 @@ export default function BeautyJobDetailPage() {
                   <div className="grid gap-3 sm:grid-cols-2">
                     {job.availableSlots.map((slot) => (
                       <div key={slot.id} className={`rounded-xl border p-4 ${slot.available ? "bg-card" : "bg-muted/40 opacity-70"}`}>
-                        <p className="font-medium capitalize">{format(new Date(slot.startsAt), "EEEE, dd.MM.yyyy.", { locale: srLatn })}</p>
-                        <p className="mt-1 text-sm text-muted-foreground">{format(new Date(slot.startsAt), "HH:mm", { locale: srLatn })}–{format(new Date(slot.endsAt), "HH:mm", { locale: srLatn })}</p>
+                        <p className="font-medium capitalize">{formatBeautyJobDate(slot.startsAt, "EEEE, dd.MM.yyyy.")}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">{formatBeautyJobDate(slot.startsAt, "HH:mm")}–{formatBeautyJobDate(slot.endsAt, "HH:mm")}</p>
                         <Button className="mt-3 w-full" size="sm" variant={slot.available ? "default" : "secondary"} disabled={isAdminPreview || !slot.available || job.isOwner} onClick={() => {
                           if (!user) setLocation("/prijava");
                           else setBookingSlotId(slot.id);
@@ -424,8 +424,8 @@ export default function BeautyJobDetailPage() {
                               Administrator: {event.administratorDisplayName}
                             </p>
                           </div>
-                          <time className="text-xs text-muted-foreground" dateTime={new Date(event.createdAt).toISOString()} data-testid={`moderation-history-time-${event.id}`}>
-                            {format(new Date(event.createdAt), "dd.MM.yyyy. HH:mm:ss", { locale: srLatn })}
+                          <time className="text-xs text-muted-foreground" dateTime={event.createdAt ? new Date(event.createdAt).toISOString() : undefined} data-testid={`moderation-history-time-${event.id}`}>
+                            {formatBeautyJobDate(event.createdAt, "dd.MM.yyyy. HH:mm:ss")}
                           </time>
                         </div>
                         {event.publicReason && (
@@ -539,6 +539,10 @@ export default function BeautyJobDetailPage() {
       </div>
     </Layout>
   );
+}
+
+function formatBeautyJobDate(value: string | null | undefined, formatString: string) {
+  return value ? format(new Date(value), formatString, { locale: srLatn }) : "—";
 }
 
 const moderationActionLabels: Record<string, string> = {

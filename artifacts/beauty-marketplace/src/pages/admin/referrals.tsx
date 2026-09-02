@@ -88,7 +88,7 @@ export default function AdminReferrals() {
                               Kanal {approval.channel}
                               <Badge variant="outline">{approval.businessKind}</Badge>
                             </CardTitle>
-                            <CardDescription>Kreirano: {format(parseISO(approval.createdAt), "dd.MM.yyyy HH:mm")}</CardDescription>
+                            <CardDescription>Kreirano: {approval.createdAt ? format(parseISO(approval.createdAt), "dd.MM.yyyy HH:mm") : "—"}</CardDescription>
                           </div>
                           <Badge className="bg-amber-100 text-amber-800 border-none">{approval.status}</Badge>
                         </div>

@@ -24,8 +24,10 @@ export interface BeautyJobApplicant {
   decisionAt: Date | null;
   /** @nullable */
   repliedAt: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
+  /** @nullable */
+  updatedAt: Date | null;
   applicantDisplayName: string;
   actions: BeautyJobApplicationAction[];
 }

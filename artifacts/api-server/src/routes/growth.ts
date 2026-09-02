@@ -64,6 +64,7 @@ import { redeemPackageSession, reversePackageRedemption } from "../lib/package-e
 import { getEmployeePerformance } from "../lib/employee-performance";
 import { askGrowthAi } from "../lib/growth-ai-snapshot";
 import { dryRunAutomationRule } from "../lib/automation-worker";
+import { safeIsoTimestamp } from "../lib/date-serialization";
 
 const router = Router();
 
@@ -2350,7 +2351,7 @@ function settingsView(s: Awaited<ReturnType<typeof getActiveRetentionSettings>>)
     thresholds: s.thresholds,
     changedByUserId: s.changedByUserId,
     changedByName: s.changedByName,
-    changedAt: s.changedAt ? s.changedAt.toISOString() : null,
+    changedAt: safeIsoTimestamp(s.changedAt),
     isDefault: s.version === 0,
     defaults: { ...DEFAULT_RETENTION_THRESHOLDS },
     changeSource: s.changeSource,
@@ -2402,7 +2403,7 @@ router.put("/growth/admin/retention-settings", async (req, res, next) => {
           expectedVersion: result.conflict.expectedVersion,
           activeVersion: result.conflict.activeVersion,
           changedByName: result.conflict.changedByName,
-          changedAt: result.conflict.changedAt ? result.conflict.changedAt.toISOString() : null,
+          changedAt: safeIsoTimestamp(result.conflict.changedAt),
         });
         return;
       }
@@ -2470,7 +2471,7 @@ router.get("/growth/admin/retention-settings/history", async (req, res, next) =>
       previousThresholds: h.previousThresholds,
       changedByUserId: h.changedByUserId,
       changedByName: h.changedByName,
-      changedAt: h.changedAt.toISOString(),
+      changedAt: safeIsoTimestamp(h.changedAt),
       changeSource: h.changeSource,
       restoredFromVersion: h.restoredFromVersion,
     })));

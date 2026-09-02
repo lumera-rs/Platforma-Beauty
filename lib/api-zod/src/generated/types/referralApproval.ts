@@ -13,5 +13,6 @@ export interface ReferralApproval {
   channel: ReferralApprovalChannel;
   businessKind: ReferralApprovalBusinessKind;
   status: string;
-  createdAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
 }

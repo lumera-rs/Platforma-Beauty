@@ -16,5 +16,6 @@ export interface BeautyJobApplicationAction {
   privateNote: string | null;
   /** @nullable */
   actorUserId: string | null;
-  createdAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
 }

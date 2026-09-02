@@ -34,6 +34,7 @@ import { publishSalonNotificationUpdate } from "../lib/salon-notification-events
 import { effectiveLowStockThreshold, listSalonInventory, listServiceConsumptions } from "../lib/salon-inventory";
 import { claimMediaReference, mediaAssetIdFromUrl, stableMediaUrl } from "./media";
 import { requireSalonEmployee, requireSalonOwner } from "./marketplace";
+import { safeIsoTimestamp } from "../lib/date-serialization";
 
 const router: IRouter = Router();
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -74,7 +75,7 @@ function photoResponse(row: PhotoRow) {
       ? stableMediaUrl({ id: row.photo.mediaAssetId, contentHash: row.assetContentHash })
       : `/api/media/${row.photo.mediaAssetId}`,
     consentConfirmed: row.photo.consentConfirmed,
-    createdAt: row.photo.createdAt.toISOString(),
+    createdAt: safeIsoTimestamp(row.photo.createdAt),
     appointmentDate: row.appointmentDate,
     serviceName: row.serviceName,
   };
@@ -310,8 +311,8 @@ function clockEntryResponse(entry: typeof employeeClockEntriesTable.$inferSelect
   return {
     id: entry.id,
     employeeId: entry.employeeId,
-    clockInAt: entry.clockInAt.toISOString(),
-    clockOutAt: entry.clockOutAt ? entry.clockOutAt.toISOString() : null,
+    clockInAt: safeIsoTimestamp(entry.clockInAt),
+    clockOutAt: safeIsoTimestamp(entry.clockOutAt),
     editedByOwner: entry.editedByOwner,
     note: entry.note,
     durationMinutes: Math.max(0, Math.round((end.getTime() - entry.clockInAt.getTime()) / 60000)),
@@ -494,9 +495,9 @@ function swapResponse(row: SwapRow) {
     swapDate: row.request.swapDate,
     note: row.request.note,
     status: row.request.status,
-    colleagueRespondedAt: row.request.colleagueRespondedAt ? row.request.colleagueRespondedAt.toISOString() : null,
-    ownerReviewedAt: row.request.ownerReviewedAt ? row.request.ownerReviewedAt.toISOString() : null,
-    createdAt: row.request.createdAt.toISOString(),
+    colleagueRespondedAt: safeIsoTimestamp(row.request.colleagueRespondedAt),
+    ownerReviewedAt: safeIsoTimestamp(row.request.ownerReviewedAt),
+    createdAt: safeIsoTimestamp(row.request.createdAt),
   };
 }
 

@@ -509,7 +509,8 @@ export interface ReferralLedgerEntry {
   id: string;
   type: ReferralLedgerEntryType;
   amountRsd: number;
-  effectiveAt: string;
+  /** @nullable */
+  effectiveAt: string | null;
   /** @nullable */
   expiresAt: string | null;
   reason: string;
@@ -543,7 +544,8 @@ export interface ReferralApproval {
   channel: ReferralApprovalChannel;
   businessKind: ReferralApprovalBusinessKind;
   status: string;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
 }
 
 export type ReferralApprovalDecisionAction = typeof ReferralApprovalDecisionAction[keyof typeof ReferralApprovalDecisionAction];
@@ -610,7 +612,8 @@ export interface ReferralReview {
   detail: string | null;
   /** @nullable */
   score: number | null;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
 }
 
 export type ReferralReviewUpdateStatus = typeof ReferralReviewUpdateStatus[keyof typeof ReferralReviewUpdateStatus];
@@ -3862,7 +3865,8 @@ export interface FulfillmentHistoryEntry {
   nextValue: string | null;
   /** @nullable */
   note: string | null;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
 }
 
 export type AdminRetailOrder = RetailOrder & {
@@ -5315,10 +5319,11 @@ export interface EducationB2bQuote {
   benefit: EducationB2bBenefit;
 }
 
-export type EducationB2bOrder = EducationB2bQuote & {
+export type EducationB2bOrder = EducationB2bQuote & ({
   id: string;
-  createdAt: string;
-};
+  /** @nullable */
+  createdAt: string | null;
+});
 
 export type ShopCheckoutProfilePaymentMethodsItem = typeof ShopCheckoutProfilePaymentMethodsItem[keyof typeof ShopCheckoutProfilePaymentMethodsItem];
 
@@ -5620,7 +5625,8 @@ export interface OrderHistoryEvent {
   nextValue: string | null;
   /** @nullable */
   note: string | null;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
 }
 
 export type AdminOrder = Order & ({
@@ -11620,8 +11626,11 @@ export interface RetentionSettingsHistoryEntry {
   changedByUserId: string | null;
   /** @nullable */
   changedByName: string | null;
-  /** ISO timestamp of the change */
-  changedAt: string;
+  /**
+     * ISO timestamp of the change
+     * @nullable
+     */
+  changedAt: string | null;
   /** How the version came to be: hand-edited, restored from an earlier version, or restored platform defaults */
   changeSource: RetentionSettingsHistoryEntryChangeSource;
   /**
@@ -11675,7 +11684,8 @@ export interface TreatmentPhoto {
   kind: TreatmentPhotoKind;
   url: string;
   consentConfirmed: boolean;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
   /** @nullable */
   appointmentDate?: string | null;
   /** @nullable */
@@ -11766,7 +11776,8 @@ export interface SalonInventoryItemUpdate {
 export interface EmployeeClockEntry {
   id: string;
   employeeId: string;
-  clockInAt: string;
+  /** @nullable */
+  clockInAt: string | null;
   /** @nullable */
   clockOutAt?: string | null;
   editedByOwner: boolean;
@@ -11829,7 +11840,8 @@ export interface ShiftSwapRequest {
   colleagueRespondedAt?: string | null;
   /** @nullable */
   ownerReviewedAt?: string | null;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
 }
 
 export type EmployeeShiftSwapOverviewColleaguesItem = {
@@ -12218,8 +12230,10 @@ export interface BeautyJobRentalSlot {
   id: string;
   /** @pattern ^[0-9a-fA-F-]{36}$ */
   listingId: string;
-  startsAt: string;
-  endsAt: string;
+  /** @nullable */
+  startsAt: string | null;
+  /** @nullable */
+  endsAt: string | null;
   available: boolean;
 }
 
@@ -12255,14 +12269,17 @@ export interface BeautyJobListing {
   moderatedAt: string | null;
   contactCount: number;
   viewCount: number;
-  expiresAt: string;
-  createdAt: string;
+  /** @nullable */
+  expiresAt: string | null;
+  /** @nullable */
+  createdAt: string | null;
   /** @nullable */
   availabilityPattern: string | null;
   dayLabels: string[];
   authorDisplayName: string;
   postedByType: BeautyJobListingPostedByType;
-  updatedAt: string;
+  /** @nullable */
+  updatedAt: string | null;
   isSaved: boolean;
   isOwner: boolean;
   availableSlots: BeautyJobRentalSlot[];
@@ -12285,7 +12302,8 @@ export interface BeautyJobModerationAuditEvent {
   publicReason: string | null;
   /** @nullable */
   internalNote: string | null;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
 }
 
 export interface BeautyJobAdminPreview {
@@ -12530,12 +12548,16 @@ export interface BeautyJobRentalRequest {
   status: BeautyJobRentalRequestStatus;
   /** @nullable */
   respondedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
+  /** @nullable */
+  createdAt: string | null;
+  /** @nullable */
+  updatedAt: string | null;
   listingTitle: string;
   applicantDisplayName: string;
-  startsAt: string;
-  endsAt: string;
+  /** @nullable */
+  startsAt: string | null;
+  /** @nullable */
+  endsAt: string | null;
 }
 
 export interface BeautyJobContactCreateInput {
@@ -12663,8 +12685,10 @@ export interface BeautyJobContact {
   authorStatus: string;
   /** @nullable */
   repliedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
+  /** @nullable */
+  createdAt: string | null;
+  /** @nullable */
+  updatedAt: string | null;
   listingTitle?: string;
   applicantDisplayName?: string;
 }
@@ -12679,7 +12703,8 @@ export interface BeautyJobApplicationAction {
   privateNote: string | null;
   /** @nullable */
   actorUserId: string | null;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
 }
 
 export interface BeautyJobApplicant {
@@ -12699,8 +12724,10 @@ export interface BeautyJobApplicant {
   decisionAt: string | null;
   /** @nullable */
   repliedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
+  /** @nullable */
+  createdAt: string | null;
+  /** @nullable */
+  updatedAt: string | null;
   applicantDisplayName: string;
   actions: BeautyJobApplicationAction[];
 }
@@ -12718,7 +12745,8 @@ export interface BeautyJobReport {
   resolutionNote: string | null;
   /** @nullable */
   resolvedAt: string | null;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
   listingTitle?: string;
   /** @nullable */
   authorSalonId?: string | null;
@@ -12740,7 +12768,8 @@ export interface BeautyJobNotification {
   body: string;
   /** @nullable */
   readAt: string | null;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
 }
 
 export interface BeautyJobSettings {
@@ -12750,7 +12779,8 @@ export interface BeautyJobSettings {
   hourlyPostingLimit: number;
   /** @nullable */
   updatedByUserId: string | null;
-  updatedAt: string;
+  /** @nullable */
+  updatedAt: string | null;
 }
 
 export type BeautyJobDeliveryIssueEmailType = typeof BeautyJobDeliveryIssueEmailType[keyof typeof BeautyJobDeliveryIssueEmailType];
@@ -12793,7 +12823,8 @@ export interface BeautyJobDeliveryIssue {
   retryAvailable: boolean;
   /** @nullable */
   nextRetryAt: string | null;
-  createdAt: string;
+  /** @nullable */
+  createdAt: string | null;
 }
 
 export interface BeautyJobDeliveryIssueSummary {
@@ -14057,8 +14088,10 @@ export const EducationOperationalBookingDetailStatus = {
  */
 export type EducationOperationalBookingDetailSession = {
   id: string;
-  startsAt: string;
-  endsAt: string;
+  /** @nullable */
+  startsAt: string | null;
+  /** @nullable */
+  endsAt: string | null;
   /** @nullable */
   location: string | null;
   /** @nullable */
@@ -14075,8 +14108,10 @@ export interface EducationOperationalBookingDetail {
   /** @nullable */
   purchaserId: string | null;
   status: EducationOperationalBookingDetailStatus;
-  createdAt: string;
-  updatedAt: string;
+  /** @nullable */
+  createdAt: string | null;
+  /** @nullable */
+  updatedAt: string | null;
   /** @nullable */
   session: EducationOperationalBookingDetailSession;
   participants: EducationOperationalBookingParticipant[];
@@ -14166,7 +14201,8 @@ export interface EducationOperationalAttendance {
   participantId: string;
   sessionId: string;
   status: EducationOperationalAttendanceStatus;
-  recordedAt: string;
+  /** @nullable */
+  recordedAt: string | null;
   /** @nullable */
   recordedByUserId: string | null;
 }
@@ -14309,8 +14345,10 @@ export interface EducationOperationsCalendarSession {
   id: string;
   courseId: string;
   educatorStaffId: string;
-  startsAt: string;
-  endsAt: string;
+  /** @nullable */
+  startsAt: string | null;
+  /** @nullable */
+  endsAt: string | null;
   capacity: number;
   reservedSeats: number;
   participants: EducationOperationsCalendarParticipant[];
@@ -14462,8 +14500,10 @@ export interface EducationEducatorAbsenceConflict {
   sessionId: string;
   courseId: string;
   courseTitle: string;
-  startsAt: string;
-  endsAt: string;
+  /** @nullable */
+  startsAt: string | null;
+  /** @nullable */
+  endsAt: string | null;
   /** @minimum 0 */
   reservedSeats: number;
 }

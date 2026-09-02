@@ -23,5 +23,6 @@ export interface BeautyJobModerationAuditEvent {
   publicReason: string | null;
   /** @nullable */
   internalNote: string | null;
-  createdAt: Date;
+  /** @nullable */
+  createdAt: Date | null;
 }

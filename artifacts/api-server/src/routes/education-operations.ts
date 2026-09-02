@@ -71,6 +71,7 @@ import {
 } from "../lib/education-operational-policy";
 import { reconcileOperationalEducationEnrollmentInTx } from "../lib/education-certificate-eligibility";
 import { writeEducationFinancialAuditInTx } from "../lib/education-financial-audit";
+import { safeIsoTimestamp } from "../lib/date-serialization";
 
 const router: IRouter = Router();
 
@@ -142,10 +143,10 @@ async function customerBookingView(group: typeof educationBookingGroupsTable.$in
   return {
     id: group.id, centerId: group.centerId, courseId: group.courseId,
     courseTitle: course.title, sessionId: group.sessionId, purchaserId: group.purchaserId,
-    status: group.status, createdAt: group.createdAt.toISOString(), updatedAt: group.updatedAt.toISOString(),
+    status: group.status, createdAt: safeIsoTimestamp(group.createdAt), updatedAt: safeIsoTimestamp(group.updatedAt),
     session: currentSession ? {
-      id: currentSession.id, startsAt: currentSession.startsAt.toISOString(), endsAt: currentSession.endsAt.toISOString(),
-      location: currentSession.location, cancelledAt: currentSession.cancelledAt?.toISOString() ?? null,
+      id: currentSession.id, startsAt: safeIsoTimestamp(currentSession.startsAt), endsAt: safeIsoTimestamp(currentSession.endsAt),
+      location: currentSession.location, cancelledAt: safeIsoTimestamp(currentSession.cancelledAt),
     } : null,
     // A named participant is entitled to their own identity only.  The
     // purchaser owns the group and may manage all seats, so retains contacts.
@@ -260,7 +261,7 @@ router.get("/education/operations/centers/:centerId/calendar", async (req, res):
     const participants = await db.select({ id: educationBookingParticipantsTable.id, fullName: educationBookingParticipantsTable.fullName, email: educationBookingParticipantsTable.email, phone: educationBookingParticipantsTable.phone, status: educationBookingParticipantsTable.status })
       .from(educationBookingParticipantsTable).innerJoin(educationBookingGroupsTable, eq(educationBookingGroupsTable.id, educationBookingParticipantsTable.bookingGroupId))
       .where(and(eq(educationBookingGroupsTable.sessionId, session.id), eq(educationBookingGroupsTable.centerId, params.data.centerId)));
-    return { ...session, startsAt: session.startsAt.toISOString(), endsAt: session.endsAt.toISOString(), participants };
+    return { ...session, startsAt: safeIsoTimestamp(session.startsAt), endsAt: safeIsoTimestamp(session.endsAt), participants };
   }));
   res.json(GetEducationCenterOperationsCalendarResponse.parse(result));
 });
@@ -399,7 +400,7 @@ router.post("/education/operations/centers/:centerId/educators/:staffId/absences
   });
   res.json(PreviewEducationEducatorAbsenceResponse.parse({
     canCreate: conflicts.length === 0,
-    conflicts: conflicts.map((row) => ({ ...row, startsAt: row.startsAt.toISOString(), endsAt: row.endsAt.toISOString() })),
+    conflicts: conflicts.map((row) => ({ ...row, startsAt: safeIsoTimestamp(row.startsAt), endsAt: safeIsoTimestamp(row.endsAt) })),
   }));
 });
 
@@ -763,7 +764,7 @@ router.get("/education/operations/centers/:centerId/sessions/:sessionId/attendan
   if (!scope.allowed) { res.status(403).json({ error: "Nemate pravo na evidenciju prisustva." }); return; }
   const [row] = await db.select().from(educationAttendanceTable).where(and(eq(educationAttendanceTable.sessionId, params.data.sessionId), eq(educationAttendanceTable.participantId, params.data.participantId))).limit(1);
   if (!row) { res.status(404).json({ error: "Prisustvo nije evidentirano." }); return; }
-  res.json(GetEducationOperationalAttendanceResponse.parse({ ...row, recordedAt: row.recordedAt.toISOString() }));
+  res.json(GetEducationOperationalAttendanceResponse.parse({ ...row, recordedAt: safeIsoTimestamp(row.recordedAt) }));
 });
 
 router.put("/education/operations/centers/:centerId/sessions/:sessionId/attendance/:participantId", async (req, res): Promise<void> => {
@@ -783,7 +784,7 @@ router.put("/education/operations/centers/:centerId/sessions/:sessionId/attendan
     if (enrollment) await reconcileOperationalEducationEnrollmentInTx(tx, enrollment.id);
     return attendance!;
   });
-  res.json(UpsertEducationOperationalAttendanceResponse.parse({ ...row, recordedAt: row.recordedAt.toISOString() }));
+  res.json(UpsertEducationOperationalAttendanceResponse.parse({ ...row, recordedAt: safeIsoTimestamp(row.recordedAt) }));
 });
 
 router.patch("/education/operations/centers/:centerId/sessions/:sessionId/educator", async (req, res): Promise<void> => {
@@ -933,7 +934,7 @@ router.get("/admin/education/installments", async (req, res): Promise<void> => {
   res.json(ListAdminEducationInstallmentsResponse.parse(rows.map((row) => ({
     ...row,
     customerName: `${row.customerFirstName} ${row.customerLastName}`.trim(),
-    dueAt: row.dueAt?.toISOString() ?? null, settledAt: row.settledAt?.toISOString() ?? null,
+    dueAt: safeIsoTimestamp(row.dueAt), settledAt: safeIsoTimestamp(row.settledAt),
   }))));
 });
 

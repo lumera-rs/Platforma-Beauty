@@ -11,7 +11,9 @@ export interface BeautyJobRentalSlot {
   id: string;
   /** @pattern ^[0-9a-fA-F-]{36}$ */
   listingId: string;
-  startsAt: Date;
-  endsAt: Date;
+  /** @nullable */
+  startsAt: Date | null;
+  /** @nullable */
+  endsAt: Date | null;
   available: boolean;
 }
