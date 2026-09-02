@@ -11093,8 +11093,16 @@ export const UpdateAdminEducationSettingsResponse = zod.object({
  */
 export const GetAdminEducationBankReconciliationResponse = zod.object({
   "enabled": zod.boolean(),
-  "engineState": zod.enum(['disabled', 'ready_for_import']),
+  "engineState": zod.enum(['disabled', 'awaiting_access_confirmation', 'ready_for_import']),
   "bankConnectionConfigured": zod.boolean(),
+  "accessMethod": zod.union([zod.literal('camt053'),zod.literal('csv'),zod.literal('raiffeisen_open_banking'),zod.literal('aggregator'),zod.literal(null)]).nullable(),
+  "accessConfirmed": zod.boolean(),
+  "accessConfirmedAt": zod.coerce.date().nullable(),
+  "accessMethods": zod.array(zod.object({
+  "id": zod.enum(['camt053', 'csv', 'raiffeisen_open_banking', 'aggregator']),
+  "label": zod.string(),
+  "description": zod.string()
+})),
   "lastProcessedAt": zod.coerce.date().nullable(),
   "lastResult": zod.union([zod.literal('settled'),zod.literal('rejected'),zod.literal(null)]).nullable(),
   "lastRejectionReason": zod.string().nullable()
@@ -11105,13 +11113,22 @@ export const GetAdminEducationBankReconciliationResponse = zod.object({
  * @summary Enable or disable normalized Education bank-item processing
  */
 export const UpdateAdminEducationBankReconciliationBody = zod.object({
-  "enabled": zod.boolean()
+  "enabled": zod.boolean(),
+  "accessMethod": zod.enum(['camt053', 'csv', 'raiffeisen_open_banking', 'aggregator'])
 }).strict()
 
 export const UpdateAdminEducationBankReconciliationResponse = zod.object({
   "enabled": zod.boolean(),
-  "engineState": zod.enum(['disabled', 'ready_for_import']),
+  "engineState": zod.enum(['disabled', 'awaiting_access_confirmation', 'ready_for_import']),
   "bankConnectionConfigured": zod.boolean(),
+  "accessMethod": zod.union([zod.literal('camt053'),zod.literal('csv'),zod.literal('raiffeisen_open_banking'),zod.literal('aggregator'),zod.literal(null)]).nullable(),
+  "accessConfirmed": zod.boolean(),
+  "accessConfirmedAt": zod.coerce.date().nullable(),
+  "accessMethods": zod.array(zod.object({
+  "id": zod.enum(['camt053', 'csv', 'raiffeisen_open_banking', 'aggregator']),
+  "label": zod.string(),
+  "description": zod.string()
+})),
   "lastProcessedAt": zod.coerce.date().nullable(),
   "lastResult": zod.union([zod.literal('settled'),zod.literal('rejected'),zod.literal(null)]).nullable(),
   "lastRejectionReason": zod.string().nullable()

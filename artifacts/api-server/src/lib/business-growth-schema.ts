@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 118;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 119;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -4709,6 +4709,35 @@ function tableStatements(s: string): string[] {
      )`,
     `CREATE INDEX IF NOT EXISTS education_grace_notes_center_created_idx ON ${s}.education_grace_notes(center_id, created_at)`,
     `ALTER TABLE ${s}.education_platform_settings ADD COLUMN IF NOT EXISTS bank_reconciliation_enabled boolean NOT NULL DEFAULT false`,
+     `ALTER TABLE ${s}.education_platform_settings ADD COLUMN IF NOT EXISTS bank_reconciliation_access_method text`,
+     `ALTER TABLE ${s}.education_platform_settings ALTER COLUMN bank_reconciliation_access_method DROP DEFAULT`,
+     `ALTER TABLE ${s}.education_platform_settings ALTER COLUMN bank_reconciliation_access_method DROP NOT NULL`,
+     `ALTER TABLE ${s}.education_platform_settings ADD COLUMN IF NOT EXISTS bank_reconciliation_access_confirmed_at timestamptz`,
+     `ALTER TABLE ${s}.education_platform_settings ADD COLUMN IF NOT EXISTS bank_reconciliation_access_confirmed_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE RESTRICT`,
+     `UPDATE ${s}.education_platform_settings
+        SET bank_reconciliation_access_method=NULL,
+            bank_reconciliation_access_confirmed_at=NULL,
+            bank_reconciliation_access_confirmed_by_user_id=NULL
+      WHERE bank_reconciliation_access_confirmed_at IS NULL
+         OR bank_reconciliation_access_confirmed_by_user_id IS NULL`,
+     `CREATE INDEX IF NOT EXISTS education_platform_settings_bank_access_confirmed_by_idx
+        ON ${s}.education_platform_settings(bank_reconciliation_access_confirmed_by_user_id)`,
+     `ALTER TABLE ${s}.education_platform_settings DROP CONSTRAINT IF EXISTS education_platform_settings_bank_reconciliation_access_method_check`,
+     `ALTER TABLE ${s}.education_platform_settings
+        ADD CONSTRAINT education_platform_settings_bank_reconciliation_access_method_check
+        CHECK(bank_reconciliation_access_method is null OR bank_reconciliation_access_method in ('camt053','csv','raiffeisen_open_banking','aggregator'))`,
+     `DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname='education_platform_settings_bank_reconciliation_confirmation_check'
+            AND conrelid='${s}.education_platform_settings'::regclass
+        ) THEN
+          ALTER TABLE ${s}.education_platform_settings
+            ADD CONSTRAINT education_platform_settings_bank_reconciliation_confirmation_check
+            CHECK(num_nonnulls(bank_reconciliation_access_method, bank_reconciliation_access_confirmed_at, bank_reconciliation_access_confirmed_by_user_id) in (0, 3));
+        END IF;
+      END $$`,
     `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS online_access_days integer`,
     `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS extension_price_1_month integer`,
     `ALTER TABLE ${s}.courses ADD COLUMN IF NOT EXISTS extension_price_3_months integer`,

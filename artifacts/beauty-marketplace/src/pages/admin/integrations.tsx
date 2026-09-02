@@ -69,6 +69,7 @@ export default function AdminIntegrations() {
   const [savedEnabled, setSavedEnabled] = useState<Record<Integration, boolean> | null>(null);
   const [reconciliation, setReconciliation] = useState<EducationBankReconciliationStatus | null>(null);
   const [reconciliationEnabledDraft, setReconciliationEnabledDraft] = useState<boolean | null>(null);
+  const [reconciliationAccessMethodDraft, setReconciliationAccessMethodDraft] = useState<EducationBankReconciliationStatus["accessMethod"] | null>(null);
   const [reconciliationLoading, setReconciliationLoading] = useState(true);
   const [reconciliationError, setReconciliationError] = useState(false);
   const [savingReconciliation, setSavingReconciliation] = useState(false);
@@ -114,6 +115,7 @@ export default function AdminIntegrations() {
       const payload = body as EducationBankReconciliationStatus;
       setReconciliation(payload);
       setReconciliationEnabledDraft(payload.enabled);
+      setReconciliationAccessMethodDraft(payload.accessMethod);
       setReconciliationError(false);
     } catch {
       setReconciliationError(true);
@@ -122,7 +124,7 @@ export default function AdminIntegrations() {
     }
   };
   const saveReconciliation = async () => {
-    if (reconciliationEnabledDraft === null) return;
+    if (reconciliationEnabledDraft === null || reconciliationAccessMethodDraft === null) return;
     const key = "save:education-bank-reconciliation";
     if (!actionGuard.begin(key)) return;
     setSavingReconciliation(true);
@@ -131,7 +133,10 @@ export default function AdminIntegrations() {
         method: "PATCH",
         credentials: "include",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ enabled: reconciliationEnabledDraft }),
+        body: JSON.stringify({
+          enabled: reconciliationEnabledDraft,
+          accessMethod: reconciliationAccessMethodDraft,
+        }),
       }, {
         httpErrorMessage: "Status reconciliation engine-a nije sačuvan.",
         invalidResponseMessage: "Odgovor servera za reconciliation engine nije validan JSON.",
@@ -141,6 +146,7 @@ export default function AdminIntegrations() {
       const payload = body as EducationBankReconciliationStatus;
       setReconciliation(payload);
       setReconciliationEnabledDraft(payload.enabled);
+      setReconciliationAccessMethodDraft(payload.accessMethod);
       setReconciliationError(false);
       toast.success(payload.enabled
         ? "Reconciliation engine prihvata normalizovane interne stavke."
@@ -230,9 +236,10 @@ export default function AdminIntegrations() {
   const hasUnsavedChanges = useMemo(() => {
     if (Object.values(form).some((values) => Object.values(values).some((value) => value.trim() !== ""))) return true;
     if (reconciliation && reconciliationEnabledDraft !== null && reconciliation.enabled !== reconciliationEnabledDraft) return true;
+    if (reconciliation && reconciliationAccessMethodDraft !== null && reconciliation.accessMethod !== reconciliationAccessMethodDraft) return true;
     if (!data || !savedEnabled) return false;
     return (Object.keys(savedEnabled) as Integration[]).some((integration) => data.integrations[integration].enabled !== savedEnabled[integration]);
-  }, [form, data, savedEnabled, reconciliation, reconciliationEnabledDraft]);
+  }, [form, data, savedEnabled, reconciliation, reconciliationEnabledDraft, reconciliationAccessMethodDraft]);
   useEffect(() => {
     if (!hasUnsavedChanges) return;
     const message = "Imate nesačuvane izmene u podešavanjima integracija (npr. generisanu webhook tajnu ili promenjen prekidač). One važe tek kada kliknete „Sačuvaj“. Da li ipak želite da napustite stranicu?";
@@ -591,18 +598,26 @@ export default function AdminIntegrations() {
           </div>
           <span
             className={`w-fit shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${
-              reconciliation?.enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"
+              reconciliation?.enabled && reconciliation.accessConfirmed
+                ? "bg-emerald-100 text-emerald-700"
+                : reconciliation?.enabled
+                  ? "bg-amber-100 text-amber-700"
+                  : "bg-slate-100 text-slate-600"
             }`}
             data-testid="education-bank-reconciliation-status"
           >
-            {reconciliation?.enabled ? "Spreman za interne stavke" : "Isključen"}
+            {reconciliation?.enabled && reconciliation.accessConfirmed
+              ? "Spreman za interne stavke"
+              : reconciliation?.enabled
+                ? "Čeka potvrdu pristupa"
+                : "Isključen"}
           </span>
         </div>
 
         <div className="mt-4 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900" role="status" data-testid="education-bank-reconciliation-connection-note">
           <p className="font-semibold">Banka nije povezana</p>
           <p className="mt-1 text-xs">
-            Ovaj prekidač ne uspostavlja vezu sa bankom i ne preuzima izvode. Bank API, scraping, OAuth i automatsko preuzimanje nisu konfigurisani.
+            Izbor pristupa ne uspostavlja vezu sa bankom i ne preuzima izvode. Kredencijali se ne čuvaju ovde; stvarni adapter mora koristiti bezbednu deployment konfiguraciju.
           </p>
         </div>
 
@@ -618,6 +633,48 @@ export default function AdminIntegrations() {
           <p className="mt-4 text-sm text-muted-foreground"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Učitavanje statusa…</p>
         ) : reconciliation ? (
           <>
+            <fieldset className="mt-4">
+              <legend className="text-sm font-semibold">Potvrđeni pristup Raiffeisen transakcijama</legend>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Sve četiri opcije ostaju dostupne, ali samo jedna može biti potvrđeni izvor za budući adapter.
+                {!reconciliation.accessConfirmed
+                  ? " Trenutno nijedan pristup nije potvrđen."
+                  : ` Potvrđeno ${formatTimestamp(reconciliation.accessConfirmedAt) ?? ""}.`}
+              </p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {reconciliation.accessMethods.map((method) => {
+                  const selected = reconciliationAccessMethodDraft === method.id;
+                  return (
+                    <label
+                      key={method.id}
+                      className={`cursor-pointer rounded-lg border p-3 transition-colors ${
+                        selected ? "border-primary bg-primary/5 ring-1 ring-primary" : "bg-muted/20 hover:bg-muted/40"
+                      }`}
+                      data-testid={`education-bank-access-method-${method.id}`}
+                    >
+                      <span className="flex items-start gap-3">
+                        <input
+                          type="radio"
+                          name="education-bank-access-method"
+                          value={method.id}
+                          checked={selected}
+                          onChange={() => setReconciliationAccessMethodDraft(method.id)}
+                          disabled={savingReconciliation}
+                          className="mt-1 h-4 w-4 accent-primary"
+                        />
+                        <span className="min-w-0">
+                          <span className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+                            {method.label}
+                            {selected && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">Izabrano</span>}
+                          </span>
+                          <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">{method.description}</span>
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
             <label className="mt-4 flex items-center justify-between gap-4 rounded-lg bg-muted/50 p-3 text-sm font-medium">
               <span>
                 Prihvataj normalizovane stavke
@@ -634,7 +691,13 @@ export default function AdminIntegrations() {
             <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
               <div className="rounded-lg border bg-muted/20 p-3">
                 <p className="font-semibold text-foreground">Stanje engine-a</p>
-                <p className="mt-1 text-muted-foreground">{reconciliation.engineState === "ready_for_import" ? "Čeka stavke preko interne granice." : "Sve primljene stavke biće odbijene i evidentirane."}</p>
+                <p className="mt-1 text-muted-foreground">
+                  {reconciliation.engineState === "ready_for_import"
+                    ? "Čeka stavke preko interne granice."
+                    : reconciliation.engineState === "awaiting_access_confirmation"
+                      ? "Engine je uključen, ali stavke se odbijaju dok Super Admin ne potvrdi pristup."
+                      : "Sve primljene stavke biće odbijene i evidentirane."}
+                </p>
               </div>
               <div className="rounded-lg border bg-muted/20 p-3">
                 <p className="font-semibold text-foreground">Poslednja obrada</p>
@@ -647,11 +710,20 @@ export default function AdminIntegrations() {
             <Button
               className="mt-4 w-full sm:w-auto"
               onClick={() => void saveReconciliation()}
-              disabled={savingReconciliation || reconciliationEnabledDraft === reconciliation.enabled || actionGuard.isActive("save:education-bank-reconciliation")}
+              disabled={
+                savingReconciliation
+                || reconciliationAccessMethodDraft === null
+                || (
+                  reconciliationEnabledDraft === reconciliation.enabled
+                  && reconciliationAccessMethodDraft === reconciliation.accessMethod
+                  && reconciliation.accessConfirmed
+                )
+                || actionGuard.isActive("save:education-bank-reconciliation")
+              }
               data-testid="save-education-bank-reconciliation"
             >
               {savingReconciliation ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-              Sačuvaj status engine-a
+              Sačuvaj pristup i status
             </Button>
           </>
         ) : null}

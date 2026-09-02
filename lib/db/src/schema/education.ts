@@ -304,13 +304,19 @@ export const educationPlatformSettingsTable = pgTable("education_platform_settin
   ipsAccountEnvironment: text("ips_account_environment").notNull().default("production"),
   ipsPurpose: text("ips_purpose"),
   bankReconciliationEnabled: boolean("bank_reconciliation_enabled").notNull().default(false),
+  bankReconciliationAccessMethod: text("bank_reconciliation_access_method"),
+  bankReconciliationAccessConfirmedAt: timestamp("bank_reconciliation_access_confirmed_at", { withTimezone: true }),
+  bankReconciliationAccessConfirmedByUserId: uuid("bank_reconciliation_access_confirmed_by_user_id").references(() => usersTable.id, { onDelete: "restrict" }),
   updatedByUserId: uuid("updated_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   // Leading FK coverage for updatedByUserId (audit trail).
   index("education_platform_settings_updated_by_idx").on(table.updatedByUserId),
+  index("education_platform_settings_bank_access_confirmed_by_idx").on(table.bankReconciliationAccessConfirmedByUserId),
   check("education_platform_settings_ips_account_environment_check", sql`${table.ipsAccountEnvironment} in ('production','test')`),
+  check("education_platform_settings_bank_reconciliation_access_method_check", sql`${table.bankReconciliationAccessMethod} is null or ${table.bankReconciliationAccessMethod} in ('camt053','csv','raiffeisen_open_banking','aggregator')`),
+  check("education_platform_settings_bank_reconciliation_confirmation_check", sql`num_nonnulls(${table.bankReconciliationAccessMethod}, ${table.bankReconciliationAccessConfirmedAt}, ${table.bankReconciliationAccessConfirmedByUserId}) in (0, 3)`),
 ]);
 
 export const educationSectionsTable = pgTable("education_sections", {

@@ -8178,8 +8178,19 @@ export type EducationMarketplaceSettings = EducationMarketplaceSettingsInput & {
   updatedAt: string;
 };
 
+export type EducationBankReconciliationInputAccessMethod = typeof EducationBankReconciliationInputAccessMethod[keyof typeof EducationBankReconciliationInputAccessMethod];
+
+
+export const EducationBankReconciliationInputAccessMethod = {
+  camt053: 'camt053',
+  csv: 'csv',
+  raiffeisen_open_banking: 'raiffeisen_open_banking',
+  aggregator: 'aggregator',
+} as const;
+
 export interface EducationBankReconciliationInput {
   enabled: boolean;
+  accessMethod: EducationBankReconciliationInputAccessMethod;
 }
 
 export type EducationBankReconciliationStatusEngineState = typeof EducationBankReconciliationStatusEngineState[keyof typeof EducationBankReconciliationStatusEngineState];
@@ -8187,8 +8198,38 @@ export type EducationBankReconciliationStatusEngineState = typeof EducationBankR
 
 export const EducationBankReconciliationStatusEngineState = {
   disabled: 'disabled',
+  awaiting_access_confirmation: 'awaiting_access_confirmation',
   ready_for_import: 'ready_for_import',
 } as const;
+
+/**
+ * @nullable
+ */
+export type EducationBankReconciliationStatusAccessMethod = typeof EducationBankReconciliationStatusAccessMethod[keyof typeof EducationBankReconciliationStatusAccessMethod] | null;
+
+
+export const EducationBankReconciliationStatusAccessMethod = {
+  camt053: 'camt053',
+  csv: 'csv',
+  raiffeisen_open_banking: 'raiffeisen_open_banking',
+  aggregator: 'aggregator',
+} as const;
+
+export type EducationBankReconciliationStatusAccessMethodsItemId = typeof EducationBankReconciliationStatusAccessMethodsItemId[keyof typeof EducationBankReconciliationStatusAccessMethodsItemId];
+
+
+export const EducationBankReconciliationStatusAccessMethodsItemId = {
+  camt053: 'camt053',
+  csv: 'csv',
+  raiffeisen_open_banking: 'raiffeisen_open_banking',
+  aggregator: 'aggregator',
+} as const;
+
+export type EducationBankReconciliationStatusAccessMethodsItem = {
+  id: EducationBankReconciliationStatusAccessMethodsItemId;
+  label: string;
+  description: string;
+};
 
 /**
  * @nullable
@@ -8205,6 +8246,12 @@ export interface EducationBankReconciliationStatus {
   enabled: boolean;
   engineState: EducationBankReconciliationStatusEngineState;
   bankConnectionConfigured: boolean;
+  /** @nullable */
+  accessMethod: EducationBankReconciliationStatusAccessMethod;
+  accessConfirmed: boolean;
+  /** @nullable */
+  accessConfirmedAt: string | null;
+  accessMethods: EducationBankReconciliationStatusAccessMethodsItem[];
   /** @nullable */
   lastProcessedAt: string | null;
   /** @nullable */

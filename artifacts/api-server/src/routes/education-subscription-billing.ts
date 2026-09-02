@@ -23,7 +23,10 @@ import {
   educationGraceDaysRemaining,
   educationReactivationState,
 } from "../lib/education-subscription-reactivation";
-import { getEducationBankReconciliationStatus } from "../lib/education-bank-reconciliation";
+import {
+  educationBankAccessMethodSchema,
+  getEducationBankReconciliationStatus,
+} from "../lib/education-bank-reconciliation";
 import { lockEducationBillingRules } from "../lib/education-billing";
 import { settleEducationPaymentObligationInTransaction } from "../lib/education-payment-obligation-settlement";
 import {
@@ -1043,32 +1046,65 @@ router.patch("/admin/education/bank-reconciliation", async (req, res) => {
   const actor = await superAdmin(req, res); if (!actor) return;
   const enabled = req.body?.enabled;
   if (typeof enabled !== "boolean") { res.status(400).json({ error: "Vrednost prekidača mora biti true ili false." }); return; }
+  const parsedAccessMethod = educationBankAccessMethodSchema.safeParse(req.body?.accessMethod);
+  if (!parsedAccessMethod.success) {
+    res.status(400).json({ error: "Izaberite jedan od podržanih pristupa Raiffeisen transakcijama." });
+    return;
+  }
   await db.transaction(async (tx) => {
     await lockEducationBillingRules(tx, "exclusive");
     const [settings] = await tx.select().from(educationPlatformSettingsTable)
       .orderBy(asc(educationPlatformSettingsTable.createdAt), asc(educationPlatformSettingsTable.id))
       .for("update")
       .limit(1);
+    const accessConfirmationChanged = !settings
+      || settings.bankReconciliationAccessMethod !== parsedAccessMethod.data
+      || !settings.bankReconciliationAccessConfirmedAt
+      || !settings.bankReconciliationAccessConfirmedByUserId;
+    const accessConfirmedAt = accessConfirmationChanged
+      ? new Date()
+      : settings.bankReconciliationAccessConfirmedAt;
+    const accessConfirmedByUserId = accessConfirmationChanged
+      ? actor.id
+      : settings.bankReconciliationAccessConfirmedByUserId;
     const saved = settings
       ? (await tx.update(educationPlatformSettingsTable).set({
         bankReconciliationEnabled: enabled,
+        bankReconciliationAccessMethod: parsedAccessMethod.data,
+        bankReconciliationAccessConfirmedAt: accessConfirmedAt,
+        bankReconciliationAccessConfirmedByUserId: accessConfirmedByUserId,
         updatedByUserId: actor.id,
         updatedAt: new Date(),
       }).where(eq(educationPlatformSettingsTable.id, settings.id)).returning())[0]
       : (await tx.insert(educationPlatformSettingsTable).values({
         bankReconciliationEnabled: enabled,
+        bankReconciliationAccessMethod: parsedAccessMethod.data,
+        bankReconciliationAccessConfirmedAt: accessConfirmedAt,
+        bankReconciliationAccessConfirmedByUserId: accessConfirmedByUserId,
         updatedByUserId: actor.id,
       }).returning())[0];
     if (!saved) throw new Error("Education reconciliation settings were not saved.");
-    if (settings?.bankReconciliationEnabled !== enabled) {
+    if (
+      settings?.bankReconciliationEnabled !== enabled
+      || settings?.bankReconciliationAccessMethod !== parsedAccessMethod.data
+    ) {
       await writeEducationFinancialAuditInTx(tx, {
         actorUserId: actor.id,
         action: "bank_reconciliation_toggled",
         entityType: "education_platform_settings",
         entityId: saved.id,
-        oldValue: { enabled: settings?.bankReconciliationEnabled ?? false },
-        newValue: { enabled },
-        reason: "Administrator je promenio status internog reconciliation engine-a; bankovna veza nije konfigurisana.",
+        oldValue: {
+          enabled: settings?.bankReconciliationEnabled ?? false,
+          accessMethod: settings?.bankReconciliationAccessMethod ?? null,
+          accessConfirmedAt: settings?.bankReconciliationAccessConfirmedAt ?? null,
+        },
+        newValue: {
+          enabled,
+          accessMethod: parsedAccessMethod.data,
+          accessConfirmedAt,
+          accessConfirmedByUserId,
+        },
+        reason: "Administrator je promenio status internog reconciliation engine-a ili potvrđeni pristup; bankovna veza nije konfigurisana.",
       });
     }
   });

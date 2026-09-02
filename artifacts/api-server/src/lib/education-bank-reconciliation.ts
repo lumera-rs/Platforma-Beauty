@@ -20,8 +20,38 @@ export const normalizedEducationBankTransactionSchema = z.object({
 
 export type NormalizedEducationBankTransaction = z.infer<typeof normalizedEducationBankTransactionSchema>;
 
+export const educationBankAccessMethods = [
+  {
+    id: "camt053",
+    label: "CAMT.053 XML izvod",
+    description: "Uvoz standardnog XML izvoda; EndToEndId ili Ustrd ide u referencu, Amt u iznos, a BookgDt/ValDt u datum.",
+  },
+  {
+    id: "csv",
+    label: "CSV izvod sa definisanim kolonama",
+    description: "Uvoz samo nakon potvrde zaglavlja i mapiranja kolona za jedinstveni ID, referencu, iznos i datum.",
+  },
+  {
+    id: "raiffeisen_open_banking",
+    label: "Raiffeisen Open Banking API / OAuth",
+    description: "Direktni API/OAuth pristup zahteva potvrđen Raiffeisen proizvod, dokumentaciju, scope-ove i endpoint ugovor.",
+  },
+  {
+    id: "aggregator",
+    label: "Imenovani bankarski agregator",
+    description: "Agregator zahteva potvrđen naziv proizvoda, dokumentaciju, način autentikacije i mapiranje odgovora.",
+  },
+] as const;
+
+export type EducationBankAccessMethod = typeof educationBankAccessMethods[number]["id"];
+
+export const educationBankAccessMethodSchema = z.enum(
+  educationBankAccessMethods.map(({ id }) => id) as [EducationBankAccessMethod, ...EducationBankAccessMethod[]],
+);
+
 export const educationBankRejectionReasons = {
   engineDisabled: "reconciliation_engine_disabled",
+  accessUnconfirmed: "bank_access_method_unconfirmed",
   referenceNotFound: "payment_reference_not_found",
   amountMismatch: "received_amount_mismatch",
   obligationNotPending: "payment_obligation_not_pending",
@@ -125,6 +155,16 @@ export async function processNormalizedEducationBankTransaction(
         duplicate: false,
       };
     }
+    if (
+      !settings.bankReconciliationAccessMethod
+      || !settings.bankReconciliationAccessConfirmedAt
+      || !settings.bankReconciliationAccessConfirmedByUserId
+    ) {
+      return {
+        transaction: await rejectClaim(tx, claim, educationBankRejectionReasons.accessUnconfirmed),
+        duplicate: false,
+      };
+    }
 
     const [obligation] = await tx.select().from(educationPaymentObligationsTable)
       .where(eq(educationPaymentObligationsTable.referenceSnapshot, parsed.reference))
@@ -185,10 +225,23 @@ export async function getEducationBankReconciliationStatus() {
     .orderBy(desc(educationBankTransactionsTable.processedAt), desc(educationBankTransactionsTable.createdAt))
     .limit(1);
   const enabled = settings?.bankReconciliationEnabled ?? false;
+  const accessConfirmed = Boolean(
+    settings?.bankReconciliationAccessMethod
+    && settings.bankReconciliationAccessConfirmedAt
+    && settings.bankReconciliationAccessConfirmedByUserId,
+  );
   return {
     enabled,
-    engineState: enabled ? "ready_for_import" as const : "disabled" as const,
+    engineState: !enabled
+      ? "disabled" as const
+      : accessConfirmed
+        ? "ready_for_import" as const
+        : "awaiting_access_confirmation" as const,
     bankConnectionConfigured: false,
+    accessMethod: accessConfirmed ? settings!.bankReconciliationAccessMethod as EducationBankAccessMethod : null,
+    accessConfirmed,
+    accessConfirmedAt: accessConfirmed ? settings!.bankReconciliationAccessConfirmedAt : null,
+    accessMethods: educationBankAccessMethods,
     lastProcessedAt: latest?.processedAt ?? null,
     lastResult: latest?.result === "settled" || latest?.result === "rejected" ? latest.result : null,
     lastRejectionReason: latest?.rejectionReason ?? null,

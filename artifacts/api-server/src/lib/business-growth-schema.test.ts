@@ -372,7 +372,7 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
-    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 118, "v118 is the current production schema rollout");
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 119, "v119 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
     const sharedPlan = await q<{ id: string }>(`INSERT INTO "${s}".subscription_plans DEFAULT VALUES RETURNING id`);
     const sharedPlanId = sharedPlan.rows[0]!.id;
@@ -437,6 +437,11 @@ async function run() {
         [platformSettings!.id],
       )).rows;
       assert.equal(reconciliationDefault!.enabled, false, "v116 keeps bank reconciliation disabled by default");
+      const [reconciliationMethod] = (await q<{ method: string | null }>(
+        `SELECT bank_reconciliation_access_method AS method FROM "${s}".education_platform_settings WHERE id=$1`,
+        [platformSettings!.id],
+      )).rows;
+      assert.equal(reconciliationMethod!.method, null, "v119 keeps bank access unconfirmed until a super administrator explicitly saves a method");
       await assert.rejects(
         q(`UPDATE "${s}".education_platform_settings SET bank_reconciliation_enabled=NULL WHERE id=$1`, [platformSettings!.id]),
         /not-null constraint/,

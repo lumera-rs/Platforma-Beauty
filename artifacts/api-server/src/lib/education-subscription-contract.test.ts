@@ -77,6 +77,9 @@ try {
     await db.update(educationPlatformSettingsTable).set({
       ipsRecipientName: `LUMERA ${marker}`, ipsRecipientAccount: "840000000000000000", ipsPurpose: "Education pretplata", ipsAccountEnvironment: "test",
       bankReconciliationEnabled: false,
+      bankReconciliationAccessMethod: null,
+      bankReconciliationAccessConfirmedAt: null,
+      bankReconciliationAccessConfirmedByUserId: null,
     }).where(eq(educationPlatformSettingsTable.id, currentSettings.id));
   } else {
     const [created] = await db.insert(educationPlatformSettingsTable).values({
@@ -85,6 +88,7 @@ try {
     }).returning();
     insertedSettingsId = created!.id;
   }
+  const platformSettingsId = settingsRestore?.id ?? insertedSettingsId!;
 
   server = app.listen(0, "127.0.0.1"); await once(server, "listening");
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -259,6 +263,13 @@ try {
     engineState: "disabled",
     bankConnectionConfigured: false,
   }, "The reconciliation engine defaults to disabled and never claims a configured bank connection.");
+  assert.equal(initialReconciliationStatus.body.accessMethod, null);
+  assert.equal(initialReconciliationStatus.body.accessConfirmed, false);
+  assert.equal(initialReconciliationStatus.body.accessConfirmedAt, null);
+  assert.deepEqual(
+    initialReconciliationStatus.body.accessMethods.map((method: { id: string }) => method.id),
+    ["camt053", "csv", "raiffeisen_open_banking", "aggregator"],
+  );
 
   const disabledBankItem = await processNormalizedEducationBankTransaction({
     source: "contract-fixture",
@@ -271,16 +282,48 @@ try {
   assert.equal(disabledBankItem.transaction.result, "rejected");
   assert.equal(disabledBankItem.transaction.rejectionReason, educationBankRejectionReasons.engineDisabled);
 
+  await db.update(educationPlatformSettingsTable).set({
+    bankReconciliationEnabled: true,
+    bankReconciliationAccessMethod: null,
+    bankReconciliationAccessConfirmedAt: null,
+    bankReconciliationAccessConfirmedByUserId: null,
+  }).where(eq(educationPlatformSettingsTable.id, platformSettingsId));
+  const awaitingConfirmationStatus = await call(base, "/admin/education/bank-reconciliation", "GET", undefined, adminCookie);
+  assert.equal(awaitingConfirmationStatus.body.engineState, "awaiting_access_confirmation");
+  const unconfirmedBankItem = await processNormalizedEducationBankTransaction({
+    source: "contract-fixture",
+    sourceItemId: `${marker}:unconfirmed`,
+    reference: `UNKNOWN-UNCONFIRMED-${marker}`,
+    amountRsd: 1_000,
+    receivedAt: new Date(),
+  });
+  reconciliationTransactionIds.push(unconfirmedBankItem.transaction.id);
+  assert.equal(unconfirmedBankItem.transaction.rejectionReason, educationBankRejectionReasons.accessUnconfirmed);
+  await db.update(educationPlatformSettingsTable).set({ bankReconciliationEnabled: false })
+    .where(eq(educationPlatformSettingsTable.id, platformSettingsId));
+
+  const invalidReconciliationMethod = await call(
+    base,
+    "/admin/education/bank-reconciliation",
+    "PATCH",
+    { enabled: true, accessMethod: "unknown-provider" },
+    adminCookie,
+  );
+  assert.equal(invalidReconciliationMethod.status, 400);
+
   const enabledReconciliationStatus = await call(
     base,
     "/admin/education/bank-reconciliation",
     "PATCH",
-    { enabled: true },
+    { enabled: true, accessMethod: "camt053" },
     adminCookie,
   );
   assert.equal(enabledReconciliationStatus.status, 200);
   assert.equal(enabledReconciliationStatus.body.engineState, "ready_for_import");
   assert.equal(enabledReconciliationStatus.body.bankConnectionConfigured, false);
+  assert.equal(enabledReconciliationStatus.body.accessMethod, "camt053");
+  assert.equal(enabledReconciliationStatus.body.accessConfirmed, true);
+  assert.ok(enabledReconciliationStatus.body.accessConfirmedAt);
 
   const unknownBankItem = await processNormalizedEducationBankTransaction({
     source: "contract-fixture",
@@ -667,19 +710,22 @@ try {
     await db.delete(educationCentersTable).where(inArray(educationCentersTable.id, centerIds));
   }
   if (detachedClaimIds.length) await db.delete(educationTrialClaimsTable).where(inArray(educationTrialClaimsTable.id, detachedClaimIds));
+  if (settingsRestore) {
+    await db.update(educationPlatformSettingsTable).set({
+      ipsRecipientName: settingsRestore.ipsRecipientName, ipsRecipientAccount: settingsRestore.ipsRecipientAccount,
+      ipsPurpose: settingsRestore.ipsPurpose, ipsAccountEnvironment: settingsRestore.ipsAccountEnvironment, updatedAt: settingsRestore.updatedAt,
+      bankReconciliationEnabled: settingsRestore.bankReconciliationEnabled,
+      bankReconciliationAccessMethod: settingsRestore.bankReconciliationAccessMethod,
+      bankReconciliationAccessConfirmedAt: settingsRestore.bankReconciliationAccessConfirmedAt,
+      bankReconciliationAccessConfirmedByUserId: settingsRestore.bankReconciliationAccessConfirmedByUserId,
+    }).where(eq(educationPlatformSettingsTable.id, settingsRestore.id));
+  } else if (insertedSettingsId) {
+    await db.delete(educationPlatformSettingsTable).where(eq(educationPlatformSettingsTable.id, insertedSettingsId));
+  }
   if (userIds.length) {
     await db.delete(educationFinancialAuditLogTable).where(inArray(educationFinancialAuditLogTable.actorUserId, userIds));
     await db.delete(sessionsTable).where(inArray(sessionsTable.userId, userIds));
     await db.delete(usersTable).where(inArray(usersTable.id, userIds));
   }
   if (planIds.length) await db.delete(subscriptionPlansTable).where(inArray(subscriptionPlansTable.id, planIds));
-  if (settingsRestore) {
-    await db.update(educationPlatformSettingsTable).set({
-      ipsRecipientName: settingsRestore.ipsRecipientName, ipsRecipientAccount: settingsRestore.ipsRecipientAccount,
-      ipsPurpose: settingsRestore.ipsPurpose, ipsAccountEnvironment: settingsRestore.ipsAccountEnvironment, updatedAt: settingsRestore.updatedAt,
-      bankReconciliationEnabled: settingsRestore.bankReconciliationEnabled,
-    }).where(eq(educationPlatformSettingsTable.id, settingsRestore.id));
-  } else if (insertedSettingsId) {
-    await db.delete(educationPlatformSettingsTable).where(eq(educationPlatformSettingsTable.id, insertedSettingsId));
-  }
 }

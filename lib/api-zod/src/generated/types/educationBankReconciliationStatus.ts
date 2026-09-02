@@ -5,6 +5,8 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { EducationBankReconciliationStatusAccessMethod } from './educationBankReconciliationStatusAccessMethod';
+import type { EducationBankReconciliationStatusAccessMethodsItem } from './educationBankReconciliationStatusAccessMethodsItem';
 import type { EducationBankReconciliationStatusEngineState } from './educationBankReconciliationStatusEngineState';
 import type { EducationBankReconciliationStatusLastResult } from './educationBankReconciliationStatusLastResult';
 
@@ -12,6 +14,12 @@ export interface EducationBankReconciliationStatus {
   enabled: boolean;
   engineState: EducationBankReconciliationStatusEngineState;
   bankConnectionConfigured: boolean;
+  /** @nullable */
+  accessMethod: EducationBankReconciliationStatusAccessMethod;
+  accessConfirmed: boolean;
+  /** @nullable */
+  accessConfirmedAt: Date | null;
+  accessMethods: EducationBankReconciliationStatusAccessMethodsItem[];
   /** @nullable */
   lastProcessedAt: Date | null;
   /** @nullable */

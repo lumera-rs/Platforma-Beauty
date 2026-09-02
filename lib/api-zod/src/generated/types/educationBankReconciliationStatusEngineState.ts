@@ -11,5 +11,6 @@ export type EducationBankReconciliationStatusEngineState = typeof EducationBankR
 
 export const EducationBankReconciliationStatusEngineState = {
   disabled: 'disabled',
+  awaiting_access_confirmation: 'awaiting_access_confirmation',
   ready_for_import: 'ready_for_import',
 } as const;

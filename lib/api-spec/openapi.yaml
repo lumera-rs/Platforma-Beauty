@@ -14741,18 +14741,32 @@ components:
       additionalProperties: false
       properties:
         enabled: { type: boolean }
-      required: [enabled]
+        accessMethod: { type: string, enum: [camt053, csv, raiffeisen_open_banking, aggregator] }
+      required: [enabled, accessMethod]
     EducationBankReconciliationStatus:
       type: object
       additionalProperties: false
       properties:
         enabled: { type: boolean }
-        engineState: { type: string, enum: [disabled, ready_for_import] }
+        engineState: { type: string, enum: [disabled, awaiting_access_confirmation, ready_for_import] }
         bankConnectionConfigured: { type: boolean }
+        accessMethod: { type: ["string", "null"], enum: [camt053, csv, raiffeisen_open_banking, aggregator, null] }
+        accessConfirmed: { type: boolean }
+        accessConfirmedAt: { type: ["string", "null"], format: date-time }
+        accessMethods:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              id: { type: string, enum: [camt053, csv, raiffeisen_open_banking, aggregator] }
+              label: { type: string }
+              description: { type: string }
+            required: [id, label, description]
         lastProcessedAt: { type: ["string", "null"], format: date-time }
         lastResult: { type: ["string", "null"], enum: [settled, rejected, null] }
         lastRejectionReason: { type: ["string", "null"] }
-      required: [enabled, engineState, bankConnectionConfigured, lastProcessedAt, lastResult, lastRejectionReason]
+      required: [enabled, engineState, bankConnectionConfigured, accessMethod, accessConfirmed, accessConfirmedAt, accessMethods, lastProcessedAt, lastResult, lastRejectionReason]
     EducationInstructorProfile:
       type: object
       properties:
