@@ -259,7 +259,13 @@ import {
   qualifiesAsTopRatedEducationCenter,
   normalizedEducationTaxonomyName,
 } from "../lib/education-marketplace-domain";
-import { assertOnlineEnrollmentRequest, isOnlineEnrollmentSnapshot, issueOnlineEnrollmentFields } from "../lib/education-entitlement";
+import {
+  ACTIVE_EDUCATION_ENTITLEMENT_CONFLICT,
+  assertOnlineEnrollmentRequest,
+  isOnlineEnrollmentSnapshot,
+  issueOnlineEnrollmentFields,
+  lockCurrentPurchasedEducationEntitlement,
+} from "../lib/education-entitlement";
 import {
   educationCenterEligibility, eligibleEducationCenterSql, hasActiveEducationSubscription,
 } from "../lib/education-center-eligibility";
@@ -2859,6 +2865,42 @@ async function requireOwnedCourse(access: EducationAccess, courseId: string, res
     return null;
   }
   return course;
+}
+
+async function lockCourseForDestructiveContentMutation(
+  tx: MarketplaceTransaction,
+  actorId: string,
+  courseId: string,
+  centerId: string,
+) {
+  await lockBusinessMutationParticipants(tx, {
+    userIds: [actorId],
+    resources: [{ kind: "education-center", id: centerId }],
+  });
+  await lockEducationCenterFinancials(tx, centerId);
+  const [actor] = await tx.select().from(usersTable)
+    .where(eq(usersTable.id, actorId)).for("update").limit(1);
+  const [center] = await tx.select().from(educationCentersTable)
+    .where(eq(educationCentersTable.id, centerId)).for("update").limit(1);
+  const [course] = await tx.select().from(coursesTable)
+    .where(and(eq(coursesTable.id, courseId), eq(coursesTable.centerId, centerId)))
+    .for("update").limit(1);
+  if (!course || !center) return { status: "not-found" as const };
+  const [membership] = await tx.select({
+    role: educationCenterStaffTable.role,
+    active: educationCenterStaffTable.active,
+  }).from(educationCenterStaffTable).where(and(
+    eq(educationCenterStaffTable.centerId, centerId),
+    eq(educationCenterStaffTable.userId, actorId),
+  )).for("update").limit(1);
+  const mayManage = Boolean(actor?.active && (
+    isAdmin(actor)
+    || (actor.role === "EDUKATIVNI_CENTAR" && center.ownerId === actor.id)
+    || (membership?.active && ["owner_admin", "manager_reception"].includes(membership.role))
+  ));
+  return mayManage
+    ? { status: "authorized" as const, course }
+    : { status: "forbidden" as const };
 }
 
 async function requireOwnedEducationCenterCourse(access: EducationAccess, courseId: string, res: Response) {
@@ -19048,7 +19090,24 @@ router.delete("/education/modules/:moduleId", async (req, res): Promise<void> =>
   const [module] = await db.select().from(courseModulesTable).where(eq(courseModulesTable.id, moduleId)).limit(1);
   if (!module) { res.status(404).json({ error: "Modul nije pronađen." }); return; }
   const course = await requireOwnedCourse(access, module.courseId, res); if (!course) return;
-  await db.delete(courseModulesTable).where(eq(courseModulesTable.id, module.id));
+  const outcome = await db.transaction(async (tx) => {
+    const locked = await lockCourseForDestructiveContentMutation(tx, access.user.id, course.id, course.centerId!);
+    if (locked.status !== "authorized") return locked.status;
+    if (await lockCurrentPurchasedEducationEntitlement(tx, [locked.course.id])) {
+      return "active-entitlement" as const;
+    }
+    const [deleted] = await tx.delete(courseModulesTable).where(and(
+      eq(courseModulesTable.id, module.id),
+      eq(courseModulesTable.courseId, locked.course.id),
+    )).returning({ id: courseModulesTable.id });
+    return deleted ? "deleted" as const : "not-found" as const;
+  });
+  if (outcome === "active-entitlement") {
+    res.status(409).json({ error: ACTIVE_EDUCATION_ENTITLEMENT_CONFLICT });
+    return;
+  }
+  if (outcome === "forbidden") { res.status(403).json({ error: "Nemate pravo izmene ovog kursa." }); return; }
+  if (outcome === "not-found") { res.status(404).json({ error: "Modul nije pronađen." }); return; }
   res.sendStatus(204);
 });
 
@@ -19080,8 +19139,24 @@ router.delete("/education/lessons/:lessonId", async (req, res): Promise<void> =>
   const [lesson] = await db.select().from(courseLessonsTable).where(eq(courseLessonsTable.id, lessonId)).limit(1);
   if (!lesson) { res.status(404).json({ error: "Lekcija nije pronađena." }); return; }
   const [module] = await db.select().from(courseModulesTable).where(eq(courseModulesTable.id, lesson.moduleId)).limit(1);
-  if (!module || !(await requireOwnedCourse(access, module.courseId, res))) return;
-  await db.delete(courseLessonsTable).where(eq(courseLessonsTable.id, lesson.id));
+  if (!module) { res.status(404).json({ error: "Lekcija nije pronađena." }); return; }
+  const course = await requireOwnedCourse(access, module.courseId, res); if (!course) return;
+  const outcome = await db.transaction(async (tx) => {
+    const locked = await lockCourseForDestructiveContentMutation(tx, access.user.id, course.id, course.centerId!);
+    if (locked.status !== "authorized") return locked.status;
+    if (await lockCurrentPurchasedEducationEntitlement(tx, [locked.course.id])) {
+      return "active-entitlement" as const;
+    }
+    const [deleted] = await tx.delete(courseLessonsTable).where(eq(courseLessonsTable.id, lesson.id))
+      .returning({ id: courseLessonsTable.id });
+    return deleted ? "deleted" as const : "not-found" as const;
+  });
+  if (outcome === "active-entitlement") {
+    res.status(409).json({ error: ACTIVE_EDUCATION_ENTITLEMENT_CONFLICT });
+    return;
+  }
+  if (outcome === "forbidden") { res.status(403).json({ error: "Nemate pravo izmene ovog kursa." }); return; }
+  if (outcome === "not-found") { res.status(404).json({ error: "Lekcija nije pronađena." }); return; }
   res.sendStatus(204);
 });
 
@@ -24720,6 +24795,15 @@ router.post("/admin/users/:userId/business-role-transition", async (req, res): P
           ...centerResourceIds.map((id) => ({ kind: "education-center" as const, id })),
         ],
       });
+      const deactivatedCenterIds = body.educationCenterOwnerships
+        .filter((item) => item.action === "deactivate")
+        .map((item) => item.relationId)
+        .sort();
+      // Paid enrollment issuance uses the same center lock. Take it before any
+      // center row lock so a shutdown cannot race a purchase into existence.
+      for (const centerId of deactivatedCenterIds) {
+        await lockEducationCenterFinancials(tx, centerId);
+      }
 
       // Discover the legal-entity closure without row locks only after every
       // selected business resource is advisory-locked. Then lock entities and
@@ -24772,6 +24856,18 @@ router.post("/admin/users/:userId/business-role-transition", async (req, res): P
         || !sameIds(centers, body.educationCenterOwnerships)
         || !sameIds(instructors, body.instructorRelations)) {
         return { status: "unsafe" as const, message: "Spisak poslovnih veza je promenjen ili sadrži vezu drugog korisnika." };
+      }
+      if (deactivatedCenterIds.length) {
+        const deactivatedCourses = await tx.select({ id: coursesTable.id }).from(coursesTable)
+          .where(inArray(coursesTable.centerId, deactivatedCenterIds))
+          .orderBy(asc(coursesTable.id))
+          .for("update");
+        if (await lockCurrentPurchasedEducationEntitlement(tx, deactivatedCourses.map((course) => course.id))) {
+          return {
+            status: "conflict" as const,
+            message: "Centar nije moguće deaktivirati dok najmanje jedan polaznik ima važeći kupljeni pristup njegovom sadržaju.",
+          };
+        }
       }
       const salonTransfers = new Map(body.salonOwnerships
         .filter((item) => item.action === "transfer")

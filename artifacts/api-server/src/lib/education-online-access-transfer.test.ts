@@ -52,10 +52,11 @@ async function run(): Promise<void> {
   let settingsSnapshot: typeof educationPlatformSettingsTable.$inferSelect | undefined;
   try {
     const passwordHash = await hashPassword("online-access-test-password");
-    const [admin, centerOwner, owner, foreignOwner, sourceUser, targetUser, groupUser, inactiveUser, unlinkedUser, outsider] =
+    const [admin, centerOwner, centerTransferTarget, owner, foreignOwner, sourceUser, targetUser, groupUser, inactiveUser, unlinkedUser, outsider] =
       await db.insert(usersTable).values([
         { firstName: "Admin", lastName: marker, email: `admin-${marker}@test.invalid`, passwordHash, passwordSetAt: new Date(), role: "SUPER_ADMIN" },
         { firstName: "Center", lastName: marker, email: `center-${marker}@test.invalid`, passwordHash, passwordSetAt: new Date(), role: "EDUKATIVNI_CENTAR" },
+        { firstName: "CenterTarget", lastName: marker, email: `center-target-${marker}@test.invalid`, passwordHash, passwordSetAt: new Date(), role: "EDUKATIVNI_CENTAR" },
         { firstName: "Owner", lastName: marker, email: `owner-${marker}@test.invalid`, passwordHash, passwordSetAt: new Date(), role: "SALON_OWNER" },
         { firstName: "Foreign", lastName: marker, email: `foreign-${marker}@test.invalid`, passwordHash, passwordSetAt: new Date(), role: "SALON_OWNER" },
         { firstName: "Source", lastName: marker, email: `source-${marker}@test.invalid`, passwordHash, passwordSetAt: new Date(), role: "SALON_EMPLOYEE" },
@@ -65,7 +66,7 @@ async function run(): Promise<void> {
         { firstName: "Unlinked", lastName: marker, email: `unlinked-${marker}@test.invalid`, passwordHash, passwordSetAt: new Date(), role: "SALON_EMPLOYEE" },
         { firstName: "Outsider", lastName: marker, email: `outsider-${marker}@test.invalid`, passwordHash, passwordSetAt: new Date(), role: "STUDENT" },
       ]).returning();
-    userIds.push(...[admin, centerOwner, owner, foreignOwner, sourceUser, targetUser, groupUser, inactiveUser, unlinkedUser, outsider].map((user) => user!.id));
+    userIds.push(...[admin, centerOwner, centerTransferTarget, owner, foreignOwner, sourceUser, targetUser, groupUser, inactiveUser, unlinkedUser, outsider].map((user) => user!.id));
 
     const [settings] = await db.select().from(educationPlatformSettingsTable).orderBy(asc(educationPlatformSettingsTable.createdAt)).limit(1);
     assert.ok(settings, "Seeded platform settings are required.");
@@ -124,11 +125,17 @@ async function run(): Promise<void> {
     const [courseLesson] = await db.insert(courseLessonsTable).values({
       moduleId: courseModule!.id, title: marker, description: marker, content: marker, durationMinutes: 10, sortOrder: 1,
     }).returning();
+    const [cancelledModule] = await db.insert(courseModulesTable).values({
+      courseId: raceCourseId, title: `${marker}-cancelled`, description: marker, sortOrder: 1,
+    }).returning();
+    const [cancelledLesson] = await db.insert(courseLessonsTable).values({
+      moduleId: cancelledModule!.id, title: `${marker}-cancelled`, description: marker, content: marker, durationMinutes: 10, sortOrder: 1,
+    }).returning();
     server = app.listen(0, "127.0.0.1"); await once(server, "listening");
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     const cookie = async (userId: string) => `${sessionCookieName}=${await createSession(userId)}`;
-    const [ownerCookie, foreignCookie, sourceCookie, targetCookie, outsiderCookie, adminCookie] = await Promise.all(
-      [owner!.id, foreignOwner!.id, sourceUser!.id, targetUser!.id, outsider!.id, admin!.id].map(cookie),
+    const [centerOwnerCookie, centerTargetCookie, ownerCookie, foreignCookie, sourceCookie, targetCookie, outsiderCookie, adminCookie] = await Promise.all(
+      [centerOwner!.id, centerTransferTarget!.id, owner!.id, foreignOwner!.id, sourceUser!.id, targetUser!.id, outsider!.id, admin!.id].map(cookie),
     );
 
     let directConsentRace!: Promise<{ status: number; body: any }>;
@@ -268,9 +275,34 @@ async function run(): Promise<void> {
     assert.equal(settled!.durationSnapshot, beforeSettlement!.durationSnapshot);
     await db.update(coursesTable).set({ format: "in-person" }).where(eq(coursesTable.id, courseId));
 
+    assert.equal((await request(base, centerOwnerCookie, `/education/lessons/${courseLesson!.id}`, "DELETE")).status, 409,
+      "A valid paid entitlement must protect a lesson from physical deletion.");
+    assert.equal((await request(base, centerOwnerCookie, `/education/modules/${courseModule!.id}`, "DELETE")).status, 409,
+      "A valid paid entitlement must protect a module and its lessons from physical deletion.");
+    assert.equal((await db.select({ id: courseLessonsTable.id }).from(courseLessonsTable)
+      .where(eq(courseLessonsTable.id, courseLesson!.id))).length, 1, "Rejected lesson deletion leaves content intact.");
+    assert.equal((await request(base, centerOwnerCookie, `/education/courses/${courseId}`, "DELETE")).status, 204,
+      "Archiving remains available while purchased private access exists.");
+    const [archivedCourse] = await db.select({ archived: coursesTable.archived, published: coursesTable.published })
+      .from(coursesTable).where(eq(coursesTable.id, courseId));
+    assert.deepEqual(archivedCourse, { archived: true, published: false }, "Archive never physically removes protected course content.");
+
+    const blockedShutdown = await request(base, adminCookie, `/admin/users/${centerOwner!.id}/business-role-transition`, "POST", {
+      role: "CUSTOMER", active: false, activeSalonId: null,
+      salonOwnerships: [], employments: [],
+      educationCenterOwnerships: [{ relationId: centerId, action: "deactivate" }],
+      instructorRelations: [],
+    });
+    assert.equal(blockedShutdown.status, 409, "A center with valid purchased access cannot be shut down with its owner account.");
+    const [centerBeforeSuspension] = await db.select({ verificationStatus: educationCentersTable.verificationStatus })
+      .from(educationCentersTable).where(eq(educationCentersTable.id, centerId));
+    assert.equal(centerBeforeSuspension!.verificationStatus, "verified", "Rejected shutdown is atomic.");
+
     await db.update(educationCentersTable).set({ verificationStatus: "suspended" }).where(eq(educationCentersTable.id, centerId));
     await db.update(educationCenterSubscriptionsTable).set({ status: "suspended" }).where(eq(educationCenterSubscriptionsTable.centerId, centerId));
     assert.equal((await request(base, sourceCookie, `/education/enrollments/${enrollmentId}/lms`)).status, 200, "Suspension cannot revoke an unexpired purchased LMS entitlement.");
+    assert.equal((await request(base, centerOwnerCookie, `/education/lessons/${courseLesson!.id}`, "DELETE")).status, 409,
+      "Center suspension does not weaken protection for purchased private content.");
     assert.equal((await request(base, outsiderCookie, `/education/public/courses/${courseId}`)).status, 404);
     const catalog = await request(base, outsiderCookie, `/education/public/courses?q=${encodeURIComponent(marker)}`);
     assert.ok(!catalog.body.some((row: { id: string }) => row.id === courseId), "Suspended course must be absent from public listings.");
@@ -282,6 +314,8 @@ async function run(): Promise<void> {
     for (const field of ["purchaserId", "coursePriceSnapshot", "durationSnapshot", "accessDaysSnapshot", "extensionPricesSnapshot", "digitalContentConsentAt", "digitalContentConsentUserId", "digitalContentConsentTextSnapshot", "digitalContentConsentVersionSnapshot", "accessExpiresAt"] as const) {
       assert.deepEqual(transferred![field], settled![field], `${field} must remain purchase evidence after transfer`);
     }
+    assert.equal((await request(base, centerOwnerCookie, `/education/modules/${courseModule!.id}`, "DELETE")).status, 409,
+      "A transferred valid entitlement still protects the original course content.");
     for (const [label, actorCookie, targetEmployeeId] of [
       ["cross salon", foreignCookie, source!.id], ["non owner", outsiderCookie, source!.id], ["inactive", ownerCookie, inactive!.id], ["unlinked", ownerCookie, unlinked!.id],
     ] as const) assert.equal((await request(base, actorCookie, `/education/enrollments/${enrollmentId}/transfer`, "POST", { targetEmployeeId })).status, 409, `${label} transfer rejected`);
@@ -315,6 +349,69 @@ async function run(): Promise<void> {
     assert.equal((await db.select().from(educationPaymentObligationsTable)
       .where(eq(educationPaymentObligationsTable.enrollmentId, enrollmentId))).length, obligationsBeforeLegacyZero.length,
     "Rejected zero-price extension creates no payment obligation.");
+
+    const raceEnrollments = await db.select({ id: courseEnrollmentsTable.id }).from(courseEnrollmentsTable)
+      .where(eq(courseEnrollmentsTable.courseId, raceCourseId));
+    assert.ok(raceEnrollments.length >= 3, "Non-blocking access states need isolated enrollment fixtures.");
+    await db.update(courseEnrollmentsTable).set({ status: "cancelled", paymentStatus: "paid" })
+      .where(eq(courseEnrollmentsTable.id, raceEnrollments[0]!.id));
+    await db.update(courseEnrollmentsTable).set({ status: "active", paymentStatus: "refunded" })
+      .where(eq(courseEnrollmentsTable.id, raceEnrollments[1]!.id));
+    const [pendingRaceEnrollment] = await db.select({
+      status: courseEnrollmentsTable.status,
+      paymentStatus: courseEnrollmentsTable.paymentStatus,
+    }).from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, raceEnrollments[2]!.id));
+    assert.deepEqual(pendingRaceEnrollment, { status: "pending", paymentStatus: "pending" });
+    assert.equal((await request(base, centerOwnerCookie, `/education/lessons/${cancelledLesson!.id}`, "DELETE")).status, 204,
+      "Cancelled, refunded, and pending access do not block lesson cleanup.");
+    assert.equal((await request(base, centerOwnerCookie, `/education/modules/${cancelledModule!.id}`, "DELETE")).status, 204,
+      "Cancelled, refunded, and pending access do not block module cleanup.");
+
+    await db.update(courseEnrollmentsTable).set({ accessExpiresAt: new Date(Date.now() - 1) })
+      .where(and(
+        eq(courseEnrollmentsTable.courseId, courseId),
+        inArray(courseEnrollmentsTable.status, ["active", "completed"]),
+        eq(courseEnrollmentsTable.paymentStatus, "paid"),
+      ));
+    await db.update(courseEnrollmentsTable).set({
+      status: "completed", accessExpiresAt: new Date(Date.now() + 86_400_000),
+    }).where(eq(courseEnrollmentsTable.id, enrollmentId));
+    assert.equal((await request(base, centerOwnerCookie, `/education/lessons/${courseLesson!.id}`, "DELETE")).status, 409,
+      "Completed paid access remains protected until its online entitlement expires.");
+    await db.update(courseEnrollmentsTable).set({ accessExpiresAt: new Date(Date.now() - 1) })
+      .where(eq(courseEnrollmentsTable.id, enrollmentId));
+
+    const ownershipLock = await pool.connect();
+    await ownershipLock.query("select pg_advisory_lock(hashtext($1))", [`business-resource:education-center:${centerId}`]);
+    const transferCenter = request(base, adminCookie, `/admin/users/${centerOwner!.id}/business-role-transition`, "POST", {
+      role: "CUSTOMER", active: true, activeSalonId: null,
+      salonOwnerships: [], employments: [],
+      educationCenterOwnerships: [{ relationId: centerId, action: "transfer", targetUserId: centerTransferTarget!.id }],
+      instructorRelations: [],
+    });
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const staleOwnerDelete = request(base, centerOwnerCookie, `/education/lessons/${courseLesson!.id}`, "DELETE");
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await ownershipLock.query("select pg_advisory_unlock(hashtext($1))", [`business-resource:education-center:${centerId}`]);
+    ownershipLock.release();
+    const [transferredCenter, rejectedStaleDelete] = await Promise.all([transferCenter, staleOwnerDelete]);
+    assert.equal(transferredCenter.status, 200, "Center ownership transfer must complete under the shared resource lock.");
+    assert.equal(rejectedStaleDelete.status, 403,
+      "A delete authorized before ownership transfer must revalidate and reject the former owner.");
+    assert.equal((await db.select({ id: courseLessonsTable.id }).from(courseLessonsTable)
+      .where(eq(courseLessonsTable.id, courseLesson!.id))).length, 1, "Stale owner cannot remove course content.");
+
+    assert.equal((await request(base, centerTargetCookie, `/education/lessons/${courseLesson!.id}`, "DELETE")).status, 204,
+      "Expired online entitlements do not block lesson cleanup.");
+    assert.equal((await request(base, centerTargetCookie, `/education/modules/${courseModule!.id}`, "DELETE")).status, 204,
+      "Expired online entitlements do not block module cleanup.");
+    const allowedShutdown = await request(base, adminCookie, `/admin/users/${centerTransferTarget!.id}/business-role-transition`, "POST", {
+      role: "CUSTOMER", active: false, activeSalonId: null,
+      salonOwnerships: [], employments: [],
+      educationCenterOwnerships: [{ relationId: centerId, action: "deactivate" }],
+      instructorRelations: [],
+    });
+    assert.equal(allowedShutdown.status, 200, "Expired and cancelled access no longer blocks center shutdown.");
     console.log("education online access transfer tests passed");
   } finally {
     if (server) { server.close(); await once(server, "close"); }

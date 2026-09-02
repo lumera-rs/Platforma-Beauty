@@ -4018,6 +4018,7 @@ paths:
       responses:
         "204": { description: Module deleted }
         "403": { description: Business access required }
+        "409": { description: A learner still has a valid purchased entitlement to the course }
   /education/modules/{moduleId}/lessons:
     post:
       operationId: createEducationLesson
@@ -4065,6 +4066,7 @@ paths:
       responses:
         "204": { description: Lesson deleted }
         "403": { description: Business access required }
+        "409": { description: A learner still has a valid purchased entitlement to the course }
   /education/courses/{courseId}/availability:
     get:
       operationId: getEducationCourseAvailability
