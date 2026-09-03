@@ -9,6 +9,7 @@ import {
   findInternalControlsInGeneratedOutputs,
 } from "./internal-request-control-output-check";
 import {
+  assertOrvalFileProducingOutputValueShapesRecognized,
   assertOrvalNestedOutputContractsRecognized,
   assertOrvalOutputContractRecognized,
   collectOrvalConfiguredOutputPaths,
@@ -50,6 +51,32 @@ function readInterfaceFieldNames(declarations: string, interfaceName: string) {
     .map((match) => match[1]);
 }
 
+function readFileProducingOutputValueShapes(declarations: string) {
+  const declaration = declarations.match(
+    /interface OutputOptions(?: extends [^{]+)? \{(?<body>[\s\S]*?)^\}/m,
+  );
+  assert.ok(declaration?.groups?.body, "Installed Orval declarations must expose OutputOptions");
+
+  const aliases = new Map(
+    [...declarations.matchAll(/^type ([A-Za-z]\w*)\s*=\s*([^;\n]+);$/gm)]
+      .map((match) => [match[1], match[2]]),
+  );
+  const resolveMembers = (type: string, seen = new Set<string>()): string[] =>
+    type.split("|").flatMap((rawMember) => {
+      const member = rawMember.trim();
+      const alias = aliases.get(member);
+      if (!alias?.includes("|") || seen.has(member)) {
+        return member;
+      }
+      return resolveMembers(alias, new Set([...seen, member]));
+    });
+
+  return Object.fromEntries(
+    [...declaration.groups.body.matchAll(/^\s{2}([A-Za-z]\w*)\??:\s*([^;\n]+);$/gm)]
+      .map((match) => [match[1], resolveMembers(match[2])]),
+  );
+}
+
 test("installed Orval output options are classified by the inventory guard", async () => {
   const declarations = await readInstalledOrvalDeclarations();
   const installedOptions = readInterfaceFieldNames(declarations, "OutputOptions");
@@ -58,6 +85,29 @@ test("installed Orval output options are classified by the inventory guard", asy
   assert.throws(
     () => assertOrvalOutputContractRecognized([...installedOptions, "futureOutputDirectory"]),
     /installed Orval OutputOptions contract contains unrecognized options[\s\S]*output\.futureOutputDirectory/,
+  );
+});
+
+test("installed Orval file-producing output value shapes are reviewed", async () => {
+  const declarations = await readInstalledOrvalDeclarations();
+  const installedShapes = readFileProducingOutputValueShapes(declarations);
+
+  assert.doesNotThrow(
+    () => assertOrvalFileProducingOutputValueShapesRecognized(installedShapes),
+  );
+  assert.throws(
+    () => assertOrvalFileProducingOutputValueShapesRecognized({
+      ...installedShapes,
+      schemas: [...installedShapes.schemas, "FutureSchemaOptions"],
+    }),
+    /file-producing output value shapes have changed[\s\S]*Review every changed string\/object union[\s\S]*output\.schemas:[\s\S]*FutureSchemaOptions/,
+  );
+  assert.throws(
+    () => assertOrvalFileProducingOutputValueShapesRecognized({
+      ...installedShapes,
+      mock: [...installedShapes.mock, "FutureMockOptions"],
+    }),
+    /output\.mock:[\s\S]*FutureMockOptions/,
   );
 });
 

@@ -4,6 +4,7 @@ export type ApiGeneratorOutput = Readonly<{
 }>;
 
 export const orvalFileProducingOutputOptions: readonly string[];
+export const orvalFileProducingOutputValueShapes: Readonly<Record<string, readonly string[]>>;
 export const orvalNonFileOutputOptions: readonly string[];
 export const orvalNestedOutputContracts: Readonly<Record<string, Readonly<{
   configPath: string;
@@ -13,6 +14,10 @@ export const orvalNestedOutputContracts: Readonly<Record<string, Readonly<{
 
 export function assertOrvalOutputContractRecognized(
   installedOutputOptions: readonly string[],
+): void;
+
+export function assertOrvalFileProducingOutputValueShapesRecognized(
+  installedShapes: Readonly<Record<string, readonly string[]>>,
 ): void;
 
 export function assertOrvalNestedOutputContractsRecognized(
