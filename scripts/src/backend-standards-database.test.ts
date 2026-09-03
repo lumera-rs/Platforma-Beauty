@@ -127,6 +127,93 @@ test("database harness standards reject aggregate QA reports that capture raw ch
   );
 });
 
+test("database harness standards reject disguised aggregate child-output collectors", () => {
+  const aliasedCollectorRunner = `
+    import { spawn } from "node:child_process";
+    const environment = { ...process.env, DATABASE_URL: process.env.DATABASE_URL };
+    const child = spawn("pnpm", ["run", "test:database"], {
+      env: environment,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let output = "";
+    const collectOutput = (part) => {
+      output += part.toString();
+    };
+    child.stdout.on("data", collectOutput);
+  `;
+  const destructuredStreamRunner = `
+    import { spawn } from "node:child_process";
+    const environment = { ...process.env, DATABASE_URL: process.env.DATABASE_URL };
+    const child = spawn("pnpm", ["run", "test:database"], {
+      env: environment,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const { stdout: childOutput } = child;
+    const reportChunks = [];
+    function appendReport(data) {
+      reportChunks.push(data);
+    }
+    childOutput.on("data", appendReport);
+  `;
+  const safeAliasedStreamRunner = `
+    import { spawn } from "node:child_process";
+    import { createRedactedDatabaseOutputWriter } from "./safe-child-process-output";
+    const environment = { ...process.env, DATABASE_URL: process.env.DATABASE_URL };
+    const child = spawn("pnpm", ["run", "test:database"], {
+      env: environment,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const { stdout: childOutput } = child;
+    const writer = createRedactedDatabaseOutputWriter(environment, process.stdout);
+    const collectOutput = (part) => {
+      writer.write(part);
+    };
+    childOutput.on("data", collectOutput);
+    child.once("close", () => writer.flush());
+  `;
+  const ordinaryCollector = `
+    import { spawn } from "node:child_process";
+    const child = spawn("git", ["status"], { stdio: ["ignore", "pipe", "pipe"] });
+    let output = "";
+    const collectOutput = (part) => {
+      output += part.toString();
+    };
+    child.stdout.on("data", collectOutput);
+  `;
+  const violation = [
+    "scripts/src/run-database-qa-report.ts captures database-oriented child output for an aggregate report without chunk-safe redaction",
+  ];
+
+  assert.deepEqual(
+    findUnsafeDatabaseChildProcessUses(
+      aliasedCollectorRunner,
+      "scripts/src/run-database-qa-report.ts",
+    ),
+    violation,
+  );
+  assert.deepEqual(
+    findUnsafeDatabaseChildProcessUses(
+      destructuredStreamRunner,
+      "scripts/src/run-database-qa-report.ts",
+    ),
+    violation,
+  );
+  assert.deepEqual(
+    findUnsafeDatabaseChildProcessUses(
+      safeAliasedStreamRunner,
+      "scripts/src/run-database-qa-report.ts",
+    ),
+    [],
+  );
+  assert.deepEqual(
+    findUnsafeDatabaseChildProcessUses(
+      ordinaryCollector,
+      "scripts/src/run-git-qa-report.ts",
+    ),
+    [],
+  );
+});
+
 async function runDatabaseCommand(
   command: string,
   args: string[],

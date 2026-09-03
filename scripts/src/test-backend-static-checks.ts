@@ -56,6 +56,63 @@ const STATIC_CHECK_EXCLUSIONS = new Set([
   "scripts/src/test-backend-static-checks.ts",
 ]);
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function hasRawAggregateChildOutputCapture(source: string): boolean {
+  const streamNames = new Set(["stdout", "stderr"]);
+  const destructuringPattern = /\b(?:const|let|var)\s*\{([^}]+)\}\s*=\s*[\w$.]+/g;
+  for (const match of source.matchAll(destructuringPattern)) {
+    for (const binding of match[1]!.split(",")) {
+      const aliasMatch = binding.trim().match(/^(stdout|stderr)\s*:\s*([A-Za-z_$][\w$]*)$/);
+      if (aliasMatch) streamNames.add(aliasMatch[2]!);
+    }
+  }
+
+  const listenerCallbacks: string[] = [];
+  for (const streamName of streamNames) {
+    const listenerPattern = new RegExp(
+      `\\b${escapeRegExp(streamName)}(?:\\?)*\\.on\\s*\\(\\s*["']data["']\\s*,\\s*([A-Za-z_$][\\w$]*)`,
+      "g",
+    );
+    for (const match of source.matchAll(listenerPattern)) {
+      listenerCallbacks.push(match[1]!);
+    }
+  }
+
+  if (
+    CHILD_OUTPUT_DATA_LISTENER_PATTERN.test(source)
+    && RAW_CHILD_OUTPUT_CAPTURE_PATTERN.test(source)
+  ) {
+    return true;
+  }
+
+  for (const callbackName of listenerCallbacks) {
+    const escapedName = escapeRegExp(callbackName);
+    const callbackPatterns = [
+      new RegExp(
+        `\\bfunction\\s+${escapedName}\\s*\\(\\s*([A-Za-z_$][\\w$]*)[^)]*\\)\\s*\\{([\\s\\S]{0,1000}?)\\}`,
+      ),
+      new RegExp(
+        `\\b(?:const|let|var)\\s+${escapedName}\\s*=\\s*(?:async\\s*)?\\(?\\s*([A-Za-z_$][\\w$]*)[^=()]*\\)?\\s*=>\\s*\\{([\\s\\S]{0,1000}?)\\}`,
+      ),
+    ];
+    for (const callbackPattern of callbackPatterns) {
+      const callbackMatch = callbackPattern.exec(source);
+      if (!callbackMatch) continue;
+      const parameter = escapeRegExp(callbackMatch[1]!);
+      const body = callbackMatch[2]!;
+      const rawCapturePattern = new RegExp(
+        `(?:\\+=\\s*${parameter}\\b|=\\s*\`\\$\\{[^}]+\\}\\$\\{${parameter}(?:\\.[^}]*)?\\}\`|\\.(?:push|write)\\s*\\(\\s*${parameter}\\b)`,
+      );
+      if (rawCapturePattern.test(body)) return true;
+    }
+  }
+
+  return false;
+}
+
 export function findUnsafeDatabaseChildProcessUses(
   source: string,
   file = "database harness",
@@ -79,8 +136,7 @@ export function findUnsafeDatabaseChildProcessUses(
   }
   if (
     AGGREGATE_QA_REPORT_RUNNER_PATTERN.test(file)
-    && CHILD_OUTPUT_DATA_LISTENER_PATTERN.test(source)
-    && RAW_CHILD_OUTPUT_CAPTURE_PATTERN.test(source)
+    && hasRawAggregateChildOutputCapture(source)
     && !CHUNK_SAFE_REDACTED_CHILD_OUTPUT_USE_PATTERN.test(source)
   ) {
     violations.push(
