@@ -19,6 +19,12 @@ export function assertOrvalNestedOutputContractsRecognized(
   installedContracts: Readonly<Record<string, readonly string[]>>,
 ): void;
 
+export function collectOrvalConfiguredOutputPaths(
+  output: Readonly<Record<string, unknown>>,
+  workspace: string,
+  fileProducingOptions?: readonly string[],
+): Array<{ option: string; path: string }>;
+
 export const apiOutputInventory: Readonly<{
   publicDocumentation: readonly string[];
   generators: Readonly<Record<string, ApiGeneratorOutput>>;

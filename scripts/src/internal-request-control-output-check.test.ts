@@ -11,6 +11,7 @@ import {
 import {
   assertOrvalNestedOutputContractsRecognized,
   assertOrvalOutputContractRecognized,
+  collectOrvalConfiguredOutputPaths,
   defineInventoriedGeneratorConfig,
   orvalNestedOutputContracts,
 } from "../../lib/api-spec/api-output-inventory.mjs";
@@ -145,6 +146,46 @@ test("reviewed file-producing Orval fields drive configured-path coverage", () =
       },
     }, fixtureRoot),
     /Orval output paths are not covered[\s\S]*zod output\.operationSchemas:[\s\S]*zod output\.schemas\.path:[\s\S]*zod output\.mock\.path:[\s\S]*zod output\.mock\.generators\[0\]\.path:[\s\S]*zod output\.factoryMethods\.outputDirectory:[\s\S]*outside inventoried source root/,
+  );
+});
+
+test("newly classified top-level Orval file outputs automatically join path coverage", () => {
+  const workspace = path.resolve(
+    os.tmpdir(),
+    "orval-output-inventory-future-option",
+  );
+
+  assert.deepEqual(
+    collectOrvalConfiguredOutputPaths(
+      {
+        target: "generated",
+        futureOutputDirectory: "../escaped-future-output",
+      },
+      workspace,
+      ["target", "futureOutputDirectory"],
+    ),
+    [
+      {
+        option: "workspace + target",
+        path: path.resolve(workspace, "generated"),
+      },
+      {
+        option: "futureOutputDirectory",
+        path: path.resolve(workspace, "../escaped-future-output"),
+      },
+    ],
+  );
+
+  assert.throws(
+    () => collectOrvalConfiguredOutputPaths(
+      {
+        target: "generated",
+        futureOutputDirectory: { path: "../escaped-future-output" },
+      },
+      workspace,
+      ["target", "futureOutputDirectory"],
+    ),
+    /output\.futureOutputDirectory uses an object form without a reviewed nested path contract/,
   );
 });
 
