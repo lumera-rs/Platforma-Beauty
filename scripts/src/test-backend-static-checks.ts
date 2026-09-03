@@ -43,6 +43,14 @@ const RAW_CHILD_OUTPUT_FORWARDING_PATTERN =
   /(?:stdout|stderr)(?:\?)*\.(?:on\s*\(\s*["']data["']|pipe\s*\(\s*process\.(?:stdout|stderr))[\s\S]{0,500}process\.(?:stdout|stderr)\.write\s*\(/;
 const REDACTED_CHILD_OUTPUT_USE_PATTERN =
   /\b(?:pipeRedactedDatabaseOutput|redactDatabaseCommandOutput)\s*\(/;
+const CHUNK_SAFE_REDACTED_CHILD_OUTPUT_USE_PATTERN =
+  /\b(?:createRedactedDatabaseOutputWriter|pipeRedactedDatabaseOutput)\s*\(/;
+const AGGREGATE_QA_REPORT_RUNNER_PATTERN =
+  /(?:^|\/)run-[^/]*(?:qa|report)[^/]*\.tsx?$/i;
+const CHILD_OUTPUT_DATA_LISTENER_PATTERN =
+  /(?:stdout|stderr)(?:\?)*\.on\s*\(\s*["']data["']/;
+const RAW_CHILD_OUTPUT_CAPTURE_PATTERN =
+  /(?:\+=\s*chunk\b|=\s*`\$\{[^}]+\}\$\{chunk\}`|\.(?:push|write)\s*\(\s*chunk\b)/;
 const STATIC_CHECK_EXCLUSIONS = new Set([
   "scripts/src/backend-standards-database.test.ts",
   "scripts/src/test-backend-static-checks.ts",
@@ -68,6 +76,16 @@ export function findUnsafeDatabaseChildProcessUses(
     && !REDACTED_CHILD_OUTPUT_USE_PATTERN.test(source)
   ) {
     violations.push(`${file} forwards database-oriented child output without redaction`);
+  }
+  if (
+    AGGREGATE_QA_REPORT_RUNNER_PATTERN.test(file)
+    && CHILD_OUTPUT_DATA_LISTENER_PATTERN.test(source)
+    && RAW_CHILD_OUTPUT_CAPTURE_PATTERN.test(source)
+    && !CHUNK_SAFE_REDACTED_CHILD_OUTPUT_USE_PATTERN.test(source)
+  ) {
+    violations.push(
+      `${file} captures database-oriented child output for an aggregate report without chunk-safe redaction`,
+    );
   }
   return violations;
 }

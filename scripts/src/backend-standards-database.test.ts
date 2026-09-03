@@ -68,6 +68,65 @@ test("database harness standards reject direct child processes without safe outp
   assert.deepEqual(findUnsafeDatabaseChildProcessUses(ordinaryChildProcess), []);
 });
 
+test("database harness standards reject aggregate QA reports that capture raw child output", () => {
+  const unsafeAggregateRunner = `
+    import { spawn } from "node:child_process";
+    const environment = { ...process.env, DATABASE_URL: process.env.DATABASE_URL };
+    const child = spawn("pnpm", ["run", "test:database"], {
+      env: environment,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let output = "";
+    child.stdout.on("data", (chunk) => {
+      process.stdout.write(chunk);
+      output += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      process.stderr.write(chunk);
+      output += chunk.toString();
+    });
+  `;
+  const safeAggregateRunner = `
+    import { spawn } from "node:child_process";
+    import { createRedactedDatabaseOutputWriter } from "./safe-child-process-output";
+    const environment = { ...process.env, DATABASE_URL: process.env.DATABASE_URL };
+    let output = "";
+    const writer = createRedactedDatabaseOutputWriter(environment, {
+      write(chunk) {
+        const safeChunk = chunk.toString();
+        process.stdout.write(safeChunk);
+        output = \`\${output}\${safeChunk}\`;
+        return true;
+      },
+    });
+    const child = spawn("pnpm", ["run", "test:database"], {
+      env: environment,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    child.stdout.on("data", (chunk) => writer.write(chunk));
+    child.stderr.on("data", (chunk) => writer.write(chunk));
+    child.once("close", () => writer.flush());
+  `;
+
+  assert.deepEqual(
+    findUnsafeDatabaseChildProcessUses(
+      unsafeAggregateRunner,
+      "scripts/src/run-database-qa-report.ts",
+    ),
+    [
+      "scripts/src/run-database-qa-report.ts forwards database-oriented child output without redaction",
+      "scripts/src/run-database-qa-report.ts captures database-oriented child output for an aggregate report without chunk-safe redaction",
+    ],
+  );
+  assert.deepEqual(
+    findUnsafeDatabaseChildProcessUses(
+      safeAggregateRunner,
+      "scripts/src/run-database-qa-report.ts",
+    ),
+    [],
+  );
+});
+
 async function runDatabaseCommand(
   command: string,
   args: string[],
