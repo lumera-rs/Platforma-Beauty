@@ -9,16 +9,15 @@ import {
 } from "./check-browser-spec-types";
 
 test("browser preflight rejects every spec-local diagnostic but ignores imported source diagnostics", async () => {
-  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-browser-types-"));
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-types-"),
+  );
   try {
     const specRoot = path.join(fixtureRoot, "browser");
     await mkdir(specRoot);
     const modulePath = path.join(fixtureRoot, "helpers.ts");
     const specPath = path.join(specRoot, "broken.spec.ts");
-    await writeFile(
-      modulePath,
-      'export const existingHelper: string = 123;\n',
-    );
+    await writeFile(modulePath, "export const existingHelper: string = 123;\n");
     await writeFile(
       specPath,
       [
@@ -36,7 +35,10 @@ test("browser preflight rejects every spec-local diagnostic but ignores imported
     });
 
     const diagnosticCodes = new Set(diagnostics.map(({ code }) => code));
-    assert.ok(diagnosticCodes.has(2322), "spec-local type mismatch should fail");
+    assert.ok(
+      diagnosticCodes.has(2322),
+      "spec-local type mismatch should fail",
+    );
     assert.ok(diagnosticCodes.has(2304), "unknown identifier should fail");
     assert.ok(diagnosticCodes.has(2307), "nonexistent module should fail");
     assert.ok(
@@ -44,7 +46,9 @@ test("browser preflight rejects every spec-local diagnostic but ignores imported
       "nonexistent named export should fail",
     );
     assert.equal(
-      diagnostics.some((diagnostic) => diagnostic.file?.fileName === modulePath),
+      diagnostics.some(
+        (diagnostic) => diagnostic.file?.fileName === modulePath,
+      ),
       false,
       "imported application source diagnostics should remain outside the gate",
     );
@@ -54,7 +58,9 @@ test("browser preflight rejects every spec-local diagnostic but ignores imported
 });
 
 test("browser preflight rejects recognized runner configs omitted from the browser TypeScript project", async () => {
-  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-browser-roots-"));
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-roots-"),
+  );
   try {
     const browserRoot = path.join(fixtureRoot, "browser");
     const configPath = path.join(fixtureRoot, "playwright.config.ts");
@@ -62,11 +68,16 @@ test("browser preflight rejects recognized runner configs omitted from the brows
       fixtureRoot,
       "playwright.visual.config.ts",
     );
+    const omittedJavaScriptConfigPath = path.join(
+      fixtureRoot,
+      "playwright.mobile.config.mjs",
+    );
     const tsconfigPath = path.join(fixtureRoot, "tsconfig.browser.json");
     await mkdir(browserRoot);
     await writeFile(path.join(browserRoot, "example.spec.ts"), "export {};\n");
     await writeFile(configPath, "export default {};\n");
     await writeFile(omittedConfigPath, "export default {};\n");
+    await writeFile(omittedJavaScriptConfigPath, "export default {};\n");
     await writeFile(
       tsconfigPath,
       JSON.stringify({
@@ -80,14 +91,18 @@ test("browser preflight rejects recognized runner configs omitted from the brows
         scriptsRoot: fixtureRoot,
         configPath: tsconfigPath,
       }),
-      [omittedConfigPath],
+      [omittedJavaScriptConfigPath, omittedConfigPath].sort(),
     );
 
     await writeFile(
       tsconfigPath,
       JSON.stringify({
-        compilerOptions: { noEmit: true },
-        include: ["browser/**/*.ts", "playwright*.config.ts"],
+        compilerOptions: { allowJs: true, checkJs: true, noEmit: true },
+        include: [
+          "browser/**/*.ts",
+          "playwright*.config.ts",
+          "playwright*.config.mjs",
+        ],
       }),
     );
     assert.deepEqual(
@@ -102,13 +117,88 @@ test("browser preflight rejects recognized runner configs omitted from the brows
   }
 });
 
+test("browser preflight checks JavaScript runner config roots but ignores imported application source diagnostics", async () => {
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-js-config-types-"),
+  );
+  try {
+    const modulePath = path.join(fixtureRoot, "application-source.js");
+    const configPath = path.join(fixtureRoot, "playwright.config.js");
+    const tsconfigPath = path.join(fixtureRoot, "tsconfig.browser.json");
+    await writeFile(
+      modulePath,
+      "/** @type {string} */\nexport const applicationValue = 123;\n",
+    );
+    await writeFile(
+      configPath,
+      [
+        'import { applicationValue } from "./application-source.js";',
+        "/** @type {number} */",
+        "const configValue = applicationValue;",
+        "unknownConfigIdentifier();",
+      ].join("\n"),
+    );
+    await writeFile(
+      tsconfigPath,
+      JSON.stringify({
+        compilerOptions: {
+          allowJs: true,
+          checkJs: true,
+          noEmit: true,
+        },
+        include: ["playwright*.config.js"],
+      }),
+    );
+
+    assert.deepEqual(
+      collectUncoveredBrowserRunnerConfigs({
+        scriptsRoot: fixtureRoot,
+        configPath: tsconfigPath,
+      }),
+      [],
+    );
+
+    const diagnostics = collectBrowserSpecDiagnostics({
+      rootNames: [configPath],
+      diagnosticRoot: path.join(fixtureRoot, "browser"),
+    });
+
+    const diagnosticCodes = new Set(diagnostics.map(({ code }) => code));
+    assert.ok(
+      diagnosticCodes.has(2322),
+      "JavaScript config-local type mismatch should fail",
+    );
+    assert.ok(
+      diagnosticCodes.has(2304),
+      "JavaScript config-local unknown identifier should fail",
+    );
+    assert.equal(
+      diagnostics.some(
+        (diagnostic) => diagnostic.file?.fileName === modulePath,
+      ),
+      false,
+      "imported JavaScript application source diagnostics should remain outside the gate",
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
 test("browser preflight rejects every runner config root but ignores imported source diagnostics", async () => {
-  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-browser-config-types-"));
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-config-types-"),
+  );
   try {
     const modulePath = path.join(fixtureRoot, "application-source.ts");
     const configPath = path.join(fixtureRoot, "playwright.config.ts");
-    const additionalConfigPath = path.join(fixtureRoot, "playwright.visual.config.ts");
-    await writeFile(modulePath, "export const applicationValue: string = 123;\n");
+    const additionalConfigPath = path.join(
+      fixtureRoot,
+      "playwright.visual.config.ts",
+    );
+    await writeFile(
+      modulePath,
+      "export const applicationValue: string = 123;\n",
+    );
     await writeFile(
       configPath,
       [
@@ -132,8 +222,14 @@ test("browser preflight rejects every runner config root but ignores imported so
     });
 
     const diagnosticCodes = new Set(diagnostics.map(({ code }) => code));
-    assert.ok(diagnosticCodes.has(2322), "config-local type mismatch should fail");
-    assert.ok(diagnosticCodes.has(2304), "config-local unknown identifier should fail");
+    assert.ok(
+      diagnosticCodes.has(2322),
+      "config-local type mismatch should fail",
+    );
+    assert.ok(
+      diagnosticCodes.has(2304),
+      "config-local unknown identifier should fail",
+    );
     assert.ok(
       diagnostics.some(
         (diagnostic) => diagnostic.file?.fileName === additionalConfigPath,
@@ -141,7 +237,9 @@ test("browser preflight rejects every runner config root but ignores imported so
       "a newly added runner config root should fail without a separate allowlist update",
     );
     assert.equal(
-      diagnostics.some((diagnostic) => diagnostic.file?.fileName === modulePath),
+      diagnostics.some(
+        (diagnostic) => diagnostic.file?.fileName === modulePath,
+      ),
       false,
       "application source imported by config should remain outside the gate",
     );

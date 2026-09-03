@@ -28,7 +28,7 @@ interface BrowserProgram {
 }
 
 const browserRunnerConfigPattern =
-  /^playwright(?:\.[^.]+)*\.config\.(?:ts|tsx|mts|cts)$/;
+  /^playwright(?:\.[^.]+)*\.config\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
 
 function loadBrowserProgram(
   rootNames?: string[],
@@ -76,7 +76,7 @@ export function collectUncoveredBrowserRunnerConfigs(
   return ts.sys
     .readDirectory(
       root,
-      [".ts", ".tsx", ".mts", ".cts"],
+      [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"],
       ["**/node_modules/**"],
       ["**/playwright*.config.*"],
     )
@@ -106,19 +106,17 @@ export function collectBrowserSpecDiagnostics(
       ),
   );
 
-  return ts
-    .getPreEmitDiagnostics(program)
-    .filter((diagnostic) => {
-      if (!diagnostic.file) {
-        return false;
-      }
-      const fileName = path.resolve(diagnostic.file.fileName);
-      return (
-        fileName === diagnosticRoot
-        || fileName.startsWith(diagnosticPrefix)
-        || diagnosticFiles.has(fileName)
-      );
-    });
+  return ts.getPreEmitDiagnostics(program).filter((diagnostic) => {
+    if (!diagnostic.file) {
+      return false;
+    }
+    const fileName = path.resolve(diagnostic.file.fileName);
+    return (
+      fileName === diagnosticRoot ||
+      fileName.startsWith(diagnosticPrefix) ||
+      diagnosticFiles.has(fileName)
+    );
+  });
 }
 
 export function runBrowserSpecTypeCheck(): void {
@@ -134,13 +132,18 @@ export function runBrowserSpecTypeCheck(): void {
 
   const diagnostics = collectBrowserSpecDiagnostics();
   if (diagnostics.length > 0) {
-    console.error(ts.formatDiagnosticsWithColorAndContext(diagnostics, formatHost));
+    console.error(
+      ts.formatDiagnosticsWithColorAndContext(diagnostics, formatHost),
+    );
     throw new Error("Browser spec type checks failed.");
   }
   console.info("Browser spec types are valid.");
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
   try {
     runBrowserSpecTypeCheck();
   } catch (error) {
