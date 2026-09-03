@@ -214,6 +214,77 @@ test("database harness standards reject disguised aggregate child-output collect
   );
 });
 
+test("database harness standards follow deeply nested collectors and multi-step aliases", () => {
+  const nestedAliasedRunner = `
+    import { spawn } from "node:child_process";
+    const environment = { DATABASE_URL: process.env.DATABASE_URL };
+    const child = spawn("pnpm", ["test"], { env: environment, stdio: ["ignore", "pipe", "pipe"] });
+    const firstStream = child.stdout;
+    let secondStream;
+    secondStream = firstStream;
+    let report = "";
+    function collect(chunk) {
+      if (chunk.length) {
+        try {
+          {
+            const firstAlias = chunk;
+            const secondAlias = firstAlias;
+            report += secondAlias.toString();
+          }
+        } finally {
+          process.stdout.write(chunk);
+        }
+      }
+    }
+    const firstCollector = collect;
+    let secondCollector;
+    secondCollector = firstCollector;
+    secondStream.on("data", secondCollector);
+  `;
+  const safeNestedAliasedRunner = `
+    import { spawn } from "node:child_process";
+    import { createRedactedDatabaseOutputWriter } from "./safe-child-process-output";
+    const environment = { DATABASE_URL: process.env.DATABASE_URL };
+    const child = spawn("pnpm", ["test"], { env: environment, stdio: ["ignore", "pipe", "pipe"] });
+    const firstStream = child.stderr;
+    let secondStream;
+    secondStream = firstStream;
+    const writer = createRedactedDatabaseOutputWriter(environment, process.stderr);
+    function collect(chunk) {
+      if (chunk.length) {
+        {
+          const firstAlias = chunk;
+          const secondAlias = firstAlias;
+          writer.write(secondAlias);
+        }
+      }
+    }
+    const firstCollector = collect;
+    let secondCollector;
+    secondCollector = firstCollector;
+    secondStream.on("data", secondCollector);
+    child.once("close", () => writer.flush());
+  `;
+  const violation = [
+    "scripts/src/run-deep-database-qa-report.ts captures database-oriented child output for an aggregate report without chunk-safe redaction",
+  ];
+
+  assert.deepEqual(
+    findUnsafeDatabaseChildProcessUses(
+      nestedAliasedRunner,
+      "scripts/src/run-deep-database-qa-report.ts",
+    ),
+    violation,
+  );
+  assert.deepEqual(
+    findUnsafeDatabaseChildProcessUses(
+      safeNestedAliasedRunner,
+      "scripts/src/run-deep-database-qa-report.ts",
+    ),
+    [],
+  );
+});
+
 async function runDatabaseCommand(
   command: string,
   args: string[],

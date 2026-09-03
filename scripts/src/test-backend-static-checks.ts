@@ -19,6 +19,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -43,74 +44,162 @@ const RAW_CHILD_OUTPUT_FORWARDING_PATTERN =
   /(?:stdout|stderr)(?:\?)*\.(?:on\s*\(\s*["']data["']|pipe\s*\(\s*process\.(?:stdout|stderr))[\s\S]{0,500}process\.(?:stdout|stderr)\.write\s*\(/;
 const REDACTED_CHILD_OUTPUT_USE_PATTERN =
   /\b(?:pipeRedactedDatabaseOutput|redactDatabaseCommandOutput)\s*\(/;
-const CHUNK_SAFE_REDACTED_CHILD_OUTPUT_USE_PATTERN =
-  /\b(?:createRedactedDatabaseOutputWriter|pipeRedactedDatabaseOutput)\s*\(/;
 const AGGREGATE_QA_REPORT_RUNNER_PATTERN =
   /(?:^|\/)run-[^/]*(?:qa|report)[^/]*\.tsx?$/i;
-const CHILD_OUTPUT_DATA_LISTENER_PATTERN =
-  /(?:stdout|stderr)(?:\?)*\.on\s*\(\s*["']data["']/;
-const RAW_CHILD_OUTPUT_CAPTURE_PATTERN =
-  /(?:\+=\s*chunk\b|=\s*`\$\{[^}]+\}\$\{chunk\}`|\.(?:push|write)\s*\(\s*chunk\b)/;
 const STATIC_CHECK_EXCLUSIONS = new Set([
   "scripts/src/backend-standards-database.test.ts",
   "scripts/src/test-backend-static-checks.ts",
 ]);
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function hasRawAggregateChildOutputCapture(source: string): boolean {
-  const streamNames = new Set(["stdout", "stderr"]);
-  const destructuringPattern = /\b(?:const|let|var)\s*\{([^}]+)\}\s*=\s*[\w$.]+/g;
-  for (const match of source.matchAll(destructuringPattern)) {
-    for (const binding of match[1]!.split(",")) {
-      const aliasMatch = binding.trim().match(/^(stdout|stderr)\s*:\s*([A-Za-z_$][\w$]*)$/);
-      if (aliasMatch) streamNames.add(aliasMatch[2]!);
-    }
-  }
+  const sourceFile = ts.createSourceFile(
+    "aggregate-runner.ts",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const bindings = new Map<string, ts.Node>();
+  const functions = new Map<string, ts.FunctionLikeDeclaration>();
 
-  const listenerCallbacks: string[] = [];
-  for (const streamName of streamNames) {
-    const listenerPattern = new RegExp(
-      `\\b${escapeRegExp(streamName)}(?:\\?)*\\.on\\s*\\(\\s*["']data["']\\s*,\\s*([A-Za-z_$][\\w$]*)`,
-      "g",
+  const indexBindings = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && node.initializer) {
+      if (ts.isIdentifier(node.name)) {
+        bindings.set(node.name.text, node.initializer);
+        if (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer)) {
+          functions.set(node.name.text, node.initializer);
+        }
+      } else if (ts.isObjectBindingPattern(node.name)) {
+        for (const element of node.name.elements) {
+          if (!ts.isIdentifier(element.name)) continue;
+          const property = element.propertyName ?? element.name;
+          if (!ts.isIdentifier(property)) continue;
+          bindings.set(
+            element.name.text,
+            ts.factory.createPropertyAccessExpression(node.initializer, property.text),
+          );
+        }
+      }
+    } else if (ts.isFunctionDeclaration(node) && node.name) {
+      functions.set(node.name.text, node);
+    } else if (
+      ts.isBinaryExpression(node)
+      && node.operatorToken.kind === ts.SyntaxKind.EqualsToken
+      && ts.isIdentifier(node.left)
+    ) {
+      bindings.set(node.left.text, node.right);
+    }
+    ts.forEachChild(node, indexBindings);
+  };
+  indexBindings(sourceFile);
+
+  const resolve = (node: ts.Expression, seen = new Set<string>()): ts.Expression => {
+    if (!ts.isIdentifier(node) || seen.has(node.text)) return node;
+    const target = bindings.get(node.text);
+    if (!target || !ts.isExpression(target)) return node;
+    seen.add(node.text);
+    return resolve(target, seen);
+  };
+  const isChildOutputStream = (node: ts.Expression): boolean => {
+    const resolved = resolve(node);
+    return ts.isPropertyAccessExpression(resolved)
+      && (resolved.name.text === "stdout" || resolved.name.text === "stderr");
+  };
+  const resolveCallback = (node: ts.Expression): ts.FunctionLikeDeclaration | undefined => {
+    const resolved = resolve(node);
+    if (ts.isArrowFunction(resolved) || ts.isFunctionExpression(resolved)) return resolved;
+    return ts.isIdentifier(resolved) ? functions.get(resolved.text) : undefined;
+  };
+  const isRedactionWriter = (node: ts.Expression): boolean => {
+    const resolved = resolve(node);
+    return ts.isCallExpression(resolved)
+      && ts.isIdentifier(resolved.expression)
+      && resolved.expression.text === "createRedactedDatabaseOutputWriter";
+  };
+
+  const callbackCapturesRawOutput = (callback: ts.FunctionLikeDeclaration): boolean => {
+    const tainted = new Set(
+      callback.parameters
+        .map((parameter) => parameter.name)
+        .filter(ts.isIdentifier)
+        .map((parameter) => parameter.text),
     );
-    for (const match of source.matchAll(listenerPattern)) {
-      listenerCallbacks.push(match[1]!);
+    let violation = false;
+    const containsTaint = (node: ts.Node): boolean => {
+      let found = false;
+      const visit = (child: ts.Node): void => {
+        if (ts.isIdentifier(child) && tainted.has(child.text)) found = true;
+        if (!found) ts.forEachChild(child, visit);
+      };
+      visit(node);
+      return found;
+    };
+    const inspect = (node: ts.Node): void => {
+      if (violation) return;
+      if (
+        ts.isVariableDeclaration(node)
+        && ts.isIdentifier(node.name)
+        && node.initializer
+        && containsTaint(node.initializer)
+      ) {
+        tainted.add(node.name.text);
+      } else if (ts.isBinaryExpression(node) && containsTaint(node.right)) {
+        if (node.operatorToken.kind === ts.SyntaxKind.PlusEqualsToken) {
+          violation = true;
+          return;
+        }
+        if (
+          node.operatorToken.kind === ts.SyntaxKind.EqualsToken
+          && ts.isIdentifier(node.left)
+        ) {
+          if (ts.isIdentifier(node.right) && tainted.has(node.right.text)) {
+            tainted.add(node.left.text);
+          } else {
+            violation = true;
+            return;
+          }
+        }
+      } else if (
+        ts.isCallExpression(node)
+        && ts.isPropertyAccessExpression(node.expression)
+        && node.arguments.some(containsTaint)
+      ) {
+        const method = node.expression.name.text;
+        const receiver = node.expression.expression;
+        if (
+          (method === "push" || method === "write")
+          && !(method === "write" && isRedactionWriter(receiver))
+        ) {
+          violation = true;
+          return;
+        }
+      }
+      ts.forEachChild(node, inspect);
+    };
+    if (callback.body) inspect(callback.body);
+    return violation;
+  };
+
+  let violation = false;
+  const inspectListeners = (node: ts.Node): void => {
+    if (
+      !violation
+      && ts.isCallExpression(node)
+      && ts.isPropertyAccessExpression(node.expression)
+      && node.expression.name.text === "on"
+      && isChildOutputStream(node.expression.expression)
+      && node.arguments[0]
+      && ts.isStringLiteralLike(node.arguments[0])
+      && node.arguments[0].text === "data"
+      && node.arguments[1]
+    ) {
+      const callback = resolveCallback(node.arguments[1]);
+      violation = callback ? callbackCapturesRawOutput(callback) : false;
     }
-  }
-
-  if (
-    CHILD_OUTPUT_DATA_LISTENER_PATTERN.test(source)
-    && RAW_CHILD_OUTPUT_CAPTURE_PATTERN.test(source)
-  ) {
-    return true;
-  }
-
-  for (const callbackName of listenerCallbacks) {
-    const escapedName = escapeRegExp(callbackName);
-    const callbackPatterns = [
-      new RegExp(
-        `\\bfunction\\s+${escapedName}\\s*\\(\\s*([A-Za-z_$][\\w$]*)[^)]*\\)\\s*\\{([\\s\\S]{0,1000}?)\\}`,
-      ),
-      new RegExp(
-        `\\b(?:const|let|var)\\s+${escapedName}\\s*=\\s*(?:async\\s*)?\\(?\\s*([A-Za-z_$][\\w$]*)[^=()]*\\)?\\s*=>\\s*\\{([\\s\\S]{0,1000}?)\\}`,
-      ),
-    ];
-    for (const callbackPattern of callbackPatterns) {
-      const callbackMatch = callbackPattern.exec(source);
-      if (!callbackMatch) continue;
-      const parameter = escapeRegExp(callbackMatch[1]!);
-      const body = callbackMatch[2]!;
-      const rawCapturePattern = new RegExp(
-        `(?:\\+=\\s*${parameter}\\b|=\\s*\`\\$\\{[^}]+\\}\\$\\{${parameter}(?:\\.[^}]*)?\\}\`|\\.(?:push|write)\\s*\\(\\s*${parameter}\\b)`,
-      );
-      if (rawCapturePattern.test(body)) return true;
-    }
-  }
-
-  return false;
+    if (!violation) ts.forEachChild(node, inspectListeners);
+  };
+  inspectListeners(sourceFile);
+  return violation;
 }
 
 export function findUnsafeDatabaseChildProcessUses(
@@ -137,7 +226,6 @@ export function findUnsafeDatabaseChildProcessUses(
   if (
     AGGREGATE_QA_REPORT_RUNNER_PATTERN.test(file)
     && hasRawAggregateChildOutputCapture(source)
-    && !CHUNK_SAFE_REDACTED_CHILD_OUTPUT_USE_PATTERN.test(source)
   ) {
     violations.push(
       `${file} captures database-oriented child output for an aggregate report without chunk-safe redaction`,
