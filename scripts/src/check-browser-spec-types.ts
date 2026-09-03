@@ -150,7 +150,10 @@ function resolveRelativeImport(
     );
     const candidates = browserFileExtensions.includes(path.extname(unresolved))
       ? [unresolved]
-      : browserFileExtensions.map((extension) => unresolved + extension);
+      : browserFileExtensions.flatMap((extension) => [
+          unresolved + extension,
+          path.join(unresolved, `index${extension}`),
+        ]);
     const importedFileName = candidates.find(ts.sys.fileExists);
     if (!importedFileName) {
       return undefined;
