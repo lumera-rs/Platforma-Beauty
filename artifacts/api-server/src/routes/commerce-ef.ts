@@ -406,7 +406,6 @@ function adminRmaListDto(row: Awaited<ReturnType<typeof adminRmaRows>>[number]) 
   return {
     ...row.rma,
     target,
-    orderId: row.rma.retailOrderId ?? row.rma.orderId!,
     owner: target === "b2c"
       ? row.requester
       : {

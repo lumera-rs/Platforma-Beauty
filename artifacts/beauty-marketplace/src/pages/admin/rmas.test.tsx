@@ -14,13 +14,23 @@ const baseRma = {
   status: "RECEIVED",
   createdAt: "2026-09-03T08:00:00.000Z",
   updatedAt: "2026-09-03T08:00:00.000Z",
-  target: "b2c",
   owner: {
     firstName: "Milica",
     lastName: "Jović",
     email: "milica@example.test",
   },
-} satisfies Omit<AdminRmaListItem, "id" | "orderId" | "orderItemId" | "retailOrderId" | "retailOrderItemId">;
+} satisfies Omit<AdminRmaListItem, "id" | "orderId" | "orderItemId" | "retailOrderId" | "retailOrderItemId" | "target">;
+
+// @ts-expect-error A standard order cannot carry the retail market label.
+const contradictoryStandardRma: AdminRmaListItem = {
+  ...baseRma, id: "standard-rma", target: "b2c", orderId: "standard-order", orderItemId: "standard-item", retailOrderId: null, retailOrderItemId: null,
+};
+// @ts-expect-error A retail order cannot carry the standard market label.
+const contradictoryRetailRma: AdminRmaListItem = {
+  ...baseRma, id: "retail-rma", target: "b2b", orderId: null, orderItemId: null, retailOrderId: "retail-order", retailOrderItemId: "retail-item",
+};
+void contradictoryStandardRma;
+void contradictoryRetailRma;
 
 function listRma(
   id: string,
@@ -28,8 +38,8 @@ function listRma(
   retailOrderId: string | null,
 ): AdminRmaListItem {
   return orderId
-    ? { ...baseRma, id, orderId, orderItemId: `${id}-item`, retailOrderId: null, retailOrderItemId: null }
-    : { ...baseRma, id, orderId: null, orderItemId: null, retailOrderId: retailOrderId!, retailOrderItemId: `${id}-item` };
+    ? { ...baseRma, id, target: "b2b", orderId, orderItemId: `${id}-item`, retailOrderId: null, retailOrderItemId: null }
+    : { ...baseRma, id, target: "b2c", orderId: null, orderItemId: null, retailOrderId: retailOrderId!, retailOrderItemId: `${id}-item` };
 }
 
 function detailRma(rma: AdminRmaListItem): AdminRmaDetail {

@@ -166,7 +166,6 @@ export * from './adminRmaAuditEntry';
 export * from './adminRmaDetail';
 export * from './adminRmaItem';
 export * from './adminRmaListItem';
-export * from './adminRmaListItemTarget';
 export * from './adminRmaOwner';
 export * from './adminRmaStatusResult';
 export * from './adminSalon';

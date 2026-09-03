@@ -5,11 +5,14 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
-import type { AdminRmaListItemTarget } from './adminRmaListItemTarget';
 import type { AdminRmaOwner } from './adminRmaOwner';
-import type { RmaRecord } from './rmaRecord';
+import type { RetailRmaRecord } from './retailRmaRecord';
+import type { StandardRmaRecord } from './standardRmaRecord';
 
-export type AdminRmaListItem = RmaRecord & {
-  target: AdminRmaListItemTarget;
+export type AdminRmaListItem = StandardRmaRecord & {
+  target: 'b2b';
+  owner: AdminRmaOwner;
+} | RetailRmaRecord & {
+  target: 'b2c';
   owner: AdminRmaOwner;
 };

@@ -11,6 +11,7 @@ import {
   retailProductReviewAttachmentsTable, retailProductReviewsTable, rmaAttachmentsTable, rmaStatusHistoryTable, rmasTable, salonsTable, shopSettingsTable,
   shoppingCartItemsTable, shoppingCartsTable, suppliersTable, usersTable,
 } from "@workspace/db";
+import { AdminGetRmaResponse, AdminListRmasResponse } from "@workspace/api-zod";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureBusinessGrowthSchema } from "./business-growth-schema";
@@ -376,13 +377,28 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
       },
     );
     const adminCookie = await cookie(admin);
-    const adminRows = await (await api("/admin/rmas", adminCookie)).json() as Array<{ id: string; target: string; orderId: string; owner: Record<string, unknown> }>;
-    assert.equal(adminRows.find((row) => row.id === rma.id)?.target, "b2c"); assert.equal(adminRows.find((row) => row.id === rma.id)?.orderId, retailOrderId);
-    assert.equal(adminRows.find((row) => row.id === b2bRma.id)?.target, "b2b"); assert.equal(adminRows.find((row) => row.id === b2bRma.id)?.owner.businessName, marker);
-    const retailDetail = await (await api(`/admin/rmas/${rma.id}`, adminCookie)).json() as { items: Array<{ productName: string; quantity: number }>; privatePhotos: string[]; auditTrail: Array<{ action: string }> };
+    const adminRowsBody = await (await api("/admin/rmas", adminCookie)).json();
+    const adminRowsResult = AdminListRmasResponse.safeParse(adminRowsBody);
+    assert.equal(adminRowsResult.success, true, adminRowsResult.success ? undefined : adminRowsResult.error.message);
+    const adminRows = adminRowsBody as Array<{ id: string; target: string; orderId: string | null; retailOrderId: string | null; owner: Record<string, unknown> }>;
+    const retailAdminRow = adminRows.find((row) => row.id === rma.id)!;
+    const b2bAdminRow = adminRows.find((row) => row.id === b2bRma.id)!;
+    assert.equal(retailAdminRow.target, "b2c"); assert.equal(retailAdminRow.orderId, null); assert.equal(retailAdminRow.retailOrderId, retailOrderId);
+    assert.equal(b2bAdminRow.target, "b2b"); assert.equal(b2bAdminRow.owner.businessName, marker);
+    assert.equal(AdminListRmasResponse.safeParse([{ ...retailAdminRow, target: "b2b" }]).success, false);
+    assert.equal(AdminListRmasResponse.safeParse([{ ...b2bAdminRow, target: "b2c" }]).success, false);
+    const retailDetailBody = await (await api(`/admin/rmas/${rma.id}`, adminCookie)).json();
+    const retailDetailResult = AdminGetRmaResponse.safeParse(retailDetailBody);
+    assert.equal(retailDetailResult.success, true, retailDetailResult.success ? undefined : retailDetailResult.error.message);
+    assert.equal(AdminGetRmaResponse.safeParse({ ...(retailDetailBody as object), target: "b2b" }).success, false);
+    const retailDetail = retailDetailBody as { items: Array<{ productName: string; quantity: number }>; privatePhotos: string[]; auditTrail: Array<{ action: string }> };
     assert.deepEqual(retailDetail.items, [{ orderItemId: retailItemId, productName: marker, quantity: 1 }]);
     assert.deepEqual(retailDetail.privatePhotos, [`/api/media/${assetId}`]); assert.match(retailDetail.auditTrail[0]!.action, /RECEIVED/);
-    const b2bDetail = await (await api(`/admin/rmas/${b2bRma.id}`, adminCookie)).json() as { items: Array<{ productName: string }> };
+    const b2bDetailBody = await (await api(`/admin/rmas/${b2bRma.id}`, adminCookie)).json();
+    const b2bDetailResult = AdminGetRmaResponse.safeParse(b2bDetailBody);
+    assert.equal(b2bDetailResult.success, true, b2bDetailResult.success ? undefined : b2bDetailResult.error.message);
+    assert.equal(AdminGetRmaResponse.safeParse({ ...(b2bDetailBody as object), target: "b2c" }).success, false);
+    const b2bDetail = b2bDetailBody as { items: Array<{ productName: string }> };
     assert.equal(b2bDetail.items[0]?.productName, marker);
     assert.equal((await api(`/admin/rmas/${rma.id}/status`, adminCookie, { method: "PATCH", body: JSON.stringify({ status: "RECEIVED" }) })).status, 200);
     assert.equal((await db.select().from(emailDeliveriesTable).where(eq(emailDeliveriesTable.eventKey, `rma:${rma.id}:status:RECEIVED`))).length, 0);

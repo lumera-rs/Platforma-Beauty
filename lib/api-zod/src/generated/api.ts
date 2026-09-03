@@ -32094,6 +32094,15 @@ export const AdminListRmasResponseItem = zod.union([zod.object({
   "orderItemId": zod.string().uuid(),
   "retailOrderId": zod.null(),
   "retailOrderItemId": zod.null()
+})).and(zod.object({
+  "target": zod.literal("b2b"),
+  "owner": zod.object({
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "businessName": zod.string().nullish(),
+  "pib": zod.string().nullish(),
+  "email": zod.string()
+})
 })),zod.object({
   "id": zod.string().uuid(),
   "rmaNumber": zod.string(),
@@ -32109,8 +32118,8 @@ export const AdminListRmasResponseItem = zod.union([zod.object({
   "orderItemId": zod.null(),
   "retailOrderId": zod.string().uuid(),
   "retailOrderItemId": zod.string().uuid()
-}))]).and(zod.object({
-  "target": zod.enum(['b2b', 'b2c']),
+})).and(zod.object({
+  "target": zod.literal("b2c"),
   "owner": zod.object({
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),
@@ -32118,7 +32127,7 @@ export const AdminListRmasResponseItem = zod.union([zod.object({
   "pib": zod.string().nullish(),
   "email": zod.string()
 })
-}))
+}))])
 export const AdminListRmasResponse = zod.array(AdminListRmasResponseItem)
 
 
@@ -32149,6 +32158,15 @@ export const AdminGetRmaResponse = zod.union([zod.object({
   "orderItemId": zod.string().uuid(),
   "retailOrderId": zod.null(),
   "retailOrderItemId": zod.null()
+})).and(zod.object({
+  "target": zod.literal("b2b"),
+  "owner": zod.object({
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "businessName": zod.string().nullish(),
+  "pib": zod.string().nullish(),
+  "email": zod.string()
+})
 })),zod.object({
   "id": zod.string().uuid(),
   "rmaNumber": zod.string(),
@@ -32164,8 +32182,8 @@ export const AdminGetRmaResponse = zod.union([zod.object({
   "orderItemId": zod.null(),
   "retailOrderId": zod.string().uuid(),
   "retailOrderItemId": zod.string().uuid()
-}))]).and(zod.object({
-  "target": zod.enum(['b2b', 'b2c']),
+})).and(zod.object({
+  "target": zod.literal("b2c"),
   "owner": zod.object({
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),
@@ -32173,7 +32191,7 @@ export const AdminGetRmaResponse = zod.union([zod.object({
   "pib": zod.string().nullish(),
   "email": zod.string()
 })
-})).and(zod.object({
+}))]).and(zod.object({
   "items": zod.array(zod.object({
   "orderItemId": zod.string().uuid(),
   "productName": zod.string(),

@@ -60,16 +60,11 @@ export interface AdminRmaOwner {
   email: string;
 }
 
-export type AdminRmaListItemTarget = typeof AdminRmaListItemTarget[keyof typeof AdminRmaListItemTarget];
-
-
-export const AdminRmaListItemTarget = {
-  b2b: 'b2b',
-  b2c: 'b2c',
-} as const;
-
-export type AdminRmaListItem = RmaRecord & {
-  target: AdminRmaListItemTarget;
+export type AdminRmaListItem = StandardRmaRecord & {
+  target: 'b2b';
+  owner: AdminRmaOwner;
+} | RetailRmaRecord & {
+  target: 'b2c';
   owner: AdminRmaOwner;
 };
 

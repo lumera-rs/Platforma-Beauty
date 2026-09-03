@@ -9864,13 +9864,21 @@ components:
         pib: { type: ["string", "null"] }
         email: { type: string }
     AdminRmaListItem:
-      allOf:
-        - { $ref: "#/components/schemas/RmaRecord" }
-        - type: object
-          required: [target, owner]
-          properties:
-            target: { type: string, enum: [b2b, b2c] }
-            owner: { $ref: "#/components/schemas/AdminRmaOwner" }
+      oneOf:
+        - allOf:
+            - { $ref: "#/components/schemas/StandardRmaRecord" }
+            - type: object
+              required: [target, owner]
+              properties:
+                target: { type: string, const: b2b }
+                owner: { $ref: "#/components/schemas/AdminRmaOwner" }
+        - allOf:
+            - { $ref: "#/components/schemas/RetailRmaRecord" }
+            - type: object
+              required: [target, owner]
+              properties:
+                target: { type: string, const: b2c }
+                owner: { $ref: "#/components/schemas/AdminRmaOwner" }
     AdminRmaItem:
       type: object
       required: [orderItemId, productName, quantity]
