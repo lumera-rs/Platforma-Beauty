@@ -624,6 +624,119 @@ test("browser preflight resolves a simple package exports root and checks only s
   }
 });
 
+test("browser preflight resolves an exact static package exports subpath and checks only its consumed target", async () => {
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-package-subpath-"),
+  );
+  try {
+    const browserRoot = path.join(fixtureRoot, "browser");
+    const sharedConfigRoot = path.join(fixtureRoot, "playwright.shared");
+    const sharedConfigPath = path.join(sharedConfigRoot, "playwright.ts");
+    const unconsumedPath = path.join(sharedConfigRoot, "application.ts");
+    const configPath = path.join(fixtureRoot, "playwright.config.ts");
+    await mkdir(browserRoot);
+    await mkdir(sharedConfigRoot);
+    await writeFile(
+      path.join(sharedConfigRoot, "package.json"),
+      JSON.stringify({
+        exports: {
+          ".": "./index.ts",
+          "./playwright": "./playwright.ts",
+          "./application": "./application.ts",
+        },
+      }),
+    );
+    await writeFile(
+      path.join(sharedConfigRoot, "index.ts"),
+      'export const root = { testDir: "./wrong" };\n',
+    );
+    await writeFile(
+      sharedConfigPath,
+      [
+        'export const shared = { testDir: "../browser" };',
+        "unknownSharedConfigIdentifier();",
+      ].join("\n"),
+    );
+    await writeFile(
+      unconsumedPath,
+      "export const applicationValue: string = 123;\n",
+    );
+    await writeFile(
+      configPath,
+      [
+        'import { shared } from "./playwright.shared/playwright";',
+        'import { applicationValue } from "./playwright.shared/application";',
+        "void applicationValue;",
+        "export default { ...shared };",
+      ].join("\n"),
+    );
+
+    const diagnostics = collectBrowserSpecDiagnostics({
+      rootNames: [configPath],
+      diagnosticRoot: browserRoot,
+    });
+
+    assert.equal(
+      diagnostics.some(
+        (diagnostic) => diagnostic.file?.fileName === sharedConfigPath,
+      ),
+      true,
+      "the exact statically consumed exports subpath should fail the gate",
+    );
+    assert.equal(
+      diagnostics.some(
+        (diagnostic) => diagnostic.file?.fileName === unconsumedPath,
+      ),
+      false,
+      "an imported but statically unconsumed exports subpath should stay excluded",
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("browser preflight fails closed for non-static package export subpaths", async () => {
+  const cases: Array<[string, Record<string, unknown>]> = [
+    ["conditional", { "./playwright": { import: "./playwright.ts" } }],
+    ["wildcard", { "./*": "./playwright.ts" }],
+    ["array", { "./playwright": ["./playwright.ts"] }],
+    ["runtime-dependent", { "./playwright": null }],
+  ];
+
+  for (const [name, exportsValue] of cases) {
+    const fixtureRoot = await mkdtemp(
+      path.join(os.tmpdir(), `lumera-browser-${name}-subpath-`),
+    );
+    try {
+      const sharedConfigRoot = path.join(fixtureRoot, "playwright.shared");
+      await mkdir(sharedConfigRoot);
+      await writeFile(
+        path.join(sharedConfigRoot, "package.json"),
+        JSON.stringify({ exports: exportsValue }),
+      );
+      await writeFile(
+        path.join(sharedConfigRoot, "playwright.ts"),
+        'export const shared = { testDir: "../browser" };\n',
+      );
+      await writeFile(
+        path.join(fixtureRoot, "playwright.config.ts"),
+        [
+          'import { shared } from "./playwright.shared/playwright";',
+          "export default { ...shared };",
+        ].join("\n"),
+      );
+
+      assert.throws(
+        () => collectBrowserTestDirectories({ scriptsRoot: fixtureRoot }),
+        /statically resolvable.*unresolvable identifier shared.*playwright\.config\.ts/,
+        `${name} subpath exports should fail closed`,
+      );
+    } finally {
+      await rm(fixtureRoot, { recursive: true, force: true });
+    }
+  }
+});
+
 test("browser preflight fails closed for conditional package export maps", async () => {
   const fixtureRoot = await mkdtemp(
     path.join(os.tmpdir(), "lumera-browser-conditional-exports-"),

@@ -120,11 +120,19 @@ interface PackageEntryResolution {
   blocksFallback: boolean;
 }
 
-function resolvePackageEntry(directory: string): PackageEntryResolution {
-  const manifestPath = path.join(directory, "package.json");
-  const manifestText = ts.sys.readFile(manifestPath);
-  if (manifestText === undefined) {
-    return { blocksFallback: false };
+function resolvePackageEntry(importPath: string): PackageEntryResolution {
+  let directory = importPath;
+  let manifestText: string | undefined;
+  while (true) {
+    manifestText = ts.sys.readFile(path.join(directory, "package.json"));
+    if (manifestText !== undefined) {
+      break;
+    }
+    const parent = path.dirname(directory);
+    if (parent === directory) {
+      return { blocksFallback: false };
+    }
+    directory = parent;
   }
   let manifest: unknown;
   try {
@@ -143,24 +151,31 @@ function resolvePackageEntry(directory: string): PackageEntryResolution {
     packageManifest,
     "exports",
   );
+  const relativeSubpath = path.relative(directory, importPath);
+  const exportKey =
+    relativeSubpath === ""
+      ? "."
+      : `./${relativeSubpath.split(path.sep).join("/")}`;
   let entry: unknown;
   if (hasExports) {
     const exportsValue = packageManifest.exports;
-    if (typeof exportsValue === "string") {
+    if (exportKey === "." && typeof exportsValue === "string") {
       entry = exportsValue;
     } else if (
       exportsValue &&
       typeof exportsValue === "object" &&
       !Array.isArray(exportsValue) &&
-      Object.keys(exportsValue).length === 1 &&
-      typeof (exportsValue as { "."?: unknown })["."] === "string"
+      Object.prototype.hasOwnProperty.call(exportsValue, exportKey) &&
+      typeof (exportsValue as Record<string, unknown>)[exportKey] === "string"
     ) {
-      entry = (exportsValue as { ".": string })["."];
+      entry = (exportsValue as Record<string, string>)[exportKey];
     } else {
       return { blocksFallback: true };
     }
-  } else {
+  } else if (exportKey === ".") {
     entry = packageManifest.main;
+  } else {
+    return { blocksFallback: false };
   }
   if (typeof entry !== "string" || !browserFileExtensions.includes(path.extname(entry))) {
     return { blocksFallback: hasExports };
@@ -215,15 +230,17 @@ function resolveRelativeImport(
     const packageEntry = resolvePackageEntry(unresolved);
     const candidates = browserFileExtensions.includes(path.extname(unresolved))
       ? [unresolved]
-      : [
-          ...browserFileExtensions.map((extension) => unresolved + extension),
-          packageEntry.entry,
-          ...(packageEntry.blocksFallback
-            ? []
-            : browserFileExtensions.map((extension) =>
-                path.join(unresolved, `index${extension}`),
-              )),
-        ].filter((candidate): candidate is string => candidate !== undefined);
+      : packageEntry.blocksFallback
+        ? [packageEntry.entry].filter(
+            (candidate): candidate is string => candidate !== undefined,
+          )
+        : [
+            ...browserFileExtensions.map((extension) => unresolved + extension),
+            packageEntry.entry,
+            ...browserFileExtensions.map((extension) =>
+              path.join(unresolved, `index${extension}`),
+            ),
+          ].filter((candidate): candidate is string => candidate !== undefined);
     const importedFileName = candidates.find(ts.sys.fileExists);
     if (!importedFileName) {
       return undefined;
