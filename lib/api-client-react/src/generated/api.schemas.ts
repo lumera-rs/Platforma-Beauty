@@ -5,6 +5,50 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+export type AdminPriceInquiryStatus = typeof AdminPriceInquiryStatus[keyof typeof AdminPriceInquiryStatus];
+
+
+export const AdminPriceInquiryStatus = {
+  NEW: 'NEW',
+  CONTACTED: 'CONTACTED',
+  CLOSED: 'CLOSED',
+} as const;
+
+export interface AdminPriceInquiry {
+  id: string;
+  supplierId: string;
+  productId: string;
+  productName: string;
+  supplierName: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  message: string;
+  status: AdminPriceInquiryStatus;
+  /** @nullable */
+  internalNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type AdminPriceInquiryUpdateStatus = typeof AdminPriceInquiryUpdateStatus[keyof typeof AdminPriceInquiryUpdateStatus];
+
+
+export const AdminPriceInquiryUpdateStatus = {
+  NEW: 'NEW',
+  CONTACTED: 'CONTACTED',
+  CLOSED: 'CLOSED',
+} as const;
+
+export interface AdminPriceInquiryUpdate {
+  status?: AdminPriceInquiryUpdateStatus;
+  /**
+     * @maxLength 5000
+     * @nullable
+     */
+  internalNote?: string | null;
+}
+
 export type RmaRecordBaseStatus = typeof RmaRecordBaseStatus[keyof typeof RmaRecordBaseStatus];
 
 
@@ -16614,32 +16658,6 @@ export type CreatePriceInquiry201 = {
   id: string;
   status: CreatePriceInquiry201Status;
   createdAt: string;
-};
-
-export type AdminListPriceInquiries200ItemStatus = typeof AdminListPriceInquiries200ItemStatus[keyof typeof AdminListPriceInquiries200ItemStatus];
-
-
-export const AdminListPriceInquiries200ItemStatus = {
-  NEW: 'NEW',
-  CONTACTED: 'CONTACTED',
-  CLOSED: 'CLOSED',
-} as const;
-
-export type AdminListPriceInquiries200Item = {
-  id: string;
-  supplierId: string;
-  productId: string;
-  productName: string;
-  supplierName: string;
-  contactName: string;
-  contactEmail: string;
-  contactPhone: string;
-  message: string;
-  status: AdminListPriceInquiries200ItemStatus;
-  /** @nullable */
-  internalNote: string | null;
-  createdAt: string;
-  updatedAt: string;
 };
 
 export type CreateShopQuoteBody = {

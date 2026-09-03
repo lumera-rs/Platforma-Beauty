@@ -6,10 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type AdminListPriceInquiries200ItemStatus = typeof AdminListPriceInquiries200ItemStatus[keyof typeof AdminListPriceInquiries200ItemStatus];
+export type AdminPriceInquiryUpdateStatus = typeof AdminPriceInquiryUpdateStatus[keyof typeof AdminPriceInquiryUpdateStatus];
 
 
-export const AdminListPriceInquiries200ItemStatus = {
+export const AdminPriceInquiryUpdateStatus = {
   NEW: 'NEW',
   CONTACTED: 'CONTACTED',
   CLOSED: 'CLOSED',

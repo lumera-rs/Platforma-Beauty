@@ -17,6 +17,9 @@ import {
   AdminListPriceInquiriesResponse,
   AdminListQuotesResponse,
   AdminListRmasResponse,
+  AdminUpdatePriceInquiryBody,
+  AdminUpdatePriceInquiryParams,
+  AdminUpdatePriceInquiryResponse,
   AdminUpdateReviewRewardSettingsResponse,
   AdminUpdateRmaStatusResponse,
   AdminValidateMetaCatalogResponse,
@@ -25,6 +28,21 @@ import {
 const router: IRouter = Router();
 const clean = (value: unknown, max: number) => typeof value === "string" ? value.trim().slice(0, max) : "";
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const adminPriceInquirySelection = {
+  id: priceInquiriesTable.id,
+  supplierId: priceInquiriesTable.supplierId,
+  productId: priceInquiriesTable.productId,
+  productName: productsTable.name,
+  supplierName: suppliersTable.name,
+  contactName: priceInquiriesTable.name,
+  contactEmail: priceInquiriesTable.email,
+  contactPhone: priceInquiriesTable.phone,
+  message: priceInquiriesTable.message,
+  status: priceInquiriesTable.status,
+  internalNote: priceInquiriesTable.internalNote,
+  createdAt: priceInquiriesTable.createdAt,
+  updatedAt: priceInquiriesTable.updatedAt,
+};
 
 async function auth(req: Request, res: Response) {
   const user = await getCurrentUser(req);
@@ -129,21 +147,7 @@ router.post("/public/suppliers/:supplierId/products/:productId/price-inquiries",
 
 router.get("/admin/price-inquiries", async (req, res): Promise<void> => {
   if (!await admin(req, res)) return;
-  const rows = await db.select({
-    id: priceInquiriesTable.id,
-    supplierId: priceInquiriesTable.supplierId,
-    productId: priceInquiriesTable.productId,
-    productName: productsTable.name,
-    supplierName: suppliersTable.name,
-    contactName: priceInquiriesTable.name,
-    contactEmail: priceInquiriesTable.email,
-    contactPhone: priceInquiriesTable.phone,
-    message: priceInquiriesTable.message,
-    status: priceInquiriesTable.status,
-    internalNote: priceInquiriesTable.internalNote,
-    createdAt: priceInquiriesTable.createdAt,
-    updatedAt: priceInquiriesTable.updatedAt,
-  }).from(priceInquiriesTable)
+  const rows = await db.select(adminPriceInquirySelection).from(priceInquiriesTable)
     .innerJoin(productsTable, eq(priceInquiriesTable.productId, productsTable.id))
     .innerJoin(suppliersTable, eq(priceInquiriesTable.supplierId, suppliersTable.id))
     .orderBy(desc(priceInquiriesTable.createdAt)).limit(500);
@@ -151,14 +155,21 @@ router.get("/admin/price-inquiries", async (req, res): Promise<void> => {
 });
 router.patch("/admin/price-inquiries/:id", async (req, res): Promise<void> => {
   if (!await admin(req, res)) return;
-  const status = req.body?.status;
-  if (status !== undefined && !["NEW", "CONTACTED", "CLOSED"].includes(status)) { res.status(400).json({ error: "Invalid status." }); return; }
+  const params = AdminUpdatePriceInquiryParams.safeParse(req.params);
+  const body = AdminUpdatePriceInquiryBody.safeParse(req.body);
+  if (!params.success || !body.success) { res.status(400).json({ error: "Invalid price inquiry update." }); return; }
   const [updated] = await db.update(priceInquiriesTable).set({
-    ...(status ? { status } : {}), ...(req.body?.internalNote !== undefined ? { internalNote: clean(req.body.internalNote, 5_000) || null } : {}),
+    ...(body.data.status ? { status: body.data.status } : {}),
+    ...(body.data.internalNote !== undefined ? { internalNote: clean(body.data.internalNote, 5_000) || null } : {}),
     updatedAt: new Date(),
-  }).where(eq(priceInquiriesTable.id, req.params.id!)).returning();
+  }).where(eq(priceInquiriesTable.id, params.data.id)).returning({ id: priceInquiriesTable.id });
   if (!updated) { res.status(404).json({ error: "Inquiry not found." }); return; }
-  res.json(updated);
+  const [inquiry] = await db.select(adminPriceInquirySelection).from(priceInquiriesTable)
+    .innerJoin(productsTable, eq(priceInquiriesTable.productId, productsTable.id))
+    .innerJoin(suppliersTable, eq(priceInquiriesTable.supplierId, suppliersTable.id))
+    .where(eq(priceInquiriesTable.id, updated.id))
+    .limit(1);
+  sendValidatedAdminCommerceResponse(req, res, "adminUpdatePriceInquiry", AdminUpdatePriceInquiryResponse, inquiry);
 });
 
 router.post("/shop/quotes", async (req, res): Promise<void> => {

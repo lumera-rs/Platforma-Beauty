@@ -9160,35 +9160,29 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  required:
-                    - id
-                    - supplierId
-                    - productId
-                    - productName
-                    - supplierName
-                    - contactName
-                    - contactEmail
-                    - contactPhone
-                    - message
-                    - status
-                    - internalNote
-                    - createdAt
-                    - updatedAt
-                  properties:
-                    id: { type: string }
-                    supplierId: { type: string }
-                    productId: { type: string }
-                    productName: { type: string }
-                    supplierName: { type: string }
-                    contactName: { type: string }
-                    contactEmail: { type: string }
-                    contactPhone: { type: string }
-                    message: { type: string }
-                    status: { type: string, enum: [NEW, CONTACTED, CLOSED] }
-                    internalNote: { type: [string, "null"] }
-                    createdAt: { type: string, format: date-time }
-                    updatedAt: { type: string, format: date-time }
+                  $ref: "#/components/schemas/AdminPriceInquiry"
+  /admin/price-inquiries/{id}:
+    patch:
+      operationId: adminUpdatePriceInquiry
+      tags: [admin]
+      summary: Update an administrator price inquiry status or internal note
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminPriceInquiryUpdate"
+      responses:
+        "200":
+          description: Updated price inquiry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminPriceInquiry"
+        "400": { description: Invalid update }
+        "404": { description: Inquiry not found }
   /shop/quotes:
     post:
       operationId: createShopQuote
@@ -9808,6 +9802,41 @@ components:
       required: true
       schema: { type: string }
   schemas:
+    AdminPriceInquiry:
+      type: object
+      required:
+        - id
+        - supplierId
+        - productId
+        - productName
+        - supplierName
+        - contactName
+        - contactEmail
+        - contactPhone
+        - message
+        - status
+        - internalNote
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: string }
+        supplierId: { type: string }
+        productId: { type: string }
+        productName: { type: string }
+        supplierName: { type: string }
+        contactName: { type: string }
+        contactEmail: { type: string }
+        contactPhone: { type: string }
+        message: { type: string }
+        status: { type: string, enum: [NEW, CONTACTED, CLOSED] }
+        internalNote: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AdminPriceInquiryUpdate:
+      type: object
+      properties:
+        status: { type: string, enum: [NEW, CONTACTED, CLOSED] }
+        internalNote: { type: ["string", "null"], maxLength: 5000 }
     RmaRecordBase:
       type: object
       required:

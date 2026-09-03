@@ -31667,6 +31667,39 @@ export const AdminListPriceInquiriesResponse = zod.array(AdminListPriceInquiries
 
 
 /**
+ * @summary Update an administrator price inquiry status or internal note
+ */
+export const AdminUpdatePriceInquiryParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const adminUpdatePriceInquiryBodyInternalNoteMax = 5000;
+
+
+
+export const AdminUpdatePriceInquiryBody = zod.object({
+  "status": zod.enum(['NEW', 'CONTACTED', 'CLOSED']).optional(),
+  "internalNote": zod.string().max(adminUpdatePriceInquiryBodyInternalNoteMax).nullish()
+}).strict()
+
+export const AdminUpdatePriceInquiryResponse = zod.object({
+  "id": zod.string(),
+  "supplierId": zod.string(),
+  "productId": zod.string(),
+  "productName": zod.string(),
+  "supplierName": zod.string(),
+  "contactName": zod.string(),
+  "contactEmail": zod.string(),
+  "contactPhone": zod.string(),
+  "message": zod.string(),
+  "status": zod.enum(['NEW', 'CONTACTED', 'CLOSED']),
+  "internalNote": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Snapshot the authenticated salon cart without creating an order
  */
 export const createShopQuoteBodyCustomerCompanyNameMax = 200;

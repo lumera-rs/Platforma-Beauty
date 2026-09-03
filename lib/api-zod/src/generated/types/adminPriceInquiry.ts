@@ -5,9 +5,9 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
-import type { AdminListPriceInquiries200ItemStatus } from './adminListPriceInquiries200ItemStatus';
+import type { AdminPriceInquiryStatus } from './adminPriceInquiryStatus';
 
-export type AdminListPriceInquiries200Item = {
+export interface AdminPriceInquiry {
   id: string;
   supplierId: string;
   productId: string;
@@ -17,9 +17,9 @@ export type AdminListPriceInquiries200Item = {
   contactEmail: string;
   contactPhone: string;
   message: string;
-  status: AdminListPriceInquiries200ItemStatus;
+  status: AdminPriceInquiryStatus;
   /** @nullable */
   internalNote: string | null;
   createdAt: Date;
   updatedAt: Date;
-};
+}

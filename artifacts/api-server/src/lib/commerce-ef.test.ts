@@ -14,7 +14,7 @@ import {
 import {
   AdminGetMetaCatalogStatusResponse, AdminGetReviewRewardSettingsResponse, AdminGetRmaResponse,
   AdminListPriceInquiriesResponse, AdminListQuotesResponse, AdminListRmasResponse,
-  AdminUpdateReviewRewardSettingsResponse, AdminUpdateRmaStatusResponse, AdminValidateMetaCatalogResponse,
+  AdminUpdatePriceInquiryResponse, AdminUpdateReviewRewardSettingsResponse, AdminUpdateRmaStatusResponse, AdminValidateMetaCatalogResponse,
 } from "@workspace/api-zod";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
@@ -225,6 +225,17 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
     assert.equal((await api(`/public/suppliers/${ids.suppliers[0]}/products/${zeroProductId}/price-inquiries`, "", { method: "POST", body: JSON.stringify({ name: "Test User", email: "test@example.test", phone: "+381601234567", message: "Need a price for this item." }) })).status, 201);
     const adminInquiries = await (await api("/admin/price-inquiries", await cookie(admin))).json() as Array<Record<string, unknown>>;
     assert.equal(AdminListPriceInquiriesResponse.safeParse(adminInquiries).success, true);
+    const inquiry = adminInquiries.find((row) => row.productId === zeroProductId);
+    assert.ok(inquiry);
+    const updatedInquiryResponse = await api(`/admin/price-inquiries/${inquiry.id}`, await cookie(admin), {
+      method: "PATCH",
+      body: JSON.stringify({ status: "CONTACTED", internalNote: "Administrator contacted the customer." }),
+    });
+    const updatedInquiry = await updatedInquiryResponse.json();
+    assert.equal(updatedInquiryResponse.status, 200);
+    assert.equal(AdminUpdatePriceInquiryResponse.safeParse(updatedInquiry).success, true);
+    assert.equal((updatedInquiry as { productName: string }).productName, `${marker} zero`);
+    assert.equal((updatedInquiry as { supplierName: string }).supplierName, marker);
     const adminInquiry = adminInquiries.find((inquiry) => inquiry.productId === zeroProductId);
     assert.equal(adminInquiry?.contactName, "Test User"); assert.equal(adminInquiry?.contactEmail, "test@example.test");
     assert.equal(adminInquiry?.productName, `${marker} zero`); assert.equal(adminInquiry?.supplierName, marker);
@@ -479,6 +490,7 @@ test("admin commerce response contracts fail closed without logging payload valu
   const logged: unknown[] = [];
   const schemas = [
     ["adminListPriceInquiries", AdminListPriceInquiriesResponse, [{ contactEmail: sensitiveValue }]],
+    ["adminUpdatePriceInquiry", AdminUpdatePriceInquiryResponse, { contactEmail: sensitiveValue }],
     ["adminListQuotes", AdminListQuotesResponse, [{ customerCompanyName: sensitiveValue }]],
     ["adminGetMetaCatalogStatus", AdminGetMetaCatalogStatusResponse, { connectionStatus: sensitiveValue }],
     ["adminValidateMetaCatalog", AdminValidateMetaCatalogResponse, { connectionStatus: sensitiveValue }],

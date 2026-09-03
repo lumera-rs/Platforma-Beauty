@@ -64,7 +64,6 @@ import type {
   AdminListEducationGiftVouchersParams,
   AdminListEmailCampaignsResponse,
   AdminListOrdersParams,
-  AdminListPriceInquiries200Item,
   AdminListProductWaitlistParams,
   AdminListProductsParams,
   AdminListRetailOrdersParams,
@@ -77,6 +76,8 @@ import type {
   AdminOrder,
   AdminOrderBulkUpdate,
   AdminOrderUpdate,
+  AdminPriceInquiry,
+  AdminPriceInquiryUpdate,
   AdminProduct,
   AdminProductBulkUpdate,
   AdminProductCategory,
@@ -44204,9 +44205,9 @@ export const getAdminListPriceInquiriesUrl = () => {
 /**
  * @summary List supplier product price inquiries for administrator review
  */
-export const adminListPriceInquiries = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminListPriceInquiries200Item[]> => {
+export const adminListPriceInquiries = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminPriceInquiry[]> => {
 
-  return customFetch<AdminListPriceInquiries200Item[]>(getAdminListPriceInquiriesUrl(),
+  return customFetch<AdminPriceInquiry[]>(getAdminListPriceInquiriesUrl(),
   {
     ...options,
     method: 'GET'
@@ -44269,6 +44270,78 @@ export function useAdminListPriceInquiries<TData = Awaited<ReturnType<typeof adm
 
 
 
+
+export const getAdminUpdatePriceInquiryUrl = (id: string,) => {
+
+
+
+
+  return `/api/admin/price-inquiries/${id}`
+}
+
+/**
+ * @summary Update an administrator price inquiry status or internal note
+ */
+export const adminUpdatePriceInquiry = async (id: string,
+    adminPriceInquiryUpdate: AdminPriceInquiryUpdate, options?: Parameters<typeof customFetch>[1]): Promise<AdminPriceInquiry> => {
+
+  return customFetch<AdminPriceInquiry>(getAdminUpdatePriceInquiryUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminPriceInquiryUpdate)
+  }
+);}
+
+
+
+
+
+export const getAdminUpdatePriceInquiryMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdatePriceInquiry>>, TError,{id: string;data: BodyType<AdminPriceInquiryUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminUpdatePriceInquiry>>, TError,{id: string;data: BodyType<AdminPriceInquiryUpdate>}, TContext> => {
+
+const mutationKey = ['adminUpdatePriceInquiry'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdatePriceInquiry>>, {id: string;data: BodyType<AdminPriceInquiryUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  adminUpdatePriceInquiry(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminUpdatePriceInquiryMutationResult = NonNullable<Awaited<ReturnType<typeof adminUpdatePriceInquiry>>>
+    export type AdminUpdatePriceInquiryMutationBody = BodyType<AdminPriceInquiryUpdate>
+    export type AdminUpdatePriceInquiryMutationError = ErrorType<void>
+
+    /**
+ * @summary Update an administrator price inquiry status or internal note
+ */
+export const useAdminUpdatePriceInquiry = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdatePriceInquiry>>, TError,{id: string;data: BodyType<AdminPriceInquiryUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminUpdatePriceInquiry>>,
+        TError,
+        {id: string;data: BodyType<AdminPriceInquiryUpdate>},
+        TContext
+      > => {
+      return useMutation(getAdminUpdatePriceInquiryMutationOptions(options));
+    }
 
 export const getCreateShopQuoteUrl = () => {
 
