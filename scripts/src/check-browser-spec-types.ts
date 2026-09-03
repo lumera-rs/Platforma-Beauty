@@ -17,13 +17,25 @@ interface BrowserSpecTypeCheckOptions {
   diagnosticRoot?: string;
 }
 
+interface BrowserConfigCoverageOptions {
+  scriptsRoot?: string;
+  configPath?: string;
+}
+
 interface BrowserProgram {
   program: ts.Program;
   rootNames: string[];
 }
 
-function loadBrowserProgram(rootNames?: string[]): BrowserProgram {
-  const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
+const browserRunnerConfigPattern =
+  /^playwright(?:\.[^.]+)*\.config\.(?:ts|tsx|mts|cts)$/;
+
+function loadBrowserProgram(
+  rootNames?: string[],
+  root = scriptsRoot,
+  projectPath = configPath,
+): BrowserProgram {
+  const configFile = ts.readConfigFile(projectPath, ts.sys.readFile);
   if (configFile.error) {
     throw new Error(ts.formatDiagnostic(configFile.error, formatHost));
   }
@@ -31,9 +43,9 @@ function loadBrowserProgram(rootNames?: string[]): BrowserProgram {
   const parsed = ts.parseJsonConfigFileContent(
     configFile.config,
     ts.sys,
-    scriptsRoot,
+    root,
     undefined,
-    configPath,
+    projectPath,
   );
   if (parsed.errors.length > 0) {
     throw new Error(ts.formatDiagnostics(parsed.errors, formatHost));
@@ -48,6 +60,33 @@ function loadBrowserProgram(rootNames?: string[]): BrowserProgram {
     }),
     rootNames: programRootNames,
   };
+}
+
+export function collectUncoveredBrowserRunnerConfigs(
+  options: BrowserConfigCoverageOptions = {},
+): string[] {
+  const root = path.resolve(options.scriptsRoot ?? scriptsRoot);
+  const projectPath = path.resolve(options.configPath ?? configPath);
+  const includedRoots = new Set(
+    loadBrowserProgram(undefined, root, projectPath).rootNames.map((fileName) =>
+      path.resolve(fileName),
+    ),
+  );
+
+  return ts.sys
+    .readDirectory(
+      root,
+      [".ts", ".tsx", ".mts", ".cts"],
+      ["**/node_modules/**"],
+      ["**/playwright*.config.*"],
+    )
+    .map((fileName) => path.resolve(fileName))
+    .filter(
+      (fileName) =>
+        browserRunnerConfigPattern.test(path.basename(fileName)) &&
+        !includedRoots.has(fileName),
+    )
+    .sort();
 }
 
 export function collectBrowserSpecDiagnostics(
@@ -83,6 +122,16 @@ export function collectBrowserSpecDiagnostics(
 }
 
 export function runBrowserSpecTypeCheck(): void {
+  const uncoveredConfigs = collectUncoveredBrowserRunnerConfigs();
+  if (uncoveredConfigs.length > 0) {
+    const relativeConfigs = uncoveredConfigs
+      .map((fileName) => path.relative(scriptsRoot, fileName))
+      .join(", ");
+    throw new Error(
+      `Browser runner configs are missing from tsconfig.browser.json: ${relativeConfigs}`,
+    );
+  }
+
   const diagnostics = collectBrowserSpecDiagnostics();
   if (diagnostics.length > 0) {
     console.error(ts.formatDiagnosticsWithColorAndContext(diagnostics, formatHost));

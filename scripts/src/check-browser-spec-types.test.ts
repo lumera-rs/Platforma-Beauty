@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { collectBrowserSpecDiagnostics } from "./check-browser-spec-types";
+import {
+  collectBrowserSpecDiagnostics,
+  collectUncoveredBrowserRunnerConfigs,
+} from "./check-browser-spec-types";
 
 test("browser preflight rejects every spec-local diagnostic but ignores imported source diagnostics", async () => {
   const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-browser-types-"));
   try {
     const specRoot = path.join(fixtureRoot, "browser");
-    await import("node:fs/promises").then(({ mkdir }) => mkdir(specRoot));
+    await mkdir(specRoot);
     const modulePath = path.join(fixtureRoot, "helpers.ts");
     const specPath = path.join(specRoot, "broken.spec.ts");
     await writeFile(
@@ -50,6 +53,54 @@ test("browser preflight rejects every spec-local diagnostic but ignores imported
   }
 });
 
+test("browser preflight rejects recognized runner configs omitted from the browser TypeScript project", async () => {
+  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-browser-roots-"));
+  try {
+    const browserRoot = path.join(fixtureRoot, "browser");
+    const configPath = path.join(fixtureRoot, "playwright.config.ts");
+    const omittedConfigPath = path.join(
+      fixtureRoot,
+      "playwright.visual.config.ts",
+    );
+    const tsconfigPath = path.join(fixtureRoot, "tsconfig.browser.json");
+    await mkdir(browserRoot);
+    await writeFile(path.join(browserRoot, "example.spec.ts"), "export {};\n");
+    await writeFile(configPath, "export default {};\n");
+    await writeFile(omittedConfigPath, "export default {};\n");
+    await writeFile(
+      tsconfigPath,
+      JSON.stringify({
+        compilerOptions: { noEmit: true },
+        include: ["browser/**/*.ts", "playwright.config.ts"],
+      }),
+    );
+
+    assert.deepEqual(
+      collectUncoveredBrowserRunnerConfigs({
+        scriptsRoot: fixtureRoot,
+        configPath: tsconfigPath,
+      }),
+      [omittedConfigPath],
+    );
+
+    await writeFile(
+      tsconfigPath,
+      JSON.stringify({
+        compilerOptions: { noEmit: true },
+        include: ["browser/**/*.ts", "playwright*.config.ts"],
+      }),
+    );
+    assert.deepEqual(
+      collectUncoveredBrowserRunnerConfigs({
+        scriptsRoot: fixtureRoot,
+        configPath: tsconfigPath,
+      }),
+      [],
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
 
 test("browser preflight rejects every runner config root but ignores imported source diagnostics", async () => {
   const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-browser-config-types-"));
