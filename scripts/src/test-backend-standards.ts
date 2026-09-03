@@ -20,6 +20,7 @@
 import {
   checkAwaitInLoops,
   checkCacheInvariants,
+  checkDatabaseChildProcessOutputSafety,
   checkUnboundedSelects,
 } from "./test-backend-static-checks.js";
 import { assertDestructiveTestRuntimeAllowed } from "./destructive-test-runtime";
@@ -436,6 +437,20 @@ async function runDatabaseChecks(): Promise<void> {
 }
 
 async function runStaticChecks(): Promise<void> {
+  try {
+    const unsafeHarnesses = await checkDatabaseChildProcessOutputSafety();
+    if (unsafeHarnesses.length === 0) {
+      pass("Static: database child processes use safe output handling");
+    } else {
+      fail(
+        "Static: database child process can expose credentials",
+        unsafeHarnesses.join("\n"),
+      );
+    }
+  } catch (err) {
+    fail("Static: database child-process output check", String(err));
+  }
+
   // 4a. Cache invariants
   try {
     const cacheResults = await checkCacheInvariants();

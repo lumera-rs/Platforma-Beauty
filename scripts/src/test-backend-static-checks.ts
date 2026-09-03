@@ -16,7 +16,7 @@
  *   fetches where DB-level pagination is contractually available.
  */
 
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -31,6 +31,77 @@ function repoPath(...parts: string[]): string {
 
 async function readSource(relPath: string): Promise<string> {
   return readFile(repoPath(relPath), "utf8");
+}
+
+const CHILD_PROCESS_IMPORT_PATTERN =
+  /from\s+["'](?:node:)?child_process["']|require\s*\(\s*["'](?:node:)?child_process["']\s*\)/;
+const DATABASE_HARNESS_PATTERN =
+  /\b(?:DATABASE_URL|LUMERA_TEST_DATABASE_URL|createdb|dropdb|psql|pg_dump|pg_restore)\b|@workspace\/db/;
+const INHERITED_CHILD_OUTPUT_PATTERN =
+  /stdio\s*:\s*(?:["']inherit["']|\[[^\]]*["']inherit["'][^\]]*\])/s;
+const RAW_CHILD_OUTPUT_FORWARDING_PATTERN =
+  /(?:stdout|stderr)(?:\?)*\.(?:on\s*\(\s*["']data["']|pipe\s*\(\s*process\.(?:stdout|stderr))[\s\S]{0,500}process\.(?:stdout|stderr)\.write\s*\(/;
+const REDACTED_CHILD_OUTPUT_USE_PATTERN =
+  /\b(?:pipeRedactedDatabaseOutput|redactDatabaseCommandOutput)\s*\(/;
+const STATIC_CHECK_EXCLUSIONS = new Set([
+  "scripts/src/backend-standards-database.test.ts",
+  "scripts/src/test-backend-static-checks.ts",
+]);
+
+export function findUnsafeDatabaseChildProcessUses(
+  source: string,
+  file = "database harness",
+): string[] {
+  if (
+    !CHILD_PROCESS_IMPORT_PATTERN.test(source)
+    || !DATABASE_HARNESS_PATTERN.test(source)
+  ) {
+    return [];
+  }
+
+  const violations: string[] = [];
+  if (INHERITED_CHILD_OUTPUT_PATTERN.test(source)) {
+    violations.push(`${file} lets a database-oriented child process inherit stdout or stderr`);
+  }
+  if (
+    RAW_CHILD_OUTPUT_FORWARDING_PATTERN.test(source)
+    && !REDACTED_CHILD_OUTPUT_USE_PATTERN.test(source)
+  ) {
+    violations.push(`${file} forwards database-oriented child output without redaction`);
+  }
+  return violations;
+}
+
+async function listTypeScriptSources(
+  directory: string,
+  relativeDirectory: string,
+): Promise<string[]> {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const sources = await Promise.all(entries.map(async (entry): Promise<string[]> => {
+    const relativePath = path.posix.join(relativeDirectory, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === "node_modules" || entry.name === "dist" || entry.name.startsWith(".")) {
+        return [];
+      }
+      return listTypeScriptSources(path.join(directory, entry.name), relativePath);
+    }
+    return entry.isFile() && /\.tsx?$/.test(entry.name) ? [relativePath] : [];
+  }));
+  return sources.flat();
+}
+
+export async function checkDatabaseChildProcessOutputSafety(): Promise<string[]> {
+  const roots = ["scripts/src", "scripts/browser", "artifacts"];
+  const files = (await Promise.all(roots.map((root) =>
+    listTypeScriptSources(repoPath(root), root)))).flat();
+  const violations: string[] = [];
+
+  await Promise.all(files.map(async (file) => {
+    if (STATIC_CHECK_EXCLUSIONS.has(file)) return;
+    violations.push(...findUnsafeDatabaseChildProcessUses(await readSource(file), file));
+  }));
+
+  return violations.sort();
 }
 
 // ── 1. await-in-loop check ───────────────────────────────────────────────────

@@ -24,9 +24,49 @@ import {
   pipeRedactedDatabaseOutput,
   redactDatabaseCommandOutput,
 } from "./safe-child-process-output.js";
+import { findUnsafeDatabaseChildProcessUses } from "./test-backend-static-checks.js";
 
 const execFileAsync = promisify(execFile);
 const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
+
+test("database harness standards reject direct child processes without safe output handling", () => {
+  const unsafeHarness = `
+    import { spawn } from "node:child_process";
+    import { pipeRedactedDatabaseOutput } from "./safe-child-process-output";
+    const environment = { ...process.env, DATABASE_URL: process.env.DATABASE_URL };
+    spawn("pnpm", ["test"], { env: environment, stdio: "inherit" });
+  `;
+  const unsafeBrowserSpec = `
+    import * as childProcess from "node:child_process";
+    import { db } from "@workspace/db";
+    childProcess.spawn("tsx", ["test-server.ts"], {
+      env: process.env,
+      stdio: ["ignore", "ignore", "inherit", "ipc"],
+    });
+  `;
+  const safeHarness = `
+    import { spawn } from "node:child_process";
+    import { pipeRedactedDatabaseOutput } from "./safe-child-process-output";
+    const environment = { ...process.env, DATABASE_URL: process.env.DATABASE_URL };
+    const child = spawn("pnpm", ["test"], { env: environment, stdio: ["ignore", "pipe", "pipe"] });
+    pipeRedactedDatabaseOutput(child, environment);
+  `;
+  const ordinaryChildProcess = `
+    import { execFile } from "node:child_process";
+    execFile("git", ["status"]);
+  `;
+
+  assert.deepEqual(
+    findUnsafeDatabaseChildProcessUses(unsafeHarness, "scripts/src/run-new-database-suite.ts"),
+    ["scripts/src/run-new-database-suite.ts lets a database-oriented child process inherit stdout or stderr"],
+  );
+  assert.deepEqual(
+    findUnsafeDatabaseChildProcessUses(unsafeBrowserSpec, "scripts/browser/new-database.spec.ts"),
+    ["scripts/browser/new-database.spec.ts lets a database-oriented child process inherit stdout or stderr"],
+  );
+  assert.deepEqual(findUnsafeDatabaseChildProcessUses(safeHarness), []);
+  assert.deepEqual(findUnsafeDatabaseChildProcessUses(ordinaryChildProcess), []);
+});
 
 async function runDatabaseCommand(
   command: string,

@@ -242,12 +242,14 @@ function runCommand(
       cwd: workspaceRoot,
       detached: process.platform !== "win32",
       env: environment,
-      stdio: captureOutput ? ["ignore", "pipe", "pipe"] : "inherit",
+      stdio: ["ignore", "pipe", "pipe"],
     });
     options?.onSpawn?.(child);
     if (captureOutput) {
       child.stdout?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
       child.stderr?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+    } else {
+      pipeRedactedDatabaseOutput(child, environment);
     }
 
     child.once("error", () => reject(new Error(`${label} could not be started.`)));
