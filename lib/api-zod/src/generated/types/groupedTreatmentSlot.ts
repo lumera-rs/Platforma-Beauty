@@ -16,5 +16,11 @@ export interface GroupedTreatmentSlot {
   startTime: string;
   endTime: string;
   /** @minimum 0 */
+  preProcessingMinutes: number;
+  /** @minimum 0 */
+  processingMinutes: number;
+  /** @minimum 0 */
+  postProcessingMinutes: number;
+  /** @minimum 0 */
   bufferMinutes: number;
 }

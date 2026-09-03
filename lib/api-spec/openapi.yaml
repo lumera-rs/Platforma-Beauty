@@ -11119,6 +11119,9 @@ components:
         name: { type: string }
         description: { type: string }
         durationMinutes: { type: number }
+        preProcessingMinutes: { type: number, minimum: 0, default: 0 }
+        processingMinutes: { type: number, minimum: 0, default: 0 }
+        postProcessingMinutes: { type: number, minimum: 0, default: 0 }
         bufferMinutes: { type: number, minimum: 0, default: 0 }
         price: { type: number }
         promoPrice: { type: ["number", "null"] }
@@ -11132,7 +11135,7 @@ components:
         resourceRequirements:
           type: array
           items: { $ref: "#/components/schemas/ServiceResourceRequirement" }
-      required: [id, category, name, description, durationMinutes, price, imageUrl, active, homeServiceAvailable, homeServiceFee, homeServiceMinimumOrder, resourceRequirements]
+      required: [id, category, name, description, durationMinutes, preProcessingMinutes, processingMinutes, postProcessingMinutes, price, imageUrl, active, homeServiceAvailable, homeServiceFee, homeServiceMinimumOrder, resourceRequirements]
     SalonManagedService:
       type: object
       properties:
@@ -11141,6 +11144,9 @@ components:
         name: { type: string }
         description: { type: string }
         durationMinutes: { type: number }
+        preProcessingMinutes: { type: number, minimum: 0, default: 0 }
+        processingMinutes: { type: number, minimum: 0, default: 0 }
+        postProcessingMinutes: { type: number, minimum: 0, default: 0 }
         bufferMinutes: { type: number, minimum: 0, default: 0 }
         price: { type: number }
         promoPrice: { type: ["number", "null"] }
@@ -11155,7 +11161,7 @@ components:
         resourceRequirements:
           type: array
           items: { $ref: "#/components/schemas/ServiceResourceRequirement" }
-      required: [id, category, name, description, durationMinutes, price, imageUrl, active, homeServiceAvailable, homeServiceFee, homeServiceMinimumOrder, canBePermanentlyDeleted, resourceRequirements]
+      required: [id, category, name, description, durationMinutes, preProcessingMinutes, processingMinutes, postProcessingMinutes, price, imageUrl, active, homeServiceAvailable, homeServiceFee, homeServiceMinimumOrder, canBePermanentlyDeleted, resourceRequirements]
     ServiceTemplate:
       type: object
       properties:
@@ -11358,8 +11364,11 @@ components:
         employeeId: { type: ["string", "null"] }
         startTime: { type: string }
         endTime: { type: string }
+        preProcessingMinutes: { type: integer, minimum: 0 }
+        processingMinutes: { type: integer, minimum: 0 }
+        postProcessingMinutes: { type: integer, minimum: 0 }
         bufferMinutes: { type: integer, minimum: 0 }
-      required: [position, serviceId, date, employeeId, startTime, endTime, bufferMinutes]
+      required: [position, serviceId, date, employeeId, startTime, endTime, preProcessingMinutes, processingMinutes, postProcessingMinutes, bufferMinutes]
     GroupedAvailabilityCandidate:
       type: object
       properties:
@@ -12148,6 +12157,9 @@ components:
         name: { type: string, minLength: 1, pattern: '.*\S.*' }
         description: { type: string }
         durationMinutes: { type: number, minimum: 5 }
+        preProcessingMinutes: { type: number, minimum: 0, default: 0 }
+        processingMinutes: { type: number, minimum: 0, default: 0 }
+        postProcessingMinutes: { type: number, minimum: 0, default: 0 }
         bufferMinutes: { type: number, minimum: 0, default: 0 }
         price: { type: number, minimum: 0 }
         promoPrice: { type: ["number", "null"] }

@@ -66,3 +66,25 @@ assert.ok(generateAvailability({
   resourceDowntime: [{ resourceId: "room", date: "2099-05-04", startTime: "10:00", endTime: "11:00" }],
 }).every((slot) => slot.endTime <= "10:00" || slot.startTime >= "11:00"),
   "resource downtime must block every overlapping resource-backed slot");
+
+const segmented = {
+  ...base,
+  durationMinutes: 60,
+  preProcessingMinutes: 15,
+  processingMinutes: 30,
+  postProcessingMinutes: 15,
+  employeeSchedules: [{ employeeId: "employee", weekday: 1, startTime: "09:00", endTime: "12:00", breakStart: "09:15", breakEnd: "09:45" }],
+};
+assert.ok(generateAvailability(segmented).some((slot) => slot.startTime === "09:00"),
+  "the unattended processing interval may overlap an employee break");
+assert.ok(!generateAvailability({
+  ...segmented,
+  timeOff: [{ employeeId: "employee", startDate: "2099-05-04", endDate: "2099-05-04", startTime: "09:45", endTime: "10:00" }],
+}).some((slot) => slot.startTime === "09:00"),
+  "time off must block the post-processing employee interval");
+assert.ok(generateAvailability({
+  ...segmented,
+  employeeSchedules: [{ employeeId: "employee", weekday: 1, startTime: "09:00", endTime: "12:00" }],
+  appointments: [{ employeeId: "employee", date: "2099-05-04", startTime: "09:15", endTime: "10:15", preProcessingMinutes: 15, processingMinutes: 30, postProcessingMinutes: 15 }],
+}).some((slot) => slot.startTime === "09:30"),
+  "processing-only overlap between segmented treatments must remain bookable");

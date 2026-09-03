@@ -1499,6 +1499,12 @@ export interface Service {
   description: string;
   durationMinutes: number;
   /** @minimum 0 */
+  preProcessingMinutes: number;
+  /** @minimum 0 */
+  processingMinutes: number;
+  /** @minimum 0 */
+  postProcessingMinutes: number;
+  /** @minimum 0 */
   bufferMinutes?: number;
   price: number;
   /** @nullable */
@@ -1786,6 +1792,12 @@ export interface SalonManagedService {
   name: string;
   description: string;
   durationMinutes: number;
+  /** @minimum 0 */
+  preProcessingMinutes: number;
+  /** @minimum 0 */
+  processingMinutes: number;
+  /** @minimum 0 */
+  postProcessingMinutes: number;
   /** @minimum 0 */
   bufferMinutes?: number;
   price: number;
@@ -2098,6 +2110,12 @@ export interface GroupedTreatmentSlot {
   employeeId: string | null;
   startTime: string;
   endTime: string;
+  /** @minimum 0 */
+  preProcessingMinutes: number;
+  /** @minimum 0 */
+  processingMinutes: number;
+  /** @minimum 0 */
+  postProcessingMinutes: number;
   /** @minimum 0 */
   bufferMinutes: number;
 }
@@ -3165,6 +3183,12 @@ export interface ServiceInput {
   description: string;
   /** @minimum 5 */
   durationMinutes: number;
+  /** @minimum 0 */
+  preProcessingMinutes?: number;
+  /** @minimum 0 */
+  processingMinutes?: number;
+  /** @minimum 0 */
+  postProcessingMinutes?: number;
   /** @minimum 0 */
   bufferMinutes?: number;
   /** @minimum 0 */

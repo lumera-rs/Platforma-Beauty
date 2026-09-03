@@ -179,6 +179,9 @@ router.get("/widget/salons/:slug", async (req, res): Promise<void> => {
       id: service.id,
       name: service.name,
       durationMinutes: service.durationMinutes,
+      preProcessingMinutes: service.preProcessingMinutes,
+      processingMinutes: service.processingMinutes,
+      postProcessingMinutes: service.postProcessingMinutes,
       price: service.price,
       promoPrice: service.promoPrice,
       categoryName: service.categoryName,
@@ -387,7 +390,7 @@ admitBookingRequest, async (req, res): Promise<void> => {
       await lockAppointmentResources(tx, salon.id, treatments.map((item) => ({ date: item.date })));
       const requirements: Array<Awaited<ReturnType<typeof fetchServiceResourceRequirements>>> = [];
       const planned: Array<{ item: (typeof treatments)[number]; service: typeof servicesTable.$inferSelect; employeeId: string; endTime: string }> = [];
-      const reservedAppointments: Array<{ employeeId: string; date: string; startTime: string; endTime: string; bufferMinutes: number; resourceIds: string[] }> = [];
+      const reservedAppointments: Array<{ employeeId: string; date: string; startTime: string; endTime: string; bufferMinutes: number; preProcessingMinutes?: number; processingMinutes?: number; postProcessingMinutes?: number; resourceIds: string[] }> = [];
       const resourceReservations: Array<{ resourceId: string; quantity: number; date: string; startTime: string; endTime: string; bufferMinutes: number }> = [];
       for (const item of treatments) {
         const service = byId.get(item.serviceId)!;
@@ -405,7 +408,7 @@ admitBookingRequest, async (req, res): Promise<void> => {
         planned.push({ item, service, employeeId: slot.employeeId, endTime });
         reservedAppointments.push({
           employeeId: slot.employeeId, date: item.date, startTime: item.startTime, endTime,
-          bufferMinutes: service.bufferMinutes, resourceIds: serviceRequirements.map((entry) => entry.resourceId),
+          bufferMinutes: service.bufferMinutes, preProcessingMinutes: service.preProcessingMinutes, processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes, resourceIds: serviceRequirements.map((entry) => entry.resourceId),
         });
         resourceReservations.push(...serviceRequirements.map((entry) => ({
           resourceId: entry.resourceId, quantity: entry.quantity, date: item.date, startTime: item.startTime,
@@ -435,7 +438,7 @@ admitBookingRequest, async (req, res): Promise<void> => {
           && slot.employeeId === entry.employeeId)) throw new Error("STALE_SLOT");
         revalidationAppointments.push({
           employeeId: entry.employeeId, date: entry.item.date, startTime: entry.item.startTime, endTime: entry.endTime,
-          bufferMinutes: entry.service.bufferMinutes, resourceIds: requirements[index]!.map((item) => item.resourceId),
+          bufferMinutes: entry.service.bufferMinutes, preProcessingMinutes: entry.service.preProcessingMinutes, processingMinutes: entry.service.processingMinutes, postProcessingMinutes: entry.service.postProcessingMinutes, resourceIds: requirements[index]!.map((item) => item.resourceId),
         });
         revalidationResources.push(...requirements[index]!.map((item) => ({
           resourceId: item.resourceId, quantity: item.quantity, date: entry.item.date, startTime: entry.item.startTime,
@@ -460,6 +463,8 @@ admitBookingRequest, async (req, res): Promise<void> => {
         await tx.insert(appointmentTreatmentsTable).values({
           appointmentId: appointment!.id, serviceId: entry.service.id, employeeId: entry.employeeId,
           position, durationMinutes: entry.service.durationMinutes, bufferMinutes: entry.service.bufferMinutes,
+          preProcessingMinutes: entry.service.preProcessingMinutes, processingMinutes: entry.service.processingMinutes,
+          postProcessingMinutes: entry.service.postProcessingMinutes,
           price: entry.service.promoPrice ?? entry.service.price,
           plannedStartTime: entry.item.startTime, plannedEndTime: entry.endTime,
         });

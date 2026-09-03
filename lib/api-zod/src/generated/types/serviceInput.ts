@@ -18,6 +18,12 @@ export interface ServiceInput {
   /** @minimum 5 */
   durationMinutes: number;
   /** @minimum 0 */
+  preProcessingMinutes?: number;
+  /** @minimum 0 */
+  processingMinutes?: number;
+  /** @minimum 0 */
+  postProcessingMinutes?: number;
+  /** @minimum 0 */
   bufferMinutes?: number;
   /** @minimum 0 */
   price: number;

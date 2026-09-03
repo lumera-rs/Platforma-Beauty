@@ -534,11 +534,30 @@ async function run(): Promise<void> {
     assert.equal(mobileServiceCreate.status, 201, "an owner must be able to add an active home-service offering");
     const mobileService = mobileServiceCreate.body as { id: string };
 
+    const mismatchedProcessingSegments = await request(baseUrl, ownerSession, "/salon/services", "POST", {
+      category: "Test",
+      name: "Neispravno segmentisana usluga",
+      description: "Zbir segmenata namerno se ne poklapa sa trajanjem.",
+      durationMinutes: 30,
+      preProcessingMinutes: 10,
+      processingMinutes: 10,
+      postProcessingMinutes: 5,
+      price: 900,
+      imageUrl: "/test.jpg",
+      active: true,
+      homeServiceAvailable: false,
+      homeServiceFee: 0,
+    });
+    assert.equal(mismatchedProcessingSegments.status, 400, "a service whose processing segments do not add up to its duration must be rejected");
+
     const inSalonServiceCreate = await request(baseUrl, ownerSession, "/salon/services", "POST", {
       category: "Test",
       name: "Aktivna usluga u salonu",
       description: "Usluga bez dolaska za proveru salonskog indikatora.",
       durationMinutes: 30,
+      preProcessingMinutes: 10,
+      processingMinutes: 10,
+      postProcessingMinutes: 10,
       price: 900,
       promoPrice: null,
       imageUrl: "/test.jpg",
@@ -548,11 +567,27 @@ async function run(): Promise<void> {
       homeServiceMinimumOrder: null,
     });
     assert.equal(inSalonServiceCreate.status, 201, "an owner must be able to add an in-salon offering");
-    const inSalonService = inSalonServiceCreate.body as { id: string };
+    const inSalonService = inSalonServiceCreate.body as {
+      id: string;
+      preProcessingMinutes: number;
+      processingMinutes: number;
+      postProcessingMinutes: number;
+    };
+    assert.deepEqual(
+      [inSalonService.preProcessingMinutes, inSalonService.processingMinutes, inSalonService.postProcessingMinutes],
+      [10, 10, 10],
+      "service creation must return the persisted processing segments",
+    );
 
     const listedServices = await getRequest(baseUrl, ownerSession, "/salon/services");
     assert.equal(listedServices.status, 200, "an owner must be able to see service removal eligibility");
-    const serviceEligibility = listedServices.body as Array<{ id: string; canBePermanentlyDeleted: boolean }>;
+    const serviceEligibility = listedServices.body as Array<{
+      id: string;
+      canBePermanentlyDeleted: boolean;
+      preProcessingMinutes: number;
+      processingMinutes: number;
+      postProcessingMinutes: number;
+    }>;
     assert.equal(
       serviceEligibility.find((item) => item.id === service!.id)?.canBePermanentlyDeleted,
       false,
@@ -562,6 +597,13 @@ async function run(): Promise<void> {
       serviceEligibility.find((item) => item.id === inSalonService.id)?.canBePermanentlyDeleted,
       true,
       "an unused service must remain eligible for permanent deletion",
+    );
+    assert.deepEqual(
+      serviceEligibility
+        .filter((item) => item.id === inSalonService.id)
+        .map((item) => [item.preProcessingMinutes, item.processingMinutes, item.postProcessingMinutes]),
+      [[10, 10, 10]],
+      "the owner service list must preserve processing segments",
     );
     const protectedServiceDeletion = await request(baseUrl, ownerSession, `/salon/services/${service!.id}`, "DELETE", {});
     assert.equal(protectedServiceDeletion.status, 409, "the deletion guard must still protect a service with appointment history");

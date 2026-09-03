@@ -14,6 +14,9 @@ export type BusyAppointment = {
   startTime: string;
   endTime: string;
   bufferMinutes?: number;
+  preProcessingMinutes?: number;
+  processingMinutes?: number;
+  postProcessingMinutes?: number;
   resourceIds?: string[];
 };
 export type ResourceRequirement = { resourceId: string; quantity: number; capacity: number; active: boolean };
@@ -24,6 +27,9 @@ export type ResourceAllocation = {
   startTime: string;
   endTime: string;
   bufferMinutes?: number;
+  preProcessingMinutes?: number;
+  processingMinutes?: number;
+  postProcessingMinutes?: number;
 };
 export type ResourceDowntime = { resourceId: string; date: string; startTime: string; endTime: string };
 export type AvailabilityEmployee = { id: string; name: string };
@@ -33,6 +39,9 @@ export type GenerateAvailabilityInput = {
   dates: string[];
   durationMinutes: number;
   bufferMinutes?: number;
+  preProcessingMinutes?: number;
+  processingMinutes?: number;
+  postProcessingMinutes?: number;
   granularityMinutes?: number;
   employees: AvailabilityEmployee[];
   salonHours: AvailabilityWindow[];
@@ -111,14 +120,14 @@ function locationWindows(input: GenerateAvailabilityInput, date: string) {
   return rows.filter((item) => !item.closed).map((item) => ({ startTime: item.startTime, endTime: item.endTime }));
 }
 
-function employeeCanWork(input: GenerateAvailabilityInput, employeeId: string, date: string, start: string, employeeEnd: string) {
+function employeeCanWork(input: GenerateAvailabilityInput, employeeId: string, date: string, intervals: Array<{ start: string; end: string }>) {
   if (input.timeOff.some((item) => item.employeeId === employeeId
     && item.startDate <= date && item.endDate >= date
-    && (!item.startTime || !item.endTime || overlaps(start, employeeEnd, item.startTime, item.endTime)))) return false;
+    && (!item.startTime || !item.endTime || intervals.some(({ start, end }) => overlaps(start, end, item.startTime!, item.endTime!))))) return false;
   const rows = input.employeeSchedules.filter((item) => item.employeeId === employeeId && item.weekday === weekday(date));
   if (!rows.length) return true;
-  return rows.some((item) => start >= item.startTime && employeeEnd <= item.endTime
-    && !(item.breakStart && item.breakEnd && overlaps(start, employeeEnd, item.breakStart, item.breakEnd)));
+  return rows.some((item) => intervals.every(({ start, end }) => start >= item.startTime && end <= item.endTime
+    && !(item.breakStart && item.breakEnd && overlaps(start, end, item.breakStart, item.breakEnd))));
 }
 
 function resourcesAvailable(input: GenerateAvailabilityInput, date: string, start: string, resourceEnd: string) {
@@ -177,11 +186,32 @@ export function generateAvailability(input: GenerateAvailabilityInput): Availabi
         const resourceEnd = resourceBacked ? blockedEnd : endTime;
         if (employeeEnd > window.endTime || resourceEnd > window.endTime) continue;
         if (!resourcesAvailable(input, date, startTime, resourceEnd)) continue;
+        const pre = Math.max(0, input.preProcessingMinutes ?? 0);
+        const processing = Math.max(0, input.processingMinutes ?? 0);
+        const post = Math.max(0, input.postProcessingMinutes ?? 0);
+        const segmented = pre + processing + post > 0;
+        if (segmented && (pre + processing + post !== input.durationMinutes)) continue;
+        const activeIntervals = segmented
+          ? [
+              { start: startTime, end: addMinutes(startTime, pre)! },
+              { start: addMinutes(startTime, pre + processing)!, end: employeeEnd },
+            ].filter((interval) => interval.start < interval.end)
+          : [{ start: startTime, end: employeeEnd }];
         const employee = input.employees.find((candidate) =>
-          employeeCanWork(input, candidate.id, date, startTime, employeeEnd)
+          employeeCanWork(input, candidate.id, date, activeIntervals)
           && !input.appointments.some((appointment) => appointment.employeeId === candidate.id && appointment.date === date
-            && overlaps(startTime, employeeEnd, appointment.startTime,
-              addMinutes(appointment.endTime, appointment.resourceIds?.length ? 0 : (appointment.bufferMinutes ?? 0)) ?? appointment.endTime)));
+            && (() => {
+              const appointmentPre = Math.max(0, appointment.preProcessingMinutes ?? 0);
+              const appointmentProcessing = Math.max(0, appointment.processingMinutes ?? 0);
+              const appointmentPost = Math.max(0, appointment.postProcessingMinutes ?? 0);
+              const appointmentSegmented = appointmentPre + appointmentProcessing + appointmentPost > 0;
+              const appointmentEnd = addMinutes(appointment.endTime, appointment.resourceIds?.length ? 0 : (appointment.bufferMinutes ?? 0)) ?? appointment.endTime;
+              const busyIntervals = appointmentSegmented
+                ? [{ start: appointment.startTime, end: addMinutes(appointment.startTime, appointmentPre)! }, { start: addMinutes(appointment.startTime, appointmentPre + appointmentProcessing)!, end: appointmentEnd }]
+                  .filter((interval) => interval.start < interval.end)
+                : [{ start: appointment.startTime, end: appointmentEnd }];
+              return activeIntervals.some((interval) => busyIntervals.some((busy) => overlaps(interval.start, interval.end, busy.start, busy.end)));
+            })()));
         if (employee) slots.push({ date, startTime, endTime, employeeId: employee.id, employeeName: employee.name });
       }
     }

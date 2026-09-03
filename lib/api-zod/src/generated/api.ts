@@ -1025,6 +1025,15 @@ export const getSalonResponseTwoTopServicesItemPriceMin = 0;
 export const getSalonResponseTwoTopServicesItemPromoPriceMin = 0;
 
 
+export const getSalonResponseTwoServicesItemPreProcessingMinutesDefault = 0;
+export const getSalonResponseTwoServicesItemPreProcessingMinutesMin = 0;
+
+export const getSalonResponseTwoServicesItemProcessingMinutesDefault = 0;
+export const getSalonResponseTwoServicesItemProcessingMinutesMin = 0;
+
+export const getSalonResponseTwoServicesItemPostProcessingMinutesDefault = 0;
+export const getSalonResponseTwoServicesItemPostProcessingMinutesMin = 0;
+
 export const getSalonResponseTwoServicesItemBufferMinutesDefault = 0;
 export const getSalonResponseTwoServicesItemBufferMinutesMin = 0;
 
@@ -1105,6 +1114,9 @@ export const GetSalonResponse = zod.object({
   "name": zod.string(),
   "description": zod.string(),
   "durationMinutes": zod.number(),
+  "preProcessingMinutes": zod.number().min(getSalonResponseTwoServicesItemPreProcessingMinutesMin).default(getSalonResponseTwoServicesItemPreProcessingMinutesDefault),
+  "processingMinutes": zod.number().min(getSalonResponseTwoServicesItemProcessingMinutesMin).default(getSalonResponseTwoServicesItemProcessingMinutesDefault),
+  "postProcessingMinutes": zod.number().min(getSalonResponseTwoServicesItemPostProcessingMinutesMin).default(getSalonResponseTwoServicesItemPostProcessingMinutesDefault),
   "bufferMinutes": zod.number().min(getSalonResponseTwoServicesItemBufferMinutesMin).default(getSalonResponseTwoServicesItemBufferMinutesDefault),
   "price": zod.number(),
   "promoPrice": zod.number().nullish(),
@@ -1221,11 +1233,23 @@ export const GetGroupedBookingAvailabilityBody = zod.object({
 
 export const getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemPositionMin = 0;
 
+export const getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemBufferMinutesMin = 0;
 
 export const getGroupedBookingAvailabilityResponseCandidatesMax = 20;
 
 export const getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemPositionMin = 0;
+
+export const getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemPostProcessingMinutesMin = 0;
 
 export const getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemBufferMinutesMin = 0;
 
@@ -1249,6 +1273,9 @@ export const GetGroupedBookingAvailabilityResponse = zod.object({
   "employeeId": zod.string().nullable(),
   "startTime": zod.string(),
   "endTime": zod.string(),
+  "preProcessingMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemPreProcessingMinutesMin),
+  "processingMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemProcessingMinutesMin),
+  "postProcessingMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemPostProcessingMinutesMin),
   "bufferMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemBufferMinutesMin)
 }))
 })).max(getGroupedBookingAvailabilityResponseCandidatesMax).describe('Legacy list-mode candidates. Empty when resultMode is calendar.'),
@@ -1265,6 +1292,9 @@ export const GetGroupedBookingAvailabilityResponse = zod.object({
   "employeeId": zod.string().nullable(),
   "startTime": zod.string(),
   "endTime": zod.string(),
+  "preProcessingMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemPreProcessingMinutesMin),
+  "processingMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemProcessingMinutesMin),
+  "postProcessingMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemPostProcessingMinutesMin),
   "bufferMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemBufferMinutesMin)
 }))
 })).max(getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesMax).describe('Complete valid treatment-group combinations that start on this date.'),
@@ -1309,6 +1339,12 @@ export const createBookingGroupResponseAppointmentsItemTravelFeeMin = 0;
 
 
 export const createBookingGroupResponseAppointmentsItemTreatmentsItemPositionMin = 0;
+
+export const createBookingGroupResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const createBookingGroupResponseAppointmentsItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const createBookingGroupResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin = 0;
 
 export const createBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin = 0;
 
@@ -1366,6 +1402,9 @@ export const CreateBookingGroupResponse = zod.object({
   "employeeId": zod.string().nullable(),
   "startTime": zod.string(),
   "endTime": zod.string(),
+  "preProcessingMinutes": zod.number().int().min(createBookingGroupResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin),
+  "processingMinutes": zod.number().int().min(createBookingGroupResponseAppointmentsItemTreatmentsItemProcessingMinutesMin),
+  "postProcessingMinutes": zod.number().int().min(createBookingGroupResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin),
   "bufferMinutes": zod.number().int().min(createBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin)
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
@@ -1440,6 +1479,12 @@ export const createSalonBookingGroupResponseAppointmentsItemTravelFeeMin = 0;
 
 export const createSalonBookingGroupResponseAppointmentsItemTreatmentsItemPositionMin = 0;
 
+export const createSalonBookingGroupResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const createSalonBookingGroupResponseAppointmentsItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const createSalonBookingGroupResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const createSalonBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -1496,6 +1541,9 @@ export const CreateSalonBookingGroupResponse = zod.object({
   "employeeId": zod.string().nullable(),
   "startTime": zod.string(),
   "endTime": zod.string(),
+  "preProcessingMinutes": zod.number().int().min(createSalonBookingGroupResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin),
+  "processingMinutes": zod.number().int().min(createSalonBookingGroupResponseAppointmentsItemTreatmentsItemProcessingMinutesMin),
+  "postProcessingMinutes": zod.number().int().min(createSalonBookingGroupResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin),
   "bufferMinutes": zod.number().int().min(createSalonBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin)
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
@@ -1570,6 +1618,12 @@ export const createEmployeeBookingGroupResponseAppointmentsItemTravelFeeMin = 0;
 
 export const createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemPositionMin = 0;
 
+export const createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -1626,6 +1680,9 @@ export const CreateEmployeeBookingGroupResponse = zod.object({
   "employeeId": zod.string().nullable(),
   "startTime": zod.string(),
   "endTime": zod.string(),
+  "preProcessingMinutes": zod.number().int().min(createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin),
+  "processingMinutes": zod.number().int().min(createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemProcessingMinutesMin),
+  "postProcessingMinutes": zod.number().int().min(createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin),
   "bufferMinutes": zod.number().int().min(createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin)
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
@@ -1699,6 +1756,12 @@ export const rescheduleBookingGroupResponseGroupAppointmentsItemTravelFeeMin = 0
 
 export const rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemPositionMin = 0;
 
+export const rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -1756,6 +1819,9 @@ export const RescheduleBookingGroupResponse = zod.object({
   "employeeId": zod.string().nullable(),
   "startTime": zod.string(),
   "endTime": zod.string(),
+  "preProcessingMinutes": zod.number().int().min(rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemPreProcessingMinutesMin),
+  "processingMinutes": zod.number().int().min(rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemProcessingMinutesMin),
+  "postProcessingMinutes": zod.number().int().min(rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemPostProcessingMinutesMin),
   "bufferMinutes": zod.number().int().min(rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemBufferMinutesMin)
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
@@ -1804,6 +1870,12 @@ export const cancelBookingGroupResponseGroupAppointmentsItemTravelFeeMin = 0;
 
 
 export const cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemPositionMin = 0;
+
+export const cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemPostProcessingMinutesMin = 0;
 
 export const cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemBufferMinutesMin = 0;
 
@@ -1862,6 +1934,9 @@ export const CancelBookingGroupResponse = zod.object({
   "employeeId": zod.string().nullable(),
   "startTime": zod.string(),
   "endTime": zod.string(),
+  "preProcessingMinutes": zod.number().int().min(cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemPreProcessingMinutesMin),
+  "processingMinutes": zod.number().int().min(cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemProcessingMinutesMin),
+  "postProcessingMinutes": zod.number().int().min(cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemPostProcessingMinutesMin),
   "bufferMinutes": zod.number().int().min(cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemBufferMinutesMin)
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
@@ -1910,6 +1985,12 @@ export const listMyAppointmentsResponseTravelFeeMin = 0;
 
 
 export const listMyAppointmentsResponseTreatmentsItemPositionMin = 0;
+
+export const listMyAppointmentsResponseTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const listMyAppointmentsResponseTreatmentsItemProcessingMinutesMin = 0;
+
+export const listMyAppointmentsResponseTreatmentsItemPostProcessingMinutesMin = 0;
 
 export const listMyAppointmentsResponseTreatmentsItemBufferMinutesMin = 0;
 
@@ -1964,6 +2045,9 @@ export const ListMyAppointmentsResponseItem = zod.object({
   "employeeId": zod.string().nullable(),
   "startTime": zod.string(),
   "endTime": zod.string(),
+  "preProcessingMinutes": zod.number().int().min(listMyAppointmentsResponseTreatmentsItemPreProcessingMinutesMin),
+  "processingMinutes": zod.number().int().min(listMyAppointmentsResponseTreatmentsItemProcessingMinutesMin),
+  "postProcessingMinutes": zod.number().int().min(listMyAppointmentsResponseTreatmentsItemPostProcessingMinutesMin),
   "bufferMinutes": zod.number().int().min(listMyAppointmentsResponseTreatmentsItemBufferMinutesMin)
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
@@ -2035,6 +2119,12 @@ export const createAppointmentResponseTravelFeeMin = 0;
 
 export const createAppointmentResponseTreatmentsItemPositionMin = 0;
 
+export const createAppointmentResponseTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const createAppointmentResponseTreatmentsItemProcessingMinutesMin = 0;
+
+export const createAppointmentResponseTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const createAppointmentResponseTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -2088,6 +2178,9 @@ export const CreateAppointmentResponse = zod.object({
   "employeeId": zod.string().nullable(),
   "startTime": zod.string(),
   "endTime": zod.string(),
+  "preProcessingMinutes": zod.number().int().min(createAppointmentResponseTreatmentsItemPreProcessingMinutesMin),
+  "processingMinutes": zod.number().int().min(createAppointmentResponseTreatmentsItemProcessingMinutesMin),
+  "postProcessingMinutes": zod.number().int().min(createAppointmentResponseTreatmentsItemPostProcessingMinutesMin),
   "bufferMinutes": zod.number().int().min(createAppointmentResponseTreatmentsItemBufferMinutesMin)
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
@@ -2154,6 +2247,12 @@ export const updateAppointmentResponseTravelFeeMin = 0;
 
 export const updateAppointmentResponseTreatmentsItemPositionMin = 0;
 
+export const updateAppointmentResponseTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const updateAppointmentResponseTreatmentsItemProcessingMinutesMin = 0;
+
+export const updateAppointmentResponseTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const updateAppointmentResponseTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -2207,6 +2306,9 @@ export const UpdateAppointmentResponse = zod.object({
   "employeeId": zod.string().nullable(),
   "startTime": zod.string(),
   "endTime": zod.string(),
+  "preProcessingMinutes": zod.number().int().min(updateAppointmentResponseTreatmentsItemPreProcessingMinutesMin),
+  "processingMinutes": zod.number().int().min(updateAppointmentResponseTreatmentsItemProcessingMinutesMin),
+  "postProcessingMinutes": zod.number().int().min(updateAppointmentResponseTreatmentsItemPostProcessingMinutesMin),
   "bufferMinutes": zod.number().int().min(updateAppointmentResponseTreatmentsItemBufferMinutesMin)
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
@@ -2265,6 +2367,12 @@ export const cancelAppointmentResponseTravelFeeMin = 0;
 
 export const cancelAppointmentResponseTreatmentsItemPositionMin = 0;
 
+export const cancelAppointmentResponseTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const cancelAppointmentResponseTreatmentsItemProcessingMinutesMin = 0;
+
+export const cancelAppointmentResponseTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const cancelAppointmentResponseTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -2318,6 +2426,9 @@ export const CancelAppointmentResponse = zod.object({
   "employeeId": zod.string().nullable(),
   "startTime": zod.string(),
   "endTime": zod.string(),
+  "preProcessingMinutes": zod.number().int().min(cancelAppointmentResponseTreatmentsItemPreProcessingMinutesMin),
+  "processingMinutes": zod.number().int().min(cancelAppointmentResponseTreatmentsItemProcessingMinutesMin),
+  "postProcessingMinutes": zod.number().int().min(cancelAppointmentResponseTreatmentsItemPostProcessingMinutesMin),
   "bufferMinutes": zod.number().int().min(cancelAppointmentResponseTreatmentsItemBufferMinutesMin)
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
@@ -2361,6 +2472,12 @@ export const transitionAppointmentLifecycleResponseTravelFeeMin = 0;
 
 
 export const transitionAppointmentLifecycleResponseTreatmentsItemPositionMin = 0;
+
+export const transitionAppointmentLifecycleResponseTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const transitionAppointmentLifecycleResponseTreatmentsItemProcessingMinutesMin = 0;
+
+export const transitionAppointmentLifecycleResponseTreatmentsItemPostProcessingMinutesMin = 0;
 
 export const transitionAppointmentLifecycleResponseTreatmentsItemBufferMinutesMin = 0;
 
@@ -2415,6 +2532,9 @@ export const TransitionAppointmentLifecycleResponse = zod.object({
   "employeeId": zod.string().nullable(),
   "startTime": zod.string(),
   "endTime": zod.string(),
+  "preProcessingMinutes": zod.number().int().min(transitionAppointmentLifecycleResponseTreatmentsItemPreProcessingMinutesMin),
+  "processingMinutes": zod.number().int().min(transitionAppointmentLifecycleResponseTreatmentsItemProcessingMinutesMin),
+  "postProcessingMinutes": zod.number().int().min(transitionAppointmentLifecycleResponseTreatmentsItemPostProcessingMinutesMin),
   "bufferMinutes": zod.number().int().min(transitionAppointmentLifecycleResponseTreatmentsItemBufferMinutesMin)
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
@@ -2582,6 +2702,12 @@ export const getCustomerDashboardResponseUpcomingItemTravelFeeMin = 0;
 
 export const getCustomerDashboardResponseUpcomingItemTreatmentsItemPositionMin = 0;
 
+export const getCustomerDashboardResponseUpcomingItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const getCustomerDashboardResponseUpcomingItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const getCustomerDashboardResponseUpcomingItemTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const getCustomerDashboardResponseUpcomingItemTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -2636,6 +2762,9 @@ export const GetCustomerDashboardResponse = zod.object({
   "employeeId": zod.string().nullable(),
   "startTime": zod.string(),
   "endTime": zod.string(),
+  "preProcessingMinutes": zod.number().int().min(getCustomerDashboardResponseUpcomingItemTreatmentsItemPreProcessingMinutesMin),
+  "processingMinutes": zod.number().int().min(getCustomerDashboardResponseUpcomingItemTreatmentsItemProcessingMinutesMin),
+  "postProcessingMinutes": zod.number().int().min(getCustomerDashboardResponseUpcomingItemTreatmentsItemPostProcessingMinutesMin),
   "bufferMinutes": zod.number().int().min(getCustomerDashboardResponseUpcomingItemTreatmentsItemBufferMinutesMin)
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
@@ -2977,6 +3106,12 @@ export const getSalonDashboardResponseTodayAppointmentsItemTravelFeeMin = 0;
 
 export const getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemPositionMin = 0;
 
+export const getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -3065,6 +3200,9 @@ export const GetSalonDashboardResponse = zod.object({
   "employeeId": zod.string().nullable(),
   "startTime": zod.string(),
   "endTime": zod.string(),
+  "preProcessingMinutes": zod.number().int().min(getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemPreProcessingMinutesMin),
+  "processingMinutes": zod.number().int().min(getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemProcessingMinutesMin),
+  "postProcessingMinutes": zod.number().int().min(getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemPostProcessingMinutesMin),
   "bufferMinutes": zod.number().int().min(getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemBufferMinutesMin)
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
@@ -3395,6 +3533,12 @@ export const listSalonAppointmentsResponseTravelFeeMin = 0;
 
 export const listSalonAppointmentsResponseTreatmentsItemPositionMin = 0;
 
+export const listSalonAppointmentsResponseTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const listSalonAppointmentsResponseTreatmentsItemProcessingMinutesMin = 0;
+
+export const listSalonAppointmentsResponseTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const listSalonAppointmentsResponseTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -3448,6 +3592,9 @@ export const ListSalonAppointmentsResponseItem = zod.object({
   "employeeId": zod.string().nullable(),
   "startTime": zod.string(),
   "endTime": zod.string(),
+  "preProcessingMinutes": zod.number().int().min(listSalonAppointmentsResponseTreatmentsItemPreProcessingMinutesMin),
+  "processingMinutes": zod.number().int().min(listSalonAppointmentsResponseTreatmentsItemProcessingMinutesMin),
+  "postProcessingMinutes": zod.number().int().min(listSalonAppointmentsResponseTreatmentsItemPostProcessingMinutesMin),
   "bufferMinutes": zod.number().int().min(listSalonAppointmentsResponseTreatmentsItemBufferMinutesMin)
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
@@ -3512,6 +3659,12 @@ export const createSalonAppointmentResponseTravelFeeMin = 0;
 
 export const createSalonAppointmentResponseTreatmentsItemPositionMin = 0;
 
+export const createSalonAppointmentResponseTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const createSalonAppointmentResponseTreatmentsItemProcessingMinutesMin = 0;
+
+export const createSalonAppointmentResponseTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const createSalonAppointmentResponseTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -3565,6 +3718,9 @@ export const CreateSalonAppointmentResponse = zod.object({
   "employeeId": zod.string().nullable(),
   "startTime": zod.string(),
   "endTime": zod.string(),
+  "preProcessingMinutes": zod.number().int().min(createSalonAppointmentResponseTreatmentsItemPreProcessingMinutesMin),
+  "processingMinutes": zod.number().int().min(createSalonAppointmentResponseTreatmentsItemProcessingMinutesMin),
+  "postProcessingMinutes": zod.number().int().min(createSalonAppointmentResponseTreatmentsItemPostProcessingMinutesMin),
   "bufferMinutes": zod.number().int().min(createSalonAppointmentResponseTreatmentsItemBufferMinutesMin)
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
@@ -3694,6 +3850,12 @@ export const createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTra
 
 export const createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemPositionMin = 0;
 
+export const createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -3751,6 +3913,9 @@ export const CreateSalonPackageAppointmentsResponse = zod.object({
   "employeeId": zod.string().nullable(),
   "startTime": zod.string(),
   "endTime": zod.string(),
+  "preProcessingMinutes": zod.number().int().min(createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemPreProcessingMinutesMin),
+  "processingMinutes": zod.number().int().min(createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemProcessingMinutesMin),
+  "postProcessingMinutes": zod.number().int().min(createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemPostProcessingMinutesMin),
   "bufferMinutes": zod.number().int().min(createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemBufferMinutesMin)
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
@@ -3962,6 +4127,12 @@ export const createSalonAppointmentSeriesResponseAppointmentsItemTravelFeeMin = 
 
 export const createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPositionMin = 0;
 
+export const createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -4018,6 +4189,9 @@ export const CreateSalonAppointmentSeriesResponse = zod.object({
   "employeeId": zod.string().nullable(),
   "startTime": zod.string(),
   "endTime": zod.string(),
+  "preProcessingMinutes": zod.number().int().min(createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin),
+  "processingMinutes": zod.number().int().min(createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemProcessingMinutesMin),
+  "postProcessingMinutes": zod.number().int().min(createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin),
   "bufferMinutes": zod.number().int().min(createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemBufferMinutesMin)
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
@@ -4117,6 +4291,12 @@ export const moveSalonAppointmentSeriesResponseAppointmentsItemTravelFeeMin = 0;
 
 export const moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPositionMin = 0;
 
+export const moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -4173,6 +4353,9 @@ export const MoveSalonAppointmentSeriesResponse = zod.object({
   "employeeId": zod.string().nullable(),
   "startTime": zod.string(),
   "endTime": zod.string(),
+  "preProcessingMinutes": zod.number().int().min(moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin),
+  "processingMinutes": zod.number().int().min(moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemProcessingMinutesMin),
+  "postProcessingMinutes": zod.number().int().min(moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin),
   "bufferMinutes": zod.number().int().min(moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemBufferMinutesMin)
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
@@ -4349,6 +4532,12 @@ export const createEmployeeAppointmentSeriesResponseAppointmentsItemTravelFeeMin
 
 export const createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemPositionMin = 0;
 
+export const createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -4405,6 +4594,9 @@ export const CreateEmployeeAppointmentSeriesResponse = zod.object({
   "employeeId": zod.string().nullable(),
   "startTime": zod.string(),
   "endTime": zod.string(),
+  "preProcessingMinutes": zod.number().int().min(createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin),
+  "processingMinutes": zod.number().int().min(createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemProcessingMinutesMin),
+  "postProcessingMinutes": zod.number().int().min(createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin),
   "bufferMinutes": zod.number().int().min(createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemBufferMinutesMin)
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
@@ -4533,6 +4725,12 @@ export const updateSalonAppointmentResponseTravelFeeMin = 0;
 
 export const updateSalonAppointmentResponseTreatmentsItemPositionMin = 0;
 
+export const updateSalonAppointmentResponseTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const updateSalonAppointmentResponseTreatmentsItemProcessingMinutesMin = 0;
+
+export const updateSalonAppointmentResponseTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const updateSalonAppointmentResponseTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -4586,6 +4784,9 @@ export const UpdateSalonAppointmentResponse = zod.object({
   "employeeId": zod.string().nullable(),
   "startTime": zod.string(),
   "endTime": zod.string(),
+  "preProcessingMinutes": zod.number().int().min(updateSalonAppointmentResponseTreatmentsItemPreProcessingMinutesMin),
+  "processingMinutes": zod.number().int().min(updateSalonAppointmentResponseTreatmentsItemProcessingMinutesMin),
+  "postProcessingMinutes": zod.number().int().min(updateSalonAppointmentResponseTreatmentsItemPostProcessingMinutesMin),
   "bufferMinutes": zod.number().int().min(updateSalonAppointmentResponseTreatmentsItemBufferMinutesMin)
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
@@ -4707,6 +4908,15 @@ export const DeleteSalonResourceResponse = zod.void()
 /**
  * @summary List salon services
  */
+export const listSalonServicesResponsePreProcessingMinutesDefault = 0;
+export const listSalonServicesResponsePreProcessingMinutesMin = 0;
+
+export const listSalonServicesResponseProcessingMinutesDefault = 0;
+export const listSalonServicesResponseProcessingMinutesMin = 0;
+
+export const listSalonServicesResponsePostProcessingMinutesDefault = 0;
+export const listSalonServicesResponsePostProcessingMinutesMin = 0;
+
 export const listSalonServicesResponseBufferMinutesDefault = 0;
 export const listSalonServicesResponseBufferMinutesMin = 0;
 
@@ -4724,6 +4934,9 @@ export const ListSalonServicesResponseItem = zod.object({
   "name": zod.string(),
   "description": zod.string(),
   "durationMinutes": zod.number(),
+  "preProcessingMinutes": zod.number().min(listSalonServicesResponsePreProcessingMinutesMin).default(listSalonServicesResponsePreProcessingMinutesDefault),
+  "processingMinutes": zod.number().min(listSalonServicesResponseProcessingMinutesMin).default(listSalonServicesResponseProcessingMinutesDefault),
+  "postProcessingMinutes": zod.number().min(listSalonServicesResponsePostProcessingMinutesMin).default(listSalonServicesResponsePostProcessingMinutesDefault),
   "bufferMinutes": zod.number().min(listSalonServicesResponseBufferMinutesMin).default(listSalonServicesResponseBufferMinutesDefault),
   "price": zod.number(),
   "promoPrice": zod.number().nullish(),
@@ -4751,6 +4964,15 @@ export const ListSalonServicesResponse = zod.array(ListSalonServicesResponseItem
 export const createSalonServiceBodyNameRegExp = new RegExp('.*\\S.*');
 export const createSalonServiceBodyDurationMinutesMin = 5;
 
+export const createSalonServiceBodyPreProcessingMinutesDefault = 0;
+export const createSalonServiceBodyPreProcessingMinutesMin = 0;
+
+export const createSalonServiceBodyProcessingMinutesDefault = 0;
+export const createSalonServiceBodyProcessingMinutesMin = 0;
+
+export const createSalonServiceBodyPostProcessingMinutesDefault = 0;
+export const createSalonServiceBodyPostProcessingMinutesMin = 0;
+
 export const createSalonServiceBodyBufferMinutesDefault = 0;
 export const createSalonServiceBodyBufferMinutesMin = 0;
 
@@ -4771,6 +4993,9 @@ export const CreateSalonServiceBody = zod.object({
   "name": zod.string().min(1).regex(createSalonServiceBodyNameRegExp),
   "description": zod.string(),
   "durationMinutes": zod.number().min(createSalonServiceBodyDurationMinutesMin),
+  "preProcessingMinutes": zod.number().min(createSalonServiceBodyPreProcessingMinutesMin).default(createSalonServiceBodyPreProcessingMinutesDefault),
+  "processingMinutes": zod.number().min(createSalonServiceBodyProcessingMinutesMin).default(createSalonServiceBodyProcessingMinutesDefault),
+  "postProcessingMinutes": zod.number().min(createSalonServiceBodyPostProcessingMinutesMin).default(createSalonServiceBodyPostProcessingMinutesDefault),
   "bufferMinutes": zod.number().min(createSalonServiceBodyBufferMinutesMin).default(createSalonServiceBodyBufferMinutesDefault),
   "price": zod.number().min(createSalonServiceBodyPriceMin),
   "promoPrice": zod.number().nullish(),
@@ -4784,6 +5009,15 @@ export const CreateSalonServiceBody = zod.object({
   "quantity": zod.number().min(1).multipleOf(createSalonServiceBodyResourceRequirementsItemQuantityMultipleOf)
 })).max(createSalonServiceBodyResourceRequirementsMax).optional()
 })
+
+export const createSalonServiceResponsePreProcessingMinutesDefault = 0;
+export const createSalonServiceResponsePreProcessingMinutesMin = 0;
+
+export const createSalonServiceResponseProcessingMinutesDefault = 0;
+export const createSalonServiceResponseProcessingMinutesMin = 0;
+
+export const createSalonServiceResponsePostProcessingMinutesDefault = 0;
+export const createSalonServiceResponsePostProcessingMinutesMin = 0;
 
 export const createSalonServiceResponseBufferMinutesDefault = 0;
 export const createSalonServiceResponseBufferMinutesMin = 0;
@@ -4802,6 +5036,9 @@ export const CreateSalonServiceResponse = zod.object({
   "name": zod.string(),
   "description": zod.string(),
   "durationMinutes": zod.number(),
+  "preProcessingMinutes": zod.number().min(createSalonServiceResponsePreProcessingMinutesMin).default(createSalonServiceResponsePreProcessingMinutesDefault),
+  "processingMinutes": zod.number().min(createSalonServiceResponseProcessingMinutesMin).default(createSalonServiceResponseProcessingMinutesDefault),
+  "postProcessingMinutes": zod.number().min(createSalonServiceResponsePostProcessingMinutesMin).default(createSalonServiceResponsePostProcessingMinutesDefault),
   "bufferMinutes": zod.number().min(createSalonServiceResponseBufferMinutesMin).default(createSalonServiceResponseBufferMinutesDefault),
   "price": zod.number(),
   "promoPrice": zod.number().nullish(),
@@ -4880,6 +5117,15 @@ export const CreateSalonServicesBatchBody = zod.object({
 })).min(1).max(createSalonServicesBatchBodyItemsMax)
 })
 
+export const createSalonServicesBatchResponseCreatedItemPreProcessingMinutesDefault = 0;
+export const createSalonServicesBatchResponseCreatedItemPreProcessingMinutesMin = 0;
+
+export const createSalonServicesBatchResponseCreatedItemProcessingMinutesDefault = 0;
+export const createSalonServicesBatchResponseCreatedItemProcessingMinutesMin = 0;
+
+export const createSalonServicesBatchResponseCreatedItemPostProcessingMinutesDefault = 0;
+export const createSalonServicesBatchResponseCreatedItemPostProcessingMinutesMin = 0;
+
 export const createSalonServicesBatchResponseCreatedItemBufferMinutesDefault = 0;
 export const createSalonServicesBatchResponseCreatedItemBufferMinutesMin = 0;
 
@@ -4898,6 +5144,9 @@ export const CreateSalonServicesBatchResponse = zod.object({
   "name": zod.string(),
   "description": zod.string(),
   "durationMinutes": zod.number(),
+  "preProcessingMinutes": zod.number().min(createSalonServicesBatchResponseCreatedItemPreProcessingMinutesMin).default(createSalonServicesBatchResponseCreatedItemPreProcessingMinutesDefault),
+  "processingMinutes": zod.number().min(createSalonServicesBatchResponseCreatedItemProcessingMinutesMin).default(createSalonServicesBatchResponseCreatedItemProcessingMinutesDefault),
+  "postProcessingMinutes": zod.number().min(createSalonServicesBatchResponseCreatedItemPostProcessingMinutesMin).default(createSalonServicesBatchResponseCreatedItemPostProcessingMinutesDefault),
   "bufferMinutes": zod.number().min(createSalonServicesBatchResponseCreatedItemBufferMinutesMin).default(createSalonServicesBatchResponseCreatedItemBufferMinutesDefault),
   "price": zod.number(),
   "promoPrice": zod.number().nullish(),
@@ -4929,6 +5178,15 @@ export const UpdateSalonServiceParams = zod.object({
 export const updateSalonServiceBodyNameRegExp = new RegExp('.*\\S.*');
 export const updateSalonServiceBodyDurationMinutesMin = 5;
 
+export const updateSalonServiceBodyPreProcessingMinutesDefault = 0;
+export const updateSalonServiceBodyPreProcessingMinutesMin = 0;
+
+export const updateSalonServiceBodyProcessingMinutesDefault = 0;
+export const updateSalonServiceBodyProcessingMinutesMin = 0;
+
+export const updateSalonServiceBodyPostProcessingMinutesDefault = 0;
+export const updateSalonServiceBodyPostProcessingMinutesMin = 0;
+
 export const updateSalonServiceBodyBufferMinutesDefault = 0;
 export const updateSalonServiceBodyBufferMinutesMin = 0;
 
@@ -4949,6 +5207,9 @@ export const UpdateSalonServiceBody = zod.object({
   "name": zod.string().min(1).regex(updateSalonServiceBodyNameRegExp),
   "description": zod.string(),
   "durationMinutes": zod.number().min(updateSalonServiceBodyDurationMinutesMin),
+  "preProcessingMinutes": zod.number().min(updateSalonServiceBodyPreProcessingMinutesMin).default(updateSalonServiceBodyPreProcessingMinutesDefault),
+  "processingMinutes": zod.number().min(updateSalonServiceBodyProcessingMinutesMin).default(updateSalonServiceBodyProcessingMinutesDefault),
+  "postProcessingMinutes": zod.number().min(updateSalonServiceBodyPostProcessingMinutesMin).default(updateSalonServiceBodyPostProcessingMinutesDefault),
   "bufferMinutes": zod.number().min(updateSalonServiceBodyBufferMinutesMin).default(updateSalonServiceBodyBufferMinutesDefault),
   "price": zod.number().min(updateSalonServiceBodyPriceMin),
   "promoPrice": zod.number().nullish(),
@@ -4962,6 +5223,15 @@ export const UpdateSalonServiceBody = zod.object({
   "quantity": zod.number().min(1).multipleOf(updateSalonServiceBodyResourceRequirementsItemQuantityMultipleOf)
 })).max(updateSalonServiceBodyResourceRequirementsMax).optional()
 })
+
+export const updateSalonServiceResponsePreProcessingMinutesDefault = 0;
+export const updateSalonServiceResponsePreProcessingMinutesMin = 0;
+
+export const updateSalonServiceResponseProcessingMinutesDefault = 0;
+export const updateSalonServiceResponseProcessingMinutesMin = 0;
+
+export const updateSalonServiceResponsePostProcessingMinutesDefault = 0;
+export const updateSalonServiceResponsePostProcessingMinutesMin = 0;
 
 export const updateSalonServiceResponseBufferMinutesDefault = 0;
 export const updateSalonServiceResponseBufferMinutesMin = 0;
@@ -4980,6 +5250,9 @@ export const UpdateSalonServiceResponse = zod.object({
   "name": zod.string(),
   "description": zod.string(),
   "durationMinutes": zod.number(),
+  "preProcessingMinutes": zod.number().min(updateSalonServiceResponsePreProcessingMinutesMin).default(updateSalonServiceResponsePreProcessingMinutesDefault),
+  "processingMinutes": zod.number().min(updateSalonServiceResponseProcessingMinutesMin).default(updateSalonServiceResponseProcessingMinutesDefault),
+  "postProcessingMinutes": zod.number().min(updateSalonServiceResponsePostProcessingMinutesMin).default(updateSalonServiceResponsePostProcessingMinutesDefault),
   "bufferMinutes": zod.number().min(updateSalonServiceResponseBufferMinutesMin).default(updateSalonServiceResponseBufferMinutesDefault),
   "price": zod.number(),
   "promoPrice": zod.number().nullish(),
@@ -5079,6 +5352,15 @@ export const createSalonLocationResponseLocationTwoTopServicesItemPriceMin = 0;
 export const createSalonLocationResponseLocationTwoTopServicesItemPromoPriceMin = 0;
 
 
+export const createSalonLocationResponseLocationTwoServicesItemPreProcessingMinutesDefault = 0;
+export const createSalonLocationResponseLocationTwoServicesItemPreProcessingMinutesMin = 0;
+
+export const createSalonLocationResponseLocationTwoServicesItemProcessingMinutesDefault = 0;
+export const createSalonLocationResponseLocationTwoServicesItemProcessingMinutesMin = 0;
+
+export const createSalonLocationResponseLocationTwoServicesItemPostProcessingMinutesDefault = 0;
+export const createSalonLocationResponseLocationTwoServicesItemPostProcessingMinutesMin = 0;
+
 export const createSalonLocationResponseLocationTwoServicesItemBufferMinutesDefault = 0;
 export const createSalonLocationResponseLocationTwoServicesItemBufferMinutesMin = 0;
 
@@ -5102,6 +5384,15 @@ export const createSalonLocationResponseSalonTwoTopServicesItemPriceMin = 0;
 
 export const createSalonLocationResponseSalonTwoTopServicesItemPromoPriceMin = 0;
 
+
+export const createSalonLocationResponseSalonTwoServicesItemPreProcessingMinutesDefault = 0;
+export const createSalonLocationResponseSalonTwoServicesItemPreProcessingMinutesMin = 0;
+
+export const createSalonLocationResponseSalonTwoServicesItemProcessingMinutesDefault = 0;
+export const createSalonLocationResponseSalonTwoServicesItemProcessingMinutesMin = 0;
+
+export const createSalonLocationResponseSalonTwoServicesItemPostProcessingMinutesDefault = 0;
+export const createSalonLocationResponseSalonTwoServicesItemPostProcessingMinutesMin = 0;
 
 export const createSalonLocationResponseSalonTwoServicesItemBufferMinutesDefault = 0;
 export const createSalonLocationResponseSalonTwoServicesItemBufferMinutesMin = 0;
@@ -5190,6 +5481,9 @@ export const CreateSalonLocationResponse = zod.object({
   "name": zod.string(),
   "description": zod.string(),
   "durationMinutes": zod.number(),
+  "preProcessingMinutes": zod.number().min(createSalonLocationResponseLocationTwoServicesItemPreProcessingMinutesMin).default(createSalonLocationResponseLocationTwoServicesItemPreProcessingMinutesDefault),
+  "processingMinutes": zod.number().min(createSalonLocationResponseLocationTwoServicesItemProcessingMinutesMin).default(createSalonLocationResponseLocationTwoServicesItemProcessingMinutesDefault),
+  "postProcessingMinutes": zod.number().min(createSalonLocationResponseLocationTwoServicesItemPostProcessingMinutesMin).default(createSalonLocationResponseLocationTwoServicesItemPostProcessingMinutesDefault),
   "bufferMinutes": zod.number().min(createSalonLocationResponseLocationTwoServicesItemBufferMinutesMin).default(createSalonLocationResponseLocationTwoServicesItemBufferMinutesDefault),
   "price": zod.number(),
   "promoPrice": zod.number().nullish(),
@@ -5278,6 +5572,9 @@ export const CreateSalonLocationResponse = zod.object({
   "name": zod.string(),
   "description": zod.string(),
   "durationMinutes": zod.number(),
+  "preProcessingMinutes": zod.number().min(createSalonLocationResponseSalonTwoServicesItemPreProcessingMinutesMin).default(createSalonLocationResponseSalonTwoServicesItemPreProcessingMinutesDefault),
+  "processingMinutes": zod.number().min(createSalonLocationResponseSalonTwoServicesItemProcessingMinutesMin).default(createSalonLocationResponseSalonTwoServicesItemProcessingMinutesDefault),
+  "postProcessingMinutes": zod.number().min(createSalonLocationResponseSalonTwoServicesItemPostProcessingMinutesMin).default(createSalonLocationResponseSalonTwoServicesItemPostProcessingMinutesDefault),
   "bufferMinutes": zod.number().min(createSalonLocationResponseSalonTwoServicesItemBufferMinutesMin).default(createSalonLocationResponseSalonTwoServicesItemBufferMinutesDefault),
   "price": zod.number(),
   "promoPrice": zod.number().nullish(),
@@ -27617,6 +27914,12 @@ export const createWidgetBookingGroupResponseAppointmentsItemTravelFeeMin = 0;
 
 export const createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemPositionMin = 0;
 
+export const createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -27673,6 +27976,9 @@ export const CreateWidgetBookingGroupResponse = zod.object({
   "employeeId": zod.string().nullable(),
   "startTime": zod.string(),
   "endTime": zod.string(),
+  "preProcessingMinutes": zod.number().int().min(createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin),
+  "processingMinutes": zod.number().int().min(createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemProcessingMinutesMin),
+  "postProcessingMinutes": zod.number().int().min(createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin),
   "bufferMinutes": zod.number().int().min(createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin)
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),

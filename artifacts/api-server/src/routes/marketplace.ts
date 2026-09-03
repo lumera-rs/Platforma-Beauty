@@ -2235,7 +2235,8 @@ async function previewSeriesSlots(
   const result: Array<{ date: string; startTime: string; available: boolean; reason: string | null }> = [];
   const reservedAppointments: Array<{
     employeeId: string; date: string; startTime: string; endTime: string;
-    bufferMinutes: number; resourceIds: string[];
+    bufferMinutes: number; preProcessingMinutes?: number; processingMinutes?: number;
+    postProcessingMinutes?: number; resourceIds: string[];
   }> = [];
   const batchResourceReservations: Array<{
     resourceId: string; quantity: number; date: string; startTime: string; endTime: string; bufferMinutes: number;
@@ -2262,7 +2263,9 @@ async function previewSeriesSlots(
     if (employee) {
       reservedAppointments.push({
         employeeId: employee.employeeId, date: slot.date, startTime: slot.startTime, endTime: slot.endTime,
-        bufferMinutes: service.bufferMinutes, resourceIds: requirements.map((item) => item.resourceId),
+        bufferMinutes: service.bufferMinutes, preProcessingMinutes: service.preProcessingMinutes,
+        processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes,
+        resourceIds: requirements.map((item) => item.resourceId),
       });
       for (const req of requirements) {
         batchResourceReservations.push({
@@ -6750,6 +6753,9 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
       name: item.name,
       description: item.description,
       durationMinutes: item.durationMinutes,
+      preProcessingMinutes: item.preProcessingMinutes,
+      processingMinutes: item.processingMinutes,
+      postProcessingMinutes: item.postProcessingMinutes,
       price: item.price,
       promoPrice: item.promoPrice,
       tags: item.tags,
@@ -7073,6 +7079,9 @@ function sendGroupedAvailabilityResponse(
         employeeId: string | null;
         startTime: string;
         endTime: string;
+        preProcessingMinutes: number;
+        processingMinutes: number;
+        postProcessingMinutes: number;
         bufferMinutes: number;
       }>;
     }>;
@@ -7089,6 +7098,9 @@ function sendGroupedAvailabilityResponse(
           employeeId: string | null;
           startTime: string;
           endTime: string;
+          preProcessingMinutes: number;
+          processingMinutes: number;
+          postProcessingMinutes: number;
           bufferMinutes: number;
         }>;
       }>;
@@ -7127,7 +7139,7 @@ router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<v
     salonId: salon.id, dates, serviceIds: distinctServiceIds,
   });
   const requirementsByServiceId = availabilityContext.requirementsByServiceId;
-  const candidates: Array<{ date: string; startTime: string; endTime: string; treatments: Array<{ position: number; serviceId: string; date: string; employeeId: string | null; startTime: string; endTime: string; bufferMinutes: number }> }> = [];
+  const candidates: Array<{ date: string; startTime: string; endTime: string; treatments: Array<{ position: number; serviceId: string; date: string; employeeId: string | null; startTime: string; endTime: string; preProcessingMinutes: number; processingMinutes: number; postProcessingMinutes: number; bufferMinutes: number }> }> = [];
   const first = body.data.treatments[0]!;
   const initialService = serviceById.get(first.serviceId)!;
 
@@ -7148,7 +7160,7 @@ router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<v
       const extendCandidate = async (
         treatmentIndex: number,
         planned: (typeof candidates)[number]["treatments"],
-        reservedAppointments: Array<{ employeeId: string; date: string; startTime: string; endTime: string; bufferMinutes: number; resourceIds: string[] }>,
+        reservedAppointments: Array<{ employeeId: string; date: string; startTime: string; endTime: string; bufferMinutes: number; preProcessingMinutes?: number; processingMinutes?: number; postProcessingMinutes?: number; resourceIds: string[] }>,
         resourceReservations: Array<{ resourceId: string; quantity: number; date: string; startTime: string; endTime: string; bufferMinutes: number }>,
         cursorDate: string,
         cursor: string,
@@ -7195,11 +7207,15 @@ router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<v
             treatmentIndex + 1,
             [...planned, {
               position: treatmentIndex, serviceId: treatment.serviceId, date: slot.date,
-              employeeId: slot.employeeId, startTime: slot.startTime, endTime: slot.endTime, bufferMinutes: service.bufferMinutes,
+              employeeId: slot.employeeId, startTime: slot.startTime, endTime: slot.endTime,
+              preProcessingMinutes: service.preProcessingMinutes, processingMinutes: service.processingMinutes,
+              postProcessingMinutes: service.postProcessingMinutes, bufferMinutes: service.bufferMinutes,
             }],
             [...reservedAppointments, {
               employeeId: slot.employeeId, date: slot.date, startTime: slot.startTime, endTime: slot.endTime,
-              bufferMinutes: service.bufferMinutes, resourceIds: requirements.map((item) => item.resourceId),
+              bufferMinutes: service.bufferMinutes, preProcessingMinutes: service.preProcessingMinutes,
+              processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes,
+              resourceIds: requirements.map((item) => item.resourceId),
             }],
             [...resourceReservations, ...requirements.map((item) => ({
               resourceId: item.resourceId, quantity: item.quantity, date: slot.date, startTime: slot.startTime,
@@ -7217,11 +7233,16 @@ router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<v
         const planned = [{
           position: 0, serviceId: first.serviceId, date: initial.date,
           employeeId: initial.employeeId, startTime: initial.startTime, endTime: initial.endTime,
+          preProcessingMinutes: initialService.preProcessingMinutes,
+          processingMinutes: initialService.processingMinutes,
+          postProcessingMinutes: initialService.postProcessingMinutes,
           bufferMinutes: initialService.bufferMinutes,
         }];
         await extendCandidate(1, planned, [{
           employeeId: initial.employeeId, date: initial.date, startTime: initial.startTime, endTime: initial.endTime,
-          bufferMinutes: initialService.bufferMinutes, resourceIds: firstRequirements.map((item) => item.resourceId),
+          bufferMinutes: initialService.bufferMinutes, preProcessingMinutes: initialService.preProcessingMinutes,
+          processingMinutes: initialService.processingMinutes, postProcessingMinutes: initialService.postProcessingMinutes,
+          resourceIds: firstRequirements.map((item) => item.resourceId),
         }], firstRequirements.map((item) => ({
           resourceId: item.resourceId, quantity: item.quantity, date: initial.date, startTime: initial.startTime,
           endTime: appointmentEndTime(initial.endTime, initialService.bufferMinutes)!, bufferMinutes: 0,
@@ -7247,10 +7268,12 @@ router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<v
   });
   for (const initial of firstSlots) {
     const initialRequirements = requirementsByServiceId.get(initialService.id) ?? [];
-    const planned = [{ position: 0, serviceId: first.serviceId, date: initial.date, employeeId: initial.employeeId, startTime: initial.startTime, endTime: initial.endTime, bufferMinutes: initialService.bufferMinutes }];
+    const planned = [{ position: 0, serviceId: first.serviceId, date: initial.date, employeeId: initial.employeeId, startTime: initial.startTime, endTime: initial.endTime, preProcessingMinutes: initialService.preProcessingMinutes, processingMinutes: initialService.processingMinutes, postProcessingMinutes: initialService.postProcessingMinutes, bufferMinutes: initialService.bufferMinutes }];
     const reservedAppointments = [{
       employeeId: initial.employeeId, date: initial.date, startTime: initial.startTime, endTime: initial.endTime,
-      bufferMinutes: initialService.bufferMinutes, resourceIds: initialRequirements.map((item) => item.resourceId),
+      bufferMinutes: initialService.bufferMinutes, preProcessingMinutes: initialService.preProcessingMinutes,
+      processingMinutes: initialService.processingMinutes, postProcessingMinutes: initialService.postProcessingMinutes,
+      resourceIds: initialRequirements.map((item) => item.resourceId),
     }];
     const resourceReservations = initialRequirements.map((item) => ({
       resourceId: item.resourceId, quantity: item.quantity, date: initial.date, startTime: initial.startTime,
@@ -7278,11 +7301,13 @@ router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<v
           && entry.employeeId === slot.employeeId && entry.startTime < slot.endTime && entry.endTime > slot.startTime);
       });
       if (!next) { valid = false; break; }
-      planned.push({ position: index, serviceId: treatment.serviceId, date: next.date, employeeId: next.employeeId, startTime: next.startTime, endTime: next.endTime, bufferMinutes: serviceById.get(treatment.serviceId)!.bufferMinutes });
+      planned.push({ position: index, serviceId: treatment.serviceId, date: next.date, employeeId: next.employeeId, startTime: next.startTime, endTime: next.endTime, preProcessingMinutes: service.preProcessingMinutes, processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes, bufferMinutes: service.bufferMinutes });
       const requirements = requirementsByServiceId.get(service.id) ?? [];
       reservedAppointments.push({
         employeeId: next.employeeId, date: next.date, startTime: next.startTime, endTime: next.endTime,
-        bufferMinutes: service.bufferMinutes, resourceIds: requirements.map((item) => item.resourceId),
+        bufferMinutes: service.bufferMinutes, preProcessingMinutes: service.preProcessingMinutes,
+        processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes,
+        resourceIds: requirements.map((item) => item.resourceId),
       });
       resourceReservations.push(...requirements.map((item) => ({
         resourceId: item.resourceId, quantity: item.quantity, date: next.date, startTime: next.startTime,
@@ -7451,7 +7476,7 @@ async function createStaffBookingGroup(
         employeeId: string;
         endTime: string;
       }> = [];
-      const reservedAppointments: Array<{ employeeId: string; date: string; startTime: string; endTime: string; bufferMinutes: number; resourceIds: string[] }> = [];
+      const reservedAppointments: Array<{ employeeId: string; date: string; startTime: string; endTime: string; bufferMinutes: number; preProcessingMinutes?: number; processingMinutes?: number; postProcessingMinutes?: number; resourceIds: string[] }> = [];
       const resourceReservations: Array<{ resourceId: string; quantity: number; date: string; startTime: string; endTime: string; bufferMinutes: number }> = [];
       for (let index = 0; index < treatments.length; index += 1) {
         const item = treatments[index]!;
@@ -7473,7 +7498,7 @@ async function createStaffBookingGroup(
         planned.push({ item, service, employeeId: slot.employeeId, endTime });
         reservedAppointments.push({
           employeeId: slot.employeeId, date: item.date, startTime: item.startTime, endTime,
-          bufferMinutes: service.bufferMinutes, resourceIds: requirements[index]!.map((entry) => entry.resourceId),
+          bufferMinutes: service.bufferMinutes, preProcessingMinutes: service.preProcessingMinutes, processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes, resourceIds: requirements[index]!.map((entry) => entry.resourceId),
         });
         resourceReservations.push(...requirements[index]!.map((entry) => ({
           resourceId: entry.resourceId, quantity: entry.quantity, date: item.date, startTime: item.startTime,
@@ -7508,7 +7533,7 @@ async function createStaffBookingGroup(
         }
         revalidationAppointments.push({
           employeeId: entry.employeeId, date: entry.item.date, startTime: entry.item.startTime,
-          endTime: entry.endTime, bufferMinutes: entry.service.bufferMinutes,
+          endTime: entry.endTime, bufferMinutes: entry.service.bufferMinutes, preProcessingMinutes: entry.service.preProcessingMinutes, processingMinutes: entry.service.processingMinutes, postProcessingMinutes: entry.service.postProcessingMinutes,
           resourceIds: requirements[index]!.map((item) => item.resourceId),
         });
         revalidationResources.push(...requirements[index]!.map((item) => ({
@@ -7539,6 +7564,8 @@ async function createStaffBookingGroup(
         await tx.insert(appointmentTreatmentsTable).values({
           appointmentId: appointment!.id, serviceId: entry.service.id, employeeId: entry.employeeId,
           position, durationMinutes: entry.service.durationMinutes, bufferMinutes: entry.service.bufferMinutes,
+          preProcessingMinutes: entry.service.preProcessingMinutes, processingMinutes: entry.service.processingMinutes,
+          postProcessingMinutes: entry.service.postProcessingMinutes,
           price: entry.service.promoPrice ?? entry.service.price,
           plannedStartTime: entry.item.startTime, plannedEndTime: entry.endTime,
         });
@@ -7623,7 +7650,7 @@ admitBookingRequest, async (req, res): Promise<void> => {
       // every resolved choice must subsequently be locked with the global key.
       await lockAppointmentResources(tx, salon.id, treatmentDates.map((item) => ({ date: item })));
       const planned: Array<{ item: (typeof parsed.data.treatments)[number]; service: typeof servicesTable.$inferSelect; date: string; endTime: string; employeeId: string }> = [];
-      const reservedAppointments: Array<{ employeeId: string; date: string; startTime: string; endTime: string; bufferMinutes: number; resourceIds: string[] }> = [];
+      const reservedAppointments: Array<{ employeeId: string; date: string; startTime: string; endTime: string; bufferMinutes: number; preProcessingMinutes?: number; processingMinutes?: number; postProcessingMinutes?: number; resourceIds: string[] }> = [];
       const resourceReservations: Array<{ resourceId: string; quantity: number; date: string; startTime: string; endTime: string; bufferMinutes: number }> = [];
       for (let itemIndex = 0; itemIndex < parsed.data.treatments.length; itemIndex++) {
         const item = parsed.data.treatments[itemIndex]!;
@@ -7644,7 +7671,9 @@ admitBookingRequest, async (req, res): Promise<void> => {
         planned.push({ item, service, date: itemDate, endTime, employeeId: slot.employeeId });
         reservedAppointments.push({
           employeeId: slot.employeeId, date: itemDate, startTime: item.startTime, endTime,
-          bufferMinutes: service.bufferMinutes, resourceIds: requirements[itemIndex]!.map((entry) => entry.resourceId),
+          bufferMinutes: service.bufferMinutes, preProcessingMinutes: service.preProcessingMinutes,
+          processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes,
+          resourceIds: requirements[itemIndex]!.map((entry) => entry.resourceId),
         });
         resourceReservations.push(...requirements[itemIndex]!.map((entry) => ({
           resourceId: entry.resourceId, quantity: entry.quantity, date: itemDate, startTime: item.startTime,
@@ -7691,7 +7720,7 @@ admitBookingRequest, async (req, res): Promise<void> => {
           date: itemDate, startTime: item.startTime, endTime, durationMinutes: service.durationMinutes, price: service.promoPrice ?? service.price,
           notes: parsed.data.notes ?? null, plannedDate: itemDate, plannedStartTime: item.startTime, plannedEndTime: endTime,
         }, salon.instantBooking ? "confirmed" : "pending", user.id);
-        await tx.insert(appointmentTreatmentsTable).values({ appointmentId: appointment!.id, serviceId: service.id, employeeId, position, durationMinutes: service.durationMinutes, bufferMinutes: service.bufferMinutes, price: service.promoPrice ?? service.price, plannedStartTime: item.startTime, plannedEndTime: endTime });
+        await tx.insert(appointmentTreatmentsTable).values({ appointmentId: appointment!.id, serviceId: service.id, employeeId, position, durationMinutes: service.durationMinutes, bufferMinutes: service.bufferMinutes, preProcessingMinutes: service.preProcessingMinutes, processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes, price: service.promoPrice ?? service.price, plannedStartTime: item.startTime, plannedEndTime: endTime });
         const bufferedEnd = appointmentEndTime(endTime, service.bufferMinutes);
         if (!bufferedEnd) throw new AppointmentSeriesError("Bafer tretmana izlazi van dana.", 409);
         await allocateResourcesInTx(tx, salon.id, requirements[position]!, appointment!.id, itemDate, item.startTime, requirements[position]!.length ? bufferedEnd : endTime);
@@ -7886,7 +7915,7 @@ router.patch("/booking-groups/:bookingGroupId/reschedule", admitBookingRequest, 
         ];
       }));
       const planned: Array<{ appointment: typeof appointmentsTable.$inferSelect; service: typeof servicesTable.$inferSelect; date: string; startTime: string; endTime: string; employeeId: string }> = [];
-      const reservedAppointments: Array<{ employeeId: string; date: string; startTime: string; endTime: string; bufferMinutes: number; resourceIds: string[] }> = [];
+      const reservedAppointments: Array<{ employeeId: string; date: string; startTime: string; endTime: string; bufferMinutes: number; preProcessingMinutes?: number; processingMinutes?: number; postProcessingMinutes?: number; resourceIds: string[] }> = [];
       const resourceReservations: Array<{ resourceId: string; quantity: number; date: string; startTime: string; endTime: string; bufferMinutes: number }> = [];
       for (const appointment of affected) {
         const move = moveById.get(appointment.id)!;
@@ -7908,7 +7937,9 @@ router.patch("/booking-groups/:bookingGroupId/reschedule", admitBookingRequest, 
         const appointmentRequirements = requirements.get(appointment.id)!;
         reservedAppointments.push({
           employeeId: slot.employeeId, date, startTime: move.startTime, endTime,
-          bufferMinutes: service.bufferMinutes, resourceIds: appointmentRequirements.map((item) => item.resourceId),
+          bufferMinutes: service.bufferMinutes, preProcessingMinutes: service.preProcessingMinutes,
+          processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes,
+          resourceIds: appointmentRequirements.map((item) => item.resourceId),
         });
         resourceReservations.push(...appointmentRequirements.map((item) => ({
           resourceId: item.resourceId, quantity: item.quantity, date, startTime: move.startTime,
@@ -7930,7 +7961,9 @@ router.patch("/booking-groups/:bookingGroupId/reschedule", admitBookingRequest, 
         const appointmentRequirements = requirements.get(item.appointment.id)!;
         revalidationAppointments.push({
           employeeId: item.employeeId, date: item.date, startTime: item.startTime, endTime: item.endTime,
-          bufferMinutes: item.service.bufferMinutes, resourceIds: appointmentRequirements.map((entry) => entry.resourceId),
+          bufferMinutes: item.service.bufferMinutes, preProcessingMinutes: item.service.preProcessingMinutes,
+          processingMinutes: item.service.processingMinutes, postProcessingMinutes: item.service.postProcessingMinutes,
+          resourceIds: appointmentRequirements.map((entry) => entry.resourceId),
         });
         revalidationResources.push(...appointmentRequirements.map((entry) => ({
           resourceId: entry.resourceId, quantity: entry.quantity, date: item.date, startTime: item.startTime,
@@ -9641,7 +9674,8 @@ async function packageBookingInput(
 async function previewPackageSlots(salonId: string, services: (typeof servicesTable.$inferSelect)[], slots: Array<{ serviceId: string; date: string | Date; startTime: string; employeeId?: string | null }>) {
   const reservedAppointments: Array<{
     employeeId: string; date: string; startTime: string; endTime: string;
-    bufferMinutes: number; resourceIds: string[];
+    bufferMinutes: number; preProcessingMinutes?: number; processingMinutes?: number;
+    postProcessingMinutes?: number; resourceIds: string[];
   }> = [];
   const reservations: Array<{
     resourceId: string; quantity: number; date: string; startTime: string; endTime: string; bufferMinutes: number;
@@ -9666,7 +9700,9 @@ async function previewPackageSlots(salonId: string, services: (typeof servicesTa
     if (employee) {
       reservedAppointments.push({
         employeeId: employee.employeeId, date: prepared.date, startTime: prepared.startTime, endTime: prepared.endTime,
-        bufferMinutes: service.bufferMinutes, resourceIds: requirements.map((item) => item.resourceId),
+        bufferMinutes: service.bufferMinutes, preProcessingMinutes: service.preProcessingMinutes,
+        processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes,
+        resourceIds: requirements.map((item) => item.resourceId),
       });
       for (const requirement of requirements) reservations.push({
         resourceId: requirement.resourceId, quantity: requirement.quantity, date: prepared.date,
@@ -10300,7 +10336,7 @@ router.get("/salon/services", async (req, res): Promise<void> => {
   }
   res.json(ListSalonServicesResponse.parse(services.map((item) => ({
     id: item.id, category: item.categoryName, name: item.name, description: item.description,
-    durationMinutes: item.durationMinutes, bufferMinutes: item.bufferMinutes, price: item.price, promoPrice: item.promoPrice,
+    durationMinutes: item.durationMinutes, preProcessingMinutes: item.preProcessingMinutes, processingMinutes: item.processingMinutes, postProcessingMinutes: item.postProcessingMinutes, bufferMinutes: item.bufferMinutes, price: item.price, promoPrice: item.promoPrice,
     imageUrl: item.imageUrl, active: item.active, homeServiceAvailable: item.homeServiceAvailable,
     homeServiceFee: item.homeServiceFee, homeServiceMinimumOrder: item.homeServiceMinimumOrder,
     canBePermanentlyDeleted: !protectedServiceIds.has(item.id),
@@ -10316,7 +10352,7 @@ const serviceTemplateDto = (item: typeof serviceTemplatesTable.$inferSelect) => 
 
 const salonServiceDto = (item: typeof servicesTable.$inferSelect) => ({
   id: item.id, category: item.categoryName, name: item.name, description: item.description,
-  durationMinutes: item.durationMinutes, bufferMinutes: item.bufferMinutes, price: item.price, promoPrice: item.promoPrice, imageUrl: item.imageUrl,
+  durationMinutes: item.durationMinutes, preProcessingMinutes: item.preProcessingMinutes, processingMinutes: item.processingMinutes, postProcessingMinutes: item.postProcessingMinutes, bufferMinutes: item.bufferMinutes, price: item.price, promoPrice: item.promoPrice, imageUrl: item.imageUrl,
   active: item.active, homeServiceAvailable: item.homeServiceAvailable, homeServiceFee: item.homeServiceFee,
   homeServiceMinimumOrder: item.homeServiceMinimumOrder,
 });
@@ -10430,12 +10466,16 @@ router.post("/salon/services", async (req, res): Promise<void> => {
   const { salon } = access;
   const parsed = CreateSalonServiceBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  if ((parsed.data.preProcessingMinutes ?? 0) + (parsed.data.processingMinutes ?? 0) + (parsed.data.postProcessingMinutes ?? 0) > 0
+    && parsed.data.durationMinutes !== (parsed.data.preProcessingMinutes ?? 0) + (parsed.data.processingMinutes ?? 0) + (parsed.data.postProcessingMinutes ?? 0)) {
+    res.status(400).json({ error: "Trajanje usluge mora biti zbir pripreme, obrade i završetka." }); return;
+  }
   const [category] = await db.select().from(serviceCategoriesTable).where(eq(serviceCategoriesTable.name, parsed.data.category)).limit(1);
   let txResult: { service: typeof servicesTable.$inferSelect; resourceRequirements: Array<{ resourceId: string; quantity: number }> };
   try {
     txResult = await db.transaction(async (tx) => {
       await lockAppointmentResources(tx, salon.id);
-      const [row] = await tx.insert(servicesTable).values({ ...parsed.data, salonId: salon.id, categoryId: category?.id ?? null, categoryName: parsed.data.category, promoPrice: parsed.data.promoPrice ?? null, homeServiceMinimumOrder: parsed.data.homeServiceMinimumOrder ?? null }).returning();
+      const [row] = await tx.insert(servicesTable).values({ ...parsed.data, preProcessingMinutes: parsed.data.preProcessingMinutes ?? 0, processingMinutes: parsed.data.processingMinutes ?? 0, postProcessingMinutes: parsed.data.postProcessingMinutes ?? 0, salonId: salon.id, categoryId: category?.id ?? null, categoryName: parsed.data.category, promoPrice: parsed.data.promoPrice ?? null, homeServiceMinimumOrder: parsed.data.homeServiceMinimumOrder ?? null }).returning();
       await attachReadyImageAssets(tx, access.user.id, parsed.data.imageUrl);
       const reqData = parsed.data.resourceRequirements ?? [];
       await upsertServiceResourceRequirements(tx, row!.id, salon.id, reqData);
@@ -10452,13 +10492,17 @@ router.post("/salon/services", async (req, res): Promise<void> => {
   const { service, resourceRequirements } = txResult;
   await db.update(salonsTable).set({ homeService: await salonHasActiveHomeService(salon.id) }).where(eq(salonsTable.id, salon.id));
   void publishCatalogInvalidation(["salons", "services"]);
-  res.status(201).json(CreateSalonServiceResponse.parse({ id: service.id, category: service.categoryName, name: service.name, description: service.description, durationMinutes: service.durationMinutes, bufferMinutes: service.bufferMinutes, price: service.price, promoPrice: service.promoPrice, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder, resourceRequirements }));
+  res.status(201).json(CreateSalonServiceResponse.parse({ id: service.id, category: service.categoryName, name: service.name, description: service.description, durationMinutes: service.durationMinutes, preProcessingMinutes: service.preProcessingMinutes, processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes, bufferMinutes: service.bufferMinutes, price: service.price, promoPrice: service.promoPrice, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder, resourceRequirements }));
 });
 
 router.patch("/salon/services/:serviceId", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const parsed = CreateSalonServiceBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  if ((parsed.data.preProcessingMinutes ?? 0) + (parsed.data.processingMinutes ?? 0) + (parsed.data.postProcessingMinutes ?? 0) > 0
+    && parsed.data.durationMinutes !== (parsed.data.preProcessingMinutes ?? 0) + (parsed.data.processingMinutes ?? 0) + (parsed.data.postProcessingMinutes ?? 0)) {
+    res.status(400).json({ error: "Trajanje usluge mora biti zbir pripreme, obrade i završetka." }); return;
+  }
   let txResult: { service: typeof servicesTable.$inferSelect; resourceRequirements: Array<{ resourceId: string; quantity: number }> } | null;
   try {
     txResult = await db.transaction(async (tx) => {
@@ -10466,6 +10510,7 @@ router.patch("/salon/services/:serviceId", async (req, res): Promise<void> => {
       const [row] = await tx.update(servicesTable).set({
         categoryName: parsed.data.category, name: parsed.data.name, description: parsed.data.description,
         durationMinutes: parsed.data.durationMinutes, bufferMinutes: parsed.data.bufferMinutes, price: parsed.data.price, promoPrice: parsed.data.promoPrice ?? null,
+        preProcessingMinutes: parsed.data.preProcessingMinutes ?? 0, processingMinutes: parsed.data.processingMinutes ?? 0, postProcessingMinutes: parsed.data.postProcessingMinutes ?? 0,
         imageUrl: parsed.data.imageUrl, active: parsed.data.active,
         homeServiceAvailable: parsed.data.homeServiceAvailable, homeServiceFee: parsed.data.homeServiceFee, homeServiceMinimumOrder: parsed.data.homeServiceMinimumOrder ?? null,
       }).where(and(eq(servicesTable.id, req.params.serviceId), eq(servicesTable.salonId, access.salon.id))).returning();
@@ -10488,7 +10533,7 @@ router.patch("/salon/services/:serviceId", async (req, res): Promise<void> => {
   const { service, resourceRequirements } = txResult;
   await db.update(salonsTable).set({ homeService: await salonHasActiveHomeService(access.salon.id) }).where(eq(salonsTable.id, access.salon.id));
   void publishCatalogInvalidation(["salons", "services"]);
-  res.json(CreateSalonServiceResponse.parse({ id: service.id, category: service.categoryName, name: service.name, description: service.description, durationMinutes: service.durationMinutes, bufferMinutes: service.bufferMinutes, price: service.price, promoPrice: service.promoPrice, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder, resourceRequirements }));
+  res.json(CreateSalonServiceResponse.parse({ id: service.id, category: service.categoryName, name: service.name, description: service.description, durationMinutes: service.durationMinutes, preProcessingMinutes: service.preProcessingMinutes, processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes, bufferMinutes: service.bufferMinutes, price: service.price, promoPrice: service.promoPrice, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder, resourceRequirements }));
 });
 
 router.delete("/salon/services/:serviceId", async (req, res): Promise<void> => {
@@ -10558,6 +10603,9 @@ function additionalLocationProfile(
       name: service.name,
       description: service.description,
       durationMinutes: service.durationMinutes,
+      preProcessingMinutes: service.preProcessingMinutes,
+      processingMinutes: service.processingMinutes,
+      postProcessingMinutes: service.postProcessingMinutes,
       price: service.price,
       promoPrice: service.promoPrice,
       tags: service.tags,
@@ -10633,6 +10681,8 @@ router.post("/salon/locations", async (req, res, next): Promise<void> => {
         const [copy] = await tx.insert(servicesTable).values({
           salonId: location!.id, categoryId: service.categoryId, categoryName: service.categoryName,
           name: service.name, description: service.description, durationMinutes: service.durationMinutes,
+          preProcessingMinutes: service.preProcessingMinutes, processingMinutes: service.processingMinutes,
+          postProcessingMinutes: service.postProcessingMinutes,
           price: service.price, promoPrice: service.promoPrice, tags: service.tags,
           packageTreatments: service.packageTreatments, imageUrl: service.imageUrl, active: service.active,
           homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee,

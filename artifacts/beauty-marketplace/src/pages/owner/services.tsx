@@ -437,6 +437,9 @@ export default function OwnerServices() {
     name: "",
     category: "Frizura",
     durationMinutes: 30,
+    preProcessingMinutes: 0,
+    processingMinutes: 0,
+    postProcessingMinutes: 0,
     bufferMinutes: 0,
     price: 1500,
     description: "",
@@ -447,7 +450,7 @@ export default function OwnerServices() {
 
   const resetForm = () => {
     setEditingId(null);
-    setFormData({ name: "", category: "Frizura", durationMinutes: 30, bufferMinutes: 0, price: 1500, description: "", imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=200", active: true, homeServiceAvailable: false, homeServiceFee: 0, homeServiceMinimumOrder: "", resourceRequirements: [] });
+    setFormData({ name: "", category: "Frizura", durationMinutes: 30, preProcessingMinutes: 0, processingMinutes: 0, postProcessingMinutes: 0, bufferMinutes: 0, price: 1500, description: "", imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=200", active: true, homeServiceAvailable: false, homeServiceFee: 0, homeServiceMinimumOrder: "", resourceRequirements: [] });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -457,9 +460,26 @@ export default function OwnerServices() {
       toast.error("Neispravno buffer vreme", { description: "Buffer vreme mora biti ceo broj minuta, nula ili više." });
       return;
     }
+    const processingSegments = [
+      Number(formData.preProcessingMinutes),
+      Number(formData.processingMinutes),
+      Number(formData.postProcessingMinutes),
+    ];
+    if (processingSegments.some((minutes) => !Number.isInteger(minutes) || minutes < 0)) {
+      toast.error("Neispravni segmenti tretmana", { description: "Sva vremena moraju biti celi brojevi minuta, nula ili više." });
+      return;
+    }
+    const processingTotal = processingSegments.reduce((sum, minutes) => sum + minutes, 0);
+    if (processingTotal > 0 && processingTotal !== Number(formData.durationMinutes)) {
+      toast.error("Trajanje se ne poklapa", { description: `Zbir pripreme, vremena delovanja i završnice mora biti ${formData.durationMinutes} min.` });
+      return;
+    }
     const payload: ServiceInput = {
       ...formData,
       durationMinutes: Number(formData.durationMinutes),
+      preProcessingMinutes: processingSegments[0],
+      processingMinutes: processingSegments[1],
+      postProcessingMinutes: processingSegments[2],
       bufferMinutes,
       price: Number(formData.price),
       homeServiceFee: formData.homeServiceAvailable ? Number(formData.homeServiceFee) : 0,
@@ -507,7 +527,7 @@ export default function OwnerServices() {
 
   const editService = (service: NonNullable<typeof services>[number]) => {
     setEditingId(service.id);
-    setFormData({ name: service.name, category: service.category, durationMinutes: service.durationMinutes, bufferMinutes: service.bufferMinutes ?? 0, price: service.price, description: service.description, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder?.toString() ?? "", resourceRequirements: service.resourceRequirements ?? [] });
+    setFormData({ name: service.name, category: service.category, durationMinutes: service.durationMinutes, preProcessingMinutes: service.preProcessingMinutes ?? 0, processingMinutes: service.processingMinutes ?? 0, postProcessingMinutes: service.postProcessingMinutes ?? 0, bufferMinutes: service.bufferMinutes ?? 0, price: service.price, description: service.description, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder?.toString() ?? "", resourceRequirements: service.resourceRequirements ?? [] });
     setOpen(true);
   };
 
@@ -581,6 +601,30 @@ export default function OwnerServices() {
                           <Label>Cena (RSD)</Label>
                           <Input type="number" value={formData.price} onChange={e => setFormData({...formData, price: Number(e.target.value)})} required min="0" />
                         </div>
+                      </div>
+                      <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
+                        <div>
+                          <Label>Segmenti tretmana (opciono)</Label>
+                          <p className="mt-1 text-xs text-muted-foreground">Koristite kada zaposleni može da radi drugi termin dok tretman deluje. Ako sva tri polja ostanu 0, zaposleni je zauzet tokom celog tretmana.</p>
+                        </div>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Priprema</Label>
+                            <Input type="number" value={formData.preProcessingMinutes} onChange={e => setFormData({...formData, preProcessingMinutes: Number(e.target.value)})} min="0" step="1" required />
+                            <p className="text-[11px] text-muted-foreground">Zaposleni radi.</p>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Vreme delovanja</Label>
+                            <Input type="number" value={formData.processingMinutes} onChange={e => setFormData({...formData, processingMinutes: Number(e.target.value)})} min="0" step="1" required />
+                            <p className="text-[11px] text-muted-foreground">Zaposleni je slobodan.</p>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Završnica</Label>
+                            <Input type="number" value={formData.postProcessingMinutes} onChange={e => setFormData({...formData, postProcessingMinutes: Number(e.target.value)})} min="0" step="1" required />
+                            <p className="text-[11px] text-muted-foreground">Zaposleni ponovo radi.</p>
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground">Kada koristite segmente, njihov zbir mora biti jednak ukupnom trajanju usluge.</p>
                       </div>
                       <div className="space-y-2">
                         <Label>Kategorija</Label>
@@ -730,6 +774,9 @@ export default function OwnerServices() {
                              {!service.canBePermanentlyDeleted && <Badge variant="secondary" className="text-[10px] gap-1"><AlertCircle className="h-3 w-3" /> Istorija termina</Badge>}
                           </div>
                           <p className="text-sm text-muted-foreground mb-1">{service.category} • {service.durationMinutes} min{service.bufferMinutes ? ` + ${service.bufferMinutes}m buffer` : ''}</p>
+                          {(service.preProcessingMinutes + service.processingMinutes + service.postProcessingMinutes) > 0 && (
+                            <p className="text-xs text-muted-foreground">Priprema {service.preProcessingMinutes} min • Delovanje {service.processingMinutes} min • Završnica {service.postProcessingMinutes} min</p>
+                          )}
                           <div className="flex items-baseline gap-2">
                             <p className="font-semibold text-primary">{service.price} RSD</p>
                             {service.promoPrice && <p className="text-sm line-through text-muted-foreground">{service.promoPrice} RSD</p>}

@@ -1,6 +1,7 @@
 import { and, eq, gte, inArray, isNull, lte, ne, notInArray, or, sql } from "drizzle-orm";
 import {
   appointmentResourceAllocationsTable,
+  appointmentTreatmentsTable,
   appointmentsTable,
   db,
   employeeLocationAssignmentsTable,
@@ -44,7 +45,17 @@ export type CanonicalAvailabilityContext = {
   dateHours: Array<typeof salonDateHoursTable.$inferSelect>;
   employees: Array<typeof employeesTable.$inferSelect>;
   employeeServiceLinks: Array<typeof employeeServicesTable.$inferSelect>;
-  appointments: Array<{ id: string; employeeId: string | null; date: string; startTime: string; endTime: string; service: typeof servicesTable.$inferSelect }>;
+  appointments: Array<{
+    id: string;
+    employeeId: string | null;
+    date: string;
+    startTime: string;
+    endTime: string;
+    bufferMinutes: number;
+    preProcessingMinutes: number;
+    processingMinutes: number;
+    postProcessingMinutes: number;
+  }>;
   resourceIdsByAppointment: Map<string, string[]>;
   schedules: Array<typeof employeeLocationSchedulesTable.$inferSelect>;
   timeOff: Array<typeof employeeTimeOffTable.$inferSelect>;
@@ -88,7 +99,25 @@ export async function preloadCanonicalAvailability(input: {
   if (!employeeIds.length) return { salonId: input.salonId, startDate, endDate, settings, dateHours, employees, employeeServiceLinks: [], appointments: [], resourceIdsByAppointment: new Map(), schedules: [], timeOff: [], salonHours, requirementsByServiceId, resourceAllocations: [], downtime: downtimeRows.map((row: { downtime: typeof salonResourceDowntimeTable.$inferSelect }) => row.downtime) };
   const [employeeServiceLinks, appointments, schedules, timeOff] = await Promise.all([
     store.select().from(employeeServicesTable).where(and(inArray(employeeServicesTable.employeeId, employeeIds), inArray(employeeServicesTable.serviceId, serviceIds))),
-    store.select({ id: appointmentsTable.id, employeeId: appointmentsTable.employeeId, date: appointmentsTable.date, startTime: appointmentsTable.startTime, endTime: appointmentsTable.endTime, service: servicesTable }).from(appointmentsTable).innerJoin(servicesTable, eq(servicesTable.id, appointmentsTable.serviceId)).where(and(inArray(appointmentsTable.employeeId, employeeIds), gte(appointmentsTable.date, startDate), lte(appointmentsTable.date, endDate), ne(appointmentsTable.status, "cancelled"))),
+    store.select({
+      id: appointmentsTable.id,
+      employeeId: sql<string | null>`coalesce(${appointmentTreatmentsTable.employeeId}, ${appointmentsTable.employeeId})`,
+      date: appointmentsTable.date,
+      startTime: sql<string>`coalesce(${appointmentTreatmentsTable.plannedStartTime}, ${appointmentsTable.startTime})`,
+      endTime: sql<string>`coalesce(${appointmentTreatmentsTable.plannedEndTime}, ${appointmentsTable.endTime})`,
+      bufferMinutes: sql<number>`coalesce(${appointmentTreatmentsTable.bufferMinutes}, ${servicesTable.bufferMinutes}, 0)`,
+      preProcessingMinutes: sql<number>`coalesce(${appointmentTreatmentsTable.preProcessingMinutes}, ${servicesTable.preProcessingMinutes}, 0)`,
+      processingMinutes: sql<number>`coalesce(${appointmentTreatmentsTable.processingMinutes}, ${servicesTable.processingMinutes}, 0)`,
+      postProcessingMinutes: sql<number>`coalesce(${appointmentTreatmentsTable.postProcessingMinutes}, ${servicesTable.postProcessingMinutes}, 0)`,
+    }).from(appointmentsTable)
+      .innerJoin(servicesTable, eq(servicesTable.id, appointmentsTable.serviceId))
+      .leftJoin(appointmentTreatmentsTable, eq(appointmentTreatmentsTable.appointmentId, appointmentsTable.id))
+      .where(and(
+        inArray(sql`coalesce(${appointmentTreatmentsTable.employeeId}, ${appointmentsTable.employeeId})`, employeeIds),
+        gte(appointmentsTable.date, startDate),
+        lte(appointmentsTable.date, endDate),
+        ne(appointmentsTable.status, "cancelled"),
+      )),
     store.select().from(employeeLocationSchedulesTable).where(and(inArray(employeeLocationSchedulesTable.employeeId, employeeIds), eq(employeeLocationSchedulesTable.salonId, input.salonId))),
     store.select().from(employeeTimeOffTable).where(and(inArray(employeeTimeOffTable.employeeId, employeeIds), lte(employeeTimeOffTable.startDate, endDate), gte(employeeTimeOffTable.endDate, startDate), or(isNull(employeeTimeOffTable.salonId), eq(employeeTimeOffTable.salonId, input.salonId)))),
   ]);
@@ -163,6 +192,9 @@ export async function canonicalAvailability(input: {
     return generateAvailability({
       dates: input.dates, durationMinutes: input.service.durationMinutes,
       bufferMinutes: optionalNumber((input.service as unknown as { bufferMinutes?: unknown }).bufferMinutes, 0),
+      preProcessingMinutes: optionalNumber((input.service as unknown as { preProcessingMinutes?: unknown }).preProcessingMinutes, 0),
+      processingMinutes: optionalNumber((input.service as unknown as { processingMinutes?: unknown }).processingMinutes, 0),
+      postProcessingMinutes: optionalNumber((input.service as unknown as { postProcessingMinutes?: unknown }).postProcessingMinutes, 0),
       granularityMinutes: granularity, employees: candidates,
       salonHours: context.salonHours.map((hours) => ({ weekday: hours.weekday, startTime: hours.openTime, endTime: hours.closeTime, closed: hours.closed })),
       dateOverrides: context.dateHours.map((hours) => ({ date: hours.date, startTime: hours.openTime, endTime: hours.closeTime, closed: hours.closed })),
@@ -171,7 +203,10 @@ export async function canonicalAvailability(input: {
       appointments: [
         ...context.appointments.filter((appointment) => !!appointment.employeeId && candidateIds.has(appointment.employeeId) && (!input.excludeAppointmentIds?.includes(appointment.id))).map((appointment) => ({
           employeeId: appointment.employeeId, date: appointment.date, startTime: appointment.startTime, endTime: appointment.endTime,
-          bufferMinutes: optionalNumber((appointment.service as unknown as { bufferMinutes?: unknown }).bufferMinutes, 0),
+           bufferMinutes: optionalNumber(appointment.bufferMinutes, 0),
+           preProcessingMinutes: optionalNumber(appointment.preProcessingMinutes, 0),
+           processingMinutes: optionalNumber(appointment.processingMinutes, 0),
+           postProcessingMinutes: optionalNumber(appointment.postProcessingMinutes, 0),
           resourceIds: context.resourceIdsByAppointment.get(appointment.id) ?? [],
         })),
         ...(input.reservedAppointments ?? []),
@@ -276,26 +311,28 @@ export async function canonicalAvailability(input: {
       allocation.resourceId,
     ]);
   }
-  // Keep appointment IDs and service buffers associated without relying on a
-  // not-yet-generated service.bufferMinutes type.
   const busyAppointments = await store.select({
     id: appointmentsTable.id,
-    employeeId: appointmentsTable.employeeId,
+    employeeId: sql<string | null>`coalesce(${appointmentTreatmentsTable.employeeId}, ${appointmentsTable.employeeId})`,
     date: appointmentsTable.date,
-    startTime: appointmentsTable.startTime,
-    endTime: appointmentsTable.endTime,
-    service: servicesTable,
+    startTime: sql<string>`coalesce(${appointmentTreatmentsTable.plannedStartTime}, ${appointmentsTable.startTime})`,
+    endTime: sql<string>`coalesce(${appointmentTreatmentsTable.plannedEndTime}, ${appointmentsTable.endTime})`,
+    bufferMinutes: sql<number>`coalesce(${appointmentTreatmentsTable.bufferMinutes}, ${servicesTable.bufferMinutes}, 0)`,
+    preProcessingMinutes: sql<number>`coalesce(${appointmentTreatmentsTable.preProcessingMinutes}, ${servicesTable.preProcessingMinutes}, 0)`,
+    processingMinutes: sql<number>`coalesce(${appointmentTreatmentsTable.processingMinutes}, ${servicesTable.processingMinutes}, 0)`,
+    postProcessingMinutes: sql<number>`coalesce(${appointmentTreatmentsTable.postProcessingMinutes}, ${servicesTable.postProcessingMinutes}, 0)`,
   }).from(appointmentsTable)
     .innerJoin(servicesTable, eq(servicesTable.id, appointmentsTable.serviceId))
+    .leftJoin(appointmentTreatmentsTable, eq(appointmentTreatmentsTable.appointmentId, appointmentsTable.id))
     .where(and(
-      inArray(appointmentsTable.employeeId, candidateIds),
+      inArray(sql`coalesce(${appointmentTreatmentsTable.employeeId}, ${appointmentsTable.employeeId})`, candidateIds),
       gte(appointmentsTable.date, startDate),
       lte(appointmentsTable.date, endDate),
       ne(appointmentsTable.status, "cancelled"),
       input.excludeAppointmentIds?.length ? notInArray(appointmentsTable.id, input.excludeAppointmentIds) : undefined,
     )) as Array<{
       id: string; employeeId: string | null; date: string; startTime: string; endTime: string;
-      service: typeof servicesTable.$inferSelect;
+      bufferMinutes: number; preProcessingMinutes: number; processingMinutes: number; postProcessingMinutes: number;
     }>;
   const schedules = await store.select().from(employeeLocationSchedulesTable).where(and(
     inArray(employeeLocationSchedulesTable.employeeId, candidateIds),
@@ -357,6 +394,9 @@ export async function canonicalAvailability(input: {
     dates: input.dates,
     durationMinutes: input.service.durationMinutes,
     bufferMinutes: optionalNumber((input.service as unknown as { bufferMinutes?: unknown }).bufferMinutes, 0),
+    preProcessingMinutes: optionalNumber((input.service as unknown as { preProcessingMinutes?: unknown }).preProcessingMinutes, 0),
+    processingMinutes: optionalNumber((input.service as unknown as { processingMinutes?: unknown }).processingMinutes, 0),
+    postProcessingMinutes: optionalNumber((input.service as unknown as { postProcessingMinutes?: unknown }).postProcessingMinutes, 0),
     granularityMinutes: granularity,
     employees: candidates,
     salonHours: salonHours.map((hours: { weekday: number; openTime: string; closeTime: string; closed: boolean }) => ({
@@ -379,7 +419,10 @@ export async function canonicalAvailability(input: {
         date: appointment.date,
         startTime: appointment.startTime,
         endTime: appointment.endTime,
-        bufferMinutes: optionalNumber((appointment.service as unknown as { bufferMinutes?: unknown }).bufferMinutes, 0),
+        bufferMinutes: optionalNumber(appointment.bufferMinutes, 0),
+        preProcessingMinutes: optionalNumber(appointment.preProcessingMinutes, 0),
+        processingMinutes: optionalNumber(appointment.processingMinutes, 0),
+        postProcessingMinutes: optionalNumber(appointment.postProcessingMinutes, 0),
         resourceIds: resourceIdsByAppointment.get(appointment.id) ?? [],
       })),
       ...(input.reservedAppointments ?? []),

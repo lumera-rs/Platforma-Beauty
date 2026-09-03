@@ -487,6 +487,12 @@ export const servicesTable = pgTable("services", {
   name: text("name").notNull(),
   description: text("description").notNull(),
   durationMinutes: integer("duration_minutes").notNull(),
+  /** Employee is needed before the hands-on portion of a treatment. */
+  preProcessingMinutes: integer("pre_processing_minutes").notNull().default(0),
+  /** Hands-on employee time between preparation and finishing. */
+  processingMinutes: integer("processing_minutes").notNull().default(0),
+  /** Employee is needed after the hands-on portion of a treatment. */
+  postProcessingMinutes: integer("post_processing_minutes").notNull().default(0),
   /** Calendar occupancy after treatment; does not change the customer-visible end time. */
   bufferMinutes: integer("buffer_minutes").notNull().default(0),
   price: integer("price").notNull(),
@@ -506,6 +512,14 @@ export const servicesTable = pgTable("services", {
   // Leading FK coverage for categoryId alone (global category browse).
   index("services_category_idx").on(table.categoryId),
   check("services_buffer_minutes_check", sql`${table.bufferMinutes} >= 0`),
+  check("services_processing_segments_check", sql`
+    ${table.preProcessingMinutes} >= 0
+    and ${table.processingMinutes} >= 0
+    and ${table.postProcessingMinutes} >= 0
+    and (
+      (${table.preProcessingMinutes} = 0 and ${table.processingMinutes} = 0 and ${table.postProcessingMinutes} = 0)
+      or (${table.durationMinutes} = ${table.preProcessingMinutes} + ${table.processingMinutes} + ${table.postProcessingMinutes} and ${table.durationMinutes} > 0)
+    )`),
 ]);
 
 export const productBrandsTable = pgTable("product_brands", {
@@ -766,6 +780,9 @@ export const appointmentTreatmentsTable = pgTable("appointment_treatments", {
   employeeId: uuid("employee_id").references(() => employeesTable.id, { onDelete: "set null" }),
   position: integer("position").notNull(),
   durationMinutes: integer("duration_minutes").notNull(),
+  preProcessingMinutes: integer("pre_processing_minutes").notNull().default(0),
+  processingMinutes: integer("processing_minutes").notNull().default(0),
+  postProcessingMinutes: integer("post_processing_minutes").notNull().default(0),
   bufferMinutes: integer("buffer_minutes").notNull().default(0),
   price: integer("price").notNull(),
   plannedStartTime: text("planned_start_time"),
@@ -780,6 +797,14 @@ export const appointmentTreatmentsTable = pgTable("appointment_treatments", {
   index("appointment_treatments_employee_idx").on(table.employeeId),
   check("appointment_treatments_position_check", sql`${table.position} >= 0`),
   check("appointment_treatments_duration_check", sql`${table.durationMinutes} > 0 and ${table.bufferMinutes} >= 0`),
+  check("appointment_treatments_processing_segments_check", sql`
+    ${table.preProcessingMinutes} >= 0
+    and ${table.processingMinutes} >= 0
+    and ${table.postProcessingMinutes} >= 0
+    and (
+      (${table.preProcessingMinutes} = 0 and ${table.processingMinutes} = 0 and ${table.postProcessingMinutes} = 0)
+      or (${table.durationMinutes} = ${table.preProcessingMinutes} + ${table.processingMinutes} + ${table.postProcessingMinutes} and ${table.durationMinutes} > 0)
+    )`),
 ]);
 
 export const smsDeliveriesTable = pgTable("sms_deliveries", {

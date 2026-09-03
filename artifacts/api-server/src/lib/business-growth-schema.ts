@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 121;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 122;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -249,6 +249,32 @@ function tableStatements(s: string): string[] {
     `CREATE EXTENSION IF NOT EXISTS pg_trgm`,
     // ── Existing-table additive changes (Phase 2 evolution) ────────────────
     `ALTER TABLE ${s}.salon_customers ADD COLUMN IF NOT EXISTS birth_date date`,
+    // v122 — treatment processing phases. Existing rows deliberately default to
+    // zero so their historical continuous employee occupancy is unchanged.
+    `ALTER TABLE ${s}.services ADD COLUMN IF NOT EXISTS pre_processing_minutes integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.services ADD COLUMN IF NOT EXISTS processing_minutes integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.services ADD COLUMN IF NOT EXISTS post_processing_minutes integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.appointment_treatments ADD COLUMN IF NOT EXISTS pre_processing_minutes integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.appointment_treatments ADD COLUMN IF NOT EXISTS processing_minutes integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.appointment_treatments ADD COLUMN IF NOT EXISTS post_processing_minutes integer NOT NULL DEFAULT 0`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '${s}.services'::regclass AND conname = 'services_processing_segments_check') THEN
+         ALTER TABLE ${s}.services ADD CONSTRAINT services_processing_segments_check CHECK (
+           pre_processing_minutes >= 0 AND processing_minutes >= 0 AND post_processing_minutes >= 0 AND
+           ((pre_processing_minutes = 0 AND processing_minutes = 0 AND post_processing_minutes = 0)
+             OR (duration_minutes = pre_processing_minutes + processing_minutes + post_processing_minutes AND duration_minutes > 0))
+         );
+       END IF;
+     END $$`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '${s}.appointment_treatments'::regclass AND conname = 'appointment_treatments_processing_segments_check') THEN
+         ALTER TABLE ${s}.appointment_treatments ADD CONSTRAINT appointment_treatments_processing_segments_check CHECK (
+           pre_processing_minutes >= 0 AND processing_minutes >= 0 AND post_processing_minutes >= 0 AND
+           ((pre_processing_minutes = 0 AND processing_minutes = 0 AND post_processing_minutes = 0)
+             OR (duration_minutes = pre_processing_minutes + processing_minutes + post_processing_minutes AND duration_minutes > 0))
+         );
+       END IF;
+     END $$`,
     // Retention's stratified preview seeks from a random UUID within each salon
     // and reads a bounded circular range. Keep the production bootstrap aligned
     // with core.ts so legacy customer tables never fall back to a full sort.
