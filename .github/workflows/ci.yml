@@ -175,7 +175,7 @@ jobs:
       - name: Run the controlled Playwright failure
         id: probe
         continue-on-error: true
-        run: pnpm --filter @workspace/scripts exec playwright test
+        run: pnpm --filter @workspace/scripts run playwright:checked
       - name: Verify diagnostics before upload
         if: ${{ steps.probe.outcome == 'failure' }}
         run: |

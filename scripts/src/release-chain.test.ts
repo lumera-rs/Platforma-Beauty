@@ -273,6 +273,11 @@ test("manual CI probe verifies complete Playwright diagnostics without exposing 
   );
   assert.match(probeJob, /LUMERA_CI_DIAGNOSTICS_PROBE: "1"/);
   assert.match(probeJob, /id: probe\n {8}continue-on-error: true/);
+  assert.match(
+    probeJob,
+    /run: pnpm --filter @workspace\/scripts run playwright:checked/,
+    "The diagnostics probe must not bypass browser spec import checks.",
+  );
   assert.match(probeJob, /test -f scripts\/playwright-report\/index\.html/);
   assert.match(probeJob, /find scripts\/test-results -type f -name '\*\.png'/);
   assert.match(probeJob, /find scripts\/test-results -type f -name 'trace\.zip'/);
@@ -283,6 +288,11 @@ test("manual CI probe verifies complete Playwright diagnostics without exposing 
     /testMatch: ciDiagnosticsProbe \? "ci-failure-diagnostics-probe\.spec\.ts" : undefined/,
   );
   assert.match(playwrightConfig, /globalSetup: ciDiagnosticsProbe \? undefined :/);
+  assert.match(
+    playwrightConfig,
+    /LUMERA_BROWSER_SPEC_TYPES_CHECKED !== "1"[\s\S]*runBrowserSpecTypeCheck\(\)/,
+    "Direct Playwright launches must run the browser spec import check from the config.",
+  );
   assert.match(playwrightConfig, /trace: "retain-on-failure"/);
   assert.match(playwrightConfig, /screenshot: "only-on-failure"/);
 });

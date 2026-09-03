@@ -360,7 +360,7 @@ void db.insert({} as never);
     );
     assert.match(
       `${drizzleRefusal.stdout ?? ""}\n${drizzleRefusal.stderr ?? ""}`,
-      /Direct database tests refuses production or deployment runtimes/,
+      /Destructive test harnesses refuse production or deployment runtimes[\s\S]*Blocked: Direct database tests/,
       "The shared database boundary must reject unregistered Drizzle write tests before execution.",
     );
 

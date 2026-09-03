@@ -533,6 +533,12 @@ export async function recoverInterruptedHarnessDatabaseSuites(
 export async function runIsolatedBrowserSuite(
   configuration: IsolatedBrowserSuiteConfiguration,
 ): Promise<void> {
+  await runCommand(
+    path.join(workspaceRoot, "scripts", "node_modules", ".bin", "tsx"),
+    [path.join(workspaceRoot, "scripts", "src", "check-browser-spec-types.ts")],
+    process.env,
+    "Browser spec static checks",
+  );
   const developmentDatabaseUrl = requireDevelopmentDatabaseUrl();
   const databaseName =
     `${configuration.databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`;
@@ -558,6 +564,7 @@ export async function runIsolatedBrowserSuite(
     ...process.env,
     ...configuration.environment,
     DATABASE_URL: testDatabaseUrl,
+    LUMERA_BROWSER_SPEC_TYPES_CHECKED: "1",
     LUMERA_TEST_DATABASE_URL: testDatabaseUrl,
     [processMarkerEnvironmentName]: processMarker,
     NODE_ENV: "test",

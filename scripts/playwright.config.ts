@@ -1,7 +1,11 @@
 import { defineConfig } from "@playwright/test";
 import { assertDestructiveTestRuntimeAllowed } from "./src/destructive-test-runtime";
+import { runBrowserSpecTypeCheck } from "./src/check-browser-spec-types";
 
 assertDestructiveTestRuntimeAllowed(process.env, "Browser tests");
+if (process.env.LUMERA_BROWSER_SPEC_TYPES_CHECKED !== "1") {
+  runBrowserSpecTypeCheck();
+}
 
 const chromiumExecutablePath = process.env.REPLIT_PLAYWRIGHT_CHROMIUM_EXECUTABLE;
 const hostMatrixPublishedHost = "lumera-published.example.test";
