@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   AdminGetRmaResponse,
   AdminListRmasResponse,
+  AdminUpdateRmaStatusResponse,
 } from "@workspace/api-zod";
 
 const standardRma = {
@@ -87,6 +88,42 @@ test("RMA detail contracts pair standard orders with b2b and retail orders with 
   );
   assert.equal(
     AdminGetRmaResponse.safeParse({ ...retailDetail, target: "b2b" }).success,
+    false,
+  );
+});
+
+test("RMA status-update contracts keep standard/b2b and retail/b2c rows distinct", () => {
+  const { target: _standardTarget, owner: _standardOwner, ...standardRow } = standardRma;
+  const { target: _retailTarget, owner: _retailOwner, ...retailRow } = retailRma;
+
+  assert.equal(
+    AdminUpdateRmaStatusResponse.safeParse({ row: standardRow, changed: true }).success,
+    true,
+  );
+  assert.equal(
+    AdminUpdateRmaStatusResponse.safeParse({ row: retailRow, changed: false }).success,
+    true,
+  );
+  assert.equal(
+    AdminUpdateRmaStatusResponse.safeParse({
+      row: {
+        ...standardRow,
+        retailOrderId: retailRma.retailOrderId,
+        retailOrderItemId: retailRma.retailOrderItemId,
+      },
+      changed: true,
+    }).success,
+    false,
+  );
+  assert.equal(
+    AdminUpdateRmaStatusResponse.safeParse({
+      row: {
+        ...retailRow,
+        orderId: standardRma.orderId,
+        orderItemId: standardRma.orderItemId,
+      },
+      changed: false,
+    }).success,
     false,
   );
 });
