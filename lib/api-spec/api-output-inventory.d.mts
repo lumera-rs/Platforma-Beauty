@@ -13,6 +13,11 @@ export const orvalNestedOutputContracts: Readonly<Record<string, Readonly<{
   nonFile: readonly string[];
 }>>>;
 
+export function readOrvalInterfaceFieldValueShapes(
+  declarations: string,
+  interfaceName: string,
+): Record<string, string[]>;
+
 export function assertOrvalOutputContractRecognized(
   installedOutputOptions: readonly string[],
 ): void;

@@ -16,6 +16,7 @@ import {
   collectOrvalConfiguredOutputPaths,
   defineInventoriedGeneratorConfig,
   orvalNestedOutputContracts,
+  readOrvalInterfaceFieldValueShapes,
 } from "../../lib/api-spec/api-output-inventory.mjs";
 
 const require = createRequire(import.meta.url);
@@ -40,71 +41,7 @@ async function readInstalledOrvalDeclarations() {
 }
 
 function readInterfaceFieldNames(declarations: string, interfaceName: string) {
-  const declaration = declarations.match(
-    new RegExp(`interface ${interfaceName}(?: extends [^{]+)? \\{(?<body>[\\s\\S]*?)^\\}`, "m"),
-  );
-
-  assert.ok(
-    declaration?.groups?.body,
-    `Installed Orval declarations must expose ${interfaceName}`,
-  );
-  return [...declaration.groups.body.matchAll(/^\s{2}([A-Za-z]\w*)\??:/gm)]
-    .map((match) => match[1]);
-}
-
-function readFileProducingOutputValueShapes(declarations: string) {
-  const declaration = declarations.match(
-    /interface OutputOptions(?: extends [^{]+)? \{(?<body>[\s\S]*?)^\}/m,
-  );
-  assert.ok(declaration?.groups?.body, "Installed Orval declarations must expose OutputOptions");
-
-  const aliases = new Map(
-    [...declarations.matchAll(/^type ([A-Za-z]\w*)\s*=\s*([^;\n]+);$/gm)]
-      .map((match) => [match[1], match[2]]),
-  );
-  const resolveMembers = (type: string, seen = new Set<string>()): string[] =>
-    type.split("|").flatMap((rawMember) => {
-      const member = rawMember.trim();
-      const alias = aliases.get(member);
-      if (!alias?.includes("|") || seen.has(member)) {
-        return member;
-      }
-      return resolveMembers(alias, new Set([...seen, member]));
-    });
-
-  return Object.fromEntries(
-    [...declaration.groups.body.matchAll(/^\s{2}([A-Za-z]\w*)\??:\s*([^;\n]+);$/gm)]
-      .map((match) => [match[1], resolveMembers(match[2])]),
-  );
-}
-
-function readInterfaceFieldValueShapes(declarations: string, interfaceName: string) {
-  const declaration = declarations.match(
-    new RegExp(`interface ${interfaceName}(?: extends [^{]+)? \\{(?<body>[\\s\\S]*?)^\\}`, "m"),
-  );
-  assert.ok(
-    declaration?.groups?.body,
-    `Installed Orval declarations must expose ${interfaceName}`,
-  );
-
-  const aliases = new Map(
-    [...declarations.matchAll(/^type ([A-Za-z]\w*)\s*=\s*([^;\n]+);$/gm)]
-      .map((match) => [match[1], match[2]]),
-  );
-  const resolveMembers = (type: string, seen = new Set<string>()): string[] =>
-    type.split("|").flatMap((rawMember) => {
-      const member = rawMember.trim();
-      const alias = aliases.get(member);
-      if (!alias?.includes("|") || seen.has(member)) {
-        return member;
-      }
-      return resolveMembers(alias, new Set([...seen, member]));
-    });
-
-  return Object.fromEntries(
-    [...declaration.groups.body.matchAll(/^\s{2}([A-Za-z]\w*)\??:\s*([^;\n]+);$/gm)]
-      .map((match) => [match[1], resolveMembers(match[2])]),
-  );
+  return Object.keys(readOrvalInterfaceFieldValueShapes(declarations, interfaceName));
 }
 
 test("installed Orval output options are classified by the inventory guard", async () => {
@@ -120,7 +57,7 @@ test("installed Orval output options are classified by the inventory guard", asy
 
 test("installed Orval file-producing output value shapes are reviewed", async () => {
   const declarations = await readInstalledOrvalDeclarations();
-  const installedShapes = readFileProducingOutputValueShapes(declarations);
+  const installedShapes = readOrvalInterfaceFieldValueShapes(declarations, "OutputOptions");
 
   assert.doesNotThrow(
     () => assertOrvalFileProducingOutputValueShapesRecognized(installedShapes),
@@ -170,7 +107,7 @@ test("installed nested Orval file-producing output value shapes are reviewed", a
   const installedShapes = Object.fromEntries(
     Object.keys(orvalNestedOutputContracts).map((contractName) => [
       contractName,
-      readInterfaceFieldValueShapes(declarations, contractName),
+      readOrvalInterfaceFieldValueShapes(declarations, contractName),
     ]),
   );
 
@@ -201,6 +138,110 @@ test("installed nested Orval file-producing output value shapes are reviewed", a
     }),
     /output\.factoryMethods\.outputDirectory \(FactoryMethodsOptions\):[\s\S]*FutureFactoryDirectoryOptions[\s\S]*output\.mock\.generators\[\]\.path \(FakerMockOptions\):[\s\S]*FutureGeneratorPathOptions/,
   );
+});
+
+test("Orval declaration shapes are stable across multiline member separators", () => {
+  const compact = `
+    type SchemaOutput = string | SchemaOptions | false;
+    interface OutputOptions { schemas?: SchemaOutput; mock?: boolean | { path?: string; enabled?: boolean }; }
+    interface SchemaOptions { path?: string; type?: "typescript" | "zod"; }
+  `;
+  const multilineWithoutSemicolons = `
+    type SchemaOutput =
+      string
+      | SchemaOptions
+      | false;
+    interface OutputOptions {
+      schemas?:
+        SchemaOutput
+      mock?:
+        boolean
+        | {
+          path?: string;
+          enabled?: boolean;
+        }
+    }
+    interface SchemaOptions {
+      path?:
+        string
+      type?:
+        "typescript"
+        | "zod"
+    }
+  `;
+  const multilineWithCommas = `
+    type SchemaOutput =
+      string
+      | SchemaOptions
+      | false;
+    interface OutputOptions {
+      schemas?:
+        SchemaOutput,
+      mock?:
+        boolean
+        | {
+          path?: string;
+          enabled?: boolean;
+        },
+    }
+    interface SchemaOptions {
+      path?:
+        string,
+      type?:
+        "typescript"
+        | "zod",
+    }
+  `;
+
+  for (const declarations of [multilineWithoutSemicolons, multilineWithCommas]) {
+    assert.deepEqual(
+      readOrvalInterfaceFieldValueShapes(declarations, "OutputOptions"),
+      readOrvalInterfaceFieldValueShapes(compact, "OutputOptions"),
+    );
+    assert.deepEqual(
+      readOrvalInterfaceFieldValueShapes(declarations, "SchemaOptions"),
+      readOrvalInterfaceFieldValueShapes(compact, "SchemaOptions"),
+    );
+  }
+});
+
+test("separator-only formatting cannot hide new Orval output fields", () => {
+  for (const separator of [",", ""]) {
+    const declarations = `
+      interface OutputOptions {
+        target: string${separator}
+        futureOutputDirectory:
+          string
+      }
+    `;
+    const installedOptions = readInterfaceFieldNames(declarations, "OutputOptions");
+
+    assert.deepEqual(installedOptions, ["target", "futureOutputDirectory"]);
+    assert.throws(
+      () => assertOrvalOutputContractRecognized(installedOptions),
+      /output\.futureOutputDirectory/,
+    );
+  }
+});
+
+test("multiline semantic shape changes report the exact Orval config path", () => {
+  for (const separator of [",", ""]) {
+    const declarations = `
+    interface SchemaOptions {
+      path?:
+        string
+        | FutureSchemaPathOptions${separator}
+      type?: "typescript"
+    }
+  `;
+
+    assert.throws(
+      () => assertOrvalNestedFileProducingOutputValueShapesRecognized({
+        SchemaOptions: readOrvalInterfaceFieldValueShapes(declarations, "SchemaOptions"),
+      }),
+      /output\.schemas\.path \(SchemaOptions\):[\s\S]*FutureSchemaPathOptions/,
+    );
+  }
 });
 
 test("non-file Orval output options do not trigger output-location failures", () => {
