@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
@@ -182,14 +183,38 @@ function resolvePackageEntry(importPath: string): PackageEntryResolution {
   }
   const resolvedDirectory = path.resolve(directory);
   const resolvedEntry = path.resolve(resolvedDirectory, entry);
-  const directoryPrefix = resolvedDirectory.endsWith(path.sep)
-    ? resolvedDirectory
-    : resolvedDirectory + path.sep;
-  if (!resolvedEntry.startsWith(directoryPrefix)) {
+  const relativeEntry = path.relative(resolvedDirectory, resolvedEntry);
+  if (
+    relativeEntry === ".." ||
+    relativeEntry.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativeEntry)
+  ) {
+    return { blocksFallback: hasExports };
+  }
+  if (!ts.sys.fileExists(resolvedEntry)) {
+    return { blocksFallback: hasExports };
+  }
+  let canonicalDirectory: string;
+  let canonicalEntry: string;
+  try {
+    canonicalDirectory = realpathSync(resolvedDirectory);
+    canonicalEntry = realpathSync(resolvedEntry);
+  } catch {
+    return { blocksFallback: hasExports };
+  }
+  const relativeCanonicalEntry = path.relative(
+    canonicalDirectory,
+    canonicalEntry,
+  );
+  if (
+    relativeCanonicalEntry === ".." ||
+    relativeCanonicalEntry.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativeCanonicalEntry)
+  ) {
     return { blocksFallback: hasExports };
   }
   return {
-    entry: ts.sys.fileExists(resolvedEntry) ? resolvedEntry : undefined,
+    entry: canonicalEntry,
     blocksFallback: hasExports,
   };
 }

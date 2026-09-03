@@ -146,3 +146,4 @@
 - [Focused browser release gates](focused-browser-release-gates.md) — narrow shell regressions belong in dedicated specs instead of enrolling unrelated broad suites.
 - [Request-scoped SQL observation](request-scoped-sql-observation.md) — bridge test captures across loopback HTTP with a process-local registered ID, not AsyncLocalStorage alone.
 - [Test-only request controls](test-only-request-controls.md) — inventory every transport, scan guarded aliases, and enforce denial where each Express input becomes observable.
+- [Static browser config symlinks](static-browser-config-symlinks.md) — validate and consume canonical package exports without changing runner-relative testDir behavior.

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -618,6 +618,86 @@ test("browser preflight resolves a simple package exports root and checks only s
       ),
       false,
       "an imported but statically unconsumed module should stay excluded",
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("browser preflight fails closed when a package export symlink escapes the package", async () => {
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-export-symlink-escape-"),
+  );
+  try {
+    const sharedConfigRoot = path.join(fixtureRoot, "playwright.shared");
+    const outsideConfigPath = path.join(fixtureRoot, "outside-settings.ts");
+    await mkdir(sharedConfigRoot);
+    await writeFile(
+      path.join(sharedConfigRoot, "package.json"),
+      JSON.stringify({ exports: { ".": "./settings.ts" } }),
+    );
+    await writeFile(
+      outsideConfigPath,
+      'export const shared = { testDir: "./browser" };\n',
+    );
+    await symlink(
+      outsideConfigPath,
+      path.join(sharedConfigRoot, "settings.ts"),
+    );
+    await writeFile(
+      path.join(fixtureRoot, "playwright.config.ts"),
+      [
+        'import { shared } from "./playwright.shared";',
+        "export default { ...shared };",
+      ].join("\n"),
+    );
+
+    assert.throws(
+      () => collectBrowserTestDirectories({ scriptsRoot: fixtureRoot }),
+      /statically resolvable.*unresolvable identifier shared.*playwright\.config\.ts/,
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("browser preflight accepts a package export symlink that stays inside the package", async () => {
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-export-symlink-inside-"),
+  );
+  try {
+    const browserRoot = path.join(fixtureRoot, "browser");
+    const sharedConfigRoot = path.join(fixtureRoot, "playwright.shared");
+    const canonicalConfigPath = path.join(
+      sharedConfigRoot,
+      "internal",
+      "settings.ts",
+    );
+    await mkdir(browserRoot);
+    await mkdir(path.dirname(canonicalConfigPath), { recursive: true });
+    await writeFile(
+      path.join(sharedConfigRoot, "package.json"),
+      JSON.stringify({ exports: { ".": "./settings.ts" } }),
+    );
+    await writeFile(
+      canonicalConfigPath,
+      'export const shared = { testDir: "./browser" };\n',
+    );
+    await symlink(
+      canonicalConfigPath,
+      path.join(sharedConfigRoot, "settings.ts"),
+    );
+    await writeFile(
+      path.join(fixtureRoot, "playwright.config.ts"),
+      [
+        'import { shared } from "./playwright.shared";',
+        "export default { ...shared };",
+      ].join("\n"),
+    );
+
+    assert.deepEqual(
+      collectBrowserTestDirectories({ scriptsRoot: fixtureRoot }),
+      [browserRoot],
     );
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
