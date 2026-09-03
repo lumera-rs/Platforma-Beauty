@@ -5,6 +5,89 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+export type RmaRecordStatus = typeof RmaRecordStatus[keyof typeof RmaRecordStatus];
+
+
+export const RmaRecordStatus = {
+  RECEIVED: 'RECEIVED',
+  IN_REVIEW: 'IN_REVIEW',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+} as const;
+
+export interface RmaRecord {
+  id: string;
+  rmaNumber: string;
+  /** @nullable */
+  orderId: string | null;
+  /** @nullable */
+  orderItemId: string | null;
+  /** @nullable */
+  retailOrderId: string | null;
+  /** @nullable */
+  retailOrderItemId: string | null;
+  requesterUserId: string;
+  /** @minimum 1 */
+  quantity: number;
+  reason: string;
+  description: string;
+  status: RmaRecordStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminRmaOwner {
+  /** @nullable */
+  firstName?: string | null;
+  /** @nullable */
+  lastName?: string | null;
+  /** @nullable */
+  businessName?: string | null;
+  /** @nullable */
+  pib?: string | null;
+  email: string;
+}
+
+export type AdminRmaListItemTarget = typeof AdminRmaListItemTarget[keyof typeof AdminRmaListItemTarget];
+
+
+export const AdminRmaListItemTarget = {
+  b2b: 'b2b',
+  b2c: 'b2c',
+} as const;
+
+export type AdminRmaListItem = RmaRecord & {
+  target: AdminRmaListItemTarget;
+  owner: AdminRmaOwner;
+};
+
+export interface AdminRmaItem {
+  orderItemId: string;
+  productName: string;
+  /** @minimum 1 */
+  quantity: number;
+}
+
+export interface AdminRmaAuditEntry {
+  action: string;
+  timestamp: string;
+  /** @nullable */
+  actorId: string | null;
+  /** @nullable */
+  note: string | null;
+}
+
+export type AdminRmaDetail = AdminRmaListItem & {
+  items: AdminRmaItem[];
+  privatePhotos: string[];
+  auditTrail: AdminRmaAuditEntry[];
+};
+
+export interface AdminRmaStatusResult {
+  row: RmaRecord;
+  changed: boolean;
+}
+
 export interface CatalogSyncRun {
   id: string;
   provider: string;

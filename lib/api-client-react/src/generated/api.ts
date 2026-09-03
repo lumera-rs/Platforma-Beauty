@@ -92,6 +92,9 @@ import type {
   AdminRetailProductReviewList,
   AdminReview,
   AdminReviewUpdate,
+  AdminRmaDetail,
+  AdminRmaListItem,
+  AdminRmaStatusResult,
   AdminSalon,
   AdminSalonDetail,
   AdminSalonUpdate,
@@ -45091,9 +45094,9 @@ export const getAdminListRmasUrl = () => {
 /**
  * @summary List RMAs
  */
-export const adminListRmas = async ( options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+export const adminListRmas = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminRmaListItem[]> => {
 
-  return customFetch<void>(getAdminListRmasUrl(),
+  return customFetch<AdminRmaListItem[]>(getAdminListRmasUrl(),
   {
     ...options,
     method: 'GET'
@@ -45168,9 +45171,9 @@ export const getAdminGetRmaUrl = (id: string,) => {
 /**
  * @summary Get RMA, private attachment count and status audit
  */
-export const adminGetRma = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+export const adminGetRma = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<AdminRmaDetail> => {
 
-  return customFetch<void>(getAdminGetRmaUrl(id),
+  return customFetch<AdminRmaDetail>(getAdminGetRmaUrl(id),
   {
     ...options,
     method: 'GET'
@@ -45246,9 +45249,9 @@ export const getAdminUpdateRmaStatusUrl = (id: string,) => {
  * @summary Change RMA status with durable audit and email outbox event
  */
 export const adminUpdateRmaStatus = async (id: string,
-    adminUpdateRmaStatusBody: AdminUpdateRmaStatusBody, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+    adminUpdateRmaStatusBody: AdminUpdateRmaStatusBody, options?: Parameters<typeof customFetch>[1]): Promise<AdminRmaStatusResult> => {
 
-  return customFetch<void>(getAdminUpdateRmaStatusUrl(id),
+  return customFetch<AdminRmaStatusResult>(getAdminUpdateRmaStatusUrl(id),
   {
     ...options,
     method: 'PATCH',

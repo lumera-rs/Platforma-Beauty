@@ -32075,7 +32075,34 @@ export const CreateRetailOrderRmaResponse = zod.void()
 /**
  * @summary List RMAs
  */
-export const AdminListRmasResponse = zod.unknown()
+
+
+
+export const AdminListRmasResponseItem = zod.object({
+  "id": zod.string().uuid(),
+  "rmaNumber": zod.string(),
+  "orderId": zod.string().uuid().nullable(),
+  "orderItemId": zod.string().uuid().nullable(),
+  "retailOrderId": zod.string().uuid().nullable(),
+  "retailOrderItemId": zod.string().uuid().nullable(),
+  "requesterUserId": zod.string().uuid(),
+  "quantity": zod.number().int().min(1),
+  "reason": zod.string(),
+  "description": zod.string(),
+  "status": zod.enum(['RECEIVED', 'IN_REVIEW', 'APPROVED', 'REJECTED']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "target": zod.enum(['b2b', 'b2c']),
+  "owner": zod.object({
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "businessName": zod.string().nullish(),
+  "pib": zod.string().nullish(),
+  "email": zod.string()
+})
+}))
+export const AdminListRmasResponse = zod.array(AdminListRmasResponseItem)
 
 
 /**
@@ -32085,7 +32112,47 @@ export const AdminGetRmaParams = zod.object({
   "id": zod.coerce.string()
 })
 
-export const AdminGetRmaResponse = zod.unknown()
+
+
+
+
+export const AdminGetRmaResponse = zod.object({
+  "id": zod.string().uuid(),
+  "rmaNumber": zod.string(),
+  "orderId": zod.string().uuid().nullable(),
+  "orderItemId": zod.string().uuid().nullable(),
+  "retailOrderId": zod.string().uuid().nullable(),
+  "retailOrderItemId": zod.string().uuid().nullable(),
+  "requesterUserId": zod.string().uuid(),
+  "quantity": zod.number().int().min(1),
+  "reason": zod.string(),
+  "description": zod.string(),
+  "status": zod.enum(['RECEIVED', 'IN_REVIEW', 'APPROVED', 'REJECTED']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "target": zod.enum(['b2b', 'b2c']),
+  "owner": zod.object({
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "businessName": zod.string().nullish(),
+  "pib": zod.string().nullish(),
+  "email": zod.string()
+})
+})).and(zod.object({
+  "items": zod.array(zod.object({
+  "orderItemId": zod.string().uuid(),
+  "productName": zod.string(),
+  "quantity": zod.number().int().min(1)
+})),
+  "privatePhotos": zod.array(zod.string()),
+  "auditTrail": zod.array(zod.object({
+  "action": zod.string(),
+  "timestamp": zod.coerce.date(),
+  "actorId": zod.string().uuid().nullable(),
+  "note": zod.string().nullable()
+}))
+}))
 
 
 /**
@@ -32099,7 +32166,27 @@ export const AdminUpdateRmaStatusBody = zod.object({
   "status": zod.enum(['RECEIVED', 'IN_REVIEW', 'APPROVED', 'REJECTED'])
 }).strict()
 
-export const AdminUpdateRmaStatusResponse = zod.unknown()
+
+
+
+export const AdminUpdateRmaStatusResponse = zod.object({
+  "row": zod.object({
+  "id": zod.string().uuid(),
+  "rmaNumber": zod.string(),
+  "orderId": zod.string().uuid().nullable(),
+  "orderItemId": zod.string().uuid().nullable(),
+  "retailOrderId": zod.string().uuid().nullable(),
+  "retailOrderItemId": zod.string().uuid().nullable(),
+  "requesterUserId": zod.string().uuid(),
+  "quantity": zod.number().int().min(1),
+  "reason": zod.string(),
+  "description": zod.string(),
+  "status": zod.enum(['RECEIVED', 'IN_REVIEW', 'APPROVED', 'REJECTED']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}),
+  "changed": zod.boolean()
+})
 
 
 /**

@@ -9374,7 +9374,13 @@ paths:
       tags: [admin]
       summary: List RMAs
       responses:
-        "200": { description: RMA list }
+        "200":
+          description: RMA list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AdminRmaListItem" }
   /admin/rmas/{id}:
     get:
       operationId: adminGetRma
@@ -9383,7 +9389,11 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
       responses:
-        "200": { description: RMA detail }
+        "200":
+          description: RMA detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminRmaDetail" }
         "404": { description: RMA not found }
   /admin/rmas/{id}/status:
     patch:
@@ -9402,7 +9412,11 @@ paths:
               properties:
                 status: { type: string, enum: [RECEIVED, IN_REVIEW, APPROVED, REJECTED] }
       responses:
-        "200": { description: Current RMA and whether a real transition occurred }
+        "200":
+          description: Current RMA and whether a real transition occurred
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminRmaStatusResult" }
   /admin/review-rewards:
     get:
       operationId: adminGetReviewRewardSettings
@@ -9794,6 +9808,89 @@ components:
       required: true
       schema: { type: string }
   schemas:
+    RmaRecord:
+      type: object
+      required:
+        - id
+        - rmaNumber
+        - orderId
+        - orderItemId
+        - retailOrderId
+        - retailOrderItemId
+        - requesterUserId
+        - quantity
+        - reason
+        - description
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: string, format: uuid }
+        rmaNumber: { type: string }
+        orderId: { type: ["string", "null"], format: uuid }
+        orderItemId: { type: ["string", "null"], format: uuid }
+        retailOrderId: { type: ["string", "null"], format: uuid }
+        retailOrderItemId: { type: ["string", "null"], format: uuid }
+        requesterUserId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1 }
+        reason: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [RECEIVED, IN_REVIEW, APPROVED, REJECTED] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AdminRmaOwner:
+      type: object
+      required: [email]
+      properties:
+        firstName: { type: ["string", "null"] }
+        lastName: { type: ["string", "null"] }
+        businessName: { type: ["string", "null"] }
+        pib: { type: ["string", "null"] }
+        email: { type: string }
+    AdminRmaListItem:
+      allOf:
+        - { $ref: "#/components/schemas/RmaRecord" }
+        - type: object
+          required: [target, owner]
+          properties:
+            target: { type: string, enum: [b2b, b2c] }
+            owner: { $ref: "#/components/schemas/AdminRmaOwner" }
+    AdminRmaItem:
+      type: object
+      required: [orderItemId, productName, quantity]
+      properties:
+        orderItemId: { type: string, format: uuid }
+        productName: { type: string }
+        quantity: { type: integer, minimum: 1 }
+    AdminRmaAuditEntry:
+      type: object
+      required: [action, timestamp, actorId, note]
+      properties:
+        action: { type: string }
+        timestamp: { type: string, format: date-time }
+        actorId: { type: ["string", "null"], format: uuid }
+        note: { type: ["string", "null"] }
+    AdminRmaDetail:
+      allOf:
+        - { $ref: "#/components/schemas/AdminRmaListItem" }
+        - type: object
+          required: [items, privatePhotos, auditTrail]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/AdminRmaItem" }
+            privatePhotos:
+              type: array
+              items: { type: string }
+            auditTrail:
+              type: array
+              items: { $ref: "#/components/schemas/AdminRmaAuditEntry" }
+    AdminRmaStatusResult:
+      type: object
+      required: [row, changed]
+      properties:
+        row: { $ref: "#/components/schemas/RmaRecord" }
+        changed: { type: boolean }
     CatalogSyncRun:
       type: object
       required: [id, provider, status, itemCount, validationErrors, createdAt]

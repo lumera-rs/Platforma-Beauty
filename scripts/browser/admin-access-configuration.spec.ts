@@ -327,7 +327,14 @@ function adminRma() {
   return {
     id: rmaId,
     rmaNumber: "RMA-REG-001",
+    orderId: null,
+    orderItemId: null,
+    retailOrderId: rmaOrderId,
+    retailOrderItemId: "00000000-0000-4000-8000-000000000083",
+    requesterUserId: userId,
+    quantity: 1,
     createdAt: "2026-08-21T09:00:00.000Z",
+    updatedAt: "2026-08-21T09:00:00.000Z",
     target: "b2c",
     owner: {
       firstName: "Test",
@@ -552,7 +559,24 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
           json: checkedApiFixture(
             `/api/admin/rmas/${rmaId}/status`,
             apiSchemas.AdminUpdateRmaStatusResponse,
-            rma,
+            {
+              row: {
+                id: rma.id,
+                rmaNumber: rma.rmaNumber,
+                orderId: rma.orderId,
+                orderItemId: rma.orderItemId,
+                retailOrderId: rma.retailOrderId,
+                retailOrderItemId: rma.retailOrderItemId,
+                requesterUserId: rma.requesterUserId,
+                quantity: rma.quantity,
+                reason: rma.reason,
+                description: rma.description,
+                status: rma.status,
+                createdAt: rma.createdAt,
+                updatedAt: rma.updatedAt,
+              },
+              changed: true,
+            },
           ),
         });
         return;
