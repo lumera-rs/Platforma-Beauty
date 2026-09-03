@@ -983,6 +983,78 @@ function customerSetupRequestIdentity(req: Request) {
   return req.ip || req.socket.remoteAddress || "unknown";
 }
 
+const LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_RATE_LIMIT_MAX_PER_ACCOUNT = 10;
+const LOGIN_RATE_LIMIT_MAX_PER_IP = 30;
+
+/**
+ * Generic fixed-window admission check, keyed by an advisory-locked
+ * (action, identity) pair in the same durable table admitCustomerSetupRequest
+ * uses -- reimplemented standalone here (rather than widening that
+ * function's 3-value action union) so /auth/login gets its own limiter
+ * without touching the password-setup flow at all.
+ */
+async function admitRateLimitedAction(action: string, identity: string, limit: number, windowMs: number) {
+  const keyHash = customerSetupDigest(`${action}:${identity}`);
+  const now = new Date();
+  const windowStart = new Date(now.getTime() - windowMs);
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${keyHash}))`);
+    const [existing] = await tx.select()
+      .from(customerPasswordSetupRateLimitsTable)
+      .where(and(
+        eq(customerPasswordSetupRateLimitsTable.keyHash, keyHash),
+        eq(customerPasswordSetupRateLimitsTable.action, action),
+      ))
+      .limit(1);
+    if (!existing) {
+      await tx.insert(customerPasswordSetupRateLimitsTable).values({
+        keyHash,
+        action,
+        windowStartedAt: now,
+        requestCount: 1,
+        updatedAt: now,
+      });
+      return true;
+    }
+    if (existing.windowStartedAt <= windowStart) {
+      await tx.update(customerPasswordSetupRateLimitsTable)
+        .set({ windowStartedAt: now, requestCount: 1, updatedAt: now })
+        .where(and(
+          eq(customerPasswordSetupRateLimitsTable.keyHash, keyHash),
+          eq(customerPasswordSetupRateLimitsTable.action, action),
+        ));
+      return true;
+    }
+    if (existing.requestCount >= limit) return false;
+    await tx.update(customerPasswordSetupRateLimitsTable)
+      .set({ requestCount: existing.requestCount + 1, updatedAt: now })
+      .where(and(
+        eq(customerPasswordSetupRateLimitsTable.keyHash, keyHash),
+        eq(customerPasswordSetupRateLimitsTable.action, action),
+      ));
+    return true;
+  });
+}
+
+/**
+ * Brute-force throttle for /auth/login: both a per-account and a per-IP
+ * fixed window must admit for an attempt to proceed. Per-account blocks a
+ * targeted credential-stuffing run regardless of how many source IPs the
+ * attacker rotates through; per-IP blocks a broad password-spray run
+ * against many different accounts from one source. Neither check depends
+ * on whether the account exists, so admission behavior itself cannot be
+ * used to enumerate valid emails.
+ */
+async function admitLoginAttempt(req: Request, email: string): Promise<boolean> {
+  const ip = customerSetupRequestIdentity(req);
+  const perAccountAdmitted = await admitRateLimitedAction(
+    "login-account", email.toLowerCase(), LOGIN_RATE_LIMIT_MAX_PER_ACCOUNT, LOGIN_RATE_LIMIT_WINDOW_MS,
+  );
+  if (!perAccountAdmitted) return false;
+  return admitRateLimitedAction("login-ip", ip, LOGIN_RATE_LIMIT_MAX_PER_IP, LOGIN_RATE_LIMIT_WINDOW_MS);
+}
+
 function activeCustomerSetupToken(setup: typeof customerPasswordSetupTokensTable.$inferSelect, now: Date) {
   return !setup.consumedAt && !setup.invalidatedAt && setup.expiresAt > now && setup.failedAttempts < setup.maxAttempts;
 }
@@ -5929,6 +6001,12 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   await ensureDemoData();
   const parsed = LoginBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const admitted = await admitLoginAttempt(req, parsed.data.email);
+  if (!admitted) {
+    res.setHeader("Retry-After", "900");
+    res.status(429).json({ error: "Previše pokušaja prijave. Pokušajte ponovo za nekoliko minuta." });
+    return;
+  }
   const [user] = await db.select().from(usersTable).where(eq(usersTable.email, parsed.data.email.toLowerCase())).limit(1);
   if (user?.role === "SALON_EMPLOYEE" && !user.active) {
     res.status(403).json({ error: "Nalog zaposlenog je deaktiviran. Obratite se vlasniku salona." }); return;
