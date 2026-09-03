@@ -205,6 +205,42 @@ test("Orval declaration shapes are stable across multiline member separators", (
   }
 });
 
+test("Orval declaration comments do not alter quoted or template-literal shapes", () => {
+  const declarations = `
+    type LiteralOutput =
+      "https://example.test/a//b"
+      | '/* retained block marker */'
+      | \`route//segment/* retained */ \${string}\`
+      // ignored line comment
+      | false;
+
+    interface OutputOptions {
+      /* ignored field comment */
+      target?: LiteralOutput;
+      marker?: "  spaces // stay  " | \`/* exact */  \${number}\`;
+      // ignored member comment
+      clean?: string /* ignored inline comment */ | false;
+    }
+  `;
+
+  assert.deepEqual(
+    readOrvalInterfaceFieldValueShapes(declarations, "OutputOptions"),
+    {
+      target: [
+        '"https://example.test/a//b"',
+        "'/* retained block marker */'",
+        "`route//segment/* retained */ ${string}`",
+        "false",
+      ],
+      marker: [
+        '"  spaces // stay  "',
+        "`/* exact */  ${number}`",
+      ],
+      clean: ["string", "false"],
+    },
+  );
+});
+
 test("separator-only formatting cannot hide new Orval output fields", () => {
   for (const separator of [",", ""]) {
     const declarations = `
