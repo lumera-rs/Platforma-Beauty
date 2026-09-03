@@ -119,6 +119,50 @@ test("failed nested SQL captures unregister stale IDs without disturbing the out
   );
 });
 
+test("pre-SQL capture rejection unregisters its ID without disturbing the outer capture", async () => {
+  const staleInnerMarker = randomUUID();
+  const outerContinuationMarker = randomUUID();
+  const outerParams: unknown[][] = [];
+  const innerParams: unknown[][] = [];
+  let innerCaptureId: string | undefined;
+
+  await observeDatabaseQueries(
+    (query) => outerParams.push(query.params),
+    async () => {
+      await assert.rejects(
+        observeDatabaseQueries(
+          (query) => innerParams.push(query.params),
+          async (captureId) => {
+            innerCaptureId = captureId;
+            throw new Error("intentional pre-SQL failure");
+          },
+        ),
+        /intentional pre-SQL failure/,
+      );
+
+      assert.ok(innerCaptureId);
+      await runWithDatabaseQueryObservation(innerCaptureId, () =>
+        db.execute(sql`select ${staleInnerMarker}::text as observation_marker`),
+      );
+      await db.execute(sql`select ${outerContinuationMarker}::text as observation_marker`);
+    },
+  );
+
+  assert.deepEqual(
+    innerParams,
+    [],
+    "a rejected capture ID must not observe a later direct request",
+  );
+  assert.ok(
+    outerParams.some((params) => params.includes(staleInnerMarker)),
+    "the enclosing capture must remain active while a stale nested ID is ignored",
+  );
+  assert.ok(
+    outerParams.some((params) => params.includes(outerContinuationMarker)),
+    "the enclosing capture must continue observing after the nested rejection",
+  );
+});
+
 test("popular education ordering uses only paid featured placements before slicing", () => {
   const courses = [
     { id: "highest-rating", rating: 50, createdAt: new Date("2026-01-01T00:00:00.000Z") },
