@@ -987,14 +987,24 @@ const LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_RATE_LIMIT_MAX_PER_ACCOUNT = 10;
 const LOGIN_RATE_LIMIT_MAX_PER_IP = 30;
 
+type RateLimitAdmission = { allowed: true } | { allowed: false; retryAfterSeconds: number };
+
 /**
  * Generic fixed-window admission check, keyed by an advisory-locked
  * (action, identity) pair in the same durable table admitCustomerSetupRequest
  * uses -- reimplemented standalone here (rather than widening that
  * function's 3-value action union) so /auth/login gets its own limiter
- * without touching the password-setup flow at all.
+ * without touching the password-setup flow at all. The window is fixed
+ * (not extended by further attempts once blocked), so a block always
+ * self-clears windowMs after it started -- this can never become a
+ * permanent lock, only a bounded, temporary throttle.
  */
-async function admitRateLimitedAction(action: string, identity: string, limit: number, windowMs: number) {
+async function admitRateLimitedAction(
+  action: string,
+  identity: string,
+  limit: number,
+  windowMs: number,
+): Promise<RateLimitAdmission> {
   const keyHash = customerSetupDigest(`${action}:${identity}`);
   const now = new Date();
   const windowStart = new Date(now.getTime() - windowMs);
@@ -1015,7 +1025,7 @@ async function admitRateLimitedAction(action: string, identity: string, limit: n
         requestCount: 1,
         updatedAt: now,
       });
-      return true;
+      return { allowed: true };
     }
     if (existing.windowStartedAt <= windowStart) {
       await tx.update(customerPasswordSetupRateLimitsTable)
@@ -1024,16 +1034,22 @@ async function admitRateLimitedAction(action: string, identity: string, limit: n
           eq(customerPasswordSetupRateLimitsTable.keyHash, keyHash),
           eq(customerPasswordSetupRateLimitsTable.action, action),
         ));
-      return true;
+      return { allowed: true };
     }
-    if (existing.requestCount >= limit) return false;
+    if (existing.requestCount >= limit) {
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil((existing.windowStartedAt.getTime() + windowMs - now.getTime()) / 1000),
+      );
+      return { allowed: false, retryAfterSeconds };
+    }
     await tx.update(customerPasswordSetupRateLimitsTable)
       .set({ requestCount: existing.requestCount + 1, updatedAt: now })
       .where(and(
         eq(customerPasswordSetupRateLimitsTable.keyHash, keyHash),
         eq(customerPasswordSetupRateLimitsTable.action, action),
       ));
-    return true;
+    return { allowed: true };
   });
 }
 
@@ -1043,15 +1059,19 @@ async function admitRateLimitedAction(action: string, identity: string, limit: n
  * targeted credential-stuffing run regardless of how many source IPs the
  * attacker rotates through; per-IP blocks a broad password-spray run
  * against many different accounts from one source. Neither check depends
- * on whether the account exists, so admission behavior itself cannot be
- * used to enumerate valid emails.
+ * on whether the account exists (nor on its role), so admission behavior
+ * itself cannot be used to enumerate valid emails, and every account --
+ * including ADMIN/SUPER_ADMIN -- gets identical protection. Every attempt
+ * (successful or not) consumes one unit from both budgets, so a
+ * successful login never resets or bypasses the counters for later
+ * attempts from the same account or source.
  */
-async function admitLoginAttempt(req: Request, email: string): Promise<boolean> {
+async function admitLoginAttempt(req: Request, email: string): Promise<RateLimitAdmission> {
   const ip = customerSetupRequestIdentity(req);
-  const perAccountAdmitted = await admitRateLimitedAction(
+  const perAccount = await admitRateLimitedAction(
     "login-account", email.toLowerCase(), LOGIN_RATE_LIMIT_MAX_PER_ACCOUNT, LOGIN_RATE_LIMIT_WINDOW_MS,
   );
-  if (!perAccountAdmitted) return false;
+  if (!perAccount.allowed) return perAccount;
   return admitRateLimitedAction("login-ip", ip, LOGIN_RATE_LIMIT_MAX_PER_IP, LOGIN_RATE_LIMIT_WINDOW_MS);
 }
 
@@ -6001,9 +6021,9 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   await ensureDemoData();
   const parsed = LoginBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const admitted = await admitLoginAttempt(req, parsed.data.email);
-  if (!admitted) {
-    res.setHeader("Retry-After", "900");
+  const admission = await admitLoginAttempt(req, parsed.data.email);
+  if (!admission.allowed) {
+    res.setHeader("Retry-After", String(admission.retryAfterSeconds));
     res.status(429).json({ error: "Previše pokušaja prijave. Pokušajte ponovo za nekoliko minuta." });
     return;
   }
