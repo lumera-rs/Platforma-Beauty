@@ -6192,12 +6192,31 @@ router.post("/auth/change-password", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Trenutna lozinka nije ispravna." });
     return;
   }
-  const [updated] = await db.update(usersTable).set({
-    passwordHash: await hashPassword(newPassword),
-    passwordSetAt: new Date(),
-    mustChangePassword: false,
-    updatedAt: new Date(),
-  }).where(eq(usersTable.id, user.id)).returning();
+  // Only the session this request authenticated with survives a password
+  // change -- every other session for this user (e.g. a stolen cookie on
+  // another device) is revoked in the same transaction as the password
+  // update, so a partial failure can never leave a changed password with
+  // the old sessions still live.
+  const currentToken = req.cookies?.[sessionCookieName];
+  const currentTokenHash = typeof currentToken === "string"
+    ? createHash("sha256").update(currentToken).digest("hex")
+    : null;
+  const passwordHash = await hashPassword(newPassword);
+  const now = new Date();
+  const updated = await db.transaction(async (tx) => {
+    const [updatedUser] = await tx.update(usersTable).set({
+      passwordHash,
+      passwordSetAt: now,
+      mustChangePassword: false,
+      updatedAt: now,
+    }).where(eq(usersTable.id, user.id)).returning();
+    await tx.delete(sessionsTable).where(
+      currentTokenHash
+        ? and(eq(sessionsTable.userId, user.id), ne(sessionsTable.tokenHash, currentTokenHash))
+        : eq(sessionsTable.userId, user.id),
+    );
+    return updatedUser;
+  });
   res.json({ user: publicUser(updated!) });
 });
 
