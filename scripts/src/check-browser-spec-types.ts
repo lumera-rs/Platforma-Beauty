@@ -5,17 +5,6 @@ import ts from "typescript";
 const scriptsRoot = path.resolve(import.meta.dirname, "..");
 const browserRoot = path.join(scriptsRoot, "browser");
 const configPath = path.join(scriptsRoot, "tsconfig.browser.json");
-const importAndIdentifierDiagnosticCodes = new Set([
-  1192, // Module has no default export.
-  2304, // Cannot find name.
-  2305, // Module has no exported member.
-  2307, // Cannot find module.
-  2552, // Cannot find name. Did you mean ...?
-  2581, // Cannot find name '$'.
-  2592, // Cannot find name. Install type definitions?
-  2724, // Module has no exported member. Did you mean ...?
-  18004, // No value exists in scope for a shorthand property.
-]);
 
 const formatHost: ts.FormatDiagnosticsHost = {
   getCanonicalFileName: (fileName) => fileName,
@@ -52,7 +41,7 @@ function loadBrowserProgram(rootNames?: string[]): ts.Program {
   });
 }
 
-export function collectBrowserSpecImportDiagnostics(
+export function collectBrowserSpecDiagnostics(
   options: BrowserSpecTypeCheckOptions = {},
 ): ts.Diagnostic[] {
   const diagnosticRoot = path.resolve(options.diagnosticRoot ?? browserRoot);
@@ -63,7 +52,7 @@ export function collectBrowserSpecImportDiagnostics(
   return ts
     .getPreEmitDiagnostics(loadBrowserProgram(options.rootNames))
     .filter((diagnostic) => {
-      if (!diagnostic.file || !importAndIdentifierDiagnosticCodes.has(diagnostic.code)) {
+      if (!diagnostic.file) {
         return false;
       }
       const fileName = path.resolve(diagnostic.file.fileName);
@@ -72,12 +61,12 @@ export function collectBrowserSpecImportDiagnostics(
 }
 
 export function runBrowserSpecTypeCheck(): void {
-  const diagnostics = collectBrowserSpecImportDiagnostics();
+  const diagnostics = collectBrowserSpecDiagnostics();
   if (diagnostics.length > 0) {
     console.error(ts.formatDiagnosticsWithColorAndContext(diagnostics, formatHost));
-    throw new Error("Browser spec import and identifier checks failed.");
+    throw new Error("Browser spec type checks failed.");
   }
-  console.info("Browser spec imports and identifiers are valid.");
+  console.info("Browser spec types are valid.");
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

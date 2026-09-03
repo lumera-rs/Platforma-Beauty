@@ -62,7 +62,7 @@ async function mockAdminSalonScreen(page: Page) {
   return {
     getPatchCount: () => patchCount,
     holdNextPatch: () => {
-      let release = () => undefined;
+      let release: () => void = () => undefined;
       nextPatchHold = new Promise<void>((resolve) => { release = resolve; });
       return release;
     },

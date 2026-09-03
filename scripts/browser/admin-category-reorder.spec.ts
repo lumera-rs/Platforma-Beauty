@@ -17,7 +17,7 @@ const categories = [
 
 test("rapid category reordering submits one paired update and disables sibling controls", async ({ page }) => {
   let updateCount = 0;
-  let releaseUpdates = () => undefined;
+  let releaseUpdates: () => void = () => undefined;
   const updatesHeld = new Promise<void>((resolve) => { releaseUpdates = resolve; });
 
   await page.route("**/api/**", async (route) => {

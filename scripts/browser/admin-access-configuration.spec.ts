@@ -327,7 +327,6 @@ function adminRma() {
   return {
     id: rmaId,
     rmaNumber: "RMA-REG-001",
-    orderId: null,
     orderItemId: null,
     retailOrderId: rmaOrderId,
     retailOrderItemId: "00000000-0000-4000-8000-000000000083",
