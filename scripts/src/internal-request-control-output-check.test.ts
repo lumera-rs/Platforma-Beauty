@@ -10,6 +10,7 @@ import {
 } from "./internal-request-control-output-check";
 import {
   assertOrvalFileProducingOutputValueShapesRecognized,
+  assertOrvalNestedFileProducingOutputValueShapesRecognized,
   assertOrvalNestedOutputContractsRecognized,
   assertOrvalOutputContractRecognized,
   collectOrvalConfiguredOutputPaths,
@@ -56,6 +57,35 @@ function readFileProducingOutputValueShapes(declarations: string) {
     /interface OutputOptions(?: extends [^{]+)? \{(?<body>[\s\S]*?)^\}/m,
   );
   assert.ok(declaration?.groups?.body, "Installed Orval declarations must expose OutputOptions");
+
+  const aliases = new Map(
+    [...declarations.matchAll(/^type ([A-Za-z]\w*)\s*=\s*([^;\n]+);$/gm)]
+      .map((match) => [match[1], match[2]]),
+  );
+  const resolveMembers = (type: string, seen = new Set<string>()): string[] =>
+    type.split("|").flatMap((rawMember) => {
+      const member = rawMember.trim();
+      const alias = aliases.get(member);
+      if (!alias?.includes("|") || seen.has(member)) {
+        return member;
+      }
+      return resolveMembers(alias, new Set([...seen, member]));
+    });
+
+  return Object.fromEntries(
+    [...declaration.groups.body.matchAll(/^\s{2}([A-Za-z]\w*)\??:\s*([^;\n]+);$/gm)]
+      .map((match) => [match[1], resolveMembers(match[2])]),
+  );
+}
+
+function readInterfaceFieldValueShapes(declarations: string, interfaceName: string) {
+  const declaration = declarations.match(
+    new RegExp(`interface ${interfaceName}(?: extends [^{]+)? \\{(?<body>[\\s\\S]*?)^\\}`, "m"),
+  );
+  assert.ok(
+    declaration?.groups?.body,
+    `Installed Orval declarations must expose ${interfaceName}`,
+  );
 
   const aliases = new Map(
     [...declarations.matchAll(/^type ([A-Za-z]\w*)\s*=\s*([^;\n]+);$/gm)]
@@ -132,6 +162,44 @@ test("installed nested Orval output options are classified by the inventory guar
       ],
     }),
     /installed Orval nested output contracts contain unrecognized options[\s\S]*output\.mock\.generators\[\]\.futureOutputDirectory \(FakerMockOptions\)/,
+  );
+});
+
+test("installed nested Orval file-producing output value shapes are reviewed", async () => {
+  const declarations = await readInstalledOrvalDeclarations();
+  const installedShapes = Object.fromEntries(
+    Object.keys(orvalNestedOutputContracts).map((contractName) => [
+      contractName,
+      readInterfaceFieldValueShapes(declarations, contractName),
+    ]),
+  );
+
+  assert.doesNotThrow(
+    () => assertOrvalNestedFileProducingOutputValueShapesRecognized(installedShapes),
+  );
+  assert.throws(
+    () => assertOrvalNestedFileProducingOutputValueShapesRecognized({
+      ...installedShapes,
+      SchemaOptions: {
+        ...installedShapes.SchemaOptions,
+        path: [...installedShapes.SchemaOptions.path, "FutureSchemaPathOptions"],
+      },
+    }),
+    /nested file-producing output value shapes have changed[\s\S]*Review every changed string\/object union[\s\S]*output\.schemas\.path \(SchemaOptions\):[\s\S]*FutureSchemaPathOptions/,
+  );
+  assert.throws(
+    () => assertOrvalNestedFileProducingOutputValueShapesRecognized({
+      ...installedShapes,
+      FakerMockOptions: {
+        ...installedShapes.FakerMockOptions,
+        path: ["FutureGeneratorPathOptions"],
+      },
+      FactoryMethodsOptions: {
+        ...installedShapes.FactoryMethodsOptions,
+        outputDirectory: ["string", "FutureFactoryDirectoryOptions"],
+      },
+    }),
+    /output\.factoryMethods\.outputDirectory \(FactoryMethodsOptions\):[\s\S]*FutureFactoryDirectoryOptions[\s\S]*output\.mock\.generators\[\]\.path \(FakerMockOptions\):[\s\S]*FutureGeneratorPathOptions/,
   );
 });
 

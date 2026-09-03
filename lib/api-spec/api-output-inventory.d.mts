@@ -9,6 +9,7 @@ export const orvalNonFileOutputOptions: readonly string[];
 export const orvalNestedOutputContracts: Readonly<Record<string, Readonly<{
   configPath: string;
   fileProducing: readonly string[];
+  fileProducingValueShapes: Readonly<Record<string, readonly string[]>>;
   nonFile: readonly string[];
 }>>>;
 
@@ -22,6 +23,10 @@ export function assertOrvalFileProducingOutputValueShapesRecognized(
 
 export function assertOrvalNestedOutputContractsRecognized(
   installedContracts: Readonly<Record<string, readonly string[]>>,
+): void;
+
+export function assertOrvalNestedFileProducingOutputValueShapesRecognized(
+  installedShapes: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>>,
 ): void;
 
 export function collectOrvalConfiguredOutputPaths(
