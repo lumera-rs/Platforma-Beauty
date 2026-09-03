@@ -74,6 +74,80 @@ test("browser preflight derives and checks a custom testDir from every runner co
   }
 });
 
+test("browser preflight resolves const configs, relative imports, and ordered object spreads", async () => {
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-static-config-"),
+  );
+  try {
+    const sharedRoot = path.join(fixtureRoot, "shared-browser");
+    const overriddenRoot = path.join(fixtureRoot, "overridden-browser");
+    await mkdir(sharedRoot);
+    await mkdir(overriddenRoot);
+    await writeFile(
+      path.join(fixtureRoot, "playwright.shared.ts"),
+      [
+        'const testDir = "./shared-browser";',
+        "export const shared = { testDir };",
+      ].join("\n"),
+    );
+    await writeFile(
+      path.join(fixtureRoot, "playwright.config.ts"),
+      [
+        'import { shared as imported } from "./playwright.shared";',
+        "const config = { ...imported };",
+        "export default defineConfig(config);",
+      ].join("\n"),
+    );
+    await writeFile(
+      path.join(fixtureRoot, "playwright.visual.config.ts"),
+      [
+        'import shared from "./visual.shared";',
+        'const testDir = "./overridden-browser";',
+        "export default { testDir: './ignored', ...shared, testDir };",
+      ].join("\n"),
+    );
+    await writeFile(
+      path.join(fixtureRoot, "visual.shared.ts"),
+      'export default { testDir: "./shared-browser" };\n',
+    );
+
+    assert.deepEqual(
+      collectBrowserTestDirectories({ scriptsRoot: fixtureRoot }),
+      [overriddenRoot, sharedRoot].sort(),
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("browser preflight fails closed for runtime-dependent and unresolvable config values", async () => {
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-dynamic-config-"),
+  );
+  try {
+    const configPath = path.join(fixtureRoot, "playwright.config.ts");
+    await writeFile(
+      configPath,
+      'const testDir = process.env.TEST_DIR; export default { testDir };\n',
+    );
+    assert.throws(
+      () => collectBrowserTestDirectories({ scriptsRoot: fixtureRoot }),
+      /statically resolvable.*runtime-dependent expression.*playwright\.config\.ts/,
+    );
+
+    await writeFile(
+      configPath,
+      "export default { ...makeConfig() };\n",
+    );
+    assert.throws(
+      () => collectBrowserTestDirectories({ scriptsRoot: fixtureRoot }),
+      /statically resolvable.*runtime-dependent expression.*playwright\.config\.ts/,
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
 test("browser preflight rejects every spec-local diagnostic but ignores imported source diagnostics", async () => {
   const fixtureRoot = await mkdtemp(
     path.join(os.tmpdir(), "lumera-browser-types-"),

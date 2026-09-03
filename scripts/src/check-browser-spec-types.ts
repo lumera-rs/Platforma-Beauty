@@ -71,6 +71,211 @@ function unwrapConfigExpression(expression: ts.Expression): ts.Expression {
   return expression;
 }
 
+interface StaticResolver {
+  sourceFile: ts.SourceFile;
+  resolving: Set<string>;
+}
+
+interface StaticExpression {
+  expression: ts.Expression;
+  sourceFile: ts.SourceFile;
+}
+
+type StaticConfigValue =
+  | { kind: "object"; properties: Map<string, StaticExpression> }
+  | { kind: "string"; value: string };
+
+function staticConfigError(configFileName: string, detail: string): Error {
+  return new Error(
+    `Browser runner config must use only statically resolvable const objects, object spreads, and string testDir values so coverage can be checked (${detail}): ${configFileName}`,
+  );
+}
+
+function findConstInitializer(
+  sourceFile: ts.SourceFile,
+  name: string,
+): ts.Expression | undefined {
+  for (const statement of sourceFile.statements) {
+    if (
+      !ts.isVariableStatement(statement) ||
+      !(statement.declarationList.flags & ts.NodeFlags.Const)
+    ) {
+      continue;
+    }
+    for (const declaration of statement.declarationList.declarations) {
+      if (
+        ts.isIdentifier(declaration.name) &&
+        declaration.name.text === name
+      ) {
+        return declaration.initializer;
+      }
+    }
+  }
+  return undefined;
+}
+
+function resolveRelativeImport(
+  sourceFile: ts.SourceFile,
+  localName: string,
+): { sourceFile: ts.SourceFile; importedName: string } | undefined {
+  for (const statement of sourceFile.statements) {
+    if (
+      !ts.isImportDeclaration(statement) ||
+      !statement.importClause ||
+      !ts.isStringLiteral(statement.moduleSpecifier) ||
+      !statement.moduleSpecifier.text.startsWith(".")
+    ) {
+      continue;
+    }
+    let importedName: string | undefined;
+    if (statement.importClause.name?.text === localName) {
+      importedName = "default";
+    } else {
+      const binding = statement.importClause.namedBindings;
+      if (binding && ts.isNamedImports(binding)) {
+        const element = binding.elements.find(
+          ({ name }) => name.text === localName,
+        );
+        importedName = element?.propertyName?.text ?? element?.name.text;
+      }
+    }
+    if (!importedName) {
+      continue;
+    }
+    const unresolved = path.resolve(
+      path.dirname(sourceFile.fileName),
+      statement.moduleSpecifier.text,
+    );
+    const candidates = browserFileExtensions.includes(path.extname(unresolved))
+      ? [unresolved]
+      : browserFileExtensions.map((extension) => unresolved + extension);
+    const importedFileName = candidates.find(ts.sys.fileExists);
+    if (!importedFileName) {
+      return undefined;
+    }
+    const sourceText = ts.sys.readFile(importedFileName);
+    if (sourceText === undefined) {
+      return undefined;
+    }
+    return {
+      sourceFile: ts.createSourceFile(
+        importedFileName,
+        sourceText,
+        ts.ScriptTarget.Latest,
+        true,
+      ),
+      importedName,
+    };
+  }
+  return undefined;
+}
+
+function resolveStaticIdentifier(
+  identifier: ts.Identifier,
+  resolver: StaticResolver,
+  configFileName: string,
+): StaticConfigValue {
+  const key = `${resolver.sourceFile.fileName}:${identifier.text}`;
+  if (resolver.resolving.has(key)) {
+    throw staticConfigError(configFileName, `cyclic reference ${identifier.text}`);
+  }
+  resolver.resolving.add(key);
+  try {
+    const localInitializer = findConstInitializer(
+      resolver.sourceFile,
+      identifier.text,
+    );
+    if (localInitializer) {
+      return resolveStaticValue(localInitializer, resolver, configFileName);
+    }
+    const imported = resolveRelativeImport(resolver.sourceFile, identifier.text);
+    if (!imported) {
+      throw staticConfigError(
+        configFileName,
+        `unresolvable identifier ${identifier.text}`,
+      );
+    }
+    let initializer: ts.Expression | undefined;
+    if (imported.importedName === "default") {
+      const exported = imported.sourceFile.statements.find(
+        (statement): statement is ts.ExportAssignment =>
+          ts.isExportAssignment(statement) && !statement.isExportEquals,
+      );
+      initializer = exported?.expression;
+    } else {
+      initializer = findConstInitializer(imported.sourceFile, imported.importedName);
+    }
+    if (!initializer) {
+      throw staticConfigError(
+        configFileName,
+        `imported value ${identifier.text} is not a const or default expression`,
+      );
+    }
+    return resolveStaticValue(
+      initializer,
+      { sourceFile: imported.sourceFile, resolving: resolver.resolving },
+      configFileName,
+    );
+  } finally {
+    resolver.resolving.delete(key);
+  }
+}
+
+function resolveStaticValue(
+  expression: ts.Expression,
+  resolver: StaticResolver,
+  configFileName: string,
+): StaticConfigValue {
+  const unwrapped = unwrapConfigExpression(expression);
+  if (
+    ts.isStringLiteral(unwrapped) ||
+    ts.isNoSubstitutionTemplateLiteral(unwrapped)
+  ) {
+    return { kind: "string", value: unwrapped.text };
+  }
+  if (ts.isIdentifier(unwrapped)) {
+    return resolveStaticIdentifier(unwrapped, resolver, configFileName);
+  }
+  if (!ts.isObjectLiteralExpression(unwrapped)) {
+    throw staticConfigError(configFileName, "runtime-dependent expression");
+  }
+  const properties = new Map<string, StaticExpression>();
+  for (const property of unwrapped.properties) {
+    if (ts.isSpreadAssignment(property)) {
+      const spread = resolveStaticValue(
+        property.expression,
+        resolver,
+        configFileName,
+      );
+      if (spread.kind !== "object") {
+        throw staticConfigError(configFileName, "spread value is not an object");
+      }
+      for (const [name, initializer] of spread.properties) {
+        properties.set(name, initializer);
+      }
+      continue;
+    }
+    if (ts.isShorthandPropertyAssignment(property)) {
+      properties.set(property.name.text, {
+        expression: property.name,
+        sourceFile: resolver.sourceFile,
+      });
+      continue;
+    }
+    if (
+      !ts.isPropertyAssignment(property) ||
+      (!ts.isIdentifier(property.name) && !ts.isStringLiteral(property.name))
+    ) {
+      throw staticConfigError(configFileName, "unsupported object property");
+    }
+    properties.set(property.name.text, {
+      expression: property.initializer,
+      sourceFile: resolver.sourceFile,
+    });
+  }
+  return { kind: "object", properties };
+}
+
 function readConfiguredTestDir(configFileName: string): string {
   const sourceText = ts.sys.readFile(configFileName);
   if (sourceText === undefined) {
@@ -91,33 +296,27 @@ function readConfiguredTestDir(configFileName: string): string {
       `Browser runner config must have a default export so its testDir can be checked: ${configFileName}`,
     );
   }
-  const configExpression = unwrapConfigExpression(exportAssignment.expression);
-  if (!ts.isObjectLiteralExpression(configExpression)) {
-    throw new Error(
-      `Browser runner config must default-export an object or defineConfig({...}) so its testDir can be checked: ${configFileName}`,
-    );
-  }
-  const testDirProperty = configExpression.properties.find(
-    (property): property is ts.PropertyAssignment =>
-      ts.isPropertyAssignment(property) &&
-      ((ts.isIdentifier(property.name) && property.name.text === "testDir") ||
-        (ts.isStringLiteral(property.name) && property.name.text === "testDir")),
+  const config = resolveStaticValue(
+    exportAssignment.expression,
+    { sourceFile, resolving: new Set() },
+    configFileName,
   );
+  if (config.kind !== "object") {
+    throw staticConfigError(configFileName, "default export is not an object");
+  }
+  const testDirProperty = config.properties.get("testDir");
   if (!testDirProperty) {
     return path.dirname(configFileName);
   }
-  if (
-    !ts.isStringLiteral(testDirProperty.initializer) &&
-    !ts.isNoSubstitutionTemplateLiteral(testDirProperty.initializer)
-  ) {
-    throw new Error(
-      `Browser runner config testDir must be a static string so coverage can be checked: ${configFileName}`,
-    );
-  }
-  return path.resolve(
-    path.dirname(configFileName),
-    testDirProperty.initializer.text,
+  const testDir = resolveStaticValue(
+    testDirProperty.expression,
+    { sourceFile: testDirProperty.sourceFile, resolving: new Set() },
+    configFileName,
   );
+  if (testDir.kind !== "string") {
+    throw staticConfigError(configFileName, "testDir is not a static string");
+  }
+  return path.resolve(path.dirname(configFileName), testDir.value);
 }
 
 export function collectBrowserTestDirectories(
