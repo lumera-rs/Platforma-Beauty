@@ -10,6 +10,7 @@ import {
   db,
   observeDatabaseQueries,
   pool,
+  runWithDatabaseQueryObservation,
   type DatabaseQueryObservation,
 } from "@workspace/db";
 import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
@@ -53,6 +54,69 @@ test("parallel SQL capture sessions observe only their own async context", async
       "parallel capture sessions must not observe each other's queries",
     );
   }
+});
+
+test("failed nested SQL captures unregister stale IDs without disturbing the outer capture", async () => {
+  const failingMarker = randomUUID();
+  const staleInnerMarker = randomUUID();
+  const outerContinuationMarker = randomUUID();
+  const staleOuterMarker = randomUUID();
+  const outerParams: unknown[][] = [];
+  let outerCaptureId: string | undefined;
+  let innerCaptureId: string | undefined;
+  let innerObserverCalls = 0;
+
+  await observeDatabaseQueries(
+    (query) => outerParams.push(query.params),
+    async (captureId) => {
+      outerCaptureId = captureId;
+
+      await assert.rejects(
+        observeDatabaseQueries(
+          () => {
+            innerObserverCalls += 1;
+            throw new Error("intentional observer failure");
+          },
+          async (nestedCaptureId) => {
+            innerCaptureId = nestedCaptureId;
+            await db.execute(sql`select ${failingMarker}::text as observation_marker`);
+          },
+        ),
+        /intentional observer failure/,
+      );
+
+      assert.equal(innerObserverCalls, 1);
+      assert.ok(innerCaptureId);
+      await runWithDatabaseQueryObservation(innerCaptureId, () =>
+        db.execute(sql`select ${staleInnerMarker}::text as observation_marker`),
+      );
+      await db.execute(sql`select ${outerContinuationMarker}::text as observation_marker`);
+    },
+  );
+
+  assert.ok(
+    outerParams.some((params) => params.includes(failingMarker)),
+    "the outer capture must observe the query that failed the nested observer",
+  );
+  assert.ok(
+    outerParams.some((params) => params.includes(staleInnerMarker)),
+    "the outer capture must remain active after nested cleanup",
+  );
+  assert.ok(
+    outerParams.some((params) => params.includes(outerContinuationMarker)),
+    "the outer capture must continue observing later queries",
+  );
+
+  const capturedCountAfterOuterCleanup = outerParams.length;
+  assert.ok(outerCaptureId);
+  await runWithDatabaseQueryObservation(outerCaptureId, () =>
+    db.execute(sql`select ${staleOuterMarker}::text as observation_marker`),
+  );
+  assert.equal(
+    outerParams.length,
+    capturedCountAfterOuterCleanup,
+    "a later request must not reactivate a completed capture ID",
+  );
 });
 
 test("popular education ordering uses only paid featured placements before slicing", () => {
