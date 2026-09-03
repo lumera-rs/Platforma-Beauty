@@ -1,6 +1,9 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  apiOutputInventory,
+} from "../../lib/api-spec/api-output-inventory.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 
@@ -22,20 +25,17 @@ async function loadInternalRequestControls(): Promise<readonly InternalRequestCo
 }
 
 export const publicApiDocumentationOutputs = [
-  "lib/api-spec/openapi.yaml",
+  ...apiOutputInventory.publicDocumentation,
 ] as const;
 
-export const generatedApiSourceOutputs = [
-  "lib/api-client-react/src/generated",
-  "lib/api-zod/src/generated",
-] as const;
+export const generatedApiSourceOutputs = Object.values(apiOutputInventory.generators)
+  .map((output) => output.source);
 
 export const generatedApiPublishedOutputs = [
   ...publicApiDocumentationOutputs,
   ...generatedApiSourceOutputs,
-  "lib/api-client-react/dist/generated",
-  "lib/api-zod/dist/generated",
-] as const;
+  ...Object.values(apiOutputInventory.generators).map((output) => output.published),
+];
 
 async function listFiles(target: string): Promise<string[]> {
   const entries = await readdir(target, { withFileTypes: true });

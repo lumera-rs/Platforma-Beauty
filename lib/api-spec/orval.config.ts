@@ -1,12 +1,24 @@
 import { defineConfig, InputTransformerFn } from "orval";
 import path from "path";
+import {
+  apiOutputInventory,
+  defineInventoriedGeneratorConfig,
+} from "./api-output-inventory.mjs";
 
 const root = path.resolve(__dirname, "..", "..");
 const outputRoot = process.env.API_CODEGEN_OUTPUT_ROOT
   ? path.resolve(process.env.API_CODEGEN_OUTPUT_ROOT)
   : root;
-const apiClientReactSrc = path.resolve(outputRoot, "lib", "api-client-react", "src");
-const apiZodSrc = path.resolve(outputRoot, "lib", "api-zod", "src");
+function generatorDestination(name: string) {
+  const source = apiOutputInventory.generators[name].source;
+  return {
+    workspace: path.resolve(outputRoot, path.dirname(source)),
+    target: path.basename(source),
+  };
+}
+
+const apiClientReactDestination = generatorDestination("api-client-react");
+const apiZodDestination = generatorDestination("zod");
 
 // Our exports make assumptions about the title of the API being "Api" (i.e. generated output is `api.ts`).
 const titleTransformer: InputTransformerFn = (config) => {
@@ -16,7 +28,7 @@ const titleTransformer: InputTransformerFn = (config) => {
   return config;
 };
 
-export default defineConfig({
+export default defineConfig(defineInventoriedGeneratorConfig({
   "api-client-react": {
     input: {
       target: "./openapi.yaml",
@@ -25,8 +37,8 @@ export default defineConfig({
       },
     },
     output: {
-      workspace: apiClientReactSrc,
-      target: "generated",
+      workspace: apiClientReactDestination.workspace,
+      target: apiClientReactDestination.target,
       client: "react-query",
       mode: "split",
       baseUrl: "/api",
@@ -37,7 +49,7 @@ export default defineConfig({
           includeHttpResponseReturnType: false,
         },
         mutator: {
-          path: path.resolve(apiClientReactSrc, "custom-fetch.ts"),
+          path: path.resolve(apiClientReactDestination.workspace, "custom-fetch.ts"),
           name: "customFetch",
         },
       },
@@ -51,9 +63,9 @@ export default defineConfig({
       },
     },
     output: {
-      workspace: apiZodSrc,
+      workspace: apiZodDestination.workspace,
       client: "zod",
-      target: "generated",
+      target: apiZodDestination.target,
       schemas: { path: "generated/types", type: "typescript" },
       mode: "split",
       clean: true,
@@ -72,4 +84,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

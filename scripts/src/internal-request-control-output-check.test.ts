@@ -7,6 +7,18 @@ import {
   checkInternalRequestControlOutputs,
   findInternalControlsInGeneratedOutputs,
 } from "./internal-request-control-output-check";
+import { defineInventoriedGeneratorConfig } from "../../lib/api-spec/api-output-inventory.mjs";
+
+test("an Orval target without inventoried source and published outputs fails closed", () => {
+  assert.throws(
+    () => defineInventoriedGeneratorConfig({
+      "api-client-react": {},
+      zod: {},
+      "future-client": {},
+    }),
+    /future-client: add both source and published outputs to apiOutputInventory\.generators/,
+  );
+});
 
 test("stale or alternate generated output exposes a clear internal-control failure", async () => {
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "internal-control-output-"));

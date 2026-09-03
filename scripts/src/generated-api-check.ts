@@ -6,22 +6,17 @@ import {
   checkInternalRequestControlOutputs,
   generatedApiSourceOutputs,
 } from "./internal-request-control-output-check";
+import { apiOutputInventory } from "../../lib/api-spec/api-output-inventory.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 const apiSpecDirectory = path.join(root, "lib", "api-spec");
 const sourceContract = path.join("lib", "api-spec", "openapi.yaml");
 
-const generatedArtifacts = [
-  {
-    label: path.join("lib", "api-zod", "src", "generated"),
-    relativePath: path.join("lib", "api-zod", "src", "generated"),
-  },
-  {
-    label: path.join("lib", "api-client-react", "src", "generated"),
-    relativePath: path.join("lib", "api-client-react", "src", "generated"),
-  },
-] as const;
+const generatedArtifacts = Object.values(apiOutputInventory.generators).map(({ source }) => ({
+  label: source,
+  relativePath: source,
+}));
 
 type GeneratedFile = {
   relativePath: string;
