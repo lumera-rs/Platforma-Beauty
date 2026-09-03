@@ -163,6 +163,70 @@ test("pre-SQL capture rejection unregisters its ID without disturbing the outer 
   );
 });
 
+test("HTTP query observation ignores a rejected capture ID and preserves an enclosing capture", async () => {
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address() as AddressInfo;
+  const url = `http://127.0.0.1:${port}/api/salons?page=1&pageSize=1`;
+  const outerQueries: DatabaseQueryObservation[] = [];
+  const rejectedQueries: DatabaseQueryObservation[] = [];
+  let rejectedCaptureId: string | undefined;
+
+  try {
+    await observeDatabaseQueries(
+      (query) => outerQueries.push(query),
+      async (outerCaptureId) => {
+        await assert.rejects(
+          observeDatabaseQueries(
+            (query) => rejectedQueries.push(query),
+            async (captureId) => {
+              rejectedCaptureId = captureId;
+              throw new Error("intentional pre-SQL HTTP capture failure");
+            },
+          ),
+          /intentional pre-SQL HTTP capture failure/,
+        );
+
+        assert.ok(rejectedCaptureId);
+        const staleResponse = await fetch(url, {
+          headers: { [databaseQueryObservationHeader]: rejectedCaptureId },
+        });
+        assert.equal(staleResponse.status, 200);
+        await staleResponse.arrayBuffer();
+        assert.deepEqual(
+          rejectedQueries,
+          [],
+          "a later HTTP request must not invoke the rejected capture observer",
+        );
+        assert.deepEqual(
+          outerQueries,
+          [],
+          "the stale capture header must not leak into the enclosing capture",
+        );
+
+        const outerResponse = await fetch(url, {
+          headers: { [databaseQueryObservationHeader]: outerCaptureId },
+        });
+        assert.equal(outerResponse.status, 200);
+        await outerResponse.arrayBuffer();
+        assert.ok(
+          outerQueries.length > 0,
+          "the enclosing capture must continue observing its own HTTP request",
+        );
+        assert.deepEqual(
+          rejectedQueries,
+          [],
+          "the rejected observer must remain unregistered during later HTTP requests",
+        );
+      },
+    );
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+  }
+});
+
 test("popular education ordering uses only paid featured placements before slicing", () => {
   const courses = [
     { id: "highest-rating", rating: 50, createdAt: new Date("2026-01-01T00:00:00.000Z") },
