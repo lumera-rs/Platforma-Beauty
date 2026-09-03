@@ -704,6 +704,123 @@ test("browser preflight accepts a package export symlink that stays inside the p
   }
 });
 
+test("browser preflight fails closed when a chained package export symlink escapes the package", async () => {
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-export-symlink-chain-escape-"),
+  );
+  try {
+    const sharedConfigRoot = path.join(fixtureRoot, "playwright.shared");
+    const outsideConfigPath = path.join(fixtureRoot, "outside-settings.ts");
+    const intermediateLink = path.join(sharedConfigRoot, "intermediate.ts");
+    await mkdir(sharedConfigRoot);
+    await writeFile(
+      path.join(sharedConfigRoot, "package.json"),
+      JSON.stringify({ exports: { ".": "./settings.ts" } }),
+    );
+    await writeFile(
+      outsideConfigPath,
+      'export const shared = { testDir: "./browser" };\n',
+    );
+    await symlink(outsideConfigPath, intermediateLink);
+    await symlink(intermediateLink, path.join(sharedConfigRoot, "settings.ts"));
+    await writeFile(
+      path.join(fixtureRoot, "playwright.config.ts"),
+      [
+        'import { shared } from "./playwright.shared";',
+        "export default { ...shared };",
+      ].join("\n"),
+    );
+
+    assert.throws(
+      () => collectBrowserTestDirectories({ scriptsRoot: fixtureRoot }),
+      /statically resolvable.*unresolvable identifier shared.*playwright\.config\.ts/,
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("browser preflight fails closed when a package export crosses a symlinked directory outside the package", async () => {
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-export-directory-symlink-escape-"),
+  );
+  try {
+    const sharedConfigRoot = path.join(fixtureRoot, "playwright.shared");
+    const outsideConfigRoot = path.join(fixtureRoot, "outside");
+    await mkdir(sharedConfigRoot);
+    await mkdir(outsideConfigRoot);
+    await writeFile(
+      path.join(sharedConfigRoot, "package.json"),
+      JSON.stringify({ exports: { ".": "./linked/settings.ts" } }),
+    );
+    await writeFile(
+      path.join(outsideConfigRoot, "settings.ts"),
+      'export const shared = { testDir: "./browser" };\n',
+    );
+    await symlink(
+      outsideConfigRoot,
+      path.join(sharedConfigRoot, "linked"),
+      "dir",
+    );
+    await writeFile(
+      path.join(fixtureRoot, "playwright.config.ts"),
+      [
+        'import { shared } from "./playwright.shared";',
+        "export default { ...shared };",
+      ].join("\n"),
+    );
+
+    assert.throws(
+      () => collectBrowserTestDirectories({ scriptsRoot: fixtureRoot }),
+      /statically resolvable.*unresolvable identifier shared.*playwright\.config\.ts/,
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("browser preflight accepts a chained package export symlink whose canonical target stays inside the package", async () => {
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-export-symlink-chain-inside-"),
+  );
+  try {
+    const browserRoot = path.join(fixtureRoot, "browser");
+    const sharedConfigRoot = path.join(fixtureRoot, "playwright.shared");
+    const canonicalConfigPath = path.join(
+      sharedConfigRoot,
+      "internal",
+      "settings.ts",
+    );
+    const intermediateLink = path.join(sharedConfigRoot, "intermediate.ts");
+    await mkdir(browserRoot);
+    await mkdir(path.dirname(canonicalConfigPath), { recursive: true });
+    await writeFile(
+      path.join(sharedConfigRoot, "package.json"),
+      JSON.stringify({ exports: { ".": "./settings.ts" } }),
+    );
+    await writeFile(
+      canonicalConfigPath,
+      'export const shared = { testDir: "./browser" };\n',
+    );
+    await symlink(canonicalConfigPath, intermediateLink);
+    await symlink(intermediateLink, path.join(sharedConfigRoot, "settings.ts"));
+    await writeFile(
+      path.join(fixtureRoot, "playwright.config.ts"),
+      [
+        'import { shared } from "./playwright.shared";',
+        "export default { ...shared };",
+      ].join("\n"),
+    );
+
+    assert.deepEqual(
+      collectBrowserTestDirectories({ scriptsRoot: fixtureRoot }),
+      [browserRoot],
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
 test("browser preflight resolves an exact static package exports subpath and checks only its consumed target", async () => {
   const fixtureRoot = await mkdtemp(
     path.join(os.tmpdir(), "lumera-browser-package-subpath-"),
