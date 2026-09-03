@@ -30,7 +30,6 @@ test("browser preflight rejects every spec-local diagnostic but ignores imported
     const diagnostics = collectBrowserSpecDiagnostics({
       rootNames: [specPath],
       diagnosticRoot: specRoot,
-      diagnosticFiles: [],
     });
 
     const diagnosticCodes = new Set(diagnostics.map(({ code }) => code));
@@ -52,11 +51,12 @@ test("browser preflight rejects every spec-local diagnostic but ignores imported
 });
 
 
-test("browser preflight rejects Playwright config diagnostics but ignores its imported source diagnostics", async () => {
+test("browser preflight rejects every runner config root but ignores imported source diagnostics", async () => {
   const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-browser-config-types-"));
   try {
     const modulePath = path.join(fixtureRoot, "application-source.ts");
     const configPath = path.join(fixtureRoot, "playwright.config.ts");
+    const additionalConfigPath = path.join(fixtureRoot, "playwright.visual.config.ts");
     await writeFile(modulePath, "export const applicationValue: string = 123;\n");
     await writeFile(
       configPath,
@@ -66,16 +66,29 @@ test("browser preflight rejects Playwright config diagnostics but ignores its im
         "unknownConfigIdentifier();",
       ].join("\n"),
     );
+    await writeFile(
+      additionalConfigPath,
+      [
+        'import { applicationValue } from "./application-source";',
+        "const visualConfigValue: boolean = applicationValue;",
+        "unknownVisualConfigIdentifier();",
+      ].join("\n"),
+    );
 
     const diagnostics = collectBrowserSpecDiagnostics({
-      rootNames: [configPath],
+      rootNames: [configPath, additionalConfigPath],
       diagnosticRoot: path.join(fixtureRoot, "browser"),
-      diagnosticFiles: [configPath],
     });
 
     const diagnosticCodes = new Set(diagnostics.map(({ code }) => code));
     assert.ok(diagnosticCodes.has(2322), "config-local type mismatch should fail");
     assert.ok(diagnosticCodes.has(2304), "config-local unknown identifier should fail");
+    assert.ok(
+      diagnostics.some(
+        (diagnostic) => diagnostic.file?.fileName === additionalConfigPath,
+      ),
+      "a newly added runner config root should fail without a separate allowlist update",
+    );
     assert.equal(
       diagnostics.some((diagnostic) => diagnostic.file?.fileName === modulePath),
       false,

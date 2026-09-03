@@ -15,10 +15,14 @@ const formatHost: ts.FormatDiagnosticsHost = {
 interface BrowserSpecTypeCheckOptions {
   rootNames?: string[];
   diagnosticRoot?: string;
-  diagnosticFiles?: string[];
 }
 
-function loadBrowserProgram(rootNames?: string[]): ts.Program {
+interface BrowserProgram {
+  program: ts.Program;
+  rootNames: string[];
+}
+
+function loadBrowserProgram(rootNames?: string[]): BrowserProgram {
   const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
   if (configFile.error) {
     throw new Error(ts.formatDiagnostic(configFile.error, formatHost));
@@ -35,28 +39,36 @@ function loadBrowserProgram(rootNames?: string[]): ts.Program {
     throw new Error(ts.formatDiagnostics(parsed.errors, formatHost));
   }
 
-  return ts.createProgram({
-    rootNames: rootNames ?? parsed.fileNames,
-    options: parsed.options,
-    projectReferences: parsed.projectReferences,
-  });
+  const programRootNames = rootNames ?? parsed.fileNames;
+  return {
+    program: ts.createProgram({
+      rootNames: programRootNames,
+      options: parsed.options,
+      projectReferences: parsed.projectReferences,
+    }),
+    rootNames: programRootNames,
+  };
 }
 
 export function collectBrowserSpecDiagnostics(
   options: BrowserSpecTypeCheckOptions = {},
 ): ts.Diagnostic[] {
   const diagnosticRoot = path.resolve(options.diagnosticRoot ?? browserRoot);
-  const diagnosticFiles = new Set(
-    (options.diagnosticFiles ?? [path.join(scriptsRoot, "playwright.config.ts")]).map(
-      (fileName) => path.resolve(fileName),
-    ),
-  );
   const diagnosticPrefix = diagnosticRoot.endsWith(path.sep)
     ? diagnosticRoot
     : diagnosticRoot + path.sep;
+  const { program, rootNames } = loadBrowserProgram(options.rootNames);
+  const diagnosticFiles = new Set(
+    rootNames
+      .map((fileName) => path.resolve(fileName))
+      .filter(
+        (fileName) =>
+          fileName !== diagnosticRoot && !fileName.startsWith(diagnosticPrefix),
+      ),
+  );
 
   return ts
-    .getPreEmitDiagnostics(loadBrowserProgram(options.rootNames))
+    .getPreEmitDiagnostics(program)
     .filter((diagnostic) => {
       if (!diagnostic.file) {
         return false;
