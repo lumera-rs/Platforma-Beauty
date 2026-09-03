@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -7,7 +8,56 @@ import {
   checkInternalRequestControlOutputs,
   findInternalControlsInGeneratedOutputs,
 } from "./internal-request-control-output-check";
-import { defineInventoriedGeneratorConfig } from "../../lib/api-spec/api-output-inventory.mjs";
+import {
+  assertOrvalOutputContractRecognized,
+  defineInventoriedGeneratorConfig,
+} from "../../lib/api-spec/api-output-inventory.mjs";
+
+const require = createRequire(import.meta.url);
+
+async function readInstalledOrvalOutputOptionNames() {
+  const orvalPackagePath = require.resolve(
+    "orval/package.json",
+    { paths: [path.resolve(import.meta.dirname, "../../lib/api-spec")] },
+  );
+  const corePackagePath = require.resolve(
+    "@orval/core/package.json",
+    { paths: [path.dirname(orvalPackagePath)] },
+  );
+  const corePackage = JSON.parse(await readFile(corePackagePath, "utf8")) as {
+    types: string;
+  };
+  const declarations = await readFile(
+    path.resolve(path.dirname(corePackagePath), corePackage.types),
+    "utf8",
+  );
+  const outputOptions = declarations.match(
+    /interface OutputOptions \{(?<body>[\s\S]*?)^\}/m,
+  );
+
+  assert.ok(outputOptions?.groups?.body, "Installed Orval declarations must expose OutputOptions");
+  return [...outputOptions.groups.body.matchAll(/^\s{2}([A-Za-z]\w*)\??:/gm)]
+    .map((match) => match[1]);
+}
+
+test("installed Orval output options are classified by the inventory guard", async () => {
+  const installedOptions = await readInstalledOrvalOutputOptionNames();
+
+  assert.doesNotThrow(() => assertOrvalOutputContractRecognized(installedOptions));
+  assert.throws(
+    () => assertOrvalOutputContractRecognized([...installedOptions, "futureOutputDirectory"]),
+    /installed Orval OutputOptions contract contains unrecognized options[\s\S]*output\.futureOutputDirectory/,
+  );
+});
+
+test("non-file Orval output options do not trigger output-location failures", () => {
+  assert.doesNotThrow(() => assertOrvalOutputContractRecognized([
+    "client",
+    "mode",
+    "formatter",
+    "baseUrl",
+  ]));
+});
 
 test("an Orval target without inventoried source and published outputs fails closed", () => {
   assert.throws(

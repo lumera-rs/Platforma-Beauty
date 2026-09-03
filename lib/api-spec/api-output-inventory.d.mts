@@ -3,6 +3,13 @@ export type ApiGeneratorOutput = Readonly<{
   published: string;
 }>;
 
+export const orvalFileProducingOutputOptions: readonly string[];
+export const orvalNonFileOutputOptions: readonly string[];
+
+export function assertOrvalOutputContractRecognized(
+  installedOutputOptions: readonly string[],
+): void;
+
 export const apiOutputInventory: Readonly<{
   publicDocumentation: readonly string[];
   generators: Readonly<Record<string, ApiGeneratorOutput>>;
