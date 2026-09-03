@@ -31650,10 +31650,18 @@ export const CreatePriceInquiryResponse = zod.object({
  */
 export const adminListPriceInquiriesQuerySearchMax = 120;
 
+export const adminListPriceInquiriesQueryPageDefault = 1;
+export const adminListPriceInquiriesQueryPageMax = 100000;
+
+export const adminListPriceInquiriesQueryPageSizeDefault = 50;
+export const adminListPriceInquiriesQueryPageSizeMax = 500;
+
 
 
 export const AdminListPriceInquiriesQueryParams = zod.object({
-  "search": zod.coerce.string().max(adminListPriceInquiriesQuerySearchMax).optional().describe('Case-insensitive customer name, email, product, or supplier search.')
+  "search": zod.coerce.string().max(adminListPriceInquiriesQuerySearchMax).optional().describe('Case-insensitive customer name, email, product, or supplier search.'),
+  "page": zod.coerce.number().int().min(1).max(adminListPriceInquiriesQueryPageMax).default(adminListPriceInquiriesQueryPageDefault).describe('One-based result page in newest-first order.'),
+  "pageSize": zod.coerce.number().int().min(1).max(adminListPriceInquiriesQueryPageSizeMax).default(adminListPriceInquiriesQueryPageSizeDefault).describe('Maximum number of inquiries returned per page.')
 })
 
 export const AdminListPriceInquiriesResponseItem = zod.object({

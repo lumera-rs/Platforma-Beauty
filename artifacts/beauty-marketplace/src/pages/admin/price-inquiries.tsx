@@ -14,13 +14,15 @@ import { useDebouncedSearch } from "@/hooks/use-debounce";
 import { useToast } from "@/hooks/use-toast";
 
 export default function AdminPriceInquiries() {
+  const pageSize = 50;
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const debouncedSearch = useDebouncedSearch(search);
   const { toast } = useToast();
   const qc = useQueryClient();
 
   const { data: inquiries, isLoading } = useAdminListPriceInquiries(
-    debouncedSearch ? { search: debouncedSearch } : undefined,
+    { ...(debouncedSearch ? { search: debouncedSearch } : {}), page, pageSize },
   );
 
   const updateInquiry = useMutation({
@@ -51,7 +53,10 @@ export default function AdminPriceInquiries() {
           <Input 
             placeholder="Pretraga po imenu, emailu..." 
             value={search} 
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
             className="pl-9"
           />
         </div>
@@ -153,6 +158,31 @@ export default function AdminPriceInquiries() {
               </Card>
             );
           })
+        )}
+        {!isLoading && inquiries && (page > 1 || inquiries.length === pageSize) && (
+          <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-center text-sm text-muted-foreground sm:text-left">
+              Stranica {page}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1 sm:flex-none"
+                disabled={page === 1}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+              >
+                Prethodna
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1 sm:flex-none"
+                disabled={inquiries.length < pageSize}
+                onClick={() => setPage((current) => current + 1)}
+              >
+                Sledeća
+              </Button>
+            </div>
+          </div>
         )}
       </div>
     </AdminLayout>

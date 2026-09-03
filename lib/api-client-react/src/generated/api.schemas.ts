@@ -16666,6 +16666,18 @@ export type AdminListPriceInquiriesParams = {
  * @maxLength 120
  */
 search?: string;
+/**
+ * One-based result page in newest-first order.
+ * @minimum 1
+ * @maximum 100000
+ */
+page?: number;
+/**
+ * Maximum number of inquiries returned per page.
+ * @minimum 1
+ * @maximum 500
+ */
+pageSize?: number;
 };
 
 export type CreateShopQuoteBody = {

@@ -149,8 +149,10 @@ router.post("/public/suppliers/:supplierId/products/:productId/price-inquiries",
 router.get("/admin/price-inquiries", async (req, res): Promise<void> => {
   if (!await admin(req, res)) return;
   const query = AdminListPriceInquiriesQueryParams.safeParse(req.query);
-  if (!query.success) { res.status(400).json({ error: "Invalid price inquiry search." }); return; }
+  if (!query.success) { res.status(400).json({ error: "Invalid price inquiry query." }); return; }
   const search = query.data.search?.trim();
+  const page = query.data.page ?? 1;
+  const pageSize = query.data.pageSize ?? 50;
   const escapedSearch = search?.replace(/[\\%_]/g, "\\$&");
   const rows = await db.select(adminPriceInquirySelection).from(priceInquiriesTable)
     .innerJoin(productsTable, eq(priceInquiriesTable.productId, productsTable.id))
@@ -161,7 +163,9 @@ router.get("/admin/price-inquiries", async (req, res): Promise<void> => {
       sql`${productsTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
       sql`${suppliersTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
     ) : undefined)
-    .orderBy(desc(priceInquiriesTable.createdAt)).limit(500);
+    .orderBy(desc(priceInquiriesTable.createdAt), desc(priceInquiriesTable.id))
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
   sendValidatedAdminCommerceResponse(req, res, "adminListPriceInquiries", AdminListPriceInquiriesResponse, rows);
 });
 router.patch("/admin/price-inquiries/:id", async (req, res): Promise<void> => {
