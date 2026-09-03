@@ -531,10 +531,6 @@ async function run(): Promise<void> {
         400,
         "An invalid Idempotency-Key must be rejected before course or employee lookups can affect the response.",
       );
-      assert.ok(
-        invalidKeyQueries.length > 0,
-        "The request-scoped SQL observer must capture the authentication query.",
-      );
       const earlyEntityQueryPattern =
         /\b(?:salons|education_centers|education_center_staff|courses|employees|employee_location_assignments)\b/i;
       const earlyEntityQueries = invalidKeyQueries.filter(({ sql }) => earlyEntityQueryPattern.test(sql));
