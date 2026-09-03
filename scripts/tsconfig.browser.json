@@ -3,6 +3,7 @@
   "compilerOptions": {
     "allowJs": true,
     "checkJs": true,
+    "jsx": "preserve",
     "lib": ["es2022", "dom", "dom.iterable"],
     "noEmit": true,
     "noUncheckedSideEffectImports": true,
@@ -11,6 +12,13 @@
   },
   "include": [
     "browser/**/*.ts",
+    "browser/**/*.tsx",
+    "browser/**/*.mts",
+    "browser/**/*.cts",
+    "browser/**/*.js",
+    "browser/**/*.jsx",
+    "browser/**/*.mjs",
+    "browser/**/*.cjs",
     "playwright*.config.ts",
     "playwright*.config.tsx",
     "playwright*.config.mts",

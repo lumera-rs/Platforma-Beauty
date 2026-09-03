@@ -22,6 +22,10 @@ interface BrowserConfigCoverageOptions {
   configPath?: string;
 }
 
+interface BrowserFileCoverageOptions extends BrowserConfigCoverageOptions {
+  browserRoot?: string;
+}
+
 interface BrowserProgram {
   program: ts.Program;
   rootNames: string[];
@@ -29,6 +33,16 @@ interface BrowserProgram {
 
 const browserRunnerConfigPattern =
   /^playwright(?:\.[^.]+)*\.config\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
+const browserFileExtensions = [
+  ".ts",
+  ".tsx",
+  ".mts",
+  ".cts",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+];
 
 function loadBrowserProgram(
   rootNames?: string[],
@@ -89,6 +103,27 @@ export function collectUncoveredBrowserRunnerConfigs(
     .sort();
 }
 
+export function collectUncoveredBrowserFiles(
+  options: BrowserFileCoverageOptions = {},
+): string[] {
+  const root = path.resolve(options.scriptsRoot ?? scriptsRoot);
+  const projectPath = path.resolve(options.configPath ?? configPath);
+  const filesRoot = path.resolve(
+    options.browserRoot ?? path.join(root, "browser"),
+  );
+  const includedRoots = new Set(
+    loadBrowserProgram(undefined, root, projectPath).rootNames.map((fileName) =>
+      path.resolve(fileName),
+    ),
+  );
+
+  return ts.sys
+    .readDirectory(filesRoot, browserFileExtensions, ["**/node_modules/**"])
+    .map((fileName) => path.resolve(fileName))
+    .filter((fileName) => !includedRoots.has(fileName))
+    .sort();
+}
+
 export function collectBrowserSpecDiagnostics(
   options: BrowserSpecTypeCheckOptions = {},
 ): ts.Diagnostic[] {
@@ -127,6 +162,16 @@ export function runBrowserSpecTypeCheck(): void {
       .join(", ");
     throw new Error(
       `Browser runner configs are missing from tsconfig.browser.json: ${relativeConfigs}`,
+    );
+  }
+
+  const uncoveredBrowserFiles = collectUncoveredBrowserFiles();
+  if (uncoveredBrowserFiles.length > 0) {
+    const relativeFiles = uncoveredBrowserFiles
+      .map((fileName) => path.relative(scriptsRoot, fileName))
+      .join(", ");
+    throw new Error(
+      `Browser test or fixture files are missing from tsconfig.browser.json: ${relativeFiles}`,
     );
   }
 

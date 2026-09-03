@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  collectUncoveredBrowserFiles,
   collectBrowserSpecDiagnostics,
   collectUncoveredBrowserRunnerConfigs,
 } from "./check-browser-spec-types";
@@ -178,6 +179,100 @@ test("browser preflight checks JavaScript runner config roots but ignores import
       ),
       false,
       "imported JavaScript application source diagnostics should remain outside the gate",
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("browser preflight includes and checks every JavaScript-family browser test and fixture extension", async () => {
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-js-files-"),
+  );
+  try {
+    const browserRoot = path.join(fixtureRoot, "browser");
+    const tsconfigPath = path.join(fixtureRoot, "tsconfig.browser.json");
+    const extensions = ["js", "jsx", "mjs", "cjs"];
+    await mkdir(browserRoot);
+    const browserFiles = await Promise.all(
+      extensions.flatMap((extension) =>
+        ["spec", "fixture"].map(async (kind) => {
+          const filePath = path.join(
+            browserRoot,
+            `broken-${extension}.${kind}.${extension}`,
+          );
+          await writeFile(filePath, "unknownBrowserIdentifier();\n");
+          return filePath;
+        }),
+      ),
+    );
+    await writeFile(
+      tsconfigPath,
+      JSON.stringify({
+        compilerOptions: {
+          allowJs: true,
+          checkJs: true,
+          jsx: "preserve",
+          noEmit: true,
+        },
+        include: [
+          "browser/**/*.js",
+          "browser/**/*.jsx",
+          "browser/**/*.mjs",
+          "browser/**/*.cjs",
+        ],
+      }),
+    );
+
+    assert.deepEqual(
+      collectUncoveredBrowserFiles({
+        scriptsRoot: fixtureRoot,
+        browserRoot,
+        configPath: tsconfigPath,
+      }),
+      [],
+    );
+
+    const diagnostics = collectBrowserSpecDiagnostics({
+      rootNames: browserFiles,
+      diagnosticRoot: browserRoot,
+    });
+    assert.equal(
+      diagnostics.filter(({ code }) => code === 2304).length,
+      browserFiles.length,
+      "every JavaScript-family browser spec and fixture should be checked",
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("browser preflight clearly reports supported browser files omitted from the project", async () => {
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-file-roots-"),
+  );
+  try {
+    const browserRoot = path.join(fixtureRoot, "browser");
+    const omittedFixture = path.join(browserRoot, "helpers.fixture.cjs");
+    const tsconfigPath = path.join(fixtureRoot, "tsconfig.browser.json");
+    await mkdir(browserRoot);
+    await writeFile(path.join(browserRoot, "example.spec.ts"), "export {};\n");
+    await writeFile(omittedFixture, "module.exports = {};\n");
+    await writeFile(
+      tsconfigPath,
+      JSON.stringify({
+        compilerOptions: { allowJs: true, checkJs: true, noEmit: true },
+        include: ["browser/**/*.ts"],
+      }),
+    );
+
+    assert.deepEqual(
+      collectUncoveredBrowserFiles({
+        scriptsRoot: fixtureRoot,
+        browserRoot,
+        configPath: tsconfigPath,
+      }),
+      [omittedFixture],
     );
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
