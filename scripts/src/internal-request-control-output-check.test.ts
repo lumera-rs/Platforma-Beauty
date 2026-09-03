@@ -20,6 +20,86 @@ test("an Orval target without inventoried source and published outputs fails clo
   );
 });
 
+test("an auxiliary Orval output outside its inventoried source root fails closed", () => {
+  const fixtureRoot = path.resolve(os.tmpdir(), "orval-output-inventory-fixture");
+
+  assert.throws(
+    () => defineInventoriedGeneratorConfig({
+      "api-client-react": {
+        output: {
+          workspace: path.resolve(fixtureRoot, "lib/api-client-react/src"),
+          target: "generated",
+        },
+      },
+      zod: {
+        output: {
+          workspace: path.resolve(fixtureRoot, "lib/api-zod/src"),
+          target: "generated",
+          schemas: { path: "../escaped-schemas", type: "typescript" },
+          operationSchemas: "../escaped-operation-schemas",
+          mock: {
+            path: "../escaped-mocks",
+            generators: [
+              { type: "faker", path: "../escaped-faker-mocks" },
+            ],
+          },
+        },
+      },
+    }, fixtureRoot),
+    /Orval output paths are not covered[\s\S]*zod output\.schemas:[\s\S]*zod output\.operationSchemas:[\s\S]*zod output\.mock\.path:[\s\S]*zod output\.mock\.generators\[0\]\.path:[\s\S]*outside inventoried source root/,
+  );
+});
+
+test("an Orval target outside its inventoried source root fails closed", () => {
+  const fixtureRoot = path.resolve(os.tmpdir(), "orval-target-inventory-fixture");
+
+  assert.throws(
+    () => defineInventoriedGeneratorConfig({
+      "api-client-react": {
+        output: {
+          workspace: path.resolve(fixtureRoot, "lib/api-client-react/src"),
+          target: "../escaped-client",
+        },
+      },
+      zod: {
+        output: {
+          workspace: path.resolve(fixtureRoot, "lib/api-zod/src"),
+          target: "generated",
+        },
+      },
+    }, fixtureRoot),
+    /api-client-react output\.workspace \+ target:[\s\S]*outside inventoried source root/,
+  );
+});
+
+test("current split React and Zod output layouts stay covered", () => {
+  const fixtureRoot = path.resolve(os.tmpdir(), "orval-output-inventory-current");
+
+  assert.doesNotThrow(() => defineInventoriedGeneratorConfig({
+    "api-client-react": {
+      output: {
+        workspace: path.resolve(fixtureRoot, "lib/api-client-react/src"),
+        target: "generated",
+        mode: "split",
+      },
+    },
+    zod: {
+      output: {
+        workspace: path.resolve(fixtureRoot, "lib/api-zod/src"),
+        target: "generated",
+        schemas: { path: "generated/types", type: "typescript" },
+        mock: {
+          path: "generated/mocks",
+          generators: [
+            { type: "faker", path: "generated/faker-mocks" },
+          ],
+        },
+        mode: "split",
+      },
+    },
+  }, fixtureRoot));
+});
+
 test("stale or alternate generated output exposes a clear internal-control failure", async () => {
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "internal-control-output-"));
   const generatedDirectory = path.join(temporaryRoot, "alternate-client");

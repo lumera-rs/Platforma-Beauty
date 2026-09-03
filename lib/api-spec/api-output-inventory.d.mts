@@ -12,6 +12,12 @@ export function assertApiGeneratorInventoryComplete(
   configuredGeneratorNames: readonly string[],
 ): void;
 
+export function assertApiGeneratorOutputPathsCovered(
+  config: Readonly<Record<string, unknown>>,
+  outputRoot?: string,
+): void;
+
 export function defineInventoriedGeneratorConfig<const Config extends Readonly<Record<string, unknown>>>(
   config: Config,
+  outputRoot?: string,
 ): Config;

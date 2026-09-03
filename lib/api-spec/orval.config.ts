@@ -84,4 +84,4 @@ export default defineConfig(defineInventoriedGeneratorConfig({
       },
     },
   },
-}));
+}, outputRoot));
