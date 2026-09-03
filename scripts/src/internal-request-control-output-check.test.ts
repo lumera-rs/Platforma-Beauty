@@ -225,7 +225,7 @@ test("malformed CRLF Orval declarations report a concise parser location", () =>
       assert.ok(error instanceof Error);
       assert.match(
         error.message,
-        /^Installed Orval declarations must contain valid TypeScript syntax: TS\d+ at 4:12: .+$/,
+        /^Installed Orval declarations is invalid: DEPENDENCY_DECLARATIONS_INVALID_SYNTAX TS\d+ at 4:12$/,
       );
       assert.doesNotMatch(error.message, new RegExp(privateDeclarationContent));
       assert.doesNotMatch(error.message, /interface OutputOptions/);
@@ -253,7 +253,7 @@ test("malformed mixed-ending Orval declarations report a concise parser location
       assert.ok(error instanceof Error);
       assert.match(
         error.message,
-        /^Installed Orval declarations must contain valid TypeScript syntax: TS\d+ at 5:12: .+$/,
+        /^Installed Orval declarations is invalid: DEPENDENCY_DECLARATIONS_INVALID_SYNTAX TS\d+ at 5:12$/,
       );
       assert.doesNotMatch(error.message, new RegExp(privateDeclarationContent));
       assert.doesNotMatch(error.message, /interface OutputOptions/);
@@ -280,7 +280,7 @@ test("malformed CR-only Orval declarations report a concise parser location", ()
       assert.ok(error instanceof Error);
       assert.match(
         error.message,
-        /^Installed Orval declarations must contain valid TypeScript syntax: TS\d+ at 5:12: .+$/,
+        /^Installed Orval declarations is invalid: DEPENDENCY_DECLARATIONS_INVALID_SYNTAX TS\d+ at 5:12$/,
       );
       assert.doesNotMatch(error.message, new RegExp(privateDeclarationContent));
       assert.doesNotMatch(error.message, /interface OutputOptions/);
@@ -311,7 +311,7 @@ test("malformed Unicode-separated Orval declarations report a concise parser loc
         assert.ok(error instanceof Error);
         assert.match(
           error.message,
-          /^Installed Orval declarations must contain valid TypeScript syntax: TS\d+ at 4:12: .+$/,
+          /^Installed Orval declarations is invalid: DEPENDENCY_DECLARATIONS_INVALID_SYNTAX TS\d+ at 4:12$/,
         );
         assert.doesNotMatch(error.message, new RegExp(privateDeclarationContent));
         assert.doesNotMatch(error.message, /interface OutputOptions/);

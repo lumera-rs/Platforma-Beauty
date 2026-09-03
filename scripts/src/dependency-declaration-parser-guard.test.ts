@@ -3,7 +3,12 @@ import { access, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import ts from "typescript";
-import { parseDependencyDeclarations } from "../../lib/api-spec/dependency-declaration-parser.mjs";
+import {
+  MAX_DEPENDENCY_DECLARATION_BYTES,
+  MAX_DEPENDENCY_DECLARATION_NESTING_DEPTH,
+  MAX_DEPENDENCY_DECLARATION_TOKENS,
+  parseDependencyDeclarations,
+} from "../../lib/api-spec/dependency-declaration-parser.mjs";
 import {
   MAX_DEPENDENCY_PACKAGE_BYTES,
   MAX_DEPENDENCY_PACKAGE_NESTING_DEPTH,
@@ -17,6 +22,7 @@ const sharedParsers = new Set([
   "lib/api-spec/dependency-package-parser.mjs",
 ]);
 const packageLabel = "Installed dependency package manifest";
+const declarationLabel = "Installed dependency declarations";
 
 function createDeterministicRandom(seed: number): () => number {
   let state = seed >>> 0;
@@ -227,13 +233,125 @@ test("dependency parser diagnostics include only a trustworthy code and location
       assert.ok(error instanceof Error);
       assert.match(
         error.message,
-        /^Installed dependency declarations must contain valid TypeScript syntax: TS\d+ at 3:12: .+$/,
+        /^Installed dependency declarations is invalid: DEPENDENCY_DECLARATIONS_INVALID_SYNTAX TS\d+ at 3:12$/,
       );
       assert.doesNotMatch(error.message, new RegExp(privateContent));
       assert.doesNotMatch(error.message, /interface DependencyOptions|broken\?:/);
       return true;
     },
   );
+});
+
+test("dependency declaration parser enforces a deterministic UTF-8 size limit", () => {
+  const accepted = `/*${"a".repeat(MAX_DEPENDENCY_DECLARATION_BYTES - 4)}*/`;
+  parseDependencyDeclarations({
+    declarations: accepted,
+    fileName: "dependency-package.d.ts",
+    label: declarationLabel,
+  });
+
+  const privateContent = "DO_NOT_REVEAL_OVERSIZE_DECLARATION";
+  assert.throws(
+    () => parseDependencyDeclarations({
+      declarations: `${accepted}${privateContent}`,
+      fileName: "dependency-package.d.ts",
+      label: declarationLabel,
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(
+        error.message,
+        `${declarationLabel} is invalid: DEPENDENCY_DECLARATIONS_TOO_LARGE`,
+      );
+      assert.doesNotMatch(error.message, new RegExp(privateContent));
+      return true;
+    },
+  );
+});
+
+test("dependency declaration parser enforces a deterministic token limit", () => {
+  const accepted = ";".repeat(MAX_DEPENDENCY_DECLARATION_TOKENS);
+  parseDependencyDeclarations({
+    declarations: accepted,
+    fileName: "dependency-package.d.ts",
+    label: declarationLabel,
+  });
+
+  const privateContent = "DO_NOT_REVEAL_TOKEN_HEAVY_DECLARATION";
+  assert.throws(
+    () => parseDependencyDeclarations({
+      declarations: `${accepted};/*${privateContent}*/`,
+      fileName: "dependency-package.d.ts",
+      label: declarationLabel,
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(
+        error.message,
+        `${declarationLabel} is invalid: DEPENDENCY_DECLARATIONS_TOO_MANY_TOKENS`,
+      );
+      assert.doesNotMatch(error.message, new RegExp(privateContent));
+      return true;
+    },
+  );
+});
+
+test("dependency declaration parser enforces a deterministic nesting limit", () => {
+  const accepted = `type Safe = ${"(".repeat(MAX_DEPENDENCY_DECLARATION_NESTING_DEPTH)}string${")".repeat(MAX_DEPENDENCY_DECLARATION_NESTING_DEPTH)};`;
+  parseDependencyDeclarations({
+    declarations: accepted,
+    fileName: "dependency-package.d.ts",
+    label: declarationLabel,
+  });
+
+  const privateContent = "DO_NOT_REVEAL_OVERDEEP_DECLARATION";
+  assert.throws(
+    () => parseDependencyDeclarations({
+      declarations: `type ${privateContent} = (${accepted}`,
+      fileName: "dependency-package.d.ts",
+      label: declarationLabel,
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(
+        error.message,
+        `${declarationLabel} is invalid: DEPENDENCY_DECLARATIONS_TOO_DEEP`,
+      );
+      assert.doesNotMatch(error.message, new RegExp(privateContent));
+      return true;
+    },
+  );
+});
+
+test("dependency declaration parser bounds recursive type grammar without nested delimiters", () => {
+  const accepted = `type Safe = ${"() => ".repeat(MAX_DEPENDENCY_DECLARATION_NESTING_DEPTH)}string;`;
+  parseDependencyDeclarations({
+    declarations: accepted,
+    fileName: "dependency-package.d.ts",
+    label: declarationLabel,
+  });
+
+  const privateContent = "DO_NOT_REVEAL_RECURSIVE_TYPE_DECLARATION";
+  const rejectedArrow = `type ${privateContent} = ${"() => ".repeat(MAX_DEPENDENCY_DECLARATION_NESTING_DEPTH + 1)}string;`;
+  const rejectedConditional = `type ${privateContent}<T> = ${"T extends string ? string : ".repeat(MAX_DEPENDENCY_DECLARATION_NESTING_DEPTH + 1)}T;`;
+  for (const declarations of [rejectedArrow, rejectedConditional]) {
+    assert.throws(
+      () => parseDependencyDeclarations({
+        declarations,
+        fileName: "dependency-package.d.ts",
+        label: declarationLabel,
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.equal(
+          error.message,
+          `${declarationLabel} is invalid: DEPENDENCY_DECLARATIONS_TOO_DEEP`,
+        );
+        assert.doesNotMatch(error.message, new RegExp(privateContent));
+        return true;
+      },
+    );
+  }
 });
 
 test("dependency package diagnostics include only a stable code and trustworthy location", () => {
