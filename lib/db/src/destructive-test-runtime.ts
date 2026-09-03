@@ -19,6 +19,8 @@ export function assertDestructiveTestRuntimeAllowed(
   label = "Destructive test harness",
 ): void {
   if (isProductionOrDeploymentRuntime(environment)) {
-    throw new Error(`${label} refuses production or deployment runtimes.`);
+    throw new Error(
+      `Destructive test harnesses refuse production or deployment runtimes. Blocked: ${label}.`,
+    );
   }
 }

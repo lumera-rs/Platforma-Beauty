@@ -22,6 +22,7 @@ import {
   courseEnrollmentsTable,
   courseSessionsTable,
   coursesTable,
+  databaseQueryObservationHeader,
   db,
   educationCentersTable,
   educationCenterReviewsTable,
@@ -85,14 +86,17 @@ async function requestWithObservedQueries(
   options: RequestOptions = {},
 ) {
   const queries: Array<{ sql: string; params: unknown[] }> = [];
-  const stopObserving = observeDatabaseQueries((query) => queries.push(query));
-  try {
-    const response = await request(baseUrl, path, options);
+  return observeDatabaseQueries((query) => queries.push(query), async (captureId) => {
+    const response = await request(baseUrl, path, {
+      ...options,
+      headers: {
+        ...options.headers,
+        [databaseQueryObservationHeader]: captureId,
+      },
+    });
     await response.clone().arrayBuffer();
     return { response, queries };
-  } finally {
-    stopObserving();
-  }
+  });
 }
 
 async function json<T>(response: Response): Promise<T> {

@@ -7,6 +7,7 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
   couponRedemptionsTable,
   couponsTable,
+  databaseQueryObservationHeader,
   db,
   commerceCustomerNotificationsTable,
   loyaltyPointLedgerTable,
@@ -1018,16 +1019,18 @@ test("cart and checkout retain the saved catalog reference after an SKU edit", a
     try {
       const adminCookie = `${sessionCookieName}=${await createSession(admin.id)}`;
       const searchQueries: string[] = [];
-      const stopObserving = observeDatabaseQueries(({ sql: query }) => searchQueries.push(query));
-      let byCatalogReference: Response;
-      try {
-        byCatalogReference = await fetch(
+      const byCatalogReference = await observeDatabaseQueries(
+        ({ sql: query }) => searchQueries.push(query),
+        (captureId) => fetch(
           `${baseUrl}/admin/retail-orders?search=${encodeURIComponent(product.catalogReference.toLowerCase())}`,
-          { headers: { cookie: adminCookie } },
-        );
-      } finally {
-        stopObserving();
-      }
+          {
+            headers: {
+              cookie: adminCookie,
+              [databaseQueryObservationHeader]: captureId,
+            },
+          },
+        ),
+      );
       assert.equal(byCatalogReference.status, 200);
       const referenceResults = await byCatalogReference.json() as Array<{ id: string }>;
       assert.ok(referenceResults.some((candidate) => candidate.id === order.id), "an order must remain searchable by its saved catalog reference");

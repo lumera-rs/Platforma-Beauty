@@ -17,6 +17,7 @@ import { isDeepStrictEqual } from "node:util";
 import { eq, inArray } from "drizzle-orm";
 import {
   appointmentsTable,
+  databaseQueryObservationHeader,
   db,
   databasePoolStats,
   observeDatabaseQueries,
@@ -368,19 +369,23 @@ async function run(): Promise<void> {
 
     const observedSummaryQueries: string[] = [];
     let aggregateQuery: { sql: string; params: unknown[] } | undefined;
-    const stopObserving = observeDatabaseQueries(({ sql, params }) => {
-      observedSummaryQueries.push(sql);
-      if (sql.includes(`AS "totalUsers"`)) aggregateQuery = { sql, params };
-    });
     const startedAt = performance.now();
-    let response: Response;
-    let responseText: string;
-    try {
-      response = await fetch(`${baseUrl}/admin/summary`, { headers: { cookie } });
-      responseText = await response.text();
-    } finally {
-      stopObserving();
-    }
+    const { response, responseText } = await observeDatabaseQueries(
+      ({ sql, params }) => {
+        observedSummaryQueries.push(sql);
+        if (sql.includes(`AS "totalUsers"`)) aggregateQuery = { sql, params };
+      },
+      async (captureId) => {
+        const response = await fetch(`${baseUrl}/admin/summary`, {
+          headers: {
+            cookie,
+            [databaseQueryObservationHeader]: captureId,
+          },
+        });
+        const responseText = await response.text();
+        return { response, responseText };
+      },
+    );
     const latencyMs = performance.now() - startedAt;
     const summaryReadQueryCount = observedSummaryQueries.filter((query) => (
       query.includes(`AS "totalUsers"`)

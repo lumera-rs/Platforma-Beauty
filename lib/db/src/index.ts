@@ -2,6 +2,8 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "./schema";
 import { assertDestructiveTestRuntimeAllowed } from "./destructive-test-runtime";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { randomUUID } from "node:crypto";
 
 const { Pool } = pg;
 
@@ -81,23 +83,47 @@ export type DatabaseQueryObservation = {
   params: unknown[];
 };
 
-let databaseQueryObserver: ((query: DatabaseQueryObservation) => void) | undefined;
+type DatabaseQueryObserver = (query: DatabaseQueryObservation) => void;
 let databaseStatementCount = 0;
 
-export function observeDatabaseQueries(observer: (query: DatabaseQueryObservation) => void) {
-  if (databaseQueryObserver) throw new Error("A database query observer is already active.");
-  databaseQueryObserver = observer;
-  return () => {
-    if (databaseQueryObserver === observer) databaseQueryObserver = undefined;
-  };
+export const databaseQueryObservationHeader = "x-database-query-observation";
+export async function observeDatabaseQueries<T>(
+  observer: DatabaseQueryObserver,
+  operation: (captureId: string) => Promise<T>,
+): Promise<T> {
+  const captureId = randomUUID();
+  const observers = new Set(databaseQueryObservers.getStore());
+  observers.add(observer);
+  registeredDatabaseQueryObservers.set(captureId, observer);
+  try {
+    return await databaseQueryObservers.run(observers, () => operation(captureId));
+  } finally {
+    registeredDatabaseQueryObservers.delete(captureId);
+  }
 }
 
+export function runWithDatabaseQueryObservation<T>(
+  captureId: string | undefined,
+  operation: () => T,
+): T {
+  const observer = captureId
+    ? registeredDatabaseQueryObservers.get(captureId)
+    : undefined;
+  if (!observer) return operation();
+
+  const observers = new Set(databaseQueryObservers.getStore());
+  observers.add(observer);
+  return databaseQueryObservers.run(observers, operation);
+}
 export const db = drizzle(pool, {
   schema,
   logger: {
     logQuery(query, params) {
       databaseStatementCount += 1;
-      databaseQueryObserver?.({ sql: query, params });
+      const observation = { sql: query, params };
+      for (const observer of databaseQueryObservers.getStore() ?? []) {
+        observer(observation);
+      }
     },
   },
 });
@@ -117,3 +143,7 @@ export function getPoolStatus(): {
 } {
   return databasePoolStats();
 }
+
+const registeredDatabaseQueryObservers = new Map<string, DatabaseQueryObserver>();
+
+const databaseQueryObservers = new AsyncLocalStorage<ReadonlySet<DatabaseQueryObserver>>();

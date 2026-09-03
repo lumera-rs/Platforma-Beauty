@@ -60,16 +60,14 @@ async function run(): Promise<void> {
 
     await ensureShippingConfigSchema();
     const queries: string[] = [];
-    const stopObserving = observeDatabaseQueries(({ sql }) => queries.push(sql));
-    try {
-      const configs = await Promise.all(Array.from(
+    const configs = await observeDatabaseQueries(
+      ({ sql }) => queries.push(sql),
+      () => Promise.all(Array.from(
         { length: 8 },
         () => getOrCreateShippingConfig({ freeShippingThreshold: 1, tiers: [] }),
-      ));
-      assert.ok(configs.every((config) => config.id === configs[0]!.id));
-    } finally {
-      stopObserving();
-    }
+      )),
+    );
+    assert.ok(configs.every((config) => config.id === configs[0]!.id));
     assert.equal(
       queries.some((query) => /pg_advisory|lock table|create unique index/i.test(query)),
       false,

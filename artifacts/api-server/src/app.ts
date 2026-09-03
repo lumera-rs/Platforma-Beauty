@@ -1,6 +1,10 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
+import {
+  databaseQueryObservationHeader,
+  runWithDatabaseQueryObservation,
+} from "@workspace/db";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { apiErrorHandler, normalizeAdminErrorResponses } from "./lib/api-errors";
@@ -9,6 +13,11 @@ const app: Express = express();
 // Replit deployments have one controlled edge proxy. Local/test processes are
 // directly reachable, so forwarded headers must not influence req.ip there.
 app.set("trust proxy", process.env["REPLIT_DEPLOYMENT"] ? 1 : false);
+
+app.use((req, _res, next) => {
+  const captureId = req.get(databaseQueryObservationHeader);
+  runWithDatabaseQueryObservation(captureId, next);
+});
 
 app.use(
   pinoHttp({

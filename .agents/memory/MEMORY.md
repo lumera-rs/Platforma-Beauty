@@ -144,3 +144,4 @@
 - [Cross-domain booking fixtures](cross-domain-booking-fixtures.md) — broad HTTP suites must satisfy booking idempotency and canonical location availability, not legacy setup alone.
 - [Required headers in generated clients](required-headers-generated-clients.md) — Orval documents headers but custom-transport calls still need typed wrappers to make them mandatory.
 - [Focused browser release gates](focused-browser-release-gates.md) — narrow shell regressions belong in dedicated specs instead of enrolling unrelated broad suites.
+- [Request-scoped SQL observation](request-scoped-sql-observation.md) — bridge test captures across loopback HTTP with a process-local registered ID, not AsyncLocalStorage alone.

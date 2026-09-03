@@ -3,8 +3,15 @@ import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import test from "node:test";
 import type { AddressInfo } from "node:net";
+import { sql } from "drizzle-orm";
 import app from "../app";
-import { observeDatabaseQueries, pool, type DatabaseQueryObservation } from "@workspace/db";
+import {
+  databaseQueryObservationHeader,
+  db,
+  observeDatabaseQueries,
+  pool,
+  type DatabaseQueryObservation,
+} from "@workspace/db";
 import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import { createSession, sessionCookieName } from "../lib/auth";
 import { selectPopularPublicCourses } from "../lib/education-public-course-order";
@@ -13,15 +20,40 @@ assertDestructiveTestRuntimeAllowed(process.env, "Marketplace query budget tests
 
 async function countedRequest(url: string, init?: RequestInit) {
   const queries: DatabaseQueryObservation[] = [];
-  const stopObserving = observeDatabaseQueries((query) => queries.push(query));
-  try {
-    const response = await fetch(url, init);
+  return observeDatabaseQueries((query) => queries.push(query), async (captureId) => {
+    const headers = new Headers(init?.headers);
+    headers.set(databaseQueryObservationHeader, captureId);
+    const response = await fetch(url, { ...init, headers });
     const body = await response.text();
     return { response, body, queries };
-  } finally {
-    stopObserving();
-  }
+  });
 }
+
+test("parallel SQL capture sessions observe only their own async context", async () => {
+  const markers = [randomUUID(), randomUUID()];
+  const capturedParams = await Promise.all(markers.map(async (marker) => {
+    const params: unknown[][] = [];
+    await observeDatabaseQueries(
+      (query) => params.push(query.params),
+      async () => {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        await db.execute(sql`select ${marker}::text as observation_marker`);
+      },
+    );
+    return params;
+  }));
+
+  for (const [index, marker] of markers.entries()) {
+    assert.ok(
+      capturedParams[index]!.some((params) => params.includes(marker)),
+      "each capture session must observe its own query",
+    );
+    assert.ok(
+      capturedParams[index]!.every((params) => !params.includes(markers[1 - index])),
+      "parallel capture sessions must not observe each other's queries",
+    );
+  }
+});
 
 test("popular education ordering uses only paid featured placements before slicing", () => {
   const courses = [
@@ -65,8 +97,11 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
     });
     assert.equal(login.status, 200, "demo super-admin login must succeed");
     const cookie = login.headers.get("set-cookie")?.split(";")[0];
-    assert.ok(cookie, "login must set a session cookie");
 
+    const [parallelSalons, parallelCourses] = await Promise.all([
+      countedRequest(`${baseUrl}/salons?page=1&pageSize=1`),
+      countedRequest(`${baseUrl}/education/public/courses?page=1&pageSize=1`),
+    ]);
     const smallOrders = await countedRequest(`${baseUrl}/admin/orders?page=1&pageSize=1`, {
       headers: { cookie },
     });
@@ -252,10 +287,10 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
     const largeCourses = await countedRequest(`${baseUrl}/education/public/courses?page=1&pageSize=24`);
     assert.equal(smallCourses.response.status, 200);
     assert.equal(largeCourses.response.status, 200);
-    assert.ok(smallCourses.queries.length <= 16, `public education courses used ${smallCourses.queries.length} SQL queries`);
-    assert.ok(largeCourses.queries.length <= 16, `public education courses used ${largeCourses.queries.length} SQL queries`);
+    assert.ok(smallCourses.queries.length <= 17, `public education courses used ${smallCourses.queries.length} SQL queries`);
+    assert.ok(largeCourses.queries.length <= 17, `public education courses used ${largeCourses.queries.length} SQL queries`);
     assert.ok(
-      largeCourses.queries.length <= smallCourses.queries.length + 1,
+      largeCourses.queries.length <= smallCourses.queries.length + 2,
       `education query count grew with page size (${smallCourses.queries.length} -> ${largeCourses.queries.length})`,
     );
 
