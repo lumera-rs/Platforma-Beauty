@@ -12,6 +12,82 @@ const sharedParsers = new Set([
   "lib/api-spec/dependency-declaration-parser.mjs",
   "lib/api-spec/dependency-package-parser.mjs",
 ]);
+const packageLabel = "Installed dependency package manifest";
+
+function createDeterministicRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 0x1_0000_0000;
+  };
+}
+
+function createRandomJsonValue(
+  random: () => number,
+  depth = 0,
+): unknown {
+  const escapedStrings = [
+    "",
+    "plain",
+    "\"quoted\"",
+    "\\slash/\b\f\n\r\t",
+    "\u0000\u001f",
+    "unicode-\u2028-\u2029-\ud800-\udfff-\ud83d\ude80",
+  ];
+  const primitive = (): unknown => {
+    switch (Math.floor(random() * 5)) {
+      case 0: return null;
+      case 1: return random() < 0.5;
+      case 2: {
+        const exponent = Math.floor(random() * 617) - 308;
+        const value = (random() - 0.5) * Number(`1e${exponent}`);
+        return Number.isFinite(value) ? value : 0;
+      }
+      default: return escapedStrings[Math.floor(random() * escapedStrings.length)];
+    }
+  };
+  if (depth >= 7 || random() < 0.55) return primitive();
+  if (random() < 0.5) {
+    return Array.from(
+      { length: Math.floor(random() * 5) },
+      () => createRandomJsonValue(random, depth + 1),
+    );
+  }
+  return Object.fromEntries(Array.from(
+    { length: Math.floor(random() * 5) },
+    (_, index) => [
+      `${escapedStrings[Math.floor(random() * escapedStrings.length)]}-${index}`,
+      createRandomJsonValue(random, depth + 1),
+    ],
+  ));
+}
+
+function assertSourceSafePackageError(
+  contents: string,
+  expectedLine: number,
+  expectedColumn: number,
+  markers: string[] = [],
+): void {
+  assert.throws(
+    () => parseDependencyPackageJson({ contents, label: packageLabel }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(
+        error.message,
+        `${packageLabel} is invalid: DEPENDENCY_PACKAGE_JSON_INVALID at ${expectedLine}:${expectedColumn}`,
+      );
+      for (const marker of markers) {
+        assert.ok(marker.length > 0);
+        assert.equal(
+          error.message.includes(marker),
+          false,
+          `Diagnostic exposed fixture source marker ${JSON.stringify(marker)}`,
+        );
+      }
+      return true;
+    },
+  );
+}
 
 async function collectSourceFiles(directory: string): Promise<string[]> {
   try {
@@ -196,4 +272,50 @@ test("dependency package parser preserves valid structured package data", () => 
       exports: [null, 1, -2500],
     },
   );
+});
+
+test("dependency package parser accepts deterministic randomized native-valid JSON", () => {
+  const random = createDeterministicRandom(0x5afe815);
+  for (let index = 0; index < 500; index += 1) {
+    const contents = JSON.stringify(createRandomJsonValue(random));
+    const nativeValue = JSON.parse(contents);
+    assert.deepEqual(
+      parseDependencyPackageJson({ contents, label: packageLabel }),
+      nativeValue,
+      `Safe parser rejected randomized native-valid JSON case ${index}`,
+    );
+  }
+
+  const deeplyNested = `${"[".repeat(200)}"deep-marker"${"]".repeat(200)}`;
+  assert.deepEqual(
+    parseDependencyPackageJson({ contents: deeplyNested, label: packageLabel }),
+    JSON.parse(deeplyNested),
+  );
+});
+
+test("dependency package diagnostics stay source-free across malformed edge cases", () => {
+  const fixtures = [
+    { contents: '{"n":01,"secret":"LEAK_NUMBER"}', line: 1, column: 7, markers: ["LEAK_NUMBER", '"n":01'] },
+    { contents: '{"escape":"\\x","secret":"LEAK_ESCAPE"}', line: 1, column: 13, markers: ["LEAK_ESCAPE", "\\x"] },
+    { contents: '{"unicode":"\\u12G4","secret":"LEAK_UNICODE"}', line: 1, column: 17, markers: ["LEAK_UNICODE", "\\u12G4"] },
+    { contents: '{"truncated":"LEAK_TRUNCATED', line: 1, column: 29, markers: ["LEAK_TRUNCATED", "truncated"] },
+    { contents: '{"a":[[[{"private":"LEAK_DEEP"}]]]', line: 1, column: 35, markers: ["LEAK_DEEP", "private"] },
+    { contents: '{"a":1,// LEAK_COMMENT\r\n"b":2}', line: 1, column: 8, markers: ["LEAK_COMMENT", "//"] },
+    { contents: '{"a":1,\r\n}', line: 2, column: 1, markers: ['"a":1'] },
+    { contents: '{"a":1,\r}', line: 2, column: 1, markers: ['"a":1'] },
+    { contents: '{"a":1,\u2028}', line: 1, column: 8, markers: ['"a":1'] },
+    { contents: '{"a":1,\u2029}', line: 1, column: 8, markers: ['"a":1'] },
+    { contents: '["LEAK_ARRAY",]', line: 1, column: 15, markers: ["LEAK_ARRAY"] },
+    { contents: '{"secret":"LEAK_VALUE","value":truee}', line: 1, column: 36, markers: ["LEAK_VALUE", "truee"] },
+  ];
+
+  for (const fixture of fixtures) {
+    assert.throws(() => JSON.parse(fixture.contents));
+    assertSourceSafePackageError(
+      fixture.contents,
+      fixture.line,
+      fixture.column,
+      fixture.markers,
+    );
+  }
 });
