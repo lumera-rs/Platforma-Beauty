@@ -2951,6 +2951,45 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/AdminOrder" }
+  /admin/orders/page:
+    get:
+      operationId: adminListOrdersPage
+      tags: [admin]
+      summary: List a bounded page of B2B orders for administration
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, confirmed, paid, processing, shipped, delivered, cancelled] }
+        - name: salon
+          in: query
+          schema: { type: string }
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: paymentStatus
+          in: query
+          schema: { type: string, enum: [unpaid, pending, paid, refunded, failed] }
+        - name: deliveryMethod
+          in: query
+          schema: { type: string, enum: [courier, personal_belgrade] }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Bounded admin order page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminOrderPage" }
   /admin/orders/{orderId}:
     get:
       operationId: adminGetOrder
@@ -5686,6 +5725,39 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/AdminSalon" }
+  /admin/salons/page:
+    get:
+      operationId: adminListSalonsPage
+      tags: [admin]
+      summary: Searchable/filterable bounded salon page
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: city
+          in: query
+          schema: { type: string }
+        - name: active
+          in: query
+          schema: { type: boolean }
+        - name: featured
+          in: query
+          schema: { type: boolean }
+        - name: subscriptionStatus
+          in: query
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Bounded admin salon page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminSalonPage" }
   /admin/salons/{salonId}:
     get:
       operationId: adminGetSalon
@@ -5752,6 +5824,35 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/AdminUser" }
+  /admin/users/page:
+    get:
+      operationId: adminListUsersPage
+      tags: [admin]
+      summary: Searchable/filterable bounded user page
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: role
+          in: query
+          schema:
+            type: string
+            enum: [SUPER_ADMIN, ADMIN, SALON_OWNER, SALON_EMPLOYEE, EDUKATIVNI_CENTAR, INSTRUCTOR, CUSTOMER, STUDENT]
+        - name: active
+          in: query
+          schema: { type: boolean }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Bounded admin user page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminUserPage" }
   /admin/customers/setup:
     post:
       operationId: adminCreateCustomerSetup
@@ -13610,6 +13711,16 @@ components:
             adminNote: { type: ["string", "null"] }
             history: { type: array, items: { $ref: "#/components/schemas/OrderHistoryEvent" } }
           required: [adminNote, history]
+    AdminOrderPage:
+      type: object
+      required: [items, page, pageSize, hasNext]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AdminOrder" }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        hasNext: { type: boolean }
     OrderItem:
       type: object
       properties:
@@ -15452,6 +15563,16 @@ components:
         loyaltySpend: { type: number }
         createdAt: { type: string, format: date-time }
       required: [id, name, slug, city, active, featured, isVerified, topSalon, videoUrl, rating, reviewCount, loyaltySpend, createdAt]
+    AdminSalonPage:
+      type: object
+      required: [items, page, pageSize, hasNext]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AdminSalon" }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        hasNext: { type: boolean }
     AdminSalonUpdate:
       type: object
       properties:
@@ -15505,6 +15626,16 @@ components:
         passwordSetAt: { type: ["string", "null"], format: date-time }
         createdAt: { type: string, format: date-time }
       required: [id, firstName, lastName, email, role, active, passwordSetAt, createdAt]
+    AdminUserPage:
+      type: object
+      required: [items, page, pageSize, hasNext]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AdminUser" }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        hasNext: { type: boolean }
     AdminUserUpdate:
       type: object
       additionalProperties: false

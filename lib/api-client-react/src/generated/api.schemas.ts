@@ -5781,6 +5781,18 @@ export type AdminOrder = Order & ({
   history: OrderHistoryEvent[];
 });
 
+export interface AdminOrderPage {
+  items: AdminOrder[];
+  /** @minimum 1 */
+  page: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  pageSize: number;
+  hasNext: boolean;
+}
+
 export type OrderInputItemsItem = {
   productId: string;
   variantValue?: string;
@@ -8973,6 +8985,18 @@ export interface AdminSalon {
   createdAt: string;
 }
 
+export interface AdminSalonPage {
+  items: AdminSalon[];
+  /** @minimum 1 */
+  page: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  pageSize: number;
+  hasNext: boolean;
+}
+
 export interface AdminSalonUpdate {
   active?: boolean;
   featured?: boolean;
@@ -9041,6 +9065,18 @@ export interface AdminUser {
   /** @nullable */
   passwordSetAt: string | null;
   createdAt: string;
+}
+
+export interface AdminUserPage {
+  items: AdminUser[];
+  /** @minimum 1 */
+  page: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  pageSize: number;
+  hasNext: boolean;
 }
 
 export type AdminUserUpdateRole = typeof AdminUserUpdateRole[keyof typeof AdminUserUpdateRole];
@@ -15154,6 +15190,57 @@ export const AdminListOrdersDeliveryMethod = {
   personal_belgrade: 'personal_belgrade',
 } as const;
 
+export type AdminListOrdersPageParams = {
+status?: AdminListOrdersPageStatus;
+salon?: string;
+from?: string;
+to?: string;
+search?: string;
+paymentStatus?: AdminListOrdersPagePaymentStatus;
+deliveryMethod?: AdminListOrdersPageDeliveryMethod;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
+
+export type AdminListOrdersPageStatus = typeof AdminListOrdersPageStatus[keyof typeof AdminListOrdersPageStatus];
+
+
+export const AdminListOrdersPageStatus = {
+  pending: 'pending',
+  confirmed: 'confirmed',
+  paid: 'paid',
+  processing: 'processing',
+  shipped: 'shipped',
+  delivered: 'delivered',
+  cancelled: 'cancelled',
+} as const;
+
+export type AdminListOrdersPagePaymentStatus = typeof AdminListOrdersPagePaymentStatus[keyof typeof AdminListOrdersPagePaymentStatus];
+
+
+export const AdminListOrdersPagePaymentStatus = {
+  unpaid: 'unpaid',
+  pending: 'pending',
+  paid: 'paid',
+  refunded: 'refunded',
+  failed: 'failed',
+} as const;
+
+export type AdminListOrdersPageDeliveryMethod = typeof AdminListOrdersPageDeliveryMethod[keyof typeof AdminListOrdersPageDeliveryMethod];
+
+
+export const AdminListOrdersPageDeliveryMethod = {
+  courier: 'courier',
+  personal_belgrade: 'personal_belgrade',
+} as const;
+
 export type SaveEducationReactivationCourseSelection200 = { [key: string]: unknown };
 
 export type SelectEducationSubscriptionPlanBodyBillingCycle = typeof SelectEducationSubscriptionPlanBodyBillingCycle[keyof typeof SelectEducationSubscriptionPlanBodyBillingCycle];
@@ -15747,6 +15834,23 @@ page?: number;
 pageSize?: number;
 };
 
+export type AdminListSalonsPageParams = {
+search?: string;
+city?: string;
+active?: boolean;
+featured?: boolean;
+subscriptionStatus?: string;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
+
 export type AdminListUsersParams = {
 search?: string;
 role?: AdminListUsersRole;
@@ -15768,6 +15872,35 @@ export type AdminListUsersRole = typeof AdminListUsersRole[keyof typeof AdminLis
 
 
 export const AdminListUsersRole = {
+  SUPER_ADMIN: 'SUPER_ADMIN',
+  ADMIN: 'ADMIN',
+  SALON_OWNER: 'SALON_OWNER',
+  SALON_EMPLOYEE: 'SALON_EMPLOYEE',
+  EDUKATIVNI_CENTAR: 'EDUKATIVNI_CENTAR',
+  INSTRUCTOR: 'INSTRUCTOR',
+  CUSTOMER: 'CUSTOMER',
+  STUDENT: 'STUDENT',
+} as const;
+
+export type AdminListUsersPageParams = {
+search?: string;
+role?: AdminListUsersPageRole;
+active?: boolean;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
+
+export type AdminListUsersPageRole = typeof AdminListUsersPageRole[keyof typeof AdminListUsersPageRole];
+
+
+export const AdminListUsersPageRole = {
   SUPER_ADMIN: 'SUPER_ADMIN',
   ADMIN: 'ADMIN',
   SALON_OWNER: 'SALON_OWNER',

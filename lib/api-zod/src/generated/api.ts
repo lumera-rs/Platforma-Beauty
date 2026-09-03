@@ -9587,6 +9587,138 @@ export const AdminListOrdersResponse = zod.array(AdminListOrdersResponseItem)
 
 
 /**
+ * @summary List a bounded page of B2B orders for administration
+ */
+export const adminListOrdersPageQueryPageDefault = 1;
+
+export const adminListOrdersPageQueryPageSizeDefault = 50;
+export const adminListOrdersPageQueryPageSizeMax = 100;
+
+
+
+export const AdminListOrdersPageQueryParams = zod.object({
+  "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']).optional(),
+  "salon": zod.coerce.string().optional(),
+  "from": zod.date().optional(),
+  "to": zod.date().optional(),
+  "search": zod.coerce.string().optional(),
+  "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']).optional(),
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']).optional(),
+  "page": zod.coerce.number().int().min(1).default(adminListOrdersPageQueryPageDefault),
+  "pageSize": zod.coerce.number().int().min(1).max(adminListOrdersPageQueryPageSizeMax).default(adminListOrdersPageQueryPageSizeDefault)
+})
+
+export const adminListOrdersPageResponseItemsItemOneTotalMultipleOf = 1;
+
+export const adminListOrdersPageResponseItemsItemOneSubtotalMultipleOf = 1;
+
+export const adminListOrdersPageResponseItemsItemOneShippingCostMultipleOf = 1;
+
+export const adminListOrdersPageResponseItemsItemOneTotalWeightGramsMultipleOf = 1;
+
+export const adminListOrdersPageResponseItemsItemOneCouponDiscountRsdMin = 0;
+
+export const adminListOrdersPageResponseItemsItemOneReferralCreditMerchandiseSubtotalRsdMin = 0;
+
+export const adminListOrdersPageResponseItemsItemOneReferralCreditPreCreditPayableTotalRsdMin = 0;
+
+export const adminListOrdersPageResponseItemsItemOneReferralCreditAppliedRsdMin = 0;
+
+export const adminListOrdersPageResponseItemsItemOneItemsItemQuantityMultipleOf = 1;
+
+export const adminListOrdersPageResponseItemsItemOneItemsItemPriceMultipleOf = 1;
+
+export const adminListOrdersPageResponseItemsItemOneItemsItemCouponDiscountRsdMin = 0;
+
+
+export const adminListOrdersPageResponsePageSizeMax = 100;
+
+
+
+export const AdminListOrdersPageResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
+  "fulfillmentStatus": zod.enum(['RECEIVED', 'PREPARING', 'PACKING', 'SHIPPED', 'COMPLETED', 'CANCELLED']),
+  "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
+  "courierServiceId": zod.string().nullable(),
+  "courierService": zod.string().nullable(),
+  "trackingNumber": zod.string().nullable(),
+  "trackingUrl": zod.string().nullable(),
+  "total": zod.number().multipleOf(adminListOrdersPageResponseItemsItemOneTotalMultipleOf),
+  "subtotal": zod.number().multipleOf(adminListOrdersPageResponseItemsItemOneSubtotalMultipleOf),
+  "shippingCost": zod.number().multipleOf(adminListOrdersPageResponseItemsItemOneShippingCostMultipleOf),
+  "totalWeightGrams": zod.number().multipleOf(adminListOrdersPageResponseItemsItemOneTotalWeightGramsMultipleOf),
+  "couponCode": zod.string().nullable(),
+  "couponDiscountRsd": zod.number().int().min(adminListOrdersPageResponseItemsItemOneCouponDiscountRsdMin),
+  "couponFreeShipping": zod.boolean(),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(adminListOrdersPageResponseItemsItemOneReferralCreditMerchandiseSubtotalRsdMin),
+  "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(adminListOrdersPageResponseItemsItemOneReferralCreditPreCreditPayableTotalRsdMin),
+  "referralCreditAppliedRsd": zod.number().int().min(adminListOrdersPageResponseItemsItemOneReferralCreditAppliedRsdMin),
+  "invoice": zod.object({
+  "number": zod.string(),
+  "issuedAt": zod.coerce.date().nullable()
+}).nullable(),
+  "itemCount": zod.number(),
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable(),
+  "salon": zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "phone": zod.string(),
+  "email": zod.string(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string().nullable()
+}),
+  "delivery": zod.object({
+  "recipientName": zod.string(),
+  "address": zod.string(),
+  "city": zod.string().nullish(),
+  "postalCode": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "note": zod.string().nullish(),
+  "usesSalonAddress": zod.boolean()
+}),
+  "billing": zod.object({
+  "companyName": zod.string(),
+  "pib": zod.string(),
+  "registrationNumber": zod.string(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string()
+}).nullable(),
+  "items": zod.array(zod.object({
+  "productId": zod.string().nullable(),
+  "bundleId": zod.string().nullable(),
+  "productName": zod.string(),
+  "variantValue": zod.string().nullish(),
+  "variantLabel": zod.string().nullish(),
+  "productSku": zod.string().nullish(),
+  "quantity": zod.number().multipleOf(adminListOrdersPageResponseItemsItemOneItemsItemQuantityMultipleOf),
+  "price": zod.number().multipleOf(adminListOrdersPageResponseItemsItemOneItemsItemPriceMultipleOf),
+  "couponDiscountRsd": zod.number().int().min(adminListOrdersPageResponseItemsItemOneItemsItemCouponDiscountRsdMin).optional()
+}))
+}).and(zod.object({
+  "adminNote": zod.string().nullable(),
+  "history": zod.array(zod.object({
+  "id": zod.string(),
+  "actorName": zod.string(),
+  "field": zod.string(),
+  "previousValue": zod.string().nullable(),
+  "nextValue": zod.string().nullable(),
+  "note": zod.string().nullable(),
+  "createdAt": zod.coerce.date().nullable()
+}))
+}))),
+  "page": zod.number().int().min(1),
+  "pageSize": zod.number().int().min(1).max(adminListOrdersPageResponsePageSizeMax),
+  "hasNext": zod.boolean()
+})
+
+
+/**
  * @summary Get complete B2B order for administration
  */
 export const AdminGetOrderParams = zod.object({
@@ -20249,6 +20381,56 @@ export const AdminListSalonsResponse = zod.array(AdminListSalonsResponseItem)
 
 
 /**
+ * @summary Searchable/filterable bounded salon page
+ */
+export const adminListSalonsPageQueryPageDefault = 1;
+
+export const adminListSalonsPageQueryPageSizeDefault = 50;
+export const adminListSalonsPageQueryPageSizeMax = 100;
+
+
+
+export const AdminListSalonsPageQueryParams = zod.object({
+  "search": zod.coerce.string().optional(),
+  "city": zod.coerce.string().optional(),
+  "active": zod.coerce.boolean().optional(),
+  "featured": zod.coerce.boolean().optional(),
+  "subscriptionStatus": zod.coerce.string().optional(),
+  "page": zod.coerce.number().int().min(1).default(adminListSalonsPageQueryPageDefault),
+  "pageSize": zod.coerce.number().int().min(1).max(adminListSalonsPageQueryPageSizeMax).default(adminListSalonsPageQueryPageSizeDefault)
+})
+
+
+export const adminListSalonsPageResponsePageSizeMax = 100;
+
+
+
+export const AdminListSalonsPageResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "slug": zod.string(),
+  "city": zod.string(),
+  "active": zod.boolean(),
+  "featured": zod.boolean(),
+  "isVerified": zod.boolean(),
+  "topSalon": zod.boolean(),
+  "videoUrl": zod.string().nullable(),
+  "rating": zod.number(),
+  "reviewCount": zod.number(),
+  "subscriptionStatus": zod.string().nullish(),
+  "subscriptionPlan": zod.string().nullish(),
+  "loyaltyTier": zod.string().nullish(),
+  "loyaltySpend": zod.number(),
+  "createdAt": zod.coerce.date()
+})),
+  "page": zod.number().int().min(1),
+  "pageSize": zod.number().int().min(1).max(adminListSalonsPageResponsePageSizeMax),
+  "hasNext": zod.boolean()
+})
+
+
+/**
  * @summary Admin salon profile with B2B order aggregates
  */
 export const adminGetSalonPathSalonIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
@@ -20375,6 +20557,47 @@ export const AdminListUsersResponseItem = zod.object({
   "createdAt": zod.coerce.date()
 })
 export const AdminListUsersResponse = zod.array(AdminListUsersResponseItem)
+
+
+/**
+ * @summary Searchable/filterable bounded user page
+ */
+export const adminListUsersPageQueryPageDefault = 1;
+
+export const adminListUsersPageQueryPageSizeDefault = 50;
+export const adminListUsersPageQueryPageSizeMax = 100;
+
+
+
+export const AdminListUsersPageQueryParams = zod.object({
+  "search": zod.coerce.string().optional(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']).optional(),
+  "active": zod.coerce.boolean().optional(),
+  "page": zod.coerce.number().int().min(1).default(adminListUsersPageQueryPageDefault),
+  "pageSize": zod.coerce.number().int().min(1).max(adminListUsersPageQueryPageSizeMax).default(adminListUsersPageQueryPageSizeDefault)
+})
+
+
+export const adminListUsersPageResponsePageSizeMax = 100;
+
+
+
+export const AdminListUsersPageResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "email": zod.string(),
+  "phone": zod.string().nullish(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
+  "active": zod.boolean(),
+  "passwordSetAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})),
+  "page": zod.number().int().min(1),
+  "pageSize": zod.number().int().min(1).max(adminListUsersPageResponsePageSizeMax),
+  "hasNext": zod.boolean()
+})
 
 
 /**

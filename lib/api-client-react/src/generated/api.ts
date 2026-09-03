@@ -63,6 +63,7 @@ import type {
   AdminListEducationCenterReviewsParams,
   AdminListEducationGiftVouchersParams,
   AdminListEmailCampaignsResponse,
+  AdminListOrdersPageParams,
   AdminListOrdersParams,
   AdminListPriceInquiriesPageParams,
   AdminListPriceInquiriesParams,
@@ -71,12 +72,15 @@ import type {
   AdminListRetailOrdersParams,
   AdminListRetailProductReviewsParams,
   AdminListReviewsParams,
+  AdminListSalonsPageParams,
   AdminListSalonsParams,
   AdminListServiceTemplatesParams,
+  AdminListUsersPageParams,
   AdminListUsersParams,
   AdminModerateEducationCenterReviewBody,
   AdminOrder,
   AdminOrderBulkUpdate,
+  AdminOrderPage,
   AdminOrderUpdate,
   AdminPriceInquiry,
   AdminPriceInquiryPage,
@@ -101,6 +105,7 @@ import type {
   AdminRmaStatusResult,
   AdminSalon,
   AdminSalonDetail,
+  AdminSalonPage,
   AdminSalonUpdate,
   AdminSaveIntegrationInput,
   AdminServiceCategory,
@@ -113,6 +118,7 @@ import type {
   AdminUpdateReviewRewardSettingsBody,
   AdminUpdateRmaStatusBody,
   AdminUser,
+  AdminUserPage,
   AdminUserUpdate,
   AdminWebPushDeliveryMetrics,
   AftercareSettings,
@@ -14069,6 +14075,90 @@ export function useAdminListOrders<TData = Awaited<ReturnType<typeof adminListOr
 
 
 
+export const getAdminListOrdersPageUrl = (params?: AdminListOrdersPageParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/orders/page?${stringifiedParams}` : `/api/admin/orders/page`
+}
+
+/**
+ * @summary List a bounded page of B2B orders for administration
+ */
+export const adminListOrdersPage = async (params?: AdminListOrdersPageParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminOrderPage> => {
+
+  return customFetch<AdminOrderPage>(getAdminListOrdersPageUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListOrdersPageQueryKey = (params?: AdminListOrdersPageParams,) => {
+    return [
+    `/api/admin/orders/page`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminListOrdersPageQueryOptions = <TData = Awaited<ReturnType<typeof adminListOrdersPage>>, TError = ErrorType<unknown>>(params?: AdminListOrdersPageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListOrdersPage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListOrdersPageQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListOrdersPage>>> = ({ signal }) => adminListOrdersPage(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListOrdersPage>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminListOrdersPageQueryResult = NonNullable<Awaited<ReturnType<typeof adminListOrdersPage>>>
+export type AdminListOrdersPageQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List a bounded page of B2B orders for administration
+ */
+
+export function useAdminListOrdersPage<TData = Awaited<ReturnType<typeof adminListOrdersPage>>, TError = ErrorType<unknown>>(
+ params?: AdminListOrdersPageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListOrdersPage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminListOrdersPageQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getAdminGetOrderUrl = (orderId: string,) => {
 
 
@@ -26457,6 +26547,90 @@ export function useAdminListSalons<TData = Awaited<ReturnType<typeof adminListSa
 
 
 
+export const getAdminListSalonsPageUrl = (params?: AdminListSalonsPageParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/salons/page?${stringifiedParams}` : `/api/admin/salons/page`
+}
+
+/**
+ * @summary Searchable/filterable bounded salon page
+ */
+export const adminListSalonsPage = async (params?: AdminListSalonsPageParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminSalonPage> => {
+
+  return customFetch<AdminSalonPage>(getAdminListSalonsPageUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListSalonsPageQueryKey = (params?: AdminListSalonsPageParams,) => {
+    return [
+    `/api/admin/salons/page`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminListSalonsPageQueryOptions = <TData = Awaited<ReturnType<typeof adminListSalonsPage>>, TError = ErrorType<unknown>>(params?: AdminListSalonsPageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListSalonsPage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListSalonsPageQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListSalonsPage>>> = ({ signal }) => adminListSalonsPage(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListSalonsPage>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminListSalonsPageQueryResult = NonNullable<Awaited<ReturnType<typeof adminListSalonsPage>>>
+export type AdminListSalonsPageQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Searchable/filterable bounded salon page
+ */
+
+export function useAdminListSalonsPage<TData = Awaited<ReturnType<typeof adminListSalonsPage>>, TError = ErrorType<unknown>>(
+ params?: AdminListSalonsPageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListSalonsPage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminListSalonsPageQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getAdminGetSalonUrl = (salonId: string,) => {
 
 
@@ -26678,6 +26852,90 @@ export function useAdminListUsers<TData = Awaited<ReturnType<typeof adminListUse
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getAdminListUsersQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminListUsersPageUrl = (params?: AdminListUsersPageParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/users/page?${stringifiedParams}` : `/api/admin/users/page`
+}
+
+/**
+ * @summary Searchable/filterable bounded user page
+ */
+export const adminListUsersPage = async (params?: AdminListUsersPageParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminUserPage> => {
+
+  return customFetch<AdminUserPage>(getAdminListUsersPageUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListUsersPageQueryKey = (params?: AdminListUsersPageParams,) => {
+    return [
+    `/api/admin/users/page`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminListUsersPageQueryOptions = <TData = Awaited<ReturnType<typeof adminListUsersPage>>, TError = ErrorType<unknown>>(params?: AdminListUsersPageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListUsersPage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListUsersPageQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListUsersPage>>> = ({ signal }) => adminListUsersPage(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListUsersPage>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminListUsersPageQueryResult = NonNullable<Awaited<ReturnType<typeof adminListUsersPage>>>
+export type AdminListUsersPageQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Searchable/filterable bounded user page
+ */
+
+export function useAdminListUsersPage<TData = Awaited<ReturnType<typeof adminListUsersPage>>, TError = ErrorType<unknown>>(
+ params?: AdminListUsersPageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListUsersPage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminListUsersPageQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
