@@ -32,6 +32,102 @@ function createDeterministicRandom(seed: number): () => number {
   };
 }
 
+function assertTypeScriptAcceptsDeclaration(
+  source: string,
+  caseLabel: string,
+): void {
+  const sourceFile = ts.createSourceFile(
+    `${caseLabel}.ts`,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  assert.deepEqual(
+    (sourceFile as ts.SourceFile & {
+      parseDiagnostics: readonly ts.Diagnostic[];
+    }).parseDiagnostics,
+    [],
+    `TypeScript rejected valid declaration corpus case ${caseLabel}`,
+  );
+}
+
+function countTypeScriptTokens(source: string): number {
+  const scanner = ts.createScanner(
+    ts.ScriptTarget.Latest,
+    true,
+    ts.LanguageVariant.Standard,
+    source,
+  );
+  let count = 0;
+  while (scanner.scan() !== ts.SyntaxKind.EndOfFileToken) count += 1;
+  return count;
+}
+
+function assertDeclarationAccepted(
+  declarations: string,
+  caseLabel: string,
+): void {
+  assertTypeScriptAcceptsDeclaration(declarations, caseLabel);
+  parseDependencyDeclarations({
+    declarations,
+    fileName: `${caseLabel}.d.ts`,
+    label: declarationLabel,
+  });
+}
+
+function createDeclarationCorpusCase(
+  random: () => number,
+  index: number,
+): string {
+  const unicodeNames = ["Café", "Živeli", "東京", "Δelta", "Пример", "Lumière"];
+  const name = `${unicodeNames[Math.floor(random() * unicodeNames.length)]}${index}`;
+  const genericDepth = 2 + Math.floor(random() * 10);
+  const genericType = `${"ReadonlyArray<".repeat(genericDepth)}${name}${">".repeat(genericDepth)}`;
+  const commentKind = random() < 0.5
+    ? `// deterministic unicode comment ${name}\n`
+    : `/* deterministic nested-generic comment ${name} */\n`;
+  const templateSegments = 1 + Math.floor(random() * 5);
+  const templateType = `\`${Array.from(
+    { length: templateSegments },
+    (_, segment) => `${segment === 0 ? name : "-"}\${Extract<keyof T, string>}`,
+  ).join("")}\``;
+
+  return [
+    commentKind,
+    `interface ${name} { readonly value: string; }`,
+    `type Nested${index} = ${genericType};`,
+    `type Template${index}<T extends Record<string, unknown>> = ${templateType};`,
+    `type Mapped${index}<T> = { readonly [K in keyof T as \`get\${Capitalize<string & K>}\`]?: T[K] };`,
+    `declare const value${index}: Mapped${index}<Nested${index}>;`,
+  ].join("\n");
+}
+
+function assertSourceFreeDeclarationLimitError(
+  declarations: string,
+  expectedCode: string,
+  markers: string[],
+): void {
+  assert.throws(
+    () => parseDependencyDeclarations({
+      declarations,
+      fileName: "dependency-package.d.ts",
+      label: declarationLabel,
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(
+        error.message,
+        `${declarationLabel} is invalid: ${expectedCode}`,
+      );
+      for (const marker of markers) {
+        assert.equal(error.message.includes(marker), false);
+      }
+      return true;
+    },
+  );
+}
+
 function createRandomJsonValue(
   random: () => number,
   depth = 0,
@@ -352,6 +448,51 @@ test("dependency declaration parser bounds recursive type grammar without nested
       },
     );
   }
+});
+
+test("dependency declaration parser accepts deterministic complex valid syntax below every limit", () => {
+  const random = createDeterministicRandom(0xdec1a7e);
+  for (let index = 0; index < 250; index += 1) {
+    const declarations = createDeclarationCorpusCase(random, index);
+    assert.ok(
+      Buffer.byteLength(declarations, "utf8") < MAX_DEPENDENCY_DECLARATION_BYTES,
+    );
+    assertDeclarationAccepted(declarations, `complex-corpus-${index}`);
+  }
+
+  const complexTail = "type Café<T> = { readonly [K in keyof T]?: `${string & K}-東京` };";
+  const tokenBoundary = `${";".repeat(
+    MAX_DEPENDENCY_DECLARATION_TOKENS - countTypeScriptTokens(complexTail),
+  )}${complexTail}`;
+  assert.equal(
+    countTypeScriptTokens(tokenBoundary),
+    MAX_DEPENDENCY_DECLARATION_TOKENS,
+  );
+  assertDeclarationAccepted(tokenBoundary, "complex-token-boundary");
+
+  const nestingBoundary = `type Živeli = ${"ReadonlyArray<".repeat(MAX_DEPENDENCY_DECLARATION_NESTING_DEPTH)}string${">".repeat(MAX_DEPENDENCY_DECLARATION_NESTING_DEPTH)};`;
+  assertDeclarationAccepted(nestingBoundary, "complex-nesting-boundary");
+});
+
+test("complex declaration mutations keep limit diagnostics stable and source-free", () => {
+  const tokenMarker = "DO_NOT_REVEAL_COMPLEX_TOKEN_MUTATION";
+  const tokenMutation = `${";".repeat(MAX_DEPENDENCY_DECLARATION_TOKENS + 1)}/* ${tokenMarker} 東京 */`;
+  assertSourceFreeDeclarationLimitError(
+    tokenMutation,
+    "DEPENDENCY_DECLARATIONS_TOO_MANY_TOKENS",
+    [tokenMarker, "東京"],
+  );
+
+  const depthMarker = "DO_NOT_REVEAL_COMPLEX_DEPTH_MUTATION";
+  const depthMutation = [
+    `/* ${depthMarker} Živeli */`,
+    `type TooDeep = ${"ReadonlyArray<".repeat(MAX_DEPENDENCY_DECLARATION_NESTING_DEPTH + 1)}string${">".repeat(MAX_DEPENDENCY_DECLARATION_NESTING_DEPTH + 1)};`,
+  ].join("\n");
+  assertSourceFreeDeclarationLimitError(
+    depthMutation,
+    "DEPENDENCY_DECLARATIONS_TOO_DEEP",
+    [depthMarker, "Živeli"],
+  );
 });
 
 test("dependency package diagnostics include only a stable code and trustworthy location", () => {
