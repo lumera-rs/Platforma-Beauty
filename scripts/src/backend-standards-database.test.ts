@@ -285,6 +285,58 @@ test("database harness standards follow deeply nested collectors and multi-step 
   );
 });
 
+test("database harness standards fail closed on malformed aggregate runner syntax", () => {
+  const malformedCollector = `
+    import { spawn } from "node:child_process";
+    const environment = { DATABASE_URL: process.env.DATABASE_URL };
+    const child = spawn("pnpm", ["test"], { env: environment, stdio: ["ignore", "pipe", "pipe"] });
+    child.stdout.on("data", (chunk) => {
+      const collected = chunk.toString(;
+    });
+  `;
+  const validTypeScriptRunner = `
+    import { spawn } from "node:child_process";
+    import { createRedactedDatabaseOutputWriter } from "./safe-child-process-output";
+    const environment = { DATABASE_URL: process.env.DATABASE_URL };
+    const child = spawn("pnpm", ["test"], { env: environment, stdio: ["ignore", "pipe", "pipe"] });
+    const writer = createRedactedDatabaseOutputWriter(environment, process.stdout);
+    child.stdout.on("data", (chunk) => writer.write(chunk));
+  `;
+  const validTsxRunner = `
+    import { spawn } from "node:child_process";
+    import { createRedactedDatabaseOutputWriter } from "./safe-child-process-output";
+    const environment = { DATABASE_URL: process.env.DATABASE_URL };
+    const child = spawn("pnpm", ["test"], { env: environment, stdio: ["ignore", "pipe", "pipe"] });
+    const writer = createRedactedDatabaseOutputWriter(environment, process.stdout);
+    const status = <output data-state="safe">ready</output>;
+    child.stdout.on("data", (chunk) => writer.write(chunk));
+  `;
+
+  const violations = findUnsafeDatabaseChildProcessUses(
+    malformedCollector,
+    "scripts/src/run-broken-database-qa-report.ts",
+  );
+  assert.equal(violations.length, 1);
+  assert.match(
+    violations[0]!,
+    /^scripts\/src\/run-broken-database-qa-report\.ts:\d+:\d+ has invalid TypeScript syntax: /,
+  );
+  assert.deepEqual(
+    findUnsafeDatabaseChildProcessUses(
+      validTypeScriptRunner,
+      "scripts/src/run-valid-database-qa-report.ts",
+    ),
+    [],
+  );
+  assert.deepEqual(
+    findUnsafeDatabaseChildProcessUses(
+      validTsxRunner,
+      "scripts/src/run-valid-database-qa-report.tsx",
+    ),
+    [],
+  );
+});
+
 async function runDatabaseCommand(
   command: string,
   args: string[],

@@ -51,14 +51,31 @@ const STATIC_CHECK_EXCLUSIONS = new Set([
   "scripts/src/test-backend-static-checks.ts",
 ]);
 
-function hasRawAggregateChildOutputCapture(source: string): boolean {
-  const sourceFile = ts.createSourceFile(
-    "aggregate-runner.ts",
+function parseAggregateRunner(source: string, file: string): ts.SourceFile {
+  return ts.createSourceFile(
+    file,
     source,
     ts.ScriptTarget.Latest,
     true,
-    ts.ScriptKind.TS,
+    file.toLowerCase().endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
   );
+}
+
+function formatAggregateRunnerParseDiagnostics(
+  sourceFile: ts.SourceFile,
+  file: string,
+): string[] {
+  const parseDiagnostics = (
+    sourceFile as ts.SourceFile & { parseDiagnostics: readonly ts.Diagnostic[] }
+  ).parseDiagnostics;
+  return parseDiagnostics.map((diagnostic) => {
+    const position = sourceFile.getLineAndCharacterOfPosition(diagnostic.start ?? 0);
+    const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, " ");
+    return `${file}:${position.line + 1}:${position.character + 1} has invalid TypeScript syntax: ${message}`;
+  });
+}
+
+function hasRawAggregateChildOutputCapture(sourceFile: ts.SourceFile): boolean {
   const bindings = new Map<string, ts.Node>();
   const functions = new Map<string, ts.FunctionLikeDeclaration>();
 
@@ -206,14 +223,21 @@ export function findUnsafeDatabaseChildProcessUses(
   source: string,
   file = "database harness",
 ): string[] {
+  const isAggregateRunner = AGGREGATE_QA_REPORT_RUNNER_PATTERN.test(file);
+  const aggregateSourceFile = isAggregateRunner
+    ? parseAggregateRunner(source, file)
+    : undefined;
+  const violations = aggregateSourceFile
+    ? formatAggregateRunnerParseDiagnostics(aggregateSourceFile, file)
+    : [];
+
   if (
     !CHILD_PROCESS_IMPORT_PATTERN.test(source)
     || !DATABASE_HARNESS_PATTERN.test(source)
   ) {
-    return [];
+    return violations;
   }
 
-  const violations: string[] = [];
   if (INHERITED_CHILD_OUTPUT_PATTERN.test(source)) {
     violations.push(`${file} lets a database-oriented child process inherit stdout or stderr`);
   }
@@ -224,8 +248,8 @@ export function findUnsafeDatabaseChildProcessUses(
     violations.push(`${file} forwards database-oriented child output without redaction`);
   }
   if (
-    AGGREGATE_QA_REPORT_RUNNER_PATTERN.test(file)
-    && hasRawAggregateChildOutputCapture(source)
+    aggregateSourceFile
+    && hasRawAggregateChildOutputCapture(aggregateSourceFile)
   ) {
     violations.push(
       `${file} captures database-oriented child output for an aggregate report without chunk-safe redaction`,
