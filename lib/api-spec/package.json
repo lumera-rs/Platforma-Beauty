@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "codegen": "pnpm -w run test:internal-request-controls && orval --config ./orval.config.ts && node ./scripts/fix-zod-index.mjs && pnpm -w run test:marketplace-typecheck && pnpm -w run typecheck:libs"
+    "codegen": "pnpm -w run test:internal-request-controls && orval --config ./orval.config.ts && node ./scripts/fix-zod-index.mjs && pnpm --filter @workspace/scripts exec tsx ./src/internal-request-control-output-check.ts --codegen && pnpm -w run test:marketplace-typecheck && pnpm -w run typecheck:libs"
   },
   "devDependencies": {
     "orval": "^8.23.0"

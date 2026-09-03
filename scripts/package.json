@@ -12,6 +12,7 @@
     "typecheck:browser": "tsx ./src/check-browser-spec-types.ts",
     "playwright:checked": "tsx ./src/run-playwright-with-preflight.ts",
     "test:generated-api": "tsx ./src/generated-api-check.ts",
+    "test:internal-request-control-outputs": "tsx --test ./src/internal-request-control-output-check.test.ts && tsx ./src/internal-request-control-output-check.ts",
     "test:backend-standards": "tsx --test ./src/backend-standards-database.test.ts && tsx ./src/test-backend-standards.ts",
     "test:backend-standards:static": "tsx ./src/test-backend-standards.ts --static-only",
     "test:backend-standards:database": "tsx ./src/test-backend-standards.ts --database-only",
