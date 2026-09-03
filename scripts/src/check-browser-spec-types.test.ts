@@ -482,18 +482,31 @@ test("browser preflight rejects every runner config root but ignores imported so
   }
 });
 
-test("browser preflight resolves and checks statically consumed folder entry points but not application imports", async () => {
+test("browser preflight resolves and checks statically consumed package folder entry points but not application imports", async () => {
   const fixtureRoot = await mkdtemp(
     path.join(os.tmpdir(), "lumera-browser-shared-config-types-"),
   );
   try {
     const browserRoot = path.join(fixtureRoot, "browser");
     const sharedConfigRoot = path.join(fixtureRoot, "playwright.shared");
-    const sharedConfigPath = path.join(sharedConfigRoot, "index.ts");
+    const sharedConfigPath = path.join(sharedConfigRoot, "settings.ts");
+    const indexFallbackPath = path.join(sharedConfigRoot, "index.ts");
     const applicationPath = path.join(fixtureRoot, "application-source.ts");
     const configPath = path.join(fixtureRoot, "playwright.config.ts");
     await mkdir(browserRoot);
     await mkdir(sharedConfigRoot);
+    await writeFile(
+      path.join(sharedConfigRoot, "package.json"),
+      JSON.stringify({ main: "./settings.ts" }),
+    );
+    await writeFile(
+      indexFallbackPath,
+      [
+        'export const testDir: string = "./browser";',
+        "export const shared = { testDir };",
+        "unknownIndexFallbackIdentifier();",
+      ].join("\n"),
+    );
     await writeFile(
       sharedConfigPath,
       [
@@ -529,7 +542,14 @@ test("browser preflight resolves and checks statically consumed folder entry poi
         (diagnostic) => diagnostic.file?.fileName === sharedConfigPath,
       ),
       true,
-      "a shared folder entry point statically consumed by the config should fail the gate",
+      "a shared package folder entry point statically consumed by the config should fail the gate",
+    );
+    assert.equal(
+      diagnostics.some(
+        (diagnostic) => diagnostic.file?.fileName === indexFallbackPath,
+      ),
+      false,
+      "an index fallback bypassed by the package entry should stay excluded",
     );
     assert.equal(
       diagnostics.some(

@@ -115,6 +115,36 @@ function findConstInitializer(
   return undefined;
 }
 
+function resolvePackageEntry(directory: string): string | undefined {
+  const manifestPath = path.join(directory, "package.json");
+  const manifestText = ts.sys.readFile(manifestPath);
+  if (manifestText === undefined) {
+    return undefined;
+  }
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(manifestText);
+  } catch {
+    return undefined;
+  }
+  if (!manifest || typeof manifest !== "object") {
+    return undefined;
+  }
+  const entry = (manifest as { main?: unknown }).main;
+  if (typeof entry !== "string" || !browserFileExtensions.includes(path.extname(entry))) {
+    return undefined;
+  }
+  const resolvedDirectory = path.resolve(directory);
+  const resolvedEntry = path.resolve(resolvedDirectory, entry);
+  const directoryPrefix = resolvedDirectory.endsWith(path.sep)
+    ? resolvedDirectory
+    : resolvedDirectory + path.sep;
+  if (!resolvedEntry.startsWith(directoryPrefix)) {
+    return undefined;
+  }
+  return ts.sys.fileExists(resolvedEntry) ? resolvedEntry : undefined;
+}
+
 function resolveRelativeImport(
   sourceFile: ts.SourceFile,
   localName: string,
@@ -150,10 +180,13 @@ function resolveRelativeImport(
     );
     const candidates = browserFileExtensions.includes(path.extname(unresolved))
       ? [unresolved]
-      : browserFileExtensions.flatMap((extension) => [
-          unresolved + extension,
-          path.join(unresolved, `index${extension}`),
-        ]);
+      : [
+          ...browserFileExtensions.map((extension) => unresolved + extension),
+          resolvePackageEntry(unresolved),
+          ...browserFileExtensions.map((extension) =>
+            path.join(unresolved, `index${extension}`),
+          ),
+        ].filter((candidate): candidate is string => candidate !== undefined);
     const importedFileName = candidates.find(ts.sys.fileExists);
     if (!importedFileName) {
       return undefined;
