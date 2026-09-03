@@ -71,7 +71,7 @@ const commands: Record<CommandKey, string> = {
   admin: "pnpm run test:admin-validation && pnpm run test:admin-list-pagination && pnpm run test:admin-summary",
   monitoring: "pnpm run test:monitoring",
   browser: "pnpm run test:booking-journey && pnpm --filter @workspace/scripts run test:appointment-status-consistency",
-  calendar: "pnpm run test:booking-settings && pnpm --filter @workspace/scripts run test:service-availability && pnpm --filter @workspace/scripts run test:employee-location-booking",
+  calendar: "pnpm run test:booking-settings && pnpm --filter @workspace/scripts run test:owner-service-availability && pnpm --filter @workspace/scripts run test:employee-location-booking",
   calendarTimezone: "pnpm run test:calendar-timezone-boundaries",
   finalBooking: "pnpm run test:final-booking-qa",
 };

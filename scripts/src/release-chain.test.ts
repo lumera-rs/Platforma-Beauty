@@ -37,6 +37,11 @@ type FocusedAdministratorBrowserGateInventory = {
   localOnly?: string[];
 };
 
+type FocusedOwnerBrowserGateInventory = {
+  release?: string[];
+  localOnly?: string[];
+};
+
 function focusedAdministratorBrowserCommands(
   packageScripts: Record<string, string>,
 ): string[] {
@@ -78,6 +83,48 @@ function validateFocusedAdministratorBrowserGateInventory(
       isolatedPhaseCommand,
       new RegExp(`(?:^| && )pnpm run ${scriptName}(?: && |$)`),
       `${requiredIsolatedBrowserGatePhase} must invoke release-focused administrator browser command ${scriptName}. Move it to localOnly only if it is intentionally diagnostic.`,
+    );
+  }
+}
+
+function focusedOwnerBrowserCommands(
+  packageScripts: Record<string, string>,
+): string[] {
+  return Object.entries(packageScripts)
+    .filter(([scriptName, command]) =>
+      scriptName.startsWith("test:owner-") &&
+      command.includes("playwright:checked")
+    )
+    .map(([scriptName]) => scriptName)
+    .sort();
+}
+
+function validateFocusedOwnerBrowserGateInventory(
+  packageScripts: Record<string, string>,
+  inventory: FocusedOwnerBrowserGateInventory,
+  isolatedPhaseCommand: string,
+): void {
+  const releaseScripts = inventory.release ?? [];
+  const localOnlyScripts = inventory.localOnly ?? [];
+  const classifiedScripts = [...releaseScripts, ...localOnlyScripts];
+  const discoveredScripts = focusedOwnerBrowserCommands(packageScripts);
+
+  assert.equal(
+    new Set(classifiedScripts).size,
+    classifiedScripts.length,
+    "Each focused salon-owner browser command must be classified exactly once in scripts/package.json focusedOwnerBrowserGates.",
+  );
+  assert.deepEqual(
+    [...classifiedScripts].sort(),
+    discoveredScripts,
+    "Every test:owner-* Playwright command must be classified in scripts/package.json focusedOwnerBrowserGates.release or .localOnly. Add release checks to the release inventory, or explicitly mark diagnostics as localOnly.",
+  );
+
+  for (const scriptName of releaseScripts) {
+    assert.match(
+      isolatedPhaseCommand,
+      new RegExp(`(?:^| && )pnpm run ${scriptName}(?: && |$)`),
+      `${requiredIsolatedBrowserGatePhase} must invoke release-focused salon-owner browser command ${scriptName}. Move it to localOnly only if it is intentionally diagnostic.`,
     );
   }
 }
@@ -514,6 +561,92 @@ test("a new focused administrator browser command must be released or explicitly
         localOnly: ["test:admin-new-regression"],
       },
       "pnpm run test:admin-existing",
+    )
+  );
+});
+
+test("focused salon-owner browser inventory remains wired into the release gate", async () => {
+  const [rootPackageJson, scriptsPackageJson] = await Promise.all([
+    readFile(path.join(workspaceRoot, "package.json"), "utf8"),
+    readFile(path.join(workspaceRoot, "scripts", "package.json"), "utf8"),
+  ]);
+  const rootScripts = (JSON.parse(rootPackageJson) as { scripts?: Record<string, string> }).scripts ?? {};
+  const parsedScriptsPackageJson = JSON.parse(scriptsPackageJson) as {
+    scripts?: Record<string, string>;
+    focusedOwnerBrowserGates?: FocusedOwnerBrowserGateInventory;
+  };
+  const packageScripts = parsedScriptsPackageJson.scripts ?? {};
+  const inventory = parsedScriptsPackageJson.focusedOwnerBrowserGates;
+  const isolatedPhaseCommand = rootScripts[requiredIsolatedBrowserGatePhase];
+
+  assert.ok(isolatedPhaseCommand, `${requiredIsolatedBrowserGatePhase} must be defined.`);
+  assert.ok(
+    inventory,
+    "scripts/package.json must define focusedOwnerBrowserGates as the authoritative release/local-only inventory for test:owner-* Playwright commands.",
+  );
+
+  validateFocusedOwnerBrowserGateInventory(
+    packageScripts,
+    inventory,
+    isolatedPhaseCommand,
+  );
+
+  for (const scriptName of inventory.release ?? []) {
+    assert.ok(rootScripts[scriptName], `Root script ${scriptName} must be defined.`);
+    assert.match(
+      rootScripts[scriptName],
+      new RegExp(`(?:^| )run ${scriptName}(?: |$)`),
+      `Root script ${scriptName} must delegate to the scripts package.`,
+    );
+    assert.ok(packageScripts[scriptName], `Scripts package command ${scriptName} must be defined.`);
+  }
+});
+
+test("a new focused salon-owner browser command must be released or explicitly local-only", () => {
+  const packageScripts = {
+    "test:owner-existing": "pnpm run playwright:checked -- browser/owner-existing.spec.ts",
+    "test:owner-new-regression": "pnpm run playwright:checked -- browser/owner-new-regression.spec.ts",
+  };
+
+  assert.throws(
+    () =>
+      validateFocusedOwnerBrowserGateInventory(
+        packageScripts,
+        { release: ["test:owner-existing"], localOnly: [] },
+        "pnpm run test:owner-existing",
+      ),
+    (error: unknown) =>
+      error instanceof assert.AssertionError &&
+      error.message.startsWith(
+        "Every test:owner-* Playwright command must be classified in scripts/package.json focusedOwnerBrowserGates.release or .localOnly.",
+      ),
+  );
+
+  assert.throws(
+    () =>
+      validateFocusedOwnerBrowserGateInventory(
+        packageScripts,
+        {
+          release: ["test:owner-existing", "test:owner-new-regression"],
+          localOnly: [],
+        },
+        "pnpm run test:owner-existing",
+      ),
+    (error: unknown) =>
+      error instanceof assert.AssertionError &&
+      error.message.startsWith(
+        `${requiredIsolatedBrowserGatePhase} must invoke release-focused salon-owner browser command test:owner-new-regression.`,
+      ),
+  );
+
+  assert.doesNotThrow(() =>
+    validateFocusedOwnerBrowserGateInventory(
+      packageScripts,
+      {
+        release: ["test:owner-existing"],
+        localOnly: ["test:owner-new-regression"],
+      },
+      "pnpm run test:owner-existing",
     )
   );
 });

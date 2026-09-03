@@ -15,6 +15,12 @@
       "test:admin-salon-designations"
     ]
   },
+  "focusedOwnerBrowserGates": {
+    "release": [
+      "test:owner-service-availability"
+    ],
+    "localOnly": []
+  },
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "ensure:development-schema": "tsx ./src/ensure-development-schema.ts",
@@ -71,7 +77,7 @@
     "test:salon-notifications:release": "tsx ./src/run-salon-notification-release.ts",
     "cleanup:salon-notifications": "tsx ./src/run-salon-notification-release.ts --recover-interrupted-databases",
     "test:service-library": "pnpm run playwright:checked -- browser/service-library.spec.ts",
-    "test:service-availability": "pnpm run playwright:checked -- browser/owner-service-availability.spec.ts",
+    "test:owner-service-availability": "pnpm run playwright:checked -- browser/owner-service-availability.spec.ts",
     "test:salon-owner-regressions": "pnpm run playwright:checked -- browser/owner-appointment-employee-regression.spec.ts browser/owner-loyalty-packages.spec.ts browser/owner-automation-b2b-order.spec.ts browser/salon-owner-employee-education-purchase.spec.ts browser/education-group-online-consent.spec.ts browser/owner-service-availability.spec.ts browser/service-library.spec.ts browser/multi-location-owner.spec.ts --workers=1",
     "test:education-group-online-consent-browser": "tsx ./src/run-education-group-online-consent-browser.ts",
     "test:education-dispute-browser": "tsx ./src/run-education-dispute-browser.ts",
