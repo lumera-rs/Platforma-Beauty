@@ -15,6 +15,7 @@ const formatHost: ts.FormatDiagnosticsHost = {
 interface BrowserSpecTypeCheckOptions {
   rootNames?: string[];
   diagnosticRoot?: string;
+  diagnosticFiles?: string[];
 }
 
 function loadBrowserProgram(rootNames?: string[]): ts.Program {
@@ -45,6 +46,11 @@ export function collectBrowserSpecDiagnostics(
   options: BrowserSpecTypeCheckOptions = {},
 ): ts.Diagnostic[] {
   const diagnosticRoot = path.resolve(options.diagnosticRoot ?? browserRoot);
+  const diagnosticFiles = new Set(
+    (options.diagnosticFiles ?? [path.join(scriptsRoot, "playwright.config.ts")]).map(
+      (fileName) => path.resolve(fileName),
+    ),
+  );
   const diagnosticPrefix = diagnosticRoot.endsWith(path.sep)
     ? diagnosticRoot
     : diagnosticRoot + path.sep;
@@ -56,7 +62,11 @@ export function collectBrowserSpecDiagnostics(
         return false;
       }
       const fileName = path.resolve(diagnostic.file.fileName);
-      return fileName === diagnosticRoot || fileName.startsWith(diagnosticPrefix);
+      return (
+        fileName === diagnosticRoot
+        || fileName.startsWith(diagnosticPrefix)
+        || diagnosticFiles.has(fileName)
+      );
     });
 }
 

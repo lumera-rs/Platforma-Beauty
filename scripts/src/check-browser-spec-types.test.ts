@@ -30,6 +30,7 @@ test("browser preflight rejects every spec-local diagnostic but ignores imported
     const diagnostics = collectBrowserSpecDiagnostics({
       rootNames: [specPath],
       diagnosticRoot: specRoot,
+      diagnosticFiles: [],
     });
 
     const diagnosticCodes = new Set(diagnostics.map(({ code }) => code));
@@ -44,6 +45,41 @@ test("browser preflight rejects every spec-local diagnostic but ignores imported
       diagnostics.some((diagnostic) => diagnostic.file?.fileName === modulePath),
       false,
       "imported application source diagnostics should remain outside the gate",
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+
+test("browser preflight rejects Playwright config diagnostics but ignores its imported source diagnostics", async () => {
+  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-browser-config-types-"));
+  try {
+    const modulePath = path.join(fixtureRoot, "application-source.ts");
+    const configPath = path.join(fixtureRoot, "playwright.config.ts");
+    await writeFile(modulePath, "export const applicationValue: string = 123;\n");
+    await writeFile(
+      configPath,
+      [
+        'import { applicationValue } from "./application-source";',
+        "const configValue: number = applicationValue;",
+        "unknownConfigIdentifier();",
+      ].join("\n"),
+    );
+
+    const diagnostics = collectBrowserSpecDiagnostics({
+      rootNames: [configPath],
+      diagnosticRoot: path.join(fixtureRoot, "browser"),
+      diagnosticFiles: [configPath],
+    });
+
+    const diagnosticCodes = new Set(diagnostics.map(({ code }) => code));
+    assert.ok(diagnosticCodes.has(2322), "config-local type mismatch should fail");
+    assert.ok(diagnosticCodes.has(2304), "config-local unknown identifier should fail");
+    assert.equal(
+      diagnostics.some((diagnostic) => diagnostic.file?.fileName === modulePath),
+      false,
+      "application source imported by config should remain outside the gate",
     );
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
