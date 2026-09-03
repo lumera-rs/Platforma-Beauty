@@ -98,6 +98,7 @@ export * from './adminListOrdersDeliveryMethod';
 export * from './adminListOrdersParams';
 export * from './adminListOrdersPaymentStatus';
 export * from './adminListOrdersStatus';
+export * from './adminListPriceInquiriesParams';
 export * from './adminListProductsMarket';
 export * from './adminListProductsParams';
 export * from './adminListProductsSortBy';

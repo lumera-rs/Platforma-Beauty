@@ -16660,6 +16660,14 @@ export type CreatePriceInquiry201 = {
   createdAt: string;
 };
 
+export type AdminListPriceInquiriesParams = {
+/**
+ * Case-insensitive customer name, email, product, or supplier search.
+ * @maxLength 120
+ */
+search?: string;
+};
+
 export type CreateShopQuoteBody = {
   /** @maxLength 200 */
   customerCompanyName?: string;

@@ -31648,6 +31648,14 @@ export const CreatePriceInquiryResponse = zod.object({
 /**
  * @summary List supplier product price inquiries for administrator review
  */
+export const adminListPriceInquiriesQuerySearchMax = 120;
+
+
+
+export const AdminListPriceInquiriesQueryParams = zod.object({
+  "search": zod.coerce.string().max(adminListPriceInquiriesQuerySearchMax).optional().describe('Case-insensitive customer name, email, product, or supplier search.')
+})
+
 export const AdminListPriceInquiriesResponseItem = zod.object({
   "id": zod.string(),
   "supplierId": zod.string(),

@@ -223,10 +223,22 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
     const matrix = await api(`/public/products/${zeroProductId}/bulk-matrix`); const body = await matrix.json() as { priceOnRequest: boolean; cartEligible: boolean; rows: Array<Record<string, unknown>> };
     assert.equal(body.priceOnRequest, true); assert.equal(body.cartEligible, false); assert.equal("unitPrice" in body.rows[0]!, false);
     assert.equal((await api(`/public/suppliers/${ids.suppliers[0]}/products/${zeroProductId}/price-inquiries`, "", { method: "POST", body: JSON.stringify({ name: "Test User", email: "test@example.test", phone: "+381601234567", message: "Need a price for this item." }) })).status, 201);
-    const adminInquiries = await (await api("/admin/price-inquiries", await cookie(admin))).json() as Array<Record<string, unknown>>;
+    await db.insert(priceInquiriesTable).values({ supplierId: ids.suppliers[0]!, productId: zeroProductId, name: "Unrelated Customer", email: "unrelated@example.test", phone: "+381601234568", message: "Separate inquiry used to prove filtering." });
+    const adminCookie = await cookie(admin);
+    const adminInquiries = await (await api("/admin/price-inquiries", adminCookie)).json() as Array<Record<string, unknown>>;
     assert.equal(AdminListPriceInquiriesResponse.safeParse(adminInquiries).success, true);
-    const inquiry = adminInquiries.find((row) => row.productId === zeroProductId);
+    const inquiry = adminInquiries.find((row) => row.productId === zeroProductId && row.contactName === "Test User");
     assert.ok(inquiry);
+    for (const term of ["test user", "TEST@EXAMPLE.TEST", `${marker} zero`, marker]) {
+      const matches = await (await api(`/admin/price-inquiries?search=${encodeURIComponent(term)}`, adminCookie)).json() as Array<{ contactName: string }>;
+      assert.ok(matches.some((row) => row.contactName === "Test User"), `expected ${term} to match the inquiry`);
+    }
+    const customerMatches = await (await api("/admin/price-inquiries?search=test%20user", adminCookie)).json() as Array<{ contactName: string }>;
+    assert.ok(customerMatches.length > 0);
+    assert.ok(customerMatches.every((row) => row.contactName === "Test User"));
+    const noMatches = await (await api("/admin/price-inquiries?search=definitely-no-such-inquiry", adminCookie)).json();
+    assert.deepEqual(noMatches, []);
+    assert.equal((await api(`/admin/price-inquiries?search=${"x".repeat(121)}`, adminCookie)).status, 400);
     const updatedInquiryResponse = await api(`/admin/price-inquiries/${inquiry.id}`, await cookie(admin), {
       method: "PATCH",
       body: JSON.stringify({ status: "CONTACTED", internalNote: "Administrator contacted the customer." }),
@@ -236,7 +248,7 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
     assert.equal(AdminUpdatePriceInquiryResponse.safeParse(updatedInquiry).success, true);
     assert.equal((updatedInquiry as { productName: string }).productName, `${marker} zero`);
     assert.equal((updatedInquiry as { supplierName: string }).supplierName, marker);
-    const adminInquiry = adminInquiries.find((inquiry) => inquiry.productId === zeroProductId);
+    const adminInquiry = adminInquiries.find((inquiry) => inquiry.productId === zeroProductId && inquiry.contactName === "Test User");
     assert.equal(adminInquiry?.contactName, "Test User"); assert.equal(adminInquiry?.contactEmail, "test@example.test");
     assert.equal(adminInquiry?.productName, `${marker} zero`); assert.equal(adminInquiry?.supplierName, marker);
     const before = await db.select().from(shoppingCartItemsTable).where(eq(shoppingCartItemsTable.cartId, ids.carts[0]!));

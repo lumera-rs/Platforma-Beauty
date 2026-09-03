@@ -64,6 +64,7 @@ import type {
   AdminListEducationGiftVouchersParams,
   AdminListEmailCampaignsResponse,
   AdminListOrdersParams,
+  AdminListPriceInquiriesParams,
   AdminListProductWaitlistParams,
   AdminListProductsParams,
   AdminListRetailOrdersParams,
@@ -44194,20 +44195,27 @@ export const useCreatePriceInquiry = <TError = ErrorType<void>,
       return useMutation(getCreatePriceInquiryMutationOptions(options));
     }
 
-export const getAdminListPriceInquiriesUrl = () => {
+export const getAdminListPriceInquiriesUrl = (params?: AdminListPriceInquiriesParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/admin/price-inquiries`
+  return stringifiedParams.length > 0 ? `/api/admin/price-inquiries?${stringifiedParams}` : `/api/admin/price-inquiries`
 }
 
 /**
  * @summary List supplier product price inquiries for administrator review
  */
-export const adminListPriceInquiries = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminPriceInquiry[]> => {
+export const adminListPriceInquiries = async (params?: AdminListPriceInquiriesParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminPriceInquiry[]> => {
 
-  return customFetch<AdminPriceInquiry[]>(getAdminListPriceInquiriesUrl(),
+  return customFetch<AdminPriceInquiry[]>(getAdminListPriceInquiriesUrl(params),
   {
     ...options,
     method: 'GET'
@@ -44220,23 +44228,23 @@ export const adminListPriceInquiries = async ( options?: Parameters<typeof custo
 
 
 
-export const getAdminListPriceInquiriesQueryKey = () => {
+export const getAdminListPriceInquiriesQueryKey = (params?: AdminListPriceInquiriesParams,) => {
     return [
-    `/api/admin/price-inquiries`
+    `/api/admin/price-inquiries`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getAdminListPriceInquiriesQueryOptions = <TData = Awaited<ReturnType<typeof adminListPriceInquiries>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListPriceInquiries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getAdminListPriceInquiriesQueryOptions = <TData = Awaited<ReturnType<typeof adminListPriceInquiries>>, TError = ErrorType<unknown>>(params?: AdminListPriceInquiriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListPriceInquiries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getAdminListPriceInquiriesQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getAdminListPriceInquiriesQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListPriceInquiries>>> = ({ signal }) => adminListPriceInquiries({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListPriceInquiries>>> = ({ signal }) => adminListPriceInquiries(params, { signal, ...requestOptions });
 
 
 
@@ -44254,11 +44262,11 @@ export type AdminListPriceInquiriesQueryError = ErrorType<unknown>
  */
 
 export function useAdminListPriceInquiries<TData = Awaited<ReturnType<typeof adminListPriceInquiries>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListPriceInquiries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: AdminListPriceInquiriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListPriceInquiries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getAdminListPriceInquiriesQueryOptions(options)
+  const queryOptions = getAdminListPriceInquiriesQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

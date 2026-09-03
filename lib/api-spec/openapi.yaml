@@ -9152,6 +9152,11 @@ paths:
       operationId: adminListPriceInquiries
       tags: [admin]
       summary: List supplier product price inquiries for administrator review
+      parameters:
+        - name: search
+          in: query
+          description: Case-insensitive customer name, email, product, or supplier search.
+          schema: { type: string, maxLength: 120 }
       responses:
         "200":
           description: Price inquiries

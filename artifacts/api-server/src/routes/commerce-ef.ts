@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { Router, type IRouter, type Request, type Response } from "express";
 import PDFDocument from "pdfkit";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 import {
   b2bQuotesTable, catalogSyncRunsTable, db, emailDeliveriesTable, priceInquiriesTable,
   orderItemsTable, ordersTable, productsTable, retailOrderItemsTable, retailOrdersTable, reviewRewardIssuancesTable, rmaAttachmentsTable, rmaStatusHistoryTable, rmasTable, salonsTable, shopSettingsTable,
@@ -14,6 +14,7 @@ import {
   AdminGetMetaCatalogStatusResponse,
   AdminGetReviewRewardSettingsResponse,
   AdminGetRmaResponse,
+  AdminListPriceInquiriesQueryParams,
   AdminListPriceInquiriesResponse,
   AdminListQuotesResponse,
   AdminListRmasResponse,
@@ -147,9 +148,19 @@ router.post("/public/suppliers/:supplierId/products/:productId/price-inquiries",
 
 router.get("/admin/price-inquiries", async (req, res): Promise<void> => {
   if (!await admin(req, res)) return;
+  const query = AdminListPriceInquiriesQueryParams.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: "Invalid price inquiry search." }); return; }
+  const search = query.data.search?.trim();
+  const escapedSearch = search?.replace(/[\\%_]/g, "\\$&");
   const rows = await db.select(adminPriceInquirySelection).from(priceInquiriesTable)
     .innerJoin(productsTable, eq(priceInquiriesTable.productId, productsTable.id))
     .innerJoin(suppliersTable, eq(priceInquiriesTable.supplierId, suppliersTable.id))
+    .where(search ? or(
+      sql`${priceInquiriesTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+      sql`${priceInquiriesTable.email} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+      sql`${productsTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+      sql`${suppliersTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+    ) : undefined)
     .orderBy(desc(priceInquiriesTable.createdAt)).limit(500);
   sendValidatedAdminCommerceResponse(req, res, "adminListPriceInquiries", AdminListPriceInquiriesResponse, rows);
 });
