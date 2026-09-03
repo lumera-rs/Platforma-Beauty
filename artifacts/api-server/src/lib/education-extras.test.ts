@@ -481,6 +481,28 @@ async function run(): Promise<void> {
     // TEST: Group enrollment — discount validation
     // ═══════════════════════════════════════════════════════════════════════
     {
+      const invalidGroupKeys: ReadonlyArray<{ label: string; value?: string }> = [
+        { label: "missing" },
+        { label: "empty", value: "" },
+        { label: "spaced", value: "contains space" },
+        { label: "Unicode", value: "é" },
+        { label: "201 characters", value: "x".repeat(201) },
+      ];
+      const groupEnrollmentsBeforeInvalidKeys = (await db.select().from(courseEnrollmentsTable)
+        .where(eq(courseEnrollmentsTable.courseId, certCourse.id))).length;
+      for (const invalidKey of invalidGroupKeys) {
+        const response = await request(baseUrl, `/education/courses/${certCourse.id}/group-enrollments`, {
+          method: "POST",
+          cookie: salonOwnerCookie,
+          ...(invalidKey.value === undefined ? {} : { headers: { "idempotency-key": invalidKey.value } }),
+          body: buildValidOnlineEducationEnrollmentRequest({ employeeIds: [emp1.id, emp2.id] }),
+        });
+        assert.equal(response.status, 400, `Group enrollment must reject a ${invalidKey.label} Idempotency-Key.`);
+      }
+      assert.equal((await db.select().from(courseEnrollmentsTable)
+        .where(eq(courseEnrollmentsTable.courseId, certCourse.id))).length, groupEnrollmentsBeforeInvalidKeys,
+      "Rejected Idempotency-Key requests must not create group enrollments.");
+
       // Single employee should be rejected (below minimum)
       const groupResp1 = await request(baseUrl, `/education/courses/${certCourse.id}/group-enrollments`, {
         method: "POST",
@@ -495,7 +517,7 @@ async function run(): Promise<void> {
       console.log("✓ Group enrollment rejected below minimum (server-validated).");
 
       // Two employees should succeed
-      const iKey = randomUUID();
+      const iKey = "!";
       const groupResp2 = await request(baseUrl, `/education/courses/${certCourse.id}/group-enrollments`, {
         method: "POST",
         cookie: salonOwnerCookie,
@@ -558,7 +580,7 @@ async function run(): Promise<void> {
       const groupResp3 = await request(baseUrl, `/education/courses/${certCourse.id}/group-enrollments`, {
         method: "POST",
         cookie: salonOwnerCookie,
-        headers: { "idempotency-key": randomUUID() }, // different key, but same participants
+        headers: { "idempotency-key": "~".repeat(200) }, // accepted boundary, but same participants
         body: buildValidOnlineEducationEnrollmentRequest({ employeeIds: [emp1.id, emp2.id] }),
       });
       assert.equal(groupResp3.status, 409, "Duplicate group enrollment must return 409.");
