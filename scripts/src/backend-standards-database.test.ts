@@ -218,6 +218,39 @@ test("a spawned process cannot print its database connection string to reported 
   assert.doesNotMatch(report, /process-user|process-password|db\.example\.test|ssl=require/);
 });
 
+test("aggregate booking QA streams and captures output through the database redaction boundary", async () => {
+  const source = await readFile(
+    new URL("./run-booking-qa.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    source,
+    /createRedactedDatabaseOutputWriter\(environment,/,
+    "the aggregate runner must use the chunk-safe shared database-output writer",
+  );
+  assert.match(
+    source,
+    /process\.stdout\.write\(safeChunk\)/,
+    "terminal output must receive only redacted chunks",
+  );
+  assert.match(
+    source,
+    /output = `\$\{output\}\$\{safeChunk\}`\.slice\(-12_000\)/,
+    "captured report tails must receive the same redacted chunks",
+  );
+  assert.match(
+    source,
+    /outputWriter\.flush\(\)/,
+    "the final unterminated chunk must be redacted before the report is built",
+  );
+  assert.doesNotMatch(
+    source,
+    /process\.stdout\.write\(chunk\)/,
+    "raw child-process chunks must never reach aggregate stdout",
+  );
+});
+
 test("reports NOT VALID public CHECK and FK constraints with a safe remediation", async () => {
   let capturedSql = "";
   const client: DatabaseClient = {

@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { hasRealActivityStateEvidence } from "./booking-load-telemetry";
+import { createRedactedDatabaseOutputWriter } from "./safe-child-process-output";
 
 type Status = "PASS" | "FAIL" | "NOT TESTED" | "NOT APPLICABLE";
 type Severity = "critical" | "high" | "medium" | "low";
@@ -115,20 +116,27 @@ async function runCommand(key: CommandKey): Promise<CommandOutcome> {
   const command = commands[key];
   const startedAt = new Date().toISOString();
   let output = "";
+  const environment = { ...process.env, CI: process.env.CI ?? "true" };
+  const outputWriter = createRedactedDatabaseOutputWriter(environment, {
+    write(chunk) {
+      const safeChunk = chunk.toString();
+      process.stdout.write(safeChunk);
+      output = `${output}${safeChunk}`.slice(-12_000);
+      return true;
+    },
+  });
   const child = spawn("bash", ["-lc", command], {
     cwd: workspaceRoot,
-    env: { ...process.env, CI: process.env.CI ?? "true" },
+    env: environment,
     stdio: ["ignore", "pipe", "pipe"],
   });
-  const collect = (chunk: Buffer) => {
-    process.stdout.write(chunk);
-    output = `${output}${chunk.toString()}`.slice(-12_000);
-  };
+  const collect = (chunk: Buffer) => outputWriter.write(chunk);
   child.stdout.on("data", collect);
   child.stderr.on("data", collect);
   const result = await new Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>((resolve) => {
     child.once("close", (exitCode, signal) => resolve({ exitCode, signal }));
   });
+  outputWriter.flush();
   return {
     key,
     command,
