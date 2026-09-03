@@ -42,6 +42,13 @@ type FocusedOwnerBrowserGateInventory = {
   localOnly?: string[];
 };
 
+type FocusedEmployeeBrowserGateInventory = {
+  scriptNamePattern?: string;
+  specFilePattern?: string;
+  release?: string[];
+  localOnly?: string[];
+};
+
 function focusedAdministratorBrowserCommands(
   packageScripts: Record<string, string>,
 ): string[] {
@@ -125,6 +132,59 @@ function validateFocusedOwnerBrowserGateInventory(
       isolatedPhaseCommand,
       new RegExp(`(?:^| && )pnpm run ${scriptName}(?: && |$)`),
       `${requiredIsolatedBrowserGatePhase} must invoke release-focused salon-owner browser command ${scriptName}. Move it to localOnly only if it is intentionally diagnostic.`,
+    );
+  }
+}
+
+function focusedEmployeeBrowserCommands(
+  packageScripts: Record<string, string>,
+): string[] {
+  return Object.entries(packageScripts)
+    .filter(([scriptName, command]) =>
+      scriptName.startsWith("test:employee-") &&
+      /playwright:checked -- browser\/employee-[\w-]+\.spec\.ts(?: |$)/.test(command)
+    )
+    .map(([scriptName]) => scriptName)
+    .sort();
+}
+
+function validateFocusedEmployeeBrowserGateInventory(
+  packageScripts: Record<string, string>,
+  inventory: FocusedEmployeeBrowserGateInventory,
+  isolatedPhaseCommand: string,
+): void {
+  assert.equal(
+    inventory.scriptNamePattern,
+    "test:employee-*",
+    "Focused employee browser commands must follow the documented test:employee-* package-script naming convention.",
+  );
+  assert.equal(
+    inventory.specFilePattern,
+    "browser/employee-*.spec.ts",
+    "Focused employee browser commands must target the documented browser/employee-*.spec.ts naming convention.",
+  );
+
+  const releaseScripts = inventory.release ?? [];
+  const localOnlyScripts = inventory.localOnly ?? [];
+  const classifiedScripts = [...releaseScripts, ...localOnlyScripts];
+  const discoveredScripts = focusedEmployeeBrowserCommands(packageScripts);
+
+  assert.equal(
+    new Set(classifiedScripts).size,
+    classifiedScripts.length,
+    "Each focused employee browser command must be classified exactly once in scripts/package.json focusedEmployeeBrowserGates.",
+  );
+  assert.deepEqual(
+    [...classifiedScripts].sort(),
+    discoveredScripts,
+    "Every test:employee-* command targeting browser/employee-*.spec.ts must be classified in scripts/package.json focusedEmployeeBrowserGates.release or .localOnly.",
+  );
+
+  for (const scriptName of releaseScripts) {
+    assert.match(
+      isolatedPhaseCommand,
+      new RegExp(`(?:^| && )pnpm run ${scriptName}(?: && |$)`),
+      `${requiredIsolatedBrowserGatePhase} must invoke release-focused employee browser command ${scriptName}. Move it to localOnly only if it is intentionally diagnostic.`,
     );
   }
 }
@@ -647,6 +707,102 @@ test("a new focused salon-owner browser command must be released or explicitly l
         localOnly: ["test:owner-new-regression"],
       },
       "pnpm run test:owner-existing",
+    )
+  );
+});
+
+test("focused employee browser inventory remains wired into the release gate", async () => {
+  const [rootPackageJson, scriptsPackageJson] = await Promise.all([
+    readFile(path.join(workspaceRoot, "package.json"), "utf8"),
+    readFile(path.join(workspaceRoot, "scripts", "package.json"), "utf8"),
+  ]);
+  const rootScripts = (JSON.parse(rootPackageJson) as { scripts?: Record<string, string> }).scripts ?? {};
+  const parsedScriptsPackageJson = JSON.parse(scriptsPackageJson) as {
+    scripts?: Record<string, string>;
+    focusedEmployeeBrowserGates?: FocusedEmployeeBrowserGateInventory;
+  };
+  const packageScripts = parsedScriptsPackageJson.scripts ?? {};
+  const inventory = parsedScriptsPackageJson.focusedEmployeeBrowserGates;
+  const isolatedPhaseCommand = rootScripts[requiredIsolatedBrowserGatePhase];
+
+  assert.ok(isolatedPhaseCommand, `${requiredIsolatedBrowserGatePhase} must be defined.`);
+  assert.ok(
+    inventory,
+    "scripts/package.json must define focusedEmployeeBrowserGates as the authoritative release/local-only inventory for focused employee browser commands.",
+  );
+
+  validateFocusedEmployeeBrowserGateInventory(
+    packageScripts,
+    inventory,
+    isolatedPhaseCommand,
+  );
+
+  for (const scriptName of inventory.release ?? []) {
+    assert.ok(rootScripts[scriptName], `Root script ${scriptName} must be defined.`);
+    assert.match(
+      rootScripts[scriptName],
+      new RegExp(`(?:^| )run ${scriptName}(?: |$)`),
+      `Root script ${scriptName} must delegate to the scripts package.`,
+    );
+    assert.ok(packageScripts[scriptName], `Scripts package command ${scriptName} must be defined.`);
+  }
+});
+
+test("a new focused employee browser command must be released or explicitly local-only", () => {
+  const packageScripts = {
+    "test:employee-existing": "pnpm run playwright:checked -- browser/employee-existing.spec.ts",
+    "test:employee-new-regression": "pnpm run playwright:checked -- browser/employee-new-regression.spec.ts",
+  };
+  const namingConvention = {
+    scriptNamePattern: "test:employee-*",
+    specFilePattern: "browser/employee-*.spec.ts",
+  };
+
+  assert.throws(
+    () =>
+      validateFocusedEmployeeBrowserGateInventory(
+        packageScripts,
+        {
+          ...namingConvention,
+          release: ["test:employee-existing"],
+          localOnly: [],
+        },
+        "pnpm run test:employee-existing",
+      ),
+    (error: unknown) =>
+      error instanceof assert.AssertionError &&
+      error.message.startsWith(
+        "Every test:employee-* command targeting browser/employee-*.spec.ts must be classified",
+      ),
+  );
+
+  assert.throws(
+    () =>
+      validateFocusedEmployeeBrowserGateInventory(
+        packageScripts,
+        {
+          ...namingConvention,
+          release: ["test:employee-existing", "test:employee-new-regression"],
+          localOnly: [],
+        },
+        "pnpm run test:employee-existing",
+      ),
+    (error: unknown) =>
+      error instanceof assert.AssertionError &&
+      error.message.startsWith(
+        `${requiredIsolatedBrowserGatePhase} must invoke release-focused employee browser command test:employee-new-regression.`,
+      ),
+  );
+
+  assert.doesNotThrow(() =>
+    validateFocusedEmployeeBrowserGateInventory(
+      packageScripts,
+      {
+        ...namingConvention,
+        release: ["test:employee-existing"],
+        localOnly: ["test:employee-new-regression"],
+      },
+      "pnpm run test:employee-existing",
     )
   );
 });

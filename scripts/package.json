@@ -21,6 +21,14 @@
     ],
     "localOnly": []
   },
+  "focusedEmployeeBrowserGates": {
+    "scriptNamePattern": "test:employee-*",
+    "specFilePattern": "browser/employee-*.spec.ts",
+    "release": [
+      "test:employee-location-booking"
+    ],
+    "localOnly": []
+  },
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "ensure:development-schema": "tsx ./src/ensure-development-schema.ts",
