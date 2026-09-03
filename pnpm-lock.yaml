@@ -246,6 +246,9 @@ importers:
       thread-stream:
         specifier: 3.1.0
         version: 3.1.0
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
 
   artifacts/beauty-marketplace:
     dependencies:

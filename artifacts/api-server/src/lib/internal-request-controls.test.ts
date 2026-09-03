@@ -9,6 +9,7 @@ import express, {
   type Response,
 } from "express";
 import ts from "typescript";
+import { parse as parseYaml } from "yaml";
 import {
   denyInternalRequestControlErrors,
   denyInternalRequestControlsInProduction,
@@ -31,6 +32,114 @@ const REQUEST_TRANSPORTS = new Set([
   "cookies",
   "body",
 ]);
+const HTTP_METHODS = new Set([
+  "get",
+  "put",
+  "post",
+  "delete",
+  "options",
+  "head",
+  "patch",
+  "trace",
+]);
+
+type OpenApiObject = Record<string, unknown>;
+
+function isObject(value: unknown): value is OpenApiObject {
+  return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
+function resolveLocalReference(document: OpenApiObject, value: unknown): unknown {
+  if (!isObject(value) || typeof value.$ref !== "string") return value;
+  if (!value.$ref.startsWith("#/")) return value;
+  return value.$ref
+    .slice(2)
+    .split("/")
+    .map((segment) => segment.replace(/~1/g, "/").replace(/~0/g, "~"))
+    .reduce<unknown>(
+      (current, segment) => isObject(current) ? current[segment] : undefined,
+      document,
+    );
+}
+
+export function findInternalControlsInOpenApi(
+  document: OpenApiObject,
+  controls: readonly InternalRequestControl[],
+): string[] {
+  const findings = new Set<string>();
+  const parameterControls = controls.filter((control) => control.transport !== "body");
+  const bodyNames = new Set(
+    controls
+      .filter((control) => control.transport === "body")
+      .map((control) => control.name),
+  );
+
+  const inspectParameters = (parameters: unknown, location: string): void => {
+    if (!Array.isArray(parameters)) return;
+    for (const unresolved of parameters) {
+      const parameter = resolveLocalReference(document, unresolved);
+      if (!isObject(parameter) || typeof parameter.name !== "string") continue;
+      for (const control of parameterControls) {
+        const expectedTransport = control.transport === "path"
+          ? "path"
+          : control.transport;
+        const namesMatch = control.transport === "header"
+          ? parameter.name.toLowerCase() === control.name.toLowerCase()
+          : parameter.name === control.name;
+        if (parameter.in === expectedTransport && namesMatch) {
+          findings.add(`${control.transport}:${control.name} at ${location}`);
+        }
+      }
+    }
+  };
+
+  const inspectBodySchema = (
+    unresolved: unknown,
+    location: string,
+    visited = new Set<unknown>(),
+  ): void => {
+    const schema = resolveLocalReference(document, unresolved);
+    if (!isObject(schema) || visited.has(schema)) return;
+    visited.add(schema);
+    if (isObject(schema.properties)) {
+      for (const [name, child] of Object.entries(schema.properties)) {
+        if (bodyNames.has(name)) findings.add(`body:${name} at ${location}`);
+        inspectBodySchema(child, location, visited);
+      }
+    }
+    inspectBodySchema(schema.items, location, visited);
+    for (const keyword of ["allOf", "anyOf", "oneOf", "prefixItems"] as const) {
+      const children = schema[keyword];
+      if (Array.isArray(children)) {
+        for (const child of children) inspectBodySchema(child, location, visited);
+      }
+    }
+    if (isObject(schema.additionalProperties)) {
+      inspectBodySchema(schema.additionalProperties, location, visited);
+    }
+  };
+
+  const paths = document.paths;
+  if (!isObject(paths)) return [];
+  for (const [route, unresolvedPathItem] of Object.entries(paths)) {
+    const pathItem = resolveLocalReference(document, unresolvedPathItem);
+    if (!isObject(pathItem)) continue;
+    inspectParameters(pathItem.parameters, route);
+    for (const [method, unresolvedOperation] of Object.entries(pathItem)) {
+      if (!HTTP_METHODS.has(method)) continue;
+      const operation = resolveLocalReference(document, unresolvedOperation);
+      if (!isObject(operation)) continue;
+      const location = `${method.toUpperCase()} ${route}`;
+      inspectParameters(operation.parameters, location);
+      const requestBody = resolveLocalReference(document, operation.requestBody);
+      if (!isObject(requestBody) || !isObject(requestBody.content)) continue;
+      for (const mediaType of Object.values(requestBody.content)) {
+        if (isObject(mediaType)) inspectBodySchema(mediaType.schema, location);
+      }
+    }
+  }
+  return [...findings].sort();
+}
 
 function accessPath(node: ts.Expression): { root: string; segments: string[] } | undefined {
   if (ts.isIdentifier(node)) return { root: node.text, segments: [] };
@@ -301,6 +410,68 @@ test("test-only request controls are read only through the declared convention",
     [],
     "Test-only HTTP inputs must be declared and read with readInternalRequestControl()",
   );
+});
+
+test("declared internal request controls stay out of the public OpenAPI contract", async () => {
+  const openApiPath = path.resolve(
+    import.meta.dirname,
+    "../../../../lib/api-spec/openapi.yaml",
+  );
+  const document = parseYaml(await readFile(openApiPath, "utf8")) as OpenApiObject;
+  assert.deepEqual(
+    findInternalControlsInOpenApi(document, internalRequestControls),
+    [],
+    "Internal test controls must not appear in OpenAPI parameters or request body schemas",
+  );
+});
+
+test("OpenAPI contract check catches every internal request-control transport", () => {
+  const controls = ([
+    { transport: "header", name: "x-fixture", purpose: "fixture" },
+    { transport: "query", name: "preview", purpose: "fixture" },
+    { transport: "path", name: "scenario", purpose: "fixture" },
+    { transport: "cookie", name: "harness", purpose: "fixture" },
+    { transport: "body", name: "seed", purpose: "fixture" },
+  ] as const) satisfies readonly InternalRequestControl[];
+  const document = parseYaml(`
+openapi: 3.1.0
+paths:
+  /probe/{scenario}:
+    parameters:
+      - in: path
+        name: scenario
+    post:
+      parameters:
+        - in: header
+          name: X-Fixture
+        - in: query
+          name: preview
+        - in: cookie
+          name: harness
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FixtureBody'
+components:
+  schemas:
+    FixtureBody:
+      type: object
+      properties:
+        nested:
+          type: object
+          properties:
+            seed:
+              type: string
+`) as OpenApiObject;
+
+  assert.deepEqual(findInternalControlsInOpenApi(document, controls), [
+    "body:seed at POST /probe/{scenario}",
+    "cookie:harness at POST /probe/{scenario}",
+    "header:x-fixture at POST /probe/{scenario}",
+    "path:scenario at /probe/{scenario}",
+    "query:preview at POST /probe/{scenario}",
+  ]);
 });
 
 test("repository check catches disguised controls in every request transport", () => {
