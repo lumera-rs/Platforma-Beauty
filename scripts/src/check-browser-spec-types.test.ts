@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -700,6 +708,69 @@ test("browser preflight fails closed at a cyclic imported package-directory syml
       "a cyclic package-directory link must not select a parent manifest, extension fallback, or index fallback",
     );
   } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("browser preflight fails closed at an unreadable imported package directory", async (t) => {
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-package-directory-unreadable-"),
+  );
+  const unreadablePackagePath = path.join(fixtureRoot, "playwright.shared");
+  try {
+    await mkdir(unreadablePackagePath);
+    await writeFile(
+      path.join(unreadablePackagePath, "package.json"),
+      JSON.stringify({ main: "./settings.ts" }),
+    );
+    await writeFile(
+      path.join(unreadablePackagePath, "settings.ts"),
+      'export const shared = { testDir: "./package-entry" };\n',
+    );
+    await writeFile(
+      path.join(unreadablePackagePath, "index.ts"),
+      'export const shared = { testDir: "./index-fallback" };\n',
+    );
+    await writeFile(
+      path.join(fixtureRoot, "package.json"),
+      JSON.stringify({ exports: { "./playwright.shared": "./parent.ts" } }),
+    );
+    await writeFile(
+      path.join(fixtureRoot, "parent.ts"),
+      'export const shared = { testDir: "./parent-manifest" };\n',
+    );
+    await writeFile(
+      `${unreadablePackagePath}.ts`,
+      'export const shared = { testDir: "./extension-fallback" };\n',
+    );
+    await writeFile(
+      path.join(fixtureRoot, "playwright.config.ts"),
+      [
+        'import { shared } from "./playwright.shared";',
+        "export default { ...shared };",
+      ].join("\n"),
+    );
+
+    await chmod(unreadablePackagePath, 0);
+    try {
+      await readFile(path.join(unreadablePackagePath, "package.json"));
+      t.skip("host process can read mode-000 directories");
+      return;
+    } catch (error) {
+      assert.equal(
+        error instanceof Error && "code" in error && error.code,
+        "EACCES",
+        "fixture should fail specifically because directory access is denied",
+      );
+    }
+
+    assert.throws(
+      () => collectBrowserTestDirectories({ scriptsRoot: fixtureRoot }),
+      /statically resolvable.*unresolvable identifier shared.*playwright\.config\.ts/,
+      "an unreadable package directory must not select a parent manifest, extension fallback, or index fallback",
+    );
+  } finally {
+    await chmod(unreadablePackagePath, 0o700).catch(() => undefined);
     await rm(fixtureRoot, { recursive: true, force: true });
   }
 });

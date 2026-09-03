@@ -1,4 +1,4 @@
-import { lstatSync, realpathSync } from "node:fs";
+import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
@@ -131,7 +131,10 @@ function hasMalformedPathBoundary(importPath: string): boolean {
       } catch {
         return true;
       }
-    } catch {
+    } catch (error) {
+      if (!isMissingPathError(error)) {
+        return true;
+      }
       // A missing leaf or child is valid while resolving extension and package
       // fallbacks. Keep walking until an existing ancestor reveals whether a
       // symlink boundary itself is malformed.
@@ -144,6 +147,29 @@ function hasMalformedPathBoundary(importPath: string): boolean {
   }
 }
 
+function isMissingPathError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error.code === "ENOENT" || error.code === "ENOTDIR")
+  );
+}
+
+function readPackageManifest(
+  manifestPath: string,
+): { text?: string; blocksFallback: boolean } {
+  try {
+    return {
+      text: readFileSync(manifestPath, "utf8"),
+      blocksFallback: false,
+    };
+  } catch (error) {
+    return {
+      blocksFallback: !isMissingPathError(error),
+    };
+  }
+}
+
 function resolvePackageEntry(importPath: string): PackageEntryResolution {
   if (hasMalformedPathBoundary(importPath)) {
     return { blocksFallback: true };
@@ -151,7 +177,11 @@ function resolvePackageEntry(importPath: string): PackageEntryResolution {
   let directory = importPath;
   let manifestText: string | undefined;
   while (true) {
-    manifestText = ts.sys.readFile(path.join(directory, "package.json"));
+    const manifestRead = readPackageManifest(path.join(directory, "package.json"));
+    if (manifestRead.blocksFallback) {
+      return { blocksFallback: true };
+    }
+    manifestText = manifestRead.text;
     if (manifestText !== undefined) {
       break;
     }
