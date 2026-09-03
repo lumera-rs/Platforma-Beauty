@@ -147,3 +147,4 @@
 - [Request-scoped SQL observation](request-scoped-sql-observation.md) — bridge test captures across loopback HTTP with a process-local registered ID, not AsyncLocalStorage alone.
 - [Test-only request controls](test-only-request-controls.md) — inventory every transport, scan guarded aliases, and enforce denial where each Express input becomes observable.
 - [Static browser config symlinks](static-browser-config-symlinks.md) — validate and consume canonical package exports without changing runner-relative testDir behavior.
+- [Declaration inventory parsing](declaration-inventory-parsing.md) — use the TypeScript AST for declaration shape checks; hand-written scanners cannot safely model nested template substitutions.

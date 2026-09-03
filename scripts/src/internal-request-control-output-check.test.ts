@@ -241,6 +241,43 @@ test("Orval declaration comments do not alter quoted or template-literal shapes"
   );
 });
 
+test("complex template substitutions cannot weaken Orval declaration shape checks", () => {
+  const declarations = [
+    "type NestedTemplate =",
+    "  `root${{",
+    '    nested: `child${"escaped \\` delimiter" | "escaped \\" quote"}`;',
+    '    commented: /* ignored block | } ` */ "left" // ignored line | } `',
+    '      | "right";',
+    "  }[\"nested\"]}/tail`",
+    "  | false;",
+    "",
+    "interface OutputOptions {",
+    "  target?: NestedTemplate;",
+    '  futureOutputDirectory?: `out/${Record<"a|b", `nested/${"x}" | "y\\`"}`>["a|b"]}`;',
+    "}",
+  ].join("\n");
+
+  const shapes = readOrvalInterfaceFieldValueShapes(declarations, "OutputOptions");
+
+  assert.equal(shapes.target.length, 2);
+  assert.match(shapes.target[0], /^`root\$\{\{/);
+  assert.ok(
+    shapes.target[0].includes(
+      '`child${"escaped \\` delimiter" | "escaped \\" quote"}`',
+    ),
+  );
+  assert.match(shapes.target[0], /commented:\s*"left" \| "right"/);
+  assert.doesNotMatch(shapes.target[0], /ignored (?:block|line)/);
+  assert.equal(shapes.target[1], "false");
+  assert.deepEqual(shapes.futureOutputDirectory, [
+    '`out/${Record<"a|b", `nested/${"x}" | "y\\`"}`>["a|b"]}`',
+  ]);
+  assert.throws(
+    () => assertOrvalOutputContractRecognized(Object.keys(shapes)),
+    /output\.futureOutputDirectory/,
+  );
+});
+
 test("separator-only formatting cannot hide new Orval output fields", () => {
   for (const separator of [",", ""]) {
     const declarations = `
