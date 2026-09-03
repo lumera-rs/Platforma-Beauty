@@ -33,6 +33,8 @@ import {
 import { getCurrentUser, isAdmin } from "../lib/auth";
 import { integrationValue } from "../lib/integrations";
 import { logger } from "../lib/logger";
+import { isProductionOrDeploymentRuntime } from "@workspace/db/destructive-test-runtime";
+import { mediaRouteRegressionHeader } from "../lib/internal-request-controls";
 
 const router: IRouter = Router();
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -49,7 +51,6 @@ const MEDIA_ROUTE_REGRESSION_CLEANUP_KEYS = [
   MEDIA_ROUTE_REGRESSION_CONTROL_CLEANUP_KEY,
 ] as const;
 type MediaRouteRegressionCleanupKey = typeof MEDIA_ROUTE_REGRESSION_CLEANUP_KEYS[number];
-const MEDIA_ROUTE_REGRESSION_HEADER = "x-lumera-media-regression-token";
 let mediaRouteRegressionMarker: {
   token: string;
   cleanupKey: MediaRouteRegressionCleanupKey;
@@ -76,7 +77,7 @@ export function enableMediaRouteRegressionUploadMarking(
   requestHeaders: Record<string, string>;
   disable: () => void;
 } {
-  if (process.env.NODE_ENV === "production") {
+  if (isProductionOrDeploymentRuntime()) {
     throw new Error("Media regression upload marking cannot run in production.");
   }
   if (mediaRouteRegressionMarker) {
@@ -85,7 +86,7 @@ export function enableMediaRouteRegressionUploadMarking(
   const token = randomBytes(32).toString("hex");
   mediaRouteRegressionMarker = { token, cleanupKey };
   return {
-    requestHeaders: { [MEDIA_ROUTE_REGRESSION_HEADER]: token },
+    requestHeaders: { [mediaRouteRegressionHeader]: token },
     disable: () => {
       if (mediaRouteRegressionMarker?.token === token) mediaRouteRegressionMarker = null;
     },
@@ -99,7 +100,7 @@ export function enableMediaRouteRegressionUploadMarking(
 export function enableMediaCachePurgeForTesting(handler: MediaCachePurgeHandler): {
   disable: () => void;
 } {
-  if (process.env.NODE_ENV === "production") {
+  if (isProductionOrDeploymentRuntime()) {
     throw new Error("Media cache purge test controls cannot run in production.");
   }
   if (mediaCachePurgeHandlerForTesting) {
@@ -799,7 +800,7 @@ router.post("/media/uploads", async (req, res): Promise<void> => {
       byteSize: body.size,
       expiresAt,
       testCleanupKey: mediaRouteRegressionMarker
-        && req.get(MEDIA_ROUTE_REGRESSION_HEADER) === mediaRouteRegressionMarker.token
+        && req.get(mediaRouteRegressionHeader) === mediaRouteRegressionMarker.token
         ? mediaRouteRegressionMarker.cleanupKey
         : null,
     });

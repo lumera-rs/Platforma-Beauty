@@ -214,14 +214,14 @@ test("HTTP query observation headers cannot activate captures in production", as
           `http://127.0.0.1:${port}/api/salons?page=1&pageSize=1`,
           { headers: { [databaseQueryObservationHeader]: captureId } },
         );
-        assert.equal(response.status, 200);
+        assert.equal(response.status, 404);
         await response.arrayBuffer();
       },
     );
     assert.deepEqual(
       observedQueries,
       [],
-      "production HTTP requests must ignore registered observation capture IDs",
+      "production HTTP requests must deny registered observation capture IDs",
     );
   } finally {
     if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
