@@ -115,24 +115,55 @@ function findConstInitializer(
   return undefined;
 }
 
-function resolvePackageEntry(directory: string): string | undefined {
+interface PackageEntryResolution {
+  entry?: string;
+  blocksFallback: boolean;
+}
+
+function resolvePackageEntry(directory: string): PackageEntryResolution {
   const manifestPath = path.join(directory, "package.json");
   const manifestText = ts.sys.readFile(manifestPath);
   if (manifestText === undefined) {
-    return undefined;
+    return { blocksFallback: false };
   }
   let manifest: unknown;
   try {
     manifest = JSON.parse(manifestText);
   } catch {
-    return undefined;
+    return { blocksFallback: false };
   }
   if (!manifest || typeof manifest !== "object") {
-    return undefined;
+    return { blocksFallback: false };
   }
-  const entry = (manifest as { main?: unknown }).main;
+  const packageManifest = manifest as {
+    exports?: unknown;
+    main?: unknown;
+  };
+  const hasExports = Object.prototype.hasOwnProperty.call(
+    packageManifest,
+    "exports",
+  );
+  let entry: unknown;
+  if (hasExports) {
+    const exportsValue = packageManifest.exports;
+    if (typeof exportsValue === "string") {
+      entry = exportsValue;
+    } else if (
+      exportsValue &&
+      typeof exportsValue === "object" &&
+      !Array.isArray(exportsValue) &&
+      Object.keys(exportsValue).length === 1 &&
+      typeof (exportsValue as { "."?: unknown })["."] === "string"
+    ) {
+      entry = (exportsValue as { ".": string })["."];
+    } else {
+      return { blocksFallback: true };
+    }
+  } else {
+    entry = packageManifest.main;
+  }
   if (typeof entry !== "string" || !browserFileExtensions.includes(path.extname(entry))) {
-    return undefined;
+    return { blocksFallback: hasExports };
   }
   const resolvedDirectory = path.resolve(directory);
   const resolvedEntry = path.resolve(resolvedDirectory, entry);
@@ -140,9 +171,12 @@ function resolvePackageEntry(directory: string): string | undefined {
     ? resolvedDirectory
     : resolvedDirectory + path.sep;
   if (!resolvedEntry.startsWith(directoryPrefix)) {
-    return undefined;
+    return { blocksFallback: hasExports };
   }
-  return ts.sys.fileExists(resolvedEntry) ? resolvedEntry : undefined;
+  return {
+    entry: ts.sys.fileExists(resolvedEntry) ? resolvedEntry : undefined,
+    blocksFallback: hasExports,
+  };
 }
 
 function resolveRelativeImport(
@@ -178,14 +212,17 @@ function resolveRelativeImport(
       path.dirname(sourceFile.fileName),
       statement.moduleSpecifier.text,
     );
+    const packageEntry = resolvePackageEntry(unresolved);
     const candidates = browserFileExtensions.includes(path.extname(unresolved))
       ? [unresolved]
       : [
           ...browserFileExtensions.map((extension) => unresolved + extension),
-          resolvePackageEntry(unresolved),
-          ...browserFileExtensions.map((extension) =>
-            path.join(unresolved, `index${extension}`),
-          ),
+          packageEntry.entry,
+          ...(packageEntry.blocksFallback
+            ? []
+            : browserFileExtensions.map((extension) =>
+                path.join(unresolved, `index${extension}`),
+              )),
         ].filter((candidate): candidate is string => candidate !== undefined);
     const importedFileName = candidates.find(ts.sys.fileExists);
     if (!importedFileName) {
@@ -470,7 +507,7 @@ export function collectBrowserSpecDiagnostics(
   const diagnosticPrefix = diagnosticRoot.endsWith(path.sep)
     ? diagnosticRoot
     : diagnosticRoot + path.sep;
-  const { program, rootNames } = loadBrowserProgram(options.rootNames);
+  let { program, rootNames } = loadBrowserProgram(options.rootNames);
   const diagnosticFiles = new Set(
     rootNames
       .map((fileName) => path.resolve(fileName))
@@ -501,6 +538,15 @@ export function collectBrowserSpecDiagnostics(
     if (hasDefaultExport) {
       readStaticBrowserConfig(resolvedRootName, diagnosticFiles);
     }
+  }
+  const additionalRoots = [...diagnosticFiles].filter(
+    (fileName) => !rootNames.some((rootName) => path.resolve(rootName) === fileName),
+  );
+  if (additionalRoots.length > 0) {
+    ({ program, rootNames } = loadBrowserProgram([
+      ...rootNames,
+      ...additionalRoots,
+    ]));
   }
 
   return ts.getPreEmitDiagnostics(program).filter((diagnostic) => {

@@ -562,3 +562,108 @@ test("browser preflight resolves and checks statically consumed package folder e
     await rm(fixtureRoot, { recursive: true, force: true });
   }
 });
+
+test("browser preflight resolves a simple package exports root and checks only statically consumed settings", async () => {
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-package-exports-"),
+  );
+  try {
+    const browserRoot = path.join(fixtureRoot, "browser");
+    const sharedConfigRoot = path.join(fixtureRoot, "playwright.shared");
+    const sharedConfigPath = path.join(sharedConfigRoot, "settings.ts");
+    const applicationPath = path.join(fixtureRoot, "application-source.ts");
+    const configPath = path.join(fixtureRoot, "playwright.config.ts");
+    await mkdir(browserRoot);
+    await mkdir(sharedConfigRoot);
+    await writeFile(
+      path.join(sharedConfigRoot, "package.json"),
+      JSON.stringify({ exports: { ".": "./settings.ts" } }),
+    );
+    await writeFile(
+      sharedConfigPath,
+      [
+        'export const shared = { testDir: "./browser" };',
+        "unknownSharedConfigIdentifier();",
+      ].join("\n"),
+    );
+    await writeFile(
+      applicationPath,
+      "export const applicationValue: string = 123;\n",
+    );
+    await writeFile(
+      configPath,
+      [
+        'import { shared } from "./playwright.shared";',
+        'import { applicationValue } from "./application-source";',
+        "void applicationValue;",
+        "export default { ...shared };",
+      ].join("\n"),
+    );
+
+    const diagnostics = collectBrowserSpecDiagnostics({
+      rootNames: [configPath],
+      diagnosticRoot: browserRoot,
+    });
+
+    assert.equal(
+      diagnostics.some(
+        (diagnostic) => diagnostic.file?.fileName === sharedConfigPath,
+      ),
+      true,
+      "the statically consumed exports root should fail the gate",
+    );
+    assert.equal(
+      diagnostics.some(
+        (diagnostic) => diagnostic.file?.fileName === applicationPath,
+      ),
+      false,
+      "an imported but statically unconsumed module should stay excluded",
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("browser preflight fails closed for conditional package export maps", async () => {
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-conditional-exports-"),
+  );
+  try {
+    const sharedConfigRoot = path.join(fixtureRoot, "playwright.shared");
+    await mkdir(sharedConfigRoot);
+    await writeFile(
+      path.join(sharedConfigRoot, "package.json"),
+      JSON.stringify({
+        exports: {
+          ".": {
+            import: "./settings.ts",
+            default: "./index.ts",
+          },
+        },
+        main: "./settings.ts",
+      }),
+    );
+    await writeFile(
+      path.join(sharedConfigRoot, "settings.ts"),
+      'export const shared = { testDir: "./browser" };\n',
+    );
+    await writeFile(
+      path.join(sharedConfigRoot, "index.ts"),
+      'export const shared = { testDir: "./browser" };\n',
+    );
+    await writeFile(
+      path.join(fixtureRoot, "playwright.config.ts"),
+      [
+        'import { shared } from "./playwright.shared";',
+        "export default { ...shared };",
+      ].join("\n"),
+    );
+
+    assert.throws(
+      () => collectBrowserTestDirectories({ scriptsRoot: fixtureRoot }),
+      /statically resolvable.*unresolvable identifier shared.*playwright\.config\.ts/,
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
