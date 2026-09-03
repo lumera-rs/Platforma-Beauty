@@ -1,7 +1,10 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "./schema";
-import { assertDestructiveTestRuntimeAllowed } from "./destructive-test-runtime";
+import {
+  assertDestructiveTestRuntimeAllowed,
+  isProductionOrDeploymentRuntime,
+} from "./destructive-test-runtime";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 
@@ -87,6 +90,16 @@ type DatabaseQueryObserver = (query: DatabaseQueryObservation) => void;
 let databaseStatementCount = 0;
 
 export const databaseQueryObservationHeader = "x-database-query-observation";
+export function isDatabaseQueryObservationRuntimeAllowed(
+  environment: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (isProductionOrDeploymentRuntime(environment)) return false;
+  return (
+    environment.NODE_ENV === "test"
+    || environment.DATABASE_QUERY_OBSERVATION_ENABLED === "1"
+  );
+}
+
 export async function observeDatabaseQueries<T>(
   observer: DatabaseQueryObserver,
   operation: (captureId: string) => Promise<T>,

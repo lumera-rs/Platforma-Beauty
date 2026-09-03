@@ -3,6 +3,7 @@ import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import {
   databaseQueryObservationHeader,
+  isDatabaseQueryObservationRuntimeAllowed,
   runWithDatabaseQueryObservation,
 } from "@workspace/db";
 import router from "./routes";
@@ -15,7 +16,9 @@ const app: Express = express();
 app.set("trust proxy", process.env["REPLIT_DEPLOYMENT"] ? 1 : false);
 
 app.use((req, _res, next) => {
-  const captureId = req.get(databaseQueryObservationHeader);
+  const captureId = isDatabaseQueryObservationRuntimeAllowed()
+    ? req.get(databaseQueryObservationHeader)
+    : undefined;
   runWithDatabaseQueryObservation(captureId, next);
 });
 

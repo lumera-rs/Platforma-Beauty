@@ -8,6 +8,7 @@ import app from "../app";
 import {
   databaseQueryObservationHeader,
   db,
+  isDatabaseQueryObservationRuntimeAllowed,
   observeDatabaseQueries,
   pool,
   runWithDatabaseQueryObservation,
@@ -18,6 +19,40 @@ import { createSession, sessionCookieName } from "../lib/auth";
 import { selectPopularPublicCourses } from "../lib/education-public-course-order";
 
 assertDestructiveTestRuntimeAllowed(process.env, "Marketplace query budget tests");
+
+test("database query observation runtime guard allows only explicit non-production runtimes", () => {
+  assert.equal(isDatabaseQueryObservationRuntimeAllowed({ NODE_ENV: "test" }), true);
+  assert.equal(
+    isDatabaseQueryObservationRuntimeAllowed({
+      NODE_ENV: "development",
+      DATABASE_QUERY_OBSERVATION_ENABLED: "1",
+    }),
+    true,
+  );
+  assert.equal(isDatabaseQueryObservationRuntimeAllowed({ NODE_ENV: "development" }), false);
+  assert.equal(
+    isDatabaseQueryObservationRuntimeAllowed({
+      NODE_ENV: "production",
+      DATABASE_QUERY_OBSERVATION_ENABLED: "1",
+    }),
+    false,
+  );
+  assert.equal(
+    isDatabaseQueryObservationRuntimeAllowed({
+      NODE_ENV: "test",
+      REPLIT_DEPLOYMENT: "1",
+      DATABASE_QUERY_OBSERVATION_ENABLED: "1",
+    }),
+    false,
+  );
+  assert.equal(
+    isDatabaseQueryObservationRuntimeAllowed({
+      NODE_ENV: "test",
+      REPL_DEPLOYMENT: "1",
+    }),
+    false,
+  );
+});
 
 async function countedRequest(url: string, init?: RequestInit) {
   const queries: DatabaseQueryObservation[] = [];
@@ -161,6 +196,40 @@ test("pre-SQL capture rejection unregisters its ID without disturbing the outer 
     outerParams.some((params) => params.includes(outerContinuationMarker)),
     "the enclosing capture must continue observing after the nested rejection",
   );
+});
+
+test("HTTP query observation headers cannot activate captures in production", async () => {
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address() as AddressInfo;
+  const previousNodeEnv = process.env.NODE_ENV;
+  const observedQueries: DatabaseQueryObservation[] = [];
+
+  try {
+    await observeDatabaseQueries(
+      (query) => observedQueries.push(query),
+      async (captureId) => {
+        process.env.NODE_ENV = "production";
+        const response = await fetch(
+          `http://127.0.0.1:${port}/api/salons?page=1&pageSize=1`,
+          { headers: { [databaseQueryObservationHeader]: captureId } },
+        );
+        assert.equal(response.status, 200);
+        await response.arrayBuffer();
+      },
+    );
+    assert.deepEqual(
+      observedQueries,
+      [],
+      "production HTTP requests must ignore registered observation capture IDs",
+    );
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+  }
 });
 
 test("HTTP query observation ignores a rejected capture ID and preserves an enclosing capture", async () => {
