@@ -9,13 +9,15 @@ import {
   findInternalControlsInGeneratedOutputs,
 } from "./internal-request-control-output-check";
 import {
+  assertOrvalNestedOutputContractsRecognized,
   assertOrvalOutputContractRecognized,
   defineInventoriedGeneratorConfig,
+  orvalNestedOutputContracts,
 } from "../../lib/api-spec/api-output-inventory.mjs";
 
 const require = createRequire(import.meta.url);
 
-async function readInstalledOrvalOutputOptionNames() {
+async function readInstalledOrvalDeclarations() {
   const orvalPackagePath = require.resolve(
     "orval/package.json",
     { paths: [path.resolve(import.meta.dirname, "../../lib/api-spec")] },
@@ -31,22 +33,54 @@ async function readInstalledOrvalOutputOptionNames() {
     path.resolve(path.dirname(corePackagePath), corePackage.types),
     "utf8",
   );
-  const outputOptions = declarations.match(
-    /interface OutputOptions \{(?<body>[\s\S]*?)^\}/m,
+  return declarations;
+}
+
+function readInterfaceFieldNames(declarations: string, interfaceName: string) {
+  const declaration = declarations.match(
+    new RegExp(`interface ${interfaceName}(?: extends [^{]+)? \\{(?<body>[\\s\\S]*?)^\\}`, "m"),
   );
 
-  assert.ok(outputOptions?.groups?.body, "Installed Orval declarations must expose OutputOptions");
-  return [...outputOptions.groups.body.matchAll(/^\s{2}([A-Za-z]\w*)\??:/gm)]
+  assert.ok(
+    declaration?.groups?.body,
+    `Installed Orval declarations must expose ${interfaceName}`,
+  );
+  return [...declaration.groups.body.matchAll(/^\s{2}([A-Za-z]\w*)\??:/gm)]
     .map((match) => match[1]);
 }
 
 test("installed Orval output options are classified by the inventory guard", async () => {
-  const installedOptions = await readInstalledOrvalOutputOptionNames();
+  const declarations = await readInstalledOrvalDeclarations();
+  const installedOptions = readInterfaceFieldNames(declarations, "OutputOptions");
 
   assert.doesNotThrow(() => assertOrvalOutputContractRecognized(installedOptions));
   assert.throws(
     () => assertOrvalOutputContractRecognized([...installedOptions, "futureOutputDirectory"]),
     /installed Orval OutputOptions contract contains unrecognized options[\s\S]*output\.futureOutputDirectory/,
+  );
+});
+
+test("installed nested Orval output options are classified by the inventory guard", async () => {
+  const declarations = await readInstalledOrvalDeclarations();
+  const installedContracts = Object.fromEntries(
+    Object.keys(orvalNestedOutputContracts).map((contractName) => [
+      contractName,
+      readInterfaceFieldNames(declarations, contractName),
+    ]),
+  );
+
+  assert.doesNotThrow(
+    () => assertOrvalNestedOutputContractsRecognized(installedContracts),
+  );
+  assert.throws(
+    () => assertOrvalNestedOutputContractsRecognized({
+      ...installedContracts,
+      FakerMockOptions: [
+        ...installedContracts.FakerMockOptions,
+        "futureOutputDirectory",
+      ],
+    }),
+    /installed Orval nested output contracts contain unrecognized options[\s\S]*output\.mock\.generators\[\]\.futureOutputDirectory \(FakerMockOptions\)/,
   );
 });
 
@@ -57,6 +91,17 @@ test("non-file Orval output options do not trigger output-location failures", ()
     "formatter",
     "baseUrl",
   ]));
+});
+
+test("nested non-file Orval output options do not trigger output-location failures", () => {
+  assert.doesNotThrow(() => assertOrvalNestedOutputContractsRecognized({
+    SchemaOptions: ["type", "importPath", "splitByTags"],
+    OutputMocksConfig: ["indexMockFiles", "generators"],
+    CommonMockOptions: ["locale", "arrayItems"],
+    MswMockOptions: ["type", "baseUrl", "delay"],
+    FakerMockOptions: ["type", "schemas", "schemasImportPath"],
+    FactoryMethodsOptions: ["functionNamePrefix", "mode", "includeOptionalProperty"],
+  }));
 });
 
 test("an Orval target without inventoried source and published outputs fails closed", () => {
