@@ -10,6 +10,11 @@ export type WidgetSalonServicesItem = {
   id: string;
   name: string;
   durationMinutes: number;
+  /**
+     * @minimum 1
+     * @maximum 20
+     */
+  requiredEmployeeCount: number;
   price: number;
   /** @nullable */
   promoPrice?: number | null;

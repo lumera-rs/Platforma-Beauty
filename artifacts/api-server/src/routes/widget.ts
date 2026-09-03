@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   appointmentTreatmentsTable,
+  appointmentTreatmentEmployeesTable,
   appointmentsTable,
   bookingGroupsTable,
   db,
@@ -179,6 +180,7 @@ router.get("/widget/salons/:slug", async (req, res): Promise<void> => {
       id: service.id,
       name: service.name,
       durationMinutes: service.durationMinutes,
+      requiredEmployeeCount: service.requiredEmployeeCount,
       preProcessingMinutes: service.preProcessingMinutes,
       processingMinutes: service.processingMinutes,
       postProcessingMinutes: service.postProcessingMinutes,
@@ -221,8 +223,8 @@ router.get("/widget/salons/:slug/availability", async (req, res): Promise<void> 
     salonId: salon.id, service, dates: [date], employeeId: employeeId ?? null,
     granularityMinutes: granularity,
   });
-  res.json(slots.map(({ startTime, endTime, employeeId: slotEmployeeId, employeeName }) => ({
-    start: startTime, end: endTime, employeeId: slotEmployeeId, employeeName,
+  res.json(slots.map(({ startTime, endTime, employeeId: slotEmployeeId, employeeName, employeeIds, employeeNames }) => ({
+    start: startTime, end: endTime, employeeId: slotEmployeeId, employeeName, employeeIds, employeeNames,
   })));
 });
 
@@ -300,6 +302,7 @@ admitBookingRequest, async (req, res): Promise<void> => {
       status: "pending",
       notes: parsed.data.note?.trim() || null,
       preferredEmployeeId: parsed.data.employeeId ?? null,
+      preferredEmployeeIds: parsed.data.employeeIds,
       tx,
     });
     if (!result.appointment || !result.employee) {
@@ -318,6 +321,7 @@ admitBookingRequest, async (req, res): Promise<void> => {
       startTime: result.appointment.startTime,
       endTime: result.appointment.endTime,
       employeeName: result.employee.name,
+      employeeIds: result.employeeIds ?? (result.appointment.employeeId ? [result.appointment.employeeId] : []),
       serviceName: service.name,
       salonName: salon.name,
     } };
@@ -389,8 +393,8 @@ admitBookingRequest, async (req, res): Promise<void> => {
     }, async (tx) => {
       await lockAppointmentResources(tx, salon.id, treatments.map((item) => ({ date: item.date })));
       const requirements: Array<Awaited<ReturnType<typeof fetchServiceResourceRequirements>>> = [];
-      const planned: Array<{ item: (typeof treatments)[number]; service: typeof servicesTable.$inferSelect; employeeId: string; endTime: string }> = [];
-      const reservedAppointments: Array<{ employeeId: string; date: string; startTime: string; endTime: string; bufferMinutes: number; preProcessingMinutes?: number; processingMinutes?: number; postProcessingMinutes?: number; resourceIds: string[] }> = [];
+      const planned: Array<{ item: (typeof treatments)[number]; service: typeof servicesTable.$inferSelect; employeeId: string; employeeIds: string[]; endTime: string }> = [];
+      const reservedAppointments: Array<{ employeeId: string; employeeIds?: string[]; date: string; startTime: string; endTime: string; bufferMinutes: number; preProcessingMinutes?: number; processingMinutes?: number; postProcessingMinutes?: number; resourceIds: string[] }> = [];
       const resourceReservations: Array<{ resourceId: string; quantity: number; date: string; startTime: string; endTime: string; bufferMinutes: number }> = [];
       for (const item of treatments) {
         const service = byId.get(item.serviceId)!;
@@ -399,15 +403,15 @@ admitBookingRequest, async (req, res): Promise<void> => {
         const serviceRequirements = await fetchServiceResourceRequirements(tx, service.id);
         requirements.push(serviceRequirements);
         const slots = await canonicalAvailability({
-          salonId: salon.id, service, dates: [item.date], employeeId: item.employeeId ?? null, store: tx,
+          salonId: salon.id, service, dates: [item.date], employeeId: item.employeeId ?? null, employeeIds: item.employeeIds, store: tx,
           reservedAppointments, resourceReservations,
         });
         const slot = slots.find((candidate) => candidate.startTime === item.startTime && candidate.endTime === endTime);
         if (!slot || planned.some((entry) => entry.item.date === item.date && entry.employeeId === slot.employeeId
           && entry.item.startTime < endTime && entry.endTime > item.startTime)) throw new Error("STALE_SLOT");
-        planned.push({ item, service, employeeId: slot.employeeId, endTime });
+        planned.push({ item, service, employeeId: slot.employeeId, employeeIds: slot.employeeIds, endTime });
         reservedAppointments.push({
-          employeeId: slot.employeeId, date: item.date, startTime: item.startTime, endTime,
+          employeeId: slot.employeeId, employeeIds: slot.employeeIds, date: item.date, startTime: item.startTime, endTime,
           bufferMinutes: service.bufferMinutes, preProcessingMinutes: service.preProcessingMinutes, processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes, resourceIds: serviceRequirements.map((entry) => entry.resourceId),
         });
         resourceReservations.push(...serviceRequirements.map((entry) => ({
@@ -422,7 +426,7 @@ admitBookingRequest, async (req, res): Promise<void> => {
         position,
       })), settings?.maxVisitGapMinutes ?? 0)) throw new Error("INVALID_LAYOUT");
       await lockAppointmentResources(tx, salon.id, planned.flatMap((entry, index) => [
-        { date: entry.item.date, employeeId: entry.employeeId },
+        ...entry.employeeIds.map((employeeId) => ({ date: entry.item.date, employeeId })),
         ...requirements[index]!.map((requirement) => ({ date: entry.item.date, resourceId: requirement.resourceId })),
       ]));
       const revalidationAppointments: typeof reservedAppointments = [];
@@ -431,13 +435,13 @@ admitBookingRequest, async (req, res): Promise<void> => {
         const entry = planned[index]!;
         const slots = await canonicalAvailability({
           salonId: salon.id, service: entry.service, dates: [entry.item.date],
-          employeeId: entry.employeeId, store: tx,
+          employeeId: entry.employeeId, employeeIds: entry.employeeIds, store: tx,
           reservedAppointments: revalidationAppointments, resourceReservations: revalidationResources,
         });
         if (!slots.some((slot) => slot.startTime === entry.item.startTime && slot.endTime === entry.endTime
-          && slot.employeeId === entry.employeeId)) throw new Error("STALE_SLOT");
+          && slot.employeeIds.join() === entry.employeeIds.join())) throw new Error("STALE_SLOT");
         revalidationAppointments.push({
-          employeeId: entry.employeeId, date: entry.item.date, startTime: entry.item.startTime, endTime: entry.endTime,
+          employeeId: entry.employeeId, employeeIds: entry.employeeIds, date: entry.item.date, startTime: entry.item.startTime, endTime: entry.endTime,
           bufferMinutes: entry.service.bufferMinutes, preProcessingMinutes: entry.service.preProcessingMinutes, processingMinutes: entry.service.processingMinutes, postProcessingMinutes: entry.service.postProcessingMinutes, resourceIds: requirements[index]!.map((item) => item.resourceId),
         });
         revalidationResources.push(...requirements[index]!.map((item) => ({
@@ -449,6 +453,11 @@ admitBookingRequest, async (req, res): Promise<void> => {
         salonId: salon.id, customerId: null, salonCustomerId: contact!.id, createdByUserId: null,
         notes: parsed.data.note?.trim() || null,
       }).returning();
+      const participantEmployees = await tx.select().from(employeesTable).where(inArray(
+        employeesTable.id,
+        [...new Set(planned.flatMap((entry) => entry.employeeIds))],
+      ));
+      const participantById = new Map(participantEmployees.map((employee) => [employee.id, employee]));
       const appointments = [];
       for (let position = 0; position < planned.length; position++) {
         const entry = planned[position]!;
@@ -460,20 +469,29 @@ admitBookingRequest, async (req, res): Promise<void> => {
           notes: parsed.data.note?.trim() || null, plannedDate: entry.item.date,
           plannedStartTime: entry.item.startTime, plannedEndTime: entry.endTime,
         }).returning();
-        await tx.insert(appointmentTreatmentsTable).values({
+        const [treatment] = await tx.insert(appointmentTreatmentsTable).values({
           appointmentId: appointment!.id, serviceId: entry.service.id, employeeId: entry.employeeId,
           position, durationMinutes: entry.service.durationMinutes, bufferMinutes: entry.service.bufferMinutes,
           preProcessingMinutes: entry.service.preProcessingMinutes, processingMinutes: entry.service.processingMinutes,
           postProcessingMinutes: entry.service.postProcessingMinutes,
           price: entry.service.promoPrice ?? entry.service.price,
           plannedStartTime: entry.item.startTime, plannedEndTime: entry.endTime,
-        });
+        }).returning();
+        await tx.insert(appointmentTreatmentEmployeesTable).values(entry.employeeIds.map((employeeId, participantPosition) => ({
+          appointmentTreatmentId: treatment!.id, employeeId, position: participantPosition,
+        })));
         const bufferedEnd = appointmentEndTime(entry.endTime, entry.service.bufferMinutes);
         if (!bufferedEnd) throw new Error("STALE_SLOT");
         await allocateResourcesInTx(tx, salon.id, requirements[position]!, appointment!.id, entry.item.date,
           entry.item.startTime, requirements[position]!.length ? bufferedEnd : entry.endTime);
-        const [employee] = await tx.select().from(employeesTable).where(eq(employeesTable.id, entry.employeeId)).limit(1);
-        appointments.push({ appointment: appointment!, employee: employee!, service: entry.service });
+        const employee = participantById.get(entry.employeeId)!;
+        appointments.push({
+          appointment: appointment!,
+          employee,
+          service: entry.service,
+          employeeIds: entry.employeeIds,
+          employeeNames: entry.employeeIds.map((employeeId) => participantById.get(employeeId)!.name),
+        });
       }
       await tx.insert(salonNotificationsTable).values({
         salonId: salon.id, title: "Nova grupna rezervacija sa sajta",
@@ -482,10 +500,11 @@ admitBookingRequest, async (req, res): Promise<void> => {
       });
       const response = CreateWidgetBookingGroupResponse.parse({
         id: group!.id, salonId: salon.id, createdAt: group!.createdAt,
-        appointments: appointments.map(({ appointment, employee, service }) => ({
+        appointments: appointments.map(({ appointment, employee, service, employeeIds, employeeNames }) => ({
           id: appointment.id, salonId: salon.id, salonSlug: salon.slug, salonName: salon.name,
           serviceId: service.id, customerName: `${contact!.firstName} ${contact!.lastName}`,
           serviceName: service.name, employeeId: employee.id, employeeName: employee.name,
+          employeeIds, employeeNames,
           date: appointment.date, startTime: appointment.startTime, endTime: appointment.endTime,
           durationMinutes: appointment.durationMinutes, price: appointment.price, treatmentLocation: "salon",
           travelFee: 0, treatmentAddress: null, seriesId: null, bookingGroupId: group!.id,

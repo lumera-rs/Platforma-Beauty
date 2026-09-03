@@ -495,6 +495,8 @@ export const servicesTable = pgTable("services", {
   postProcessingMinutes: integer("post_processing_minutes").notNull().default(0),
   /** Calendar occupancy after treatment; does not change the customer-visible end time. */
   bufferMinutes: integer("buffer_minutes").notNull().default(0),
+  /** Number of distinct qualified staff members required for one treatment. */
+  requiredEmployeeCount: integer("required_employee_count").notNull().default(1),
   price: integer("price").notNull(),
   promoPrice: integer("promo_price"),
   tags: jsonb("tags").$type<string[]>().notNull().default([]),
@@ -512,6 +514,7 @@ export const servicesTable = pgTable("services", {
   // Leading FK coverage for categoryId alone (global category browse).
   index("services_category_idx").on(table.categoryId),
   check("services_buffer_minutes_check", sql`${table.bufferMinutes} >= 0`),
+  check("services_required_employee_count_check", sql`${table.requiredEmployeeCount} >= 1 and ${table.requiredEmployeeCount} <= 20`),
   check("services_processing_segments_check", sql`
     ${table.preProcessingMinutes} >= 0
     and ${table.processingMinutes} >= 0
@@ -805,6 +808,26 @@ export const appointmentTreatmentsTable = pgTable("appointment_treatments", {
       (${table.preProcessingMinutes} = 0 and ${table.processingMinutes} = 0 and ${table.postProcessingMinutes} = 0)
       or (${table.durationMinutes} = ${table.preProcessingMinutes} + ${table.processingMinutes} + ${table.postProcessingMinutes} and ${table.durationMinutes} > 0)
     )`),
+]);
+
+/**
+ * All staff participating in a treatment. The primary employee remains on both
+ * the appointment and treatment rows for compatibility with existing calendars.
+ */
+export const appointmentTreatmentEmployeesTable = pgTable("appointment_treatment_employees", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  appointmentTreatmentId: uuid("appointment_treatment_id").notNull()
+    .references(() => appointmentTreatmentsTable.id, { onDelete: "cascade" }),
+  employeeId: uuid("employee_id").notNull().references(() => employeesTable.id),
+  role: text("role"),
+  position: integer("position").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("appointment_treatment_employees_treatment_employee_unique").on(table.appointmentTreatmentId, table.employeeId),
+  uniqueIndex("appointment_treatment_employees_treatment_position_unique").on(table.appointmentTreatmentId, table.position),
+  index("appointment_treatment_employees_employee_idx").on(table.employeeId),
+  index("appointment_treatment_employees_treatment_idx").on(table.appointmentTreatmentId),
+  check("appointment_treatment_employees_position_check", sql`${table.position} >= 0`),
 ]);
 
 export const smsDeliveriesTable = pgTable("sms_deliveries", {

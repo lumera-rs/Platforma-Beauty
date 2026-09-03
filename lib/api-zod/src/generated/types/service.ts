@@ -21,6 +21,11 @@ export interface Service {
   postProcessingMinutes: number;
   /** @minimum 0 */
   bufferMinutes?: number;
+  /**
+     * @minimum 1
+     * @maximum 20
+     */
+  requiredEmployeeCount?: number;
   price: number;
   /** @nullable */
   promoPrice?: number | null;

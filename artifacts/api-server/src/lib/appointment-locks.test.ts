@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { and, count, eq, inArray } from "drizzle-orm";
 import {
   appointmentResourceAllocationsTable,
+  appointmentTreatmentEmployeesTable,
+  appointmentTreatmentsTable,
   appointmentsTable,
   db,
   employeeLocationAssignmentsTable,
@@ -49,6 +51,7 @@ async function run(): Promise<void> {
     name: "Termin sa zaključavanjem",
     description: "Usluga za konkurentni test.",
     durationMinutes: 60,
+    requiredEmployeeCount: 2,
     price: 1000,
     imageUrl: "/test.jpg",
   }).returning();
@@ -85,6 +88,7 @@ async function run(): Promise<void> {
     name: "Termin druge lokacije",
     description: "Usluga za globalno zaključavanje zaposlenog.",
     durationMinutes: 60,
+    requiredEmployeeCount: 2,
     price: 1000,
     imageUrl: "/test.jpg",
   }).returning();
@@ -94,6 +98,21 @@ async function run(): Promise<void> {
     active: true,
   });
   await db.insert(employeeServicesTable).values({ employeeId: employee!.id, serviceId: siblingService!.id });
+  const [secondaryEmployee] = await db.insert(employeesTable).values({
+    salonId: salon!.id,
+    name: "Test sekundarni zaposleni",
+    role: "Asistent",
+    bio: "",
+    avatarUrl: "",
+  }).returning();
+  await db.insert(employeeLocationAssignmentsTable).values([
+    { employeeId: secondaryEmployee!.id, salonId: salon!.id, active: true },
+    { employeeId: secondaryEmployee!.id, salonId: siblingSalon!.id, active: true },
+  ]);
+  await db.insert(employeeServicesTable).values([
+    { employeeId: secondaryEmployee!.id, serviceId: service!.id },
+    { employeeId: secondaryEmployee!.id, serviceId: siblingService!.id },
+  ]);
 
   try {
     // -------------------------------------------------------------------------
@@ -130,31 +149,32 @@ async function run(): Promise<void> {
     const createWithNullEmployee = async (
       targetSalon: typeof salon,
       targetService: typeof service,
+      requestedEmployeeIds: string[],
     ) => db.transaction(async (tx) => {
       await lockAppointmentResources(tx, targetSalon!.id, [{ date: crossLocationDate }]);
       const initial = await canonicalAvailability({
         salonId: targetSalon!.id,
         service: targetService!,
         dates: [crossLocationDate],
-        employeeId: null,
+        employeeIds: requestedEmployeeIds,
         store: tx,
       });
       const selected = initial.find((slot) => slot.startTime === "10:00");
-      if (!selected) return false;
-      await lockAppointmentResources(tx, targetSalon!.id, [{
+      if (!selected) return null;
+      await lockAppointmentResources(tx, targetSalon!.id, selected.employeeIds.map((employeeId) => ({
         date: crossLocationDate,
-        employeeId: selected.employeeId,
-      }]);
+        employeeId,
+      })));
       const locked = await canonicalAvailability({
         salonId: targetSalon!.id,
         service: targetService!,
         dates: [crossLocationDate],
-        employeeId: selected.employeeId,
+        employeeIds: selected.employeeIds,
         store: tx,
       });
-      if (!locked.some((slot) => slot.startTime === "10:00")) return false;
+      if (!locked.some((slot) => slot.startTime === "10:00")) return null;
       await pause(40);
-      await tx.insert(appointmentsTable).values({
+      const [appointment] = await tx.insert(appointmentsTable).values({
         salonId: targetSalon!.id,
         employeeId: selected.employeeId,
         serviceId: targetService!.id,
@@ -164,18 +184,39 @@ async function run(): Promise<void> {
         durationMinutes: 60,
         price: 1000,
         status: "confirmed",
-      });
-      return true;
+      }).returning();
+      const [treatment] = await tx.insert(appointmentTreatmentsTable).values({
+        appointmentId: appointment!.id,
+        serviceId: targetService!.id,
+        employeeId: selected.employeeIds[0],
+        position: 0,
+        durationMinutes: 60,
+        price: 1000,
+        plannedStartTime: "10:00",
+        plannedEndTime: "11:00",
+      }).returning();
+      await tx.insert(appointmentTreatmentEmployeesTable).values(selected.employeeIds.map((employeeId, position) => ({
+        appointmentTreatmentId: treatment!.id,
+        employeeId,
+        position,
+      })));
+      return appointment!.id;
     });
     const crossLocationCreated = await Promise.all([
-      createWithNullEmployee(salon, service),
-      createWithNullEmployee(siblingSalon, siblingService),
+      createWithNullEmployee(salon, service, [employee!.id, secondaryEmployee!.id]),
+      createWithNullEmployee(siblingSalon, siblingService, [secondaryEmployee!.id, employee!.id]),
     ]);
     assert.equal(
       crossLocationCreated.filter(Boolean).length,
       1,
-      "null-employee resolution at sibling locations must be revalidated under one global employee lock",
+      "opposite participant orders at sibling locations must serialize without deadlock and only one may claim the shared staff",
     );
+    const winningAppointmentId = crossLocationCreated.find(Boolean)!;
+    const [winningTreatment] = await db.select().from(appointmentTreatmentsTable)
+      .where(eq(appointmentTreatmentsTable.appointmentId, winningAppointmentId)).limit(1);
+    const persistedParticipants = await db.select().from(appointmentTreatmentEmployeesTable)
+      .where(eq(appointmentTreatmentEmployeesTable.appointmentTreatmentId, winningTreatment!.id));
+    assert.equal(persistedParticipants.length, 2, "the winning treatment persists its complete participant set");
 
     const [seriesMember] = await db.insert(appointmentsTable).values({
       salonId: salon!.id,
@@ -361,10 +402,36 @@ async function run(): Promise<void> {
     assert.equal(resultA, true, "independent resource A booking must succeed");
     assert.equal(resultB, true, "independent resource B booking must succeed without blocking A");
 
+    const [historyEmployee] = await db.insert(employeesTable).values({
+      salonId: salon!.id, name: "History employee", role: "Stilist", bio: "", avatarUrl: "",
+    }).returning();
+    const [historyAppointment] = await db.insert(appointmentsTable).values({
+      salonId: salon!.id, serviceId: service!.id, date: crossLocationDate,
+      startTime: "14:00", endTime: "15:00", durationMinutes: 60, price: 1000, status: "confirmed",
+    }).returning();
+    const [historyTreatment] = await db.insert(appointmentTreatmentsTable).values({
+      appointmentId: historyAppointment!.id, serviceId: service!.id, position: 0,
+      durationMinutes: 60, price: 1000, plannedStartTime: "14:00", plannedEndTime: "15:00",
+    }).returning();
+    await db.insert(appointmentTreatmentEmployeesTable).values({
+      appointmentTreatmentId: historyTreatment!.id, employeeId: historyEmployee!.id, position: 0,
+    });
+    await assert.rejects(
+      db.delete(employeesTable).where(eq(employeesTable.id, historyEmployee!.id)),
+      "history-safe junction FK must reject direct employee deletion while its treatment survives",
+    );
+    await db.transaction(async (tx) => {
+      await tx.delete(salonsTable).where(inArray(salonsTable.id, [salon!.id, siblingSalon!.id]));
+    });
+    assert.equal((await db.select({ value: count() }).from(salonsTable)
+      .where(inArray(salonsTable.id, [salon!.id, siblingSalon!.id])))[0]!.value, 0,
+    "deferred employee FK must permit atomic multi-location tenant graph teardown");
+
     console.log("Resource capacity concurrency tests passed.");
   } finally {
-    await db.delete(salonsTable).where(eq(salonsTable.id, salon!.id));
-    await db.delete(salonsTable).where(eq(salonsTable.id, siblingSalon!.id));
+    await db.transaction(async (tx) => {
+      await tx.delete(salonsTable).where(inArray(salonsTable.id, [salon!.id, siblingSalon!.id]));
+    });
   }
 }
 

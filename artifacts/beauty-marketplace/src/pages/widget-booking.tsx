@@ -30,6 +30,20 @@ import { GroupedAvailabilityView } from "@/components/booking/grouped-availabili
 // Step Enum
 type Step = "CART" | "EMPLOYEE" | "DATETIME" | "CONTACT" | "SUCCESS";
 
+function requiredEmployeeCount(service?: { requiredEmployeeCount?: number }) {
+  return Math.max(1, service?.requiredEmployeeCount ?? 1);
+}
+
+function employeeSelections(value: readonly (string | null)[] | undefined, count: number, legacy?: string | null) {
+  const selections = [...(value?.length ? value : [legacy ?? null])].slice(0, count);
+  while (selections.length < count) selections.push(null);
+  return selections;
+}
+
+function primaryEmployeeId(employeeIds: readonly (string | null)[]) {
+  return employeeIds.find((employeeId): employeeId is string => Boolean(employeeId)) ?? null;
+}
+
 export default function WidgetBooking() {
   const { slug } = useParams<{ slug: string }>();
   const searchString = useSearch();
@@ -215,12 +229,16 @@ export default function WidgetBooking() {
       phone: contact.phone,
       email: contact.email || null,
       note: contact.note || null,
-      treatments: selectedCandidate.treatments.map((t) => ({
-        serviceId: t.serviceId,
-        employeeId: t.employeeId,
-        date: t.date,
-        startTime: t.startTime
-      }))
+      treatments: selectedCandidate.treatments.map((t) => {
+        const employeeIds = employeeSelections(t.employeeIds, requiredEmployeeCount(salon.services.find((service) => service.id === t.serviceId) as typeof salon.services[number] & { requiredEmployeeCount?: number }), t.employeeId);
+        return {
+          serviceId: t.serviceId,
+          employeeId: primaryEmployeeId(employeeIds),
+          employeeIds,
+          date: t.date,
+          startTime: t.startTime
+        };
+      })
     };
     const payload = JSON.stringify(data);
     if (bookingCommandRef.current?.payload !== payload) {
@@ -258,7 +276,8 @@ export default function WidgetBooking() {
       toast.error("Maksimalno 5 usluga po terminu");
       return;
     }
-    setCart([...cart, { serviceId }]);
+    const service = salon.services.find((item) => item.id === serviceId) as typeof salon.services[number] & { requiredEmployeeCount?: number };
+    setCart([...cart, { serviceId, employeeIds: employeeSelections(undefined, requiredEmployeeCount(service)) }]);
   };
 
   const removeFromCart = (index: number) => {
@@ -356,6 +375,8 @@ export default function WidgetBooking() {
                 {cart.map((item, index) => {
                   const s = salon.services.find(x => x.id === item.serviceId);
                   const eligibleStaff = salon.employees.filter(e => e.serviceIds.includes(item.serviceId));
+                  const count = requiredEmployeeCount(s as typeof s & { requiredEmployeeCount?: number });
+                  const selections = employeeSelections(item.employeeIds, count, item.employeeId);
                   return (
                     <Card key={index} role="listitem" className="overflow-hidden border shadow-sm">
                       <CardContent className="p-3">
@@ -367,21 +388,35 @@ export default function WidgetBooking() {
                           <Button aria-label={`Ukloni ${s?.name ?? "uslugu"} iz izabranih tretmana`} size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:bg-destructive/10 -mt-1 -mr-1" onClick={() => removeFromCart(index)}><Trash2 className="w-4 h-4" /></Button>
                         </div>
 
-                        <Label className="text-xs mb-1.5 block text-muted-foreground">Izaberite radnika</Label>
-                        <select
-                          className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm font-medium"
-                          value={item.employeeId ?? ""}
-                          onChange={(e) => {
-                            const newCart = [...cart];
-                            newCart[index].employeeId = e.target.value === "" ? null : e.target.value;
-                            setCart(newCart);
-                          }}
-                        >
-                          <option value="">Bilo ko (prvi dostupan)</option>
-                          {eligibleStaff.map(emp => (
-                            <option key={emp.id} value={emp.id}>{emp.name}</option>
+                        <div className="space-y-2">
+                          {selections.map((selectedEmployeeId, position) => (
+                            <div key={position}>
+                              <Label htmlFor={`widget-employee-${index}-${position}`} className="text-xs mb-1.5 block text-muted-foreground">
+                                {count === 1 ? "Izaberite radnika" : `Zaposleni ${position + 1}`}
+                              </Label>
+                              <select
+                                id={`widget-employee-${index}-${position}`}
+                                data-testid={`select-widget-employee-${index}-${position}`}
+                                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm font-medium"
+                                value={selectedEmployeeId ?? ""}
+                                onChange={(e) => {
+                                  const nextId = e.target.value || null;
+                                  if (nextId && selections.some((id, selectionIndex) => selectionIndex !== position && id === nextId)) return;
+                                  const employeeIds = selections.map((id, selectionIndex) => selectionIndex === position ? nextId : id);
+                                  setCart((current) => current.map((treatment, treatmentIndex) => treatmentIndex === index
+                                    ? { ...treatment, employeeIds, employeeId: primaryEmployeeId(employeeIds) }
+                                    : treatment));
+                                }}
+                              >
+                                <option value="">Bilo ko (prvi dostupan)</option>
+                                {eligibleStaff.map(emp => (
+                                  <option key={emp.id} value={emp.id} disabled={emp.id !== selectedEmployeeId && selections.includes(emp.id)}>{emp.name}</option>
+                                ))}
+                              </select>
+                            </div>
                           ))}
-                        </select>
+                          {count > 1 && <p className="text-xs text-muted-foreground" role="status">Istog zaposlenog nije moguće izabrati dva puta za isti tretman.</p>}
+                        </div>
                       </CardContent>
                     </Card>
                   );

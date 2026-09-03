@@ -11,6 +11,8 @@ export interface SalonAppointmentCreate {
   serviceId: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   date: Date;
   /** @pattern ^[0-2][0-9]:[0-5][0-9]$ */
   startTime: string;

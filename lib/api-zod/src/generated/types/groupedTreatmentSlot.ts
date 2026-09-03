@@ -13,6 +13,8 @@ export interface GroupedTreatmentSlot {
   date: Date;
   /** @nullable */
   employeeId: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   startTime: string;
   endTime: string;
   /** @minimum 0 */

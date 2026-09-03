@@ -20,3 +20,9 @@ When a helper accepts either the shared database or a transaction session, do no
 **Why:** pg 9 will remove the permissive busy-client query queue behavior, turning currently hidden transaction read races into release-blocking failures.
 
 **How to apply:** Keep parallel reads only on independently acquired pool clients. Treat any `store`/`tx` abstraction as single-connection unless its contract explicitly guarantees otherwise.
+
+For treatments requiring several employees, the ordered participant set is one booking invariant across preview, create, reschedule, busy-time calculation, and persistence. A legacy primary employee is only position zero; it must never narrow the candidate pool once the complete assignment array is present.
+
+**Why:** Revalidating a valid multi-employee slot through a single-employee filter makes every write fail, while updating only the primary can silently double-book secondary staff or leave historical assignments inconsistent.
+
+**How to apply:** Preserve or resolve the full distinct participant set, lock every old and proposed employee/day key deterministically before resource locks, revalidate the full set, and write primary plus junction rows in the same transaction.

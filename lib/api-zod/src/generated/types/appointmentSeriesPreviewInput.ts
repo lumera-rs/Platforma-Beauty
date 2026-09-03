@@ -11,6 +11,8 @@ export interface AppointmentSeriesPreviewInput {
   serviceId: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   /** @nullable */
   packagePurchaseId?: string | null;
   /** @nullable */

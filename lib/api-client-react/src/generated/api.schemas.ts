@@ -1506,6 +1506,11 @@ export interface Service {
   postProcessingMinutes: number;
   /** @minimum 0 */
   bufferMinutes?: number;
+  /**
+     * @minimum 1
+     * @maximum 20
+     */
+  requiredEmployeeCount?: number;
   price: number;
   /** @nullable */
   promoPrice?: number | null;
@@ -1800,6 +1805,11 @@ export interface SalonManagedService {
   postProcessingMinutes: number;
   /** @minimum 0 */
   bufferMinutes?: number;
+  /**
+     * @minimum 1
+     * @maximum 20
+     */
+  requiredEmployeeCount?: number;
   price: number;
   /** @nullable */
   promoPrice?: number | null;
@@ -2074,6 +2084,8 @@ export interface GroupedTreatmentRequest {
   serviceId: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
 }
 
 /**
@@ -2108,6 +2120,8 @@ export interface GroupedTreatmentSlot {
   date: string;
   /** @nullable */
   employeeId: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   startTime: string;
   endTime: string;
   /** @minimum 0 */
@@ -2158,6 +2172,8 @@ export interface BookingGroupTreatmentInput {
   date?: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   startTime: string;
 }
 
@@ -2198,6 +2214,8 @@ export interface ManualBookingGroupTreatmentInput {
   date: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   startTime: string;
 }
 
@@ -2222,6 +2240,8 @@ export interface BookingGroupRescheduleTreatmentInput {
   startTime: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
 }
 
 export interface BookingGroupRescheduleInput {
@@ -2337,6 +2357,8 @@ export interface Appointment {
   /** @nullable */
   employeeId: string | null;
   employeeName: string;
+  employeeIds: string[];
+  employeeNames: string[];
   /** @pattern ^\d{4}-\d{2}-\d{2}$ */
   date: string;
   startTime: string;
@@ -2572,6 +2594,8 @@ export interface TimeSlot {
   employeeId?: string | null;
   /** @nullable */
   employeeName?: string | null;
+  employeeIds?: string[];
+  employeeNames?: string[];
 }
 
 export interface FirstAvailableServiceSlot {
@@ -2640,6 +2664,8 @@ export interface AppointmentInput {
   serviceId: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   date: string;
   /** @pattern ^(?:[01][0-9]|2[0-3]):[0-5][0-9]$ */
   startTime: string;
@@ -2658,6 +2684,8 @@ export interface AppointmentUpdate {
   startTime?: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   notes?: string;
 }
 
@@ -2676,6 +2704,8 @@ export interface SalonAppointmentUpdate {
   status?: SalonAppointmentUpdateStatus;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   notes?: string;
 }
 
@@ -2715,6 +2745,8 @@ export interface AppointmentSeriesPreviewInput {
   serviceId: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   /** @nullable */
   packagePurchaseId?: string | null;
   /** @nullable */
@@ -3023,6 +3055,8 @@ export interface SalonAppointmentCreate {
   serviceId: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   date: string;
   /** @pattern ^[0-2][0-9]:[0-5][0-9]$ */
   startTime: string;
@@ -3040,6 +3074,8 @@ export interface SalonPackageAppointmentSlot {
   startTime: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
 }
 
 export interface SalonPackageAppointmentsInput {
@@ -3191,6 +3227,11 @@ export interface ServiceInput {
   postProcessingMinutes?: number;
   /** @minimum 0 */
   bufferMinutes?: number;
+  /**
+     * @minimum 1
+     * @maximum 20
+     */
+  requiredEmployeeCount?: number;
   /** @minimum 0 */
   price: number;
   /** @nullable */
@@ -12100,6 +12141,11 @@ export type WidgetSalonServicesItem = {
   id: string;
   name: string;
   durationMinutes: number;
+  /**
+     * @minimum 1
+     * @maximum 20
+     */
+  requiredEmployeeCount: number;
   price: number;
   /** @nullable */
   promoPrice?: number | null;
@@ -12128,6 +12174,8 @@ export interface WidgetSlot {
   end: string;
   employeeId: string;
   employeeName: string;
+  employeeIds: string[];
+  employeeNames: string[];
 }
 
 export interface EmployeeTimeBlock {
@@ -12167,6 +12215,8 @@ export interface AvailabilitySearchSlot {
   endTime: string;
   employeeId: string;
   employeeName: string;
+  employeeIds: string[];
+  employeeNames: string[];
 }
 
 /**
@@ -12324,6 +12374,8 @@ export interface WidgetAppointmentCreate {
   serviceId: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   date: string;
   startTime: string;
   /**
@@ -12360,6 +12412,7 @@ export interface WidgetAppointmentCreated {
   startTime: string;
   endTime: string;
   employeeName: string;
+  employeeIds?: string[];
   serviceName: string;
   salonName: string;
 }
@@ -12368,6 +12421,8 @@ export type WidgetBookingGroupCreateTreatmentsItem = {
   serviceId: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   date: string;
   startTime: string;
 };
@@ -14845,6 +14900,11 @@ city?: CityQueryParameter;
 export type GetSalonAvailabilityParams = {
 serviceId: string;
 employeeId?: string;
+/**
+ * Ordered employee positions; an empty value means that position may use any qualified available employee.
+ * @maxItems 20
+ */
+employeeIds?: string[];
 date: string;
 /**
  * Optional requested cadence. The salon booking policy remains authoritative.
@@ -14976,6 +15036,10 @@ serviceId: string;
  */
 startDate: string;
 employeeId?: string;
+/**
+ * @maxItems 20
+ */
+employeeIds?: string[];
 /**
  * @minimum 1
  * @maximum 100

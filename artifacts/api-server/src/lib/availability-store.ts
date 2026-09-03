@@ -1,6 +1,7 @@
 import { and, eq, gte, inArray, isNull, lte, ne, notInArray, or, sql } from "drizzle-orm";
 import {
   appointmentResourceAllocationsTable,
+  appointmentTreatmentEmployeesTable,
   appointmentTreatmentsTable,
   appointmentsTable,
   db,
@@ -55,6 +56,7 @@ export type CanonicalAvailabilityContext = {
     preProcessingMinutes: number;
     processingMinutes: number;
     postProcessingMinutes: number;
+    employeeIds?: string[];
   }>;
   resourceIdsByAppointment: Map<string, string[]>;
   schedules: Array<typeof employeeLocationSchedulesTable.$inferSelect>;
@@ -101,7 +103,7 @@ export async function preloadCanonicalAvailability(input: {
     store.select().from(employeeServicesTable).where(and(inArray(employeeServicesTable.employeeId, employeeIds), inArray(employeeServicesTable.serviceId, serviceIds))),
     store.select({
       id: appointmentsTable.id,
-      employeeId: sql<string | null>`coalesce(${appointmentTreatmentsTable.employeeId}, ${appointmentsTable.employeeId})`,
+       employeeId: sql<string | null>`coalesce(${appointmentTreatmentEmployeesTable.employeeId}, ${appointmentTreatmentsTable.employeeId}, ${appointmentsTable.employeeId})`,
       date: appointmentsTable.date,
       startTime: sql<string>`coalesce(${appointmentTreatmentsTable.plannedStartTime}, ${appointmentsTable.startTime})`,
       endTime: sql<string>`coalesce(${appointmentTreatmentsTable.plannedEndTime}, ${appointmentsTable.endTime})`,
@@ -112,8 +114,9 @@ export async function preloadCanonicalAvailability(input: {
     }).from(appointmentsTable)
       .innerJoin(servicesTable, eq(servicesTable.id, appointmentsTable.serviceId))
       .leftJoin(appointmentTreatmentsTable, eq(appointmentTreatmentsTable.appointmentId, appointmentsTable.id))
+       .leftJoin(appointmentTreatmentEmployeesTable, eq(appointmentTreatmentEmployeesTable.appointmentTreatmentId, appointmentTreatmentsTable.id))
       .where(and(
-        inArray(sql`coalesce(${appointmentTreatmentsTable.employeeId}, ${appointmentsTable.employeeId})`, employeeIds),
+         inArray(sql`coalesce(${appointmentTreatmentEmployeesTable.employeeId}, ${appointmentTreatmentsTable.employeeId}, ${appointmentsTable.employeeId})`, employeeIds),
         gte(appointmentsTable.date, startDate),
         lte(appointmentsTable.date, endDate),
         ne(appointmentsTable.status, "cancelled"),
@@ -140,6 +143,7 @@ export async function canonicalAvailability(input: {
   service: typeof servicesTable.$inferSelect;
   dates: string[];
   employeeId?: string | null;
+  employeeIds?: Array<string | null>;
   limit?: number;
   /** Retained for callers compiled before policy enforcement; DB policy wins. */
   granularityMinutes?: number;
@@ -177,7 +181,11 @@ export async function canonicalAvailability(input: {
     const minimumLeadTimeMinutes = context.settings?.minimumLeadTimeMinutes ?? 0;
     const effectiveNow = input.now ?? wallClockNowInTimeZone(new Date(), DEFAULT_SALON_TIME_ZONE);
     const linked = new Set(context.employeeServiceLinks.filter((link) => link.serviceId === input.service.id).map((link) => link.employeeId));
-    const candidates = context.employees.filter((employee) => linked.has(employee.id) && (!input.employeeId || employee.id === input.employeeId));
+    // `employeeId` is the backwards-compatible position-zero alias whenever
+    // the ordered multi-participant assignment is present. Do not narrow the
+    // candidate pool in that case: null positions must still be auto-filled.
+    const candidates = context.employees.filter((employee) => linked.has(employee.id)
+      && (input.employeeIds?.length ? true : (!input.employeeId || employee.id === input.employeeId)));
     if (!candidates.length) return [];
     const candidateIds = new Set(candidates.map((employee) => employee.id));
     const requirements = input.resourceRequirements ?? context.requirementsByServiceId.get(input.service.id) ?? [];
@@ -196,6 +204,8 @@ export async function canonicalAvailability(input: {
       processingMinutes: optionalNumber((input.service as unknown as { processingMinutes?: unknown }).processingMinutes, 0),
       postProcessingMinutes: optionalNumber((input.service as unknown as { postProcessingMinutes?: unknown }).postProcessingMinutes, 0),
       granularityMinutes: granularity, employees: candidates,
+      employeeIds: input.employeeIds,
+      requiredEmployeeCount: (input.service as unknown as { requiredEmployeeCount?: number }).requiredEmployeeCount ?? 1,
       salonHours: context.salonHours.map((hours) => ({ weekday: hours.weekday, startTime: hours.openTime, endTime: hours.closeTime, closed: hours.closed })),
       dateOverrides: context.dateHours.map((hours) => ({ date: hours.date, startTime: hours.openTime, endTime: hours.closeTime, closed: hours.closed })),
       employeeSchedules: context.schedules.filter((schedule) => candidateIds.has(schedule.employeeId)),
@@ -267,12 +277,12 @@ export async function canonicalAvailability(input: {
     ))
     .where(and(
       eq(employeesTable.active, true),
-      input.employeeId ? eq(employeesTable.id, input.employeeId) : undefined,
+      input.employeeId && !input.employeeIds?.length ? eq(employeesTable.id, input.employeeId) : undefined,
     )) as Array<{ employee: typeof employeesTable.$inferSelect }>;
   const allEmployees = employeeRows.map((row) => row.employee);
   const employeeIds = allEmployees.map((employee) => employee.id);
   if (!employeeIds.length) return [];
-  const candidates = allEmployees.filter((employee) => !input.employeeId || employee.id === input.employeeId);
+  const candidates = allEmployees.filter((employee) => input.employeeIds?.length || !input.employeeId || employee.id === input.employeeId);
   if (!candidates.length) return [];
   const candidateIds = candidates.map((employee) => employee.id);
 
@@ -313,7 +323,7 @@ export async function canonicalAvailability(input: {
   }
   const busyAppointments = await store.select({
     id: appointmentsTable.id,
-    employeeId: sql<string | null>`coalesce(${appointmentTreatmentsTable.employeeId}, ${appointmentsTable.employeeId})`,
+     employeeId: sql<string | null>`coalesce(${appointmentTreatmentEmployeesTable.employeeId}, ${appointmentTreatmentsTable.employeeId}, ${appointmentsTable.employeeId})`,
     date: appointmentsTable.date,
     startTime: sql<string>`coalesce(${appointmentTreatmentsTable.plannedStartTime}, ${appointmentsTable.startTime})`,
     endTime: sql<string>`coalesce(${appointmentTreatmentsTable.plannedEndTime}, ${appointmentsTable.endTime})`,
@@ -324,8 +334,9 @@ export async function canonicalAvailability(input: {
   }).from(appointmentsTable)
     .innerJoin(servicesTable, eq(servicesTable.id, appointmentsTable.serviceId))
     .leftJoin(appointmentTreatmentsTable, eq(appointmentTreatmentsTable.appointmentId, appointmentsTable.id))
+    .leftJoin(appointmentTreatmentEmployeesTable, eq(appointmentTreatmentEmployeesTable.appointmentTreatmentId, appointmentTreatmentsTable.id))
     .where(and(
-      inArray(sql`coalesce(${appointmentTreatmentsTable.employeeId}, ${appointmentsTable.employeeId})`, candidateIds),
+       inArray(sql`coalesce(${appointmentTreatmentEmployeesTable.employeeId}, ${appointmentTreatmentsTable.employeeId}, ${appointmentsTable.employeeId})`, candidateIds),
       gte(appointmentsTable.date, startDate),
       lte(appointmentsTable.date, endDate),
       ne(appointmentsTable.status, "cancelled"),
@@ -399,6 +410,8 @@ export async function canonicalAvailability(input: {
     postProcessingMinutes: optionalNumber((input.service as unknown as { postProcessingMinutes?: unknown }).postProcessingMinutes, 0),
     granularityMinutes: granularity,
     employees: candidates,
+    employeeIds: input.employeeIds,
+    requiredEmployeeCount: (input.service as unknown as { requiredEmployeeCount?: number }).requiredEmployeeCount ?? 1,
     salonHours: salonHours.map((hours: { weekday: number; openTime: string; closeTime: string; closed: boolean }) => ({
       weekday: hours.weekday,
       startTime: hours.openTime,

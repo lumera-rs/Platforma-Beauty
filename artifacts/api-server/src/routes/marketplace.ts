@@ -79,6 +79,7 @@ import
    appointmentStatusHistoryTable,
   appointmentsTable,
    appointmentTreatmentsTable,
+   appointmentTreatmentEmployeesTable,
    bookingGroupsTable,
   beautyGlossaryTable,
   b2cNeedTagsTable,
@@ -1459,10 +1460,45 @@ export async function eligibleEmployees(salonId: string, serviceId: string, pref
 
 type ReservedAppointment = {
   employeeId: string;
+  employeeIds?: string[];
   date: string;
   startTime: string;
   endTime: string;
 };
+
+function appointmentEmployeeScope(employeeId: string): SQL {
+  return or(
+    eq(appointmentsTable.employeeId, employeeId),
+    exists(
+      db.select({ id: appointmentTreatmentEmployeesTable.id })
+        .from(appointmentTreatmentsTable)
+        .innerJoin(
+          appointmentTreatmentEmployeesTable,
+          eq(appointmentTreatmentEmployeesTable.appointmentTreatmentId, appointmentTreatmentsTable.id),
+        )
+        .where(and(
+          eq(appointmentTreatmentsTable.appointmentId, appointmentsTable.id),
+          eq(appointmentTreatmentEmployeesTable.employeeId, employeeId),
+        )),
+    ),
+  )!;
+}
+
+async function appointmentParticipantIds(
+  store: any,
+  appointmentId: string,
+  legacyEmployeeId: string | null,
+): Promise<string[]> {
+  const rows = await store.select({ employeeId: appointmentTreatmentEmployeesTable.employeeId })
+    .from(appointmentTreatmentsTable)
+    .innerJoin(
+      appointmentTreatmentEmployeesTable,
+      eq(appointmentTreatmentEmployeesTable.appointmentTreatmentId, appointmentTreatmentsTable.id),
+    )
+    .where(eq(appointmentTreatmentsTable.appointmentId, appointmentId))
+    .orderBy(asc(appointmentTreatmentEmployeesTable.position));
+  return rows.length ? rows.map((row: { employeeId: string }) => row.employeeId) : legacyEmployeeId ? [legacyEmployeeId] : [];
+}
 
 type EmployeeAvailabilityContext = {
   candidates: (typeof employeesTable.$inferSelect)[];
@@ -1488,18 +1524,18 @@ function selectAvailableEmployeeFromContext(
     employeeWorksAt(employee.id, date, startTime, endTime, context.schedules, context.timeOff)
     && !sameDay.some((appointment) => !ignoredAppointmentIds.has(appointment.id)
       && appointment.employeeId === employee.id && overlapsAppointment(startTime, endTime, appointment))
-    && !reservedSameDay.some((appointment) => appointment.employeeId === employee.id
+    && !reservedSameDay.some((appointment) => (appointment.employeeIds ?? [appointment.employeeId]).includes(employee.id)
       && appointment.startTime < endTime && appointment.endTime > startTime));
   if (!available.length) return null;
   return [...available].sort((a, b) => {
     const dayA = sameDay.filter((appointment) => appointment.employeeId === a.id && appointment.status !== "cancelled").length
-      + reservedSameDay.filter((appointment) => appointment.employeeId === a.id).length;
+      + reservedSameDay.filter((appointment) => (appointment.employeeIds ?? [appointment.employeeId]).includes(a.id)).length;
     const dayB = sameDay.filter((appointment) => appointment.employeeId === b.id && appointment.status !== "cancelled").length
-      + reservedSameDay.filter((appointment) => appointment.employeeId === b.id).length;
+      + reservedSameDay.filter((appointment) => (appointment.employeeIds ?? [appointment.employeeId]).includes(b.id)).length;
     const weekA = sameWeek.filter((appointment) => appointment.employeeId === a.id && appointment.status !== "cancelled").length
-      + reservedSameWeek.filter((appointment) => appointment.employeeId === a.id).length;
+      + reservedSameWeek.filter((appointment) => (appointment.employeeIds ?? [appointment.employeeId]).includes(a.id)).length;
     const weekB = sameWeek.filter((appointment) => appointment.employeeId === b.id && appointment.status !== "cancelled").length
-      + reservedSameWeek.filter((appointment) => appointment.employeeId === b.id).length;
+      + reservedSameWeek.filter((appointment) => (appointment.employeeIds ?? [appointment.employeeId]).includes(b.id)).length;
     return dayA - dayB || weekA - weekB || a.name.localeCompare(b.name);
   })[0]!;
 }
@@ -1534,10 +1570,26 @@ async function availableEmployeeWithDb(
   // with Promise.all on the transaction's single connection.
   // An employee is a single person, even when assigned to several locations:
   // appointments at another assigned location must also prevent a double-book.
-  const sameWeek = await store.select().from(appointmentsTable).where(and(
-    inArray(appointmentsTable.employeeId, candidates.map((employee: typeof employeesTable.$inferSelect) => employee.id)),
-    sql`${appointmentsTable.date} >= ${weekStart} and ${appointmentsTable.date} <= ${date}`,
-  ));
+  const sameWeekRows = await store.select({
+    appointment: appointmentsTable,
+    participantEmployeeId: appointmentTreatmentEmployeesTable.employeeId,
+  }).from(appointmentsTable)
+    .leftJoin(appointmentTreatmentsTable, eq(appointmentTreatmentsTable.appointmentId, appointmentsTable.id))
+    .leftJoin(
+      appointmentTreatmentEmployeesTable,
+      eq(appointmentTreatmentEmployeesTable.appointmentTreatmentId, appointmentTreatmentsTable.id),
+    )
+    .where(and(
+      or(
+        inArray(appointmentsTable.employeeId, candidates.map((employee: typeof employeesTable.$inferSelect) => employee.id)),
+        inArray(appointmentTreatmentEmployeesTable.employeeId, candidates.map((employee: typeof employeesTable.$inferSelect) => employee.id)),
+      ),
+      sql`${appointmentsTable.date} >= ${weekStart} and ${appointmentsTable.date} <= ${date}`,
+    ));
+  const sameWeek = sameWeekRows.map(({ appointment, participantEmployeeId }: {
+    appointment: typeof appointmentsTable.$inferSelect;
+    participantEmployeeId: string | null;
+  }) => ({ ...appointment, employeeId: participantEmployeeId ?? appointment.employeeId }));
   const schedules = await store.select().from(employeeLocationSchedulesTable)
     .where(and(
       inArray(employeeLocationSchedulesTable.employeeId, candidates.map((employee: typeof employeesTable.$inferSelect) => employee.id)),
@@ -2054,6 +2106,8 @@ async function insertInitializedAppointmentInTx(
 export async function createAllocatedAppointment(input: {
   salonId: string; customerId: string | null; salonCustomerId?: string | null; serviceId: string; date: string; startTime: string;
   endTime: string; durationMinutes: number; price: number; status: "pending" | "confirmed"; notes?: string | null; preferredEmployeeId?: string | null;
+  /** One per required staff position; null entries are auto-assigned. */
+  preferredEmployeeIds?: Array<string | null>;
   createdByUserId?: string | null;
   treatmentLocation?: "salon" | "home"; travelFee?: number; treatmentAddress?: { line1: string; city: string; postalCode?: string; details?: string } | null;
   /** When set, redeem this package purchase against the created appointment in the SAME transaction. */
@@ -2063,6 +2117,8 @@ export async function createAllocatedAppointment(input: {
 }): Promise<{
   employee: typeof employeesTable.$inferSelect;
   appointment: typeof appointmentsTable.$inferSelect;
+  employeeIds?: string[];
+  assignedEmployees?: Array<typeof employeesTable.$inferSelect>;
   allocatedResources: Array<{ resourceId: string; resourceName: string; quantity: number }>;
 } | { employee: null; appointment: null; allocatedResources: [] }> {
   const create = async (tx: any) => {
@@ -2070,69 +2126,37 @@ export async function createAllocatedAppointment(input: {
     let service: typeof servicesTable.$inferSelect | undefined;
     let employee: typeof employeesTable.$inferSelect | null = null;
     let requirements: ResourceRequirement[] = [];
-    if (input.preferredEmployeeId) {
-      const rows = await tx.select({
-        service: servicesTable,
-        employee: employeesTable,
-        resourceId: serviceResourceRequirementsTable.resourceId,
-        quantity: serviceResourceRequirementsTable.quantity,
-        capacity: salonResourcesTable.capacity,
-        resourceName: salonResourcesTable.name,
-        resourceActive: salonResourcesTable.active,
-      }).from(servicesTable)
-        .innerJoin(employeesTable, and(
-          eq(employeesTable.id, input.preferredEmployeeId),
-          eq(employeesTable.active, true),
-        ))
-        .innerJoin(employeeLocationAssignmentsTable, and(
-          eq(employeeLocationAssignmentsTable.employeeId, employeesTable.id),
-          eq(employeeLocationAssignmentsTable.salonId, input.salonId),
-          eq(employeeLocationAssignmentsTable.active, true),
-        ))
-        .innerJoin(employeeServicesTable, and(
-          eq(employeeServicesTable.employeeId, employeesTable.id),
-          eq(employeeServicesTable.serviceId, servicesTable.id),
-        ))
-        .leftJoin(serviceResourceRequirementsTable, eq(serviceResourceRequirementsTable.serviceId, servicesTable.id))
-        .leftJoin(salonResourcesTable, eq(salonResourcesTable.id, serviceResourceRequirementsTable.resourceId))
-        .where(and(
-          eq(servicesTable.id, input.serviceId),
-          eq(servicesTable.salonId, input.salonId),
-          eq(servicesTable.active, true),
-        ));
-      service = rows[0]?.service;
-      employee = rows[0]?.employee ?? null;
-      requirements = rows.flatMap((row: any) => row.resourceId && row.quantity !== null
-        && row.capacity !== null && row.resourceName !== null && row.resourceActive !== null
-        ? [{
-            resourceId: row.resourceId,
-            quantity: row.quantity,
-            capacity: row.capacity,
-            resourceName: row.resourceName,
-            active: row.resourceActive,
-          }]
-        : []);
-    } else {
-      [service] = await tx.select().from(servicesTable).where(and(
-        eq(servicesTable.id, input.serviceId),
-        eq(servicesTable.salonId, input.salonId),
-        eq(servicesTable.active, true),
-      )).limit(1);
-      if (service) requirements = await fetchServiceResourceRequirements(tx, input.serviceId);
-    }
+    const requestedEmployeeIds = input.preferredEmployeeIds ?? (input.preferredEmployeeId ? [input.preferredEmployeeId] : undefined);
+    [service] = await tx.select().from(servicesTable).where(and(
+      eq(servicesTable.id, input.serviceId),
+      eq(servicesTable.salonId, input.salonId),
+      eq(servicesTable.active, true),
+    )).limit(1);
+    if (service) requirements = await fetchServiceResourceRequirements(tx, input.serviceId);
     if (!service) return { employee: null, appointment: null, allocatedResources: [] as [] };
     const bufferMinutes = typeof (service as unknown as { bufferMinutes?: unknown }).bufferMinutes === "number"
       ? Math.max(0, (service as unknown as { bufferMinutes: number }).bufferMinutes)
       : 0;
     const bufferedEnd = appointmentEndTime(input.endTime, bufferMinutes);
     if (!bufferedEnd) return { employee: null, appointment: null, allocatedResources: [] as [] };
-    const employeeEnd = requirements.length ? input.endTime : bufferedEnd;
-    if (!input.preferredEmployeeId) {
-      employee = await availableEmployeeWithDb(tx, input.salonId, input.serviceId, input.date, input.startTime, employeeEnd);
+    const selectedSlots = await canonicalAvailability({
+      salonId: input.salonId, service, dates: [input.date],
+      employeeId: input.preferredEmployeeIds ? null : input.preferredEmployeeId,
+      employeeIds: requestedEmployeeIds, granularityMinutes: 5, resourceRequirements: requirements, store: tx,
+    });
+    const selected = selectedSlots.find((slot) => slot.startTime === input.startTime && slot.endTime === input.endTime);
+    if (!selected) return { employee: null, appointment: null, allocatedResources: [] as [] };
+    const selectedEmployees = await tx.select().from(employeesTable).where(inArray(employeesTable.id, selected.employeeIds));
+    const selectedEmployeeById = new Map(selectedEmployees.map((item: typeof employeesTable.$inferSelect) => [item.id, item]));
+    const assignedEmployees = selected.employeeIds
+      .map((employeeId) => selectedEmployeeById.get(employeeId))
+      .filter((item): item is typeof employeesTable.$inferSelect => Boolean(item));
+    employee = assignedEmployees[0] ?? null;
+    if (!employee || assignedEmployees.length !== selected.employeeIds.length) {
+      return { employee: null, appointment: null, allocatedResources: [] as [] };
     }
-    if (!employee) return { employee: null, appointment: null, allocatedResources: [] as [] };
     await lockAppointmentParticipants(tx, input.salonId, [
-      { date: input.date, employeeId: employee.id },
+      ...selected.employeeIds.map((employeeId) => ({ date: input.date, employeeId })),
       ...requirements.map((requirement) => ({ date: input.date, resourceId: requirement.resourceId })),
     ]);
     // The first selection happens before the global employee lock. Re-read all
@@ -2142,7 +2166,7 @@ export async function createAllocatedAppointment(input: {
       salonId: input.salonId,
       service,
       dates: [input.date],
-      employeeId: employee.id,
+      employeeId: employee.id, employeeIds: selected.employeeIds,
       granularityMinutes: 5,
       resourceRequirements: requirements,
       store: tx,
@@ -2157,6 +2181,16 @@ export async function createAllocatedAppointment(input: {
       treatmentAddressLine1: input.treatmentAddress?.line1 ?? null, treatmentAddressCity: input.treatmentAddress?.city ?? null,
       treatmentAddressPostalCode: input.treatmentAddress?.postalCode ?? null, treatmentAddressDetails: input.treatmentAddress?.details ?? null,
     }, input.status, input.createdByUserId ?? null);
+    const [treatment] = await tx.insert(appointmentTreatmentsTable).values({
+      appointmentId: appointment.id, serviceId: input.serviceId, employeeId: employee.id, position: 0,
+      durationMinutes: input.durationMinutes, bufferMinutes,
+      preProcessingMinutes: service.preProcessingMinutes, processingMinutes: service.processingMinutes,
+      postProcessingMinutes: service.postProcessingMinutes, price: input.price,
+      plannedStartTime: input.startTime, plannedEndTime: input.endTime,
+    }).returning();
+    await tx.insert(appointmentTreatmentEmployeesTable).values(selected.employeeIds.map((employeeId, position) => ({
+      appointmentTreatmentId: treatment!.id, employeeId, position,
+    })));
     // allocateResourcesInTx throws ResourceCapacityError → transaction rolls back.
     await allocateResourcesInTx(
       tx, input.salonId, requirements, appointment.id, input.date, input.startTime,
@@ -2179,6 +2213,8 @@ export async function createAllocatedAppointment(input: {
     await input.afterCreate?.(tx, finalizedAppointment);
     return {
       employee,
+      employeeIds: selected.employeeIds,
+      assignedEmployees,
       appointment: finalizedAppointment,
       allocatedResources: requirements.map((item) => ({
         resourceId: item.resourceId,
@@ -2195,6 +2231,7 @@ type PreparedSeriesSlot = {
   startTime: string;
   endTime: string;
   preferredEmployeeId?: string | null;
+  preferredEmployeeIds?: Array<string | null>;
 };
 
 function prepareSeriesSlots(
@@ -2231,10 +2268,11 @@ async function previewSeriesSlots(
   service: typeof servicesTable.$inferSelect,
   slots: PreparedSeriesSlot[],
   preferredEmployeeId?: string | null,
+  preferredEmployeeIds?: Array<string | null>,
 ) {
   const result: Array<{ date: string; startTime: string; available: boolean; reason: string | null }> = [];
   const reservedAppointments: Array<{
-    employeeId: string; date: string; startTime: string; endTime: string;
+    employeeId: string; employeeIds?: string[]; date: string; startTime: string; endTime: string;
     bufferMinutes: number; preProcessingMinutes?: number; processingMinutes?: number;
     postProcessingMinutes?: number; resourceIds: string[];
   }> = [];
@@ -2248,6 +2286,7 @@ async function previewSeriesSlots(
       service,
       dates: [slot.date],
       employeeId: preferredEmployeeId,
+      employeeIds: preferredEmployeeIds,
       reservedAppointments,
       resourceReservations: batchResourceReservations,
     });
@@ -2262,7 +2301,7 @@ async function previewSeriesSlots(
     });
     if (employee) {
       reservedAppointments.push({
-        employeeId: employee.employeeId, date: slot.date, startTime: slot.startTime, endTime: slot.endTime,
+        employeeId: employee.employeeId, employeeIds: employee.employeeIds, date: slot.date, startTime: slot.startTime, endTime: slot.endTime,
         bufferMinutes: service.bufferMinutes, preProcessingMinutes: service.preProcessingMinutes,
         processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes,
         resourceIds: requirements.map((item) => item.resourceId),
@@ -2287,27 +2326,29 @@ async function createAppointmentSeries(input: {
   createdByUserId: string;
   notes?: string | null;
   preferredEmployeeId?: string | null;
+  preferredEmployeeIds?: Array<string | null>;
   packagePurchaseId?: string | null;
   /** Allows package-wide booking to keep all per-service series in one tx. */
   tx?: any;
 }) {
   const createInTx = async (tx: any) => {
     await lockAppointmentResources(tx, input.salonId, input.slots.map((slot) => ({ date: slot.date })));
-    const allocations: Array<{ slot: PreparedSeriesSlot; employee: typeof employeesTable.$inferSelect }> = [];
+    const allocations: Array<{ slot: PreparedSeriesSlot; employee: typeof employeesTable.$inferSelect; employeeIds: string[] }> = [];
     const requirements = await fetchServiceResourceRequirements(tx, input.service.id);
     for (const slot of input.slots) {
       const available = await canonicalAvailability({
         salonId: input.salonId, service: input.service, dates: [slot.date],
-        employeeId: slot.preferredEmployeeId ?? input.preferredEmployeeId, store: tx,
+        employeeId: slot.preferredEmployeeId ?? input.preferredEmployeeId,
+        employeeIds: slot.preferredEmployeeIds ?? input.preferredEmployeeIds, store: tx,
       });
       const selected = available.find((candidate) => candidate.startTime === slot.startTime && candidate.endTime === slot.endTime);
       if (!selected) throw new AppointmentSeriesError(`Termin ${slot.date} u ${slot.startTime} više nije slobodan.`);
       const [employee] = await tx.select().from(employeesTable).where(eq(employeesTable.id, selected.employeeId)).limit(1);
       if (!employee) throw new AppointmentSeriesError(`Termin ${slot.date} u ${slot.startTime} više nije slobodan.`);
-      allocations.push({ slot, employee });
+      allocations.push({ slot, employee, employeeIds: selected.employeeIds });
     }
     await lockAppointmentResources(tx, input.salonId, [
-      ...allocations.map(({ slot, employee }) => ({ date: slot.date, employeeId: employee.id })),
+       ...allocations.flatMap(({ slot, employeeIds }) => employeeIds.map((employeeId) => ({ date: slot.date, employeeId }))),
       ...input.slots.flatMap((slot) => requirements.map((requirement) => ({ date: slot.date, resourceId: requirement.resourceId }))),
     ]);
     const allocatedEmployeeIds = [...new Set(allocations.map(({ employee }) => employee.id))];
@@ -2320,10 +2361,10 @@ async function createAppointmentSeries(input: {
       createdByUserId: input.createdByUserId,
     }).returning();
     const appointments: (typeof appointmentsTable.$inferSelect)[] = [];
-    for (const { slot, employee } of allocations) {
+    for (const { slot, employee, employeeIds } of allocations) {
       const revalidated = await canonicalAvailability({
         salonId: input.salonId, service: input.service, dates: [slot.date],
-        employeeId: employee.id, store: tx,
+        employeeId: employee.id, employeeIds, store: tx,
       });
       if (!revalidated.some((candidate) => candidate.startTime === slot.startTime && candidate.endTime === slot.endTime)) {
         throw new AppointmentSeriesError(`Termin ${slot.date} u ${slot.startTime} više nije slobodan.`);
@@ -2342,6 +2383,16 @@ async function createAppointmentSeries(input: {
         price: input.service.promoPrice ?? input.service.price,
         notes: input.notes ?? null,
       }, "confirmed", input.createdByUserId);
+      const [treatment] = await tx.insert(appointmentTreatmentsTable).values({
+        appointmentId: appointment!.id, serviceId: input.service.id, employeeId: employee.id, position: 0,
+        durationMinutes: input.service.durationMinutes, bufferMinutes: input.service.bufferMinutes,
+        preProcessingMinutes: input.service.preProcessingMinutes, processingMinutes: input.service.processingMinutes,
+        postProcessingMinutes: input.service.postProcessingMinutes, price: input.service.promoPrice ?? input.service.price,
+        plannedStartTime: slot.startTime, plannedEndTime: slot.endTime,
+      }).returning();
+      await tx.insert(appointmentTreatmentEmployeesTable).values(employeeIds.map((employeeId, position) => ({
+        appointmentTreatmentId: treatment!.id, employeeId, position,
+      })));
       // allocateResourcesInTx throws ResourceCapacityError → rolls back.
       const bufferedEnd = appointmentEndTime(slot.endTime, input.service.bufferMinutes);
       if (!bufferedEnd) throw new AppointmentSeriesError(`Bafer termina ${slot.date} u ${slot.startTime} izlazi van dana.`);
@@ -2416,7 +2467,7 @@ async function previewSeriesMove(
   const ignoredAppointmentIds = new Set(slots.map((slot) => slot.appointment.id));
   const ignoredIdArray = [...ignoredAppointmentIds];
   const reservedAppointments: Array<{
-    employeeId: string; date: string; startTime: string; endTime: string;
+    employeeId: string; employeeIds?: string[]; date: string; startTime: string; endTime: string;
     bufferMinutes: number; resourceIds: string[];
   }> = [];
   const batchResourceReservations: Array<{
@@ -2427,6 +2478,10 @@ async function previewSeriesMove(
     ? await store.select().from(servicesTable).where(eq(servicesTable.id, slots[0]!.appointment.serviceId)).limit(1)
     : [];
   const requirements = service ? await fetchServiceResourceRequirements(store, service.id) : [];
+  const treatments = slots.length ? await store.select().from(appointmentTreatmentsTable)
+    .where(inArray(appointmentTreatmentsTable.appointmentId, slots.map((slot) => slot.appointment.id))) : [];
+  const participants = treatments.length ? await store.select().from(appointmentTreatmentEmployeesTable)
+    .where(inArray(appointmentTreatmentEmployeesTable.appointmentTreatmentId, treatments.map((treatment: typeof appointmentTreatmentsTable.$inferSelect) => treatment.id))) : [];
   const result: Array<{
     appointmentId: string;
     currentDate: string;
@@ -2438,11 +2493,17 @@ async function previewSeriesMove(
     reason: string | null;
   }> = [];
   for (const slot of slots) {
+    const treatment = treatments.find((item: typeof appointmentTreatmentsTable.$inferSelect) => item.appointmentId === slot.appointment.id);
+    const employeeIds = treatment ? participants.filter((item: typeof appointmentTreatmentEmployeesTable.$inferSelect) => item.appointmentTreatmentId === treatment.id)
+      .sort((a: typeof appointmentTreatmentEmployeesTable.$inferSelect, b: typeof appointmentTreatmentEmployeesTable.$inferSelect) => a.position - b.position)
+      .map((item: typeof appointmentTreatmentEmployeesTable.$inferSelect) => item.employeeId) : [];
+    const preservedEmployeeIds = employeeIds.length ? employeeIds : slot.appointment.employeeId ? [slot.appointment.employeeId] : [];
     const candidates = service ? await canonicalAvailability({
       salonId,
       service,
       dates: [slot.date],
       employeeId: slot.appointment.employeeId,
+      employeeIds: preservedEmployeeIds,
       excludeAppointmentIds: ignoredIdArray,
       reservedAppointments,
       resourceReservations: batchResourceReservations,
@@ -2463,7 +2524,7 @@ async function previewSeriesMove(
     });
     if (available) {
       reservedAppointments.push({
-        employeeId: employee!.employeeId, date: slot.date, startTime: slot.startTime, endTime: slot.endTime,
+        employeeId: employee!.employeeId, employeeIds: employee!.employeeIds, date: slot.date, startTime: slot.startTime, endTime: slot.endTime,
         bufferMinutes: service!.bufferMinutes, resourceIds: requirements.map((item: { resourceId: string }) => item.resourceId),
       });
       for (const req of requirements) {
@@ -2504,17 +2565,35 @@ export async function moveAppointmentSeries(input: {
       eq(appointmentsTable.seriesId, input.seriesId),
     )).for("update"));
     if (!appointments.length) throw new AppointmentSeriesError("U ovoj seriji više nema budućih nezavršenih termina za pomeranje.", 409);
+    const seriesTreatments = await tx.select().from(appointmentTreatmentsTable)
+      .where(inArray(appointmentTreatmentsTable.appointmentId, appointments.map((appointment) => appointment.id)));
+    const seriesParticipants = seriesTreatments.length ? await tx.select().from(appointmentTreatmentEmployeesTable)
+      .where(inArray(appointmentTreatmentEmployeesTable.appointmentTreatmentId, seriesTreatments.map((treatment) => treatment.id))) : [];
+    const employeeIdsByAppointment = new Map(appointments.map((appointment) => {
+      const treatment = seriesTreatments.find((item) => item.appointmentId === appointment.id);
+      const ids = treatment ? seriesParticipants.filter((item) => item.appointmentTreatmentId === treatment.id)
+        .sort((a, b) => a.position - b.position).map((item) => item.employeeId) : [];
+      return [appointment.id, ids.length ? ids : appointment.employeeId ? [appointment.employeeId] : []];
+    }));
     const slots = prepareSeriesMoveSlots(appointments, input.move);
+    await lockAppointmentParticipants(tx, input.salonId, slots.flatMap((slot) => {
+      const employeeIds = employeeIdsByAppointment.get(slot.appointment.id) ?? [];
+      return employeeIds.flatMap((employeeId) => [
+        { date: slot.appointment.date, employeeId },
+        { date: slot.date, employeeId },
+      ]);
+    }));
     const ignoredAppointmentIds = new Set(slots.map((slot) => slot.appointment.id));
     const reservedAppointments: ReservedAppointment[] = [];
-    const allocations: Array<{ slot: SeriesMoveSlot; employee: typeof employeesTable.$inferSelect }> = [];
+    const allocations: Array<{ slot: SeriesMoveSlot; employee: typeof employeesTable.$inferSelect; employeeIds: string[] }> = [];
     for (const slot of slots) {
       const [service] = await tx.select().from(servicesTable).where(eq(servicesTable.id, slot.appointment.serviceId)).limit(1);
       if (!service || !slot.appointment.employeeId) throw new AppointmentSeriesError(`Termin ${slot.date} u ${slot.startTime} više nije slobodan.`);
-      const collidesInBatch = reservedAppointments.some((reserved) => reserved.employeeId === slot.appointment.employeeId
+      const employeeIds = employeeIdsByAppointment.get(slot.appointment.id)!;
+      const collidesInBatch = reservedAppointments.some((reserved) => (reserved.employeeIds ?? [reserved.employeeId]).some((id) => employeeIds.includes(id))
         && reserved.date === slot.date && reserved.startTime < slot.endTime && reserved.endTime > slot.startTime);
       const available = collidesInBatch ? [] : await canonicalAvailability({
-        salonId: input.salonId, service, dates: [slot.date], employeeId: slot.appointment.employeeId,
+        salonId: input.salonId, service, dates: [slot.date], employeeId: slot.appointment.employeeId, employeeIds,
         excludeAppointmentIds: [...ignoredAppointmentIds], store: tx,
       });
       if (!available.some((candidate) => candidate.startTime === slot.startTime && candidate.endTime === slot.endTime)) {
@@ -2522,8 +2601,8 @@ export async function moveAppointmentSeries(input: {
       }
       const [employee] = await tx.select().from(employeesTable).where(eq(employeesTable.id, slot.appointment.employeeId)).limit(1);
       if (!employee) throw new AppointmentSeriesError(`Termin ${slot.date} u ${slot.startTime} više nije slobodan.`);
-      allocations.push({ slot, employee });
-      reservedAppointments.push({ employeeId: employee.id, date: slot.date, startTime: slot.startTime, endTime: slot.endTime });
+      allocations.push({ slot, employee, employeeIds });
+      reservedAppointments.push({ employeeId: employee.id, employeeIds, date: slot.date, startTime: slot.startTime, endTime: slot.endTime });
     }
     // Pre-check resource capacity for all new slots before writing, accounting
     // for in-batch reservations and ignoring the appointments being moved.
@@ -2546,13 +2625,13 @@ export async function moveAppointmentSeries(input: {
       ? await fetchServiceResourceRequirements(tx, allocations[0]!.slot.appointment.serviceId)
       : [];
     await lockAppointmentResources(tx, input.salonId, [
-      ...allocations.map(({ slot, employee }) => ({ date: slot.date, employeeId: employee.id })),
+      ...allocations.flatMap(({ slot, employeeIds }) => employeeIds.map((employeeId) => ({ date: slot.date, employeeId }))),
       ...allocations.flatMap(({ slot }) => moveRequirements.map((requirement) => ({ date: slot.date, resourceId: requirement.resourceId }))),
     ]);
-    for (const { slot, employee } of allocations) {
+    for (const { slot, employee, employeeIds } of allocations) {
       const [service] = await tx.select().from(servicesTable).where(eq(servicesTable.id, slot.appointment.serviceId)).limit(1);
       const available = service ? await canonicalAvailability({
-        salonId: input.salonId, service, dates: [slot.date], employeeId: employee.id,
+        salonId: input.salonId, service, dates: [slot.date], employeeId: employee.id, employeeIds,
         excludeAppointmentIds: [...ignoredAppointmentIds], store: tx,
       }) : [];
       if (!available.some((candidate) => candidate.startTime === slot.startTime && candidate.endTime === slot.endTime)) {
@@ -2562,7 +2641,7 @@ export async function moveAppointmentSeries(input: {
     await tx.delete(appointmentResourceAllocationsTable)
       .where(inArray(appointmentResourceAllocationsTable.appointmentId, [...ignoredAppointmentIds]));
     const moved: (typeof appointmentsTable.$inferSelect)[] = [];
-    for (const { slot, employee } of allocations) {
+    for (const { slot, employee, employeeIds } of allocations) {
       const requirements = await fetchServiceResourceRequirements(tx, slot.appointment.serviceId);
       const [appointment] = await tx.update(appointmentsTable).set({
         date: slot.date,
@@ -2574,6 +2653,17 @@ export async function moveAppointmentSeries(input: {
         inArray(appointmentsTable.status, ["pending", "confirmed"]),
       )).returning();
       if (!appointment) throw new AppointmentSeriesError("Jedan od termina serije je u međuvremenu promenjen. Ponovo pregledajte konflikte.");
+      const treatment = seriesTreatments.find((item) => item.appointmentId === appointment.id);
+      if (treatment) {
+        await tx.update(appointmentTreatmentsTable).set({
+          employeeId: employee.id, plannedStartTime: slot.startTime, plannedEndTime: slot.endTime,
+        }).where(eq(appointmentTreatmentsTable.id, treatment.id));
+        await tx.delete(appointmentTreatmentEmployeesTable)
+          .where(eq(appointmentTreatmentEmployeesTable.appointmentTreatmentId, treatment.id));
+        await tx.insert(appointmentTreatmentEmployeesTable).values(employeeIds.map((employeeId, position) => ({
+          appointmentTreatmentId: treatment.id, employeeId, position,
+        })));
+      }
       // allocateResourcesInTx throws ResourceCapacityError → rolls back.
       const [service] = await tx.select().from(servicesTable).where(eq(servicesTable.id, appointment.serviceId)).limit(1);
       const bufferedEnd = service ? appointmentEndTime(slot.endTime, service.bufferMinutes) : null;
@@ -4024,6 +4114,7 @@ function appointmentView(
     email: { status: typeof emailDeliveriesTable.$inferSelect["status"]; nextRetryAt: Date | null } | null;
   } | null = null,
   allocatedResources: Array<{ resourceId: string; resourceName: string; quantity: number }> = [],
+  assignedEmployees: Array<{ id: string; name: string }> = employee ? [{ id: employee.id, name: employee.name }] : [],
 ) {
   return {
     id: appointment.id,
@@ -4035,6 +4126,8 @@ function appointmentView(
     serviceName: service.name,
     employeeId: employee?.id ?? null,
     employeeName: employee?.name ?? "Bilo koji dostupan",
+    employeeIds: assignedEmployees.map((item) => item.id),
+    employeeNames: assignedEmployees.map((item) => item.name),
     date: calendarDate(appointment.date),
     startTime: appointment.startTime,
     endTime: appointment.endTime,
@@ -4136,7 +4229,7 @@ async function appointmentList(
   const salonCustomerIds = [...new Set(appointments.flatMap((item) => item.salonCustomerId ? [item.salonCustomerId] : []))];
   const employeeIds = appointments.flatMap((item) => item.employeeId ? [item.employeeId] : []);
   const appointmentIds = appointments.map((item) => item.id);
-  const [salons, services, customers, salonCustomers, employees, smsDeliveries, emailDeliveries, allocations] = await Promise.all([
+  const [salons, services, customers, salonCustomers, employees, smsDeliveries, emailDeliveries, allocations, assignedEmployees] = await Promise.all([
     db.select().from(salonsTable).where(inArray(salonsTable.id, salonIds)),
     db.select().from(servicesTable).where(inArray(servicesTable.id, serviceIds)),
     db.select().from(usersTable).where(customerIds.length ? inArray(usersTable.id, customerIds) : sql`false`),
@@ -4155,12 +4248,36 @@ async function appointmentList(
     }).from(appointmentResourceAllocationsTable)
       .innerJoin(salonResourcesTable, eq(appointmentResourceAllocationsTable.resourceId, salonResourcesTable.id))
       .where(inArray(appointmentResourceAllocationsTable.appointmentId, appointmentIds)),
+    db.select({
+      appointmentId: appointmentTreatmentsTable.appointmentId,
+      employeeId: appointmentTreatmentEmployeesTable.employeeId,
+      employeeName: employeesTable.name,
+    }).from(appointmentTreatmentEmployeesTable)
+      .innerJoin(appointmentTreatmentsTable, eq(
+        appointmentTreatmentEmployeesTable.appointmentTreatmentId,
+        appointmentTreatmentsTable.id,
+      ))
+      .innerJoin(employeesTable, eq(appointmentTreatmentEmployeesTable.employeeId, employeesTable.id))
+      .where(inArray(appointmentTreatmentsTable.appointmentId, appointmentIds))
+      .orderBy(
+        asc(appointmentTreatmentsTable.position),
+        asc(appointmentTreatmentEmployeesTable.position),
+        asc(appointmentTreatmentEmployeesTable.employeeId),
+      ),
   ]);
   const allocationsByAppointment = new Map<string, Array<{ resourceId: string; resourceName: string; quantity: number }>>();
   for (const alloc of allocations) {
     const existing = allocationsByAppointment.get(alloc.appointmentId) ?? [];
     existing.push({ resourceId: alloc.resourceId, resourceName: alloc.resourceName, quantity: alloc.quantity });
     allocationsByAppointment.set(alloc.appointmentId, existing);
+  }
+  const assignedEmployeesByAppointment = new Map<string, Array<{ id: string; name: string }>>();
+  for (const assigned of assignedEmployees) {
+    const existing = assignedEmployeesByAppointment.get(assigned.appointmentId) ?? [];
+    if (!existing.some((item) => item.id === assigned.employeeId)) {
+      existing.push({ id: assigned.employeeId, name: assigned.employeeName });
+    }
+    assignedEmployeesByAppointment.set(assigned.appointmentId, existing);
   }
   const latestByAppointment = <T extends { appointmentId: string | null; createdAt: Date }>(deliveries: T[]) => {
     const latest = new Map<string, T>();
@@ -4191,6 +4308,7 @@ async function appointmentList(
         : null;
     })(),
     allocationsByAppointment.get(item.id) ?? [],
+    assignedEmployeesByAppointment.get(item.id),
   ));
 }
 
@@ -6214,7 +6332,17 @@ router.get("/salons", async (req, res): Promise<void> => {
         and not exists (
           select 1
           from ${appointmentsTable}
-          where ${appointmentsTable.employeeId} = ${employeesTable.id}
+          where (
+            ${appointmentsTable.employeeId} = ${employeesTable.id}
+            or exists (
+              select 1
+              from ${appointmentTreatmentsTable}
+              inner join ${appointmentTreatmentEmployeesTable}
+                on ${appointmentTreatmentEmployeesTable.appointmentTreatmentId} = ${appointmentTreatmentsTable.id}
+              where ${appointmentTreatmentsTable.appointmentId} = ${appointmentsTable.id}
+                and ${appointmentTreatmentEmployeesTable.employeeId} = ${employeesTable.id}
+            )
+          )
             and ${appointmentsTable.date}
               = (now() at time zone 'UTC')::date + day_offset::integer
             and ${appointmentsTable.status} <> 'cancelled'
@@ -7160,7 +7288,7 @@ router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<v
       const extendCandidate = async (
         treatmentIndex: number,
         planned: (typeof candidates)[number]["treatments"],
-        reservedAppointments: Array<{ employeeId: string; date: string; startTime: string; endTime: string; bufferMinutes: number; preProcessingMinutes?: number; processingMinutes?: number; postProcessingMinutes?: number; resourceIds: string[] }>,
+        reservedAppointments: Array<{ employeeId: string; employeeIds?: string[]; date: string; startTime: string; endTime: string; bufferMinutes: number; preProcessingMinutes?: number; processingMinutes?: number; postProcessingMinutes?: number; resourceIds: string[] }>,
         resourceReservations: Array<{ resourceId: string; quantity: number; date: string; startTime: string; endTime: string; bufferMinutes: number }>,
         cursorDate: string,
         cursor: string,
@@ -7212,7 +7340,7 @@ router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<v
               postProcessingMinutes: service.postProcessingMinutes, bufferMinutes: service.bufferMinutes,
             }],
             [...reservedAppointments, {
-              employeeId: slot.employeeId, date: slot.date, startTime: slot.startTime, endTime: slot.endTime,
+              employeeId: slot.employeeId, employeeIds: slot.employeeIds, date: slot.date, startTime: slot.startTime, endTime: slot.endTime,
               bufferMinutes: service.bufferMinutes, preProcessingMinutes: service.preProcessingMinutes,
               processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes,
               resourceIds: requirements.map((item) => item.resourceId),
@@ -7239,7 +7367,7 @@ router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<v
           bufferMinutes: initialService.bufferMinutes,
         }];
         await extendCandidate(1, planned, [{
-          employeeId: initial.employeeId, date: initial.date, startTime: initial.startTime, endTime: initial.endTime,
+          employeeId: initial.employeeId, employeeIds: initial.employeeIds, date: initial.date, startTime: initial.startTime, endTime: initial.endTime,
           bufferMinutes: initialService.bufferMinutes, preProcessingMinutes: initialService.preProcessingMinutes,
           processingMinutes: initialService.processingMinutes, postProcessingMinutes: initialService.postProcessingMinutes,
           resourceIds: firstRequirements.map((item) => item.resourceId),
@@ -7270,7 +7398,7 @@ router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<v
     const initialRequirements = requirementsByServiceId.get(initialService.id) ?? [];
     const planned = [{ position: 0, serviceId: first.serviceId, date: initial.date, employeeId: initial.employeeId, startTime: initial.startTime, endTime: initial.endTime, preProcessingMinutes: initialService.preProcessingMinutes, processingMinutes: initialService.processingMinutes, postProcessingMinutes: initialService.postProcessingMinutes, bufferMinutes: initialService.bufferMinutes }];
     const reservedAppointments = [{
-      employeeId: initial.employeeId, date: initial.date, startTime: initial.startTime, endTime: initial.endTime,
+      employeeId: initial.employeeId, employeeIds: initial.employeeIds, date: initial.date, startTime: initial.startTime, endTime: initial.endTime,
       bufferMinutes: initialService.bufferMinutes, preProcessingMinutes: initialService.preProcessingMinutes,
       processingMinutes: initialService.processingMinutes, postProcessingMinutes: initialService.postProcessingMinutes,
       resourceIds: initialRequirements.map((item) => item.resourceId),
@@ -7304,7 +7432,7 @@ router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<v
       planned.push({ position: index, serviceId: treatment.serviceId, date: next.date, employeeId: next.employeeId, startTime: next.startTime, endTime: next.endTime, preProcessingMinutes: service.preProcessingMinutes, processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes, bufferMinutes: service.bufferMinutes });
       const requirements = requirementsByServiceId.get(service.id) ?? [];
       reservedAppointments.push({
-        employeeId: next.employeeId, date: next.date, startTime: next.startTime, endTime: next.endTime,
+        employeeId: next.employeeId, employeeIds: next.employeeIds, date: next.date, startTime: next.startTime, endTime: next.endTime,
         bufferMinutes: service.bufferMinutes, preProcessingMinutes: service.preProcessingMinutes,
         processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes,
         resourceIds: requirements.map((item) => item.resourceId),
@@ -7463,7 +7591,7 @@ async function createStaffBookingGroup(
       }
       if (access.employee && !newlyCreatedContact) {
         const [previous] = await tx.select({ id: appointmentsTable.id }).from(appointmentsTable).where(and(
-          eq(appointmentsTable.employeeId, access.employee.id),
+          appointmentEmployeeScope(access.employee.id),
           eq(appointmentsTable.salonCustomerId, contact.id),
         )).limit(1);
         if (!previous) throw new AppointmentSeriesError("Možete izabrati samo klijenta kog ste već uslužili.", 403);
@@ -7474,9 +7602,10 @@ async function createStaffBookingGroup(
         item: (typeof treatments)[number];
         service: typeof servicesTable.$inferSelect;
         employeeId: string;
+        employeeIds: string[];
         endTime: string;
       }> = [];
-      const reservedAppointments: Array<{ employeeId: string; date: string; startTime: string; endTime: string; bufferMinutes: number; preProcessingMinutes?: number; processingMinutes?: number; postProcessingMinutes?: number; resourceIds: string[] }> = [];
+      const reservedAppointments: Array<{ employeeId: string; employeeIds?: string[]; date: string; startTime: string; endTime: string; bufferMinutes: number; preProcessingMinutes?: number; processingMinutes?: number; postProcessingMinutes?: number; resourceIds: string[] }> = [];
       const resourceReservations: Array<{ resourceId: string; quantity: number; date: string; startTime: string; endTime: string; bufferMinutes: number }> = [];
       for (let index = 0; index < treatments.length; index += 1) {
         const item = treatments[index]!;
@@ -7488,6 +7617,9 @@ async function createStaffBookingGroup(
           service,
           dates: [item.date],
           employeeId: access.employee?.id ?? item.employeeId ?? null,
+          employeeIds: access.employee
+            ? [access.employee.id, ...Array.from({ length: Math.max(0, service.requiredEmployeeCount - 1) }, () => null)]
+            : item.employeeIds,
           store: tx,
           reservedAppointments,
           resourceReservations,
@@ -7495,9 +7627,9 @@ async function createStaffBookingGroup(
         const slot = slots.find((candidate) =>
           candidate.startTime === item.startTime && candidate.endTime === endTime);
         if (!slot) throw new AppointmentSeriesError("Jedan od termina više nije slobodan.", 409);
-        planned.push({ item, service, employeeId: slot.employeeId, endTime });
+        planned.push({ item, service, employeeId: slot.employeeId, employeeIds: slot.employeeIds, endTime });
         reservedAppointments.push({
-          employeeId: slot.employeeId, date: item.date, startTime: item.startTime, endTime,
+          employeeId: slot.employeeId, employeeIds: slot.employeeIds, date: item.date, startTime: item.startTime, endTime,
           bufferMinutes: service.bufferMinutes, preProcessingMinutes: service.preProcessingMinutes, processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes, resourceIds: requirements[index]!.map((entry) => entry.resourceId),
         });
         resourceReservations.push(...requirements[index]!.map((entry) => ({
@@ -7511,7 +7643,7 @@ async function createStaffBookingGroup(
         date: entry.item.date, startTime: entry.item.startTime, endTime: entry.endTime, position,
       })), settings?.maxVisitGapMinutes ?? 0)) throw new BookingGroupLayoutConflictError();
       await lockAppointmentResources(tx, access.salon.id, planned.flatMap((entry, index) => [
-        { date: entry.item.date, employeeId: entry.employeeId },
+        ...entry.employeeIds.map((employeeId) => ({ date: entry.item.date, employeeId })),
         ...requirements[index]!.map((requirement) => ({ date: entry.item.date, resourceId: requirement.resourceId })),
       ]));
       // A resolved employee may also work at another location. Re-check after
@@ -7523,16 +7655,16 @@ async function createStaffBookingGroup(
         const entry = planned[index]!;
         const slots = await canonicalAvailability({
           salonId: access.salon.id, service: entry.service, dates: [entry.item.date],
-          employeeId: entry.employeeId, store: tx,
+          employeeId: entry.employeeId, employeeIds: entry.employeeIds, store: tx,
           reservedAppointments: revalidationAppointments,
           resourceReservations: revalidationResources,
         });
         if (!slots.some((slot) => slot.startTime === entry.item.startTime
-          && slot.endTime === entry.endTime && slot.employeeId === entry.employeeId)) {
+          && slot.endTime === entry.endTime && slot.employeeIds.join() === entry.employeeIds.join())) {
           throw new AppointmentSeriesError("Jedan od termina više nije slobodan.", 409);
         }
         revalidationAppointments.push({
-          employeeId: entry.employeeId, date: entry.item.date, startTime: entry.item.startTime,
+          employeeId: entry.employeeId, employeeIds: entry.employeeIds, date: entry.item.date, startTime: entry.item.startTime,
           endTime: entry.endTime, bufferMinutes: entry.service.bufferMinutes, preProcessingMinutes: entry.service.preProcessingMinutes, processingMinutes: entry.service.processingMinutes, postProcessingMinutes: entry.service.postProcessingMinutes,
           resourceIds: requirements[index]!.map((item) => item.resourceId),
         });
@@ -7561,27 +7693,31 @@ async function createStaffBookingGroup(
           notes: parsed.data.notes ?? null, plannedDate: entry.item.date,
           plannedStartTime: entry.item.startTime, plannedEndTime: entry.endTime,
         }, "confirmed", access.user.id);
-        await tx.insert(appointmentTreatmentsTable).values({
+        const [treatment] = await tx.insert(appointmentTreatmentsTable).values({
           appointmentId: appointment!.id, serviceId: entry.service.id, employeeId: entry.employeeId,
           position, durationMinutes: entry.service.durationMinutes, bufferMinutes: entry.service.bufferMinutes,
           preProcessingMinutes: entry.service.preProcessingMinutes, processingMinutes: entry.service.processingMinutes,
           postProcessingMinutes: entry.service.postProcessingMinutes,
           price: entry.service.promoPrice ?? entry.service.price,
           plannedStartTime: entry.item.startTime, plannedEndTime: entry.endTime,
-        });
+        }).returning();
+        await tx.insert(appointmentTreatmentEmployeesTable).values(entry.employeeIds.map((employeeId, participantPosition) => ({
+          appointmentTreatmentId: treatment!.id, employeeId, position: participantPosition,
+        })));
         const bufferedEnd = appointmentEndTime(entry.endTime, entry.service.bufferMinutes);
         if (!bufferedEnd) throw new AppointmentSeriesError("Bafer tretmana izlazi van dana.", 409);
         await allocateResourcesInTx(tx, access.salon.id, requirements[position]!, appointment!.id,
           entry.item.date, entry.item.startTime, requirements[position]!.length ? bufferedEnd : entry.endTime);
-        appointments.push({ appointment: appointment!, service: entry.service, employeeId: entry.employeeId });
+        appointments.push({ appointment: appointment!, service: entry.service, employeeId: entry.employeeId, employeeIds: entry.employeeIds });
       }
       const employees = await tx.select().from(employeesTable).where(inArray(
-        employeesTable.id, appointments.map((item) => item.employeeId)));
+        employeesTable.id, [...new Set(appointments.flatMap((item) => item.employeeIds))]));
       const employeeById = new Map(employees.map((employee) => [employee.id, employee]));
       const views = await Promise.all(appointments.map(async (item) =>
         appointmentView(item.appointment, access.salon, item.service, contact,
           employeeById.get(item.employeeId)!, true, null,
-          await getAllocationsForAppointment(tx, item.appointment.id))));
+          await getAllocationsForAppointment(tx, item.appointment.id),
+          item.employeeIds.map((employeeId) => employeeById.get(employeeId)!).filter(Boolean))));
       const response = {
         id: group!.id, salonId: access.salon.id, appointments: views, createdAt: group!.createdAt,
       };
@@ -7649,8 +7785,8 @@ admitBookingRequest, async (req, res): Promise<void> => {
       // do not write yet. Employees are people shared by sibling locations, so
       // every resolved choice must subsequently be locked with the global key.
       await lockAppointmentResources(tx, salon.id, treatmentDates.map((item) => ({ date: item })));
-      const planned: Array<{ item: (typeof parsed.data.treatments)[number]; service: typeof servicesTable.$inferSelect; date: string; endTime: string; employeeId: string }> = [];
-      const reservedAppointments: Array<{ employeeId: string; date: string; startTime: string; endTime: string; bufferMinutes: number; preProcessingMinutes?: number; processingMinutes?: number; postProcessingMinutes?: number; resourceIds: string[] }> = [];
+      const planned: Array<{ item: (typeof parsed.data.treatments)[number]; service: typeof servicesTable.$inferSelect; date: string; endTime: string; employeeId: string; employeeIds: string[] }> = [];
+      const reservedAppointments: Array<{ employeeId: string; employeeIds?: string[]; date: string; startTime: string; endTime: string; bufferMinutes: number; preProcessingMinutes?: number; processingMinutes?: number; postProcessingMinutes?: number; resourceIds: string[] }> = [];
       const resourceReservations: Array<{ resourceId: string; quantity: number; date: string; startTime: string; endTime: string; bufferMinutes: number }> = [];
       for (let itemIndex = 0; itemIndex < parsed.data.treatments.length; itemIndex++) {
         const item = parsed.data.treatments[itemIndex]!;
@@ -7659,18 +7795,18 @@ admitBookingRequest, async (req, res): Promise<void> => {
         const endTime = appointmentEndTime(item.startTime, service.durationMinutes);
         if (!endTime) throw new AppointmentSeriesError("Neispravno trajanje tretmana.", 400);
         const slots = await canonicalAvailability({
-          salonId: salon.id, service, dates: [itemDate], employeeId: item.employeeId ?? null, store: tx,
+          salonId: salon.id, service, dates: [itemDate], employeeId: item.employeeId ?? null, employeeIds: item.employeeIds, store: tx,
           reservedAppointments, resourceReservations,
         });
         const slot = slots.find((candidate) => candidate.startTime === item.startTime && candidate.endTime === endTime);
         if (!slot) throw new AppointmentSeriesError("Jedan od termina više nije slobodan.", 409);
-        if (planned.some((entry) => entry.date === itemDate && entry.employeeId === slot.employeeId
+        if (planned.some((entry) => entry.date === itemDate && entry.employeeIds.some((id) => slot.employeeIds.includes(id))
           && entry.item.startTime < endTime && entry.endTime > item.startTime)) {
           throw new AppointmentSeriesError("Tretmani u grupi se preklapaju.", 409);
         }
-        planned.push({ item, service, date: itemDate, endTime, employeeId: slot.employeeId });
+        planned.push({ item, service, date: itemDate, endTime, employeeId: slot.employeeId, employeeIds: slot.employeeIds });
         reservedAppointments.push({
-          employeeId: slot.employeeId, date: itemDate, startTime: item.startTime, endTime,
+          employeeId: slot.employeeId, employeeIds: slot.employeeIds, date: itemDate, startTime: item.startTime, endTime,
           bufferMinutes: service.bufferMinutes, preProcessingMinutes: service.preProcessingMinutes,
           processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes,
           resourceIds: requirements[itemIndex]!.map((entry) => entry.resourceId),
@@ -7688,7 +7824,7 @@ admitBookingRequest, async (req, res): Promise<void> => {
         throw new BookingGroupLayoutConflictError();
       }
       await lockAppointmentResources(tx, salon.id, [
-        ...planned.map((entry) => ({ date: entry.date, employeeId: entry.employeeId })),
+        ...planned.flatMap((entry) => entry.employeeIds.map((employeeId) => ({ date: entry.date, employeeId }))),
         ...planned.flatMap((entry, index) => requirements[index]!.map((requirement) => ({ date: entry.date, resourceId: requirement.resourceId }))),
       ]);
       const revalidationAppointments: typeof reservedAppointments = [];
@@ -7696,14 +7832,14 @@ admitBookingRequest, async (req, res): Promise<void> => {
       for (let index = 0; index < planned.length; index += 1) {
         const entry = planned[index]!;
         const slots = await canonicalAvailability({
-          salonId: salon.id, service: entry.service, dates: [entry.date], employeeId: entry.employeeId, store: tx,
+          salonId: salon.id, service: entry.service, dates: [entry.date], employeeId: entry.employeeId, employeeIds: entry.employeeIds, store: tx,
           reservedAppointments: revalidationAppointments, resourceReservations: revalidationResources,
         });
-        if (!slots.some((slot) => slot.startTime === entry.item.startTime && slot.endTime === entry.endTime && slot.employeeId === entry.employeeId)) {
+        if (!slots.some((slot) => slot.startTime === entry.item.startTime && slot.endTime === entry.endTime && slot.employeeIds.join() === entry.employeeIds.join())) {
           throw new AppointmentSeriesError("Jedan od termina više nije slobodan.", 409);
         }
         revalidationAppointments.push({
-          employeeId: entry.employeeId, date: entry.date, startTime: entry.item.startTime, endTime: entry.endTime,
+          employeeId: entry.employeeId, employeeIds: entry.employeeIds, date: entry.date, startTime: entry.item.startTime, endTime: entry.endTime,
           bufferMinutes: entry.service.bufferMinutes, resourceIds: requirements[index]!.map((item) => item.resourceId),
         });
         revalidationResources.push(...requirements[index]!.map((item) => ({
@@ -7712,24 +7848,31 @@ admitBookingRequest, async (req, res): Promise<void> => {
         })));
       }
       const [group] = await tx.insert(bookingGroupsTable).values({ salonId: salon.id, customerId: user.id, salonCustomerId: crm.id, createdByUserId: user.id, notes: parsed.data.notes ?? null }).returning();
-      const appointments: Array<{ appointment: typeof appointmentsTable.$inferSelect; employee: typeof employeesTable.$inferSelect; service: typeof servicesTable.$inferSelect }> = [];
+      const appointments: Array<{ appointment: typeof appointmentsTable.$inferSelect; employee: typeof employeesTable.$inferSelect; service: typeof servicesTable.$inferSelect; employeeIds: string[] }> = [];
       for (let position = 0; position < planned.length; position++) {
-        const { item, service, date: itemDate, endTime, employeeId } = planned[position]!;
+        const { item, service, date: itemDate, endTime, employeeId, employeeIds } = planned[position]!;
         const appointment = await insertInitializedAppointmentInTx(tx, {
           salonId: salon.id, customerId: user.id, salonCustomerId: crm.id, employeeId, serviceId: service.id, bookingGroupId: group!.id,
           date: itemDate, startTime: item.startTime, endTime, durationMinutes: service.durationMinutes, price: service.promoPrice ?? service.price,
           notes: parsed.data.notes ?? null, plannedDate: itemDate, plannedStartTime: item.startTime, plannedEndTime: endTime,
         }, salon.instantBooking ? "confirmed" : "pending", user.id);
-        await tx.insert(appointmentTreatmentsTable).values({ appointmentId: appointment!.id, serviceId: service.id, employeeId, position, durationMinutes: service.durationMinutes, bufferMinutes: service.bufferMinutes, preProcessingMinutes: service.preProcessingMinutes, processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes, price: service.promoPrice ?? service.price, plannedStartTime: item.startTime, plannedEndTime: endTime });
+        const [treatment] = await tx.insert(appointmentTreatmentsTable).values({ appointmentId: appointment!.id, serviceId: service.id, employeeId, position, durationMinutes: service.durationMinutes, bufferMinutes: service.bufferMinutes, preProcessingMinutes: service.preProcessingMinutes, processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes, price: service.promoPrice ?? service.price, plannedStartTime: item.startTime, plannedEndTime: endTime }).returning();
+        await tx.insert(appointmentTreatmentEmployeesTable).values(employeeIds.map((participantId, participantPosition) => ({ appointmentTreatmentId: treatment!.id, employeeId: participantId, position: participantPosition })));
         const bufferedEnd = appointmentEndTime(endTime, service.bufferMinutes);
         if (!bufferedEnd) throw new AppointmentSeriesError("Bafer tretmana izlazi van dana.", 409);
         await allocateResourcesInTx(tx, salon.id, requirements[position]!, appointment!.id, itemDate, item.startTime, requirements[position]!.length ? bufferedEnd : endTime);
         const [employee] = await tx.select().from(employeesTable).where(eq(employeesTable.id, employeeId)).limit(1);
-        appointments.push({ appointment: appointment!, employee: employee!, service });
+        appointments.push({ appointment: appointment!, employee: employee!, service, employeeIds });
       }
-      const views = await Promise.all(appointments.map(async ({ appointment, employee, service }) =>
+      const participantEmployees = await tx.select().from(employeesTable).where(inArray(
+        employeesTable.id,
+        [...new Set(appointments.flatMap((item) => item.employeeIds))],
+      ));
+      const participantById = new Map(participantEmployees.map((employee) => [employee.id, employee]));
+      const views = await Promise.all(appointments.map(async ({ appointment, employee, service, employeeIds }) =>
         appointmentView(appointment, salon, service, user, employee, true, null,
-          await getAllocationsForAppointment(tx, appointment.id))));
+          await getAllocationsForAppointment(tx, appointment.id),
+          employeeIds.map((employeeId) => participantById.get(employeeId)!).filter(Boolean))));
       await tx.insert(salonNotificationsTable).values({
         salonId: salon.id, title: "Nova grupna rezervacija",
         message: `${user.firstName} ${user.lastName} je zakazao/la ${views.length} tretmana.`,
@@ -7904,18 +8047,29 @@ router.patch("/booking-groups/:bookingGroupId/reschedule", admitBookingRequest, 
       const moveById = new Map(body.data.treatments.map((item) => [item.appointmentId, item]));
       const services = await tx.select().from(servicesTable).where(inArray(servicesTable.id, affected.map((item) => item.serviceId)));
       const serviceById = new Map(services.map((item) => [item.id, item]));
+      const treatmentRows = await tx.select({ appointmentId: appointmentTreatmentsTable.appointmentId, treatmentId: appointmentTreatmentsTable.id, employeeId: appointmentTreatmentsTable.employeeId })
+        .from(appointmentTreatmentsTable).where(inArray(appointmentTreatmentsTable.appointmentId, affected.map((item) => item.id)));
+      const participantRows = treatmentRows.length ? await tx.select().from(appointmentTreatmentEmployeesTable)
+        .where(inArray(appointmentTreatmentEmployeesTable.appointmentTreatmentId, treatmentRows.map((item) => item.treatmentId))) : [];
+      const existingEmployeeIds = new Map(treatmentRows.map((treatment) => {
+        const ids = participantRows.filter((participant) => participant.appointmentTreatmentId === treatment.treatmentId)
+          .sort((a, b) => a.position - b.position).map((participant) => participant.employeeId);
+        return [treatment.appointmentId, ids.length ? ids : treatment.employeeId ? [treatment.employeeId] : []];
+      }));
       const requirements = new Map<string, Awaited<ReturnType<typeof fetchServiceResourceRequirements>>>();
       for (const item of affected) requirements.set(item.id, await fetchServiceResourceRequirements(tx, item.serviceId));
       await lockAppointmentResources(tx, access.salon.id, affected.flatMap((item) => {
         const move = moveById.get(item.id)!; const date = treatmentDatesById.get(item.id)!;
         return [
-          { date: item.date, employeeId: item.employeeId },
-          { date, employeeId: move.employeeId ?? item.employeeId },
+          ...(existingEmployeeIds.get(item.id) ?? (item.employeeId ? [item.employeeId] : [])).flatMap((employeeId) => [
+            { date: item.date, employeeId },
+            { date, employeeId: move.employeeIds ? undefined : (move.employeeId ?? employeeId) },
+          ]),
           ...requirements.get(item.id)!.map((requirement) => ({ date, resourceId: requirement.resourceId })),
         ];
       }));
-      const planned: Array<{ appointment: typeof appointmentsTable.$inferSelect; service: typeof servicesTable.$inferSelect; date: string; startTime: string; endTime: string; employeeId: string }> = [];
-      const reservedAppointments: Array<{ employeeId: string; date: string; startTime: string; endTime: string; bufferMinutes: number; preProcessingMinutes?: number; processingMinutes?: number; postProcessingMinutes?: number; resourceIds: string[] }> = [];
+      const planned: Array<{ appointment: typeof appointmentsTable.$inferSelect; service: typeof servicesTable.$inferSelect; date: string; startTime: string; endTime: string; employeeId: string; employeeIds: string[] }> = [];
+      const reservedAppointments: Array<{ employeeId: string; employeeIds?: string[]; date: string; startTime: string; endTime: string; bufferMinutes: number; preProcessingMinutes?: number; processingMinutes?: number; postProcessingMinutes?: number; resourceIds: string[] }> = [];
       const resourceReservations: Array<{ resourceId: string; quantity: number; date: string; startTime: string; endTime: string; bufferMinutes: number }> = [];
       for (const appointment of affected) {
         const move = moveById.get(appointment.id)!;
@@ -7925,6 +8079,7 @@ router.patch("/booking-groups/:bookingGroupId/reschedule", admitBookingRequest, 
         if (!endTime) throw new AppointmentSeriesError("Novo vreme tretmana nije ispravno.", 400);
         const slots = await canonicalAvailability({
           salonId: access.salon.id, service, dates: [date], employeeId: move.employeeId ?? appointment.employeeId,
+          employeeIds: move.employeeIds ?? existingEmployeeIds.get(appointment.id),
           excludeAppointmentIds: affected.map((item) => item.id), store: tx,
           reservedAppointments, resourceReservations,
         });
@@ -7933,10 +8088,10 @@ router.patch("/booking-groups/:bookingGroupId/reschedule", admitBookingRequest, 
           && item.startTime < endTime && item.endTime > move.startTime)) {
           throw new AppointmentSeriesError("Jedan od novih termina više nije slobodan.", 409);
         }
-        planned.push({ appointment, service, date, startTime: move.startTime, endTime, employeeId: slot.employeeId });
+        planned.push({ appointment, service, date, startTime: move.startTime, endTime, employeeId: slot.employeeId, employeeIds: slot.employeeIds });
         const appointmentRequirements = requirements.get(appointment.id)!;
         reservedAppointments.push({
-          employeeId: slot.employeeId, date, startTime: move.startTime, endTime,
+          employeeId: slot.employeeId, employeeIds: slot.employeeIds, date, startTime: move.startTime, endTime,
           bufferMinutes: service.bufferMinutes, preProcessingMinutes: service.preProcessingMinutes,
           processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes,
           resourceIds: appointmentRequirements.map((item) => item.resourceId),
@@ -7946,21 +8101,25 @@ router.patch("/booking-groups/:bookingGroupId/reschedule", admitBookingRequest, 
           endTime: appointmentEndTime(endTime, service.bufferMinutes)!, bufferMinutes: 0,
         })));
       }
+      await lockAppointmentParticipants(tx, access.salon.id, planned.flatMap((item) => [
+        ...item.employeeIds.map((employeeId) => ({ date: item.date, employeeId })),
+        ...requirements.get(item.appointment.id)!.map((requirement) => ({ date: item.date, resourceId: requirement.resourceId })),
+      ]));
       const revalidationAppointments: typeof reservedAppointments = [];
       const revalidationResources: typeof resourceReservations = [];
       for (const item of planned) {
         const slots = await canonicalAvailability({
-          salonId: access.salon.id, service: item.service, dates: [item.date], employeeId: item.employeeId,
+          salonId: access.salon.id, service: item.service, dates: [item.date], employeeId: item.employeeId, employeeIds: item.employeeIds,
           excludeAppointmentIds: affected.map((entry) => entry.id), store: tx,
           reservedAppointments: revalidationAppointments, resourceReservations: revalidationResources,
         });
         if (!slots.some((slot) => slot.startTime === item.startTime && slot.endTime === item.endTime
-          && slot.employeeId === item.employeeId)) {
+           && slot.employeeIds.join() === item.employeeIds.join())) {
           throw new AppointmentSeriesError("Jedan od novih termina više nije slobodan.", 409);
         }
         const appointmentRequirements = requirements.get(item.appointment.id)!;
         revalidationAppointments.push({
-          employeeId: item.employeeId, date: item.date, startTime: item.startTime, endTime: item.endTime,
+          employeeId: item.employeeId, employeeIds: item.employeeIds, date: item.date, startTime: item.startTime, endTime: item.endTime,
           bufferMinutes: item.service.bufferMinutes, preProcessingMinutes: item.service.preProcessingMinutes,
           processingMinutes: item.service.processingMinutes, postProcessingMinutes: item.service.postProcessingMinutes,
           resourceIds: appointmentRequirements.map((entry) => entry.resourceId),
@@ -7980,6 +8139,13 @@ router.patch("/booking-groups/:bookingGroupId/reschedule", admitBookingRequest, 
         await tx.update(appointmentTreatmentsTable).set({
           employeeId: item.employeeId, plannedStartTime: item.startTime, plannedEndTime: item.endTime,
         }).where(eq(appointmentTreatmentsTable.appointmentId, item.appointment.id));
+        const movedTreatments = treatmentRows.filter((treatment) => treatment.appointmentId === item.appointment.id);
+        for (const treatment of movedTreatments) {
+          await tx.delete(appointmentTreatmentEmployeesTable).where(eq(appointmentTreatmentEmployeesTable.appointmentTreatmentId, treatment.treatmentId));
+          await tx.insert(appointmentTreatmentEmployeesTable).values(item.employeeIds.map((employeeId, position) => ({
+            appointmentTreatmentId: treatment.treatmentId, employeeId, position,
+          })));
+        }
         const bufferedEnd = appointmentEndTime(item.endTime, item.service.bufferMinutes);
         if (!bufferedEnd) throw new AppointmentSeriesError("Bafer tretmana izlazi van dana.", 409);
         await allocateResourcesInTx(tx, access.salon.id, requirements.get(item.appointment.id)!, item.appointment.id,
@@ -8148,6 +8314,7 @@ admitBookingRequest, async (req, res): Promise<void> => {
         status: treatmentLocation === "home" ? "pending" : salon.instantBooking ? "confirmed" : "pending", notes: parsed.data.notes ?? null,
         createdByUserId: user.id,
         preferredEmployeeId: parsed.data.employeeId,
+        preferredEmployeeIds: parsed.data.employeeIds,
         treatmentLocation, travelFee: treatmentLocation === "home" ? service.homeServiceFee : 0,
         treatmentAddress: treatmentLocation === "home" ? parsed.data.treatmentAddress : null,
         packagePurchaseId, tx,
@@ -8177,6 +8344,7 @@ admitBookingRequest, async (req, res): Promise<void> => {
       }
       const response = appointmentView(
         allocation.appointment, salon, service, user, allocation.employee, true, null, allocation.allocatedResources,
+        allocation.assignedEmployees,
       );
       CreateAppointmentResponse.parse(response);
       return { status: 201, body: response };
@@ -8220,7 +8388,7 @@ router.patch("/appointments/:appointmentId", admitBookingRequest, async (req, re
   if (!params.success || !body.success || (req.body?.date !== undefined && !isValidCalendarDate(String(req.body.date)))) {
     res.status(400).json({ error: "Podaci za izmenu termina nisu ispravni." }); return;
   }
-  let result: { appointment: typeof appointmentsTable.$inferSelect; service: typeof servicesTable.$inferSelect; employee: typeof employeesTable.$inferSelect } | { error: "not-found" | "changed" | "invalid-time" | "unavailable" | "booking-group" };
+  let result: { appointment: typeof appointmentsTable.$inferSelect; service: typeof servicesTable.$inferSelect; employee: typeof employeesTable.$inferSelect; employeeIds: string[] } | { error: "not-found" | "changed" | "invalid-time" | "unavailable" | "booking-group" };
   try {
     result = await db.transaction(async (tx) => {
       const [initial] = await tx.select().from(appointmentsTable).where(and(
@@ -8232,10 +8400,21 @@ router.patch("/appointments/:appointmentId", admitBookingRequest, async (req, re
 
       const date = body.data.date ? calendarDate(body.data.date) : initial.date;
       const startTime = body.data.startTime ?? initial.startTime;
-      const employeeId = body.data.employeeId ?? initial.employeeId;
+      const [initialTreatment] = await tx.select().from(appointmentTreatmentsTable)
+        .where(eq(appointmentTreatmentsTable.appointmentId, initial.id)).orderBy(asc(appointmentTreatmentsTable.position)).limit(1);
+      const existingParticipants = initialTreatment ? await tx.select().from(appointmentTreatmentEmployeesTable)
+        .where(eq(appointmentTreatmentEmployeesTable.appointmentTreatmentId, initialTreatment.id))
+        .orderBy(asc(appointmentTreatmentEmployeesTable.position)) : [];
+      const oldEmployeeIds = existingParticipants.length
+        ? existingParticipants.map((participant) => participant.employeeId)
+        : initialTreatment?.employeeId ? [initialTreatment.employeeId] : initial.employeeId ? [initial.employeeId] : [];
+      const requestedEmployeeIds = body.data.employeeIds
+        ?? (body.data.employeeId !== undefined ? [body.data.employeeId] : oldEmployeeIds);
+      const employeeId = body.data.employeeId ?? requestedEmployeeIds[0] ?? initial.employeeId;
       await lockAppointmentResources(tx, initial.salonId, [
-        { date: initial.date, employeeId: initial.employeeId },
-        { date, employeeId },
+        ...oldEmployeeIds.map((participantId) => ({ date: initial.date, employeeId: participantId })),
+        ...requestedEmployeeIds.filter((participantId): participantId is string => Boolean(participantId))
+          .map((participantId) => ({ date, employeeId: participantId })),
       ]);
       const [appointment] = await tx.select().from(appointmentsTable).where(and(
         eq(appointmentsTable.id, initial.id),
@@ -8247,20 +8426,21 @@ router.patch("/appointments/:appointmentId", admitBookingRequest, async (req, re
       if (!service || !endTime) return { error: "invalid-time" as const };
       const requirements = await fetchServiceResourceRequirements(tx, service.id);
       const initialSlots = await canonicalAvailability({
-        salonId: appointment.salonId, service, dates: [date], employeeId,
+        salonId: appointment.salonId, service, dates: [date], employeeId, employeeIds: requestedEmployeeIds,
         excludeAppointmentIds: [appointment.id], store: tx,
       });
       const initialSlot = initialSlots.find((slot) => slot.startTime === startTime && slot.endTime === endTime);
       if (!initialSlot) return { error: "unavailable" as const };
       await lockAppointmentResources(tx, appointment.salonId, [
-        { date, employeeId: initialSlot.employeeId },
+        ...initialSlot.employeeIds.map((participantId) => ({ date, employeeId: participantId })),
         ...requirements.map((requirement) => ({ date, resourceId: requirement.resourceId })),
       ]);
       const revalidated = await canonicalAvailability({
-        salonId: appointment.salonId, service, dates: [date], employeeId: initialSlot.employeeId,
+        salonId: appointment.salonId, service, dates: [date], employeeId: initialSlot.employeeId, employeeIds: initialSlot.employeeIds,
         excludeAppointmentIds: [appointment.id], store: tx,
       });
-      if (!revalidated.some((slot) => slot.startTime === startTime && slot.endTime === endTime)) return { error: "unavailable" as const };
+      if (!revalidated.some((slot) => slot.startTime === startTime && slot.endTime === endTime
+        && slot.employeeIds.join() === initialSlot.employeeIds.join())) return { error: "unavailable" as const };
       const [employee] = await tx.select().from(employeesTable).where(eq(employeesTable.id, initialSlot.employeeId)).limit(1);
       if (!employee) return { error: "unavailable" as const };
       const bufferedEnd = appointmentEndTime(endTime, service.bufferMinutes);
@@ -8269,11 +8449,21 @@ router.patch("/appointments/:appointmentId", admitBookingRequest, async (req, re
         date, startTime, endTime, employeeId: employee.id, notes: body.data.notes ?? appointment.notes,
       }).where(and(eq(appointmentsTable.id, appointment.id), inArray(appointmentsTable.status, ["pending", "confirmed"]))).returning();
       if (!updated) return { error: "changed" as const };
+      if (initialTreatment) {
+        await tx.update(appointmentTreatmentsTable).set({
+          employeeId: employee.id, plannedStartTime: startTime, plannedEndTime: endTime,
+        }).where(eq(appointmentTreatmentsTable.id, initialTreatment.id));
+        await tx.delete(appointmentTreatmentEmployeesTable)
+          .where(eq(appointmentTreatmentEmployeesTable.appointmentTreatmentId, initialTreatment.id));
+        await tx.insert(appointmentTreatmentEmployeesTable).values(initialSlot.employeeIds.map((participantId, position) => ({
+          appointmentTreatmentId: initialTreatment.id, employeeId: participantId, position,
+        })));
+      }
       await tx.delete(appointmentResourceAllocationsTable)
         .where(eq(appointmentResourceAllocationsTable.appointmentId, updated.id));
       // Throws ResourceCapacityError → rolls back transaction.
       await allocateResourcesInTx(tx, appointment.salonId, requirements, updated.id, date, startTime, requirements.length ? bufferedEnd : endTime);
-      return { appointment: updated, service, employee };
+      return { appointment: updated, service, employee, employeeIds: initialSlot.employeeIds };
     });
   } catch (err: unknown) {
     if (err instanceof ResourceCapacityError) {
@@ -8294,15 +8484,18 @@ router.patch("/appointments/:appointmentId", admitBookingRequest, async (req, re
     });
     return;
   }
-  const { appointment: updated, employee } = result;
-  const [salon, service, allocatedResources] = await Promise.all([
+  const { appointment: updated, employee, employeeIds } = result;
+  const [salon, service, allocatedResources, assignedEmployees] = await Promise.all([
     db.select().from(salonsTable).where(eq(salonsTable.id, updated!.salonId)).limit(1),
     db.select().from(servicesTable).where(eq(servicesTable.id, updated!.serviceId)).limit(1),
     getAllocationsForAppointment(db, updated!.id),
+    db.select({ id: employeesTable.id, name: employeesTable.name }).from(employeesTable)
+      .where(inArray(employeesTable.id, employeeIds)),
   ]);
   await sendAppointmentEmails({ event: "updated", appointment: updated, customer: user, salon: salon[0]!, service: service[0]! });
   await notifyCustomer(db, { userId: user.id, eventKey: `appointment:${updated.id}:updated:${updated.updatedAt.toISOString()}`, category: "booking", title: "Termin je izmenjen", body: `Termin u salonu ${salon[0]!.name} je izmenjen.`, deepLink: "/moji-termini" });
-  const response = appointmentView(updated, salon[0]!, service[0]!, user, employee, true, null, allocatedResources);
+  const orderedAssignedEmployees = employeeIds.map((id) => assignedEmployees.find((item) => item.id === id)).filter((item): item is { id: string; name: string } => Boolean(item));
+  const response = appointmentView(updated, salon[0]!, service[0]!, user, employee, true, null, allocatedResources, orderedAssignedEmployees);
   UpdateAppointmentResponse.parse(response);
   res.json(response);
 });
@@ -8343,7 +8536,8 @@ async function cancelAppointmentInTx(
   const [initial] = await tx.select().from(appointmentsTable)
     .where(eq(appointmentsTable.id, input.appointmentId)).limit(1);
   if (!initial) return { error: "not-found" as const };
-  await lockAppointmentResources(tx, initial.salonId, [{ date: initial.date, employeeId: initial.employeeId }]);
+  const participantIds = await appointmentParticipantIds(tx, initial.id, initial.employeeId);
+  await lockAppointmentResources(tx, initial.salonId, participantIds.map((employeeId) => ({ date: initial.date, employeeId })));
   const [appointment] = await tx.select().from(appointmentsTable)
     .where(eq(appointmentsTable.id, initial.id)).for("update").limit(1);
   if (!appointment) return { error: "not-found" as const };
@@ -8399,9 +8593,17 @@ router.post("/appointments/:appointmentId/lifecycle", async (req, res): Promise<
     return;
   }
   const result = await db.transaction(async (tx) => {
-    const [initial] = await tx.select().from(appointmentsTable).where(and(eq(appointmentsTable.id, params.data.appointmentId), eq(appointmentsTable.salonId, allowedSalonId!))).limit(1);
-    if (!initial || (employeeId && initial.employeeId !== employeeId)) return null;
-    await lockAppointmentResources(tx, initial.salonId, [{ date: initial.date, employeeId: initial.employeeId }]);
+    const [initial] = await tx.select().from(appointmentsTable).where(and(
+      eq(appointmentsTable.id, params.data.appointmentId),
+      eq(appointmentsTable.salonId, allowedSalonId!),
+      employeeId ? appointmentEmployeeScope(employeeId) : undefined,
+    )).limit(1);
+    if (!initial) return null;
+    const participantIds = await appointmentParticipantIds(tx, initial.id, initial.employeeId);
+    await lockAppointmentResources(tx, initial.salonId, participantIds.map((participantId) => ({
+      date: initial.date,
+      employeeId: participantId,
+    })));
     const [appointment] = await tx.select().from(appointmentsTable).where(eq(appointmentsTable.id, initial.id)).for("update").limit(1);
     if (!appointment) return null;
     const occurredAt = body.data.occurredAt ?? serverNow;
@@ -8468,14 +8670,24 @@ router.post("/appointments/:appointmentId/lifecycle", async (req, res): Promise<
     return;
   }
   const lifecycleAppointment = result.appointment!;
-  const [salon, service, employee, allocations] = await Promise.all([
+  const participantIds = await appointmentParticipantIds(db, lifecycleAppointment.id, lifecycleAppointment.employeeId);
+  const [salon, service, employee, allocations, assignedEmployees] = await Promise.all([
     db.select().from(salonsTable).where(eq(salonsTable.id, lifecycleAppointment.salonId)).limit(1),
     db.select().from(servicesTable).where(eq(servicesTable.id, lifecycleAppointment.serviceId)).limit(1),
     lifecycleAppointment.employeeId ? db.select().from(employeesTable).where(eq(employeesTable.id, lifecycleAppointment.employeeId)).limit(1) : Promise.resolve([]),
     getAllocationsForAppointment(db, lifecycleAppointment.id),
+    participantIds.length
+      ? db.select({ id: employeesTable.id, name: employeesTable.name }).from(employeesTable)
+        .where(inArray(employeesTable.id, participantIds))
+      : Promise.resolve([] as Array<{ id: string; name: string }>),
   ]);
   if (result.lowStockWarned) await publishSalonNotificationUpdate(lifecycleAppointment.salonId);
-  res.json(TransitionAppointmentLifecycleResponse.parse(appointmentView(lifecycleAppointment, salon[0]!, service[0]!, actor, employee[0], true, null, allocations)));
+  const orderedAssignedEmployees = participantIds
+    .map((id) => assignedEmployees.find((item) => item.id === id))
+    .filter((item): item is { id: string; name: string } => Boolean(item));
+  res.json(TransitionAppointmentLifecycleResponse.parse(appointmentView(
+    lifecycleAppointment, salon[0]!, service[0]!, actor, employee[0], true, null, allocations, orderedAssignedEmployees,
+  )));
 });
 
 router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<void> => {
@@ -8488,7 +8700,8 @@ router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<voi
       eq(appointmentsTable.customerId, user.id),
     )).limit(1);
     if (!initial) return { error: "not-found" as const };
-    await lockAppointmentResources(tx, initial.salonId, [{ date: initial.date, employeeId: initial.employeeId }]);
+    const participantIds = await appointmentParticipantIds(tx, initial.id, initial.employeeId);
+    await lockAppointmentResources(tx, initial.salonId, participantIds.map((employeeId) => ({ date: initial.date, employeeId })));
     const [settings] = await tx.select().from(salonBookingSettingsTable)
       .where(eq(salonBookingSettingsTable.salonId, initial.salonId)).limit(1);
     const cancelledAt = new Date();
@@ -9150,7 +9363,7 @@ router.get("/salon/appointments", async (req, res): Promise<void> => {
       res.status(404).json({ error: "Zaposleni nije pronađen u ovom salonu." });
       return;
     }
-    predicates.push(eq(appointmentsTable.employeeId, parsed.data.employeeId));
+    predicates.push(appointmentEmployeeScope(parsed.data.employeeId));
   }
   if (parsed.data.serviceId) {
     const [service] = await db.select({ id: servicesTable.id }).from(servicesTable).where(and(
@@ -9219,7 +9432,7 @@ router.post("/salon/time-blocks", async (req, res): Promise<void> => {
     await lockAppointmentResources(tx, access.salon.id, [{ date: parsed.data.date, employeeId: employee.id }]);
     const appointments = await tx.select().from(appointmentsTable).where(and(
       eq(appointmentsTable.salonId, access.salon.id),
-      eq(appointmentsTable.employeeId, employee.id),
+      appointmentEmployeeScope(employee.id),
       eq(appointmentsTable.date, parsed.data.date),
     ));
     if (appointments.some((appointment) => overlapsAppointment(parsed.data.startTime, parsed.data.endTime, appointment))) return null;
@@ -9257,7 +9470,10 @@ router.delete("/salon/time-blocks/:timeBlockId", async (req, res): Promise<void>
 
 router.get("/salon/availability/search", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
-  const parsed = SearchSalonAvailabilityQueryParams.safeParse(req.query);
+  const parsed = SearchSalonAvailabilityQueryParams.safeParse({
+    ...req.query,
+    ...(typeof req.query.employeeIds === "string" ? { employeeIds: [req.query.employeeIds] } : {}),
+  });
   if (!parsed.success || !isValidCalendarDate(parsed.data.startDate)) {
     res.status(400).json({ error: parsed.success ? "Početni datum nije ispravan." : parsed.error.message }); return;
   }
@@ -9274,8 +9490,9 @@ router.get("/salon/availability/search", async (req, res): Promise<void> => {
   const dates = Array.from({ length: 7 }, (_, offset) =>
     dateAtOffset(new Date(`${parsed.data.startDate}T12:00:00.000Z`), offset));
   const granularity = parsed.data.granularityMinutes ?? 30;
+  const requestedEmployeeIds = parsed.data.employeeIds?.map((employeeId) => employeeId.trim() || null);
   const slots = await canonicalAvailability({
-    salonId: access.salon.id, service, dates, employeeId: parsed.data.employeeId,
+    salonId: access.salon.id, service, dates, employeeId: parsed.data.employeeId, employeeIds: requestedEmployeeIds,
     granularityMinutes: granularity, limit: parsed.data.limit,
   });
   res.json(SearchSalonAvailabilityResponse.parse(slots));
@@ -9309,7 +9526,10 @@ router.get("/employee/availability/search", async (req, res): Promise<void> => {
     salonId: access.salon.id,
     service,
     dates,
-    employeeId: access.employee.id,
+    employeeIds: [
+      access.employee.id,
+      ...Array.from({ length: Math.max(0, service.requiredEmployeeCount - 1) }, () => null),
+    ],
     granularityMinutes: parsed.data.granularityMinutes,
   });
   res.json(SearchEmployeeAvailabilityResponse.parse(slots));
@@ -9553,6 +9773,7 @@ admitBookingRequest, async (req, res): Promise<void> => {
         createdByUserId: access.user.id,
         notes: parsed.data.notes ?? null,
         preferredEmployeeId: parsed.data.employeeId,
+        preferredEmployeeIds: parsed.data.employeeIds,
         packagePurchaseId: parsed.data.packagePurchaseId,
         tx,
         afterCreate: async (mutationTx, createdAppointment) => {
@@ -9572,6 +9793,7 @@ admitBookingRequest, async (req, res): Promise<void> => {
       }
       const response = appointmentView(
         allocation.appointment, salon, service, contact!, allocation.employee, true, null, allocation.allocatedResources,
+        allocation.assignedEmployees,
       );
       CreateSalonAppointmentResponse.parse(response);
       return { status: 201, body: response };
@@ -9613,7 +9835,7 @@ router.post("/salon/appointment-series/preview", async (req, res): Promise<void>
       });
     }
     const response = PreviewSalonAppointmentSeriesResponse.parse(
-      { ...(await previewSeriesSlots(access.salon.id, service, slots, parsed.data.employeeId)),
+      { ...(await previewSeriesSlots(access.salon.id, service, slots, parsed.data.employeeId, parsed.data.employeeIds)),
         packageEligible: parsed.data.packagePurchaseId ? entitlement.ok : null,
         packageReason: parsed.data.packagePurchaseId && !entitlement.ok ? entitlement.reason : null },
     );
@@ -9671,9 +9893,9 @@ async function packageBookingInput(
   return { purchase: currentPurchase, contact, services, required };
 }
 
-async function previewPackageSlots(salonId: string, services: (typeof servicesTable.$inferSelect)[], slots: Array<{ serviceId: string; date: string | Date; startTime: string; employeeId?: string | null }>) {
+async function previewPackageSlots(salonId: string, services: (typeof servicesTable.$inferSelect)[], slots: Array<{ serviceId: string; date: string | Date; startTime: string; employeeId?: string | null; employeeIds?: Array<string | null> }>) {
   const reservedAppointments: Array<{
-    employeeId: string; date: string; startTime: string; endTime: string;
+    employeeId: string; employeeIds?: string[]; date: string; startTime: string; endTime: string;
     bufferMinutes: number; preProcessingMinutes?: number; processingMinutes?: number;
     postProcessingMinutes?: number; resourceIds: string[];
   }> = [];
@@ -9690,6 +9912,7 @@ async function previewPackageSlots(salonId: string, services: (typeof servicesTa
       service,
       dates: [prepared.date],
       employeeId: slot.employeeId,
+      employeeIds: slot.employeeIds,
       reservedAppointments,
       resourceReservations: reservations,
     });
@@ -9699,7 +9922,7 @@ async function previewPackageSlots(salonId: string, services: (typeof servicesTa
     result.push({ ...slot, date: prepared.date, available, reason: available ? null : "Nema slobodnog zaposlenog, termin izlazi van radnog vremena, ili nema dostupnih resursa." });
     if (employee) {
       reservedAppointments.push({
-        employeeId: employee.employeeId, date: prepared.date, startTime: prepared.startTime, endTime: prepared.endTime,
+        employeeId: employee.employeeId, employeeIds: employee.employeeIds, date: prepared.date, startTime: prepared.startTime, endTime: prepared.endTime,
         bufferMinutes: service.bufferMinutes, preProcessingMinutes: service.preProcessingMinutes,
         processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes,
         resourceIds: requirements.map((item) => item.resourceId),
@@ -9756,11 +9979,14 @@ admitBookingRequest, async (req, res): Promise<void> => {
       for (const [serviceId, slots] of groups) {
         const service = prepared.services.find((item: typeof servicesTable.$inferSelect) => item.id === serviceId)!;
         const preferredEmployeeBySlot = new Map(
-          slots.map((slot) => [`${calendarDate(slot.date)}:${slot.startTime}`, slot.employeeId ?? null]),
+          slots.map((slot) => [`${calendarDate(slot.date)}:${slot.startTime}`, {
+            employeeId: slot.employeeId ?? null, employeeIds: slot.employeeIds,
+          }]),
         );
         const preparedSlots = prepareSeriesSlots(slots, service.durationMinutes).map((slot) => ({
           ...slot,
-          preferredEmployeeId: preferredEmployeeBySlot.get(`${slot.date}:${slot.startTime}`) ?? null,
+          preferredEmployeeId: preferredEmployeeBySlot.get(`${slot.date}:${slot.startTime}`)?.employeeId ?? null,
+          preferredEmployeeIds: preferredEmployeeBySlot.get(`${slot.date}:${slot.startTime}`)?.employeeIds,
         }));
         result.push(await createAppointmentSeries({
           salonId: access.salon.id,
@@ -9850,7 +10076,7 @@ admitBookingRequest, async (req, res): Promise<void> => {
     }, async (tx) => {
       const created = await createAppointmentSeries({
         salonId: access.salon.id, customerId: contact!.userId, salonCustomerId: contact!.id, service, slots,
-        createdByUserId: access.user.id, notes: parsed.data.notes ?? null, preferredEmployeeId: parsed.data.employeeId,
+         createdByUserId: access.user.id, notes: parsed.data.notes ?? null, preferredEmployeeId: parsed.data.employeeId, preferredEmployeeIds: parsed.data.employeeIds,
         packagePurchaseId: parsed.data.packagePurchaseId, tx,
       });
       const employees = await tx.select().from(employeesTable).where(inArray(
@@ -10013,26 +10239,54 @@ router.patch("/salon/appointments/:appointmentId", admitBookingRequest, async (r
       eq(appointmentsTable.salonId, salon.id),
     )).for("update").limit(1);
     if (!target) return { error: "not-found" as const };
-    const employeeId = body.data.employeeId ?? target.employeeId;
+    const [targetTreatment] = await tx.select().from(appointmentTreatmentsTable)
+      .where(eq(appointmentTreatmentsTable.appointmentId, target.id)).orderBy(asc(appointmentTreatmentsTable.position)).limit(1);
+    const targetParticipants = targetTreatment ? await tx.select().from(appointmentTreatmentEmployeesTable)
+      .where(eq(appointmentTreatmentEmployeesTable.appointmentTreatmentId, targetTreatment.id))
+      .orderBy(asc(appointmentTreatmentEmployeesTable.position)) : [];
+    const oldEmployeeIds = targetParticipants.length ? targetParticipants.map((item) => item.employeeId)
+      : targetTreatment?.employeeId ? [targetTreatment.employeeId] : target.employeeId ? [target.employeeId] : [];
+    const requestedEmployeeIds = body.data.employeeIds
+      ?? (body.data.employeeId !== undefined ? [body.data.employeeId] : oldEmployeeIds);
+    const employeeId = body.data.employeeId ?? requestedEmployeeIds[0] ?? target.employeeId;
     const status = body.data.status ?? target.status;
     await lockAppointmentResources(tx, salon.id, [
-      { date: target.date, employeeId: target.employeeId },
-      { date: target.date, employeeId },
+      ...oldEmployeeIds.map((participantId) => ({ date: target.date, employeeId: participantId })),
+      ...requestedEmployeeIds.filter((participantId): participantId is string => Boolean(participantId))
+        .map((participantId) => ({ date: target.date, employeeId: participantId })),
     ]);
     if (employeeId && status !== "cancelled") {
       const [service] = await tx.select().from(servicesTable).where(eq(servicesTable.id, target.serviceId)).limit(1);
       if (!service) return { error: "unavailable" as const };
       const requirements = await fetchServiceResourceRequirements(tx, service.id);
-      await lockAppointmentResources(tx, salon.id, [
-        { date: target.date, employeeId },
-        ...requirements.map((requirement) => ({ date: target.date, resourceId: requirement.resourceId })),
-      ]);
       const slots = await canonicalAvailability({
-        salonId: salon.id, service, dates: [target.date], employeeId,
+        salonId: salon.id, service, dates: [target.date], employeeId, employeeIds: requestedEmployeeIds,
         excludeAppointmentIds: [target.id], store: tx,
       });
-      if (!slots.some((slot) => slot.startTime === target.startTime && slot.endTime === target.endTime)) {
+      const selectedSlot = slots.find((slot) => slot.startTime === target.startTime && slot.endTime === target.endTime);
+      if (!selectedSlot) {
         return { error: "unavailable" as const };
+      }
+      await lockAppointmentParticipants(tx, salon.id, selectedSlot.employeeIds.flatMap((participantId) => [
+        { date: target.date, employeeId: participantId },
+      ]));
+      await lockAppointmentParticipants(tx, salon.id, requirements.map((requirement) => ({
+        date: target.date, resourceId: requirement.resourceId,
+      })));
+      const revalidated = await canonicalAvailability({
+        salonId: salon.id, service, dates: [target.date], employeeId: selectedSlot.employeeId,
+        employeeIds: selectedSlot.employeeIds, excludeAppointmentIds: [target.id], store: tx,
+      });
+      if (!revalidated.some((slot) => slot.startTime === target.startTime && slot.endTime === target.endTime
+        && slot.employeeIds.join() === selectedSlot.employeeIds.join())) return { error: "unavailable" as const };
+      if (targetTreatment) {
+        await tx.update(appointmentTreatmentsTable).set({ employeeId: selectedSlot.employeeId })
+          .where(eq(appointmentTreatmentsTable.id, targetTreatment.id));
+        await tx.delete(appointmentTreatmentEmployeesTable)
+          .where(eq(appointmentTreatmentEmployeesTable.appointmentTreatmentId, targetTreatment.id));
+        await tx.insert(appointmentTreatmentEmployeesTable).values(selectedSlot.employeeIds.map((participantId, position) => ({
+          appointmentTreatmentId: targetTreatment.id, employeeId: participantId, position,
+        })));
       }
     }
     if (target.status === "cancelled" && status !== "cancelled") {
@@ -10055,7 +10309,7 @@ router.patch("/salon/appointments/:appointmentId", admitBookingRequest, async (r
       );
     }
     const [updated] = await tx.update(appointmentsTable).set({
-      employeeId: body.data.employeeId,
+      employeeId,
       notes: body.data.notes === "" ? null : body.data.notes,
       updatedByUserId: access.user.id,
       updatedAt: new Date(),
@@ -10492,7 +10746,7 @@ router.post("/salon/services", async (req, res): Promise<void> => {
   const { service, resourceRequirements } = txResult;
   await db.update(salonsTable).set({ homeService: await salonHasActiveHomeService(salon.id) }).where(eq(salonsTable.id, salon.id));
   void publishCatalogInvalidation(["salons", "services"]);
-  res.status(201).json(CreateSalonServiceResponse.parse({ id: service.id, category: service.categoryName, name: service.name, description: service.description, durationMinutes: service.durationMinutes, preProcessingMinutes: service.preProcessingMinutes, processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes, bufferMinutes: service.bufferMinutes, price: service.price, promoPrice: service.promoPrice, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder, resourceRequirements }));
+  res.status(201).json(CreateSalonServiceResponse.parse({ id: service.id, category: service.categoryName, name: service.name, description: service.description, durationMinutes: service.durationMinutes, preProcessingMinutes: service.preProcessingMinutes, processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes, bufferMinutes: service.bufferMinutes, requiredEmployeeCount: service.requiredEmployeeCount, price: service.price, promoPrice: service.promoPrice, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder, resourceRequirements }));
 });
 
 router.patch("/salon/services/:serviceId", async (req, res): Promise<void> => {
@@ -10509,7 +10763,8 @@ router.patch("/salon/services/:serviceId", async (req, res): Promise<void> => {
       await lockAppointmentResources(tx, access.salon.id);
       const [row] = await tx.update(servicesTable).set({
         categoryName: parsed.data.category, name: parsed.data.name, description: parsed.data.description,
-        durationMinutes: parsed.data.durationMinutes, bufferMinutes: parsed.data.bufferMinutes, price: parsed.data.price, promoPrice: parsed.data.promoPrice ?? null,
+        durationMinutes: parsed.data.durationMinutes, requiredEmployeeCount: parsed.data.requiredEmployeeCount,
+        bufferMinutes: parsed.data.bufferMinutes, price: parsed.data.price, promoPrice: parsed.data.promoPrice ?? null,
         preProcessingMinutes: parsed.data.preProcessingMinutes ?? 0, processingMinutes: parsed.data.processingMinutes ?? 0, postProcessingMinutes: parsed.data.postProcessingMinutes ?? 0,
         imageUrl: parsed.data.imageUrl, active: parsed.data.active,
         homeServiceAvailable: parsed.data.homeServiceAvailable, homeServiceFee: parsed.data.homeServiceFee, homeServiceMinimumOrder: parsed.data.homeServiceMinimumOrder ?? null,
@@ -10533,7 +10788,7 @@ router.patch("/salon/services/:serviceId", async (req, res): Promise<void> => {
   const { service, resourceRequirements } = txResult;
   await db.update(salonsTable).set({ homeService: await salonHasActiveHomeService(access.salon.id) }).where(eq(salonsTable.id, access.salon.id));
   void publishCatalogInvalidation(["salons", "services"]);
-  res.json(CreateSalonServiceResponse.parse({ id: service.id, category: service.categoryName, name: service.name, description: service.description, durationMinutes: service.durationMinutes, preProcessingMinutes: service.preProcessingMinutes, processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes, bufferMinutes: service.bufferMinutes, price: service.price, promoPrice: service.promoPrice, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder, resourceRequirements }));
+  res.json(CreateSalonServiceResponse.parse({ id: service.id, category: service.categoryName, name: service.name, description: service.description, durationMinutes: service.durationMinutes, preProcessingMinutes: service.preProcessingMinutes, processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes, bufferMinutes: service.bufferMinutes, requiredEmployeeCount: service.requiredEmployeeCount, price: service.price, promoPrice: service.promoPrice, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder, resourceRequirements }));
 });
 
 router.delete("/salon/services/:serviceId", async (req, res): Promise<void> => {
@@ -10853,7 +11108,7 @@ router.put("/salon/employees/:employeeId/locations/:salonId", async (req, res): 
   if (typeof body.active !== "boolean" && typeof body.isDefault !== "boolean") { res.status(400).json({ error: "Navedite active ili isDefault." }); return; }
   if (body.active === false) {
     const [future] = await db.select({ id: appointmentsTable.id }).from(appointmentsTable).where(and(
-      eq(appointmentsTable.employeeId, target.employee.id), eq(appointmentsTable.salonId, target.salon.id),
+      appointmentEmployeeScope(target.employee.id), eq(appointmentsTable.salonId, target.salon.id),
       gte(appointmentsTable.date, new Date().toISOString().slice(0, 10)), ne(appointmentsTable.status, "cancelled"),
     )).limit(1);
     if (future) { res.status(409).json({ error: "Deaktivacija bi ostavila buduće termine bez zaposlenog." }); return; }
@@ -10988,7 +11243,7 @@ router.put("/salon/employees/:employeeId/locations/:salonId/schedule", async (re
 
 async function employeeDeactivationPreview(employee: typeof employeesTable.$inferSelect, ownerId: string, store: any = db) {
   const [future] = await store.select({ count: count() }).from(appointmentsTable).where(and(
-    eq(appointmentsTable.employeeId, employee.id),
+    appointmentEmployeeScope(employee.id),
     gte(appointmentsTable.date, new Date().toISOString().slice(0, 10)),
     ne(appointmentsTable.status, "cancelled"),
     exists(store.select({ id: employeeLocationAssignmentsTable.id })
@@ -11302,7 +11557,7 @@ router.get("/employee/portal", async (req, res): Promise<void> => {
     .reduce((earliest, candidate) => (candidate < earliest ? candidate : earliest));
   const recentCreatedThreshold = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const employeeScope = and(
-    eq(appointmentsTable.employeeId, employee.id),
+    appointmentEmployeeScope(employee.id),
     eq(appointmentsTable.salonId, salon.id),
   );
   const inMonth = and(gte(appointmentsTable.date, monthStart), lte(appointmentsTable.date, shiftCalendarDate(monthStart, 31)));
@@ -11428,18 +11683,19 @@ router.patch("/employee/appointments/:appointmentId", async (req, res): Promise<
     await lockAppointmentResources(tx, access.salon.id);
     const [initial] = await tx.select().from(appointmentsTable).where(and(
       eq(appointmentsTable.id, req.params.appointmentId),
-      eq(appointmentsTable.employeeId, access.employee.id),
+      appointmentEmployeeScope(access.employee.id),
       eq(appointmentsTable.salonId, access.salon.id),
     )).limit(1);
     if (!initial) return { error: "not-found" as const };
-    await lockAppointmentResources(tx, access.salon.id, [{ date: initial.date, employeeId: initial.employeeId }]);
+    const participantIds = await appointmentParticipantIds(tx, initial.id, initial.employeeId);
+    await lockAppointmentResources(tx, access.salon.id, participantIds.map((employeeId) => ({ date: initial.date, employeeId })));
     const [appointment] = await tx.update(appointmentsTable).set({
       notes: notes.trim() || null,
       updatedByUserId: access.user.id,
       updatedAt: new Date(),
     }).where(and(
       eq(appointmentsTable.id, initial.id),
-      eq(appointmentsTable.employeeId, access.employee.id),
+      appointmentEmployeeScope(access.employee.id),
       eq(appointmentsTable.salonId, access.salon.id),
     )).returning();
     if (!appointment) return { error: "changed" as const };
@@ -11551,7 +11807,16 @@ router.post("/employee/appointment-series/preview", async (req, res): Promise<vo
   try {
     const slots = prepareSeriesSlots(parsed.data.slots, service[0].durationMinutes);
     const response = PreviewEmployeeAppointmentSeriesResponse.parse(
-      await previewSeriesSlots(access.salon.id, service[0], slots, access.employee.id),
+      await previewSeriesSlots(
+        access.salon.id,
+        service[0],
+        slots,
+        access.employee.id,
+        [
+          access.employee.id,
+          ...Array.from({ length: Math.max(0, service[0].requiredEmployeeCount - 1) }, () => null),
+        ],
+      ),
     );
     res.json({
       ...response,
@@ -11601,7 +11866,7 @@ admitBookingRequest, async (req, res): Promise<void> => {
     }
   }
   const [previous] = await db.select({ id: appointmentsTable.id }).from(appointmentsTable)
-    .where(and(eq(appointmentsTable.employeeId, access.employee.id), eq(appointmentsTable.salonCustomerId, contact!.id))).limit(1);
+    .where(and(appointmentEmployeeScope(access.employee.id), eq(appointmentsTable.salonCustomerId, contact!.id))).limit(1);
   if (!newlyCreatedContact && !previous) { res.status(403).json({ error: "Možete izabrati samo klijenta kog ste već uslužili." }); return; }
   try {
     const slots = prepareSeriesSlots(parsed.data.slots, service[0].durationMinutes);
@@ -11611,7 +11876,8 @@ admitBookingRequest, async (req, res): Promise<void> => {
     }, async (tx) => {
       const created = await createAppointmentSeries({
         salonId: access.salon.id, customerId: contact!.userId, salonCustomerId: contact!.id, service: service[0], slots,
-        createdByUserId: access.user.id, preferredEmployeeId: access.employee.id, tx,
+        createdByUserId: access.user.id, preferredEmployeeId: access.employee.id,
+        preferredEmployeeIds: [access.employee.id, ...Array.from({ length: Math.max(0, service[0].requiredEmployeeCount - 1) }, () => null)], tx,
       });
       const views = await Promise.all(created.appointments.map(async (appointment) =>
         appointmentView(appointment, access.salon, service[0], contact!, access.employee, false, null,
@@ -11668,10 +11934,7 @@ admitBookingRequest, async (req, res): Promise<void> => {
       salonId: access.salon.id, actorType: "user", actorId: access.user.id, idempotencyKey,
       commandType: "employee.appointments.create", payload: req.body,
     }, async (tx) => {
-    await lockAppointmentResources(tx, access.salon.id, preparedSlots.map((slot) => ({
-      date: slot.date,
-      employeeId: access.employee.id,
-    })));
+    await lockAppointmentResources(tx, access.salon.id, preparedSlots.map((slot) => ({ date: slot.date })));
     let contact: typeof salonCustomersTable.$inferSelect;
     let newlyCreatedContact = false;
     if (salonCustomerId) {
@@ -11695,32 +11958,34 @@ admitBookingRequest, async (req, res): Promise<void> => {
       }
     }
     const [previous] = await tx.select({ id: appointmentsTable.id }).from(appointmentsTable)
-      .where(and(eq(appointmentsTable.employeeId, access.employee.id), eq(appointmentsTable.salonCustomerId, contact.id))).limit(1);
+      .where(and(appointmentEmployeeScope(access.employee.id), eq(appointmentsTable.salonCustomerId, contact.id))).limit(1);
     if (!newlyCreatedContact && !previous) {
       throw new EmployeeBookingError("Možete izabrati samo klijenta kog ste već uslužili.", 403);
     }
-    const requirements = await fetchServiceResourceRequirements(tx, serviceId);
-    await lockAppointmentResources(tx, access.salon.id, preparedSlots.flatMap((slot) =>
-      requirements.map((requirement) => ({ date: slot.date, resourceId: requirement.resourceId }))));
     const created: (typeof appointmentsTable.$inferSelect)[] = [];
     for (const slot of preparedSlots) {
-      const available = await canonicalAvailability({
-        salonId: access.salon.id, service: service[0], dates: [slot.date],
-        employeeId: access.employee.id, store: tx,
+      const allocation = await createAllocatedAppointment({
+        salonId: access.salon.id,
+        customerId: contact.userId,
+        salonCustomerId: contact.id,
+        serviceId,
+        date: slot.date,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        durationMinutes: service[0].durationMinutes,
+        price: service[0].promoPrice ?? service[0].price,
+        status: "confirmed",
+        preferredEmployeeIds: [
+          access.employee.id,
+          ...Array.from({ length: Math.max(0, service[0].requiredEmployeeCount - 1) }, () => null),
+        ],
+        createdByUserId: access.user.id,
+        tx,
       });
-      if (!available.some((candidate) => candidate.startTime === slot.startTime && candidate.endTime === slot.endTime)) {
+      if (!allocation.appointment) {
         throw new EmployeeBookingError(`Termin ${slot.date} u ${slot.startTime} nije slobodan ili je van vašeg radnog vremena.`);
       }
-      const appointment = await insertInitializedAppointmentInTx(tx, {
-        salonId: access.salon.id, customerId: contact.userId, salonCustomerId: contact.id, employeeId: access.employee.id, serviceId,
-        date: slot.date, startTime: slot.startTime, endTime: slot.endTime, durationMinutes: service[0].durationMinutes,
-        price: service[0].promoPrice ?? service[0].price,
-      }, "confirmed", access.user.id);
-      // allocateResourcesInTx throws ResourceCapacityError → rolls back.
-      const bufferedEnd = appointmentEndTime(slot.endTime, service[0].bufferMinutes);
-      if (!bufferedEnd) throw new EmployeeBookingError(`Bafer termina ${slot.date} u ${slot.startTime} izlazi van dana.`);
-      await allocateResourcesInTx(tx, access.salon.id, requirements, appointment!.id, slot.date, slot.startTime, requirements.length ? bufferedEnd : slot.endTime);
-      created.push(appointment!);
+      created.push(allocation.appointment);
     }
       const appointments = await Promise.all(created.map(async (item) => ({
         id: item.id, date: item.date, startTime: item.startTime, status: item.status,

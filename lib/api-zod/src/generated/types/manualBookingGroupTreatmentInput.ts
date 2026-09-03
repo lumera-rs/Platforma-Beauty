@@ -11,5 +11,7 @@ export interface ManualBookingGroupTreatmentInput {
   date: Date;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   startTime: string;
 }

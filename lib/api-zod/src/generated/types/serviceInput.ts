@@ -25,6 +25,11 @@ export interface ServiceInput {
   postProcessingMinutes?: number;
   /** @minimum 0 */
   bufferMinutes?: number;
+  /**
+     * @minimum 1
+     * @maximum 20
+     */
+  requiredEmployeeCount?: number;
   /** @minimum 0 */
   price: number;
   /** @nullable */

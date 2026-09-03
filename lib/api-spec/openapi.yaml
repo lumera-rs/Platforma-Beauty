@@ -496,6 +496,15 @@ paths:
         - name: employeeId
           in: query
           schema: { type: string }
+        - name: employeeIds
+          in: query
+          style: form
+          explode: true
+          description: Ordered employee positions; an empty value means that position may use any qualified available employee.
+          schema:
+            type: array
+            maxItems: 20
+            items: { type: string }
         - name: date
           in: query
           required: true
@@ -1441,6 +1450,14 @@ paths:
         - name: employeeId
           in: query
           schema: { type: string }
+        - name: employeeIds
+          in: query
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 20
+            items: { type: string }
         - name: limit
           in: query
           schema: { type: integer, minimum: 1, maximum: 100 }
@@ -11123,6 +11140,7 @@ components:
         processingMinutes: { type: number, minimum: 0, default: 0 }
         postProcessingMinutes: { type: number, minimum: 0, default: 0 }
         bufferMinutes: { type: number, minimum: 0, default: 0 }
+        requiredEmployeeCount: { type: integer, minimum: 1, maximum: 20, default: 1 }
         price: { type: number }
         promoPrice: { type: ["number", "null"] }
         tags: { type: array, items: { type: string } }
@@ -11148,6 +11166,7 @@ components:
         processingMinutes: { type: number, minimum: 0, default: 0 }
         postProcessingMinutes: { type: number, minimum: 0, default: 0 }
         bufferMinutes: { type: number, minimum: 0, default: 0 }
+        requiredEmployeeCount: { type: integer, minimum: 1, maximum: 20, default: 1 }
         price: { type: number }
         promoPrice: { type: ["number", "null"] }
         tags: { type: array, items: { type: string } }
@@ -11334,6 +11353,10 @@ components:
       properties:
         serviceId: { type: string }
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
       required: [serviceId]
     GroupedAvailabilityInput:
       type: object
@@ -11362,6 +11385,10 @@ components:
         serviceId: { type: string }
         date: { type: string, format: date }
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
         startTime: { type: string }
         endTime: { type: string }
         preProcessingMinutes: { type: integer, minimum: 0 }
@@ -11414,6 +11441,10 @@ components:
         serviceId: { type: string }
         date: { type: string, format: date }
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
         startTime: { type: string }
       required: [serviceId, startTime]
     BookingGroupInput:
@@ -11453,6 +11484,10 @@ components:
         serviceId: { type: string }
         date: { type: string, format: date }
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
         startTime: { type: string }
       required: [serviceId, date, startTime]
     BookingGroupRescheduleTreatmentInput:
@@ -11462,6 +11497,10 @@ components:
         date: { type: string, format: date }
         startTime: { type: string }
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
       required: [appointmentId, date, startTime]
     BookingGroupRescheduleInput:
       type: object
@@ -11626,6 +11665,8 @@ components:
         end: { type: string }
         employeeId: { type: ["string", "null"] }
         employeeName: { type: ["string", "null"] }
+        employeeIds: { type: array, items: { type: string } }
+        employeeNames: { type: array, items: { type: string } }
       required: [start, end]
     FirstAvailableServiceSlot:
       type: object
@@ -11658,6 +11699,8 @@ components:
         serviceName: { type: string }
         employeeId: { type: ["string", "null"] }
         employeeName: { type: string }
+        employeeIds: { type: array, items: { type: string } }
+        employeeNames: { type: array, items: { type: string } }
         date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
         startTime: { type: string }
         endTime: { type: string }
@@ -11717,7 +11760,7 @@ components:
         cancelledAt: { type: ["string", "null"], format: date-time }
         completedAt: { type: ["string", "null"], format: date-time }
         noShowAt: { type: ["string", "null"], format: date-time }
-      required: [id, salonId, salonSlug, salonName, serviceId, customerName, serviceName, employeeId, employeeName, date, startTime, endTime, durationMinutes, price, treatmentLocation, travelFee, treatmentAddress, status, allocatedResources]
+      required: [id, salonId, salonSlug, salonName, serviceId, customerName, serviceName, employeeId, employeeName, employeeIds, employeeNames, date, startTime, endTime, durationMinutes, price, treatmentLocation, travelFee, treatmentAddress, status, allocatedResources]
     AppointmentSalonContact:
       type: object
       properties:
@@ -11737,6 +11780,10 @@ components:
         salonId: { type: string }
         serviceId: { type: string }
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
         date: { type: string, format: date }
         startTime: { type: string, pattern: '^(?:[01][0-9]|2[0-3]):[0-5][0-9]$' }
         notes: { type: string }
@@ -11765,6 +11812,10 @@ components:
         date: { type: string, format: date }
         startTime: { type: string }
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
         notes: { type: string }
     SalonAppointmentUpdate:
       type: object
@@ -11773,6 +11824,10 @@ components:
           type: string
           enum: [pending, confirmed, completed, cancelled, no-show]
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
         notes: { type: string }
     SalonCustomer:
       type: object
@@ -11802,6 +11857,10 @@ components:
       properties:
         serviceId: { type: string }
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
         packagePurchaseId: { type: ["string", "null"] }
         salonCustomerId: { type: ["string", "null"] }
         slots:
@@ -12030,6 +12089,10 @@ components:
       properties:
         serviceId: { type: string }
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
         date: { type: string, format: date }
         startTime: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$' }
         notes: { type: string }
@@ -12052,6 +12115,10 @@ components:
         date: { type: string, format: date }
         startTime: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$' }
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
       required: [serviceId, date, startTime]
     SalonPackageAppointmentsInput:
       type: object
@@ -12161,6 +12228,7 @@ components:
         processingMinutes: { type: number, minimum: 0, default: 0 }
         postProcessingMinutes: { type: number, minimum: 0, default: 0 }
         bufferMinutes: { type: number, minimum: 0, default: 0 }
+        requiredEmployeeCount: { type: integer, minimum: 1, maximum: 20, default: 1 }
         price: { type: number, minimum: 0 }
         promoPrice: { type: ["number", "null"] }
         imageUrl: { type: string }
@@ -17694,10 +17762,11 @@ components:
               id: { type: string }
               name: { type: string }
               durationMinutes: { type: number }
+              requiredEmployeeCount: { type: integer, minimum: 1, maximum: 20 }
               price: { type: number }
               promoPrice: { type: ["number", "null"] }
               categoryName: { type: string }
-            required: [id, name, durationMinutes, price, categoryName]
+            required: [id, name, durationMinutes, requiredEmployeeCount, price, categoryName]
         employees:
           type: array
           items:
@@ -17718,7 +17787,9 @@ components:
         end: { type: string }
         employeeId: { type: string }
         employeeName: { type: string }
-      required: [start, end, employeeId, employeeName]
+        employeeIds: { type: array, items: { type: string } }
+        employeeNames: { type: array, items: { type: string } }
+      required: [start, end, employeeId, employeeName, employeeIds, employeeNames]
     EmployeeTimeBlock:
       type: object
       properties:
@@ -17746,7 +17817,9 @@ components:
         endTime: { type: string, pattern: '^\d{2}:\d{2}$' }
         employeeId: { type: string }
         employeeName: { type: string }
-      required: [date, startTime, endTime, employeeId, employeeName]
+        employeeIds: { type: array, items: { type: string } }
+        employeeNames: { type: array, items: { type: string } }
+      required: [date, startTime, endTime, employeeId, employeeName, employeeIds, employeeNames]
     AvailabilitySearchResponse:
       type: array
       description: Server-confirmed canonical slots for exactly seven calendar days beginning at the requested startDate. The fixed window lets calendar clients represent every date and disable dates absent from this list.
@@ -17843,6 +17916,10 @@ components:
       properties:
         serviceId: { type: string }
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
         date: { type: string }
         startTime: { type: string }
         firstName: { type: string, minLength: 1, maxLength: 80 }
@@ -17860,6 +17937,7 @@ components:
         startTime: { type: string }
         endTime: { type: string }
         employeeName: { type: string }
+        employeeIds: { type: array, items: { type: string } }
         serviceName: { type: string }
         salonName: { type: string }
       required: [appointmentId, status, date, startTime, endTime, employeeName, serviceName, salonName]
@@ -17880,6 +17958,10 @@ components:
             properties:
               serviceId: { type: string }
               employeeId: { type: ["string", "null"] }
+              employeeIds:
+                type: array
+                maxItems: 20
+                items: { type: ["string", "null"] }
               date: { type: string, format: date }
               startTime: { type: string }
             required: [serviceId, date, startTime]

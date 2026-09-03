@@ -4,6 +4,8 @@ import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { and, count, eq } from "drizzle-orm";
 import {
+  appointmentTreatmentEmployeesTable,
+  appointmentTreatmentsTable,
   appointmentStatusHistoryTable,
   appointmentsTable,
   bookingCommandReceiptsTable,
@@ -78,11 +80,12 @@ async function run(): Promise<void> {
   await ensureBookingCommandSchema();
   const suffix = randomUUID();
   const passwordHash = await hashPassword("final-booking-hardening");
-  const [ownerA, ownerB, customerA, customerB] = await db.insert(usersTable).values([
+  const [ownerA, ownerB, customerA, customerB, secondaryEmployeeUser] = await db.insert(usersTable).values([
     { firstName: "Owner", lastName: "A", email: `final-owner-a-${suffix}@example.test`, passwordHash, passwordSetAt: new Date(), role: "SALON_OWNER" },
     { firstName: "Owner", lastName: "B", email: `final-owner-b-${suffix}@example.test`, passwordHash, passwordSetAt: new Date(), role: "SALON_OWNER" },
     { firstName: "Customer", lastName: "A", email: `final-customer-a-${suffix}@example.test`, passwordHash, passwordSetAt: new Date(), role: "CUSTOMER" },
     { firstName: "Customer", lastName: "B", email: `final-customer-b-${suffix}@example.test`, passwordHash, passwordSetAt: new Date(), role: "CUSTOMER" },
+    { firstName: "Assistant", lastName: "A", email: `final-assistant-a-${suffix}@example.test`, passwordHash, passwordSetAt: new Date(), role: "SALON_EMPLOYEE" },
   ]).returning();
   const [salonA, salonB] = await db.insert(salonsTable).values([
     {
@@ -105,33 +108,164 @@ async function run(): Promise<void> {
     { salonId: salonA!.id, categoryName: "QA", name: "Final service A", description: "QA", durationMinutes: 30, price: 1100, imageUrl: "/test.jpg" },
     { salonId: salonB!.id, categoryName: "QA", name: "Final service B", description: "QA", durationMinutes: 30, price: 2200, imageUrl: "/test.jpg" },
   ]).returning();
-  const [employeeA, employeeB] = await db.insert(employeesTable).values([
+  const [employeeA, employeeB, secondaryEmployeeA] = await db.insert(employeesTable).values([
     { salonId: salonA!.id, name: "Final employee A", role: "Stylist", bio: "", avatarUrl: "" },
     { salonId: salonB!.id, name: "Final employee B", role: "Stylist", bio: "", avatarUrl: "" },
+    { salonId: salonA!.id, userId: secondaryEmployeeUser!.id, name: "Final employee A assistant", role: "Assistant", bio: "", avatarUrl: "" },
   ]).returning();
   await db.insert(employeeLocationAssignmentsTable).values([
     { salonId: salonA!.id, employeeId: employeeA!.id, active: true, isDefault: true },
     { salonId: salonB!.id, employeeId: employeeB!.id, active: true, isDefault: true },
+    { salonId: salonA!.id, employeeId: secondaryEmployeeA!.id, active: true },
   ]);
   await db.insert(employeeServicesTable).values([
     { employeeId: employeeA!.id, serviceId: serviceA!.id },
     { employeeId: employeeB!.id, serviceId: serviceB!.id },
   ]);
+  await db.update(usersTable).set({ activeSalonId: salonA!.id }).where(eq(usersTable.id, secondaryEmployeeUser!.id));
   const [contactA, contactB] = await db.insert(salonCustomersTable).values([
     { salonId: salonA!.id, userId: customerA!.id, firstName: "Customer", lastName: "A", email: customerA!.email, phone: "+381611119901", phoneNormalized: "+381611119901" },
     { salonId: salonB!.id, userId: customerB!.id, firstName: "Customer", lastName: "B", email: customerB!.email, phone: "+381611119902", phoneNormalized: "+381611119902" },
   ]).returning();
 
-  const [ownerASession, ownerBSession, customerASession, customerBSession] = await Promise.all([
+  const [ownerASession, ownerBSession, customerASession, customerBSession, secondaryEmployeeSession] = await Promise.all([
     createSession(ownerA!.id), createSession(ownerB!.id), createSession(customerA!.id), createSession(customerB!.id),
+    createSession(secondaryEmployeeUser!.id),
   ]);
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
   try {
+    const multiServiceCreated = await request(baseUrl, ownerASession, "/salon/services", "POST", {
+      category: "QA",
+      name: "Final multi-staff service",
+      description: "QA",
+      durationMinutes: 30,
+      requiredEmployeeCount: 1,
+      price: 3300,
+      imageUrl: "/test.jpg",
+      active: true,
+      homeServiceAvailable: false,
+      homeServiceFee: 0,
+    });
+    assert.equal(multiServiceCreated.status, 201, "owner API creates a configurable staff-count service");
+    const createdMultiService = multiServiceCreated.body as { id: string };
+    const multiServiceUpdated = await request(
+      baseUrl,
+      ownerASession,
+      `/salon/services/${createdMultiService.id}`,
+      "PATCH",
+      {
+        category: "QA",
+        name: "Final multi-staff service",
+        description: "QA",
+        durationMinutes: 30,
+        requiredEmployeeCount: 2,
+        price: 3300,
+        imageUrl: "/test.jpg",
+        active: true,
+        homeServiceAvailable: false,
+        homeServiceFee: 0,
+      },
+    );
+    assert.equal(multiServiceUpdated.status, 200, "owner API updates the required staff count");
+    const multiServiceA = multiServiceUpdated.body as { id: string; requiredEmployeeCount: number };
+    assert.equal(multiServiceA.requiredEmployeeCount, 2, "owner API returns the persisted required staff count");
+    await db.insert(employeeServicesTable).values([
+      { employeeId: employeeA!.id, serviceId: multiServiceA.id },
+      { employeeId: secondaryEmployeeA!.id, serviceId: multiServiceA.id },
+    ]);
+
+    const assertMultiParticipantGroup = (
+      result: { status: number; body: unknown },
+      expectedStatusMessage: string,
+    ) => {
+      assert.equal(result.status, 201, expectedStatusMessage);
+      const appointment = (result.body as {
+        appointments: Array<{ employeeIds: string[]; employeeNames: string[] }>;
+      }).appointments[0]!;
+      assert.deepEqual(appointment.employeeIds, [employeeA!.id, secondaryEmployeeA!.id]);
+      assert.deepEqual(appointment.employeeNames, [employeeA!.name, secondaryEmployeeA!.name]);
+    };
+    const customerMultiGroup = await request(baseUrl, customerASession, "/booking-groups", "POST", {
+        salonId: salonA!.id,
+        date: "2099-12-20",
+        treatments: [{
+          serviceId: multiServiceA.id,
+          employeeIds: [employeeA!.id, secondaryEmployeeA!.id],
+          startTime: "10:00",
+        }],
+      });
+    assertMultiParticipantGroup(customerMultiGroup,
+      "customer required-two booking group must return the complete participant set");
+    const customerMultiAppointment = (customerMultiGroup.body as {
+      appointments: Array<{ id: string }>;
+    }).appointments[0]!;
+    const secondaryOwnerFilter = await request(
+      baseUrl, ownerASession, `/salon/appointments?employeeId=${secondaryEmployeeA!.id}`, "GET",
+    );
+    assert.equal(secondaryOwnerFilter.status, 200);
+    assert.ok((secondaryOwnerFilter.body as Array<{ id: string }>).some((item) => item.id === customerMultiAppointment.id),
+      "owner employee filtering must include secondary participants");
+    const secondaryPortal = await request(baseUrl, secondaryEmployeeSession, "/employee/portal", "GET");
+    assert.equal(secondaryPortal.status, 200);
+    assert.ok((secondaryPortal.body as { appointments: Array<{ id: string }> }).appointments
+      .some((item) => item.id === customerMultiAppointment.id),
+    "employee portal must include appointments where the employee is secondary");
+    assert.equal((await request(baseUrl, secondaryEmployeeSession,
+      `/employee/appointments/${customerMultiAppointment.id}`, "PATCH", { notes: "Secondary participant note" })).status, 200,
+    "secondary participants may update employee appointment notes");
+    assert.equal((await request(baseUrl, ownerASession, "/salon/time-blocks", "POST", {
+      employeeId: secondaryEmployeeA!.id, date: "2099-12-20", startTime: "10:00", endTime: "10:30", reason: "Conflict",
+    })).status, 409, "time blocks must reject overlap with secondary participant appointments");
+    const deactivationPreview = await request(
+      baseUrl, ownerASession, `/salon/employees/${secondaryEmployeeA!.id}/deactivation-preview`, "GET",
+    );
+    assert.equal(deactivationPreview.status, 200);
+    assert.ok((deactivationPreview.body as { futureAppointmentCount: number }).futureAppointmentCount >= 1,
+      "deactivation preview must count future secondary participant appointments");
+    assert.equal((await request(baseUrl, ownerASession,
+      `/salon/employees/${secondaryEmployeeA!.id}/deactivate`, "POST")).status, 409,
+    "employee deactivation must refuse future secondary participant appointments");
+    assert.equal((await request(baseUrl, ownerASession,
+      `/salon/employees/${secondaryEmployeeA!.id}/locations/${salonA!.id}`, "PUT", { active: false })).status, 409,
+    "location deactivation must refuse future secondary participant appointments");
+    const secondaryLifecycle = await request(baseUrl, secondaryEmployeeSession,
+      `/appointments/${customerMultiAppointment.id}/lifecycle`, "POST", { action: "confirm" });
+    assert.equal(secondaryLifecycle.status, 409);
+    assert.equal((secondaryLifecycle.body as { code: string }).code, "INVALID_TRANSITION",
+      "secondary participants must reach lifecycle validation rather than fail authorization");
+    assertMultiParticipantGroup(
+      await request(baseUrl, ownerASession, "/salon/booking-groups", "POST", {
+        salonCustomerId: contactA!.id,
+        treatments: [{
+          serviceId: multiServiceA.id,
+          employeeIds: [employeeA!.id, secondaryEmployeeA!.id],
+          date: "2099-12-21",
+          startTime: "10:00",
+        }],
+      }),
+      "owner required-two booking group must return the complete participant set",
+    );
+    assertMultiParticipantGroup(
+      await request(baseUrl, "", `/widget/salons/${salonA!.slug}/booking-groups`, "POST", {
+        firstName: "Widget",
+        lastName: "Multi",
+        phone: "+381611110098",
+        treatments: [{
+          serviceId: multiServiceA.id,
+          employeeIds: [employeeA!.id, secondaryEmployeeA!.id],
+          date: "2099-12-22",
+          startTime: "10:00",
+        }],
+      }),
+      "widget required-two booking group must return the complete participant set",
+    );
+
     const customerBody = (date: string, startTime: string) => ({
-      salonId: salonA!.id, serviceId: serviceA!.id, employeeId: employeeA!.id, date, startTime,
+      salonId: salonA!.id, serviceId: serviceA!.id, employeeId: employeeA!.id,
+      employeeIds: [employeeA!.id], date, startTime,
     });
 
     const impossibleFutureDate = "2099-02-30";
@@ -221,6 +355,7 @@ async function run(): Promise<void> {
       startTime: "10:00",
       date: "2099-12-07",
       employeeId: employeeA!.id,
+      employeeIds: [employeeA!.id],
       serviceId: serviceA!.id,
       salonId: salonA!.id,
     }, duplicateKey);
@@ -278,7 +413,7 @@ async function run(): Promise<void> {
     const widgetKey = `widget-replay-${suffix}`;
     const widgetBody = {
       firstName: "Widget", lastName: "Replay", phone: "+381611119955",
-      serviceId: serviceA!.id, employeeId: employeeA!.id,
+      serviceId: serviceA!.id, employeeId: employeeA!.id, employeeIds: [employeeA!.id],
       date: "2099-12-21", startTime: "12:00",
     };
     const widgetWithoutKey = await request(
@@ -295,6 +430,47 @@ async function run(): Promise<void> {
       "POST", widgetBody, widgetKey,
     );
     assert.equal(widgetCreated.status, 201);
+    const explicitMultiCreated = await request(baseUrl, customerASession, "/appointments", "POST", {
+      salonId: salonA!.id,
+      serviceId: multiServiceA!.id,
+      employeeId: employeeA!.id,
+      employeeIds: [employeeA!.id, secondaryEmployeeA!.id],
+      date: "2099-12-22",
+      startTime: "09:00",
+    });
+    assert.equal(explicitMultiCreated.status, 201, "customer booking accepts a complete explicit multi-employee assignment");
+    assert.deepEqual(
+      (explicitMultiCreated.body as { employeeIds: string[] }).employeeIds,
+      [employeeA!.id, secondaryEmployeeA!.id],
+      "customer booking returns the ordered explicit participant set",
+    );
+    const explicitMultiAppointmentId = (explicitMultiCreated.body as { id: string }).id;
+    const [explicitMultiTreatment] = await db.select().from(appointmentTreatmentsTable)
+      .where(eq(appointmentTreatmentsTable.appointmentId, explicitMultiAppointmentId)).limit(1);
+    const [explicitParticipantCount] = await db.select({ value: count() }).from(appointmentTreatmentEmployeesTable)
+      .where(eq(appointmentTreatmentEmployeesTable.appointmentTreatmentId, explicitMultiTreatment!.id));
+    assert.equal(explicitParticipantCount!.value, 2, "owner-configured staff count persists both booking participants");
+    const mixedWidgetCreated = await request(
+      baseUrl,
+      "",
+      `/widget/salons/${salonA!.slug}/appointments`,
+      "POST",
+      {
+        firstName: "Widget",
+        lastName: "Mixed assignment",
+        phone: "+381611119956",
+        serviceId: multiServiceA!.id,
+        employeeId: employeeA!.id,
+        employeeIds: [employeeA!.id, null],
+        date: "2099-12-23",
+        startTime: "09:00",
+      },
+    );
+    assert.equal(mixedWidgetCreated.status, 201, "widget booking resolves a mixed explicit and wildcard assignment");
+    const mixedEmployeeIds = (mixedWidgetCreated.body as { employeeIds: string[] }).employeeIds;
+    assert.equal(mixedEmployeeIds.length, 2);
+    assert.equal(mixedEmployeeIds[0], employeeA!.id);
+    assert.notEqual(mixedEmployeeIds[1], employeeA!.id);
     for (let attempt = 0; attempt < 10; attempt += 1) {
       await request(
         baseUrl, "", `/widget/salons/${salonA!.slug}/appointments`,
@@ -335,7 +511,10 @@ async function run(): Promise<void> {
       eq(appointmentsTable.salonId, salonA!.id), eq(appointmentsTable.date, "2099-12-08"),
     ));
     assert.equal(groupAppointmentCount!.value, 2, "an exact group retry must leave one complete group, not duplicate or partial members");
-    const [groupCount] = await db.select({ value: count() }).from(bookingGroupsTable).where(eq(bookingGroupsTable.salonId, salonA!.id));
+    const [groupCount] = await db.select({ value: count() }).from(bookingGroupsTable).where(and(
+      eq(bookingGroupsTable.salonId, salonA!.id),
+      eq(bookingGroupsTable.notes, "Concurrent exact group retry"),
+    ));
     assert.equal(groupCount!.value, 1, "an exact group retry must persist one group");
     const createdGroup = groupResults.find((item) => item.status === 201)!.body as {
       id: string;

@@ -11,10 +11,20 @@ type InternalStaffAvailabilityPickerProps = {
   slots: AvailabilitySearchSlot[] | undefined;
   isLoading?: boolean;
   error?: unknown;
-  selectedSlot?: Pick<AvailabilitySearchSlot, "date" | "startTime" | "employeeId"> | null;
+  selectedSlot?: Pick<AvailabilitySearchSlot, "date" | "startTime" | "employeeId"> & Partial<Pick<AvailabilitySearchSlot, "employeeIds" | "employeeNames">> | null;
   onSelectSlot: (slot: AvailabilitySearchSlot) => void;
   testId?: string;
 };
+
+type AssignedAvailabilitySlot = AvailabilitySearchSlot;
+
+function slotIdentity(slot: AssignedAvailabilitySlot) {
+  return `${slot.date}-${slot.startTime}-${(slot.employeeIds ?? [slot.employeeId]).join(",")}`;
+}
+
+function staffSummary(slot: AssignedAvailabilitySlot) {
+  return (slot.employeeNames?.length ? slot.employeeNames : [slot.employeeName]).join(", ");
+}
 
 function dateFromKey(key: string) {
   return new Date(`${key}T12:00:00`);
@@ -57,8 +67,9 @@ export function InternalStaffAvailabilityPicker({
     setCalendarDate((current) => current && days.includes(current) ? current : days.find((day) => slotsByDay.has(day)) ?? null);
   }, [days, slotsByDay]);
 
-  const isSelected = (slot: AvailabilitySearchSlot) =>
-    selectedSlot?.date === slot.date && selectedSlot.startTime === slot.startTime && selectedSlot.employeeId === slot.employeeId;
+  const isSelected = (slot: AssignedAvailabilitySlot) =>
+    selectedSlot?.date === slot.date && selectedSlot.startTime === slot.startTime
+    && (selectedSlot.employeeIds ?? [selectedSlot.employeeId]).join(",") === (slot.employeeIds ?? [slot.employeeId]).join(",");
 
   const renderSlots = (day: string) => {
     const daySlots = slotsByDay.get(day) ?? [];
@@ -66,17 +77,17 @@ export function InternalStaffAvailabilityPicker({
     return <div className="flex flex-wrap gap-2">
       {daySlots.map((slot) => (
         <Button
-          key={`${slot.date}-${slot.startTime}-${slot.employeeId}`}
+          key={slotIdentity(slot)}
           type="button"
           size="sm"
           variant={isSelected(slot) ? "default" : "outline"}
           aria-pressed={isSelected(slot)}
-          aria-label={`Izaberite termin ${slot.startTime}, ${slot.employeeName}`}
-          data-testid={`${testId}-slot-${slot.date}-${slot.startTime}-${slot.employeeId}`}
+          aria-label={`Izaberite termin ${slot.startTime}, ${staffSummary(slot)}`}
+          data-testid={`${testId}-slot-${slotIdentity(slot)}`}
           onClick={() => onSelectSlot(slot)}
         >
           <Clock3 className="mr-1 h-3.5 w-3.5" />{slot.startTime}
-          <span className="ml-1 max-w-24 truncate text-xs opacity-80">· {slot.employeeName}</span>
+          <span className="ml-1 max-w-32 truncate text-xs opacity-80">· {staffSummary(slot)}</span>
         </Button>
       ))}
     </div>;

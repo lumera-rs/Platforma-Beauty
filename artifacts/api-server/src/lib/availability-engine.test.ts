@@ -88,3 +88,44 @@ assert.ok(generateAvailability({
   appointments: [{ employeeId: "employee", date: "2099-05-04", startTime: "09:15", endTime: "10:15", preProcessingMinutes: 15, processingMinutes: 30, postProcessingMinutes: 15 }],
 }).some((slot) => slot.startTime === "09:30"),
   "processing-only overlap between segmented treatments must remain bookable");
+
+const twoStaff = {
+  ...base,
+  employees: [{ id: "a", name: "A" }, { id: "b", name: "B" }, { id: "c", name: "C" }],
+  employeeSchedules: [
+    { employeeId: "a", weekday: 1, startTime: "09:00", endTime: "12:00" },
+    { employeeId: "b", weekday: 1, startTime: "09:00", endTime: "12:00" },
+    { employeeId: "c", weekday: 1, startTime: "09:00", endTime: "12:00" },
+  ],
+  requiredEmployeeCount: 2,
+};
+const twoStaffSlot = generateAvailability(twoStaff).find((slot) => slot.startTime === "09:00");
+assert.deepEqual(twoStaffSlot?.employeeIds, ["a", "b"],
+  "multi-staff availability deterministically allocates distinct employees");
+assert.equal(new Set(twoStaffSlot?.employeeIds).size, 2);
+assert.equal(generateAvailability({
+  ...twoStaff,
+  appointments: [{ employeeId: "b", date: "2099-05-04", startTime: "09:00", endTime: "09:45" }],
+}).find((slot) => slot.startTime === "09:00")?.employeeIds[1], "c",
+  "an unavailable participant is replaced by another distinct qualified employee");
+assert.equal(generateAvailability({
+  ...twoStaff,
+  employees: twoStaff.employees.slice(0, 2),
+  employeeSchedules: twoStaff.employeeSchedules.slice(0, 2),
+  appointments: [{ employeeIds: ["b"], employeeId: "b", date: "2099-05-04", startTime: "09:00", endTime: "09:45" }],
+}).some((slot) => slot.startTime === "09:00"), false,
+  "a slot is rejected when fewer than the required distinct staff remain available");
+
+assert.deepEqual(generateAvailability({
+  ...twoStaff, employeeIds: ["a", null],
+}).find((slot) => slot.startTime === "09:00")?.employeeIds, ["a", "b"],
+  "legacy primary is an ordered alias, while null positions select from the full qualified pool");
+assert.deepEqual(generateAvailability({
+  ...twoStaff, employeeIds: ["a", "b"],
+}).find((slot) => slot.startTime === "09:00")?.employeeIds, ["a", "b"],
+  "an explicit complete assignment revalidates with its legacy primary alias");
+assert.equal(generateAvailability({
+  ...twoStaff, employeeIds: ["a", "b"],
+  appointments: [{ employeeId: "b", date: "2099-05-04", startTime: "09:00", endTime: "09:45" }],
+}).some((slot) => slot.startTime === "09:00"), false,
+  "a busy explicitly selected secondary rejects the complete assignment");

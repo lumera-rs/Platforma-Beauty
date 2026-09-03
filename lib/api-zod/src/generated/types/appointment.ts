@@ -23,6 +23,8 @@ export interface Appointment {
   /** @nullable */
   employeeId: string | null;
   employeeName: string;
+  employeeIds: string[];
+  employeeNames: string[];
   /** @pattern ^\d{4}-\d{2}-\d{2}$ */
   date: string;
   startTime: string;

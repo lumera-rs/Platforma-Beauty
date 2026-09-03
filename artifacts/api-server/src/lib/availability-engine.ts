@@ -10,6 +10,8 @@ export type TimeOffWindow = {
 };
 export type BusyAppointment = {
   employeeId: string | null;
+  /** Complete treatment participant set; employeeId is retained for legacy rows. */
+  employeeIds?: string[];
   date: string;
   startTime: string;
   endTime: string;
@@ -33,7 +35,10 @@ export type ResourceAllocation = {
 };
 export type ResourceDowntime = { resourceId: string; date: string; startTime: string; endTime: string };
 export type AvailabilityEmployee = { id: string; name: string };
-export type AvailabilitySlot = { date: string; startTime: string; endTime: string; employeeId: string; employeeName: string };
+export type AvailabilitySlot = {
+  date: string; startTime: string; endTime: string; employeeId: string; employeeName: string;
+  employeeIds: string[]; employeeNames: string[];
+};
 
 export type GenerateAvailabilityInput = {
   dates: string[];
@@ -44,6 +49,9 @@ export type GenerateAvailabilityInput = {
   postProcessingMinutes?: number;
   granularityMinutes?: number;
   employees: AvailabilityEmployee[];
+  /** One entry per required position. Null positions are deterministically auto-assigned. */
+  employeeIds?: Array<string | null>;
+  requiredEmployeeCount?: number;
   salonHours: AvailabilityWindow[];
   dateOverrides?: AvailabilityOverride[];
   employeeSchedules: EmployeeWindow[];
@@ -169,6 +177,13 @@ export function generateAvailability(input: GenerateAvailabilityInput): Availabi
   const leadCutoffTime = nowMinutes === null ? null : `${String(Math.floor((nowMinutes! % 1440) / 60)).padStart(2, "0")}:${String(nowMinutes! % 60).padStart(2, "0")}`;
   const resourceBacked = input.resourceRequirements.length > 0;
   const slots: AvailabilitySlot[] = [];
+  const requiredEmployeeCount = input.requiredEmployeeCount ?? 1;
+  if (!Number.isInteger(requiredEmployeeCount) || requiredEmployeeCount < 1 || requiredEmployeeCount > 20
+    || (input.employeeIds && input.employeeIds.length !== requiredEmployeeCount)) return [];
+  const orderedEmployees = [...input.employees].sort((a, b) => a.id.localeCompare(b.id));
+  const explicitIds = input.employeeIds ?? [];
+  const nonNullExplicit = explicitIds.filter((id): id is string => Boolean(id));
+  if (new Set(nonNullExplicit).size !== nonNullExplicit.length) return [];
   const cap = input.limit ?? Number.POSITIVE_INFINITY;
 
   for (const date of input.dates) {
@@ -197,9 +212,11 @@ export function generateAvailability(input: GenerateAvailabilityInput): Availabi
               { start: addMinutes(startTime, pre + processing)!, end: employeeEnd },
             ].filter((interval) => interval.start < interval.end)
           : [{ start: startTime, end: employeeEnd }];
-        const employee = input.employees.find((candidate) =>
+        const eligible = orderedEmployees.filter((candidate) =>
           employeeCanWork(input, candidate.id, date, activeIntervals)
-          && !input.appointments.some((appointment) => appointment.employeeId === candidate.id && appointment.date === date
+          && !input.appointments.some((appointment) => (appointment.employeeIds?.length
+            ? appointment.employeeIds
+            : appointment.employeeId ? [appointment.employeeId] : []).includes(candidate.id) && appointment.date === date
             && (() => {
               const appointmentPre = Math.max(0, appointment.preProcessingMinutes ?? 0);
               const appointmentProcessing = Math.max(0, appointment.processingMinutes ?? 0);
@@ -211,8 +228,24 @@ export function generateAvailability(input: GenerateAvailabilityInput): Availabi
                   .filter((interval) => interval.start < interval.end)
                 : [{ start: appointment.startTime, end: appointmentEnd }];
               return activeIntervals.some((interval) => busyIntervals.some((busy) => overlaps(interval.start, interval.end, busy.start, busy.end)));
-            })()));
-        if (employee) slots.push({ date, startTime, endTime, employeeId: employee.id, employeeName: employee.name });
+             })()));
+        const byId = new Map(eligible.map((employee) => [employee.id, employee]));
+        const assigned: Array<AvailabilityEmployee | undefined> = explicitIds.length
+          ? explicitIds.map((id) => id ? byId.get(id) : undefined)
+          : Array.from({ length: requiredEmployeeCount });
+        if (explicitIds.length && explicitIds.some((id, position) => id && !assigned[position])) continue;
+        const used = new Set(assigned.filter(Boolean).map((employee) => employee!.id));
+        for (const employee of eligible) {
+          const position = assigned.findIndex((item) => !item);
+          if (position < 0) break;
+          if (!used.has(employee.id)) { assigned[position] = employee; used.add(employee.id); }
+        }
+        if (assigned.some((employee) => !employee)) continue;
+        const participants = assigned as AvailabilityEmployee[];
+        slots.push({
+          date, startTime, endTime, employeeId: participants[0]!.id, employeeName: participants[0]!.name,
+          employeeIds: participants.map((employee) => employee.id), employeeNames: participants.map((employee) => employee.name),
+        });
       }
     }
     if (slots.length >= cap) break;

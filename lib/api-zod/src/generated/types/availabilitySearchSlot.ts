@@ -15,4 +15,6 @@ export interface AvailabilitySearchSlot {
   endTime: string;
   employeeId: string;
   employeeName: string;
+  employeeIds: string[];
+  employeeNames: string[];
 }

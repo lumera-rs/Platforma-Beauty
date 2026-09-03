@@ -22,6 +22,10 @@ export interface GroupedAvailabilityViewProps {
   todayDate?: string;
 }
 
+function candidateIdentity(candidate: GroupedAvailabilityCandidate) {
+  return candidate.treatments.map((treatment) => `${treatment.position}:${(treatment.employeeIds ?? [treatment.employeeId]).join(",")}`).join("|");
+}
+
 export function GroupedAvailabilityView({
   isLoading,
   viewMode,
@@ -58,11 +62,12 @@ export function GroupedAvailabilityView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [availabilityResponse]);
 
-  const renderCandidate = (c: any, i: number) => {
+  const renderCandidate = (c: GroupedAvailabilityCandidate, i: number) => {
+    const identity = candidateIdentity(c);
     return (
       <div
-        key={i}
-        data-testid={`booking-candidate-${c.date}-${c.startTime}-${i}`}
+        key={`${c.date}-${c.startTime}-${identity}-${i}`}
+        data-testid={`booking-candidate-${c.date}-${c.startTime}-${identity}`}
         aria-label={`Izaberi raspored ${c.date} u ${c.startTime}`}
         className={`p-4 rounded-xl cursor-pointer transition-all border-2 ${selectedCandidate === c ? 'border-primary bg-primary/5 shadow-sm' : 'border-border hover:border-primary/30 bg-card'}`}
         onClick={() => onSelectCandidate(c)}
@@ -81,15 +86,16 @@ export function GroupedAvailabilityView({
           <span className="font-bold text-primary bg-primary/10 px-2.5 py-1 rounded-md text-sm flex items-center gap-1.5"><Clock className="w-4 h-4" />{c.startTime}</span>
         </div>
         <div className="space-y-1.5 mt-3 border-t pt-3">
-          {c.treatments.map((t: any, tidx: number) => {
+          {c.treatments.map((t, tidx: number) => {
             const svc = salon.services?.find((s: any) => s.id === t.serviceId);
             const staffList = (salon as any).staff || (salon as any).employees || [];
-            const emp = staffList.find((e: any) => e.id === t.employeeId);
+            const employeeIds = t.employeeIds ?? [t.employeeId];
+            const employeeNames = employeeIds.map((employeeId) => staffList.find((employee: any) => employee.id === employeeId)?.name ?? "Bilo ko");
             return (
               <div key={tidx} className="flex justify-between items-center text-sm">
                 <span className="font-medium truncate pr-3 text-foreground">{svc?.name}</span>
                 <span className="text-muted-foreground whitespace-nowrap text-xs">
-                  {t.date !== c.date ? `${format(parseISO(t.date), "dd.MM.")} · ` : ""}{t.startTime} • {emp?.name || "Bilo ko"}
+                  {t.date !== c.date ? `${format(parseISO(t.date), "dd.MM.")} · ` : ""}{t.startTime} • {employeeNames.join(", ")}
                 </span>
               </div>
             );
@@ -277,8 +283,8 @@ export function GroupedAvailabilityView({
                                   const isCandidateSelected = selectedCandidate === candidate;
                                   return (
                                     <button
-                                      key={`${candidate.date}-${candidate.startTime}-${index}`}
-                                      data-testid={`booking-calendar-candidate-${candidate.date}-${candidate.startTime}-${index}`}
+                                      key={`${candidate.date}-${candidate.startTime}-${candidateIdentity(candidate)}-${index}`}
+                                      data-testid={`booking-calendar-candidate-${candidate.date}-${candidate.startTime}-${candidateIdentity(candidate)}`}
                                       aria-label={`Izaberi raspored ${candidate.date} u ${candidate.startTime}`}
                                       type="button"
                                       aria-pressed={isCandidateSelected}

@@ -13,4 +13,6 @@ export interface TimeSlot {
   employeeId?: string | null;
   /** @nullable */
   employeeName?: string | null;
+  employeeIds?: string[];
+  employeeNames?: string[];
 }

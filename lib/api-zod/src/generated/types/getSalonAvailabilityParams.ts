@@ -9,6 +9,11 @@
 export type GetSalonAvailabilityParams = {
 serviceId: string;
 employeeId?: string;
+/**
+ * Ordered employee positions; an empty value means that position may use any qualified available employee.
+ * @maxItems 20
+ */
+employeeIds?: string[];
 date: string;
 /**
  * Optional requested cadence. The salon booking policy remains authoritative.

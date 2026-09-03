@@ -11,5 +11,7 @@ export interface SalonAppointmentUpdate {
   status?: SalonAppointmentUpdateStatus;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   notes?: string;
 }

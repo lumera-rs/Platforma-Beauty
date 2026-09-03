@@ -60,7 +60,9 @@ import {
   type SalonCalendarDayEmployee,
   type SearchSalonAvailabilityParams,
   type PackagePurchase,
-  type SalonPackageAppointmentSlot
+   type SalonPackageAppointmentSlot,
+   type SalonAppointmentCreate,
+   type SalonAppointmentSeriesInput
 } from "@workspace/api-client-react";
 import { CalendarDays, Clock3, House, Loader2, MapPin, MessageSquareOff, Pencil, Plus, Repeat2, Trash2, UserRoundPlus, Search, Ban, AlignLeft, CalendarRange, Settings } from "lucide-react";
 
@@ -144,13 +146,53 @@ function AppointmentDayButton({ day, modifiers, className, ...props }: Component
 const today = dateKey(new Date());
 type SeriesSlot = { date: string; startTime: string };
 
-type BookingGroupRow = { id: string; serviceId: string; employeeId: string; date: string; startTime: string };
-type OwnerBookingForm = { serviceId: string; employeeId: string; date: string; startTime: string; notes: string; customerId: string; firstName: string; lastName: string; phone: string; email: string; recurrence: "daily" | "every-2-days" | "every-3-days" | "weekly" | "biweekly" | "monthly" | "custom"; customDays: string; count: string; packagePurchaseId: string };
+type BookingGroupRow = { id: string; serviceId: string; employeeId: string; employeeIds: (string | null)[]; date: string; startTime: string };
+type OwnerBookingForm = { serviceId: string; employeeId: string; employeeIds: (string | null)[]; date: string; startTime: string; notes: string; customerId: string; firstName: string; lastName: string; phone: string; email: string; recurrence: "daily" | "every-2-days" | "every-3-days" | "weekly" | "biweekly" | "monthly" | "custom"; customDays: string; count: string; packagePurchaseId: string };
 type CalendarListItem = (Appointment & { _type: "appointment" }) | (EmployeeTimeBlock & { _type: "block" });
-const initialForm: OwnerBookingForm = { serviceId: "", employeeId: "", date: today, startTime: "10:00", notes: "", customerId: "new", firstName: "", lastName: "", phone: "", email: "", recurrence: "weekly", customDays: "7", count: "5", packagePurchaseId: "" };
+const initialForm: OwnerBookingForm = { serviceId: "", employeeId: "", employeeIds: [null], date: today, startTime: "10:00", notes: "", customerId: "new", firstName: "", lastName: "", phone: "", email: "", recurrence: "weekly", customDays: "7", count: "5", packagePurchaseId: "" };
 
 function newBookingGroupRow(overrides: Partial<BookingGroupRow> = {}): BookingGroupRow {
-  return { id: crypto.randomUUID(), serviceId: "", employeeId: "", date: today, startTime: "10:00", ...overrides };
+  return { id: crypto.randomUUID(), serviceId: "", employeeId: "", employeeIds: [null], date: today, startTime: "10:00", ...overrides };
+}
+
+function requiredEmployeeCount(service?: { requiredEmployeeCount?: number }) {
+  return Math.max(1, service?.requiredEmployeeCount ?? 1);
+}
+
+function employeeSelections(value: readonly (string | null)[] | undefined, count: number, legacy?: string | null) {
+  const result = [...(value?.length ? value : [legacy || null])].slice(0, count);
+  while (result.length < count) result.push(null);
+  return result;
+}
+
+function primaryEmployeeId(employeeIds: readonly (string | null)[]) {
+  return employeeIds.find((employeeId): employeeId is string => Boolean(employeeId)) ?? "";
+}
+
+function EmployeeAssignmentFields({ idPrefix, employeeIds, count, employees, onChange }: {
+  idPrefix: string;
+  employeeIds: (string | null)[];
+  count: number;
+  employees: { id: string; name: string }[] | undefined;
+  onChange: (employeeIds: (string | null)[]) => void;
+}) {
+  const selections = employeeSelections(employeeIds, count);
+  return <div className="space-y-2">
+    {selections.map((selectedId, position) => (
+      <div key={position} className="space-y-1">
+        {count > 1 && <Label htmlFor={`${idPrefix}-${position}`} className="text-xs text-muted-foreground">Zaposleni {position + 1}</Label>}
+        <select id={`${idPrefix}-${position}`} aria-label={count === 1 ? "Zaposleni" : `Zaposleni ${position + 1}`} data-testid={`${idPrefix}-${position}`} className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={selectedId ?? ""} onChange={(event) => {
+          const next = event.target.value || null;
+          if (next && selections.some((id, index) => index !== position && id === next)) return;
+          onChange(selections.map((id, index) => index === position ? next : id));
+        }}>
+          <option value="">{count === 1 ? "Prvi dostupan" : "Bilo ko (prvi dostupan)"}</option>
+          {employees?.map((employee) => <option key={employee.id} value={employee.id} disabled={employee.id !== selectedId && selections.includes(employee.id)}>{employee.name}</option>)}
+        </select>
+      </div>
+    ))}
+    {count > 1 && <p className="text-xs text-muted-foreground" role="status">Isti zaposleni može biti izabran samo jednom za ovaj tretman.</p>}
+  </div>;
 }
 function buildSeriesSlots(form: OwnerBookingForm): SeriesSlot[] {
   const count = Math.max(1, Math.min(24, Number(form.count) || 1));
@@ -490,7 +532,7 @@ export default function OwnerCalendar() {
     { query: { enabled: !!userResp?.user && form.customerId !== "" && form.customerId !== "new", queryKey: getOwnerListCustomerPackagesQueryKey({ salonCustomerId: form.customerId, status: 'active' }) } }
   );
 
-  type PackagePlannerRow = { id: string; serviceId: string; employeeId: string; date: string; startTime: string };
+  type PackagePlannerRow = { id: string; serviceId: string; employeeId: string; employeeIds: (string | null)[]; date: string; startTime: string };
   const [packagePlannerPackageId, setPackagePlannerPackageId] = useState("");
   const [packagePlannerRows, setPackagePlannerRows] = useState<PackagePlannerRow[]>([]);
   const updatePackagePlannerRow = (index: number, patch: Partial<PackagePlannerRow>) => {
@@ -514,6 +556,7 @@ export default function OwnerCalendar() {
             id: Math.random().toString(36).slice(2),
             serviceId: q.serviceId,
             employeeId: "",
+            employeeIds: [null],
             date: today,
             startTime: "10:00"
           });
@@ -526,6 +569,7 @@ export default function OwnerCalendar() {
           id: Math.random().toString(36).slice(2),
           serviceId: firstCoveredServiceId,
           employeeId: "",
+          employeeIds: [null],
           date: today,
           startTime: "10:00"
         });
@@ -554,7 +598,8 @@ export default function OwnerCalendar() {
     serviceId: form.serviceId,
     startDate: manualAvailabilityStart,
     ...(form.employeeId ? { employeeId: form.employeeId } : {}),
-  }), [form.employeeId, form.serviceId, manualAvailabilityStart]);
+    employeeIds: form.employeeIds.map((employeeId) => employeeId ?? ""),
+  }), [form.employeeId, form.employeeIds, form.serviceId, manualAvailabilityStart]);
   const { data: manualAvailabilitySlots, isFetching: manualAvailabilityFetching, error: manualAvailabilityError, refetch: refetchManualAvailability } = useSearchSalonAvailability(
     manualAvailabilityParams,
     { query: { enabled: open && bookingMode === "standard" && !isSeries && !!form.serviceId, queryKey: getSearchSalonAvailabilityQueryKey(manualAvailabilityParams) } },
@@ -613,8 +658,8 @@ export default function OwnerCalendar() {
     const nextForm = { ...initialForm, date: selectedDate ?? today, ...overrides };
     setForm(nextForm);
     setBookingGroupRows([
-      newBookingGroupRow({ date: nextForm.date, serviceId: nextForm.serviceId, employeeId: nextForm.employeeId, startTime: nextForm.startTime }),
-      newBookingGroupRow({ date: nextForm.date, serviceId: nextForm.serviceId, employeeId: nextForm.employeeId, startTime: nextForm.startTime }),
+      newBookingGroupRow({ date: nextForm.date, serviceId: nextForm.serviceId, employeeId: nextForm.employeeId, employeeIds: nextForm.employeeIds, startTime: nextForm.startTime }),
+      newBookingGroupRow({ date: nextForm.date, serviceId: nextForm.serviceId, employeeId: nextForm.employeeId, employeeIds: nextForm.employeeIds, startTime: nextForm.startTime }),
     ]);
     setManualAvailabilityStart(selectedDate ?? today);
     setIsSeries(false);
@@ -632,7 +677,7 @@ export default function OwnerCalendar() {
     setBlockOpen(true);
   };
 
-  useEffect(() => { previewSeries.reset(); }, [form.serviceId, form.employeeId, form.packagePurchaseId, form.customerId, seriesSlots]);
+  useEffect(() => { previewSeries.reset(); }, [form.serviceId, form.employeeId, form.employeeIds, form.packagePurchaseId, form.customerId, seriesSlots]);
   useEffect(() => {
     if (open && bookingMode === "standard" && !isSeries && form.serviceId) void refetchManualAvailability();
   }, [bookingMode, form.serviceId, isSeries, manualAvailabilityStart, open, refetchManualAvailability]);
@@ -654,14 +699,14 @@ export default function OwnerCalendar() {
       if (!previewSeries.data?.allAvailable) { toast.error("Pregledom potvrdite da su svi termini dostupni."); return; }
       if (previewSeries.data?.packageEligible === false) { toast.error(`Paket problem: ${previewSeries.data.packageReason}`); return; }
       createSeries.mutate({
-        data: {
-          serviceId: form.serviceId, employeeId: form.employeeId || null, notes: form.notes || undefined,
+        data: ({
+          serviceId: form.serviceId, employeeId: primaryEmployeeId(form.employeeIds) || null, employeeIds: form.employeeIds, notes: form.notes || undefined,
           slots: seriesSlots,
           packagePurchaseId: form.packagePurchaseId || undefined,
           ...(form.customerId === "new"
             ? { guest: { firstName: form.firstName.trim(), lastName: form.lastName.trim(), phone: form.phone.trim(), ...(form.email.trim() ? { email: form.email.trim() } : {}) } }
             : { salonCustomerId: form.customerId }),
-        },
+        } as SalonAppointmentSeriesInput & { employeeIds: (string | null)[] }),
       }, {
         onSuccess: () => {
           toast.success("Serija termina je sačuvana", { description: "Svaki termin ima zasebnu SMS i e-mail potvrdu kada su podaci dostupni." });
@@ -672,9 +717,10 @@ export default function OwnerCalendar() {
       return;
     }
     create.mutate({
-      data: {
+      data: ({
         serviceId: form.serviceId,
-        employeeId: form.employeeId || null,
+        employeeId: primaryEmployeeId(form.employeeIds) || null,
+        employeeIds: form.employeeIds,
         date: form.date,
         startTime: form.startTime,
         notes: form.notes || undefined,
@@ -682,7 +728,7 @@ export default function OwnerCalendar() {
         ...(form.customerId === "new"
           ? { guest: { firstName: form.firstName.trim(), lastName: form.lastName.trim(), phone: form.phone.trim(), ...(form.email.trim() ? { email: form.email.trim() } : {}) } }
           : { salonCustomerId: form.customerId }),
-      },
+      } as SalonAppointmentCreate & { employeeIds: (string | null)[] }),
     }, {
       onSuccess: () => {
         toast.success("Termin je sačuvan", { description: "Potvrda je evidentirana za SMS slanje ako klijent prima obaveštenja." });
@@ -711,8 +757,8 @@ export default function OwnerCalendar() {
     }
     createBookingGroup.mutate({
       data: {
-        treatments: bookingGroupRows.map(({ serviceId, date, startTime, employeeId }) => ({
-          serviceId, date, startTime, employeeId: employeeId || null,
+        treatments: bookingGroupRows.map(({ serviceId, date, startTime, employeeIds }) => ({
+          serviceId, date, startTime, employeeId: primaryEmployeeId(employeeSelections(employeeIds, requiredEmployeeCount(services?.find((service) => service.id === serviceId)))) || null, employeeIds: employeeSelections(employeeIds, requiredEmployeeCount(services?.find((service) => service.id === serviceId))),
         })),
         ...(form.notes.trim() ? { notes: form.notes.trim() } : {}),
         ...(form.customerId === "new"
@@ -748,7 +794,8 @@ export default function OwnerCalendar() {
           serviceId: r.serviceId,
           date: r.date,
           startTime: r.startTime,
-          employeeId: r.employeeId || null,
+          employeeId: primaryEmployeeId(employeeSelections(r.employeeIds, requiredEmployeeCount(services?.find((service) => service.id === r.serviceId)))) || null,
+          employeeIds: employeeSelections(r.employeeIds, requiredEmployeeCount(services?.find((service) => service.id === r.serviceId))),
         }))
       }
     }, {
@@ -814,7 +861,7 @@ export default function OwnerCalendar() {
 
   const runSeriesPreview = () => {
     if (!form.serviceId || !seriesSlots.length) { toast.error("Izaberite uslugu i primenite pravilo serije."); return; }
-    previewSeries.mutate({ data: { serviceId: form.serviceId, employeeId: form.employeeId || null, slots: seriesSlots, packagePurchaseId: form.packagePurchaseId || null, salonCustomerId: form.customerId !== "new" ? form.customerId : null } });
+    previewSeries.mutate({ data: { serviceId: form.serviceId, employeeId: primaryEmployeeId(form.employeeIds) || null, employeeIds: form.employeeIds, slots: seriesSlots, packagePurchaseId: form.packagePurchaseId || null, salonCustomerId: form.customerId !== "new" ? form.customerId : null } });
   };
 
   const runPlannerPreview = () => {
@@ -826,9 +873,10 @@ export default function OwnerCalendar() {
           serviceId: r.serviceId,
           date: r.date,
           startTime: r.startTime,
-          employeeId: r.employeeId || null,
+          employeeId: primaryEmployeeId(employeeSelections(r.employeeIds, requiredEmployeeCount(services?.find((service) => service.id === r.serviceId)))) || null,
+          employeeIds: employeeSelections(r.employeeIds, requiredEmployeeCount(services?.find((service) => service.id === r.serviceId))),
         }))
-      }
+      } as Parameters<typeof previewPackageSeries.mutate>[0]["data"] & { slots: (SalonPackageAppointmentSlot & { employeeIds: (string | null)[] })[] }
     });
   };
 
@@ -950,11 +998,11 @@ export default function OwnerCalendar() {
                     <TabsContent value="standard" className="min-w-0">
                       <form className="space-y-5" onSubmit={createAppointment}>
                         <div className="grid gap-4 sm:grid-cols-2">
-                          <div className="space-y-2"><Label>Usluga</Label><select required className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={form.serviceId} onChange={(e) => { setForm({ ...form, serviceId: e.target.value, startTime: "", packagePurchaseId: "" }); previewSeries.reset(); }}><option value="">Izaberite uslugu</option>{services?.filter((service) => service.active).map((service) => <option key={service.id} value={service.id}>{service.name} · {service.durationMinutes} min</option>)}</select></div>
-                          <div className="space-y-2"><Label>Zaposleni</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={form.employeeId} onChange={(e) => setForm({ ...form, employeeId: e.target.value, startTime: "" })}><option value="">Prvi dostupan</option>{employees?.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></div>
+                          <div className="space-y-2"><Label>Usluga</Label><select required className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={form.serviceId} onChange={(e) => { const service = services?.find((item) => item.id === e.target.value); setForm({ ...form, serviceId: e.target.value, employeeId: "", employeeIds: employeeSelections(undefined, requiredEmployeeCount(service)), startTime: "", packagePurchaseId: "" }); previewSeries.reset(); }}><option value="">Izaberite uslugu</option>{services?.filter((service) => service.active).map((service) => <option key={service.id} value={service.id}>{service.name} · {service.durationMinutes} min</option>)}</select></div>
+                          <div className="space-y-2"><Label>Zaposleni</Label><EmployeeAssignmentFields idPrefix="owner-employee" employeeIds={form.employeeIds} count={requiredEmployeeCount(services?.find((service) => service.id === form.serviceId))} employees={employees} onChange={(employeeIds) => setForm({ ...form, employeeIds, employeeId: primaryEmployeeId(employeeIds), startTime: "" })} /></div>
                           {isSeries && <><div className="space-y-2"><Label>Datum</Label><Input required type="date" min={today} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div><div className="space-y-2"><Label>Vreme</Label><Input required type="time" value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></div></>}
                         </div>
-                        {!isSeries && <div className="space-y-2"><Label>Početak perioda</Label><Input type="date" min={today} value={manualAvailabilityStart} data-testid="owner-availability-start-date" onChange={(e) => { setManualAvailabilityStart(e.target.value); setForm((current) => ({ ...current, startTime: "" })); }} /><InternalStaffAvailabilityPicker startDate={manualAvailabilityStart} slots={manualAvailabilitySlots} isLoading={manualAvailabilityFetching} error={manualAvailabilityError} selectedSlot={form.startTime ? { date: form.date, startTime: form.startTime, employeeId: form.employeeId || manualAvailabilitySlots?.find((slot) => slot.date === form.date && slot.startTime === form.startTime)?.employeeId || "" } : null} onSelectSlot={(slot) => setForm((current) => ({ ...current, date: slot.date, startTime: slot.startTime, employeeId: current.employeeId || slot.employeeId }))} testId="owner-appointment-availability" /><p className="text-xs text-muted-foreground">Ako izaberete „Prvi dostupan“, zaposleni sa odabranog termina biće sačuvan uz rezervaciju.</p></div>}
+                        {!isSeries && <div className="space-y-2"><Label>Početak perioda</Label><Input type="date" min={today} value={manualAvailabilityStart} data-testid="owner-availability-start-date" onChange={(e) => { setManualAvailabilityStart(e.target.value); setForm((current) => ({ ...current, startTime: "" })); }} /><InternalStaffAvailabilityPicker startDate={manualAvailabilityStart} slots={manualAvailabilitySlots} isLoading={manualAvailabilityFetching} error={manualAvailabilityError} selectedSlot={form.startTime ? { date: form.date, startTime: form.startTime, employeeId: form.employeeId || manualAvailabilitySlots?.find((slot) => slot.date === form.date && slot.startTime === form.startTime)?.employeeId || "", employeeIds: form.employeeIds.filter((id): id is string => Boolean(id)) } : null} onSelectSlot={(slot) => setForm((current) => { const assigned = slot.employeeIds; const employeeIds = employeeSelections(current.employeeIds.some(Boolean) ? current.employeeIds : assigned, requiredEmployeeCount(services?.find((service) => service.id === current.serviceId))); return { ...current, date: slot.date, startTime: slot.startTime, employeeIds, employeeId: primaryEmployeeId(employeeIds) }; })} testId="owner-appointment-availability" /><p className="text-xs text-muted-foreground">Izabrani zaposleni su sačuvani uz rezervaciju; „Bilo ko“ se dodeljuje prema slobodnom terminu.</p></div>}
                         <div className="space-y-2">
                           <Label>Klijent</Label>
                           <SearchableCombobox
@@ -1023,8 +1071,8 @@ export default function OwnerCalendar() {
                             <div key={row.id} className="rounded-xl border bg-muted/15 p-3">
                               <div className="mb-3 flex items-center justify-between gap-3"><Label className="font-semibold">Tretman {index + 1}</Label>{bookingGroupRows.length > 2 && <Button type="button" variant="ghost" size="sm" aria-label={`Ukloni tretman ${index + 1}`} onClick={() => setBookingGroupRows((rows) => rows.filter((_, i) => i !== index))}><Trash2 className="mr-1 h-4 w-4" /> Ukloni</Button>}</div>
                               <div className="grid gap-3 sm:grid-cols-2">
-                                <select required aria-label={`Usluga za tretman ${index + 1}`} className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={row.serviceId} onChange={(event) => setBookingGroupRows((rows) => rows.map((item, i) => i === index ? { ...item, serviceId: event.target.value } : item))}><option value="">Izaberite uslugu</option>{services?.filter((service) => service.active).map((service) => <option key={service.id} value={service.id}>{service.name} · {service.durationMinutes} min</option>)}</select>
-                                <select aria-label={`Zaposleni za tretman ${index + 1}`} className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={row.employeeId} onChange={(event) => setBookingGroupRows((rows) => rows.map((item, i) => i === index ? { ...item, employeeId: event.target.value } : item))}><option value="">Prvi dostupan</option>{employees?.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select>
+                                <select required aria-label={`Usluga za tretman ${index + 1}`} className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={row.serviceId} onChange={(event) => setBookingGroupRows((rows) => rows.map((item, i) => i === index ? { ...item, serviceId: event.target.value, employeeId: "", employeeIds: employeeSelections(undefined, requiredEmployeeCount(services?.find((service) => service.id === event.target.value))) } : item))}><option value="">Izaberite uslugu</option>{services?.filter((service) => service.active).map((service) => <option key={service.id} value={service.id}>{service.name} · {service.durationMinutes} min</option>)}</select>
+                                <EmployeeAssignmentFields idPrefix={`group-employee-${row.id}`} employeeIds={row.employeeIds} count={requiredEmployeeCount(services?.find((service) => service.id === row.serviceId))} employees={employees} onChange={(employeeIds) => setBookingGroupRows((rows) => rows.map((item, i) => i === index ? { ...item, employeeIds, employeeId: primaryEmployeeId(employeeIds) } : item))} />
                                 <Input required aria-label={`Datum za tretman ${index + 1}`} type="date" min={today} value={row.date} onChange={(event) => setBookingGroupRows((rows) => rows.map((item, i) => i === index ? { ...item, date: event.target.value } : item))} />
                                 <Input required aria-label={`Vreme za tretman ${index + 1}`} type="time" value={row.startTime} onChange={(event) => setBookingGroupRows((rows) => rows.map((item, i) => i === index ? { ...item, startTime: event.target.value } : item))} />
                               </div>
@@ -1114,10 +1162,7 @@ export default function OwnerCalendar() {
                                           ) : (
                                             <div className="h-9 w-full rounded-md border bg-muted/30 px-3 text-sm flex items-center text-muted-foreground">{services?.find(s => s.id === row.serviceId)?.name || row.serviceId}</div>
                                           )}
-                                          <select className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={row.employeeId} onChange={(e) => updatePackagePlannerRow(index, { employeeId: e.target.value })}>
-                                            <option value="">Zaposleni: Prvi dostupan</option>
-                                            {employees?.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
-                                          </select>
+                                          <EmployeeAssignmentFields idPrefix={`package-employee-${row.id}`} employeeIds={row.employeeIds} count={requiredEmployeeCount(services?.find((service) => service.id === row.serviceId))} employees={employees} onChange={(employeeIds) => updatePackagePlannerRow(index, { employeeIds, employeeId: primaryEmployeeId(employeeIds) })} />
                                           <Input className="h-9 text-sm" type="date" min={today} value={row.date} onChange={(e) => updatePackagePlannerRow(index, { date: e.target.value })} />
                                           <Input className="h-9 text-sm" type="time" value={row.startTime} onChange={(e) => updatePackagePlannerRow(index, { startTime: e.target.value })} />
                                         </div>

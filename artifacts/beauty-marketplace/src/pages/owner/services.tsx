@@ -437,6 +437,7 @@ export default function OwnerServices() {
     name: "",
     category: "Frizura",
     durationMinutes: 30,
+    requiredEmployeeCount: 1,
     preProcessingMinutes: 0,
     processingMinutes: 0,
     postProcessingMinutes: 0,
@@ -450,7 +451,7 @@ export default function OwnerServices() {
 
   const resetForm = () => {
     setEditingId(null);
-    setFormData({ name: "", category: "Frizura", durationMinutes: 30, preProcessingMinutes: 0, processingMinutes: 0, postProcessingMinutes: 0, bufferMinutes: 0, price: 1500, description: "", imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=200", active: true, homeServiceAvailable: false, homeServiceFee: 0, homeServiceMinimumOrder: "", resourceRequirements: [] });
+    setFormData({ name: "", category: "Frizura", durationMinutes: 30, requiredEmployeeCount: 1, preProcessingMinutes: 0, processingMinutes: 0, postProcessingMinutes: 0, bufferMinutes: 0, price: 1500, description: "", imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=200", active: true, homeServiceAvailable: false, homeServiceFee: 0, homeServiceMinimumOrder: "", resourceRequirements: [] });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -458,6 +459,11 @@ export default function OwnerServices() {
     const bufferMinutes = Number(formData.bufferMinutes);
     if (!Number.isInteger(bufferMinutes) || bufferMinutes < 0) {
       toast.error("Neispravno buffer vreme", { description: "Buffer vreme mora biti ceo broj minuta, nula ili više." });
+      return;
+    }
+    const requiredEmployeeCount = Number(formData.requiredEmployeeCount);
+    if (!Number.isInteger(requiredEmployeeCount) || requiredEmployeeCount < 1 || requiredEmployeeCount > 20) {
+      toast.error("Neispravan broj zaposlenih", { description: "Usluga mora zahtevati između 1 i 20 zaposlenih." });
       return;
     }
     const processingSegments = [
@@ -477,6 +483,7 @@ export default function OwnerServices() {
     const payload: ServiceInput = {
       ...formData,
       durationMinutes: Number(formData.durationMinutes),
+      requiredEmployeeCount,
       preProcessingMinutes: processingSegments[0],
       processingMinutes: processingSegments[1],
       postProcessingMinutes: processingSegments[2],
@@ -527,7 +534,7 @@ export default function OwnerServices() {
 
   const editService = (service: NonNullable<typeof services>[number]) => {
     setEditingId(service.id);
-    setFormData({ name: service.name, category: service.category, durationMinutes: service.durationMinutes, preProcessingMinutes: service.preProcessingMinutes ?? 0, processingMinutes: service.processingMinutes ?? 0, postProcessingMinutes: service.postProcessingMinutes ?? 0, bufferMinutes: service.bufferMinutes ?? 0, price: service.price, description: service.description, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder?.toString() ?? "", resourceRequirements: service.resourceRequirements ?? [] });
+    setFormData({ name: service.name, category: service.category, durationMinutes: service.durationMinutes, requiredEmployeeCount: service.requiredEmployeeCount ?? 1, preProcessingMinutes: service.preProcessingMinutes ?? 0, processingMinutes: service.processingMinutes ?? 0, postProcessingMinutes: service.postProcessingMinutes ?? 0, bufferMinutes: service.bufferMinutes ?? 0, price: service.price, description: service.description, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder?.toString() ?? "", resourceRequirements: service.resourceRequirements ?? [] });
     setOpen(true);
   };
 
@@ -596,6 +603,10 @@ export default function OwnerServices() {
                         <div className="space-y-2">
                           <Label>Buffer vreme (min)</Label>
                           <Input type="number" value={formData.bufferMinutes} onChange={e => setFormData({...formData, bufferMinutes: Number(e.target.value)})} min="0" step="1" required />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Potreban broj zaposlenih</Label>
+                          <Input type="number" value={formData.requiredEmployeeCount} onChange={e => setFormData({...formData, requiredEmployeeCount: Number(e.target.value)})} min="1" max="20" step="1" required />
                         </div>
                         <div className="space-y-2">
                           <Label>Cena (RSD)</Label>
@@ -773,7 +784,7 @@ export default function OwnerServices() {
                             {service.active && service.homeServiceAvailable && <Badge className="text-[10px] gap-1 bg-primary/10 text-primary border-primary/20"><House className="h-3 w-3" /> Na adresi</Badge>}
                              {!service.canBePermanentlyDeleted && <Badge variant="secondary" className="text-[10px] gap-1"><AlertCircle className="h-3 w-3" /> Istorija termina</Badge>}
                           </div>
-                          <p className="text-sm text-muted-foreground mb-1">{service.category} • {service.durationMinutes} min{service.bufferMinutes ? ` + ${service.bufferMinutes}m buffer` : ''}</p>
+                          <p className="text-sm text-muted-foreground mb-1">{service.category} • {service.durationMinutes} min{service.bufferMinutes ? ` + ${service.bufferMinutes}m buffer` : ''}{(service.requiredEmployeeCount ?? 1) > 1 ? ` • ${service.requiredEmployeeCount} zaposlenih` : ''}</p>
                           {(service.preProcessingMinutes + service.processingMinutes + service.postProcessingMinutes) > 0 && (
                             <p className="text-xs text-muted-foreground">Priprema {service.preProcessingMinutes} min • Delovanje {service.processingMinutes} min • Završnica {service.postProcessingMinutes} min</p>
                           )}

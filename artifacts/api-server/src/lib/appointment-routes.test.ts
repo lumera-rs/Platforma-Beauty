@@ -7,6 +7,8 @@ import {
   appointmentResourceAllocationsTable,
   appointmentSeriesTable,
   appointmentStatusHistoryTable,
+  appointmentTreatmentEmployeesTable,
+  appointmentTreatmentsTable,
   appointmentsTable,
   bookingGroupsTable,
   customerNotificationsTable,
@@ -37,6 +39,9 @@ import { assertNoPgBusyClientWarnings } from "./pg-busy-client.test-support";
 import { ensureDemoData } from "./seed";
 
 const suffix = randomUUID();
+const rerunSafeCustomerPhone = `+3816${(
+  BigInt(`0x${suffix.replaceAll("-", "").slice(0, 12)}`) % 100_000_000n
+).toString().padStart(8, "0")}`;
 const primarySalonDate = "2099-10-18";
 const movedSeriesDate = "2099-10-19";
 const completedOrCancelledDate = "2099-10-20";
@@ -720,8 +725,8 @@ async function run(): Promise<void> {
     );
 
     await db.update(usersTable).set({
-      phone: "+381611234529",
-      phoneNormalized: "+381611234529",
+      phone: rerunSafeCustomerPhone,
+      phoneNormalized: rerunSafeCustomerPhone,
     }).where(eq(usersTable.id, customer!.id));
     await db.update(servicesTable).set({
       homeServiceAvailable: true,
@@ -1304,6 +1309,92 @@ async function run(): Promise<void> {
     assert.equal(overlappingBookings.length, 1, "one employee must have only one active appointment in the same slot");
     await assertConfirmedCreationAudit(overlappingBookings[0]!.id, employeeUser!.id);
 
+    const employeeMultiServiceCreate = await request(baseUrl, ownerSession, "/salon/services", "POST", {
+      category: "Test",
+      name: "Employee multi-staff HTTP service",
+      description: "Employee route multi-staff regression.",
+      durationMinutes: 30,
+      requiredEmployeeCount: 2,
+      price: 1800,
+      imageUrl: "/test.jpg",
+      active: true,
+      homeServiceAvailable: false,
+      homeServiceFee: 0,
+    });
+    assert.equal(employeeMultiServiceCreate.status, 201, "owner must configure a required-two service for employee booking");
+    const employeeMultiService = employeeMultiServiceCreate.body as { id: string; requiredEmployeeCount: number };
+    assert.equal(employeeMultiService.requiredEmployeeCount, 2);
+    const [employeeMultiSecondary] = await db.insert(employeesTable).values({
+      salonId: salon!.id,
+      name: "Secondary employee participant",
+      role: "Assistant",
+      bio: "",
+      avatarUrl: "",
+    }).returning();
+    await db.insert(employeeLocationAssignmentsTable).values({
+      employeeId: employeeMultiSecondary!.id,
+      salonId: salon!.id,
+      active: true,
+      isDefault: true,
+    });
+    await db.insert(employeeServicesTable).values([
+      { employeeId: employee!.id, serviceId: employeeMultiService.id },
+      { employeeId: employeeMultiSecondary!.id, serviceId: employeeMultiService.id },
+    ]);
+    const employeeMultiAvailability = await getRequest(
+      baseUrl,
+      employeeSession,
+      `/employee/availability/search?serviceId=${employeeMultiService.id}&startDate=${employeeBookingDate}&granularityMinutes=30`,
+    );
+    assert.equal(employeeMultiAvailability.status, 200, "employee availability must resolve required secondary participants");
+    assert.ok(
+      (employeeMultiAvailability.body as Array<{ date: string; startTime: string; employeeIds: string[] }>).some((slot) =>
+        slot.date === employeeBookingDate
+        && slot.startTime === "14:00"
+        && slot.employeeIds[0] === employee!.id
+        && slot.employeeIds.includes(employeeMultiSecondary!.id)),
+      "employee availability must keep the acting employee first and fill the remaining staff positions",
+    );
+    const employeeMultiSeriesPreview = await request(baseUrl, employeeSession, "/employee/appointment-series/preview", "POST", {
+      serviceId: employeeMultiService.id,
+      slots: [{ date: employeeBookingDate, startTime: "15:00" }],
+    });
+    assert.equal(employeeMultiSeriesPreview.status, 200, "employee series preview must support required secondary participants");
+    assert.equal(
+      (employeeMultiSeriesPreview.body as { slots: Array<{ available: boolean }> }).slots[0]?.available,
+      true,
+      "employee series preview must find the required secondary employee",
+    );
+    const employeeMultiCreated = await request(baseUrl, employeeSession, "/employee/appointments", "POST", {
+      serviceId: employeeMultiService.id,
+      salonCustomerId: contact!.id,
+      slots: [{ date: employeeBookingDate, startTime: "14:00" }],
+    });
+    assert.equal(employeeMultiCreated.status, 201, "employee must create a required-two appointment with themselves fixed first");
+    const employeeMultiAppointmentId = (employeeMultiCreated.body as { appointments: Array<{ id: string }> }).appointments[0]!.id;
+    const [employeeMultiTreatment] = await db.select({ id: appointmentTreatmentsTable.id })
+      .from(appointmentTreatmentsTable)
+      .where(eq(appointmentTreatmentsTable.appointmentId, employeeMultiAppointmentId))
+      .limit(1);
+    const employeeMultiParticipants = await db.select({
+      employeeId: appointmentTreatmentEmployeesTable.employeeId,
+      position: appointmentTreatmentEmployeesTable.position,
+    }).from(appointmentTreatmentEmployeesTable)
+      .where(eq(appointmentTreatmentEmployeesTable.appointmentTreatmentId, employeeMultiTreatment!.id));
+    assert.deepEqual(
+      employeeMultiParticipants.sort((left, right) => left.position - right.position).map((participant) => participant.employeeId),
+      [employee!.id, employeeMultiSecondary!.id],
+      "employee booking must persist the complete ordered participant set",
+    );
+    const employeeMultiConflict = await request(baseUrl, ownerSession, "/salon/appointments", "POST", {
+      serviceId: employeeMultiService.id,
+      employeeIds: [employeeMultiSecondary!.id, employee!.id],
+      salonCustomerId: contact!.id,
+      date: employeeBookingDate,
+      startTime: "14:00",
+    });
+    assert.equal(employeeMultiConflict.status, 409, "a secondary participant must block an overlapping owner booking");
+
     const employeeReplayKey = `employee-appointments-replay-${suffix}`;
     const replayPayload = {
       serviceId: service!.id,
@@ -1683,6 +1774,18 @@ async function run(): Promise<void> {
     const ownerSlots = ownerSearch.body as Array<{ date: string; startTime: string; employeeId: string; employeeName: string }>;
     assert.ok(Array.isArray(ownerSearch.body), "owner availability response preserves the reusable chronological slot-array contract");
     assert.ok(ownerSlots.every((slot) => slot.date >= timeBlockDate && slot.date <= "2099-12-16"), "owner response is bounded to exactly the requested seven-day window");
+    const ownerWildcardSearch = await getRequest(
+      baseUrl,
+      ownerSession,
+      `/salon/availability/search?serviceId=${service!.id}&employeeIds=&startDate=${timeBlockDate}&limit=14`,
+    );
+    assert.equal(ownerWildcardSearch.status, 200, "an empty employeeIds query position remains an any-qualified-employee wildcard");
+    const ownerWildcardSlots = ownerWildcardSearch.body as Array<{ employeeIds: string[]; employeeNames: string[] }>;
+    assert.ok(ownerWildcardSlots.length > 0, "owner wildcard availability returns assignable slots");
+    assert.ok(
+      ownerWildcardSlots.every((slot) => slot.employeeIds.length === 1 && slot.employeeNames.length === 1),
+      "owner wildcard availability returns the resolved participant arrays",
+    );
     assert.ok(ownerSlots.length <= 14, "owner response preserves the requested cross-window limit");
     assert.ok(!ownerSlots.some((slot) => slot.date === timeBlockDate && slot.startTime === "12:00"), "owner search inherits the block exclusion");
     assert.ok(ownerSlots.every((slot) => slot.employeeId === employee!.id && slot.employeeName === employee!.name), "owner search returns selected employee identity");
