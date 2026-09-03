@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/pages/admin/rmas.test.tsx"],
+  "exclude": ["node_modules", "build", "dist"]
+}

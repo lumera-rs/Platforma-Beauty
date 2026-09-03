@@ -12,6 +12,8 @@
     "bundle:report": "node scripts/bundle-report.mjs",
     "bundle:check": "vite build --config vite.config.ts && node scripts/bundle-report.mjs",
     "test:seo": "NODE_ENV=test node --test seo-server.test.mjs",
+    "test:rmas": "pnpm --filter @workspace/scripts exec tsx --tsconfig ../artifacts/beauty-marketplace/tsconfig.json --test ../artifacts/beauty-marketplace/src/pages/admin/rmas.test.tsx",
+    "typecheck:rmas": "tsc -p tsconfig.rma-tests.json --noEmit",
     "test:rental-history": "pnpm --filter @workspace/scripts exec tsx --tsconfig ../artifacts/beauty-marketplace/tsconfig.json --test ../artifacts/beauty-marketplace/src/components/beauty-jobs/rental-request-list.test.tsx ../artifacts/beauty-marketplace/src/components/beauty-jobs/rental-response.test.ts",
     "test:education-language-audit": "pnpm --filter @workspace/scripts exec tsx ../artifacts/beauty-marketplace/src/lib/education-language-audit.test.ts"
   },

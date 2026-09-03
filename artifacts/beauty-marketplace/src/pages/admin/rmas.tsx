@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { AdminLayout } from "./layout";
 import {
   getAdminGetRmaQueryKey,
@@ -15,6 +15,20 @@ import { Loader2, AlertCircle, Image as ImageIcon, History, CheckCircle, XCircle
 import { useToast } from "@/hooks/use-toast";
 import { OptimizedImage } from "@/components/optimized-image";
 import { useQueryClient } from "@tanstack/react-query";
+import type { AdminRmaDetail, AdminRmaListItem } from "@workspace/api-client-react";
+
+type RmaOrderReferenceProps = {
+  rma: Pick<AdminRmaListItem | AdminRmaDetail, "orderId" | "retailOrderId">;
+  context: "list" | "detail";
+};
+
+export function RmaOrderReference({ rma, context }: RmaOrderReferenceProps) {
+  const reference = (rma.orderId ?? rma.retailOrderId)?.slice(0, 8) ?? "—";
+
+  return context === "list"
+    ? <>Porudžbina: {reference}</>
+    : <>Porudžbina #{reference}</>;
+}
 
 export default function AdminRmas() {
   const { data, isLoading } = useAdminListRmas();
@@ -67,7 +81,9 @@ export default function AdminRmas() {
                             : rma.owner.businessName}
                           <Badge variant="outline" className="ml-2 text-[10px] uppercase">{rma.target}</Badge>
                         </div>
-                        <div className="text-xs text-muted-foreground mt-0.5">Porudžbina: {(rma.orderId ?? rma.retailOrderId)?.slice(0,8) ?? "—"}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          <RmaOrderReference rma={rma} context="list" />
+                        </div>
                       </td>
                       <td className="p-3">
                         <div className="font-medium text-foreground">{rma.reason}</div>
@@ -134,7 +150,7 @@ function RmaDetailDialog({ rmaId, open, onOpenChange }: { rmaId: string, open: b
               </div>
               <DialogTitle className="text-2xl font-serif">RMA: {rma.rmaNumber}</DialogTitle>
               <DialogDescription>
-                Porudžbina #{(rma.orderId ?? rma.retailOrderId)?.slice(0,8) ?? "—"} · Kreirano: {new Date(rma.createdAt).toLocaleString("sr-RS")}
+                <RmaOrderReference rma={rma} context="detail" /> · Kreirano: {new Date(rma.createdAt).toLocaleString("sr-RS")}
               </DialogDescription>
             </DialogHeader>
 
