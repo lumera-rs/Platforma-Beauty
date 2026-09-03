@@ -2132,6 +2132,10 @@ export interface GroupedTreatmentSlot {
   postProcessingMinutes: number;
   /** @minimum 0 */
   bufferMinutes: number;
+  /** Additive schedule-compaction score; never affects validity, identity, count, or order. */
+  score?: number;
+  /** True only for a meaningfully better same-day option within the same employee/resource assignment. */
+  recommended?: boolean;
 }
 
 export interface GroupedAvailabilityCandidate {
@@ -2139,6 +2143,10 @@ export interface GroupedAvailabilityCandidate {
   startTime: string;
   endTime: string;
   treatments: GroupedTreatmentSlot[];
+  /** Additive aggregate compaction score for the displayed treatment group. */
+  score?: number;
+  /** True when the API marks the group as a discreet recommended option. */
+  recommended?: boolean;
 }
 
 export interface GroupedAvailabilityCalendarDay {
@@ -2359,6 +2367,9 @@ export interface Appointment {
   employeeName: string;
   employeeIds: string[];
   employeeNames: string[];
+  /** Additive schedule-compaction score; never affects validity, identity, count, or order. */
+  score?: number;
+  recommended?: boolean;
   /** @pattern ^\d{4}-\d{2}-\d{2}$ */
   date: string;
   startTime: string;
@@ -2596,6 +2607,9 @@ export interface TimeSlot {
   employeeName?: string | null;
   employeeIds?: string[];
   employeeNames?: string[];
+  /** Additive schedule-compaction score; never affects validity, identity, count, or order. */
+  score?: number;
+  recommended?: boolean;
 }
 
 export interface FirstAvailableServiceSlot {

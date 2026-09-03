@@ -25,6 +25,9 @@ export interface Appointment {
   employeeName: string;
   employeeIds: string[];
   employeeNames: string[];
+  /** Additive schedule-compaction score; never affects validity, identity, count, or order. */
+  score?: number;
+  recommended?: boolean;
   /** @pattern ^\d{4}-\d{2}-\d{2}$ */
   date: string;
   startTime: string;

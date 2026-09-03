@@ -88,6 +88,7 @@ export function InternalStaffAvailabilityPicker({
         >
           <Clock3 className="mr-1 h-3.5 w-3.5" />{slot.startTime}
           <span className="ml-1 max-w-32 truncate text-xs opacity-80">· {staffSummary(slot)}</span>
+          {slot.recommended ? <span className="ml-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">Preporučeno</span> : null}
         </Button>
       ))}
     </div>;

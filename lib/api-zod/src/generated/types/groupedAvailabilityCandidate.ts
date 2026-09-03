@@ -12,4 +12,8 @@ export interface GroupedAvailabilityCandidate {
   startTime: string;
   endTime: string;
   treatments: GroupedTreatmentSlot[];
+  /** Additive aggregate compaction score for the displayed treatment group. */
+  score?: number;
+  /** True when the API marks the group as a discreet recommended option. */
+  recommended?: boolean;
 }

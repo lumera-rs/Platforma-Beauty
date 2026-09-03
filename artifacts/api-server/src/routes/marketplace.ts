@@ -6974,7 +6974,10 @@ router.get("/salons/:salonId/availability", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Izabrani zaposleni ne obavlja ovu uslugu." }); return;
   }
   res.json(GetSalonAvailabilityResponse.parse(slots.map((slot) => ({
-    start: slot.startTime, end: slot.endTime, employeeId: slot.employeeId, employeeName: slot.employeeName,
+    start: slot.startTime, end: slot.endTime,
+    employeeId: slot.employeeId, employeeName: slot.employeeName,
+    employeeIds: slot.employeeIds, employeeNames: slot.employeeNames,
+    score: slot.score, recommended: slot.recommended,
   }))));
 });
 
@@ -7205,13 +7208,18 @@ function sendGroupedAvailabilityResponse(
         serviceId: string;
         date: string;
         employeeId: string | null;
+        employeeIds?: string[];
         startTime: string;
         endTime: string;
         preProcessingMinutes: number;
         processingMinutes: number;
         postProcessingMinutes: number;
         bufferMinutes: number;
+        score?: number;
+        recommended?: boolean;
       }>;
+      score?: number;
+      recommended?: boolean;
     }>;
     calendarDays?: Array<{
       date: string;
@@ -7224,13 +7232,18 @@ function sendGroupedAvailabilityResponse(
           serviceId: string;
           date: string;
           employeeId: string | null;
+          employeeIds?: string[];
           startTime: string;
           endTime: string;
           preProcessingMinutes: number;
           processingMinutes: number;
           postProcessingMinutes: number;
           bufferMinutes: number;
+          score?: number;
+          recommended?: boolean;
         }>;
+        score?: number;
+        recommended?: boolean;
       }>;
       truncated: boolean;
     }>;
@@ -7267,7 +7280,14 @@ router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<v
     salonId: salon.id, dates, serviceIds: distinctServiceIds,
   });
   const requirementsByServiceId = availabilityContext.requirementsByServiceId;
-  const candidates: Array<{ date: string; startTime: string; endTime: string; treatments: Array<{ position: number; serviceId: string; date: string; employeeId: string | null; startTime: string; endTime: string; preProcessingMinutes: number; processingMinutes: number; postProcessingMinutes: number; bufferMinutes: number }> }> = [];
+  const candidates: Array<{
+    date: string; startTime: string; endTime: string; score?: number; recommended?: boolean;
+    treatments: Array<{
+      position: number; serviceId: string; date: string; employeeId: string | null; employeeIds?: string[];
+      startTime: string; endTime: string; preProcessingMinutes: number; processingMinutes: number;
+      postProcessingMinutes: number; bufferMinutes: number; score?: number; recommended?: boolean;
+    }>;
+  }> = [];
   const first = body.data.treatments[0]!;
   const initialService = serviceById.get(first.serviceId)!;
 
@@ -7300,6 +7320,8 @@ router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<v
             startTime: planned[0]!.startTime,
             endTime: cursor,
             treatments: planned,
+            score: Math.round(planned.reduce((sum, item) => sum + (item.score ?? 0), 0) / planned.length),
+            ...(planned[0]!.recommended ? { recommended: true } : {}),
           });
           if (dayCandidates.length > GROUPED_AVAILABILITY_CALENDAR_DAY_LIMIT) truncated = true;
           return;
@@ -7335,9 +7357,10 @@ router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<v
             treatmentIndex + 1,
             [...planned, {
               position: treatmentIndex, serviceId: treatment.serviceId, date: slot.date,
-              employeeId: slot.employeeId, startTime: slot.startTime, endTime: slot.endTime,
+              employeeId: slot.employeeId, employeeIds: slot.employeeIds, startTime: slot.startTime, endTime: slot.endTime,
               preProcessingMinutes: service.preProcessingMinutes, processingMinutes: service.processingMinutes,
               postProcessingMinutes: service.postProcessingMinutes, bufferMinutes: service.bufferMinutes,
+              score: slot.score, recommended: slot.recommended,
             }],
             [...reservedAppointments, {
               employeeId: slot.employeeId, employeeIds: slot.employeeIds, date: slot.date, startTime: slot.startTime, endTime: slot.endTime,
@@ -7360,11 +7383,11 @@ router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<v
         if (dayCandidates.length > GROUPED_AVAILABILITY_CALENDAR_DAY_LIMIT || branchBudgetExhausted) break;
         const planned = [{
           position: 0, serviceId: first.serviceId, date: initial.date,
-          employeeId: initial.employeeId, startTime: initial.startTime, endTime: initial.endTime,
+          employeeId: initial.employeeId, employeeIds: initial.employeeIds, startTime: initial.startTime, endTime: initial.endTime,
           preProcessingMinutes: initialService.preProcessingMinutes,
           processingMinutes: initialService.processingMinutes,
           postProcessingMinutes: initialService.postProcessingMinutes,
-          bufferMinutes: initialService.bufferMinutes,
+          bufferMinutes: initialService.bufferMinutes, score: initial.score, recommended: initial.recommended,
         }];
         await extendCandidate(1, planned, [{
           employeeId: initial.employeeId, employeeIds: initial.employeeIds, date: initial.date, startTime: initial.startTime, endTime: initial.endTime,
@@ -7396,7 +7419,14 @@ router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<v
   });
   for (const initial of firstSlots) {
     const initialRequirements = requirementsByServiceId.get(initialService.id) ?? [];
-    const planned = [{ position: 0, serviceId: first.serviceId, date: initial.date, employeeId: initial.employeeId, startTime: initial.startTime, endTime: initial.endTime, preProcessingMinutes: initialService.preProcessingMinutes, processingMinutes: initialService.processingMinutes, postProcessingMinutes: initialService.postProcessingMinutes, bufferMinutes: initialService.bufferMinutes }];
+    const planned = [{
+      position: 0, serviceId: first.serviceId, date: initial.date,
+      employeeId: initial.employeeId, employeeIds: initial.employeeIds,
+      startTime: initial.startTime, endTime: initial.endTime,
+      preProcessingMinutes: initialService.preProcessingMinutes, processingMinutes: initialService.processingMinutes,
+      postProcessingMinutes: initialService.postProcessingMinutes, bufferMinutes: initialService.bufferMinutes,
+      score: initial.score, recommended: initial.recommended,
+    }];
     const reservedAppointments = [{
       employeeId: initial.employeeId, employeeIds: initial.employeeIds, date: initial.date, startTime: initial.startTime, endTime: initial.endTime,
       bufferMinutes: initialService.bufferMinutes, preProcessingMinutes: initialService.preProcessingMinutes,
@@ -7429,7 +7459,14 @@ router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<v
           && entry.employeeId === slot.employeeId && entry.startTime < slot.endTime && entry.endTime > slot.startTime);
       });
       if (!next) { valid = false; break; }
-      planned.push({ position: index, serviceId: treatment.serviceId, date: next.date, employeeId: next.employeeId, startTime: next.startTime, endTime: next.endTime, preProcessingMinutes: service.preProcessingMinutes, processingMinutes: service.processingMinutes, postProcessingMinutes: service.postProcessingMinutes, bufferMinutes: service.bufferMinutes });
+      planned.push({
+        position: index, serviceId: treatment.serviceId, date: next.date,
+        employeeId: next.employeeId, employeeIds: next.employeeIds,
+        startTime: next.startTime, endTime: next.endTime,
+        preProcessingMinutes: service.preProcessingMinutes, processingMinutes: service.processingMinutes,
+        postProcessingMinutes: service.postProcessingMinutes, bufferMinutes: service.bufferMinutes,
+        score: next.score, recommended: next.recommended,
+      });
       const requirements = requirementsByServiceId.get(service.id) ?? [];
       reservedAppointments.push({
         employeeId: next.employeeId, employeeIds: next.employeeIds, date: next.date, startTime: next.startTime, endTime: next.endTime,
@@ -7443,7 +7480,11 @@ router.post("/salons/:salonId/grouped-availability", async (req, res): Promise<v
       })));
       cursorDate = next.date; cursor = next.endTime;
     }
-    if (valid) candidates.push({ date: initial.date, startTime: initial.startTime, endTime: cursor, treatments: planned });
+    if (valid) candidates.push({
+      date: initial.date, startTime: initial.startTime, endTime: cursor, treatments: planned,
+      score: Math.round(planned.reduce((sum, item) => sum + (item.score ?? 0), 0) / planned.length),
+      ...(planned[0]!.recommended ? { recommended: true } : {}),
+    });
     if (candidates.length >= GROUPED_AVAILABILITY_LIST_LIMIT) break;
   }
   sendGroupedAvailabilityResponse(res, {

@@ -82,7 +82,10 @@ export function GroupedAvailabilityView({
         }}
       >
         <div className="flex justify-between items-center mb-2">
-          <span className="font-serif font-bold text-base text-foreground">{format(parseISO(c.date), "dd. MMMM", { locale: srLatn })}</span>
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="font-serif font-bold text-base text-foreground">{format(parseISO(c.date), "dd. MMMM", { locale: srLatn })}</span>
+            {c.recommended ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">Preporučeno</span> : null}
+          </span>
           <span className="font-bold text-primary bg-primary/10 px-2.5 py-1 rounded-md text-sm flex items-center gap-1.5"><Clock className="w-4 h-4" />{c.startTime}</span>
         </div>
         <div className="space-y-1.5 mt-3 border-t pt-3">

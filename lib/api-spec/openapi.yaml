@@ -11395,6 +11395,12 @@ components:
         processingMinutes: { type: integer, minimum: 0 }
         postProcessingMinutes: { type: integer, minimum: 0 }
         bufferMinutes: { type: integer, minimum: 0 }
+        score:
+          type: number
+          description: Additive schedule-compaction score; never affects validity, identity, count, or order.
+        recommended:
+          type: boolean
+          description: True only for a meaningfully better same-day option within the same employee/resource assignment.
       required: [position, serviceId, date, employeeId, startTime, endTime, preProcessingMinutes, processingMinutes, postProcessingMinutes, bufferMinutes]
     GroupedAvailabilityCandidate:
       type: object
@@ -11405,6 +11411,12 @@ components:
         treatments:
           type: array
           items: { $ref: "#/components/schemas/GroupedTreatmentSlot" }
+        score:
+          type: number
+          description: Additive aggregate compaction score for the displayed treatment group.
+        recommended:
+          type: boolean
+          description: True when the API marks the group as a discreet recommended option.
       required: [date, startTime, endTime, treatments]
     GroupedAvailabilityCalendarDay:
       type: object
@@ -11667,6 +11679,10 @@ components:
         employeeName: { type: ["string", "null"] }
         employeeIds: { type: array, items: { type: string } }
         employeeNames: { type: array, items: { type: string } }
+        score:
+          type: number
+          description: Additive schedule-compaction score; never affects validity, identity, count, or order.
+        recommended: { type: boolean }
       required: [start, end]
     FirstAvailableServiceSlot:
       type: object
@@ -11701,6 +11717,10 @@ components:
         employeeName: { type: string }
         employeeIds: { type: array, items: { type: string } }
         employeeNames: { type: array, items: { type: string } }
+        score:
+          type: number
+          description: Additive schedule-compaction score; never affects validity, identity, count, or order.
+        recommended: { type: boolean }
         date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
         startTime: { type: string }
         endTime: { type: string }

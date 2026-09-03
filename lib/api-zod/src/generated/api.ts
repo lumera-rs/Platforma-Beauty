@@ -1182,7 +1182,9 @@ export const GetSalonAvailabilityResponseItem = zod.object({
   "employeeId": zod.string().nullish(),
   "employeeName": zod.string().nullish(),
   "employeeIds": zod.array(zod.string()).optional(),
-  "employeeNames": zod.array(zod.string()).optional()
+  "employeeNames": zod.array(zod.string()).optional(),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional()
 })
 export const GetSalonAvailabilityResponse = zod.array(GetSalonAvailabilityResponseItem)
 
@@ -1293,8 +1295,12 @@ export const GetGroupedBookingAvailabilityResponse = zod.object({
   "preProcessingMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemPreProcessingMinutesMin),
   "processingMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemProcessingMinutesMin),
   "postProcessingMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemPostProcessingMinutesMin),
-  "bufferMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemBufferMinutesMin)
-}))
+  "bufferMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
+})),
+  "score": zod.number().optional().describe('Additive aggregate compaction score for the displayed treatment group.'),
+  "recommended": zod.boolean().optional().describe('True when the API marks the group as a discreet recommended option.')
 })).max(getGroupedBookingAvailabilityResponseCandidatesMax).describe('Legacy list-mode candidates. Empty when resultMode is calendar.'),
   "calendarDays": zod.array(zod.object({
   "date": zod.coerce.date(),
@@ -1313,8 +1319,12 @@ export const GetGroupedBookingAvailabilityResponse = zod.object({
   "preProcessingMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemPreProcessingMinutesMin),
   "processingMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemProcessingMinutesMin),
   "postProcessingMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemPostProcessingMinutesMin),
-  "bufferMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemBufferMinutesMin)
-}))
+  "bufferMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
+})),
+  "score": zod.number().optional().describe('Additive aggregate compaction score for the displayed treatment group.'),
+  "recommended": zod.boolean().optional().describe('True when the API marks the group as a discreet recommended option.')
 })).max(getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesMax).describe('Complete valid treatment-group combinations that start on this date.'),
   "truncated": zod.boolean().describe('True when more than the safe per-day maximum of 20 valid combinations exist or the bounded candidate-search budget was reached.')
 })).max(getGroupedBookingAvailabilityResponseCalendarDaysMax).optional().describe('Present in calendar mode and includes every requested date, including dates with no candidates.')
@@ -1388,6 +1398,8 @@ export const CreateBookingGroupResponse = zod.object({
   "employeeName": zod.string(),
   "employeeIds": zod.array(zod.string()),
   "employeeNames": zod.array(zod.string()),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(createBookingGroupResponseAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -1431,7 +1443,9 @@ export const CreateBookingGroupResponse = zod.object({
   "preProcessingMinutes": zod.number().int().min(createBookingGroupResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin),
   "processingMinutes": zod.number().int().min(createBookingGroupResponseAppointmentsItemTreatmentsItemProcessingMinutesMin),
   "postProcessingMinutes": zod.number().int().min(createBookingGroupResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin),
-  "bufferMinutes": zod.number().int().min(createBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin)
+  "bufferMinutes": zod.number().int().min(createBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -1535,6 +1549,8 @@ export const CreateSalonBookingGroupResponse = zod.object({
   "employeeName": zod.string(),
   "employeeIds": zod.array(zod.string()),
   "employeeNames": zod.array(zod.string()),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(createSalonBookingGroupResponseAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -1578,7 +1594,9 @@ export const CreateSalonBookingGroupResponse = zod.object({
   "preProcessingMinutes": zod.number().int().min(createSalonBookingGroupResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin),
   "processingMinutes": zod.number().int().min(createSalonBookingGroupResponseAppointmentsItemTreatmentsItemProcessingMinutesMin),
   "postProcessingMinutes": zod.number().int().min(createSalonBookingGroupResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin),
-  "bufferMinutes": zod.number().int().min(createSalonBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin)
+  "bufferMinutes": zod.number().int().min(createSalonBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -1682,6 +1700,8 @@ export const CreateEmployeeBookingGroupResponse = zod.object({
   "employeeName": zod.string(),
   "employeeIds": zod.array(zod.string()),
   "employeeNames": zod.array(zod.string()),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(createEmployeeBookingGroupResponseAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -1725,7 +1745,9 @@ export const CreateEmployeeBookingGroupResponse = zod.object({
   "preProcessingMinutes": zod.number().int().min(createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin),
   "processingMinutes": zod.number().int().min(createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemProcessingMinutesMin),
   "postProcessingMinutes": zod.number().int().min(createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin),
-  "bufferMinutes": zod.number().int().min(createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin)
+  "bufferMinutes": zod.number().int().min(createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -1829,6 +1851,8 @@ export const RescheduleBookingGroupResponse = zod.object({
   "employeeName": zod.string(),
   "employeeIds": zod.array(zod.string()),
   "employeeNames": zod.array(zod.string()),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(rescheduleBookingGroupResponseGroupAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -1872,7 +1896,9 @@ export const RescheduleBookingGroupResponse = zod.object({
   "preProcessingMinutes": zod.number().int().min(rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemPreProcessingMinutesMin),
   "processingMinutes": zod.number().int().min(rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemProcessingMinutesMin),
   "postProcessingMinutes": zod.number().int().min(rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemPostProcessingMinutesMin),
-  "bufferMinutes": zod.number().int().min(rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemBufferMinutesMin)
+  "bufferMinutes": zod.number().int().min(rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -1949,6 +1975,8 @@ export const CancelBookingGroupResponse = zod.object({
   "employeeName": zod.string(),
   "employeeIds": zod.array(zod.string()),
   "employeeNames": zod.array(zod.string()),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(cancelBookingGroupResponseGroupAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -1992,7 +2020,9 @@ export const CancelBookingGroupResponse = zod.object({
   "preProcessingMinutes": zod.number().int().min(cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemPreProcessingMinutesMin),
   "processingMinutes": zod.number().int().min(cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemProcessingMinutesMin),
   "postProcessingMinutes": zod.number().int().min(cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemPostProcessingMinutesMin),
-  "bufferMinutes": zod.number().int().min(cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemBufferMinutesMin)
+  "bufferMinutes": zod.number().int().min(cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -2065,6 +2095,8 @@ export const ListMyAppointmentsResponseItem = zod.object({
   "employeeName": zod.string(),
   "employeeIds": zod.array(zod.string()),
   "employeeNames": zod.array(zod.string()),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(listMyAppointmentsResponseDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -2108,7 +2140,9 @@ export const ListMyAppointmentsResponseItem = zod.object({
   "preProcessingMinutes": zod.number().int().min(listMyAppointmentsResponseTreatmentsItemPreProcessingMinutesMin),
   "processingMinutes": zod.number().int().min(listMyAppointmentsResponseTreatmentsItemProcessingMinutesMin),
   "postProcessingMinutes": zod.number().int().min(listMyAppointmentsResponseTreatmentsItemPostProcessingMinutesMin),
-  "bufferMinutes": zod.number().int().min(listMyAppointmentsResponseTreatmentsItemBufferMinutesMin)
+  "bufferMinutes": zod.number().int().min(listMyAppointmentsResponseTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -2206,6 +2240,8 @@ export const CreateAppointmentResponse = zod.object({
   "employeeName": zod.string(),
   "employeeIds": zod.array(zod.string()),
   "employeeNames": zod.array(zod.string()),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(createAppointmentResponseDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -2249,7 +2285,9 @@ export const CreateAppointmentResponse = zod.object({
   "preProcessingMinutes": zod.number().int().min(createAppointmentResponseTreatmentsItemPreProcessingMinutesMin),
   "processingMinutes": zod.number().int().min(createAppointmentResponseTreatmentsItemProcessingMinutesMin),
   "postProcessingMinutes": zod.number().int().min(createAppointmentResponseTreatmentsItemPostProcessingMinutesMin),
-  "bufferMinutes": zod.number().int().min(createAppointmentResponseTreatmentsItemBufferMinutesMin)
+  "bufferMinutes": zod.number().int().min(createAppointmentResponseTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -2344,6 +2382,8 @@ export const UpdateAppointmentResponse = zod.object({
   "employeeName": zod.string(),
   "employeeIds": zod.array(zod.string()),
   "employeeNames": zod.array(zod.string()),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(updateAppointmentResponseDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -2387,7 +2427,9 @@ export const UpdateAppointmentResponse = zod.object({
   "preProcessingMinutes": zod.number().int().min(updateAppointmentResponseTreatmentsItemPreProcessingMinutesMin),
   "processingMinutes": zod.number().int().min(updateAppointmentResponseTreatmentsItemProcessingMinutesMin),
   "postProcessingMinutes": zod.number().int().min(updateAppointmentResponseTreatmentsItemPostProcessingMinutesMin),
-  "bufferMinutes": zod.number().int().min(updateAppointmentResponseTreatmentsItemBufferMinutesMin)
+  "bufferMinutes": zod.number().int().min(updateAppointmentResponseTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -2469,6 +2511,8 @@ export const CancelAppointmentResponse = zod.object({
   "employeeName": zod.string(),
   "employeeIds": zod.array(zod.string()),
   "employeeNames": zod.array(zod.string()),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(cancelAppointmentResponseDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -2512,7 +2556,9 @@ export const CancelAppointmentResponse = zod.object({
   "preProcessingMinutes": zod.number().int().min(cancelAppointmentResponseTreatmentsItemPreProcessingMinutesMin),
   "processingMinutes": zod.number().int().min(cancelAppointmentResponseTreatmentsItemProcessingMinutesMin),
   "postProcessingMinutes": zod.number().int().min(cancelAppointmentResponseTreatmentsItemPostProcessingMinutesMin),
-  "bufferMinutes": zod.number().int().min(cancelAppointmentResponseTreatmentsItemBufferMinutesMin)
+  "bufferMinutes": zod.number().int().min(cancelAppointmentResponseTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -2580,6 +2626,8 @@ export const TransitionAppointmentLifecycleResponse = zod.object({
   "employeeName": zod.string(),
   "employeeIds": zod.array(zod.string()),
   "employeeNames": zod.array(zod.string()),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(transitionAppointmentLifecycleResponseDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -2623,7 +2671,9 @@ export const TransitionAppointmentLifecycleResponse = zod.object({
   "preProcessingMinutes": zod.number().int().min(transitionAppointmentLifecycleResponseTreatmentsItemPreProcessingMinutesMin),
   "processingMinutes": zod.number().int().min(transitionAppointmentLifecycleResponseTreatmentsItemProcessingMinutesMin),
   "postProcessingMinutes": zod.number().int().min(transitionAppointmentLifecycleResponseTreatmentsItemPostProcessingMinutesMin),
-  "bufferMinutes": zod.number().int().min(transitionAppointmentLifecycleResponseTreatmentsItemBufferMinutesMin)
+  "bufferMinutes": zod.number().int().min(transitionAppointmentLifecycleResponseTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -2815,6 +2865,8 @@ export const GetCustomerDashboardResponse = zod.object({
   "employeeName": zod.string(),
   "employeeIds": zod.array(zod.string()),
   "employeeNames": zod.array(zod.string()),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(getCustomerDashboardResponseUpcomingItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -2858,7 +2910,9 @@ export const GetCustomerDashboardResponse = zod.object({
   "preProcessingMinutes": zod.number().int().min(getCustomerDashboardResponseUpcomingItemTreatmentsItemPreProcessingMinutesMin),
   "processingMinutes": zod.number().int().min(getCustomerDashboardResponseUpcomingItemTreatmentsItemProcessingMinutesMin),
   "postProcessingMinutes": zod.number().int().min(getCustomerDashboardResponseUpcomingItemTreatmentsItemPostProcessingMinutesMin),
-  "bufferMinutes": zod.number().int().min(getCustomerDashboardResponseUpcomingItemTreatmentsItemBufferMinutesMin)
+  "bufferMinutes": zod.number().int().min(getCustomerDashboardResponseUpcomingItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -3258,6 +3312,8 @@ export const GetSalonDashboardResponse = zod.object({
   "employeeName": zod.string(),
   "employeeIds": zod.array(zod.string()),
   "employeeNames": zod.array(zod.string()),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(getSalonDashboardResponseTodayAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -3301,7 +3357,9 @@ export const GetSalonDashboardResponse = zod.object({
   "preProcessingMinutes": zod.number().int().min(getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemPreProcessingMinutesMin),
   "processingMinutes": zod.number().int().min(getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemProcessingMinutesMin),
   "postProcessingMinutes": zod.number().int().min(getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemPostProcessingMinutesMin),
-  "bufferMinutes": zod.number().int().min(getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemBufferMinutesMin)
+  "bufferMinutes": zod.number().int().min(getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -3655,6 +3713,8 @@ export const ListSalonAppointmentsResponseItem = zod.object({
   "employeeName": zod.string(),
   "employeeIds": zod.array(zod.string()),
   "employeeNames": zod.array(zod.string()),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(listSalonAppointmentsResponseDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -3698,7 +3758,9 @@ export const ListSalonAppointmentsResponseItem = zod.object({
   "preProcessingMinutes": zod.number().int().min(listSalonAppointmentsResponseTreatmentsItemPreProcessingMinutesMin),
   "processingMinutes": zod.number().int().min(listSalonAppointmentsResponseTreatmentsItemProcessingMinutesMin),
   "postProcessingMinutes": zod.number().int().min(listSalonAppointmentsResponseTreatmentsItemPostProcessingMinutesMin),
-  "bufferMinutes": zod.number().int().min(listSalonAppointmentsResponseTreatmentsItemBufferMinutesMin)
+  "bufferMinutes": zod.number().int().min(listSalonAppointmentsResponseTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -3789,6 +3851,8 @@ export const CreateSalonAppointmentResponse = zod.object({
   "employeeName": zod.string(),
   "employeeIds": zod.array(zod.string()),
   "employeeNames": zod.array(zod.string()),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(createSalonAppointmentResponseDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -3832,7 +3896,9 @@ export const CreateSalonAppointmentResponse = zod.object({
   "preProcessingMinutes": zod.number().int().min(createSalonAppointmentResponseTreatmentsItemPreProcessingMinutesMin),
   "processingMinutes": zod.number().int().min(createSalonAppointmentResponseTreatmentsItemProcessingMinutesMin),
   "postProcessingMinutes": zod.number().int().min(createSalonAppointmentResponseTreatmentsItemPostProcessingMinutesMin),
-  "bufferMinutes": zod.number().int().min(createSalonAppointmentResponseTreatmentsItemBufferMinutesMin)
+  "bufferMinutes": zod.number().int().min(createSalonAppointmentResponseTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -4001,6 +4067,8 @@ export const CreateSalonPackageAppointmentsResponse = zod.object({
   "employeeName": zod.string(),
   "employeeIds": zod.array(zod.string()),
   "employeeNames": zod.array(zod.string()),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -4044,7 +4112,9 @@ export const CreateSalonPackageAppointmentsResponse = zod.object({
   "preProcessingMinutes": zod.number().int().min(createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemPreProcessingMinutesMin),
   "processingMinutes": zod.number().int().min(createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemProcessingMinutesMin),
   "postProcessingMinutes": zod.number().int().min(createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemPostProcessingMinutesMin),
-  "bufferMinutes": zod.number().int().min(createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemBufferMinutesMin)
+  "bufferMinutes": zod.number().int().min(createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -4290,6 +4360,8 @@ export const CreateSalonAppointmentSeriesResponse = zod.object({
   "employeeName": zod.string(),
   "employeeIds": zod.array(zod.string()),
   "employeeNames": zod.array(zod.string()),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(createSalonAppointmentSeriesResponseAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -4333,7 +4405,9 @@ export const CreateSalonAppointmentSeriesResponse = zod.object({
   "preProcessingMinutes": zod.number().int().min(createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin),
   "processingMinutes": zod.number().int().min(createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemProcessingMinutesMin),
   "postProcessingMinutes": zod.number().int().min(createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin),
-  "bufferMinutes": zod.number().int().min(createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemBufferMinutesMin)
+  "bufferMinutes": zod.number().int().min(createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -4459,6 +4533,8 @@ export const MoveSalonAppointmentSeriesResponse = zod.object({
   "employeeName": zod.string(),
   "employeeIds": zod.array(zod.string()),
   "employeeNames": zod.array(zod.string()),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(moveSalonAppointmentSeriesResponseAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -4502,7 +4578,9 @@ export const MoveSalonAppointmentSeriesResponse = zod.object({
   "preProcessingMinutes": zod.number().int().min(moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin),
   "processingMinutes": zod.number().int().min(moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemProcessingMinutesMin),
   "postProcessingMinutes": zod.number().int().min(moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin),
-  "bufferMinutes": zod.number().int().min(moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemBufferMinutesMin)
+  "bufferMinutes": zod.number().int().min(moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -4713,6 +4791,8 @@ export const CreateEmployeeAppointmentSeriesResponse = zod.object({
   "employeeName": zod.string(),
   "employeeIds": zod.array(zod.string()),
   "employeeNames": zod.array(zod.string()),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(createEmployeeAppointmentSeriesResponseAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -4756,7 +4836,9 @@ export const CreateEmployeeAppointmentSeriesResponse = zod.object({
   "preProcessingMinutes": zod.number().int().min(createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin),
   "processingMinutes": zod.number().int().min(createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemProcessingMinutesMin),
   "postProcessingMinutes": zod.number().int().min(createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin),
-  "bufferMinutes": zod.number().int().min(createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemBufferMinutesMin)
+  "bufferMinutes": zod.number().int().min(createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -4913,6 +4995,8 @@ export const UpdateSalonAppointmentResponse = zod.object({
   "employeeName": zod.string(),
   "employeeIds": zod.array(zod.string()),
   "employeeNames": zod.array(zod.string()),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(updateSalonAppointmentResponseDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -4956,7 +5040,9 @@ export const UpdateSalonAppointmentResponse = zod.object({
   "preProcessingMinutes": zod.number().int().min(updateSalonAppointmentResponseTreatmentsItemPreProcessingMinutesMin),
   "processingMinutes": zod.number().int().min(updateSalonAppointmentResponseTreatmentsItemProcessingMinutesMin),
   "postProcessingMinutes": zod.number().int().min(updateSalonAppointmentResponseTreatmentsItemPostProcessingMinutesMin),
-  "bufferMinutes": zod.number().int().min(updateSalonAppointmentResponseTreatmentsItemBufferMinutesMin)
+  "bufferMinutes": zod.number().int().min(updateSalonAppointmentResponseTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -28156,6 +28242,8 @@ export const CreateWidgetBookingGroupResponse = zod.object({
   "employeeName": zod.string(),
   "employeeIds": zod.array(zod.string()),
   "employeeNames": zod.array(zod.string()),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(createWidgetBookingGroupResponseAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -28199,7 +28287,9 @@ export const CreateWidgetBookingGroupResponse = zod.object({
   "preProcessingMinutes": zod.number().int().min(createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin),
   "processingMinutes": zod.number().int().min(createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemProcessingMinutesMin),
   "postProcessingMinutes": zod.number().int().min(createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin),
-  "bufferMinutes": zod.number().int().min(createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin)
+  "bufferMinutes": zod.number().int().min(createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),

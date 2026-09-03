@@ -38,6 +38,9 @@ export type AvailabilityEmployee = { id: string; name: string };
 export type AvailabilitySlot = {
   date: string; startTime: string; endTime: string; employeeId: string; employeeName: string;
   employeeIds: string[]; employeeNames: string[];
+  /** Additive schedule-compaction hint; never participates in slot validity or identity. */
+  score?: number;
+  recommended?: boolean;
 };
 
 export type GenerateAvailabilityInput = {
@@ -108,6 +111,121 @@ function minutes(time: string) {
 
 function overlaps(start: string, end: string, otherStart: string, otherEnd: string) {
   return start < otherEnd && end > otherStart;
+}
+
+type Interval = { start: string; end: string };
+
+function employeeIntervals(
+  startTime: string,
+  endTime: string,
+  bufferMinutes: number,
+  preProcessingMinutes: number,
+  processingMinutes: number,
+  postProcessingMinutes: number,
+  resourceBacked: boolean,
+): Interval[] {
+  const employeeEnd = resourceBacked ? endTime : addMinutes(endTime, bufferMinutes) ?? endTime;
+  const segmented = preProcessingMinutes + processingMinutes + postProcessingMinutes > 0;
+  return segmented
+    ? [
+        { start: startTime, end: addMinutes(startTime, preProcessingMinutes)! },
+        { start: addMinutes(startTime, preProcessingMinutes + processingMinutes)!, end: employeeEnd },
+      ].filter((interval) => interval.start < interval.end)
+    : [{ start: startTime, end: employeeEnd }];
+}
+
+function compactnessPoints(candidate: Interval[], occupied: Interval[]): number | null {
+  if (!occupied.length) return null;
+  let nearestGap = Number.POSITIVE_INFINITY;
+  for (const interval of candidate) {
+    for (const existing of occupied) {
+      if (existing.end <= interval.start) nearestGap = Math.min(nearestGap, minutes(interval.start) - minutes(existing.end));
+      else if (existing.start >= interval.end) nearestGap = Math.min(nearestGap, minutes(existing.start) - minutes(interval.end));
+    }
+  }
+  return Number.isFinite(nearestGap) ? Math.max(0, 240 - nearestGap) : 0;
+}
+
+const RECOMMENDATION_SIGNIFICANCE_MINUTES = 30;
+const MAX_RECOMMENDATIONS_PER_ASSIGNMENT_DAY = 3;
+
+/**
+ * Decorates already-valid slots without changing their order, count or identity fields.
+ * A recommendation requires an existing same-day employee/resource schedule and a
+ * meaningful score boundary (30 minutes) versus the next alternative.
+ */
+export function decorateAvailabilitySlots(
+  slots: AvailabilitySlot[],
+  input: Pick<GenerateAvailabilityInput,
+    "appointments" | "resourceAllocations" | "resourceRequirements" | "bufferMinutes"
+    | "preProcessingMinutes" | "processingMinutes" | "postProcessingMinutes">,
+): AvailabilitySlot[] {
+  if (!slots.length) return slots;
+  const buffer = Math.max(0, input.bufferMinutes ?? 0);
+  const pre = Math.max(0, input.preProcessingMinutes ?? 0);
+  const processing = Math.max(0, input.processingMinutes ?? 0);
+  const post = Math.max(0, input.postProcessingMinutes ?? 0);
+  const resourceIds = [...new Set(input.resourceRequirements.map((item) => item.resourceId))].sort();
+  const scored = slots.map((slot) => {
+    const candidateEmployeeIntervals = employeeIntervals(
+      slot.startTime, slot.endTime, buffer, pre, processing, post, resourceIds.length > 0,
+    );
+    const points: number[] = [];
+    for (const employeeId of slot.employeeIds) {
+      const occupied = input.appointments
+        .filter((appointment) => appointment.date === slot.date
+          && (appointment.employeeIds?.length
+            ? appointment.employeeIds
+            : appointment.employeeId ? [appointment.employeeId] : []).includes(employeeId))
+        .flatMap((appointment) => employeeIntervals(
+          appointment.startTime,
+          appointment.endTime,
+          Math.max(0, appointment.bufferMinutes ?? 0),
+          Math.max(0, appointment.preProcessingMinutes ?? 0),
+          Math.max(0, appointment.processingMinutes ?? 0),
+          Math.max(0, appointment.postProcessingMinutes ?? 0),
+          Boolean(appointment.resourceIds?.length),
+        ));
+      const value = compactnessPoints(candidateEmployeeIntervals, occupied);
+      if (value !== null) points.push(value);
+    }
+    for (const resourceId of resourceIds) {
+      const occupied = input.resourceAllocations
+        .filter((allocation) => allocation.resourceId === resourceId && allocation.date === slot.date)
+        .map((allocation) => ({
+          start: allocation.startTime,
+          end: addMinutes(allocation.endTime, Math.max(0, allocation.bufferMinutes ?? 0)) ?? allocation.endTime,
+        }));
+      const value = compactnessPoints([{
+        start: slot.startTime,
+        end: addMinutes(slot.endTime, buffer) ?? slot.endTime,
+      }], occupied);
+      if (value !== null) points.push(value);
+    }
+    const score = points.length ? Math.round(points.reduce((sum, value) => sum + value, 0) / points.length) : 0;
+    const groupKey = `${slot.date}|${slot.employeeIds.join(",")}|${resourceIds.join(",")}`;
+    return { slot, score, groupKey, hasSchedule: points.length > 0 };
+  });
+  const recommendedIndexes = new Set<number>();
+  const groups = new Map<string, number[]>();
+  scored.forEach((item, index) => groups.set(item.groupKey, [...(groups.get(item.groupKey) ?? []), index]));
+  for (const indexes of groups.values()) {
+    const ranked = indexes.filter((index) => scored[index]!.hasSchedule)
+      .sort((left, right) => scored[right]!.score - scored[left]!.score || left - right);
+    const maxPrefix = Math.min(MAX_RECOMMENDATIONS_PER_ASSIGNMENT_DAY, ranked.length - 1);
+    let recommendationCount = 0;
+    for (let count = 1; count <= maxPrefix; count += 1) {
+      if (scored[ranked[count - 1]!]!.score - scored[ranked[count]!]!.score >= RECOMMENDATION_SIGNIFICANCE_MINUTES) {
+        recommendationCount = count;
+      }
+    }
+    ranked.slice(0, recommendationCount).forEach((index) => recommendedIndexes.add(index));
+  }
+  return scored.map((item, index) => ({
+    ...item.slot,
+    score: item.score,
+    ...(recommendedIndexes.has(index) ? { recommended: true } : {}),
+  }));
 }
 
 function weekday(date: string) {

@@ -25,4 +25,8 @@ export interface GroupedTreatmentSlot {
   postProcessingMinutes: number;
   /** @minimum 0 */
   bufferMinutes: number;
+  /** Additive schedule-compaction score; never affects validity, identity, count, or order. */
+  score?: number;
+  /** True only for a meaningfully better same-day option within the same employee/resource assignment. */
+  recommended?: boolean;
 }

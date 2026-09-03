@@ -21,6 +21,7 @@ import {
 } from "@workspace/db";
 import {
   DEFAULT_SALON_TIME_ZONE,
+  decorateAvailabilitySlots,
   generateAvailability,
   type AvailabilitySlot,
   type BusyAppointment,
@@ -28,6 +29,10 @@ import {
   type ResourceAllocation,
   wallClockNowInTimeZone,
 } from "./availability-engine";
+
+function generateDecoratedAvailability(input: GenerateAvailabilityInput): AvailabilitySlot[] {
+  return decorateAvailabilitySlots(generateAvailability(input), input);
+}
 
 function optionalNumber(value: unknown, fallback: number) {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : fallback;
@@ -197,7 +202,7 @@ export async function canonicalAvailability(input: {
       const end = downtime.endsAt < dayEnd ? downtime.endsAt : dayEnd;
       return [{ resourceId: downtime.resourceId, date, startTime: start.toISOString().slice(11, 16), endTime: end.getTime() === dayEnd.getTime() ? "24:00" : end.toISOString().slice(11, 16) }];
     }));
-    return generateAvailability({
+    return generateDecoratedAvailability({
       dates: input.dates, durationMinutes: input.service.durationMinutes,
       bufferMinutes: optionalNumber((input.service as unknown as { bufferMinutes?: unknown }).bufferMinutes, 0),
       preProcessingMinutes: optionalNumber((input.service as unknown as { preProcessingMinutes?: unknown }).preProcessingMinutes, 0),
@@ -401,7 +406,7 @@ export async function canonicalAvailability(input: {
       service: typeof servicesTable.$inferSelect;
     }>;
 
-  return generateAvailability({
+  return generateDecoratedAvailability({
     dates: input.dates,
     durationMinutes: input.service.durationMinutes,
     bufferMinutes: optionalNumber((input.service as unknown as { bufferMinutes?: unknown }).bufferMinutes, 0),
