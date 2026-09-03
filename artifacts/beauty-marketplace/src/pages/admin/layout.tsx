@@ -4,80 +4,48 @@ import { useGetCurrentUser, useLogout } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { BusinessLayout } from "@/components/business-layout";
 import { Button } from "@/components/ui/button";
-import { Loader2, LayoutDashboard, Store, Users, Star, CreditCard, MessageSquare, Menu, X, Package, FolderTree, Tags, Truck, Mail, MessageSquareText, PlugZap, FileText, GraduationCap, SlidersHorizontal, BriefcaseBusiness, ListX, Gift, Layers, Bell, Settings2, Image, ListTree, ShieldAlert, Facebook, MailQuestion, AlertCircle, ShoppingBag, Megaphone, TrendingUp, Sparkles, ArrowLeft, BookOpen, LogOut } from "lucide-react";
+import { Loader2, LayoutDashboard, Store, Users, Star, CreditCard, MessageSquare, Menu, X, Package, FolderTree, Tags, Truck, Mail, MessageSquareText, PlugZap, FileText, GraduationCap, SlidersHorizontal, BriefcaseBusiness, ListX, Gift, Layers, Bell, Settings2, Image, ListTree, ShieldAlert, Facebook, MailQuestion, AlertCircle, ShoppingBag, Megaphone, TrendingUp, Sparkles, ArrowLeft, BookOpen, LogOut, type LucideIcon } from "lucide-react";
+import { ADMIN_NAV_GROUPS, adminNavigationTestId, type AdminNavIconName } from "@/lib/admin-navigation";
 
-const navGroups = [
-  {
-    label: "Osnovno",
-    links: [
-      { href: "/admin", label: "Pregled", icon: LayoutDashboard },
-      { href: "/admin/saloni", label: "Saloni", icon: Store },
-      { href: "/admin/korisnici", label: "Korisnici", icon: Users },
-      { href: "/admin/predlosci-usluga", label: "Predlošci usluga", icon: FileText },
-    ],
-  },
-  {
-    label: "Edukacije i programi",
-    links: [
-      { href: "/admin/edukacije", label: "Edukacije, isticanje i obračun", icon: GraduationCap },
-      { href: "/admin/education-b2b-popusti", label: "B2B popusti za edukacije", icon: CreditCard },
-      { href: "/admin/loyalty", label: "Loyalty program", icon: Star },
-      { href: "/admin/retencija", label: "Pragovi retencije", icon: SlidersHorizontal },
-      { href: "/admin/pretplate", label: "Pretplate", icon: CreditCard },
-      { href: "/admin/preporuke", label: "Preporuke", icon: Gift },
-    ],
-  },
-  {
-    label: "Katalog i prodavnica",
-    links: [
-      { href: "/admin/dobavljaci", label: "Dobavljači", icon: FolderTree },
-      { href: "/admin/proizvodi", label: "Proizvodi", icon: Package },
-      { href: "/admin/bundle-proizvodi", label: "Paketi", icon: Layers },
-      { href: "/admin/brendovi", label: "Brendovi", icon: Tags },
-      { href: "/admin/katalog/atributi", label: "Katalog atributi", icon: ListTree },
-      { href: "/admin/nivoi-korpe", label: "Nivoi korpe", icon: ShoppingBag },
-      { href: "/admin/kuponi", label: "Kuponi", icon: Tags },
-      { href: "/admin/lista-cekanja", label: "Lista čekanja", icon: Bell },
-      { href: "/admin/profitabilnost", label: "Profitabilnost", icon: TrendingUp },
-    ],
-  },
-  {
-    label: "Porudžbine i podrška",
-    links: [
-      { href: "/admin/porudzbine", label: "Porudžbine", icon: Package },
-      { href: "/admin/b2b-ponude", label: "B2B ponude", icon: FileText },
-      { href: "/admin/reklamacije", label: "Reklamacije (RMA)", icon: AlertCircle },
-      { href: "/admin/upiti-za-cenu", label: "Upiti za cenu", icon: MailQuestion },
-      { href: "/admin/recenzije", label: "Recenzije salona", icon: MessageSquare },
-      { href: "/admin/recenzije-proizvoda", label: "Moderacija proizvoda", icon: ShieldAlert },
-      { href: "/admin/nagrade-recenzije", label: "Nagrade za recenzije", icon: Star },
-    ],
-  },
-  {
-    label: "Marketing i sadržaj",
-    links: [
-      { href: "/admin/poslovi", label: "Oglasi i izveštaji", icon: BriefcaseBusiness },
-      { href: "/admin/odbijeni-oglasi", label: "Odbijeni oglasi", icon: ListX },
-      { href: "/admin/marketinske-kampanje", label: "Marketinške kampanje", icon: Megaphone },
-      { href: "/admin/b2c-baneri", label: "B2C baneri", icon: Image },
-      { href: "/admin/nega-posle-tretmana", label: "Nega posle tretmana", icon: Sparkles },
-      { href: "/admin/nega-posle-tretmana/statistika", label: "Statistika nege", icon: TrendingUp },
-      { href: "/admin/drustvene-mreze", label: "Meta (Facebook)", icon: Facebook },
-      { href: "/admin/email-marketing", label: "E-mail marketing", icon: Mail },
-      { href: "/admin/sms-evidencija", label: "SMS evidencija", icon: MessageSquareText },
-    ],
-  },
-  {
-    label: "Podešavanja",
-    links: [
-      { href: "/admin/podesavanja/prodavnica", label: "Podešavanja prodavnice", icon: Settings2 },
-      { href: "/admin/podesavanja-prikaza", label: "B2C podešavanja", icon: Settings2 },
-      { href: "/admin/iskustvo-kupovine", label: "Iskustvo kupovine", icon: Settings2 },
-      { href: "/admin/dostava", label: "Dostava", icon: Truck },
-      { href: "/admin/integracije", label: "Integracije", icon: PlugZap },
-    ],
-  },
-];
+const adminNavIcons: Record<AdminNavIconName, LucideIcon> = {
+  AlertCircle,
+  Bell,
+  BriefcaseBusiness,
+  CreditCard,
+  Facebook,
+  FileText,
+  FolderTree,
+  Gift,
+  GraduationCap,
+  Image,
+  Layers,
+  LayoutDashboard,
+  ListTree,
+  ListX,
+  Mail,
+  MailQuestion,
+  Megaphone,
+  MessageSquare,
+  MessageSquareText,
+  Package,
+  PlugZap,
+  Settings2,
+  ShieldAlert,
+  ShoppingBag,
+  SlidersHorizontal,
+  Sparkles,
+  Star,
+  Store,
+  Tags,
+  TrendingUp,
+  Truck,
+  Users,
+};
+
+const navGroups = ADMIN_NAV_GROUPS.map((group) => ({
+  ...group,
+  links: group.links.map((link) => ({ ...link, icon: adminNavIcons[link.icon] })),
+}));
 
 const adminFocusClass =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 forced-colors:focus-visible:outline-[Highlight] forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-offset-2";
@@ -194,7 +162,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
                         : "text-muted-foreground hover:bg-muted hover:text-foreground"
                     } ${adminFocusClass}`}
                     aria-current={isActive ? "page" : undefined}
-                    data-testid={`admin-nav-${link.href.replace("/admin", "").replaceAll("/", "-").replace(/^-/, "") || "dashboard"}`}
+                    data-testid={adminNavigationTestId(link.href)}
                     onClick={() => setIsMobileOpen(false)}
                   >
                     <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />

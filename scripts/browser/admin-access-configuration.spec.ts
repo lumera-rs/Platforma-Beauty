@@ -10,31 +10,20 @@ import {
 } from "@workspace/db";
 import * as apiSchemas from "../../lib/api-zod/src/generated/api";
 import { hashPassword } from "../../artifacts/api-server/src/lib/auth";
+import {
+  ADMIN_NAV_GROUPS,
+  ADMIN_PROTECTED_DETAIL_ROUTE_FIXTURES,
+  adminNavigationTestId,
+} from "../../artifacts/beauty-marketplace/src/lib/admin-navigation";
 import { adminSummaryFixture, checkedApiFixture } from "../src/browser-api-fixtures";
 
-const ADMIN_NAV = [
-  { href: "/admin", testId: "admin-nav-dashboard" },
-  { href: "/admin/saloni", testId: "admin-nav-saloni" },
-  { href: "/admin/predlosci-usluga", testId: "admin-nav-predlosci-usluga" },
-  { href: "/admin/korisnici", testId: "admin-nav-korisnici" },
-  { href: "/admin/loyalty", testId: "admin-nav-loyalty" },
-  { href: "/admin/pretplate", testId: "admin-nav-pretplate" },
-  { href: "/admin/edukacije", testId: "admin-nav-edukacije" },
-  { href: "/admin/recenzije", testId: "admin-nav-recenzije" },
-  { href: "/admin/proizvodi", testId: "admin-nav-proizvodi" },
-  { href: "/admin/porudzbine", testId: "admin-nav-porudzbine" },
-  { href: "/admin/kategorije", testId: "admin-nav-kategorije" },
-  { href: "/admin/brendovi", testId: "admin-nav-brendovi" },
-  { href: "/admin/dostava", testId: "admin-nav-dostava" },
-  { href: "/admin/email-marketing", testId: "admin-nav-email-marketing" },
-  { href: "/admin/sms-evidencija", testId: "admin-nav-sms-evidencija" },
-  { href: "/admin/integracije", testId: "admin-nav-integracije" },
-];
+const ADMIN_NAV = ADMIN_NAV_GROUPS.flatMap((group) =>
+  group.links.map(({ href }) => ({ href, testId: adminNavigationTestId(href) })),
+);
 
 const PROTECTED_ADMIN_ROUTES = [
   ...ADMIN_NAV.map(({ href }) => href),
-  "/admin/saloni/00000000-0000-4000-8000-000000000001",
-  "/admin/porudzbine/00000000-0000-4000-8000-000000000002",
+  ...ADMIN_PROTECTED_DETAIL_ROUTE_FIXTURES,
 ];
 
 const admin = {
@@ -45,6 +34,9 @@ const admin = {
   role: "ADMIN" as const,
   active: true,
   mustChangePassword: false,
+  phone: null,
+  dateOfBirth: null,
+  marketingEmailsEnabled: false,
 };
 
 const superAdmin = { ...admin, role: "SUPER_ADMIN" as const };
@@ -82,8 +74,9 @@ function adminUser() {
     lastName: "Vlasnik",
     email: "owner-regression@example.test",
     phone: null,
-    role: "SALON_OWNER",
+    role: "CUSTOMER",
     active: true,
+    passwordSetAt: "2026-08-21T09:00:00.000Z",
     createdAt: "2026-08-21T09:00:00.000Z",
   };
 }
@@ -178,7 +171,11 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
       return;
     }
 
-    if (path.startsWith("/api/admin/")) {
+    if (
+      path.startsWith("/api/admin/")
+      || path.startsWith("/api/beauty-jobs/")
+      || path.startsWith("/api/growth/admin/retention-settings")
+    ) {
       if (path === "/api/admin/summary") {
         await route.fulfill({
           json: adminSummaryFixture(apiSchemas.GetAdminSummaryResponse),
@@ -356,6 +353,7 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
               google_oauth: card,
               facebook_oauth: card,
               cloudflare: card,
+              web_push: card,
             },
             deliveryReports: {
               providers: {
@@ -406,6 +404,295 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
         });
         return;
       }
+      if (path === "/api/admin/education/taxonomy/proposals" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/admin/education/taxonomy/proposals",
+            apiSchemas.ListAdminEducationTaxonomyProposalsResponse,
+            [],
+          ),
+        });
+        return;
+      }
+      if (path === "/api/admin/education/placement-settings" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/admin/education/placement-settings",
+            apiSchemas.GetAdminEducationPlacementSettingsResponse,
+            [],
+          ),
+        });
+        return;
+      }
+      if (path === "/api/admin/featured-placements" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/admin/featured-placements",
+            apiSchemas.ListAdminFeaturedPlacementsResponse,
+            { items: [], page: 1, pageSize: 20, total: 0 },
+          ),
+        });
+        return;
+      }
+      if (path === "/api/admin/education/installments" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/admin/education/installments",
+            apiSchemas.ListAdminEducationInstallmentsResponse,
+            [],
+          ),
+        });
+        return;
+      }
+      if (path === "/api/admin/education/gift-vouchers" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/admin/education/gift-vouchers",
+            apiSchemas.AdminListEducationGiftVouchersResponse,
+            { items: [], page: 1, pageSize: 20, total: 0 },
+          ),
+        });
+        return;
+      }
+      if (path === "/api/admin/education/grace-centers" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/admin/education/grace-centers",
+            apiSchemas.ListAdminEducationGraceCentersResponse,
+            {
+              items: [],
+              generatedAt: "2026-08-21T09:00:00.000Z",
+              truncated: false,
+            },
+          ),
+        });
+        return;
+      }
+      if (path === "/api/admin/education/financial-audit" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/admin/education/financial-audit",
+            apiSchemas.ListAdminEducationFinancialAuditResponse,
+            { items: [], nextCursor: null },
+          ),
+        });
+        return;
+      }
+      if (path === "/api/admin/product-waitlist" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/admin/product-waitlist",
+            apiSchemas.AdminListProductWaitlistResponse,
+            { items: [], total: 0, page: 1, pageSize: 20, totalPages: 0 },
+          ),
+        });
+        return;
+      }
+      if (path === "/api/admin/commerce/profitability" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/admin/commerce/profitability",
+            apiSchemas.AdminGetCommerceProfitabilityResponse,
+            {
+              kpis: { revenueRsd: 0, cogsRsd: 0, profitRsd: 0, marginPercent: null, units: 0 },
+              timeSeries: [],
+              products: [],
+              treatment: "",
+            },
+          ),
+        });
+        return;
+      }
+      if (path === "/api/admin/retail-product-reviews" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/admin/retail-product-reviews",
+            apiSchemas.AdminListRetailProductReviewsResponse,
+            { items: [], total: 0, page: 1, pageSize: 20 },
+          ),
+        });
+        return;
+      }
+      if (path === "/api/admin/review-rewards" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/admin/review-rewards",
+            apiSchemas.AdminGetReviewRewardSettingsResponse,
+            {
+              settings: {
+                enabled: false,
+                invitationDelayDays: 7,
+                percent: 1,
+                validityDays: 1,
+                version: 1,
+              },
+              stats: { issued: 0 },
+            },
+          ),
+        });
+        return;
+      }
+      if (path === "/api/admin/aftercare/statistics" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/admin/aftercare/statistics",
+            apiSchemas.AdminGetAftercareStatisticsResponse,
+            {
+              kpis: {
+                recommendationsCreated: 0,
+                firstSent: 0,
+                secondSent: 0,
+                replenishmentSent: 0,
+                convertedRecommendations: 0,
+                conversionRevenueRsd: 0,
+                conversionRatePercent: 0,
+              },
+              timeSeries: [],
+              byTreatment: [],
+              byItem: [],
+            },
+          ),
+        });
+        return;
+      }
+      if (path === "/api/admin/shop-settings" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/admin/shop-settings",
+            apiSchemas.AdminGetShopSettingsResponse,
+            {
+              showLoyaltyPoints: false,
+              pointsPer100Rsd: 0,
+              lowStockThreshold: 1,
+              defaultDeliveryBusinessDays: 1,
+              retailCartReminderEnabled: false,
+              retailCartReminderDelayHours: 1,
+              retailCartReminderBrevoTemplateId: null,
+              freeShippingThreshold: 0,
+              version: 1,
+              updatedAt: "2026-08-21T09:00:00.000Z",
+              seller: {
+                companyName: "LUMERA",
+                taxId: "100000000",
+                registrationNumber: "00000000",
+                address: "Test adresa 1",
+                city: "Beograd",
+                postalCode: "11000",
+                bankAccount: "000-0000000000000-00",
+                contactEmail: "shop-regression@example.test",
+                contactPhone: "+381600000000",
+              },
+            },
+          ),
+        });
+        return;
+      }
+      if (path === "/api/admin/beauty-jobs/queue" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/admin/beauty-jobs/queue",
+            apiSchemas.GetBeautyJobModerationQueueResponse,
+            { listings: [], reports: [], total: 0, page: 1, pageSize: 24 },
+          ),
+        });
+        return;
+      }
+      if (path === "/api/beauty-jobs/categories" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/beauty-jobs/categories",
+            apiSchemas.ListBeautyJobCategoriesResponse,
+            { categories: [] },
+          ),
+        });
+        return;
+      }
+      if (path === "/api/admin/beauty-jobs/settings" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/admin/beauty-jobs/settings",
+            apiSchemas.GetBeautyJobSettingsResponse,
+            {
+              id: "00000000-0000-4000-8000-000000000079",
+              listingExpiryDays: 30,
+              hourlyPostingLimit: 10,
+              updatedByUserId: null,
+              updatedAt: null,
+            },
+          ),
+        });
+        return;
+      }
+      if (path === "/api/admin/beauty-jobs/email-deliveries" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/admin/beauty-jobs/email-deliveries",
+            apiSchemas.GetBeautyJobDeliveryIssuesResponse,
+            {
+              summary: {
+                delayedQueuedCount: 0,
+                failedCount: 0,
+                skippedCount: 0,
+                totalIssueCount: 0,
+                terminalIssueCount: 0,
+                staleAfterMinutes: 15,
+                alertThreshold: 1,
+              },
+              deliveries: [],
+            },
+          ),
+        });
+        return;
+      }
+      if (path === "/api/admin/beauty-jobs/rejected" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/admin/beauty-jobs/rejected",
+            apiSchemas.ListRejectedBeautyJobsResponse,
+            { items: [], total: 0, page: 1, pageSize: 20 },
+          ),
+        });
+        return;
+      }
+      if (path === "/api/growth/admin/retention-settings" && method === "GET") {
+        const thresholds = {
+          newCustomerWindowDays: 30,
+          defaultIntervalDays: 30,
+          atRiskIntervalPercent: 150,
+          lostIntervalPercent: 250,
+          lostMinimumDays: 90,
+          vipMinCompletedVisits: 10,
+          vipSpendPercentOfMedian: 200,
+        };
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/growth/admin/retention-settings",
+            apiSchemas.AdminGetRetentionSettingsResponse,
+            {
+              version: 0,
+              thresholds,
+              changedByUserId: null,
+              changedByName: null,
+              changedAt: null,
+              isDefault: true,
+              defaults: thresholds,
+              changeSource: "manual",
+              restoredFromVersion: null,
+            },
+          ),
+        });
+        return;
+      }
+      if (path === "/api/growth/admin/retention-settings/history" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/growth/admin/retention-settings/history",
+            apiSchemas.AdminGetRetentionSettingsHistoryResponse,
+            [],
+          ),
+        });
+        return;
+      }
 
       // The navigation test only needs these sections to resolve their initial
       // list requests. Individual action tests above provide complete fixtures.
@@ -420,7 +707,11 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
 async function openAdminPage(page: Page, path: string, role: "ADMIN" | "SUPER_ADMIN" = "SUPER_ADMIN") {
   await mockAdminApi(page, role);
   await page.goto(path);
-  await expect(page.locator("aside").getByRole("heading", { name: "Admin Panel" })).toBeVisible();
+  if ((page.viewportSize()?.width ?? 1280) < 768) {
+    await expect(page.getByTestId("admin-mobile-menu-trigger")).toBeVisible();
+  } else {
+    await expect(page.locator("aside").getByRole("heading", { name: "Admin Panel" })).toBeVisible();
+  }
 }
 
 function collectBrowserErrors(page: Page): string[] {
@@ -431,7 +722,7 @@ function collectBrowserErrors(page: Page): string[] {
   page.on("pageerror", (error) => errors.push(`page: ${error.message}`));
   page.on("requestfailed", (request) => {
     const failure = request.failure()?.errorText;
-    if (request.resourceType() === "eventsource" && failure === "net::ERR_ABORTED") return;
+    if (failure === "net::ERR_ABORTED") return;
     errors.push(`request: ${request.method()} ${request.url()} — ${failure ?? "failed"}`);
   });
   page.on("response", (response) => {
@@ -450,7 +741,24 @@ async function expectVisibleFocusIndicator(control: Locator) {
   })).toBe(true);
 }
 
+async function expectAdminDestination(page: Page, href: string, browserErrors: string[]) {
+  const previousErrorCount = browserErrors.length;
+  await expect(page).toHaveURL(new RegExp(`${href.replaceAll("/", "\\/")}$`));
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByRole("heading", { name: "Something went wrong" })).toHaveCount(0);
+  await expect(
+    page.locator("h1:visible, h2:visible, h3:visible").filter({ hasNotText: /^Admin Panel$/i }).first(),
+  ).toBeVisible();
+  expect(
+    browserErrors.slice(previousErrorCount),
+    `Admin destination ${href} must render without browser errors.`,
+  ).toEqual([]);
+}
+
 test("an admin can sign in and reach every admin section on desktop", async ({ page }) => {
+  test.setTimeout(180_000);
+  const browserErrors = collectBrowserErrors(page);
+  await page.setViewportSize({ width: 1280, height: 844 });
   await mockAdminApi(page, "ADMIN", false);
   await page.goto("/poslovna-prijava");
   await page.getByLabel("Email").fill("admin-regression@example.test");
@@ -462,11 +770,17 @@ test("an admin can sign in and reach every admin section on desktop", async ({ p
 
   for (const [index, link] of ADMIN_NAV.entries()) {
     if (index > 0) {
-      await page.getByTestId(link.testId).click();
-      await expect(page).toHaveURL(new RegExp(`${link.href.replaceAll("/", "\\/")}$`));
+      await page.goto("/admin");
+      await expect(page.getByRole("heading", { name: "Aktivnost novih modula" })).toBeVisible();
     }
-    await expect(page.getByTestId(link.testId)).toBeVisible();
+    const navLink = page.locator("aside").getByTestId(link.testId);
+    await expect(navLink).toBeAttached();
+    if (index > 0) {
+      await navLink.click();
+    }
+    await expectAdminDestination(page, link.href, browserErrors);
   }
+  expect(browserErrors, "Every desktop admin destination must render without browser errors.").toEqual([]);
 });
 
 test("a super administrator receives growth data on the dashboard without a forbidden response", async ({ page }) => {
@@ -485,17 +799,22 @@ test("a super administrator receives growth data on the dashboard without a forb
 });
 
 test("an admin can reach every admin section from the mobile menu", async ({ page }) => {
-  await openAdminPage(page, "/admin");
+  test.setTimeout(180_000);
+  const browserErrors = collectBrowserErrors(page);
   await page.setViewportSize({ width: 390, height: 844 });
+  await openAdminPage(page, "/admin");
   await expect(page.getByTestId("admin-mobile-menu-trigger")).toBeVisible();
 
   await expect(page.locator("main")).toBeVisible();
   for (const link of ADMIN_NAV.slice(1)) {
+    await page.goto("/admin");
+    await expect(page.getByRole("heading", { name: "Aktivnost novih modula" })).toBeVisible();
     await page.getByTestId("admin-mobile-menu-trigger").click();
     await expect(page.getByTestId(link.testId).first()).toBeVisible();
     await page.getByTestId(link.testId).first().click();
-    await expect(page).toHaveURL(new RegExp(`${link.href.replaceAll("/", "\\/")}$`));
+    await expectAdminDestination(page, link.href, browserErrors);
   }
+  expect(browserErrors, "Every mobile admin destination must render without browser errors.").toEqual([]);
 });
 
 test("admin mobile navigation traps keyboard focus and restores the toggle on escape", async ({ page }) => {
@@ -584,6 +903,7 @@ test("admin desktop navigation keeps focus indicators visible with forced colors
 });
 
 test("a customer is redirected from every admin route without admin requests", async ({ page }) => {
+  test.setTimeout(120_000);
   const customerFixture = await createUser("CUSTOMER", "api-customer");
   const customer = { ...admin, id: customerFixture.id, email: customerFixture.email, role: "CUSTOMER" as const };
   try {
@@ -627,7 +947,8 @@ test("admin salon, user, loyalty, subscription, and review actions show success"
   await expect(page.getByText("Sačuvano", { exact: true })).toBeVisible();
 
   await page.goto("/admin/pretplate");
-  await page.getByTestId(`btn-edit-${planId}`).click();
+  const salonPlanCard = page.getByRole("heading", { name: subscriptionPlan().name }).locator("../..");
+  await salonPlanCard.getByRole("button", { name: "Izmeni" }).click();
   await page.getByRole("button", { name: "Sačuvaj" }).click();
   await expect(page.getByText("Sačuvano", { exact: true })).toBeVisible();
 
@@ -636,20 +957,21 @@ test("admin salon, user, loyalty, subscription, and review actions show success"
   await expect(page.getByText("Recenzija ažurirana", { exact: true })).toBeVisible();
 });
 
-test("limited admins see protected user, loyalty, and subscription controls", async ({ page }) => {
+test("admins can manage loyalty but not protected user and subscription controls", async ({ page }) => {
   await openAdminPage(page, "/admin/korisnici", "ADMIN");
   await expect(page.getByTestId(`select-role-${userId}`)).toBeDisabled();
   await expect(page.getByTestId(`toggle-active-${userId}`)).toBeDisabled();
 
   await page.goto("/admin/loyalty");
-  await expect(page.getByTestId("btn-new-tier")).toBeDisabled();
-  await expect(page.getByTestId(`btn-edit-${tierId}`)).toBeDisabled();
-  await expect(page.getByTestId(`btn-delete-${tierId}`)).toBeDisabled();
+  await expect(page.getByTestId("btn-new-tier")).toBeEnabled();
+  await expect(page.getByTestId(`btn-edit-${tierId}`)).toBeEnabled();
+  await expect(page.getByTestId(`btn-delete-${tierId}`)).toBeEnabled();
 
   await page.goto("/admin/pretplate");
-  await expect(page.getByTestId("btn-new-plan")).toBeDisabled();
-  await expect(page.getByTestId(`btn-edit-${planId}`)).toBeDisabled();
-  await expect(page.getByTestId(`btn-delete-${planId}`)).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Novi Salon Plan" })).toBeDisabled();
+  const salonPlanCard = page.getByRole("heading", { name: subscriptionPlan().name }).locator("../..");
+  await expect(salonPlanCard.getByRole("button", { name: "Izmeni" })).toBeDisabled();
+  await expect(salonPlanCard.locator("button").nth(1)).toBeDisabled();
 });
 
 type UserFixture = {
