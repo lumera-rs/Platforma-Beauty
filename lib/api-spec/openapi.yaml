@@ -9174,6 +9174,31 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/AdminPriceInquiry"
+  /admin/price-inquiries/page:
+    get:
+      operationId: adminListPriceInquiriesPage
+      tags: [admin]
+      summary: List a bounded page of supplier product price inquiries with exact navigation metadata
+      parameters:
+        - name: search
+          in: query
+          description: Case-insensitive customer name, email, product, or supplier search.
+          schema: { type: string, maxLength: 120 }
+        - name: page
+          in: query
+          description: One-based result page in newest-first order.
+          schema: { type: integer, minimum: 1, maximum: 100000, default: 1 }
+        - name: pageSize
+          in: query
+          description: Maximum number of inquiries returned per page.
+          schema: { type: integer, minimum: 1, maximum: 500, default: 50 }
+      responses:
+        "200":
+          description: Price inquiry page with bounded look-ahead metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminPriceInquiryPage"
   /admin/price-inquiries/{id}:
     patch:
       operationId: adminUpdatePriceInquiry
@@ -9845,6 +9870,17 @@ components:
         internalNote: { type: [string, "null"] }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    AdminPriceInquiryPage:
+      type: object
+      required: [items, page, pageSize, hasNext]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminPriceInquiry"
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 500 }
+        hasNext: { type: boolean }
     AdminPriceInquiryUpdate:
       type: object
       properties:

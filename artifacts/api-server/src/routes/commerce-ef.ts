@@ -15,6 +15,8 @@ import {
   AdminGetReviewRewardSettingsResponse,
   AdminGetRmaResponse,
   AdminListPriceInquiriesQueryParams,
+  AdminListPriceInquiriesPageQueryParams,
+  AdminListPriceInquiriesPageResponse,
   AdminListPriceInquiriesResponse,
   AdminListQuotesResponse,
   AdminListRmasResponse,
@@ -167,6 +169,34 @@ router.get("/admin/price-inquiries", async (req, res): Promise<void> => {
     .limit(pageSize)
     .offset((page - 1) * pageSize);
   sendValidatedAdminCommerceResponse(req, res, "adminListPriceInquiries", AdminListPriceInquiriesResponse, rows);
+});
+
+router.get("/admin/price-inquiries/page", async (req, res): Promise<void> => {
+  if (!await admin(req, res)) return;
+  const query = AdminListPriceInquiriesPageQueryParams.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: "Invalid price inquiry query." }); return; }
+  const search = query.data.search?.trim();
+  const page = query.data.page ?? 1;
+  const pageSize = query.data.pageSize ?? 50;
+  const escapedSearch = search?.replace(/[\\%_]/g, "\\$&");
+  const rows = await db.select(adminPriceInquirySelection).from(priceInquiriesTable)
+    .innerJoin(productsTable, eq(priceInquiriesTable.productId, productsTable.id))
+    .innerJoin(suppliersTable, eq(priceInquiriesTable.supplierId, suppliersTable.id))
+    .where(search ? or(
+      sql`${priceInquiriesTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+      sql`${priceInquiriesTable.email} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+      sql`${productsTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+      sql`${suppliersTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+    ) : undefined)
+    .orderBy(desc(priceInquiriesTable.createdAt), desc(priceInquiriesTable.id))
+    .limit(pageSize + 1)
+    .offset((page - 1) * pageSize);
+  sendValidatedAdminCommerceResponse(req, res, "adminListPriceInquiriesPage", AdminListPriceInquiriesPageResponse, {
+    items: rows.slice(0, pageSize),
+    page,
+    pageSize,
+    hasNext: rows.length > pageSize,
+  });
 });
 router.patch("/admin/price-inquiries/:id", async (req, res): Promise<void> => {
   if (!await admin(req, res)) return;

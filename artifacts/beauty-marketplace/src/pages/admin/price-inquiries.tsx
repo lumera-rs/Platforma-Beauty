@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { customFetch, getAdminListPriceInquiriesQueryKey, useAdminListPriceInquiries } from "@workspace/api-client-react";
+import { customFetch, getAdminListPriceInquiriesPageQueryKey, useAdminListPriceInquiriesPage } from "@workspace/api-client-react";
 import type { AdminPriceInquiry } from "@workspace/api-client-react";
 import { AdminLayout } from "./layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,9 +21,10 @@ export default function AdminPriceInquiries() {
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  const { data: inquiries, isLoading } = useAdminListPriceInquiries(
+  const { data: inquiryPage, isLoading } = useAdminListPriceInquiriesPage(
     { ...(debouncedSearch ? { search: debouncedSearch } : {}), page, pageSize },
   );
+  const inquiries = inquiryPage?.items;
 
   const updateInquiry = useMutation({
     mutationFn: ({ id, status, internalNote }: { id: string, status?: string, internalNote?: string }) => 
@@ -34,7 +35,7 @@ export default function AdminPriceInquiries() {
       }),
     onSuccess: () => {
       toast.success("Upit je uspešno ažuriran.");
-      qc.invalidateQueries({ queryKey: getAdminListPriceInquiriesQueryKey() });
+      qc.invalidateQueries({ queryKey: getAdminListPriceInquiriesPageQueryKey() });
     },
     onError: () => toast.error("Greška prilikom ažuriranja upita.")
   });
@@ -159,7 +160,7 @@ export default function AdminPriceInquiries() {
             );
           })
         )}
-        {!isLoading && inquiries && (page > 1 || inquiries.length === pageSize) && (
+        {!isLoading && inquiryPage && (page > 1 || inquiryPage.hasNext) && (
           <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-center text-sm text-muted-foreground sm:text-left">
               Stranica {page}
@@ -176,7 +177,7 @@ export default function AdminPriceInquiries() {
               <Button
                 variant="outline"
                 className="flex-1 sm:flex-none"
-                disabled={inquiries.length < pageSize}
+                disabled={!inquiryPage.hasNext}
                 onClick={() => setPage((current) => current + 1)}
               >
                 Sledeća

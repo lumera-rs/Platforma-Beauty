@@ -31,6 +31,18 @@ export interface AdminPriceInquiry {
   updatedAt: string;
 }
 
+export interface AdminPriceInquiryPage {
+  items: AdminPriceInquiry[];
+  /** @minimum 1 */
+  page: number;
+  /**
+     * @minimum 1
+     * @maximum 500
+     */
+  pageSize: number;
+  hasNext: boolean;
+}
+
 export type AdminPriceInquiryUpdateStatus = typeof AdminPriceInquiryUpdateStatus[keyof typeof AdminPriceInquiryUpdateStatus];
 
 
@@ -16661,6 +16673,26 @@ export type CreatePriceInquiry201 = {
 };
 
 export type AdminListPriceInquiriesParams = {
+/**
+ * Case-insensitive customer name, email, product, or supplier search.
+ * @maxLength 120
+ */
+search?: string;
+/**
+ * One-based result page in newest-first order.
+ * @minimum 1
+ * @maximum 100000
+ */
+page?: number;
+/**
+ * Maximum number of inquiries returned per page.
+ * @minimum 1
+ * @maximum 500
+ */
+pageSize?: number;
+};
+
+export type AdminListPriceInquiriesPageParams = {
 /**
  * Case-insensitive customer name, email, product, or supplier search.
  * @maxLength 120

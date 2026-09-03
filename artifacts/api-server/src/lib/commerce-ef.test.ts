@@ -243,6 +243,7 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
       { supplierId: ids.suppliers[0]!, productId: zeroProductId, name: "Paged Match Oldest", email: "paged-oldest@example.test", phone: "+381601234571", message: "Pagination matching inquiry oldest.", createdAt: new Date("2025-01-02T03:04:03.000Z") },
       { supplierId: ids.suppliers[0]!, productId: zeroProductId, name: "Paged Match Middle", email: "paged-middle@example.test", phone: "+381601234572", message: "Pagination matching inquiry middle.", createdAt: new Date("2025-01-02T03:04:04.000Z") },
       { supplierId: ids.suppliers[0]!, productId: zeroProductId, name: "Paged Match Newest", email: "paged-newest@example.test", phone: "+381601234573", message: "Pagination matching inquiry newest.", createdAt: new Date("2025-01-02T03:04:05.000Z") },
+      { supplierId: ids.suppliers[0]!, productId: zeroProductId, name: "Paged Match Latest", email: "paged-latest@example.test", phone: "+381601234574", message: "Pagination matching inquiry latest.", createdAt: new Date("2025-01-02T03:04:06.000Z") },
     ]);
     const firstPageResponse = await api("/admin/price-inquiries?search=Paged%20Match&page=1&pageSize=2", adminCookie);
     const secondPageResponse = await api("/admin/price-inquiries?search=Paged%20Match&page=2&pageSize=2", adminCookie);
@@ -252,10 +253,14 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
     assert.equal(firstPageResponse.status, 200);
     assert.equal(secondPageResponse.status, 200);
     assert.equal(firstPage.length, 2);
-    assert.equal(secondPage.length, 1);
+    assert.equal(secondPage.length, 2);
     assert.deepEqual(repeatedFirstPage.map((row) => row.id), firstPage.map((row) => row.id));
-    assert.equal(new Set([...firstPage, ...secondPage].map((row) => row.id)).size, 3);
+    assert.equal(new Set([...firstPage, ...secondPage].map((row) => row.id)).size, 4);
     assert.ok(secondPage.some((row) => row.contactName === "Paged Match Oldest"));
+    const firstPageWithMetadata = await (await api("/admin/price-inquiries/page?search=Paged%20Match&page=1&pageSize=2", adminCookie)).json() as { items: Array<{ id: string }>; hasNext: boolean; page: number; pageSize: number };
+    const exactFinalPage = await (await api("/admin/price-inquiries/page?search=Paged%20Match&page=2&pageSize=2", adminCookie)).json() as { items: Array<{ id: string }>; hasNext: boolean; page: number; pageSize: number };
+    assert.deepEqual(firstPageWithMetadata, { items: firstPage, page: 1, pageSize: 2, hasNext: true });
+    assert.deepEqual(exactFinalPage, { items: secondPage, page: 2, pageSize: 2, hasNext: false });
     for (const invalidQuery of ["page=0", "page=1.5", "pageSize=0", "pageSize=501"]) {
       assert.equal((await api(`/admin/price-inquiries?${invalidQuery}`, adminCookie)).status, 400);
     }

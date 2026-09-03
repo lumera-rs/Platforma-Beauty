@@ -31683,6 +31683,52 @@ export const AdminListPriceInquiriesResponse = zod.array(AdminListPriceInquiries
 
 
 /**
+ * @summary List a bounded page of supplier product price inquiries with exact navigation metadata
+ */
+export const adminListPriceInquiriesPageQuerySearchMax = 120;
+
+export const adminListPriceInquiriesPageQueryPageDefault = 1;
+export const adminListPriceInquiriesPageQueryPageMax = 100000;
+
+export const adminListPriceInquiriesPageQueryPageSizeDefault = 50;
+export const adminListPriceInquiriesPageQueryPageSizeMax = 500;
+
+
+
+export const AdminListPriceInquiriesPageQueryParams = zod.object({
+  "search": zod.coerce.string().max(adminListPriceInquiriesPageQuerySearchMax).optional().describe('Case-insensitive customer name, email, product, or supplier search.'),
+  "page": zod.coerce.number().int().min(1).max(adminListPriceInquiriesPageQueryPageMax).default(adminListPriceInquiriesPageQueryPageDefault).describe('One-based result page in newest-first order.'),
+  "pageSize": zod.coerce.number().int().min(1).max(adminListPriceInquiriesPageQueryPageSizeMax).default(adminListPriceInquiriesPageQueryPageSizeDefault).describe('Maximum number of inquiries returned per page.')
+})
+
+
+export const adminListPriceInquiriesPageResponsePageSizeMax = 500;
+
+
+
+export const AdminListPriceInquiriesPageResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "supplierId": zod.string(),
+  "productId": zod.string(),
+  "productName": zod.string(),
+  "supplierName": zod.string(),
+  "contactName": zod.string(),
+  "contactEmail": zod.string(),
+  "contactPhone": zod.string(),
+  "message": zod.string(),
+  "status": zod.enum(['NEW', 'CONTACTED', 'CLOSED']),
+  "internalNote": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})),
+  "page": zod.number().int().min(1),
+  "pageSize": zod.number().int().min(1).max(adminListPriceInquiriesPageResponsePageSizeMax),
+  "hasNext": zod.boolean()
+})
+
+
+/**
  * @summary Update an administrator price inquiry status or internal note
  */
 export const AdminUpdatePriceInquiryParams = zod.object({

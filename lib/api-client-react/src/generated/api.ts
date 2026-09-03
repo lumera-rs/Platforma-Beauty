@@ -64,6 +64,7 @@ import type {
   AdminListEducationGiftVouchersParams,
   AdminListEmailCampaignsResponse,
   AdminListOrdersParams,
+  AdminListPriceInquiriesPageParams,
   AdminListPriceInquiriesParams,
   AdminListProductWaitlistParams,
   AdminListProductsParams,
@@ -78,6 +79,7 @@ import type {
   AdminOrderBulkUpdate,
   AdminOrderUpdate,
   AdminPriceInquiry,
+  AdminPriceInquiryPage,
   AdminPriceInquiryUpdate,
   AdminProduct,
   AdminProductBulkUpdate,
@@ -44267,6 +44269,90 @@ export function useAdminListPriceInquiries<TData = Awaited<ReturnType<typeof adm
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getAdminListPriceInquiriesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminListPriceInquiriesPageUrl = (params?: AdminListPriceInquiriesPageParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/price-inquiries/page?${stringifiedParams}` : `/api/admin/price-inquiries/page`
+}
+
+/**
+ * @summary List a bounded page of supplier product price inquiries with exact navigation metadata
+ */
+export const adminListPriceInquiriesPage = async (params?: AdminListPriceInquiriesPageParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminPriceInquiryPage> => {
+
+  return customFetch<AdminPriceInquiryPage>(getAdminListPriceInquiriesPageUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListPriceInquiriesPageQueryKey = (params?: AdminListPriceInquiriesPageParams,) => {
+    return [
+    `/api/admin/price-inquiries/page`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminListPriceInquiriesPageQueryOptions = <TData = Awaited<ReturnType<typeof adminListPriceInquiriesPage>>, TError = ErrorType<unknown>>(params?: AdminListPriceInquiriesPageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListPriceInquiriesPage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListPriceInquiriesPageQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListPriceInquiriesPage>>> = ({ signal }) => adminListPriceInquiriesPage(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListPriceInquiriesPage>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminListPriceInquiriesPageQueryResult = NonNullable<Awaited<ReturnType<typeof adminListPriceInquiriesPage>>>
+export type AdminListPriceInquiriesPageQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List a bounded page of supplier product price inquiries with exact navigation metadata
+ */
+
+export function useAdminListPriceInquiriesPage<TData = Awaited<ReturnType<typeof adminListPriceInquiriesPage>>, TError = ErrorType<unknown>>(
+ params?: AdminListPriceInquiriesPageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListPriceInquiriesPage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminListPriceInquiriesPageQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
