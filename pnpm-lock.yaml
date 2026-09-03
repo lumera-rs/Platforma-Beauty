@@ -693,6 +693,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 25.9.5
+      '@workspace/api-zod':
+        specifier: workspace:*
+        version: link:../lib/api-zod
       '@workspace/db':
         specifier: workspace:*
         version: link:../lib/db
