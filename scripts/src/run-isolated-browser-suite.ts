@@ -5,6 +5,10 @@ import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/pro
 import { createServer } from "node:net";
 import path from "node:path";
 import { assertDestructiveTestRuntimeAllowed } from "./destructive-test-runtime";
+import {
+  pipeRedactedDatabaseOutput,
+  redactDatabaseCommandOutput,
+} from "./safe-child-process-output";
 
 const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
 const stateRoot = path.join(workspaceRoot, ".lumera-test-state");
@@ -232,24 +236,26 @@ function runCommand(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     let output = "";
+    const captureOutput = Boolean(options?.failOnOutput)
+      || Object.keys(environment).some((key) => /(?:^|_)DATABASE_URL$/.test(key));
     const child = spawn(command, args, {
       cwd: workspaceRoot,
       detached: process.platform !== "win32",
       env: environment,
-      stdio: options?.failOnOutput ? ["ignore", "pipe", "pipe"] : "inherit",
+      stdio: captureOutput ? ["ignore", "pipe", "pipe"] : "inherit",
     });
     options?.onSpawn?.(child);
-    if (options?.failOnOutput) {
-      const writeOutput = (stream: NodeJS.WriteStream, chunk: Buffer) => {
-        output += chunk.toString();
-        stream.write(chunk);
-      };
-      child.stdout?.on("data", (chunk: Buffer) => writeOutput(process.stdout, chunk));
-      child.stderr?.on("data", (chunk: Buffer) => writeOutput(process.stderr, chunk));
+    if (captureOutput) {
+      child.stdout?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+      child.stderr?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
     }
 
     child.once("error", () => reject(new Error(`${label} could not be started.`)));
     child.once("exit", (code, signal) => {
+      if (output) {
+        const stream = code === 0 ? process.stdout : process.stderr;
+        stream.write(redactDatabaseCommandOutput(output, environment));
+      }
       if (code === 0 && (!options?.failOnOutput || !options.failOnOutput.test(output))) {
         resolve();
       } else {
@@ -273,8 +279,9 @@ function startProcess(
     cwd: workspaceRoot,
     detached: process.platform !== "win32",
     env: environment,
-    stdio: "inherit",
+    stdio: ["ignore", "pipe", "pipe"],
   });
+  pipeRedactedDatabaseOutput(child, environment);
 
   child.once("error", () => {
     console.error(`${label} could not be started.`);

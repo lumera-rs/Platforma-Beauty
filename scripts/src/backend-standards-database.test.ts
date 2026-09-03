@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { once } from "node:events";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -17,9 +18,28 @@ import {
   assertDestructiveTestRuntimeAllowed,
   destructiveTestGuardEnvironments,
 } from "./destructive-test-runtime.js";
+import {
+  createRedactedDatabaseOutputWriter,
+  formatDatabaseCommandFailure,
+  pipeRedactedDatabaseOutput,
+  redactDatabaseCommandOutput,
+} from "./safe-child-process-output.js";
 
 const execFileAsync = promisify(execFile);
 const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
+
+async function runDatabaseCommand(
+  command: string,
+  args: string[],
+  options: Parameters<typeof execFileAsync>[2],
+  label: string,
+): Promise<Awaited<ReturnType<typeof execFileAsync>>> {
+  try {
+    return await execFileAsync(command, args, options);
+  } catch (error) {
+    throw formatDatabaseCommandFailure(label, error, options?.env);
+  }
+}
 
 function requireDisposableDevelopmentDatabaseUrl(
   environment: NodeJS.ProcessEnv = process.env,
@@ -74,6 +94,88 @@ test("refuses destructive database fixtures before commands in production and de
     REPL_DEPLOYMENT: "0",
   });
   assert.equal(developmentDatabaseUrl, "postgresql://localhost/development");
+});
+
+test("database command failures redact connection strings but retain useful diagnostics", () => {
+  const databaseUrl = "postgresql://secret-user:secret-password@db.example.test:5432/lumera?sslmode=require";
+  const failure = Object.assign(
+    new Error(`Command failed: psql ${databaseUrl}`),
+    {
+      code: 2,
+      stderr: `psql: error: connection to ${databaseUrl} failed: timeout`,
+      stdout: `maintenance target ${databaseUrl}`,
+    },
+  );
+  const formatted = formatDatabaseCommandFailure(
+    "Preparing the disposable database schema",
+    failure,
+    { DATABASE_URL: databaseUrl },
+  );
+  const report = `${formatted.message}\n${
+    redactDatabaseCommandOutput(`${failure.stdout}\n${failure.stderr}`, {
+      DATABASE_URL: databaseUrl,
+    })
+  }`;
+
+  assert.match(report, /Preparing the disposable database schema/);
+  assert.match(report, /exit code 2/);
+  assert.match(report, /timeout/);
+  assert.match(report, /<redacted-database-url>/);
+  assert.doesNotMatch(report, /secret-user|secret-password|db\.example\.test|sslmode/);
+  assert.doesNotMatch(report, new RegExp(databaseUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("streamed database output redacts a connection string split across chunks", () => {
+  const databaseUrl = "postgresql://stream-user:stream-password@db.example.test/lumera";
+  let report = "";
+  const writer = createRedactedDatabaseOutputWriter(
+    { DATABASE_URL: databaseUrl },
+    { write(chunk) { report += chunk.toString(); return true; } },
+  );
+
+  writer.write(`startup diagnostic: ${databaseUrl.slice(0, 24)}`);
+  writer.write(`${databaseUrl.slice(24)}\nserver failed after connection timeout\n`);
+  writer.flush();
+
+  assert.match(report, /startup diagnostic: <redacted-database-url>/);
+  assert.match(report, /server failed after connection timeout/);
+  assert.doesNotMatch(report, /stream-user|stream-password|db\.example\.test/);
+  assert.doesNotMatch(report, new RegExp(databaseUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("a spawned process cannot print its database connection string to reported output", async () => {
+  const databaseUrl = "postgresql://process-user:process-password@db.example.test/lumera?ssl=require";
+  const environment = { ...process.env, DATABASE_URL: databaseUrl };
+  let stdout = "";
+  let stderr = "";
+  const child = spawn(
+    process.execPath,
+    [
+      "-e",
+      [
+        "const value = process.env.DATABASE_URL;",
+        "process.stdout.write(`database=${value.slice(0, 25)}`);",
+        "setTimeout(() => {",
+        "  process.stdout.write(`${value.slice(25)}\\n`);",
+        "  process.stderr.write(`connection failed for ${value}\\n`);",
+        "}, 5);",
+      ].join("\n"),
+    ],
+    { env: environment, stdio: ["ignore", "pipe", "pipe"] },
+  );
+  pipeRedactedDatabaseOutput(
+    child,
+    environment,
+    { write(chunk) { stdout += chunk.toString(); return true; } },
+    { write(chunk) { stderr += chunk.toString(); return true; } },
+  );
+  const [exitCode] = await once(child, "close");
+  const report = `${stdout}\n${stderr}`;
+
+  assert.equal(exitCode, 0);
+  assert.match(report, /database=<redacted-database-url>/);
+  assert.match(report, /connection failed for <redacted-database-url>/);
+  assert.doesNotMatch(report, /process-user|process-password|db\.example\.test|ssl=require/);
 });
 
 test("reports NOT VALID public CHECK and FK constraints with a safe remediation", async () => {
@@ -207,17 +309,19 @@ test("database-only release command exits nonzero and identifies an invalid isol
 
   try {
     databaseMayExist = true;
-    await execFileAsync(
+    await runDatabaseCommand(
       "createdb",
       ["--maintenance-db", developmentDatabaseUrl, databaseName],
       { cwd: workspaceRoot },
+      "Creating the isolated backend-standards database",
     );
-    await execFileAsync(
+    await runDatabaseCommand(
       "pnpm",
       ["--filter", "@workspace/db", "run", "push-force"],
       { cwd: workspaceRoot, env: isolatedEnvironment, maxBuffer: 10 * 1024 * 1024 },
+      "Preparing the isolated backend-standards schema",
     );
-    await execFileAsync(
+    await runDatabaseCommand(
       "psql",
       [
         isolatedDatabaseUrl,
@@ -235,11 +339,12 @@ test("database-only release command exits nonzero and identifies an invalid isol
         ].join("; "),
       ],
       { cwd: workspaceRoot },
+      "Creating the invalid-index fixture",
     );
 
     let commandFailure: unknown;
     try {
-      await execFileAsync(
+      await runDatabaseCommand(
         "pnpm",
         ["--filter", "@workspace/scripts", "run", "test:backend-standards:database"],
         {
@@ -247,6 +352,7 @@ test("database-only release command exits nonzero and identifies an invalid isol
           env: isolatedEnvironment,
           maxBuffer: 10 * 1024 * 1024,
         },
+        "Running the database release gate",
       );
     } catch (error) {
       commandFailure = error;
@@ -267,7 +373,7 @@ test("database-only release command exits nonzero and identifies an invalid isol
     assert.match(output, /INVALID INDEX/);
   } finally {
     if (databaseMayExist) {
-      await execFileAsync(
+      await runDatabaseCommand(
         "dropdb",
         [
           "--force",
@@ -277,6 +383,7 @@ test("database-only release command exits nonzero and identifies an invalid isol
           databaseName,
         ],
         { cwd: workspaceRoot },
+        "Removing the isolated backend-standards database",
       );
     }
   }
@@ -304,17 +411,19 @@ test("database-only release command exits nonzero and identifies an unvalidated 
 
   try {
     databaseMayExist = true;
-    await execFileAsync(
+    await runDatabaseCommand(
       "createdb",
       ["--maintenance-db", developmentDatabaseUrl, databaseName],
       { cwd: workspaceRoot },
+      "Creating the isolated constraint database",
     );
-    await execFileAsync(
+    await runDatabaseCommand(
       "pnpm",
       ["--filter", "@workspace/db", "run", "push-force"],
       { cwd: workspaceRoot, env: isolatedEnvironment, maxBuffer: 10 * 1024 * 1024 },
+      "Preparing the isolated constraint schema",
     );
-    await execFileAsync(
+    await runDatabaseCommand(
       "psql",
       [
         isolatedDatabaseUrl,
@@ -331,11 +440,12 @@ test("database-only release command exits nonzero and identifies an unvalidated 
         ].join("; "),
       ],
       { cwd: workspaceRoot },
+      "Creating the unvalidated-constraint fixture",
     );
 
     let commandFailure: unknown;
     try {
-      await execFileAsync(
+      await runDatabaseCommand(
         "pnpm",
         ["--filter", "@workspace/scripts", "run", "test:backend-standards:database"],
         {
@@ -343,6 +453,7 @@ test("database-only release command exits nonzero and identifies an unvalidated 
           env: isolatedEnvironment,
           maxBuffer: 10 * 1024 * 1024,
         },
+        "Running the database constraint release gate",
       );
     } catch (error) {
       commandFailure = error;
@@ -366,7 +477,7 @@ test("database-only release command exits nonzero and identifies an unvalidated 
     assert.match(output, /\(CHECK\)/);
   } finally {
     if (databaseMayExist) {
-      await execFileAsync(
+      await runDatabaseCommand(
         "dropdb",
         [
           "--force",
@@ -376,6 +487,7 @@ test("database-only release command exits nonzero and identifies an unvalidated 
           databaseName,
         ],
         { cwd: workspaceRoot },
+        "Removing the isolated constraint database",
       );
     }
   }
