@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -139,12 +140,60 @@ router.post("/education/b2b/quote", async (req, res) => {
   catch { res.status(409).json({ error: "Jedan ili više proizvoda nije dostupno za B2B kupovinu." }); }
 });
 
+/**
+ * Canonical fingerprint of everything in the checkout request that can
+ * materially change the resulting purchase (items, quantities, the price
+ * the client expects to pay). Lines are sorted by productId first so the
+ * same logical cart submitted with a different array/JSON key order still
+ * fingerprints identically -- callers must not be able to defeat replay
+ * detection just by re-ordering an otherwise-identical payload.
+ */
+function b2bCheckoutFingerprint(body: { lines: Array<{ productId: string; quantity: number }>; expectedTotalRsd: number }) {
+  const canonicalLines = body.lines
+    .map((line) => ({ productId: line.productId, quantity: line.quantity }))
+    .sort((a, b) => a.productId.localeCompare(b.productId));
+  return createHash("sha256").update(JSON.stringify({ lines: canonicalLines, expectedTotalRsd: body.expectedTotalRsd })).digest("hex");
+}
+
+/** Reconstructs the exact original success response from a persisted order row, for idempotent replay. */
+function b2bCheckoutView(order: typeof educationB2bOrdersTable.$inferSelect) {
+  return {
+    id: order.id,
+    createdAt: safeIsoTimestamp(order.createdAt),
+    lines: order.linesSnapshot.map((line) => ({ ...line, lineSubtotalRsd: line.unitPriceRsd * line.quantity })),
+    subtotalRsd: order.subtotalRsd,
+    educationCenterDiscountRsd: order.discountRsd,
+    payableTotalRsd: order.totalRsd,
+    benefit: order.benefitSnapshot as Awaited<ReturnType<typeof benefit>>,
+  };
+}
+
 router.post("/education/b2b/checkout", async (req, res) => {
   const access = await centerAccess(req, res); if (!access) return;
   const body = CheckoutEducationB2bOrderBody.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: "Podaci porudžbine nisu ispravni." }); return; }
+  const idempotencyKey = req.get("Idempotency-Key")?.trim() ?? "";
+  if (!idempotencyKey || idempotencyKey.length > 200) {
+    res.status(400).json({ error: "Idempotency-Key zaglavlje je obavezno." }); return;
+  }
+  const fingerprint = b2bCheckoutFingerprint(body.data);
   try {
-    const result = await db.transaction(async (tx) => {
+    const { result, replayed } = await db.transaction(async (tx) => {
+      // Serialize concurrent requests carrying the same (center, key) pair --
+      // a durable, tenant-scoped equivalent of the retail checkout's
+      // pg_advisory_xact_lock(idempotencyKey) pattern -- so two racing
+      // duplicate requests can never both observe "no prior order" and both
+      // proceed to decrement stock and insert a row. The loser simply blocks
+      // here until the winner commits, then finds and replays its row below.
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`education-b2b-checkout:${access.center.id}:${idempotencyKey}`}))`);
+      const [existing] = await tx.select().from(educationB2bOrdersTable).where(and(
+        eq(educationB2bOrdersTable.centerId, access.center.id),
+        eq(educationB2bOrdersTable.idempotencyKey, idempotencyKey),
+      )).limit(1);
+      if (existing) {
+        if (existing.idempotencyFingerprint !== fingerprint) throw new Error("IDEMPOTENCY_MISMATCH");
+        return { result: b2bCheckoutView(existing), replayed: true };
+      }
       const current = await quote(access.center.id, body.data, tx);
       if (current.payableTotalRsd !== body.data.expectedTotalRsd) throw new Error("QUOTE");
       for (const line of current.lines) {
@@ -157,15 +206,19 @@ router.post("/education/b2b/checkout", async (req, res) => {
         linesSnapshot: current.lines.map(({ lineSubtotalRsd: _lineTotal, ...line }) => line),
         subtotalRsd: current.subtotalRsd, discountRsd: current.educationCenterDiscountRsd,
         totalRsd: current.payableTotalRsd, benefitSnapshot: current.benefit,
+        idempotencyKey, idempotencyFingerprint: fingerprint,
       }).returning();
       await tx.insert(educationB2bOrderItemsTable).values(current.lines.map((line) => ({
         orderId: order!.id, productId: line.productId, quantity: line.quantity,
         unitPriceRsd: line.unitPriceRsd, lineTotalRsd: line.lineSubtotalRsd,
       })));
-      return { id: order!.id, createdAt: safeIsoTimestamp(order!.createdAt), ...current };
+      return { result: { id: order!.id, createdAt: safeIsoTimestamp(order!.createdAt), ...current }, replayed: false };
     });
-    res.status(201).json(CheckoutEducationB2bOrderResponse.parse(result));
+    res.status(replayed ? 200 : 201).json(CheckoutEducationB2bOrderResponse.parse(result));
   } catch (error) {
+    if (error instanceof Error && error.message === "IDEMPOTENCY_MISMATCH") {
+      res.status(409).json({ error: "Idempotency-Key je već korišćen za drugi zahtev." }); return;
+    }
     res.status(409).json({ error: error instanceof Error && error.message === "QUOTE"
       ? "Ponuda je promenjena. Osvežite obračun." : "Zalihe ili cena su promenjene. Osvežite obračun." });
   }

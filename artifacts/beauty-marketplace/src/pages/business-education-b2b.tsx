@@ -18,7 +18,13 @@ export default function BusinessEducationB2b() {
   const { data: productsData, isLoading: isProductsLoading } = useListEducationB2bProducts();
   
   const quoteMut = useQuoteEducationB2bOrder();
-  const checkoutMut = useCheckoutEducationB2bOrder();
+  // Stable per-checkout-attempt key: a retry of the same logical checkout
+  // (e.g. a network timeout) reuses this key, so the server-side idempotency
+  // guard recognizes it as a replay rather than a second order. It only
+  // rotates once the attempt actually succeeds (see handleCheckout's
+  // onSuccess below), so a genuinely new, later checkout gets a fresh key.
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const checkoutMut = useCheckoutEducationB2bOrder({ request: { headers: { "Idempotency-Key": idempotencyKey } } });
   const { toast } = useToast();
 
   const [cart, setCart] = useState<Record<string, number>>({});
@@ -84,6 +90,9 @@ export default function BusinessEducationB2b() {
         setOrderConfirmed(true);
         setCart({});
         setQuote(null);
+        // This logical checkout attempt is done; the next one (a new cart)
+        // must get its own key so it isn't treated as a replay of this one.
+        setIdempotencyKey(crypto.randomUUID());
         toast.success("Porudžbina uspešna");
       },
       onError: () => {
