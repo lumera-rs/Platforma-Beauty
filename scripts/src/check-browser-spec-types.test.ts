@@ -661,6 +661,88 @@ test("browser preflight fails closed when a package export symlink escapes the p
   }
 });
 
+test("browser preflight fails closed when a package export symlink is dangling", async () => {
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-export-symlink-dangling-"),
+  );
+  try {
+    const sharedConfigRoot = path.join(fixtureRoot, "playwright.shared");
+    await mkdir(sharedConfigRoot);
+    await writeFile(
+      path.join(sharedConfigRoot, "package.json"),
+      JSON.stringify({ exports: { ".": "./settings.ts" } }),
+    );
+    await symlink(
+      path.join(sharedConfigRoot, "missing-settings.ts"),
+      path.join(sharedConfigRoot, "settings.ts"),
+    );
+    await writeFile(
+      `${sharedConfigRoot}.ts`,
+      'export const shared = { testDir: "./extension-fallback" };\n',
+    );
+    await writeFile(
+      path.join(sharedConfigRoot, "index.ts"),
+      'export const shared = { testDir: "./index-fallback" };\n',
+    );
+    await writeFile(
+      path.join(fixtureRoot, "playwright.config.ts"),
+      [
+        'import { shared } from "./playwright.shared";',
+        "export default { ...shared };",
+      ].join("\n"),
+    );
+
+    assert.throws(
+      () => collectBrowserTestDirectories({ scriptsRoot: fixtureRoot }),
+      /statically resolvable.*unresolvable identifier shared.*playwright\.config\.ts/,
+      "a dangling package export must not use extension or index fallbacks",
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("browser preflight fails closed when package export symlinks form a cycle", async () => {
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-export-symlink-cycle-"),
+  );
+  try {
+    const sharedConfigRoot = path.join(fixtureRoot, "playwright.shared");
+    const settingsPath = path.join(sharedConfigRoot, "settings.ts");
+    const intermediatePath = path.join(sharedConfigRoot, "intermediate.ts");
+    await mkdir(sharedConfigRoot);
+    await writeFile(
+      path.join(sharedConfigRoot, "package.json"),
+      JSON.stringify({ exports: { ".": "./settings.ts" } }),
+    );
+    await symlink(intermediatePath, settingsPath);
+    await symlink(settingsPath, intermediatePath);
+    await writeFile(
+      `${sharedConfigRoot}.ts`,
+      'export const shared = { testDir: "./extension-fallback" };\n',
+    );
+    await writeFile(
+      path.join(sharedConfigRoot, "index.ts"),
+      'export const shared = { testDir: "./index-fallback" };\n',
+    );
+    await writeFile(
+      path.join(fixtureRoot, "playwright.config.ts"),
+      [
+        'import { shared } from "./playwright.shared";',
+        "export default { ...shared };",
+      ].join("\n"),
+    );
+
+    assert.throws(
+      () => collectBrowserTestDirectories({ scriptsRoot: fixtureRoot }),
+      /statically resolvable.*unresolvable identifier shared.*playwright\.config\.ts/,
+      "a package export symlink cycle must not use extension or index fallbacks",
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
 test("browser preflight accepts a package export symlink that stays inside the package", async () => {
   const fixtureRoot = await mkdtemp(
     path.join(os.tmpdir(), "lumera-browser-export-symlink-inside-"),
