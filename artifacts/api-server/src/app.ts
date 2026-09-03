@@ -2,14 +2,18 @@ import express, { type Express, type Request, type Response, type NextFunction }
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import {
-  databaseQueryObservationHeader,
   isDatabaseQueryObservationRuntimeAllowed,
   runWithDatabaseQueryObservation,
 } from "@workspace/db";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { apiErrorHandler, normalizeAdminErrorResponses } from "./lib/api-errors";
-import { denyInternalRequestControlsInProduction } from "./lib/internal-request-controls";
+import {
+  databaseQueryObservationControl,
+  denyInternalRequestControlErrors,
+  denyInternalRequestControlsInProduction,
+  readInternalRequestControl,
+} from "./lib/internal-request-controls";
 
 const app: Express = express();
 // Replit deployments have one controlled edge proxy. Local/test processes are
@@ -19,9 +23,12 @@ app.set("trust proxy", process.env["REPLIT_DEPLOYMENT"] ? 1 : false);
 app.use(denyInternalRequestControlsInProduction);
 app.use((req, _res, next) => {
   const captureId = isDatabaseQueryObservationRuntimeAllowed()
-    ? req.get(databaseQueryObservationHeader)
+    ? readInternalRequestControl(req, databaseQueryObservationControl)
     : undefined;
-  runWithDatabaseQueryObservation(captureId, next);
+  runWithDatabaseQueryObservation(
+    typeof captureId === "string" ? captureId : undefined,
+    next,
+  );
 });
 
 app.use(
@@ -142,9 +149,13 @@ app.use(
 app.use("/api/webhooks", express.json({ limit: "5mb" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// Run again after cookie/body parsers. Path controls are denied by the shared
+// reader and normalized by denyInternalRequestControlErrors below.
+app.use(denyInternalRequestControlsInProduction);
 app.use(normalizeAdminErrorResponses);
 
 app.use("/api", router);
+app.use(denyInternalRequestControlErrors);
 app.use(apiErrorHandler);
 
 export default app;

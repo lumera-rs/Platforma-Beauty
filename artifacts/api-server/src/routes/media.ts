@@ -34,7 +34,11 @@ import { getCurrentUser, isAdmin } from "../lib/auth";
 import { integrationValue } from "../lib/integrations";
 import { logger } from "../lib/logger";
 import { isProductionOrDeploymentRuntime } from "@workspace/db/destructive-test-runtime";
-import { mediaRouteRegressionHeader } from "../lib/internal-request-controls";
+import {
+  mediaRouteRegressionControl,
+  mediaRouteRegressionHeader,
+  readInternalRequestControl,
+} from "../lib/internal-request-controls";
 
 const router: IRouter = Router();
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -800,7 +804,7 @@ router.post("/media/uploads", async (req, res): Promise<void> => {
       byteSize: body.size,
       expiresAt,
       testCleanupKey: mediaRouteRegressionMarker
-        && req.get(mediaRouteRegressionHeader) === mediaRouteRegressionMarker.token
+        && readInternalRequestControl(req, mediaRouteRegressionControl) === mediaRouteRegressionMarker.token
         ? mediaRouteRegressionMarker.cleanupKey
         : null,
     });
