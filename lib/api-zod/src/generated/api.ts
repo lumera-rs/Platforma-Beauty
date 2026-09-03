@@ -722,6 +722,17 @@ export const AdminGetWebPushDeliveryMetricsResponse = zod.object({
 
 
 /**
+ * @summary List provider-side Brevo webhooks that are eligible for administrator cleanup
+ */
+export const AdminListBrevoStaleWebhooksResponse = zod.object({
+  "staleWebhooks": zod.array(zod.object({
+  "id": zod.number().int(),
+  "maskedUrl": zod.string()
+}))
+})
+
+
+/**
  * @summary Save administrator integration settings
  */
 export const AdminSaveIntegrationParams = zod.object({
@@ -31635,6 +31646,27 @@ export const CreatePriceInquiryResponse = zod.object({
 
 
 /**
+ * @summary List supplier product price inquiries for administrator review
+ */
+export const AdminListPriceInquiriesResponseItem = zod.object({
+  "id": zod.string(),
+  "supplierId": zod.string(),
+  "productId": zod.string(),
+  "productName": zod.string(),
+  "supplierName": zod.string(),
+  "contactName": zod.string(),
+  "contactEmail": zod.string(),
+  "contactPhone": zod.string(),
+  "message": zod.string(),
+  "status": zod.enum(['NEW', 'CONTACTED', 'CLOSED']),
+  "internalNote": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const AdminListPriceInquiriesResponse = zod.array(AdminListPriceInquiriesResponseItem)
+
+
+/**
  * @summary Snapshot the authenticated salon cart without creating an order
  */
 export const createShopQuoteBodyCustomerCompanyNameMax = 200;
@@ -31874,6 +31906,68 @@ export const GetShopQuotePdfParams = zod.object({
 })
 
 export const GetShopQuotePdfResponse = zod.unknown()
+
+
+/**
+ * @summary List B2B quote snapshots for administrator review
+ */
+
+export const adminListQuotesResponseSubtotalWithoutVatMin = 0;
+
+export const adminListQuotesResponseVatAmountMin = 0;
+
+export const adminListQuotesResponseTotalWithVatMin = 0;
+
+
+
+export const AdminListQuotesResponseItem = zod.object({
+  "id": zod.string(),
+  "publicId": zod.string(),
+  "salonId": zod.string(),
+  "sourceCartId": zod.string().nullish(),
+  "customerCompanyName": zod.string().nullish(),
+  "sellerSnapshot": zod.object({
+  "companyName": zod.string(),
+  "taxId": zod.string().optional(),
+  "registrationNumber": zod.string().optional(),
+  "address": zod.string().optional(),
+  "city": zod.string().optional(),
+  "postalCode": zod.string().optional(),
+  "bankAccount": zod.string().optional(),
+  "email": zod.string().optional(),
+  "phone": zod.string().optional(),
+  "recipient": zod.object({
+  "companyName": zod.string(),
+  "registeredCompanyName": zod.string().optional(),
+  "taxId": zod.string().optional(),
+  "registrationNumber": zod.string().optional(),
+  "address": zod.string().optional(),
+  "city": zod.string().optional(),
+  "postalCode": zod.string().optional(),
+  "email": zod.string().optional(),
+  "phone": zod.string().optional()
+}).optional()
+}),
+  "itemSnapshots": zod.array(zod.object({
+  "productId": zod.string().nullable(),
+  "bundleId": zod.string().nullable(),
+  "productName": zod.string(),
+  "productImageUrl": zod.string(),
+  "variantValue": zod.string().nullable(),
+  "variantLabel": zod.string().nullable(),
+  "productSku": zod.string().nullable(),
+  "unitPrice": zod.number().int(),
+  "quantity": zod.number().int().min(1),
+  "lineTotal": zod.number().int()
+})),
+  "subtotalWithoutVat": zod.number().int().min(adminListQuotesResponseSubtotalWithoutVatMin),
+  "vatAmount": zod.number().int().min(adminListQuotesResponseVatAmountMin),
+  "totalWithVat": zod.number().int().min(adminListQuotesResponseTotalWithVatMin),
+  "currency": zod.enum(['RSD']),
+  "validUntil": zod.coerce.date(),
+  "createdAt": zod.coerce.date()
+})
+export const AdminListQuotesResponse = zod.array(AdminListQuotesResponseItem)
 
 
 /**

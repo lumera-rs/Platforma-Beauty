@@ -58,11 +58,13 @@ import type {
   AdminIntegrationCard,
   AdminListAftercareTreatmentsParams,
   AdminListB2cBannersParams,
+  AdminListBrevoStaleWebhooks200,
   AdminListCommerceBestsellersParams,
   AdminListEducationCenterReviewsParams,
   AdminListEducationGiftVouchersParams,
   AdminListEmailCampaignsResponse,
   AdminListOrdersParams,
+  AdminListPriceInquiries200Item,
   AdminListProductWaitlistParams,
   AdminListProductsParams,
   AdminListRetailOrdersParams,
@@ -2036,6 +2038,83 @@ export function useAdminGetWebPushDeliveryMetrics<TData = Awaited<ReturnType<typ
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getAdminGetWebPushDeliveryMetricsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminListBrevoStaleWebhooksUrl = () => {
+
+
+
+
+  return `/api/admin/integrations/brevo/stale-webhooks`
+}
+
+/**
+ * @summary List provider-side Brevo webhooks that are eligible for administrator cleanup
+ */
+export const adminListBrevoStaleWebhooks = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminListBrevoStaleWebhooks200> => {
+
+  return customFetch<AdminListBrevoStaleWebhooks200>(getAdminListBrevoStaleWebhooksUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListBrevoStaleWebhooksQueryKey = () => {
+    return [
+    `/api/admin/integrations/brevo/stale-webhooks`
+    ] as const;
+    }
+
+
+export const getAdminListBrevoStaleWebhooksQueryOptions = <TData = Awaited<ReturnType<typeof adminListBrevoStaleWebhooks>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListBrevoStaleWebhooks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListBrevoStaleWebhooksQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListBrevoStaleWebhooks>>> = ({ signal }) => adminListBrevoStaleWebhooks({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListBrevoStaleWebhooks>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminListBrevoStaleWebhooksQueryResult = NonNullable<Awaited<ReturnType<typeof adminListBrevoStaleWebhooks>>>
+export type AdminListBrevoStaleWebhooksQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List provider-side Brevo webhooks that are eligible for administrator cleanup
+ */
+
+export function useAdminListBrevoStaleWebhooks<TData = Awaited<ReturnType<typeof adminListBrevoStaleWebhooks>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListBrevoStaleWebhooks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminListBrevoStaleWebhooksQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -44111,6 +44190,83 @@ export const useCreatePriceInquiry = <TError = ErrorType<void>,
       return useMutation(getCreatePriceInquiryMutationOptions(options));
     }
 
+export const getAdminListPriceInquiriesUrl = () => {
+
+
+
+
+  return `/api/admin/price-inquiries`
+}
+
+/**
+ * @summary List supplier product price inquiries for administrator review
+ */
+export const adminListPriceInquiries = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminListPriceInquiries200Item[]> => {
+
+  return customFetch<AdminListPriceInquiries200Item[]>(getAdminListPriceInquiriesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListPriceInquiriesQueryKey = () => {
+    return [
+    `/api/admin/price-inquiries`
+    ] as const;
+    }
+
+
+export const getAdminListPriceInquiriesQueryOptions = <TData = Awaited<ReturnType<typeof adminListPriceInquiries>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListPriceInquiries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListPriceInquiriesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListPriceInquiries>>> = ({ signal }) => adminListPriceInquiries({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListPriceInquiries>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminListPriceInquiriesQueryResult = NonNullable<Awaited<ReturnType<typeof adminListPriceInquiries>>>
+export type AdminListPriceInquiriesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List supplier product price inquiries for administrator review
+ */
+
+export function useAdminListPriceInquiries<TData = Awaited<ReturnType<typeof adminListPriceInquiries>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListPriceInquiries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminListPriceInquiriesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getCreateShopQuoteUrl = () => {
 
 
@@ -44543,6 +44699,83 @@ export function useGetShopQuotePdf<TData = Awaited<ReturnType<typeof getShopQuot
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetShopQuotePdfQueryOptions(publicId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminListQuotesUrl = () => {
+
+
+
+
+  return `/api/admin/quotes`
+}
+
+/**
+ * @summary List B2B quote snapshots for administrator review
+ */
+export const adminListQuotes = async ( options?: Parameters<typeof customFetch>[1]): Promise<B2bQuote[]> => {
+
+  return customFetch<B2bQuote[]>(getAdminListQuotesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListQuotesQueryKey = () => {
+    return [
+    `/api/admin/quotes`
+    ] as const;
+    }
+
+
+export const getAdminListQuotesQueryOptions = <TData = Awaited<ReturnType<typeof adminListQuotes>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListQuotes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListQuotesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListQuotes>>> = ({ signal }) => adminListQuotes({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListQuotes>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminListQuotesQueryResult = NonNullable<Awaited<ReturnType<typeof adminListQuotes>>>
+export type AdminListQuotesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List B2B quote snapshots for administrator review
+ */
+
+export function useAdminListQuotes<TData = Awaited<ReturnType<typeof adminListQuotes>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListQuotes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminListQuotesQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -15,7 +15,11 @@ import {
   ADMIN_PROTECTED_DETAIL_ROUTE_FIXTURES,
   adminNavigationTestId,
 } from "../../artifacts/beauty-marketplace/src/lib/admin-navigation";
-import { adminSummaryFixture, checkedApiFixture } from "../src/browser-api-fixtures";
+import {
+  adminSummaryFixture,
+  checkedApiFixture,
+  type FixtureSchema,
+} from "../src/browser-api-fixtures";
 
 const ADMIN_NAV = ADMIN_NAV_GROUPS.flatMap((group) =>
   group.links.map(({ href }) => ({ href, testId: adminNavigationTestId(href) })),
@@ -25,6 +29,198 @@ const PROTECTED_ADMIN_ROUTES = [
   ...ADMIN_NAV.map(({ href }) => href),
   ...ADMIN_PROTECTED_DETAIL_ROUTE_FIXTURES,
 ];
+
+type RegisteredAdminFixture = {
+  schema: FixtureSchema;
+  payload: unknown;
+};
+
+const ADMIN_INITIAL_GET_FIXTURES: Record<string, RegisteredAdminFixture> = {
+  "/api/admin/aftercare/settings": {
+    schema: apiSchemas.AdminGetAftercareSettingsResponse,
+    payload: {
+      version: 1,
+      firstTiming: "NEXT_DAY",
+      cooldownDays: 30,
+      secondReminderDelayDays: 7,
+      postTreatmentDiscountEnabled: false,
+      postTreatmentDiscountPercent: 0,
+      postTreatmentDiscountValidityDays: 30,
+      personalizedBundleDiscountPercent: 1,
+      combinationWindowDays: 30,
+    },
+  },
+  "/api/admin/aftercare/treatments": {
+    schema: apiSchemas.AdminListAftercareTreatmentsResponse,
+    payload: [],
+  },
+  "/api/admin/automatic-xy-promotions": {
+    schema: apiSchemas.AdminListAutomaticXyPromotionsResponse,
+    payload: [],
+  },
+  "/api/admin/b2c/banners": {
+    schema: apiSchemas.AdminListB2cBannersResponse,
+    payload: [],
+  },
+  "/api/admin/b2c/display-settings": {
+    schema: apiSchemas.AdminGetB2cDisplaySettingsResponse,
+    payload: {
+      id: "00000000-0000-4000-8000-000000000080",
+      version: 1,
+      updatedAt: "2026-08-21T09:00:00.000Z",
+      defaultSort: "RECOMMENDED",
+      enabledSortOptions: ["RECOMMENDED", "PRICE_ASC", "PRICE_DESC", "NEWEST"],
+      pageSize: 24,
+      showOutOfStock: false,
+      recentlyViewedEnabled: true,
+      recentlyViewedMax: 10,
+    },
+  },
+  "/api/admin/b2c/product-types": {
+    schema: apiSchemas.AdminListB2cProductTypesResponse,
+    payload: [],
+  },
+  "/api/admin/brands": {
+    schema: apiSchemas.AdminListBrandsResponse,
+    payload: [],
+  },
+  "/api/admin/bulk-sale-campaigns": {
+    schema: apiSchemas.AdminListBulkSaleCampaignsResponse,
+    payload: [],
+  },
+  "/api/admin/bundles": {
+    schema: apiSchemas.AdminListBundlesResponse,
+    payload: [],
+  },
+  "/api/admin/cart-threshold-rewards": {
+    schema: apiSchemas.AdminListCartThresholdRewardsResponse,
+    payload: [],
+  },
+  "/api/admin/catalog/meta/status": {
+    schema: apiSchemas.AdminGetMetaCatalogStatusResponse,
+    payload: { connectionStatus: "NOT_CONNECTED", canSync: false, latestRun: null },
+  },
+  "/api/admin/commerce/bestsellers": {
+    schema: apiSchemas.AdminListCommerceBestsellersResponse,
+    payload: [],
+  },
+  "/api/admin/commerce-experience": {
+    schema: apiSchemas.AdminGetCommerceExperienceResponse,
+    payload: {
+      headerEnabled: false,
+      headerMessages: [],
+      headerIntervalSeconds: 5,
+      smartSearchMode: "AUTOMATIC",
+      smartSearchProductIds: [],
+      bestsellerPeriodDays: 30,
+      version: 1,
+    },
+  },
+  "/api/admin/coupons": {
+    schema: apiSchemas.AdminListCouponsResponse,
+    payload: [],
+  },
+  "/api/admin/education/b2b-discount-tiers": {
+    schema: apiSchemas.AdminGetEducationB2bDiscountTiersResponse,
+    payload: { version: 1, tiers: [] },
+  },
+  "/api/admin/education/bank-reconciliation": {
+    schema: apiSchemas.GetAdminEducationBankReconciliationResponse,
+    payload: {
+      enabled: false,
+      engineState: "disabled",
+      bankConnectionConfigured: false,
+      accessMethod: null,
+      accessConfirmed: false,
+      accessConfirmedAt: null,
+      accessMethods: [],
+      lastProcessedAt: null,
+      lastResult: null,
+      lastRejectionReason: null,
+    },
+  },
+  "/api/admin/education/bundle-purchases/pending": {
+    schema: apiSchemas.ListAdminPendingEducationBundlePurchasesResponse,
+    payload: [],
+  },
+  "/api/admin/integrations/brevo/stale-webhooks": {
+    schema: apiSchemas.AdminListBrevoStaleWebhooksResponse,
+    payload: { staleWebhooks: [] },
+  },
+  "/api/admin/integrations/web-push-delivery-metrics": {
+    schema: apiSchemas.AdminGetWebPushDeliveryMetricsResponse,
+    payload: {
+      periodDays: 30,
+      periodStartedAt: "2026-07-22T09:00:00.000Z",
+      deliveries: {
+        sent: 0,
+        acknowledged: 0,
+        failed: 0,
+        retried: 0,
+        pending: 0,
+        expiredOrChanged: 0,
+        providerErrors: 0,
+      },
+      devices: { active: 0, automaticallyDeactivated: 0 },
+    },
+  },
+  "/api/admin/loyalty-pricing-tiers": {
+    schema: apiSchemas.AdminListLoyaltyPricingTiersResponse,
+    payload: [],
+  },
+  "/api/admin/orders": {
+    schema: apiSchemas.AdminListOrdersResponse,
+    payload: [],
+  },
+  "/api/admin/price-inquiries": {
+    schema: apiSchemas.AdminListPriceInquiriesResponse,
+    payload: [],
+  },
+  "/api/admin/product-categories": {
+    schema: apiSchemas.AdminListProductCategoriesResponse,
+    payload: [],
+  },
+  "/api/admin/products": {
+    schema: apiSchemas.AdminListProductsResponse,
+    payload: { items: [], total: 0, page: 1, pageSize: 20, totalPages: 0 },
+  },
+  "/api/admin/quotes": {
+    schema: apiSchemas.AdminListQuotesResponse,
+    payload: [],
+  },
+  "/api/admin/referrals/approvals": {
+    schema: apiSchemas.AdminListReferralApprovalsResponse,
+    payload: [],
+  },
+  "/api/admin/referrals/reviews": {
+    schema: apiSchemas.AdminListReferralReviewsResponse,
+    payload: [],
+  },
+  "/api/admin/rmas": {
+    schema: apiSchemas.AdminListRmasResponse,
+    payload: [],
+  },
+  "/api/admin/sms-deliveries": {
+    schema: apiSchemas.AdminListSmsDeliveriesResponse,
+    payload: [],
+  },
+  "/api/admin/service-categories": {
+    schema: apiSchemas.AdminListServiceCategoriesResponse,
+    payload: [],
+  },
+  "/api/admin/service-templates": {
+    schema: apiSchemas.AdminListServiceTemplatesResponse,
+    payload: [],
+  },
+  "/api/admin/suppliers": {
+    schema: apiSchemas.AdminListSuppliersResponse,
+    payload: [],
+  },
+};
+
+for (const [endpoint, fixture] of Object.entries(ADMIN_INITIAL_GET_FIXTURES)) {
+  checkedApiFixture(endpoint, fixture.schema, fixture.payload);
+}
 
 const admin = {
   id: "00000000-0000-4000-8000-000000000071",
@@ -151,7 +347,12 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
     if (path === "/api/auth/login" && method === "POST") {
       isLoggedIn = true;
       currentUser = role === "SUPER_ADMIN" ? superAdmin : admin;
-      await route.fulfill({ json: { user: currentUser, message: "Uspešno ste prijavljeni." } });
+      await route.fulfill({
+        json: checkedApiFixture("/api/auth/login", apiSchemas.LoginResponse, {
+          user: currentUser,
+          message: "Uspešno ste prijavljeni.",
+        }),
+      });
       return;
     }
     if (path === "/api/education/disputes" && method === "GET") {
@@ -694,10 +895,15 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
         return;
       }
 
-      // The navigation test only needs these sections to resolve their initial
-      // list requests. Individual action tests above provide complete fixtures.
-      await route.fulfill({ json: [] });
-      return;
+      const registeredFixture = method === "GET" ? ADMIN_INITIAL_GET_FIXTURES[path] : undefined;
+      if (registeredFixture) {
+        await route.fulfill({
+          json: checkedApiFixture(path, registeredFixture.schema, registeredFixture.payload),
+        });
+        return;
+      }
+
+      throw new Error(`Unregistered admin API fixture: ${method} ${path}`);
     }
 
     await route.fallback();
@@ -755,9 +961,22 @@ async function expectAdminDestination(page: Page, href: string, browserErrors: s
   ).toEqual([]);
 }
 
+async function renderedAdminNavigationHrefs(container: Locator): Promise<string[]> {
+  return container.locator('a[data-testid^="admin-nav-"]').evaluateAll((links) =>
+    links.map((link) => new URL((link as HTMLAnchorElement).href).pathname),
+  );
+}
+
+test("admin route matrix is unique and exactly mirrors the grouped navigation source", () => {
+  const groupedHrefs = ADMIN_NAV_GROUPS.flatMap((group) => group.links.map((link) => link.href));
+  expect(ADMIN_NAV.map((link) => link.href)).toEqual(groupedHrefs);
+  expect(new Set(groupedHrefs).size, "Every admin menu route must appear exactly once.").toBe(groupedHrefs.length);
+});
+
 test("an admin can sign in and reach every admin section on desktop", async ({ page }) => {
   test.setTimeout(180_000);
   const browserErrors = collectBrowserErrors(page);
+  const visitedRoutes = new Set<string>();
   await page.setViewportSize({ width: 1280, height: 844 });
   await mockAdminApi(page, "ADMIN", false);
   await page.goto("/poslovna-prijava");
@@ -767,6 +986,7 @@ test("an admin can sign in and reach every admin section on desktop", async ({ p
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.locator("aside").getByRole("heading", { name: "Admin Panel" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Aktivnost novih modula" })).toBeVisible();
+  expect(await renderedAdminNavigationHrefs(page.locator("aside"))).toEqual(ADMIN_NAV.map((link) => link.href));
 
   for (const [index, link] of ADMIN_NAV.entries()) {
     if (index > 0) {
@@ -779,7 +999,9 @@ test("an admin can sign in and reach every admin section on desktop", async ({ p
       await navLink.click();
     }
     await expectAdminDestination(page, link.href, browserErrors);
+    visitedRoutes.add(link.href);
   }
+  expect([...visitedRoutes]).toEqual(ADMIN_NAV.map((link) => link.href));
   expect(browserErrors, "Every desktop admin destination must render without browser errors.").toEqual([]);
 });
 
@@ -801,11 +1023,17 @@ test("a super administrator receives growth data on the dashboard without a forb
 test("an admin can reach every admin section from the mobile menu", async ({ page }) => {
   test.setTimeout(180_000);
   const browserErrors = collectBrowserErrors(page);
+  const visitedRoutes = new Set<string>([ADMIN_NAV[0]!.href]);
   await page.setViewportSize({ width: 390, height: 844 });
   await openAdminPage(page, "/admin");
   await expect(page.getByTestId("admin-mobile-menu-trigger")).toBeVisible();
 
   await expect(page.locator("main")).toBeVisible();
+  await page.getByTestId("admin-mobile-menu-trigger").click();
+  expect(await renderedAdminNavigationHrefs(page.getByTestId("admin-mobile-menu"))).toEqual(
+    ADMIN_NAV.map((link) => link.href),
+  );
+  await page.getByTestId("admin-mobile-menu-trigger").click();
   for (const link of ADMIN_NAV.slice(1)) {
     await page.goto("/admin");
     await expect(page.getByRole("heading", { name: "Aktivnost novih modula" })).toBeVisible();
@@ -813,7 +1041,9 @@ test("an admin can reach every admin section from the mobile menu", async ({ pag
     await expect(page.getByTestId(link.testId).first()).toBeVisible();
     await page.getByTestId(link.testId).first().click();
     await expectAdminDestination(page, link.href, browserErrors);
+    visitedRoutes.add(link.href);
   }
+  expect([...visitedRoutes]).toEqual(ADMIN_NAV.map((link) => link.href));
   expect(browserErrors, "Every mobile admin destination must render without browser errors.").toEqual([]);
 });
 
@@ -912,10 +1142,12 @@ test("a customer is redirected from every admin route without admin requests", a
       const path = new URL(route.request().url()).pathname;
       if (path.startsWith("/api/admin/")) adminRequests.push(path);
       if (path === "/api/auth/me") {
-        await route.fulfill({ json: { user: customer } });
+        await route.fulfill({
+          json: checkedApiFixture("/api/auth/me", apiSchemas.GetCurrentUserResponse, { user: customer }),
+        });
         return;
       }
-      await route.fulfill({ json: [] });
+      await route.fallback();
     });
 
     for (const path of PROTECTED_ADMIN_ROUTES) {

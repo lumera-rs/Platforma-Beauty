@@ -300,6 +300,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminWebPushDeliveryMetrics"
+  /admin/integrations/brevo/stale-webhooks:
+    get:
+      operationId: adminListBrevoStaleWebhooks
+      tags: [admin]
+      summary: List provider-side Brevo webhooks that are eligible for administrator cleanup
+      responses:
+        "200":
+          description: Stale Brevo webhook registrations
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [staleWebhooks]
+                properties:
+                  staleWebhooks:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, maskedUrl]
+                      properties:
+                        id: { type: integer }
+                        maskedUrl: { type: string }
   /admin/integrations/{integration}:
     put:
       operationId: adminSaveIntegration
@@ -9125,6 +9147,48 @@ paths:
         "400": { description: Invalid contact data }
         "404": { description: Supplier/product scope not found }
         "409": { description: Product is currently directly purchasable }
+  /admin/price-inquiries:
+    get:
+      operationId: adminListPriceInquiries
+      tags: [admin]
+      summary: List supplier product price inquiries for administrator review
+      responses:
+        "200":
+          description: Price inquiries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - id
+                    - supplierId
+                    - productId
+                    - productName
+                    - supplierName
+                    - contactName
+                    - contactEmail
+                    - contactPhone
+                    - message
+                    - status
+                    - internalNote
+                    - createdAt
+                    - updatedAt
+                  properties:
+                    id: { type: string }
+                    supplierId: { type: string }
+                    productId: { type: string }
+                    productName: { type: string }
+                    supplierName: { type: string }
+                    contactName: { type: string }
+                    contactEmail: { type: string }
+                    contactPhone: { type: string }
+                    message: { type: string }
+                    status: { type: string, enum: [NEW, CONTACTED, CLOSED] }
+                    internalNote: { type: [string, "null"] }
+                    createdAt: { type: string, format: date-time }
+                    updatedAt: { type: string, format: date-time }
   /shop/quotes:
     post:
       operationId: createShopQuote
@@ -9221,6 +9285,19 @@ paths:
           content:
             application/pdf:
               schema: { type: string, format: binary }
+  /admin/quotes:
+    get:
+      operationId: adminListQuotes
+      tags: [admin]
+      summary: List B2B quote snapshots for administrator review
+      responses:
+        "200":
+          description: B2B quote snapshots
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/B2bQuote" }
   /admin/catalog/meta/status:
     get:
       operationId: adminGetMetaCatalogStatus

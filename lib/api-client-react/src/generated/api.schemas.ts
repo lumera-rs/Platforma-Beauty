@@ -14563,6 +14563,15 @@ export const AdminGetWebPushDeliveryMetricsPeriodDays = {
   NUMBER_90: 90,
 } as const;
 
+export type AdminListBrevoStaleWebhooks200StaleWebhooksItem = {
+  id: number;
+  maskedUrl: string;
+};
+
+export type AdminListBrevoStaleWebhooks200 = {
+  staleWebhooks: AdminListBrevoStaleWebhooks200StaleWebhooksItem[];
+};
+
 export type ListSalonsParams = {
 city?: CityQueryParameter;
 category?: CategoryQueryParameter;
@@ -16515,6 +16524,32 @@ export type CreatePriceInquiry201 = {
   id: string;
   status: CreatePriceInquiry201Status;
   createdAt: string;
+};
+
+export type AdminListPriceInquiries200ItemStatus = typeof AdminListPriceInquiries200ItemStatus[keyof typeof AdminListPriceInquiries200ItemStatus];
+
+
+export const AdminListPriceInquiries200ItemStatus = {
+  NEW: 'NEW',
+  CONTACTED: 'CONTACTED',
+  CLOSED: 'CLOSED',
+} as const;
+
+export type AdminListPriceInquiries200Item = {
+  id: string;
+  supplierId: string;
+  productId: string;
+  productName: string;
+  supplierName: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  message: string;
+  status: AdminListPriceInquiries200ItemStatus;
+  /** @nullable */
+  internalNote: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type CreateShopQuoteBody = {
