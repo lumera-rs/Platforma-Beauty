@@ -10,6 +10,11 @@ import {
 import { getCurrentUser, isAdmin } from "../lib/auth";
 import { canClaimMediaReference, claimMediaReference, mediaAssetIdFromUrl } from "./media";
 import { activeProductSale } from "../lib/active-product-sale";
+import {
+  AdminGetRmaResponse,
+  AdminListRmasResponse,
+  AdminUpdateRmaStatusResponse,
+} from "@workspace/api-zod";
 
 const router: IRouter = Router();
 const clean = (value: unknown, max: number) => typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -416,10 +421,36 @@ function adminRmaListDto(row: Awaited<ReturnType<typeof adminRmaRows>>[number]) 
   };
 }
 
+type RmaResponseSchema<T> = {
+  safeParse(value: unknown):
+    | { success: true; data: T }
+    | { success: false; error: { issues: Array<{ code: string; path: PropertyKey[] }> } };
+};
+
+export function validateAdminRmaResponse<T>(
+  operation: "list" | "detail" | "status-update",
+  schema: RmaResponseSchema<T>,
+  value: unknown,
+  log: Pick<Request["log"], "error">,
+) {
+  const parsed = schema.safeParse(value);
+  if (parsed.success) return parsed.data;
+  log.error({
+    operation,
+    issues: parsed.error.issues.map(({ code, path }) => ({
+      code,
+      path: path.map(String).join("."),
+    })),
+  }, "Admin RMA response failed contract validation");
+  return null;
+}
+
 router.get("/admin/rmas", async (req, res): Promise<void> => {
   if (!await admin(req, res)) return;
   const rows = await adminRmaRows(sql`true`, 500);
-  res.json(rows.map(adminRmaListDto));
+  const response = validateAdminRmaResponse("list", AdminListRmasResponse, rows.map(adminRmaListDto), req.log);
+  if (!response) { res.status(500).json({ error: "RMA data could not be returned safely." }); return; }
+  res.json(response);
 });
 router.get("/admin/rmas/:id", async (req, res): Promise<void> => {
   if (!await admin(req, res)) return;
@@ -438,7 +469,7 @@ router.get("/admin/rmas/:id", async (req, res): Promise<void> => {
     : (await db.select({ orderItemId: orderItemsTable.id, productName: orderItemsTable.productName, quantity: rmasTable.quantity })
       .from(orderItemsTable).innerJoin(rmasTable, eq(rmasTable.orderItemId, orderItemsTable.id))
       .where(eq(rmasTable.id, row.id)).limit(1))[0];
-  res.json({
+  const response = validateAdminRmaResponse("detail", AdminGetRmaResponse, {
     ...adminRmaListDto(base),
     items: item ? [item] : [],
     privatePhotos: attachments.map((attachment) => `/api/media/${attachment.mediaAssetId}`),
@@ -448,7 +479,9 @@ router.get("/admin/rmas/:id", async (req, res): Promise<void> => {
       actorId: entry.actorUserId,
       note: null,
     })),
-  });
+  }, req.log);
+  if (!response) { res.status(500).json({ error: "RMA data could not be returned safely." }); return; }
+  res.json(response);
 });
 router.post("/retail/orders/:orderId/rmas", async (req, res): Promise<void> => {
   const user = await auth(req, res); if (!user) return;
@@ -545,7 +578,9 @@ router.patch("/admin/rmas/:id/status", async (req, res): Promise<void> => {
     return { row: row!, changed: true };
   });
   if (!result) { res.status(404).json({ error: "RMA not found." }); return; }
-  res.json(result);
+  const response = validateAdminRmaResponse("status-update", AdminUpdateRmaStatusResponse, result, req.log);
+  if (!response) { res.status(500).json({ error: "RMA data could not be returned safely." }); return; }
+  res.json(response);
 });
 
 export default router;

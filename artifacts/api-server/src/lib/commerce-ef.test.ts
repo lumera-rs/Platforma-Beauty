@@ -11,12 +11,12 @@ import {
   retailProductReviewAttachmentsTable, retailProductReviewsTable, rmaAttachmentsTable, rmaStatusHistoryTable, rmasTable, salonsTable, shopSettingsTable,
   shoppingCartItemsTable, shoppingCartsTable, suppliersTable, usersTable,
 } from "@workspace/db";
-import { AdminGetRmaResponse, AdminListRmasResponse } from "@workspace/api-zod";
+import { AdminGetRmaResponse, AdminListRmasResponse, AdminUpdateRmaStatusResponse } from "@workspace/api-zod";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureBusinessGrowthSchema } from "./business-growth-schema";
 import { runRetailReviewInvitationSweep } from "./review-invitations";
-import { validatedSwatch } from "../routes/commerce-ef";
+import { validateAdminRmaResponse, validatedSwatch } from "../routes/commerce-ef";
 import { settledCommerceSpend } from "./deo-g2-rule-loader";
 
 const marker = `commerce-ef-${randomUUID()}`;
@@ -400,8 +400,33 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
     assert.equal(AdminGetRmaResponse.safeParse({ ...(b2bDetailBody as object), target: "b2c" }).success, false);
     const b2bDetail = b2bDetailBody as { items: Array<{ productName: string }> };
     assert.equal(b2bDetail.items[0]?.productName, marker);
-    assert.equal((await api(`/admin/rmas/${rma.id}/status`, adminCookie, { method: "PATCH", body: JSON.stringify({ status: "RECEIVED" }) })).status, 200);
+    const statusResponse = await api(`/admin/rmas/${rma.id}/status`, adminCookie, { method: "PATCH", body: JSON.stringify({ status: "RECEIVED" }) });
+    const statusBody = await statusResponse.json();
+    assert.equal(statusResponse.status, 200);
+    assert.equal(AdminUpdateRmaStatusResponse.safeParse(statusBody).success, true);
     assert.equal((await db.select().from(emailDeliveriesTable).where(eq(emailDeliveriesTable.eventKey, `rma:${rma.id}:status:RECEIVED`))).length, 0);
+
+    const sensitiveValue = `${marker}-must-not-be-logged`;
+    const logged: unknown[] = [];
+    const invalid = {
+      ...retailAdminRow,
+      target: "b2c",
+      orderId: b2bOrderId,
+      orderItemId: b2bItemId,
+      retailOrderId,
+      retailOrderItemId: retailItemId,
+      description: sensitiveValue,
+    };
+    assert.equal(validateAdminRmaResponse("list", AdminListRmasResponse, [invalid], {
+      error: (...args: unknown[]) => { logged.push(args); },
+    }), null);
+    assert.equal(validateAdminRmaResponse("detail", AdminGetRmaResponse, {
+      ...invalid, items: [], privatePhotos: [], auditTrail: [],
+    }, { error: (...args: unknown[]) => { logged.push(args); } }), null);
+    assert.equal(validateAdminRmaResponse("status-update", AdminUpdateRmaStatusResponse, {
+      row: invalid, changed: false,
+    }, { error: (...args: unknown[]) => { logged.push(args); } }), null);
+    assert.equal(JSON.stringify(logged).includes(sensitiveValue), false);
   });
   await t.test("supplier-scoped bestseller ranking never crosses supplier or category", async () => {
     const [supplierB] = await db.insert(suppliersTable).values({ name: `${marker} B`, slug: `${marker}-b`, scope: "BOTH" }).returning();
