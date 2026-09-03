@@ -115,7 +115,7 @@ test("an Orval target without inventoried source and published outputs fails clo
   );
 });
 
-test("an auxiliary Orval output outside its inventoried source root fails closed", () => {
+test("reviewed file-producing Orval fields drive configured-path coverage", () => {
   const fixtureRoot = path.resolve(os.tmpdir(), "orval-output-inventory-fixture");
 
   assert.throws(
@@ -138,10 +138,13 @@ test("an auxiliary Orval output outside its inventoried source root fails closed
               { type: "faker", path: "../escaped-faker-mocks" },
             ],
           },
+          factoryMethods: {
+            outputDirectory: "../escaped-factories",
+          },
         },
       },
     }, fixtureRoot),
-    /Orval output paths are not covered[\s\S]*zod output\.schemas:[\s\S]*zod output\.operationSchemas:[\s\S]*zod output\.mock\.path:[\s\S]*zod output\.mock\.generators\[0\]\.path:[\s\S]*outside inventoried source root/,
+    /Orval output paths are not covered[\s\S]*zod output\.operationSchemas:[\s\S]*zod output\.schemas\.path:[\s\S]*zod output\.mock\.path:[\s\S]*zod output\.mock\.generators\[0\]\.path:[\s\S]*zod output\.factoryMethods\.outputDirectory:[\s\S]*outside inventoried source root/,
   );
 });
 
@@ -188,6 +191,9 @@ test("current split React and Zod output layouts stay covered", () => {
           generators: [
             { type: "faker", path: "generated/faker-mocks" },
           ],
+        },
+        factoryMethods: {
+          outputDirectory: "generated/factories",
         },
         mode: "split",
       },
