@@ -11,9 +11,15 @@ import { getCurrentUser, isAdmin } from "../lib/auth";
 import { canClaimMediaReference, claimMediaReference, mediaAssetIdFromUrl } from "./media";
 import { activeProductSale } from "../lib/active-product-sale";
 import {
+  AdminGetMetaCatalogStatusResponse,
+  AdminGetReviewRewardSettingsResponse,
   AdminGetRmaResponse,
+  AdminListPriceInquiriesResponse,
+  AdminListQuotesResponse,
   AdminListRmasResponse,
+  AdminUpdateReviewRewardSettingsResponse,
   AdminUpdateRmaStatusResponse,
+  AdminValidateMetaCatalogResponse,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
@@ -123,7 +129,7 @@ router.post("/public/suppliers/:supplierId/products/:productId/price-inquiries",
 
 router.get("/admin/price-inquiries", async (req, res): Promise<void> => {
   if (!await admin(req, res)) return;
-  res.json(await db.select({
+  const rows = await db.select({
     id: priceInquiriesTable.id,
     supplierId: priceInquiriesTable.supplierId,
     productId: priceInquiriesTable.productId,
@@ -140,7 +146,8 @@ router.get("/admin/price-inquiries", async (req, res): Promise<void> => {
   }).from(priceInquiriesTable)
     .innerJoin(productsTable, eq(priceInquiriesTable.productId, productsTable.id))
     .innerJoin(suppliersTable, eq(priceInquiriesTable.supplierId, suppliersTable.id))
-    .orderBy(desc(priceInquiriesTable.createdAt)).limit(500));
+    .orderBy(desc(priceInquiriesTable.createdAt)).limit(500);
+  sendValidatedAdminCommerceResponse(req, res, "adminListPriceInquiries", AdminListPriceInquiriesResponse, rows);
 });
 router.patch("/admin/price-inquiries/:id", async (req, res): Promise<void> => {
   if (!await admin(req, res)) return;
@@ -333,11 +340,17 @@ router.get("/shop/quotes/:publicId/pdf", async (req, res): Promise<void> => {
   pdf.end();
 });
 
-router.get("/admin/quotes", async (req, res): Promise<void> => { if (await admin(req, res)) res.json(await db.select().from(b2bQuotesTable).orderBy(desc(b2bQuotesTable.createdAt)).limit(500)); });
+router.get("/admin/quotes", async (req, res): Promise<void> => {
+  if (!await admin(req, res)) return;
+  const rows = await db.select().from(b2bQuotesTable).orderBy(desc(b2bQuotesTable.createdAt)).limit(500);
+  sendValidatedAdminCommerceResponse(req, res, "adminListQuotes", AdminListQuotesResponse, rows);
+});
 router.get("/admin/catalog/meta/status", async (req, res): Promise<void> => {
   if (!await admin(req, res)) return;
   const [latest] = await db.select().from(catalogSyncRunsTable).orderBy(desc(catalogSyncRunsTable.createdAt)).limit(1);
-  res.json({ connectionStatus: "NOT_CONNECTED", canSync: false, latestRun: latest ?? null });
+  sendValidatedAdminCommerceResponse(req, res, "adminGetMetaCatalogStatus", AdminGetMetaCatalogStatusResponse, {
+    connectionStatus: "NOT_CONNECTED", canSync: false, latestRun: latest ?? null,
+  });
 });
 
 router.post("/orders/:orderId/rmas", async (req, res): Promise<void> => {
@@ -421,15 +434,15 @@ function adminRmaListDto(row: Awaited<ReturnType<typeof adminRmaRows>>[number]) 
   };
 }
 
-type RmaResponseSchema<T> = {
+type AdminCommerceResponseSchema<T> = {
   safeParse(value: unknown):
     | { success: true; data: T }
     | { success: false; error: { issues: Array<{ code: string; path: PropertyKey[] }> } };
 };
 
-export function validateAdminRmaResponse<T>(
-  operation: "list" | "detail" | "status-update",
-  schema: RmaResponseSchema<T>,
+export function validateAdminCommerceResponse<T>(
+  operation: string,
+  schema: AdminCommerceResponseSchema<T>,
   value: unknown,
   log: Pick<Request["log"], "error">,
 ) {
@@ -441,8 +454,33 @@ export function validateAdminRmaResponse<T>(
       code,
       path: path.map(String).join("."),
     })),
-  }, "Admin RMA response failed contract validation");
+  }, "Admin commerce response failed contract validation");
   return null;
+}
+
+function sendValidatedAdminCommerceResponse<T>(
+  req: Request,
+  res: Response,
+  operation: string,
+  schema: AdminCommerceResponseSchema<T>,
+  value: unknown,
+) {
+  const response = validateAdminCommerceResponse(operation, schema, value, req.log);
+  if (!response) {
+    res.status(500).json({ error: "Admin commerce data could not be returned safely." });
+    return false;
+  }
+  res.json(response);
+  return true;
+}
+
+export function validateAdminRmaResponse<T>(
+  operation: "list" | "detail" | "status-update",
+  schema: AdminCommerceResponseSchema<T>,
+  value: unknown,
+  log: Pick<Request["log"], "error">,
+) {
+  return validateAdminCommerceResponse(`adminRma:${operation}`, schema, value, log);
 }
 
 router.get("/admin/rmas", async (req, res): Promise<void> => {
@@ -530,13 +568,15 @@ router.post("/admin/catalog/meta/validate", async (req, res): Promise<void> => {
   const [run] = await db.insert(catalogSyncRunsTable).values({
     status: "NOT_CONNECTED", itemCount, validationErrors: errors, requestedByUserId: user.id,
   }).returning();
-  res.json({ connectionStatus: "NOT_CONNECTED", canSync: false, run });
+  sendValidatedAdminCommerceResponse(req, res, "adminValidateMetaCatalog", AdminValidateMetaCatalogResponse, {
+    connectionStatus: "NOT_CONNECTED", canSync: false, run,
+  });
 });
 router.get("/admin/review-rewards", async (req, res): Promise<void> => {
   if (!await admin(req, res)) return;
   const [settings] = await db.select().from(shopSettingsTable).limit(1);
   const [stats] = await db.select({ issued: sql<number>`count(*)::int` }).from(reviewRewardIssuancesTable);
-  res.json({
+  sendValidatedAdminCommerceResponse(req, res, "adminGetReviewRewardSettings", AdminGetReviewRewardSettingsResponse, {
     settings: settings ? {
       enabled: settings.reviewRewardsEnabled, invitationDelayDays: settings.reviewInvitationDelayDays,
       percent: settings.reviewRewardPercent, validityDays: settings.reviewRewardValidityDays, version: settings.version,
@@ -557,7 +597,10 @@ router.patch("/admin/review-rewards", async (req, res): Promise<void> => {
     version: version + 1, updatedAt: new Date(),
   }).where(eq(shopSettingsTable.version, version)).returning();
   if (!updated) { res.status(409).json({ error: "Settings changed; reload before saving." }); return; }
-  res.json({ enabled: updated.reviewRewardsEnabled, invitationDelayDays: updated.reviewInvitationDelayDays, percent: updated.reviewRewardPercent, validityDays: updated.reviewRewardValidityDays, version: updated.version });
+  sendValidatedAdminCommerceResponse(req, res, "adminUpdateReviewRewardSettings", AdminUpdateReviewRewardSettingsResponse, {
+    enabled: updated.reviewRewardsEnabled, invitationDelayDays: updated.reviewInvitationDelayDays,
+    percent: updated.reviewRewardPercent, validityDays: updated.reviewRewardValidityDays, version: updated.version,
+  });
 });
 
 router.patch("/admin/rmas/:id/status", async (req, res): Promise<void> => {

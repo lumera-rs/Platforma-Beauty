@@ -11,12 +11,16 @@ import {
   retailProductReviewAttachmentsTable, retailProductReviewsTable, rmaAttachmentsTable, rmaStatusHistoryTable, rmasTable, salonsTable, shopSettingsTable,
   shoppingCartItemsTable, shoppingCartsTable, suppliersTable, usersTable,
 } from "@workspace/db";
-import { AdminGetRmaResponse, AdminListRmasResponse, AdminUpdateRmaStatusResponse } from "@workspace/api-zod";
+import {
+  AdminGetMetaCatalogStatusResponse, AdminGetReviewRewardSettingsResponse, AdminGetRmaResponse,
+  AdminListPriceInquiriesResponse, AdminListQuotesResponse, AdminListRmasResponse,
+  AdminUpdateReviewRewardSettingsResponse, AdminUpdateRmaStatusResponse, AdminValidateMetaCatalogResponse,
+} from "@workspace/api-zod";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureBusinessGrowthSchema } from "./business-growth-schema";
 import { runRetailReviewInvitationSweep } from "./review-invitations";
-import { validateAdminRmaResponse, validatedSwatch } from "../routes/commerce-ef";
+import { validateAdminCommerceResponse, validateAdminRmaResponse, validatedSwatch } from "../routes/commerce-ef";
 import { settledCommerceSpend } from "./deo-g2-rule-loader";
 
 const marker = `commerce-ef-${randomUUID()}`;
@@ -220,6 +224,7 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
     assert.equal(body.priceOnRequest, true); assert.equal(body.cartEligible, false); assert.equal("unitPrice" in body.rows[0]!, false);
     assert.equal((await api(`/public/suppliers/${ids.suppliers[0]}/products/${zeroProductId}/price-inquiries`, "", { method: "POST", body: JSON.stringify({ name: "Test User", email: "test@example.test", phone: "+381601234567", message: "Need a price for this item." }) })).status, 201);
     const adminInquiries = await (await api("/admin/price-inquiries", await cookie(admin))).json() as Array<Record<string, unknown>>;
+    assert.equal(AdminListPriceInquiriesResponse.safeParse(adminInquiries).success, true);
     const adminInquiry = adminInquiries.find((inquiry) => inquiry.productId === zeroProductId);
     assert.equal(adminInquiry?.contactName, "Test User"); assert.equal(adminInquiry?.contactEmail, "test@example.test");
     assert.equal(adminInquiry?.productName, `${marker} zero`); assert.equal(adminInquiry?.supplierName, marker);
@@ -248,10 +253,12 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
     const failedValidation = await (await api("/admin/catalog/meta/validate", await cookie(admin), { method: "POST" })).json() as {
       run: { itemCount: number; validationErrors: string[] };
     };
+    assert.equal(AdminValidateMetaCatalogResponse.safeParse(failedValidation).success, true);
     assert.ok(failedValidation.run.itemCount >= 1); assert.ok(failedValidation.run.validationErrors.length >= 1);
     const failedStatus = await (await api("/admin/catalog/meta/status", await cookie(admin))).json() as {
       latestRun: { validationErrors: string[] };
     };
+    assert.equal(AdminGetMetaCatalogStatusResponse.safeParse(failedStatus).success, true);
     assert.deepEqual(failedStatus.latestRun.validationErrors, failedValidation.run.validationErrors);
     process.env.APP_BASE_URL = validOrigin;
     const explicitSession = await cookie(explicitBuyer);
@@ -308,6 +315,7 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
       settings: { enabled: boolean; invitationDelayDays: number; percent: number; validityDays: number; version: number };
       stats: { issued: number };
     };
+    assert.equal(AdminGetReviewRewardSettingsResponse.safeParse(loadedSettings).success, true);
     assert.ok(loadedSettings.settings.version >= 1); assert.ok(loadedSettings.stats.issued >= 0);
     const savedSettingsResponse = await api("/admin/review-rewards", adminSession, {
       method: "PATCH",
@@ -315,6 +323,7 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
     });
     assert.equal(savedSettingsResponse.status, 200);
     const savedSettings = await savedSettingsResponse.json() as { version: number };
+    assert.equal(AdminUpdateReviewRewardSettingsResponse.safeParse(savedSettings).success, true);
     assert.equal(savedSettings.version, loadedSettings.settings.version + 1);
     const session = await cookie(customer);
     const firstAsset = randomUUID(); const replacementAsset = randomUUID(); ids.assets.push(firstAsset, replacementAsset);
@@ -457,4 +466,53 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
     assert.equal(categoryScoped.status, 200);
     assert.deepEqual(await categoryScoped.json(), [], "Supplier A plus supplier B category must return no cross-supplier ranking.");
   });
+});
+
+test("admin commerce response contracts fail closed without logging payload values", async () => {
+  const adminSession = await cookie(admin);
+  const quotesResponse = await api("/admin/quotes", adminSession);
+  const validQuotes = await quotesResponse.json();
+  assert.equal(quotesResponse.status, 200);
+  assert.equal(AdminListQuotesResponse.safeParse(validQuotes).success, true);
+
+  const sensitiveValue = `${marker}-admin-commerce-secret`;
+  const logged: unknown[] = [];
+  const schemas = [
+    ["adminListPriceInquiries", AdminListPriceInquiriesResponse, [{ contactEmail: sensitiveValue }]],
+    ["adminListQuotes", AdminListQuotesResponse, [{ customerCompanyName: sensitiveValue }]],
+    ["adminGetMetaCatalogStatus", AdminGetMetaCatalogStatusResponse, { connectionStatus: sensitiveValue }],
+    ["adminValidateMetaCatalog", AdminValidateMetaCatalogResponse, { connectionStatus: sensitiveValue }],
+    ["adminGetReviewRewardSettings", AdminGetReviewRewardSettingsResponse, { settings: sensitiveValue }],
+    ["adminUpdateReviewRewardSettings", AdminUpdateReviewRewardSettingsResponse, { enabled: sensitiveValue }],
+  ] as const;
+  for (const [operation, schema, malformed] of schemas) {
+    assert.equal(validateAdminCommerceResponse(operation, schema as {
+      safeParse(value: unknown):
+        | { success: true; data: unknown }
+        | { success: false; error: { issues: Array<{ code: string; path: PropertyKey[] }> } };
+    }, malformed, {
+      error: (...args: unknown[]) => { logged.push(args); },
+    }), null);
+  }
+  assert.equal(JSON.stringify(logged).includes(sensitiveValue), false);
+  assert.deepEqual(logged.map((entry) => (entry as [{ operation: string }])[0].operation), schemas.map(([operation]) => operation));
+  assert.ok(logged.every((entry) => {
+    const record = (entry as [{ issues: Array<Record<string, unknown>> }])[0];
+    return record.issues.every((issue) => Object.keys(issue).sort().join(",") === "code,path");
+  }));
+
+  const [quote] = (validQuotes as Array<{ id: string; itemSnapshots: unknown[] }>).filter((row) => row.itemSnapshots.length > 0);
+  assert.ok(quote);
+  const [stored] = await db.select({ itemSnapshots: b2bQuotesTable.itemSnapshots }).from(b2bQuotesTable).where(eq(b2bQuotesTable.id, quote.id));
+  assert.ok(stored);
+  await db.update(b2bQuotesTable).set({
+    itemSnapshots: stored.itemSnapshots.map((item, index) => index === 0 ? { ...item, quantity: 0 } : item),
+  }).where(eq(b2bQuotesTable.id, quote.id));
+  try {
+    const malformedResponse = await api("/admin/quotes", adminSession);
+    assert.equal(malformedResponse.status, 500);
+    assert.deepEqual(await malformedResponse.json(), { error: "Admin commerce data could not be returned safely." });
+  } finally {
+    await db.update(b2bQuotesTable).set({ itemSnapshots: stored.itemSnapshots }).where(eq(b2bQuotesTable.id, quote.id));
+  }
 });
