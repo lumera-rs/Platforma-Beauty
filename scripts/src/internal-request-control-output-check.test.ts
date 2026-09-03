@@ -205,7 +205,7 @@ test("Orval declaration shapes are stable across multiline member separators", (
   }
 });
 
-test("malformed Orval declarations report a concise parser location", () => {
+test("malformed CRLF Orval declarations report a concise parser location", () => {
   const privateDeclarationContent = "do-not-dump-this-dependency-content";
   const declarations = [
     "interface OutputOptions {",
@@ -213,7 +213,7 @@ test("malformed Orval declarations report a concise parser location", () => {
     `  // ${privateDeclarationContent}`,
     "  broken?: ;",
     "}",
-  ].join("\n");
+  ].join("\r\n");
 
   assert.throws(
     () => readOrvalInterfaceFieldValueShapes(declarations, "OutputOptions"),
