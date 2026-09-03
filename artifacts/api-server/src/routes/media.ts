@@ -33,6 +33,7 @@ import {
 import { getCurrentUser, isAdmin } from "../lib/auth";
 import { integrationValue } from "../lib/integrations";
 import { logger } from "../lib/logger";
+import { getObjectStorage } from "../lib/object-storage";
 import { isProductionOrDeploymentRuntime } from "@workspace/db/destructive-test-runtime";
 import {
   mediaRouteRegressionControl,
@@ -236,56 +237,16 @@ const REVOCABLE_PUBLIC_MEDIA_SCOPES = new Set<string>([
 
 type MediaVariantInsert = typeof mediaVariantsTable.$inferInsert;
 
-function privateObjectRoot(): string {
-  const root = process.env.PRIVATE_OBJECT_DIR;
-  if (!root) throw new Error("App Storage nije podešen.");
-  return root.replace(/\/+$/, "");
-}
-
-function privateObjectPath(storagePath: string): string {
-  if (!storagePath.startsWith("/objects/")) throw new Error("Neispravna App Storage putanja.");
-  return `${privateObjectRoot()}/${storagePath.slice("/objects/".length)}`;
-}
-
-async function signPrivateObject(rawPath: string, method: "DELETE" | "GET" | "PUT", ttlSeconds: number): Promise<string> {
-  const [, bucketName, ...objectParts] = rawPath.startsWith("/") ? rawPath.split("/") : `/${rawPath}`.split("/");
-  const response = await fetch("http://127.0.0.1:1106/object-storage/signed-object-url", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      bucket_name: bucketName,
-      object_name: objectParts.join("/"),
-      method,
-      expires_at: new Date(Date.now() + ttlSeconds * 1000).toISOString(),
-    }),
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!response.ok) throw new Error(`App Storage nije generisao URL (${response.status}).`);
-  const data = await response.json() as { signed_url?: string };
-  if (!data.signed_url) throw new Error("App Storage nije vratio potpisani URL.");
-  return data.signed_url;
-}
-
 async function putPrivateObject(storagePath: string, contentType: string, bytes: Buffer): Promise<void> {
-  const uploadUrl = await signPrivateObject(privateObjectPath(storagePath), "PUT", 120);
-  const response = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: { "Content-Type": contentType },
-    body: bytes,
-    signal: AbortSignal.timeout(60_000),
-  });
-  if (!response.ok) throw new Error(`App Storage nije sačuvao sliku (${response.status}).`);
+  await getObjectStorage().put(storagePath, bytes, contentType);
 }
 
 export async function deletePrivateStorageObject(storagePath: string): Promise<void> {
-  const deleteUrl = await signPrivateObject(privateObjectPath(storagePath), "DELETE", 60);
-  const response = await fetch(deleteUrl, { method: "DELETE", signal: AbortSignal.timeout(30_000) });
-  if (!response.ok && response.status !== 404) throw new Error(`App Storage nije obrisao objekat (${response.status}).`);
+  await getObjectStorage().delete(storagePath);
 }
 
 export async function readPrivateStorageObject(storagePath: string): Promise<Buffer | null> {
-  const downloadUrl = await signPrivateObject(privateObjectPath(storagePath), "GET", 60);
-  const response = await fetch(downloadUrl, { signal: AbortSignal.timeout(45_000) });
+  const response = await getObjectStorage().get(storagePath);
   if (!response.ok) return null;
   const length = Number(response.headers.get("content-length"));
   if (Number.isFinite(length) && length > MAX_IMAGE_BYTES) {
@@ -721,8 +682,7 @@ export async function processImageBytes(input: {
 }
 
 async function readStagedUpload(ticket: typeof mediaUploadTicketsTable.$inferSelect): Promise<Buffer> {
-  const downloadUrl = await signPrivateObject(privateObjectPath(ticket.stagingObjectPath), "GET", 60);
-  const response = await fetch(downloadUrl, { signal: AbortSignal.timeout(45_000) });
+  const response = await getObjectStorage().get(ticket.stagingObjectPath);
   if (!response.ok) throw new Error("Otpremanje nije pronađeno u App Storage-u.");
   const responseType = response.headers.get("content-type")?.split(";", 1)[0]?.toLowerCase();
   const responseLength = Number(response.headers.get("content-length"));
@@ -792,7 +752,7 @@ router.post("/media/uploads", async (req, res): Promise<void> => {
   const stagingObjectPath = `/objects/media-staging/${user.id}/${uploadId}`;
   const expiresAt = new Date(Date.now() + UPLOAD_TTL_SECONDS * 1000);
   try {
-    const uploadUrl = await signPrivateObject(privateObjectPath(stagingObjectPath), "PUT", UPLOAD_TTL_SECONDS);
+    const uploadUrl = await getObjectStorage().signPut(stagingObjectPath, UPLOAD_TTL_SECONDS);
     await db.insert(mediaUploadTicketsTable).values({
       id: uploadId,
       ownerUserId: user.id,
@@ -1035,8 +995,7 @@ router.get("/media/:assetId", async (req, res): Promise<void> => {
   if (req.headers["if-none-match"] === variant.etag) { res.status(304).end(); return; }
 
   try {
-    const downloadUrl = await signPrivateObject(privateObjectPath(variant.objectPath), "GET", 120);
-    const source = await fetch(downloadUrl, { signal: AbortSignal.timeout(30_000) });
+    const source = await getObjectStorage().get(variant.objectPath);
     if (!source.ok || !source.body) { res.status(404).json({ error: "Fotografija nije pronađena." }); return; }
     Readable.fromWeb(source.body as ReadableStream<Uint8Array>).pipe(res);
   } catch (error) {

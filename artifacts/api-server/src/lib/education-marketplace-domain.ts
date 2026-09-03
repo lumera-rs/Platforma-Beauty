@@ -3,6 +3,7 @@ import {
   addEducationBelgradeCalendarDays as addCalendarDays,
   educationBelgradeDateKey as belgradeDateKey,
 } from "./education-belgrade-calendar";
+import { paymentRuntimeEnvironment, safeModeNoExternalCalls } from "./runtime-environment";
 
 export type EducationPaymentModeInput = {
   format: "online" | "in-person" | "hybrid";
@@ -162,12 +163,7 @@ export function formatEducationIpsAmount(amount: number): string {
 
 /** NODE_ENV is deliberately reduced to the two payment account classifications. */
 export function educationIpsRuntimeEnvironment(): EducationIpsAccountEnvironment {
-  const deploymentValue = process.env.REPLIT_DEPLOYMENT ?? process.env.REPL_DEPLOYMENT;
-  const publishedDeployment = deploymentValue !== undefined && ["1", "true", "yes", "production"].includes(deploymentValue.trim().toLowerCase());
-  const optionalMarkerAllowsProduction = process.env.REPLIT_ENVIRONMENT === undefined || process.env.REPLIT_ENVIRONMENT === "production";
-  return process.env.NODE_ENV === "production" && publishedDeployment && optionalMarkerAllowsProduction
-    ? "production"
-    : "test";
+  return safeModeNoExternalCalls() ? "test" : paymentRuntimeEnvironment();
 }
 
 export const EDUCATION_PAYMENT_UNAVAILABLE_ERROR = {

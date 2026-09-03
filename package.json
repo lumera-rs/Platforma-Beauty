@@ -75,6 +75,7 @@
     "test:backend-standards": "pnpm --filter @workspace/scripts run test:backend-standards",
     "test:backend-standards:static": "pnpm --filter @workspace/scripts run test:backend-standards:static",
     "test:backend-standards:database": "pnpm --filter @workspace/scripts run test:backend-standards:database",
+    "test:anonymized-pg-dump": "pnpm --filter @workspace/scripts run test:anonymized-pg-dump",
     "test:query-counts": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/query-count.test.ts",
     "test:internal-request-controls": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/lib/internal-request-controls.test.ts",
     "test:internal-request-control-outputs": "NODE_ENV=test pnpm --filter @workspace/scripts run test:internal-request-control-outputs",

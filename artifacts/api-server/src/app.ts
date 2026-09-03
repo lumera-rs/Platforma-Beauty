@@ -14,11 +14,12 @@ import {
   denyInternalRequestControlsInProduction,
   readInternalRequestControl,
 } from "./lib/internal-request-controls";
+import { trustProxySetting } from "./lib/runtime-environment";
 
 const app: Express = express();
 // Replit deployments have one controlled edge proxy. Local/test processes are
 // directly reachable, so forwarded headers must not influence req.ip there.
-app.set("trust proxy", process.env["REPLIT_DEPLOYMENT"] ? 1 : false);
+app.set("trust proxy", trustProxySetting());
 
 app.use(denyInternalRequestControlsInProduction);
 app.use((req, _res, next) => {

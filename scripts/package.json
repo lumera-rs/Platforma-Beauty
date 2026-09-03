@@ -16,6 +16,8 @@
     "test:backend-standards": "tsx --test ./src/backend-standards-database.test.ts && tsx ./src/test-backend-standards.ts",
     "test:backend-standards:static": "tsx ./src/test-backend-standards.ts --static-only",
     "test:backend-standards:database": "tsx ./src/test-backend-standards.ts --database-only",
+    "anonymized-pg-dump": "bash ./anonymized-pg-dump.sh",
+    "test:anonymized-pg-dump": "bash ./src/anonymized-pg-dump.test.sh",
     "test:bundle-budget": "tsx ./src/bundle-budget.ts",
     "test:frontend-standards": "tsx ./src/frontend-performance-standards.test.ts",
     "test:frontend-interactions": "tsx --test ../lib/api-client-react/src/custom-fetch.test.ts && tsx --test ../artifacts/beauty-marketplace/src/lib/api-error-regressions.test.ts && tsx ../artifacts/beauty-marketplace/src/lib/optimistic-interactions.test.ts && tsx --test ../artifacts/beauty-marketplace/src/lib/date-range-presets.test.ts && tsx --test ../artifacts/beauty-marketplace/src/lib/campaign-period-url.test.ts && tsx --test ../artifacts/beauty-marketplace/src/lib/campaign-cancellation-warning.test.ts && tsx --test ../artifacts/beauty-marketplace/src/lib/home-search-categories.test.ts && tsx --test ../artifacts/beauty-marketplace/src/lib/education-dispute-analytics.test.ts && tsx --test ../artifacts/beauty-marketplace/src/lib/featured-salon-payment-contract.test.ts",

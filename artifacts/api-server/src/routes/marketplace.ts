@@ -783,9 +783,11 @@ import
 from "../lib/appointment-locks"
 ;
 import { canonicalAvailability, preloadCanonicalAvailability } from "../lib/availability-store";
+import { getObjectStorage } from "../lib/object-storage";
 import { admitBookingRequest } from "../lib/booking-admission";
 import { notifyCustomer } from "../lib/customer-notifications";
 import { timestampAgeMinutes } from "../lib/timestamp-age";
+import { allowedPublicHosts, isDevelopmentHostname } from "../lib/runtime-environment";
 import { educationCertificateEligibility, reconcileOperationalEducationEnrollmentInTx } from "../lib/education-certificate-eligibility";
 import {
   publicWebPushConfiguration,
@@ -2981,31 +2983,12 @@ function publicEducationMediaUrl(media: typeof educationMediaTable.$inferSelect)
   return `/api/storage/objects/${legacyUrl.replace(/^\/+/, "")}`;
 }
 
-function educationMediaObjectPath(centerId: string, courseId: string, mediaId: string): string {
-  const root = process.env.PRIVATE_OBJECT_DIR;
-  if (!root) throw new Error("App Storage nije podešen.");
-  return `${root.replace(/\/+$/, "")}/education-gallery/${centerId}/${courseId}/${mediaId}`;
-}
-
-function educationMediaStagingObjectPath(centerId: string, courseId: string, mediaId: string): string {
-  const root = process.env.PRIVATE_OBJECT_DIR;
-  if (!root) throw new Error("App Storage nije podešen.");
-  return `${root.replace(/\/+$/, "")}/education-gallery-staging/${centerId}/${courseId}/${mediaId}`;
-}
-
 function educationMediaStoragePath(centerId: string, courseId: string, mediaId: string): string {
   return `/objects/education-gallery/${centerId}/${courseId}/${mediaId}`;
 }
 
 function educationMediaStagingStoragePath(centerId: string, courseId: string, mediaId: string): string {
   return `/objects/education-gallery-staging/${centerId}/${courseId}/${mediaId}`;
-}
-
-function privateObjectPathFromStoragePath(storagePath: string): string {
-  if (!storagePath.startsWith("/objects/")) throw new Error("Neispravna putanja objekta.");
-  const root = process.env.PRIVATE_OBJECT_DIR;
-  if (!root) throw new Error("App Storage nije podešen.");
-  return `${root.replace(/\/+$/, "")}/${storagePath.slice("/objects/".length)}`;
 }
 
 function hasExpectedImageSignature(contentType: string, bytes: Buffer): boolean {
@@ -3016,33 +2999,8 @@ function hasExpectedImageSignature(contentType: string, bytes: Buffer): boolean 
   return false;
 }
 
-async function signPrivateObject(rawPath: string, method: "DELETE" | "GET" | "PUT", ttlSeconds: number): Promise<string> {
-  const [, bucketName, ...objectParts] = rawPath.startsWith("/") ? rawPath.split("/") : `/${rawPath}`.split("/");
-  const response = await fetch("http://127.0.0.1:1106/object-storage/signed-object-url", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      bucket_name: bucketName,
-      object_name: objectParts.join("/"),
-      method,
-      expires_at: new Date(Date.now() + ttlSeconds * 1000).toISOString(),
-    }),
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!response.ok) throw new Error(`App Storage nije generisao URL (${response.status}).`);
-  const data = await response.json() as { signed_url?: string };
-  if (!data.signed_url) throw new Error("App Storage nije vratio potpisani URL.");
-  return data.signed_url;
-}
-
 async function deletePrivateObject(storagePath: string): Promise<void> {
-  const deleteUrl = await signPrivateObject(privateObjectPathFromStoragePath(storagePath), "DELETE", 60);
-  const response = await fetch(deleteUrl, {
-    method: "DELETE",
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (response.ok || response.status === 404) return;
-  throw new Error(`App Storage nije obrisao objekat (${response.status}).`);
+  await getObjectStorage().delete(storagePath);
 }
 
 function managedEducationMediaObjectPath(media: typeof educationMediaTable.$inferSelect): string {
@@ -3054,8 +3012,7 @@ function isManagedEducationMediaObject(media: typeof educationMediaTable.$inferS
 }
 
 async function readVerifiedEducationMediaUpload(upload: typeof educationMediaUploadsTable.$inferSelect): Promise<Buffer | null> {
-  const downloadUrl = await signPrivateObject(privateObjectPathFromStoragePath(upload.objectPath), "GET", 60);
-  const response = await fetch(downloadUrl, { signal: AbortSignal.timeout(30_000) });
+  const response = await getObjectStorage().get(upload.objectPath);
   if (!response.ok) return null;
   const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.toLowerCase();
   const contentLength = Number(response.headers.get("content-length"));
@@ -3069,14 +3026,7 @@ async function readVerifiedEducationMediaUpload(upload: typeof educationMediaUpl
 
 async function promoteEducationMediaUpload(upload: typeof educationMediaUploadsTable.$inferSelect, bytes: Buffer): Promise<string> {
   const finalStoragePath = educationMediaStoragePath(upload.centerId, upload.courseId, upload.id);
-  const uploadUrl = await signPrivateObject(educationMediaObjectPath(upload.centerId, upload.courseId, upload.id), "PUT", 60);
-  const response = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: { "Content-Type": upload.contentType },
-    body: bytes,
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!response.ok) throw new Error(`App Storage nije sačuvao proverenu sliku (${response.status}).`);
+  await getObjectStorage().put(finalStoragePath, bytes, upload.contentType);
   return finalStoragePath;
 }
 
@@ -4049,30 +3999,11 @@ function categoryImageProxyUrl(imageId: string): string {
   return `/api/category-images/${imageId}`;
 }
 
-function categoryImageObjectPath(imageId: string): string {
-  const root = process.env.PRIVATE_OBJECT_DIR;
-  if (!root) throw new Error("App Storage nije podešen.");
-  return `${root.replace(/\/+$/, "")}/category-images/${imageId}`;
-}
-
 async function signCategoryImageObject(imageId: string, method: "GET" | "PUT", ttlSeconds: number): Promise<string> {
-  const path = categoryImageObjectPath(imageId);
-  const [, bucketName, ...objectParts] = path.startsWith("/") ? path.split("/") : `/${path}`.split("/");
-  const response = await fetch("http://127.0.0.1:1106/object-storage/signed-object-url", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      bucket_name: bucketName,
-      object_name: objectParts.join("/"),
-      method,
-      expires_at: new Date(Date.now() + ttlSeconds * 1000).toISOString(),
-    }),
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!response.ok) throw new Error(`App Storage nije generisao URL (${response.status}).`);
-  const data = await response.json() as { signed_url?: string };
-  if (!data.signed_url) throw new Error("App Storage nije vratio potpisani URL.");
-  return data.signed_url;
+  const storagePath = `/objects/category-images/${imageId}`;
+  return method === "GET"
+    ? getObjectStorage().signGet(storagePath, ttlSeconds)
+    : getObjectStorage().signPut(storagePath, ttlSeconds);
 }
 
 function appointmentView(
@@ -5202,10 +5133,8 @@ function brevoRegistrationCandidates(webhooks: Array<{ id: number; url: string; 
  */
 function deploymentAcceptedOrigins(origin: string): Set<string> {
   const origins = new Set([origin]);
-  for (const domain of (process.env["REPLIT_DOMAINS"] ?? "").split(",")) {
-    const trimmed = domain.trim();
-    if (!trimmed) continue;
-    try { origins.add(new URL(`https://${trimmed}`).origin); } catch { /* skip malformed entries */ }
+  for (const hostname of allowedPublicHosts()) {
+    origins.add(new URL(`https://${hostname}`).origin);
   }
   return origins;
 }
@@ -5223,10 +5152,7 @@ function deploymentAcceptedOrigins(origin: string): Set<string> {
 function isDevelopmentBrowsingOrigin(origin: string): boolean {
   let hostname: string;
   try { hostname = new URL(origin).hostname; } catch { return false; }
-  const devDomain = process.env["REPLIT_DEV_DOMAIN"]?.trim();
-  if (devDomain && hostname === devDomain) return true;
-  if (hostname.endsWith(".replit.dev")) return true;
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0" || hostname === "::1" || hostname === "[::1]";
+  return isDevelopmentHostname(hostname);
 }
 
 /** Per-request comparison context shared by the registration check and the
@@ -18640,7 +18566,10 @@ router.post("/education/courses/:courseId/gallery/upload-url", async (req, res):
   const mediaId = randomUUID();
   try {
     const stagingStoragePath = educationMediaStagingStoragePath(course.centerId!, course.id, mediaId);
-    const uploadUrl = await signPrivateObject(educationMediaStagingObjectPath(course.centerId!, course.id, mediaId), "PUT", 900);
+    const uploadUrl = await getObjectStorage().signPut(
+      educationMediaStagingStoragePath(course.centerId!, course.id, mediaId),
+      900,
+    );
     await db.insert(educationMediaUploadsTable).values({
       id: mediaId,
       courseId: course.id,
@@ -18692,7 +18621,7 @@ router.get("/education/media/:mediaId", async (req, res): Promise<void> => {
     }
   }
   try {
-    const signedUrl = await signPrivateObject(privateObjectPathFromStoragePath(media.objectPath), "GET", 300);
+    const signedUrl = await getObjectStorage().signGet(media.objectPath, 300);
     const source = await fetch(signedUrl, { signal: AbortSignal.timeout(30_000) });
     if (!source.ok || !source.body) {
       res.status(404).json({ error: "Fotografija nije pronađena." });
