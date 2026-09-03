@@ -32078,13 +32078,10 @@ export const CreateRetailOrderRmaResponse = zod.void()
 
 
 
-export const AdminListRmasResponseItem = zod.object({
+
+export const AdminListRmasResponseItem = zod.union([zod.object({
   "id": zod.string().uuid(),
   "rmaNumber": zod.string(),
-  "orderId": zod.string().uuid().nullable(),
-  "orderItemId": zod.string().uuid().nullable(),
-  "retailOrderId": zod.string().uuid().nullable(),
-  "retailOrderItemId": zod.string().uuid().nullable(),
   "requesterUserId": zod.string().uuid(),
   "quantity": zod.number().int().min(1),
   "reason": zod.string(),
@@ -32093,6 +32090,26 @@ export const AdminListRmasResponseItem = zod.object({
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 }).and(zod.object({
+  "orderId": zod.string().uuid(),
+  "orderItemId": zod.string().uuid(),
+  "retailOrderId": zod.null(),
+  "retailOrderItemId": zod.null()
+})),zod.object({
+  "id": zod.string().uuid(),
+  "rmaNumber": zod.string(),
+  "requesterUserId": zod.string().uuid(),
+  "quantity": zod.number().int().min(1),
+  "reason": zod.string(),
+  "description": zod.string(),
+  "status": zod.enum(['RECEIVED', 'IN_REVIEW', 'APPROVED', 'REJECTED']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "orderId": zod.null(),
+  "orderItemId": zod.null(),
+  "retailOrderId": zod.string().uuid(),
+  "retailOrderItemId": zod.string().uuid()
+}))]).and(zod.object({
   "target": zod.enum(['b2b', 'b2c']),
   "owner": zod.object({
   "firstName": zod.string().nullish(),
@@ -32116,13 +32133,10 @@ export const AdminGetRmaParams = zod.object({
 
 
 
-export const AdminGetRmaResponse = zod.object({
+
+export const AdminGetRmaResponse = zod.union([zod.object({
   "id": zod.string().uuid(),
   "rmaNumber": zod.string(),
-  "orderId": zod.string().uuid().nullable(),
-  "orderItemId": zod.string().uuid().nullable(),
-  "retailOrderId": zod.string().uuid().nullable(),
-  "retailOrderItemId": zod.string().uuid().nullable(),
   "requesterUserId": zod.string().uuid(),
   "quantity": zod.number().int().min(1),
   "reason": zod.string(),
@@ -32131,6 +32145,26 @@ export const AdminGetRmaResponse = zod.object({
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 }).and(zod.object({
+  "orderId": zod.string().uuid(),
+  "orderItemId": zod.string().uuid(),
+  "retailOrderId": zod.null(),
+  "retailOrderItemId": zod.null()
+})),zod.object({
+  "id": zod.string().uuid(),
+  "rmaNumber": zod.string(),
+  "requesterUserId": zod.string().uuid(),
+  "quantity": zod.number().int().min(1),
+  "reason": zod.string(),
+  "description": zod.string(),
+  "status": zod.enum(['RECEIVED', 'IN_REVIEW', 'APPROVED', 'REJECTED']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "orderId": zod.null(),
+  "orderItemId": zod.null(),
+  "retailOrderId": zod.string().uuid(),
+  "retailOrderItemId": zod.string().uuid()
+}))]).and(zod.object({
   "target": zod.enum(['b2b', 'b2c']),
   "owner": zod.object({
   "firstName": zod.string().nullish(),
@@ -32169,14 +32203,11 @@ export const AdminUpdateRmaStatusBody = zod.object({
 
 
 
+
 export const AdminUpdateRmaStatusResponse = zod.object({
-  "row": zod.object({
+  "row": zod.union([zod.object({
   "id": zod.string().uuid(),
   "rmaNumber": zod.string(),
-  "orderId": zod.string().uuid().nullable(),
-  "orderItemId": zod.string().uuid().nullable(),
-  "retailOrderId": zod.string().uuid().nullable(),
-  "retailOrderItemId": zod.string().uuid().nullable(),
   "requesterUserId": zod.string().uuid(),
   "quantity": zod.number().int().min(1),
   "reason": zod.string(),
@@ -32184,7 +32215,27 @@ export const AdminUpdateRmaStatusResponse = zod.object({
   "status": zod.enum(['RECEIVED', 'IN_REVIEW', 'APPROVED', 'REJECTED']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
-}),
+}).and(zod.object({
+  "orderId": zod.string().uuid(),
+  "orderItemId": zod.string().uuid(),
+  "retailOrderId": zod.null(),
+  "retailOrderItemId": zod.null()
+})),zod.object({
+  "id": zod.string().uuid(),
+  "rmaNumber": zod.string(),
+  "requesterUserId": zod.string().uuid(),
+  "quantity": zod.number().int().min(1),
+  "reason": zod.string(),
+  "description": zod.string(),
+  "status": zod.enum(['RECEIVED', 'IN_REVIEW', 'APPROVED', 'REJECTED']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "orderId": zod.null(),
+  "orderItemId": zod.null(),
+  "retailOrderId": zod.string().uuid(),
+  "retailOrderItemId": zod.string().uuid()
+}))]),
   "changed": zod.boolean()
 })
 

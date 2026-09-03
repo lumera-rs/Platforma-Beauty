@@ -9808,15 +9808,11 @@ components:
       required: true
       schema: { type: string }
   schemas:
-    RmaRecord:
+    RmaRecordBase:
       type: object
       required:
         - id
         - rmaNumber
-        - orderId
-        - orderItemId
-        - retailOrderId
-        - retailOrderItemId
         - requesterUserId
         - quantity
         - reason
@@ -9827,10 +9823,6 @@ components:
       properties:
         id: { type: string, format: uuid }
         rmaNumber: { type: string }
-        orderId: { type: ["string", "null"], format: uuid }
-        orderItemId: { type: ["string", "null"], format: uuid }
-        retailOrderId: { type: ["string", "null"], format: uuid }
-        retailOrderItemId: { type: ["string", "null"], format: uuid }
         requesterUserId: { type: string, format: uuid }
         quantity: { type: integer, minimum: 1 }
         reason: { type: string }
@@ -9838,6 +9830,30 @@ components:
         status: { type: string, enum: [RECEIVED, IN_REVIEW, APPROVED, REJECTED] }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    StandardRmaRecord:
+      allOf:
+        - { $ref: "#/components/schemas/RmaRecordBase" }
+        - type: object
+          required: [orderId, orderItemId, retailOrderId, retailOrderItemId]
+          properties:
+            orderId: { type: string, format: uuid }
+            orderItemId: { type: string, format: uuid }
+            retailOrderId: { type: "null" }
+            retailOrderItemId: { type: "null" }
+    RetailRmaRecord:
+      allOf:
+        - { $ref: "#/components/schemas/RmaRecordBase" }
+        - type: object
+          required: [orderId, orderItemId, retailOrderId, retailOrderItemId]
+          properties:
+            orderId: { type: "null" }
+            orderItemId: { type: "null" }
+            retailOrderId: { type: string, format: uuid }
+            retailOrderItemId: { type: string, format: uuid }
+    RmaRecord:
+      oneOf:
+        - { $ref: "#/components/schemas/StandardRmaRecord" }
+        - { $ref: "#/components/schemas/RetailRmaRecord" }
     AdminRmaOwner:
       type: object
       required: [email]

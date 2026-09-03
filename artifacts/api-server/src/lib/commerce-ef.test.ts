@@ -354,6 +354,27 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
     const b2bMade = await api(`/orders/${b2bOrderId}/rmas`, await cookie(salonOwner), { method: "POST", body: JSON.stringify({ orderItemId: b2bItemId, quantity: 1, reason: "Wrong item", description: "The delivered B2B item does not match the order." }) });
     assert.equal(b2bMade.status, 201);
     const b2bRma = await b2bMade.json() as { id: string };
+    await assert.rejects(
+      db.insert(rmasTable).values({
+        rmaNumber: `${marker}-ambiguous-rma`,
+        orderId: b2bOrderId,
+        orderItemId: b2bItemId,
+        retailOrderId,
+        retailOrderItemId: retailItemId,
+        requesterUserId: customer,
+        quantity: 1,
+        reason: "Invalid target",
+        description: "An RMA cannot reference standard and retail orders together.",
+      }),
+      (error: unknown) => {
+        let current: unknown = error;
+        while (current && typeof current === "object") {
+          if ((current as { code?: string }).code === "23514") return true;
+          current = (current as { cause?: unknown }).cause;
+        }
+        return false;
+      },
+    );
     const adminCookie = await cookie(admin);
     const adminRows = await (await api("/admin/rmas", adminCookie)).json() as Array<{ id: string; target: string; orderId: string; owner: Record<string, unknown> }>;
     assert.equal(adminRows.find((row) => row.id === rma.id)?.target, "b2c"); assert.equal(adminRows.find((row) => row.id === rma.id)?.orderId, retailOrderId);

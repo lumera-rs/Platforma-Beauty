@@ -6,10 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type RmaRecordStatus = typeof RmaRecordStatus[keyof typeof RmaRecordStatus];
+export type RmaRecordBaseStatus = typeof RmaRecordBaseStatus[keyof typeof RmaRecordBaseStatus];
 
 
-export const RmaRecordStatus = {
+export const RmaRecordBaseStatus = {
   RECEIVED: 'RECEIVED',
   IN_REVIEW: 'IN_REVIEW',
   APPROVED: 'APPROVED',

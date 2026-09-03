@@ -5,36 +5,48 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
-export type RmaRecordStatus = typeof RmaRecordStatus[keyof typeof RmaRecordStatus];
+export type RmaRecordBaseStatus = typeof RmaRecordBaseStatus[keyof typeof RmaRecordBaseStatus];
 
 
-export const RmaRecordStatus = {
+export const RmaRecordBaseStatus = {
   RECEIVED: 'RECEIVED',
   IN_REVIEW: 'IN_REVIEW',
   APPROVED: 'APPROVED',
   REJECTED: 'REJECTED',
 } as const;
 
-export interface RmaRecord {
+export interface RmaRecordBase {
   id: string;
   rmaNumber: string;
-  /** @nullable */
-  orderId: string | null;
-  /** @nullable */
-  orderItemId: string | null;
-  /** @nullable */
-  retailOrderId: string | null;
-  /** @nullable */
-  retailOrderItemId: string | null;
   requesterUserId: string;
   /** @minimum 1 */
   quantity: number;
   reason: string;
   description: string;
-  status: RmaRecordStatus;
+  status: RmaRecordBaseStatus;
   createdAt: string;
   updatedAt: string;
 }
+
+export type StandardRmaRecord = RmaRecordBase & {
+  orderId: string;
+  orderItemId: string;
+  /** @nullable */
+  retailOrderId: null;
+  /** @nullable */
+  retailOrderItemId: null;
+};
+
+export type RetailRmaRecord = RmaRecordBase & {
+  /** @nullable */
+  orderId: null;
+  /** @nullable */
+  orderItemId: null;
+  retailOrderId: string;
+  retailOrderItemId: string;
+};
+
+export type RmaRecord = StandardRmaRecord | RetailRmaRecord;
 
 export interface AdminRmaOwner {
   /** @nullable */

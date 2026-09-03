@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 120;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 121;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -3170,6 +3170,14 @@ function tableStatements(s: string): string[] {
     `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'rmas_target_check' AND conrelid = '${s}.rmas'::regclass) THEN
       ALTER TABLE ${s}.rmas ADD CONSTRAINT rmas_target_check CHECK (num_nonnulls(order_id, retail_order_id) = 1 AND num_nonnulls(order_item_id, retail_order_item_id) = 1) NOT VALID;
       ALTER TABLE ${s}.rmas VALIDATE CONSTRAINT rmas_target_check;
+    END IF; END $$`,
+    `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'rmas_target_pair_check' AND conrelid = '${s}.rmas'::regclass) THEN
+      ALTER TABLE ${s}.rmas ADD CONSTRAINT rmas_target_pair_check CHECK (
+        (order_id IS NOT NULL AND order_item_id IS NOT NULL AND retail_order_id IS NULL AND retail_order_item_id IS NULL)
+        OR
+        (order_id IS NULL AND order_item_id IS NULL AND retail_order_id IS NOT NULL AND retail_order_item_id IS NOT NULL)
+      ) NOT VALID;
+      ALTER TABLE ${s}.rmas VALIDATE CONSTRAINT rmas_target_pair_check;
     END IF; END $$`,
     `CREATE TABLE IF NOT EXISTS ${s}.rma_attachments (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), rma_id uuid NOT NULL REFERENCES ${s}.rmas(id) ON DELETE CASCADE,

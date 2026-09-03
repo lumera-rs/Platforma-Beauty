@@ -7,8 +7,6 @@ import { RmaOrderReference } from "./rmas";
 
 const baseRma = {
   rmaNumber: "RMA-2026-001",
-  orderItemId: null,
-  retailOrderItemId: null,
   requesterUserId: "user-1",
   quantity: 1,
   reason: "Oštećen proizvod",
@@ -22,14 +20,16 @@ const baseRma = {
     lastName: "Jović",
     email: "milica@example.test",
   },
-} satisfies Omit<AdminRmaListItem, "id" | "orderId" | "retailOrderId">;
+} satisfies Omit<AdminRmaListItem, "id" | "orderId" | "orderItemId" | "retailOrderId" | "retailOrderItemId">;
 
 function listRma(
   id: string,
   orderId: string | null,
   retailOrderId: string | null,
 ): AdminRmaListItem {
-  return { ...baseRma, id, orderId, retailOrderId };
+  return orderId
+    ? { ...baseRma, id, orderId, orderItemId: `${id}-item`, retailOrderId: null, retailOrderItemId: null }
+    : { ...baseRma, id, orderId: null, orderItemId: null, retailOrderId: retailOrderId!, retailOrderItemId: `${id}-item` };
 }
 
 function detailRma(rma: AdminRmaListItem): AdminRmaDetail {

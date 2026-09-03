@@ -5,25 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
-import type { RmaRecordStatus } from './rmaRecordStatus';
+import type { RetailRmaRecord } from './retailRmaRecord';
+import type { StandardRmaRecord } from './standardRmaRecord';
 
-export interface RmaRecord {
-  id: string;
-  rmaNumber: string;
-  /** @nullable */
-  orderId: string | null;
-  /** @nullable */
-  orderItemId: string | null;
-  /** @nullable */
-  retailOrderId: string | null;
-  /** @nullable */
-  retailOrderItemId: string | null;
-  requesterUserId: string;
-  /** @minimum 1 */
-  quantity: number;
-  reason: string;
-  description: string;
-  status: RmaRecordStatus;
-  createdAt: Date;
-  updatedAt: Date;
-}
+export type RmaRecord = StandardRmaRecord | RetailRmaRecord;
