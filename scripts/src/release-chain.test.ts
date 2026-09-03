@@ -6,6 +6,7 @@ import test from "node:test";
 const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
 
 const requiredIsolatedBrowserGateScripts = [
+  "test:admin-navigation-regression",
   "test:beauty-jobs-browser",
   "test:education-group-online-consent-browser",
   "test:education-dispute-browser",

@@ -143,3 +143,4 @@
 - [GitHub default-branch rulesets](github-default-branch-ruleset.md) — target `~DEFAULT_BRANCH`; merge queue additionally requires an organization-owned repository.
 - [Cross-domain booking fixtures](cross-domain-booking-fixtures.md) — broad HTTP suites must satisfy booking idempotency and canonical location availability, not legacy setup alone.
 - [Required headers in generated clients](required-headers-generated-clients.md) — Orval documents headers but custom-transport calls still need typed wrappers to make them mandatory.
+- [Focused browser release gates](focused-browser-release-gates.md) — narrow shell regressions belong in dedicated specs instead of enrolling unrelated broad suites.

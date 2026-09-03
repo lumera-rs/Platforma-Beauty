@@ -41,6 +41,7 @@
     "test:admin-salon-designations": "playwright test browser/admin-salon-designations.spec.ts",
     "test:admin-access-configuration": "tsx ./src/run-admin-access-configuration.ts",
     "cleanup:admin-access-configuration": "tsx ./src/run-admin-access-configuration.ts --recover-interrupted-databases",
+    "test:admin-navigation-regression": "tsx ./src/run-admin-navigation-regression.ts",
     "test:admin-form-resilience": "tsx ./src/run-admin-form-resilience.ts",
     "cleanup:admin-form-resilience": "tsx ./src/run-admin-form-resilience.ts --recover-interrupted-databases",
     "test:salon-notifications": "tsx ./src/run-salon-notification-release.ts",
