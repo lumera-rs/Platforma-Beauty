@@ -22434,6 +22434,11 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
   if (!params.success || !body.success) {
     res.status(400).json({ error: "Podaci grupne prijave nisu ispravni." }); return;
   }
+  const parsedKey = parseEducationIdempotencyKey("createEducationGroupEnrollments", req.headers["idempotency-key"]);
+  if (!parsedKey.success) {
+    res.status(400).json({ error: "Ispravan Idempotency-Key je obavezan." }); return;
+  }
+  const idempotencyKey = parsedKey.key;
   const courseId = params.data.courseId;
   const access = await requireEducationAccess(req, res); if (!access) return;
   const salon = access.salon;
@@ -22484,11 +22489,6 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
   }
   const effectiveDiscountPercent = (minGroup !== null && employeeIds.length >= minGroup) ? discountPercent : 0;
   const unitPrice = Math.max(0, Math.round(course.price * (1 - effectiveDiscountPercent / 100)));
-  const parsedKey = parseEducationIdempotencyKey("createEducationGroupEnrollments", req.headers["idempotency-key"]);
-  if (!parsedKey.success) {
-    res.status(400).json({ error: "Ispravan Idempotency-Key je obavezan." }); return;
-  }
-  const idempotencyKey = parsedKey.key;
 
   let enrollments: (typeof courseEnrollmentsTable.$inferSelect)[];
   try {

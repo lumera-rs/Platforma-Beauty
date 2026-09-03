@@ -499,6 +499,16 @@ async function run(): Promise<void> {
         });
         assert.equal(response.status, 400, `Group enrollment must reject a ${invalidKey.label} Idempotency-Key.`);
       }
+      const invalidKeyBeforeEntityLookups = await request(baseUrl, `/education/courses/${randomUUID()}/group-enrollments`, {
+        method: "POST",
+        cookie: salonOwnerCookie,
+        body: buildValidOnlineEducationEnrollmentRequest({ employeeIds: [randomUUID(), randomUUID()] }),
+      });
+      assert.equal(
+        invalidKeyBeforeEntityLookups.status,
+        400,
+        "An invalid Idempotency-Key must be rejected before course or employee lookups can affect the response.",
+      );
       assert.equal((await db.select().from(courseEnrollmentsTable)
         .where(eq(courseEnrollmentsTable.courseId, certCourse.id))).length, groupEnrollmentsBeforeInvalidKeys,
       "Rejected Idempotency-Key requests must not create group enrollments.");
