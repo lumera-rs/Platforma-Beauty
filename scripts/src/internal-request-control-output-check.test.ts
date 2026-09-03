@@ -230,6 +230,34 @@ test("malformed CRLF Orval declarations report a concise parser location", () =>
   );
 });
 
+test("malformed mixed-ending Orval declarations report a concise parser location", () => {
+  const privateDeclarationContent = "do-not-dump-this-mixed-dependency-content";
+  const declarations = [
+    "interface OutputOptions {\r\n",
+    "  target?: string;\n",
+    `  // ${privateDeclarationContent}\r\n`,
+    "  schemas?: string;\n",
+    "  broken?: ;\r\n",
+    "}",
+  ].join("");
+
+  assert.match(declarations, /\r\n/);
+  assert.match(declarations, /(?<!\r)\n/);
+  assert.throws(
+    () => readOrvalInterfaceFieldValueShapes(declarations, "OutputOptions"),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(
+        error.message,
+        /^Installed Orval declarations must contain valid TypeScript syntax: TS\d+ at 5:12: .+$/,
+      );
+      assert.doesNotMatch(error.message, new RegExp(privateDeclarationContent));
+      assert.doesNotMatch(error.message, /interface OutputOptions/);
+      return true;
+    },
+  );
+});
+
 test("Orval declaration comments do not alter quoted or template-literal shapes", () => {
   const declarations = `
     type LiteralOutput =
