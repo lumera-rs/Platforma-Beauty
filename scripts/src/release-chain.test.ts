@@ -5,10 +5,7 @@ import test from "node:test";
 
 const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
 
-const requiredIsolatedBrowserGateScripts = [
-  "test:admin-access-configuration",
-  "test:admin-bounded-pagination",
-  "test:admin-navigation-regression",
+const requiredOtherIsolatedBrowserGateScripts = [
   "test:beauty-jobs-browser",
   "test:education-group-online-consent-browser",
   "test:education-dispute-browser",
@@ -33,6 +30,56 @@ function chainedPnpmScripts(command: string): string[] {
     const match = /^pnpm run ([\w:-]+)$/.exec(step);
     return match ? [match[1]] : [];
   });
+}
+
+type FocusedAdministratorBrowserGateInventory = {
+  release?: string[];
+  localOnly?: string[];
+};
+
+function focusedAdministratorBrowserCommands(
+  packageScripts: Record<string, string>,
+): string[] {
+  return Object.entries(packageScripts)
+    .filter(([scriptName, command]) =>
+      scriptName.startsWith("test:admin-") &&
+      (
+        command.includes("playwright:checked") ||
+        /tsx \.\/src\/run-admin-[\w-]+\.ts(?: |$)/.test(command)
+      )
+    )
+    .map(([scriptName]) => scriptName)
+    .sort();
+}
+
+function validateFocusedAdministratorBrowserGateInventory(
+  packageScripts: Record<string, string>,
+  inventory: FocusedAdministratorBrowserGateInventory,
+  isolatedPhaseCommand: string,
+): void {
+  const releaseScripts = inventory.release ?? [];
+  const localOnlyScripts = inventory.localOnly ?? [];
+  const classifiedScripts = [...releaseScripts, ...localOnlyScripts];
+  const discoveredScripts = focusedAdministratorBrowserCommands(packageScripts);
+
+  assert.equal(
+    new Set(classifiedScripts).size,
+    classifiedScripts.length,
+    "Each focused administrator browser command must be classified exactly once in scripts/package.json focusedAdministratorBrowserGates.",
+  );
+  assert.deepEqual(
+    [...classifiedScripts].sort(),
+    discoveredScripts,
+    "Every test:admin-* browser command must be classified in scripts/package.json focusedAdministratorBrowserGates.release or .localOnly. Add release checks to the release inventory, or explicitly mark diagnostics as localOnly.",
+  );
+
+  for (const scriptName of releaseScripts) {
+    assert.match(
+      isolatedPhaseCommand,
+      new RegExp(`(?:^| && )pnpm run ${scriptName}(?: && |$)`),
+      `${requiredIsolatedBrowserGatePhase} must invoke release-focused administrator browser command ${scriptName}. Move it to localOnly only if it is intentionally diagnostic.`,
+    );
+  }
 }
 
 test("publish validation checks the release chain first without database access", async () => {
@@ -385,13 +432,18 @@ test("release validation phases preserve the full gate and print safe continuati
   });
 });
 
-test("required isolated browser checks remain wired into the release gate", async () => {
+test("focused administrator browser inventory remains wired into the release gate", async () => {
   const [rootPackageJson, scriptsPackageJson] = await Promise.all([
     readFile(path.join(workspaceRoot, "package.json"), "utf8"),
     readFile(path.join(workspaceRoot, "scripts", "package.json"), "utf8"),
   ]);
   const rootScripts = (JSON.parse(rootPackageJson) as { scripts?: Record<string, string> }).scripts ?? {};
-  const packageScripts = (JSON.parse(scriptsPackageJson) as { scripts?: Record<string, string> }).scripts ?? {};
+  const parsedScriptsPackageJson = JSON.parse(scriptsPackageJson) as {
+    scripts?: Record<string, string>;
+    focusedAdministratorBrowserGates?: FocusedAdministratorBrowserGateInventory;
+  };
+  const packageScripts = parsedScriptsPackageJson.scripts ?? {};
+  const inventory = parsedScriptsPackageJson.focusedAdministratorBrowserGates;
   const releaseCommand = rootScripts["validate:release"];
   const isolatedPhaseCommand = rootScripts[requiredIsolatedBrowserGatePhase];
 
@@ -402,8 +454,18 @@ test("required isolated browser checks remain wired into the release gate", asyn
     `validate:release must invoke ${requiredIsolatedBrowserGatePhase}.`,
   );
   assert.ok(isolatedPhaseCommand, `${requiredIsolatedBrowserGatePhase} must be defined.`);
+  assert.ok(
+    inventory,
+    "scripts/package.json must define focusedAdministratorBrowserGates as the authoritative release/local-only inventory.",
+  );
 
-  for (const scriptName of requiredIsolatedBrowserGateScripts) {
+  validateFocusedAdministratorBrowserGateInventory(
+    packageScripts,
+    inventory,
+    isolatedPhaseCommand,
+  );
+
+  for (const scriptName of inventory.release ?? []) {
     assert.ok(rootScripts[scriptName], `Root script ${scriptName} must be defined.`);
     assert.match(
       rootScripts[scriptName],
@@ -411,10 +473,47 @@ test("required isolated browser checks remain wired into the release gate", asyn
       `Root script ${scriptName} must delegate to the scripts package.`,
     );
     assert.ok(packageScripts[scriptName], `Scripts package command ${scriptName} must be defined.`);
+  }
+
+  for (const scriptName of requiredOtherIsolatedBrowserGateScripts) {
+    assert.ok(rootScripts[scriptName], `Root script ${scriptName} must be defined.`);
+    assert.ok(packageScripts[scriptName], `Scripts package command ${scriptName} must be defined.`);
     assert.match(
       isolatedPhaseCommand,
       new RegExp(`(?:^| && )pnpm run ${scriptName}(?: && |$)`),
       `${requiredIsolatedBrowserGatePhase} must invoke ${scriptName}.`,
     );
   }
+});
+
+test("a new focused administrator browser command must be released or explicitly local-only", () => {
+  const packageScripts = {
+    "test:admin-existing": "pnpm run playwright:checked -- browser/admin-existing.spec.ts",
+    "test:admin-new-regression": "pnpm run playwright:checked -- browser/admin-new-regression.spec.ts",
+  };
+
+  assert.throws(
+    () =>
+      validateFocusedAdministratorBrowserGateInventory(
+        packageScripts,
+        { release: ["test:admin-existing"], localOnly: [] },
+        "pnpm run test:admin-existing",
+      ),
+    (error: unknown) =>
+      error instanceof assert.AssertionError &&
+      error.message.startsWith(
+        "Every test:admin-* browser command must be classified in scripts/package.json focusedAdministratorBrowserGates.release or .localOnly. Add release checks to the release inventory, or explicitly mark diagnostics as localOnly.",
+      ),
+  );
+
+  assert.doesNotThrow(() =>
+    validateFocusedAdministratorBrowserGateInventory(
+      packageScripts,
+      {
+        release: ["test:admin-existing"],
+        localOnly: ["test:admin-new-regression"],
+      },
+      "pnpm run test:admin-existing",
+    )
+  );
 });

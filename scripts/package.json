@@ -3,6 +3,18 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "focusedAdministratorBrowserGates": {
+    "release": [
+      "test:admin-access-configuration",
+      "test:admin-bounded-pagination",
+      "test:admin-form-resilience",
+      "test:admin-navigation-regression"
+    ],
+    "localOnly": [
+      "test:admin-review-feedback",
+      "test:admin-salon-designations"
+    ]
+  },
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "ensure:development-schema": "tsx ./src/ensure-development-schema.ts",
