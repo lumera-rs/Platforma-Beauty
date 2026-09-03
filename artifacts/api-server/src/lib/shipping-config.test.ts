@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { observeDatabaseQueries, pool } from "@workspace/db";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import {
   ensureShippingConfigSchema,
   getOrCreateShippingConfig,
   runShippingConfigSchemaDdl,
 } from "./shipping-config";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Shipping configuration tests");
 
 const TEST_SCHEMA = `shipping_config_upgrade_test_${Date.now()}`;
 

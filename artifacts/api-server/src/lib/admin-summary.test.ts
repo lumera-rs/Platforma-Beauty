@@ -29,6 +29,7 @@ import {
   subscriptionsTable,
   usersTable,
 } from "@workspace/db";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import {
@@ -36,6 +37,8 @@ import {
   withSchedulerDatabaseActivity,
 } from "./scheduler-resilience";
 import { setAdminSummaryAfterFirstReadForTest } from "../routes/marketplace";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Admin summary tests");
 
 const APPOINTMENTS_PER_CATEGORY = 500;
 const ADMIN_SUMMARY_READ_QUERY_BUDGET = 4;

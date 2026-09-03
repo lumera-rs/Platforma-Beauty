@@ -22,6 +22,7 @@ import {
   checkCacheInvariants,
   checkUnboundedSelects,
 } from "./test-backend-static-checks.js";
+import { assertDestructiveTestRuntimeAllowed } from "./destructive-test-runtime";
 import {
   auditInvalidIndexes,
   auditUnvalidatedConstraints,
@@ -484,6 +485,7 @@ async function main(): Promise<void> {
   const mode = parseMode(process.argv.slice(2));
 
   if (mode !== "static-only") {
+    assertDestructiveTestRuntimeAllowed(process.env, "Backend standards database checks");
     await runDatabaseChecks();
   }
   if (mode !== "database-only") {

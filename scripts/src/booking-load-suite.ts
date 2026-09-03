@@ -8,8 +8,11 @@ import {
   appointmentsTable, bookingGroupsTable, db, employeeLocationAssignmentsTable, employeeServicesTable, employeesTable,
   salonDateHoursTable, salonsTable, servicesTable, sessionsTable, usersTable,
 } from "@workspace/db";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import { classifyLoadSamples, evaluateLoadTargets, latencySummary, roundRobinServerIndex, type LoadSample, type LoadTargets } from "./booking-load-metrics";
 import { classifySamplingFailure, summarizeActivity, type ActivitySample, type SamplingFailure } from "./booking-load-telemetry";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Booking load suite");
 
 const urls = (process.env.LUMERA_BOOKING_LOAD_URLS ?? "").split(",").filter((url) => /^http:\/\/127\.0\.0\.1:\d+$/.test(url));
 const apiProcesses = Number(process.env.LUMERA_BOOKING_LOAD_API_PROCESSES ?? 2);

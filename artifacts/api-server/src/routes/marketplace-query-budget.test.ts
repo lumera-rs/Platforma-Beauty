@@ -5,8 +5,11 @@ import test from "node:test";
 import type { AddressInfo } from "node:net";
 import app from "../app";
 import { observeDatabaseQueries, pool, type DatabaseQueryObservation } from "@workspace/db";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import { createSession, sessionCookieName } from "../lib/auth";
 import { selectPopularPublicCourses } from "../lib/education-public-course-order";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Marketplace query budget tests");
 
 async function countedRequest(url: string, init?: RequestInit) {
   const queries: DatabaseQueryObservation[] = [];

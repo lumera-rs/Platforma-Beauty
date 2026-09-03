@@ -16,11 +16,14 @@
  */
 import assert from "node:assert/strict";
 import { pool } from "@workspace/db";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import {
   BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY,
   BUSINESS_GROWTH_SCHEMA_VERSION,
   runBusinessGrowthSchemaDdl,
 } from "./business-growth-schema";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Business growth schema tests");
 
 const TEST_SCHEMA = `bg_upgrade_test_${Date.now()}`;
 

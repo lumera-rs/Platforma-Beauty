@@ -1,19 +1,14 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "./schema";
+import { assertDestructiveTestRuntimeAllowed } from "./destructive-test-runtime";
 
 const { Pool } = pg;
 
 function assertDirectDatabaseTestRuntimeAllowed(): void {
   const entryPoint = process.argv[1] ?? "";
-  if (!/\.test\.[cm]?[jt]sx?$/.test(entryPoint)) return;
-  if (
-    process.env.NODE_ENV === "production"
-    || process.env.REPLIT_DEPLOYMENT === "1"
-    || process.env.REPL_DEPLOYMENT === "1"
-  ) {
-    throw new Error("Direct database tests refuse production or deployment runtimes.");
-  }
+  if (!/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(entryPoint)) return;
+  assertDestructiveTestRuntimeAllowed(process.env, "Direct database tests");
 }
 
 assertDirectDatabaseTestRuntimeAllowed();

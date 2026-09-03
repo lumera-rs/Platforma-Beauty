@@ -21,11 +21,14 @@ import {
   servicesTable,
   usersTable,
 } from "@workspace/db";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { lockAppointmentResources } from "./appointment-locks";
 import { ensureBookingCommandSchema } from "./booking-command-schema";
 import { bookingPayloadFingerprint } from "./booking-command";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Final booking hardening tests");
 
 type HttpResult = { status: number; body: unknown; replayed: boolean };
 

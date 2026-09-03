@@ -13,6 +13,10 @@ import {
   formatUnvalidatedConstraintReport,
   type DatabaseClient,
 } from "./backend-standards-database.js";
+import {
+  assertDestructiveTestRuntimeAllowed,
+  destructiveTestGuardEnvironments,
+} from "./destructive-test-runtime.js";
 
 const execFileAsync = promisify(execFile);
 const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
@@ -20,13 +24,7 @@ const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
 function requireDisposableDevelopmentDatabaseUrl(
   environment: NodeJS.ProcessEnv = process.env,
 ): string {
-  if (
-    environment.NODE_ENV === "production"
-    || environment.REPLIT_DEPLOYMENT === "1"
-    || environment.REPL_DEPLOYMENT === "1"
-  ) {
-    throw new Error("Backend standards process tests refuse production or deployment runtimes.");
-  }
+  assertDestructiveTestRuntimeAllowed(environment, "Backend standards process tests");
 
   const databaseUrl = environment.DATABASE_URL;
   assert.ok(databaseUrl, "DATABASE_URL is required for the backend standards process test.");
@@ -42,23 +40,13 @@ function databaseUrlFor(databaseUrl: string, databaseName: string): string {
 }
 
 test("refuses destructive database fixtures before commands in production and deployment runtimes", () => {
-  const guardedEnvironments: Array<{
-    name: string;
-    environment: NodeJS.ProcessEnv;
-  }> = [
-    {
-      name: "NODE_ENV=production",
-      environment: { DATABASE_URL: "postgresql://localhost/development", NODE_ENV: "production" },
+  const guardedEnvironments = destructiveTestGuardEnvironments.map(({ name, values }) => ({
+    name,
+    environment: {
+      DATABASE_URL: "postgresql://localhost/development",
+      ...values,
     },
-    {
-      name: "REPLIT_DEPLOYMENT=1",
-      environment: { DATABASE_URL: "postgresql://localhost/development", REPLIT_DEPLOYMENT: "1" },
-    },
-    {
-      name: "REPL_DEPLOYMENT=1",
-      environment: { DATABASE_URL: "postgresql://localhost/development", REPL_DEPLOYMENT: "1" },
-    },
-  ];
+  }));
 
   for (const { name, environment } of guardedEnvironments) {
     const invokedCommands: string[] = [];

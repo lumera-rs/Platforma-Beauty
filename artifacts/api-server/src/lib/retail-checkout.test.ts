@@ -33,6 +33,7 @@ import {
   aftercareRecommendationsTable,
   aftercareRecommendationLinesTable,
 } from "@workspace/db";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import app from "../app";
 import {
   AdminGetRetailOrderResponse,
@@ -44,6 +45,8 @@ import { ensureBusinessGrowthSchema } from "./business-growth-schema";
 import { runProductWaitlistNotificationWorker } from "./product-waitlist-worker";
 import { ensureShippingConfigSchema } from "./shipping-config";
 import { reconcileAftercareConversions } from "./aftercare-worker";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Retail checkout tests");
 
 type RetailCart = {
   id: string;
