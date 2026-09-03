@@ -241,6 +241,8 @@ const userId = "00000000-0000-4000-8000-000000000073";
 const tierId = "00000000-0000-4000-8000-000000000074";
 const planId = "00000000-0000-4000-8000-000000000075";
 const reviewId = "00000000-0000-4000-8000-000000000076";
+const rmaId = "00000000-0000-4000-8000-000000000081";
+const rmaOrderId = "00000000-0000-4000-8000-000000000082";
 
 function adminSalon() {
   return {
@@ -321,6 +323,28 @@ function adminReview() {
   };
 }
 
+function adminRma() {
+  return {
+    id: rmaId,
+    rmaNumber: "RMA-REG-001",
+    createdAt: "2026-08-21T09:00:00.000Z",
+    target: "b2c",
+    owner: {
+      firstName: "Test",
+      lastName: "Kupac",
+      email: "customer-regression@example.test",
+    },
+    orderId: rmaOrderId,
+    reason: "Oštećen proizvod",
+    description: "Pakovanje je stiglo oštećeno.",
+    status: "RECEIVED",
+  };
+}
+
+function throwUnregisteredAdminApiFixture(method: string, path: string): never {
+  throw new Error(`Unregistered admin API fixture: ${method} ${path}`);
+}
+
 async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn = true) {
   let currentUser = role === "SUPER_ADMIN" ? superAdmin : admin;
   let isLoggedIn = loggedIn;
@@ -329,6 +353,7 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
   let tier = loyaltyTier();
   let plan = subscriptionPlan();
   let review = adminReview();
+  let rma = adminRma();
 
   await page.route("**/api/**", async (route) => {
     const request = route.request();
@@ -502,6 +527,34 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
       }
       if (path === `/api/admin/reviews/${reviewId}` && method === "DELETE") {
         await route.fulfill({ status: 204 });
+        return;
+      }
+      if (path === "/api/admin/rmas" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/rmas", apiSchemas.AdminListRmasResponse, [rma]),
+        });
+        return;
+      }
+      if (path === `/api/admin/rmas/${rmaId}` && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(`/api/admin/rmas/${rmaId}`, apiSchemas.AdminGetRmaResponse, {
+            ...rma,
+            items: [],
+            privatePhotos: [],
+            auditTrail: [],
+          }),
+        });
+        return;
+      }
+      if (path === `/api/admin/rmas/${rmaId}/status` && method === "PATCH") {
+        rma = { ...rma, ...(request.postDataJSON() as Partial<typeof rma>) };
+        await route.fulfill({
+          json: checkedApiFixture(
+            `/api/admin/rmas/${rmaId}/status`,
+            apiSchemas.AdminUpdateRmaStatusResponse,
+            rma,
+          ),
+        });
         return;
       }
       if (path === "/api/admin/shipping" && method === "GET") {
@@ -903,7 +956,7 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
         return;
       }
 
-      throw new Error(`Unregistered admin API fixture: ${method} ${path}`);
+      throwUnregisteredAdminApiFixture(method, path);
     }
 
     await route.fallback();
@@ -971,6 +1024,11 @@ test("admin route matrix is unique and exactly mirrors the grouped navigation so
   const groupedHrefs = ADMIN_NAV_GROUPS.flatMap((group) => group.links.map((link) => link.href));
   expect(ADMIN_NAV.map((link) => link.href)).toEqual(groupedHrefs);
   expect(new Set(groupedHrefs).size, "Every admin menu route must appear exactly once.").toBe(groupedHrefs.length);
+});
+
+test("unregistered admin fixtures identify the request method and endpoint", () => {
+  expect(() => throwUnregisteredAdminApiFixture("POST", "/api/admin/unregistered-action"))
+    .toThrow("Unregistered admin API fixture: POST /api/admin/unregistered-action");
 });
 
 test("an admin can sign in and reach every admin section on desktop", async ({ page }) => {
@@ -1187,6 +1245,31 @@ test("admin salon, user, loyalty, subscription, and review actions show success"
   await page.goto("/admin/recenzije");
   await page.getByTestId(`toggle-visibility-${reviewId}`).click();
   await expect(page.getByText("Recenzija ažurirana", { exact: true })).toBeVisible();
+});
+
+test("post-load admin filters, detail dialogs, and dialog actions use registered API contracts", async ({ page }) => {
+  const reviewListRequests: URL[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (request.method() === "GET" && url.pathname === "/api/admin/reviews") {
+      reviewListRequests.push(url);
+    }
+  });
+
+  await openAdminPage(page, "/admin/recenzije");
+  await expect(page.getByTestId(`review-card-${reviewId}`)).toBeVisible();
+  await page.getByTestId("select-visible-filter").click();
+  await page.getByRole("option", { name: "Samo skrivene" }).click();
+  await expect.poll(() =>
+    reviewListRequests.some((url) => url.searchParams.get("visible") === "false"),
+  ).toBe(true);
+
+  await page.goto("/admin/reklamacije");
+  await page.getByRole("button", { name: "Detalji" }).click();
+  await expect(page.getByRole("dialog")).toContainText("RMA: RMA-REG-001");
+  await page.getByRole("button", { name: "Započni obradu" }).click();
+  await expect(page.getByText("Status reklamacije je ažuriran.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toContainText("IN_REVIEW");
 });
 
 test("admins can manage loyalty but not protected user and subscription controls", async ({ page }) => {
