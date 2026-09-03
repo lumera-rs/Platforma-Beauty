@@ -16,6 +16,7 @@ import {
   adminNavigationTestId,
 } from "../../artifacts/beauty-marketplace/src/lib/admin-navigation";
 import {
+  adminIntegrationsFixture,
   adminSummaryFixture,
   checkedApiFixture,
   type FixtureSchema,
@@ -340,7 +341,7 @@ function adminRma() {
       lastName: "Kupac",
       email: "customer-regression@example.test",
     },
-    orderId: rmaOrderId,
+    orderId: null,
     reason: "Oštećen proizvod",
     description: "Pakovanje je stiglo oštećeno.",
     status: "RECEIVED",
@@ -610,42 +611,8 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
         return;
       }
       if (path === "/api/admin/integrations" && method === "GET") {
-        const card = { enabled: false, configuredInDatabase: false, complete: false, values: {}, version: null };
-        const webhookCard = {
-          ...card,
-          webhookSecretPendingReconfirmation: false,
-          webhookVerifiedAt: null,
-          webhookVerificationStale: false,
-          webhookConfirmationMaxAgeDays: 7,
-        };
-        const brevoWebhookCard = {
-          ...webhookCard,
-          brevoRegistrationMissingEvents: [],
-        };
         await route.fulfill({
-          json: checkedApiFixture("/api/admin/integrations", apiSchemas.AdminGetIntegrationsResponse, {
-            integrations: {
-              sms: webhookCard,
-              brevo: brevoWebhookCard,
-              google_oauth: card,
-              facebook_oauth: card,
-              cloudflare: card,
-              web_push: card,
-            },
-            deliveryReports: {
-              providers: {
-                brevo: { lastEventAt: null, rejectedPayloadCount: 0, lastRejectedAt: null, malformedWebhookState: "normal", lastAutomationSentAt: null, recentSendCount: 0, warning: false },
-                infobip: { lastEventAt: null, rejectedPayloadCount: 0, lastRejectedAt: null, malformedWebhookState: "normal", lastAutomationSentAt: null, recentSendCount: 0, warning: false },
-              },
-              windowHours: 24,
-              graceMinutes: 30,
-              rejectionAlertThreshold: 3,
-            },
-            smsFallback: { reachableAdminCount: 0, reachableAdmins: [] },
-            smsWebhookRegistration: { state: "unconfirmed", secretSavedAt: null, lastReportAt: null },
-            redirectUris: { google: "https://example.test/google", facebook: "https://example.test/facebook" },
-            smsReminder: { command: "pnpm run sms-reminders", active: false, instructions: [] },
-          }),
+          json: adminIntegrationsFixture(apiSchemas.AdminGetIntegrationsResponse),
         });
         return;
       }

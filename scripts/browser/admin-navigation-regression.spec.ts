@@ -68,8 +68,18 @@ async function mockAuthenticatedAdmin(page: Page, role: (typeof roles)[number]) 
       });
       return;
     }
+    if (path === "/api/commerce/header-bar") {
+      await route.fulfill({
+        json: checkedApiFixture(
+          "/api/commerce/header-bar",
+          apiSchemas.GetCommerceHeaderBarResponse,
+          { enabled: false, messages: [], intervalSeconds: 5 },
+        ),
+      });
+      return;
+    }
 
-    await route.fulfill({ json: [] });
+    throw new Error(`Unregistered admin navigation API fixture: ${request.method()} ${path}`);
   });
 }
 
