@@ -48,6 +48,7 @@
     "test:admin-access-configuration": "tsx ./src/run-admin-access-configuration.ts",
     "cleanup:admin-access-configuration": "tsx ./src/run-admin-access-configuration.ts --recover-interrupted-databases",
     "test:admin-navigation-regression": "tsx ./src/run-admin-navigation-regression.ts",
+    "test:admin-bounded-pagination": "pnpm run playwright:checked -- browser/admin-bounded-pagination.spec.ts",
     "test:admin-form-resilience": "tsx ./src/run-admin-form-resilience.ts",
     "cleanup:admin-form-resilience": "tsx ./src/run-admin-form-resilience.ts --recover-interrupted-databases",
     "test:salon-notifications": "tsx ./src/run-salon-notification-release.ts",
