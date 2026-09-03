@@ -36,6 +36,7 @@ import {
   employeeLocationAssignmentsTable,
   employeesTable,
   lessonProgressTable,
+  observeDatabaseQueries,
   courseModulesTable,
   courseLessonsTable,
   subscriptionPlansTable,
@@ -76,6 +77,22 @@ async function request(baseUrl: string, path: string, options: RequestOptions = 
     },
     ...(options.body ? { body: JSON.stringify(options.body) } : {}),
   });
+}
+
+async function requestWithObservedQueries(
+  baseUrl: string,
+  path: string,
+  options: RequestOptions = {},
+) {
+  const queries: Array<{ sql: string; params: unknown[] }> = [];
+  const stopObserving = observeDatabaseQueries((query) => queries.push(query));
+  try {
+    const response = await request(baseUrl, path, options);
+    await response.clone().arrayBuffer();
+    return { response, queries };
+  } finally {
+    stopObserving();
+  }
 }
 
 async function json<T>(response: Response): Promise<T> {
@@ -499,7 +516,8 @@ async function run(): Promise<void> {
         });
         assert.equal(response.status, 400, `Group enrollment must reject a ${invalidKey.label} Idempotency-Key.`);
       }
-      const invalidKeyBeforeEntityLookups = await request(baseUrl, `/education/courses/${randomUUID()}/group-enrollments`, {
+      const { response: invalidKeyBeforeEntityLookups, queries: invalidKeyQueries } =
+        await requestWithObservedQueries(baseUrl, `/education/courses/${randomUUID()}/group-enrollments`, {
         method: "POST",
         cookie: salonOwnerCookie,
         body: buildValidOnlineEducationEnrollmentRequest({ employeeIds: [randomUUID(), randomUUID()] }),
@@ -508,6 +526,18 @@ async function run(): Promise<void> {
         invalidKeyBeforeEntityLookups.status,
         400,
         "An invalid Idempotency-Key must be rejected before course or employee lookups can affect the response.",
+      );
+      assert.ok(
+        invalidKeyQueries.length > 0,
+        "The request-scoped SQL observer must capture the authentication query.",
+      );
+      const earlyEntityQueryPattern =
+        /\b(?:salons|education_centers|education_center_staff|courses|employees|employee_location_assignments)\b/i;
+      const earlyEntityQueries = invalidKeyQueries.filter(({ sql }) => earlyEntityQueryPattern.test(sql));
+      assert.deepEqual(
+        earlyEntityQueries,
+        [],
+        "An invalid Idempotency-Key must perform zero access, course, or employee queries.",
       );
       assert.equal((await db.select().from(courseEnrollmentsTable)
         .where(eq(courseEnrollmentsTable.courseId, certCourse.id))).length, groupEnrollmentsBeforeInvalidKeys,
