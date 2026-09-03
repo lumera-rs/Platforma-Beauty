@@ -74,6 +74,7 @@ function unwrapConfigExpression(expression: ts.Expression): ts.Expression {
 interface StaticResolver {
   sourceFile: ts.SourceFile;
   resolving: Set<string>;
+  consumedFiles?: Set<string>;
 }
 
 interface StaticExpression {
@@ -117,6 +118,7 @@ function findConstInitializer(
 function resolveRelativeImport(
   sourceFile: ts.SourceFile,
   localName: string,
+  consumedFiles?: Set<string>,
 ): { sourceFile: ts.SourceFile; importedName: string } | undefined {
   for (const statement of sourceFile.statements) {
     if (
@@ -157,6 +159,7 @@ function resolveRelativeImport(
     if (sourceText === undefined) {
       return undefined;
     }
+    consumedFiles?.add(path.resolve(importedFileName));
     return {
       sourceFile: ts.createSourceFile(
         importedFileName,
@@ -188,7 +191,11 @@ function resolveStaticIdentifier(
     if (localInitializer) {
       return resolveStaticValue(localInitializer, resolver, configFileName);
     }
-    const imported = resolveRelativeImport(resolver.sourceFile, identifier.text);
+    const imported = resolveRelativeImport(
+      resolver.sourceFile,
+      identifier.text,
+      resolver.consumedFiles,
+    );
     if (!imported) {
       throw staticConfigError(
         configFileName,
@@ -213,7 +220,11 @@ function resolveStaticIdentifier(
     }
     return resolveStaticValue(
       initializer,
-      { sourceFile: imported.sourceFile, resolving: resolver.resolving },
+      {
+        sourceFile: imported.sourceFile,
+        resolving: resolver.resolving,
+        consumedFiles: resolver.consumedFiles,
+      },
       configFileName,
     );
   } finally {
@@ -276,7 +287,10 @@ function resolveStaticValue(
   return { kind: "object", properties };
 }
 
-function readConfiguredTestDir(configFileName: string): string {
+function readStaticBrowserConfig(
+  configFileName: string,
+  consumedFiles?: Set<string>,
+): StaticConfigValue {
   const sourceText = ts.sys.readFile(configFileName);
   if (sourceText === undefined) {
     throw new Error(`Browser runner config could not be read: ${configFileName}`);
@@ -296,11 +310,15 @@ function readConfiguredTestDir(configFileName: string): string {
       `Browser runner config must have a default export so its testDir can be checked: ${configFileName}`,
     );
   }
-  const config = resolveStaticValue(
+  return resolveStaticValue(
     exportAssignment.expression,
-    { sourceFile, resolving: new Set() },
+    { sourceFile, resolving: new Set(), consumedFiles },
     configFileName,
   );
+}
+
+function readConfiguredTestDir(configFileName: string): string {
+  const config = readStaticBrowserConfig(configFileName);
   if (config.kind !== "object") {
     throw staticConfigError(configFileName, "default export is not an object");
   }
@@ -425,6 +443,29 @@ export function collectBrowserSpecDiagnostics(
           fileName !== diagnosticRoot && !fileName.startsWith(diagnosticPrefix),
       ),
   );
+  for (const rootName of rootNames) {
+    const resolvedRootName = path.resolve(rootName);
+    if (!browserRunnerConfigPattern.test(path.basename(resolvedRootName))) {
+      continue;
+    }
+    const sourceText = ts.sys.readFile(resolvedRootName);
+    if (sourceText === undefined) {
+      continue;
+    }
+    const sourceFile = ts.createSourceFile(
+      resolvedRootName,
+      sourceText,
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const hasDefaultExport = sourceFile.statements.some(
+      (statement) =>
+        ts.isExportAssignment(statement) && !statement.isExportEquals,
+    );
+    if (hasDefaultExport) {
+      readStaticBrowserConfig(resolvedRootName, diagnosticFiles);
+    }
+  }
 
   return ts.getPreEmitDiagnostics(program).filter((diagnostic) => {
     if (!diagnostic.file) {

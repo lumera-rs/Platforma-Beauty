@@ -481,3 +481,62 @@ test("browser preflight rejects every runner config root but ignores imported so
     await rm(fixtureRoot, { recursive: true, force: true });
   }
 });
+
+test("browser preflight checks statically consumed shared config modules but not application imports", async () => {
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-shared-config-types-"),
+  );
+  try {
+    const browserRoot = path.join(fixtureRoot, "browser");
+    const sharedConfigPath = path.join(fixtureRoot, "playwright.shared.ts");
+    const applicationPath = path.join(fixtureRoot, "application-source.ts");
+    const configPath = path.join(fixtureRoot, "playwright.config.ts");
+    await mkdir(browserRoot);
+    await writeFile(
+      sharedConfigPath,
+      [
+        'export const testDir: string = "./browser";',
+        "export const shared = { testDir };",
+        "unknownSharedConfigIdentifier();",
+      ].join("\n"),
+    );
+    await writeFile(
+      applicationPath,
+      [
+        "export const applicationValue: string = 123;",
+        "unknownApplicationIdentifier();",
+      ].join("\n"),
+    );
+    await writeFile(
+      configPath,
+      [
+        'import { shared } from "./playwright.shared";',
+        'import { applicationValue } from "./application-source";',
+        "void applicationValue;",
+        "export default { ...shared };",
+      ].join("\n"),
+    );
+
+    const diagnostics = collectBrowserSpecDiagnostics({
+      rootNames: [configPath],
+      diagnosticRoot: browserRoot,
+    });
+
+    assert.equal(
+      diagnostics.some(
+        (diagnostic) => diagnostic.file?.fileName === sharedConfigPath,
+      ),
+      true,
+      "a shared module statically consumed by the config should fail the gate",
+    );
+    assert.equal(
+      diagnostics.some(
+        (diagnostic) => diagnostic.file?.fileName === applicationPath,
+      ),
+      false,
+      "an application module imported but not statically consumed should stay excluded",
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
