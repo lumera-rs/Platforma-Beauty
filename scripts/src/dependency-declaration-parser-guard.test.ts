@@ -4,7 +4,11 @@ import path from "node:path";
 import test from "node:test";
 import ts from "typescript";
 import { parseDependencyDeclarations } from "../../lib/api-spec/dependency-declaration-parser.mjs";
-import { parseDependencyPackageJson } from "../../lib/api-spec/dependency-package-parser.mjs";
+import {
+  MAX_DEPENDENCY_PACKAGE_BYTES,
+  MAX_DEPENDENCY_PACKAGE_NESTING_DEPTH,
+  parseDependencyPackageJson,
+} from "../../lib/api-spec/dependency-package-parser.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 const scanRoots = ["scripts/src", "artifacts", "lib", "packages"];
@@ -286,10 +290,56 @@ test("dependency package parser accepts deterministic randomized native-valid JS
     );
   }
 
-  const deeplyNested = `${"[".repeat(200)}"deep-marker"${"]".repeat(200)}`;
+  const deeplyNested = `${"[".repeat(MAX_DEPENDENCY_PACKAGE_NESTING_DEPTH)}"deep-marker"${"]".repeat(MAX_DEPENDENCY_PACKAGE_NESTING_DEPTH)}`;
   assert.deepEqual(
     parseDependencyPackageJson({ contents: deeplyNested, label: packageLabel }),
     JSON.parse(deeplyNested),
+  );
+});
+
+test("dependency package parser enforces a deterministic UTF-8 size limit", () => {
+  const accepted = `"${"a".repeat(MAX_DEPENDENCY_PACKAGE_BYTES - 2)}"`;
+  assert.equal(
+    parseDependencyPackageJson({ contents: accepted, label: packageLabel }),
+    "a".repeat(MAX_DEPENDENCY_PACKAGE_BYTES - 2),
+  );
+
+  const privateContent = "DO_NOT_REVEAL_OVERSIZE_PACKAGE_CONTENT";
+  const rejected = `${accepted} ${privateContent}`;
+  assert.throws(
+    () => parseDependencyPackageJson({ contents: rejected, label: packageLabel }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(
+        error.message,
+        `${packageLabel} is invalid: DEPENDENCY_PACKAGE_JSON_TOO_LARGE`,
+      );
+      assert.doesNotMatch(error.message, new RegExp(privateContent));
+      return true;
+    },
+  );
+});
+
+test("dependency package parser enforces a deterministic nesting limit", () => {
+  const privateContent = "DO_NOT_REVEAL_OVERDEEP_PACKAGE_CONTENT";
+  const accepted = `${"[".repeat(MAX_DEPENDENCY_PACKAGE_NESTING_DEPTH)}"${privateContent}"${"]".repeat(MAX_DEPENDENCY_PACKAGE_NESTING_DEPTH)}`;
+  assert.deepEqual(
+    parseDependencyPackageJson({ contents: accepted, label: packageLabel }),
+    JSON.parse(accepted),
+  );
+
+  const rejected = `[${accepted}]`;
+  assert.throws(
+    () => parseDependencyPackageJson({ contents: rejected, label: packageLabel }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(
+        error.message,
+        `${packageLabel} is invalid: DEPENDENCY_PACKAGE_JSON_TOO_DEEP`,
+      );
+      assert.doesNotMatch(error.message, new RegExp(privateContent));
+      return true;
+    },
   );
 });
 
