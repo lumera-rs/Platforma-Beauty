@@ -6192,32 +6192,32 @@ router.post("/auth/change-password", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Trenutna lozinka nije ispravna." });
     return;
   }
-  // Only the session this request authenticated with survives a password
-  // change -- every other session for this user (e.g. a stolen cookie on
-  // another device) is revoked in the same transaction as the password
-  // update, so a partial failure can never leave a changed password with
-  // the old sessions still live.
-  const currentToken = req.cookies?.[sessionCookieName];
-  const currentTokenHash = typeof currentToken === "string"
-    ? createHash("sha256").update(currentToken).digest("hex")
-    : null;
+  // Every session for this user -- including the one that authenticated
+  // this very request -- is invalidated and replaced by a brand-new one,
+  // all inside the same transaction as the password update. Preserving the
+  // bearer token that submitted the request would also preserve an exact
+  // copy of that token an attacker had captured before the change; rotating
+  // it is the only way to guarantee no pre-change token remains usable.
   const passwordHash = await hashPassword(newPassword);
   const now = new Date();
-  const updated = await db.transaction(async (tx) => {
+  const { updatedUser, newSessionToken } = await db.transaction(async (tx) => {
     const [updatedUser] = await tx.update(usersTable).set({
       passwordHash,
       passwordSetAt: now,
       mustChangePassword: false,
       updatedAt: now,
     }).where(eq(usersTable.id, user.id)).returning();
-    await tx.delete(sessionsTable).where(
-      currentTokenHash
-        ? and(eq(sessionsTable.userId, user.id), ne(sessionsTable.tokenHash, currentTokenHash))
-        : eq(sessionsTable.userId, user.id),
-    );
-    return updatedUser;
+    await tx.delete(sessionsTable).where(eq(sessionsTable.userId, user.id));
+    const newSessionToken = await createSession(user.id, tx);
+    return { updatedUser, newSessionToken };
   });
-  res.json({ user: publicUser(updated!) });
+  // The old cookie is only ever replaced after the transaction above has
+  // committed -- old sessions are already gone in the database by this
+  // point, so if setting this cookie were to fail, the client would simply
+  // be signed out (forced to log in again with the new password), never
+  // left holding a still-valid pre-change token.
+  res.cookie(sessionCookieName, newSessionToken, cookieOptions());
+  res.json({ user: publicUser(updatedUser!) });
 });
 
 router.get("/auth/sign-in-methods", async (req, res): Promise<void> => {
