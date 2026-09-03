@@ -44,6 +44,95 @@ const browserFileExtensions = [
   ".cjs",
 ];
 
+function collectBrowserRunnerConfigs(root: string): string[] {
+  return ts.sys
+    .readDirectory(
+      root,
+      browserFileExtensions,
+      ["**/node_modules/**"],
+      ["**/playwright*.config.*"],
+    )
+    .map((fileName) => path.resolve(fileName))
+    .filter((fileName) =>
+      browserRunnerConfigPattern.test(path.basename(fileName)),
+    )
+    .sort();
+}
+
+function unwrapConfigExpression(expression: ts.Expression): ts.Expression {
+  if (
+    ts.isCallExpression(expression) &&
+    expression.arguments.length > 0 &&
+    ts.isIdentifier(expression.expression) &&
+    expression.expression.text === "defineConfig"
+  ) {
+    return expression.arguments[0];
+  }
+  return expression;
+}
+
+function readConfiguredTestDir(configFileName: string): string {
+  const sourceText = ts.sys.readFile(configFileName);
+  if (sourceText === undefined) {
+    throw new Error(`Browser runner config could not be read: ${configFileName}`);
+  }
+  const sourceFile = ts.createSourceFile(
+    configFileName,
+    sourceText,
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  const exportAssignment = sourceFile.statements.find(
+    (statement): statement is ts.ExportAssignment =>
+      ts.isExportAssignment(statement) && !statement.isExportEquals,
+  );
+  if (!exportAssignment) {
+    throw new Error(
+      `Browser runner config must have a default export so its testDir can be checked: ${configFileName}`,
+    );
+  }
+  const configExpression = unwrapConfigExpression(exportAssignment.expression);
+  if (!ts.isObjectLiteralExpression(configExpression)) {
+    throw new Error(
+      `Browser runner config must default-export an object or defineConfig({...}) so its testDir can be checked: ${configFileName}`,
+    );
+  }
+  const testDirProperty = configExpression.properties.find(
+    (property): property is ts.PropertyAssignment =>
+      ts.isPropertyAssignment(property) &&
+      ((ts.isIdentifier(property.name) && property.name.text === "testDir") ||
+        (ts.isStringLiteral(property.name) && property.name.text === "testDir")),
+  );
+  if (!testDirProperty) {
+    return path.dirname(configFileName);
+  }
+  if (
+    !ts.isStringLiteral(testDirProperty.initializer) &&
+    !ts.isNoSubstitutionTemplateLiteral(testDirProperty.initializer)
+  ) {
+    throw new Error(
+      `Browser runner config testDir must be a static string so coverage can be checked: ${configFileName}`,
+    );
+  }
+  return path.resolve(
+    path.dirname(configFileName),
+    testDirProperty.initializer.text,
+  );
+}
+
+export function collectBrowserTestDirectories(
+  options: BrowserConfigCoverageOptions = {},
+): string[] {
+  const root = path.resolve(options.scriptsRoot ?? scriptsRoot);
+  return [
+    ...new Set(
+      collectBrowserRunnerConfigs(root).map((configFileName) =>
+        readConfiguredTestDir(configFileName),
+      ),
+    ),
+  ].sort();
+}
+
 function loadBrowserProgram(
   rootNames?: string[],
   root = scriptsRoot,
@@ -87,17 +176,9 @@ export function collectUncoveredBrowserRunnerConfigs(
     ),
   );
 
-  return ts.sys
-    .readDirectory(
-      root,
-      [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"],
-      ["**/node_modules/**"],
-      ["**/playwright*.config.*"],
-    )
-    .map((fileName) => path.resolve(fileName))
+  return collectBrowserRunnerConfigs(root)
     .filter(
       (fileName) =>
-        browserRunnerConfigPattern.test(path.basename(fileName)) &&
         !includedRoots.has(fileName),
     )
     .sort();
@@ -108,19 +189,24 @@ export function collectUncoveredBrowserFiles(
 ): string[] {
   const root = path.resolve(options.scriptsRoot ?? scriptsRoot);
   const projectPath = path.resolve(options.configPath ?? configPath);
-  const filesRoot = path.resolve(
-    options.browserRoot ?? path.join(root, "browser"),
-  );
+  const fileRoots = options.browserRoot
+    ? [path.resolve(options.browserRoot)]
+    : collectBrowserTestDirectories({ scriptsRoot: root });
   const includedRoots = new Set(
     loadBrowserProgram(undefined, root, projectPath).rootNames.map((fileName) =>
       path.resolve(fileName),
     ),
   );
 
-  return ts.sys
-    .readDirectory(filesRoot, browserFileExtensions, ["**/node_modules/**"])
+  return fileRoots
+    .flatMap((filesRoot) =>
+      ts.sys.readDirectory(filesRoot, browserFileExtensions, [
+        "**/node_modules/**",
+      ]),
+    )
     .map((fileName) => path.resolve(fileName))
     .filter((fileName) => !includedRoots.has(fileName))
+    .filter((fileName, index, files) => files.indexOf(fileName) === index)
     .sort();
 }
 
@@ -171,7 +257,7 @@ export function runBrowserSpecTypeCheck(): void {
       .map((fileName) => path.relative(scriptsRoot, fileName))
       .join(", ");
     throw new Error(
-      `Browser test or fixture files are missing from tsconfig.browser.json: ${relativeFiles}`,
+      `Browser test or fixture files under a Playwright testDir are missing from tsconfig.browser.json: ${relativeFiles}`,
     );
   }
 

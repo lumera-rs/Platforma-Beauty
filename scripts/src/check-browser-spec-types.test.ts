@@ -4,10 +4,75 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  collectBrowserTestDirectories,
   collectUncoveredBrowserFiles,
   collectBrowserSpecDiagnostics,
   collectUncoveredBrowserRunnerConfigs,
 } from "./check-browser-spec-types";
+
+test("browser preflight derives and checks a custom testDir from every runner config", async () => {
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-custom-test-dir-"),
+  );
+  try {
+    const browserRoot = path.join(fixtureRoot, "browser");
+    const customRoot = path.join(fixtureRoot, "custom-browser");
+    const omittedSpec = path.join(customRoot, "moved.spec.ts");
+    const tsconfigPath = path.join(fixtureRoot, "tsconfig.browser.json");
+    await mkdir(browserRoot);
+    await mkdir(customRoot);
+    await writeFile(
+      path.join(fixtureRoot, "playwright.config.ts"),
+      'export default { testDir: "./browser" };\n',
+    );
+    await writeFile(
+      path.join(fixtureRoot, "playwright.custom.config.ts"),
+      'export default defineConfig({ testDir: "./custom-browser" });\n',
+    );
+    await writeFile(path.join(browserRoot, "covered.spec.ts"), "export {};\n");
+    await writeFile(omittedSpec, "export {};\n");
+    await writeFile(
+      tsconfigPath,
+      JSON.stringify({
+        compilerOptions: { noEmit: true },
+        include: ["browser/**/*.ts", "playwright*.config.ts"],
+      }),
+    );
+
+    assert.deepEqual(
+      collectBrowserTestDirectories({ scriptsRoot: fixtureRoot }),
+      [browserRoot, customRoot].sort(),
+    );
+    assert.deepEqual(
+      collectUncoveredBrowserFiles({
+        scriptsRoot: fixtureRoot,
+        configPath: tsconfigPath,
+      }),
+      [omittedSpec],
+    );
+
+    await writeFile(
+      tsconfigPath,
+      JSON.stringify({
+        compilerOptions: { noEmit: true },
+        include: [
+          "browser/**/*.ts",
+          "custom-browser/**/*.ts",
+          "playwright*.config.ts",
+        ],
+      }),
+    );
+    assert.deepEqual(
+      collectUncoveredBrowserFiles({
+        scriptsRoot: fixtureRoot,
+        configPath: tsconfigPath,
+      }),
+      [],
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
 
 test("browser preflight rejects every spec-local diagnostic but ignores imported source diagnostics", async () => {
   const fixtureRoot = await mkdtemp(
