@@ -712,6 +712,50 @@ test("browser preflight fails closed at a cyclic imported package-directory syml
   }
 });
 
+test("browser preflight package errors expose only their path, code, and location", async () => {
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-package-privacy-"),
+  );
+  const sharedConfigRoot = path.join(fixtureRoot, "playwright.shared");
+  const packagePath = path.join(sharedConfigRoot, "package.json");
+  const privateContent = "DO_NOT_REVEAL_PACKAGE_SOURCE_902e";
+  try {
+    await mkdir(sharedConfigRoot);
+    await writeFile(
+      packagePath,
+      [
+        "{",
+        `  "private": "${privateContent}",`,
+        '  "exports": ,',
+        "}",
+      ].join("\r\n"),
+    );
+    await writeFile(
+      path.join(fixtureRoot, "playwright.config.ts"),
+      [
+        'import { shared } from "./playwright.shared";',
+        "export default { ...shared };",
+      ].join("\n"),
+    );
+
+    assert.throws(
+      () => collectBrowserTestDirectories({ scriptsRoot: fixtureRoot }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.equal(
+          error.message,
+          `Dependency package manifest ${packagePath} is invalid: DEPENDENCY_PACKAGE_JSON_INVALID at 3:14`,
+        );
+        assert.doesNotMatch(error.message, new RegExp(privateContent));
+        assert.doesNotMatch(error.message, /exports|private/);
+        return true;
+      },
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
 test("browser preflight fails closed at an unreadable imported package directory", async (t) => {
   const fixtureRoot = await mkdtemp(
     path.join(os.tmpdir(), "lumera-browser-package-directory-unreadable-"),

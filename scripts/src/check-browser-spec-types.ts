@@ -2,6 +2,7 @@ import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import { parseDependencyPackageJson } from "../../lib/api-spec/dependency-package-parser.mjs";
 
 const scriptsRoot = path.resolve(import.meta.dirname, "..");
 const browserRoot = path.join(scriptsRoot, "browser");
@@ -157,10 +158,11 @@ function isMissingPathError(error: unknown): boolean {
 
 function readPackageManifest(
   manifestPath: string,
-): { text?: string; blocksFallback: boolean } {
+): { text?: string; path?: string; blocksFallback: boolean } {
   try {
     return {
       text: readFileSync(manifestPath, "utf8"),
+      path: manifestPath,
       blocksFallback: false,
     };
   } catch (error) {
@@ -176,6 +178,7 @@ function resolvePackageEntry(importPath: string): PackageEntryResolution {
   }
   let directory = importPath;
   let manifestText: string | undefined;
+  let manifestPath: string | undefined;
   while (true) {
     const manifestRead = readPackageManifest(path.join(directory, "package.json"));
     if (manifestRead.blocksFallback) {
@@ -183,6 +186,7 @@ function resolvePackageEntry(importPath: string): PackageEntryResolution {
     }
     manifestText = manifestRead.text;
     if (manifestText !== undefined) {
+      manifestPath = manifestRead.path;
       break;
     }
     const parent = path.dirname(directory);
@@ -191,12 +195,10 @@ function resolvePackageEntry(importPath: string): PackageEntryResolution {
     }
     directory = parent;
   }
-  let manifest: unknown;
-  try {
-    manifest = JSON.parse(manifestText);
-  } catch {
-    return { blocksFallback: false };
-  }
+  const manifest = parseDependencyPackageJson({
+    contents: manifestText,
+    label: `Dependency package manifest ${manifestPath}`,
+  });
   if (!manifest || typeof manifest !== "object") {
     return { blocksFallback: false };
   }

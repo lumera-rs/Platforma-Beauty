@@ -18,6 +18,7 @@ import {
   orvalNestedOutputContracts,
   readOrvalInterfaceFieldValueShapes,
 } from "../../lib/api-spec/api-output-inventory.mjs";
+import { parseDependencyPackageJson } from "../../lib/api-spec/dependency-package-parser.mjs";
 
 const require = createRequire(import.meta.url);
 
@@ -30,7 +31,10 @@ async function readInstalledOrvalDeclarations() {
     "@orval/core/package.json",
     { paths: [path.dirname(orvalPackagePath)] },
   );
-  const corePackage = JSON.parse(await readFile(corePackagePath, "utf8")) as {
+  const corePackage = parseDependencyPackageJson({
+    contents: await readFile(corePackagePath, "utf8"),
+    label: "Installed @orval/core package manifest",
+  }) as {
     types: string;
   };
   const declarations = await readFile(
