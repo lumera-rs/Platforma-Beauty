@@ -624,6 +624,86 @@ test("browser preflight resolves a simple package exports root and checks only s
   }
 });
 
+test("browser preflight fails closed at a dangling imported package-directory symlink", async () => {
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-package-directory-dangling-"),
+  );
+  try {
+    const malformedPackagePath = path.join(fixtureRoot, "playwright.shared");
+    await writeFile(
+      path.join(fixtureRoot, "package.json"),
+      JSON.stringify({ exports: { "./playwright.shared": "./parent.ts" } }),
+    );
+    await writeFile(
+      path.join(fixtureRoot, "parent.ts"),
+      'export const shared = { testDir: "./parent-manifest" };\n',
+    );
+    await writeFile(
+      `${malformedPackagePath}.ts`,
+      'export const shared = { testDir: "./extension-fallback" };\n',
+    );
+    await symlink(
+      path.join(fixtureRoot, "missing-package"),
+      malformedPackagePath,
+      "dir",
+    );
+    await writeFile(
+      path.join(fixtureRoot, "playwright.config.ts"),
+      [
+        'import { shared } from "./playwright.shared";',
+        "export default { ...shared };",
+      ].join("\n"),
+    );
+
+    assert.throws(
+      () => collectBrowserTestDirectories({ scriptsRoot: fixtureRoot }),
+      /statically resolvable.*unresolvable identifier shared.*playwright\.config\.ts/,
+      "a dangling package-directory link must not select a parent manifest or extension fallback",
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("browser preflight fails closed at a cyclic imported package-directory symlink", async () => {
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "lumera-browser-package-directory-cycle-"),
+  );
+  try {
+    const malformedPackagePath = path.join(fixtureRoot, "playwright.shared");
+    const intermediatePath = path.join(fixtureRoot, "playwright.intermediate");
+    await writeFile(
+      path.join(fixtureRoot, "package.json"),
+      JSON.stringify({ exports: { "./playwright.shared": "./parent.ts" } }),
+    );
+    await writeFile(
+      path.join(fixtureRoot, "parent.ts"),
+      'export const shared = { testDir: "./parent-manifest" };\n',
+    );
+    await writeFile(
+      `${malformedPackagePath}.ts`,
+      'export const shared = { testDir: "./extension-fallback" };\n',
+    );
+    await symlink(intermediatePath, malformedPackagePath, "dir");
+    await symlink(malformedPackagePath, intermediatePath, "dir");
+    await writeFile(
+      path.join(fixtureRoot, "playwright.config.ts"),
+      [
+        'import { shared } from "./playwright.shared";',
+        "export default { ...shared };",
+      ].join("\n"),
+    );
+
+    assert.throws(
+      () => collectBrowserTestDirectories({ scriptsRoot: fixtureRoot }),
+      /statically resolvable.*unresolvable identifier shared.*playwright\.config\.ts/,
+      "a cyclic package-directory link must not select a parent manifest, extension fallback, or index fallback",
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
 test("browser preflight fails closed when a package export symlink escapes the package", async () => {
   const fixtureRoot = await mkdtemp(
     path.join(os.tmpdir(), "lumera-browser-export-symlink-escape-"),

@@ -1,4 +1,4 @@
-import { realpathSync } from "node:fs";
+import { lstatSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
@@ -121,7 +121,33 @@ interface PackageEntryResolution {
   blocksFallback: boolean;
 }
 
+function hasMalformedPathBoundary(importPath: string): boolean {
+  let current = path.resolve(importPath);
+  while (true) {
+    try {
+      lstatSync(current);
+      try {
+        realpathSync(current);
+      } catch {
+        return true;
+      }
+    } catch {
+      // A missing leaf or child is valid while resolving extension and package
+      // fallbacks. Keep walking until an existing ancestor reveals whether a
+      // symlink boundary itself is malformed.
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      return false;
+    }
+    current = parent;
+  }
+}
+
 function resolvePackageEntry(importPath: string): PackageEntryResolution {
+  if (hasMalformedPathBoundary(importPath)) {
+    return { blocksFallback: true };
+  }
   let directory = importPath;
   let manifestText: string | undefined;
   while (true) {
