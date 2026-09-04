@@ -38,6 +38,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, isValid, parseISO } from "date-fns";
 import { SalonGallery, MediaItem } from "@/components/salon-gallery";
+import { safeExternalHref } from "@/lib/safe-external-url";
 import { AvatarImage as OptimizedAvatarImage, OptimizedImage } from "@/components/optimized-image";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SalonFavoriteButton } from "@/components/salon-favorite-button";
@@ -645,8 +646,9 @@ export default function SalonProfile() {
   const mediaItems: MediaItem[] = useMemo(() => {
     if (!salonData) return [];
     const items: MediaItem[] = [];
-    if (salonData.videoUrl) {
-      items.push({ type: 'video', url: salonData.videoUrl });
+    const safeVideoUrl = safeExternalHref(salonData.videoUrl);
+    if (safeVideoUrl) {
+      items.push({ type: 'video', url: safeVideoUrl });
     }
     if (salonData.imageUrl) {
       items.push({ type: 'image', url: salonData.imageUrl });

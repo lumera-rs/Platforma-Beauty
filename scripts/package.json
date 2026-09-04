@@ -43,7 +43,7 @@
     "cleanup:admin-access-configuration": "tsx ./src/run-admin-access-configuration.ts --recover-interrupted-databases",
     "test:admin-form-resilience": "tsx ./src/run-admin-form-resilience.ts",
     "test:employee-location-deactivation-browser": "tsx ./src/run-employee-location-deactivation-browser.ts",
-    "test:education-center-url-xss-audit-browser": "tsx ./src/run-education-center-url-xss-audit-browser.ts",
+    "test:safe-external-url-rendering-browser": "tsx ./src/run-safe-external-url-rendering-browser.ts",
     "test:logout-login-cache-residue-browser": "tsx ./src/run-logout-login-cache-residue-browser.ts",
     "cleanup:employee-location-deactivation-browser": "tsx ./src/run-employee-location-deactivation-browser.ts --recover-interrupted-databases",
     "cleanup:admin-form-resilience": "tsx ./src/run-admin-form-resilience.ts --recover-interrupted-databases",

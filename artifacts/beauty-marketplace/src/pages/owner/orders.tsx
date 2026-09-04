@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Loader2, Package, ArrowLeft, ExternalLink, Truck, Repeat, Download, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { safeExternalHref } from "@/lib/safe-external-url";
 
 const money = (n: number) => `${n.toLocaleString("sr-RS")} RSD`;
 const date = (d: string | null) => d
@@ -18,10 +19,11 @@ function DeliveryTracking({ order, compact = false }: { order: { deliveryMethod:
   const personalDelivery = order.deliveryMethod === "personal_belgrade" || order.courierService === "Lična dostava";
   if (personalDelivery) return <p className="flex items-center gap-1 text-sm text-muted-foreground"><Truck className="h-4 w-4" />Lična dostava — kontaktiraćemo vas</p>;
   if (!order.courierService && !order.trackingNumber) return null;
+  const safeTrackingUrl = safeExternalHref(order.trackingUrl);
   return <div className={compact ? "mt-1 text-xs text-muted-foreground" : "rounded-lg border bg-muted/30 p-3 text-sm"}>
     <p><span className="font-medium">Kurir:</span> {order.courierService ?? "Nije izabran"}</p>
     {order.trackingNumber && <p><span className="font-medium">Broj za praćenje:</span> {order.trackingNumber}</p>}
-    {order.trackingUrl && <Button asChild variant="link" size="sm" className="mt-1 h-auto px-0 text-primary"><a href={order.trackingUrl} target="_blank" rel="noopener noreferrer" data-testid="btn-track-shipment">Prati pošiljku <ExternalLink className="ml-1 h-3.5 w-3.5" /></a></Button>}
+    {safeTrackingUrl && <Button asChild variant="link" size="sm" className="mt-1 h-auto px-0 text-primary"><a href={safeTrackingUrl} target="_blank" rel="noopener noreferrer" data-testid="btn-track-shipment">Prati pošiljku <ExternalLink className="ml-1 h-3.5 w-3.5" /></a></Button>}
   </div>;
 }
 

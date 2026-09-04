@@ -47,6 +47,8 @@ import { Layout } from "@/components/layout";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SalonGallery } from "@/components/salon-gallery";
+import { SafeExternalLink } from "@/components/safe-external-link";
+import { safeExternalHref } from "@/lib/safe-external-url";
 import { OptimizedImage } from "@/components/optimized-image";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1126,10 +1128,14 @@ function useEducationPurchase() {
 }
 
 function SafeVideoEmbed({ url }: { url: string }) {
-  if (!url) return null;
-  let embedUrl = url;
+  // Reject anything other than a safe http(s) URL up front -- a legacy or
+  // otherwise-unvalidated trailerUrl (javascript:, data:, ...) must never
+  // reach the <a href> fallback branch below.
+  const safeUrl = safeExternalHref(url);
+  if (!safeUrl) return null;
+  let embedUrl = safeUrl;
   try {
-    const parsed = new URL(url);
+    const parsed = new URL(safeUrl);
     if (parsed.hostname.includes('youtube.com') || parsed.hostname.includes('youtu.be')) {
       const videoId = parsed.hostname.includes('youtu.be') ? parsed.pathname.slice(1) : parsed.searchParams.get('v');
       if (videoId) embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}`;
@@ -1138,10 +1144,10 @@ function SafeVideoEmbed({ url }: { url: string }) {
       if (videoId) embedUrl = `https://player.vimeo.com/video/${videoId}?dnt=1`;
     } else {
       return (
-        <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-4 bg-muted/30 rounded-xl border border-border/50 hover:bg-muted/50 transition-colors mt-8">
+        <SafeExternalLink href={safeUrl} className="flex items-center gap-2 p-4 bg-muted/30 rounded-xl border border-border/50 hover:bg-muted/50 transition-colors mt-8">
           <div className="bg-primary/10 p-3 rounded-full"><Sparkles className="w-5 h-5 text-primary" /></div>
           <div><p className="font-medium text-foreground">Pogledaj video prezentaciju</p><p className="text-sm text-muted-foreground">Otvori spoljni link</p></div>
-        </a>
+        </SafeExternalLink>
       );
     }
 
@@ -1535,8 +1541,8 @@ export function EducationPublicCenterPage() {
         <CardContent className="space-y-3 p-5 text-sm">
           <p className="flex gap-2"><MapPin className="h-4 w-4 text-muted-foreground" />{center.city}</p>
           <p className="flex gap-2"><Star className="h-4 w-4 fill-amber-500 text-amber-500" />{center.rating ? `${center.rating.toFixed(1)} · ${center.reviewCount} utisaka` : "Novi centar"}</p>
-          {center.websiteUrl ? <a className="block text-primary underline" href={center.websiteUrl} target="_blank" rel="noreferrer">Sajt centra</a> : null}
-          {center.instagramUrl ? <a className="block text-primary underline" href={center.instagramUrl} target="_blank" rel="noreferrer">Instagram</a> : null}
+          <SafeExternalLink className="block text-primary underline" href={center.websiteUrl}>Sajt centra</SafeExternalLink>
+          <SafeExternalLink className="block text-primary underline" href={center.instagramUrl}>Instagram</SafeExternalLink>
         </CardContent>
       </Card>
     </section>

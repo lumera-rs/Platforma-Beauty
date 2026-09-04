@@ -37,6 +37,7 @@ import
 ;
 import { expireFeaturedPlacementPaymentInTx } from "../lib/featured-placement-payment-reminders";
 import { safeIsoTimestamp } from "../lib/date-serialization";
+import { isSafeExternalHttpUrl } from "../lib/safe-external-url";
 import {
   batchPublicFeaturedEducationCourseState,
   isPubliclyFeaturedEducationCourse,
@@ -1369,16 +1370,6 @@ function calendarDateCourseResponse<T extends { startDate?: Date | null }>(cours
     ...course,
     startDate: course.startDate ? calendarDate(course.startDate) : null,
   };
-}
-
-function isHttpVideoUrl(value: string | null): boolean {
-  if (value === null) return true;
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" || url.protocol === "http:";
-  } catch {
-    return false;
-  }
 }
 
 async function current(req: Request, res: Response) {
@@ -5873,6 +5864,10 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Matični broj i poslovni račun edukativnog centra su obavezni." });
     return;
   }
+  if (!isSafeExternalHttpUrl(input.websiteUrl) || !isSafeExternalHttpUrl(input.instagramUrl)) {
+    res.status(400).json({ error: "Sajt i Instagram link moraju biti validni http:// ili https:// linkovi." });
+    return;
+  }
   const [educationPlan] = input.businessType === "EDUCATION_CENTER"
     ? await db.select().from(subscriptionPlansTable).where(and(eq(subscriptionPlansTable.id, input.planId!), eq(subscriptionPlansTable.active, true), eq(subscriptionPlansTable.audience, "education"), gt(subscriptionPlansTable.price, 0))).limit(1)
     : [];
@@ -9108,7 +9103,7 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
   }
   const parsed = UpdateManagedSalonProfileBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  if (parsed.data.videoUrl !== undefined && !isHttpVideoUrl(parsed.data.videoUrl)) { res.status(400).json({ error: "Video URL mora početi sa http:// ili https://." }); return; }
+  if (parsed.data.videoUrl !== undefined && !isSafeExternalHttpUrl(parsed.data.videoUrl)) { res.status(400).json({ error: "Video URL mora početi sa http:// ili https://." }); return; }
   const updates: Partial<typeof salonsTable.$inferInsert> = {};
   if (parsed.data.videoUrl !== undefined) updates.videoUrl = parsed.data.videoUrl;
   if (parsed.data.acceptsCards !== undefined) updates.acceptsCards = parsed.data.acceptsCards;
@@ -13524,16 +13519,6 @@ const fulfillmentTransitions: Record<string, readonly string[]> = {
   CANCELLED: [],
 };
 
-function validProviderUrl(value: string | null | undefined) {
-  if (value == null || value === "") return true;
-  try {
-    const url = new URL(value);
-    return (url.protocol === "https:" || url.protocol === "http:") && Boolean(url.hostname);
-  } catch {
-    return false;
-  }
-}
-
 function legacyStatusForFulfillment(status: string): typeof retailOrdersTable.$inferInsert.status {
   return status === "CANCELLED" ? "cancelled"
     : status === "COMPLETED" ? "delivered"
@@ -14957,7 +14942,7 @@ router.patch("/admin/retail-orders/:orderId/status", async (req, res): Promise<v
   const trackingUrl = req.body?.trackingUrl === null ? null
     : typeof req.body?.trackingUrl === "string" ? req.body.trackingUrl.trim() || null : undefined;
   if (typeof next !== "string" || !Object.hasOwn(fulfillmentTransitions, next)
-    || (trackingUrl !== undefined && !validProviderUrl(trackingUrl))) {
+    || (trackingUrl !== undefined && !isSafeExternalHttpUrl(trackingUrl))) {
     res.status(400).json({ error: "Neispravan status ili URL za praćenje." }); return;
   }
   let transitionError = false;
@@ -18276,7 +18261,7 @@ router.patch("/admin/orders/:orderId", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Status i tok isporuke su međusobno protivrečni." }); return;
   }
   const fulfillmentUpdate = body.data.fulfillmentStatus ?? legacyCanonical;
-  if (body.data.trackingUrl !== undefined && !validProviderUrl(body.data.trackingUrl)) {
+  if (body.data.trackingUrl !== undefined && !isSafeExternalHttpUrl(body.data.trackingUrl)) {
     res.status(400).json({ error: "URL za praćenje mora biti validan http/https URL." }); return;
   }
   let selectedCourier: typeof courierServicesTable.$inferSelect | null | undefined;
@@ -18518,6 +18503,10 @@ router.post("/education/courses", async (req, res): Promise<void> => {
     return;
   }
   const data = parsed.data;
+  if (!isSafeExternalHttpUrl(data.trailerUrl)) {
+    res.status(400).json({ error: "Video najava mora biti validan http:// ili https:// link." });
+    return;
+  }
   const commercialPolicyError = await educationCommercialPolicyError({
     price: data.price, earlyBirdPrice: data.earlyBirdPrice ?? null,
     earlyBirdCutoff: data.earlyBirdCutoff ?? null,
@@ -18642,6 +18631,10 @@ router.patch("/education/courses/:courseId", async (req, res): Promise<void> => 
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci kursa nisu ispravni." }); return; }
   const course = await requireOwnedCourse(access, params.data.courseId, res); if (!course) return;
   const data = body.data;
+  if (data.trailerUrl !== undefined && !isSafeExternalHttpUrl(data.trailerUrl)) {
+    res.status(400).json({ error: "Video najava mora biti validan http:// ili https:// link." });
+    return;
+  }
   const { cancellationCutoffHours: _cancellationCutoffHours, ...courseUpdate } = data;
   const commercialPolicyFields = ["price", "paymentMode", "depositAmount", "refundPolicy", "schedulingMode", "cancellationCutoffHours", "depositDisposition", "minimumEnrollmentRiskDeadline", "earlyBirdPrice", "earlyBirdCutoff", "installmentCount"];
   if (course.centerId && commercialPolicyFields.some((field) => Object.prototype.hasOwnProperty.call(data, field))) {
@@ -24283,7 +24276,7 @@ router.patch("/admin/salons/:salonId", async (req, res): Promise<void> => {
   const parsed = AdminUpdateSalonBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const { active, featured, isVerified, topSalon, videoUrl, pib } = parsed.data;
-  if (videoUrl !== undefined && !isHttpVideoUrl(videoUrl)) { res.status(400).json({ error: "Video URL mora početi sa http:// ili https://." }); return; }
+  if (videoUrl !== undefined && !isSafeExternalHttpUrl(videoUrl)) { res.status(400).json({ error: "Video URL mora početi sa http:// ili https://." }); return; }
 
   const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, salonId)).limit(1);
   if (!salon) { res.status(404).json({ error: "Salon nije pronađen." }); return; }
