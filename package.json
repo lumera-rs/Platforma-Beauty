@@ -102,6 +102,7 @@
     "test:infobip-registration-browser": "pnpm --filter @workspace/scripts run test:infobip-registration-browser",
     "test:admin-form-resilience": "pnpm --filter @workspace/scripts run test:admin-form-resilience",
     "test:employee-location-deactivation-browser": "pnpm --filter @workspace/scripts run test:employee-location-deactivation-browser",
+    "test:education-center-url-xss-audit-browser": "pnpm --filter @workspace/scripts run test:education-center-url-xss-audit-browser",
     "test:salon-notifications": "pnpm --filter @workspace/scripts run test:salon-notifications",
     "test:salon-notifications:release": "pnpm --filter @workspace/scripts run test:salon-notifications:release",
     "test:service-library": "pnpm --filter @workspace/scripts run test:service-library",
