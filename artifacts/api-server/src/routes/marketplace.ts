@@ -2816,8 +2816,12 @@ function isCourseOwner(access: EducationAccess, course: typeof coursesTable.$inf
  * publisher, and salon owners remain learners/purchasers rather than course
  * authors.
  */
-async function canManageEducationCourses(access: EducationAccess, centerId?: string | null) {
-  if (access.admin) return true;
+async function canManageEducationCourses(
+  access: EducationAccess,
+  centerId?: string | null,
+  options: { allowAdmin?: boolean } = {},
+) {
+  if (access.admin && options.allowAdmin !== false) return true;
   const scopedCenters = centerId
     ? access.centers.filter((center) => center.id === centerId)
     : access.centers;
@@ -19152,6 +19156,22 @@ router.patch("/education/courses/:courseId/featured", async (req, res): Promise<
   const access = await requireEducationAccess(req, res); if (!access) return;
   const courseId = String(req.params.courseId ?? "");
   const course = await requireOwnedCourse(access, courseId, res); if (!course) return;
+  // Unlike requireOwnedCourse's general content-moderation bypass (admin can
+  // fix a title, unpublish, delete a lesson -- an established, intentional
+  // capability, see requireOwnedCourse's own comment and
+  // lockCourseForDestructiveContentMutation), toggling featured placement is a
+  // commercial/billing action: activating it immediately records an auditable
+  // education_featured_charges row -- a NEW financial obligation for the
+  // center, not a configuration edit. The platform's sibling paid-placement
+  // system (POST /education/placements/purchase) already excludes admin from
+  // *initiating* a purchase on a center's behalf for exactly this reason,
+  // while a dedicated admin route (POST /admin/education/featured-charges/:chargeId/settle)
+  // remains the intended admin touchpoint for this lifecycle: confirming a
+  // payment the center itself already requested. This must match that rule.
+  if (!(await canManageEducationCourses(access, course.centerId, { allowAdmin: false }))) {
+    res.status(403).json({ error: "Isticanjem kursa upravlja samo vlasnik ili ovlašćeni menadžer edukativnog centra." });
+    return;
+  }
   const active = req.body?.active;
   if (typeof active !== "boolean") { res.status(400).json({ error: "Pošaljite active: true ili false." }); return; }
   const paymentReference = typeof req.body?.paymentReference === "string" && req.body.paymentReference.trim().length > 0
