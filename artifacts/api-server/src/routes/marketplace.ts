@@ -21532,9 +21532,24 @@ router.get("/education/public/popular", async (req, res): Promise<void> => {
   const parsed = ListPopularEducationCoursesQueryParams.safeParse(req.query);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const limit = parsed.data.limit ?? 6;
+  // Rank by the SAME authoritative paid-featured state batchEducationCourseViews
+  // computes for this response's own `featured` field below (isFeatured, not
+  // expired, and an actually paid education_featured_charges row) -- a course
+  // can flip isFeatured=true immediately on activation while its charge is
+  // still "pending" (see PATCH /education/courses/:courseId/featured), so the
+  // raw column alone must never grant ranking priority over organic results.
+  const paidFeaturedRank = sql<boolean>`(
+    ${coursesTable.isFeatured}
+    and (${coursesTable.featuredUntil} is null or ${coursesTable.featuredUntil} > ${new Date()})
+    and exists (
+      select 1 from ${educationFeaturedChargesTable}
+      where ${educationFeaturedChargesTable.courseId} = ${coursesTable.id}
+        and ${educationFeaturedChargesTable.status} = 'paid'
+    )
+  )`;
   const courses = await db.select().from(coursesTable)
     .where(publicEducationCoursePredicate())
-    .orderBy(desc(coursesTable.rating), desc(coursesTable.isFeatured), desc(coursesTable.createdAt), desc(coursesTable.id))
+    .orderBy(desc(coursesTable.rating), desc(paidFeaturedRank), desc(coursesTable.createdAt), desc(coursesTable.id))
     .limit(limit);
   const views = await batchEducationCourseViews(courses);
   res.json(ListPopularEducationCoursesResponse.parse(views).map(calendarDateCourseResponse));
