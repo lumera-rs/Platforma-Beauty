@@ -27,6 +27,7 @@
     "test:b2b-catalog": "bash scripts/test-b2b-catalog.sh",
     "test:attributed-appointments-returning": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/attributed-appointments-returning.test.ts",
     "test:api-regressions": "pnpm --filter @workspace/scripts run test:api-regressions",
+    "test:runtime-security-suite": "pnpm --filter @workspace/scripts run test:runtime-security-suite",
     "test:api-regressions-lifecycle": "pnpm --filter @workspace/scripts run test:api-regressions-lifecycle",
     "test:date-serialization": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/date-serialization.test.ts",
     "test:release-chain": "pnpm --filter @workspace/scripts run test:release-chain",

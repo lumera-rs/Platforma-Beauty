@@ -82,6 +82,7 @@
     "test:education-placement-lifecycle": "tsx ./src/run-education-placement-lifecycle.ts",
     "test:education-ips-production-safety": "tsx ./src/run-education-ips-production-safety.ts",
     "test:api-regressions": "tsx ./src/run-api-regressions.ts",
+    "test:runtime-security-suite": "tsx ./src/run-runtime-security-suite.ts",
     "test:api-regressions-lifecycle": "tsx --test ./src/run-api-regressions-lifecycle.test.ts",
     "test:release-chain": "tsx --test ./src/release-chain.test.ts",
     "cleanup:api-regressions": "tsx ./src/run-api-regressions.ts --recover-interrupted-databases",
