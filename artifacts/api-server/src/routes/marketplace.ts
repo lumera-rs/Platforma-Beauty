@@ -5828,7 +5828,8 @@ router.post("/admin/integrations/brevo/cleanup-webhooks", async (req, res): Prom
 
 router.post("/internal/jobs/sms-reminders", async (req, res): Promise<void> => {
   const expected = process.env["SMS_REMINDER_JOB_SECRET"];
-  if (!expected || req.get("x-lumera-job-key") !== expected) { res.status(401).json({ error: "Neovlašćen posao." }); return; }
+  const provided = req.get("x-lumera-job-key");
+  if (!expected || !provided || !webhookTokenMatches(expected, provided)) { res.status(401).json({ error: "Neovlašćen posao." }); return; }
   const date = typeof req.body?.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.body.date) ? req.body.date : undefined;
   const result = await sendDailyAppointmentReminders(date);
   req.log.info(result, "SMS reminder batch finished");
@@ -5837,14 +5838,16 @@ router.post("/internal/jobs/sms-reminders", async (req, res): Promise<void> => {
 
 router.post("/internal/jobs/rescheduled-confirmation-retries", async (req, res): Promise<void> => {
   const expected = process.env["CONFIRMATION_RETRY_JOB_SECRET"];
-  if (!expected || req.get("x-lumera-job-key") !== expected) { res.status(401).json({ error: "Neovlašćen posao." }); return; }
+  const provided = req.get("x-lumera-job-key");
+  if (!expected || !provided || !webhookTokenMatches(expected, provided)) { res.status(401).json({ error: "Neovlašćen posao." }); return; }
   const result = await runRescheduledConfirmationRetries();
   res.json(result);
 });
 
 router.post("/internal/jobs/education-gallery-cleanup", async (req, res): Promise<void> => {
   const expected = process.env["EDUCATION_GALLERY_CLEANUP_JOB_SECRET"];
-  if (!expected || req.get("x-lumera-job-key") !== expected) { res.status(401).json({ error: "Neovlašćen posao." }); return; }
+  const provided = req.get("x-lumera-job-key");
+  if (!expected || !provided || !webhookTokenMatches(expected, provided)) { res.status(401).json({ error: "Neovlašćen posao." }); return; }
   try {
     res.json(await runEducationGalleryCleanup());
   } catch (error) {
