@@ -1404,9 +1404,7 @@ function VoucherPurchaseForm({ courseId }: { courseId: string }) {
   const [purchasedCode, setPurchasedCode] = useState<string | null>(null);
   const [paymentReference, setPaymentReference] = useState<string | null>(null);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
-  const mut = usePurchaseEducationGiftVoucher({
-    request: { headers: { "Idempotency-Key": idempotencyKey } },
-  });
+  const mut = usePurchaseEducationGiftVoucher();
   const { toast } = useToast();
 
   const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -1423,7 +1421,8 @@ function VoucherPurchaseForm({ courseId }: { courseId: string }) {
         recipientName: recipientName || undefined,
         recipientEmail: recipientEmail,
         giftMessage: giftMessage || undefined
-      }
+      },
+      headers: { "Idempotency-Key": idempotencyKey },
     }, {
       onSuccess: (data: any) => {
         setPurchasedCode(data.redemptionCode || "N/A");

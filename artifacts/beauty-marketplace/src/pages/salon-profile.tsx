@@ -28,7 +28,9 @@ import {
   getApiErrorDetails,
   getApiErrorMessage,
   type FirstAvailableServiceSlot,
-  type GroupedTreatmentRequest
+  type GroupedTreatmentRequest,
+  bookingCommandKey,
+  clearBookingCommandKey,
 } from "@workspace/api-client-react";
 import { useParams, useLocation, useSearch, Link } from "wouter";
 import { MapPin, Star, Clock, CalendarDays, Loader2, Heart, ShieldCheck, Flame, House, Smartphone, BriefcaseBusiness } from "lucide-react";
@@ -444,21 +446,24 @@ export default function SalonProfile() {
 
     if (!salonData || !selectedService || !selectedSlot) return;
 
+    const appointmentData = {
+      salonId: salonData.id,
+      serviceId: selectedService,
+      date: dateStr,
+      startTime: selectedSlot.start,
+      employeeId: employeeSelection === "any" ? undefined : selectedEmployee ?? undefined,
+      treatmentLocation: locationType,
+      treatmentAddress: locationType === "home"
+        ? { line1: homeAddress.line1.trim(), city: homeAddress.city.trim(), postalCode: homeAddress.postalCode.trim() || undefined, details: homeAddress.details.trim() || undefined }
+        : undefined,
+      packagePurchaseId: packagePurchaseId,
+    };
     createAppointment.mutate({
-      data: {
-        salonId: salonData.id,
-        serviceId: selectedService,
-        date: dateStr,
-        startTime: selectedSlot.start,
-        employeeId: employeeSelection === "any" ? undefined : selectedEmployee ?? undefined,
-        treatmentLocation: locationType,
-        treatmentAddress: locationType === "home"
-          ? { line1: homeAddress.line1.trim(), city: homeAddress.city.trim(), postalCode: homeAddress.postalCode.trim() || undefined, details: homeAddress.details.trim() || undefined }
-          : undefined,
-        packagePurchaseId: packagePurchaseId,
-      }
+      data: appointmentData,
+      headers: { "Idempotency-Key": bookingCommandKey("/api/appointments", appointmentData) },
     }, {
       onSuccess: (response) => {
+        clearBookingCommandKey("/api/appointments", appointmentData);
         queryClient.invalidateQueries({ queryKey: getListMyAppointmentsQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetCustomerDashboardQueryKey() });
         if (packagePurchaseId) {

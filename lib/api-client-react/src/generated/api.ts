@@ -203,9 +203,11 @@ import type {
   CartThresholdRewardInput,
   CartThresholdRewardProgress,
   CartThresholdRewardUpdate,
+  CheckoutEducationB2bOrderHeaders,
   CitySummary,
   CommerceExperienceSettings,
   CommerceExperienceSettingsInput,
+  CommitEducationCourseRecurrenceHeaders,
   ConfigureEducationCustomContract200,
   ConfigureEducationCustomContractBody,
   Coupon,
@@ -214,21 +216,34 @@ import type {
   CourierServiceInput,
   CourierServiceUpdate,
   Course,
+  CreateAppointmentHeaders,
   CreateAutomationFromAiProposalBody,
   CreateAutomationRuleBody,
+  CreateBookingGroupHeaders,
   CreateEducationDisputeBody,
+  CreateEducationGroupEnrollmentsHeaders,
+  CreateEducationOperationalBookingHeaders,
   CreateEducationPurchaseMessageBody,
+  CreateEmployeeAppointmentSeriesHeaders,
+  CreateEmployeeAppointmentsHeaders,
+  CreateEmployeeBookingGroupHeaders,
   CreateOrderRmaBody,
   CreatePriceInquiry201,
   CreatePriceInquiryBody,
   CreatePublicEducationCourseInquiryBody,
   CreateRetailOrderRmaBody,
+  CreateSalonAppointmentHeaders,
+  CreateSalonAppointmentSeriesHeaders,
+  CreateSalonBookingGroupHeaders,
   CreateSalonLocationInput,
   CreateSalonLocationResult,
+  CreateSalonPackageAppointmentsHeaders,
   CreateShopQuoteBody,
   CreateTreatmentPackageBody,
   CreateWidgetAppointment429,
+  CreateWidgetAppointmentHeaders,
   CreateWidgetBookingGroup429,
+  CreateWidgetBookingGroupHeaders,
   CurrentUserResponse,
   CustomerAftercareRecommendation,
   CustomerDashboard,
@@ -421,6 +436,7 @@ import type {
   EmployeeShiftSwapOverview,
   EmployeeTimeBlock,
   EmployeeTimeBlockInput,
+  EnrollInEducationCourseHeaders,
   FavoriteInput,
   FavoriteResult,
   FeaturedPlacement,
@@ -555,6 +571,8 @@ import type {
   PublicRetailProductReviewList,
   PurchaseEducationBundle201,
   PurchaseEducationBundleBody,
+  PurchaseEducationBundleHeaders,
+  PurchaseEducationGiftVoucherHeaders,
   PurchasePackageBody,
   PushSubscription,
   PushSubscriptionInput,
@@ -573,6 +591,9 @@ import type {
   RegisterInput,
   RemoveProductWishlistItemParams,
   ReorderResult,
+  RepeatLastRetailOrderHeaders,
+  RepeatLastShopOrderHeaders,
+  RescheduleEducationOperationalBookingHeaders,
   RetailCart,
   RetailCartContactInput,
   RetailCartItemInput,
@@ -641,6 +662,7 @@ import type {
   ServiceTemplateBatchInput,
   ServiceTemplateBatchResult,
   SettleAdminEducationBundlePurchase200,
+  SettleAdminEducationInstallmentHeaders,
   SettleEducationPaymentObligation200,
   SettleEducationPaymentObligationBody,
   ShiftSwapCreate,
@@ -2768,13 +2790,14 @@ export const getCreateBookingGroupUrl = () => {
 /**
  * @summary Atomically book an ordered group of treatments
  */
-export const createBookingGroup = async (bookingGroupInput: BookingGroupInput, options?: Parameters<typeof customFetch>[1]): Promise<BookingGroup> => {
+export const createBookingGroup = async (bookingGroupInput: BookingGroupInput,
+    headers: CreateBookingGroupHeaders, options?: Parameters<typeof customFetch>[1]): Promise<BookingGroup> => {
 
   return customFetch<BookingGroup>(getCreateBookingGroupUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(bookingGroupInput)
   }
 );}
@@ -2784,8 +2807,8 @@ export const createBookingGroup = async (bookingGroupInput: BookingGroupInput, o
 
 
 export const getCreateBookingGroupMutationOptions = <TError = ErrorType<BookingGroupConflict | BookingCapacityReachedResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createBookingGroup>>, TError,{data: BodyType<BookingGroupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof createBookingGroup>>, TError,{data: BodyType<BookingGroupInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createBookingGroup>>, TError,{data: BodyType<BookingGroupInput>;headers: CreateBookingGroupHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createBookingGroup>>, TError,{data: BodyType<BookingGroupInput>;headers: CreateBookingGroupHeaders}, TContext> => {
 
 const mutationKey = ['createBookingGroup'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -2797,10 +2820,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createBookingGroup>>, {data: BodyType<BookingGroupInput>}> = (props) => {
-          const {data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createBookingGroup>>, {data: BodyType<BookingGroupInput>;headers: CreateBookingGroupHeaders}> = (props) => {
+          const {data,headers} = props ?? {};
 
-          return  createBookingGroup(data,requestOptions)
+          return  createBookingGroup(data,headers,requestOptions)
         }
 
 
@@ -2818,11 +2841,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Atomically book an ordered group of treatments
  */
 export const useCreateBookingGroup = <TError = ErrorType<BookingGroupConflict | BookingCapacityReachedResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createBookingGroup>>, TError,{data: BodyType<BookingGroupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createBookingGroup>>, TError,{data: BodyType<BookingGroupInput>;headers: CreateBookingGroupHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createBookingGroup>>,
         TError,
-        {data: BodyType<BookingGroupInput>},
+        {data: BodyType<BookingGroupInput>;headers: CreateBookingGroupHeaders},
         TContext
       > => {
       return useMutation(getCreateBookingGroupMutationOptions(options));
@@ -2839,13 +2862,14 @@ export const getCreateSalonBookingGroupUrl = () => {
 /**
  * @summary Atomically create a manual grouped booking for a CRM customer or guest
  */
-export const createSalonBookingGroup = async (manualBookingGroupInput: ManualBookingGroupInput, options?: Parameters<typeof customFetch>[1]): Promise<BookingGroup> => {
+export const createSalonBookingGroup = async (manualBookingGroupInput: ManualBookingGroupInput,
+    headers: CreateSalonBookingGroupHeaders, options?: Parameters<typeof customFetch>[1]): Promise<BookingGroup> => {
 
   return customFetch<BookingGroup>(getCreateSalonBookingGroupUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(manualBookingGroupInput)
   }
 );}
@@ -2855,8 +2879,8 @@ export const createSalonBookingGroup = async (manualBookingGroupInput: ManualBoo
 
 
 export const getCreateSalonBookingGroupMutationOptions = <TError = ErrorType<void | BookingGroupConflict | BookingCapacityReachedResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonBookingGroup>>, TError,{data: BodyType<ManualBookingGroupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof createSalonBookingGroup>>, TError,{data: BodyType<ManualBookingGroupInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonBookingGroup>>, TError,{data: BodyType<ManualBookingGroupInput>;headers: CreateSalonBookingGroupHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSalonBookingGroup>>, TError,{data: BodyType<ManualBookingGroupInput>;headers: CreateSalonBookingGroupHeaders}, TContext> => {
 
 const mutationKey = ['createSalonBookingGroup'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -2868,10 +2892,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSalonBookingGroup>>, {data: BodyType<ManualBookingGroupInput>}> = (props) => {
-          const {data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSalonBookingGroup>>, {data: BodyType<ManualBookingGroupInput>;headers: CreateSalonBookingGroupHeaders}> = (props) => {
+          const {data,headers} = props ?? {};
 
-          return  createSalonBookingGroup(data,requestOptions)
+          return  createSalonBookingGroup(data,headers,requestOptions)
         }
 
 
@@ -2889,11 +2913,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Atomically create a manual grouped booking for a CRM customer or guest
  */
 export const useCreateSalonBookingGroup = <TError = ErrorType<void | BookingGroupConflict | BookingCapacityReachedResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonBookingGroup>>, TError,{data: BodyType<ManualBookingGroupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonBookingGroup>>, TError,{data: BodyType<ManualBookingGroupInput>;headers: CreateSalonBookingGroupHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createSalonBookingGroup>>,
         TError,
-        {data: BodyType<ManualBookingGroupInput>},
+        {data: BodyType<ManualBookingGroupInput>;headers: CreateSalonBookingGroupHeaders},
         TContext
       > => {
       return useMutation(getCreateSalonBookingGroupMutationOptions(options));
@@ -2910,13 +2934,14 @@ export const getCreateEmployeeBookingGroupUrl = () => {
 /**
  * @summary Atomically create a manual grouped booking assigned to the signed-in employee
  */
-export const createEmployeeBookingGroup = async (manualBookingGroupInput: ManualBookingGroupInput, options?: Parameters<typeof customFetch>[1]): Promise<BookingGroup> => {
+export const createEmployeeBookingGroup = async (manualBookingGroupInput: ManualBookingGroupInput,
+    headers: CreateEmployeeBookingGroupHeaders, options?: Parameters<typeof customFetch>[1]): Promise<BookingGroup> => {
 
   return customFetch<BookingGroup>(getCreateEmployeeBookingGroupUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(manualBookingGroupInput)
   }
 );}
@@ -2926,8 +2951,8 @@ export const createEmployeeBookingGroup = async (manualBookingGroupInput: Manual
 
 
 export const getCreateEmployeeBookingGroupMutationOptions = <TError = ErrorType<void | BookingGroupConflict | BookingCapacityReachedResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeBookingGroup>>, TError,{data: BodyType<ManualBookingGroupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof createEmployeeBookingGroup>>, TError,{data: BodyType<ManualBookingGroupInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeBookingGroup>>, TError,{data: BodyType<ManualBookingGroupInput>;headers: CreateEmployeeBookingGroupHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createEmployeeBookingGroup>>, TError,{data: BodyType<ManualBookingGroupInput>;headers: CreateEmployeeBookingGroupHeaders}, TContext> => {
 
 const mutationKey = ['createEmployeeBookingGroup'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -2939,10 +2964,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createEmployeeBookingGroup>>, {data: BodyType<ManualBookingGroupInput>}> = (props) => {
-          const {data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createEmployeeBookingGroup>>, {data: BodyType<ManualBookingGroupInput>;headers: CreateEmployeeBookingGroupHeaders}> = (props) => {
+          const {data,headers} = props ?? {};
 
-          return  createEmployeeBookingGroup(data,requestOptions)
+          return  createEmployeeBookingGroup(data,headers,requestOptions)
         }
 
 
@@ -2960,11 +2985,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Atomically create a manual grouped booking assigned to the signed-in employee
  */
 export const useCreateEmployeeBookingGroup = <TError = ErrorType<void | BookingGroupConflict | BookingCapacityReachedResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeBookingGroup>>, TError,{data: BodyType<ManualBookingGroupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeBookingGroup>>, TError,{data: BodyType<ManualBookingGroupInput>;headers: CreateEmployeeBookingGroupHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createEmployeeBookingGroup>>,
         TError,
-        {data: BodyType<ManualBookingGroupInput>},
+        {data: BodyType<ManualBookingGroupInput>;headers: CreateEmployeeBookingGroupHeaders},
         TContext
       > => {
       return useMutation(getCreateEmployeeBookingGroupMutationOptions(options));
@@ -3298,13 +3323,14 @@ export const getCreateAppointmentUrl = () => {
 /**
  * @summary Create a booking
  */
-export const createAppointment = async (appointmentInput: AppointmentInput, options?: Parameters<typeof customFetch>[1]): Promise<Appointment> => {
+export const createAppointment = async (appointmentInput: AppointmentInput,
+    headers: CreateAppointmentHeaders, options?: Parameters<typeof customFetch>[1]): Promise<Appointment> => {
 
   return customFetch<Appointment>(getCreateAppointmentUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(appointmentInput)
   }
 );}
@@ -3314,8 +3340,8 @@ export const createAppointment = async (appointmentInput: AppointmentInput, opti
 
 
 export const getCreateAppointmentMutationOptions = <TError = ErrorType<AppointmentConflictError | BookingCapacityReachedResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAppointment>>, TError,{data: BodyType<AppointmentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof createAppointment>>, TError,{data: BodyType<AppointmentInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAppointment>>, TError,{data: BodyType<AppointmentInput>;headers: CreateAppointmentHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createAppointment>>, TError,{data: BodyType<AppointmentInput>;headers: CreateAppointmentHeaders}, TContext> => {
 
 const mutationKey = ['createAppointment'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -3327,10 +3353,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createAppointment>>, {data: BodyType<AppointmentInput>}> = (props) => {
-          const {data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createAppointment>>, {data: BodyType<AppointmentInput>;headers: CreateAppointmentHeaders}> = (props) => {
+          const {data,headers} = props ?? {};
 
-          return  createAppointment(data,requestOptions)
+          return  createAppointment(data,headers,requestOptions)
         }
 
 
@@ -3348,11 +3374,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Create a booking
  */
 export const useCreateAppointment = <TError = ErrorType<AppointmentConflictError | BookingCapacityReachedResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAppointment>>, TError,{data: BodyType<AppointmentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAppointment>>, TError,{data: BodyType<AppointmentInput>;headers: CreateAppointmentHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createAppointment>>,
         TError,
-        {data: BodyType<AppointmentInput>},
+        {data: BodyType<AppointmentInput>;headers: CreateAppointmentHeaders},
         TContext
       > => {
       return useMutation(getCreateAppointmentMutationOptions(options));
@@ -5916,13 +5942,14 @@ export const getCreateSalonAppointmentUrl = () => {
 /**
  * @summary Create a salon appointment for a CRM customer or walk-in guest
  */
-export const createSalonAppointment = async (salonAppointmentCreate: SalonAppointmentCreate, options?: Parameters<typeof customFetch>[1]): Promise<Appointment> => {
+export const createSalonAppointment = async (salonAppointmentCreate: SalonAppointmentCreate,
+    headers: CreateSalonAppointmentHeaders, options?: Parameters<typeof customFetch>[1]): Promise<Appointment> => {
 
   return customFetch<Appointment>(getCreateSalonAppointmentUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(salonAppointmentCreate)
   }
 );}
@@ -5932,8 +5959,8 @@ export const createSalonAppointment = async (salonAppointmentCreate: SalonAppoin
 
 
 export const getCreateSalonAppointmentMutationOptions = <TError = ErrorType<BookingCapacityReachedResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonAppointment>>, TError,{data: BodyType<SalonAppointmentCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof createSalonAppointment>>, TError,{data: BodyType<SalonAppointmentCreate>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonAppointment>>, TError,{data: BodyType<SalonAppointmentCreate>;headers: CreateSalonAppointmentHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSalonAppointment>>, TError,{data: BodyType<SalonAppointmentCreate>;headers: CreateSalonAppointmentHeaders}, TContext> => {
 
 const mutationKey = ['createSalonAppointment'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -5945,10 +5972,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSalonAppointment>>, {data: BodyType<SalonAppointmentCreate>}> = (props) => {
-          const {data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSalonAppointment>>, {data: BodyType<SalonAppointmentCreate>;headers: CreateSalonAppointmentHeaders}> = (props) => {
+          const {data,headers} = props ?? {};
 
-          return  createSalonAppointment(data,requestOptions)
+          return  createSalonAppointment(data,headers,requestOptions)
         }
 
 
@@ -5966,11 +5993,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Create a salon appointment for a CRM customer or walk-in guest
  */
 export const useCreateSalonAppointment = <TError = ErrorType<BookingCapacityReachedResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonAppointment>>, TError,{data: BodyType<SalonAppointmentCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonAppointment>>, TError,{data: BodyType<SalonAppointmentCreate>;headers: CreateSalonAppointmentHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createSalonAppointment>>,
         TError,
-        {data: BodyType<SalonAppointmentCreate>},
+        {data: BodyType<SalonAppointmentCreate>;headers: CreateSalonAppointmentHeaders},
         TContext
       > => {
       return useMutation(getCreateSalonAppointmentMutationOptions(options));
@@ -6129,13 +6156,14 @@ export const getCreateSalonPackageAppointmentsUrl = () => {
 /**
  * @summary Atomically book every remaining session in a purchased package
  */
-export const createSalonPackageAppointments = async (salonPackageAppointmentsInput: SalonPackageAppointmentsInput, options?: Parameters<typeof customFetch>[1]): Promise<SalonPackageAppointmentsResult> => {
+export const createSalonPackageAppointments = async (salonPackageAppointmentsInput: SalonPackageAppointmentsInput,
+    headers: CreateSalonPackageAppointmentsHeaders, options?: Parameters<typeof customFetch>[1]): Promise<SalonPackageAppointmentsResult> => {
 
   return customFetch<SalonPackageAppointmentsResult>(getCreateSalonPackageAppointmentsUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(salonPackageAppointmentsInput)
   }
 );}
@@ -6145,8 +6173,8 @@ export const createSalonPackageAppointments = async (salonPackageAppointmentsInp
 
 
 export const getCreateSalonPackageAppointmentsMutationOptions = <TError = ErrorType<BookingCapacityReachedResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonPackageAppointments>>, TError,{data: BodyType<SalonPackageAppointmentsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof createSalonPackageAppointments>>, TError,{data: BodyType<SalonPackageAppointmentsInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonPackageAppointments>>, TError,{data: BodyType<SalonPackageAppointmentsInput>;headers: CreateSalonPackageAppointmentsHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSalonPackageAppointments>>, TError,{data: BodyType<SalonPackageAppointmentsInput>;headers: CreateSalonPackageAppointmentsHeaders}, TContext> => {
 
 const mutationKey = ['createSalonPackageAppointments'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -6158,10 +6186,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSalonPackageAppointments>>, {data: BodyType<SalonPackageAppointmentsInput>}> = (props) => {
-          const {data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSalonPackageAppointments>>, {data: BodyType<SalonPackageAppointmentsInput>;headers: CreateSalonPackageAppointmentsHeaders}> = (props) => {
+          const {data,headers} = props ?? {};
 
-          return  createSalonPackageAppointments(data,requestOptions)
+          return  createSalonPackageAppointments(data,headers,requestOptions)
         }
 
 
@@ -6179,11 +6207,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Atomically book every remaining session in a purchased package
  */
 export const useCreateSalonPackageAppointments = <TError = ErrorType<BookingCapacityReachedResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonPackageAppointments>>, TError,{data: BodyType<SalonPackageAppointmentsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonPackageAppointments>>, TError,{data: BodyType<SalonPackageAppointmentsInput>;headers: CreateSalonPackageAppointmentsHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createSalonPackageAppointments>>,
         TError,
-        {data: BodyType<SalonPackageAppointmentsInput>},
+        {data: BodyType<SalonPackageAppointmentsInput>;headers: CreateSalonPackageAppointmentsHeaders},
         TContext
       > => {
       return useMutation(getCreateSalonPackageAppointmentsMutationOptions(options));
@@ -6594,13 +6622,14 @@ export const getCreateSalonAppointmentSeriesUrl = () => {
 /**
  * @summary Create an atomic salon appointment series
  */
-export const createSalonAppointmentSeries = async (salonAppointmentSeriesInput: SalonAppointmentSeriesInput, options?: Parameters<typeof customFetch>[1]): Promise<AppointmentSeriesResult> => {
+export const createSalonAppointmentSeries = async (salonAppointmentSeriesInput: SalonAppointmentSeriesInput,
+    headers: CreateSalonAppointmentSeriesHeaders, options?: Parameters<typeof customFetch>[1]): Promise<AppointmentSeriesResult> => {
 
   return customFetch<AppointmentSeriesResult>(getCreateSalonAppointmentSeriesUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(salonAppointmentSeriesInput)
   }
 );}
@@ -6610,8 +6639,8 @@ export const createSalonAppointmentSeries = async (salonAppointmentSeriesInput: 
 
 
 export const getCreateSalonAppointmentSeriesMutationOptions = <TError = ErrorType<BookingCapacityReachedResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonAppointmentSeries>>, TError,{data: BodyType<SalonAppointmentSeriesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof createSalonAppointmentSeries>>, TError,{data: BodyType<SalonAppointmentSeriesInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonAppointmentSeries>>, TError,{data: BodyType<SalonAppointmentSeriesInput>;headers: CreateSalonAppointmentSeriesHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSalonAppointmentSeries>>, TError,{data: BodyType<SalonAppointmentSeriesInput>;headers: CreateSalonAppointmentSeriesHeaders}, TContext> => {
 
 const mutationKey = ['createSalonAppointmentSeries'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -6623,10 +6652,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSalonAppointmentSeries>>, {data: BodyType<SalonAppointmentSeriesInput>}> = (props) => {
-          const {data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSalonAppointmentSeries>>, {data: BodyType<SalonAppointmentSeriesInput>;headers: CreateSalonAppointmentSeriesHeaders}> = (props) => {
+          const {data,headers} = props ?? {};
 
-          return  createSalonAppointmentSeries(data,requestOptions)
+          return  createSalonAppointmentSeries(data,headers,requestOptions)
         }
 
 
@@ -6644,11 +6673,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Create an atomic salon appointment series
  */
 export const useCreateSalonAppointmentSeries = <TError = ErrorType<BookingCapacityReachedResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonAppointmentSeries>>, TError,{data: BodyType<SalonAppointmentSeriesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonAppointmentSeries>>, TError,{data: BodyType<SalonAppointmentSeriesInput>;headers: CreateSalonAppointmentSeriesHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createSalonAppointmentSeries>>,
         TError,
-        {data: BodyType<SalonAppointmentSeriesInput>},
+        {data: BodyType<SalonAppointmentSeriesInput>;headers: CreateSalonAppointmentSeriesHeaders},
         TContext
       > => {
       return useMutation(getCreateSalonAppointmentSeriesMutationOptions(options));
@@ -7119,13 +7148,14 @@ export const getCreateEmployeeAppointmentSeriesUrl = () => {
 /**
  * @summary Create an atomic employee appointment series
  */
-export const createEmployeeAppointmentSeries = async (employeeAppointmentSeriesInput: EmployeeAppointmentSeriesInput, options?: Parameters<typeof customFetch>[1]): Promise<AppointmentSeriesResult> => {
+export const createEmployeeAppointmentSeries = async (employeeAppointmentSeriesInput: EmployeeAppointmentSeriesInput,
+    headers: CreateEmployeeAppointmentSeriesHeaders, options?: Parameters<typeof customFetch>[1]): Promise<AppointmentSeriesResult> => {
 
   return customFetch<AppointmentSeriesResult>(getCreateEmployeeAppointmentSeriesUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(employeeAppointmentSeriesInput)
   }
 );}
@@ -7135,8 +7165,8 @@ export const createEmployeeAppointmentSeries = async (employeeAppointmentSeriesI
 
 
 export const getCreateEmployeeAppointmentSeriesMutationOptions = <TError = ErrorType<BookingCapacityReachedResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeAppointmentSeries>>, TError,{data: BodyType<EmployeeAppointmentSeriesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof createEmployeeAppointmentSeries>>, TError,{data: BodyType<EmployeeAppointmentSeriesInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeAppointmentSeries>>, TError,{data: BodyType<EmployeeAppointmentSeriesInput>;headers: CreateEmployeeAppointmentSeriesHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createEmployeeAppointmentSeries>>, TError,{data: BodyType<EmployeeAppointmentSeriesInput>;headers: CreateEmployeeAppointmentSeriesHeaders}, TContext> => {
 
 const mutationKey = ['createEmployeeAppointmentSeries'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -7148,10 +7178,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createEmployeeAppointmentSeries>>, {data: BodyType<EmployeeAppointmentSeriesInput>}> = (props) => {
-          const {data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createEmployeeAppointmentSeries>>, {data: BodyType<EmployeeAppointmentSeriesInput>;headers: CreateEmployeeAppointmentSeriesHeaders}> = (props) => {
+          const {data,headers} = props ?? {};
 
-          return  createEmployeeAppointmentSeries(data,requestOptions)
+          return  createEmployeeAppointmentSeries(data,headers,requestOptions)
         }
 
 
@@ -7169,11 +7199,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Create an atomic employee appointment series
  */
 export const useCreateEmployeeAppointmentSeries = <TError = ErrorType<BookingCapacityReachedResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeAppointmentSeries>>, TError,{data: BodyType<EmployeeAppointmentSeriesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeAppointmentSeries>>, TError,{data: BodyType<EmployeeAppointmentSeriesInput>;headers: CreateEmployeeAppointmentSeriesHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createEmployeeAppointmentSeries>>,
         TError,
-        {data: BodyType<EmployeeAppointmentSeriesInput>},
+        {data: BodyType<EmployeeAppointmentSeriesInput>;headers: CreateEmployeeAppointmentSeriesHeaders},
         TContext
       > => {
       return useMutation(getCreateEmployeeAppointmentSeriesMutationOptions(options));
@@ -7190,13 +7220,14 @@ export const getCreateEmployeeAppointmentsUrl = () => {
 /**
  * @summary Atomically create one or more appointments assigned to the signed-in employee
  */
-export const createEmployeeAppointments = async (employeeAppointmentsInput: EmployeeAppointmentsInput, options?: Parameters<typeof customFetch>[1]): Promise<EmployeeAppointmentsResult> => {
+export const createEmployeeAppointments = async (employeeAppointmentsInput: EmployeeAppointmentsInput,
+    headers: CreateEmployeeAppointmentsHeaders, options?: Parameters<typeof customFetch>[1]): Promise<EmployeeAppointmentsResult> => {
 
   return customFetch<EmployeeAppointmentsResult>(getCreateEmployeeAppointmentsUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(employeeAppointmentsInput)
   }
 );}
@@ -7206,8 +7237,8 @@ export const createEmployeeAppointments = async (employeeAppointmentsInput: Empl
 
 
 export const getCreateEmployeeAppointmentsMutationOptions = <TError = ErrorType<void | AppointmentConflictError | IdempotencyMismatchError | BookingCapacityReachedResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeAppointments>>, TError,{data: BodyType<EmployeeAppointmentsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof createEmployeeAppointments>>, TError,{data: BodyType<EmployeeAppointmentsInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeAppointments>>, TError,{data: BodyType<EmployeeAppointmentsInput>;headers: CreateEmployeeAppointmentsHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createEmployeeAppointments>>, TError,{data: BodyType<EmployeeAppointmentsInput>;headers: CreateEmployeeAppointmentsHeaders}, TContext> => {
 
 const mutationKey = ['createEmployeeAppointments'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -7219,10 +7250,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createEmployeeAppointments>>, {data: BodyType<EmployeeAppointmentsInput>}> = (props) => {
-          const {data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createEmployeeAppointments>>, {data: BodyType<EmployeeAppointmentsInput>;headers: CreateEmployeeAppointmentsHeaders}> = (props) => {
+          const {data,headers} = props ?? {};
 
-          return  createEmployeeAppointments(data,requestOptions)
+          return  createEmployeeAppointments(data,headers,requestOptions)
         }
 
 
@@ -7240,11 +7271,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Atomically create one or more appointments assigned to the signed-in employee
  */
 export const useCreateEmployeeAppointments = <TError = ErrorType<void | AppointmentConflictError | IdempotencyMismatchError | BookingCapacityReachedResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeAppointments>>, TError,{data: BodyType<EmployeeAppointmentsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeAppointments>>, TError,{data: BodyType<EmployeeAppointmentsInput>;headers: CreateEmployeeAppointmentsHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createEmployeeAppointments>>,
         TError,
-        {data: BodyType<EmployeeAppointmentsInput>},
+        {data: BodyType<EmployeeAppointmentsInput>;headers: CreateEmployeeAppointmentsHeaders},
         TContext
       > => {
       return useMutation(getCreateEmployeeAppointmentsMutationOptions(options));
@@ -11054,13 +11085,13 @@ export const getRepeatLastShopOrderUrl = () => {
 /**
  * @summary Add eligible lines from the latest salon order at current prices
  */
-export const repeatLastShopOrder = async ( options?: Parameters<typeof customFetch>[1]): Promise<ReorderResult> => {
+export const repeatLastShopOrder = async (headers: RepeatLastShopOrderHeaders, options?: Parameters<typeof customFetch>[1]): Promise<ReorderResult> => {
 
   return customFetch<ReorderResult>(getRepeatLastShopOrderUrl(),
   {
     ...options,
-    method: 'POST'
-
+    method: 'POST',
+    headers: { ...headers, ...options?.headers }
 
   }
 );}
@@ -11070,8 +11101,8 @@ export const repeatLastShopOrder = async ( options?: Parameters<typeof customFet
 
 
 export const getRepeatLastShopOrderMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof repeatLastShopOrder>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof repeatLastShopOrder>>, TError,void, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof repeatLastShopOrder>>, TError,{headers: RepeatLastShopOrderHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof repeatLastShopOrder>>, TError,{headers: RepeatLastShopOrderHeaders}, TContext> => {
 
 const mutationKey = ['repeatLastShopOrder'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -11083,10 +11114,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof repeatLastShopOrder>>, void> = () => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof repeatLastShopOrder>>, {headers: RepeatLastShopOrderHeaders}> = (props) => {
+          const {headers} = props ?? {};
 
-
-          return  repeatLastShopOrder(requestOptions)
+          return  repeatLastShopOrder(headers,requestOptions)
         }
 
 
@@ -11104,11 +11135,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Add eligible lines from the latest salon order at current prices
  */
 export const useRepeatLastShopOrder = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof repeatLastShopOrder>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof repeatLastShopOrder>>, TError,{headers: RepeatLastShopOrderHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof repeatLastShopOrder>>,
         TError,
-        void,
+        {headers: RepeatLastShopOrderHeaders},
         TContext
       > => {
       return useMutation(getRepeatLastShopOrderMutationOptions(options));
@@ -12522,13 +12553,14 @@ export const getCheckoutEducationB2bOrderUrl = () => {
 /**
  * @summary Finalize a center B2B order and persist immutable benefit evidence
  */
-export const checkoutEducationB2bOrder = async (educationB2bCheckoutInput: EducationB2bCheckoutInput, options?: Parameters<typeof customFetch>[1]): Promise<EducationB2bOrder> => {
+export const checkoutEducationB2bOrder = async (educationB2bCheckoutInput: EducationB2bCheckoutInput,
+    headers: CheckoutEducationB2bOrderHeaders, options?: Parameters<typeof customFetch>[1]): Promise<EducationB2bOrder> => {
 
   return customFetch<EducationB2bOrder>(getCheckoutEducationB2bOrderUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(educationB2bCheckoutInput)
   }
 );}
@@ -12538,8 +12570,8 @@ export const checkoutEducationB2bOrder = async (educationB2bCheckoutInput: Educa
 
 
 export const getCheckoutEducationB2bOrderMutationOptions = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkoutEducationB2bOrder>>, TError,{data: BodyType<EducationB2bCheckoutInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof checkoutEducationB2bOrder>>, TError,{data: BodyType<EducationB2bCheckoutInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkoutEducationB2bOrder>>, TError,{data: BodyType<EducationB2bCheckoutInput>;headers: CheckoutEducationB2bOrderHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof checkoutEducationB2bOrder>>, TError,{data: BodyType<EducationB2bCheckoutInput>;headers: CheckoutEducationB2bOrderHeaders}, TContext> => {
 
 const mutationKey = ['checkoutEducationB2bOrder'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -12551,10 +12583,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof checkoutEducationB2bOrder>>, {data: BodyType<EducationB2bCheckoutInput>}> = (props) => {
-          const {data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof checkoutEducationB2bOrder>>, {data: BodyType<EducationB2bCheckoutInput>;headers: CheckoutEducationB2bOrderHeaders}> = (props) => {
+          const {data,headers} = props ?? {};
 
-          return  checkoutEducationB2bOrder(data,requestOptions)
+          return  checkoutEducationB2bOrder(data,headers,requestOptions)
         }
 
 
@@ -12572,11 +12604,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Finalize a center B2B order and persist immutable benefit evidence
  */
 export const useCheckoutEducationB2bOrder = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkoutEducationB2bOrder>>, TError,{data: BodyType<EducationB2bCheckoutInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkoutEducationB2bOrder>>, TError,{data: BodyType<EducationB2bCheckoutInput>;headers: CheckoutEducationB2bOrderHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof checkoutEducationB2bOrder>>,
         TError,
-        {data: BodyType<EducationB2bCheckoutInput>},
+        {data: BodyType<EducationB2bCheckoutInput>;headers: CheckoutEducationB2bOrderHeaders},
         TContext
       > => {
       return useMutation(getCheckoutEducationB2bOrderMutationOptions(options));
@@ -16366,13 +16398,14 @@ export const getPurchaseEducationBundleUrl = (bundleId: string,) => {
  * @summary Request one parent package entitlement
  */
 export const purchaseEducationBundle = async (bundleId: string,
-    purchaseEducationBundleBody: PurchaseEducationBundleBody, options?: Parameters<typeof customFetch>[1]): Promise<PurchaseEducationBundle201> => {
+    purchaseEducationBundleBody: PurchaseEducationBundleBody,
+    headers: PurchaseEducationBundleHeaders, options?: Parameters<typeof customFetch>[1]): Promise<PurchaseEducationBundle201> => {
 
   return customFetch<PurchaseEducationBundle201>(getPurchaseEducationBundleUrl(bundleId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(purchaseEducationBundleBody)
   }
 );}
@@ -16382,8 +16415,8 @@ export const purchaseEducationBundle = async (bundleId: string,
 
 
 export const getPurchaseEducationBundleMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof purchaseEducationBundle>>, TError,{bundleId: string;data: BodyType<PurchaseEducationBundleBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof purchaseEducationBundle>>, TError,{bundleId: string;data: BodyType<PurchaseEducationBundleBody>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof purchaseEducationBundle>>, TError,{bundleId: string;data: BodyType<PurchaseEducationBundleBody>;headers: PurchaseEducationBundleHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof purchaseEducationBundle>>, TError,{bundleId: string;data: BodyType<PurchaseEducationBundleBody>;headers: PurchaseEducationBundleHeaders}, TContext> => {
 
 const mutationKey = ['purchaseEducationBundle'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -16395,10 +16428,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof purchaseEducationBundle>>, {bundleId: string;data: BodyType<PurchaseEducationBundleBody>}> = (props) => {
-          const {bundleId,data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof purchaseEducationBundle>>, {bundleId: string;data: BodyType<PurchaseEducationBundleBody>;headers: PurchaseEducationBundleHeaders}> = (props) => {
+          const {bundleId,data,headers} = props ?? {};
 
-          return  purchaseEducationBundle(bundleId,data,requestOptions)
+          return  purchaseEducationBundle(bundleId,data,headers,requestOptions)
         }
 
 
@@ -16416,11 +16449,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Request one parent package entitlement
  */
 export const usePurchaseEducationBundle = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof purchaseEducationBundle>>, TError,{bundleId: string;data: BodyType<PurchaseEducationBundleBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof purchaseEducationBundle>>, TError,{bundleId: string;data: BodyType<PurchaseEducationBundleBody>;headers: PurchaseEducationBundleHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof purchaseEducationBundle>>,
         TError,
-        {bundleId: string;data: BodyType<PurchaseEducationBundleBody>},
+        {bundleId: string;data: BodyType<PurchaseEducationBundleBody>;headers: PurchaseEducationBundleHeaders},
         TContext
       > => {
       return useMutation(getPurchaseEducationBundleMutationOptions(options));
@@ -20063,13 +20096,14 @@ export const getCreateEducationOperationalBookingUrl = () => {
 /**
  * @summary Atomically create a named-seat booking for an in-person or hybrid course
  */
-export const createEducationOperationalBooking = async (educationOperationalBookingInput: EducationOperationalBookingInput, options?: Parameters<typeof customFetch>[1]): Promise<EducationOperationalBooking> => {
+export const createEducationOperationalBooking = async (educationOperationalBookingInput: EducationOperationalBookingInput,
+    headers: CreateEducationOperationalBookingHeaders, options?: Parameters<typeof customFetch>[1]): Promise<EducationOperationalBooking> => {
 
   return customFetch<EducationOperationalBooking>(getCreateEducationOperationalBookingUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(educationOperationalBookingInput)
   }
 );}
@@ -20079,8 +20113,8 @@ export const createEducationOperationalBooking = async (educationOperationalBook
 
 
 export const getCreateEducationOperationalBookingMutationOptions = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEducationOperationalBooking>>, TError,{data: BodyType<EducationOperationalBookingInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof createEducationOperationalBooking>>, TError,{data: BodyType<EducationOperationalBookingInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEducationOperationalBooking>>, TError,{data: BodyType<EducationOperationalBookingInput>;headers: CreateEducationOperationalBookingHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createEducationOperationalBooking>>, TError,{data: BodyType<EducationOperationalBookingInput>;headers: CreateEducationOperationalBookingHeaders}, TContext> => {
 
 const mutationKey = ['createEducationOperationalBooking'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -20092,10 +20126,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createEducationOperationalBooking>>, {data: BodyType<EducationOperationalBookingInput>}> = (props) => {
-          const {data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createEducationOperationalBooking>>, {data: BodyType<EducationOperationalBookingInput>;headers: CreateEducationOperationalBookingHeaders}> = (props) => {
+          const {data,headers} = props ?? {};
 
-          return  createEducationOperationalBooking(data,requestOptions)
+          return  createEducationOperationalBooking(data,headers,requestOptions)
         }
 
 
@@ -20113,11 +20147,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Atomically create a named-seat booking for an in-person or hybrid course
  */
 export const useCreateEducationOperationalBooking = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEducationOperationalBooking>>, TError,{data: BodyType<EducationOperationalBookingInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEducationOperationalBooking>>, TError,{data: BodyType<EducationOperationalBookingInput>;headers: CreateEducationOperationalBookingHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createEducationOperationalBooking>>,
         TError,
-        {data: BodyType<EducationOperationalBookingInput>},
+        {data: BodyType<EducationOperationalBookingInput>;headers: CreateEducationOperationalBookingHeaders},
         TContext
       > => {
       return useMutation(getCreateEducationOperationalBookingMutationOptions(options));
@@ -20447,13 +20481,14 @@ export const getSettleAdminEducationInstallmentUrl = (installmentId: string,) =>
 /**
  * @summary Manually settle one pending operational installment
  */
-export const settleAdminEducationInstallment = async (installmentId: string, options?: Parameters<typeof customFetch>[1]): Promise<EducationInstallmentSettlement> => {
+export const settleAdminEducationInstallment = async (installmentId: string,
+    headers: SettleAdminEducationInstallmentHeaders, options?: Parameters<typeof customFetch>[1]): Promise<EducationInstallmentSettlement> => {
 
   return customFetch<EducationInstallmentSettlement>(getSettleAdminEducationInstallmentUrl(installmentId),
   {
     ...options,
-    method: 'POST'
-
+    method: 'POST',
+    headers: { ...headers, ...options?.headers }
 
   }
 );}
@@ -20463,8 +20498,8 @@ export const settleAdminEducationInstallment = async (installmentId: string, opt
 
 
 export const getSettleAdminEducationInstallmentMutationOptions = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof settleAdminEducationInstallment>>, TError,{installmentId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof settleAdminEducationInstallment>>, TError,{installmentId: string}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof settleAdminEducationInstallment>>, TError,{installmentId: string;headers: SettleAdminEducationInstallmentHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof settleAdminEducationInstallment>>, TError,{installmentId: string;headers: SettleAdminEducationInstallmentHeaders}, TContext> => {
 
 const mutationKey = ['settleAdminEducationInstallment'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -20476,10 +20511,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof settleAdminEducationInstallment>>, {installmentId: string}> = (props) => {
-          const {installmentId} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof settleAdminEducationInstallment>>, {installmentId: string;headers: SettleAdminEducationInstallmentHeaders}> = (props) => {
+          const {installmentId,headers} = props ?? {};
 
-          return  settleAdminEducationInstallment(installmentId,requestOptions)
+          return  settleAdminEducationInstallment(installmentId,headers,requestOptions)
         }
 
 
@@ -20497,11 +20532,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Manually settle one pending operational installment
  */
 export const useSettleAdminEducationInstallment = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof settleAdminEducationInstallment>>, TError,{installmentId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof settleAdminEducationInstallment>>, TError,{installmentId: string;headers: SettleAdminEducationInstallmentHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof settleAdminEducationInstallment>>,
         TError,
-        {installmentId: string},
+        {installmentId: string;headers: SettleAdminEducationInstallmentHeaders},
         TContext
       > => {
       return useMutation(getSettleAdminEducationInstallmentMutationOptions(options));
@@ -20675,13 +20710,14 @@ export const getRescheduleEducationOperationalBookingUrl = (bookingGroupId: stri
  * @summary Atomically move whole or selected operational booking seats to a compatible session
  */
 export const rescheduleEducationOperationalBooking = async (bookingGroupId: string,
-    educationOperationalBookingRescheduleInput: EducationOperationalBookingRescheduleInput, options?: Parameters<typeof customFetch>[1]): Promise<EducationOperationalBookingOperation> => {
+    educationOperationalBookingRescheduleInput: EducationOperationalBookingRescheduleInput,
+    headers: RescheduleEducationOperationalBookingHeaders, options?: Parameters<typeof customFetch>[1]): Promise<EducationOperationalBookingOperation> => {
 
   return customFetch<EducationOperationalBookingOperation>(getRescheduleEducationOperationalBookingUrl(bookingGroupId),
   {
     ...options,
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(educationOperationalBookingRescheduleInput)
   }
 );}
@@ -20691,8 +20727,8 @@ export const rescheduleEducationOperationalBooking = async (bookingGroupId: stri
 
 
 export const getRescheduleEducationOperationalBookingMutationOptions = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rescheduleEducationOperationalBooking>>, TError,{bookingGroupId: string;data: BodyType<EducationOperationalBookingRescheduleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof rescheduleEducationOperationalBooking>>, TError,{bookingGroupId: string;data: BodyType<EducationOperationalBookingRescheduleInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rescheduleEducationOperationalBooking>>, TError,{bookingGroupId: string;data: BodyType<EducationOperationalBookingRescheduleInput>;headers: RescheduleEducationOperationalBookingHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof rescheduleEducationOperationalBooking>>, TError,{bookingGroupId: string;data: BodyType<EducationOperationalBookingRescheduleInput>;headers: RescheduleEducationOperationalBookingHeaders}, TContext> => {
 
 const mutationKey = ['rescheduleEducationOperationalBooking'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -20704,10 +20740,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rescheduleEducationOperationalBooking>>, {bookingGroupId: string;data: BodyType<EducationOperationalBookingRescheduleInput>}> = (props) => {
-          const {bookingGroupId,data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rescheduleEducationOperationalBooking>>, {bookingGroupId: string;data: BodyType<EducationOperationalBookingRescheduleInput>;headers: RescheduleEducationOperationalBookingHeaders}> = (props) => {
+          const {bookingGroupId,data,headers} = props ?? {};
 
-          return  rescheduleEducationOperationalBooking(bookingGroupId,data,requestOptions)
+          return  rescheduleEducationOperationalBooking(bookingGroupId,data,headers,requestOptions)
         }
 
 
@@ -20725,11 +20761,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Atomically move whole or selected operational booking seats to a compatible session
  */
 export const useRescheduleEducationOperationalBooking = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rescheduleEducationOperationalBooking>>, TError,{bookingGroupId: string;data: BodyType<EducationOperationalBookingRescheduleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rescheduleEducationOperationalBooking>>, TError,{bookingGroupId: string;data: BodyType<EducationOperationalBookingRescheduleInput>;headers: RescheduleEducationOperationalBookingHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof rescheduleEducationOperationalBooking>>,
         TError,
-        {bookingGroupId: string;data: BodyType<EducationOperationalBookingRescheduleInput>},
+        {bookingGroupId: string;data: BodyType<EducationOperationalBookingRescheduleInput>;headers: RescheduleEducationOperationalBookingHeaders},
         TContext
       > => {
       return useMutation(getRescheduleEducationOperationalBookingMutationOptions(options));
@@ -21121,13 +21157,14 @@ export const getCommitEducationCourseRecurrenceUrl = (courseId: string,) => {
 }
 
 export const commitEducationCourseRecurrence = async (courseId: string,
-    educationCourseRecurrenceInput: EducationCourseRecurrenceInput, options?: Parameters<typeof customFetch>[1]): Promise<EducationCourseRecurrenceCommit> => {
+    educationCourseRecurrenceInput: EducationCourseRecurrenceInput,
+    headers: CommitEducationCourseRecurrenceHeaders, options?: Parameters<typeof customFetch>[1]): Promise<EducationCourseRecurrenceCommit> => {
 
   return customFetch<EducationCourseRecurrenceCommit>(getCommitEducationCourseRecurrenceUrl(courseId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(educationCourseRecurrenceInput)
   }
 );}
@@ -21137,8 +21174,8 @@ export const commitEducationCourseRecurrence = async (courseId: string,
 
 
 export const getCommitEducationCourseRecurrenceMutationOptions = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof commitEducationCourseRecurrence>>, TError,{courseId: string;data: BodyType<EducationCourseRecurrenceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof commitEducationCourseRecurrence>>, TError,{courseId: string;data: BodyType<EducationCourseRecurrenceInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof commitEducationCourseRecurrence>>, TError,{courseId: string;data: BodyType<EducationCourseRecurrenceInput>;headers: CommitEducationCourseRecurrenceHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof commitEducationCourseRecurrence>>, TError,{courseId: string;data: BodyType<EducationCourseRecurrenceInput>;headers: CommitEducationCourseRecurrenceHeaders}, TContext> => {
 
 const mutationKey = ['commitEducationCourseRecurrence'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -21150,10 +21187,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof commitEducationCourseRecurrence>>, {courseId: string;data: BodyType<EducationCourseRecurrenceInput>}> = (props) => {
-          const {courseId,data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof commitEducationCourseRecurrence>>, {courseId: string;data: BodyType<EducationCourseRecurrenceInput>;headers: CommitEducationCourseRecurrenceHeaders}> = (props) => {
+          const {courseId,data,headers} = props ?? {};
 
-          return  commitEducationCourseRecurrence(courseId,data,requestOptions)
+          return  commitEducationCourseRecurrence(courseId,data,headers,requestOptions)
         }
 
 
@@ -21168,11 +21205,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type CommitEducationCourseRecurrenceMutationError = ErrorType<void>
 
     export const useCommitEducationCourseRecurrence = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof commitEducationCourseRecurrence>>, TError,{courseId: string;data: BodyType<EducationCourseRecurrenceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof commitEducationCourseRecurrence>>, TError,{courseId: string;data: BodyType<EducationCourseRecurrenceInput>;headers: CommitEducationCourseRecurrenceHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof commitEducationCourseRecurrence>>,
         TError,
-        {courseId: string;data: BodyType<EducationCourseRecurrenceInput>},
+        {courseId: string;data: BodyType<EducationCourseRecurrenceInput>;headers: CommitEducationCourseRecurrenceHeaders},
         TContext
       > => {
       return useMutation(getCommitEducationCourseRecurrenceMutationOptions(options));
@@ -22332,13 +22369,14 @@ export const getEnrollInEducationCourseUrl = (courseId: string,) => {
  * @summary Request a course purchase for the purchaser or one salon employee; access and escrow begin only after trusted manual settlement
  */
 export const enrollInEducationCourse = async (courseId: string,
+    headers: EnrollInEducationCourseHeaders,
     educationEnrollmentInput?: EducationEnrollmentInput, options?: Parameters<typeof customFetch>[1]): Promise<EducationEnrollment> => {
 
   return customFetch<EducationEnrollment>(getEnrollInEducationCourseUrl(courseId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(educationEnrollmentInput)
   }
 );}
@@ -22348,8 +22386,8 @@ export const enrollInEducationCourse = async (courseId: string,
 
 
 export const getEnrollInEducationCourseMutationOptions = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof enrollInEducationCourse>>, TError,{courseId: string;data?: BodyType<EducationEnrollmentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof enrollInEducationCourse>>, TError,{courseId: string;data?: BodyType<EducationEnrollmentInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof enrollInEducationCourse>>, TError,{courseId: string;headers: EnrollInEducationCourseHeaders;data?: BodyType<EducationEnrollmentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof enrollInEducationCourse>>, TError,{courseId: string;headers: EnrollInEducationCourseHeaders;data?: BodyType<EducationEnrollmentInput>}, TContext> => {
 
 const mutationKey = ['enrollInEducationCourse'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -22361,10 +22399,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof enrollInEducationCourse>>, {courseId: string;data?: BodyType<EducationEnrollmentInput>}> = (props) => {
-          const {courseId,data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof enrollInEducationCourse>>, {courseId: string;headers: EnrollInEducationCourseHeaders;data?: BodyType<EducationEnrollmentInput>}> = (props) => {
+          const {courseId,headers,data} = props ?? {};
 
-          return  enrollInEducationCourse(courseId,data,requestOptions)
+          return  enrollInEducationCourse(courseId,headers,data,requestOptions)
         }
 
 
@@ -22382,11 +22420,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Request a course purchase for the purchaser or one salon employee; access and escrow begin only after trusted manual settlement
  */
 export const useEnrollInEducationCourse = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof enrollInEducationCourse>>, TError,{courseId: string;data?: BodyType<EducationEnrollmentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof enrollInEducationCourse>>, TError,{courseId: string;headers: EnrollInEducationCourseHeaders;data?: BodyType<EducationEnrollmentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof enrollInEducationCourse>>,
         TError,
-        {courseId: string;data?: BodyType<EducationEnrollmentInput>},
+        {courseId: string;headers: EnrollInEducationCourseHeaders;data?: BodyType<EducationEnrollmentInput>},
         TContext
       > => {
       return useMutation(getEnrollInEducationCourseMutationOptions(options));
@@ -22404,13 +22442,14 @@ export const getCreateEducationGroupEnrollmentsUrl = (courseId: string,) => {
  * @summary Request one course purchase per selected salon employee in a single transaction
  */
 export const createEducationGroupEnrollments = async (courseId: string,
-    educationGroupEnrollmentInput: EducationGroupEnrollmentInput, options?: Parameters<typeof customFetch>[1]): Promise<EducationGroupEnrollmentResponse> => {
+    educationGroupEnrollmentInput: EducationGroupEnrollmentInput,
+    headers?: CreateEducationGroupEnrollmentsHeaders, options?: Parameters<typeof customFetch>[1]): Promise<EducationGroupEnrollmentResponse> => {
 
   return customFetch<EducationGroupEnrollmentResponse>(getCreateEducationGroupEnrollmentsUrl(courseId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(educationGroupEnrollmentInput)
   }
 );}
@@ -22420,8 +22459,8 @@ export const createEducationGroupEnrollments = async (courseId: string,
 
 
 export const getCreateEducationGroupEnrollmentsMutationOptions = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEducationGroupEnrollments>>, TError,{courseId: string;data: BodyType<EducationGroupEnrollmentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof createEducationGroupEnrollments>>, TError,{courseId: string;data: BodyType<EducationGroupEnrollmentInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEducationGroupEnrollments>>, TError,{courseId: string;data: BodyType<EducationGroupEnrollmentInput>;headers?: CreateEducationGroupEnrollmentsHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createEducationGroupEnrollments>>, TError,{courseId: string;data: BodyType<EducationGroupEnrollmentInput>;headers?: CreateEducationGroupEnrollmentsHeaders}, TContext> => {
 
 const mutationKey = ['createEducationGroupEnrollments'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -22433,10 +22472,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createEducationGroupEnrollments>>, {courseId: string;data: BodyType<EducationGroupEnrollmentInput>}> = (props) => {
-          const {courseId,data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createEducationGroupEnrollments>>, {courseId: string;data: BodyType<EducationGroupEnrollmentInput>;headers?: CreateEducationGroupEnrollmentsHeaders}> = (props) => {
+          const {courseId,data,headers} = props ?? {};
 
-          return  createEducationGroupEnrollments(courseId,data,requestOptions)
+          return  createEducationGroupEnrollments(courseId,data,headers,requestOptions)
         }
 
 
@@ -22454,11 +22493,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Request one course purchase per selected salon employee in a single transaction
  */
 export const useCreateEducationGroupEnrollments = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEducationGroupEnrollments>>, TError,{courseId: string;data: BodyType<EducationGroupEnrollmentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEducationGroupEnrollments>>, TError,{courseId: string;data: BodyType<EducationGroupEnrollmentInput>;headers?: CreateEducationGroupEnrollmentsHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createEducationGroupEnrollments>>,
         TError,
-        {courseId: string;data: BodyType<EducationGroupEnrollmentInput>},
+        {courseId: string;data: BodyType<EducationGroupEnrollmentInput>;headers?: CreateEducationGroupEnrollmentsHeaders},
         TContext
       > => {
       return useMutation(getCreateEducationGroupEnrollmentsMutationOptions(options));
@@ -25787,13 +25826,14 @@ export const getPurchaseEducationGiftVoucherUrl = () => {
 /**
  * @summary Create a manual-payment gift voucher purchase
  */
-export const purchaseEducationGiftVoucher = async (educationGiftVoucherPurchaseInput: EducationGiftVoucherPurchaseInput, options?: Parameters<typeof customFetch>[1]): Promise<EducationGiftVoucherPurchase> => {
+export const purchaseEducationGiftVoucher = async (educationGiftVoucherPurchaseInput: EducationGiftVoucherPurchaseInput,
+    headers: PurchaseEducationGiftVoucherHeaders, options?: Parameters<typeof customFetch>[1]): Promise<EducationGiftVoucherPurchase> => {
 
   return customFetch<EducationGiftVoucherPurchase>(getPurchaseEducationGiftVoucherUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(educationGiftVoucherPurchaseInput)
   }
 );}
@@ -25803,8 +25843,8 @@ export const purchaseEducationGiftVoucher = async (educationGiftVoucherPurchaseI
 
 
 export const getPurchaseEducationGiftVoucherMutationOptions = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof purchaseEducationGiftVoucher>>, TError,{data: BodyType<EducationGiftVoucherPurchaseInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof purchaseEducationGiftVoucher>>, TError,{data: BodyType<EducationGiftVoucherPurchaseInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof purchaseEducationGiftVoucher>>, TError,{data: BodyType<EducationGiftVoucherPurchaseInput>;headers: PurchaseEducationGiftVoucherHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof purchaseEducationGiftVoucher>>, TError,{data: BodyType<EducationGiftVoucherPurchaseInput>;headers: PurchaseEducationGiftVoucherHeaders}, TContext> => {
 
 const mutationKey = ['purchaseEducationGiftVoucher'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -25816,10 +25856,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof purchaseEducationGiftVoucher>>, {data: BodyType<EducationGiftVoucherPurchaseInput>}> = (props) => {
-          const {data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof purchaseEducationGiftVoucher>>, {data: BodyType<EducationGiftVoucherPurchaseInput>;headers: PurchaseEducationGiftVoucherHeaders}> = (props) => {
+          const {data,headers} = props ?? {};
 
-          return  purchaseEducationGiftVoucher(data,requestOptions)
+          return  purchaseEducationGiftVoucher(data,headers,requestOptions)
         }
 
 
@@ -25837,11 +25877,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Create a manual-payment gift voucher purchase
  */
 export const usePurchaseEducationGiftVoucher = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof purchaseEducationGiftVoucher>>, TError,{data: BodyType<EducationGiftVoucherPurchaseInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof purchaseEducationGiftVoucher>>, TError,{data: BodyType<EducationGiftVoucherPurchaseInput>;headers: PurchaseEducationGiftVoucherHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof purchaseEducationGiftVoucher>>,
         TError,
-        {data: BodyType<EducationGiftVoucherPurchaseInput>},
+        {data: BodyType<EducationGiftVoucherPurchaseInput>;headers: PurchaseEducationGiftVoucherHeaders},
         TContext
       > => {
       return useMutation(getPurchaseEducationGiftVoucherMutationOptions(options));
@@ -37997,13 +38037,14 @@ export const getCreateWidgetAppointmentUrl = (slug: string,) => {
  * @summary Public widget booking — creates a pending appointment for the salon
  */
 export const createWidgetAppointment = async (slug: string,
-    widgetAppointmentCreate: WidgetAppointmentCreate, options?: Parameters<typeof customFetch>[1]): Promise<WidgetAppointmentCreated> => {
+    widgetAppointmentCreate: WidgetAppointmentCreate,
+    headers: CreateWidgetAppointmentHeaders, options?: Parameters<typeof customFetch>[1]): Promise<WidgetAppointmentCreated> => {
 
   return customFetch<WidgetAppointmentCreated>(getCreateWidgetAppointmentUrl(slug),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(widgetAppointmentCreate)
   }
 );}
@@ -38013,8 +38054,8 @@ export const createWidgetAppointment = async (slug: string,
 
 
 export const getCreateWidgetAppointmentMutationOptions = <TError = ErrorType<void | CreateWidgetAppointment429>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWidgetAppointment>>, TError,{slug: string;data: BodyType<WidgetAppointmentCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof createWidgetAppointment>>, TError,{slug: string;data: BodyType<WidgetAppointmentCreate>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWidgetAppointment>>, TError,{slug: string;data: BodyType<WidgetAppointmentCreate>;headers: CreateWidgetAppointmentHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createWidgetAppointment>>, TError,{slug: string;data: BodyType<WidgetAppointmentCreate>;headers: CreateWidgetAppointmentHeaders}, TContext> => {
 
 const mutationKey = ['createWidgetAppointment'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -38026,10 +38067,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createWidgetAppointment>>, {slug: string;data: BodyType<WidgetAppointmentCreate>}> = (props) => {
-          const {slug,data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createWidgetAppointment>>, {slug: string;data: BodyType<WidgetAppointmentCreate>;headers: CreateWidgetAppointmentHeaders}> = (props) => {
+          const {slug,data,headers} = props ?? {};
 
-          return  createWidgetAppointment(slug,data,requestOptions)
+          return  createWidgetAppointment(slug,data,headers,requestOptions)
         }
 
 
@@ -38047,11 +38088,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Public widget booking — creates a pending appointment for the salon
  */
 export const useCreateWidgetAppointment = <TError = ErrorType<void | CreateWidgetAppointment429>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWidgetAppointment>>, TError,{slug: string;data: BodyType<WidgetAppointmentCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWidgetAppointment>>, TError,{slug: string;data: BodyType<WidgetAppointmentCreate>;headers: CreateWidgetAppointmentHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createWidgetAppointment>>,
         TError,
-        {slug: string;data: BodyType<WidgetAppointmentCreate>},
+        {slug: string;data: BodyType<WidgetAppointmentCreate>;headers: CreateWidgetAppointmentHeaders},
         TContext
       > => {
       return useMutation(getCreateWidgetAppointmentMutationOptions(options));
@@ -38069,13 +38110,14 @@ export const getCreateWidgetBookingGroupUrl = (slug: string,) => {
  * @summary Public rate-limited grouped booking for an anonymous salon customer
  */
 export const createWidgetBookingGroup = async (slug: string,
-    widgetBookingGroupCreate: WidgetBookingGroupCreate, options?: Parameters<typeof customFetch>[1]): Promise<BookingGroup> => {
+    widgetBookingGroupCreate: WidgetBookingGroupCreate,
+    headers: CreateWidgetBookingGroupHeaders, options?: Parameters<typeof customFetch>[1]): Promise<BookingGroup> => {
 
   return customFetch<BookingGroup>(getCreateWidgetBookingGroupUrl(slug),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(widgetBookingGroupCreate)
   }
 );}
@@ -38085,8 +38127,8 @@ export const createWidgetBookingGroup = async (slug: string,
 
 
 export const getCreateWidgetBookingGroupMutationOptions = <TError = ErrorType<void | CreateWidgetBookingGroup429>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWidgetBookingGroup>>, TError,{slug: string;data: BodyType<WidgetBookingGroupCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof createWidgetBookingGroup>>, TError,{slug: string;data: BodyType<WidgetBookingGroupCreate>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWidgetBookingGroup>>, TError,{slug: string;data: BodyType<WidgetBookingGroupCreate>;headers: CreateWidgetBookingGroupHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createWidgetBookingGroup>>, TError,{slug: string;data: BodyType<WidgetBookingGroupCreate>;headers: CreateWidgetBookingGroupHeaders}, TContext> => {
 
 const mutationKey = ['createWidgetBookingGroup'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -38098,10 +38140,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createWidgetBookingGroup>>, {slug: string;data: BodyType<WidgetBookingGroupCreate>}> = (props) => {
-          const {slug,data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createWidgetBookingGroup>>, {slug: string;data: BodyType<WidgetBookingGroupCreate>;headers: CreateWidgetBookingGroupHeaders}> = (props) => {
+          const {slug,data,headers} = props ?? {};
 
-          return  createWidgetBookingGroup(slug,data,requestOptions)
+          return  createWidgetBookingGroup(slug,data,headers,requestOptions)
         }
 
 
@@ -38119,11 +38161,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Public rate-limited grouped booking for an anonymous salon customer
  */
 export const useCreateWidgetBookingGroup = <TError = ErrorType<void | CreateWidgetBookingGroup429>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWidgetBookingGroup>>, TError,{slug: string;data: BodyType<WidgetBookingGroupCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWidgetBookingGroup>>, TError,{slug: string;data: BodyType<WidgetBookingGroupCreate>;headers: CreateWidgetBookingGroupHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createWidgetBookingGroup>>,
         TError,
-        {slug: string;data: BodyType<WidgetBookingGroupCreate>},
+        {slug: string;data: BodyType<WidgetBookingGroupCreate>;headers: CreateWidgetBookingGroupHeaders},
         TContext
       > => {
       return useMutation(getCreateWidgetBookingGroupMutationOptions(options));
@@ -39090,13 +39132,13 @@ export const getRepeatLastRetailOrderUrl = () => {
 /**
  * @summary Add eligible lines from the authenticated CUSTOMER or JOBSEEKER account's latest retail order
  */
-export const repeatLastRetailOrder = async ( options?: Parameters<typeof customFetch>[1]): Promise<ReorderResult> => {
+export const repeatLastRetailOrder = async (headers: RepeatLastRetailOrderHeaders, options?: Parameters<typeof customFetch>[1]): Promise<ReorderResult> => {
 
   return customFetch<ReorderResult>(getRepeatLastRetailOrderUrl(),
   {
     ...options,
-    method: 'POST'
-
+    method: 'POST',
+    headers: { ...headers, ...options?.headers }
 
   }
 );}
@@ -39106,8 +39148,8 @@ export const repeatLastRetailOrder = async ( options?: Parameters<typeof customF
 
 
 export const getRepeatLastRetailOrderMutationOptions = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof repeatLastRetailOrder>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof repeatLastRetailOrder>>, TError,void, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof repeatLastRetailOrder>>, TError,{headers: RepeatLastRetailOrderHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof repeatLastRetailOrder>>, TError,{headers: RepeatLastRetailOrderHeaders}, TContext> => {
 
 const mutationKey = ['repeatLastRetailOrder'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -39119,10 +39161,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof repeatLastRetailOrder>>, void> = () => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof repeatLastRetailOrder>>, {headers: RepeatLastRetailOrderHeaders}> = (props) => {
+          const {headers} = props ?? {};
 
-
-          return  repeatLastRetailOrder(requestOptions)
+          return  repeatLastRetailOrder(headers,requestOptions)
         }
 
 
@@ -39140,11 +39182,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Add eligible lines from the authenticated CUSTOMER or JOBSEEKER account's latest retail order
  */
 export const useRepeatLastRetailOrder = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof repeatLastRetailOrder>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof repeatLastRetailOrder>>, TError,{headers: RepeatLastRetailOrderHeaders}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof repeatLastRetailOrder>>,
         TError,
-        void,
+        {headers: RepeatLastRetailOrderHeaders},
         TContext
       > => {
       return useMutation(getRepeatLastRetailOrderMutationOptions(options));

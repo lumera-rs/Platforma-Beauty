@@ -1234,9 +1234,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
     () => crypto.randomUUID(),
     [courseId, learnerId, sessionId, paymentMode],
   );
-  const enroll = useEnrollInEducationCourse({
-    request: { headers: { "Idempotency-Key": enrollmentIdempotencyKey } },
-  });
+  const enroll = useEnrollInEducationCourse();
   const pendingEnrollmentId = createdEnrollmentId
     ?? (isSalonOwner && pendingCourseEnrollmentIds.length === 1 ? pendingCourseEnrollmentIds[0] : null);
   const { data: paymentInstructions, isLoading: paymentInstructionsLoading, isError: paymentInstructionsError } = useGetEducationEnrollmentPaymentInstructions(
@@ -1281,7 +1279,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
       sessionId: sessionId || null,
       paymentMode,
       ...(course?.format === "online" ? { digitalContentConsent } : {}),
-    } }, {
+    }, headers: { "Idempotency-Key": enrollmentIdempotencyKey } }, {
       onSuccess: (res: any) => {
         setCreatedEnrollmentId(res.id);
         setDigitalContentConsent(false);
@@ -1306,7 +1304,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
         ...(groupSessionId ? { sessionId: groupSessionId } : {}),
         ...(course?.format === "online" ? { digitalContentConsent: groupDigitalContentConsent } : {}),
       }, {
-        headers: { "Idempotency-Key": crypto.randomUUID() },
+        "Idempotency-Key": crypto.randomUUID(),
       });
       const discountMsg = data.discountPercent > 0
         ? ` Primenjen je popust od ${data.discountPercent}%. Cena po polazniku: ${data.unitPrice.toLocaleString("sr-RS")} RSD.`

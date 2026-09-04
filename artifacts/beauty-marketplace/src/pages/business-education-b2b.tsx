@@ -24,7 +24,7 @@ export default function BusinessEducationB2b() {
   // rotates once the attempt actually succeeds (see handleCheckout's
   // onSuccess below), so a genuinely new, later checkout gets a fresh key.
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
-  const checkoutMut = useCheckoutEducationB2bOrder({ request: { headers: { "Idempotency-Key": idempotencyKey } } });
+  const checkoutMut = useCheckoutEducationB2bOrder();
   const { toast } = useToast();
 
   const [cart, setCart] = useState<Record<string, number>>({});
@@ -80,11 +80,12 @@ export default function BusinessEducationB2b() {
     
     const lines = Object.entries(cart).map(([productId, quantity]) => ({ productId, quantity }));
     
-    checkoutMut.mutate({ 
-      data: { 
+    checkoutMut.mutate({
+      data: {
         lines,
         expectedTotalRsd: quote.payableTotalRsd
-      } 
+      },
+      headers: { "Idempotency-Key": idempotencyKey },
     }, {
       onSuccess: () => {
         setOrderConfirmed(true);

@@ -11,7 +11,7 @@ export function RescheduleModal({ booking, onClose, onSuccess }: { booking: any,
   const { data: availability, isLoading: isAvailLoading, isError: isAvailError, refetch: refetchAvailability } = useGetEducationCourseAvailability(booking.courseId, {}, {
     query: { enabled: !!booking.courseId, queryKey: ["getEducationCourseAvailability", booking.courseId, "", ""] }
   });
-  const mut = useRescheduleEducationOperationalBooking({ request: { headers: { "Idempotency-Key": crypto.randomUUID() } } });
+  const mut = useRescheduleEducationOperationalBooking();
   const { toast } = useToast();
   
   const [selectedCandidate, setSelectedCandidate] = useState<any>(null);
@@ -56,7 +56,8 @@ export function RescheduleModal({ booking, onClose, onSuccess }: { booking: any,
       data: {
         targetSessionId,
         participantIds: booking.participants.filter((p: any) => p.status === "reserved" || p.status === "waitlisted").map((p: any) => p.id)
-      }
+      },
+      headers: { "Idempotency-Key": crypto.randomUUID() },
     }, {
       onSuccess: () => {
         toast.success("Termin je uspešno promenjen");

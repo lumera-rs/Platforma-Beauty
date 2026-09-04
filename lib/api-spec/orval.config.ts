@@ -32,6 +32,13 @@ export default defineConfig({
       baseUrl: "/api",
       clean: true,
       prettier: true,
+      // Generates a typed `headers` function/mutation parameter for any
+      // operation that declares OpenAPI header parameters (using the same
+      // mechanism already used for query params), instead of leaving
+      // required headers reachable only through the generic, untyped
+      // `request` mutator-options passthrough. Endpoints with no header
+      // parameters are unaffected; optional headers stay optional.
+      headers: true,
       override: {
         fetch: {
           includeHttpResponseReturnType: false,

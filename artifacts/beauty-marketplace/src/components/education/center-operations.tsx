@@ -326,7 +326,7 @@ function SessionDetailDialog({ session, centerId, permissions, onClose }: { sess
   const { toast } = useToast();
   
   const [guestBookingKey, setGuestBookingKey] = useState(() => crypto.randomUUID());
-  const addGuestMut = useCreateEducationOperationalBooking({ request: { headers: { "Idempotency-Key": guestBookingKey } } });
+  const addGuestMut = useCreateEducationOperationalBooking();
   const cancelSessionMut = useCancelEducationOperationalSession();
   const substituteMut = useSubstituteEducationSessionEducator();
   const { data: staff } = useListEducationCenterOperationalStaff(centerId, { query: { enabled: !!centerId, queryKey: getListEducationCenterOperationalStaffQueryKey(centerId) } });
@@ -343,7 +343,8 @@ function SessionDetailDialog({ session, centerId, permissions, onClose }: { sess
         courseId: session.courseId,
         sessionId: session.id,
         participants: [{ fullName, email }]
-      }
+      },
+      headers: { "Idempotency-Key": guestBookingKey },
     }, {
       onSuccess: () => {
         setGuestBookingKey(crypto.randomUUID());
@@ -465,7 +466,7 @@ function RecurrenceManager({ centerId }: { centerId: string }) {
   const [weekdays, setWeekdays] = useState<number[]>([]);
   
   const previewMut = usePreviewEducationCourseRecurrence();
-  const commitMut = useCommitEducationCourseRecurrence({ request: { headers: { "Idempotency-Key": crypto.randomUUID() } } });
+  const commitMut = useCommitEducationCourseRecurrence();
 
   const toggleWeekday = (day: number) => {
     setWeekdays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]);
@@ -486,7 +487,15 @@ function RecurrenceManager({ centerId }: { centerId: string }) {
 
   const handleCommit = () => {
     if (!previewMut.data?.candidates) return;
-    commitMut.mutate({ courseId, data: { educatorStaffId, weekdays, startTime, endTime, durationMinutes, startDate, endDate } }, {
+    commitMut.mutate({
+      courseId,
+      data: { educatorStaffId, weekdays, startTime, endTime, durationMinutes, startDate, endDate },
+      // Matches the pre-existing behavior: a fresh key per commit attempt,
+      // generated at call time (this hook never rotated/reused a key
+      // across renders either, since it was previously re-evaluated on
+      // every render of the hook-construction options).
+      headers: { "Idempotency-Key": crypto.randomUUID() },
+    }, {
       onSuccess: () => {
         toast.success("Termini su uspešno generisani.");
         previewMut.reset();

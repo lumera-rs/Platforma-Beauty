@@ -21,6 +21,8 @@ import {
   useCreateBookingGroup,
   getApiErrorDetails,
   getApiErrorMessage,
+  bookingCommandKey,
+  clearBookingCommandKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -245,7 +247,8 @@ export function BookingWidget(props: BookingWidgetProps) {
 
   const createMutation = useCreateBookingGroup({
     mutation: {
-      onSuccess: (data) => {
+      onSuccess: (data, variables) => {
+        clearBookingCommandKey("/api/booking-groups", variables.data);
         void queryClient.invalidateQueries({ queryKey: getListMyAppointmentsQueryKey() });
         void queryClient.invalidateQueries({ queryKey: getGetCustomerDashboardQueryKey() });
         setCompletedAppointments(data.appointments);
@@ -327,17 +330,21 @@ export function BookingWidget(props: BookingWidgetProps) {
       });
       return;
     }
+    const data = {
+      salonId: props.salon.id,
+      date: selectedCandidate.date,
+      treatments: selectedCandidate.treatments.map(t => ({
+        serviceId: t.serviceId,
+        employeeId: t.employeeId,
+        date: t.date,
+        startTime: t.startTime
+      }))
+    };
     createMutation.mutate({
-      data: {
-        salonId: props.salon.id,
-        date: selectedCandidate.date,
-        treatments: selectedCandidate.treatments.map(t => ({
-          serviceId: t.serviceId,
-          employeeId: t.employeeId,
-          date: t.date,
-          startTime: t.startTime
-        }))
-      }
+      data,
+      // Same key customFetch's own retry-safe fallback would have picked for
+      // this exact payload -- kept explicit now that the header is required.
+      headers: { "Idempotency-Key": bookingCommandKey("/api/booking-groups", data) },
     });
   };
 

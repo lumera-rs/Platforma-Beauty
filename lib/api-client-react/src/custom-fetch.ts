@@ -520,6 +520,45 @@ function shortHash(value: string): string {
   return (hash >>> 0).toString(36);
 }
 
+function bookingCommandStorageKey(pathname: string, body: unknown): string {
+  return `lumera:booking-command:${shortHash(`${pathname}\n${stableJson(body)}`)}`;
+}
+
+/**
+ * Returns the same idempotency key customFetch's own automatic booking-
+ * command fallback (below) would silently generate for this exact
+ * (pathname, body) pair -- persisted in sessionStorage so a retry (network
+ * error, page refresh) of the identical logical booking reuses it, and a
+ * later, genuinely different booking with the same canonical payload gets a
+ * fresh one once cleared (see clearBookingCommandKey).
+ *
+ * Exposed so a caller that now has to pass a typed Idempotency-Key header
+ * explicitly (generated operations with a required `headers` argument) can
+ * obtain the identical value instead of minting an unrelated one that would
+ * defeat retry / duplicate-submission protection. `pathname` must be the
+ * exact API path the request will hit (e.g. "/api/booking-groups"), with
+ * any path parameters already resolved, matching BOOKING_CREATION_PATHS.
+ */
+export function bookingCommandKey(pathname: string, body: unknown): string {
+  const storageKey = bookingCommandStorageKey(pathname, body);
+  let key: string | null = typeof sessionStorage !== "undefined" ? sessionStorage.getItem(storageKey) : null;
+  key ??= typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  if (typeof sessionStorage !== "undefined") sessionStorage.setItem(storageKey, key);
+  return key;
+}
+
+/**
+ * Retires a key obtained from bookingCommandKey() once its request has
+ * succeeded, mirroring customFetch's own post-success cleanup below, so a
+ * later distinct booking with the same canonical payload is not mistaken
+ * for a replay of this one.
+ */
+export function clearBookingCommandKey(pathname: string, body: unknown): void {
+  if (typeof sessionStorage !== "undefined") sessionStorage.removeItem(bookingCommandStorageKey(pathname, body));
+}
+
 /**
  * Keeps one command key for an in-flight JSON booking payload. Network errors
  * and page refreshes retain it; a parsed successful response retires it.
@@ -533,21 +572,12 @@ function attachBookingCommandKey(
   if (method !== "POST" || headers.has("idempotency-key") || typeof body !== "string") return null;
   const pathname = new URL(url, typeof window === "undefined" ? "http://localhost" : window.location.origin).pathname;
   if (!BOOKING_CREATION_PATHS.some((pattern) => pattern.test(pathname))) return null;
-  let canonicalBody: string;
+  let parsedBody: unknown;
   try {
-    canonicalBody = stableJson(JSON.parse(body));
+    parsedBody = JSON.parse(body);
   } catch {
     return null;
   }
-  const storageKey = `lumera:booking-command:${shortHash(`${pathname}\n${canonicalBody}`)}`;
-  let key: string | null = null;
-  if (typeof sessionStorage !== "undefined") {
-    key = sessionStorage.getItem(storageKey);
-  }
-  key ??= typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-    ? crypto.randomUUID()
-    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-  if (typeof sessionStorage !== "undefined") sessionStorage.setItem(storageKey, key);
-  headers.set("Idempotency-Key", key);
-  return storageKey;
+  headers.set("Idempotency-Key", bookingCommandKey(pathname, parsedBody));
+  return bookingCommandStorageKey(pathname, parsedBody);
 }
