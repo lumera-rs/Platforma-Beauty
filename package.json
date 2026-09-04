@@ -38,6 +38,7 @@
     "test:education-finance": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-financial.test.ts",
     "test:education-subscription-contract": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-subscription-contract.test.ts && pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-subscription-billing.test.ts",
     "test:education-placement-lifecycle": "pnpm --filter @workspace/scripts run test:education-placement-lifecycle",
+    "test:education-ips-production-safety": "pnpm --filter @workspace/scripts run test:education-ips-production-safety",
     "test:education-sessions": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-sessions.test.ts",
     "test:retail-checkout-api": "pnpm --filter @workspace/scripts run test:retail-checkout-api",
     "test:final-booking-qa": "pnpm --filter @workspace/scripts run test:final-booking-qa",

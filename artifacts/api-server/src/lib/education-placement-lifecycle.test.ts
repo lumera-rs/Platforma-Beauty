@@ -25,7 +25,7 @@ import app from "../app";
 import { hashPassword, sessionCookieName } from "./auth";
 import { ensureDemoData } from "./seed";
 import { runFeaturedPlacementPaymentReminderSweep } from "./featured-placement-payment-reminders";
-import { buildValidOnlineEducationCourse } from "./education-test-fixtures";
+import { buildValidOnlineEducationCourse, installTemporaryEducationIpsSettings } from "./education-test-fixtures";
 
 const suffix = randomUUID();
 const password = "education-placement-test-password";
@@ -170,13 +170,7 @@ async function run(): Promise<void> {
   let sectionId: string | undefined;
   const categoryIds: string[] = [];
   const subcategoryIds: string[] = [];
-  let ipsSettingsRestore: {
-    id: string;
-    ipsRecipientName: string | null;
-    ipsRecipientAccount: string | null;
-    ipsPurpose: string | null;
-    createdForTest: boolean;
-  } | undefined;
+  let ipsSettings: Awaited<ReturnType<typeof installTemporaryEducationIpsSettings>> | undefined;
 
   try {
     const passwordHash = await hashPassword(password);
@@ -247,26 +241,19 @@ async function run(): Promise<void> {
       login(baseUrl, admin.email),
       login(baseUrl, owner.email),
     ]);
-    const [priorIpsSettings] = await db.select().from(educationPlatformSettingsTable)
-      .orderBy(educationPlatformSettingsTable.createdAt).limit(1);
-    const [ipsSettings] = priorIpsSettings
-      ? await db.update(educationPlatformSettingsTable).set({
-        ipsRecipientName: "Placement Lifecycle Test",
-        ipsRecipientAccount: "840000000000000000",
-        ipsPurpose: "Featured placement",
-      }).where(eq(educationPlatformSettingsTable.id, priorIpsSettings.id)).returning()
-      : await db.insert(educationPlatformSettingsTable).values({
-        ipsRecipientName: "Placement Lifecycle Test",
-        ipsRecipientAccount: "840000000000000000",
-        ipsPurpose: "Featured placement",
-      }).returning();
-    ipsSettingsRestore = {
-      id: ipsSettings!.id,
-      ipsRecipientName: priorIpsSettings?.ipsRecipientName ?? null,
-      ipsRecipientAccount: priorIpsSettings?.ipsRecipientAccount ?? null,
-      ipsPurpose: priorIpsSettings?.ipsPurpose ?? null,
-      createdForTest: !priorIpsSettings,
-    };
+    // Uses the same canonical test-IPS-settings helper as education-extras.test.ts,
+    // education-financial.test.ts, and education-online-access-transfer.test.ts --
+    // notably including ipsAccountEnvironment: "test", without which a fresh
+    // isolated database's educationPlatformSettingsTable row keeps the schema
+    // default ipsAccountEnvironment="production" and trips the production
+    // IPS payment-safety guard (educationIpsQrPayload's
+    // IPS_PAYMENT_PRODUCTION_ACCOUNT_BLOCKED) even though NODE_ENV=test.
+    ipsSettings = await installTemporaryEducationIpsSettings({
+      ipsRecipientName: "Placement Lifecycle Test",
+      ipsRecipientAccount: "840000000000000000",
+      ipsPurpose: "Featured placement",
+      ipsAccountEnvironment: "test",
+    });
 
     const [section] = await db.insert(educationSectionsTable).values({
       name: `Placement section ${suffix}`,
@@ -543,17 +530,7 @@ async function run(): Promise<void> {
       await new Promise<void>((resolve, reject) =>
         server!.close((error) => error ? reject(error) : resolve()));
     }
-    if (ipsSettingsRestore) {
-      if (ipsSettingsRestore.createdForTest) {
-        await db.delete(educationPlatformSettingsTable).where(eq(educationPlatformSettingsTable.id, ipsSettingsRestore.id));
-      } else {
-        await db.update(educationPlatformSettingsTable).set({
-          ipsRecipientName: ipsSettingsRestore.ipsRecipientName,
-          ipsRecipientAccount: ipsSettingsRestore.ipsRecipientAccount,
-          ipsPurpose: ipsSettingsRestore.ipsPurpose,
-        }).where(eq(educationPlatformSettingsTable.id, ipsSettingsRestore.id));
-      }
-    }
+    if (ipsSettings) await ipsSettings.restore();
     if (centerId) {
       await db.delete(educationPlacementsTable).where(eq(educationPlacementsTable.centerId, centerId));
       if (courseIds.length) {
