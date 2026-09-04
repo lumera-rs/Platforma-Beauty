@@ -8621,7 +8621,7 @@ export const getDeactivateSalonEmployeeUrl = (employeeId: string,) => {
 }
 
 /**
- * @summary Soft-deactivate an employee and their login account
+ * @summary Deactivate an employee's assignment at the caller's active salon only; their login account is disabled only once no active assignment remains anywhere
  */
 export const deactivateSalonEmployee = async (employeeId: string, options?: Parameters<typeof customFetch>[1]): Promise<EmployeeDeactivationResult> => {
 
@@ -8670,7 +8670,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type DeactivateSalonEmployeeMutationError = ErrorType<unknown>
 
     /**
- * @summary Soft-deactivate an employee and their login account
+ * @summary Deactivate an employee's assignment at the caller's active salon only; their login account is disabled only once no active assignment remains anywhere
  */
 export const useDeactivateSalonEmployee = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deactivateSalonEmployee>>, TError,{employeeId: string}, TContext>, request?: SecondParameter<typeof customFetch>}

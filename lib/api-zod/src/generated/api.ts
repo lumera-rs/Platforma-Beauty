@@ -5414,13 +5414,14 @@ export const GetSalonEmployeeDeactivationPreviewResponse = zod.object({
   "employeeId": zod.string(),
   "employeeName": zod.string(),
   "locationName": zod.string().nullish().describe('Exact salon location that owns this request; present for owner queue reads.'),
-  "futureAppointmentCount": zod.number().min(getSalonEmployeeDeactivationPreviewResponseFutureAppointmentCountMin),
-  "hasLoginAccount": zod.boolean()
+  "futureAppointmentCount": zod.number().min(getSalonEmployeeDeactivationPreviewResponseFutureAppointmentCountMin).describe('Future appointments at the caller\'s active salon only -- other locations this employee works are unaffected by this action.'),
+  "hasLoginAccount": zod.boolean(),
+  "willDeactivateLogin": zod.boolean().describe('True only if this employee has no other active location assignment, so this action would also disable their login (and this salon\'s assignment is the last one).')
 })
 
 
 /**
- * @summary Soft-deactivate an employee and their login account
+ * @summary Deactivate an employee's assignment at the caller's active salon only; their login account is disabled only once no active assignment remains anywhere
  */
 export const DeactivateSalonEmployeeParams = zod.object({
   "employeeId": zod.coerce.string()

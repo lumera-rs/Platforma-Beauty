@@ -10951,11 +10951,14 @@ router.get("/salon/employees", async (req, res): Promise<void> => {
 });
 
 async function employeeAndOwnedLocation(ownerId: string, employeeId: string, salonId: string) {
+  // Deliberately not filtered to active=true: an employee whose only
+  // remaining assignment was just deactivated must still be reachable here
+  // so the owner can reactivate that very assignment. The employee row is
+  // still only reachable through an assignment (active or not) at a salon
+  // this owner actually owns, so this cannot reach an employee with no
+  // relationship to this owner at all.
   const [employee] = await db.select({ employee: employeesTable }).from(employeesTable)
-    .innerJoin(employeeLocationAssignmentsTable, and(
-      eq(employeeLocationAssignmentsTable.employeeId, employeesTable.id),
-      eq(employeeLocationAssignmentsTable.active, true),
-    ))
+    .innerJoin(employeeLocationAssignmentsTable, eq(employeeLocationAssignmentsTable.employeeId, employeesTable.id))
     .innerJoin(salonsTable, eq(salonsTable.id, employeeLocationAssignmentsTable.salonId))
     .where(and(eq(employeesTable.id, employeeId), eq(salonsTable.ownerId, ownerId))).limit(1);
   const [salon] = await db.select().from(salonsTable)
@@ -11008,6 +11011,11 @@ router.put("/salon/employees/:employeeId/locations/:salonId", async (req, res): 
       set: { ...(typeof body.active === "boolean" ? { active: body.active } : {}),
         ...(typeof body.isDefault === "boolean" ? { isDefault: body.isDefault } : {}), updatedAt: new Date() },
     }).returning();
+    // Keep the derived employee/account "active" state (see
+    // syncEmployeeAccountState) in sync whenever this could have changed
+    // whether the employee has any active assignment left -- both toggling
+    // this one off and adding/toggling a new one back on qualify.
+    if (typeof body.active === "boolean") await syncEmployeeAccountState(tx, target.employee.id);
     return saved!;
   });
   res.json({ employeeId: assignment.employeeId, salonId: assignment.salonId, locationId: assignment.salonId,
@@ -11123,86 +11131,155 @@ router.put("/salon/employees/:employeeId/locations/:salonId/schedule", async (re
   res.json(windows.map((window) => ({ ...window, breakStart: window.breakStart ?? null, breakEnd: window.breakEnd ?? null })));
 });
 
-async function employeeDeactivationPreview(employee: typeof employeesTable.$inferSelect, ownerId: string, store: any = db) {
+/**
+ * Scoped to exactly one location: an employee can hold several active
+ * employeeLocationAssignmentsTable rows (one salon each, all under the same
+ * owner -- see the table's doc comment), so "deactivating" must only ever
+ * be evaluated, and later applied, against the ONE assignment the caller is
+ * actually managing. `willDeactivateLogin` tells the caller whether this
+ * specific action would also be the one that takes down the employee's
+ * login (true only when no OTHER active assignment exists anywhere).
+ */
+async function employeeDeactivationPreview(
+  employee: typeof employeesTable.$inferSelect, salonId: string, store: any = db,
+) {
   const [future] = await store.select({ count: count() }).from(appointmentsTable).where(and(
     eq(appointmentsTable.employeeId, employee.id),
+    eq(appointmentsTable.salonId, salonId),
     gte(appointmentsTable.date, new Date().toISOString().slice(0, 10)),
     ne(appointmentsTable.status, "cancelled"),
-    exists(store.select({ id: employeeLocationAssignmentsTable.id })
-      .from(employeeLocationAssignmentsTable)
-      .innerJoin(salonsTable, eq(salonsTable.id, employeeLocationAssignmentsTable.salonId))
-      .where(and(
-        eq(employeeLocationAssignmentsTable.employeeId, employee.id),
-        eq(employeeLocationAssignmentsTable.salonId, appointmentsTable.salonId),
-        eq(employeeLocationAssignmentsTable.active, true),
-        eq(salonsTable.ownerId, ownerId),
-      ))),
   ));
+  const [otherActiveAssignment] = await store.select({ id: employeeLocationAssignmentsTable.id })
+    .from(employeeLocationAssignmentsTable)
+    .where(and(
+      eq(employeeLocationAssignmentsTable.employeeId, employee.id),
+      eq(employeeLocationAssignmentsTable.active, true),
+      ne(employeeLocationAssignmentsTable.salonId, salonId),
+    )).limit(1);
   return {
     employeeId: employee.id,
     employeeName: employee.name,
     futureAppointmentCount: Number(future?.count ?? 0),
     hasLoginAccount: Boolean(employee.userId),
+    willDeactivateLogin: Boolean(employee.userId) && !otherActiveAssignment,
   };
+}
+
+/**
+ * The single source of truth that derives employeesTable.active -- and, for
+ * a linked login account, usersTable.active/session validity -- from the
+ * authoritative per-location assignment rows, so the two never disagree.
+ * Called after ANY write to employeeLocationAssignmentsTable.active for this
+ * employee (deactivate, reactivate, or a brand-new assignment), it is
+ * idempotent: recomputing from the current rows always yields the same
+ * result regardless of how many times, or in what order, it runs.
+ *
+ * Locked per employee so two concurrent assignment changes for the SAME
+ * employee (e.g. deactivating their last two locations at once) cannot each
+ * read the other's not-yet-committed row as still active and both leave the
+ * account enabled with zero active assignments left.
+ */
+async function syncEmployeeAccountState(
+  tx: Pick<typeof db, "select" | "update" | "delete" | "execute">, employeeId: string,
+): Promise<{ hasActiveAssignment: boolean }> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`employee-active-sync:${employeeId}`}))`);
+  const [remaining] = await tx.select({ id: employeeLocationAssignmentsTable.id })
+    .from(employeeLocationAssignmentsTable)
+    .where(and(
+      eq(employeeLocationAssignmentsTable.employeeId, employeeId),
+      eq(employeeLocationAssignmentsTable.active, true),
+    )).limit(1);
+  const hasActiveAssignment = Boolean(remaining);
+  const [employee] = await tx.update(employeesTable).set({ active: hasActiveAssignment })
+    .where(eq(employeesTable.id, employeeId)).returning({ userId: employeesTable.userId });
+  if (employee?.userId) {
+    if (hasActiveAssignment) {
+      await tx.update(usersTable).set({ active: true, updatedAt: new Date() }).where(and(
+        eq(usersTable.id, employee.userId), eq(usersTable.role, "SALON_EMPLOYEE"),
+      ));
+    } else {
+      await tx.update(usersTable).set({ active: false, updatedAt: new Date() }).where(and(
+        eq(usersTable.id, employee.userId), eq(usersTable.role, "SALON_EMPLOYEE"),
+      ));
+      await tx.delete(sessionsTable).where(eq(sessionsTable.userId, employee.userId));
+    }
+  }
+  return { hasActiveAssignment };
 }
 
 router.get("/salon/employees/:employeeId/deactivation-preview", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const employee = await employeeInSalon(req.params.employeeId, access.salon.id);
   if (!employee) { res.status(404).json({ error: "Zaposleni nije pronađen." }); return; }
-  res.json(await employeeDeactivationPreview(employee, access.user.id));
+  res.json(await employeeDeactivationPreview(employee, access.salon.id));
 });
 
 router.post("/salon/employees/:employeeId/deactivate", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const employee = await employeeInSalon(req.params.employeeId, access.salon.id);
   if (!employee) { res.status(404).json({ error: "Zaposleni nije pronađen." }); return; }
-  if (!employee.active) { res.status(409).json({ error: "Zaposleni je već deaktiviran." }); return; }
-  const preview = await employeeDeactivationPreview(employee, access.user.id);
+  const preview = await employeeDeactivationPreview(employee, access.salon.id);
   if (preview.futureAppointmentCount > 0) {
-    res.status(409).json({ error: "Deaktivacija nije moguća dok zaposleni ima buduće termine na aktivnim lokacijama.", futureAppointmentCount: preview.futureAppointmentCount });
+    res.status(409).json({ error: "Deaktivacija nije moguća dok zaposleni ima buduće termine na ovoj lokaciji.", futureAppointmentCount: preview.futureAppointmentCount });
     return;
   }
-  const revokedAvatarIds = [mediaAssetIdFromUrl(employee.avatarUrl)].filter((id): id is string => Boolean(id));
-  if (revokedAvatarIds.length) {
-    try {
-      await requireMediaCachePurgeForVisibilityRevocation();
-      await purgeMediaCacheForVisibilityRevocation(revokedAvatarIds);
-    } catch (error) {
-      res.status(503).json({ error: error instanceof Error ? error.message : "Nije moguće bezbedno opozvati keš fotografije zaposlenog." });
-      return;
+  // Only pre-flight (and abort on failure) the cache purge when this action
+  // will actually take the employee's public profile fully private; if
+  // another location's assignment stays active, the avatar remains a valid
+  // public reference there and nothing needs to be purged.
+  if (preview.willDeactivateLogin || !employee.userId) {
+    const revokedAvatarIds = [mediaAssetIdFromUrl(employee.avatarUrl)].filter((id): id is string => Boolean(id));
+    if (revokedAvatarIds.length) {
+      try {
+        await requireMediaCachePurgeForVisibilityRevocation();
+        await purgeMediaCacheForVisibilityRevocation(revokedAvatarIds);
+      } catch (error) {
+        res.status(503).json({ error: error instanceof Error ? error.message : "Nije moguće bezbedno opozvati keš fotografije zaposlenog." });
+        return;
+      }
     }
   }
+  let loginAccountDeactivated = false;
   try {
     await db.transaction(async (tx) => {
-      // Recheck inside the write transaction so a sibling-location appointment
-      // cannot be created between preview and global deactivation.
-      const currentPreview = await employeeDeactivationPreview(employee, access.user.id, tx);
-      if (currentPreview.futureAppointmentCount > 0) throw new Error("EMPLOYEE_DEACTIVATION_FUTURE_APPOINTMENTS");
-      await tx.update(employeesTable).set({ active: false }).where(eq(employeesTable.id, employee.id));
-      await tx.update(employeeLocationAssignmentsTable).set({ active: false, isDefault: false, updatedAt: new Date() })
-        .where(eq(employeeLocationAssignmentsTable.employeeId, employee.id));
-      await releaseMediaReferenceClaims({
-        urls: [employee.avatarUrl],
-        resourceId: employee.id,
-        visibility: "private",
-      }, tx);
-      if (employee.userId) {
-        await tx.update(usersTable).set({ active: false, updatedAt: new Date() }).where(and(
-          eq(usersTable.id, employee.userId),
-          eq(usersTable.role, "SALON_EMPLOYEE"),
-        ));
-        await tx.delete(sessionsTable).where(eq(sessionsTable.userId, employee.userId));
+      // Recheck inside the write transaction so a concurrent appointment at
+      // this specific location cannot be created between preview and write.
+      const [future] = await tx.select({ id: appointmentsTable.id }).from(appointmentsTable).where(and(
+        eq(appointmentsTable.employeeId, employee.id), eq(appointmentsTable.salonId, access.salon.id),
+        gte(appointmentsTable.date, new Date().toISOString().slice(0, 10)), ne(appointmentsTable.status, "cancelled"),
+      )).limit(1);
+      if (future) throw new Error("EMPLOYEE_DEACTIVATION_FUTURE_APPOINTMENTS");
+      // Scoped to this one (employeeId, salonId) assignment row -- every
+      // other location this employee works remains completely untouched.
+      const [deactivated] = await tx.update(employeeLocationAssignmentsTable)
+        .set({ active: false, isDefault: false, updatedAt: new Date() })
+        .where(and(
+          eq(employeeLocationAssignmentsTable.employeeId, employee.id),
+          eq(employeeLocationAssignmentsTable.salonId, access.salon.id),
+        )).returning({ id: employeeLocationAssignmentsTable.id });
+      if (!deactivated) throw new Error("EMPLOYEE_DEACTIVATION_NOT_ASSIGNED");
+      const { hasActiveAssignment } = await syncEmployeeAccountState(tx, employee.id);
+      loginAccountDeactivated = Boolean(employee.userId) && !hasActiveAssignment;
+      if (!hasActiveAssignment) {
+        await releaseMediaReferenceClaims({
+          urls: [employee.avatarUrl],
+          resourceId: employee.id,
+          visibility: "private",
+        }, tx);
       }
     });
   } catch (error) {
     if (error instanceof Error && error.message === "EMPLOYEE_DEACTIVATION_FUTURE_APPOINTMENTS") {
-      res.status(409).json({ error: "Deaktivacija nije moguća dok zaposleni ima buduće termine na aktivnim lokacijama." });
+      res.status(409).json({ error: "Deaktivacija nije moguća dok zaposleni ima buduće termine na ovoj lokaciji." });
+      return;
+    }
+    if (error instanceof Error && error.message === "EMPLOYEE_DEACTIVATION_NOT_ASSIGNED") {
+      res.status(409).json({ error: "Zaposleni više nije dodeljen ovoj lokaciji." });
       return;
     }
     throw error;
   }
-  res.json({ employeeId: employee.id, deactivated: true, futureAppointmentCount: preview.futureAppointmentCount, loginAccountDeactivated: Boolean(employee.userId) });
+  res.json({ employeeId: employee.id, deactivated: true, futureAppointmentCount: 0, loginAccountDeactivated });
 });
 
 router.post("/salon/employees", async (req, res): Promise<void> => {
