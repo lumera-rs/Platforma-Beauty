@@ -6178,6 +6178,10 @@ router.post("/auth/logout", async (req, res): Promise<void> => {
 router.get("/auth/me", async (req, res): Promise<void> => {
   await ensureDemoData();
   const user = await getCurrentUser(req);
+  // Task #8: session-bound identity response -- must never be served from a
+  // shared/intermediary cache to a different visitor, or reused after logout
+  // on a shared machine.
+  res.set("Cache-Control", "private, no-store");
   res.json(GetCurrentUserResponse.parse({ user: user ? publicUser(user) : null }));
 });
 
