@@ -40,21 +40,8 @@ async function hashPassword(password: string): Promise<string> {
   return `${salt}:${derived.toString("hex")}`;
 }
 
-/**
- * education-marketplace.tsx's public center page has a pre-existing,
- * unrelated rules-of-hooks bug (reported separately, not fixed here): a
- * cold navigation whose query resolves on a later render throws "Rendered
- * more hooks than during the previous render", caught by the app's
- * ErrorBoundary. Resetting the boundary in place (not a reload) lets the
- * next render pass see isLoading:false from its first render, avoiding
- * the same mismatch. Used here purely to reach the page under test.
- */
 async function openPublicCenterPage(page: Page, centerId: string): Promise<void> {
   await page.goto(`/edukacije/centri/${centerId}`);
-  const tryAgain = page.getByRole("button", { name: "Try again" });
-  if (await tryAgain.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await tryAgain.click();
-  }
 }
 
 test.describe("Task #9B: safe external-URL scheme handling", () => {

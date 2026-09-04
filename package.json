@@ -103,6 +103,7 @@
     "test:admin-form-resilience": "pnpm --filter @workspace/scripts run test:admin-form-resilience",
     "test:employee-location-deactivation-browser": "pnpm --filter @workspace/scripts run test:employee-location-deactivation-browser",
     "test:safe-external-url-rendering-browser": "pnpm --filter @workspace/scripts run test:safe-external-url-rendering-browser",
+    "test:education-public-center-hook-order-browser": "pnpm --filter @workspace/scripts run test:education-public-center-hook-order-browser",
     "test:logout-login-cache-residue-browser": "pnpm --filter @workspace/scripts run test:logout-login-cache-residue-browser",
     "test:salon-notifications": "pnpm --filter @workspace/scripts run test:salon-notifications",
     "test:salon-notifications:release": "pnpm --filter @workspace/scripts run test:salon-notifications:release",

@@ -1515,13 +1515,31 @@ export function EducationPublicCenterPage() {
   const centerId = params?.centerId ?? "";
   const { data: center, isLoading, isError } = useGetPublicEducationCenter(centerId);
   const { buy, buying, purchaseConsentDialog } = useEducationPurchase();
+  // Every hook the component uses must run on every render, regardless of
+  // the loading/error/not-found early returns below -- so the review page
+  // state and the reviews query are declared here, unconditionally, rather
+  // than after those returns. The query itself still only fires once
+  // `center` has actually loaded (via `enabled`), matching the original
+  // behavior of not requesting reviews for a still-loading or nonexistent
+  // center.
+  const [page, setPage] = useState(1);
+  useEffect(() => {
+    // Reset pagination when navigating (via SPA route, not a full reload)
+    // from one center's page directly to another's -- this component
+    // instance is reused across that transition, so `page` would otherwise
+    // carry over from the previous center.
+    setPage(1);
+  }, [centerId]);
+  const { data: reviewsPage } = useListPublicEducationCenterReviews(centerId, { page, pageSize: 10 }, {
+    query: {
+      enabled: Boolean(center),
+      queryKey: getListPublicEducationCenterReviewsQueryKey(centerId, { page, pageSize: 10 }),
+    },
+  });
+
   if (isLoading) return <Layout><div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div></Layout>;
   if (isError || !center) return <Layout><div className="container mx-auto px-4 py-20 text-center"><h1 className="font-serif text-3xl font-bold">Centar nije dostupan</h1><Button className="mt-6" asChild><Link href="/edukacije">Nazad na katalog</Link></Button></div></Layout>;
   const gallery = [{ type: "image" as const, url: center.imageUrl }, ...center.gallery.map((media) => ({ type: "image" as const, url: media.url }))];
-  const [page, setPage] = useState(1);
-  const { data: reviewsPage } = useListPublicEducationCenterReviews(centerId, { page, pageSize: 10 }, {
-    query: { queryKey: getListPublicEducationCenterReviewsQueryKey(centerId, { page, pageSize: 10 }) }
-  });
 
   return <Layout><main className="container mx-auto max-w-6xl px-4 py-8 sm:py-12">
     <div className="mb-6 flex items-center gap-2 text-sm text-muted-foreground"><Link href="/edukacije" className="hover:text-foreground">Edukacije</Link><ChevronRight className="h-4 w-4" /><span>Centar</span></div>
