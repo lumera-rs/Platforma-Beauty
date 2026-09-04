@@ -18,11 +18,17 @@
  * else about the formula (rating DESC, then this term, then createdAt DESC, then id
  * DESC) changed, and the WHERE clause (publicEducationCoursePredicate) is untouched.
  *
- * Note: there is a pre-existing pure-function helper
- * (education-public-course-order.ts's selectPopularPublicCourses) with its own correct
- * unit test in marketplace-query-budget.test.ts asserting this exact intended
- * ordering -- but the real route never called it, which is exactly how this bug shipped
- * silently green. This file instead exercises the REAL HTTP endpoint end-to-end.
+ * Note (superseded by Task #6B): at the time this test was written, there was a
+ * pre-existing pure-function helper (education-public-course-order.ts's
+ * selectPopularPublicCourses) with its own correct unit test in
+ * marketplace-query-budget.test.ts asserting this exact intended ordering -- but the
+ * real route never called it, which is exactly how this bug shipped silently green.
+ * Task #6B removed that dead duplicate implementation once the canonical eligibility
+ * rule (education-featured-eligibility.ts) made it fully redundant. This file
+ * exercises the REAL HTTP endpoint end-to-end and remains the regression proof that
+ * the original bypass stays closed under the now-unified rule (see
+ * education-featured-eligibility-consistency.test.ts for the broader cross-endpoint
+ * consistency coverage Task #6B added).
  */
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID, scrypt as scryptCallback } from "node:crypto";

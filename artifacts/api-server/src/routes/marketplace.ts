@@ -38,6 +38,11 @@ import
 import { expireFeaturedPlacementPaymentInTx } from "../lib/featured-placement-payment-reminders";
 import { safeIsoTimestamp } from "../lib/date-serialization";
 import {
+  batchPublicFeaturedEducationCourseState,
+  isPubliclyFeaturedEducationCourse,
+  publicFeaturedEducationCourseSql,
+} from "../lib/education-featured-eligibility";
+import {
   allocateReferralCreditInTx,
   bindLegalEntityBusinessInTx,
   captureReferralAttributionInTx,
@@ -2877,18 +2882,6 @@ async function isPublicEducationCourse(course: typeof coursesTable.$inferSelect)
   // education centers can sell through the protected public marketplace.
   if (!course.centerId) return false;
   return (await educationCenterEligibility(course.centerId)).eligible;
-}
-
-// A course is only *publicly* featured once its featured placement has actually
-// been paid for. Activating featured placement flips `isFeatured` immediately and
-// records a charge, but a non-zero charge stays "pending" until an administrator
-// confirms the manual payment. Until then the placement must not surface publicly.
-// A zero-fee charge is recorded as "paid" on activation, so this stays sensible.
-async function isPubliclyFeaturedEducationCourse(course: typeof coursesTable.$inferSelect) {
-  if (!course.isFeatured) return false;
-  if (course.featuredUntil && course.featuredUntil <= new Date()) return false;
-  const charge = await latestFeaturedCharge(course.id);
-  return charge?.status === "paid";
 }
 
 async function releaseAtForEducationCourse(
@@ -20493,6 +20486,7 @@ function publicEducationCoursePredicate(extraPredicates: Parameters<typeof and>[
 export async function batchEducationCourseViews(
   courses: (typeof coursesTable.$inferSelect)[],
   access?: EducationAccess,
+  referenceTime: Date = new Date(),
 ) {
   _hookAssembler("batchEducationCourseViews");
   if (!courses.length) return [];
@@ -20502,7 +20496,7 @@ export async function batchEducationCourseViews(
   const salonIds = [...new Set(courses.flatMap((c) => (c.salonId ? [c.salonId] : [])))];
 
   // One query per cross-cutting resource; all parallelised.
-  const [centers, salons, allSessions, allModules, allDayProgram, allGallery, allReviewRows, allInstructors, paidFeaturedCharges, enrichments] = await Promise.all([
+  const [centers, salons, allSessions, allModules, allDayProgram, allGallery, allReviewRows, allInstructors, featuredStateByCourseId, enrichments] = await Promise.all([
     centerIds.length ? db.select().from(educationCentersTable).where(inArray(educationCentersTable.id, centerIds)) : Promise.resolve([] as (typeof educationCentersTable.$inferSelect)[]),
     salonIds.length ? db.select().from(salonsTable).where(inArray(salonsTable.id, salonIds)) : Promise.resolve([] as (typeof salonsTable.$inferSelect)[]),
     db.select().from(courseSessionsTable).where(inArray(courseSessionsTable.courseId, courseIds)).orderBy(asc(courseSessionsTable.startsAt)),
@@ -20511,13 +20505,9 @@ export async function batchEducationCourseViews(
     db.select().from(educationMediaTable).where(inArray(educationMediaTable.courseId, courseIds)).orderBy(asc(educationMediaTable.sortOrder), asc(educationMediaTable.createdAt)),
     db.select().from(courseReviewsTable).where(and(inArray(courseReviewsTable.courseId, courseIds), eq(courseReviewsTable.status, "published"))).orderBy(desc(courseReviewsTable.createdAt)),
     centerIds.length ? db.select().from(educationInstructorsTable).where(inArray(educationInstructorsTable.centerId, centerIds)) : Promise.resolve([] as (typeof educationInstructorsTable.$inferSelect)[]),
-    // Only fetch featured charges for isFeatured courses that haven't expired.
-    db.select().from(educationFeaturedChargesTable)
-      .where(and(
-        inArray(educationFeaturedChargesTable.courseId, courseIds),
-        eq(educationFeaturedChargesTable.status, "paid"),
-      ))
-      .orderBy(desc(educationFeaturedChargesTable.createdAt)),
+    // Canonical public-featured eligibility (see education-featured-eligibility.ts) --
+    // the same rule /education/public/popular and /education/public/featured use.
+    batchPublicFeaturedEducationCourseState(courses, referenceTime),
     educationCourseEnrichment(courseIds),
   ]);
 
@@ -20573,12 +20563,6 @@ export async function batchEducationCourseViews(
   for (const i of allInstructors) {
     if (i.userId) instructorByUserIdAndCenter.set(`${i.centerId}:${i.userId}`, i);
   }
-  // Latest paid featured charge per course.
-  const paidFeaturedByCourseId = new Map<string, typeof educationFeaturedChargesTable.$inferSelect>();
-  for (const ch of paidFeaturedCharges) {
-    if (!paidFeaturedByCourseId.has(ch.courseId)) paidFeaturedByCourseId.set(ch.courseId, ch);
-  }
-
   // Optionally resolve per-user enrollment status in one batch query.
   const enrollmentByCourseId = new Map<string, typeof courseEnrollmentsTable.$inferSelect>();
   if (access?.user) {
@@ -20586,8 +20570,6 @@ export async function batchEducationCourseViews(
       .where(and(inArray(courseEnrollmentsTable.courseId, courseIds), eq(courseEnrollmentsTable.purchaserId, access.user.id)));
     for (const e of enrollments) enrollmentByCourseId.set(e.courseId, e);
   }
-
-  const now = new Date();
 
   return courses.map((course) => {
     const center = course.centerId ? centerById.get(course.centerId) : undefined;
@@ -20676,9 +20658,7 @@ export async function batchEducationCourseViews(
       createdAt: safeIsoTimestamp(r.createdAt),
     }));
 
-    // Featured: isFeatured flag + not expired + latest charge is "paid".
-    const isFeaturedActive = course.isFeatured && (!course.featuredUntil || course.featuredUntil > now);
-    const featured = isFeaturedActive && Boolean(paidFeaturedByCourseId.get(course.id));
+    const featured = featuredStateByCourseId.get(course.id) ?? false;
 
     const enrollment = enrollmentByCourseId.get(course.id);
 
@@ -21532,26 +21512,19 @@ router.get("/education/public/popular", async (req, res): Promise<void> => {
   const parsed = ListPopularEducationCoursesQueryParams.safeParse(req.query);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const limit = parsed.data.limit ?? 6;
-  // Rank by the SAME authoritative paid-featured state batchEducationCourseViews
-  // computes for this response's own `featured` field below (isFeatured, not
-  // expired, and an actually paid education_featured_charges row) -- a course
-  // can flip isFeatured=true immediately on activation while its charge is
-  // still "pending" (see PATCH /education/courses/:courseId/featured), so the
-  // raw column alone must never grant ranking priority over organic results.
-  const paidFeaturedRank = sql<boolean>`(
-    ${coursesTable.isFeatured}
-    and (${coursesTable.featuredUntil} is null or ${coursesTable.featuredUntil} > ${new Date()})
-    and exists (
-      select 1 from ${educationFeaturedChargesTable}
-      where ${educationFeaturedChargesTable.courseId} = ${coursesTable.id}
-        and ${educationFeaturedChargesTable.status} = 'paid'
-    )
-  )`;
+  const now = new Date();
+  // Rank by the canonical public-featured eligibility rule (see
+  // education-featured-eligibility.ts) -- the SAME rule batchEducationCourseViews
+  // uses for this response's own `featured` field below, so ranking and display
+  // can never disagree. A course can flip isFeatured=true immediately on
+  // activation while its charge is still "pending" (see PATCH
+  // /education/courses/:courseId/featured), so the raw column alone must never
+  // grant ranking priority over organic results.
   const courses = await db.select().from(coursesTable)
     .where(publicEducationCoursePredicate())
-    .orderBy(desc(coursesTable.rating), desc(paidFeaturedRank), desc(coursesTable.createdAt), desc(coursesTable.id))
+    .orderBy(desc(coursesTable.rating), desc(publicFeaturedEducationCourseSql(now)), desc(coursesTable.createdAt), desc(coursesTable.id))
     .limit(limit);
-  const views = await batchEducationCourseViews(courses);
+  const views = await batchEducationCourseViews(courses, undefined, now);
   res.json(ListPopularEducationCoursesResponse.parse(views).map(calendarDateCourseResponse));
 });
 
@@ -22078,28 +22051,23 @@ router.post("/admin/education/gift-vouchers/:voucherId/refund", async (req, res)
 });
 
 router.get("/education/public/featured", async (_req, res): Promise<void> => {
+  const now = new Date();
+  // WHERE now bakes in the full canonical public-featured rule (see
+  // education-featured-eligibility.ts) directly -- isFeatured, not expired,
+  // AND the latest education_featured_charges row is paid -- so only center
+  // eligibility (a separate, unrelated tenant concern) needs a JS filter pass.
   const courses = await db.select().from(coursesTable)
     .where(and(
       eq(coursesTable.published, true), eq(coursesTable.archived, false), isNotNull(coursesTable.centerId),
-      eq(coursesTable.isFeatured, true), or(sql`${coursesTable.featuredUntil} is null`, gte(coursesTable.featuredUntil, new Date())),
+      publicFeaturedEducationCourseSql(now),
     ))
     .orderBy(desc(coursesTable.featuredActivatedAt));
   if (!courses.length) { res.json([]); return; }
   // Batch eligibility check — replaces N×2 per-course queries.
   const centerIds = [...new Set(courses.map((c) => c.centerId) as string[])];
   const eligibilityMap = await batchCenterEligibility(centerIds);
-  // Batch paid-charge check — one query for all candidates.
-  const paidCharges = await db.select().from(educationFeaturedChargesTable)
-    .where(and(
-      inArray(educationFeaturedChargesTable.courseId, courses.map((c) => c.id)),
-      eq(educationFeaturedChargesTable.status, "paid"),
-    ))
-    .orderBy(desc(educationFeaturedChargesTable.createdAt));
-  const paidCourseIds = new Set(paidCharges.map((ch) => ch.courseId));
-  const visible = courses.filter((course) =>
-    course.centerId && eligibilityMap.get(course.centerId) === true && paidCourseIds.has(course.id),
-  );
-  res.json((await batchEducationCourseViews(visible)).map(publicEducationCourseView));
+  const visible = courses.filter((course) => course.centerId && eligibilityMap.get(course.centerId) === true);
+  res.json((await batchEducationCourseViews(visible, undefined, now)).map(publicEducationCourseView));
 });
 
 router.get("/education/instructors", async (req, res): Promise<void> => {
