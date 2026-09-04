@@ -11,5 +11,6 @@ export {
   customFetch,
   bookingCommandKey,
   clearBookingCommandKey,
+  createTargetedIdempotencyKeys,
 } from "./custom-fetch";
 export type { ApiErrorData, ApiErrorDetails, AuthTokenGetter, CustomFetchOptions } from "./custom-fetch";

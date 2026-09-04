@@ -1225,14 +1225,27 @@ function CourseDetailView({ courseId }: { courseId: string }) {
   const [groupEnrolling, setGroupEnrolling] = useState(false);
   const [groupSessionId, setGroupSessionId] = useState("");
   const [groupDigitalContentConsent, setGroupDigitalContentConsent] = useState(false);
+  // Stable for this logical group-enroll attempt: a retry (network failure,
+  // re-clicking after an error) reuses it; a confirmed success rotates it
+  // below so the next group enrollment gets its own key.
+  const [groupEnrollIdempotencyKey, setGroupEnrollIdempotencyKey] = useState(() => crypto.randomUUID());
   const [sessionId, setSessionId] = useState("");
   const [digitalContentConsent, setDigitalContentConsent] = useState(false);
   const [paymentMode, setPaymentMode] = useState<"online_full" | "live_deposit" | "live_off_platform">("online_full");
   const [createdEnrollmentId, setCreatedEnrollmentId] = useState<string | null>(null);
   const [groupPaymentInstructions, setGroupPaymentInstructions] = useState<EducationEnrollmentPaymentInstructions[]>([]);
+  // Rotates automatically when the target of the enrollment changes
+  // (course/learner/session/paymentMode), so a retry with a genuinely
+  // different selection isn't mistaken for a replay of the prior one; a
+  // retry of the SAME selection (network failure, re-click) still reuses
+  // it. enrollmentAttempt additionally forces a fresh key once a commit
+  // actually succeeds (bumped in handleEnroll's onSuccess below), so an
+  // unlikely identical re-submission after success starts a new command
+  // rather than replaying the completed one.
+  const [enrollmentAttempt, setEnrollmentAttempt] = useState(0);
   const enrollmentIdempotencyKey = useMemo(
     () => crypto.randomUUID(),
-    [courseId, learnerId, sessionId, paymentMode],
+    [courseId, learnerId, sessionId, paymentMode, enrollmentAttempt],
   );
   const enroll = useEnrollInEducationCourse();
   const pendingEnrollmentId = createdEnrollmentId
@@ -1283,6 +1296,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
       onSuccess: (res: any) => {
         setCreatedEnrollmentId(res.id);
         setDigitalContentConsent(false);
+        setEnrollmentAttempt((n) => n + 1);
         toast.success("Zahtev za upis je primljen. Pratite instrukcije za uplatu.");
         queryClient.invalidateQueries({ queryKey: getGetEducationCourseQueryKey(courseId) });
         queryClient.invalidateQueries({ queryKey: getListEnrollmentsQueryKey() });
@@ -1304,7 +1318,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
         ...(groupSessionId ? { sessionId: groupSessionId } : {}),
         ...(course?.format === "online" ? { digitalContentConsent: groupDigitalContentConsent } : {}),
       }, {
-        "Idempotency-Key": crypto.randomUUID(),
+        "Idempotency-Key": groupEnrollIdempotencyKey,
       });
       const discountMsg = data.discountPercent > 0
         ? ` Primenjen je popust od ${data.discountPercent}%. Cena po polazniku: ${data.unitPrice.toLocaleString("sr-RS")} RSD.`
@@ -1316,6 +1330,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
       setGroupMode(false);
       setGroupSelectedIds([]);
       setGroupDigitalContentConsent(false);
+      setGroupEnrollIdempotencyKey(crypto.randomUUID());
     } catch (err) {
       toast.error("Grupna prijava nije uspela", { description: getApiErrorMessage(err, "Proverite izabrane polaznike i uslove kursa.") });
     } finally {

@@ -13,8 +13,18 @@ export function RescheduleModal({ booking, onClose, onSuccess }: { booking: any,
   });
   const mut = useRescheduleEducationOperationalBooking();
   const { toast } = useToast();
-  
+
   const [selectedCandidate, setSelectedCandidate] = useState<any>(null);
+  // Stable for as long as this modal instance stays mounted: a retry of an
+  // uncertain prior submission (network failure, lost response) reuses it.
+  // The parent only ever renders this modal conditionally ({open && <.../>}),
+  // so closing it (cancel, or onSuccess closing it) unmounts this component
+  // and a later reopen gets a brand-new key -- a genuinely new reschedule
+  // never reuses a prior attempt's key. The one case handled explicitly
+  // below (without closing the modal) is a confirmed capacity conflict: the
+  // key's target is now known stale, so continuing to use it would only
+  // produce a spurious idempotency-mismatch once the user picks a new slot.
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
   const candidates = useMemo(() => {
     if (!availability?.slots) return [];
@@ -57,7 +67,7 @@ export function RescheduleModal({ booking, onClose, onSuccess }: { booking: any,
         targetSessionId,
         participantIds: booking.participants.filter((p: any) => p.status === "reserved" || p.status === "waitlisted").map((p: any) => p.id)
       },
-      headers: { "Idempotency-Key": crypto.randomUUID() },
+      headers: { "Idempotency-Key": idempotencyKey },
     }, {
       onSuccess: () => {
         toast.success("Termin je uspešno promenjen");
@@ -69,6 +79,9 @@ export function RescheduleModal({ booking, onClose, onSuccess }: { booking: any,
           toast.error("Konflikt", { description: "Kapacitet za novi termin je popunjen." });
           setSelectedCandidate(null);
           void refetchAvailability();
+          // The picked slot is now known unavailable; the next submission
+          // targets a different slot, so it must not reuse this key.
+          setIdempotencyKey(crypto.randomUUID());
         } else {
           toast.error("Greška", { description: message });
         }

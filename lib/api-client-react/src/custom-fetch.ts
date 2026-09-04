@@ -488,6 +488,35 @@ export async function customFetch<T = unknown>(
   return result;
 }
 
+/**
+ * Maintainability note (investigated for Task #4D): this list used to be the
+ * ONLY thing standing between a booking-creation request and a missing
+ * Idempotency-Key, so adding a new booking endpoint here silently determined
+ * whether it got retry protection at all -- an easy thing to forget.
+ *
+ * That is no longer true. Since orval.config.ts's `output.headers: true`
+ * (Task #4C), every generated call for an operation that declares
+ * Idempotency-Key -- which includes every path below -- requires an
+ * explicit `headers` argument to typecheck at all, independent of this
+ * list. A new booking-creation endpoint called through the generated
+ * client therefore does NOT need an entry here for correctness: TypeScript
+ * itself forces the caller to supply a key (see bookingCommandKey() below
+ * for the reusable, sessionStorage-backed choice already used by every
+ * current booking-creation call site, and the Task #4C/#4D commits for the
+ * lifecycle pattern -- stable across retries, rotated only after confirmed
+ * success or an intentional new attempt).
+ *
+ * What remains is a narrower, genuinely-still-open gap: raw fetch() calls
+ * that bypass the generated client entirely are outside the type system,
+ * so nothing forces them to set a header at all. attachBookingCommandKey()
+ * below is retained specifically as a safety net for exactly that case. A
+ * generic fix -- deriving this list from the OpenAPI spec automatically --
+ * would require either a new codegen step writing into this hand-authored
+ * file or a runtime dependency on the spec from the browser bundle; both
+ * are a materially bigger change than this maintenance concern justifies,
+ * so it has been left as a manually-maintained (but now much lower-stakes)
+ * list rather than redesigned.
+ */
 const BOOKING_CREATION_PATHS = [
   /^\/api\/appointments$/,
   /^\/api\/booking-groups$/,
@@ -557,6 +586,41 @@ export function bookingCommandKey(pathname: string, body: unknown): string {
  */
 export function clearBookingCommandKey(pathname: string, body: unknown): void {
   if (typeof sessionStorage !== "undefined") sessionStorage.removeItem(bookingCommandStorageKey(pathname, body));
+}
+
+/**
+ * A small, framework-agnostic idempotency-key lifecycle for "settle/act on
+ * one specific target among a list" UI flows (e.g. one row's action button
+ * in a table), where a plain single `useState` slot would be wrong because
+ * several distinct targets can each be independently retried.
+ *
+ * `keyFor(targetId)` returns a key stable across retries of that target
+ * (generating one on first use, reusing it after); `clear(targetId)`
+ * retires it once that target's command is confirmed done, so a later,
+ * genuinely new command against the same target id gets a fresh key
+ * instead of replaying the old one.
+ *
+ * Typical use: `const keys = useRef(createTargetedIdempotencyKeys()).current;`
+ * then `keys.keyFor(row.id)` in the mutate call and `keys.clear(row.id)` in
+ * onSuccess.
+ */
+export function createTargetedIdempotencyKeys() {
+  const keys = new Map<string, string>();
+  return {
+    keyFor(targetId: string): string {
+      let key = keys.get(targetId);
+      if (!key) {
+        key = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+        keys.set(targetId, key);
+      }
+      return key;
+    },
+    clear(targetId: string): void {
+      keys.delete(targetId);
+    },
+  };
 }
 
 /**

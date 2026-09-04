@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { AlertTriangle, BadgeCheck, Banknote, Building2, Loader2, ShieldAlert, Tag, Check, X, Megaphone, Save } from "lucide-react";
 import { AdminLayout } from "./layout";
@@ -56,6 +56,7 @@ import {
   getListAdminEducationTaxonomyProposalsQueryKey,
   getGetAdminEducationPlacementSettingsQueryKey,
   getListAdminFeaturedPlacementsQueryKey,
+  createTargetedIdempotencyKeys,
 } from "@workspace/api-client-react";
 
 const money = (value: number) => new Intl.NumberFormat("sr-RS", { style: "currency", currency: "RSD", maximumFractionDigits: 0 }).format(value);
@@ -83,6 +84,13 @@ export default function AdminEducationMarketplace() {
   const [installmentStatus, setInstallmentStatus] = useState<"pending" | "settled" | "cancelled" | "all">("all");
   const { data: installmentsPage, isLoading: loadingInstallments } = useListAdminEducationInstallments({ status: installmentStatus === "all" ? undefined : installmentStatus }, { query: { queryKey: getListAdminEducationInstallmentsQueryKey({ status: installmentStatus === "all" ? undefined : installmentStatus }) } });
   const settleInstallmentMut = useSettleAdminEducationInstallment();
+  // Settling an installment is a per-row list action -- several distinct
+  // installments can each independently be retried, so the key is scoped per
+  // installment id rather than to one component-wide slot. A retry of the
+  // same installment reuses its key; a confirmed settlement retires that
+  // installment's entry so a later (different) installment, or a genuinely
+  // repeated attempt on this one, never collides with a stale value.
+  const installmentIdempotencyKeys = useRef(createTargetedIdempotencyKeys());
   const [voucherPage, setVoucherPage] = useState(1);
   const [placementPage, setPlacementPage] = useState(1);
   const voucherParams = { status: voucherStatus, page: voucherPage, pageSize: VOUCHER_PAGE_SIZE };
@@ -344,8 +352,9 @@ export default function AdminEducationMarketplace() {
     if (installment.status !== "pending") return;
     if (!actionGuard.begin(`settle-installment:${installment.id}`)) return;
     if (!window.confirm(`Potvrditi ručnu uplatu za ratu ${installment.paymentReference} (${money(installment.amount)})?\nIPS uplate se knjiže isključivo ručno.`)) return actionGuard.end(`settle-installment:${installment.id}`);
-    settleInstallmentMut.mutate({ installmentId: installment.id, headers: { "Idempotency-Key": crypto.randomUUID() } }, {
+    settleInstallmentMut.mutate({ installmentId: installment.id, headers: { "Idempotency-Key": installmentIdempotencyKeys.current.keyFor(installment.id) } }, {
       onSuccess: () => {
+        installmentIdempotencyKeys.current.clear(installment.id);
         toast.success("Rata je evidentirana kao uplaćena.");
         queryClient.invalidateQueries({ queryKey: getListAdminEducationInstallmentsQueryKey({ status: installmentStatus === "all" ? undefined : installmentStatus }) });
         queryClient.invalidateQueries({ queryKey: getGetAdminEducationFinanceQueryKey() });

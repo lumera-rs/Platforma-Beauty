@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, ReactNode } from "react";
+import { useState, useMemo, useEffect, useRef, ReactNode } from "react";
 import { Link, useLocation, useRoute, useSearch } from "wouter";
 import {
   Award, BadgeCheck, BookOpen, Building2, CalendarDays, ChevronLeft, ChevronRight,
@@ -40,6 +40,7 @@ import {
   getGetPublicEducationRankingsQueryKey,
   getListPublicEducationPlacementsQueryKey,
   getListPublicEducationCoursesQueryKey,
+  createTargetedIdempotencyKeys,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout";
@@ -902,6 +903,12 @@ export function EducationBundleDetail() {
   const [pending, setPending] = useState(false);
   const [purchase, setPurchase] = useState<any>(null);
   const [digitalContentConsent, setDigitalContentConsent] = useState(false);
+  // Rotates when navigating to a different bundle (bundleId changes -- this
+  // page component is not remounted by the router on param-only navigation)
+  // or after a confirmed purchase; stable across a retry of the same
+  // logical purchase attempt in between.
+  const [purchaseAttempt, setPurchaseAttempt] = useState(0);
+  const bundlePurchaseIdempotencyKey = useMemo(() => crypto.randomUUID(), [bundleId, purchaseAttempt]);
   useEffect(() => { void fetch(`/api/education/bundles/${bundleId}`).then(r => r.ok ? r.json() : Promise.reject()).then(setBundle).catch(() => setBundle(false)); }, [bundleId]);
   useEffect(() => { if (current?.user?.role === "SALON_OWNER") void fetch("/api/education/bundle-purchases/eligible-employees", { credentials: "include" }).then(r => r.json()).then(setEmployees); }, [current?.user?.role]);
   useEffect(() => { setDigitalContentConsent(false); }, [bundleId]);
@@ -918,10 +925,11 @@ export function EducationBundleDetail() {
       const body = employee
         ? { targetType: "salon_employee", salonId: employee.salonId, employeeId: employee.id, ...(hasOnlineCourse ? { digitalContentConsent } : {}) }
         : { targetType: "individual", ...(hasOnlineCourse ? { digitalContentConsent } : {}) };
-      const response = await fetch(`/api/education/bundles/${bundleId}/purchases`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(body) });
+      const response = await fetch(`/api/education/bundles/${bundleId}/purchases`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "Idempotency-Key": bundlePurchaseIdempotencyKey }, body: JSON.stringify(body) });
       const result = await response.json(); if (!response.ok) throw new Error(result.error);
       setPurchase(result);
       setDigitalContentConsent(false);
+      setPurchaseAttempt((n) => n + 1);
       toast.success("Zahtev za paket je evidentiran");
     } catch (error) { toast.error(error instanceof Error ? error.message : "Kupovina nije uspela"); } finally { setPending(false); }
   };
@@ -1008,6 +1016,10 @@ function useEducationPurchase() {
   const [buying, setBuying] = useState<string | null>(null);
   const [consentCourse, setConsentCourse] = useState<any | null>(null);
   const [digitalContentConsent, setDigitalContentConsent] = useState(false);
+  // Per-course, so retrying the same course's enrollment reuses its key
+  // while a different course started in between never collides with it.
+  // Cleared once that course's enrollment is confirmed.
+  const enrollIdempotencyKeys = useRef(createTargetedIdempotencyKeys());
 
   const purchase = async (course: any, consent: boolean) => {
     setBuying(course.id);
@@ -1022,7 +1034,7 @@ function useEducationPurchase() {
       }
       const response = await fetch(`/api/education/courses/${course.id}/enrollments`, {
         method: "POST",
-        headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
+        headers: { "content-type": "application/json", "idempotency-key": enrollIdempotencyKeys.current.keyFor(course.id) },
         body: JSON.stringify({
           ...(session ? { sessionId: session.id } : {}),
           ...(course.format === "online" ? { digitalContentConsent: consent } : {}),
@@ -1030,6 +1042,7 @@ function useEducationPurchase() {
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Zahtev za kupovinu nije uspeo.");
+      enrollIdempotencyKeys.current.clear(course.id);
       toast.success("Zahtev je poslat", { description: "Administrator potvrđuje uplatu. Pristup se aktivira nakon potvrde." });
       setLocation(currentUser!.user!.role === "STUDENT" ? "/student/edukacije" : currentUser!.user!.role === "JOBSEEKER" ? "/poslovi/nalog/edukacije" : "/biznis/edukacije");
       return true;
@@ -1179,7 +1192,7 @@ export function EducationPublicCourseDetail() {
     query: { enabled: Boolean(courseId), queryKey: ["educationOperationalAvailability", courseId] },
   });
   const [operationalBookingKey, setOperationalBookingKey] = useState(() => crypto.randomUUID());
-  const createOperationalBookingMut = useCreateEducationOperationalBooking({ request: { headers: { "Idempotency-Key": operationalBookingKey } } });
+  const createOperationalBookingMut = useCreateEducationOperationalBooking();
   const viewerPublishesCourse = Boolean(course?.center?.id && viewerCenters?.some((center) => center.id === course.center!.id));
   const showOperationalBookingCta = educationBookingCtaVisible({
     hasFutureSession: Boolean(operationalSession),
@@ -1334,7 +1347,7 @@ export function EducationPublicCourseDetail() {
           <Dialog open={operationalBookingOpen} onOpenChange={setOperationalBookingOpen}>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
               <DialogHeader><DialogTitle>Rezervacija edukacije</DialogTitle><DialogDescription>Izaberite raspoloživ termin i unesite učesnike.</DialogDescription></DialogHeader>
-              <EducationOperationalBookingFlow course={course} availability={operationalAvailability} availabilityLoading={operationalAvailabilityLoading} availabilityError={operationalAvailabilityError} currentUser={currentUser} onCancel={() => setOperationalBookingOpen(false)} createBookingMut={createOperationalBookingMut} refetchAvail={refetchOperationalAvailability} resetIdempotencyKey={() => setOperationalBookingKey(crypto.randomUUID())} />
+              <EducationOperationalBookingFlow course={course} availability={operationalAvailability} availabilityLoading={operationalAvailabilityLoading} availabilityError={operationalAvailabilityError} currentUser={currentUser} onCancel={() => setOperationalBookingOpen(false)} createBookingMut={createOperationalBookingMut} refetchAvail={refetchOperationalAvailability} idempotencyKey={operationalBookingKey} resetIdempotencyKey={() => setOperationalBookingKey(crypto.randomUUID())} />
             </DialogContent>
           </Dialog>
 

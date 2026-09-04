@@ -466,6 +466,11 @@ function RecurrenceManager({ centerId }: { centerId: string }) {
   const [weekdays, setWeekdays] = useState<number[]>([]);
   
   const previewMut = usePreviewEducationCourseRecurrence();
+  // Stable for the lifetime of this logical commit attempt: a retry (network
+  // failure, manual re-click) reuses it, so the request is a safe replay
+  // rather than a second command. Only rotates once a commit actually
+  // succeeds (see handleCommit's onSuccess below), starting a new one.
+  const [commitIdempotencyKey, setCommitIdempotencyKey] = useState(() => crypto.randomUUID());
   const commitMut = useCommitEducationCourseRecurrence();
 
   const toggleWeekday = (day: number) => {
@@ -490,15 +495,14 @@ function RecurrenceManager({ centerId }: { centerId: string }) {
     commitMut.mutate({
       courseId,
       data: { educatorStaffId, weekdays, startTime, endTime, durationMinutes, startDate, endDate },
-      // Matches the pre-existing behavior: a fresh key per commit attempt,
-      // generated at call time (this hook never rotated/reused a key
-      // across renders either, since it was previously re-evaluated on
-      // every render of the hook-construction options).
-      headers: { "Idempotency-Key": crypto.randomUUID() },
+      headers: { "Idempotency-Key": commitIdempotencyKey },
     }, {
       onSuccess: () => {
         toast.success("Termini su uspešno generisani.");
         previewMut.reset();
+        // This logical commit is done; the next one (even with identical
+        // parameters) is a new intentional action and must get its own key.
+        setCommitIdempotencyKey(crypto.randomUUID());
       },
       onError: (e: any) => toast.error("Greška", { description: e.message })
     });
