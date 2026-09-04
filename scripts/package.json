@@ -42,6 +42,8 @@
     "test:admin-access-configuration": "tsx ./src/run-admin-access-configuration.ts",
     "cleanup:admin-access-configuration": "tsx ./src/run-admin-access-configuration.ts --recover-interrupted-databases",
     "test:admin-form-resilience": "tsx ./src/run-admin-form-resilience.ts",
+    "test:employee-location-deactivation-browser": "tsx ./src/run-employee-location-deactivation-browser.ts",
+    "cleanup:employee-location-deactivation-browser": "tsx ./src/run-employee-location-deactivation-browser.ts --recover-interrupted-databases",
     "cleanup:admin-form-resilience": "tsx ./src/run-admin-form-resilience.ts --recover-interrupted-databases",
     "test:salon-notifications": "tsx ./src/run-salon-notification-release.ts",
     "test:infobip-registration-browser": "tsx ./src/run-infobip-registration-browser.ts",
