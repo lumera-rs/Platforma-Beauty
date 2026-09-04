@@ -10892,12 +10892,21 @@ router.post("/salon/locations", async (req, res, next): Promise<void> => {
 router.get("/salon/employees", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const { salon } = access;
+  // Default response is unchanged (active staff only) for existing consumers
+  // like the booking/scheduling employee pickers. includeInactive=true is an
+  // owner-management-only extension (see owner/employees.tsx's inactive
+  // section) that also surfaces employees whose assignment at THIS salon was
+  // deactivated (Task #5), so the owner can find and reactivate them --
+  // scoped by the same salon-id join, never widening which owner's
+  // employees are reachable.
+  const includeInactive = req.query.includeInactive === "true";
   // Employee counts are plan-bounded, but all related reads must still be scoped:
   // links, service names, and user accounts are restricted with inArray to the
   // returned employee/service/user IDs instead of scanning full global tables.
   const [employeeRows, services] = await Promise.all([
     db.select({
       employee: employeesTable,
+      assignmentActive: employeeLocationAssignmentsTable.active,
       account: {
         active: usersTable.active,
         email: usersTable.email,
@@ -10909,9 +10918,9 @@ router.get("/salon/employees", async (req, res): Promise<void> => {
       .innerJoin(employeeLocationAssignmentsTable, and(
         eq(employeeLocationAssignmentsTable.employeeId, employeesTable.id),
         eq(employeeLocationAssignmentsTable.salonId, salon.id),
-        eq(employeeLocationAssignmentsTable.active, true),
+        ...(includeInactive ? [] : [eq(employeeLocationAssignmentsTable.active, true)]),
       ))
-      .where(eq(employeesTable.active, true))
+      .where(includeInactive ? undefined : eq(employeesTable.active, true))
       .orderBy(asc(employeesTable.name), asc(employeesTable.id))
       .limit(500),
     db.select().from(servicesTable)
@@ -10928,6 +10937,7 @@ router.get("/salon/employees", async (req, res): Promise<void> => {
       inArray(employeeServicesTable.serviceId, salonServiceIds),
     ) : sql`false`);
   const accountByEmployeeId = new Map(employeeRows.map((row) => [row.employee.id, row.account]));
+  const assignmentActiveByEmployeeId = new Map(employeeRows.map((row) => [row.employee.id, row.assignmentActive]));
   const serviceNameById = new Map(services.map((service) => [service.id, service.name]));
   const serviceIdsByEmployeeId = new Map<string, string[]>();
   for (const link of links) {
@@ -10938,9 +10948,10 @@ router.get("/salon/employees", async (req, res): Promise<void> => {
   res.json(employees.map((item) => {
     const serviceIds = serviceIdsByEmployeeId.get(item.id) ?? [];
     const account = item.userId ? accountByEmployeeId.get(item.id) : null;
+    const active = assignmentActiveByEmployeeId.get(item.id) ?? true;
     return {
        id: item.id, name: item.name, role: item.role, bio: item.bio, avatarUrl: item.avatarUrl, email: item.email,
-       canOrderIndependently: item.canOrderIndependently,
+       canOrderIndependently: item.canOrderIndependently, active,
       specialties: item.specialties, serviceIds, serviceNames: serviceIds.flatMap((id) => {
         const name = serviceNameById.get(id);
         return name ? [name] : [];

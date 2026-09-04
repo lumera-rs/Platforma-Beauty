@@ -19,6 +19,10 @@
  *      attempt, matching auth.ts's SALON_EMPLOYEE branch), and
  *      reactivating it must restore login -- exercised with fresh browser
  *      contexts at each checkpoint, never an already-authenticated page.
+ *      Reactivation (Task #5C) is driven entirely through the owner UI's
+ *      inactive-employees section and its "Reaktiviraj" button -- no direct
+ *      API call -- since a single-salon owner has no per-location checkbox
+ *      to use (that control only renders for owners with >= 2 locations).
  *   3. Cross-tenant scenario: a second, unrelated owner cannot deactivate,
  *      reactivate, or otherwise read another owner's employee assignment
  *      through the real, authenticated UI/API -- verified against actual
@@ -64,6 +68,17 @@ async function signIn(page: Page, email: string, password: string): Promise<void
 
 function employeeCard(page: Page, employeeName: string) {
   return page.locator("div.overflow-hidden", { has: page.getByRole("heading", { name: employeeName, exact: true }) });
+}
+
+// Task #5C added a dedicated inactive-employees section (owner/employees.tsx)
+// alongside the active staff grid, so a bare employeeCard() lookup can now
+// match either one. These two scope to exactly the section that matters for
+// a given assertion instead of "somewhere on the page."
+function activeEmployeeCard(page: Page, employeeName: string) {
+  return page.getByTestId("active-employees-grid").locator("div.overflow-hidden", { has: page.getByRole("heading", { name: employeeName, exact: true }) });
+}
+function inactiveEmployeeCard(page: Page, employeeName: string) {
+  return page.getByTestId("inactive-employees-section").locator("div.overflow-hidden", { has: page.getByRole("heading", { name: employeeName, exact: true }) });
 }
 
 /**
@@ -180,16 +195,16 @@ test("owner deactivates and reactivates an employee scoped to a single salon whi
     // --- Step 1: baseline -----------------------------------------------
     await signIn(page, fixture.ownerEmail, fixture.ownerPassword);
     await page.goto("/vlasnik/zaposleni");
-    await expect(employeeCard(page, fixture.employeeName)).toBeVisible();
-    await expect(employeeCard(page, fixture.employeeName).getByText("Nalog aktivan")).toBeVisible();
+    await expect(activeEmployeeCard(page, fixture.employeeName)).toBeVisible();
+    await expect(activeEmployeeCard(page, fixture.employeeName).getByText("Nalog aktivan")).toBeVisible();
 
     // Switch to Salon B via the real location switcher and confirm the
     // employee is visible there too (baseline: active in both locations).
     await switchActiveSalonOnEmployeesPage(page, fixture.salonBId);
-    await expect(employeeCard(page, fixture.employeeName)).toBeVisible();
+    await expect(activeEmployeeCard(page, fixture.employeeName)).toBeVisible();
 
     await switchActiveSalonOnEmployeesPage(page, fixture.salonAId);
-    await expect(employeeCard(page, fixture.employeeName)).toBeVisible();
+    await expect(activeEmployeeCard(page, fixture.employeeName)).toBeVisible();
 
     // Baseline employee-side access: both locations available before any change.
     {
@@ -207,7 +222,7 @@ test("owner deactivates and reactivates an employee scoped to a single salon whi
     // --- Step 2: deactivate Salon A through the real owner UI ------------
     const previewResponse = page.waitForResponse((response) =>
       response.request().method() === "GET" && new URL(response.url()).pathname === `/api/salon/employees/${fixture.employeeId}/deactivation-preview`);
-    await employeeCard(page, fixture.employeeName).getByRole("button", { name: `Deaktiviraj ${fixture.employeeName}` }).click();
+    await activeEmployeeCard(page, fixture.employeeName).getByRole("button", { name: `Deaktiviraj ${fixture.employeeName}` }).click();
     expect((await previewResponse).status()).toBe(200);
 
     const confirmDialog = page.getByRole("dialog", { name: "Deaktivirati zaposlenog?" });
@@ -225,8 +240,13 @@ test("owner deactivates and reactivates an employee scoped to a single salon whi
     expect(deactivateBody.loginAccountDeactivated).toBe(false);
     await expect(confirmDialog).toBeHidden();
 
-    // UI must reflect the employee as removed from Salon A's active staff.
-    await expect(employeeCard(page, fixture.employeeName)).toHaveCount(0);
+    // UI must reflect the employee as removed from Salon A's active staff --
+    // but still discoverable (Task #5C) in the inactive section there, not
+    // vanished without a trace, with the same reactivation control a
+    // single-salon owner would see.
+    await expect(activeEmployeeCard(page, fixture.employeeName)).toHaveCount(0);
+    await expect(inactiveEmployeeCard(page, fixture.employeeName)).toBeVisible();
+    await expect(inactiveEmployeeCard(page, fixture.employeeName).getByRole("button", { name: `Reaktiviraj ${fixture.employeeName}` })).toBeVisible();
 
     // --- Step 4a: scheduling exclusion at Salon A -------------------------
     {
@@ -250,8 +270,8 @@ test("owner deactivates and reactivates an employee scoped to a single salon whi
       await employeesListResponse;
     }
     await switchActiveSalonOnEmployeesPage(page, fixture.salonBId);
-    await expect(employeeCard(page, fixture.employeeName)).toBeVisible();
-    await expect(employeeCard(page, fixture.employeeName).getByText("Nalog aktivan")).toBeVisible();
+    await expect(activeEmployeeCard(page, fixture.employeeName)).toBeVisible();
+    await expect(activeEmployeeCard(page, fixture.employeeName).getByText("Nalog aktivan")).toBeVisible();
 
     // --- Step 4b: scheduling still offers the employee at Salon B --------
     {
@@ -290,7 +310,7 @@ test("owner deactivates and reactivates an employee scoped to a single salon whi
       response.request().method() === "GET" && new URL(response.url()).pathname === `/api/salon/employees/${fixture.employeeId}/locations`);
     await page.goto("/vlasnik/zaposleni");
     await assignmentsResponse;
-    const card = employeeCard(page, fixture.employeeName);
+    const card = activeEmployeeCard(page, fixture.employeeName);
     const salonACheckbox = card.getByRole("checkbox", { name: `${fixture.salonAName} aktivna lokacija` });
     await expect(salonACheckbox).not.toBeChecked();
     const reactivateResponse = page.waitForResponse((response) =>
@@ -306,8 +326,8 @@ test("owner deactivates and reactivates an employee scoped to a single salon whi
     // Employee account must be active again, and Salon A must offer them
     // as active staff once more.
     await switchActiveSalonOnEmployeesPage(page, fixture.salonAId);
-    await expect(employeeCard(page, fixture.employeeName)).toBeVisible();
-    await expect(employeeCard(page, fixture.employeeName).getByText("Nalog aktivan")).toBeVisible();
+    await expect(activeEmployeeCard(page, fixture.employeeName)).toBeVisible();
+    await expect(activeEmployeeCard(page, fixture.employeeName).getByText("Nalog aktivan")).toBeVisible();
 
     {
       const employeeContext = await browser.newContext();
@@ -319,6 +339,29 @@ test("owner deactivates and reactivates an employee scoped to a single salon whi
       expect(locationsBody.locations.map((location) => location.salonId).sort())
         .toEqual([fixture.salonAId, fixture.salonBId].sort());
       await employeeContext.close();
+    }
+
+    // --- Regression: repeated deactivate -> reactivate -> deactivate stays
+    // deterministic, entirely through the UI, both times. -------------------
+    for (let cycle = 0; cycle < 2; cycle += 1) {
+      const previewAgain = page.waitForResponse((response) =>
+        response.request().method() === "GET" && new URL(response.url()).pathname === `/api/salon/employees/${fixture.employeeId}/deactivation-preview`);
+      await activeEmployeeCard(page, fixture.employeeName).getByRole("button", { name: `Deaktiviraj ${fixture.employeeName}` }).click();
+      await previewAgain;
+      const dialogAgain = page.getByRole("dialog", { name: "Deaktivirati zaposlenog?" });
+      const deactivateAgain = page.waitForResponse((response) =>
+        response.request().method() === "POST" && new URL(response.url()).pathname === `/api/salon/employees/${fixture.employeeId}/deactivate`);
+      await dialogAgain.getByRole("button", { name: "Da, deaktiviraj" }).click();
+      expect((await deactivateAgain).status()).toBe(200);
+      await expect(activeEmployeeCard(page, fixture.employeeName)).toHaveCount(0);
+      await expect(inactiveEmployeeCard(page, fixture.employeeName)).toBeVisible();
+
+      const reactivateAgain = page.waitForResponse((response) =>
+        response.request().method() === "PUT" && new URL(response.url()).pathname === `/api/salon/employees/${fixture.employeeId}/locations/${fixture.salonAId}`);
+      await inactiveEmployeeCard(page, fixture.employeeName).getByRole("button", { name: `Reaktiviraj ${fixture.employeeName}` }).click();
+      expect((await reactivateAgain).status()).toBe(200);
+      await expect(activeEmployeeCard(page, fixture.employeeName)).toBeVisible();
+      await expect(inactiveEmployeeCard(page, fixture.employeeName)).toHaveCount(0);
     }
   } finally {
     await cleanUpPrimaryFixture(fixture);
@@ -426,7 +469,7 @@ test("deactivating an employee's last active assignment disables login and react
 
     await signIn(page, fixture.ownerEmail, fixture.ownerPassword);
     await page.goto("/vlasnik/zaposleni");
-    const card = employeeCard(page, fixture.employeeName);
+    const card = activeEmployeeCard(page, fixture.employeeName);
     await expect(card).toBeVisible();
     await expect(card.getByText("Nalog aktivan")).toBeVisible();
 
@@ -446,7 +489,7 @@ test("deactivating an employee's last active assignment disables login and react
     await confirmDialog.getByRole("button", { name: "Da, deaktiviraj" }).click();
     const deactivateBody = await (await deactivateResponse).json() as { loginAccountDeactivated: boolean };
     expect(deactivateBody.loginAccountDeactivated).toBe(true);
-    await expect(employeeCard(page, fixture.employeeName)).toHaveCount(0);
+    await expect(activeEmployeeCard(page, fixture.employeeName)).toHaveCount(0);
 
     // The session established before deactivation must now be dead.
     const meResponse = await preDeactivationPage.request.get("/api/auth/me");
@@ -472,21 +515,47 @@ test("deactivating an employee's last active assignment disables login and react
     expect(appointmentRow?.employeeId).toBe(fixture.employeeId);
     expect(appointmentRow?.status).toBe("completed");
 
-    // Reactivate through the authorized owner flow.
-    // With zero locations for this owner (single-salon fixture), the
-    // per-location checkbox UI doesn't render (it needs >= 2 locations) --
-    // reactivate via the deactivation-preview/locations API surface the
-    // owner UI itself calls, exactly mirroring employeeAndOwnedLocation's
-    // relaxed reachability that Task #5 introduced for this exact case.
-    const reactivateResponse = await page.request.put(`/api/salon/employees/${fixture.employeeId}/locations/${fixture.salonId}`, {
-      data: { active: true },
-    });
-    expect(reactivateResponse.status(), "reactivating an employee's last-known assignment must succeed even with zero active assignments left").toBe(200);
+    // --- Step 7: the owner can still locate the inactive employee -----------
+    // A single-salon owner has no "other location" to switch to, so the
+    // per-location checkbox never renders for them. Task #5C's fix:
+    // owner/employees.tsx now fetches includeInactive=true and renders a
+    // dedicated inactive section instead of dropping the employee entirely.
+    const inactiveSection = page.getByTestId("inactive-employees-section");
+    await expect(inactiveSection).toBeVisible();
+    const inactiveCard = inactiveEmployeeCard(page, fixture.employeeName);
+    await expect(inactiveCard).toBeVisible();
+    await expect(inactiveCard.getByText("Neaktivan na ovoj lokaciji")).toBeVisible();
 
-    await page.reload();
-    await expect(employeeCard(page, fixture.employeeName)).toBeVisible();
-    await expect(employeeCard(page, fixture.employeeName).getByText("Nalog aktivan")).toBeVisible();
+    // --- Step 8: reactivate entirely through the real owner UI --------------
+    // No direct API call from the test -- clicking this button is the ONLY
+    // action that reactivates the assignment. It calls the exact same
+    // PUT .../locations/:salonId operation the multi-location checkbox uses
+    // (see reactivateEmployee in owner/employees.tsx); the backend's
+    // syncEmployeeAccountState then derives employees.active/users.active.
+    const reactivateResponse = page.waitForResponse((response) =>
+      response.request().method() === "PUT" && new URL(response.url()).pathname === `/api/salon/employees/${fixture.employeeId}/locations/${fixture.salonId}`);
+    await inactiveCard.getByRole("button", { name: `Reaktiviraj ${fixture.employeeName}` }).click();
+    expect((await reactivateResponse).status()).toBe(200);
 
+    await expect(inactiveSection).toHaveCount(0);
+    await expect(activeEmployeeCard(page, fixture.employeeName)).toBeVisible();
+    await expect(activeEmployeeCard(page, fixture.employeeName).getByText("Nalog aktivan")).toBeVisible();
+
+    // --- Step 11b: back on the scheduling picker too -------------------------
+    {
+      const employeesListResponse = page.waitForResponse((response) =>
+        response.request().method() === "GET" && new URL(response.url()).pathname === "/api/salon/employees");
+      await page.goto("/vlasnik/kalendar");
+      await employeesListResponse;
+      await page.getByTestId("calendar-new-appointment").click();
+      const bookingDialog = page.getByRole("dialog", { name: "Zakazivanje" });
+      await expect(bookingDialog).toBeVisible();
+      await expect(bookingDialog.locator("select").nth(1).locator(`option[value="${fixture.employeeId}"]`))
+        .toHaveCount(1, { timeout: 10_000 });
+      await page.keyboard.press("Escape");
+    }
+
+    // --- Step 10: fresh login succeeds again ---------------------------------
     {
       const freshContext = await browser.newContext();
       const freshPage = await freshContext.newPage();
@@ -496,6 +565,11 @@ test("deactivating an employee's last active assignment disables login and react
       expect(meBody.user?.email).toBe(fixture.employeeEmail);
       await freshContext.close();
     }
+
+    // --- Step 12: historical appointment still intact after reactivation ----
+    const [appointmentRowAfter] = await db.select().from(appointmentsTable).where(eq(appointmentsTable.id, fixture.appointmentId));
+    expect(appointmentRowAfter?.employeeId).toBe(fixture.employeeId);
+    expect(appointmentRowAfter?.status).toBe("completed");
   } finally {
     await cleanUpFinalAssignmentFixture(fixture);
   }

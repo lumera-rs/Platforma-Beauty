@@ -1878,6 +1878,12 @@ paths:
       operationId: listSalonEmployees
       tags: [salon-management]
       summary: List salon employees
+      parameters:
+        - name: includeInactive
+          in: query
+          required: false
+          schema: { type: boolean }
+          description: When true, also include employees whose assignment at the caller's active salon is inactive (owner-management use only -- booking/scheduling pickers must omit this so inactive employees never appear there).
       responses:
         "200":
           description: Employees
@@ -10669,7 +10675,10 @@ components:
           type: array
           items: { type: string }
         canOrderIndependently: { type: boolean, description: Owner-controlled B2B purchasing permission. }
-      required: [id, name, role, bio, avatarUrl, specialties, serviceIds, serviceNames, canOrderIndependently]
+        active:
+          type: boolean
+          description: Whether this employee's assignment at the caller's active salon is currently active. Always true unless the request set includeInactive=true.
+      required: [id, name, role, bio, avatarUrl, specialties, serviceIds, serviceNames, canOrderIndependently, active]
     EmployeeDeactivationPreview:
       type: object
       properties:

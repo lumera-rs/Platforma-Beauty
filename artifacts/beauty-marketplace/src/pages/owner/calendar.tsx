@@ -435,7 +435,7 @@ export default function OwnerCalendar() {
     },
   });
   const { data: services } = useListSalonServices({ query: { enabled: !!userResp?.user, queryKey: getListSalonServicesQueryKey() } });
-  const { data: employees } = useListSalonEmployees({ query: { enabled: !!userResp?.user, queryKey: getListSalonEmployeesQueryKey() } });
+  const { data: employees } = useListSalonEmployees(undefined, { query: { enabled: !!userResp?.user, queryKey: getListSalonEmployeesQueryKey() } });
   const CUSTOMERS_PAGE_SIZE = 25;
   const [customersPage, setCustomersPage] = useState(1);
   const customersParams = useMemo(() => ({ page: customersPage, pageSize: CUSTOMERS_PAGE_SIZE }), [customersPage]);

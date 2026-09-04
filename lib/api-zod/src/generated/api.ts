@@ -1086,7 +1086,8 @@ export const GetSalonResponse = zod.object({
   "specialties": zod.array(zod.string()),
   "serviceIds": zod.array(zod.string()),
   "serviceNames": zod.array(zod.string()),
-  "canOrderIndependently": zod.boolean().describe('Owner-controlled B2B purchasing permission.')
+  "canOrderIndependently": zod.boolean().describe('Owner-controlled B2B purchasing permission.'),
+  "active": zod.boolean().describe('Whether this employee\'s assignment at the caller\'s active salon is currently active. Always true unless the request set includeInactive=true.')
 })),
   "services": zod.array(zod.object({
   "id": zod.string(),
@@ -4981,6 +4982,10 @@ export const DeleteSalonServiceResponse = zod.void()
 /**
  * @summary List salon employees
  */
+export const ListSalonEmployeesQueryParams = zod.object({
+  "includeInactive": zod.coerce.boolean().optional().describe('When true, also include employees whose assignment at the caller\'s active salon is inactive (owner-management use only -- booking\/scheduling pickers must omit this so inactive employees never appear there).')
+})
+
 export const ListSalonEmployeesResponseItem = zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -4990,7 +4995,8 @@ export const ListSalonEmployeesResponseItem = zod.object({
   "specialties": zod.array(zod.string()),
   "serviceIds": zod.array(zod.string()),
   "serviceNames": zod.array(zod.string()),
-  "canOrderIndependently": zod.boolean().describe('Owner-controlled B2B purchasing permission.')
+  "canOrderIndependently": zod.boolean().describe('Owner-controlled B2B purchasing permission.'),
+  "active": zod.boolean().describe('Whether this employee\'s assignment at the caller\'s active salon is currently active. Always true unless the request set includeInactive=true.')
 })
 export const ListSalonEmployeesResponse = zod.array(ListSalonEmployeesResponseItem)
 
@@ -5153,7 +5159,8 @@ export const CreateSalonLocationResponse = zod.object({
   "specialties": zod.array(zod.string()),
   "serviceIds": zod.array(zod.string()),
   "serviceNames": zod.array(zod.string()),
-  "canOrderIndependently": zod.boolean().describe('Owner-controlled B2B purchasing permission.')
+  "canOrderIndependently": zod.boolean().describe('Owner-controlled B2B purchasing permission.'),
+  "active": zod.boolean().describe('Whether this employee\'s assignment at the caller\'s active salon is currently active. Always true unless the request set includeInactive=true.')
 })),
   "services": zod.array(zod.object({
   "id": zod.string(),
@@ -5241,7 +5248,8 @@ export const CreateSalonLocationResponse = zod.object({
   "specialties": zod.array(zod.string()),
   "serviceIds": zod.array(zod.string()),
   "serviceNames": zod.array(zod.string()),
-  "canOrderIndependently": zod.boolean().describe('Owner-controlled B2B purchasing permission.')
+  "canOrderIndependently": zod.boolean().describe('Owner-controlled B2B purchasing permission.'),
+  "active": zod.boolean().describe('Whether this employee\'s assignment at the caller\'s active salon is currently active. Always true unless the request set includeInactive=true.')
 })),
   "services": zod.array(zod.object({
   "id": zod.string(),

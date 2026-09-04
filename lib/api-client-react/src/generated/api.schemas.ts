@@ -1338,6 +1338,8 @@ export interface Employee {
   serviceNames: string[];
   /** Owner-controlled B2B purchasing permission. */
   canOrderIndependently: boolean;
+  /** Whether this employee's assignment at the caller's active salon is currently active. Always true unless the request set includeInactive=true. */
+  active: boolean;
 }
 
 export interface ServiceResourceRequirement {
@@ -14911,6 +14913,13 @@ subcategory?: string;
 
 export type DeleteSalonService409 = {
   error: string;
+};
+
+export type ListSalonEmployeesParams = {
+/**
+ * When true, also include employees whose assignment at the caller's active salon is inactive (owner-management use only -- booking/scheduling pickers must omit this so inactive employees never appear there).
+ */
+includeInactive?: boolean;
 };
 
 export type ListPublicProductsParams = {

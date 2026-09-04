@@ -512,6 +512,7 @@ import type {
   ListSalonAppointmentsParams,
   ListSalonClockEntriesParams,
   ListSalonCustomersParams,
+  ListSalonEmployeesParams,
   ListSalonNotificationsParams,
   ListSalonTimeBlocksParams,
   ListSalonsParams,
@@ -8162,20 +8163,27 @@ export const useDeleteSalonService = <TError = ErrorType<void | DeleteSalonServi
       return useMutation(getDeleteSalonServiceMutationOptions(options));
     }
 
-export const getListSalonEmployeesUrl = () => {
+export const getListSalonEmployeesUrl = (params?: ListSalonEmployeesParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/salon/employees`
+  return stringifiedParams.length > 0 ? `/api/salon/employees?${stringifiedParams}` : `/api/salon/employees`
 }
 
 /**
  * @summary List salon employees
  */
-export const listSalonEmployees = async ( options?: Parameters<typeof customFetch>[1]): Promise<Employee[]> => {
+export const listSalonEmployees = async (params?: ListSalonEmployeesParams, options?: Parameters<typeof customFetch>[1]): Promise<Employee[]> => {
 
-  return customFetch<Employee[]>(getListSalonEmployeesUrl(),
+  return customFetch<Employee[]>(getListSalonEmployeesUrl(params),
   {
     ...options,
     method: 'GET'
@@ -8188,23 +8196,23 @@ export const listSalonEmployees = async ( options?: Parameters<typeof customFetc
 
 
 
-export const getListSalonEmployeesQueryKey = () => {
+export const getListSalonEmployeesQueryKey = (params?: ListSalonEmployeesParams,) => {
     return [
-    `/api/salon/employees`
+    `/api/salon/employees`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getListSalonEmployeesQueryOptions = <TData = Awaited<ReturnType<typeof listSalonEmployees>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalonEmployees>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListSalonEmployeesQueryOptions = <TData = Awaited<ReturnType<typeof listSalonEmployees>>, TError = ErrorType<unknown>>(params?: ListSalonEmployeesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalonEmployees>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListSalonEmployeesQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getListSalonEmployeesQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSalonEmployees>>> = ({ signal }) => listSalonEmployees({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSalonEmployees>>> = ({ signal }) => listSalonEmployees(params, { signal, ...requestOptions });
 
 
 
@@ -8222,11 +8230,11 @@ export type ListSalonEmployeesQueryError = ErrorType<unknown>
  */
 
 export function useListSalonEmployees<TData = Awaited<ReturnType<typeof listSalonEmployees>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalonEmployees>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: ListSalonEmployeesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalonEmployees>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getListSalonEmployeesQueryOptions(options)
+  const queryOptions = getListSalonEmployeesQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

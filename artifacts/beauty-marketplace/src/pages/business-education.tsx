@@ -1179,7 +1179,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
   const isSalonEmployee = user?.role === "SALON_EMPLOYEE";
 
   const { data: enrollments } = useListEnrollments(undefined, { query: { enabled: !!course?.enrollmentStatus, queryKey: getListEnrollmentsQueryKey() } });
-  const { data: ownerEmployees } = useListSalonEmployees({
+  const { data: ownerEmployees } = useListSalonEmployees(undefined, {
     query: {
       enabled: isSalonOwner,
       queryKey: getListSalonEmployeesQueryKey(),
