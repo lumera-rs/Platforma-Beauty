@@ -8257,6 +8257,14 @@ export const QuoteEducationB2bOrderResponse = zod.object({
 /**
  * @summary Finalize a center B2B order and persist immutable benefit evidence
  */
+export const checkoutEducationB2bOrderHeaderIdempotencyKeyMax = 200;
+
+
+
+export const CheckoutEducationB2bOrderHeader = zod.object({
+  "Idempotency-Key": zod.string().min(1).max(checkoutEducationB2bOrderHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+})
+
 export const checkoutEducationB2bOrderBodyOneLinesItemQuantityMax = 1000;
 
 export const checkoutEducationB2bOrderBodyOneLinesMax = 100;

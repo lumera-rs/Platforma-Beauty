@@ -2649,10 +2649,14 @@ paths:
       operationId: checkoutEducationB2bOrder
       tags: [education]
       summary: Finalize a center B2B order and persist immutable benefit evidence
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/EducationB2bCheckoutInput" } } } }
       responses:
-        "201": { description: Persisted order, content: { application/json: { schema: { $ref: "#/components/schemas/EducationB2bOrder" } } } }
-        "409": { description: Quote changed }
+        "201": { description: Order created by this request, content: { application/json: { schema: { $ref: "#/components/schemas/EducationB2bOrder" } } } }
+        "200": { description: Idempotent replay — an exact Idempotency-Key + payload repeat returns the original order unchanged, content: { application/json: { schema: { $ref: "#/components/schemas/EducationB2bOrder" } } } }
+        "400": { description: "Invalid request, or Idempotency-Key header missing/malformed" }
+        "409": { description: "Quote/stock changed since the price was checked, or Idempotency-Key reused with a different payload" }
   /admin/education/b2b-discount-tiers:
     get:
       operationId: adminGetEducationB2bDiscountTiers
