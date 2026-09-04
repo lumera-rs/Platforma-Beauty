@@ -8,7 +8,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { getApiErrorMessage, useLogin, useRegister, useGetCurrentUser } from "@workspace/api-client-react";
+import { getApiErrorMessage, getGetCurrentUserQueryKey, useLogin, useRegister, useGetCurrentUser } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useSearch } from "wouter";
 import { useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -35,6 +36,7 @@ const registerSchema = z.object({
 
 export default function Login() {
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const searchString = useSearch();
   const studentPortal = window.location.pathname.startsWith("/student/");
   const searchParams = new URLSearchParams(searchString);
@@ -68,6 +70,11 @@ export default function Login() {
   const onLoginSubmit = (values: z.infer<typeof loginSchema>) => {
     loginMutation.mutate({ data: values }, {
       onSuccess: (res) => {
+        // Drop any cached data from a previous identity (anonymous browsing,
+        // or another user on a shared device) before the authenticated
+        // destination route mounts and reads it.
+        queryClient.clear();
+        queryClient.setQueryData(getGetCurrentUserQueryKey(), res);
         toast.success("Uspešna prijava", { description: "Dobrodošli nazad!" });
         setLocation(returnTo ?? homeForRole(res.user.role));
       },
@@ -92,6 +99,12 @@ export default function Login() {
         .then(({ response, data }) => {
           if (!response.ok) throw new Error(data.error ?? "Registracija nije uspela.");
           clearStoredReferralCode();
+          // Same identity-transition cache reset as the typed mutations
+          // below; this path uses a raw fetch() so there is no typed
+          // response to seed getCurrentUser with, but the destination
+          // route's own useGetCurrentUser() will refetch since the cache
+          // was just cleared.
+          queryClient.clear();
           toast.success("STUDENT nalog je kreiran", { description: "Dobrodošli u LUMERA Edukacije." });
           setLocation("/student/edukacije");
         })
@@ -101,6 +114,8 @@ export default function Login() {
     registerMutation.mutate({ data: registrationValues }, {
       onSuccess: (res) => {
         clearStoredReferralCode();
+        queryClient.clear();
+        queryClient.setQueryData(getGetCurrentUserQueryKey(), res);
         toast.success("Uspešna registracija", { description: "Vaš klijentski nalog je kreiran!" });
         setLocation(returnTo ?? homeForRole(res.user.role));
       },

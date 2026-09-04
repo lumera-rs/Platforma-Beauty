@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { User, LogOut, Menu, X, Calendar, LayoutDashboard, Award, ChevronDown, Heart, Settings, BriefcaseBusiness, ShoppingBag, Bell } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "./ui/button";
 import { getGetRetailCartSummaryQueryKey, useGetCurrentUser, useGetRetailCartSummary, useLogout, useListCustomerNotifications, getListCustomerNotificationsQueryKey } from "@workspace/api-client-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -15,6 +16,7 @@ import { homeForRole } from "@/lib/role-routing";
 
 export function Navbar() {
   const [location, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const { data: userResp, isLoading: isUserLoading } = useGetCurrentUser();
   const logout = useLogout();
   const user = userResp?.user;
@@ -80,7 +82,10 @@ export function Navbar() {
 
   const handleLogout = () => {
     logout.mutate(undefined, {
-      onSuccess: () => setLocation("/")
+      onSuccess: () => {
+        queryClient.clear();
+        setLocation("/");
+      },
     });
   };
 

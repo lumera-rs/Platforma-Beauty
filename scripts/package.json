@@ -44,6 +44,7 @@
     "test:admin-form-resilience": "tsx ./src/run-admin-form-resilience.ts",
     "test:employee-location-deactivation-browser": "tsx ./src/run-employee-location-deactivation-browser.ts",
     "test:education-center-url-xss-audit-browser": "tsx ./src/run-education-center-url-xss-audit-browser.ts",
+    "test:logout-login-cache-residue-browser": "tsx ./src/run-logout-login-cache-residue-browser.ts",
     "cleanup:employee-location-deactivation-browser": "tsx ./src/run-employee-location-deactivation-browser.ts --recover-interrupted-databases",
     "cleanup:admin-form-resilience": "tsx ./src/run-admin-form-resilience.ts --recover-interrupted-databases",
     "test:salon-notifications": "tsx ./src/run-salon-notification-release.ts",
