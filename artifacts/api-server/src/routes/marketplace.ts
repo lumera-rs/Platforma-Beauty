@@ -4760,6 +4760,20 @@ router.get("/auth/oauth/:provider/callback", async (req, res): Promise<void> => 
         }
       }
       const [existingByEmail] = await tx.select().from(usersTable).where(eq(usersTable.email, profile.email)).limit(1);
+      if (existingByEmail && provider === "facebook") {
+        // Task #7A: unlike Google (whose profile fetch already rejects an
+        // unverified email above), Facebook's Graph API /me response used
+        // here carries no verified-email signal this application can check.
+        // A brand-new, never-before-linked Facebook identity must never be
+        // allowed to silently authenticate as -- or attach itself to -- an
+        // existing account merely by presenting that account's email; that
+        // is a direct account-takeover path. Require the account owner to
+        // sign in through an already-trusted method first and link Facebook
+        // from account settings (the existing authenticated "link" flow
+        // above), exactly like a normal email/password registration already
+        // rejects a duplicate email.
+        throw new Error("oauth_facebook_email_collision");
+      }
       const created = !existingByEmail;
       const user = existingByEmail ?? (await tx.insert(usersTable).values({
         firstName: profile.firstName,
@@ -4791,6 +4805,15 @@ router.get("/auth/oauth/:provider/callback", async (req, res): Promise<void> => 
         // the rejected browser-bound attempt cannot be replayed.
         await db.delete(oauthLoginStatesTable).where(eq(oauthLoginStatesTable.id, loginState.id));
         res.status(400).json({ error: error.message, code: error.code });
+        return;
+      }
+      if (error instanceof Error && error.message === "oauth_facebook_email_collision") {
+        // Same message an ordinary email/password registration already gives
+        // for a duplicate email -- this is not a new account-enumeration
+        // surface, just the existing convention applied to this path too.
+        await db.delete(oauthLoginStatesTable).where(eq(oauthLoginStatesTable.id, loginState.id));
+        res.redirect(oauthFailurePath(loginState.flow,
+          "Nalog sa ovom e-mail adresom već postoji. Prijavite se lozinkom ili prethodno povezanim nalogom, pa dodajte Facebook prijavu iz podešavanja naloga."));
         return;
       }
       const errorCode = typeof error === "object" && error !== null && "cause" in error
